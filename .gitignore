@@ -1,0 +1,15 @@
+node_modules/
+.next/
+dist/
+out/
+.turbo/
+coverage/
+*.log
+
+# env — values live in Doppler; never commit a real .env
+.env
+.env.*
+!.env.example
+
+.DS_Store
+.vercel
