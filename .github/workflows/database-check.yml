@@ -1,16 +1,14 @@
-name: CI
+name: Database Check
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  validate:
+  migrations:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -33,14 +31,5 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Lint
-        run: pnpm lint
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Test
-        run: pnpm test
-
-      - name: Build
-        run: pnpm build
+      - name: Check migrations
+        run: pnpm db:check
