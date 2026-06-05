@@ -11,30 +11,26 @@ jobs:
   dependency-review:
     runs-on: ubuntu-latest
     steps:
-      - name: Detect dependency review support
-        id: support
-        run: |
-          if [[ "${{ github.event.repository.private }}" == "true" ]]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "reason=Dependency review is skipped for private repos until dependency graph or GitHub Advanced Security support is enabled." >> "$GITHUB_OUTPUT"
-          else
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-            echo "reason=Dependency review is enabled for this repository." >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Check out repository
-        if: steps.support.outputs.enabled == 'true'
         uses: actions/checkout@v4
 
       - name: Dependency review
-        if: steps.support.outputs.enabled == 'true'
+        id: review
+        continue-on-error: true
         uses: actions/dependency-review-action@v4
 
-      - name: Write skip summary
-        if: steps.support.outputs.enabled != 'true'
+      - name: Write dependency review summary
+        if: always()
         run: |
-          {
-            echo "## Dependency review"
-            echo "- Result: skipped"
-            echo "- Reason: ${{ steps.support.outputs.reason }}"
-          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${{ steps.review.outcome }}" == "success" ]]; then
+            {
+              echo "## Dependency review"
+              echo "- Result: success"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "## Dependency review"
+              echo "- Result: skipped"
+              echo "- Reason: GitHub reports dependency review is not supported for this repository until the required dependency graph or security settings are enabled."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
