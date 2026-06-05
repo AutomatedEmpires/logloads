@@ -1,0 +1,4 @@
+# TODO: Replace placeholder local configuration values after the team confirms
+# local Supabase orchestration for LogLoads.
+
+project_id = "logloads-local"

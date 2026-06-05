@@ -1,0 +1,22 @@
+{
+  "root": true,
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/.next/**",
+    "**/dist/**",
+    "**/coverage/**",
+    "**/.turbo/**",
+    "pnpm-lock.yaml"
+  ],
+  "overrides": [
+    {
+      "files": ["**/*.ts", "**/*.tsx"],
+      "parser": "@typescript-eslint/parser",
+      "plugins": ["@typescript-eslint"],
+      "extends": ["eslint:recommended", "plugin:@typescript-eslint/recommended"],
+      "rules": {
+        "@typescript-eslint/no-explicit-any": "off"
+      }
+    }
+  ]
+}
