@@ -1,0 +1,67 @@
+name: Agent Build Task Router
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  route-build-task:
+    if: >-
+      github.event.issue.pull_request == null &&
+      startsWith(github.event.issue.title, '[build]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply routing labels from build task form
+        uses: actions/github-script@91a83c091797b22c5771b1d7178fd0fddacc73ea
+        with:
+          script: |
+            const body = context.payload.issue.body || '';
+
+            const captureField = (heading) => {
+              const match = body.match(new RegExp(`## ${heading}\\r?\\n+([^\\r\\n]+)`, 'i'));
+              return match ? match[1].trim() : null;
+            };
+
+            const allowedLabels = new Set([
+              'area:sprint-zero',
+              'area:design-system',
+              'area:contracts',
+              'area:ui',
+              'area:database',
+              'area:auth',
+              'area:billing',
+              'area:analytics',
+              'area:docs',
+              'area:agent-governance',
+              'agent:vscode',
+              'agent:codex',
+              'agent:cursor',
+              'agent:claude',
+              'agent:opus',
+              'risk:low',
+              'risk:medium',
+              'risk:high',
+              'risk:approval-required',
+            ]);
+
+            const labels = [
+              captureField('Area'),
+              captureField('Suggested agent'),
+              captureField('Risk level'),
+            ].filter((label, index, list) => label && allowedLabels.has(label) && list.indexOf(label) === index);
+
+            if (labels.length === 0) {
+              core.info('No routing labels found in build task body.');
+              return;
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              labels,
+            });
