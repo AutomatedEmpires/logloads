@@ -1,0 +1,17 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '23 5 * * 1' # Mondays 05:23 UTC
+
+jobs:
+  codeql:
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    uses: AutomatedEmpires/.github/.github/workflows/reusable-codeql.yml@main
