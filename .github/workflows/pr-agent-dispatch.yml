@@ -1,0 +1,200 @@
+name: PR Agent Dispatch
+
+on:
+  repository_dispatch:
+    types: [pr-agent-requested]
+
+permissions:
+  issues: write
+  pull-requests: read
+  contents: read
+
+jobs:
+  dispatch-external-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Forward the PR agent request to the configured webhook
+        uses: actions/github-script@91a83c091797b22c5771b1d7178fd0fddacc73ea
+        env:
+          CODEX_AGENT_WEBHOOK_URL: ${{ secrets.CODEX_AGENT_WEBHOOK_URL }}
+          CODEX_AGENT_WEBHOOK_TOKEN: ${{ secrets.CODEX_AGENT_WEBHOOK_TOKEN }}
+          CLAUDE_AGENT_WEBHOOK_URL: ${{ secrets.CLAUDE_AGENT_WEBHOOK_URL }}
+          CLAUDE_AGENT_WEBHOOK_TOKEN: ${{ secrets.CLAUDE_AGENT_WEBHOOK_TOKEN }}
+          SENTRY_AGENT_WEBHOOK_URL: ${{ secrets.SENTRY_AGENT_WEBHOOK_URL }}
+          SENTRY_AGENT_WEBHOOK_TOKEN: ${{ secrets.SENTRY_AGENT_WEBHOOK_TOKEN }}
+          GIT_AGENT_WEBHOOK_URL: ${{ secrets.GIT_AGENT_WEBHOOK_URL }}
+          GIT_AGENT_WEBHOOK_TOKEN: ${{ secrets.GIT_AGENT_WEBHOOK_TOKEN }}
+        with:
+          script: |
+            const payload = context.payload.client_payload || {};
+            const agent = `${payload.agent || ''}`.trim().toLowerCase();
+            const issueNumber = Number(payload.issue_number);
+            const pullRequestNumber = Number(payload.pr_number);
+
+            const routes = {
+              codex: {
+                label: 'Codex',
+                secretNames: ['CODEX_AGENT_WEBHOOK_URL', 'CODEX_AGENT_WEBHOOK_TOKEN'],
+                url: process.env.CODEX_AGENT_WEBHOOK_URL,
+                token: process.env.CODEX_AGENT_WEBHOOK_TOKEN,
+              },
+              claude: {
+                label: 'Claude',
+                secretNames: ['CLAUDE_AGENT_WEBHOOK_URL', 'CLAUDE_AGENT_WEBHOOK_TOKEN'],
+                url: process.env.CLAUDE_AGENT_WEBHOOK_URL,
+                token: process.env.CLAUDE_AGENT_WEBHOOK_TOKEN,
+              },
+              sentry: {
+                label: 'Sentry review',
+                secretNames: ['SENTRY_AGENT_WEBHOOK_URL', 'SENTRY_AGENT_WEBHOOK_TOKEN'],
+                url: process.env.SENTRY_AGENT_WEBHOOK_URL,
+                token: process.env.SENTRY_AGENT_WEBHOOK_TOKEN,
+              },
+              git: {
+                label: 'git-agent',
+                secretNames: ['GIT_AGENT_WEBHOOK_URL', 'GIT_AGENT_WEBHOOK_TOKEN'],
+                url: process.env.GIT_AGENT_WEBHOOK_URL,
+                token: process.env.GIT_AGENT_WEBHOOK_TOKEN,
+              },
+            };
+
+            const route = routes[agent];
+            if (!route) {
+              core.setFailed(`Unsupported PR agent route: ${agent || 'unknown'}`);
+              return;
+            }
+
+            const createIssueComment = async (body) => {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body,
+              });
+            };
+
+            if (!route.url) {
+              await createIssueComment([
+                `### ${route.label} dispatch not configured`,
+                '',
+                `The PR agent router received a request for ${route.label}, but this repository is missing the required webhook secret: \`${route.secretNames[0]}\`.`,
+                '',
+                `Set \`${route.secretNames[0]}\` and optionally \`${route.secretNames[1]}\` in GitHub Actions secrets, then retry from the PR comment thread.`,
+              ].join('\n'));
+              core.setFailed(`Missing webhook URL for ${agent}.`);
+              return;
+            }
+
+            const prompt = `${payload.prompt || ''}`.trim();
+            if (agent === 'git' && !prompt) {
+              await createIssueComment([
+                '### git-agent request needs a prompt',
+                '',
+                'Use `/git-agent <what you want done>` or `/agent git <what you want done>` so the external worker receives a concrete instruction set.',
+              ].join('\n'));
+              core.setFailed('git-agent request was missing a prompt.');
+              return;
+            }
+
+            const { data: pull } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullRequestNumber,
+            });
+
+            const requestBody = {
+              agent,
+              requested_at: payload.requested_at || new Date().toISOString(),
+              requested_by: payload.sender_login || context.actor,
+              sources: payload.sources || [],
+              prompt,
+              repository: {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              },
+              pull_request: {
+                number: pull.number,
+                title: pull.title,
+                html_url: pull.html_url,
+                diff_url: pull.diff_url,
+                patch_url: pull.patch_url,
+                head: {
+                  ref: pull.head.ref,
+                  sha: pull.head.sha,
+                  repo: pull.head.repo?.full_name || null,
+                },
+                base: {
+                  ref: pull.base.ref,
+                  sha: pull.base.sha,
+                  repo: pull.base.repo?.full_name || null,
+                },
+              },
+              trigger_comment: {
+                id: payload.comment_id || null,
+                url: payload.comment_url || null,
+                body: payload.comment_body || '',
+              },
+            };
+
+            const headers = {
+              'content-type': 'application/json',
+              'user-agent': 'explore-and-earn-pr-agent-dispatch',
+            };
+
+            if (route.token) {
+              headers.authorization = `Bearer ${route.token}`;
+            }
+
+            let response;
+            try {
+              response = await fetch(route.url, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(requestBody),
+              });
+            } catch (error) {
+              const message = error instanceof Error ? error.message : `${error}`;
+              await createIssueComment([
+                `### ${route.label} dispatch failed`,
+                '',
+                `The webhook call could not be completed: ${message}`,
+                '',
+                `Source: ${payload.comment_url || pull.html_url}`,
+              ].join('\n'));
+              core.setFailed(message);
+              return;
+            }
+
+            const rawResponse = await response.text();
+            const compactResponse = rawResponse.replace(/\s+/g, ' ').trim();
+            const responseSnippet = compactResponse.slice(0, 280);
+
+            if (!response.ok) {
+              await createIssueComment([
+                `### ${route.label} dispatch failed`,
+                '',
+                `Webhook returned HTTP ${response.status}.`,
+                responseSnippet ? `Response: ${responseSnippet}` : null,
+                '',
+                `Source: ${payload.comment_url || pull.html_url}`,
+              ].filter(Boolean).join('\n'));
+              core.setFailed(`Webhook returned HTTP ${response.status}.`);
+              return;
+            }
+
+            let requestId = '';
+            try {
+              const parsed = rawResponse ? JSON.parse(rawResponse) : null;
+              requestId = parsed?.request_id || parsed?.requestId || parsed?.id || '';
+            } catch {
+              requestId = '';
+            }
+
+            await createIssueComment([
+              `### ${route.label} dispatched`,
+              '',
+              `The PR agent router forwarded this request to the configured ${route.label} webhook.`,
+              `Source: ${payload.comment_url || pull.html_url}`,
+              requestId ? `Request id: ${requestId}` : `Webhook status: HTTP ${response.status}`,
+              prompt ? `Prompt: ${prompt}` : null,
+            ].filter(Boolean).join('\n'));
