@@ -11,7 +11,7 @@
 - Product/vision conflict → Notion decides. Implementation conflict → this repo decides.
 
 ## 1 · What LogLoads is
-**The Timber Truck Operating Network**: drivers, outfits, and loaders connected through real-time hauls and lane matching. Map-first, mobile-first. Name + domain are **LOCKED** (LogLoads · logloads.com); "LogBoard" is the retired placeholder. See `README.md`, `docs/`, and the Notion canon for the spec.
+**The Timber Truck Operating Network**: drivers, outfits, and loaders are connected through real-time hauls and lane matching. Map-first, mobile-first. Name + domain are **LOCKED** (LogLoads · logloads.com); "LogBoard" is the retired placeholder. See `README.md`, `docs/`, and the Notion canon for the spec.
 
 **Positioning guardrail:** LogLoads is coordination software + marketplace visibility — **not** a payment handler or freight broker. Keep features inside that line unless the founder explicitly moves it.
 

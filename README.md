@@ -1,6 +1,6 @@
 # LogLoads
 
-**The Timber Truck Operating Network.** Drivers, outfits, and loaders connected through real-time hauls and lane matching.
+**The Timber Truck Operating Network.** Drivers, outfits, and loaders are connected through real-time hauls and lane matching.
 
 - **Name + domain are LOCKED:** LogLoads · logloads.com (GoDaddy). "LogBoard" is the retired placeholder — do not reintroduce.
 - **Product truth lives in Notion** (AutomatedEmpires — Ventures → LogLoads Source of Truth). This repo is implementation truth.
