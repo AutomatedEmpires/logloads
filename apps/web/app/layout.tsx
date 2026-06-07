@@ -1,6 +1,6 @@
 export const metadata = {
 	title: "LogLoads",
-	description: "The timber truck operating network.",
+	description: "The Timber Truck Operating Network.",
 }
 
 export default function RootLayout({

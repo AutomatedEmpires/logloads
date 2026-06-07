@@ -2,7 +2,7 @@ export default function HomePage() {
 	return (
 		<main>
 			<h1>LogLoads</h1>
-			<p>The timber truck operating network. Scaffold in progress.</p>
+			<p>The Timber Truck Operating Network. Scaffold in progress.</p>
 		</main>
 	)
 }
