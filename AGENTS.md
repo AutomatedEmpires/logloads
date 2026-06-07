@@ -1,6 +1,6 @@
 # LogLoads — Agent Operating Contract
 
-> **Binding contract for every agent (human or AI: Copilot, Claude, Codex) that touches this repo. Read it fully before doing anything.**
+> **Binding contract for every agent (human or AI: Copilot or Claude) that touches this repo. Read it fully before doing anything.**
 > Aligned to the Explore&Earn (E&E) doctrine. LogLoads is one of the AutomatedEmpires apps; E&E is the reference implementation.
 
 ## 0 · Prime doctrine
@@ -60,6 +60,7 @@ No one codes from vague ideas. Every slice moves through:
 - One feature branch per slice: `feat/<lane>/<slug>`.
 - Open a PR against `main`. Reference the issue and its acceptance criteria.
 - Nothing merges to `main` without a PR + at least one independent review + green CI. The builder is not the sole approver.
+- Active coding agents: **Claude** (primary builder + reviewer) and **Copilot** (secondary, scoped builder + inline VS Code). **Codex was retired 2026-06-06.**
 - Squash-merge only. Merged branches are auto-deleted.
 
 ## 7 · Security & access (server-enforced)
