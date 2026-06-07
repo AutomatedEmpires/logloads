@@ -79,3 +79,24 @@ No one codes from vague ideas. Every slice moves through:
 
 ## 10 · Cross-app alignment
 E&E is the reference. LogLoads, BidSpace, Sweepza, and E&E share the same doctrine, machine, runtime, and integration spine so an agent moving between repos reads one contract. Differences are product scope only — never workflow.
+
+## 11 · Canonical schema names (do not drift)
+**The schema is locked. These 20 table names are the only valid ones.** Single source of truth: the Notion **LogLoads MVP Pack — Build-Ready Consolidation** (Section 5: Schema Objects), mirrored in GitHub Issue #5. If code, a PR, or a doc uses any other name for these concepts, it is wrong and must be corrected before merge.
+
+**Canonical tables (20):**
+`users`, `organizations`, `organization_members`, `driver_profiles`, `truck_profiles`, `outfit_profiles`, `haul_opportunities`, `haul_private_details`, `truck_slots`, `slot_requests`, `assignments`, `standby_assignments`, `availability_signals`, `operational_updates`, `notifications`, `reminders`, `verification_records`, `reliability_events`, `saved_items`, `audit_log`.
+
+**Banned / retired names (never reintroduce):**
+- `load_postings`, `LoadPosting`, `loads` → use `haul_opportunities`
+- `slot_assignments` → use `assignments`
+- `messages`, `message_threads`, `message_events`, generic messaging tables → out of MVP scope; coordination is via `operational_updates` / `notifications`
+- `haul_locations`, `destinations` → exact landing lives in `haul_private_details`; do not model separate location tables
+- `reviews`, `reviews_private_notes`, public star-rating tables → not in MVP (reputation is `reliability_events`)
+- `billing_accounts`, `subscriptions` → billing is Stripe-side only in MVP; no money-moving tables
+
+**Naming rules:**
+- Tables are `snake_case`, plural. Columns are `snake_case`.
+- The core posting object is always `haul_opportunities` (reusable job context); date-specific capacity is `truck_slots`; the request→fulfillment loop is `slot_requests` → `assignments` (+ `standby_assignments`).
+- Adding, renaming, or removing a canonical table requires a dated decision in `docs/DECISIONS.md` AND an update to Issue #5 / the MVP Pack. Code may not lead schema.
+
+**CI lint (intent):** add a check that fails the build if any banned identifier above appears in `packages/**` schema/migration files or in `apps/**` types. Treat a hit as a hard error, not a warning. (Tracked in Issue #13.)
