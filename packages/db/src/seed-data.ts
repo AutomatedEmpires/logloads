@@ -2,8 +2,13 @@ import {
   assignmentSchema,
   auditEventSchema,
   availabilityWindowSchema,
+  destinationFacilitySchema,
+  directOfferSchema,
   dispatcherProfileSchema,
   driverProfileSchema,
+  entitlementSchema,
+  equipmentCombinationSchema,
+  futureAvailabilitySchema,
   haulRouteSchema,
   landingSchema,
   loaderProfileSchema,
@@ -13,16 +18,33 @@ import {
   messageThreadSchema,
   millSchema,
   notificationSchema,
+  operationalNoticeSchema,
+  opportunityCapacitySchema,
+  organizationInvitationSchema,
+  organizationMembershipSchema,
+  organizationSchema,
+  privateNetworkRelationshipSchema,
   rateSchema,
+  richLandingDetailsSchema,
+  routePackSchema,
   trailerProfileSchema,
+  tripDocumentSchema,
+  tripEventSchema,
+  tripSchemaV2,
   truckProfileSchema,
   truckSlotSchema,
   userSchema,
+  verificationRecordSchema,
   type Assignment,
   type AuditEvent,
   type AvailabilityWindow,
+  type DestinationFacility,
+  type DirectOffer,
   type DispatcherProfile,
   type DriverProfile,
+  type Entitlement,
+  type EquipmentCombination,
+  type FutureAvailability,
   type HaulRoute,
   type Landing,
   type LoaderProfile,
@@ -32,12 +54,24 @@ import {
   type MessageThread,
   type Mill,
   type Notification,
+  type OperationalNotice,
+  type OpportunityCapacity,
+  type Organization,
+  type OrganizationInvitation,
+  type OrganizationMembership,
+  type PrivateNetworkRelationship,
   type Rate,
+  type RichLandingDetails,
+  type RoutePack,
   type TrailerProfile,
+  type TripDocument,
+  type TripEvent,
+  type TripV2,
   type TruckProfile,
   type TruckSlot,
-  type User
-} from "@logloads/core"
+  type User,
+  type VerificationRecord
+} from "@logloads/contracts"
 
 import type { LogLoadsDatabaseState } from "./types"
 
@@ -258,7 +292,7 @@ export const seedTruckProfiles: TruckProfile[] = parseMany(truckProfileSchema, [
     plateNumber: "LOG101",
     vin: "VIN-NP-101",
     axleCount: 4,
-    maxPayloadTons: 28,
+    maxPayloadTons: 30,
     equipmentTags: ["chains", "radio"],
     roadAccessCapabilities: ["steep-grade", "gravel"],
     archivedAt: null,
@@ -310,7 +344,7 @@ export const seedTrailerProfiles: TrailerProfile[] = parseMany(trailerProfileSch
     truckId: "77777777-7777-4777-8777-777777777771",
     trailerType: "pole_trailer",
     unitNumber: "TRL-101",
-    capacityTons: 28,
+    capacityTons: 30,
     equipmentTags: ["stakes"],
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
@@ -1043,22 +1077,781 @@ export const seedAuditEvents: AuditEvent[] = parseMany(auditEventSchema, [
   }
 ])
 
+
+export const seedOrganizations: Organization[] = parseMany(organizationSchema, [
+  {
+    id: "33333333-3333-4333-8333-333333333331",
+    slug: "north-pine-logging",
+    type: "fleet",
+    legalName: "North Pine Logging LLC",
+    displayName: "North Pine Logging",
+    primaryRegion: "Cascade Foothills",
+    verificationStatus: "verified",
+    archivedAt: null,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "33333333-3333-4333-8333-333333333332",
+    slug: "summit-ridge-timber",
+    type: "landing_source",
+    legalName: "Summit Ridge Timber Inc.",
+    displayName: "Summit Ridge Timber",
+    primaryRegion: "Blue River Corridor",
+    verificationStatus: "verified",
+    archivedAt: null,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  }
+])
+
+export const seedOrganizationMemberships: OrganizationMembership[] = parseMany(organizationMembershipSchema, [
+  {
+    id: "16161616-1616-4616-8616-161616161611",
+    organizationId: "33333333-3333-4333-8333-333333333331",
+    userId: "22222222-2222-4222-8222-222222222224",
+    role: "dispatcher",
+    status: "active",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "16161616-1616-4616-8616-161616161612",
+    organizationId: "33333333-3333-4333-8333-333333333331",
+    userId: "22222222-2222-4222-8222-222222222221",
+    role: "driver",
+    status: "active",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "16161616-1616-4616-8616-161616161613",
+    organizationId: "33333333-3333-4333-8333-333333333331",
+    userId: "22222222-2222-4222-8222-222222222222",
+    role: "driver",
+    status: "active",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "16161616-1616-4616-8616-161616161614",
+    organizationId: "33333333-3333-4333-8333-333333333331",
+    userId: "22222222-2222-4222-8222-222222222225",
+    role: "landing_manager",
+    status: "active",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "16161616-1616-4616-8616-161616161615",
+    organizationId: "33333333-3333-4333-8333-333333333332",
+    userId: "22222222-2222-4222-8222-222222222223",
+    role: "owner",
+    status: "active",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "16161616-1616-4616-8616-161616161616",
+    organizationId: "33333333-3333-4333-8333-333333333332",
+    userId: "22222222-2222-4222-8222-222222222224",
+    role: "dispatcher",
+    status: "active",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  }
+])
+
+export const seedOrganizationInvitations: OrganizationInvitation[] = parseMany(organizationInvitationSchema, [
+  {
+    id: "17171717-1717-4717-8717-171717171711",
+    organizationId: "33333333-3333-4333-8333-333333333332",
+    invitedEmail: "loader@summit.example",
+    invitedRole: "landing_manager",
+    status: "sent",
+    invitedByUserId: "22222222-2222-4222-8222-222222222223",
+    acceptedByUserId: null,
+    expiresAt: "2026-06-18T18:00:00.000Z",
+    acceptedAt: null,
+    revokedAt: null,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  }
+])
+
+export const seedPrivateNetworkRelationships: PrivateNetworkRelationship[] = parseMany(privateNetworkRelationshipSchema, [
+  {
+    id: "17171717-1717-4717-8717-171717171712",
+    ownerOrganizationId: "33333333-3333-4333-8333-333333333332",
+    partnerOrganizationId: "33333333-3333-4333-8333-333333333331",
+    status: "active",
+    visibilityScope: "private_loads",
+    preferred: true,
+    notes: "Summit exposes high-grade Blue River work to North Pine before open discovery.",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "17171717-1717-4717-8717-171717171713",
+    ownerOrganizationId: "33333333-3333-4333-8333-333333333331",
+    partnerOrganizationId: "33333333-3333-4333-8333-333333333332",
+    status: "active",
+    visibilityScope: "availability",
+    preferred: false,
+    notes: "North Pine shares future capacity windows with Summit dispatchers.",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  }
+])
+
+export const seedEquipmentCombinations: EquipmentCombination[] = parseMany(equipmentCombinationSchema, [
+  {
+    id: "18181818-1818-4818-8818-181818181811",
+    organizationId: "33333333-3333-4333-8333-333333333331",
+    truckProfileId: "77777777-7777-4777-8777-777777777771",
+    trailerProfileId: "88888888-8888-4888-8888-888888888881",
+    assignedDriverProfileId: "44444444-4444-4444-8444-444444444441",
+    label: "NP-101 with pole trailer",
+    truckTypes: ["log_truck"],
+    trailerTypes: ["pole_trailer"],
+    capabilityTags: ["radio", "chains", "steep-grade"],
+    productLengthMinFeet: 24,
+    productLengthMaxFeet: 42,
+    maxPayloadTons: 30,
+    status: "available",
+    homeRegion: "Cascade Foothills",
+    lastVerifiedAt: timestamps.updated,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "18181818-1818-4818-8818-181818181812",
+    organizationId: "33333333-3333-4333-8333-333333333331",
+    truckProfileId: "77777777-7777-4777-8777-777777777772",
+    trailerProfileId: "88888888-8888-4888-8888-888888888882",
+    assignedDriverProfileId: "44444444-4444-4444-8444-444444444442",
+    label: "NP-202 chip van",
+    truckTypes: ["chip_truck"],
+    trailerTypes: ["chip_van"],
+    capabilityTags: ["chip-box", "mill-yard"],
+    productLengthMinFeet: null,
+    productLengthMaxFeet: null,
+    maxPayloadTons: 31,
+    status: "committed",
+    homeRegion: "Oak Landing",
+    lastVerifiedAt: timestamps.updated,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "18181818-1818-4818-8818-181818181813",
+    organizationId: "33333333-3333-4333-8333-333333333332",
+    truckProfileId: "77777777-7777-4777-8777-777777777773",
+    trailerProfileId: "88888888-8888-4888-8888-888888888883",
+    assignedDriverProfileId: "44444444-4444-4444-8444-444444444443",
+    label: "SR-330 mountain bunk",
+    truckTypes: ["log_truck"],
+    trailerTypes: ["bunk_trailer"],
+    capabilityTags: ["chains", "snow-kit", "forest-road"],
+    productLengthMinFeet: 16,
+    productLengthMaxFeet: 40,
+    maxPayloadTons: 29,
+    status: "committed",
+    homeRegion: "Blue River Corridor",
+    lastVerifiedAt: timestamps.updated,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  }
+])
+
+export const seedRichLandingDetails: RichLandingDetails[] = parseMany(richLandingDetailsSchema, [
+  {
+    id: "19191919-1919-4919-8919-191919191911",
+    landingId: "66666666-6666-4666-8666-666666666661",
+    controlledByOrganizationId: "33333333-3333-4333-8333-333333333331",
+    publicApproximateArea: "Oakridge, OR - Cascade Foothills",
+    entranceLat: 43.7463,
+    entranceLng: -122.4628,
+    exactLocationVisibility: "assigned_only",
+    privateRoadNotes: "Consumer map pins are offset; use the timber road entrance after the bridge.",
+    gateInstructions: "Gate code rotates daily and is visible only after assignment acceptance.",
+    loadingEquipment: ["heel-boom loader", "landing radio channel 4"],
+    turnaroundConstraints: ["single-lane bridge", "no chip vans past upper spur"],
+    stagingInstructions: "Stage on the gravel apron west of the loader, nose out.",
+    communicationInstructions: "Call loader before entering the one-lane bridge.",
+    lastVerifiedAt: timestamps.updated,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "19191919-1919-4919-8919-191919191912",
+    landingId: "66666666-6666-4666-8666-666666666662",
+    controlledByOrganizationId: "33333333-3333-4333-8333-333333333332",
+    publicApproximateArea: "Blue River, OR - upper corridor",
+    entranceLat: 44.1919,
+    entranceLng: -122.0925,
+    exactLocationVisibility: "private_network",
+    privateRoadNotes: "High-grade switchback after mile 18; chains required when restricted.",
+    gateInstructions: "Summit dispatcher confirms gate status during morning check-in.",
+    loadingEquipment: ["shovel loader", "portable scale pad"],
+    turnaroundConstraints: ["short wheelbase preferred", "bridge control at county crossing"],
+    stagingInstructions: "Hold at the lower landing until radio clearance.",
+    communicationInstructions: "Use VHF channel 7; cell coverage is intermittent.",
+    lastVerifiedAt: timestamps.updated,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  }
+])
+
+export const seedDestinationFacilities: DestinationFacility[] = parseMany(destinationFacilitySchema, [
+  {
+    id: "20202020-2020-4020-8020-202020202011",
+    millId: "99999999-9999-4999-8999-999999999991",
+    facilityType: "mill",
+    managedByOrganizationId: null,
+    recordStatus: "verified",
+    truckEntranceLat: 44.0468,
+    truckEntranceLng: -123.0209,
+    receivingHours: "Mon-Fri 05:30-15:30",
+    productRestrictions: ["saw logs only at north scale", "no mud over bolsters"],
+    checkInProcess: "Use gate 2 kiosk, then wait for scale light.",
+    scaleProcess: "Gross scale before unload, tare scale after sweep-out.",
+    unloadingInstructions: "Unload at bay 3 unless scale house redirects.",
+    currentStatus: "open",
+    currentNotice: null,
+    lastVerifiedAt: timestamps.updated,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "20202020-2020-4020-8020-202020202012",
+    millId: "99999999-9999-4999-8999-999999999992",
+    facilityType: "mill",
+    managedByOrganizationId: null,
+    recordStatus: "verified",
+    truckEntranceLat: 44.0509,
+    truckEntranceLng: -123.1511,
+    receivingHours: "Mon-Sat 06:00-14:00",
+    productRestrictions: ["chip vans only at west entrance", "covered loads required in rain"],
+    checkInProcess: "Call unload desk before entering the west gate.",
+    scaleProcess: "Auto-scale lane records inbound and outbound weights.",
+    unloadingInstructions: "Follow yard marshal to live-bottom bay.",
+    currentStatus: "limited",
+    currentNotice: "West entrance queue is running 20 minutes behind.",
+    lastVerifiedAt: timestamps.updated,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  }
+])
+
+export const seedOpportunityCapacities: OpportunityCapacity[] = parseMany(opportunityCapacitySchema, [
+  {
+    id: "21212121-2121-4121-8121-212121212111",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+    visibilityMode: "open_network",
+    allocationMode: "request_approval",
+    totalTruckloads: 3,
+    committedTruckloads: 1,
+    completedTruckloads: 0,
+    remainingTruckloads: 2,
+    acceptedTermsSnapshot: { rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1", fuelSurchargeCents: 12000 },
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "21212121-2121-4121-8121-212121212112",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc2",
+    visibilityMode: "verified_network",
+    allocationMode: "dispatcher_assignment",
+    totalTruckloads: 2,
+    committedTruckloads: 1,
+    completedTruckloads: 1,
+    remainingTruckloads: 1,
+    acceptedTermsSnapshot: { rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2" },
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "21212121-2121-4121-8121-212121212113",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+    visibilityMode: "private_network",
+    allocationMode: "request_approval",
+    totalTruckloads: 4,
+    committedTruckloads: 1,
+    completedTruckloads: 0,
+    remainingTruckloads: 3,
+    acceptedTermsSnapshot: { rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3", restriction: "chains required" },
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "21212121-2121-4121-8121-212121212114",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc4",
+    visibilityMode: "direct_offer",
+    allocationMode: "direct_offer",
+    totalTruckloads: 1,
+    committedTruckloads: 1,
+    completedTruckloads: 0,
+    remainingTruckloads: 0,
+    acceptedTermsSnapshot: { rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3" },
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "21212121-2121-4121-8121-212121212115",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc5",
+    visibilityMode: "open_network",
+    allocationMode: "request_approval",
+    totalTruckloads: 1,
+    committedTruckloads: 0,
+    completedTruckloads: 0,
+    remainingTruckloads: 0,
+    acceptedTermsSnapshot: { cancelledReason: "Landing access closed after storm." },
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "21212121-2121-4121-8121-212121212116",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc6",
+    visibilityMode: "private_network",
+    allocationMode: "dispatcher_assignment",
+    totalTruckloads: 2,
+    committedTruckloads: 0,
+    completedTruckloads: 0,
+    remainingTruckloads: 2,
+    acceptedTermsSnapshot: {},
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  }
+])
+
+export const seedRoutePacks: RoutePack[] = parseMany(routePackSchema, [
+  {
+    id: "23232323-2323-4323-8323-232323232311",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+    landingId: "66666666-6666-4666-8666-666666666661",
+    destinationId: "99999999-9999-4999-8999-999999999991",
+    haulRouteId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+    visibility: "assigned_only",
+    cacheableOffline: true,
+    calculatedRouteSummary: "Highway 58 to Oak timber road, then operator entrance pin after the bridge.",
+    localInstructions: [
+      {
+        source: "operator_provided",
+        severity: "critical",
+        title: "Use bridge entrance, not consumer pin",
+        detail: "Consumer navigation points trucks to a closed spur. Enter at the bridge pin and call loader before crossing.",
+        verifiedAt: timestamps.updated
+      },
+      {
+        source: "facility_verified",
+        severity: "standard",
+        title: "Cascade Mill gate 2",
+        detail: "Check in at gate 2 and wait for the scale light before entering the yard.",
+        verifiedAt: timestamps.updated
+      }
+    ],
+    currentRoadCondition: "good",
+    lastVerifiedAt: timestamps.updated,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "23232323-2323-4323-8323-232323232312",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc2",
+    landingId: "66666666-6666-4666-8666-666666666661",
+    destinationId: "99999999-9999-4999-8999-999999999992",
+    haulRouteId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
+    visibility: "organization",
+    cacheableOffline: true,
+    calculatedRouteSummary: "Oak Landing to River Pulp west chip gate via Highway 58.",
+    localInstructions: [
+      {
+        source: "facility_verified",
+        severity: "critical",
+        title: "West entrance only",
+        detail: "Chip vans must use the west entrance and call the unload desk before entering.",
+        verifiedAt: timestamps.updated
+      }
+    ],
+    currentRoadCondition: "wet",
+    lastVerifiedAt: timestamps.updated,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "23232323-2323-4323-8323-232323232313",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+    landingId: "66666666-6666-4666-8666-666666666662",
+    destinationId: "99999999-9999-4999-8999-999999999991",
+    haulRouteId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
+    visibility: "private_network",
+    cacheableOffline: true,
+    calculatedRouteSummary: "Blue River lower hold point to Cascade Mill; high-grade restriction after mile 18.",
+    localInstructions: [
+      {
+        source: "operator_provided",
+        severity: "critical",
+        title: "Chains required above mile 18",
+        detail: "Dispatch will pause requests if snow begins above 3000 feet.",
+        verifiedAt: timestamps.updated
+      },
+      {
+        source: "driver_reported",
+        severity: "standard",
+        title: "Bridge control delay",
+        detail: "Expect alternating one-lane control at the county bridge.",
+        verifiedAt: "2026-06-05T15:30:00.000Z"
+      }
+    ],
+    currentRoadCondition: "restricted",
+    lastVerifiedAt: timestamps.updated,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  }
+])
+
+export const seedTripsV2: TripV2[] = parseMany(tripSchemaV2, [
+  {
+    id: "24242424-2424-4424-8424-242424242411",
+    assignmentId: "ffffffff-ffff-4fff-8fff-fffffffffff1",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+    routePackId: "23232323-2323-4323-8323-232323232311",
+    driverProfileId: "44444444-4444-4444-8444-444444444441",
+    equipmentCombinationId: "18181818-1818-4818-8818-181818181811",
+    status: "assigned",
+    locationVisibility: "active_trip_participants",
+    locationSharingStartedAt: null,
+    locationSharingEndsAt: null,
+    lastSyncedAt: timestamps.assigned,
+    createdAt: timestamps.assigned,
+    updatedAt: timestamps.assigned,
+    completedAt: null
+  },
+  {
+    id: "24242424-2424-4424-8424-242424242412",
+    assignmentId: "ffffffff-ffff-4fff-8fff-fffffffffff2",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc2",
+    routePackId: "23232323-2323-4323-8323-232323232312",
+    driverProfileId: "44444444-4444-4444-8444-444444444442",
+    equipmentCombinationId: "18181818-1818-4818-8818-181818181812",
+    status: "completed",
+    locationVisibility: "never_public",
+    locationSharingStartedAt: "2026-06-05T13:05:00.000Z",
+    locationSharingEndsAt: timestamps.completed,
+    lastSyncedAt: timestamps.completed,
+    createdAt: timestamps.assigned,
+    updatedAt: timestamps.completed,
+    completedAt: timestamps.completed
+  }
+])
+
+export const seedTripEvents: TripEvent[] = parseMany(tripEventSchema, [
+  {
+    id: "25252525-2525-4525-8525-252525252511",
+    tripId: "24242424-2424-4424-8424-242424242411",
+    type: "assignment_created",
+    actorUserId: "22222222-2222-4222-8222-222222222224",
+    source: "dispatcher",
+    occurredAt: timestamps.assigned,
+    note: "Assignment accepted by North Pine dispatch.",
+    metadata: { slotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd1" },
+    createdAt: timestamps.assigned
+  },
+  {
+    id: "25252525-2525-4525-8525-252525252512",
+    tripId: "24242424-2424-4424-8424-242424242412",
+    type: "assignment_created",
+    actorUserId: "22222222-2222-4222-8222-222222222224",
+    source: "dispatcher",
+    occurredAt: "2026-06-05T13:00:00.000Z",
+    note: "Chip shuttle assigned.",
+    metadata: {},
+    createdAt: "2026-06-05T13:00:00.000Z"
+  },
+  {
+    id: "25252525-2525-4525-8525-252525252513",
+    tripId: "24242424-2424-4424-8424-242424242412",
+    type: "landing_check_in",
+    actorUserId: "22222222-2222-4222-8222-222222222222",
+    source: "driver",
+    occurredAt: "2026-06-05T13:35:00.000Z",
+    note: "Checked in at Oak chip lane.",
+    metadata: { queuePosition: 1 },
+    createdAt: "2026-06-05T13:35:00.000Z"
+  },
+  {
+    id: "25252525-2525-4525-8525-252525252514",
+    tripId: "24242424-2424-4424-8424-242424242412",
+    type: "loading_started",
+    actorUserId: "22222222-2222-4222-8222-222222222225",
+    source: "landing",
+    occurredAt: "2026-06-05T13:45:00.000Z",
+    note: "Chip loading started.",
+    metadata: {},
+    createdAt: "2026-06-05T13:45:00.000Z"
+  },
+  {
+    id: "25252525-2525-4525-8525-252525252515",
+    tripId: "24242424-2424-4424-8424-242424242412",
+    type: "departed_landing",
+    actorUserId: "22222222-2222-4222-8222-222222222222",
+    source: "driver",
+    occurredAt: "2026-06-05T14:05:00.000Z",
+    note: "Departed Oak Landing for River Pulp.",
+    metadata: { loadedTonsEstimate: 30 },
+    createdAt: "2026-06-05T14:05:00.000Z"
+  },
+  {
+    id: "25252525-2525-4525-8525-252525252516",
+    tripId: "24242424-2424-4424-8424-242424242412",
+    type: "destination_arrival",
+    actorUserId: "22222222-2222-4222-8222-222222222222",
+    source: "driver",
+    occurredAt: "2026-06-05T15:45:00.000Z",
+    note: "Arrived at River Pulp west entrance.",
+    metadata: {},
+    createdAt: "2026-06-05T15:45:00.000Z"
+  },
+  {
+    id: "25252525-2525-4525-8525-252525252517",
+    tripId: "24242424-2424-4424-8424-242424242412",
+    type: "ticket_uploaded",
+    actorUserId: "22222222-2222-4222-8222-222222222222",
+    source: "driver",
+    occurredAt: timestamps.completed,
+    note: "Scale ticket uploaded and linked to completed haul.",
+    metadata: { documentId: "26262626-2626-4626-8626-262626262611" },
+    createdAt: timestamps.completed
+  },
+  {
+    id: "25252525-2525-4525-8525-252525252518",
+    tripId: "24242424-2424-4424-8424-242424242412",
+    type: "completed",
+    actorUserId: "22222222-2222-4222-8222-222222222224",
+    source: "dispatcher",
+    occurredAt: timestamps.completed,
+    note: "Delivery accepted by receiving facility.",
+    metadata: {},
+    createdAt: timestamps.completed
+  }
+])
+
+export const seedTripDocuments: TripDocument[] = parseMany(tripDocumentSchema, [
+  {
+    id: "26262626-2626-4626-8626-262626262611",
+    tripId: "24242424-2424-4424-8424-242424242412",
+    type: "scale_ticket",
+    storageProvider: "cloudinary",
+    storageKey: "logloads/demo/river-pulp-scale-ff2.pdf",
+    filename: "river-pulp-scale-ticket-0605.pdf",
+    contentType: "application/pdf",
+    uploadedByUserId: "22222222-2222-4222-8222-222222222222",
+    uploadedAt: timestamps.completed,
+    processingStatus: "ready",
+    auditMetadata: { grossTons: 30.4, source: "driver_upload" }
+  }
+])
+
+export const seedVerificationRecords: VerificationRecord[] = parseMany(verificationRecordSchema, [
+  {
+    id: "27272727-2727-4727-8727-272727272711",
+    subjectType: "organization",
+    subjectId: "33333333-3333-4333-8333-333333333331",
+    verificationType: "carrier_identifier",
+    status: "verified",
+    source: "official_record_reviewed",
+    evidenceSummary: "Carrier identifiers reviewed for North Pine operating records.",
+    reviewerUserId: "11111111-1111-4111-8111-111111111111",
+    verifiedAt: timestamps.updated,
+    expiresAt: "2027-06-04T16:00:00.000Z",
+    lastCheckedAt: timestamps.updated,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "27272727-2727-4727-8727-272727272712",
+    subjectType: "organization",
+    subjectId: "33333333-3333-4333-8333-333333333332",
+    verificationType: "facility_control",
+    status: "verified",
+    source: "landing_confirmed",
+    evidenceSummary: "Summit confirmed operational control of Blue River Landing.",
+    reviewerUserId: "11111111-1111-4111-8111-111111111111",
+    verifiedAt: timestamps.updated,
+    expiresAt: "2027-06-04T16:00:00.000Z",
+    lastCheckedAt: timestamps.updated,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "27272727-2727-4727-8727-272727272713",
+    subjectType: "equipment",
+    subjectId: "18181818-1818-4818-8818-181818181811",
+    verificationType: "equipment",
+    status: "verified",
+    source: "platform_review",
+    evidenceSummary: "NP-101 and TRL-101 inspected for pole-trailer saw-log work.",
+    reviewerUserId: "11111111-1111-4111-8111-111111111111",
+    verifiedAt: timestamps.updated,
+    expiresAt: null,
+    lastCheckedAt: timestamps.updated,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "27272727-2727-4727-8727-272727272714",
+    subjectType: "landing",
+    subjectId: "66666666-6666-4666-8666-666666666662",
+    verificationType: "landing_authorization",
+    status: "verified",
+    source: "landing_confirmed",
+    evidenceSummary: "Blue River exact entrance and staging instructions confirmed by Summit.",
+    reviewerUserId: "11111111-1111-4111-8111-111111111111",
+    verifiedAt: timestamps.updated,
+    expiresAt: null,
+    lastCheckedAt: timestamps.updated,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  }
+])
+
+export const seedEntitlements: Entitlement[] = parseMany(entitlementSchema, [
+  {
+    id: "28282828-2828-4828-8828-282828282811",
+    organizationId: "33333333-3333-4333-8333-333333333331",
+    product: "fleet_operations",
+    status: "trialing",
+    features: ["private_network", "route_packs", "trip_documents", "fleet_dispatch"],
+    activeTruckLimit: 12,
+    activeLandingLimit: 4,
+    stripeCustomerId: null,
+    stripeSubscriptionId: null,
+    currentPeriodEndsAt: "2026-07-04T16:00:00.000Z",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "28282828-2828-4828-8828-282828282812",
+    organizationId: "33333333-3333-4333-8333-333333333332",
+    product: "landing_operations",
+    status: "active",
+    features: ["private_loads", "landing_control", "route_pack_publishing"],
+    activeTruckLimit: null,
+    activeLandingLimit: 3,
+    stripeCustomerId: null,
+    stripeSubscriptionId: null,
+    currentPeriodEndsAt: "2026-08-04T16:00:00.000Z",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  }
+])
+
+export const seedDirectOffers: DirectOffer[] = parseMany(directOfferSchema, [
+  {
+    id: "29292929-2929-4929-8929-292929292911",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+    offeredByOrganizationId: "33333333-3333-4333-8333-333333333332",
+    offeredToOrganizationId: "33333333-3333-4333-8333-333333333331",
+    status: "sent",
+    offeredTruckloads: 2,
+    termsSnapshot: { rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3", responseWindowHours: 12 },
+    expiresAt: "2026-06-06T20:00:00.000Z",
+    respondedAt: null,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  }
+])
+
+export const seedFutureAvailability: FutureAvailability[] = parseMany(futureAvailabilitySchema, [
+  {
+    id: "30303030-3030-4030-8030-303030303011",
+    organizationId: "33333333-3333-4333-8333-333333333331",
+    equipmentCombinationId: "18181818-1818-4818-8818-181818181811",
+    startsAt: "2026-06-07T12:00:00.000Z",
+    endsAt: "2026-06-07T22:00:00.000Z",
+    status: "available",
+    visibleToRelationshipIds: ["17171717-1717-4717-8717-171717171713"],
+    notes: "NP-101 is open for private network saw-log work after Oak morning run.",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "30303030-3030-4030-8030-303030303012",
+    organizationId: "33333333-3333-4333-8333-333333333332",
+    equipmentCombinationId: "18181818-1818-4818-8818-181818181813",
+    startsAt: "2026-06-08T14:00:00.000Z",
+    endsAt: "2026-06-08T23:00:00.000Z",
+    status: "tentative",
+    visibleToRelationshipIds: ["17171717-1717-4717-8717-171717171712"],
+    notes: "SR-330 may release if Blue River bridge control clears.",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  }
+])
+
+export const seedOperationalNotices: OperationalNotice[] = parseMany(operationalNoticeSchema, [
+  {
+    id: "31313131-3131-4131-8131-313131313111",
+    organizationId: "33333333-3333-4333-8333-333333333332",
+    relatedLoadId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+    relatedLandingId: "66666666-6666-4666-8666-666666666662",
+    relatedDestinationId: null,
+    severity: "critical",
+    title: "Blue River bridge control active",
+    body: "Use lower hold point until Summit clears each truck over the county bridge.",
+    effectiveAt: "2026-06-05T15:30:00.000Z",
+    expiresAt: "2026-06-08T00:00:00.000Z",
+    createdAt: "2026-06-05T15:30:00.000Z"
+  },
+  {
+    id: "31313131-3131-4131-8131-313131313112",
+    organizationId: "33333333-3333-4333-8333-333333333331",
+    relatedLoadId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc2",
+    relatedLandingId: null,
+    relatedDestinationId: "99999999-9999-4999-8999-999999999992",
+    severity: "watch",
+    title: "River Pulp west entrance queue",
+    body: "Receiving is open but the west entrance is running behind; call unload desk before entering.",
+    effectiveAt: "2026-06-05T14:00:00.000Z",
+    expiresAt: null,
+    createdAt: "2026-06-05T14:00:00.000Z"
+  }
+])
+
 export const seedDatabaseState: LogLoadsDatabaseState = {
   profiles: seedProfiles,
   companies: seedCompanies,
+  organizations: seedOrganizations,
+  organizationMemberships: seedOrganizationMemberships,
+  organizationInvitations: seedOrganizationInvitations,
+  privateNetworkRelationships: seedPrivateNetworkRelationships,
   driverProfiles: seedDriverProfiles,
   dispatcherProfiles: seedDispatcherProfiles,
   loaderProfiles: seedLoaderProfiles,
   truckProfiles: seedTruckProfiles,
   trailerProfiles: seedTrailerProfiles,
+  equipmentCombinations: seedEquipmentCombinations,
   landings: seedLandings,
+  richLandingDetails: seedRichLandingDetails,
   mills: seedMills,
+  destinationFacilities: seedDestinationFacilities,
   haulRoutes: seedHaulRoutes,
+  routePacks: seedRoutePacks,
   rates: seedRates,
   loadPostings: seedLoadPostings,
+  opportunityCapacities: seedOpportunityCapacities,
   truckSlots: seedTruckSlots,
   availabilityWindows: seedAvailabilityWindows,
+  futureAvailability: seedFutureAvailability,
   assignments: seedAssignments,
+  directOffers: seedDirectOffers,
+  tripsV2: seedTripsV2,
+  tripEvents: seedTripEvents,
+  tripDocuments: seedTripDocuments,
+  verificationRecords: seedVerificationRecords,
+  entitlements: seedEntitlements,
+  operationalNotices: seedOperationalNotices,
   notifications: seedNotifications,
   messageThreads: seedMessageThreads,
   messageEvents: seedMessageEvents,

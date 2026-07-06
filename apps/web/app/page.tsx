@@ -1,8 +1,8 @@
+import { PublicHome } from "@/components/v3"
+import { getFleetNetwork, getHostNetwork, getPublicLoads } from "@/lib/v3"
+
+export const dynamic = "force-dynamic"
+
 export default function HomePage() {
-	return (
-		<main>
-			<h1>LogLoads</h1>
-			<p>The timber truck operating network. Scaffold in progress.</p>
-		</main>
-	)
+  return <PublicHome fleet={getFleetNetwork()} host={getHostNetwork()} loads={getPublicLoads()} />
 }

@@ -1,4 +1,4 @@
-import type { HaulRoute } from "@logloads/core"
+import type { HaulRoute } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
 export function listRoutes(state: LogLoadsDatabaseState): HaulRoute[] {

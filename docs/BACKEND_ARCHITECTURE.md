@@ -1,7 +1,7 @@
 # Backend Architecture
 
 ## What is real now
-- `packages/core`: canonical enums, schemas, helper functions, and state machines.
+- `packages/contracts`: canonical enums, schemas, helper functions, matching rules, permissions, and state machines.
 - `packages/db`: Supabase client scaffold, deterministic seed data, and SQL migration/seed files.
 - `packages/services`: typed load, slot, availability, assignment, route, and notification services.
 - `apps/web/app/api/*`: thin route handlers delegating to the service layer.
@@ -19,7 +19,7 @@
 - Route optimization
 
 ## Package boundaries
-- `packages/core`: contracts and shared rules
+- `packages/contracts`: contracts and shared rules
 - `packages/db`: persistence and seed/migration scaffolding
 - `packages/services`: business operations and rule enforcement
 - `apps/web`: transport layer only

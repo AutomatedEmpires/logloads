@@ -3,7 +3,7 @@ import {
   upsertAvailabilityWindowInputSchema,
   availabilityWindowSchema,
   type AvailabilityWindow
-} from "@logloads/core"
+} from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { createUuid, nowIso } from "./utils"

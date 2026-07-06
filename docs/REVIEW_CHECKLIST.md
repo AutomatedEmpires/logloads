@@ -1,7 +1,7 @@
 # Review Checklist
 
 ## Backend rules
-- Domain changes are centralized in `packages/core`.
+- Domain changes are centralized in `packages/contracts`.
 - Services own lifecycle transitions and validation rules.
 - UI and route handlers do not bypass the service layer.
 - Migrations and seeds are deterministic and reviewable.

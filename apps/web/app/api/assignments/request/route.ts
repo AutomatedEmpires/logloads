@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import { services, serializeError } from "@/lib/services"
+import { getRequestActorContext, services, serializeError } from "@/lib/services"
 
 export async function POST(request: NextRequest) {
 	try {
 		const payload = await request.json()
-		const assignment = services.requestAssignment(payload)
+		const context = await getRequestActorContext({
+			devActorUserId: payload.actorUserId,
+			requestedOrganizationId: payload.organizationId
+		})
+		const assignment = services.requestCapacityWithPolicy({
+			...payload,
+			actorUserId: context.actorUserId,
+			organizationId: context.organizationId
+		})
 
 		return NextResponse.json({ assignment }, { status: 201 })
 	} catch (error) {

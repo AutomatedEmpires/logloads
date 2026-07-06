@@ -4,7 +4,7 @@ import {
   truckSlotSchema,
   transitionTruckSlotStatus,
   type TruckSlot
-} from "@logloads/core"
+} from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { assertFound, createUuid, nowIso } from "./utils"

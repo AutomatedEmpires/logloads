@@ -1,16 +1,38 @@
+import { ClerkProvider } from "@clerk/nextjs"
+import type { ReactNode } from "react"
+
+import "./globals.css"
+
 export const metadata = {
 	title: "LogLoads",
-	description: "The timber truck operating network.",
+	description: "The operating network for moving timber.",
+	metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3002"),
+	openGraph: {
+		siteName: "LogLoads",
+		title: "LogLoads - The operating network for moving timber",
+		description: "Find capacity, put trucks to work, and keep every timber haul connected.",
+		type: "website",
+	},
+}
+
+function AuthBoundary({ children }: { children: ReactNode }) {
+	if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
+		return <>{children}</>
+	}
+
+	return <ClerkProvider>{children}</ClerkProvider>
 }
 
 export default function RootLayout({
 	children,
 }: {
-	children: React.ReactNode
+	children: ReactNode
 }) {
 	return (
-		<html lang="en">
-			<body>{children}</body>
-		</html>
+		<AuthBoundary>
+			<html lang="en">
+				<body>{children}</body>
+			</html>
+		</AuthBoundary>
 	)
 }

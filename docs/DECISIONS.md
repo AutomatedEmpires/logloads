@@ -8,7 +8,7 @@ Append-only. Newest at top. Every runtime / provider / architecture change needs
 - Integration spine adopted: Doppler · Vercel · Supabase Postgres (+ PostGIS) · Clerk · Mapbox · Stripe · Cloudinary · PostHog + Sentry · Resend.
 - Auth = Clerk; Supabase RLS keyed on the Clerk user identity.
 - Maps = Mapbox (core surface — LogLoads is map-first).
-- Icons: Streamline **formal** style (specific style TBD — founder to pick).
+- Icons: Phosphor through `@logloads/ui` semantic icon registry; feature code uses `<Icon name="domain.action" />`.
 - Positioning guardrail: coordination software + marketplace visibility, NOT a payment handler or freight broker. Stripe scoped to subscriptions; Stripe Connect N/A until/unless that changes.
 
 ### Known follow-up (CI)

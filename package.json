@@ -7,15 +7,19 @@
   },
   "scripts": {
     "build": "turbo run build",
+    "db:assert": "bash ./tools/db-check.sh",
     "db:check": "bash ./tools/db-check.sh",
     "dev": "pnpm --filter @logloads/web dev",
+    "guardrails": "pnpm db:assert && node tools/check-guardrails.mjs",
     "lint": "turbo run lint && pnpm lint:workflows",
     "lint:workflows": "npx --yes github-actionlint@1.7.12",
     "test": "turbo run test",
+    "test:e2e": "pnpm --filter @logloads/web test:e2e",
     "typecheck": "turbo run typecheck",
     "validate": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@typescript-eslint/eslint-plugin": "^8.37.0",
     "@typescript-eslint/parser": "^8.37.0",
     "eslint": "^8.57.1",

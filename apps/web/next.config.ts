@@ -1,7 +1,7 @@
 import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
-	transpilePackages: ["@logloads/core", "@logloads/db", "@logloads/services"],
+	transpilePackages: ["@logloads/contracts", "@logloads/db", "@logloads/services", "@logloads/ui"],
 }
 
 export default nextConfig

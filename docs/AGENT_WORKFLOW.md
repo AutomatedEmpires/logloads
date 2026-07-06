@@ -3,7 +3,7 @@
 ## Operating sequence
 1. Read `AGENTS.md` and the smallest local surface controlling the task.
 2. Work on a feature branch.
-3. Keep domain contracts in `packages/core`.
+3. Keep domain contracts in `packages/contracts`.
 4. Keep DB and migration work in `packages/db` and `supabase/`.
 5. Keep backend rules in `packages/services`.
 6. Keep `apps/web` route handlers thin.

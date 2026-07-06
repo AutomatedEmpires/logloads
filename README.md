@@ -10,7 +10,7 @@
 - Runtime: Node 24.16.0 · pnpm 10.12.4 · Turborepo monorepo
 - Auth: Clerk · DB: Supabase Postgres (+ PostGIS) · Maps: Mapbox
 - Secrets: Doppler · Hosting: Vercel · Media: Cloudinary · Observability: PostHog + Sentry · Email: Resend
-- Icons: Streamline (formal style — specific style TBD)
+- Icons: Phosphor through `@logloads/ui` semantic icon registry (`<Icon name="domain.action" />`)
 
 ## Getting started
 

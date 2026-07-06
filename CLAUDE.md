@@ -6,7 +6,7 @@ Read `AGENTS.md` first. This file is a shorter execution reminder for Claude-spe
 - Never commit secrets.
 - Run `pnpm validate` before opening or updating a PR.
 - Keep backend logic in `packages/services`.
-- Keep domain contracts in `packages/core`.
+- Keep domain contracts in `packages/contracts`.
 - Keep migrations and seed changes in `packages/db` plus `supabase/`.
 - Do not bypass the service layer from `apps/web`.
 - Do not build broad UI before the domain and API contracts are stable.

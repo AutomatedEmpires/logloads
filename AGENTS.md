@@ -41,15 +41,16 @@ Shared providers across all AutomatedEmpires apps. Do not introduce alternates w
 | Media | Cloudinary |
 | Observability | PostHog + Sentry |
 | Email | Resend |
-| Icons | Streamline — **formal style** (Core / Sharp / Ultimate); specific style TBD (founder to pick) |
+| Icons | Phosphor through `@logloads/ui` semantic icon registry |
 | Language | TypeScript end-to-end |
 | Surfaces | Web: Next.js |
 
-**Icon policy (per-app):** LogLoads and BidSpace use a more formal Streamline style (specific style still to be chosen by the founder); Sweepza and Explore&Earn use Streamline Freehand (Pro). One Streamline style per app, applied consistently — never mix styles within an app, and no Lucide / Heroicons / Font Awesome / Material.
+**Icon policy:** LogLoads uses Phosphor through the semantic registry in `packages/ui`. Feature code renders icons with `<Icon name="domain.action" />`; do not import Lucide, Heroicons, Font Awesome, Material icons, `react-icons`, or ad hoc SVGs in feature code.
 
 ## 5 · Repo layout
 - `apps/` — web (Next.js); additional surfaces (public site, ops/admin, driver) land here
-- `packages/core/` — canonical domain types, enums, Zod schemas, state machines, shared helpers
+- `packages/contracts/` — canonical domain types, enums, Zod schemas, state machines, matching rules, permissions, shared helpers
+- `packages/ui/` — token-compatible UI primitives and the single semantic Phosphor icon registry
 - `packages/db/` — Supabase/Postgres client scaffolding, migrations, seeds, typed store helpers
 - `packages/services/` — business rules for loads, routes, slots, availability, assignments, notifications
 - `docs/` — canonical, deduped spec (DECISIONS first; ARCHITECTURE, DATA-MODEL, API, ROADMAP, GTM as they land)
@@ -74,7 +75,7 @@ No one codes from vague ideas. Every slice moves through:
 - CI (lint + typecheck + test + build) must pass. Add tests for non-trivial logic.
 - Run `pnpm validate` before opening or updating a PR.
 - Keep route handlers thin: UI and API surfaces call `packages/services`, never reach directly into `packages/db`.
-- Domain contracts live in `packages/core`; do not recreate them in the app layer.
+- Domain contracts live in `packages/contracts`; do not recreate them in the app layer.
 
 ## 9 · GitHub management
 - Work on lane/feature branches → small PRs → review → merge. Never push straight to `main`.

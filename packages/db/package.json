@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@logloads/core": "workspace:*",
+    "@logloads/contracts": "workspace:*",
     "@supabase/supabase-js": "^2.54.0"
   }
 }

@@ -3,7 +3,7 @@ import {
   requestAssignmentInputSchema,
   transitionAssignmentStatus,
   type Assignment
-} from "@logloads/core"
+} from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { listDriverAvailability } from "./availability"
