@@ -1,23 +1,23 @@
 "use client"
 
 import Link from "next/link"
+import type { ReactNode } from "react"
 import { Badge } from "@logloads/ui"
 
-import type { NetworkLoadView, NetworkView } from "@/lib/network"
-import { fitTone, legalPages, loadProductLabel, pricingPlans, type LegalPageContent, type PublicStoryPage, visibilityLabel } from "@/lib/v3-shared"
+import type { NetworkLoadView } from "@/lib/network"
+import type { PublicHomeSnapshot } from "@/lib/v3"
+import { fitLabel, fitTone, legalPages, loadProductLabel, pricingPlans, type LegalPageContent, type PublicStoryPage, visibilityLabel } from "@/lib/v3-shared"
+import { DevSignInForm, OnboardingFlow } from "./AuthForms"
 import { DecisionPanel, LoadCard, LoadDiscovery, OperatingMap, OperationSections, RoutePackPreview } from "./LoadMap"
 import { EmptyState, Metric, PageIntro, PublicShell, SectionHeader } from "./Shells"
 
-export function PublicHome({ fleet, host, loads }: { loads: NetworkLoadView[]; fleet: NetworkView; host: NetworkView }) {
-  const hostLoads = host.loads.filter((load) => load.sourceOrganizationId === host.activeOrganization.id)
-  const openCapacity = hostLoads.reduce((sum, load) => sum + load.capacity.remaining, 0)
-
+export function PublicHome({ loads, snapshot }: { loads: NetworkLoadView[]; snapshot: PublicHomeSnapshot }) {
   return (
     <PublicShell>
       <main>
         <section className="home-hero">
           <div className="home-hero__content">
-            <p className="eyebrow">The operating network for moving timber</p>
+            <p className="eyebrow">Timber needs trucks. Trucks need work.</p>
             <h1>TIMBER MOVES HERE.</h1>
             <p>Find capacity. Put trucks to work. Keep every haul connected from landing to mill.</p>
             <div className="hero-actions">
@@ -28,22 +28,22 @@ export function PublicHome({ fleet, host, loads }: { loads: NetworkLoadView[]; f
           </div>
           <div className="hero-signal" aria-label="Live network sample">
             <span>Today</span>
-            <strong>{loads.length} public loads</strong>
-            <p>{fleet.metrics.trucksAvailable} trucks available across the active fleet</p>
+            <strong>{snapshot.openLoads} public loads</strong>
+            <p>{snapshot.trucksAvailable} trucks available across the network</p>
           </div>
         </section>
         <section className="home-strip" aria-label="Current operating pulse">
           <Metric label="Loads still open" value={loads.reduce((sum, load) => sum + load.capacity.remaining, 0)} />
-          <Metric label="Host capacity gap" value={openCapacity} />
-          <Metric label="Active trips" value={fleet.metrics.activeAssignments} />
-          <Metric label="Critical changes" value={host.metrics.criticalNotices} />
+          <Metric label="Active landings" value={snapshot.landings} />
+          <Metric label="Destinations" value={snapshot.destinations} />
+          <Metric label="Trucks available" value={snapshot.trucksAvailable} />
         </section>
         <section className="split-section">
           <div>
             <p className="eyebrow">For drivers</p>
             <h2>Open the app and know what to do next.</h2>
             <p>Today starts with the active haul, the next action, the Route Pack, and the changes that can affect the move.</p>
-            <Link className="action-link action-link--secondary" href="/driver/today">View driver today</Link>
+            <Link className="action-link action-link--secondary" href="/sign-up">Start hauling</Link>
           </div>
           <OperatingMap loads={loads} selectedLoadId={loads[0]?.id} variant="public" />
         </section>
@@ -90,7 +90,9 @@ export function PublicLoadDetail({ load }: { load: NetworkLoadView }) {
           <OperationSections load={load} publicMode />
         </div>
         <aside className="sticky-action">
-          <Badge tone={fitTone(load)}>{load.compatibility.eligibility === "strong_match" ? "Strong fit" : "Review needed"}</Badge>
+          <Badge tone={load.capacity.remaining > 0 ? "success" : "info"}>
+            {load.capacity.remaining > 0 ? `${load.capacity.remaining} loads open` : "Capacity filled"}
+          </Badge>
           <strong>{load.capacity.remaining > 0 ? "Capacity open" : "All loads assigned"}</strong>
           <p>Exact access unlocks after assignment.</p>
           <Link className="action-link" href="/sign-up">Request this load</Link>
@@ -142,17 +144,15 @@ export function LegalPage({ content }: { content: LegalPageContent }) {
   )
 }
 
-function OnboardingChoices() {
-  const choices = [
-    { href: "/onboarding/driver", title: "I haul timber", body: "Owner-operators, company drivers, and leased-on drivers." },
-    { href: "/onboarding/fleet", title: "I manage trucks", body: "Fleet owners, dispatchers, and carrier operations." },
-    { href: "/onboarding/host", title: "I have timber to move", body: "Landing operators, logging contractors, and timber teams." }
-  ]
-
-  return <div className="choice-grid">{choices.map((choice) => <Link href={choice.href} key={choice.href}><strong>{choice.title}</strong><span>{choice.body}</span></Link>)}</div>
-}
-
-export function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
+export function AuthPage({
+  mode,
+  next,
+  clerkForm
+}: {
+  mode: "sign-in" | "sign-up"
+  next?: string
+  clerkForm?: ReactNode
+}) {
   const isSignUp = mode === "sign-up"
 
   return (
@@ -161,28 +161,36 @@ export function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
         <section className="auth-panel">
           <p className="eyebrow">{isSignUp ? "Create account" : "Welcome back"}</p>
           <h1>{isSignUp ? "Start with the work you do." : "Sign in to your cockpit."}</h1>
-          <p>{isSignUp ? "Choose a path so LogLoads can set up the right first screen." : "Use your organization membership to open the right driver, fleet, host, or admin tools."}</p>
-          {isSignUp ? <OnboardingChoices /> : <div className="auth-shortcuts"><Link className="action-link" href="/driver/today">Open driver cockpit</Link><Link className="action-link action-link--secondary" href="/fleet/command">Open fleet command</Link><Link className="action-link action-link--secondary" href="/host/command">Open host command</Link></div>}
+          <p>{isSignUp ? "Tell us how you work and LogLoads sets up the right first screen." : "Your account opens the driver, fleet, host, or admin tools your membership grants."}</p>
+          {clerkForm ?? (isSignUp
+            ? <p className="auth-form__note">Account creation happens in onboarding. <Link className="action-link" href="/onboarding">Start setup</Link></p>
+            : <DevSignInForm next={next} />)}
         </section>
       </main>
     </PublicShell>
   )
 }
 
-export function OnboardingPage({ mode }: { mode?: "driver" | "fleet" | "host" }) {
-  const steps = {
-    driver: ["Identity", "Sole operator or invitation", "Operating area", "First truck", "First trailer", "Active combination", "Availability", "Matching loads"],
-    fleet: ["Organization", "Operating region", "First truck", "First driver", "Equipment combination", "Availability", "Partner network", "Dispatch command"],
-    host: ["Organization", "First landing", "Operational location", "Primary contact", "First opportunity", "Private carriers", "Preview", "Publish"]
-  }
-  const title = mode === "fleet" ? "Set up fleet operations." : mode === "host" ? "Publish timber with control." : mode === "driver" ? "See work that fits your equipment." : "How will you use LogLoads?"
+export function OnboardingPage({
+  identityKnown,
+  mode
+}: {
+  identityKnown?: { fullName?: string | null; email?: string | null }
+  mode?: "driver" | "fleet" | "host"
+}) {
+  const title = mode === "fleet"
+    ? "Set up fleet operations."
+    : mode === "host"
+      ? "Publish timber with control."
+      : mode === "driver"
+        ? "See work that fits your equipment."
+        : "How will you use LogLoads?"
 
   return (
     <PublicShell>
       <main className="page-main onboarding-page">
-        <PageIntro eyebrow="Onboarding" title={title} body="The first setup path is short, practical, and tied to the activation moment for your work." />
-        {mode ? <div className="stepper-grid">{steps[mode].map((step, index) => <article key={step}><span>{index + 1}</span><strong>{step}</strong></article>)}</div> : <OnboardingChoices />}
-        <Link className="action-link" href={mode === "host" ? "/host/command" : mode === "fleet" ? "/fleet/command" : "/driver/today"}>Continue</Link>
+        <PageIntro eyebrow="Get started" title={title} body="A short setup creates your account, your organization, and the first screen for your work." />
+        <OnboardingFlow identityKnown={identityKnown} initialPath={mode} />
       </main>
     </PublicShell>
   )

@@ -3,6 +3,6 @@ import { getFleetNetwork } from "@/lib/v3"
 
 export const dynamic = "force-dynamic"
 
-export default function Page() {
-  return <FleetAvailability network={getFleetNetwork()} />
+export default async function Page() {
+  return <FleetAvailability network={await getFleetNetwork()} />
 }

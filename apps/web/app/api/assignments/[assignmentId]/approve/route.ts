@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import { getRequestActorContext, services, serializeError } from "@/lib/services"
+import { apiErrorResponse, requireApiActor } from "@/lib/api-actor"
+import { persistState, services } from "@/lib/services"
 
 export async function POST(
 	request: NextRequest,
@@ -9,18 +10,18 @@ export async function POST(
 	try {
 		const { assignmentId } = await context.params
 		const payload = await request.json().catch(() => ({}))
-		const actor = await getRequestActorContext({
-			devActorUserId: payload.actorUserId,
-			requestedOrganizationId: payload.organizationId
-		})
-		const result = services.approveCapacityRequest({
+		const { actorUserId, organizationId } = await requireApiActor(payload.organizationId)
+		const assignment = services.approveCapacityRequest({
+			...payload,
 			assignmentId,
-			actorUserId: actor.actorUserId,
-			organizationId: actor.organizationId
+			actorUserId,
+			organizationId
 		})
 
-		return NextResponse.json(result)
+		persistState()
+
+		return NextResponse.json({ assignment })
 	} catch (error) {
-		return NextResponse.json(serializeError(error), { status: 400 })
+		return apiErrorResponse(error)
 	}
 }

@@ -1,17 +1,31 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 
+import { apiErrorResponse } from "@/lib/api-actor"
+import { buildNetworkView } from "@/lib/network"
 import { services } from "@/lib/services"
+import { getSessionActor } from "@/lib/session"
 
 export async function GET(
-	_request: Request,
+	_request: NextRequest,
 	context: { params: Promise<{ loadId: string }> }
 ) {
-	const { loadId } = await context.params
-	const load = services.getLoadById(loadId)
+	try {
+		const { loadId } = await context.params
+		const actor = await getSessionActor()
+		const network = buildNetworkView(
+			services.state,
+			actor
+				? { actorUserId: actor.profile.id, kind: "actor", organizationId: actor.activeOrganization?.id ?? null }
+				: { kind: "public" }
+		)
+		const load = network.loads.find((candidate) => candidate.id === loadId)
 
-	if (!load) {
-		return NextResponse.json({ error: `Load ${loadId} was not found` }, { status: 404 })
+		if (!load) {
+			return NextResponse.json({ error: "Load not found" }, { status: 404 })
+		}
+
+		return NextResponse.json({ load })
+	} catch (error) {
+		return apiErrorResponse(error)
 	}
-
-	return NextResponse.json({ load })
 }

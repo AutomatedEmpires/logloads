@@ -19,11 +19,13 @@
     "@logloads/ui": "workspace:*",
     "@sentry/nextjs": "^10.63.0",
     "mapbox-gl": "^3.25.0",
+    "maplibre-gl": "^5.24.0",
     "next": "^15.5.20",
     "posthog-js": "^1.396.5",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-map-gl": "^7.1.9",
+    "server-only": "^0.0.1",
     "stripe": "^22.2.0"
   },
   "devDependencies": {

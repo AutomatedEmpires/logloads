@@ -148,8 +148,8 @@ export function LoadDiscovery({ loads, publicMode = false }: { loads: NetworkLoa
 }
 
 export function DecisionPanel({ load, publicMode = false }: { load: NetworkLoadView; publicMode?: boolean }) {
-  const positives = load.compatibility.positives.slice(0, 3)
-  const cautions = [...load.compatibility.cautions, ...load.warnings].slice(0, 3)
+  const positives = load.compatibility?.positives.slice(0, 3) ?? []
+  const cautions = [...(load.compatibility?.cautions ?? []), ...load.warnings].slice(0, 3)
 
   return (
     <section className="decision-panel">

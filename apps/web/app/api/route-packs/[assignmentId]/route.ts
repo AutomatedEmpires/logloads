@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import { getRequestActorContext, services, serializeError } from "@/lib/services"
+import { apiErrorResponse, requireApiActor } from "@/lib/api-actor"
+import { services } from "@/lib/services"
 
 export async function GET(
 	request: NextRequest,
@@ -9,15 +10,15 @@ export async function GET(
 	try {
 		const { assignmentId } = await context.params
 		const organizationId = request.nextUrl.searchParams.get("organizationId")
-		const actor = await getRequestActorContext({ requestedOrganizationId: organizationId })
+		const { actorUserId, organizationId: resolvedOrganizationId } = await requireApiActor(organizationId)
 		const routePack = services.getRoutePackForAssignment({
 			assignmentId,
-			actorUserId: actor.actorUserId,
-			organizationId: actor.organizationId
+			actorUserId,
+			organizationId: resolvedOrganizationId
 		})
 
 		return NextResponse.json(routePack)
 	} catch (error) {
-		return NextResponse.json(serializeError(error), { status: 404 })
+		return apiErrorResponse(error)
 	}
 }

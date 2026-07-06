@@ -1,6 +1,25 @@
 import { type LogLoadsDatabaseState } from "@logloads/db"
 
+import {
+  createAccount,
+  findProfileByClerkId,
+  findProfileByEmail,
+  getAccountContext,
+  linkProfileToClerkUser
+} from "./accounts"
+import {
+  listVerificationQueue,
+  resolveOperationalNotice,
+  reviewOrganization,
+  reviewVerificationRecord
+} from "./admin"
 import { assignDriverToSlot, cancelAssignment, requestAssignment } from "./assignments"
+import {
+  addEquipmentCombination,
+  assignDriverToEquipment,
+  updateEquipmentStatus
+} from "./equipment"
+import { createThread, listThreadMessages, listThreadsForUser, postMessage } from "./messaging"
 import { listDriverAvailability, upsertAvailabilityWindow } from "./availability"
 import { createLoadPosting, getLoadById, listOpenLoads, updateLoadPosting } from "./loads"
 import { createNotification, listNotificationsForUser } from "./notifications"
@@ -34,6 +53,22 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     state,
     DEFAULT_ACTOR_USER_ID,
     DEFAULT_ORGANIZATION_ID,
+    addEquipmentCombination: (input: unknown) => addEquipmentCombination(state, input),
+    assignDriverToEquipment: (input: unknown) => assignDriverToEquipment(state, input),
+    createAccount: (input: unknown) => createAccount(state, input),
+    createThread: (input: unknown) => createThread(state, input),
+    findProfileByClerkId: (clerkUserId: string) => findProfileByClerkId(state, clerkUserId),
+    findProfileByEmail: (email: string) => findProfileByEmail(state, email),
+    getAccountContext: (userId: string) => getAccountContext(state, userId),
+    linkProfileToClerkUser: (userId: string, clerkUserId: string) => linkProfileToClerkUser(state, userId, clerkUserId),
+    listThreadMessages: (threadId: string, viewerUserId: string) => listThreadMessages(state, threadId, viewerUserId),
+    listThreadsForUser: (userId: string) => listThreadsForUser(state, userId),
+    listVerificationQueue: () => listVerificationQueue(state),
+    postMessage: (input: unknown) => postMessage(state, input),
+    resolveOperationalNotice: (input: { noticeId: string; reviewerUserId: string }) => resolveOperationalNotice(state, input),
+    reviewOrganization: (input: unknown) => reviewOrganization(state, input),
+    reviewVerificationRecord: (input: unknown) => reviewVerificationRecord(state, input),
+    updateEquipmentStatus: (input: unknown) => updateEquipmentStatus(state, input),
     approveCapacityRequest: (input: Parameters<typeof approveCapacityRequest>[1]) => approveCapacityRequest(state, input),
     assignDriverToSlot: (assignmentId: string) => assignDriverToSlot(state, assignmentId),
     attachTripDocument: (input: Parameters<typeof attachTripDocument>[1]) => attachTripDocument(state, input),

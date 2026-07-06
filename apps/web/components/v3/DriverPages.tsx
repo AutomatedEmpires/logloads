@@ -13,7 +13,7 @@ interface NetworkProps { network: NetworkView }
 export function DriverToday({ network }: NetworkProps) {
   const activeTrip = network.trips.find((trip) => !["completed", "cancelled"].includes(trip.status))
   const activeLoad = activeTrip ? network.loads.find((load) => load.title === activeTrip.loadTitle) ?? network.loads[0] : null
-  const matches = network.loads.filter((load) => load.compatibility.eligibility !== "ineligible" && load.capacity.remaining > 0)
+  const matches = network.loads.filter((load) => load.compatibility && load.compatibility.eligibility !== "ineligible" && load.capacity.remaining > 0)
 
   return (
     <AppShell role="driver" title="Today" kicker="Driver cockpit" orgName={network.activeOrganization.name}>
@@ -90,7 +90,7 @@ export function MessagesPage({ network, role }: NetworkProps & { role: "driver" 
 export function DriverProfile({ network }: NetworkProps) {
   return (
     <AppShell role="driver" title="Me" kicker="Profile" orgName={network.activeOrganization.name}>
-      <section className="profile-panel"><h2>{network.currentDriver.name}</h2><p>Availability, equipment, contact preferences, and organization membership.</p><div className="choice-grid"><Link href="/driver/equipment"><strong>Equipment</strong><span>Truck, trailer, and active combination</span></Link><Link href="/driver/loads"><strong>Availability</strong><span>Available now, tomorrow, this week, or unavailable</span></Link><Link href="/driver/messages"><strong>Communication</strong><span>Fast messages and phone escalation preferences</span></Link></div></section>
+      <section className="profile-panel"><h2>{network.currentDriver?.name ?? "Your profile"}</h2><p>Availability, equipment, contact preferences, and organization membership.</p><div className="choice-grid"><Link href="/driver/equipment"><strong>Equipment</strong><span>Truck, trailer, and active combination</span></Link><Link href="/driver/loads"><strong>Availability</strong><span>Available now, tomorrow, this week, or unavailable</span></Link><Link href="/driver/messages"><strong>Communication</strong><span>Fast messages and phone escalation preferences</span></Link></div></section>
     </AppShell>
   )
 }

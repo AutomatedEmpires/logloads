@@ -3,6 +3,6 @@ import { getHostNetwork } from "@/lib/v3"
 
 export const dynamic = "force-dynamic"
 
-export default function Page() {
-  return <HostCarriers network={getHostNetwork()} />
+export default async function Page() {
+  return <HostCarriers network={await getHostNetwork()} />
 }

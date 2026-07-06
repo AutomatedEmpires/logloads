@@ -1,20 +1,40 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import { services, serializeError } from "@/lib/services"
+import { ApiError, apiErrorResponse, requireApiActor } from "@/lib/api-actor"
+import { persistState, services } from "@/lib/services"
 
-export async function GET(request: NextRequest) {
-	const driverProfileId = request.nextUrl.searchParams.get("driverProfileId") ?? undefined
+export async function GET() {
+	try {
+		const { actor } = await requireApiActor()
 
-	return NextResponse.json({ availability: services.listDriverAvailability(driverProfileId) })
+		if (!actor.driverProfileId) {
+			return NextResponse.json({ availability: [] })
+		}
+
+		return NextResponse.json({ availability: services.listDriverAvailability(actor.driverProfileId) })
+	} catch (error) {
+		return apiErrorResponse(error)
+	}
 }
 
 export async function POST(request: NextRequest) {
 	try {
 		const payload = await request.json()
-		const availabilityWindow = services.upsertAvailabilityWindow(payload)
+		const { actor } = await requireApiActor()
 
-		return NextResponse.json({ availabilityWindow }, { status: 201 })
+		if (!actor.driverProfileId) {
+			throw new ApiError("Add a driver profile before setting availability", 403)
+		}
+
+		const window = services.upsertAvailabilityWindow({
+			...payload,
+			driverProfileId: actor.driverProfileId
+		})
+
+		persistState()
+
+		return NextResponse.json({ window }, { status: 201 })
 	} catch (error) {
-		return NextResponse.json(serializeError(error), { status: 400 })
+		return apiErrorResponse(error)
 	}
 }

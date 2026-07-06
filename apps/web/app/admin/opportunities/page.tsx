@@ -3,6 +3,6 @@ import { getAdminSummary } from "@/lib/v3"
 
 export const dynamic = "force-dynamic"
 
-export default function Page() {
-  return <AdminSectionPage summary={getAdminSummary()} title="Opportunities" />
+export default async function Page() {
+  return <AdminSectionPage summary={await getAdminSummary()} title="Opportunities" />
 }

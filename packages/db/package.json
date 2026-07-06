@@ -14,5 +14,8 @@
   "dependencies": {
     "@logloads/contracts": "workspace:*",
     "@supabase/supabase-js": "^2.54.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2"
   }
 }

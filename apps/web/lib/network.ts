@@ -9,8 +9,12 @@ import {
   type RoadCondition,
   type TripStatusV2
 } from "@logloads/contracts"
-import { createInMemoryDatabase, type LogLoadsDatabaseState } from "@logloads/db"
+import type { LogLoadsDatabaseState } from "@logloads/db"
 import { createLogLoadsServices } from "@logloads/services"
+
+export type NetworkViewer =
+  | { kind: "actor"; actorUserId: string; organizationId?: string | null }
+  | { kind: "public" }
 
 export interface NetworkPoint {
   id: string
@@ -19,9 +23,15 @@ export interface NetworkPoint {
   state: string
   lat: number
   lng: number
-  accessNotes: string
+  approximate: boolean
+  accessNotes: string | null
   roadCondition: RoadCondition
   freshness: "verified" | "recent" | "stale"
+}
+
+export interface LoadAccess {
+  unlocked: boolean
+  reason: "owner" | "assigned" | "locked"
 }
 
 export interface NetworkLoadView {
@@ -35,6 +45,7 @@ export interface NetworkLoadView {
   allocationMode: string
   loadType: string
   scheduleLabel: string
+  access: LoadAccess
   landing: NetworkPoint
   destination: NetworkPoint
   landingDetails: {
@@ -99,12 +110,11 @@ export interface NetworkLoadView {
   }
   compatibility: {
     eligibility: MatchEligibility
-    score: number
     summary: string
     positives: string[]
     cautions: string[]
     failures: string[]
-  }
+  } | null
   warnings: string[]
   criticalInstructions: string[]
   assignments: Array<{
@@ -112,13 +122,20 @@ export interface NetworkLoadView {
     status: AssignmentStatus
     driverName: string
     truckUnit: string
+    driverProfileId: string
+    requestedByOrganizationId: string | null
   }>
+  viewerAssignment: {
+    id: string
+    status: AssignmentStatus
+  } | null
 }
 
 export interface TruckView {
   id: string
   unitNumber: string
   driverName: string
+  driverProfileId: string | null
   configuration: string
   status: string
   payload: string
@@ -140,14 +157,21 @@ export interface NetworkView {
     id: string
     name: string
     role: string
+    type: string
     verificationStatus: string
   }
   currentDriver: {
     id: string
     name: string
+    truckId: string | null
+    trailerId: string | null
+  } | null
+  currentEquipment: {
+    combinationId: string
+    label: string
     truckId: string
     trailerId: string | null
-  }
+  } | null
   loads: NetworkLoadView[]
   trucks: TruckView[]
   privateNetwork: Array<{
@@ -161,7 +185,11 @@ export interface NetworkView {
   }>
   trips: Array<{
     id: string
+    loadPostingId: string
+    assignmentId: string
     loadTitle: string
+    driverName: string
+    driverProfileId: string
     status: TripStatusV2
     locationVisibility: string
     routePackId: string | null
@@ -194,7 +222,9 @@ export interface NetworkView {
   messages: Array<{
     id: string
     subject: string
+    contextLabel: string
     lastMessage: string
+    lastMessageAt: string | null
   }>
   auditEvents: Array<{
     id: string
@@ -204,16 +234,18 @@ export interface NetworkView {
   }>
 }
 
-function requireRecord<T>(value: T | undefined, label: string): T {
+const ACTIVE_ASSIGNMENT_STATUSES = ["requested", "offered", "accepted", "checked_in", "loading", "hauled"]
+
+function requireRecord<T>(value: T | undefined | null, label: string): T {
   if (!value) {
-    throw new Error(`Seed data integrity error: ${label}`)
+    throw new Error(`Data integrity error: ${label}`)
   }
 
   return value
 }
 
 function publicReference(id: string): string {
-  return `LL-${id.slice(-4).toUpperCase()}`
+  return `LL-${id.slice(0, 4).toUpperCase()}${id.slice(-4).toUpperCase()}`
 }
 
 function formatDateRange(load: { loadDate?: string | null; campaignStartDate?: string | null; campaignEndDate?: string | null }): string {
@@ -251,31 +283,33 @@ function formatWindow(startAt: string, endAt: string): string {
   return `${formatter.format(new Date(startAt))} - ${formatter.format(new Date(endAt))}`
 }
 
-function pointFromLanding(landing: LogLoadsDatabaseState["landings"][number]): NetworkPoint {
-  return {
-    accessNotes: landing.accessNotes ?? "Operational entrance notes not yet verified.",
-    city: landing.city,
-    freshness: landing.roadCondition === "good" ? "verified" : "recent",
-    id: landing.id,
-    lat: landing.coordinates.lat,
-    lng: landing.coordinates.lng,
-    name: landing.name,
-    roadCondition: landing.roadCondition ?? "good",
-    state: landing.state
-  }
+function approximateCoordinate(value: number): number {
+  return Math.round(value * 50) / 50
 }
 
-function pointFromDestination(destination: LogLoadsDatabaseState["mills"][number]): NetworkPoint {
+function pointFromSite(
+  site: {
+    id: string
+    name: string
+    city: string
+    state: string
+    coordinates: { lat: number; lng: number }
+    accessNotes?: string | null
+    roadCondition?: RoadCondition | null
+  },
+  exact: boolean
+): NetworkPoint {
   return {
-    accessNotes: destination.accessNotes ?? "Receiving entrance notes not yet verified.",
-    city: destination.city,
-    freshness: "recent",
-    id: destination.id,
-    lat: destination.coordinates.lat,
-    lng: destination.coordinates.lng,
-    name: destination.name,
-    roadCondition: destination.roadCondition ?? "good",
-    state: destination.state
+    accessNotes: exact ? site.accessNotes ?? null : null,
+    approximate: !exact,
+    city: site.city,
+    freshness: (site.roadCondition ?? "good") === "good" ? "verified" : "recent",
+    id: site.id,
+    lat: exact ? site.coordinates.lat : approximateCoordinate(site.coordinates.lat),
+    lng: exact ? site.coordinates.lng : approximateCoordinate(site.coordinates.lng),
+    name: site.name,
+    roadCondition: site.roadCondition ?? "good",
+    state: site.state
   }
 }
 
@@ -291,196 +325,318 @@ function warningForRoad(condition: RoadCondition): string | null {
   return `Road condition ${condition}: verify local access instructions before moving.`
 }
 
-export function buildNetworkView(
-  state = createInMemoryDatabase(),
-  options: { actorUserId?: string; organizationId?: string } = {}
-): NetworkView {
+export function buildNetworkView(state: LogLoadsDatabaseState, viewer: NetworkViewer): NetworkView {
   const services = createLogLoadsServices(state)
-  const actorUserId = options.actorUserId ?? services.DEFAULT_ACTOR_USER_ID
-  const activeContext = services.getActiveOrganizationContext(actorUserId, options.organizationId ?? services.DEFAULT_ORGANIZATION_ID)
-  const currentUser = requireRecord(
-    state.profiles.find((profile) => profile.id === actorUserId),
-    "current user"
-  )
-  const currentDriver = state.driverProfiles.find((driver) => driver.userId === currentUser.id) ?? requireRecord(
-    state.driverProfiles.find((driver) => driver.id === "44444444-4444-4444-8444-444444444441"),
-    "current driver"
-  )
-  const activeOrganization = requireRecord(
-    state.organizations.find((organization) => organization.id === activeContext.organizationId),
-    "active organization"
-  )
-  const currentTruck = requireRecord(
-    state.truckProfiles.find((truck) => truck.id === "77777777-7777-4777-8777-777777777771"),
-    "current truck"
-  )
-  const currentTrailer = state.trailerProfiles.find((trailer) => trailer.truckId === currentTruck.id) ?? null
-  const availabilityWindows = state.availabilityWindows.filter((window) => window.driverProfileId === currentDriver.id)
-  const visibleLoadRecords = services.listVisibleLoadsForOrganization(activeOrganization.id)
 
-  const loads = visibleLoadRecords
-    .map((load): NetworkLoadView => {
-      const source = requireRecord(state.companies.find((company) => company.id === load.companyId), `company ${load.companyId}`)
-      const landing = requireRecord(state.landings.find((item) => item.id === load.pickupLandingId), `landing ${load.pickupLandingId}`)
-      const landingDetails = state.richLandingDetails.find((item) => item.landingId === landing.id) ?? null
-      const destination = requireRecord(state.mills.find((item) => item.id === load.dropoffMillId), `destination ${load.dropoffMillId}`)
-      const destinationFacility = state.destinationFacilities.find((item) => item.millId === destination.id) ?? null
-      const route = requireRecord(state.haulRoutes.find((item) => item.id === load.routeId), `route ${load.routeId}`)
-      const routePack = state.routePacks.find((item) => item.loadPostingId === load.id) ?? null
-      const rate = requireRecord(state.rates.find((item) => item.id === load.rateId), `rate ${load.rateId}`)
-      const capacity = state.opportunityCapacities.find((item) => item.loadPostingId === load.id) ?? null
-      const slots = state.truckSlots.filter((slot) => slot.loadPostingId === load.id)
-      const currentDriverHasActiveAssignment = state.assignments.some((assignment) =>
-        assignment.loadPostingId === load.id &&
-        assignment.driverProfileId === currentDriver.id &&
-        ["requested", "offered", "accepted", "checked_in", "loading", "hauled"].includes(assignment.status)
+  // --- Resolve the viewer -------------------------------------------------
+  const actorUserId = viewer.kind === "actor" ? viewer.actorUserId : null
+  const currentUser = actorUserId
+    ? requireRecord(state.profiles.find((profile) => profile.id === actorUserId), "current user")
+    : null
+
+  const memberships = actorUserId
+    ? state.organizationMemberships.filter((membership) => membership.userId === actorUserId && membership.status === "active")
+    : []
+  const requestedOrganizationId = viewer.kind === "actor" ? viewer.organizationId ?? null : null
+  const activeMembership = (requestedOrganizationId
+    ? memberships.find((membership) => membership.organizationId === requestedOrganizationId)
+    : undefined) ?? memberships[0] ?? null
+  const activeOrganization = activeMembership
+    ? requireRecord(
+        state.organizations.find((organization) => organization.id === activeMembership.organizationId),
+        "active organization"
       )
-      const requestableSlot = currentDriverHasActiveAssignment
-        ? null
-        : slots.find((slot) => ["open", "requested"].includes(slot.status) && slot.reservedCount < slot.capacity) ?? null
-      const compatibility = evaluateLoadCompatibility({
-        availabilityWindows,
-        load,
-        route,
-        trailer: currentTrailer,
-        truck: currentTruck
-      })
-      const assigned = state.assignments
-        .filter((assignment) => assignment.loadPostingId === load.id)
-        .map((assignment) => {
-          const driver = requireRecord(state.driverProfiles.find((profile) => profile.id === assignment.driverProfileId), `driver ${assignment.driverProfileId}`)
-          const user = requireRecord(state.profiles.find((profile) => profile.id === driver.userId), `user ${driver.userId}`)
-          const truck = requireRecord(state.truckProfiles.find((item) => item.id === assignment.truckProfileId), `truck ${assignment.truckProfileId}`)
+    : null
 
-          return {
-            driverName: user.fullName,
-            id: assignment.id,
-            status: assignment.status,
-            truckUnit: truck.unitNumber
-          }
+  const currentDriverProfile = actorUserId
+    ? state.driverProfiles.find((driver) => driver.userId === actorUserId) ?? null
+    : null
+
+  const organizationCombinations = activeOrganization
+    ? state.equipmentCombinations.filter((combination) => combination.organizationId === activeOrganization.id)
+    : []
+  const currentCombination = currentDriverProfile
+    ? organizationCombinations.find((combination) => combination.assignedDriverProfileId === currentDriverProfile.id) ??
+      state.equipmentCombinations.find((combination) => combination.assignedDriverProfileId === currentDriverProfile.id) ??
+      null
+    : null
+  const currentTruck = currentCombination
+    ? state.truckProfiles.find((truck) => truck.id === currentCombination.truckProfileId) ?? null
+    : null
+  const currentTrailer = currentCombination?.trailerProfileId
+    ? state.trailerProfiles.find((trailer) => trailer.id === currentCombination.trailerProfileId) ?? null
+    : null
+  const availabilityWindows = currentDriverProfile
+    ? state.availabilityWindows.filter((window) => window.driverProfileId === currentDriverProfile.id)
+    : []
+
+  const organizationDriverProfileIds = new Set(
+    activeOrganization
+      ? state.driverProfiles
+          .filter((driver) => driver.companyId === activeOrganization.id ||
+            organizationCombinations.some((combination) => combination.assignedDriverProfileId === driver.id) ||
+            state.organizationMemberships.some((membership) =>
+              membership.organizationId === activeOrganization.id &&
+              membership.status === "active" &&
+              membership.userId === driver.userId
+            ))
+          .map((driver) => driver.id)
+      : []
+  )
+
+  // --- Which loads can this viewer see ------------------------------------
+  const visibleLoadRecords = viewer.kind === "public"
+    ? state.loadPostings.filter((load) => {
+        const capacity = state.opportunityCapacities.find((item) => item.loadPostingId === load.id)
+        const visibilityMode = capacity?.visibilityMode ?? "open_network"
+
+        return ["open_network", "verified_network"].includes(visibilityMode) && ["open", "scheduled"].includes(load.status)
+      })
+    : services.listVisibleLoadsForOrganization(requireRecord(activeOrganization, "organization context").id)
+
+  const loadsWithScore = visibleLoadRecords.map((load) => {
+    const source = requireRecord(state.companies.find((company) => company.id === load.companyId), `company ${load.companyId}`)
+    const landing = requireRecord(state.landings.find((item) => item.id === load.pickupLandingId), `landing ${load.pickupLandingId}`)
+    const landingDetails = state.richLandingDetails.find((item) => item.landingId === landing.id) ?? null
+    const destination = requireRecord(state.mills.find((item) => item.id === load.dropoffMillId), `destination ${load.dropoffMillId}`)
+    const destinationFacility = state.destinationFacilities.find((item) => item.millId === destination.id) ?? null
+    const route = requireRecord(state.haulRoutes.find((item) => item.id === load.routeId), `route ${load.routeId}`)
+    const routePack = state.routePacks.find((item) => item.loadPostingId === load.id) ?? null
+    const rate = requireRecord(state.rates.find((item) => item.id === load.rateId), `rate ${load.rateId}`)
+    const capacity = state.opportunityCapacities.find((item) => item.loadPostingId === load.id) ?? null
+    const slots = state.truckSlots.filter((slot) => slot.loadPostingId === load.id)
+    const loadAssignments = state.assignments.filter((assignment) => assignment.loadPostingId === load.id)
+
+    // --- Access: sensitive operational detail unlocks for the publishing
+    // organization and for actively assigned haulers only. -----------------
+    const ownsLoad = Boolean(activeOrganization && load.companyId === activeOrganization.id)
+    const viewerActiveAssignment = loadAssignments.find((assignment) =>
+      ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status) &&
+      (
+        (currentDriverProfile && assignment.driverProfileId === currentDriverProfile.id) ||
+        (!currentDriverProfile && organizationDriverProfileIds.has(assignment.driverProfileId))
+      )
+    ) ?? null
+    const unlocked = ownsLoad || Boolean(viewerActiveAssignment)
+    const access: LoadAccess = {
+      reason: ownsLoad ? "owner" : viewerActiveAssignment ? "assigned" : "locked",
+      unlocked
+    }
+
+    const viewerHasActiveAssignment = Boolean(
+      currentDriverProfile &&
+      loadAssignments.some((assignment) =>
+        assignment.driverProfileId === currentDriverProfile.id &&
+        ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status)
+      )
+    )
+    const requestableSlot = viewerHasActiveAssignment || viewer.kind === "public"
+      ? null
+      : slots.find((slot) => ["open", "requested"].includes(slot.status) && slot.reservedCount < slot.capacity) ?? null
+
+    const compatibility = currentTruck
+      ? evaluateLoadCompatibility({
+          availabilityWindows,
+          load,
+          route,
+          trailer: currentTrailer,
+          truck: currentTruck
         })
-      const roadWarning = warningForRoad(load.roadCondition)
-      const routeWarning = warningForRoad(route.roadCondition)
-      const weatherWarning = load.weatherNotes ? `Weather: ${load.weatherNotes}` : null
-      const facilityWarning = destinationFacility?.currentNotice ? `Receiving: ${destinationFacility.currentNotice}` : null
+      : null
+
+    const assignmentViews = (ownsLoad
+      ? loadAssignments
+      : loadAssignments.filter((assignment) =>
+          (currentDriverProfile && assignment.driverProfileId === currentDriverProfile.id) ||
+          organizationDriverProfileIds.has(assignment.driverProfileId)
+        )
+    ).map((assignment) => {
+      const driver = requireRecord(
+        state.driverProfiles.find((profile) => profile.id === assignment.driverProfileId),
+        `driver ${assignment.driverProfileId}`
+      )
+      const user = requireRecord(state.profiles.find((profile) => profile.id === driver.userId), `user ${driver.userId}`)
+      const truck = state.truckProfiles.find((item) => item.id === assignment.truckProfileId)
 
       return {
-        accessRequirements: load.accessRequirements,
-        allocationMode: capacity?.allocationMode ?? "request_approval",
-        assignments: assigned,
-        capacity: {
-          committed: capacity?.committedTruckloads ?? slots.reduce((sum, slot) => sum + slot.reservedCount, 0),
-          completed: capacity?.completedTruckloads ?? 0,
-          remaining: capacity?.remainingTruckloads ?? slots.reduce((sum, slot) => sum + Math.max(0, slot.capacity - slot.reservedCount), 0),
-          total: capacity?.totalTruckloads ?? slots.reduce((sum, slot) => sum + slot.capacity, 0)
-        },
-        compatibility: {
-          cautions: compatibility.cautions,
-          eligibility: compatibility.eligibility,
-          failures: compatibility.hardFailures,
-          positives: compatibility.positiveSignals,
-          score: compatibility.score,
-          summary: explainCompatibility(compatibility)
-        },
-        criticalInstructions: [
-          landingDetails?.gateInstructions ? `Gate: ${landingDetails.gateInstructions}` : null,
-          landingDetails?.privateRoadNotes ? `Landing access: ${landingDetails.privateRoadNotes}` : landing.accessNotes ? `Landing: ${landing.accessNotes}` : null,
-          destinationFacility?.checkInProcess ? `Destination check-in: ${destinationFacility.checkInProcess}` : destination.accessNotes ? `Destination: ${destination.accessNotes}` : null,
-          routePack?.calculatedRouteSummary ? `Route pack: ${routePack.calculatedRouteSummary}` : route.roadNotes ? `Local route: ${route.roadNotes}` : null
-        ].filter((value): value is string => Boolean(value)),
-        destination: pointFromDestination(destination),
-        destinationFacility: destinationFacility ? {
-          checkInProcess: destinationFacility.checkInProcess,
-          currentNotice: destinationFacility.currentNotice ?? null,
-          currentStatus: destinationFacility.currentStatus,
-          lastVerifiedAt: destinationFacility.lastVerifiedAt,
-          receivingHours: destinationFacility.receivingHours,
-          scaleProcess: destinationFacility.scaleProcess,
-          unloadingInstructions: destinationFacility.unloadingInstructions
-        } : null,
-        equipment: load.equipmentRequirements,
-        fuelSurchargeLabel: rate.fuelSurchargeCents > 0
-          ? `+ ${formatRateLabel({ amountCents: rate.fuelSurchargeCents, currency: "USD" }, "flat_rate")} fuel`
-          : "Fuel included in terms",
-        id: load.id,
-        landing: pointFromLanding(landing),
-        landingDetails: landingDetails ? {
-          exactLocationVisibility: landingDetails.exactLocationVisibility,
-          gateInstructions: landingDetails.gateInstructions ?? null,
-          lastVerifiedAt: landingDetails.lastVerifiedAt,
-          loadingEquipment: landingDetails.loadingEquipment,
-          privateRoadNotes: landingDetails.privateRoadNotes ?? null,
-          publicApproximateArea: landingDetails.publicApproximateArea,
-          turnaroundConstraints: landingDetails.turnaroundConstraints
-        } : null,
-        loadType: load.loadType.replaceAll("_", " "),
-        payLabel: formatRateLabel(rate.baseRate, rate.rateType),
-        reference: publicReference(load.id),
-        route: {
-          condition: route.roadCondition,
-          distanceMiles: route.estimatedDistanceMiles,
-          id: route.id,
-          localNotes: route.roadNotes ?? "No operator route note has been added.",
-          name: route.routeName,
-          runTimeMinutes: route.estimatedRunTimeMinutes,
-          weatherNotes: route.weatherNotes ?? null
-        },
-        routePack: routePack ? {
-          cacheableOffline: routePack.cacheableOffline,
-          calculatedRouteSummary: routePack.calculatedRouteSummary,
-          currentRoadCondition: routePack.currentRoadCondition,
-          id: routePack.id,
-          instructions: routePack.localInstructions.map((instruction) => ({
-            detail: instruction.detail,
-            severity: instruction.severity,
-            source: instruction.source,
-            title: instruction.title,
-            verifiedAt: instruction.verifiedAt ?? null
-          })),
-          lastVerifiedAt: routePack.lastVerifiedAt,
-          visibility: routePack.visibility
-        } : null,
-        scheduleLabel: formatDateRange(load),
-        slots: {
-          nextWindow: requestableSlot ? formatSlotWindow(requestableSlot.startAt, requestableSlot.endAt) : "No open slot",
-          open: slots.reduce((sum, slot) => sum + Math.max(0, slot.capacity - slot.reservedCount), 0),
-          requestableSlotId: requestableSlot?.id ?? null,
-          reserved: slots.reduce((sum, slot) => sum + slot.reservedCount, 0),
-          total: slots.reduce((sum, slot) => sum + slot.capacity, 0)
-        },
-        sourceName: source.displayName,
-        sourceOrganizationId: source.id,
-        status: load.status,
-        title: load.title,
-        tonsLabel: load.estimatedTonsPerLoad ? `${load.estimatedTonsPerLoad} tons expected` : "Weight pending",
-        visibilityMode: capacity?.visibilityMode ?? "open_network",
-        warnings: [roadWarning, routeWarning, weatherWarning, facilityWarning].filter((value): value is string => Boolean(value))
+        driverName: user.fullName,
+        driverProfileId: driver.id,
+        id: assignment.id,
+        requestedByOrganizationId: driver.companyId ?? null,
+        status: assignment.status,
+        truckUnit: truck?.unitNumber ?? "Unassigned"
       }
     })
-    .sort((left, right) => {
-      const statusWeight: Record<LoadStatus, number> = {
-        archived: 6,
-        cancelled: 5,
-        completed: 4,
-        draft: 3,
-        filled: 2,
-        in_transit: 1,
-        open: 0,
-        scheduled: 1
-      }
 
-      return statusWeight[left.status] - statusWeight[right.status] || right.compatibility.score - left.compatibility.score
-    })
+    const roadWarning = warningForRoad(load.roadCondition)
+    const routeWarning = warningForRoad(route.roadCondition)
+    const weatherWarning = load.weatherNotes ? `Weather: ${load.weatherNotes}` : null
+    const facilityWarning = destinationFacility?.currentNotice ? `Receiving: ${destinationFacility.currentNotice}` : null
 
-  const trucks = state.equipmentCombinations.map((combination): TruckView => {
+    const view: NetworkLoadView = {
+      access,
+      accessRequirements: load.accessRequirements,
+      allocationMode: capacity?.allocationMode ?? "request_approval",
+      assignments: assignmentViews,
+      capacity: {
+        committed: capacity?.committedTruckloads ?? slots.reduce((sum, slot) => sum + slot.reservedCount, 0),
+        completed: capacity?.completedTruckloads ?? 0,
+        remaining: capacity?.remainingTruckloads ?? slots.reduce((sum, slot) => sum + Math.max(0, slot.capacity - slot.reservedCount), 0),
+        total: capacity?.totalTruckloads ?? slots.reduce((sum, slot) => sum + slot.capacity, 0)
+      },
+      compatibility: compatibility
+        ? {
+            cautions: compatibility.cautions,
+            eligibility: compatibility.eligibility,
+            failures: compatibility.hardFailures,
+            positives: compatibility.positiveSignals,
+            summary: explainCompatibility(compatibility)
+          }
+        : null,
+      criticalInstructions: unlocked
+        ? [
+            landingDetails?.gateInstructions ? `Gate: ${landingDetails.gateInstructions}` : null,
+            landingDetails?.privateRoadNotes ? `Landing access: ${landingDetails.privateRoadNotes}` : landing.accessNotes ? `Landing: ${landing.accessNotes}` : null,
+            destinationFacility?.checkInProcess ? `Destination check-in: ${destinationFacility.checkInProcess}` : destination.accessNotes ? `Destination: ${destination.accessNotes}` : null,
+            routePack?.calculatedRouteSummary ? `Route pack: ${routePack.calculatedRouteSummary}` : route.roadNotes ? `Local route: ${route.roadNotes}` : null
+          ].filter((value): value is string => Boolean(value))
+        : [],
+      destination: pointFromSite(destination, unlocked),
+      destinationFacility: destinationFacility && unlocked
+        ? {
+            checkInProcess: destinationFacility.checkInProcess,
+            currentNotice: destinationFacility.currentNotice ?? null,
+            currentStatus: destinationFacility.currentStatus,
+            lastVerifiedAt: destinationFacility.lastVerifiedAt,
+            receivingHours: destinationFacility.receivingHours,
+            scaleProcess: destinationFacility.scaleProcess,
+            unloadingInstructions: destinationFacility.unloadingInstructions
+          }
+        : null,
+      equipment: load.equipmentRequirements,
+      fuelSurchargeLabel: rate.fuelSurchargeCents > 0
+        ? `+ ${formatRateLabel({ amountCents: rate.fuelSurchargeCents, currency: "USD" }, "flat_rate")} fuel`
+        : "Fuel included in terms",
+      id: load.id,
+      landing: pointFromSite(landing, unlocked),
+      landingDetails: landingDetails
+        ? {
+            exactLocationVisibility: landingDetails.exactLocationVisibility,
+            gateInstructions: unlocked ? landingDetails.gateInstructions ?? null : null,
+            lastVerifiedAt: landingDetails.lastVerifiedAt,
+            loadingEquipment: landingDetails.loadingEquipment,
+            privateRoadNotes: unlocked ? landingDetails.privateRoadNotes ?? null : null,
+            publicApproximateArea: landingDetails.publicApproximateArea,
+            turnaroundConstraints: landingDetails.turnaroundConstraints
+          }
+        : null,
+      loadType: load.loadType.replaceAll("_", " "),
+      payLabel: formatRateLabel(rate.baseRate, rate.rateType),
+      reference: publicReference(load.id),
+      route: {
+        condition: route.roadCondition,
+        distanceMiles: route.estimatedDistanceMiles,
+        id: route.id,
+        localNotes: unlocked ? route.roadNotes ?? "No operator route note has been added." : "Route notes unlock after assignment.",
+        name: route.routeName,
+        runTimeMinutes: route.estimatedRunTimeMinutes,
+        weatherNotes: route.weatherNotes ?? null
+      },
+      routePack: routePack && unlocked
+        ? {
+            cacheableOffline: routePack.cacheableOffline,
+            calculatedRouteSummary: routePack.calculatedRouteSummary,
+            currentRoadCondition: routePack.currentRoadCondition,
+            id: routePack.id,
+            instructions: routePack.localInstructions.map((instruction) => ({
+              detail: instruction.detail,
+              severity: instruction.severity,
+              source: instruction.source,
+              title: instruction.title,
+              verifiedAt: instruction.verifiedAt ?? null
+            })),
+            lastVerifiedAt: routePack.lastVerifiedAt,
+            visibility: routePack.visibility
+          }
+        : null,
+      scheduleLabel: formatDateRange(load),
+      slots: {
+        nextWindow: requestableSlot ? formatSlotWindow(requestableSlot.startAt, requestableSlot.endAt) : "No open slot",
+        open: slots.reduce((sum, slot) => sum + Math.max(0, slot.capacity - slot.reservedCount), 0),
+        requestableSlotId: requestableSlot?.id ?? null,
+        reserved: slots.reduce((sum, slot) => sum + slot.reservedCount, 0),
+        total: slots.reduce((sum, slot) => sum + slot.capacity, 0)
+      },
+      sourceName: source.displayName,
+      sourceOrganizationId: source.id,
+      status: load.status,
+      title: load.title,
+      tonsLabel: load.estimatedTonsPerLoad ? `${load.estimatedTonsPerLoad} tons expected` : "Weight pending",
+      viewerAssignment: viewerActiveAssignment && !ownsLoad
+        ? { id: viewerActiveAssignment.id, status: viewerActiveAssignment.status }
+        : null,
+      visibilityMode: capacity?.visibilityMode ?? "open_network",
+      warnings: [roadWarning, routeWarning, weatherWarning, facilityWarning].filter((value): value is string => Boolean(value))
+    }
+
+    return { score: compatibility?.score ?? 0, view }
+  })
+
+  const statusWeight: Record<LoadStatus, number> = {
+    archived: 6,
+    cancelled: 5,
+    completed: 4,
+    draft: 3,
+    filled: 2,
+    in_transit: 1,
+    open: 0,
+    scheduled: 1
+  }
+
+  const loads = loadsWithScore
+    .sort((left, right) =>
+      statusWeight[left.view.status] - statusWeight[right.view.status] || right.score - left.score
+    )
+    .map((entry) => entry.view)
+
+  // --- Public viewers stop here with a redacted, aggregate-only view -------
+  if (viewer.kind === "public" || !activeOrganization || !activeMembership || !currentUser) {
+    return {
+      activeOrganization: { id: "public", name: "LogLoads", role: "visitor", type: "public", verificationStatus: "pending" },
+      auditEvents: [],
+      currentDriver: null,
+      currentEquipment: null,
+      entitlements: [],
+      futureAvailability: [],
+      loads,
+      messages: [],
+      metrics: {
+        activeAssignments: 0,
+        criticalNotices: 0,
+        openLoads: loads.filter((load) => load.status === "open").length,
+        trucksAvailable: state.equipmentCombinations.filter((combination) => combination.status === "available").length
+      },
+      notices: [],
+      privateNetwork: [],
+      trips: [],
+      trucks: []
+    }
+  }
+
+  // --- Organization-scoped operational data --------------------------------
+  const trucks = organizationCombinations.map((combination): TruckView => {
     const truck = requireRecord(state.truckProfiles.find((item) => item.id === combination.truckProfileId), `truck ${combination.truckProfileId}`)
-    const driver = combination.assignedDriverProfileId ? state.driverProfiles.find((profile) => profile.id === combination.assignedDriverProfileId) : undefined
+    const driver = combination.assignedDriverProfileId
+      ? state.driverProfiles.find((profile) => profile.id === combination.assignedDriverProfileId)
+      : undefined
     const user = state.profiles.find((profile) => profile.id === driver?.userId)
     const availability = state.futureAvailability.find((window) => window.equipmentCombinationId === combination.id)
+    const trailer = combination.trailerProfileId
+      ? state.trailerProfiles.find((item) => item.id === combination.trailerProfileId) ?? null
+      : null
     const matchCount = loads.filter((load) => {
       const original = state.loadPostings.find((item) => item.id === load.id)
       const route = original ? state.haulRoutes.find((item) => item.id === original.routeId) : undefined
-      const trailer = combination.trailerProfileId ? state.trailerProfiles.find((item) => item.id === combination.trailerProfileId) : null
 
       if (!original) {
         return false
@@ -499,6 +655,7 @@ export function buildNetworkView(
     return {
       configuration: `${combination.truckTypes.join(", ").replaceAll("_", " ")} / ${combination.trailerTypes.join(", ").replaceAll("_", " ") || "standard"}`,
       driverName: user?.fullName ?? "Unassigned",
+      driverProfileId: driver?.id ?? null,
       id: combination.id,
       matchCount,
       payload: `${combination.maxPayloadTons} tons`,
@@ -511,17 +668,13 @@ export function buildNetworkView(
 
   const notices: NoticeView[] = services.listAttentionItems(activeOrganization.id)
 
-  const messages = state.messageThreads.map((thread) => {
-    const lastMessage = state.messageEvents
-      .filter((event) => event.threadId === thread.id)
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0]
-
-    return {
-      id: thread.id,
-      lastMessage: lastMessage?.body ?? "No messages yet.",
-      subject: thread.subject ?? "Operational thread"
-    }
-  })
+  const messages = services.listThreadsForUser(currentUser.id).map((thread) => ({
+    contextLabel: thread.contextLabel,
+    id: thread.id,
+    lastMessage: thread.lastMessage?.body ?? "No messages yet.",
+    lastMessageAt: thread.lastMessage?.at ?? null,
+    subject: thread.subject
+  }))
 
   const privateNetwork = services.listPrivateNetworkRelationships(activeOrganization.id).map((relationship) => {
     const partnerId = relationship.ownerOrganizationId === activeOrganization.id
@@ -540,38 +693,60 @@ export function buildNetworkView(
     }
   })
 
-  const trips = state.tripsV2.map((trip) => {
-    const load = requireRecord(state.loadPostings.find((item) => item.id === trip.loadPostingId), `trip load ${trip.loadPostingId}`)
-    const events = state.tripEvents
-      .filter((event) => event.tripId === trip.id)
-      .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt))
-      .map((event) => ({
-        id: event.id,
-        note: event.note ?? null,
-        occurredAt: event.occurredAt,
-        source: event.source,
-        type: event.type.replaceAll("_", " ")
-      }))
-    const documents = state.tripDocuments
-      .filter((document) => document.tripId === trip.id)
-      .map((document) => ({
-        filename: document.filename,
-        id: document.id,
-        processingStatus: document.processingStatus,
-        type: document.type.replaceAll("_", " ")
-      }))
+  const organizationLoadIds = new Set(
+    state.loadPostings.filter((load) => load.companyId === activeOrganization.id).map((load) => load.id)
+  )
 
-    return {
-      documents,
-      events,
-      id: trip.id,
-      lastSyncedAt: trip.lastSyncedAt ?? null,
-      loadTitle: load.title,
-      locationVisibility: trip.locationVisibility.replaceAll("_", " "),
-      routePackId: trip.routePackId ?? null,
-      status: trip.status
-    }
-  })
+  const trips = state.tripsV2
+    .filter((trip) => {
+      if (currentDriverProfile && trip.driverProfileId === currentDriverProfile.id) {
+        return true
+      }
+
+      if (organizationLoadIds.has(trip.loadPostingId)) {
+        return true
+      }
+
+      return organizationDriverProfileIds.has(trip.driverProfileId)
+    })
+    .map((trip) => {
+      const load = requireRecord(state.loadPostings.find((item) => item.id === trip.loadPostingId), `trip load ${trip.loadPostingId}`)
+      const driver = state.driverProfiles.find((profile) => profile.id === trip.driverProfileId)
+      const driverUser = driver ? state.profiles.find((profile) => profile.id === driver.userId) : undefined
+      const events = state.tripEvents
+        .filter((event) => event.tripId === trip.id)
+        .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt))
+        .map((event) => ({
+          id: event.id,
+          note: event.note ?? null,
+          occurredAt: event.occurredAt,
+          source: event.source,
+          type: event.type.replaceAll("_", " ")
+        }))
+      const documents = state.tripDocuments
+        .filter((document) => document.tripId === trip.id)
+        .map((document) => ({
+          filename: document.filename,
+          id: document.id,
+          processingStatus: document.processingStatus,
+          type: document.type.replaceAll("_", " ")
+        }))
+
+      return {
+        assignmentId: trip.assignmentId,
+        documents,
+        driverName: driverUser?.fullName ?? "Driver",
+        driverProfileId: trip.driverProfileId,
+        events,
+        id: trip.id,
+        lastSyncedAt: trip.lastSyncedAt ?? null,
+        loadPostingId: trip.loadPostingId,
+        loadTitle: load.title,
+        locationVisibility: trip.locationVisibility.replaceAll("_", " "),
+        routePackId: trip.routePackId ?? null,
+        status: trip.status
+      }
+    })
 
   const entitlements = services.listEntitlements(activeOrganization.id).map((entitlement) => ({
     currentPeriodEndsAt: entitlement.currentPeriodEndsAt ?? null,
@@ -601,34 +776,66 @@ export function buildNetworkView(
     }
   })
 
+  const organizationMemberIds = new Set(
+    state.organizationMemberships
+      .filter((membership) => membership.organizationId === activeOrganization.id && membership.status === "active")
+      .map((membership) => membership.userId)
+  )
+  const canSeeActivity = ["owner", "admin"].includes(activeMembership.role) || currentUser.role === "admin"
+
+  const relevantTripIds = new Set(trips.map((trip) => trip.id))
+  const auditEvents = canSeeActivity
+    ? state.auditEvents
+        .filter((event) =>
+          (event.actorUserId && organizationMemberIds.has(event.actorUserId)) ||
+          organizationLoadIds.has(event.entityId) ||
+          relevantTripIds.has(event.entityId) ||
+          event.entityId === activeOrganization.id
+        )
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+        .map((event) => ({
+          action: event.action,
+          createdAt: event.createdAt,
+          entityType: event.entityType,
+          id: event.id
+        }))
+    : []
+
   return {
     activeOrganization: {
       id: activeOrganization.id,
       name: activeOrganization.displayName,
-      role: activeContext.membership.role,
+      role: activeMembership.role,
+      type: activeOrganization.type,
       verificationStatus: activeOrganization.verificationStatus
     },
-    auditEvents: state.auditEvents
-      .slice()
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-      .map((event) => ({
-        action: event.action,
-        createdAt: event.createdAt,
-        entityType: event.entityType,
-        id: event.id
-      })),
-    currentDriver: {
-      id: currentDriver.id,
-      name: currentUser.fullName,
-      trailerId: currentTrailer?.id ?? null,
-      truckId: currentTruck.id
-    },
+    auditEvents,
+    currentDriver: currentDriverProfile
+      ? {
+          id: currentDriverProfile.id,
+          name: currentUser.fullName,
+          trailerId: currentTrailer?.id ?? null,
+          truckId: currentTruck?.id ?? null
+        }
+      : null,
+    currentEquipment: currentCombination && currentTruck
+      ? {
+          combinationId: currentCombination.id,
+          label: currentCombination.label,
+          trailerId: currentTrailer?.id ?? null,
+          truckId: currentTruck.id
+        }
+      : null,
     entitlements,
     futureAvailability,
     loads,
     messages,
     metrics: {
-      activeAssignments: state.assignments.filter((assignment) => ["accepted", "checked_in", "loading", "hauled", "requested"].includes(assignment.status)).length,
+      activeAssignments: state.assignments.filter((assignment) =>
+        ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status) &&
+        (organizationDriverProfileIds.has(assignment.driverProfileId) ||
+          organizationLoadIds.has(assignment.loadPostingId))
+      ).length,
       criticalNotices: notices.filter((notice) => notice.severity === "critical").length,
       openLoads: loads.filter((load) => load.status === "open").length,
       trucksAvailable: trucks.filter((truck) => truck.status !== "unavailable" && truck.status !== "inactive").length

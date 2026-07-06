@@ -1,14 +1,25 @@
 "use client"
 
 import Link from "next/link"
-import type { ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 import { Badge, Icon, type IconKey } from "@logloads/ui"
+
+import { signOutAction, switchOrganizationAction } from "@/lib/session-actions"
+
+export interface ShellAccount {
+  userName: string
+  organizationName: string
+  verificationStatus: string
+  activeOrganizationId: string | null
+  memberships: Array<{ id: string; name: string; role: string }>
+}
 
 interface ShellProps {
   role: "driver" | "fleet" | "host" | "admin"
   title: string
   kicker: string
   orgName?: string
+  account?: ShellAccount
   children: ReactNode
 }
 
@@ -178,7 +189,81 @@ export function PublicShell({ children }: { children: ReactNode }) {
   )
 }
 
-export function AppShell({ children, kicker, orgName, role, title }: ShellProps) {
+function verificationTone(status: string): "success" | "warning" | "critical" | "info" {
+  if (status === "verified") {
+    return "success"
+  }
+
+  if (status === "rejected" || status === "suspended") {
+    return "critical"
+  }
+
+  return "warning"
+}
+
+function verificationLabel(status: string): string {
+  if (status === "verified") {
+    return "Verified"
+  }
+
+  if (status === "rejected") {
+    return "Not approved"
+  }
+
+  if (status === "suspended") {
+    return "Suspended"
+  }
+
+  return "Review pending"
+}
+
+function AccountMenu({ account }: { account: ShellAccount }) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div className="account-switcher">
+      <button
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="account-switcher__trigger"
+        onClick={() => setOpen((current) => !current)}
+        type="button"
+      >
+        <span>{account.organizationName}</span>
+        <Badge tone={verificationTone(account.verificationStatus)}>{verificationLabel(account.verificationStatus)}</Badge>
+      </button>
+      {open ? (
+        <div className="account-switcher__menu" role="menu">
+          <p className="account-switcher__user">{account.userName}</p>
+          {account.memberships.length > 1 ? (
+            <div className="account-switcher__orgs">
+              <span>Switch workspace</span>
+              {account.memberships.map((membership) => (
+                <button
+                  className={membership.id === account.activeOrganizationId ? "is-active" : undefined}
+                  key={membership.id}
+                  onClick={() => {
+                    setOpen(false)
+                    void switchOrganizationAction(membership.id)
+                  }}
+                  type="button"
+                >
+                  {membership.name}
+                  <em>{membership.role.replaceAll("_", " ")}</em>
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <button className="account-switcher__signout" onClick={() => void signOutAction()} type="button">
+            Sign out
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+export function AppShell({ account, children, kicker, orgName, role, title }: ShellProps) {
   const nav = [...navByRole[role], ...desktopMoreByRole[role]]
 
   return (
@@ -203,10 +288,13 @@ export function AppShell({ children, kicker, orgName, role, title }: ShellProps)
             <p className="eyebrow">{kicker}</p>
             <h1>{title}</h1>
           </div>
-          <div className="account-switcher">
-            <span>{orgName ?? "Platform"}</span>
-            <Badge tone="success">Verified</Badge>
-          </div>
+          {account ? (
+            <AccountMenu account={account} />
+          ) : (
+            <div className="account-switcher">
+              <span>{orgName ?? "Platform"}</span>
+            </div>
+          )}
         </header>
         {children}
       </div>

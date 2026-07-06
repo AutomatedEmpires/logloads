@@ -47,6 +47,10 @@ export function formatHuman(value: string): string {
 }
 
 export function fitLabel(load: NetworkLoadView): string {
+  if (!load.compatibility) {
+    return "Add equipment to see fit"
+  }
+
   if (load.compatibility.eligibility === "strong_match") {
     return "Strong fit"
   }
@@ -63,6 +67,10 @@ export function fitLabel(load: NetworkLoadView): string {
 }
 
 export function fitTone(load: NetworkLoadView): "success" | "warning" | "critical" | "info" {
+  if (!load.compatibility) {
+    return "info"
+  }
+
   if (load.compatibility.eligibility === "strong_match") {
     return "success"
   }

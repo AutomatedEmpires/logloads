@@ -1,19 +1,21 @@
 import { NextRequest, NextResponse } from "next/server"
 
+import { apiErrorResponse, requireApiActor } from "@/lib/api-actor"
 import { buildNetworkView } from "@/lib/network"
-import { getRequestActorContext, serializeError, services } from "@/lib/services"
+import { services } from "@/lib/services"
 
 export async function GET(request: NextRequest) {
 	try {
 		const organizationId = request.nextUrl.searchParams.get("organizationId")
-		const context = await getRequestActorContext({ requestedOrganizationId: organizationId })
+		const { actorUserId, organizationId: resolvedOrganizationId } = await requireApiActor(organizationId)
 		const network = buildNetworkView(services.state, {
-			actorUserId: context.actorUserId,
-			organizationId: context.organizationId
+			actorUserId,
+			kind: "actor",
+			organizationId: resolvedOrganizationId
 		})
 
 		return NextResponse.json({ network })
 	} catch (error) {
-		return NextResponse.json(serializeError(error), { status: 400 })
+		return apiErrorResponse(error)
 	}
 }

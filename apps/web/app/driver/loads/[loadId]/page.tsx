@@ -5,5 +5,5 @@ export const dynamic = "force-dynamic"
 
 export default async function Page({ params }: { params: Promise<{ loadId: string }> }) {
   const { loadId } = await params
-  return <DriverLoadDetail loadId={loadId} network={getDriverNetwork()} />
+  return <DriverLoadDetail loadId={loadId} network={await getDriverNetwork()} />
 }

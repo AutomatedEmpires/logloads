@@ -3,6 +3,6 @@ import { getDriverNetwork } from "@/lib/v3"
 
 export const dynamic = "force-dynamic"
 
-export default function Page() {
-  return <MessagesPage network={getDriverNetwork()} role="driver" />
+export default async function Page() {
+  return <MessagesPage network={await getDriverNetwork()} role="driver" />
 }

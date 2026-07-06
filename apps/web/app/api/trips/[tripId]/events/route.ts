@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import { getRequestActorContext, services, serializeError } from "@/lib/services"
+import { apiErrorResponse, requireApiActor } from "@/lib/api-actor"
+import { persistState, services } from "@/lib/services"
 
 export async function POST(
 	request: NextRequest,
@@ -9,19 +10,18 @@ export async function POST(
 	try {
 		const { tripId } = await context.params
 		const payload = await request.json()
-		const actor = await getRequestActorContext({
-			devActorUserId: payload.actorUserId,
-			requestedOrganizationId: payload.organizationId
-		})
+		const { actorUserId, organizationId } = await requireApiActor(payload.organizationId)
 		const result = services.progressTripStatus({
 			...payload,
 			tripId,
-			actorUserId: actor.actorUserId,
-			organizationId: actor.organizationId
+			actorUserId,
+			organizationId
 		})
+
+		persistState()
 
 		return NextResponse.json(result)
 	} catch (error) {
-		return NextResponse.json(serializeError(error), { status: 400 })
+		return apiErrorResponse(error)
 	}
 }
