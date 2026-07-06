@@ -40,6 +40,28 @@ export interface CockpitContext {
   network: NetworkView
 }
 
+export interface ShellAccount {
+  userName: string
+  organizationName: string
+  verificationStatus: string
+  activeOrganizationId: string | null
+  memberships: Array<{ id: string; name: string; role: string }>
+}
+
+export function shellAccountFor(context: CockpitContext): ShellAccount {
+  return {
+    activeOrganizationId: context.actor.activeOrganization?.id ?? null,
+    memberships: context.actor.memberships.map((entry) => ({
+      id: entry.organization.id,
+      name: entry.organization.displayName,
+      role: entry.membership.role
+    })),
+    organizationName: context.network.activeOrganization.name,
+    userName: context.actor.profile.fullName,
+    verificationStatus: context.network.activeOrganization.verificationStatus
+  }
+}
+
 /**
  * Session-derived cockpit data: redirects unauthenticated visitors to sign-in and
  * cross-cockpit visitors to the cockpit their membership actually grants.

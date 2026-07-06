@@ -6,7 +6,7 @@ import { Badge } from "@logloads/ui"
 
 import type { NetworkLoadView } from "@/lib/network"
 import type { PublicHomeSnapshot } from "@/lib/v3"
-import { fitLabel, fitTone, legalPages, loadProductLabel, pricingPlans, type LegalPageContent, type PublicStoryPage, visibilityLabel } from "@/lib/v3-shared"
+import { legalPages, loadProductLabel, pricingPlans, type LegalPageContent, type PublicStoryPage, visibilityLabel } from "@/lib/v3-shared"
 import { DevSignInForm, OnboardingFlow } from "./AuthForms"
 import { DecisionPanel, LoadCard, LoadDiscovery, OperatingMap, OperationSections, RoutePackPreview } from "./LoadMap"
 import { EmptyState, Metric, PageIntro, PublicShell, SectionHeader } from "./Shells"

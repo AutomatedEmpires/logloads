@@ -4,7 +4,8 @@ import Link from "next/link"
 import { Badge, Button } from "@logloads/ui"
 
 import type { NetworkView } from "@/lib/network"
-import { fitLabel, formatHuman, tripActionLabel, tripStatusLabel } from "@/lib/v3-shared"
+import { tripActionLabel, tripStatusLabel } from "@/lib/v3-shared"
+import { RelationshipGrid } from "./Common"
 import { EmptyState, Metric, SectionHeader, AppShell } from "./Shells"
 import { DecisionPanel, LoadCard, LoadDiscovery, OperatingMap, OperationSections, RoutePackPreview } from "./LoadMap"
 
@@ -69,24 +70,6 @@ export function DriverNetwork({ network }: NetworkProps) {
   return <AppShell role="driver" title="Network" kicker="Trusted work" orgName={network.activeOrganization.name}><RelationshipGrid network={network} /></AppShell>
 }
 
-export function RelationshipGrid({ network }: NetworkProps) {
-  return (
-    <section className="relationship-grid">
-      {network.privateNetwork.length === 0 ? <EmptyState title="No operating relationships yet." body="Invite trusted carriers or hosts to share work and selected availability." /> : network.privateNetwork.map((relationship) => <article key={relationship.id}><Badge tone={relationship.status === "active" ? "success" : "warning"}>{relationship.status}</Badge><h2>{relationship.partnerName}</h2><p>{relationship.notes ?? "Trusted partner relationship."}</p><span>{formatHuman(relationship.scope)}</span></article>)}
-    </section>
-  )
-}
-
-export function MessagesPage({ network, role }: NetworkProps & { role: "driver" | "fleet" | "host" }) {
-  return (
-    <AppShell role={role} title="Messages" kicker="Connected conversations" orgName={network.activeOrganization.name}>
-      <section className="messages-layout">
-        {network.messages.length === 0 ? <EmptyState title="No conversations yet." body="Messages stay connected to loads, assignments, trips, and relationships." /> : network.messages.map((message) => <article key={message.id}><strong>{message.subject}</strong><p>{message.lastMessage}</p><div className="quick-replies">{['Running late', 'At entrance', 'Waiting', 'Loaded', 'Need directions', 'Road issue', 'Call me'].map((reply) => <button type="button" key={reply}>{reply}</button>)}</div></article>)}
-      </section>
-    </AppShell>
-  )
-}
-
 export function DriverProfile({ network }: NetworkProps) {
   return (
     <AppShell role="driver" title="Me" kicker="Profile" orgName={network.activeOrganization.name}>
@@ -98,11 +81,6 @@ export function DriverProfile({ network }: NetworkProps) {
 export function FitWorkList({ network }: NetworkProps) {
   return <div className="load-card-grid">{network.loads.filter((load) => load.capacity.remaining > 0).slice(0, 4).map((load) => <LoadCard key={load.id} load={load} />)}</div>
 }
-
-export function simpleOpportunityItems(network: NetworkView) {
-  return network.loads.filter((load) => load.capacity.remaining > 0).slice(0, 4).map((load) => ({ title: load.title, body: `${fitLabel(load)} · ${load.payLabel}`, tone: "success" as const }))
-}
-
 
 export function DriverLoadDetail({ loadId, network }: NetworkProps & { loadId: string }) {
   const load = network.loads.find((item) => item.id === loadId)

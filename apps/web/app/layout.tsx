@@ -2,6 +2,15 @@ import { ClerkProvider } from "@clerk/nextjs"
 import type { ReactNode } from "react"
 
 import "./globals.css"
+import "./styles/public.css"
+import "./styles/auth.css"
+import "./styles/map.css"
+import "./styles/driver.css"
+import "./styles/fleet.css"
+import "./styles/host.css"
+import "./styles/admin.css"
+import "./styles/messages.css"
+import "./styles/billing.css"
 
 export const metadata = {
 	title: "LogLoads",
