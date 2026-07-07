@@ -51,6 +51,7 @@
 ## Operating state
 - `LOGLOADS_STATE_FILE` overrides the snapshot path (default `apps/web/.data/logloads-state.json`).
 - Delete the snapshot file to reset local state to the date-shifted seed.
+- Snapshot mirror (disaster recovery): live Supabase project `logloads` (ref `fdzohbiiyzgvjzfsjyxo`, us-west-1). `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (or the anon key kept SERVER-ONLY — never `NEXT_PUBLIC_`) in `.env.local` activate it: every persisted mutation also writes the `operating_state` row, and a node booting without a disk snapshot restores from it automatically. To fully reset to seed, delete both the disk snapshot and the `operating_state` row.
 
 ## Maps
 - `NEXT_PUBLIC_MAPBOX_TOKEN` activates Mapbox (locked provider). Without it, the map renders real geography through the MapLibre + Carto fallback.
