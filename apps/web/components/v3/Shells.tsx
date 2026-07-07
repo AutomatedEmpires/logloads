@@ -49,7 +49,7 @@ const navByRole: Record<ShellProps["role"], Array<{ href: string; icon: IconKey;
     { href: "/admin/billing", icon: "load.pay", label: "Billing" }
   ],
   driver: [
-    { href: "/driver/today", icon: "status.open", label: "Today" },
+    { href: "/driver/today", icon: "nav.today", label: "Today" },
     { href: "/driver/loads", icon: "nav.loads", label: "Loads" },
     { href: "/driver/trips", icon: "nav.trips", label: "Trips" },
     { href: "/driver/messages", icon: "nav.messages", label: "Messages" },

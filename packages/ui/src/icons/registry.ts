@@ -25,7 +25,9 @@ import {
   PaperPlaneTilt,
   SealCheck,
   ShieldStar,
+  Stack,
   Storefront,
+  SunHorizon,
   TreeStructure,
   UploadSimple,
   UsersThree,
@@ -59,6 +61,7 @@ export type IconKey =
   | "nav.loads"
   | "nav.map"
   | "nav.messages"
+  | "nav.today"
   | "nav.trips"
   | "ops.audit"
   | "ops.document"
@@ -102,7 +105,8 @@ export const ICON_REGISTRY = {
   "nav.admin": { key: "nav.admin", icon: ShieldStar, label: "Admin" },
   "nav.fleet": { key: "nav.fleet", icon: UsersThree, label: "Fleet" },
   "nav.landing": { key: "nav.landing", icon: TreeStructure, label: "Landing board" },
-  "nav.loads": { key: "nav.loads", icon: CircleDashed, label: "Loads" },
+  "nav.loads": { key: "nav.loads", icon: Stack, label: "Loads" },
+  "nav.today": { key: "nav.today", icon: SunHorizon, label: "Today" },
   "nav.map": { key: "nav.map", icon: MapTrifold, label: "Map" },
   "nav.messages": { key: "nav.messages", icon: ChatCircle, label: "Messages" },
   "nav.trips": { key: "nav.trips", icon: Van, label: "Trips" },
