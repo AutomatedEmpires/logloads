@@ -1,8 +1,10 @@
-import { AdminSectionPage } from "@/components/v3"
-import { getAdminSummary } from "@/lib/v3"
+import { AdminVerificationPage } from "@/components/v3"
+import { getAdminShellAccount, getAdminVerificationQueue } from "@/lib/admin-data"
 
 export const dynamic = "force-dynamic"
 
 export default async function Page() {
-  return <AdminSectionPage summary={await getAdminSummary()} title="Verification" />
+  const [account, items] = await Promise.all([getAdminShellAccount(), getAdminVerificationQueue()])
+
+  return <AdminVerificationPage account={account} items={items} />
 }

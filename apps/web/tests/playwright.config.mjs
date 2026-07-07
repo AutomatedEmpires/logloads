@@ -2,14 +2,16 @@ import { defineConfig, devices } from "@playwright/test"
 
 export default defineConfig({
   testDir: ".",
-  timeout: 30_000,
+  timeout: 60_000,
+  forbidOnly: Boolean(process.env.CI),
+  retries: process.env.CI ? 1 : 0,
   use: {
     baseURL: "http://127.0.0.1:3002",
     trace: "retain-on-failure"
   },
   webServer: {
     command: "pnpm exec next start -H 127.0.0.1 -p 3002",
-    reuseExistingServer: true,
+    reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     url: "http://127.0.0.1:3002"
   },
@@ -17,6 +19,10 @@ export default defineConfig({
     {
       name: "mobile-chrome",
       use: { ...devices["Pixel 7"] }
+    },
+    {
+      name: "desktop-chrome",
+      use: { ...devices["Desktop Chrome"] }
     }
   ]
 })

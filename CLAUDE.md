@@ -9,7 +9,7 @@ Read `AGENTS.md` first. This file is a shorter execution reminder for Claude-spe
 - Keep domain contracts in `packages/contracts`.
 - Keep migrations and seed changes in `packages/db` plus `supabase/`.
 - Do not bypass the service layer from `apps/web`.
-- Do not build broad UI before the domain and API contracts are stable.
+- Cockpit identity comes from the session (`apps/web/lib/session.ts`); never reintroduce hardcoded or client-supplied actor IDs.
 - Add or update tests whenever state machines or service rules change.
 - Include exact verification commands in the PR body.
 

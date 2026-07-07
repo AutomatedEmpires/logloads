@@ -42,7 +42,19 @@
   - `SENTRY_DSN`
   - `RESEND_API_KEY`
 
+## Sessions and identity
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` + `CLERK_SECRET_KEY` activate Clerk (production auth provider).
+- `LOGLOADS_SESSION_SECRET` signs sessions; REQUIRED in production.
+- `LOGLOADS_ENABLE_DEV_LOGIN=true` allows email dev sign-in in production-like builds without Clerk (never set in real production).
+- Without Clerk keys, non-production environments use dev sessions automatically through the same session resolution path.
+
+## Operating state
+- `LOGLOADS_STATE_FILE` overrides the snapshot path (default `apps/web/.data/logloads-state.json`).
+- Delete the snapshot file to reset local state to the date-shifted seed.
+
+## Maps
+- `NEXT_PUBLIC_MAPBOX_TOKEN` activates Mapbox (locked provider). Without it, the map renders real geography through the MapLibre + Carto fallback.
+
 ## Placeholders and future providers
-- Map provider placeholder: `NEXT_PUBLIC_MAP_PROVIDER=placeholder`
 - Notification provider placeholder: `NOTIFICATION_PROVIDER=placeholder`
 - Do not commit secrets while provider choice is still fluid.

@@ -1,8 +1,10 @@
-import { AdminSectionPage } from "@/components/v3"
-import { getAdminSummary } from "@/lib/v3"
+import { AdminActivityPage } from "@/components/v3"
+import { getAdminActivityHistory, getAdminShellAccount } from "@/lib/admin-data"
 
 export const dynamic = "force-dynamic"
 
 export default async function Page() {
-  return <AdminSectionPage summary={await getAdminSummary()} title="Activity history" />
+  const [account, history] = await Promise.all([getAdminShellAccount(), getAdminActivityHistory()])
+
+  return <AdminActivityPage account={account} history={history} />
 }

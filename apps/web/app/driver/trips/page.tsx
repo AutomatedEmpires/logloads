@@ -1,8 +1,10 @@
 import { DriverTrips } from "@/components/v3"
-import { getDriverNetwork } from "@/lib/v3"
+import { getCockpitContext, shellAccountFor } from "@/lib/v3"
 
 export const dynamic = "force-dynamic"
 
 export default async function Page() {
-  return <DriverTrips network={await getDriverNetwork()} />
+  const context = await getCockpitContext("driver")
+
+  return <DriverTrips account={shellAccountFor(context)} network={context.network} />
 }

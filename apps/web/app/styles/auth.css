@@ -1,1 +1,148 @@
-/* auth + onboarding styles */
+/* Auth panel, dev sign-in, and onboarding flow. */
+
+.auth-page { background:
+  radial-gradient(80% 60% at 100% 0%, rgba(35, 88, 62, 0.1), transparent 60%),
+  var(--bone);
+}
+.auth-panel { box-shadow: var(--shadow); }
+.auth-panel .eyebrow { color: var(--pine); }
+
+.auth-form {
+  display: grid;
+  gap: 14px;
+  max-width: 420px;
+  margin-top: 18px;
+}
+.auth-form label,
+.onboarding-form label { display: grid; gap: 6px; color: var(--muted); font-size: 0.88rem; font-weight: 900; }
+.auth-form input,
+.onboarding-form input,
+.onboarding-form select {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  padding: 10px 12px;
+  color: var(--ink);
+  font-weight: 600;
+}
+.auth-form input:focus,
+.onboarding-form input:focus,
+.onboarding-form select:focus {
+  border-color: var(--green);
+  outline: 3px solid rgba(46, 118, 81, 0.2);
+  outline-offset: 0;
+}
+.onboarding-form input[readonly] { background: var(--bone); color: var(--ink-soft); }
+.auth-form .action-link { justify-self: start; min-width: 160px; }
+.auth-form__note { margin: 4px 0 0; color: var(--ink-soft); line-height: 1.5; }
+.auth-form__note a { color: var(--pine); font-weight: 800; text-decoration: underline; text-underline-offset: 4px; }
+
+.form-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(159, 51, 43, 0.3);
+  border-radius: var(--radius);
+  background: var(--red-bg);
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--red);
+  font-weight: 800;
+}
+
+/* ---------- Onboarding ---------- */
+
+.onboarding-page .page-intro { max-width: 720px; }
+.onboarding-form {
+  display: grid;
+  gap: 18px;
+  max-width: 760px;
+}
+.onboarding-form fieldset {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  margin: 0;
+  padding: 18px;
+}
+.onboarding-form legend {
+  float: left;
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 0;
+  font-family: var(--font-display);
+  font-size: 1.12rem;
+  font-weight: 800;
+}
+.fieldset-note { margin: -4px 0 4px; color: var(--muted); font-size: 0.9rem; font-weight: 600; line-height: 1.45; }
+
+.radio-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.radio-card {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  padding: 14px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.radio-card:hover { border-color: var(--line-strong); }
+.radio-card input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  opacity: 0;
+}
+.radio-card strong { color: var(--ink); font-weight: 800; }
+.radio-card span { color: var(--muted); font-size: 0.86rem; font-weight: 600; line-height: 1.4; }
+.radio-card--active {
+  border-color: var(--pine);
+  box-shadow: inset 0 0 0 1px var(--pine);
+  background: var(--green-bg);
+}
+.radio-card--active span { color: var(--ink-soft); }
+.radio-card:has(input:focus-visible) { outline: 3px solid rgba(46, 118, 81, 0.36); outline-offset: 2px; }
+
+.onboarding-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+.onboarding-form__actions .text-link { border: 0; background: transparent; padding: 0; }
+
+/* Path choice buttons (choice-grid holds <button> in onboarding, <a> elsewhere) */
+.choice-grid button {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 18px;
+  text-align: left;
+  transition: border-color 0.12s ease, transform 0.12s ease;
+}
+.choice-grid button:hover { border-color: var(--pine); transform: translateY(-2px); }
+.choice-grid button strong { font-family: var(--font-display); font-size: 1.12rem; }
+.choice-grid button span { color: var(--ink-soft); font-weight: 600; line-height: 1.45; }
+
+@media (max-width: 1100px) {
+  .radio-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .onboarding-form fieldset { padding: 14px; }
+  .radio-grid { grid-template-columns: 1fr; }
+  .auth-form .action-link,
+  .onboarding-form__actions .action-link { justify-self: stretch; width: 100%; }
+  .choice-grid { grid-template-columns: 1fr; }
+}

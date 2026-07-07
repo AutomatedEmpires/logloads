@@ -16,7 +16,7 @@
     "test": "turbo run test",
     "test:e2e": "pnpm --filter @logloads/web test:e2e",
     "typecheck": "turbo run typecheck",
-    "validate": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+    "validate": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm guardrails"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

@@ -142,39 +142,104 @@ export function PageIntro({ body, eyebrow, title }: { body: string; eyebrow: str
 }
 
 function PublicHeader() {
+  const [menuOpen, setMenuOpen] = useState(false)
+
   return (
     <header className="public-header">
-      <Link className="brand" href="/" aria-label="LogLoads home">
+      <Link className="brand" href="/" aria-label="LogLoads home" onClick={() => setMenuOpen(false)}>
         <span className="brand-mark">LL</span>
         <span>LogLoads</span>
       </Link>
-      <nav aria-label="Public navigation">
+      <nav aria-label="Main navigation" className="public-header__nav">
         {publicNav.map(([label, href]) => <Link href={href} key={href}>{label}</Link>)}
       </nav>
       <div className="public-actions">
         <Link href="/sign-in">Sign in</Link>
         <Link className="action-link" href="/sign-up">Get started</Link>
+        <button
+          aria-controls="public-mobile-menu"
+          aria-expanded={menuOpen}
+          className={menuOpen ? "public-menu-toggle is-open" : "public-menu-toggle"}
+          onClick={() => setMenuOpen((current) => !current)}
+          type="button"
+        >
+          <span aria-hidden className="public-menu-toggle__bars"><i /><i /><i /></span>
+          <span className="sr-only">{menuOpen ? "Close menu" : "Open menu"}</span>
+        </button>
       </div>
+      {menuOpen ? (
+        <nav aria-label="Menu" className="public-mobile-menu" id="public-mobile-menu">
+          {publicNav.map(([label, href]) => (
+            <Link href={href} key={href} onClick={() => setMenuOpen(false)}>{label}</Link>
+          ))}
+          <div className="public-mobile-menu__actions">
+            <Link className="action-link action-link--secondary" href="/sign-in" onClick={() => setMenuOpen(false)}>Sign in</Link>
+            <Link className="action-link" href="/sign-up" onClick={() => setMenuOpen(false)}>Get started</Link>
+          </div>
+        </nav>
+      ) : null}
     </header>
   )
 }
 
+const footerColumns: Array<{ heading: string; links: Array<[string, string]> }> = [
+  {
+    heading: "Product",
+    links: [
+      ["Loads", "/loads"],
+      ["How it works", "/how-it-works"],
+      ["Pricing", "/pricing"],
+      ["Trust", "/trust"]
+    ]
+  },
+  {
+    heading: "Who it serves",
+    links: [
+      ["Haulers", "/for-haulers"],
+      ["Fleets", "/for-fleets"],
+      ["Hosts", "/for-landings"]
+    ]
+  },
+  {
+    heading: "Company",
+    links: [
+      ["About", "/about"],
+      ["Contact", "/contact"]
+    ]
+  },
+  {
+    heading: "Legal",
+    links: [
+      ["Terms", "/terms"],
+      ["Privacy", "/privacy"],
+      ["Marketplace Rules", "/marketplace-rules"],
+      ["Acceptable Use", "/acceptable-use"]
+    ]
+  }
+]
+
 function PublicFooter() {
   return (
     <footer className="public-footer">
-      <div>
-        <Link className="brand" href="/">
-          <span className="brand-mark">LL</span>
-          <span>LogLoads</span>
-        </Link>
-        <p>Timber needs trucks. Trucks need work. LogLoads connects the operation.</p>
+      <div className="public-footer__grid">
+        <div className="public-footer__brand">
+          <Link className="brand" href="/">
+            <span className="brand-mark">LL</span>
+            <span>LogLoads</span>
+          </Link>
+          <p>Timber needs trucks. Trucks need work. LogLoads connects the operation from landing to mill.</p>
+        </div>
+        {footerColumns.map((column) => (
+          <nav aria-label={column.heading} className="public-footer__column" key={column.heading}>
+            <span>{column.heading}</span>
+            {column.links.map(([label, href]) => <Link href={href} key={href}>{label}</Link>)}
+          </nav>
+        ))}
       </div>
-      <nav aria-label="Footer navigation">
-        <Link href="/terms">Terms</Link>
-        <Link href="/privacy">Privacy</Link>
-        <Link href="/marketplace-rules">Marketplace Rules</Link>
-        <Link href="/acceptable-use">Acceptable Use</Link>
-      </nav>
+      <div className="public-footer__legal">
+        <p>LogLoads is coordination software. It does not broker freight and does not move freight payment.</p>
+        <p>&copy; 2026 LogLoads</p>
+      </div>
     </footer>
   )
 }

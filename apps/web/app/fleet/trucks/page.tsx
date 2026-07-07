@@ -1,8 +1,10 @@
 import { FleetTrucks } from "@/components/v3"
-import { getFleetNetwork } from "@/lib/v3"
+import { getFleetCockpitData } from "@/lib/fleet-data"
 
 export const dynamic = "force-dynamic"
 
 export default async function Page() {
-  return <FleetTrucks network={await getFleetNetwork()} />
+  const data = await getFleetCockpitData()
+
+  return <FleetTrucks account={data.account} driverOptions={data.driverOptions} network={data.network} trucks={data.trucks} />
 }

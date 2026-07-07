@@ -1,1 +1,423 @@
-/* operating map styles */
+/* Operating map — real geographic map, markers, selection sheet, discovery split */
+
+.map-surface--real {
+  position: relative;
+  height: clamp(420px, 62vh, 640px);
+  overflow: hidden;
+}
+
+.real-map {
+  position: absolute;
+  inset: 0;
+}
+
+.real-map .maplibregl-map,
+.real-map .mapboxgl-map {
+  font: inherit;
+}
+
+.map-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--bone-2);
+  color: var(--muted);
+  font-weight: 800;
+}
+
+/* Markers */
+
+.map-marker-hit {
+  display: block;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.map-marker-hit:focus-visible {
+  outline: 2px solid var(--pine);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.map-marker {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+
+.map-marker-chip {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 253, 247, 0.95);
+  padding: 3px 10px;
+  color: var(--ink);
+  font-size: 0.74rem;
+  font-weight: 900;
+  line-height: 1.2;
+  white-space: nowrap;
+  box-shadow: 0 4px 10px rgba(17, 22, 16, 0.16);
+}
+
+.map-marker-chip em {
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.map-marker-chip--below {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* Exact landing: dot + label chip, anchored bottom */
+.map-marker--pin .map-marker-dot {
+  width: 15px;
+  height: 15px;
+  border: 2.5px solid #fff;
+  border-radius: 999px;
+  background: var(--pine);
+  box-shadow: 0 4px 12px rgba(17, 22, 16, 0.35);
+}
+
+.map-marker--pin.is-selected .map-marker-dot {
+  width: 19px;
+  height: 19px;
+  background: var(--amber);
+}
+
+.map-marker--pin.is-selected .map-marker-chip {
+  border-color: var(--amber);
+}
+
+/* Approximate landing: soft area circle anchored center, never an exact pin */
+.map-marker--area .map-marker-dot {
+  width: 28px;
+  height: 28px;
+  border: 2px solid rgba(23, 61, 43, 0.55);
+  border-radius: 999px;
+  background: rgba(46, 118, 81, 0.26);
+  box-shadow: 0 0 0 9px rgba(46, 118, 81, 0.14);
+}
+
+.map-marker--area.is-selected .map-marker-dot {
+  border-color: var(--amber);
+  background: rgba(172, 104, 29, 0.28);
+  box-shadow: 0 0 0 11px rgba(172, 104, 29, 0.16);
+}
+
+.map-marker--area.is-selected .map-marker-chip {
+  border-color: var(--amber);
+}
+
+/* Destination: small square marker, label only when selected */
+.map-marker--destination {
+  opacity: 0.9;
+}
+
+.map-marker--destination .map-marker-dot {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--pine);
+  border-radius: 3px;
+  background: #d9eee1;
+  box-shadow: 0 3px 8px rgba(17, 22, 16, 0.22);
+}
+
+.map-marker--destination .map-marker-chip {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* Selected-load sheet (bottom card on desktop, bottom sheet on mobile) */
+
+.map-selected-sheet {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 7;
+  display: grid;
+  gap: 6px;
+  width: min(350px, calc(100% - 24px));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 253, 247, 0.96);
+  padding: 14px;
+  box-shadow: var(--shadow);
+}
+
+.map-selected-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.map-selected-sheet strong {
+  font-size: 1.05rem;
+  line-height: 1.2;
+}
+
+.map-selected-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+.map-selected-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: #7a4515;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.map-selected-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.map-selected-visibility {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+/* Discovery: split map + synced list on desktop */
+
+.discovery-map-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 14px;
+  align-items: start;
+}
+
+.discovery-map-split .operating-map {
+  min-width: 0;
+}
+
+.discovery-map-list {
+  display: grid;
+  gap: 10px;
+  max-height: clamp(420px, 62vh, 640px);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.discovery-map-item {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 12px;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ink);
+}
+
+.discovery-map-item strong {
+  font-size: 0.98rem;
+}
+
+.discovery-map-item .load-meta {
+  font-size: 0.84rem;
+}
+
+.discovery-map-item.is-active {
+  border-color: var(--pine);
+  box-shadow: 0 0 0 2px rgba(23, 61, 43, 0.16);
+}
+
+.discovery-map-item:focus-visible {
+  outline: 2px solid var(--pine);
+  outline-offset: 2px;
+}
+
+/* Load card lane hint */
+
+.lane-approx {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Decision panel setup state */
+
+.decision-panel--setup {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.decision-setup-body {
+  margin: 0;
+  max-width: 60ch;
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+
+/* Route Pack */
+
+.route-pack-lede {
+  margin: 10px 0 0;
+  max-width: 64ch;
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+
+.route-pack-includes {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.route-pack-includes li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--ink-soft);
+  font-weight: 750;
+}
+
+.route-pack-includes li svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--pine);
+}
+
+.route-pack-preview--locked {
+  background: linear-gradient(160deg, var(--paper), var(--bone-2));
+}
+
+.route-pack-instructions {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.route-pack-instructions li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 12px;
+}
+
+.route-pack-instructions li .ui-badge {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.route-pack-instructions strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.route-pack-instructions p {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+
+.briefing-note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 750;
+}
+
+.route-pack-footnote {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+/* Breakpoints */
+
+@media (max-width: 1100px) {
+  .discovery-map-split {
+    grid-template-columns: 1fr;
+  }
+
+  .discovery-map-list {
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+@media (max-width: 760px) {
+  .map-surface--real {
+    height: min(72vh, 560px);
+    min-height: 400px;
+  }
+
+  /* Bottom sheet takes over selection on small screens */
+  .discovery-map-list {
+    display: none;
+  }
+
+  .map-selected-sheet {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    border-bottom: 0;
+    border-radius: 14px 14px 0 0;
+    padding-top: 20px;
+  }
+
+  .map-selected-sheet::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    width: 44px;
+    height: 4px;
+    transform: translateX(-50%);
+    border-radius: 999px;
+    background: var(--line-strong);
+  }
+
+  /* Keep basemap attribution readable above the bottom sheet */
+  .map-surface--real .maplibregl-ctrl-bottom-right,
+  .map-surface--real .mapboxgl-ctrl-bottom-right {
+    top: 0;
+    right: auto;
+    bottom: auto;
+    left: 0;
+  }
+}

@@ -44,3 +44,15 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Guardrails
+        run: pnpm guardrails
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @logloads/web exec playwright install --with-deps chromium
+
+      - name: End-to-end smoke
+        run: pnpm test:e2e
+        working-directory: apps/web
+        env:
+          CI: "true"

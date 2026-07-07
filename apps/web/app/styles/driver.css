@@ -1,1 +1,261 @@
-/* driver cockpit styles */
+/* Driver cockpit — mobile-first field surfaces */
+
+/* --- Primary trip action ------------------------------------------------- */
+.trip-advance { display: grid; gap: 8px; margin-top: 18px; justify-items: start; }
+.advance-button {
+  display: inline-flex;
+  min-height: 52px;
+  width: 100%;
+  max-width: 420px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid var(--pine);
+  border-radius: var(--radius);
+  background: var(--pine);
+  color: #fff;
+  font-size: 1.02rem;
+  font-weight: 900;
+  padding: 12px 20px;
+}
+.advance-button:disabled { opacity: 0.68; }
+.trip-advance--hero .advance-button {
+  border-color: #fff;
+  background: #fff;
+  color: var(--pine);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+}
+.trip-advance--row { margin-top: 0; }
+.trip-advance--row .advance-button { min-height: 46px; font-size: 0.95rem; }
+
+.action-error { margin: 0; color: var(--red); font-weight: 800; }
+.driver-now .action-error { color: #f6c8bf; }
+.action-note { margin: 0; color: var(--green); font-weight: 800; }
+.driver-now .action-note { color: #b5e3c6; }
+
+.now-stop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+  color: rgba(255, 255, 255, 0.86);
+  font-weight: 800;
+}
+
+/* --- Availability quick set ---------------------------------------------- */
+.availability-panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 18px;
+}
+.quickset-block { display: grid; gap: 10px; }
+.availability-now {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ink-soft);
+  font-weight: 800;
+}
+.quickset { display: flex; flex-wrap: wrap; gap: 8px; }
+.quickset button {
+  min-height: 46px;
+  flex: 1 1 140px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--pine);
+  padding: 10px 12px;
+  font-weight: 800;
+}
+.quickset button:hover { border-color: var(--pine); }
+.quickset button:disabled { opacity: 0.6; }
+.availability-list {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.availability-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  color: var(--ink-soft);
+  font-weight: 800;
+}
+.availability-list em { color: var(--muted); font-style: normal; font-weight: 700; }
+
+/* --- Trip cards ----------------------------------------------------------- */
+.board-list--flush { margin: 0; }
+.trip-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 16px;
+}
+.trip-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.trip-card header strong { display: block; margin-top: 2px; font-size: 1.08rem; }
+.trip-card__event { margin: 0; color: var(--ink-soft); }
+.trip-card__actions {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.doc-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.doc-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-soft);
+  font-weight: 750;
+  font-size: 0.92rem;
+}
+.doc-list em { color: var(--muted); font-style: normal; text-transform: capitalize; }
+
+.proof-control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.proof-control select {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+  padding: 6px 10px;
+  font-weight: 750;
+}
+.proof-control__submit {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--pine);
+  padding: 8px 12px;
+  font-weight: 800;
+}
+.proof-control__submit:disabled { opacity: 0.6; }
+.proof-control .action-note,
+.proof-control .action-error { flex-basis: 100%; }
+
+/* --- Equipment ------------------------------------------------------------ */
+.equipment-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 16px;
+}
+.equipment-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 900;
+}
+.equipment-form input,
+.equipment-form select {
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+  padding: 8px 10px;
+  font-weight: 700;
+}
+.equipment-form__actions { display: grid; gap: 8px; justify-items: start; }
+
+.status-toggle-block { display: grid; gap: 6px; }
+.status-toggle {
+  display: inline-flex;
+  width: fit-content;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bone);
+  padding: 3px;
+}
+.status-toggle button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-soft);
+  padding: 0 12px;
+  font-weight: 800;
+}
+.status-toggle button[aria-pressed="true"] { background: var(--pine); color: #fff; }
+.status-toggle button:disabled { opacity: 0.65; }
+
+/* --- Load detail request panel --------------------------------------------- */
+.request-panel { display: grid; gap: 10px; }
+.request-panel strong { font-size: 1.18rem; line-height: 1.25; }
+.request-panel p { margin: 0; color: var(--ink-soft); line-height: 1.45; }
+.request-panel__meta {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+.request-panel .advance-button { max-width: none; min-height: 48px; }
+.request-links { display: grid; gap: 8px; }
+.detail-layout--app { margin: 18px 24px 0; }
+
+/* --- Profile ---------------------------------------------------------------- */
+.profile-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.profile-head h2 { margin: 0; font-size: 1.6rem; }
+.profile-head p { margin: 6px 0 0; }
+.signout-row { margin-top: 16px; }
+.signout-button {
+  min-height: 46px;
+  border: 1px solid var(--red);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--red);
+  padding: 10px 18px;
+  font-weight: 900;
+}
+.signout-button:disabled { opacity: 0.6; }
+
+/* --- Wider screens ---------------------------------------------------------- */
+@media (min-width: 761px) {
+  .equipment-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .equipment-form__actions { grid-column: 1 / -1; }
+  .trip-card__actions {
+    grid-template-columns: auto 1fr;
+    align-items: start;
+  }
+}
+
+@media (max-width: 760px) {
+  .detail-layout--app { margin: 12px 12px 0; }
+  .advance-button { max-width: none; }
+  .trip-advance { justify-items: stretch; }
+  .quickset button { flex: 1 1 100%; }
+  .proof-control__submit { flex: 1; justify-content: center; }
+  .proof-control select { flex: 1; }
+  .signout-button { width: 100%; }
+}

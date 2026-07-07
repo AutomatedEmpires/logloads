@@ -1,8 +1,10 @@
 import { HostLiveBoard } from "@/components/v3"
-import { getHostNetwork } from "@/lib/v3"
+import { getCockpitContext, shellAccountFor } from "@/lib/v3"
 
 export const dynamic = "force-dynamic"
 
 export default async function Page() {
-  return <HostLiveBoard network={await getHostNetwork()} />
+  const context = await getCockpitContext("host")
+
+  return <HostLiveBoard account={shellAccountFor(context)} network={context.network} />
 }

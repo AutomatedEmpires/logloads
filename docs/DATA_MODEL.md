@@ -20,6 +20,15 @@
 - `MessageThread`
 - `MessageEvent`
 - `AuditEvent`
+- `Organization` / `OrganizationMembership` / `OrganizationInvitation`
+- `PrivateNetworkRelationship`
+- `EquipmentCombination`
+- `RichLandingDetails` / `DestinationFacility`
+- `RoutePack`
+- `OpportunityCapacity` / `DirectOffer` / `FutureAvailability`
+- `TripV2` / `TripEvent` / `TripDocument`
+- `VerificationRecord`
+- `Entitlement` (rendered to users only as plan features)
 
 ## Coverage
 - Pickup landing and drop-off mill ids

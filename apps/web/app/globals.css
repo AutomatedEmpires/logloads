@@ -19,7 +19,8 @@
   --line-strong: #a9a08e;
   --radius: 8px;
   --shadow: 0 18px 60px rgba(17, 22, 16, 0.14);
-  --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-ui: var(--font-inter, Inter), Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: var(--font-archivo, Archivo), Archivo, var(--font-inter, Inter), ui-sans-serif, system-ui, sans-serif;
   color-scheme: light;
 }
 
@@ -34,7 +35,15 @@ body {
   font-size: 16px;
   letter-spacing: 0;
 }
-button, input, select { font: inherit; }
+button, input, select, textarea { font: inherit; }
+h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.01em; }
+.home-hero h1,
+.page-intro h1,
+.detail-main h1,
+.auth-panel h1,
+.split-section h2,
+.driver-now h2,
+.host-need h2 { font-stretch: 84%; font-weight: 800; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
 a { color: inherit; text-decoration: none; }
@@ -151,8 +160,9 @@ a { color: inherit; text-decoration: none; }
   gap: 24px;
   padding: 110px clamp(16px, 5vw, 70px) 42px;
   background:
-    linear-gradient(90deg, rgba(17, 22, 16, 0.84), rgba(17, 22, 16, 0.38)),
-    url("https://commons.wikimedia.org/wiki/Special:Redirect/file/Logging_truck_with_load_of_saw_logs.jpg");
+    linear-gradient(90deg, rgba(17, 22, 16, 0.86), rgba(17, 22, 16, 0.4)),
+    radial-gradient(120% 90% at 80% 10%, rgba(17, 22, 16, 0) 55%, rgba(17, 22, 16, 0.55)),
+    url("/hero-timber.jpg");
   background-position: center;
   background-size: cover;
   color: #fff;
@@ -561,7 +571,7 @@ dd { margin: 0; font-weight: 900; text-align: right; }
 .error-state button { min-height: 42px; border: 1px solid var(--pine); border-radius: var(--radius); background: var(--pine); color: #fff; padding: 10px 14px; font-weight: 900; }
 
 @media (max-width: 1100px) {
-  .public-header nav { display: none; }
+  .public-header .public-header__nav { display: none; }
   .home-hero { grid-template-columns: 1fr; min-height: 74vh; }
   .split-section,
   .detail-layout,

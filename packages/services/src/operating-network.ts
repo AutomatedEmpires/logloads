@@ -842,7 +842,7 @@ export function publishFutureAvailability(
 
 export function listAttentionItems(state: LogLoadsDatabaseState, organizationId = DEFAULT_ORGANIZATION_ID): AttentionItem[] {
   const notices = state.operationalNotices
-    .filter((notice) => !notice.expiresAt || notice.expiresAt >= "2026-06-05T00:00:00.000Z")
+    .filter((notice) => !notice.expiresAt || notice.expiresAt >= nowIso())
     .filter((notice) => notice.organizationId === organizationId || !notice.relatedLoadId || listVisibleLoadsForOrganization(state, organizationId).some((load) => load.id === notice.relatedLoadId))
     .map((notice): AttentionItem => ({
       body: notice.body,

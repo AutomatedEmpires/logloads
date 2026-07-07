@@ -1,15 +1,262 @@
 "use client"
 
-import type { NetworkView } from "@/lib/network"
-import { userPlanFeatures } from "@/lib/v3-shared"
-import { AppShell } from "./Shells"
+import Link from "next/link"
+import { useState, useTransition } from "react"
+import { Badge, Icon } from "@logloads/ui"
 
-interface NetworkProps { network: NetworkView }
+import { startCheckoutAction } from "@/lib/billing-actions"
+import type { BillingView, PlanProduct, SettingsView } from "@/lib/plans"
+import { AppShell, EmptyState, SectionHeader, type ShellAccount } from "./Shells"
 
-export function BillingPage({ network, role }: NetworkProps & { role: "fleet" | "host" }) {
-  return <AppShell role={role} title="Billing" kicker="Plan features" orgName={network.activeOrganization.name}><section className="pricing-grid pricing-grid--app">{network.entitlements.map((entitlement) => <article key={entitlement.id}><span>{entitlement.status}</span><h2>{entitlement.product === "fleet_operations" ? "Fleet Operations" : "Host Operations"}</h2><strong>{entitlement.limitLabel}</strong><ul>{userPlanFeatures(entitlement.product).map((feature) => <li key={feature}>{feature}</li>)}</ul></article>)}</section></AppShell>
+type CockpitRole = "fleet" | "host"
+
+export interface CheckoutNotice {
+  message: string
+  tone: "success" | "info"
 }
 
-export function SettingsPage({ network, role }: NetworkProps & { role: "fleet" | "host" }) {
-  return <AppShell role={role} title="Settings" kicker="Organization" orgName={network.activeOrganization.name}><section className="settings-grid">{['Team access', 'Notifications', 'Operating regions', 'Verification', 'Templates'].map((item) => <article key={item}><h2>{item}</h2><p>Configured for {network.activeOrganization.name}.</p></article>)}</section></AppShell>
+function PlanAction({ label, product }: { label: string; product: PlanProduct }) {
+  const [pending, startTransition] = useTransition()
+  const [notice, setNotice] = useState<string | null>(null)
+
+  return (
+    <div className="plan-action">
+      <button
+        className="action-link"
+        disabled={pending}
+        onClick={() => {
+          startTransition(async () => {
+            const result = await startCheckoutAction(product)
+
+            if (result.ok && result.url) {
+              window.location.assign(result.url)
+              return
+            }
+
+            setNotice(result.error ?? "Checkout could not be started. Try again.")
+          })
+        }}
+        type="button"
+      >
+        {pending ? "Opening checkout…" : label}
+      </button>
+      {notice ? (
+        <p className="plan-action__notice" role="status">
+          <Icon aria-hidden name="status.warning" size={16} />
+          <span>{notice}</span>
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+export function BillingPage({
+  account,
+  billing,
+  checkoutNotice,
+  role
+}: {
+  account: ShellAccount
+  billing: BillingView
+  checkoutNotice?: CheckoutNotice | null
+  role: CockpitRole
+}) {
+  const addUsageHref = role === "fleet" ? "/fleet/trucks" : "/host/landings"
+  const addUsageLabel = role === "fleet" ? "Go to trucks" : "Go to landings"
+  const addUsageBody = role === "fleet"
+    ? "Add your first truck and this section shows where you stand against your plan limits."
+    : "Add your first landing and this section shows where you stand against your plan limits."
+
+  return (
+    <AppShell account={account} kicker="Plan features" role={role} title="Billing">
+      <div className="billing-page">
+        {checkoutNotice ? (
+          <p className={`billing-banner billing-banner--${checkoutNotice.tone}`} role="status">
+            <Icon aria-hidden name={checkoutNotice.tone === "success" ? "status.assigned" : "ops.notice"} size={18} />
+            <span>{checkoutNotice.message}</span>
+          </p>
+        ) : null}
+
+        {billing.plans.length === 0 ? (
+          <EmptyState
+            actionHref="/pricing"
+            actionLabel="Compare plans"
+            body="Pick the plan that matches how this workspace operates. Trials start without a card."
+            title="No plan on this workspace yet"
+          />
+        ) : (
+          <>
+            <section className="plan-cards" aria-label="Current plan">
+              {billing.plans.map((plan) => (
+                <article className="plan-card" key={plan.id}>
+                  <header className="plan-card__head">
+                    <div>
+                      <p className="eyebrow">Current plan</p>
+                      <h2>{plan.name}</h2>
+                      <p className="plan-card__summary">{plan.summary}</p>
+                    </div>
+                    <strong className="plan-card__price">{plan.priceLine}</strong>
+                  </header>
+                  <div className="plan-card__status">
+                    <Badge tone={plan.statusTone}>{plan.statusLine}</Badge>
+                    {plan.statusDetail ? <p>{plan.statusDetail}</p> : null}
+                  </div>
+                  <div className="plan-card__body">
+                    <h3>What your plan includes</h3>
+                    <ul>
+                      {plan.features.map((feature) => (
+                        <li key={feature}>
+                          <Icon aria-hidden name="status.assigned" size={16} />
+                          <span>{feature}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    {plan.limitLines.length > 0 ? <p className="plan-card__limits">{plan.limitLines.join(" · ")}</p> : null}
+                  </div>
+                  {plan.actionLabel ? <PlanAction label={plan.actionLabel} product={plan.product} /> : null}
+                </article>
+              ))}
+            </section>
+
+            {!billing.billingReady ? (
+              <p className="billing-pending" role="note">
+                <Icon aria-hidden name="status.lock" size={16} />
+                <span>Billing activation is pending for this workspace. Your plan and trial remain active.</span>
+              </p>
+            ) : null}
+
+            <section className="usage-panel" aria-label="Plan usage">
+              <SectionHeader eyebrow="Usage" title="Where you stand against plan limits" />
+              {billing.usage.length === 0 ? (
+                <EmptyState actionHref={addUsageHref} actionLabel={addUsageLabel} body={addUsageBody} title="Nothing to measure yet" />
+              ) : (
+                <div className="usage-list">
+                  {billing.usage.map((row) => (
+                    <article className="usage-row" key={row.id}>
+                      <div className="usage-row__top">
+                        <strong>{row.label}</strong>
+                        <span className={`usage-row__detail usage-row__detail--${row.tone}`}>{row.detail}</span>
+                      </div>
+                      {row.percent !== null ? (
+                        <div aria-label={`${row.label}: ${row.detail}`} className="usage-meter" role="img">
+                          <span className={`usage-meter__fill usage-meter__fill--${row.tone}`} style={{ width: `${row.percent}%` }} />
+                        </div>
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          </>
+        )}
+      </div>
+    </AppShell>
+  )
+}
+
+export function SettingsPage({
+  account,
+  role,
+  settings
+}: {
+  account: ShellAccount
+  role: CockpitRole
+  settings: SettingsView
+}) {
+  const billingHref = role === "fleet" ? "/fleet/billing" : "/host/billing"
+
+  return (
+    <AppShell account={account} kicker="Organization" role={role} title="Settings">
+      <div className="settings-stack">
+        <section className="settings-panel" aria-label="Organization identity">
+          <SectionHeader eyebrow="Organization" title={settings.identity.name} />
+          <dl className="identity-grid">
+            <div>
+              <dt>Legal name</dt>
+              <dd>{settings.identity.legalName}</dd>
+            </div>
+            <div>
+              <dt>Primary region</dt>
+              <dd>{settings.identity.region}</dd>
+            </div>
+            <div>
+              <dt>Workspace type</dt>
+              <dd>{settings.identity.typeLabel}</dd>
+            </div>
+            <div>
+              <dt>Verification</dt>
+              <dd>
+                <Badge tone={settings.identity.verificationTone}>{settings.identity.verificationLabel}</Badge>
+              </dd>
+            </div>
+          </dl>
+          <p className="settings-meaning">{settings.identity.verificationMeaning}</p>
+        </section>
+
+        <section className="settings-panel" aria-label="Team">
+          <SectionHeader eyebrow="Team" title="Who works in this workspace" />
+          {settings.team.length === 0 ? (
+            <EmptyState
+              body="Members appear here once they accept an invitation to this workspace."
+              title="No members yet"
+            />
+          ) : (
+            <ul className="team-list">
+              {settings.team.map((member) => (
+                <li key={member.id}>
+                  <div>
+                    <strong>{member.name}</strong>
+                    <span>{member.roleLabel}</span>
+                  </div>
+                  <Badge tone={member.statusTone}>{member.statusLabel}</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="settings-panel settings-panel--muted" aria-label="Notifications">
+          <SectionHeader eyebrow="Notifications" title="How updates reach you" />
+          <div className="notify-line">
+            <Icon aria-hidden name="nav.messages" size={20} />
+            <div>
+              <strong>Delivery: in-app</strong>
+              <p>
+                Assignment, trip, and message updates appear in your cockpit as they happen. Email delivery activates
+                once an email provider is connected for this workspace.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section className="settings-panel" aria-label="Plan">
+          <SectionHeader
+            action={<Link className="action-link action-link--secondary" href={billingHref}>Open billing</Link>}
+            eyebrow="Plan"
+            title="Plan features"
+          />
+          {settings.planSummaries.length === 0 ? (
+            <EmptyState
+              actionHref="/pricing"
+              actionLabel="Compare plans"
+              body="Pick the plan that matches how this workspace operates. Trials start without a card."
+              title="No plan on this workspace yet"
+            />
+          ) : (
+            <ul className="plan-summary-list">
+              {settings.planSummaries.map((plan) => (
+                <li key={plan.id}>
+                  <div>
+                    <strong>{plan.name}</strong>
+                    <span>{plan.priceLine}</span>
+                  </div>
+                  <Badge tone={plan.statusTone}>{plan.statusLine}</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+    </AppShell>
+  )
 }

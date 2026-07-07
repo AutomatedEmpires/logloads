@@ -1,8 +1,11 @@
 import { SettingsPage } from "@/components/v3"
-import { getFleetNetwork } from "@/lib/v3"
+import { getSettingsView } from "@/lib/plans"
+import { getCockpitContext, shellAccountFor } from "@/lib/v3"
 
 export const dynamic = "force-dynamic"
 
 export default async function Page() {
-  return <SettingsPage network={await getFleetNetwork()} role="fleet" />
+  const context = await getCockpitContext("fleet")
+
+  return <SettingsPage account={shellAccountFor(context)} role="fleet" settings={getSettingsView(context.network)} />
 }

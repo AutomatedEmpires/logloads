@@ -1,8 +1,17 @@
 import { DriverToday } from "@/components/v3"
-import { getDriverNetwork } from "@/lib/v3"
+import { getDriverAvailability } from "@/lib/driver-data"
+import { getCockpitContext, shellAccountFor } from "@/lib/v3"
 
 export const dynamic = "force-dynamic"
 
 export default async function Page() {
-  return <DriverToday network={await getDriverNetwork()} />
+  const context = await getCockpitContext("driver")
+
+  return (
+    <DriverToday
+      account={shellAccountFor(context)}
+      availability={getDriverAvailability(context.actor.driverProfileId)}
+      network={context.network}
+    />
+  )
 }

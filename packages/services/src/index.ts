@@ -14,6 +14,7 @@ import {
   reviewVerificationRecord
 } from "./admin"
 import { assignDriverToSlot, cancelAssignment, requestAssignment } from "./assignments"
+import { applyBillingUpdate, findEntitlementByStripeSubscription } from "./billing"
 import {
   addEquipmentCombination,
   assignDriverToEquipment,
@@ -54,6 +55,8 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     DEFAULT_ACTOR_USER_ID,
     DEFAULT_ORGANIZATION_ID,
     addEquipmentCombination: (input: unknown) => addEquipmentCombination(state, input),
+    applyBillingUpdate: (input: unknown) => applyBillingUpdate(state, input),
+    findEntitlementByStripeSubscription: (stripeSubscriptionId: string) => findEntitlementByStripeSubscription(state, stripeSubscriptionId),
     assignDriverToEquipment: (input: unknown) => assignDriverToEquipment(state, input),
     createAccount: (input: unknown) => createAccount(state, input),
     createThread: (input: unknown) => createThread(state, input),

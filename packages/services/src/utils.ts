@@ -1,6 +1,6 @@
-import { type LogLoadsDatabaseState, createInMemoryDatabase } from "@logloads/db"
+import { randomUUID } from "node:crypto"
 
-let sequence = 6000
+import { type LogLoadsDatabaseState, createInMemoryDatabase } from "@logloads/db"
 
 export function createServiceState(seed?: LogLoadsDatabaseState): LogLoadsDatabaseState {
   return createInMemoryDatabase(seed)
@@ -11,9 +11,7 @@ export function nowIso(): string {
 }
 
 export function createUuid(): string {
-  sequence += 1
-  const suffix = sequence.toString(16).padStart(12, "0")
-  return `00000000-0000-4000-8000-${suffix}`
+  return randomUUID()
 }
 
 export function assertFound<T>(value: T | undefined, message: string): T {

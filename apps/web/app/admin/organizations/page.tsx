@@ -1,8 +1,10 @@
-import { AdminSectionPage } from "@/components/v3"
-import { getAdminSummary } from "@/lib/v3"
+import { AdminOrganizationsPage } from "@/components/v3"
+import { getAdminOrganizations, getAdminShellAccount } from "@/lib/admin-data"
 
 export const dynamic = "force-dynamic"
 
 export default async function Page() {
-  return <AdminSectionPage summary={await getAdminSummary()} title="Organizations" />
+  const [account, organizations] = await Promise.all([getAdminShellAccount(), getAdminOrganizations()])
+
+  return <AdminOrganizationsPage account={account} organizations={organizations} />
 }

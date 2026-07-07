@@ -1,58 +1,30 @@
 "use client"
 
+import dynamic from "next/dynamic"
 import Link from "next/link"
-import { useMemo, useState, type CSSProperties } from "react"
+import { useMemo, useState } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
 import type { NetworkLoadView } from "@/lib/network"
-import { fitLabel, fitTone, formatHuman, loadProductLabel, publicLoadHref, shortLane, visibilityLabel } from "@/lib/v3-shared"
+import { fitLabel, fitTone, formatDateTime, formatHuman, loadProductLabel, publicLoadHref, shortLane, visibilityLabel } from "@/lib/v3-shared"
 import { EmptyState, SectionHeader } from "./Shells"
 
-function coordinateBounds(loads: NetworkLoadView[]) {
-  const points = loads.flatMap((load) => [load.landing, load.destination])
-  const lats = points.map((point) => point.lat)
-  const lngs = points.map((point) => point.lng)
-
-  return {
-    maxLat: Math.max(...lats),
-    maxLng: Math.max(...lngs),
-    minLat: Math.min(...lats),
-    minLng: Math.min(...lngs)
-  }
-}
-
-function pointStyle(point: { lat: number; lng: number }, bounds: ReturnType<typeof coordinateBounds>): CSSProperties {
-  const latRange = bounds.maxLat - bounds.minLat || 1
-  const lngRange = bounds.maxLng - bounds.minLng || 1
-  const x = 9 + ((point.lng - bounds.minLng) / lngRange) * 82
-  const y = 12 + (1 - (point.lat - bounds.minLat) / latRange) * 76
-
-  return { left: `${x}%`, top: `${y}%` }
-}
-
-function routeStyle(load: NetworkLoadView, bounds: ReturnType<typeof coordinateBounds>): CSSProperties {
-  const start = pointStyle(load.landing, bounds)
-  const end = pointStyle(load.destination, bounds)
-  const startX = Number(String(start.left).replace("%", ""))
-  const startY = Number(String(start.top).replace("%", ""))
-  const endX = Number(String(end.left).replace("%", ""))
-  const endY = Number(String(end.top).replace("%", ""))
-  const dx = endX - startX
-  const dy = endY - startY
-  const width = Math.sqrt(dx * dx + dy * dy)
-  const angle = Math.atan2(dy, dx) * (180 / Math.PI)
-
-  return { left: `${startX}%`, top: `${startY}%`, transform: `rotate(${angle}deg)`, width: `${width}%` }
-}
+const RealMap = dynamic(() => import("./RealMap"), {
+  loading: () => <div className="map-loading" role="status">Loading map…</div>,
+  ssr: false
+})
 
 export function LoadCard({ href, load }: { href?: string; load: NetworkLoadView }) {
   const content = (
     <>
       <span className="card-kicker">{loadProductLabel(load)}</span>
       <strong>{load.title}</strong>
-      <span className="lane-line"><Icon aria-hidden name="load.origin" size={16} /> {load.landing.city} to {load.destination.name}</span>
+      <span className="lane-line">
+        <Icon aria-hidden name="load.origin" size={16} /> {load.landing.city} to {load.destination.name}
+        {load.landing.approximate ? <em className="lane-approx">approx. area</em> : null}
+      </span>
       <span className="load-meta">{load.scheduleLabel} · {load.payLabel}</span>
-      <span className="load-meta">{load.capacity.remaining} of {load.capacity.total} loads open</span>
+      <span className="load-meta">{load.capacity.remaining} of {load.capacity.total} loads open · {load.route.distanceMiles.toFixed(0)} mi haul</span>
       <span className="card-footer"><Badge tone={fitTone(load)}>{fitLabel(load)}</Badge><span>{visibilityLabel(load)}</span></span>
     </>
   )
@@ -64,36 +36,57 @@ export function LoadCard({ href, load }: { href?: string; load: NetworkLoadView 
   return <Link className="load-card-v3" href={href}>{content}</Link>
 }
 
-export function OperatingMap({ loads, selectedLoadId, variant = "app" }: { loads: NetworkLoadView[]; selectedLoadId?: string; variant?: "app" | "public" }) {
-  const firstLoad = loads[0]
+export function OperatingMap({ loads, onSelect, selectedLoadId, variant = "app" }: {
+  loads: NetworkLoadView[]
+  onSelect?: (loadId: string) => void
+  selectedLoadId?: string
+  variant?: "app" | "public"
+}) {
+  const [internalSelectedId, setInternalSelectedId] = useState<string | undefined>(selectedLoadId)
+  const activeId = onSelect ? selectedLoadId : internalSelectedId
+  const selected = loads.find((load) => load.id === activeId) ?? loads[0]
 
-  if (!firstLoad) {
-    return <EmptyState title="No map results." body="There are no loads in this area yet." />
+  if (!selected) {
+    return (
+      <EmptyState
+        actionHref={variant === "public" ? "/loads" : "/driver/loads"}
+        actionLabel={variant === "public" ? "Browse current loads" : "Find loads"}
+        title="No loads on the map right now."
+        body="Landings appear here as hosts publish work. Public loads show approximate areas; exact access unlocks after assignment."
+      />
+    )
   }
 
-  const bounds = coordinateBounds(loads)
-  const selected = loads.find((load) => load.id === selectedLoadId) ?? firstLoad
+  const handleSelect = (loadId: string) => {
+    if (onSelect) {
+      onSelect(loadId)
+    } else {
+      setInternalSelectedId(loadId)
+    }
+  }
+
+  const detailHref = variant === "public" ? publicLoadHref(selected) : `/driver/loads/${selected.id}`
 
   return (
-    <section className={`operating-map operating-map--${variant}`} aria-label="Operating map">
-      <div className="map-surface">
-        <div className="map-terrain" aria-hidden="true" />
-        {loads.map((load) => <span className="route-segment" key={`route-${load.id}`} style={routeStyle(load, bounds)} />)}
-        {loads.map((load) => (
-          <span className={`domain-pin domain-pin--landing ${load.id === selected.id ? "is-selected" : ""}`} key={`landing-${load.id}`} style={pointStyle(load.landing, bounds)}>
-            <Icon aria-hidden name="map.landing" size={18} />
-          </span>
-        ))}
-        {loads.map((load) => (
-          <span className="domain-pin domain-pin--destination" key={`destination-${load.id}`} style={pointStyle(load.destination, bounds)}>
-            <Icon aria-hidden name="map.destination" size={16} />
-          </span>
-        ))}
-        <div className="map-card">
-          <span>{selected.landing.city}, {selected.landing.state}</span>
+    <section aria-label="Operating map" className={`operating-map operating-map--${variant}`}>
+      <div className="map-surface map-surface--real">
+        <RealMap loads={loads} onSelect={handleSelect} selectedLoadId={selected.id} />
+        <aside aria-label="Selected load" className="map-selected-sheet">
+          <div className="map-selected-head">
+            <span className="card-kicker">{loadProductLabel(selected)}</span>
+            <Badge tone={fitTone(selected)}>{fitLabel(selected)}</Badge>
+          </div>
           <strong>{shortLane(selected)}</strong>
-          <p>{selected.route.distanceMiles.toFixed(0)} mi · {selected.route.runTimeMinutes} min planned</p>
-        </div>
+          <p className="map-selected-meta">{selected.route.distanceMiles.toFixed(0)} mi · {selected.route.runTimeMinutes} min planned · {selected.payLabel}</p>
+          <p className="map-selected-meta">{selected.scheduleLabel} · {selected.capacity.remaining} of {selected.capacity.total} loads open</p>
+          {selected.landing.approximate ? (
+            <p className="map-selected-note"><Icon aria-hidden name="map.landing" size={14} /> Approximate area — exact access unlocks after assignment.</p>
+          ) : null}
+          <div className="map-selected-actions">
+            <Link className="action-link" href={detailHref}>View load</Link>
+            <span className="map-selected-visibility">{visibilityLabel(selected)}</span>
+          </div>
+        </aside>
       </div>
     </section>
   )
@@ -103,6 +96,7 @@ export function LoadDiscovery({ loads, publicMode = false }: { loads: NetworkLoa
   const [query, setQuery] = useState("")
   const [fit, setFit] = useState("all")
   const [view, setView] = useState<"list" | "map">("list")
+  const [selectedLoadId, setSelectedLoadId] = useState<string | undefined>(undefined)
   const filteredLoads = useMemo(() => {
     const normalized = query.trim().toLowerCase()
 
@@ -114,6 +108,10 @@ export function LoadDiscovery({ loads, publicMode = false }: { loads: NetworkLoa
       return matchesQuery && matchesFit
     })
   }, [fit, loads, query])
+
+  const activeSelectedId = filteredLoads.some((load) => load.id === selectedLoadId)
+    ? selectedLoadId
+    : filteredLoads[0]?.id
 
   return (
     <section className="discovery-v3" aria-label="Load discovery">
@@ -137,7 +135,25 @@ export function LoadDiscovery({ loads, publicMode = false }: { loads: NetworkLoa
       {filteredLoads.length === 0 ? (
         <EmptyState title="No current loads fit this setup." body="Try a different search, change equipment, or expand your operating area." actionHref={publicMode ? "/sign-up" : "/driver/equipment"} actionLabel={publicMode ? "Create account" : "Change equipment"} />
       ) : view === "map" ? (
-        <OperatingMap loads={filteredLoads} selectedLoadId={filteredLoads[0]?.id} variant={publicMode ? "public" : "app"} />
+        <div className="discovery-map-split">
+          <OperatingMap loads={filteredLoads} onSelect={setSelectedLoadId} selectedLoadId={activeSelectedId} variant={publicMode ? "public" : "app"} />
+          <aside aria-label="Loads shown on map" className="discovery-map-list">
+            {filteredLoads.map((load) => (
+              <button
+                aria-pressed={load.id === activeSelectedId}
+                className={`discovery-map-item${load.id === activeSelectedId ? " is-active" : ""}`}
+                key={load.id}
+                onClick={() => setSelectedLoadId(load.id)}
+                type="button"
+              >
+                <span className="card-kicker">{loadProductLabel(load)}</span>
+                <strong>{shortLane(load)}</strong>
+                <span className="load-meta">{load.scheduleLabel} · {load.payLabel}</span>
+                <Badge tone={fitTone(load)}>{fitLabel(load)}</Badge>
+              </button>
+            ))}
+          </aside>
+        </div>
       ) : (
         <div className="load-list-v3">
           {filteredLoads.map((load) => <LoadCard href={publicMode ? publicLoadHref(load) : `/driver/loads/${load.id}`} key={load.id} load={load} />)}
@@ -148,22 +164,48 @@ export function LoadDiscovery({ loads, publicMode = false }: { loads: NetworkLoa
 }
 
 export function DecisionPanel({ load, publicMode = false }: { load: NetworkLoadView; publicMode?: boolean }) {
-  const positives = load.compatibility?.positives.slice(0, 3) ?? []
-  const cautions = [...(load.compatibility?.cautions ?? []), ...load.warnings].slice(0, 3)
+  if (!load.compatibility) {
+    return (
+      <section className="decision-panel decision-panel--setup">
+        <div>
+          <Badge tone="info">{fitLabel(load)}</Badge>
+          <h2>{publicMode ? "Fit is personal to your truck." : "Add your equipment to see fit for this load."}</h2>
+        </div>
+        <p className="decision-setup-body">
+          {publicMode
+            ? "Fit compares a load's equipment, access, and payload needs against your active truck and trailer. Create a free account and add your setup to see whether this haul works for you."
+            : "Fit compares this load's equipment, access, and payload needs against your active truck and trailer. Add your setup once and every load shows where it fits."}
+        </p>
+        <Link className="action-link action-link--secondary" href={publicMode ? "/sign-up" : "/driver/equipment"}>
+          {publicMode ? "Create account" : "Add equipment"}
+        </Link>
+      </section>
+    )
+  }
+
+  const positives = load.compatibility.positives.slice(0, 3)
+  const cautions = [...load.compatibility.failures, ...load.compatibility.cautions, ...load.warnings].slice(0, 4)
+  const heading = publicMode
+    ? "What drivers can see now"
+    : load.compatibility.eligibility === "ineligible"
+      ? "Why this doesn't fit your setup"
+      : load.compatibility.eligibility === "strong_match"
+        ? "Why this fits"
+        : "What to review before requesting"
 
   return (
     <section className="decision-panel">
       <div>
         <Badge tone={fitTone(load)}>{fitLabel(load)}</Badge>
-        <h2>{publicMode ? "What drivers can see now" : "Why this fits"}</h2>
+        <h2>{heading}</h2>
       </div>
       <div className="fit-columns">
         <div>
           <h3>Ready</h3>
-          <ul>{(positives.length > 0 ? positives : ["Load is open for requests", "Equipment can be reviewed before committing"]).map((item) => <li key={item}>{item}</li>)}</ul>
+          <ul>{(positives.length > 0 ? positives : ["Load is open for requests"]).map((item) => <li key={item}>{item}</li>)}</ul>
         </div>
         <div>
-          <h3>Review before requesting</h3>
+          <h3>{load.compatibility.failures.length > 0 ? "Blocking issues" : "Review before requesting"}</h3>
           <ul>{(cautions.length > 0 ? cautions : ["Exact access unlocks after assignment"]).map((item) => <li key={item}>{item}</li>)}</ul>
         </div>
       </div>
@@ -171,16 +213,113 @@ export function DecisionPanel({ load, publicMode = false }: { load: NetworkLoadV
   )
 }
 
+function instructionTone(severity: string): "info" | "neutral" | "critical" {
+  if (severity === "critical") {
+    return "critical"
+  }
+
+  if (severity === "standard") {
+    return "info"
+  }
+
+  return "neutral"
+}
+
+function instructionSeverityLabel(severity: string): string {
+  if (severity === "critical") {
+    return "Critical"
+  }
+
+  if (severity === "standard") {
+    return "Standard"
+  }
+
+  if (severity === "optional") {
+    return "Good to know"
+  }
+
+  return formatHuman(severity)
+}
+
 export function RoutePackPreview({ load, locked = false }: { load: NetworkLoadView; locked?: boolean }) {
+  const isLocked = locked || !load.access.unlocked
+
+  if (isLocked) {
+    return (
+      <section className="route-pack-preview route-pack-preview--locked">
+        <SectionHeader eyebrow="Route Pack" title="Route Pack unlocks after assignment." />
+        <p className="route-pack-lede">
+          When the host assigns this load to you, the full operational briefing opens for this move
+          {load.landingDetails ? ` near ${load.landingDetails.publicApproximateArea}` : ""}. It includes:
+        </p>
+        <ul className="route-pack-includes">
+          <li><Icon aria-hidden name="map.landing" size={18} /><span>Exact landing location, gate instructions, and private road notes</span></li>
+          <li><Icon aria-hidden name="map.route" size={18} /><span>Calculated route with current road conditions and local cautions</span></li>
+          <li><Icon aria-hidden name="map.destination" size={18} /><span>Destination check-in, scale process, and receiving hours</span></li>
+          <li><Icon aria-hidden name="action.save" size={18} /><span>Offline access for low-signal hauls when the host enables it</span></li>
+        </ul>
+      </section>
+    )
+  }
+
+  const pack = load.routePack
+
+  if (!pack) {
+    return (
+      <section className="route-pack-preview">
+        <SectionHeader eyebrow="Route Pack" title="No Route Pack published for this move yet." />
+        <p className="route-pack-lede">The host has not attached an operational briefing. Use the notes below and confirm access with the host before rolling.</p>
+        <div className="briefing-grid">
+          <article><h3>Landing</h3><p>{load.landingDetails?.privateRoadNotes ?? load.landing.accessNotes ?? "No landing access notes listed."}</p></article>
+          <article><h3>Route</h3><p>{load.route.localNotes}</p></article>
+          <article><h3>Destination</h3><p>{load.destinationFacility?.checkInProcess ?? load.destination.accessNotes ?? "No destination check-in notes listed."}</p></article>
+          <article><h3>Changes</h3><p>{load.warnings[0] ?? "No active change for this move."}</p></article>
+        </div>
+      </section>
+    )
+  }
+
   return (
     <section className="route-pack-preview">
-      <SectionHeader eyebrow="Route Pack" title={locked ? "Operational briefing unlocks after assignment." : "Operational briefing for this move."} />
+      <SectionHeader eyebrow="Route Pack" title="Operational briefing for this move." />
       <div className="briefing-grid">
-        <article><h3>Landing</h3><p>{locked ? "Exact access unlocks after assignment." : load.landingDetails?.privateRoadNotes ?? load.landing.accessNotes}</p></article>
-        <article><h3>Route</h3><p>{load.routePack?.calculatedRouteSummary ?? load.route.localNotes}</p></article>
-        <article><h3>Destination</h3><p>{load.destinationFacility?.checkInProcess ?? load.destination.accessNotes}</p></article>
-        <article><h3>Changes</h3><p>{load.warnings[0] ?? "No active change for this move."}</p></article>
+        <article>
+          <h3>Landing</h3>
+          <p>{load.landingDetails?.privateRoadNotes ?? load.landing.accessNotes ?? "No special landing access notes."}</p>
+          {load.landingDetails?.gateInstructions ? <p className="briefing-note">Gate: {load.landingDetails.gateInstructions}</p> : null}
+        </article>
+        <article>
+          <h3>Route</h3>
+          <p>{pack.calculatedRouteSummary}</p>
+          <p className="briefing-note">Road condition: {formatHuman(pack.currentRoadCondition)}</p>
+        </article>
+        <article>
+          <h3>Destination</h3>
+          <p>{load.destinationFacility?.checkInProcess ?? load.destination.accessNotes ?? "No check-in notes listed."}</p>
+          {load.destinationFacility ? <p className="briefing-note">Receiving: {load.destinationFacility.receivingHours}</p> : null}
+        </article>
+        <article>
+          <h3>Changes</h3>
+          <p>{load.warnings[0] ?? "No active change for this move."}</p>
+        </article>
       </div>
+      {pack.instructions.length > 0 ? (
+        <ul className="route-pack-instructions">
+          {pack.instructions.map((instruction) => (
+            <li key={`${instruction.title}-${instruction.detail}`}>
+              <Badge tone={instructionTone(instruction.severity)}>{instructionSeverityLabel(instruction.severity)}</Badge>
+              <div>
+                <strong>{instruction.title}</strong>
+                <p>{instruction.detail}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <p className="route-pack-footnote">
+        Verified {formatDateTime(pack.lastVerifiedAt)}
+        {pack.cacheableOffline ? " · Available offline once the trip starts" : ""}
+      </p>
     </section>
   )
 }
