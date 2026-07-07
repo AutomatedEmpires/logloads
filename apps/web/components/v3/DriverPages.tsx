@@ -181,22 +181,8 @@ export function DriverMap({ account, network }: DriverPageProps) {
           />
         </div>
       ) : (
-        <div className="map-layout">
+        <div className="map-layout map-layout--full">
           <OperatingMap loads={loads} selectedLoadId={selected.id} />
-          <aside className="map-sheet">
-            <p className="eyebrow">Selected load</p>
-            <h2>{selected.title}</h2>
-            <p>
-              {selected.landing.city}, {selected.landing.state} to {selected.destination.name} ·{" "}
-              {Math.round(selected.route.distanceMiles)} mi
-            </p>
-            <p className="muted">
-              {selected.access.unlocked
-                ? "Exact access is unlocked for this load."
-                : "Locations are approximate. Exact access unlocks after assignment."}
-            </p>
-            <Link className="action-link" href={`/driver/loads/${selected.id}`}>Open load</Link>
-          </aside>
         </div>
       )}
     </AppShell>

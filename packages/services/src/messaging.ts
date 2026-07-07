@@ -157,6 +157,50 @@ export function postMessage(state: LogLoadsDatabaseState, rawInput: unknown): Me
   return event
 }
 
+/**
+ * Unread message counts per thread for a user, derived from their undelivered
+ * message notifications (postMessage writes one per recipient).
+ */
+export function unreadThreadCounts(state: LogLoadsDatabaseState, userId: string): Record<string, number> {
+  const counts: Record<string, number> = {}
+
+  for (const notification of state.notifications) {
+    if (
+      notification.userId === userId &&
+      notification.type === "message_received" &&
+      !notification.readAt &&
+      notification.relatedEntityType === "message_thread" &&
+      notification.relatedEntityId
+    ) {
+      counts[notification.relatedEntityId] = (counts[notification.relatedEntityId] ?? 0) + 1
+    }
+  }
+
+  return counts
+}
+
+/** Marks the viewer's message notifications for a thread as read. */
+export function markThreadRead(state: LogLoadsDatabaseState, input: { threadId: string; userId: string }): number {
+  const now = new Date().toISOString()
+  let marked = 0
+
+  for (const notification of state.notifications) {
+    if (
+      notification.userId === input.userId &&
+      notification.type === "message_received" &&
+      !notification.readAt &&
+      notification.relatedEntityType === "message_thread" &&
+      notification.relatedEntityId === input.threadId
+    ) {
+      notification.readAt = now
+      notification.updatedAt = now
+      marked += 1
+    }
+  }
+
+  return marked
+}
+
 export function createThread(state: LogLoadsDatabaseState, rawInput: unknown): MessageThread {
   const input = createThreadInputSchema.parse(rawInput)
   const participantUserIds = Array.from(new Set([input.creatorUserId, ...input.participantUserIds]))

@@ -5,6 +5,9 @@ export default defineConfig({
   timeout: 60_000,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
+  // The app is a single-writer stateful server; concurrent workers mutate the
+  // same operating state and make journeys nondeterministic.
+  workers: 1,
   use: {
     baseURL: "http://127.0.0.1:3002",
     trace: "retain-on-failure"

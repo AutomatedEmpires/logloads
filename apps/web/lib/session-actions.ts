@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
+import { checkRateLimit, requestClientKey } from "./rate-limit"
 import { persistState, serializeError, services } from "./services"
 import {
   SESSION_COOKIE,
@@ -36,6 +37,17 @@ export async function signInWithEmail(_previous: AuthFormState, formData: FormDa
 
   if (!email) {
     return { error: "Enter the email address on your account." }
+  }
+
+  try {
+    // Per-identity limit catches guessing without punishing shared IPs (crew
+    // NAT, office wifi); the wider per-IP cap still stops bulk enumeration.
+    const clientKey = await requestClientKey()
+
+    checkRateLimit("sign-in", `${clientKey}:${email.toLowerCase()}`, 10, 60_000)
+    checkRateLimit("sign-in-ip", clientKey, 60, 60_000)
+  } catch (error) {
+    return { error: serializeError(error).error }
   }
 
   const profile = services.findProfileByEmail(email)
@@ -105,6 +117,12 @@ export async function completeOnboardingAction(
 
   if (existingActor) {
     redirect(homePathFor(existingActor))
+  }
+
+  try {
+    checkRateLimit("onboarding", await requestClientKey(), 5, 60 * 60_000)
+  } catch (error) {
+    return { error: serializeError(error).error }
   }
 
   let clerkUserId: string | null = null

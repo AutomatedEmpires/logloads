@@ -399,17 +399,21 @@ export async function sendMessageAction(input: { threadId: string; body: string 
   }
 }
 
+export interface StartThreadResult extends ActionResult {
+  threadId: string | null
+}
+
 export async function startThreadAction(input: {
   participantUserIds: string[]
   subject: string
   body: string
   loadPostingId?: string | null
   assignmentId?: string | null
-}): Promise<ActionResult> {
+}): Promise<StartThreadResult> {
   try {
     const actor = await requireActor()
 
-    services.createThread({
+    const thread = services.createThread({
       assignmentId: input.assignmentId ?? null,
       body: input.body,
       creatorUserId: actor.profile.id,
@@ -420,9 +424,9 @@ export async function startThreadAction(input: {
 
     commit(["/driver/messages", "/fleet/messages", "/host/messages"])
 
-    return OK
+    return { ...OK, threadId: thread.id }
   } catch (error) {
-    return failure(error)
+    return { ...failure(error), threadId: null }
   }
 }
 

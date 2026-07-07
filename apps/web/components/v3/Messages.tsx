@@ -34,6 +34,7 @@ export function MessagesPage({ account, data, network, role }: MessagesPageProps
   const threads = network.messages
   const selected = data.selectedThread
   const pane = selected || data.threadNotFound ? "thread" : "list"
+  const totalUnread = Object.values(data.unreadByThread).reduce((sum, count) => sum + count, 0)
 
   return (
     <AppShell account={account} kicker="Connected conversations" orgName={network.activeOrganization.name} role={role} title="Messages">
@@ -44,6 +45,9 @@ export function MessagesPage({ account, data, network, role }: MessagesPageProps
               <p className="eyebrow">Inbox</p>
               <strong>{threads.length === 1 ? "1 conversation" : `${threads.length} conversations`}</strong>
             </div>
+            {totalUnread > 0 ? (
+              <span aria-label={`${totalUnread} unread`} className="unread-pill">{totalUnread}</span>
+            ) : null}
           </header>
           <StartConversation counterparties={data.counterparties} emptyHint={NEW_MESSAGE_HINTS[role]} />
           {threads.length === 0 ? (
@@ -55,22 +59,30 @@ export function MessagesPage({ account, data, network, role }: MessagesPageProps
             />
           ) : (
             <ul className="messages-thread-list">
-              {threads.map((thread) => (
-                <li key={thread.id}>
-                  <Link
-                    aria-current={selected?.id === thread.id ? "true" : undefined}
-                    className={selected?.id === thread.id ? "thread-item is-active" : "thread-item"}
-                    href={`${basePath}?thread=${thread.id}`}
-                  >
-                    <span className="thread-item__top">
-                      <strong>{thread.subject}</strong>
-                      {thread.lastMessageAt ? <time dateTime={thread.lastMessageAt}>{formatDateTime(thread.lastMessageAt)}</time> : null}
-                    </span>
-                    <span className="thread-context">{thread.contextLabel}</span>
-                    <span className="thread-item__preview">{thread.lastMessage}</span>
-                  </Link>
-                </li>
-              ))}
+              {threads.map((thread) => {
+                const unread = data.unreadByThread[thread.id] ?? 0
+
+                return (
+                  <li key={thread.id}>
+                    <Link
+                      aria-current={selected?.id === thread.id ? "true" : undefined}
+                      className={`thread-item${selected?.id === thread.id ? " is-active" : ""}${unread > 0 ? " has-unread" : ""}`}
+                      href={`${basePath}?thread=${thread.id}`}
+                    >
+                      <span className="thread-item__top">
+                        <strong>{thread.subject}</strong>
+                        {unread > 0 ? (
+                          <span aria-label={`${unread} unread message${unread === 1 ? "" : "s"}`} className="unread-pill">{unread}</span>
+                        ) : thread.lastMessageAt ? (
+                          <time dateTime={thread.lastMessageAt}>{formatDateTime(thread.lastMessageAt)}</time>
+                        ) : null}
+                      </span>
+                      <span className="thread-context">{thread.contextLabel}</span>
+                      <span className="thread-item__preview">{thread.lastMessage}</span>
+                    </Link>
+                  </li>
+                )
+              })}
             </ul>
           )}
         </aside>

@@ -92,10 +92,12 @@ export interface PlanView {
   features: string[]
   limitLines: string[]
   actionLabel: string | null
+  actionKind: "checkout" | "portal" | null
 }
 
 interface PlanStatusView {
   actionLabel: string | null
+  actionKind: "checkout" | "portal" | null
   statusDetail: string | null
   statusLine: string
   statusTone: PlanTone
@@ -107,6 +109,7 @@ function planStatusView(status: Entitlement["status"], periodEndsAt: string | nu
   if (status === "trialing") {
     if (!endsAt) {
       return {
+        actionKind: "checkout",
         actionLabel: "Start subscription",
         statusDetail: "Start your subscription anytime to keep plan features without interruption.",
         statusLine: "Trial",
@@ -118,6 +121,7 @@ function planStatusView(status: Entitlement["status"], periodEndsAt: string | nu
 
     if (days > 0) {
       return {
+        actionKind: "checkout",
         actionLabel: "Start subscription",
         statusDetail: `Trial ends ${formatDay(endsAt)}. Start your subscription to keep plan features without interruption.`,
         statusLine: `Trial — ${days} day${days === 1 ? "" : "s"} left`,
@@ -126,6 +130,7 @@ function planStatusView(status: Entitlement["status"], periodEndsAt: string | nu
     }
 
     return {
+      actionKind: "checkout",
       actionLabel: "Start subscription",
       statusDetail: `Your trial ended ${formatDay(endsAt)}. Start your subscription to keep plan features.`,
       statusLine: "Trial ended",
@@ -135,7 +140,8 @@ function planStatusView(status: Entitlement["status"], periodEndsAt: string | nu
 
   if (status === "active") {
     return {
-      actionLabel: null,
+      actionKind: "portal",
+      actionLabel: "Manage billing",
       statusDetail: endsAt ? `Renews ${formatDay(endsAt)}.` : null,
       statusLine: "Active",
       statusTone: "success"
@@ -144,6 +150,7 @@ function planStatusView(status: Entitlement["status"], periodEndsAt: string | nu
 
   if (status === "past_due") {
     return {
+      actionKind: "portal",
       actionLabel: "Update payment",
       statusDetail: "The last payment did not go through. Update billing to keep plan features active.",
       statusLine: "Payment issue — update billing",
@@ -155,6 +162,7 @@ function planStatusView(status: Entitlement["status"], periodEndsAt: string | nu
     const stillCovered = endsAt !== null && daysUntil(endsAt) > 0
 
     return {
+      actionKind: "checkout",
       actionLabel: "Restart subscription",
       statusDetail: stillCovered && endsAt
         ? `Plan features stay available until ${formatDay(endsAt)}.`
@@ -165,6 +173,7 @@ function planStatusView(status: Entitlement["status"], periodEndsAt: string | nu
   }
 
   return {
+    actionKind: null,
     actionLabel: null,
     statusDetail: "This workspace has complimentary access. No billing is needed.",
     statusLine: "Included",
@@ -194,6 +203,7 @@ function toPlanView(entitlement: Entitlement): PlanView {
     : definition.defaultFeatures
 
   return {
+    actionKind: status.actionKind,
     actionLabel: status.actionLabel,
     features,
     id: entitlement.id,

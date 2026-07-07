@@ -20,7 +20,14 @@ import {
   assignDriverToEquipment,
   updateEquipmentStatus
 } from "./equipment"
-import { createThread, listThreadMessages, listThreadsForUser, postMessage } from "./messaging"
+import {
+  createThread,
+  listThreadMessages,
+  listThreadsForUser,
+  markThreadRead,
+  postMessage,
+  unreadThreadCounts
+} from "./messaging"
 import { listDriverAvailability, upsertAvailabilityWindow } from "./availability"
 import { createLoadPosting, getLoadById, listOpenLoads, updateLoadPosting } from "./loads"
 import { createNotification, listNotificationsForUser } from "./notifications"
@@ -66,6 +73,8 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     linkProfileToClerkUser: (userId: string, clerkUserId: string) => linkProfileToClerkUser(state, userId, clerkUserId),
     listThreadMessages: (threadId: string, viewerUserId: string) => listThreadMessages(state, threadId, viewerUserId),
     listThreadsForUser: (userId: string) => listThreadsForUser(state, userId),
+    markThreadRead: (input: { threadId: string; userId: string }) => markThreadRead(state, input),
+    unreadThreadCounts: (userId: string) => unreadThreadCounts(state, userId),
     listVerificationQueue: () => listVerificationQueue(state),
     postMessage: (input: unknown) => postMessage(state, input),
     resolveOperationalNotice: (input: { noticeId: string; reviewerUserId: string }) => resolveOperationalNotice(state, input),

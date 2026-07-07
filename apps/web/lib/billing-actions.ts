@@ -3,7 +3,7 @@
 import Stripe from "stripe"
 
 import type { PlanProduct } from "./plans"
-import { serializeError } from "./services"
+import { serializeError, services } from "./services"
 import { getSessionActor } from "./session"
 
 export interface CheckoutResult {
@@ -76,19 +76,28 @@ export async function startCheckoutAction(product: PlanProduct): Promise<Checkou
     const stripe = new Stripe(secretKey)
     const origin = process.env.NEXT_PUBLIC_APP_URL ?? "http://127.0.0.1:3002"
 
+    // Real Stripe price IDs (STRIPE_PRICE_FLEET / STRIPE_PRICE_HOST) take
+    // precedence; inline price_data is the bootstrap fallback so checkout works
+    // before prices are configured in the Stripe dashboard.
+    const configuredPriceId = product === "fleet_operations"
+      ? process.env.STRIPE_PRICE_FLEET
+      : process.env.STRIPE_PRICE_HOST
+
     const session = await stripe.checkout.sessions.create({
       cancel_url: `${origin}${pricing.returnPath}?checkout=cancelled`,
       client_reference_id: organization.id,
       line_items: [
-        {
-          price_data: {
-            currency: "usd",
-            product_data: { description: pricing.description, name: pricing.name },
-            recurring: { interval: "month" },
-            unit_amount: pricing.unitAmount
-          },
-          quantity: 1
-        }
+        configuredPriceId
+          ? { price: configuredPriceId, quantity: 1 }
+          : {
+              price_data: {
+                currency: "usd",
+                product_data: { description: pricing.description, name: pricing.name },
+                recurring: { interval: "month" },
+                unit_amount: pricing.unitAmount
+              },
+              quantity: 1
+            }
       ],
       metadata: { organizationId: organization.id, product },
       mode: "subscription",
@@ -98,6 +107,57 @@ export async function startCheckoutAction(product: PlanProduct): Promise<Checkou
     if (!session.url) {
       throw new Error("Checkout could not be started. Try again.")
     }
+
+    return { error: null, ok: true, url: session.url }
+  } catch (error) {
+    return { error: serializeError(error).error, ok: false, url: null }
+  }
+}
+
+/**
+ * Opens the Stripe billing portal for an organization with an established
+ * Stripe customer (update card, change plan, cancel). Falls back to the honest
+ * pending message when billing is not activated or no customer exists yet.
+ */
+export async function startBillingPortalAction(product: PlanProduct): Promise<CheckoutResult> {
+  try {
+    const actor = await getSessionActor()
+
+    if (!actor) {
+      throw new Error("Sign in to continue")
+    }
+
+    const organization = actor.activeOrganization
+
+    if (!organization) {
+      throw new Error("Finish onboarding before managing billing")
+    }
+
+    const secretKey = process.env.STRIPE_SECRET_KEY
+
+    if (!secretKey) {
+      return { error: BILLING_PENDING_MESSAGE, ok: false, url: null }
+    }
+
+    const entitlement = services.state.entitlements.find(
+      (candidate) => candidate.organizationId === organization.id && candidate.product === product
+    )
+
+    if (!entitlement?.stripeCustomerId) {
+      return {
+        error: "No billing profile exists for this workspace yet. Start a plan first and the billing portal unlocks after payment.",
+        ok: false,
+        url: null
+      }
+    }
+
+    const stripe = new Stripe(secretKey)
+    const origin = process.env.NEXT_PUBLIC_APP_URL ?? "http://127.0.0.1:3002"
+    const returnPath = CHECKOUT_PRICING[product]?.returnPath ?? "/"
+    const session = await stripe.billingPortal.sessions.create({
+      customer: entitlement.stripeCustomerId,
+      return_url: `${origin}${returnPath}`
+    })
 
     return { error: null, ok: true, url: session.url }
   } catch (error) {

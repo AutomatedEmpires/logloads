@@ -1,6 +1,13 @@
 import { join } from "node:path"
 
-import { createInMemoryDatabase, loadStateSnapshot, persistStateSnapshot, type LogLoadsDatabaseState } from "@logloads/db"
+import {
+  createInMemoryDatabase,
+  loadRemoteSnapshot,
+  loadStateSnapshot,
+  persistStateSnapshot,
+  remoteSnapshotConfig,
+  type LogLoadsDatabaseState
+} from "@logloads/db"
 import { createLogLoadsServices } from "@logloads/services"
 
 const SEED_ANCHOR = Date.UTC(2026, 5, 5)
@@ -54,13 +61,44 @@ const stateFilePath = process.env.LOGLOADS_STATE_FILE ?? join(process.cwd(), ".d
 // can instantiate this module twice and a runtime-provisioned account would be
 // visible to the action that created it but not to the page that renders next.
 type ServicesSingleton = ReturnType<typeof createLogLoadsServices>
-const globalStore = globalThis as typeof globalThis & { __logloadsServices?: ServicesSingleton }
+const globalStore = globalThis as typeof globalThis & {
+  __logloadsServices?: ServicesSingleton
+  __logloadsRemoteSync?: boolean
+}
+
+const bootDiskState = globalStore.__logloadsServices ? null : loadStateSnapshot(stateFilePath)
 
 export const services: ServicesSingleton =
   globalStore.__logloadsServices ??
   (globalStore.__logloadsServices = createLogLoadsServices(
-    loadStateSnapshot(stateFilePath) ?? shiftSeedDates(createInMemoryDatabase())
+    bootDiskState ?? shiftSeedDates(createInMemoryDatabase())
   ))
+
+// Remote snapshot mirror: every persistState() writes disk and (when Supabase
+// credentials exist) the mirror. On a fresh node with no disk snapshot, restore
+// from the mirror once at boot — the local disk remains the primary and is never
+// rolled back by the mirror. Single-writer deployment.
+const remote = remoteSnapshotConfig()
+
+if (remote && !bootDiskState && !globalStore.__logloadsRemoteSync) {
+  globalStore.__logloadsRemoteSync = true
+
+  void loadRemoteSnapshot(remote).then((remoteState) => {
+    if (!remoteState) {
+      return
+    }
+
+    const target = services.state as unknown as Record<string, unknown>
+
+    for (const [table, rows] of Object.entries(remoteState)) {
+      if (table in target) {
+        target[table] = rows
+      }
+    }
+
+    console.log("logloads: operating state restored from remote snapshot mirror")
+  })
+}
 
 /**
  * Durable single-node persistence: every successful mutation schedules a debounced

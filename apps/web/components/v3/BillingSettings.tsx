@@ -4,7 +4,7 @@ import Link from "next/link"
 import { useState, useTransition } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
-import { startCheckoutAction } from "@/lib/billing-actions"
+import { startBillingPortalAction, startCheckoutAction } from "@/lib/billing-actions"
 import type { BillingView, PlanProduct, SettingsView } from "@/lib/plans"
 import { AppShell, EmptyState, SectionHeader, type ShellAccount } from "./Shells"
 
@@ -15,7 +15,7 @@ export interface CheckoutNotice {
   tone: "success" | "info"
 }
 
-function PlanAction({ label, product }: { label: string; product: PlanProduct }) {
+function PlanAction({ kind, label, product }: { kind: "checkout" | "portal"; label: string; product: PlanProduct }) {
   const [pending, startTransition] = useTransition()
   const [notice, setNotice] = useState<string | null>(null)
 
@@ -26,19 +26,21 @@ function PlanAction({ label, product }: { label: string; product: PlanProduct })
         disabled={pending}
         onClick={() => {
           startTransition(async () => {
-            const result = await startCheckoutAction(product)
+            const result = kind === "portal"
+              ? await startBillingPortalAction(product)
+              : await startCheckoutAction(product)
 
             if (result.ok && result.url) {
               window.location.assign(result.url)
               return
             }
 
-            setNotice(result.error ?? "Checkout could not be started. Try again.")
+            setNotice(result.error ?? "Billing could not be opened. Try again.")
           })
         }}
         type="button"
       >
-        {pending ? "Opening checkout…" : label}
+        {pending ? "Opening billing…" : label}
       </button>
       {notice ? (
         <p className="plan-action__notice" role="status">
@@ -113,7 +115,7 @@ export function BillingPage({
                     </ul>
                     {plan.limitLines.length > 0 ? <p className="plan-card__limits">{plan.limitLines.join(" · ")}</p> : null}
                   </div>
-                  {plan.actionLabel ? <PlanAction label={plan.actionLabel} product={plan.product} /> : null}
+                  {plan.actionLabel && plan.actionKind ? <PlanAction kind={plan.actionKind} label={plan.actionLabel} product={plan.product} /> : null}
                 </article>
               ))}
             </section>

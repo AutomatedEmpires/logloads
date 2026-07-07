@@ -574,7 +574,10 @@ export function buildNetworkView(state: LogLoadsDatabaseState, viewer: NetworkVi
       status: load.status,
       title: load.title,
       tonsLabel: load.estimatedTonsPerLoad ? `${load.estimatedTonsPerLoad} tons expected` : "Weight pending",
-      viewerAssignment: viewerActiveAssignment && !ownsLoad
+      // The viewer's own commitment is reported even on own-org loads so the
+      // driver request panel shows "Assigned to you" instead of a request CTA
+      // the service would reject.
+      viewerAssignment: viewerActiveAssignment
         ? { id: viewerActiveAssignment.id, status: viewerActiveAssignment.status }
         : null,
       visibilityMode: capacity?.visibilityMode ?? "open_network",

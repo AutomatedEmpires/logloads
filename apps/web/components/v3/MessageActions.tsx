@@ -1,5 +1,6 @@
 "use client"
 
+import { usePathname, useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { Button, Icon } from "@logloads/ui"
 
@@ -81,6 +82,8 @@ interface StartConversationProps {
 }
 
 export function StartConversation({ counterparties, emptyHint }: StartConversationProps) {
+  const router = useRouter()
+  const pathname = usePathname()
   const [open, setOpen] = useState(false)
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [subject, setSubject] = useState("")
@@ -120,9 +123,14 @@ export function StartConversation({ counterparties, emptyHint }: StartConversati
       })
 
       if (result.ok) {
-        setConfirmation(`Message sent to ${selected.name}. The conversation is now in your list.`)
         reset()
         setOpen(false)
+
+        if (result.threadId) {
+          router.push(`${pathname}?thread=${result.threadId}`)
+        } else {
+          setConfirmation(`Message sent to ${selected.name}. The conversation is now in your list.`)
+        }
       } else {
         setError(result.error ?? "The conversation could not be started. Try again.")
       }

@@ -1,6 +1,6 @@
 import "server-only"
 
-import { services } from "./services"
+import { persistState, services } from "./services"
 import { requireCockpitActor, type SessionActor } from "./session"
 
 export type MessagesCockpit = "driver" | "fleet" | "host"
@@ -36,6 +36,7 @@ export interface MessagesData {
   selectedThread: SelectedThreadView | null
   threadNotFound: boolean
   counterparties: MessageCounterparty[]
+  unreadByThread: Record<string, number>
 }
 
 const ACTIVE_ASSIGNMENT_STATUSES = new Set(["requested", "offered", "accepted", "checked_in", "loading", "hauled"])
@@ -207,6 +208,10 @@ export async function getMessagesData(cockpit: MessagesCockpit, threadId: string
           participants: meta.participants,
           subject: meta.subject
         }
+
+        if (services.markThreadRead({ threadId: meta.id, userId: viewerUserId }) > 0) {
+          persistState()
+        }
       } catch {
         threadNotFound = true
       }
@@ -219,6 +224,7 @@ export async function getMessagesData(cockpit: MessagesCockpit, threadId: string
     counterparties: deriveCounterparties(actor, cockpit),
     selectedThread,
     threadNotFound,
+    unreadByThread: services.unreadThreadCounts(viewerUserId),
     viewerUserId
   }
 }
