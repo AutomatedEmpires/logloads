@@ -48,6 +48,10 @@ export function formatHuman(value: string): string {
   return value.replaceAll("_", " ")
 }
 
+export function pluralize(count: number, singular: string, plural?: string): string {
+  return `${count} ${count === 1 ? singular : plural ?? `${singular}s`}`
+}
+
 export function fitLabel(load: NetworkLoadView): string {
   if (!load.compatibility) {
     return "Add equipment to see fit"

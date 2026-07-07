@@ -7,7 +7,7 @@ import { Badge } from "@logloads/ui"
 import { submitContactInquiryAction, type ContactFormState } from "@/lib/contact-actions"
 import type { NetworkLoadView } from "@/lib/network"
 import type { PublicHomeSnapshot } from "@/lib/v3"
-import { legalPages, loadProductLabel, pricingPlans, type LegalPageContent, type PublicStoryPage, visibilityLabel } from "@/lib/v3-shared"
+import { legalPages, loadProductLabel, pluralize, pricingPlans, type LegalPageContent, type PublicStoryPage, visibilityLabel } from "@/lib/v3-shared"
 import { DevSignInForm, OnboardingFlow } from "./AuthForms"
 import { DecisionPanel, LoadCard, LoadDiscovery, OperatingMap, OperationSections, RoutePackPreview } from "./LoadMap"
 import { EmptyState, Metric, PageIntro, PublicShell, SectionHeader } from "./Shells"
@@ -39,8 +39,8 @@ export function PublicHome({ loads, snapshot }: { loads: NetworkLoadView[]; snap
           </div>
           <div className="hero-signal" aria-label="Live network sample">
             <span>Today</span>
-            <strong>{snapshot.openLoads} public loads</strong>
-            <p>{snapshot.trucksAvailable} trucks available across the network</p>
+            <strong>{pluralize(snapshot.openLoads, "public load")}</strong>
+            <p>{pluralize(snapshot.trucksAvailable, "truck")} available across the network</p>
           </div>
         </section>
         <section className="home-strip" aria-label="Current operating pulse">
