@@ -385,14 +385,16 @@ export function buildNetworkView(state: LogLoadsDatabaseState, viewer: NetworkVi
   )
 
   // --- Which loads can this viewer see ------------------------------------
-  const visibleLoadRecords = viewer.kind === "public"
+  // A signed-in actor without an active organization (e.g. a platform admin, or a
+  // user mid-onboarding) sees the public network rather than crashing.
+  const visibleLoadRecords = viewer.kind === "public" || !activeOrganization
     ? state.loadPostings.filter((load) => {
         const capacity = state.opportunityCapacities.find((item) => item.loadPostingId === load.id)
         const visibilityMode = capacity?.visibilityMode ?? "open_network"
 
         return ["open_network", "verified_network"].includes(visibilityMode) && ["open", "scheduled"].includes(load.status)
       })
-    : services.listVisibleLoadsForOrganization(requireRecord(activeOrganization, "organization context").id)
+    : services.listVisibleLoadsForOrganization(activeOrganization.id)
 
   const loadsWithScore = visibleLoadRecords.map((load) => {
     const source = requireRecord(state.companies.find((company) => company.id === load.companyId), `company ${load.companyId}`)

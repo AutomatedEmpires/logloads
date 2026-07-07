@@ -11,6 +11,11 @@ export default defineConfig({
   },
   webServer: {
     command: "pnpm exec next start -H 127.0.0.1 -p 3002",
+    env: {
+      LOGLOADS_ENABLE_DEV_LOGIN: "true",
+      LOGLOADS_SESSION_SECRET: "logloads-e2e-session-secret",
+      LOGLOADS_STATE_FILE: "/tmp/logloads-e2e-state.json"
+    },
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     url: "http://127.0.0.1:3002"

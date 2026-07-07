@@ -48,9 +48,19 @@ function shiftSeedDates(state: LogLoadsDatabaseState): LogLoadsDatabaseState {
 }
 
 const stateFilePath = process.env.LOGLOADS_STATE_FILE ?? join(process.cwd(), ".data", "logloads-state.json")
-const initialState = loadStateSnapshot(stateFilePath) ?? shiftSeedDates(createInMemoryDatabase())
 
-export const services = createLogLoadsServices(initialState)
+// Pin the services singleton to globalThis so the server-action bundle and the
+// page-render bundle share one in-memory operating state. Without this, Next.js
+// can instantiate this module twice and a runtime-provisioned account would be
+// visible to the action that created it but not to the page that renders next.
+type ServicesSingleton = ReturnType<typeof createLogLoadsServices>
+const globalStore = globalThis as typeof globalThis & { __logloadsServices?: ServicesSingleton }
+
+export const services: ServicesSingleton =
+  globalStore.__logloadsServices ??
+  (globalStore.__logloadsServices = createLogLoadsServices(
+    loadStateSnapshot(stateFilePath) ?? shiftSeedDates(createInMemoryDatabase())
+  ))
 
 /**
  * Durable single-node persistence: every successful mutation schedules a debounced
