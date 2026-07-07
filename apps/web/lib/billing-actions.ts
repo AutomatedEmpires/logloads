@@ -74,7 +74,7 @@ export async function startCheckoutAction(product: PlanProduct): Promise<Checkou
     }
 
     const stripe = new Stripe(secretKey)
-    const origin = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"
+    const origin = process.env.NEXT_PUBLIC_APP_URL ?? "http://127.0.0.1:3002"
 
     const session = await stripe.checkout.sessions.create({
       cancel_url: `${origin}${pricing.returnPath}?checkout=cancelled`,

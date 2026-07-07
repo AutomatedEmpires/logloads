@@ -77,7 +77,7 @@ export function PublicHome({ loads, snapshot }: { loads: NetworkLoadView[]; snap
         <section className="feature-band">
           <SectionHeader eyebrow="One product, three seats" title="Different work needs different screens." />
           <div className="feature-grid">
-            <article><h3>Drivers</h3><p>Today's trip, loads that fit, equipment, availability, messages, and proof — on a phone, at the landing.</p></article>
+            <article><h3>Drivers</h3><p>The current trip, loads that fit, equipment, availability, messages, and proof — on a phone, at the landing.</p></article>
             <article><h3>Fleets</h3><p>Which trucks are free, which work fits them, who is driving what, and where the exceptions are.</p></article>
             <article><h3>Hosts</h3><p>Publish work, control who sees it, and run the live board as trucks commit, arrive, load, and roll.</p></article>
           </div>

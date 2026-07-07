@@ -397,7 +397,12 @@ export async function getFleetOpportunityData(loadId: string): Promise<FleetOppo
       }]
     })
     .sort((left, right) => Number(right.eligible) - Number(left.eligible) || left.rank - right.rank)
-    .map(({ rank: _rank, ...option }) => option)
+    .map((option) => {
+      const { rank, ...rest } = option
+      void rank
+
+      return rest
+    })
 
   return { account: shellAccountFor(context), load, network, options }
 }
