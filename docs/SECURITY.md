@@ -1,0 +1,108 @@
+# LogLoads — Security Record
+
+Authoritative record of the database security posture. Verified against the live
+Supabase project `fdzohbiiyzgvjzfsjyxo` on 2026-07-08. The next agent should not
+have to rediscover any of this.
+
+## Status: SECURITY VERIFIED
+
+- 36 public tables · **35 RLS-enabled** · 1 documented PostGIS exception
+- `operating_state` (the only data-bearing table): **service-role only**
+- Anonymous read/write denied (proven from outside with the live anon key)
+- PII access denied · sensitive RPCs no longer anonymous · function search_paths pinned
+- Supabase security advisor: **zero application-table ERRORs**
+
+## How the RLS discrepancy arose (reconciled, proven)
+
+Two earlier reports appeared to conflict; both were true subsets of the same reality:
+
+- The **foundation migration** (`20260604190000_backend_foundation.sql`) predated the
+  RLS design and created 19 tables with **no RLS**.
+- **Phase 2** (`20260706090000_operating_network_phase2.sql`) enabled RLS on 21 tables
+  but only **5 of the foundation tables** (profiles, companies, load_postings,
+  truck_slots, assignments), leaving **14 foundation tables uncovered**.
+- Report A ("~21 protected") = the phase-2 set. Report B ("15 disabled") = the 14
+  uncovered tables + PostGIS `spatial_ref_sys`.
+- **Not a regression, not stale, not an unapplied migration — an original coverage gap.**
+
+## The real exposure that was found and closed (was CRITICAL)
+
+`public.operating_state` — the durability mirror holding a full-state JSON blob with
+all PII — had a policy (`operating_state_rw`) granting **anon** full read/write. The
+publishable anon key could have exfiltrated or overwritten the entire operating state.
+
+Fixed in `20260707050000_security_rls_coverage.sql`: permissive policy dropped, anon
+and authenticated grants revoked. The table is now RLS-enabled with **no policy**, so
+PostgREST denies everyone except the service role (which bypasses RLS). The app mirror
+was changed to require `SUPABASE_SERVICE_ROLE_KEY` (`packages/db/src/snapshot.ts`).
+
+Empirically verified from outside with the live anon key:
+- `GET /rest/v1/operating_state` → `permission denied for table operating_state`
+- `POST /rest/v1/operating_state` → `permission denied`
+- `GET /rest/v1/driver_profiles` (PII) → `permission denied`
+- `POST /rest/v1/rpc/request_capacity` → not callable; `is_org_member` → `permission denied`
+
+## 36-table inventory
+
+**RLS-enabled with policies (21 application tables):** assignments, companies,
+destination_facilities, direct_offers, entitlements, equipment_combinations,
+future_availability, load_postings, operational_notices, opportunity_capacities,
+organization_invitations, organization_memberships, private_network_relationships,
+profiles, rich_landing_details, route_packs, trip_documents, trip_events, trips,
+truck_slots, verification_records.
+
+**RLS-enabled with policies (added 2026-07-08, migration `20260707050000`, 14 tables):**
+driver_profiles, dispatcher_profiles, loader_profiles, truck_profiles,
+trailer_profiles, landings, mills, haul_routes, rates, availability_windows,
+notifications, message_threads, message_events, audit_events.
+
+**RLS-enabled, NO policy (deny-all but service role) — intentional:** operating_state.
+
+**RLS exempt (1):** `spatial_ref_sys` — PostGIS system table, extension-owned, cannot
+take RLS. Contains only public coordinate-reference definitions (SRIDs); no app data
+or PII. This is the single accepted `rls_disabled_in_public` advisor ERROR.
+
+## Policy design principles
+
+- SELECT policies are member/owner-scoped via the `current_profile_id()` and
+  `is_org_member()` SECURITY DEFINER helpers.
+- Writes are NOT granted to anon/authenticated on these tables; they flow through the
+  service role (server-side) or SECURITY DEFINER RPCs. This matches the phase-2 pattern.
+- `mills` and `destination_facilities` are intentionally public-readable (shared
+  destination reference data).
+
+## Function / RPC execution restrictions
+
+- Internal RLS helpers (`current_profile_id`, `current_clerk_user_id`, `is_org_member`,
+  `org_role_can`, `load_visible_to_org`, `orgs_have_active_relationship`): EXECUTE
+  revoked from PUBLIC; granted to `authenticated` (required for RLS evaluation under a
+  Clerk JWT) and `service_role`. **anon cannot execute them.**
+- `request_capacity` (mutating RPC): EXECUTE revoked from PUBLIC; granted to
+  `service_role` only. Not callable by anon or authenticated over REST.
+- `set_updated_at` and `current_clerk_user_id`: `search_path` pinned (was mutable).
+
+## Accepted advisor exceptions (documented, not defects)
+
+| Advisor finding | Level | Why accepted |
+|---|---|---|
+| `spatial_ref_sys` RLS disabled | ERROR | PostGIS extension-owned system table; public SRID reference data only; cannot enable RLS |
+| `postgis` extension in `public` schema | WARN | Moving it risks breaking geography columns; not a data-exposure vector |
+| `st_estimatedextent(...)` executable by anon/authenticated | WARN | PostGIS extension functions (geometry-extent estimators); extension-owned, not revocable |
+| `current_profile_id`/`is_org_member`/etc. executable by `authenticated` | WARN | REQUIRED — RLS policies cannot evaluate without it |
+| `operating_state` RLS enabled, no policy | INFO | Intentional deny-all-but-service-role |
+
+## Future note (when Postgres becomes the canonical read path)
+
+RLS tables currently fail-closed for anon (`permission denied for function
+current_profile_id`). Correct today: the Next server serves all data via the service
+role / in-memory engine; anon never queries PostgREST. If open-network loads are ever
+served directly to anon via PostgREST, revisit those specific policies/grants.
+
+## Repo ↔ live ledger reconciliation
+
+The live project was bootstrapped and secured via the Supabase MCP `apply_migration`,
+which timestamps ledger entries at apply time. The repo `supabase/migrations/*.sql`
+files are the **idempotent source of truth** (CREATE IF NOT EXISTS / DROP POLICY IF
+EXISTS / CREATE OR REPLACE / enable-RLS-is-a-no-op-if-enabled). A fresh environment
+applies them in filename order; re-applying against the live project is safe. See
+`docs/DEPLOYMENT.md` for the migration order.

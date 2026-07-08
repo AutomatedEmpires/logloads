@@ -397,6 +397,8 @@ export async function sendMessageAction(input: { threadId: string; body: string 
       threadId: input.threadId
     })
 
+    // Event only — never the message body (PII/content stays out of analytics).
+    captureServerEvent("message_sent", actor.profile.id, { threadId: input.threadId })
     commit(["/driver/messages", "/fleet/messages", "/host/messages"])
 
     return OK

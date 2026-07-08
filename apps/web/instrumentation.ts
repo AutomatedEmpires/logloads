@@ -11,7 +11,10 @@ export async function register() {
     Sentry.init({
       dsn: process.env.SENTRY_DSN,
       environment: process.env.NODE_ENV,
-      tracesSampleRate: 0.1
+      tracesSampleRate: 0.1,
+      // Do not attach IPs, cookies, headers, or request bodies (which can carry
+      // the session cookie or form input). Keeps PII and secrets out of events.
+      sendDefaultPii: false
     })
   }
 }
