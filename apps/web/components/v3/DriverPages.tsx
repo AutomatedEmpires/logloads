@@ -5,8 +5,10 @@ import { Badge, Icon } from "@logloads/ui"
 
 import type { DriverAvailabilitySummary } from "@/lib/driver-data"
 import type { NetworkLoadView, NetworkView } from "@/lib/network"
+import type { VerificationRecordView } from "@/lib/verification-data"
 import { formatDateTime, formatHuman, tripStatusLabel } from "@/lib/v3-shared"
 import { RelationshipGrid } from "./Common"
+import { VerificationSubmit, type VerificationTypeOption } from "./VerificationSubmit"
 import {
   AddEquipmentForm,
   AvailabilityQuickSet,
@@ -383,7 +385,17 @@ export function DriverNetwork({ account, network }: DriverPageProps) {
   )
 }
 
-export function DriverProfile({ account, availability, network }: DriverPageProps & { availability: DriverAvailabilitySummary }) {
+const DRIVER_VERIFICATION_OPTIONS: VerificationTypeOption[] = [
+  { value: "identity", label: "Identity", hint: "A driver's license or government ID number a reviewer can confirm." },
+  { value: "contact", label: "Contact details", hint: "A phone number or email we can reach you at for dispatch." }
+]
+
+export function DriverProfile({
+  account,
+  availability,
+  network,
+  verifications
+}: DriverPageProps & { availability: DriverAvailabilitySummary; verifications: VerificationRecordView[] }) {
   const verification = verificationBadge(network.activeOrganization.verificationStatus)
 
   return (
@@ -431,6 +443,10 @@ export function DriverProfile({ account, availability, network }: DriverPageProp
             ))}
           </ul>
         ) : null}
+      </section>
+      <section className="app-section">
+        <SectionHeader eyebrow="Trust" title="Get verified" />
+        <VerificationSubmit options={DRIVER_VERIFICATION_OPTIONS} records={verifications} subjectType="person" />
       </section>
       <section className="app-section">
         <SectionHeader eyebrow="Account" title="Shortcuts" />

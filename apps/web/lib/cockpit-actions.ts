@@ -466,6 +466,41 @@ export async function markAllNotificationsReadAction(): Promise<ActionResult> {
   }
 }
 
+// --- Verification (self-service) -------------------------------------------------
+
+export async function submitVerificationAction(input: {
+  subjectType: "person" | "organization"
+  verificationType: string
+  evidenceSummary: string
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+    // Coerce to exactly the two supported subjects at the boundary — a crafted
+    // request can't create a mislabeled record. Subject is always the actor or
+    // their own org, derived from the session, never on behalf of someone else.
+    const subjectType = input.subjectType === "organization" ? "organization" : "person"
+    const subjectId = subjectType === "person" ? actor.profile.id : actorOrganizationId(actor)
+
+    services.submitVerificationRecord({
+      evidenceSummary: input.evidenceSummary,
+      subjectId,
+      subjectType,
+      submittedByUserId: actor.profile.id,
+      verificationType: input.verificationType
+    })
+
+    captureServerEvent("verification_submitted", actor.profile.id, {
+      subjectType: input.subjectType,
+      verificationType: input.verificationType
+    })
+    commit(["/driver", "/fleet", "/host", "/admin"])
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
 // --- Admin -----------------------------------------------------------------------
 
 async function requireAdmin(): Promise<SessionActor> {

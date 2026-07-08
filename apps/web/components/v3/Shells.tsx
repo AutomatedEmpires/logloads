@@ -94,12 +94,14 @@ const desktopMoreByRole: Record<ShellProps["role"], Array<{ href: string; icon: 
   driver: [
     { href: "/driver/map", icon: "nav.map", label: "Map" },
     { href: "/driver/equipment", icon: "load.equipment", label: "Equipment" },
+    { href: "/driver/assistant", icon: "action.search", label: "Assistant" },
     { href: "/driver/network", icon: "map.network", label: "Network" }
   ],
   fleet: [
     { href: "/fleet/drivers", icon: "nav.fleet", label: "Drivers" },
     { href: "/fleet/availability", icon: "load.schedule", label: "Availability" },
     { href: "/fleet/opportunities", icon: "nav.loads", label: "Opportunities" },
+    { href: "/fleet/assistant", icon: "action.search", label: "Assistant" },
     { href: "/fleet/network", icon: "map.network", label: "Network" },
     { href: "/fleet/billing", icon: "load.pay", label: "Billing" },
     { href: "/fleet/settings", icon: "truck.service", label: "Settings" }
@@ -107,6 +109,7 @@ const desktopMoreByRole: Record<ShellProps["role"], Array<{ href: string; icon: 
   host: [
     { href: "/host/landings", icon: "map.landing", label: "Landings" },
     { href: "/host/schedule", icon: "load.schedule", label: "Schedule" },
+    { href: "/host/assistant", icon: "action.search", label: "Assistant" },
     { href: "/host/analytics", icon: "ops.queue", label: "Analytics" },
     { href: "/host/billing", icon: "load.pay", label: "Billing" },
     { href: "/host/settings", icon: "truck.service", label: "Settings" }

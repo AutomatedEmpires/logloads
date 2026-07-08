@@ -58,6 +58,7 @@ import {
 import { getRouteById, listRoutes } from "./routes"
 import { createTruckSlot, listTruckSlotsForDate } from "./truck-slots"
 import { createServiceState } from "./utils"
+import { submitVerificationRecord } from "./verification"
 
 export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
   const state = createServiceState(seed)
@@ -85,6 +86,7 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     resolveOperationalNotice: (input: { noticeId: string; reviewerUserId: string }) => resolveOperationalNotice(state, input),
     reviewOrganization: (input: unknown) => reviewOrganization(state, input),
     reviewVerificationRecord: (input: unknown) => reviewVerificationRecord(state, input),
+    submitVerificationRecord: (input: unknown) => submitVerificationRecord(state, input),
     updateEquipmentStatus: (input: unknown) => updateEquipmentStatus(state, input),
     approveCapacityRequest: (input: Parameters<typeof approveCapacityRequest>[1]) => approveCapacityRequest(state, input),
     assignDriverToSlot: (assignmentId: string) => assignDriverToSlot(state, assignmentId),

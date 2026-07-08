@@ -402,6 +402,47 @@ a { color: inherit; text-decoration: none; }
 .notif-item__text { color: var(--ink-soft); font-size: 0.85rem; line-height: 1.35; }
 .notif-item__time { color: var(--muted); font-size: 0.76rem; font-weight: 700; }
 
+/* --- Verification self-service --------------------------------------------- */
+.verify-panel { display: grid; gap: 16px; }
+.verify-records { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.verify-record {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 12px 14px;
+}
+.verify-record__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.verify-record__head strong { font-size: 0.98rem; }
+.verify-record__evidence { margin: 0; color: var(--ink-soft); font-size: 0.9rem; line-height: 1.4; }
+.verify-record__meta { color: var(--muted); font-size: 0.8rem; font-weight: 700; }
+.verify-empty { margin: 0; color: var(--muted); font-weight: 600; }
+.verify-form {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bone);
+  padding: 16px;
+}
+.verify-form label { display: grid; gap: 6px; color: var(--muted); font-size: 0.88rem; font-weight: 900; }
+.verify-form select,
+.verify-form textarea {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+  padding: 10px 12px;
+  font-weight: 600;
+  font-family: inherit;
+}
+.verify-form select { min-height: 46px; }
+.verify-form textarea { resize: vertical; min-height: 76px; }
+.verify-form__hint { margin: -4px 0 0; color: var(--muted); font-size: 0.84rem; font-weight: 600; }
+.verify-form__actions { display: grid; justify-items: start; }
+.verify-form .advance-button { max-width: none; }
+
 .mobile-app-nav { display: none; }
 .app-section,
 .driver-now,

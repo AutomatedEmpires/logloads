@@ -6,9 +6,24 @@ import { Badge, Icon } from "@logloads/ui"
 
 import { startBillingPortalAction, startCheckoutAction } from "@/lib/billing-actions"
 import type { BillingView, PlanProduct, SettingsView } from "@/lib/plans"
+import type { VerificationRecordView } from "@/lib/verification-data"
 import { AppShell, EmptyState, SectionHeader, type ShellAccount } from "./Shells"
+import { VerificationSubmit, type VerificationTypeOption } from "./VerificationSubmit"
 
 type CockpitRole = "fleet" | "host"
+
+const ORG_VERIFICATION_OPTIONS: Record<CockpitRole, VerificationTypeOption[]> = {
+  fleet: [
+    { value: "organization", label: "Business identity", hint: "Confirms this carrier is a real, active business — approval turns on your Verified badge." },
+    { value: "carrier_identifier", label: "Carrier (MC/DOT) number", hint: "Your motor-carrier or DOT number so hosts can look you up." },
+    { value: "insurance_document", label: "Insurance", hint: "Your liability/cargo carrier and policy number." }
+  ],
+  host: [
+    { value: "organization", label: "Business identity", hint: "Confirms this operation is a real, active business — approval turns on your Verified badge." },
+    { value: "facility_control", label: "Facility control", hint: "Evidence you control the landing or mill you post from." },
+    { value: "landing_authorization", label: "Landing authorization", hint: "Authorization to move wood from this landing." }
+  ]
+}
 
 export interface CheckoutNotice {
   message: string
@@ -159,11 +174,13 @@ export function BillingPage({
 export function SettingsPage({
   account,
   role,
-  settings
+  settings,
+  verifications
 }: {
   account: ShellAccount
   role: CockpitRole
   settings: SettingsView
+  verifications: VerificationRecordView[]
 }) {
   const billingHref = role === "fleet" ? "/fleet/billing" : "/host/billing"
 
@@ -193,6 +210,11 @@ export function SettingsPage({
             </div>
           </dl>
           <p className="settings-meaning">{settings.identity.verificationMeaning}</p>
+        </section>
+
+        <section className="settings-panel" aria-label="Verification">
+          <SectionHeader eyebrow="Trust" title="Verify this workspace" />
+          <VerificationSubmit options={ORG_VERIFICATION_OPTIONS[role]} records={verifications} subjectType="organization" />
         </section>
 
         <section className="settings-panel" aria-label="Team">

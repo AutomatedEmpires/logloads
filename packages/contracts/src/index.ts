@@ -1,3 +1,4 @@
+export * from "./assistant"
 export * from "./enums"
 export * from "./helpers/date-time"
 export * from "./helpers/money"
