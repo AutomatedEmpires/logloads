@@ -31,13 +31,16 @@ export interface RemoteSnapshotConfig {
 }
 
 /**
- * Reads the remote snapshot mirror config from the environment. The key is
- * server-only (never NEXT_PUBLIC_): the service-role key when provided, else the
- * anon key with RLS scoped to the operating_state table.
+ * Reads the remote snapshot mirror config from the environment. The mirror is a
+ * server-only durability sink and REQUIRES the service-role key: the
+ * operating_state table denies anon/authenticated at the database (RLS enabled,
+ * no policy), so the anon key cannot and must not be used here. Without the
+ * service-role key the mirror is disabled and the local disk snapshot remains
+ * the primary durability mechanism.
  */
 export function remoteSnapshotConfig(): RemoteSnapshotConfig | null {
   const url = process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!url || !key) {
     return null
