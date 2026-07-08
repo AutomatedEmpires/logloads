@@ -1,10 +1,21 @@
 "use client"
 
 import Link from "next/link"
-import { useState, type ReactNode } from "react"
+import { useState, useTransition, type ReactNode } from "react"
 import { Badge, Icon, type IconKey } from "@logloads/ui"
 
+import { markAllNotificationsReadAction, markNotificationReadAction } from "@/lib/cockpit-actions"
 import { signOutAction, switchOrganizationAction } from "@/lib/session-actions"
+
+export interface ShellNotification {
+  id: string
+  title: string
+  body: string
+  createdAt: string
+  read: boolean
+  relatedEntityType: string | null
+  relatedEntityId: string | null
+}
 
 export interface ShellAccount {
   userName: string
@@ -12,6 +23,8 @@ export interface ShellAccount {
   verificationStatus: string
   activeOrganizationId: string | null
   memberships: Array<{ id: string; name: string; role: string }>
+  notifications: ShellNotification[]
+  unreadCount: number
 }
 
 interface ShellProps {
@@ -282,6 +295,153 @@ function verificationLabel(status: string): string {
   return "Review pending"
 }
 
+function relativeTime(iso: string): string {
+  const then = new Date(iso).getTime()
+
+  if (Number.isNaN(then)) {
+    return ""
+  }
+
+  const seconds = Math.round((Date.now() - then) / 1000)
+
+  if (seconds < 60) {
+    return "just now"
+  }
+
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) {
+    return `${minutes}m ago`
+  }
+
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) {
+    return `${hours}h ago`
+  }
+
+  const days = Math.round(hours / 24)
+  return days < 7 ? `${days}d ago` : new Date(iso).toLocaleDateString()
+}
+
+/**
+ * Resolves a notification to a cockpit destination. Targets are role-scoped
+ * because the same event (an assignment, a load) is viewed at different routes
+ * per role. Unknown types stay unlinked rather than dead-linking.
+ */
+function notificationHref(role: ShellProps["role"], type: string | null, id: string | null): string | null {
+  switch (type) {
+    case "load":
+    case "load_posting":
+      return role === "driver"
+        ? (id ? `/driver/loads/${id}` : "/driver/loads")
+        : role === "host" ? "/host/opportunities" : "/fleet/opportunities"
+    case "assignment":
+      return role === "driver" ? "/driver/trips" : role === "host" ? "/host/live-board" : "/fleet/dispatch"
+    case "direct_offer":
+      return "/fleet/opportunities"
+    default:
+      return null
+  }
+}
+
+function NotificationBell({ notifications, role, unreadCount }: {
+  notifications: ShellNotification[]
+  role: ShellProps["role"]
+  unreadCount: number
+}) {
+  const [open, setOpen] = useState(false)
+  const [isPending, startTransition] = useTransition()
+
+  function markOne(notificationId: string): void {
+    startTransition(() => {
+      void markNotificationReadAction({ notificationId })
+    })
+  }
+
+  function markAll(): void {
+    startTransition(() => {
+      void markAllNotificationsReadAction()
+    })
+  }
+
+  return (
+    <div className="notif-bell">
+      <button
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
+        className="notif-bell__trigger"
+        onClick={() => setOpen((current) => !current)}
+        type="button"
+      >
+        <Icon aria-hidden name="ops.notice" size={20} />
+        {unreadCount > 0 ? <span className="notif-bell__count">{unreadCount > 9 ? "9+" : unreadCount}</span> : null}
+      </button>
+      {open ? (
+        <div className="notif-bell__menu" role="menu">
+          <div className="notif-bell__head">
+            <strong>Notifications</strong>
+            <button
+              className="notif-bell__markall"
+              disabled={unreadCount === 0 || isPending}
+              onClick={markAll}
+              type="button"
+            >
+              Mark all read
+            </button>
+          </div>
+          {notifications.length === 0 ? (
+            <p className="notif-bell__empty">You&rsquo;re all caught up.</p>
+          ) : (
+            <ul className="notif-bell__list">
+              {notifications.map((notification) => {
+                const href = notificationHref(role, notification.relatedEntityType, notification.relatedEntityId)
+                const body = (
+                  <>
+                    <span className={`notif-dot${notification.read ? " is-read" : ""}`} aria-hidden />
+                    <span className="notif-item__body">
+                      <span className="notif-item__title">{notification.title}</span>
+                      <span className="notif-item__text">{notification.body}</span>
+                      <span className="notif-item__time">{relativeTime(notification.createdAt)}</span>
+                    </span>
+                  </>
+                )
+
+                return (
+                  <li className={notification.read ? "is-read" : undefined} key={notification.id}>
+                    {href ? (
+                      <Link
+                        className="notif-item"
+                        href={href}
+                        onClick={() => {
+                          setOpen(false)
+                          if (!notification.read) {
+                            markOne(notification.id)
+                          }
+                        }}
+                      >
+                        {body}
+                      </Link>
+                    ) : (
+                      <button
+                        className="notif-item"
+                        disabled={notification.read || isPending}
+                        onClick={() => markOne(notification.id)}
+                        type="button"
+                      >
+                        {body}
+                      </button>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function AccountMenu({ account }: { account: ShellAccount }) {
   const [open, setOpen] = useState(false)
 
@@ -354,7 +514,10 @@ export function AppShell({ account, children, kicker, orgName, role, title }: Sh
             <h1>{title}</h1>
           </div>
           {account ? (
-            <AccountMenu account={account} />
+            <div className="app-topbar__account">
+              <NotificationBell notifications={account.notifications} role={role} unreadCount={account.unreadCount} />
+              <AccountMenu account={account} />
+            </div>
           ) : (
             <div className="account-switcher">
               <span>{orgName ?? "Platform"}</span>

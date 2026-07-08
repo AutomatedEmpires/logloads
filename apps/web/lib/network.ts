@@ -2,10 +2,13 @@ import {
   evaluateLoadCompatibility,
   explainCompatibility,
   formatRateLabel,
+  recommendLoad,
   type AssignmentStatus,
   type LoadStatus,
   type MatchEligibility,
   type OpportunityVisibilityMode,
+  type RecommendationBand,
+  type RecommendationVisibility,
   type RoadCondition,
   type TripStatusV2
 } from "@logloads/contracts"
@@ -115,6 +118,11 @@ export interface NetworkLoadView {
     cautions: string[]
     failures: string[]
   } | null
+  recommendation: {
+    band: RecommendationBand
+    label: string
+    reasons: string[]
+  } | null
   warnings: string[]
   criticalInstructions: string[]
   assignments: Array<{
@@ -173,6 +181,17 @@ export interface NetworkView {
     trailerId: string | null
   } | null
   loads: NetworkLoadView[]
+  topRecommendations: Array<{
+    loadId: string
+    title: string
+    lane: string
+    band: RecommendationBand
+    label: string
+    reasons: string[]
+    payLabel: string
+    scheduleLabel: string
+    requestable: boolean
+  }>
   trucks: TruckView[]
   privateNetwork: Array<{
     id: string
@@ -313,6 +332,20 @@ function pointFromSite(
   }
 }
 
+function daysUntil(dateOnly: string | null | undefined): number | null {
+  if (!dateOnly) {
+    return null
+  }
+
+  const target = new Date(`${dateOnly}T12:00:00.000Z`).getTime()
+
+  if (Number.isNaN(target)) {
+    return null
+  }
+
+  return Math.round((target - Date.now()) / (24 * 60 * 60 * 1000))
+}
+
 function warningForRoad(condition: RoadCondition): string | null {
   if (condition === "good") {
     return null
@@ -446,6 +479,20 @@ export function buildNetworkView(state: LogLoadsDatabaseState, viewer: NetworkVi
         })
       : null
 
+    const capacityRemaining = capacity?.remainingTruckloads ??
+      slots.reduce((sum, slot) => sum + Math.max(0, slot.capacity - slot.reservedCount), 0)
+    const recommendation = compatibility && !ownsLoad
+      ? recommendLoad({
+          compatibility,
+          daysUntilSchedule: daysUntil(load.loadDate ?? load.campaignStartDate),
+          distanceMiles: route.estimatedDistanceMiles,
+          freshness: (landing.roadCondition ?? "good") === "good" ? "verified" : "recent",
+          isRequestable: Boolean(requestableSlot),
+          remainingCapacity: capacityRemaining,
+          visibility: (capacity?.visibilityMode ?? "open_network") as RecommendationVisibility
+        })
+      : null
+
     const assignmentViews = (ownsLoad
       ? loadAssignments
       : loadAssignments.filter((assignment) =>
@@ -494,6 +541,9 @@ export function buildNetworkView(state: LogLoadsDatabaseState, viewer: NetworkVi
             positives: compatibility.positiveSignals,
             summary: explainCompatibility(compatibility)
           }
+        : null,
+      recommendation: recommendation
+        ? { band: recommendation.band, label: recommendation.label, reasons: recommendation.reasons }
         : null,
       criticalInstructions: unlocked
         ? [
@@ -584,7 +634,7 @@ export function buildNetworkView(state: LogLoadsDatabaseState, viewer: NetworkVi
       warnings: [roadWarning, routeWarning, weatherWarning, facilityWarning].filter((value): value is string => Boolean(value))
     }
 
-    return { score: compatibility?.score ?? 0, view }
+    return { recommendationSortKey: recommendation?.sortKey ?? -1000, score: compatibility?.score ?? 0, view }
   })
 
   const statusWeight: Record<LoadStatus, number> = {
@@ -603,6 +653,38 @@ export function buildNetworkView(state: LogLoadsDatabaseState, viewer: NetworkVi
       statusWeight[left.view.status] - statusWeight[right.view.status] || right.score - left.score
     )
     .map((entry) => entry.view)
+
+  // Ranked "Recommended for you": genuinely requestable, well-fitting live loads,
+  // best first. Ineligible/filled/locked loads are excluded.
+  const topRecommendations = loadsWithScore
+    .flatMap((entry) => {
+      const recommendation = entry.view.recommendation
+
+      if (
+        !recommendation ||
+        recommendation.band === "not_recommended" ||
+        !["open", "scheduled"].includes(entry.view.status) ||
+        entry.view.slots.requestableSlotId === null ||
+        entry.view.viewerAssignment
+      ) {
+        return []
+      }
+
+      return [{ entry, recommendation }]
+    })
+    .sort((left, right) => right.entry.recommendationSortKey - left.entry.recommendationSortKey)
+    .slice(0, 5)
+    .map(({ entry, recommendation }) => ({
+      band: recommendation.band,
+      label: recommendation.label,
+      lane: `${entry.view.landing.city} to ${entry.view.destination.name}`,
+      loadId: entry.view.id,
+      payLabel: entry.view.payLabel,
+      reasons: recommendation.reasons,
+      requestable: entry.view.slots.requestableSlotId !== null,
+      scheduleLabel: entry.view.scheduleLabel,
+      title: entry.view.title
+    }))
 
   // --- Public viewers stop here with a redacted, aggregate-only view -------
   if (viewer.kind === "public" || !activeOrganization || !activeMembership || !currentUser) {
@@ -623,6 +705,7 @@ export function buildNetworkView(state: LogLoadsDatabaseState, viewer: NetworkVi
       },
       notices: [],
       privateNetwork: [],
+      topRecommendations: [],
       trips: [],
       trucks: []
     }
@@ -847,6 +930,7 @@ export function buildNetworkView(state: LogLoadsDatabaseState, viewer: NetworkVi
     },
     notices,
     privateNetwork,
+    topRecommendations,
     trips,
     trucks
   }

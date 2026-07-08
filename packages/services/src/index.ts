@@ -30,7 +30,12 @@ import {
 } from "./messaging"
 import { listDriverAvailability, upsertAvailabilityWindow } from "./availability"
 import { createLoadPosting, getLoadById, listOpenLoads, updateLoadPosting } from "./loads"
-import { createNotification, listNotificationsForUser } from "./notifications"
+import {
+  createNotification,
+  listNotificationsForUser,
+  markAllNotificationsRead,
+  markNotificationRead
+} from "./notifications"
 import {
   DEFAULT_ACTOR_USER_ID,
   DEFAULT_ORGANIZATION_ID,
@@ -101,6 +106,8 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     listEntitlements: (organizationId?: string) => listEntitlements(state, organizationId),
     listFutureAvailabilityForOrganization: (organizationId?: string) => listFutureAvailabilityForOrganization(state, organizationId),
     listNotificationsForUser: (userId: string) => listNotificationsForUser(state, userId),
+    markNotificationRead: (input: { userId: string; notificationId: string }) => markNotificationRead(state, input.userId, input.notificationId),
+    markAllNotificationsRead: (userId: string) => markAllNotificationsRead(state, userId),
     listPrivateNetworkRelationships: (organizationId?: string) => listPrivateNetworkRelationships(state, organizationId),
     listOpenLoads: () => listOpenLoads(state),
     listVisibleLoadsForOrganization: (organizationId?: string) => listVisibleLoadsForOrganization(state, organizationId),

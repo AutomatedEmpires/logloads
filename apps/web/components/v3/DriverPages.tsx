@@ -46,6 +46,50 @@ function matchingLoads(network: NetworkView): NetworkLoadView[] {
   )
 }
 
+function recommendBandTone(band: NetworkView["topRecommendations"][number]["band"]): "success" | "warning" | "info" | "neutral" {
+  if (band === "top_pick" || band === "strong") {
+    return "success"
+  }
+
+  if (band === "worth_review") {
+    return "warning"
+  }
+
+  return "info"
+}
+
+export function RecommendedLoads({ recommendations }: { recommendations: NetworkView["topRecommendations"] }) {
+  return (
+    <ol className="recommend-list">
+      {recommendations.map((rec, index) => (
+        <li key={rec.loadId}>
+          <Link className="recommend-card" href={`/driver/loads/${rec.loadId}`}>
+            <span aria-hidden className="recommend-rank">{index + 1}</span>
+            <div className="recommend-body">
+              <div className="recommend-head">
+                <strong>{rec.title}</strong>
+                <Badge tone={recommendBandTone(rec.band)}>{rec.label}</Badge>
+              </div>
+              <span className="recommend-lane">
+                <Icon aria-hidden name="load.origin" size={14} /> {rec.lane}
+              </span>
+              <span className="recommend-meta">{rec.scheduleLabel} · {rec.payLabel}</span>
+              <ul className="recommend-reasons">
+                {rec.reasons.map((reason) => (
+                  <li key={reason}>
+                    <Icon aria-hidden name="status.assigned" size={13} /> {reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <span className="recommend-go">View load</span>
+          </Link>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
 function verificationBadge(status: string): { label: string; tone: "success" | "warning" | "critical" } {
   if (status === "verified") {
     return { label: "Verified", tone: "success" }
@@ -135,11 +179,17 @@ export function DriverToday({ account, availability, network }: DriverPageProps 
             />
           </section>
           <section className="app-section">
-            <SectionHeader eyebrow="Best matches" title="Work that fits your active setup" />
-            {matches.length === 0 ? (
+            <SectionHeader
+              action={<Link className="action-link action-link--secondary" href="/driver/loads">See all loads</Link>}
+              eyebrow="Recommended for you"
+              title="Best work for your truck right now"
+            />
+            {network.topRecommendations.length > 0 ? (
+              <RecommendedLoads recommendations={network.topRecommendations} />
+            ) : matches.length === 0 ? (
               <EmptyState
                 title="No loads fit your current setup."
-                body="Update your equipment so matching can work with real truck and trailer details, or browse the full board."
+                body="Add your truck so matching can work with real equipment details, then recommendations appear here ranked for you."
                 actionHref="/driver/equipment"
                 actionLabel="Update equipment"
               />
@@ -158,6 +208,12 @@ export function DriverToday({ account, availability, network }: DriverPageProps 
 export function DriverLoads({ account, network }: DriverPageProps) {
   return (
     <AppShell account={account} kicker="Find work" role="driver" title="Loads">
+      {network.topRecommendations.length > 0 ? (
+        <section className="app-section">
+          <SectionHeader eyebrow="Recommended for you" title="Ranked for your truck" />
+          <RecommendedLoads recommendations={network.topRecommendations} />
+        </section>
+      ) : null}
       <div className="app-section">
         <LoadDiscovery loads={network.loads} />
       </div>

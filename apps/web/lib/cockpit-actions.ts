@@ -438,6 +438,34 @@ export async function startThreadAction(input: {
   }
 }
 
+// --- Notifications ---------------------------------------------------------------
+
+export async function markNotificationReadAction(input: { notificationId: string }): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    services.markNotificationRead({ notificationId: input.notificationId, userId: actor.profile.id })
+    commit(["/driver", "/fleet", "/host", "/admin"])
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function markAllNotificationsReadAction(): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    services.markAllNotificationsRead(actor.profile.id)
+    commit(["/driver", "/fleet", "/host", "/admin"])
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
 // --- Admin -----------------------------------------------------------------------
 
 async function requireAdmin(): Promise<SessionActor> {

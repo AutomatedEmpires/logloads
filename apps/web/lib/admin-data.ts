@@ -2,7 +2,7 @@ import "server-only"
 
 import { services } from "./services"
 import { requireCockpitActor } from "./session"
-import { getCockpitContext, shellAccountFor, type ShellAccount } from "./v3"
+import { getCockpitContext, shellAccountFor, shellNotificationsFor, type ShellAccount } from "./v3"
 import { formatDateTime } from "./v3-shared"
 
 // --- Shared helpers ----------------------------------------------------------
@@ -89,6 +89,8 @@ export async function getAdminShellAccount(): Promise<ShellAccount> {
   const context = await getCockpitContext("admin")
 
   if (!context.actor.activeOrganization) {
+    const inbox = shellNotificationsFor(context.actor.profile.id)
+
     return {
       activeOrganizationId: null,
       memberships: context.actor.memberships.map((entry) => ({
@@ -96,7 +98,9 @@ export async function getAdminShellAccount(): Promise<ShellAccount> {
         name: entry.organization.displayName,
         role: entry.membership.role
       })),
+      notifications: inbox.notifications,
       organizationName: "Platform",
+      unreadCount: inbox.unreadCount,
       userName: context.actor.profile.fullName,
       verificationStatus: context.actor.profile.verificationStatus
     }

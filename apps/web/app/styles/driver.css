@@ -259,3 +259,43 @@
   .proof-control select { flex: 1; }
   .signout-button { width: 100%; }
 }
+
+/* --- Recommended for you: ranked, glanceable, mobile-first ----------------- */
+.recommend-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.recommend-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: var(--shadow-1);
+  text-decoration: none;
+  color: inherit;
+}
+.recommend-rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--pine);
+  color: #fff;
+  font-weight: 900;
+  font-size: 0.95rem;
+}
+.recommend-body { display: grid; gap: 6px; min-width: 0; }
+.recommend-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.recommend-head strong { font-size: 1.05rem; }
+.recommend-lane { display: inline-flex; align-items: center; gap: 6px; color: rgba(17, 22, 16, 0.7); font-weight: 600; }
+.recommend-meta { color: rgba(17, 22, 16, 0.6); font-size: 0.9rem; }
+.recommend-reasons { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 3px; }
+.recommend-reasons li { display: inline-flex; align-items: center; gap: 6px; font-size: 0.86rem; color: var(--green, #2e7651); font-weight: 600; }
+.recommend-go { align-self: center; font-weight: 800; color: var(--pine); white-space: nowrap; }
+@media (max-width: 640px) {
+  .recommend-card { grid-template-columns: auto 1fr; }
+  .recommend-go { grid-column: 2; justify-self: start; margin-top: 4px; }
+}

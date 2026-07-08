@@ -15,3 +15,7 @@ coverage/
 .DS_Store
 .vercel
 .data/
+
+# Playwright output + local proof screenshots
+test-results/
+apps/web/.artifacts/
