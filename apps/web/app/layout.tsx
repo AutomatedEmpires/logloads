@@ -2,6 +2,8 @@ import { ClerkProvider } from "@clerk/nextjs"
 import { Archivo, Inter } from "next/font/google"
 import type { ReactNode } from "react"
 
+import { AnalyticsProvider } from "@/components/analytics/AnalyticsProvider"
+
 import "./globals.css"
 import "./styles/public.css"
 import "./styles/auth.css"
@@ -58,7 +60,10 @@ export default function RootLayout({
 	return (
 		<AuthBoundary>
 			<html className={`${inter.variable} ${archivo.variable}`} lang="en">
-				<body>{children}</body>
+				<body>
+					{children}
+					<AnalyticsProvider />
+				</body>
 			</html>
 		</AuthBoundary>
 	)

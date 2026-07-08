@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
+import { captureServerEvent } from "./analytics"
 import { checkRateLimit, requestClientKey } from "./rate-limit"
 import { persistState, serializeError, services } from "./services"
 import {
@@ -163,6 +164,7 @@ export async function completeOnboardingAction(
     })
 
     persistState()
+    captureServerEvent("account_created", account.profile.id, { path, accountType })
 
     const cookieStore = await cookies()
 

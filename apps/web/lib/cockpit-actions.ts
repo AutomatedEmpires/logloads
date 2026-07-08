@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 
+import { captureServerEvent } from "./analytics"
 import { persistState, serializeError, services } from "./services"
 import { getSessionActor, type SessionActor } from "./session"
 
@@ -79,6 +80,7 @@ export async function requestCapacityAction(input: {
       truckSlotId: input.truckSlotId
     })
 
+    captureServerEvent("capacity_requested", actor.profile.id, { loadPostingId: input.loadPostingId })
     commit(["/driver", "/fleet", "/host"])
 
     return OK
@@ -109,6 +111,7 @@ export async function progressTripAction(input: {
       tripId: input.tripId
     })
 
+    captureServerEvent("trip_progressed", actor.profile.id, { tripId: input.tripId, nextStatus: input.nextStatus })
     commit(["/driver", "/fleet", "/host"])
 
     return OK
@@ -291,6 +294,9 @@ export async function approveCapacityRequestAction(input: {
       services.cancelAssignment(input.assignmentId, input.reason?.trim() || "Declined by the publishing organization")
     }
 
+    captureServerEvent(input.approve ? "capacity_approved" : "capacity_declined", actor.profile.id, {
+      assignmentId: input.assignmentId
+    })
     commit(["/host", "/fleet", "/driver"])
 
     return OK

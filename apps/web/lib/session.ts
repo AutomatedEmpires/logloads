@@ -88,7 +88,7 @@ export function verifySessionCookieValue(value: string | undefined): { userId: s
   return { organizationId: organizationId === "-" ? null : organizationId, userId }
 }
 
-async function resolveClerkProfile(): Promise<User | null> {
+export async function getClerkUserId(): Promise<string | null> {
   if (!isClerkConfigured()) {
     return null
   }
@@ -96,14 +96,20 @@ async function resolveClerkProfile(): Promise<User | null> {
   try {
     const session = await auth()
 
-    if (!session.userId) {
-      return null
-    }
-
-    return services.findProfileByClerkId(session.userId) ?? null
+    return session.userId ?? null
   } catch {
     return null
   }
+}
+
+async function resolveClerkProfile(): Promise<User | null> {
+  const clerkUserId = await getClerkUserId()
+
+  if (!clerkUserId) {
+    return null
+  }
+
+  return services.findProfileByClerkId(clerkUserId) ?? null
 }
 
 function buildSessionActor(profile: User, requestedOrganizationId: string | null): SessionActor {
@@ -206,7 +212,11 @@ export async function requireCockpitActor(cockpit: Cockpit): Promise<SessionActo
   const actor = await getSessionActor()
 
   if (!actor) {
-    redirect(`/sign-in?next=/${cockpit}`)
+    // A signed-in Clerk user who has not finished provisioning a LogLoads
+    // profile belongs in onboarding, not a sign-in loop.
+    const clerkUserId = await getClerkUserId()
+
+    redirect(clerkUserId ? "/onboarding" : `/sign-in?next=/${cockpit}`)
   }
 
   if (!canAccessCockpit(actor, cockpit)) {
