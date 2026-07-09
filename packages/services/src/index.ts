@@ -57,6 +57,14 @@ import {
 } from "./operating-network"
 import { getRouteById, listRoutes } from "./routes"
 import { createTruckSlot, listTruckSlotsForDate } from "./truck-slots"
+import {
+  getReliabilityForOrganization,
+  getReputationForDriver,
+  getReputationForOrganization,
+  hasTripReview,
+  listReviewsForOrganization,
+  submitTripReview
+} from "./trip-reviews"
 import { createServiceState } from "./utils"
 import { submitVerificationRecord } from "./verification"
 
@@ -87,6 +95,12 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     reviewOrganization: (input: unknown) => reviewOrganization(state, input),
     reviewVerificationRecord: (input: unknown) => reviewVerificationRecord(state, input),
     submitVerificationRecord: (input: unknown) => submitVerificationRecord(state, input),
+    submitTripReview: (input: unknown) => submitTripReview(state, input),
+    getReputationForOrganization: (organizationId: string) => getReputationForOrganization(state, organizationId),
+    getReputationForDriver: (driverProfileId: string) => getReputationForDriver(state, driverProfileId),
+    getReliabilityForOrganization: (organizationId: string) => getReliabilityForOrganization(state, organizationId),
+    listReviewsForOrganization: (organizationId: string) => listReviewsForOrganization(state, organizationId),
+    hasTripReview: (input: { tripId: string; direction: "host_rates_hauler" | "hauler_rates_host" }) => hasTripReview(state, input.tripId, input.direction),
     updateEquipmentStatus: (input: unknown) => updateEquipmentStatus(state, input),
     approveCapacityRequest: (input: Parameters<typeof approveCapacityRequest>[1]) => approveCapacityRequest(state, input),
     assignDriverToSlot: (assignmentId: string) => assignDriverToSlot(state, assignmentId),

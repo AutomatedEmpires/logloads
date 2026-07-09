@@ -43,6 +43,7 @@ function grounding(overrides: Partial<AssistantGrounding> = {}): AssistantGround
     metrics: { activeAssignments: 1, criticalNotices: 1, openLoads: 4, trucksAvailable: 3 },
     notices: [{ body: "Blue River Rd washout — use the north approach.", severity: "critical", title: "Road closure" }],
     orgName: "North Pine Logging",
+    reputation: { avgRating: 4.7, label: "4.7 · 12 reviews", ratedCount: 12 },
     recommendations: [
       {
         label: "Top pick",
@@ -117,6 +118,14 @@ describe("operator assistant engine", () => {
       const result = answerOperatorQuestion(grounding(), question)
       expect(result.answer).not.toMatch(/\b\d{1,3}\s*\/\s*100\b/)
     }
+  })
+
+  it("answers a reputation question from the viewer's own rating", () => {
+    const result = answerOperatorQuestion(grounding(), "how's my reputation?")
+
+    expect(result.intent).toBe("reputation")
+    expect(result.answer).toContain("4.7 · 12 reviews")
+    expect(result.citations.some((c) => c.href === "/driver/profile")).toBe(true)
   })
 
   it("routes a haul-phrased question to recommendations, not trips", () => {

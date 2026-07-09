@@ -443,6 +443,91 @@ a { color: inherit; text-decoration: none; }
 .verify-form__actions { display: grid; justify-items: start; }
 .verify-form .advance-button { max-width: none; }
 
+/* --- Reputation + reviews -------------------------------------------------- */
+.reputation-chip { display: inline-flex; }
+.profile-head__badges { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.truck-card-v3__badges { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.review-done { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: var(--green); font-weight: 800; }
+.review-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bone);
+  padding: 14px;
+}
+.review-form__prompt { margin: 0; font-weight: 800; color: var(--ink); }
+.review-stars { display: flex; gap: 4px; }
+.review-star {
+  border: 0;
+  background: transparent;
+  color: var(--line-strong);
+  font-size: 1.6rem;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+.review-star.is-on { color: var(--amber); }
+.review-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.review-tag {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink-soft);
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.review-tag.is-on { background: var(--pine); border-color: var(--pine); color: #fff; }
+.review-note {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+  padding: 8px 10px;
+  font-family: inherit;
+  font-weight: 600;
+  resize: vertical;
+}
+.review-form__actions { display: grid; justify-items: start; }
+.review-form .advance-button { max-width: none; }
+
+/* --- Reliability dashboard ------------------------------------------------- */
+.perf-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--line);
+}
+.perf-stat strong { transition: none; }
+.perf-stat--success strong { color: var(--green); }
+.perf-stat--warning strong { color: var(--amber); }
+.perf-stat--critical strong { color: var(--red); }
+.perf-stat--info strong { color: var(--steel); }
+.perf-rows { display: grid; gap: 10px; }
+.perf-row {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 16px;
+  box-shadow: var(--shadow-1);
+}
+.perf-row__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.perf-row__id { display: grid; gap: 2px; }
+.perf-row__id strong { font-size: 1.05rem; }
+.perf-row__sub { color: var(--muted); font-size: 0.86rem; font-weight: 700; }
+.perf-row__metrics { display: flex; flex-wrap: wrap; gap: 14px; }
+.perf-metric { display: inline-flex; align-items: center; gap: 6px; }
+.perf-metric em { color: var(--muted); font-style: normal; font-size: 0.82rem; font-weight: 800; }
+.perf-row__tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.perf-tag { border: 1px solid var(--line); border-radius: 999px; background: var(--green-bg); color: var(--green); padding: 3px 9px; font-size: 0.78rem; font-weight: 700; }
+
 .mobile-app-nav { display: none; }
 .app-section,
 .driver-now,

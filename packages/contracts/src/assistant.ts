@@ -69,6 +69,7 @@ export interface AssistantGrounding {
   trips: AssistantTripFacts[]
   notices: AssistantNoticeFacts[]
   availability: AssistantAvailabilityFacts[]
+  reputation: { label: string; avgRating: number | null; ratedCount: number } | null
 }
 
 export type AssistantIntent =
@@ -78,6 +79,7 @@ export type AssistantIntent =
   | "alerts"
   | "availability"
   | "trips"
+  | "reputation"
   | "overview"
 
 export interface AssistantAnswer {
@@ -90,19 +92,20 @@ interface RoleRoutes {
   loads: string
   trips: string
   equipment: string
+  performance: string
   loadDetail: (loadId: string) => string
 }
 
 function routesFor(role: AssistantRole): RoleRoutes {
   switch (role) {
     case "driver":
-      return { loads: "/driver/loads", trips: "/driver/trips", equipment: "/driver/equipment", loadDetail: (id) => `/driver/loads/${id}` }
+      return { loads: "/driver/loads", trips: "/driver/trips", equipment: "/driver/equipment", performance: "/driver/profile", loadDetail: (id) => `/driver/loads/${id}` }
     case "fleet":
-      return { loads: "/fleet/opportunities", trips: "/fleet/trips", equipment: "/fleet/trucks", loadDetail: (id) => `/fleet/opportunities/${id}` }
+      return { loads: "/fleet/opportunities", trips: "/fleet/trips", equipment: "/fleet/trucks", performance: "/fleet/performance", loadDetail: (id) => `/fleet/opportunities/${id}` }
     case "host":
-      return { loads: "/host/opportunities", trips: "/host/live-board", equipment: "/host/landings", loadDetail: () => "/host/opportunities" }
+      return { loads: "/host/opportunities", trips: "/host/live-board", equipment: "/host/landings", performance: "/host/reliability", loadDetail: () => "/host/opportunities" }
     default:
-      return { loads: "/admin/opportunities", trips: "/admin", equipment: "/admin", loadDetail: () => "/admin/opportunities" }
+      return { loads: "/admin/opportunities", trips: "/admin", equipment: "/admin", performance: "/admin/reliability", loadDetail: () => "/admin/opportunities" }
   }
 }
 
@@ -113,6 +116,7 @@ const INTENT_PATTERNS: Array<{ intent: AssistantIntent; test: RegExp }> = [
   { intent: "alerts", test: /\b(alerts?|notices?|warnings?|hazards?|weather|closed|closure|problems?|issues?|urgent|critical|watch out)\b/ },
   { intent: "availability", test: /\b(availab|capacity|free trucks?|open trucks?|who can haul|drivers? (free|open|available)|open slots?|when can)/ },
   { intent: "trips", test: /\b(trips?|hauls\b|hauling|current|active|in progress|where am i|my loads?|delivery|on the road|status of my)/ },
+  { intent: "reputation", test: /\b(reputation|ratings?|reviews?|stars?|how am i doing|my (score|standing)|trusted|on.?time|reliab)/ },
   { intent: "overview", test: /\b(overview|summary|snapshot|dashboard|how many|today|what'?s (going on|happening|new)|status)\b/ }
 ]
 
@@ -304,6 +308,24 @@ function answerOverview(g: AssistantGrounding, routes: RoleRoutes): AssistantAns
   return { answer: lines.join("\n"), citations, intent: "overview" }
 }
 
+function answerReputation(g: AssistantGrounding, routes: RoleRoutes): AssistantAnswer {
+  const label = g.role === "host" ? "Your landing rating" : "Your rating"
+
+  if (!g.reputation) {
+    return {
+      answer: "You don't have reviews yet — they start rolling in after your first cross-company haul completes. Keep delivering and your track record builds itself.",
+      citations: [{ href: routes.performance, label: "Reliability" }],
+      intent: "reputation"
+    }
+  }
+
+  return {
+    answer: `${label}: ${g.reputation.label}. Open your reliability page for on-time and completion rates and the full breakdown.`,
+    citations: [{ href: routes.performance, label: "Reliability" }],
+    intent: "reputation"
+  }
+}
+
 function answerHelp(g: AssistantGrounding): AssistantAnswer {
   const lines = [
     "I'm your operations assistant. I answer from what's live in your workspace right now — your loads, matches, trips, and alerts. Try asking:"
@@ -322,20 +344,20 @@ export function suggestedPrompts(g: AssistantGrounding): string[] {
       return [
         "What should I haul next?",
         "Why can't I request a load?",
-        "What's the status of my trips?",
+        "How's my reputation?",
         "Any alerts I should know about?"
       ]
     case "fleet":
       return [
         "What are the best loads for my trucks?",
-        "Which trucks are available?",
+        "How's our reputation?",
         "What's my current haul activity?",
         "Any critical alerts?"
       ]
     case "host":
       return [
         "How many loads are open?",
-        "Who's available to haul?",
+        "How's my landing rated?",
         "Any alerts on my loads?",
         "Give me a snapshot."
       ]
@@ -365,6 +387,8 @@ export function answerOperatorQuestion(grounding: AssistantGrounding, question: 
       return answerAvailability(grounding, routes)
     case "trips":
       return answerTrips(grounding, routes)
+    case "reputation":
+      return answerReputation(grounding, routes)
     default:
       return answerOverview(grounding, routes)
   }

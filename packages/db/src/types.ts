@@ -30,6 +30,7 @@ import type {
   TrailerProfile,
   TripDocument,
   TripEvent,
+  TripReview,
   TripV2,
   TruckProfile,
   TruckSlot,
@@ -67,6 +68,7 @@ export interface LogLoadsDatabaseState {
   tripsV2: TripV2[]
   tripEvents: TripEvent[]
   tripDocuments: TripDocument[]
+  tripReviews: TripReview[]
   verificationRecords: VerificationRecord[]
   entitlements: Entitlement[]
   operationalNotices: OperationalNotice[]

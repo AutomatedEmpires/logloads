@@ -3,6 +3,7 @@ import { z } from "zod"
 import {
   assignmentStatusSchema,
   loadStatusSchema,
+  reviewTagSchema,
   roadConditionSchema,
   trailerTypeSchema,
   truckTypeSchema,
@@ -281,6 +282,28 @@ export const tripEventSchema = z.object({
   createdAt: timestampSchema
 })
 
+/**
+ * A two-sided post-haul review. Written only for a completed trip, once per
+ * (trip, direction). The subject (who is being rated) is derived server-side from
+ * the trip's assignment/load, never supplied by the client.
+ */
+export const tripReviewSchema = z.object({
+  id: uuidSchema,
+  tripId: uuidSchema,
+  assignmentId: uuidSchema,
+  loadPostingId: uuidSchema,
+  direction: z.enum(["host_rates_hauler", "hauler_rates_host"]),
+  raterOrganizationId: uuidSchema,
+  raterUserId: uuidSchema,
+  subjectOrganizationId: uuidSchema,
+  subjectDriverProfileId: uuidSchema.optional().nullable(),
+  stars: z.number().int().min(1).max(5),
+  tags: z.array(reviewTagSchema).default([]),
+  note: z.string().trim().max(1000).optional().nullable(),
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema
+})
+
 export const tripDocumentSchema = z.object({
   id: uuidSchema,
   tripId: uuidSchema,
@@ -357,6 +380,7 @@ export type TripEventTypeV2 = z.infer<typeof tripEventTypeV2Schema>
 export type LocationVisibility = z.infer<typeof locationVisibilitySchema>
 export type TripV2 = z.infer<typeof tripSchemaV2>
 export type TripEvent = z.infer<typeof tripEventSchema>
+export type TripReview = z.infer<typeof tripReviewSchema>
 export type TripDocument = z.infer<typeof tripDocumentSchema>
 export type Entitlement = z.infer<typeof entitlementSchema>
 export type DirectOffer = z.infer<typeof directOfferSchema>

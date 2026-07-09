@@ -87,6 +87,7 @@ const navByRole: Record<ShellProps["role"], Array<{ href: string; icon: IconKey;
 const desktopMoreByRole: Record<ShellProps["role"], Array<{ href: string; icon: IconKey; label: string }>> = {
   admin: [
     { href: "/admin/opportunities", icon: "nav.loads", label: "Opportunities" },
+    { href: "/admin/reliability", icon: "status.verified", label: "Reliability" },
     { href: "/admin/disputes", icon: "ops.notice", label: "Disputes" },
     { href: "/admin/notices", icon: "ops.notice", label: "Notices" },
     { href: "/admin/audit", icon: "ops.audit", label: "History" }
@@ -101,6 +102,7 @@ const desktopMoreByRole: Record<ShellProps["role"], Array<{ href: string; icon: 
     { href: "/fleet/drivers", icon: "nav.fleet", label: "Drivers" },
     { href: "/fleet/availability", icon: "load.schedule", label: "Availability" },
     { href: "/fleet/opportunities", icon: "nav.loads", label: "Opportunities" },
+    { href: "/fleet/performance", icon: "status.verified", label: "Performance" },
     { href: "/fleet/assistant", icon: "action.search", label: "Assistant" },
     { href: "/fleet/network", icon: "map.network", label: "Network" },
     { href: "/fleet/billing", icon: "load.pay", label: "Billing" },
@@ -109,6 +111,7 @@ const desktopMoreByRole: Record<ShellProps["role"], Array<{ href: string; icon: 
   host: [
     { href: "/host/landings", icon: "map.landing", label: "Landings" },
     { href: "/host/schedule", icon: "load.schedule", label: "Schedule" },
+    { href: "/host/reliability", icon: "status.verified", label: "Reliability" },
     { href: "/host/assistant", icon: "action.search", label: "Assistant" },
     { href: "/host/analytics", icon: "ops.queue", label: "Analytics" },
     { href: "/host/billing", icon: "load.pay", label: "Billing" },

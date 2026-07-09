@@ -7,6 +7,7 @@ import { Badge, Icon } from "@logloads/ui"
 
 import type { NetworkLoadView } from "@/lib/network"
 import { fitLabel, fitTone, formatDateTime, formatHuman, loadProductLabel, publicLoadHref, shortLane, visibilityLabel } from "@/lib/v3-shared"
+import { ReputationChip } from "./Reputation"
 import { EmptyState, SectionHeader } from "./Shells"
 
 const RealMap = dynamic(() => import("./RealMap"), {
@@ -25,7 +26,11 @@ export function LoadCard({ href, load }: { href?: string; load: NetworkLoadView 
       </span>
       <span className="load-meta">{load.scheduleLabel} · {load.payLabel}</span>
       <span className="load-meta">{load.capacity.remaining} of {load.capacity.total} loads open · {load.route.distanceMiles.toFixed(0)} mi haul</span>
-      <span className="card-footer"><Badge tone={fitTone(load)}>{fitLabel(load)}</Badge><span>{visibilityLabel(load)}</span></span>
+      <span className="card-footer">
+        <Badge tone={fitTone(load)}>{fitLabel(load)}</Badge>
+        <span>{visibilityLabel(load)}</span>
+        <ReputationChip reputation={load.sourceReputation} />
+      </span>
     </>
   )
 

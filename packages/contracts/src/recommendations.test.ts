@@ -17,6 +17,7 @@ function compatibility(overrides: Partial<CompatibilityResult> = {}): Compatibil
 function signals(overrides: Partial<RecommendationSignals> = {}): RecommendationSignals {
   return {
     compatibility: compatibility(),
+    counterpartReliability: null,
     daysUntilSchedule: 1,
     distanceMiles: 54,
     freshness: "verified",
@@ -72,6 +73,20 @@ describe("load recommendations", () => {
     const filled = recommendLoad(signals({ isRequestable: false, remainingCapacity: 0 }))
 
     expect(open.sortKey).toBeGreaterThan(filled.sortKey)
+  })
+
+  it("credits a proven, on-time host with a reliability reason and a lift", () => {
+    const reliable = recommendLoad(signals({ counterpartReliability: { avgRating: 4.8, onTimeRate: 0.95, ratedTrips: 8 } }))
+    const unknown = recommendLoad(signals({ counterpartReliability: null }))
+
+    expect(reliable.reasons).toContain("Reliable host — consistently on time")
+    expect(reliable.sortKey).toBeGreaterThanOrEqual(unknown.sortKey)
+  })
+
+  it("ignores counterpart reliability under the cold-start sample size", () => {
+    const result = recommendLoad(signals({ counterpartReliability: { avgRating: 5, onTimeRate: 1, ratedTrips: 1 } }))
+
+    expect(result.reasons).not.toContain("Reliable host — consistently on time")
   })
 
   it("ranks a set best-first and sinks ineligible loads", () => {

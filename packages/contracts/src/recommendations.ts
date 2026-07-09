@@ -23,6 +23,8 @@ export interface RecommendationSignals {
   distanceMiles: number | null
   freshness: "verified" | "recent" | "stale"
   visibility: RecommendationVisibility
+  /** The publishing host's track record; null under a cold-start sample size. */
+  counterpartReliability: { onTimeRate: number | null; avgRating: number | null; ratedTrips: number } | null
 }
 
 export interface Recommendation {
@@ -66,6 +68,28 @@ function scheduleReason(days: number | null): string | null {
   return null
 }
 
+function isReliableCounterpart(reliability: RecommendationSignals["counterpartReliability"]): boolean {
+  if (!reliability || reliability.ratedTrips < 2) {
+    return false
+  }
+
+  return (
+    (reliability.avgRating !== null && reliability.avgRating >= 4.5) ||
+    (reliability.onTimeRate !== null && reliability.onTimeRate >= 0.9)
+  )
+}
+
+function isWeakCounterpart(reliability: RecommendationSignals["counterpartReliability"]): boolean {
+  if (!reliability || reliability.ratedTrips < 2) {
+    return false
+  }
+
+  return (
+    (reliability.avgRating !== null && reliability.avgRating < 3.5) ||
+    (reliability.onTimeRate !== null && reliability.onTimeRate < 0.6)
+  )
+}
+
 function visibilityReason(visibility: RecommendationVisibility): string | null {
   if (visibility === "private_network") {
     return "Partner work you're trusted for"
@@ -83,7 +107,7 @@ function visibilityReason(visibility: RecommendationVisibility): string | null {
 }
 
 export function recommendLoad(signals: RecommendationSignals): Recommendation {
-  const { compatibility, daysUntilSchedule, distanceMiles, freshness, isRequestable, remainingCapacity, visibility } = signals
+  const { compatibility, counterpartReliability, daysUntilSchedule, distanceMiles, freshness, isRequestable, remainingCapacity, visibility } = signals
 
   // Ineligible loads are never recommended, regardless of other signals.
   if (compatibility.eligibility === "ineligible") {
@@ -126,6 +150,14 @@ export function recommendLoad(signals: RecommendationSignals): Recommendation {
     sortKey -= 8
   }
 
+  // A proven, on-time host is a modest tailwind; a poorly-rated one, a headwind.
+  // Gated on sample size so a cold-start host is never penalized.
+  if (isReliableCounterpart(counterpartReliability)) {
+    sortKey += 6
+  } else if (isWeakCounterpart(counterpartReliability)) {
+    sortKey -= 8
+  }
+
   // Prefer shorter hauls at the margin (less deadhead risk, faster turns).
   if (distanceMiles !== null) {
     if (distanceMiles <= 60) {
@@ -163,6 +195,13 @@ export function recommendLoad(signals: RecommendationSignals): Recommendation {
   const trust = visibilityReason(visibility)
   if (trust) {
     reasons.push(trust)
+  }
+
+  if (isReliableCounterpart(counterpartReliability)) {
+    const onTime = counterpartReliability?.onTimeRate ?? null
+    // Only claim an on-time record when the data actually shows one; otherwise
+    // credit the rating. Words only, never a number.
+    reasons.push(onTime !== null && onTime >= 0.9 ? "Reliable host — consistently on time" : "Reliable host — highly rated")
   }
 
   const schedule = scheduleReason(daysUntilSchedule)

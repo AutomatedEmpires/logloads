@@ -8,6 +8,7 @@ export * from "./operating-network"
 export * from "./permissions"
 export * from "./production-network"
 export * from "./recommendations"
+export * from "./reputation"
 export * from "./schemas"
 export * from "./state-machines"
 

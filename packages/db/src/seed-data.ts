@@ -30,6 +30,7 @@ import {
   trailerProfileSchema,
   tripDocumentSchema,
   tripEventSchema,
+  tripReviewSchema,
   tripSchemaV2,
   truckProfileSchema,
   truckSlotSchema,
@@ -66,6 +67,7 @@ import {
   type TrailerProfile,
   type TripDocument,
   type TripEvent,
+  type TripReview,
   type TripV2,
   type TruckProfile,
   type TruckSlot,
@@ -1653,6 +1655,168 @@ export const seedTripDocuments: TripDocument[] = parseMany(tripDocumentSchema, [
   }
 ])
 
+// Cross-org completed hauls: North Pine's maya (44…442) hauled two truckloads of
+// Summit Ridge's high-grade campaign (ccc…3, company 332). These give both orgs a
+// genuine two-sided track record. Slots are "filled" so they add no open capacity
+// (existing recommendation/requestability behavior is unchanged).
+export const seedCrossOrgTruckSlots: TruckSlot[] = parseMany(truckSlotSchema, [
+  {
+    id: "dddddddd-dddd-4ddd-8ddd-ddddddddaaa1",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+    landingId: "66666666-6666-4666-8666-666666666662",
+    loaderProfileId: null,
+    slotDate: "2026-06-06",
+    startAt: "2026-06-06T15:00:00.000Z",
+    endAt: "2026-06-06T15:20:00.000Z",
+    capacity: 1,
+    reservedCount: 1,
+    status: "filled",
+    notes: "High-grade truckload — North Pine crew.",
+    createdAt: timestamps.created,
+    updatedAt: "2026-06-06T18:00:00.000Z"
+  },
+  {
+    id: "dddddddd-dddd-4ddd-8ddd-ddddddddaaa2",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+    landingId: "66666666-6666-4666-8666-666666666662",
+    loaderProfileId: null,
+    slotDate: "2026-06-07",
+    startAt: "2026-06-07T15:00:00.000Z",
+    endAt: "2026-06-07T15:20:00.000Z",
+    capacity: 1,
+    reservedCount: 1,
+    status: "filled",
+    notes: "Second high-grade truckload.",
+    createdAt: timestamps.created,
+    updatedAt: "2026-06-07T18:00:00.000Z"
+  }
+])
+
+export const seedCrossOrgAssignments: Assignment[] = parseMany(assignmentSchema, [
+  {
+    id: "ffffffff-ffff-4fff-8fff-ffffffffaaa1",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+    truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddaaa1",
+    driverProfileId: "44444444-4444-4444-8444-444444444442",
+    truckProfileId: "77777777-7777-4777-8777-777777777772",
+    trailerProfileId: "88888888-8888-4888-8888-888888888882",
+    status: "completed",
+    requestedAt: timestamps.requested,
+    assignedAt: timestamps.assigned,
+    completedAt: "2026-06-06T18:00:00.000Z",
+    cancelledAt: null,
+    cancellationReason: null,
+    dispatcherNotes: "High-grade run for Summit Ridge.",
+    createdAt: timestamps.created,
+    updatedAt: "2026-06-06T18:00:00.000Z"
+  },
+  {
+    id: "ffffffff-ffff-4fff-8fff-ffffffffaaa2",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+    truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddaaa2",
+    driverProfileId: "44444444-4444-4444-8444-444444444442",
+    truckProfileId: "77777777-7777-4777-8777-777777777772",
+    trailerProfileId: "88888888-8888-4888-8888-888888888882",
+    status: "completed",
+    requestedAt: timestamps.requested,
+    assignedAt: timestamps.assigned,
+    completedAt: "2026-06-07T18:00:00.000Z",
+    cancelledAt: null,
+    cancellationReason: null,
+    dispatcherNotes: "Second high-grade run for Summit Ridge.",
+    createdAt: timestamps.created,
+    updatedAt: "2026-06-07T18:00:00.000Z"
+  }
+])
+
+export const seedCrossOrgTrips: TripV2[] = parseMany(tripSchemaV2, [
+  {
+    id: "24242424-2424-4424-8424-242424242413",
+    assignmentId: "ffffffff-ffff-4fff-8fff-ffffffffaaa1",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+    routePackId: null,
+    driverProfileId: "44444444-4444-4444-8444-444444444442",
+    equipmentCombinationId: null,
+    status: "completed",
+    locationVisibility: "never_public",
+    locationSharingStartedAt: null,
+    locationSharingEndsAt: null,
+    lastSyncedAt: "2026-06-06T18:00:00.000Z",
+    createdAt: timestamps.assigned,
+    updatedAt: "2026-06-06T18:00:00.000Z",
+    completedAt: "2026-06-06T18:00:00.000Z"
+  },
+  {
+    id: "24242424-2424-4424-8424-242424242414",
+    assignmentId: "ffffffff-ffff-4fff-8fff-ffffffffaaa2",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+    routePackId: null,
+    driverProfileId: "44444444-4444-4444-8444-444444444442",
+    equipmentCombinationId: null,
+    status: "completed",
+    locationVisibility: "never_public",
+    locationSharingStartedAt: null,
+    locationSharingEndsAt: null,
+    lastSyncedAt: "2026-06-07T18:00:00.000Z",
+    createdAt: timestamps.assigned,
+    updatedAt: "2026-06-07T18:00:00.000Z",
+    completedAt: "2026-06-07T18:00:00.000Z"
+  }
+])
+
+// Two-sided reviews on the cross-org hauls. Trip …413 is reviewed both ways;
+// trip …414 keeps its hauler_rates_host side open so it can be exercised live.
+export const seedTripReviews: TripReview[] = parseMany(tripReviewSchema, [
+  {
+    id: "32323232-3232-4232-8232-323232323211",
+    tripId: "24242424-2424-4424-8424-242424242413",
+    assignmentId: "ffffffff-ffff-4fff-8fff-ffffffffaaa1",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+    direction: "host_rates_hauler",
+    raterOrganizationId: "33333333-3333-4333-8333-333333333332",
+    raterUserId: "22222222-2222-4222-8222-222222222223",
+    subjectOrganizationId: "33333333-3333-4333-8333-333333333331",
+    subjectDriverProfileId: "44444444-4444-4444-8444-444444444442",
+    stars: 5,
+    tags: ["on_time", "professional", "accurate_load"],
+    note: "Showed up early, tidy loadout, no issues at the scale.",
+    createdAt: "2026-06-06T19:00:00.000Z",
+    updatedAt: "2026-06-06T19:00:00.000Z"
+  },
+  {
+    id: "32323232-3232-4232-8232-323232323212",
+    tripId: "24242424-2424-4424-8424-242424242413",
+    assignmentId: "ffffffff-ffff-4fff-8fff-ffffffffaaa1",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+    direction: "hauler_rates_host",
+    raterOrganizationId: "33333333-3333-4333-8333-333333333331",
+    raterUserId: "22222222-2222-4222-8222-222222222222",
+    subjectOrganizationId: "33333333-3333-4333-8333-333333333332",
+    subjectDriverProfileId: null,
+    stars: 5,
+    tags: ["clear_instructions", "easy_access", "good_communication"],
+    note: "Landing was ready on arrival and the directions were spot on.",
+    createdAt: "2026-06-06T19:10:00.000Z",
+    updatedAt: "2026-06-06T19:10:00.000Z"
+  },
+  {
+    id: "32323232-3232-4232-8232-323232323213",
+    tripId: "24242424-2424-4424-8424-242424242414",
+    assignmentId: "ffffffff-ffff-4fff-8fff-ffffffffaaa2",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+    direction: "host_rates_hauler",
+    raterOrganizationId: "33333333-3333-4333-8333-333333333332",
+    raterUserId: "22222222-2222-4222-8222-222222222223",
+    subjectOrganizationId: "33333333-3333-4333-8333-333333333331",
+    subjectDriverProfileId: "44444444-4444-4444-8444-444444444442",
+    stars: 4,
+    tags: ["on_time", "safe"],
+    note: "Another solid run.",
+    createdAt: "2026-06-07T19:00:00.000Z",
+    updatedAt: "2026-06-07T19:00:00.000Z"
+  }
+])
+
 export const seedVerificationRecords: VerificationRecord[] = parseMany(verificationRecordSchema, [
   {
     id: "27272727-2727-4727-8727-272727272711",
@@ -1841,14 +2005,15 @@ export const seedDatabaseState: LogLoadsDatabaseState = {
   rates: seedRates,
   loadPostings: seedLoadPostings,
   opportunityCapacities: seedOpportunityCapacities,
-  truckSlots: seedTruckSlots,
+  truckSlots: [...seedTruckSlots, ...seedCrossOrgTruckSlots],
   availabilityWindows: seedAvailabilityWindows,
   futureAvailability: seedFutureAvailability,
-  assignments: seedAssignments,
+  assignments: [...seedAssignments, ...seedCrossOrgAssignments],
   directOffers: seedDirectOffers,
-  tripsV2: seedTripsV2,
+  tripsV2: [...seedTripsV2, ...seedCrossOrgTrips],
   tripEvents: seedTripEvents,
   tripDocuments: seedTripDocuments,
+  tripReviews: seedTripReviews,
   verificationRecords: seedVerificationRecords,
   entitlements: seedEntitlements,
   operationalNotices: seedOperationalNotices,

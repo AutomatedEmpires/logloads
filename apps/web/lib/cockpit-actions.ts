@@ -501,6 +501,39 @@ export async function submitVerificationAction(input: {
   }
 }
 
+// --- Reviews (post-haul reputation) ----------------------------------------------
+
+export async function submitTripReviewAction(input: {
+  tripId: string
+  direction: "host_rates_hauler" | "hauler_rates_host"
+  stars: number
+  tags: string[]
+  note?: string | null
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+    // The rating side (rater org/user) is the session's; the subject is derived
+    // in the service from the trip. A member can only rate the other side of a
+    // completed haul their org took part in.
+    services.submitTripReview({
+      direction: input.direction,
+      note: input.note ?? null,
+      raterOrganizationId: actorOrganizationId(actor),
+      raterUserId: actor.profile.id,
+      stars: input.stars,
+      tags: input.tags,
+      tripId: input.tripId
+    })
+
+    captureServerEvent("trip_reviewed", actor.profile.id, { direction: input.direction, stars: input.stars })
+    commit(["/driver", "/fleet", "/host", "/admin"])
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
 // --- Admin -----------------------------------------------------------------------
 
 async function requireAdmin(): Promise<SessionActor> {

@@ -15,6 +15,7 @@ import {
   OpportunityBuilder,
   type PendingCapacityRequest
 } from "./HostActions"
+import { TripReviewForm } from "./Reputation"
 import { AppShell, EmptyState, Metric, type ShellAccount } from "./Shells"
 
 interface HostPageProps {
@@ -268,6 +269,19 @@ export function HostLiveBoard({ account, network }: HostPageProps) {
                       </span>
                       <Badge tone={tripTone(trip.status)}>{tripStatusLabel(trip.status)}</Badge>
                       <span>{lastUpdateFor(trip)}</span>
+                      {trip.reviewable ? (
+                        trip.reviewable.alreadyReviewed ? (
+                          <span className="review-done">
+                            <Icon aria-hidden name="status.verified" size={14} /> You rated {trip.reviewable.counterpartyName}.
+                          </span>
+                        ) : (
+                          <TripReviewForm
+                            counterpartyName={trip.reviewable.counterpartyName}
+                            direction={trip.reviewable.direction}
+                            tripId={trip.id}
+                          />
+                        )
+                      ) : null}
                     </div>
                   ))
                 )}

@@ -63,6 +63,13 @@ export function buildAssistantGrounding(
       scheduleLabel: rec.scheduleLabel,
       title: rec.title
     })),
+    reputation: network.activeOrganization.reputation
+      ? {
+          avgRating: network.activeOrganization.reputation.avgRating,
+          label: network.activeOrganization.reputation.label,
+          ratedCount: network.activeOrganization.reputation.ratingCount
+        }
+      : null,
     role,
     trips: network.trips.map((trip) => ({
       driverName: trip.driverName,

@@ -113,6 +113,23 @@ export const loadTypeSchema = z.enum([
 
 export const scheduleTypeSchema = z.enum(["one_off", "recurring", "campaign"])
 
+export const reviewTagSchema = z.enum([
+  // Positive
+  "on_time",
+  "professional",
+  "clear_instructions",
+  "accurate_load",
+  "easy_access",
+  "good_communication",
+  "safe",
+  // Needs-work
+  "late",
+  "unsafe_access",
+  "inaccurate_load",
+  "poor_communication",
+  "access_issues"
+])
+
 export type UserRole = z.infer<typeof userRoleSchema>
 export type TruckType = z.infer<typeof truckTypeSchema>
 export type TrailerType = z.infer<typeof trailerTypeSchema>
@@ -126,3 +143,4 @@ export type VerificationStatus = z.infer<typeof verificationStatusSchema>
 export type NotificationType = z.infer<typeof notificationTypeSchema>
 export type LoadType = z.infer<typeof loadTypeSchema>
 export type ScheduleType = z.infer<typeof scheduleTypeSchema>
+export type ReviewTag = z.infer<typeof reviewTagSchema>

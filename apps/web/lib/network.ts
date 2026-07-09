@@ -3,17 +3,70 @@ import {
   explainCompatibility,
   formatRateLabel,
   recommendLoad,
+  reputationLabel,
+  summarizeReviews,
   type AssignmentStatus,
   type LoadStatus,
   type MatchEligibility,
   type OpportunityVisibilityMode,
   type RecommendationBand,
   type RecommendationVisibility,
+  type ReputationBand,
   type RoadCondition,
   type TripStatusV2
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 import { createLogLoadsServices } from "@logloads/services"
+
+export type OrgReputationView = {
+  label: string
+  band: ReputationBand
+  avgRating: number | null
+  ratingCount: number
+} | null
+
+/** An organization's public reputation aggregate, or null when it has none yet. */
+function organizationReputation(state: LogLoadsDatabaseState, organizationId: string): OrgReputationView {
+  const reviews = state.tripReviews.filter((review) => review.subjectOrganizationId === organizationId)
+
+  if (reviews.length === 0) {
+    return null
+  }
+
+  const summary = summarizeReviews(reviews)
+  return { avgRating: summary.avgRating, band: summary.band, label: reputationLabel(summary), ratingCount: summary.ratedCount }
+}
+
+/** Reliability signal for the recommendation engine: a host org's on-time/rating. */
+function counterpartReliabilitySignal(
+  state: LogLoadsDatabaseState,
+  organizationId: string
+): { onTimeRate: number | null; avgRating: number | null; ratedTrips: number } | null {
+  const reviews = state.tripReviews.filter((review) => review.subjectOrganizationId === organizationId)
+
+  if (reviews.length === 0) {
+    return null
+  }
+
+  const summary = summarizeReviews(reviews)
+  const onTime = reviews.filter((review) => review.tags.includes("on_time")).length
+  const late = reviews.filter((review) => review.tags.includes("late")).length
+  const timed = onTime + late
+
+  return { avgRating: summary.avgRating, onTimeRate: timed === 0 ? null : onTime / timed, ratedTrips: summary.ratedCount }
+}
+
+/** A driver's reputation aggregate (reviews naming this driver profile as subject). */
+function driverReputation(state: LogLoadsDatabaseState, driverProfileId: string): OrgReputationView {
+  const reviews = state.tripReviews.filter((review) => review.subjectDriverProfileId === driverProfileId)
+
+  if (reviews.length === 0) {
+    return null
+  }
+
+  const summary = summarizeReviews(reviews)
+  return { avgRating: summary.avgRating, band: summary.band, label: reputationLabel(summary), ratingCount: summary.ratedCount }
+}
 
 export type NetworkViewer =
   | { kind: "actor"; actorUserId: string; organizationId?: string | null }
@@ -43,6 +96,7 @@ export interface NetworkLoadView {
   title: string
   sourceName: string
   sourceOrganizationId: string
+  sourceReputation: OrgReputationView
   status: LoadStatus
   visibilityMode: OpportunityVisibilityMode
   allocationMode: string
@@ -150,6 +204,7 @@ export interface TruckView {
   region: string
   matchCount: number
   verification: string
+  reputation: OrgReputationView
 }
 
 export interface NoticeView {
@@ -167,6 +222,7 @@ export interface NetworkView {
     role: string
     type: string
     verificationStatus: string
+    reputation: OrgReputationView
   }
   currentDriver: {
     id: string
@@ -213,6 +269,12 @@ export interface NetworkView {
     locationVisibility: string
     routePackId: string | null
     lastSyncedAt: string | null
+    completedAt: string | null
+    reviewable: {
+      direction: "host_rates_hauler" | "hauler_rates_host"
+      counterpartyName: string
+      alreadyReviewed: boolean
+    } | null
     events: Array<{ id: string; type: string; note: string | null; occurredAt: string; source: string }>
     documents: Array<{ id: string; type: string; filename: string; processingStatus: string }>
   }>
@@ -484,6 +546,7 @@ export function buildNetworkView(state: LogLoadsDatabaseState, viewer: NetworkVi
     const recommendation = compatibility && !ownsLoad
       ? recommendLoad({
           compatibility,
+          counterpartReliability: counterpartReliabilitySignal(state, load.companyId),
           daysUntilSchedule: daysUntil(load.loadDate ?? load.campaignStartDate),
           distanceMiles: route.estimatedDistanceMiles,
           freshness: (landing.roadCondition ?? "good") === "good" ? "verified" : "recent",
@@ -621,6 +684,7 @@ export function buildNetworkView(state: LogLoadsDatabaseState, viewer: NetworkVi
       },
       sourceName: source.displayName,
       sourceOrganizationId: source.id,
+      sourceReputation: organizationReputation(state, source.id),
       status: load.status,
       title: load.title,
       tonsLabel: load.estimatedTonsPerLoad ? `${load.estimatedTonsPerLoad} tons expected` : "Weight pending",
@@ -689,7 +753,7 @@ export function buildNetworkView(state: LogLoadsDatabaseState, viewer: NetworkVi
   // --- Public viewers stop here with a redacted, aggregate-only view -------
   if (viewer.kind === "public" || !activeOrganization || !activeMembership || !currentUser) {
     return {
-      activeOrganization: { id: "public", name: "LogLoads", role: "visitor", type: "public", verificationStatus: "pending" },
+      activeOrganization: { id: "public", name: "LogLoads", reputation: null, role: "visitor", type: "public", verificationStatus: "pending" },
       auditEvents: [],
       currentDriver: null,
       currentEquipment: null,
@@ -748,6 +812,7 @@ export function buildNetworkView(state: LogLoadsDatabaseState, viewer: NetworkVi
       matchCount,
       payload: `${combination.maxPayloadTons} tons`,
       region: combination.homeRegion,
+      reputation: driver ? driverReputation(state, driver.id) : null,
       status: availability?.status ?? combination.status,
       unitNumber: combination.label,
       verification
@@ -820,8 +885,36 @@ export function buildNetworkView(state: LogLoadsDatabaseState, viewer: NetworkVi
           type: document.type.replaceAll("_", " ")
         }))
 
+      // A completed cross-org haul opens a review prompt for the viewer's side.
+      // The counterparty (who they'd rate) and whether they've already rated come
+      // straight from state so the UI shows the right prompt or a "Reviewed" mark.
+      const hostOrgId = load.companyId
+      const haulerOrgId = driver?.companyId ?? null
+      let reviewable: {
+        direction: "host_rates_hauler" | "hauler_rates_host"
+        counterpartyName: string
+        alreadyReviewed: boolean
+      } | null = null
+
+      if (trip.status === "completed" && haulerOrgId && hostOrgId !== haulerOrgId) {
+        if (activeOrganization.id === hostOrgId) {
+          reviewable = {
+            alreadyReviewed: state.tripReviews.some((r) => r.tripId === trip.id && r.direction === "host_rates_hauler"),
+            counterpartyName: state.organizations.find((o) => o.id === haulerOrgId)?.displayName ?? "the hauler",
+            direction: "host_rates_hauler"
+          }
+        } else if (activeOrganization.id === haulerOrgId) {
+          reviewable = {
+            alreadyReviewed: state.tripReviews.some((r) => r.tripId === trip.id && r.direction === "hauler_rates_host"),
+            counterpartyName: state.organizations.find((o) => o.id === hostOrgId)?.displayName ?? "the host",
+            direction: "hauler_rates_host"
+          }
+        }
+      }
+
       return {
         assignmentId: trip.assignmentId,
+        completedAt: trip.completedAt ?? null,
         documents,
         driverName: driverUser?.fullName ?? "Driver",
         driverProfileId: trip.driverProfileId,
@@ -831,6 +924,7 @@ export function buildNetworkView(state: LogLoadsDatabaseState, viewer: NetworkVi
         loadPostingId: trip.loadPostingId,
         loadTitle: load.title,
         locationVisibility: trip.locationVisibility.replaceAll("_", " "),
+        reviewable,
         routePackId: trip.routePackId ?? null,
         status: trip.status
       }
@@ -893,6 +987,7 @@ export function buildNetworkView(state: LogLoadsDatabaseState, viewer: NetworkVi
     activeOrganization: {
       id: activeOrganization.id,
       name: activeOrganization.displayName,
+      reputation: organizationReputation(state, activeOrganization.id),
       role: activeMembership.role,
       type: activeOrganization.type,
       verificationStatus: activeOrganization.verificationStatus

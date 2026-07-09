@@ -8,6 +8,7 @@ import type { NetworkLoadView, NetworkView } from "@/lib/network"
 import type { VerificationRecordView } from "@/lib/verification-data"
 import { formatDateTime, formatHuman, tripStatusLabel } from "@/lib/v3-shared"
 import { RelationshipGrid } from "./Common"
+import { ReputationChip, TripReviewForm } from "./Reputation"
 import { VerificationSubmit, type VerificationTypeOption } from "./VerificationSubmit"
 import {
   AddEquipmentForm,
@@ -283,6 +284,19 @@ function TripCard({ network, trip }: { network: NetworkView; trip: TripView }) {
           <LogProofControl tripId={trip.id} />
         </div>
       ) : null}
+      {trip.reviewable ? (
+        trip.reviewable.alreadyReviewed ? (
+          <p className="review-done">
+            <Icon aria-hidden name="status.verified" size={16} /> You reviewed {trip.reviewable.counterpartyName}.
+          </p>
+        ) : (
+          <TripReviewForm
+            counterpartyName={trip.reviewable.counterpartyName}
+            direction={trip.reviewable.direction}
+            tripId={trip.id}
+          />
+        )
+      ) : null}
       {load ? <Link className="text-link" href={`/driver/loads/${load.id}`}>Route Pack and load detail</Link> : null}
     </article>
   )
@@ -361,7 +375,10 @@ export function DriverEquipment({ account, network }: DriverPageProps) {
                     <span>{truck.region}</span>
                     <span>{truck.matchCount} matching loads</span>
                   </div>
-                  <Badge tone={verification.tone}>{verification.label}</Badge>
+                  <div className="truck-card-v3__badges">
+                    <Badge tone={verification.tone}>{verification.label}</Badge>
+                    <ReputationChip reputation={truck.reputation} />
+                  </div>
                   <EquipmentStatusToggle combinationId={truck.id} status={truck.status} />
                 </article>
               )
@@ -406,7 +423,10 @@ export function DriverProfile({
             <h2>{network.currentDriver?.name ?? account.userName}</h2>
             <p className="muted">{account.organizationName} · {formatHuman(network.activeOrganization.role)}</p>
           </div>
-          <Badge tone={verification.tone}>{verification.label}</Badge>
+          <div className="profile-head__badges">
+            <Badge tone={verification.tone}>{verification.label}</Badge>
+            <ReputationChip reputation={network.activeOrganization.reputation} />
+          </div>
         </div>
         <dl>
           <div>
