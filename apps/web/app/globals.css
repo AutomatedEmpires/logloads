@@ -768,6 +768,37 @@ dd { margin: 0; font-weight: 900; text-align: right; }
 .builder-form label { display: grid; gap: 6px; color: var(--muted); font-weight: 900; }
 .builder-form select,
 .builder-form input { min-height: 40px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; padding: 8px; color: var(--ink); }
+.builder-form textarea { border: 1px solid var(--line); border-radius: var(--radius); background: #fff; padding: 8px; color: var(--ink); font-family: inherit; font-weight: 600; resize: vertical; }
+
+/* Rich posting: requirement + day chips, reach step. */
+.req-block { display: grid; gap: 6px; }
+.req-label { color: var(--muted); font-weight: 900; font-size: 0.88rem; }
+.req-hint { color: var(--muted); font-size: 0.8rem; font-weight: 600; }
+.req-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.req-chip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink-soft);
+  padding: 6px 12px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.req-chip:hover { border-color: var(--pine); }
+.req-chip.is-on { background: var(--pine); border-color: var(--pine); color: #fff; }
+.host-visibility-step { display: grid; gap: 12px; }
+.load-cadence {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--steel-bg);
+  color: var(--steel);
+  font-style: normal;
+  font-weight: 800;
+  font-size: 0.72rem;
+}
 .invite-panel { margin: 14px 24px 0; }
 .profile-panel .choice-grid,
 .auth-panel .choice-grid { margin-top: 16px; }

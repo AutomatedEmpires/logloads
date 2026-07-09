@@ -102,6 +102,7 @@ export interface NetworkLoadView {
   allocationMode: string
   loadType: string
   scheduleLabel: string
+  cadenceLabel: string
   access: LoadAccess
   landing: NetworkPoint
   destination: NetworkPoint
@@ -340,6 +341,33 @@ function formatDateRange(load: { loadDate?: string | null; campaignStartDate?: s
   }
 
   return "Window pending"
+}
+
+const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+
+/** A glanceable cadence marker: "Weekly · Mon, Wed, Fri", "Campaign", or "One-off". */
+function cadenceLabel(load: {
+  scheduleType: string
+  recurringSchedule?: { frequency: string; daysOfWeek: number[] } | null
+}): string {
+  if (load.scheduleType === "recurring" && load.recurringSchedule) {
+    if (load.recurringSchedule.frequency === "daily") {
+      return "Recurring · daily"
+    }
+
+    const names = load.recurringSchedule.daysOfWeek
+      .map((day) => WEEKDAY_LABELS[day])
+      .filter((value): value is string => Boolean(value))
+      .join(", ")
+
+    return names ? `Weekly · ${names}` : "Recurring"
+  }
+
+  if (load.scheduleType === "campaign") {
+    return "Campaign"
+  }
+
+  return "One-off"
 }
 
 function formatSlotWindow(startAt: string, endAt: string): string {
@@ -675,6 +703,7 @@ export function buildNetworkView(state: LogLoadsDatabaseState, viewer: NetworkVi
           }
         : null,
       scheduleLabel: formatDateRange(load),
+      cadenceLabel: cadenceLabel(load),
       slots: {
         nextWindow: requestableSlot ? formatSlotWindow(requestableSlot.startAt, requestableSlot.endAt) : "No open slot",
         open: slots.reduce((sum, slot) => sum + Math.max(0, slot.capacity - slot.reservedCount), 0),

@@ -8,9 +8,69 @@ import {
   createLoadPostingAction,
   createOperationalNoticeAction
 } from "@/lib/cockpit-actions"
-import type { HostPublishingOptions } from "@/lib/host-data"
-import { formatHuman } from "@/lib/v3-shared"
+import type { HostPublishingOptions, RequirementOption } from "@/lib/host-data"
+import { formatHuman, humanizeTag } from "@/lib/v3-shared"
 import { EmptyState } from "./Shells"
+
+const ROAD_CONDITIONS = ["good", "wet", "muddy", "icy", "snow", "restricted", "closed"] as const
+const WEEKDAYS: Array<[number, string]> = [
+  [1, "Mon"],
+  [2, "Tue"],
+  [3, "Wed"],
+  [4, "Thu"],
+  [5, "Fri"],
+  [6, "Sat"],
+  [0, "Sun"]
+]
+const VISIBILITY_MODES: Array<[string, string, string]> = [
+  ["open_network", "Open network", "Any hauling organization can see and request this work."],
+  ["private_network", "Private — partners only", "Only your trusted partner organizations see it."],
+  ["verified_network", "Verified carriers", "Limited to carriers building a verified track record."]
+]
+
+type ScheduleKind = "one_off" | "recurring" | "campaign"
+
+function toggleInSet<T>(current: Set<T>, value: T): Set<T> {
+  const next = new Set(current)
+  if (next.has(value)) {
+    next.delete(value)
+  } else {
+    next.add(value)
+  }
+  return next
+}
+
+function RequirementChips({
+  options,
+  selected,
+  onToggle,
+  empty
+}: {
+  options: RequirementOption[]
+  selected: Set<string>
+  onToggle: (value: string) => void
+  empty: string
+}) {
+  if (options.length === 0) {
+    return <p className="host-builder-note">{empty}</p>
+  }
+
+  return (
+    <div className="req-chips">
+      {options.map((option) => (
+        <button
+          aria-pressed={selected.has(option.value)}
+          className={selected.has(option.value) ? "req-chip is-on" : "req-chip"}
+          key={option.value}
+          onClick={() => onToggle(option.value)}
+          type="button"
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 // --- Capacity request approvals ---------------------------------------------
 
@@ -98,12 +158,22 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
   const [title, setTitle] = useState("")
   const [loadType, setLoadType] = useState(options.loadTypes[0] ?? "saw_logs")
   const [tons, setTons] = useState("")
+  const [equipment, setEquipment] = useState<Set<string>>(new Set())
+  const [access, setAccess] = useState<Set<string>>(new Set())
   const [landingId, setLandingId] = useState(options.landings[0]?.id ?? "")
   const [routeId, setRouteId] = useState("")
+  const [roadOverride, setRoadOverride] = useState<string>("")
+  const [weather, setWeather] = useState("")
   const [truckloads, setTruckloads] = useState("2")
+  const [scheduleKind, setScheduleKind] = useState<ScheduleKind>("one_off")
   const [loadDate, setLoadDate] = useState(defaultLoadDate)
+  const [campaignStart, setCampaignStart] = useState(defaultLoadDate)
+  const [campaignEnd, setCampaignEnd] = useState("")
+  const [days, setDays] = useState<Set<number>>(new Set([1, 3, 5]))
+  const [until, setUntil] = useState("")
   const [rateId, setRateId] = useState(options.rates[0]?.id ?? "")
   const [visibility, setVisibility] = useState<BuilderVisibility>("open")
+  const [visibilityMode, setVisibilityMode] = useState<string>("open_network")
   const [error, setError] = useState<string | null>(null)
   const [published, setPublished] = useState<{ title: string; visibility: BuilderVisibility } | null>(null)
   const [pending, startTransition] = useTransition()
@@ -141,10 +211,29 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
 
   const dispatcher = options.dispatcher
 
+  const weekdayNames = (values: number[]) =>
+    values
+      .slice()
+      .sort((left, right) => left - right)
+      .map((day) => WEEKDAYS.find(([value]) => value === day)?.[1])
+      .filter((value): value is string => Boolean(value))
+      .join(", ")
+
+  const isDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value)
+  // The load's roadCondition is the LANDING's road (matching reports it as the
+  // landing axis, separate from the route). Default from the landing, host-editable.
+  const roadCondition = roadOverride || landing?.roadCondition || "good"
+  const scheduleReady =
+    scheduleKind === "one_off"
+      ? isDate(loadDate)
+      : scheduleKind === "campaign"
+        ? isDate(campaignStart) && isDate(campaignEnd) && campaignStart <= campaignEnd
+        : days.size > 0 && isDate(campaignStart) && isDate(until) && campaignStart <= until
+
   const stepReady = [
     title.trim().length > 0,
     Boolean(landing && route),
-    Number.isInteger(truckloadCount) && truckloadCount > 0 && /^\d{4}-\d{2}-\d{2}$/.test(loadDate),
+    Number.isInteger(truckloadCount) && truckloadCount > 0 && scheduleReady,
     Boolean(rate),
     true,
     true
@@ -158,10 +247,12 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
     startTransition(async () => {
       setError(null)
 
+      try {
       const result = await createLoadPostingAction({
-        accessRequirements: [],
-        campaignEndDate: null,
-        campaignStartDate: null,
+        accessRequirements: [...access],
+        allocationMode: "request_approval",
+        campaignEndDate: scheduleKind === "campaign" ? campaignEnd : null,
+        campaignStartDate: scheduleKind === "one_off" ? null : campaignStart,
         dailyTruckCountNeeded: truckloadCount,
         dispatcherContact: {
           email: dispatcher.email,
@@ -170,21 +261,25 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
         },
         dispatcherProfileId: dispatcher.id,
         dropoffMillId: route.millId,
-        equipmentRequirements: [],
+        equipmentRequirements: [...equipment],
         estimatedTonsPerLoad: tonsValue && tonsValue > 0 ? tonsValue : null,
-        loadDate,
+        loadDate: scheduleKind === "one_off" ? loadDate : null,
         loadType,
         loaderContact: null,
         loaderProfileId: null,
         pickupLandingId: landing.id,
         rateId: rate.id,
-        recurringSchedule: null,
-        roadCondition: route.roadCondition,
+        recurringSchedule:
+          scheduleKind === "recurring"
+            ? { daysOfWeek: [...days].sort((a, b) => a - b), frequency: "weekly", untilDate: until }
+            : null,
+        roadCondition,
         routeId: route.id,
-        scheduleType: "one_off",
+        scheduleType: scheduleKind,
         status: visibility === "open" ? "open" : "draft",
         title: title.trim(),
-        weatherNotes: null
+        visibilityMode,
+        weatherNotes: weather.trim() || null
       })
 
       if (result.ok) {
@@ -192,12 +287,25 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
         setStep(0)
         setTitle("")
         setTons("")
+        setEquipment(new Set())
+        setAccess(new Set())
+        setRoadOverride("")
+        setWeather("")
         setRouteId("")
         setTruckloads("2")
+        setScheduleKind("one_off")
         setLoadDate(defaultLoadDate())
+        setCampaignStart(defaultLoadDate())
+        setCampaignEnd("")
+        setDays(new Set([1, 3, 5]))
+        setUntil("")
         setVisibility("open")
+        setVisibilityMode("open_network")
       } else {
         setError(result.error ?? "Publishing failed. Check the details and try again.")
+      }
+      } catch {
+        setError("Publishing didn't go through. Check your connection and try again.")
       }
     })
   }
@@ -257,6 +365,26 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
               value={tons}
             />
           </label>
+          <div className="host-field--full req-block">
+            <span className="req-label">Equipment required</span>
+            <RequirementChips
+              empty="No carrier equipment on file yet — post without equipment requirements for now."
+              onToggle={(value) => setEquipment((current) => toggleInSet(current, value))}
+              options={options.equipmentVocabulary}
+              selected={equipment}
+            />
+            <span className="req-hint">Only carriers whose trucks carry every selected item can request this load.</span>
+          </div>
+          <div className="host-field--full req-block">
+            <span className="req-label">Access needs (optional)</span>
+            <RequirementChips
+              empty="No access tags on file yet."
+              onToggle={(value) => setAccess((current) => toggleInSet(current, value))}
+              options={options.accessVocabulary}
+              selected={access}
+            />
+            <span className="req-hint">Flags carriers without these — a soft caution, not a hard block.</span>
+          </div>
         </div>
       ) : null}
 
@@ -302,9 +430,29 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
               <span>
                 {route.distanceMiles.toFixed(0)} mi · {route.runTimeMinutes} min planned
               </span>
-              <span>Road {formatHuman(route.roadCondition)}</span>
+              <span>Route road {formatHuman(route.roadCondition)}</span>
             </div>
           ) : null}
+          <label>
+            Landing road condition
+            <select onChange={(event) => setRoadOverride(event.target.value)} value={roadCondition}>
+              {ROAD_CONDITIONS.map((condition) => (
+                <option key={condition} value={condition}>
+                  {formatHuman(condition)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="host-field--full">
+            Site &amp; weather notes (optional)
+            <textarea
+              maxLength={280}
+              onChange={(event) => setWeather(event.target.value)}
+              placeholder="e.g. Fog through 09:00; chains advised above 3000 ft."
+              rows={2}
+              value={weather}
+            />
+          </label>
         </div>
       ) : null}
 
@@ -321,9 +469,62 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
             />
           </label>
           <label>
-            Load date
-            <input onChange={(event) => setLoadDate(event.target.value)} type="date" value={loadDate} />
+            Cadence
+            <select onChange={(event) => setScheduleKind(event.target.value as ScheduleKind)} value={scheduleKind}>
+              <option value="one_off">One-off — a single day</option>
+              <option value="recurring">Recurring — weekly on set days</option>
+              <option value="campaign">Campaign — every day in a range</option>
+            </select>
           </label>
+
+          {scheduleKind === "one_off" ? (
+            <label>
+              Load date
+              <input onChange={(event) => setLoadDate(event.target.value)} type="date" value={loadDate} />
+            </label>
+          ) : null}
+
+          {scheduleKind === "campaign" ? (
+            <>
+              <label>
+                Campaign start
+                <input onChange={(event) => setCampaignStart(event.target.value)} type="date" value={campaignStart} />
+              </label>
+              <label>
+                Campaign end
+                <input onChange={(event) => setCampaignEnd(event.target.value)} type="date" value={campaignEnd} />
+              </label>
+            </>
+          ) : null}
+
+          {scheduleKind === "recurring" ? (
+            <>
+              <label>
+                Starting
+                <input onChange={(event) => setCampaignStart(event.target.value)} type="date" value={campaignStart} />
+              </label>
+              <label>
+                Repeat until
+                <input onChange={(event) => setUntil(event.target.value)} type="date" value={until} />
+              </label>
+              <div className="host-field--full req-block">
+                <span className="req-label">Days of the week</span>
+                <div className="req-chips">
+                  {WEEKDAYS.map(([value, label]) => (
+                    <button
+                      aria-pressed={days.has(value)}
+                      className={days.has(value) ? "req-chip is-on" : "req-chip"}
+                      key={value}
+                      onClick={() => setDays((current) => toggleInSet(current, value))}
+                      type="button"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : null}
         </div>
       ) : null}
 
@@ -347,37 +548,51 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
       ) : null}
 
       {step === 4 ? (
-        <div className="host-choice host-step">
-          <label>
-            <input
-              checked={visibility === "open"}
-              name="host-visibility"
-              onChange={() => setVisibility("open")}
-              type="radio"
-            />
-            <span>
-              <strong>Open network</strong>
+        <div className="host-step host-visibility-step">
+          <span className="req-label">Who can see this work</span>
+          <div className="host-choice">
+            {VISIBILITY_MODES.map(([value, label, description]) => (
+              <label key={value}>
+                <input
+                  checked={visibilityMode === value}
+                  name="host-reach"
+                  onChange={() => setVisibilityMode(value)}
+                  type="radio"
+                />
+                <span>
+                  <strong>{label}</strong>
+                  <span>{description}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+          <span className="req-label">Publish now, or hold as a draft</span>
+          <div className="host-choice">
+            <label>
+              <input
+                checked={visibility === "open"}
+                name="host-visibility"
+                onChange={() => setVisibility("open")}
+                type="radio"
+              />
               <span>
-                Any hauling organization on LogLoads can see this work, and it appears on the public loads board.
-                Exact landing access still unlocks only after you approve an assignment.
+                <strong>Publish now</strong>
+                <span>Goes live for the reach you chose. Exact landing access still unlocks only after you approve an assignment.</span>
               </span>
-            </span>
-          </label>
-          <label>
-            <input
-              checked={visibility === "draft"}
-              name="host-visibility"
-              onChange={() => setVisibility("draft")}
-              type="radio"
-            />
-            <span>
-              <strong>Draft — team only</strong>
+            </label>
+            <label>
+              <input
+                checked={visibility === "draft"}
+                name="host-visibility"
+                onChange={() => setVisibility("draft")}
+                type="radio"
+              />
               <span>
-                Stays inside your workspace until you open it. To steer open work toward trusted partners, send a
-                direct offer from the Carriers page.
+                <strong>Draft — team only</strong>
+                <span>Stays inside your workspace until you open it.</span>
               </span>
-            </span>
-          </label>
+            </label>
+          </div>
         </div>
       ) : null}
 
@@ -398,8 +613,27 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
           <div>
             <dt>Capacity</dt>
             <dd>
-              {truckloadCount} truckload{truckloadCount === 1 ? "" : "s"} per day on {loadDate}
+              {truckloadCount} truckload{truckloadCount === 1 ? "" : "s"} per day ·{" "}
+              {scheduleKind === "one_off"
+                ? `on ${loadDate}`
+                : scheduleKind === "campaign"
+                  ? `every day, ${campaignStart} to ${campaignEnd}`
+                  : `weekly on ${weekdayNames([...days])} until ${until}`}
             </dd>
+          </div>
+          <div>
+            <dt>Equipment</dt>
+            <dd>{equipment.size > 0 ? [...equipment].map(humanizeTag).join(", ") : "No specific requirements"}</dd>
+          </div>
+          {access.size > 0 ? (
+            <div>
+              <dt>Access</dt>
+              <dd>{[...access].map(humanizeTag).join(", ")}</dd>
+            </div>
+          ) : null}
+          <div>
+            <dt>Landing road</dt>
+            <dd>{formatHuman(roadCondition)}{weather.trim() ? ` · ${weather.trim()}` : ""}</dd>
           </div>
           <div>
             <dt>Terms</dt>
@@ -411,7 +645,11 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
           </div>
           <div>
             <dt>Visibility</dt>
-            <dd>{visibility === "open" ? "Open network" : "Draft — team only"}</dd>
+            <dd>
+              {visibility === "open"
+                ? VISIBILITY_MODES.find(([value]) => value === visibilityMode)?.[1] ?? "Open network"
+                : "Draft — team only"}
+            </dd>
           </div>
           <div>
             <dt>Dispatch contact</dt>

@@ -262,6 +262,19 @@ export const seedDispatcherProfiles: DispatcherProfile[] = parseMany(dispatcherP
     },
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
+  },
+  {
+    id: "55555555-5555-4555-8555-555555555553",
+    userId: "22222222-2222-4222-8222-222222222223",
+    companyId: "33333333-3333-4333-8333-333333333332",
+    dispatchRegion: "Blue River Basin",
+    contact: {
+      name: "Cole Cedar",
+      phone: "555-3001",
+      email: "dispatch@summit.example"
+    },
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
   }
 ])
 

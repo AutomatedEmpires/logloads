@@ -3,6 +3,7 @@ import "server-only"
 import { formatMoney, formatRateLabel, loadTypeSchema } from "@logloads/contracts"
 
 import { services } from "./services"
+import { humanizeTag } from "./v3-shared"
 
 /**
  * Read helpers for the host cockpit. Everything here is derived from the live
@@ -40,12 +41,26 @@ export interface HostRateOption {
   detail: string | null
 }
 
+export interface RequirementOption {
+  value: string
+  label: string
+}
+
 export interface HostPublishingOptions {
   dispatcher: HostDispatcherOption | null
   landings: HostLandingOption[]
   loadTypes: string[]
   rates: HostRateOption[]
   routes: HostRouteOption[]
+  equipmentVocabulary: RequirementOption[]
+  accessVocabulary: RequirementOption[]
+}
+
+function sortedOptions(values: Set<string>): RequirementOption[] {
+  return [...values]
+    .filter(Boolean)
+    .sort((left, right) => left.localeCompare(right))
+    .map((value) => ({ label: humanizeTag(value), value }))
 }
 
 export function getHostPublishingOptions(organizationId: string): HostPublishingOptions {
@@ -67,7 +82,31 @@ export function getHostPublishingOptions(organizationId: string): HostPublishing
 
   const millsById = new Map(state.mills.map((mill) => [mill.id, mill]))
 
+  // Requirement vocabularies are drawn from what carriers actually run, so a
+  // requirement always matches at least one truck's capabilities (equipment is a
+  // HARD matching filter — an unknown tag would make the load fit nobody).
+  const equipmentValues = new Set<string>()
+  for (const truck of state.truckProfiles) {
+    for (const tag of truck.equipmentTags) {
+      equipmentValues.add(tag)
+    }
+  }
+  for (const trailer of state.trailerProfiles) {
+    equipmentValues.add(trailer.trailerType)
+    for (const tag of trailer.equipmentTags) {
+      equipmentValues.add(tag)
+    }
+  }
+
+  const accessValues = new Set<string>()
+  for (const truck of state.truckProfiles) {
+    for (const capability of truck.roadAccessCapabilities) {
+      accessValues.add(capability)
+    }
+  }
+
   return {
+    accessVocabulary: sortedOptions(accessValues),
     dispatcher: dispatcherProfile
       ? {
           email: dispatcherProfile.contact.email ?? null,
@@ -76,6 +115,7 @@ export function getHostPublishingOptions(organizationId: string): HostPublishing
           phone: dispatcherProfile.contact.phone
         }
       : null,
+    equipmentVocabulary: sortedOptions(equipmentValues),
     landings: state.landings
       .filter((landing) => landing.companyId === organizationId && landing.isActive)
       .map((landing) => ({

@@ -23,12 +23,81 @@ export function getLoadById(state: LogLoadsDatabaseState, loadId: string): LoadP
 
 const LIVE_STATUSES = new Set(["open", "scheduled"])
 
+// A recurring or campaign load fans out into one loading slot per scheduled day,
+// capped so a long window can't explode the slot table.
+const MAX_SCHEDULE_SLOTS = 45
+const MAX_RANGE_DAYS = 366
+
 function loadingWindow(dateOnly: string): { startAt: string; endAt: string } {
   // A default daytime loading window on the load date (UTC).
   return {
     endAt: `${dateOnly}T21:00:00.000Z`,
     startAt: `${dateOnly}T13:00:00.000Z`
   }
+}
+
+function isoDate(dateOnly: string): Date {
+  return new Date(`${dateOnly}T00:00:00.000Z`)
+}
+
+function addDays(dateOnly: string, days: number): string {
+  const date = isoDate(dateOnly)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+function datesInRange(startDate: string, endDate: string): string[] {
+  if (isoDate(endDate).getTime() < isoDate(startDate).getTime()) {
+    return [startDate]
+  }
+
+  const dates: string[] = []
+  const endTime = isoDate(endDate).getTime()
+  let cursor = startDate
+  let guard = 0
+
+  while (isoDate(cursor).getTime() <= endTime && guard < MAX_RANGE_DAYS) {
+    dates.push(cursor)
+    cursor = addDays(cursor, 1)
+    guard += 1
+  }
+
+  return dates
+}
+
+/**
+ * The dates a live load needs loading slots on:
+ * - one_off  -> the load date;
+ * - campaign -> every day in [start, end];
+ * - recurring -> each matching day-of-week from the start through untilDate.
+ * one_off and campaign always yield >= 1 date; a recurring schedule with no
+ * matching weekday in the window yields none (so no wrong-day slot is created).
+ * Never more than MAX_SCHEDULE_SLOTS.
+ */
+function scheduleDates(entity: LoadPosting, fallbackDate: string): string[] {
+  let dates: string[]
+
+  if (entity.scheduleType === "campaign" && entity.campaignStartDate && entity.campaignEndDate) {
+    dates = datesInRange(entity.campaignStartDate, entity.campaignEndDate)
+  } else if (entity.scheduleType === "recurring" && entity.recurringSchedule) {
+    const start = entity.campaignStartDate ?? entity.loadDate ?? fallbackDate
+    const end = entity.recurringSchedule.untilDate ?? entity.campaignEndDate ?? addDays(start, 27)
+    const everyDay = datesInRange(start, end)
+
+    if (entity.recurringSchedule.frequency === "daily") {
+      dates = everyDay
+    } else {
+      // Only the requested weekdays — never a fallback onto an unrequested day.
+      // If no weekday was selected (or none falls in the window) there are simply
+      // no loading days, and the load below gets no requestable slots.
+      const wanted = new Set(entity.recurringSchedule.daysOfWeek)
+      dates = everyDay.filter((date) => wanted.has(isoDate(date).getUTCDay()))
+    }
+  } else {
+    dates = [entity.loadDate ?? entity.campaignStartDate ?? fallbackDate]
+  }
+
+  return dates.slice(0, MAX_SCHEDULE_SLOTS)
 }
 
 /**
@@ -61,10 +130,11 @@ export function createLoadPosting(
 
   state.loadPostings.push(entity)
 
-  if (LIVE_STATUSES.has(entity.status)) {
-    const totalTruckloads = Math.max(1, entity.dailyTruckCountNeeded)
-    const slotDate = entity.loadDate ?? entity.campaignStartDate ?? timestamp.slice(0, 10)
-    const window = loadingWindow(slotDate)
+  const dates = LIVE_STATUSES.has(entity.status) ? scheduleDates(entity, timestamp.slice(0, 10)) : []
+
+  if (dates.length > 0) {
+    const perDay = Math.max(1, entity.dailyTruckCountNeeded)
+    const totalTruckloads = perDay * dates.length
 
     state.opportunityCapacities.push(
       opportunityCapacitySchema.parse({
@@ -82,23 +152,27 @@ export function createLoadPosting(
       })
     )
 
-    state.truckSlots.push(
-      truckSlotSchema.parse({
-        capacity: totalTruckloads,
-        createdAt: timestamp,
-        endAt: window.endAt,
-        id: createUuid(),
-        landingId: entity.pickupLandingId,
-        loaderProfileId: entity.loaderProfileId ?? null,
-        loadPostingId: entity.id,
-        notes: null,
-        reservedCount: 0,
-        slotDate,
-        startAt: window.startAt,
-        status: "open",
-        updatedAt: timestamp
-      })
-    )
+    for (const slotDate of dates) {
+      const window = loadingWindow(slotDate)
+
+      state.truckSlots.push(
+        truckSlotSchema.parse({
+          capacity: perDay,
+          createdAt: timestamp,
+          endAt: window.endAt,
+          id: createUuid(),
+          landingId: entity.pickupLandingId,
+          loaderProfileId: entity.loaderProfileId ?? null,
+          loadPostingId: entity.id,
+          notes: null,
+          reservedCount: 0,
+          slotDate,
+          startAt: window.startAt,
+          status: "open",
+          updatedAt: timestamp
+        })
+      )
+    }
   }
 
   return entity

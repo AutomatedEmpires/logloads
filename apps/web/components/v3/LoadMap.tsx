@@ -6,7 +6,7 @@ import { useMemo, useState } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
 import type { NetworkLoadView } from "@/lib/network"
-import { fitLabel, fitTone, formatDateTime, formatHuman, loadProductLabel, publicLoadHref, shortLane, visibilityLabel } from "@/lib/v3-shared"
+import { fitLabel, fitTone, formatDateTime, formatHuman, humanizeTag, loadProductLabel, publicLoadHref, shortLane, visibilityLabel } from "@/lib/v3-shared"
 import { ReputationChip } from "./Reputation"
 import { EmptyState, SectionHeader } from "./Shells"
 
@@ -24,7 +24,10 @@ export function LoadCard({ href, load }: { href?: string; load: NetworkLoadView 
         <Icon aria-hidden name="load.origin" size={16} /> {load.landing.city} to {load.destination.name}
         {load.landing.approximate ? <em className="lane-approx">approx. area</em> : null}
       </span>
-      <span className="load-meta">{load.scheduleLabel} · {load.payLabel}</span>
+      <span className="load-meta">
+        {load.scheduleLabel} · {load.payLabel}
+        {load.cadenceLabel !== "One-off" ? <em className="load-cadence">{load.cadenceLabel}</em> : null}
+      </span>
       <span className="load-meta">{load.capacity.remaining} of {load.capacity.total} loads open · {load.route.distanceMiles.toFixed(0)} mi haul</span>
       <span className="card-footer">
         <Badge tone={fitTone(load)}>{fitLabel(load)}</Badge>
@@ -345,8 +348,9 @@ export function OperationSections({ load, publicMode = false }: { load: NetworkL
         <h2>Operation</h2>
         <ul>
           <li>{load.tonsLabel}</li>
-          <li>{load.equipment.join(", ") || "Standard timber equipment"}</li>
-          <li>{load.accessRequirements.join(", ") || "No extra access requirement listed"}</li>
+          <li>Runs {load.cadenceLabel.toLowerCase()}</li>
+          <li>Equipment: {load.equipment.length > 0 ? load.equipment.map(humanizeTag).join(", ") : "Standard timber equipment"}</li>
+          <li>Access: {load.accessRequirements.length > 0 ? load.accessRequirements.map(humanizeTag).join(", ") : "No extra access requirement listed"}</li>
           <li>{publicMode ? "Exact access unlocks after assignment." : load.criticalInstructions[0] ?? "No critical instruction listed."}</li>
         </ul>
       </article>

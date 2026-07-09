@@ -48,6 +48,11 @@ export function formatHuman(value: string): string {
   return value.replaceAll("_", " ")
 }
 
+/** Title-cases a snake_ or kebab-case tag (e.g. "chip-box" -> "Chip Box"). */
+export function humanizeTag(value: string): string {
+  return value.replace(/[-_]/g, " ").replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
 export function pluralize(count: number, singular: string, plural?: string): string {
   return `${count} ${count === 1 ? singular : plural ?? `${singular}s`}`
 }

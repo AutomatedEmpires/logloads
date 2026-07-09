@@ -62,4 +62,58 @@ describe("publishing a load makes it requestable", () => {
     expect(state.opportunityCapacities.some((entry) => entry.loadPostingId === load.id)).toBe(false)
     expect(state.truckSlots.some((slot) => slot.loadPostingId === load.id)).toBe(false)
   })
+
+  it("fans a campaign out into one slot per day with capacity summed across days", () => {
+    const state = createInMemoryDatabase()
+    const load = createLoadPosting(state, {
+      ...BASE_LOAD,
+      campaignEndDate: "2026-07-22",
+      campaignStartDate: "2026-07-20",
+      dailyTruckCountNeeded: 2,
+      loadDate: null,
+      scheduleType: "campaign",
+      status: "open"
+    })
+
+    const slots = state.truckSlots.filter((slot) => slot.loadPostingId === load.id)
+    expect(slots).toHaveLength(3) // Jul 20, 21, 22
+    expect(slots.every((slot) => slot.capacity === 2)).toBe(true)
+    expect(new Set(slots.map((slot) => slot.slotDate)).size).toBe(3)
+
+    const capacity = state.opportunityCapacities.find((entry) => entry.loadPostingId === load.id)
+    expect(capacity?.totalTruckloads).toBe(6) // 2 per day x 3 days
+  })
+
+  it("creates no slots for a recurring load with no selected weekday (never a wrong-day slot)", () => {
+    const state = createInMemoryDatabase()
+    const load = createLoadPosting(state, {
+      ...BASE_LOAD,
+      campaignStartDate: "2026-07-20",
+      loadDate: null,
+      recurringSchedule: { daysOfWeek: [], frequency: "weekly", untilDate: "2026-07-31" },
+      scheduleType: "recurring",
+      status: "open"
+    })
+
+    expect(state.truckSlots.filter((slot) => slot.loadPostingId === load.id)).toHaveLength(0)
+    expect(state.opportunityCapacities.some((entry) => entry.loadPostingId === load.id)).toBe(false)
+  })
+
+  it("fans a weekly recurring load out onto its days of the week only", () => {
+    const state = createInMemoryDatabase()
+    const load = createLoadPosting(state, {
+      ...BASE_LOAD,
+      campaignStartDate: "2026-07-20",
+      dailyTruckCountNeeded: 1,
+      loadDate: null,
+      recurringSchedule: { daysOfWeek: [1, 3, 5], frequency: "weekly", untilDate: "2026-07-31" },
+      scheduleType: "recurring",
+      status: "open"
+    })
+
+    const slots = state.truckSlots.filter((slot) => slot.loadPostingId === load.id)
+    expect(slots.length).toBeGreaterThan(1)
+    // Every generated slot lands on Mon (1), Wed (3), or Fri (5).
+    expect(slots.every((slot) => [1, 3, 5].includes(new Date(`${slot.slotDate}T00:00:00.000Z`).getUTCDay()))).toBe(true)
+  })
 })
