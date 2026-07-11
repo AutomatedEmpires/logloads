@@ -25,6 +25,10 @@ export function upsertAvailabilityWindow(
   const existingId = parsed.id ?? createUuid()
   const timestamp = nowIso()
 
+  if (parsed.id && !state.availabilityWindows.some((window) => window.id === parsed.id)) {
+    throw new Error(`Availability window ${parsed.id} was not found`)
+  }
+
   const overlapping = state.availabilityWindows.find((window) => {
     if (window.driverProfileId !== parsed.driverProfileId) {
       return false
@@ -44,7 +48,7 @@ export function upsertAvailabilityWindow(
   const entity = availabilityWindowSchema.parse({
     ...parsed,
     createdAt: parsed.id
-      ? state.availabilityWindows.find((window) => window.id === parsed.id)?.createdAt ?? timestamp
+      ? state.availabilityWindows.find((window) => window.id === parsed.id)?.createdAt
       : timestamp,
     id: existingId,
     updatedAt: timestamp

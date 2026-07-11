@@ -15,7 +15,7 @@ export function createUuid(): string {
 }
 
 export function assertFound<T>(value: T | undefined, message: string): T {
-  if (!value) {
+  if (value === undefined) {
     throw new Error(message)
   }
 

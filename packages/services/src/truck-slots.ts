@@ -36,6 +36,10 @@ export function createTruckSlot(state: LogLoadsDatabaseState, input: unknown): T
 export function reserveTruckSlot(state: LogLoadsDatabaseState, slotId: string): TruckSlot {
   const slot = assertFound(getTruckSlotById(state, slotId), `Truck slot ${slotId} was not found`)
 
+  if (!["open", "requested", "reserved"].includes(slot.status)) {
+    throw new Error(`Truck slot ${slotId} cannot be reserved while ${slot.status}`)
+  }
+
   if (slot.reservedCount >= slot.capacity) {
     throw new Error(`Truck slot ${slotId} is already at capacity`)
   }

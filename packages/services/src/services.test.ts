@@ -132,6 +132,50 @@ describe("logloads services", () => {
     ).toThrow(/overlaps existing window/)
   })
 
+  it("rejects an availability update for an unknown id", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    expect(() =>
+      services.upsertAvailabilityWindow({
+        id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        driverProfileId: "44444444-4444-4444-8444-444444444441",
+        truckProfileId: "77777777-7777-4777-8777-777777777771",
+        status: "available",
+        startAt: "2026-06-08T18:00:00.000Z",
+        endAt: "2026-06-08T19:00:00.000Z",
+        preferredRouteIds: [],
+        notes: "Unknown window.",
+        recurringSchedule: null
+      })
+    ).toThrow(/was not found/)
+  })
+
+  it("rejects reservations against terminal truck slots", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const slot = services.state.truckSlots.find(
+      (current) => current.id === "dddddddd-dddd-4ddd-8ddd-ddddddddddd2"
+    )
+
+    expect(slot).toBeDefined()
+    if (!slot) {
+      return
+    }
+
+    slot.status = "cancelled"
+
+    expect(() =>
+      services.requestAssignment({
+        loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+        truckSlotId: slot.id,
+        driverProfileId: "44444444-4444-4444-8444-444444444441",
+        truckProfileId: "77777777-7777-4777-8777-777777777771",
+        trailerProfileId: "88888888-8888-4888-8888-888888888881",
+        cancellationReason: null,
+        dispatcherNotes: "Terminal slot must reject the request."
+      })
+    ).toThrow(/cannot be reserved while cancelled/)
+  })
+
   it("releases slot capacity when an assignment is cancelled", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const assignment = services.requestAssignment({
