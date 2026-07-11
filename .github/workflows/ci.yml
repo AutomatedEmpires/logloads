@@ -1,16 +1,18 @@
 name: CI
 
 on:
-  pull_request:
   push:
-    branches:
-      - main
-
-permissions:
-  contents: read
+    branches: [main]
+  pull_request:
+  merge_group:
 
 jobs:
-  validate:
+  ci:
+    uses: AutomatedEmpires/.github/.github/workflows/reusable-ci.yml@main
+    secrets: inherit
+
+  extended-validation:
+    needs: ci
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -32,18 +34,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Test
-        run: pnpm test
-
-      - name: Build
-        run: pnpm build
 
       - name: Guardrails
         run: pnpm guardrails

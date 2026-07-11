@@ -4,10 +4,10 @@
 > Aligned to the Explore&Earn (E&E) doctrine. LogLoads is one of the AutomatedEmpires apps; E&E is the reference implementation.
 
 ## 0 · Prime doctrine
-**Notion decides. GitHub builds. Figma shows. Everything else runs.**
+**Notion decides and builds. GitHub reviews and ships. Figma shows. Everything else runs.**
 
-- **Notion** = product & vision truth (what we build and why). The locked LogLoads canon (AutomatedEmpires — Ventures → LogLoads Source of Truth) is authoritative; this repo implements it and does not redefine it.
-- **This repo** = implementation truth (how it is actually built).
+- **Notion** = product & vision truth (what we build and why), and where the bulk of the build — specs, architecture, data models, copy — is authored before code moves. The locked LogLoads canon (AutomatedEmpires — Ventures → LogLoads Source of Truth) is authoritative; this repo implements it and does not redefine it.
+- **This repo** = implementation truth (how it is actually built); GitHub validates, reviews, and ships what Notion produced.
 - Product/vision conflict → Notion decides. Implementation conflict → this repo decides.
 
 ## 1 · What LogLoads is

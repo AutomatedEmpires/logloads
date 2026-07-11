@@ -19,6 +19,7 @@
     "validate": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm guardrails"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.31.0",
     "@playwright/test": "^1.61.1",
     "@typescript-eslint/eslint-plugin": "^8.37.0",
     "@typescript-eslint/parser": "^8.37.0",
