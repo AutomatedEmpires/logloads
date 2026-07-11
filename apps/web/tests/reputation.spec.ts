@@ -22,7 +22,8 @@ async function signIn(page: Page, email: string) {
 }
 
 test.describe.serial("reputation + reliability", () => {
-  test.beforeEach((_fixtures, testInfo) => {
+  test.beforeEach(({ page }, testInfo) => {
+    void page
     test.skip(
       testInfo.project.name === "desktop-chrome",
       "stateful reputation flow already ran at an explicit desktop viewport"

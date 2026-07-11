@@ -22,7 +22,8 @@ async function signIn(page: Page, email: string) {
 }
 
 test.describe.serial("intelligence surfaces", () => {
-  test.beforeEach((_fixtures, testInfo) => {
+  test.beforeEach(({ page }, testInfo) => {
+    void page
     test.skip(
       testInfo.project.name === "desktop-chrome",
       "stateful intelligence flow already exercises desktop and mobile viewports"
