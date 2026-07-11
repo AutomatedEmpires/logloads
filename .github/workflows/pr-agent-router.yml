@@ -1,0 +1,168 @@
+name: PR Agent Router
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+  pull-requests: read
+  contents: write
+
+jobs:
+  route-pr-agent-request:
+    if: github.event.issue.pull_request != null
+    runs-on: ubuntu-latest
+    steps:
+      - name: Parse PR comment and route agent requests
+        uses: actions/github-script@91a83c091797b22c5771b1d7178fd0fddacc73ea
+        with:
+          script: |
+            const association = context.payload.comment.author_association;
+            const trustedAssociations = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
+
+            if (!trustedAssociations.has(association)) {
+              core.info(`Skipping untrusted comment from ${association || 'UNKNOWN'} association.`);
+              return;
+            }
+
+            const commentBody = context.payload.comment.body || '';
+            const normalizedBody = commentBody.trim();
+            if (!normalizedBody) {
+              core.info('Comment body is empty; nothing to route.');
+              return;
+            }
+
+            const requests = new Map();
+
+            const normalizeAgent = (rawAgent) => {
+              const candidate = rawAgent.trim().toLowerCase();
+              if (candidate === 'git-agent' || candidate === 'git') {
+                return 'git';
+              }
+              return candidate;
+            };
+
+            const recordRequest = (rawAgent, source, prompt = '') => {
+              const agent = normalizeAgent(rawAgent);
+              if (!['copilot', 'codex', 'claude', 'sentry', 'git'].includes(agent)) {
+                return;
+              }
+
+              const nextPrompt = prompt.trim();
+              const existing = requests.get(agent);
+              if (existing) {
+                existing.sources.add(source);
+                if (!existing.prompt && nextPrompt) {
+                  existing.prompt = nextPrompt;
+                }
+                return;
+              }
+
+              requests.set(agent, {
+                agent,
+                prompt: nextPrompt,
+                sources: new Set([source]),
+              });
+            };
+
+            const mentionAgents = ['copilot', 'codex', 'claude', 'sentry'];
+            for (const agent of mentionAgents) {
+              const mentionPattern = new RegExp(`(^|\\s)@${agent}\\b`, 'im');
+              if (mentionPattern.test(commentBody)) {
+                recordRequest(agent, `@${agent}`);
+              }
+            }
+
+            if (/(^|\s)@git-agent\b/im.test(commentBody)) {
+              recordRequest('git', '@git-agent');
+            }
+
+            const lineCommands = [
+              /(?:^|\n)\s*\/agent\s+(copilot|codex|claude|sentry|git(?:-agent)?)(?:\s+(.+))?$/gim,
+              /(?:^|\n)\s*\/review\s+(copilot|codex|claude|sentry|git(?:-agent)?)(?:\s+(.+))?$/gim,
+              /(?:^|\n)\s*\/git-agent(?:\s+(.+))?$/gim,
+            ];
+
+            for (const match of commentBody.matchAll(lineCommands[0])) {
+              recordRequest(match[1], '/agent', match[2] || '');
+            }
+
+            for (const match of commentBody.matchAll(lineCommands[1])) {
+              recordRequest(match[1], '/review', match[2] || '');
+            }
+
+            for (const match of commentBody.matchAll(lineCommands[2])) {
+              recordRequest('git', '/git-agent', match[1] || '');
+            }
+
+            if (requests.size === 0) {
+              core.info('No PR agent commands or mentions detected.');
+              return;
+            }
+
+            const issueNumber = context.payload.issue.number;
+            const pullRequestNumber = context.payload.issue.number;
+            const comment = context.payload.comment;
+            const commentUrl = comment.html_url || context.payload.issue.html_url;
+            const senderLogin = comment.user?.login || context.actor;
+            const acknowledgements = [];
+
+            if (requests.has('copilot')) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                labels: ['agent:copilot-cloud', 'status:needs-cloud-review'],
+              });
+
+              const copilotRequest = requests.get('copilot');
+              const needsHumanMention = !copilotRequest.sources.has('@copilot');
+              acknowledgements.push(
+                needsHumanMention
+                  ? '- Copilot cloud review: labels applied. Add a human-authored `@copilot` comment if you want GitHub to invoke the cloud reviewer immediately.'
+                  : '- Copilot cloud review: labels applied for the advisory cloud-review side-loop.'
+              );
+            }
+
+            for (const request of requests.values()) {
+              if (request.agent === 'copilot') {
+                continue;
+              }
+
+              await github.rest.repos.createDispatchEvent({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                event_type: 'pr-agent-requested',
+                client_payload: {
+                  agent: request.agent,
+                  prompt: request.prompt,
+                  comment_body: commentBody,
+                  comment_id: comment.id,
+                  comment_url: commentUrl,
+                  issue_number: issueNumber,
+                  pr_number: pullRequestNumber,
+                  sender_login: senderLogin,
+                  requested_at: new Date().toISOString(),
+                  sources: Array.from(request.sources),
+                },
+              });
+
+              const promptNote = request.prompt ? ` Prompt: ${request.prompt}` : '';
+              acknowledgements.push(
+                `- ${request.agent}: dispatch event sent from [the triggering comment](${commentUrl}).${promptNote}`
+              );
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: [
+                '### PR agent router',
+                '',
+                ...acknowledgements,
+                '',
+                '_Router only. No merge, deploy, checkout, or code mutation performed._',
+              ].join('\n'),
+            });
