@@ -40,6 +40,9 @@ jobs:
         with:
           version: 2.101.0
 
+      - name: Validate database migrations
+        run: pnpm db:assert
+
       - name: Guardrails
         run: pnpm guardrails
 
