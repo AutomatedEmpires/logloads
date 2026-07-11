@@ -41,15 +41,18 @@ Shared providers across all AutomatedEmpires apps. Do not introduce alternates w
 | Media | Cloudinary |
 | Observability | PostHog + Sentry |
 | Email | Resend |
-| Icons | Streamline — **formal style** (Core / Sharp / Ultimate); specific style TBD (founder to pick) |
+| Icons | Phosphor through `@logloads/ui` semantic icon registry |
 | Language | TypeScript end-to-end |
 | Surfaces | Web: Next.js |
 
-**Icon policy (per-app):** LogLoads and BidSpace use a more formal Streamline style (specific style still to be chosen by the founder); Sweepza and Explore&Earn use Streamline Freehand (Pro). One Streamline style per app, applied consistently — never mix styles within an app, and no Lucide / Heroicons / Font Awesome / Material.
+**Icon policy:** LogLoads uses Phosphor through the semantic registry in `packages/ui`. Feature code renders icons with `<Icon name="domain.action" />`; do not import Lucide, Heroicons, Font Awesome, Material icons, `react-icons`, or ad hoc SVGs in feature code.
 
 ## 5 · Repo layout
 - `apps/` — web (Next.js); additional surfaces (public site, ops/admin, driver) land here
-- `packages/` — shared UI, domain logic, db schema/migrations
+- `packages/contracts/` — canonical domain types, enums, Zod schemas, state machines, matching rules, permissions, shared helpers
+- `packages/ui/` — token-compatible UI primitives and the single semantic Phosphor icon registry
+- `packages/db/` — Supabase/Postgres state repository, migrations, deterministic bootstrap data, typed store helpers
+- `packages/services/` — business rules for loads, routes, slots, availability, assignments, notifications
 - `docs/` — canonical, deduped spec (DECISIONS first; ARCHITECTURE, DATA-MODEL, API, ROADMAP, GTM as they land)
 
 ## 6 · Core rule (no exceptions)
@@ -69,13 +72,23 @@ No one codes from vague ideas. Every slice moves through:
 ## 8 · Quality bar
 - TypeScript strict. Mobile-first. Accessible (semantic HTML, labels, focus states, color-contrast).
 - SEO: per-route metadata, Open Graph, canonical URLs, semantic headings.
-- CI (typecheck + lint + build) must pass. Add tests for non-trivial logic.
+- CI (lint + typecheck + unit tests + production build + fresh Supabase migration reset + browser journeys) must pass. Add tests for non-trivial logic.
+- Run `pnpm validate` before opening or updating a PR.
+- Keep route handlers thin: UI and API surfaces call `packages/services`, never reach directly into `packages/db`.
+- Domain contracts live in `packages/contracts`; do not recreate them in the app layer.
 
 ## 9 · GitHub management
 - Work on lane/feature branches → small PRs → review → merge. Never push straight to `main`.
-- CI (`.github/workflows/ci.yml`) runs typecheck + lint + build on every PR; keep it green.
+- CI (`.github/workflows/ci.yml`) runs the static/build gates plus an isolated Supabase-canonical browser path on every PR; keep it green.
 - Communicate through durable artifacts: issues, PRs, and `docs/` are the memory.
 - Respect founder gates: anything money-moving, legally binding, destructive, or schema-breaking waits for explicit founder sign-off.
+
+## 11 · Backend foundation rules
+- No direct DB access from UI components or page files.
+- Add migrations in `supabase/migrations/` and deterministic bootstrap-state updates in `packages/db/src/seed-data.ts`.
+- Service functions own state transitions and rule enforcement.
+- PR descriptions must include exact verification commands and results.
+- Update `docs/BACKEND_ARCHITECTURE.md`, `docs/DATA_MODEL.md`, and `docs/API_CONTRACTS.md` whenever the backend contract changes.
 
 ## 10 · Cross-app alignment
 E&E is the reference. LogLoads, BidSpace, Sweepza, and E&E share the same doctrine, machine, runtime, and integration spine so an agent moving between repos reads one contract. Differences are product scope only — never workflow.

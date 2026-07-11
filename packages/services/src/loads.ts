@@ -1,0 +1,202 @@
+import {
+  allocationModeSchema,
+  createLoadPostingInputSchema,
+  loadPostingSchema,
+  opportunityCapacitySchema,
+  opportunityVisibilityModeSchema,
+  transitionLoadPostingStatus,
+  truckSlotSchema,
+  updateLoadPostingInputSchema,
+  type LoadPosting
+} from "@logloads/contracts"
+import type { LogLoadsDatabaseState } from "@logloads/db"
+
+import { assertFound, createUuid, nowIso } from "./utils"
+
+export function listOpenLoads(state: LogLoadsDatabaseState): LoadPosting[] {
+  return state.loadPostings.filter((load) => load.status === "open")
+}
+
+export function getLoadById(state: LogLoadsDatabaseState, loadId: string): LoadPosting | undefined {
+  return state.loadPostings.find((load) => load.id === loadId)
+}
+
+const LIVE_STATUSES = new Set(["open", "scheduled"])
+
+// A recurring or campaign load fans out into one loading slot per scheduled day,
+// capped so a long window can't explode the slot table.
+const MAX_SCHEDULE_SLOTS = 45
+const MAX_RANGE_DAYS = 366
+
+function loadingWindow(dateOnly: string): { startAt: string; endAt: string } {
+  // A default daytime loading window on the load date (UTC).
+  return {
+    endAt: `${dateOnly}T21:00:00.000Z`,
+    startAt: `${dateOnly}T13:00:00.000Z`
+  }
+}
+
+function isoDate(dateOnly: string): Date {
+  return new Date(`${dateOnly}T00:00:00.000Z`)
+}
+
+function addDays(dateOnly: string, days: number): string {
+  const date = isoDate(dateOnly)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+function datesInRange(startDate: string, endDate: string): string[] {
+  if (isoDate(endDate).getTime() < isoDate(startDate).getTime()) {
+    return [startDate]
+  }
+
+  const dates: string[] = []
+  const endTime = isoDate(endDate).getTime()
+  let cursor = startDate
+  let guard = 0
+
+  while (isoDate(cursor).getTime() <= endTime && guard < MAX_RANGE_DAYS) {
+    dates.push(cursor)
+    cursor = addDays(cursor, 1)
+    guard += 1
+  }
+
+  return dates
+}
+
+/**
+ * The dates a live load needs loading slots on:
+ * - one_off  -> the load date;
+ * - campaign -> every day in [start, end];
+ * - recurring -> each matching day-of-week from the start through untilDate.
+ * one_off and campaign always yield >= 1 date; a recurring schedule with no
+ * matching weekday in the window yields none (so no wrong-day slot is created).
+ * Never more than MAX_SCHEDULE_SLOTS.
+ */
+function scheduleDates(entity: LoadPosting, fallbackDate: string): string[] {
+  let dates: string[]
+
+  if (entity.scheduleType === "campaign" && entity.campaignStartDate && entity.campaignEndDate) {
+    dates = datesInRange(entity.campaignStartDate, entity.campaignEndDate)
+  } else if (entity.scheduleType === "recurring" && entity.recurringSchedule) {
+    const start = entity.campaignStartDate ?? entity.loadDate ?? fallbackDate
+    const end = entity.recurringSchedule.untilDate ?? entity.campaignEndDate ?? addDays(start, 27)
+    const everyDay = datesInRange(start, end)
+
+    if (entity.recurringSchedule.frequency === "daily") {
+      dates = everyDay
+    } else {
+      // Only the requested weekdays — never a fallback onto an unrequested day.
+      // If no weekday was selected (or none falls in the window) there are simply
+      // no loading days, and the load below gets no requestable slots.
+      const wanted = new Set(entity.recurringSchedule.daysOfWeek)
+      dates = everyDay.filter((date) => wanted.has(isoDate(date).getUTCDay()))
+    }
+  } else {
+    dates = [entity.loadDate ?? entity.campaignStartDate ?? fallbackDate]
+  }
+
+  return dates.slice(0, MAX_SCHEDULE_SLOTS)
+}
+
+/**
+ * Publishes a load AND, for live loads, the capacity that makes it requestable:
+ * an opportunity-capacity ledger plus a loading slot. Without this a freshly
+ * posted load has no requestable slot and haulers cannot request it — the core
+ * marketplace loop. Visibility/allocation are read from the input (a load posting
+ * carries neither field itself); both default sensibly.
+ */
+export function createLoadPosting(
+  state: LogLoadsDatabaseState,
+  input: unknown
+): LoadPosting {
+  const parsed = createLoadPostingInputSchema.parse(input)
+  const raw = (input && typeof input === "object" ? input : {}) as Record<string, unknown>
+  const visibilityMode = opportunityVisibilityModeSchema
+    .catch("open_network")
+    .parse(raw.visibilityMode ?? raw.visibility ?? "open_network")
+  const allocationMode = allocationModeSchema.catch("request_approval").parse(raw.allocationMode ?? "request_approval")
+
+  const timestamp = nowIso()
+  const entity = loadPostingSchema.parse({
+    ...parsed,
+    archivedAt: null,
+    cancellationReason: null,
+    createdAt: timestamp,
+    id: createUuid(),
+    updatedAt: timestamp
+  })
+
+  state.loadPostings.push(entity)
+
+  const dates = LIVE_STATUSES.has(entity.status) ? scheduleDates(entity, timestamp.slice(0, 10)) : []
+
+  if (dates.length > 0) {
+    const perDay = Math.max(1, entity.dailyTruckCountNeeded)
+    const totalTruckloads = perDay * dates.length
+
+    state.opportunityCapacities.push(
+      opportunityCapacitySchema.parse({
+        acceptedTermsSnapshot: {},
+        allocationMode,
+        committedTruckloads: 0,
+        completedTruckloads: 0,
+        createdAt: timestamp,
+        id: createUuid(),
+        loadPostingId: entity.id,
+        remainingTruckloads: totalTruckloads,
+        totalTruckloads,
+        updatedAt: timestamp,
+        visibilityMode
+      })
+    )
+
+    for (const slotDate of dates) {
+      const window = loadingWindow(slotDate)
+
+      state.truckSlots.push(
+        truckSlotSchema.parse({
+          capacity: perDay,
+          createdAt: timestamp,
+          endAt: window.endAt,
+          id: createUuid(),
+          landingId: entity.pickupLandingId,
+          loaderProfileId: entity.loaderProfileId ?? null,
+          loadPostingId: entity.id,
+          notes: null,
+          reservedCount: 0,
+          slotDate,
+          startAt: window.startAt,
+          status: "open",
+          updatedAt: timestamp
+        })
+      )
+    }
+  }
+
+  return entity
+}
+
+export function updateLoadPosting(
+  state: LogLoadsDatabaseState,
+  input: unknown
+): LoadPosting {
+  const parsed = updateLoadPostingInputSchema.parse(input)
+  const existing = assertFound(getLoadById(state, parsed.id), `Load posting ${parsed.id} was not found`)
+
+  const nextStatus = parsed.status && parsed.status !== existing.status
+    ? transitionLoadPostingStatus(existing.status, parsed.status)
+    : existing.status
+
+  const updated = loadPostingSchema.parse({
+    ...existing,
+    ...parsed,
+    status: nextStatus,
+    updatedAt: nowIso()
+  })
+
+  state.loadPostings = state.loadPostings.map((load) => (load.id === updated.id ? updated : load))
+
+  return updated
+}

@@ -1,0 +1,30 @@
+# LogLoads uses a dedicated local port range so its Supabase stack can run beside
+# other AutomatedEmpires ventures without colliding with the 5432x defaults.
+project_id = "logloads-local"
+
+[api]
+port = 55321
+
+[db]
+port = 55322
+shadow_port = 55320
+major_version = 17
+
+[db.pooler]
+enabled = false
+port = 55329
+
+[studio]
+port = 55323
+
+[inbucket]
+port = 55324
+smtp_port = 55325
+pop3_port = 55326
+
+[auth]
+site_url = "http://127.0.0.1:3002"
+additional_redirect_urls = ["http://127.0.0.1:3002"]
+
+[analytics]
+port = 55327

@@ -1,0 +1,372 @@
+import { createInMemoryDatabase } from "@logloads/db"
+import { describe, expect, it } from "vitest"
+
+import { createLogLoadsServices } from "./index"
+
+describe("logloads services", () => {
+  it("creates a valid load posting", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    const created = services.createLoadPosting({
+      companyId: "33333333-3333-4333-8333-333333333331",
+      dispatcherProfileId: "55555555-5555-4555-8555-555555555551",
+      loaderProfileId: "55555555-5555-4555-8555-555555555552",
+      pickupLandingId: "66666666-6666-4666-8666-666666666661",
+      dropoffMillId: "99999999-9999-4999-8999-999999999991",
+      routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+      rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+      title: "Extra afternoon run",
+      loadType: "saw_logs",
+      status: "open",
+      scheduleType: "one_off",
+      loadDate: "2026-06-10",
+      campaignStartDate: null,
+      campaignEndDate: null,
+      recurringSchedule: null,
+      dailyTruckCountNeeded: 1,
+      estimatedTonsPerLoad: 27,
+      equipmentRequirements: ["pole-trailer"],
+      accessRequirements: ["radio"],
+      roadCondition: "good",
+      weatherNotes: null,
+      dispatcherContact: {
+        name: "Dana Dispatch",
+        phone: "555-2001",
+        email: "dispatch@northpine.example"
+      },
+      loaderContact: {
+        name: "Lee Loader",
+        phone: "555-2002",
+        email: "loader@northpine.example"
+      }
+    })
+
+    expect(created.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    expect(services.getLoadById(created.id)?.title).toBe("Extra afternoon run")
+  })
+
+  it("rejects invalid load data", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    expect(() =>
+      services.createLoadPosting({
+        companyId: "33333333-3333-4333-8333-333333333331",
+        dispatcherProfileId: "55555555-5555-4555-8555-555555555551",
+        loaderProfileId: null,
+        pickupLandingId: "66666666-6666-4666-8666-666666666661",
+        dropoffMillId: "99999999-9999-4999-8999-999999999991",
+        routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+        rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+        title: "",
+        loadType: "saw_logs",
+        status: "open",
+        scheduleType: "one_off",
+        loadDate: "2026-06-10",
+        campaignStartDate: null,
+        campaignEndDate: null,
+        recurringSchedule: null,
+        dailyTruckCountNeeded: 1,
+        estimatedTonsPerLoad: 27,
+        equipmentRequirements: [],
+        accessRequirements: [],
+        roadCondition: "good",
+        weatherNotes: null,
+        dispatcherContact: {
+          name: "Dana Dispatch",
+          phone: "555-2001",
+          email: "dispatch@northpine.example"
+        },
+        loaderContact: null
+      })
+    ).toThrow()
+  })
+
+  it("moves an assignment from request to accepted", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const assignment = services.requestAssignment({
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+      truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd2",
+      driverProfileId: "44444444-4444-4444-8444-444444444441",
+      truckProfileId: "77777777-7777-4777-8777-777777777771",
+      trailerProfileId: "88888888-8888-4888-8888-888888888881",
+      cancellationReason: null,
+      dispatcherNotes: "Slot confirmed pending radio check."
+    })
+
+    const accepted = services.assignDriverToSlot(assignment.id)
+
+    expect(assignment.status).toBe("requested")
+    expect(accepted.status).toBe("accepted")
+  })
+
+  it("enforces truck slot capacity", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    expect(() =>
+      services.requestAssignment({
+        loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc2",
+        truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd3",
+        driverProfileId: "44444444-4444-4444-8444-444444444442",
+        truckProfileId: "77777777-7777-4777-8777-777777777772",
+        trailerProfileId: "88888888-8888-4888-8888-888888888882",
+        cancellationReason: null,
+        dispatcherNotes: "Should fail because capacity is full."
+      })
+    ).toThrow(/at capacity/)
+  })
+
+  it("rejects overlapping availability windows for the same driver", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    expect(() =>
+      services.upsertAvailabilityWindow({
+        driverProfileId: "44444444-4444-4444-8444-444444444441",
+        truckProfileId: "77777777-7777-4777-8777-777777777771",
+        status: "available",
+        startAt: "2026-06-06T18:00:00.000Z",
+        endAt: "2026-06-06T19:00:00.000Z",
+        preferredRouteIds: [],
+        notes: "Conflicts with existing window.",
+        recurringSchedule: null
+      })
+    ).toThrow(/overlaps existing window/)
+  })
+
+  it("rejects an availability update for an unknown id", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    expect(() =>
+      services.upsertAvailabilityWindow({
+        id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        driverProfileId: "44444444-4444-4444-8444-444444444441",
+        truckProfileId: "77777777-7777-4777-8777-777777777771",
+        status: "available",
+        startAt: "2026-06-08T18:00:00.000Z",
+        endAt: "2026-06-08T19:00:00.000Z",
+        preferredRouteIds: [],
+        notes: "Unknown window.",
+        recurringSchedule: null
+      })
+    ).toThrow(/was not found/)
+  })
+
+  it("rejects reservations against terminal truck slots", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const slot = services.state.truckSlots.find(
+      (current) => current.id === "dddddddd-dddd-4ddd-8ddd-ddddddddddd2"
+    )
+
+    expect(slot).toBeDefined()
+    if (!slot) {
+      return
+    }
+
+    slot.status = "cancelled"
+
+    expect(() =>
+      services.requestAssignment({
+        loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+        truckSlotId: slot.id,
+        driverProfileId: "44444444-4444-4444-8444-444444444441",
+        truckProfileId: "77777777-7777-4777-8777-777777777771",
+        trailerProfileId: "88888888-8888-4888-8888-888888888881",
+        cancellationReason: null,
+        dispatcherNotes: "Terminal slot must reject the request."
+      })
+    ).toThrow(/cannot be reserved while cancelled/)
+  })
+
+  it("releases slot capacity when an assignment is cancelled", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const assignment = services.requestAssignment({
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+      truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd2",
+      driverProfileId: "44444444-4444-4444-8444-444444444441",
+      truckProfileId: "77777777-7777-4777-8777-777777777771",
+      trailerProfileId: "88888888-8888-4888-8888-888888888881",
+      cancellationReason: null,
+      dispatcherNotes: "Temporary hold."
+    })
+
+    const cancelled = services.cancelAssignment(assignment.id, "Weather closure")
+    const slot = services.listTruckSlotsForDate("2026-06-06").find((current) => current.id === "dddddddd-dddd-4ddd-8ddd-ddddddddddd2")
+
+    expect(cancelled.status).toBe("cancelled")
+    expect(cancelled.cancellationReason).toBe("Weather closure")
+    expect(slot?.reservedCount).toBe(0)
+    expect(slot?.status).toBe("open")
+  })
+
+
+  it("shows private-network opportunities to connected organizations", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    const visible = services.listVisibleLoadsForOrganization("33333333-3333-4333-8333-333333333331")
+
+    expect(visible.map((load) => load.id)).toContain("cccccccc-cccc-4ccc-8ccc-ccccccccccc3")
+  })
+
+  it("rejects duplicate active capacity requests for the same driver and load", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    expect(() =>
+      services.requestCapacityWithPolicy({
+        actorUserId: "22222222-2222-4222-8222-222222222221",
+        organizationId: "33333333-3333-4333-8333-333333333331",
+        loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+        truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd2",
+        driverProfileId: "44444444-4444-4444-8444-444444444441",
+        truckProfileId: "77777777-7777-4777-8777-777777777771",
+        trailerProfileId: "88888888-8888-4888-8888-888888888881",
+        cancellationReason: null,
+        dispatcherNotes: "Duplicate hold."
+      })
+    ).toThrow(/active assignment request/)
+  })
+
+  it("updates opportunity capacity when a connected hauler requests private work", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    const assignment = services.requestCapacityWithPolicy({
+      actorUserId: "22222222-2222-4222-8222-222222222221",
+      organizationId: "33333333-3333-4333-8333-333333333331",
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+      truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd4",
+      driverProfileId: "44444444-4444-4444-8444-444444444441",
+      truckProfileId: "77777777-7777-4777-8777-777777777771",
+      trailerProfileId: "88888888-8888-4888-8888-888888888881",
+      cancellationReason: null,
+      dispatcherNotes: "North Pine can cover the high-grade window."
+    })
+    const capacity = services.state.opportunityCapacities.find((item) => item.loadPostingId === assignment.loadPostingId)
+
+    expect(assignment.status).toBe("requested")
+    expect(capacity?.committedTruckloads).toBe(2)
+    expect(capacity?.remainingTruckloads).toBe(2)
+  })
+
+  it("lets the source organization approve capacity and creates a trip snapshot", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const assignment = services.requestCapacityWithPolicy({
+      actorUserId: "22222222-2222-4222-8222-222222222221",
+      organizationId: "33333333-3333-4333-8333-333333333331",
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+      truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd4",
+      driverProfileId: "44444444-4444-4444-8444-444444444441",
+      truckProfileId: "77777777-7777-4777-8777-777777777771",
+      trailerProfileId: "88888888-8888-4888-8888-888888888881",
+      cancellationReason: null,
+      dispatcherNotes: "Approve this request."
+    })
+
+    const result = services.approveCapacityRequest({
+      actorUserId: "22222222-2222-4222-8222-222222222224",
+      organizationId: "33333333-3333-4333-8333-333333333332",
+      assignmentId: assignment.id
+    })
+
+    expect(result.assignment.status).toBe("accepted")
+    expect(result.trip.assignmentId).toBe(assignment.id)
+    expect(result.trip.routePackId).toBe("23232323-2323-4323-8323-232323232313")
+  })
+
+  it("protects route packs behind assignment participation", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    const routePack = services.getRoutePackForAssignment({
+      actorUserId: "22222222-2222-4222-8222-222222222221",
+      organizationId: "33333333-3333-4333-8333-333333333331",
+      assignmentId: "ffffffff-ffff-4fff-8fff-fffffffffff1"
+    })
+
+    expect(routePack.routePack.id).toBe("23232323-2323-4323-8323-232323232311")
+    expect(routePack.notices.length).toBeGreaterThanOrEqual(0)
+  })
+
+  it("rejects impossible trip transitions", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    expect(() =>
+      services.progressTripStatus({
+        actorUserId: "22222222-2222-4222-8222-222222222221",
+        organizationId: "33333333-3333-4333-8333-333333333331",
+        tripId: "24242424-2424-4424-8424-242424242411",
+        nextStatus: "completed",
+        source: "driver",
+        note: "Cannot jump to complete.",
+        metadata: {}
+      })
+    ).toThrow(/Invalid trip transition/)
+  })
+
+  it("creates operational notices and notifies active assigned drivers", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    const notice = services.createOperationalNotice({
+      actorUserId: "22222222-2222-4222-8222-222222222224",
+      organizationId: "33333333-3333-4333-8333-333333333331",
+      relatedLoadId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+      relatedLandingId: "66666666-6666-4666-8666-666666666661",
+      severity: "watch",
+      title: "Oak bridge access review",
+      body: "Dispatcher review required before the next truck crosses the bridge."
+    })
+
+    const driverNotification = services.state.notifications.find((notification) =>
+      notification.userId === "22222222-2222-4222-8222-222222222221" &&
+      notification.relatedEntityId === notice.id
+    )
+
+    expect(notice.organizationId).toBe("33333333-3333-4333-8333-333333333331")
+    expect(services.state.operationalNotices).toContain(notice)
+    expect(driverNotification?.relatedEntityType).toBe("operational_notice")
+    expect(driverNotification?.type).toBe("system_alert")
+  })
+
+  it("sends direct offers through active private-network relationships", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    const offer = services.createDirectOffer({
+      actorUserId: "22222222-2222-4222-8222-222222222224",
+      organizationId: "33333333-3333-4333-8333-333333333331",
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+      offeredToOrganizationId: "33333333-3333-4333-8333-333333333332",
+      offeredTruckloads: 1,
+      expiresAt: "2026-06-06T20:00:00.000Z",
+      termsSnapshot: { route: "Oak Landing to Cascade Mill" }
+    })
+
+    const targetNotification = services.state.notifications.find((notification) =>
+      notification.userId === "22222222-2222-4222-8222-222222222223" &&
+      notification.relatedEntityId === offer.id
+    )
+
+    expect(offer.status).toBe("sent")
+    expect(offer.offeredByOrganizationId).toBe("33333333-3333-4333-8333-333333333331")
+    expect(targetNotification?.relatedEntityType).toBe("direct_offer")
+  })
+
+  it("publishes future availability to trusted partners", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    const availability = services.publishFutureAvailability({
+      actorUserId: "22222222-2222-4222-8222-222222222224",
+      organizationId: "33333333-3333-4333-8333-333333333331",
+      equipmentCombinationId: "18181818-1818-4818-8818-181818181811",
+      startsAt: "2026-06-09T12:00:00.000Z",
+      endsAt: "2026-06-09T22:00:00.000Z",
+      status: "available",
+      visibleToRelationshipIds: ["17171717-1717-4717-8717-171717171713"],
+      notes: "NP-101 is open for a partner saw-log run."
+    })
+
+    const summitVisible = services
+      .listFutureAvailabilityForOrganization("33333333-3333-4333-8333-333333333332")
+      .some((current) => current.id === availability.id)
+
+    expect(availability.organizationId).toBe("33333333-3333-4333-8333-333333333331")
+    expect(summitVisible).toBe(true)
+  })
+
+
+})

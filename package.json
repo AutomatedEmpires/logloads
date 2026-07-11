@@ -7,13 +7,25 @@
   },
   "scripts": {
     "build": "turbo run build",
-    "dev": "turbo run dev",
-    "lint": "turbo run lint",
-    "typecheck": "turbo run typecheck"
+    "db:assert": "bash ./tools/db-check.sh",
+    "db:check": "bash ./tools/db-check.sh",
+    "dev": "pnpm --filter @logloads/web dev",
+    "guardrails": "node tools/check-guardrails.mjs",
+    "lint": "turbo run lint && pnpm lint:workflows",
+    "lint:workflows": "npx --yes github-actionlint@1.7.12",
+    "test": "turbo run test",
+    "test:e2e": "node tools/run-e2e.mjs",
+    "typecheck": "turbo run typecheck",
+    "validate": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm db:assert && pnpm guardrails"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
+    "@playwright/test": "^1.61.1",
+    "@typescript-eslint/eslint-plugin": "^8.37.0",
+    "@typescript-eslint/parser": "^8.37.0",
+    "eslint": "^8.57.1",
     "turbo": "^2.5.4",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^3.2.4"
   }
 }

@@ -1,0 +1,27 @@
+name: Backend task
+description: Plan backend/domain/database work for LogLoads.
+title: "backend: "
+labels:
+  - backend
+body:
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Which package or layer changes?
+    validations:
+      required: true
+  - type: textarea
+    id: contracts
+    attributes:
+      label: Domain / DB / API contracts
+      description: Describe the contract changes and affected docs.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification plan
+      description: Which exact commands and tests must pass?
+    validations:
+      required: true

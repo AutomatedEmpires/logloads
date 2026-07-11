@@ -1,0 +1,41 @@
+# Legacy-host/reference Fly.io manifest. Vercel is the preferred target; any Fly
+# deployment still uses Supabase operating_state as canonical and needs no volume.
+
+app = "logloads"
+primary_region = "sjc"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3002"
+  NEXT_PUBLIC_APP_URL = "https://logloads.com"
+  NEXT_PUBLIC_POSTHOG_HOST = "https://us.i.posthog.com"
+  # All secrets (LOGLOADS_SESSION_SECRET, SUPABASE_SERVICE_ROLE_KEY, CLERK_*,
+  # STRIPE_*, RESEND_API_KEY, SENTRY_DSN, NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
+  # NEXT_PUBLIC_POSTHOG_KEY) are set via `fly secrets set` from Doppler.
+
+[http_service]
+  internal_port = 3002
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+  max_machines_running = 2
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+[[http_service.checks]]
+  interval = "15s"
+  timeout = "4s"
+  grace_period = "20s"
+  method = "GET"
+  path = "/api/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"

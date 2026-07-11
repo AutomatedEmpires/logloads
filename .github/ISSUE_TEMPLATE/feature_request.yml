@@ -1,0 +1,20 @@
+name: Feature request
+description: Propose a product or platform improvement.
+title: "feat: "
+labels:
+  - product
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What should be built and why?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List concrete, testable outcomes.
+    validations:
+      required: true

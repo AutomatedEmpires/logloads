@@ -1,0 +1,619 @@
+/* Fleet cockpit — dispatch operations surfaces */
+
+/* --- Shared panels ---------------------------------------------------------- */
+
+.fleet-panel {
+  margin: 14px 24px 0;
+}
+
+.fleet-panel--secondary {
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+}
+
+/* Reset margins of shared layout classes when nested inside a fleet panel */
+.fleet-panel .board-list,
+.fleet-panel .relationship-grid {
+  margin: 0;
+}
+
+/* Direct-child surfaces on fleet pages get the standard page gutter */
+.app-shell--fleet .app-main > .empty-state,
+.app-shell--fleet .app-main > .discovery-v3 {
+  margin: 18px 24px 0;
+}
+
+/* --- Command: decision board ------------------------------------------------- */
+
+.fleet-command-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 14px 24px 0;
+}
+
+.fleet-decision-column {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  min-width: 0;
+}
+
+.fleet-decision-column > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 2px solid var(--ink);
+  padding-bottom: 8px;
+}
+
+.fleet-decision-column > header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+.fleet-decision-column > header span {
+  color: var(--muted);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.fleet-decision {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--pine);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 14px;
+  min-width: 0;
+}
+
+.fleet-decision__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.fleet-decision__head strong {
+  font-size: 1.02rem;
+}
+
+.fleet-decision p {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+
+.fleet-decision .action-link {
+  justify-self: start;
+}
+
+/* --- Dispatch: decision cards -------------------------------------------------- */
+
+.fleet-dispatch-decisions {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+.fleet-dispatch-decision {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 16px;
+  min-width: 0;
+}
+
+.fleet-dispatch-decision > header {
+  display: grid;
+  gap: 2px;
+  border-bottom: 1px dashed var(--line-strong);
+  padding-bottom: 10px;
+}
+
+.fleet-dispatch-decision > header strong {
+  font-size: 1.1rem;
+}
+
+.fleet-dispatch-decision > header span,
+.fleet-dispatch-decision__body p {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+
+.fleet-dispatch-decision__body {
+  display: grid;
+  gap: 8px;
+}
+
+.fleet-dispatch-decision__load {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.fleet-dispatch-decision__load a {
+  color: var(--pine);
+  font-weight: 900;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.fleet-dispatch-decision__reason {
+  border-left: 3px solid var(--amber);
+  padding-left: 10px;
+  font-size: 0.92rem;
+}
+
+/* --- Inline action feedback ------------------------------------------------------ */
+
+.fleet-action {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.fleet-action__hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.fleet-action__error {
+  margin: 0;
+  color: var(--red);
+  font-size: 0.9rem;
+  font-weight: 800;
+  font-style: normal;
+}
+
+/* --- Forms and selects -------------------------------------------------------------- */
+
+.fleet-form,
+.fleet-publisher {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 16px;
+}
+
+.fleet-form__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.fleet-form__grid label,
+.fleet-publisher__group {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.fleet-form__grid input,
+.fleet-form__grid select,
+.fleet-select select {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  padding: 8px 10px;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+}
+
+.fleet-form__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.fleet-select {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 900;
+  min-width: 0;
+}
+
+.fleet-publisher__segments {
+  display: inline-flex;
+  flex-wrap: wrap;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bone);
+  padding: 3px;
+  gap: 3px;
+}
+
+.fleet-publisher__segments button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-soft);
+  padding: 0 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.fleet-publisher__segments button[aria-pressed="true"] {
+  background: var(--pine);
+  color: #fff;
+}
+
+/* --- Trucks ------------------------------------------------------------------------------ */
+
+.fleet-truck-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+.fleet-truck-card {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 16px;
+  min-width: 0;
+}
+
+.fleet-truck-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.fleet-truck-card h2 {
+  margin: 2px 0 0;
+  font-size: 1.2rem;
+}
+
+.fleet-truck-card__controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  border-top: 1px dashed var(--line-strong);
+  padding-top: 12px;
+}
+
+/* --- Drivers -------------------------------------------------------------------------------- */
+
+.fleet-driver-list {
+  display: grid;
+  gap: 10px;
+  margin: 14px 24px 0;
+}
+
+.fleet-driver-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.6fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 14px 16px;
+}
+
+.fleet-driver-row__who {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fleet-driver-row__who strong {
+  font-size: 1.05rem;
+}
+
+.fleet-driver-row__who span,
+.fleet-driver-row__state span,
+.fleet-driver-row__rig span {
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+
+.fleet-driver-row__state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fleet-driver-row__rig {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  min-width: 0;
+}
+
+/* --- Trips ------------------------------------------------------------------------------------ */
+
+.fleet-trip-list {
+  display: grid;
+  gap: 10px;
+  margin: 14px 24px 0;
+}
+
+.fleet-trip-row {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 14px 16px;
+}
+
+.fleet-trip-row--exception {
+  border-left: 3px solid var(--red);
+  background: linear-gradient(90deg, rgba(159, 51, 43, 0.05), var(--paper) 45%);
+}
+
+.fleet-trip-row__main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) auto minmax(0, 1.6fr) auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.fleet-trip-row__who {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fleet-trip-row__who span,
+.fleet-trip-row__last span {
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+
+.fleet-trip-row__status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fleet-trip-row__last {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fleet-trip-row__toggle {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bone);
+  color: var(--pine);
+  padding: 0 12px;
+  font-weight: 900;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.fleet-trip-timeline {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  border-top: 1px dashed var(--line-strong);
+  padding: 12px 0 0;
+  list-style: none;
+}
+
+.fleet-trip-timeline li {
+  display: grid;
+  grid-template-columns: 150px 170px minmax(0, 1fr);
+  gap: 10px;
+  color: var(--ink-soft);
+}
+
+.fleet-trip-timeline__time {
+  color: var(--muted);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.fleet-trip-timeline__type {
+  font-weight: 900;
+  text-transform: capitalize;
+}
+
+/* --- Opportunity detail --------------------------------------------------------------------------- */
+
+.fleet-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 22px;
+  align-items: start;
+  margin: 14px 24px 0;
+}
+
+.fleet-detail__main {
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+  justify-items: start;
+}
+
+.fleet-detail__main h1 {
+  margin: 0;
+  font-size: clamp(1.9rem, 4vw, 3.4rem);
+  line-height: 1;
+}
+
+.fleet-detail__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fleet-detail__equipment {
+  margin: 0;
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+
+.fleet-detail__warnings {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  border: 1px solid rgba(172, 104, 29, 0.4);
+  border-radius: var(--radius);
+  background: var(--amber-bg);
+  padding: 12px 14px;
+}
+
+.fleet-detail__warnings p {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  color: #6b3b10;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.fleet-detail__main .fleet-panel {
+  margin: 0;
+  width: 100%;
+}
+
+.fleet-detail__aside {
+  position: sticky;
+  top: 92px;
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 16px;
+}
+
+.fleet-detail__aside h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.fleet-dispatch-option {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.fleet-dispatch-option:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.fleet-dispatch-option > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.fleet-dispatch-option span {
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+
+.fleet-dispatch-option p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+/* --- Responsive ------------------------------------------------------------------------------------- */
+
+@media (max-width: 1100px) {
+  .fleet-command-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fleet-detail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fleet-detail__aside {
+    position: static;
+  }
+
+  .fleet-trip-row__main {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .fleet-trip-row__last {
+    grid-column: 1 / -1;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 760px) {
+  .fleet-panel,
+  .fleet-command-grid,
+  .fleet-driver-list,
+  .fleet-trip-list,
+  .fleet-detail,
+  .app-shell--fleet .app-main > .empty-state,
+  .app-shell--fleet .app-main > .discovery-v3 {
+    margin-left: 14px;
+    margin-right: 14px;
+  }
+
+  .fleet-driver-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .fleet-truck-card__controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fleet-dispatch-decisions,
+  .fleet-truck-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fleet-trip-row__main {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .fleet-trip-row__toggle {
+    justify-self: start;
+  }
+
+  .fleet-trip-timeline li {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+    border-bottom: 1px dashed var(--line);
+    padding-bottom: 8px;
+  }
+}

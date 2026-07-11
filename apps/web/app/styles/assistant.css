@@ -1,0 +1,105 @@
+/* Operator assistant — grounded in-app Q&A, chat-native. */
+.assistant-panel { display: grid; gap: 16px; max-width: 820px; }
+
+.assistant-intro {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--green-bg), var(--paper));
+  padding: 14px 16px;
+}
+.assistant-intro p { margin: 0; color: var(--ink-soft); font-weight: 600; line-height: 1.45; }
+.assistant-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: var(--pine);
+  color: #fff;
+}
+
+.assistant-suggestions { display: grid; gap: 10px; }
+.assistant-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.assistant-chip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--pine);
+  padding: 10px 14px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.assistant-chip:hover { border-color: var(--pine); }
+
+.assistant-stream { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; }
+.assistant-exchange { display: grid; gap: 8px; }
+.assistant-msg { margin: 0; border-radius: var(--radius); padding: 12px 14px; line-height: 1.5; }
+.assistant-msg--you {
+  justify-self: end;
+  max-width: 85%;
+  background: var(--pine);
+  color: #fff;
+  font-weight: 600;
+}
+.assistant-msg--bot {
+  justify-self: start;
+  max-width: 92%;
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  box-shadow: var(--shadow-1);
+}
+.assistant-msg--bot.is-error { border-color: var(--red); }
+.assistant-answer { margin: 0; white-space: pre-wrap; color: var(--ink); }
+.assistant-typing { color: var(--muted); font-weight: 700; }
+
+.assistant-cites { display: flex; flex-wrap: wrap; gap: 8px; }
+.assistant-cite {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bone);
+  color: var(--pine);
+  padding: 5px 10px;
+  font-weight: 700;
+  font-size: 0.82rem;
+  text-decoration: none;
+}
+.assistant-cite:hover { border-color: var(--pine); }
+
+.assistant-composer {
+  display: flex;
+  gap: 10px;
+  position: sticky;
+  bottom: 0;
+  padding-top: 8px;
+  background: linear-gradient(to top, var(--bone-2) 62%, transparent);
+}
+.assistant-composer input {
+  flex: 1;
+  min-width: 0;
+  min-height: 48px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  padding: 0 14px;
+  font-weight: 600;
+  font-family: inherit;
+}
+.assistant-composer .advance-button { width: auto; min-height: 48px; max-width: none; padding: 0 18px; }
+.assistant-note { margin: 0; color: var(--muted); font-size: 0.8rem; }
+
+@media (max-width: 640px) {
+  .assistant-msg--you,
+  .assistant-msg--bot { max-width: 100%; }
+}

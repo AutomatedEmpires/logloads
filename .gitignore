@@ -5,6 +5,7 @@ out/
 .turbo/
 coverage/
 *.log
+*.tsbuildinfo
 
 # env — values live in Doppler; never commit a real .env
 .env
@@ -13,3 +14,10 @@ coverage/
 
 .DS_Store
 .vercel
+.data/
+supabase/.temp/
+supabase/.branches/
+
+# Playwright output + local proof screenshots
+test-results/
+apps/web/.artifacts/

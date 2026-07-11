@@ -1,0 +1,69 @@
+name: PR Review Summary
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review-summary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.101.0
+
+      - name: Validate PR branch
+        run: pnpm validate
+
+      - name: Write summary
+        run: |
+          {
+            echo "## PR review summary"
+            echo "- Commands: pnpm install --frozen-lockfile && pnpm validate"
+            echo "- Result: success"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = [
+              "PR review automation completed.",
+              "",
+              "Commands:",
+              "- pnpm install --frozen-lockfile",
+              "- pnpm validate",
+              "",
+              "Result: success"
+            ].join("\n")
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            })
