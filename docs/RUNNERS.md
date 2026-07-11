@@ -6,12 +6,13 @@
 ## Why
 - The repo build and test footprint is still small.
 - No private network access is needed for the current backend scaffold.
-- The local Supabase path is not yet mandatory in CI.
+- GitHub-hosted Ubuntu runners provide Docker for the mandatory isolated Supabase migration and browser path.
+- CI installs the pinned Supabase CLI, resets the PostgreSQL 17 ledger, builds the production app, and runs Playwright against the local canonical API.
 
 ## When self-hosted runners become useful
 - Long-running builds or large test matrices.
 - Private network or VPN-only resources.
-- Full local Supabase integration in CI.
+- Private provider-network integration that cannot run against isolated local services.
 - Heavy browser/mobile matrix testing.
 
 ## If self-hosted is requested later

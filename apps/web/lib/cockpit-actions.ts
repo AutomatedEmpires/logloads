@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 
 import { captureServerEvent } from "./analytics"
-import { persistState, serializeError, services } from "./services"
+import { mutateState, serializeError, services } from "./services"
 import { getSessionActor, type SessionActor } from "./session"
 
 export interface ActionResult {
@@ -37,12 +37,17 @@ function actorOrganizationId(actor: SessionActor): string {
   return organizationId
 }
 
-function commit(paths: string[]): void {
-  persistState()
+async function commit<T>(
+  paths: string[],
+  mutation: (draft: typeof services) => T
+): Promise<T> {
+  const value = await mutateState(mutation)
 
   for (const path of paths) {
     revalidatePath(path, "layout")
   }
+
+  return value
 }
 
 // --- Driver / hauling side -------------------------------------------------
@@ -61,27 +66,28 @@ export async function requestCapacityAction(input: {
       throw new Error("Add a driver before requesting capacity")
     }
 
-    const combination = services.state.equipmentCombinations.find(
-      (candidate) => candidate.assignedDriverProfileId === driverProfileId
-    )
+    await commit(["/driver", "/fleet", "/host"], (draft) => {
+      const combination = draft.state.equipmentCombinations.find(
+        (candidate) => candidate.assignedDriverProfileId === driverProfileId
+      )
 
-    if (!combination) {
-      throw new Error("Add your truck first. Equipment powers matching and assignments.")
-    }
+      if (!combination) {
+        throw new Error("Add your truck first. Equipment powers matching and assignments.")
+      }
 
-    services.requestCapacityWithPolicy({
-      actorUserId: actor.profile.id,
-      dispatcherNotes: input.note ?? undefined,
-      driverProfileId,
-      loadPostingId: input.loadPostingId,
-      organizationId: actorOrganizationId(actor),
-      trailerProfileId: combination.trailerProfileId ?? null,
-      truckProfileId: combination.truckProfileId,
-      truckSlotId: input.truckSlotId
+      return draft.requestCapacityWithPolicy({
+        actorUserId: actor.profile.id,
+        dispatcherNotes: input.note ?? undefined,
+        driverProfileId,
+        loadPostingId: input.loadPostingId,
+        organizationId: actorOrganizationId(actor),
+        trailerProfileId: combination.trailerProfileId ?? null,
+        truckProfileId: combination.truckProfileId,
+        truckSlotId: input.truckSlotId
+      })
     })
 
     captureServerEvent("capacity_requested", actor.profile.id, { loadPostingId: input.loadPostingId })
-    commit(["/driver", "/fleet", "/host"])
 
     return OK
   } catch (error) {
@@ -102,17 +108,18 @@ export async function progressTripAction(input: {
         ? "landing"
         : "dispatcher"
 
-    services.progressTripStatus({
-      actorUserId: actor.profile.id,
-      nextStatus: input.nextStatus as Parameters<typeof services.progressTripStatus>[0]["nextStatus"],
-      note: input.note ?? undefined,
-      organizationId: actorOrganizationId(actor),
-      source,
-      tripId: input.tripId
-    })
+    await commit(["/driver", "/fleet", "/host"], (draft) =>
+      draft.progressTripStatus({
+        actorUserId: actor.profile.id,
+        nextStatus: input.nextStatus as Parameters<typeof services.progressTripStatus>[0]["nextStatus"],
+        note: input.note ?? undefined,
+        organizationId: actorOrganizationId(actor),
+        source,
+        tripId: input.tripId
+      })
+    )
 
     captureServerEvent("trip_progressed", actor.profile.id, { tripId: input.tripId, nextStatus: input.nextStatus })
-    commit(["/driver", "/fleet", "/host"])
 
     return OK
   } catch (error) {
@@ -130,18 +137,18 @@ export async function attachTripDocumentAction(input: {
     const extension = input.filename.split(".").pop()?.toLowerCase() ?? "jpg"
     const contentType = extension === "pdf" ? "application/pdf" : `image/${extension === "jpg" ? "jpeg" : extension}`
 
-    services.attachTripDocument({
-      actorUserId: actor.profile.id,
-      contentType,
-      filename: input.filename,
-      organizationId: actorOrganizationId(actor),
-      storageKey: `trips/${input.tripId}/${Date.now()}-${input.filename}`,
-      storageProvider: "external",
-      tripId: input.tripId,
-      type: input.type as Parameters<typeof services.attachTripDocument>[0]["type"]
-    })
-
-    commit(["/driver", "/fleet", "/host"])
+    await commit(["/driver", "/fleet", "/host"], (draft) =>
+      draft.attachTripDocument({
+        actorUserId: actor.profile.id,
+        contentType,
+        filename: input.filename,
+        organizationId: actorOrganizationId(actor),
+        storageKey: `trips/${input.tripId}/${Date.now()}-${input.filename}`,
+        storageProvider: "external",
+        tripId: input.tripId,
+        type: input.type as Parameters<typeof services.attachTripDocument>[0]["type"]
+      })
+    )
 
     return OK
   } catch (error) {
@@ -162,15 +169,15 @@ export async function updateDriverAvailabilityAction(input: {
       throw new Error("Add a driver profile before setting availability")
     }
 
-    services.upsertAvailabilityWindow({
-      driverProfileId: actor.driverProfileId,
-      endAt: input.endAt,
-      notes: input.notes ?? undefined,
-      startAt: input.startAt,
-      status: input.status
-    })
-
-    commit(["/driver", "/fleet"])
+    await commit(["/driver", "/fleet"], (draft) =>
+      draft.upsertAvailabilityWindow({
+        driverProfileId: actor.driverProfileId,
+        endAt: input.endAt,
+        notes: input.notes ?? undefined,
+        startAt: input.startAt,
+        status: input.status
+      })
+    )
 
     return OK
   } catch (error) {
@@ -193,21 +200,21 @@ export async function addEquipmentAction(input: {
   try {
     const actor = await requireActor()
 
-    services.addEquipmentCombination({
-      assignedDriverProfileId: input.assignToSelf ? actor.driverProfileId : null,
-      homeRegion: actor.activeOrganization?.primaryRegion ?? "Unspecified",
-      label: input.label,
-      maxPayloadTons: input.maxPayloadTons,
-      organizationId: actorOrganizationId(actor),
-      ownerUserId: actor.profile.id,
-      trailerType: input.trailerType || null,
-      truckMake: input.truckMake ?? null,
-      truckModel: input.truckModel ?? null,
-      truckType: input.truckType,
-      unitNumber: input.unitNumber
-    })
-
-    commit(["/driver", "/fleet"])
+    await commit(["/driver", "/fleet"], (draft) =>
+      draft.addEquipmentCombination({
+        assignedDriverProfileId: input.assignToSelf ? actor.driverProfileId : null,
+        homeRegion: actor.activeOrganization?.primaryRegion ?? "Unspecified",
+        label: input.label,
+        maxPayloadTons: input.maxPayloadTons,
+        organizationId: actorOrganizationId(actor),
+        ownerUserId: actor.profile.id,
+        trailerType: input.trailerType || null,
+        truckMake: input.truckMake ?? null,
+        truckModel: input.truckModel ?? null,
+        truckType: input.truckType,
+        unitNumber: input.unitNumber
+      })
+    )
 
     return OK
   } catch (error) {
@@ -222,13 +229,13 @@ export async function updateEquipmentStatusAction(input: {
   try {
     const actor = await requireActor()
 
-    services.updateEquipmentStatus({
-      combinationId: input.combinationId,
-      organizationId: actorOrganizationId(actor),
-      status: input.status
-    })
-
-    commit(["/driver", "/fleet"])
+    await commit(["/driver", "/fleet"], (draft) =>
+      draft.updateEquipmentStatus({
+        combinationId: input.combinationId,
+        organizationId: actorOrganizationId(actor),
+        status: input.status
+      })
+    )
 
     return OK
   } catch (error) {
@@ -243,13 +250,13 @@ export async function assignDriverToEquipmentAction(input: {
   try {
     const actor = await requireActor()
 
-    services.assignDriverToEquipment({
-      combinationId: input.combinationId,
-      driverProfileId: input.driverProfileId,
-      organizationId: actorOrganizationId(actor)
-    })
-
-    commit(["/fleet", "/driver"])
+    await commit(["/fleet", "/driver"], (draft) =>
+      draft.assignDriverToEquipment({
+        combinationId: input.combinationId,
+        driverProfileId: input.driverProfileId,
+        organizationId: actorOrganizationId(actor)
+      })
+    )
 
     return OK
   } catch (error) {
@@ -263,12 +270,12 @@ export async function createLoadPostingAction(input: Record<string, unknown>): P
   try {
     const actor = await requireActor()
 
-    services.createLoadPosting({
-      ...input,
-      companyId: actorOrganizationId(actor)
-    })
-
-    commit(["/host", "/fleet", "/driver", "/loads", "/"])
+    await commit(["/host", "/fleet", "/driver", "/loads", "/"], (draft) =>
+      draft.createLoadPosting({
+        ...input,
+        companyId: actorOrganizationId(actor)
+      })
+    )
 
     return OK
   } catch (error) {
@@ -284,21 +291,24 @@ export async function approveCapacityRequestAction(input: {
   try {
     const actor = await requireActor()
 
-    if (input.approve) {
-      services.approveCapacityRequest({
-        actorUserId: actor.profile.id,
-        assignmentId: input.assignmentId,
-        organizationId: actorOrganizationId(actor)
-      })
-    } else {
-      services.cancelAssignment(input.assignmentId, input.reason?.trim() || "Declined by the publishing organization")
-    }
+    await commit(["/host", "/fleet", "/driver"], (draft) => {
+      if (input.approve) {
+        return draft.approveCapacityRequest({
+          actorUserId: actor.profile.id,
+          assignmentId: input.assignmentId,
+          organizationId: actorOrganizationId(actor)
+        })
+      }
+
+      return draft.cancelAssignment(
+        input.assignmentId,
+        input.reason?.trim() || "Declined by the publishing organization"
+      )
+    })
 
     captureServerEvent(input.approve ? "capacity_approved" : "capacity_declined", actor.profile.id, {
       assignmentId: input.assignmentId
     })
-    commit(["/host", "/fleet", "/driver"])
-
     return OK
   } catch (error) {
     return failure(error)
@@ -314,16 +324,16 @@ export async function createDirectOfferAction(input: {
   try {
     const actor = await requireActor()
 
-    services.createDirectOffer({
-      actorUserId: actor.profile.id,
-      expiresAt: input.expiresAt ?? new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-      loadPostingId: input.loadPostingId,
-      offeredToOrganizationId: input.offeredToOrganizationId,
-      offeredTruckloads: input.offeredTruckloads,
-      organizationId: actorOrganizationId(actor)
-    })
-
-    commit(["/host", "/fleet"])
+    await commit(["/host", "/fleet"], (draft) =>
+      draft.createDirectOffer({
+        actorUserId: actor.profile.id,
+        expiresAt: input.expiresAt ?? new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+        loadPostingId: input.loadPostingId,
+        offeredToOrganizationId: input.offeredToOrganizationId,
+        offeredTruckloads: input.offeredTruckloads,
+        organizationId: actorOrganizationId(actor)
+      })
+    )
 
     return OK
   } catch (error) {
@@ -341,17 +351,17 @@ export async function publishFutureAvailabilityAction(input: {
   try {
     const actor = await requireActor()
 
-    services.publishFutureAvailability({
-      actorUserId: actor.profile.id,
-      endsAt: input.endsAt,
-      equipmentCombinationId: input.equipmentCombinationId,
-      notes: input.notes ?? undefined,
-      organizationId: actorOrganizationId(actor),
-      startsAt: input.startsAt,
-      status: input.status ?? "available"
-    })
-
-    commit(["/fleet", "/host"])
+    await commit(["/fleet", "/host"], (draft) =>
+      draft.publishFutureAvailability({
+        actorUserId: actor.profile.id,
+        endsAt: input.endsAt,
+        equipmentCombinationId: input.equipmentCombinationId,
+        notes: input.notes ?? undefined,
+        organizationId: actorOrganizationId(actor),
+        startsAt: input.startsAt,
+        status: input.status ?? "available"
+      })
+    )
 
     return OK
   } catch (error) {
@@ -368,16 +378,16 @@ export async function createOperationalNoticeAction(input: {
   try {
     const actor = await requireActor()
 
-    services.createOperationalNotice({
-      actorUserId: actor.profile.id,
-      body: input.body,
-      organizationId: actorOrganizationId(actor),
-      relatedLoadId: input.relatedLoadId ?? undefined,
-      severity: input.severity,
-      title: input.title
-    })
-
-    commit(["/host", "/fleet", "/driver"])
+    await commit(["/host", "/fleet", "/driver"], (draft) =>
+      draft.createOperationalNotice({
+        actorUserId: actor.profile.id,
+        body: input.body,
+        organizationId: actorOrganizationId(actor),
+        relatedLoadId: input.relatedLoadId ?? undefined,
+        severity: input.severity,
+        title: input.title
+      })
+    )
 
     return OK
   } catch (error) {
@@ -391,16 +401,16 @@ export async function sendMessageAction(input: { threadId: string; body: string 
   try {
     const actor = await requireActor()
 
-    services.postMessage({
-      authorUserId: actor.profile.id,
-      body: input.body,
-      threadId: input.threadId
-    })
+    await commit(["/driver/messages", "/fleet/messages", "/host/messages"], (draft) =>
+      draft.postMessage({
+        authorUserId: actor.profile.id,
+        body: input.body,
+        threadId: input.threadId
+      })
+    )
 
     // Event only — never the message body (PII/content stays out of analytics).
     captureServerEvent("message_sent", actor.profile.id, { threadId: input.threadId })
-    commit(["/driver/messages", "/fleet/messages", "/host/messages"])
-
     return OK
   } catch (error) {
     return failure(error)
@@ -421,16 +431,18 @@ export async function startThreadAction(input: {
   try {
     const actor = await requireActor()
 
-    const thread = services.createThread({
-      assignmentId: input.assignmentId ?? null,
-      body: input.body,
-      creatorUserId: actor.profile.id,
-      loadPostingId: input.loadPostingId ?? null,
-      participantUserIds: input.participantUserIds,
-      subject: input.subject
-    })
-
-    commit(["/driver/messages", "/fleet/messages", "/host/messages"])
+    const thread = await commit(
+      ["/driver/messages", "/fleet/messages", "/host/messages"],
+      (draft) =>
+        draft.createThread({
+          assignmentId: input.assignmentId ?? null,
+          body: input.body,
+          creatorUserId: actor.profile.id,
+          loadPostingId: input.loadPostingId ?? null,
+          participantUserIds: input.participantUserIds,
+          subject: input.subject
+        })
+    )
 
     return { ...OK, threadId: thread.id }
   } catch (error) {
@@ -444,8 +456,9 @@ export async function markNotificationReadAction(input: { notificationId: string
   try {
     const actor = await requireActor()
 
-    services.markNotificationRead({ notificationId: input.notificationId, userId: actor.profile.id })
-    commit(["/driver", "/fleet", "/host", "/admin"])
+    await commit(["/driver", "/fleet", "/host", "/admin"], (draft) =>
+      draft.markNotificationRead({ notificationId: input.notificationId, userId: actor.profile.id })
+    )
 
     return OK
   } catch (error) {
@@ -457,8 +470,9 @@ export async function markAllNotificationsReadAction(): Promise<ActionResult> {
   try {
     const actor = await requireActor()
 
-    services.markAllNotificationsRead(actor.profile.id)
-    commit(["/driver", "/fleet", "/host", "/admin"])
+    await commit(["/driver", "/fleet", "/host", "/admin"], (draft) =>
+      draft.markAllNotificationsRead(actor.profile.id)
+    )
 
     return OK
   } catch (error) {
@@ -481,20 +495,20 @@ export async function submitVerificationAction(input: {
     const subjectType = input.subjectType === "organization" ? "organization" : "person"
     const subjectId = subjectType === "person" ? actor.profile.id : actorOrganizationId(actor)
 
-    services.submitVerificationRecord({
-      evidenceSummary: input.evidenceSummary,
-      subjectId,
-      subjectType,
-      submittedByUserId: actor.profile.id,
-      verificationType: input.verificationType
-    })
+    await commit(["/driver", "/fleet", "/host", "/admin"], (draft) =>
+      draft.submitVerificationRecord({
+        evidenceSummary: input.evidenceSummary,
+        subjectId,
+        subjectType,
+        submittedByUserId: actor.profile.id,
+        verificationType: input.verificationType
+      })
+    )
 
     captureServerEvent("verification_submitted", actor.profile.id, {
       subjectType: input.subjectType,
       verificationType: input.verificationType
     })
-    commit(["/driver", "/fleet", "/host", "/admin"])
-
     return OK
   } catch (error) {
     return failure(error)
@@ -515,19 +529,19 @@ export async function submitTripReviewAction(input: {
     // The rating side (rater org/user) is the session's; the subject is derived
     // in the service from the trip. A member can only rate the other side of a
     // completed haul their org took part in.
-    services.submitTripReview({
-      direction: input.direction,
-      note: input.note ?? null,
-      raterOrganizationId: actorOrganizationId(actor),
-      raterUserId: actor.profile.id,
-      stars: input.stars,
-      tags: input.tags,
-      tripId: input.tripId
-    })
+    await commit(["/driver", "/fleet", "/host", "/admin"], (draft) =>
+      draft.submitTripReview({
+        direction: input.direction,
+        note: input.note ?? null,
+        raterOrganizationId: actorOrganizationId(actor),
+        raterUserId: actor.profile.id,
+        stars: input.stars,
+        tags: input.tags,
+        tripId: input.tripId
+      })
+    )
 
     captureServerEvent("trip_reviewed", actor.profile.id, { direction: input.direction, stars: input.stars })
-    commit(["/driver", "/fleet", "/host", "/admin"])
-
     return OK
   } catch (error) {
     return failure(error)
@@ -554,14 +568,14 @@ export async function reviewVerificationAction(input: {
   try {
     const actor = await requireAdmin()
 
-    services.reviewVerificationRecord({
-      decision: input.decision,
-      note: input.note ?? null,
-      recordId: input.recordId,
-      reviewerUserId: actor.profile.id
-    })
-
-    commit(["/admin"])
+    await commit(["/admin"], (draft) =>
+      draft.reviewVerificationRecord({
+        decision: input.decision,
+        note: input.note ?? null,
+        recordId: input.recordId,
+        reviewerUserId: actor.profile.id
+      })
+    )
 
     return OK
   } catch (error) {
@@ -576,13 +590,13 @@ export async function reviewOrganizationAction(input: {
   try {
     const actor = await requireAdmin()
 
-    services.reviewOrganization({
-      decision: input.decision,
-      organizationId: input.organizationId,
-      reviewerUserId: actor.profile.id
-    })
-
-    commit(["/admin"])
+    await commit(["/admin"], (draft) =>
+      draft.reviewOrganization({
+        decision: input.decision,
+        organizationId: input.organizationId,
+        reviewerUserId: actor.profile.id
+      })
+    )
 
     return OK
   } catch (error) {
@@ -594,12 +608,12 @@ export async function resolveNoticeAction(input: { noticeId: string }): Promise<
   try {
     const actor = await requireAdmin()
 
-    services.resolveOperationalNotice({
-      noticeId: input.noticeId,
-      reviewerUserId: actor.profile.id
-    })
-
-    commit(["/admin", "/host", "/fleet", "/driver"])
+    await commit(["/admin", "/host", "/fleet", "/driver"], (draft) =>
+      draft.resolveOperationalNotice({
+        noticeId: input.noticeId,
+        reviewerUserId: actor.profile.id
+      })
+    )
 
     return OK
   } catch (error) {

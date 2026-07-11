@@ -44,10 +44,10 @@ founder action**.
 
 ## Supabase JWT integration — NOT required for launch
 `current_clerk_user_id()` reads `auth.jwt() ->> 'sub'`, used only when authenticated
-users query Postgres directly (the future canonical-Postgres path). The app currently
-serves all data via the service role / in-memory engine, so **no Clerk↔Supabase JWT
-template is needed for single-node launch.** Wire it only when Postgres becomes the
-canonical read path.
+users query normalized Postgres tables directly. The app currently serves all data
+through the server-only, service-role `operating_state` repository, so **no
+Clerk↔Supabase JWT template is needed for launch.** Wire it only when browser/session
+queries move onto RLS-scoped relational tables.
 
 ## Verification after activation
 1. `curl https://logloads.com/api/health` → `integrations.auth: "clerk"`.

@@ -71,8 +71,8 @@ try {
   record(integrations.analytics ? "PASS" : "SKIP", "analytics wired", integrations.analytics ? "PostHog key present" : "no PostHog key")
   record(integrations.errorTracking ? "PASS" : "SKIP", "error tracking wired", integrations.errorTracking ? "Sentry DSN present" : "no Sentry DSN")
 
-  // 12. Restart/recovery is a host-level check
-  record("MANUAL", "restart/recovery", "restart the host machine; confirm /data snapshot survives and state is intact")
+  // 12. Cold-start recovery is a host-level check.
+  record("MANUAL", "cold-start/recovery", "force a fresh instance; confirm it awaits canonical Supabase state before health returns 200")
 } finally {
   await browser.close()
 }

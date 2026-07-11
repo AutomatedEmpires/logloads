@@ -35,14 +35,21 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.101.0
+
       - name: Guardrails
         run: pnpm guardrails
+
+      - name: Build production application
+        run: pnpm --filter @logloads/web build
 
       - name: Install Playwright browsers
         run: pnpm --filter @logloads/web exec playwright install --with-deps chromium
 
       - name: End-to-end smoke
         run: pnpm test:e2e
-        working-directory: apps/web
         env:
           CI: "true"

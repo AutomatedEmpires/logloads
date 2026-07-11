@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 
 import { apiErrorResponse, requireApiActor } from "@/lib/api-actor"
-import { persistState, services } from "@/lib/services"
+import { mutateState, services } from "@/lib/services"
 
 export async function GET(request: NextRequest) {
 	try {
@@ -20,9 +20,7 @@ export async function POST(request: NextRequest) {
 		const payload = await request.json()
 		await requireApiActor(payload.organizationId)
 
-		const slot = services.createTruckSlot(payload)
-
-		persistState()
+		const slot = await mutateState((draft) => draft.createTruckSlot(payload))
 
 		return NextResponse.json({ slot }, { status: 201 })
 	} catch (error) {

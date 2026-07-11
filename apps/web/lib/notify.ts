@@ -26,6 +26,7 @@ export async function deliverEmail(email: OutboundEmail): Promise<boolean> {
     const response = await fetch("https://api.resend.com/emails", {
       body: JSON.stringify({
         from: process.env.LOGLOADS_EMAIL_FROM ?? "LogLoads <onboarding@resend.dev>",
+        reply_to: process.env.LOGLOADS_EMAIL_REPLY_TO ?? "support@logloads.com",
         subject: email.subject,
         text: email.text,
         to: [email.to]

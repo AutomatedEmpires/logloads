@@ -22,7 +22,7 @@ const staticRoutes: Array<{ path: string; priority: number; changeFrequency: "ho
   { changeFrequency: "monthly", path: "/acceptable-use", priority: 0.3 }
 ]
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date()
 
   const pages: MetadataRoute.Sitemap = staticRoutes.map((route) => ({
@@ -32,7 +32,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     url: `${BASE_URL}${route.path}`
   }))
 
-  const loadPages: MetadataRoute.Sitemap = getPublicLoads().map((load) => ({
+  const loadPages: MetadataRoute.Sitemap = (await getPublicLoads()).map((load) => ({
     changeFrequency: "hourly",
     lastModified: now,
     priority: 0.6,

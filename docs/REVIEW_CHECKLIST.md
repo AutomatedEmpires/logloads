@@ -12,7 +12,7 @@
 - `pnpm test` passes.
 - `pnpm build` passes.
 - `pnpm validate` passes.
-- `pnpm db:check` passes or is clearly skipped because Supabase CLI is unavailable.
+- `pnpm db:check` passes locally when Supabase CLI/Docker are available; CI must never skip it.
 
 ## Safety
 - No secrets were committed.

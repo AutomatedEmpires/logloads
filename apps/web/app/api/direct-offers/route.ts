@@ -1,19 +1,19 @@
 import { NextRequest, NextResponse } from "next/server"
 
 import { apiErrorResponse, requireApiActor } from "@/lib/api-actor"
-import { persistState, services } from "@/lib/services"
+import { mutateState } from "@/lib/services"
 
 export async function POST(request: NextRequest) {
 	try {
 		const payload = await request.json()
 		const { actorUserId, organizationId } = await requireApiActor(payload.organizationId)
-		const offer = services.createDirectOffer({
-			...payload,
-			actorUserId,
-			organizationId
-		})
-
-		persistState()
+		const offer = await mutateState((draft) =>
+			draft.createDirectOffer({
+				...payload,
+				actorUserId,
+				organizationId
+			})
+		)
 
 		return NextResponse.json({ offer }, { status: 201 })
 	} catch (error) {

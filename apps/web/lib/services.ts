@@ -1,12 +1,18 @@
+import "server-only"
+
 import { join } from "node:path"
 
 import {
   createInMemoryDatabase,
-  loadRemoteSnapshot,
+  initializeRemoteOperatingState,
+  loadRemoteOperatingState,
   loadStateSnapshot,
+  mutateRemoteOperatingState,
+  OperatingStateUnavailableError,
   persistStateSnapshot,
   remoteSnapshotConfig,
-  type LogLoadsDatabaseState
+  type LogLoadsDatabaseState,
+  type RemoteOperatingStateSnapshot
 } from "@logloads/db"
 import { createLogLoadsServices } from "@logloads/services"
 
@@ -14,11 +20,7 @@ const SEED_ANCHOR = Date.UTC(2026, 5, 5)
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/
 
-/**
- * The committed seed is anchored to 2026-06-05. Fresh local states shift every
- * seed date forward so schedules, notices, and trips read as current operations.
- * Restored snapshots are real user state and are never shifted.
- */
+/** Shift committed demo dates only for a fresh local/bootstrap state. */
 function shiftSeedDates(state: LogLoadsDatabaseState): LogLoadsDatabaseState {
   const deltaDays = Math.floor((Date.now() - SEED_ANCHOR) / (24 * 60 * 60 * 1000))
 
@@ -34,7 +36,9 @@ function shiftSeedDates(state: LogLoadsDatabaseState): LogLoadsDatabaseState {
       }
 
       if (DATE_ONLY.test(value)) {
-        return new Date(new Date(`${value}T12:00:00.000Z`).getTime() + deltaMs).toISOString().slice(0, 10)
+        return new Date(new Date(`${value}T12:00:00.000Z`).getTime() + deltaMs)
+          .toISOString()
+          .slice(0, 10)
       }
 
       return value
@@ -54,59 +58,185 @@ function shiftSeedDates(state: LogLoadsDatabaseState): LogLoadsDatabaseState {
   return shift(state) as LogLoadsDatabaseState
 }
 
-const stateFilePath = process.env.LOGLOADS_STATE_FILE ?? join(process.cwd(), ".data", "logloads-state.json")
+const stateFilePath =
+  process.env.LOGLOADS_STATE_FILE ?? join(process.cwd(), ".data", "logloads-state.json")
 
-// Pin the services singleton to globalThis so the server-action bundle and the
-// page-render bundle share one in-memory operating state. Without this, Next.js
-// can instantiate this module twice and a runtime-provisioned account would be
-// visible to the action that created it but not to the page that renders next.
 type ServicesSingleton = ReturnType<typeof createLogLoadsServices>
+type MutationTail = Promise<void>
+
 const globalStore = globalThis as typeof globalThis & {
+  __logloadsMutationTail?: MutationTail
+  __logloadsRefresh?: Promise<void>
   __logloadsServices?: ServicesSingleton
-  __logloadsRemoteSync?: boolean
+  __logloadsStateVersion?: number
 }
 
-const bootDiskState = globalStore.__logloadsServices ? null : loadStateSnapshot(stateFilePath)
+const localBootState = loadStateSnapshot(stateFilePath)
+const initialState = localBootState ?? shiftSeedDates(createInMemoryDatabase())
 
 export const services: ServicesSingleton =
   globalStore.__logloadsServices ??
-  (globalStore.__logloadsServices = createLogLoadsServices(
-    bootDiskState ?? shiftSeedDates(createInMemoryDatabase())
-  ))
+  (globalStore.__logloadsServices = createLogLoadsServices(initialState))
 
-// Remote snapshot mirror: every persistState() writes disk and (when Supabase
-// credentials exist) the mirror. On a fresh node with no disk snapshot, restore
-// from the mirror once at boot — the local disk remains the primary and is never
-// rolled back by the mirror. Single-writer deployment.
-const remote = remoteSnapshotConfig()
+globalStore.__logloadsStateVersion ??= -1
+globalStore.__logloadsMutationTail ??= Promise.resolve()
 
-if (remote && !bootDiskState && !globalStore.__logloadsRemoteSync) {
-  globalStore.__logloadsRemoteSync = true
+function replaceStateContents(
+  targetState: LogLoadsDatabaseState,
+  sourceState: LogLoadsDatabaseState
+): void {
+  const target = targetState as unknown as Record<string, unknown>
 
-  void loadRemoteSnapshot(remote).then((remoteState) => {
-    if (!remoteState) {
-      return
+  for (const [table, rows] of Object.entries(sourceState)) {
+    target[table] = rows
+  }
+}
+
+function replaceRuntimeState(state: LogLoadsDatabaseState, version: number): void {
+  if (version < (globalStore.__logloadsStateVersion ?? -1)) {
+    return
+  }
+
+  replaceStateContents(services.state, state)
+
+  globalStore.__logloadsStateVersion = version
+}
+
+function localFallbackAllowed(): boolean {
+  return (
+    process.env.NODE_ENV !== "production" ||
+    process.env.NEXT_PHASE === "phase-production-build"
+  )
+}
+
+function bootstrapAllowed(): boolean {
+  return localFallbackAllowed() || process.env.LOGLOADS_ALLOW_STATE_BOOTSTRAP === "true"
+}
+
+async function canonicalSnapshot(): Promise<RemoteOperatingStateSnapshot | null> {
+  const remote = remoteSnapshotConfig()
+
+  if (!remote) {
+    if (!localFallbackAllowed()) {
+      throw new OperatingStateUnavailableError(
+        "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required by the production runtime"
+      )
     }
 
-    const target = services.state as unknown as Record<string, unknown>
+    return null
+  }
 
-    for (const [table, rows] of Object.entries(remoteState)) {
-      if (table in target) {
-        target[table] = rows
-      }
-    }
+  const snapshot = await loadRemoteOperatingState(remote)
 
-    console.log("logloads: operating state restored from remote snapshot mirror")
-  })
+  if (snapshot) {
+    return snapshot
+  }
+
+  if (!bootstrapAllowed()) {
+    throw new OperatingStateUnavailableError(
+      "Canonical operating_state row is missing; set LOGLOADS_ALLOW_STATE_BOOTSTRAP=true for one controlled bootstrap"
+    )
+  }
+
+  return initializeRemoteOperatingState(remote, structuredClone(services.state))
 }
 
 /**
- * Durable single-node persistence: every successful mutation schedules a debounced
- * snapshot of the operating state so restarts do not lose provisioned accounts,
- * assignments, trips, or messages.
+ * Refresh from Supabase before a request reads state. Concurrent cold-start
+ * readers share one awaited request; a late stale read cannot replace a newer
+ * locally committed version.
  */
-export function persistState(): void {
-  persistStateSnapshot(stateFilePath, services.state)
+export async function refreshState(): Promise<void> {
+  if (globalStore.__logloadsRefresh) {
+    return globalStore.__logloadsRefresh
+  }
+
+  const refresh = (async () => {
+    const snapshot = await canonicalSnapshot()
+
+    if (snapshot) {
+      replaceRuntimeState(snapshot.state, snapshot.version)
+    }
+  })()
+
+  globalStore.__logloadsRefresh = refresh
+
+  try {
+    await refresh
+  } finally {
+    if (globalStore.__logloadsRefresh === refresh) {
+      globalStore.__logloadsRefresh = undefined
+    }
+  }
+}
+
+/** Read only after the canonical refresh has completed. */
+export async function readState<T>(read: (current: ServicesSingleton) => T): Promise<T> {
+  await refreshState()
+
+  return read(services)
+}
+
+function enqueueMutation<T>(work: () => Promise<T>): Promise<T> {
+  const prior = globalStore.__logloadsMutationTail ?? Promise.resolve()
+  const result = prior.then(work, work)
+
+  globalStore.__logloadsMutationTail = result.then(
+    () => undefined,
+    () => undefined
+  )
+
+  return result
+}
+
+/**
+ * Commit a deterministic service-layer mutation. Supabase is loaded first and
+ * updated with a version predicate; on conflict the mutation is replayed against
+ * the latest document. External side effects belong after this promise resolves.
+ */
+export function mutateState<T>(mutate: (draft: ServicesSingleton) => T): Promise<T> {
+  return enqueueMutation(async () => {
+    const remote = remoteSnapshotConfig()
+
+    if (!remote) {
+      if (!localFallbackAllowed()) {
+        throw new OperatingStateUnavailableError(
+          "Local operating-state persistence is disabled in production"
+        )
+      }
+
+      const draft = createLogLoadsServices(structuredClone(services.state))
+      const value = mutate(draft)
+
+      await persistStateSnapshot(stateFilePath, draft.state)
+      replaceRuntimeState(draft.state, (globalStore.__logloadsStateVersion ?? -1) + 1)
+
+      return value
+    }
+
+    const initial = await canonicalSnapshot()
+
+    if (!initial) {
+      throw new OperatingStateUnavailableError("Canonical operating state was not loaded")
+    }
+
+    const result = await mutateRemoteOperatingState(remote, initial, (state) => {
+      const draft = createLogLoadsServices(state)
+      const value = mutate(draft)
+
+      // createLogLoadsServices intentionally clones its seed for isolation. Copy
+      // the mutated clone back into the repository-owned CAS document before the
+      // conditional PATCH; otherwise the service call succeeds in memory while
+      // the pre-mutation state is persisted.
+      replaceStateContents(state, draft.state)
+
+      return value
+    })
+
+    replaceRuntimeState(result.snapshot.state, result.snapshot.version)
+
+    return result.value
+  })
 }
 
 export function serializeError(error: unknown): { error: string } {

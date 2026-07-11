@@ -14,9 +14,11 @@ the source of truth — the code never reports a false success.
 - `isEmailDeliveryEnabled()` gates callers on `RESEND_API_KEY`.
 - **From identity:** `LOGLOADS_EMAIL_FROM` (default `LogLoads <onboarding@resend.dev>` —
   replace with a `logloads.com` sender at activation).
+- **Support/reply identity:** `LOGLOADS_EMAIL_REPLY_TO` defaults to the existing
+  `support@logloads.com` mailbox.
 - **Current email-triggering event:** contact-form inquiries
   (`apps/web/lib/contact-actions.ts`) → emails `LOGLOADS_CONTACT_EMAIL`
-  (default `jackson@automatedempires.com`) AND writes an in-app notification to the
+  (default `support@logloads.com`) AND writes an in-app notification to the
   platform admin. The in-app record is always written regardless of email outcome.
 
 ## Configuration
@@ -26,8 +28,9 @@ the source of truth — the code never reports a false success.
 3. Add the DNS records Resend provides (SPF/DKIM/DMARC) at the `logloads.com` DNS
    provider; wait for verification.
 4. Create an API key; store `RESEND_API_KEY` in Doppler → host.
-5. Set `LOGLOADS_EMAIL_FROM="LogLoads <noreply@send.logloads.com>"` (or a monitored
-   address) and confirm `LOGLOADS_CONTACT_EMAIL` points at the real operations inbox.
+5. Set `LOGLOADS_EMAIL_FROM="LogLoads <noreply@send.logloads.com>"`, keep
+   `LOGLOADS_EMAIL_REPLY_TO=support@logloads.com`, and confirm
+   `LOGLOADS_CONTACT_EMAIL=support@logloads.com`.
 
 ## Activation path (once account + DNS exist)
 `create domain` → `add DNS` → `verify` → `set RESEND_API_KEY + LOGLOADS_EMAIL_FROM` →

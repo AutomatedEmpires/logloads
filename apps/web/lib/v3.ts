@@ -1,6 +1,6 @@
 import type { NetworkLoadView, NetworkView } from "./network"
 import { buildNetworkView } from "./network"
-import { services } from "./services"
+import { readState, services } from "./services"
 import { requireCockpitActor, type Cockpit, type SessionActor } from "./session"
 import { loadSlug } from "./v3-shared"
 
@@ -127,16 +127,16 @@ export async function getHostNetwork(): Promise<NetworkView> {
   return (await getCockpitContext("host")).network
 }
 
-export function getPublicNetwork(): NetworkView {
-  return buildNetworkView(services.state, { kind: "public" })
+export async function getPublicNetwork(): Promise<NetworkView> {
+  return readState((current) => buildNetworkView(current.state, { kind: "public" }))
 }
 
-export function getPublicLoads(): NetworkLoadView[] {
-  return getPublicNetwork().loads
+export async function getPublicLoads(): Promise<NetworkLoadView[]> {
+  return (await getPublicNetwork()).loads
 }
 
-export function findPublicLoad(slug: string): NetworkLoadView | undefined {
-  return getPublicLoads().find((load) => loadSlug(load) === slug)
+export async function findPublicLoad(slug: string): Promise<NetworkLoadView | undefined> {
+  return (await getPublicLoads()).find((load) => loadSlug(load) === slug)
 }
 
 export interface PublicHomeSnapshot {
@@ -147,17 +147,21 @@ export interface PublicHomeSnapshot {
   destinations: number
 }
 
-export function getPublicHomeSnapshot(): PublicHomeSnapshot {
-  const state = services.state
-  const openLoads = getPublicLoads().filter((load) => load.status === "open")
+export async function getPublicHomeSnapshot(): Promise<PublicHomeSnapshot> {
+  return readState((current) => {
+    const state = current.state
+    const openLoads = buildNetworkView(state, { kind: "public" }).loads.filter(
+      (load) => load.status === "open"
+    )
 
-  return {
-    activeRegions: Array.from(new Set(state.organizations.map((organization) => organization.primaryRegion))).slice(0, 4),
-    destinations: state.mills.length,
-    landings: state.landings.length,
-    openLoads: openLoads.length,
-    trucksAvailable: state.equipmentCombinations.filter((combination) => combination.status === "available").length
-  }
+    return {
+      activeRegions: Array.from(new Set(state.organizations.map((organization) => organization.primaryRegion))).slice(0, 4),
+      destinations: state.mills.length,
+      landings: state.landings.length,
+      openLoads: openLoads.length,
+      trucksAvailable: state.equipmentCombinations.filter((combination) => combination.status === "available").length
+    }
+  })
 }
 
 export async function getAdminSummary() {

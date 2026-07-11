@@ -3,6 +3,8 @@ import { getPublicHomeSnapshot, getPublicLoads } from "@/lib/v3"
 
 export const dynamic = "force-dynamic"
 
-export default function HomePage() {
-  return <PublicHome loads={getPublicLoads()} snapshot={getPublicHomeSnapshot()} />
+export default async function HomePage() {
+  const [loads, snapshot] = await Promise.all([getPublicLoads(), getPublicHomeSnapshot()])
+
+  return <PublicHome loads={loads} snapshot={snapshot} />
 }

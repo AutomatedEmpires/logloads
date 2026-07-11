@@ -6,7 +6,8 @@ import { expect, test, type Page } from "@playwright/test"
  * driver reviews a completed cross-org haul, reputation surfaces on profiles and
  * load cards, and the reliability dashboard ranks organizations. maya is the
  * driver on the seeded cross-org hauls (so hank's recommendation flows stay
- * untouched). Run with --project=desktop-chrome.
+ * untouched). The group runs once because submitting a review consumes its seed
+ * opportunity; every test sets its own desktop viewport.
  */
 
 const SHOTS = ".artifacts"
@@ -21,6 +22,13 @@ async function signIn(page: Page, email: string) {
 }
 
 test.describe.serial("reputation + reliability", () => {
+  test.beforeEach((_fixtures, testInfo) => {
+    test.skip(
+      testInfo.project.name === "desktop-chrome",
+      "stateful reputation flow already ran at an explicit desktop viewport"
+    )
+  })
+
   test("a driver reviews a completed cross-org haul (stars + tags)", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "maya@northpine.example")

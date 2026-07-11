@@ -14,7 +14,7 @@
     "lint": "turbo run lint && pnpm lint:workflows",
     "lint:workflows": "npx --yes github-actionlint@1.7.12",
     "test": "turbo run test",
-    "test:e2e": "pnpm --filter @logloads/web test:e2e",
+    "test:e2e": "node tools/run-e2e.mjs",
     "typecheck": "turbo run typecheck",
     "validate": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm guardrails"
   },

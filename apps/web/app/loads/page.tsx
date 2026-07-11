@@ -3,6 +3,6 @@ import { getPublicLoads } from "@/lib/v3"
 
 export const dynamic = "force-dynamic"
 
-export default function LoadsPage() {
-  return <PublicLoadsPage loads={getPublicLoads()} />
+export default async function LoadsPage() {
+  return <PublicLoadsPage loads={await getPublicLoads()} />
 }

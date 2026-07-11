@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 
 import { ApiError, apiErrorResponse, requireApiActor } from "@/lib/api-actor"
-import { persistState, services } from "@/lib/services"
+import { mutateState, services } from "@/lib/services"
 
 export async function GET() {
 	try {
@@ -26,12 +26,12 @@ export async function POST(request: NextRequest) {
 			throw new ApiError("Add a driver profile before setting availability", 403)
 		}
 
-		const window = services.upsertAvailabilityWindow({
-			...payload,
-			driverProfileId: actor.driverProfileId
-		})
-
-		persistState()
+		const window = await mutateState((draft) =>
+			draft.upsertAvailabilityWindow({
+				...payload,
+				driverProfileId: actor.driverProfileId
+			})
+		)
 
 		return NextResponse.json({ window }, { status: 201 })
 	} catch (error) {

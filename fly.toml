@@ -1,6 +1,5 @@
-# LogLoads — Fly.io deployment manifest (single-writer node + persistent volume).
-# The operating engine is single-writer: NEVER scale beyond one machine.
-# Activation: see docs/DEPLOYMENT.md. App name may be adjusted at `fly launch`.
+# Legacy-host/reference Fly.io manifest. Vercel is the preferred target; any Fly
+# deployment still uses Supabase operating_state as canonical and needs no volume.
 
 app = "logloads"
 primary_region = "sjc"
@@ -11,17 +10,11 @@ primary_region = "sjc"
 [env]
   NODE_ENV = "production"
   PORT = "3002"
-  LOGLOADS_STATE_FILE = "/data/logloads-state.json"
   NEXT_PUBLIC_APP_URL = "https://logloads.com"
   NEXT_PUBLIC_POSTHOG_HOST = "https://us.i.posthog.com"
   # All secrets (LOGLOADS_SESSION_SECRET, SUPABASE_SERVICE_ROLE_KEY, CLERK_*,
   # STRIPE_*, RESEND_API_KEY, SENTRY_DSN, NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
   # NEXT_PUBLIC_POSTHOG_KEY) are set via `fly secrets set` from Doppler.
-
-# Single-writer: exactly one machine, no autoscaling.
-[[mounts]]
-  source = "logloads_data"
-  destination = "/data"
 
 [http_service]
   internal_port = 3002
@@ -29,7 +22,7 @@ primary_region = "sjc"
   auto_stop_machines = false
   auto_start_machines = false
   min_machines_running = 1
-  max_machines_running = 1
+  max_machines_running = 2
 
   [http_service.concurrency]
     type = "requests"

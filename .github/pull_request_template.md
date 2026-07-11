@@ -1,5 +1,5 @@
 ## Summary
-- 
+-
 
 ## Files changed by category
 - Domain model:
@@ -16,13 +16,13 @@
 - [ ] `pnpm test`
 - [ ] `pnpm build`
 - [ ] `pnpm validate`
-- [ ] `pnpm db:check` (or documented skip)
+- [ ] `pnpm db:check` (mandatory in CI; document only a local tool absence)
 
 ## Results
-- 
+-
 
 ## Known limitations
-- 
+-
 
 ## Next recommended PR
-- 
+-

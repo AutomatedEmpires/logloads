@@ -1,6 +1,6 @@
 import "server-only"
 
-import { persistState, services } from "./services"
+import { mutateState, services } from "./services"
 import { requireCockpitActor, type SessionActor } from "./session"
 
 export type MessagesCockpit = "driver" | "fleet" | "host"
@@ -209,8 +209,10 @@ export async function getMessagesData(cockpit: MessagesCockpit, threadId: string
           subject: meta.subject
         }
 
-        if (services.markThreadRead({ threadId: meta.id, userId: viewerUserId }) > 0) {
-          persistState()
+        if ((services.unreadThreadCounts(viewerUserId)[meta.id] ?? 0) > 0) {
+          await mutateState((draft) =>
+            draft.markThreadRead({ threadId: meta.id, userId: viewerUserId })
+          )
         }
       } catch {
         threadNotFound = true

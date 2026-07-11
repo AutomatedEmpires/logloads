@@ -24,9 +24,9 @@
 - Actor identity always resolves from the session (`apps/web/lib/api-actor.ts`); client payloads can select only among the actor's own organization memberships. Client-supplied actor IDs are rejected by design and banned by guardrails.
 - Validation happens in shared schemas and service-layer functions.
 - Errors: `401` unauthenticated, `403` membership/permission, `422` invalid fields, `400` business-rule rejection. Bodies are JSON `{ error }`.
-- Successful mutations schedule a durable state snapshot (`persistState`).
+- Successful mutations resolve only after `mutateState` commits a conditional Supabase update. A stale version reloads and replays the deterministic service operation; it never overwrites the newer row.
 
 ## Current limitations
-- Backed by the in-memory operating state with single-node JSON snapshot durability; Supabase runtime integration is the next infrastructure milestone.
+- Backed by the transitional versioned `operating_state` document in Supabase. Normalizing service operations onto relational tables remains a later scale milestone.
 - No pagination.
 - Cockpit UIs primarily use server actions (`apps/web/lib/cockpit-actions.ts`) that call the same service layer; the HTTP routes are the external/API-consumer contract.

@@ -5,19 +5,21 @@ export default defineConfig({
   timeout: 60_000,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
-  // The app is a single-writer stateful server; concurrent workers mutate the
-  // same operating state and make journeys nondeterministic.
+  // The journeys share one canonical state row; concurrent workers would make
+  // state-consuming scenarios nondeterministic even though writes use CAS.
   workers: 1,
   use: {
     baseURL: "http://127.0.0.1:3002",
     trace: "retain-on-failure"
   },
   webServer: {
-    command: "pnpm exec next start -H 127.0.0.1 -p 3002",
+    // Browser journeys exercise the built application and the same
+    // Supabase-canonical path required in production.
+    command: "node node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3002",
+    cwd: "..",
     env: {
       LOGLOADS_ENABLE_DEV_LOGIN: "true",
-      LOGLOADS_SESSION_SECRET: "logloads-e2e-session-secret",
-      LOGLOADS_STATE_FILE: "/tmp/logloads-e2e-state.json"
+      LOGLOADS_SESSION_SECRET: "logloads-e2e-session-secret"
     },
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

@@ -8,7 +8,7 @@ import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { cache } from "react"
 
-import { services } from "./services"
+import { refreshState, services } from "./services"
 
 export const SESSION_COOKIE = "ll_session"
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14
@@ -130,6 +130,8 @@ function buildSessionActor(profile: User, requestedOrganizationId: string | null
 }
 
 export const getSessionActor = cache(async (): Promise<SessionActor | null> => {
+  await refreshState()
+
   const cookieStore = await cookies()
   const devSession = verifySessionCookieValue(cookieStore.get(SESSION_COOKIE)?.value)
 

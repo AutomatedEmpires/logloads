@@ -7,7 +7,7 @@ import { redirect } from "next/navigation"
 
 import { captureServerEvent } from "./analytics"
 import { checkRateLimit, requestClientKey } from "./rate-limit"
-import { persistState, serializeError, services } from "./services"
+import { mutateState, refreshState, serializeError, services } from "./services"
 import {
   SESSION_COOKIE,
   createSessionCookieValue,
@@ -51,6 +51,7 @@ export async function signInWithEmail(_previous: AuthFormState, formData: FormDa
     return { error: serializeError(error).error }
   }
 
+  await refreshState()
   const profile = services.findProfileByEmail(email)
 
   if (!profile) {
@@ -145,25 +146,26 @@ export async function completeOnboardingAction(
   }
 
   try {
-    const account = services.createAccount({
-      accountType,
-      clerkUserId,
-      email,
-      equipment: truckType
-        ? {
-            maxPayloadTons: Number.isFinite(maxPayloadTons) && maxPayloadTons > 0 ? maxPayloadTons : 30,
-            trailerType: trailerType || null,
-            truckType
-          }
-        : null,
-      fullName,
-      organizationName: organizationName || null,
-      path,
-      phone,
-      region
-    })
+    const account = await mutateState((draft) =>
+      draft.createAccount({
+        accountType,
+        clerkUserId,
+        email,
+        equipment: truckType
+          ? {
+              maxPayloadTons: Number.isFinite(maxPayloadTons) && maxPayloadTons > 0 ? maxPayloadTons : 30,
+              trailerType: trailerType || null,
+              truckType
+            }
+          : null,
+        fullName,
+        organizationName: organizationName || null,
+        path,
+        phone,
+        region
+      })
+    )
 
-    persistState()
     captureServerEvent("account_created", account.profile.id, { path, accountType })
 
     const cookieStore = await cookies()

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 
-import { services } from "@/lib/services"
+import { refreshState, services } from "@/lib/services"
 import { isClerkConfigured } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
@@ -15,6 +15,7 @@ export async function GET() {
   let profileCount = 0
 
   try {
+    await refreshState()
     profileCount = services.state.profiles.length
     engineOk = Array.isArray(services.state.loadPostings)
   } catch {
@@ -29,7 +30,7 @@ export async function GET() {
     engine: { ok: engineOk, profiles: profileCount },
     integrations: {
       auth: isClerkConfigured() ? "clerk" : "dev-session",
-      snapshotMirror: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
+      canonicalState: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
       billing: Boolean(process.env.STRIPE_SECRET_KEY),
       email: Boolean(process.env.RESEND_API_KEY),
       analytics: Boolean(process.env.NEXT_PUBLIC_POSTHOG_KEY),

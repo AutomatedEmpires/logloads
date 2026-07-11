@@ -3,9 +3,9 @@ import "server-only"
 import { headers } from "next/headers"
 
 /**
- * In-memory sliding-window rate limiter. Correct for the single-writer
- * deployment model (one Node process); revisit alongside the Supabase data
- * layer if the runtime ever becomes multi-instance.
+ * Best-effort, per-runtime sliding-window rate limiter. It protects one Node
+ * process but is not a distributed production abuse-control boundary; public
+ * multi-instance traffic also needs provider-edge or shared-store limits.
  */
 interface WindowState {
   count: number

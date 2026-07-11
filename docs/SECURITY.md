@@ -27,14 +27,18 @@ Two earlier reports appeared to conflict; both were true subsets of the same rea
 
 ## The real exposure that was found and closed (was CRITICAL)
 
-`public.operating_state` — the durability mirror holding a full-state JSON blob with
+`public.operating_state` — the full-state JSON blob (then a durability mirror, now
+the transitional canonical store) holding
 all PII — had a policy (`operating_state_rw`) granting **anon** full read/write. The
 publishable anon key could have exfiltrated or overwritten the entire operating state.
 
 Fixed in `20260707050000_security_rls_coverage.sql`: permissive policy dropped, anon
 and authenticated grants revoked. The table is now RLS-enabled with **no policy**, so
-PostgREST denies everyone except the service role (which bypasses RLS). The app mirror
-was changed to require `SUPABASE_SERVICE_ROLE_KEY` (`packages/db/src/snapshot.ts`).
+PostgREST denies everyone except the service role (which bypasses RLS). The app
+repository requires `SUPABASE_SERVICE_ROLE_KEY` (`packages/db/src/snapshot.ts`).
+The repo-local 2026-07-10 convergence migration further makes service-role grants
+explicit (`SELECT`, `INSERT`, `UPDATE` only); that additive migration still requires
+live application and verification.
 
 Empirically verified from outside with the live anon key:
 - `GET /rest/v1/operating_state` → `permission denied for table operating_state`
@@ -91,11 +95,11 @@ or PII. This is the single accepted `rls_disabled_in_public` advisor ERROR.
 | `current_profile_id`/`is_org_member`/etc. executable by `authenticated` | WARN | REQUIRED — RLS policies cannot evaluate without it |
 | `operating_state` RLS enabled, no policy | INFO | Intentional deny-all-but-service-role |
 
-## Future note (when Postgres becomes the canonical read path)
+## Future note (when normalized Postgres tables become the read path)
 
 RLS tables currently fail-closed for anon (`permission denied for function
-current_profile_id`). Correct today: the Next server serves all data via the service
-role / in-memory engine; anon never queries PostgREST. If open-network loads are ever
+current_profile_id`). Correct today: the Next server reads the canonical whole-state
+row via service role; anon never queries PostgREST. If open-network loads are ever
 served directly to anon via PostgREST, revisit those specific policies/grants.
 
 ## Repo ↔ live ledger reconciliation

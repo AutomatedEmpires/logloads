@@ -27,6 +27,7 @@
 - `RoutePack`
 - `OpportunityCapacity` / `DirectOffer` / `FutureAvailability`
 - `TripV2` / `TripEvent` / `TripDocument`
+- `TripReview`
 - `VerificationRecord`
 - `Entitlement` (rendered to users only as plan features)
 
@@ -47,3 +48,5 @@
 - SQL migrations in `supabase/migrations/`
 - Deterministic TS seed snapshot in `packages/db/src/seed-data.ts`
 - SQL seed scaffold in `supabase/seed/`
+- Transitional canonical row: `public.operating_state(id='primary', state, schema_version, version)`
+- Whole-document mutations use `version` compare-and-swap with retry; normalized relational persistence remains the later scale target.

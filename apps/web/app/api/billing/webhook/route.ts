@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import Stripe from "stripe"
 
-import { persistState, services } from "@/lib/services"
+import { mutateState } from "@/lib/services"
 
 /**
  * Stripe billing truth: checkout completion and subscription lifecycle events
@@ -38,40 +38,44 @@ export async function POST(request: NextRequest) {
 			const product = session.metadata?.product
 
 			if (organizationId) {
-				services.applyBillingUpdate({
-					organizationId,
-					product: product || undefined,
-					status: "active",
-					stripeCustomerId: typeof session.customer === "string" ? session.customer : null,
-					stripeSubscriptionId: typeof session.subscription === "string" ? session.subscription : null
-				})
-				persistState()
+				await mutateState((draft) =>
+					draft.applyBillingUpdate({
+						organizationId,
+						product: product || undefined,
+						status: "active",
+						stripeCustomerId: typeof session.customer === "string" ? session.customer : null,
+						stripeSubscriptionId: typeof session.subscription === "string" ? session.subscription : null
+					})
+				)
 			}
 		}
 
 		if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
 			const subscription = event.data.object
-			const entitlement = services.findEntitlementByStripeSubscription(subscription.id)
+			const status = event.type === "customer.subscription.deleted"
+				? "cancelled"
+				: subscription.status === "past_due" || subscription.status === "unpaid"
+					? "past_due"
+					: subscription.status === "canceled"
+						? "cancelled"
+						: subscription.status === "trialing"
+							? "trialing"
+							: "active"
 
-			if (entitlement) {
-				const status = event.type === "customer.subscription.deleted"
-					? "cancelled"
-					: subscription.status === "past_due" || subscription.status === "unpaid"
-						? "past_due"
-						: subscription.status === "canceled"
-							? "cancelled"
-							: subscription.status === "trialing"
-								? "trialing"
-								: "active"
+			await mutateState((draft) => {
+				const entitlement = draft.findEntitlementByStripeSubscription(subscription.id)
 
-				services.applyBillingUpdate({
+				if (!entitlement) {
+					return null
+				}
+
+				return draft.applyBillingUpdate({
 					organizationId: entitlement.organizationId,
 					product: entitlement.product,
 					status,
 					stripeSubscriptionId: subscription.id
 				})
-				persistState()
-			}
+			})
 		}
 
 		return NextResponse.json({ received: true })

@@ -5,8 +5,9 @@ import { expect, test, type Page } from "@playwright/test"
  * Proves the intelligence surfaces added in this pass render against seeded
  * state: ranked "Recommended for you" cards on Driver Today, and the topbar
  * notification bell (hank carries one unread seed notification). Captures
- * desktop + mobile screenshots as artifacts. Runs first (alphabetical) so the
- * driver is still clear before the operating-loop journey progresses a trip.
+ * desktop + mobile screenshots as artifacts. The group runs once because it
+ * consumes seeded notification/recommendation state; the general smoke suite
+ * independently covers both configured browser projects.
  */
 
 const SHOTS = ".artifacts"
@@ -21,6 +22,13 @@ async function signIn(page: Page, email: string) {
 }
 
 test.describe.serial("intelligence surfaces", () => {
+  test.beforeEach((_fixtures, testInfo) => {
+    test.skip(
+      testInfo.project.name === "desktop-chrome",
+      "stateful intelligence flow already exercises desktop and mobile viewports"
+    )
+  })
+
   test("driver Loads ranks recommendations with human reasons", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "hank@northpine.example")

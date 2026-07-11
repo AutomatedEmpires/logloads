@@ -2,11 +2,11 @@
 
 import { deliverEmail } from "./notify"
 import { checkRateLimit, requestClientKey } from "./rate-limit"
-import { persistState, serializeError, services } from "./services"
+import { mutateState, serializeError } from "./services"
 
 /** Platform admin seed user; contact inquiries land in their notifications. */
 const PLATFORM_ADMIN_USER_ID = "11111111-1111-4111-8111-111111111111"
-const CONTACT_INBOX = process.env.LOGLOADS_CONTACT_EMAIL ?? "jackson@automatedempires.com"
+const CONTACT_INBOX = process.env.LOGLOADS_CONTACT_EMAIL ?? "support@logloads.com"
 
 export interface ContactFormState {
   ok: boolean
@@ -44,14 +44,15 @@ export async function submitContactInquiryAction(
   ].filter((line): line is string => line !== null)
 
   try {
-    services.createNotification({
-      body: bodyLines.join("\n"),
-      relatedEntityType: "contact_inquiry",
-      title: `Contact inquiry from ${name}`,
-      type: "system_alert",
-      userId: PLATFORM_ADMIN_USER_ID
-    })
-    persistState()
+    await mutateState((draft) =>
+      draft.createNotification({
+        body: bodyLines.join("\n"),
+        relatedEntityType: "contact_inquiry",
+        title: `Contact inquiry from ${name}`,
+        type: "system_alert",
+        userId: PLATFORM_ADMIN_USER_ID
+      })
+    )
   } catch {
     return { error: "We could not send your message just now. Try again in a moment.", ok: false }
   }
