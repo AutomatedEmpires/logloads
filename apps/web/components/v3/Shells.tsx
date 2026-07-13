@@ -358,14 +358,14 @@ function NotificationBell({ notifications, role, unreadCount }: {
   const [isPending, startTransition] = useTransition()
 
   function markOne(notificationId: string): void {
-    startTransition(() => {
-      void markNotificationReadAction({ notificationId })
+    startTransition(async () => {
+      await markNotificationReadAction({ notificationId })
     })
   }
 
   function markAll(): void {
-    startTransition(() => {
-      void markAllNotificationsReadAction()
+    startTransition(async () => {
+      await markAllNotificationsReadAction()
     })
   }
 

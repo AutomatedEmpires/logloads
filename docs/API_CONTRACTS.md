@@ -23,7 +23,7 @@
 - Route handlers call `packages/services` only.
 - Actor identity always resolves from the session (`apps/web/lib/api-actor.ts`); client payloads can select only among the actor's own organization memberships. Client-supplied actor IDs are rejected by design and banned by guardrails.
 - Validation happens in shared schemas and service-layer functions.
-- Errors: `401` unauthenticated, `403` membership/permission, `422` invalid fields, `400` business-rule rejection. Bodies are JSON `{ error }`.
+- Errors: `401` unauthenticated, `403` membership/permission, `422` invalid fields, `400` business-rule rejection, `429` shared rate limit exceeded, and `503` production safety check unavailable. Bodies are JSON `{ error }`; rate-limit `429`/`503` responses include integer-seconds `Retry-After`.
 - Successful mutations resolve only after `mutateState` commits a conditional Supabase update. A stale version reloads and replays the deterministic service operation; it never overwrites the newer row.
 
 ## Current limitations
