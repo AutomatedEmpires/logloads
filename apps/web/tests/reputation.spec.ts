@@ -33,7 +33,7 @@ test.describe.serial("reputation + reliability", () => {
   test("a driver reviews a completed cross-org haul (stars + tags)", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "maya@northpine.example")
-    await page.goto("/driver/trips")
+    await page.goto("/driver/schedule")
     await page.waitForLoadState("networkidle")
 
     const form = page.locator(".review-form").first()

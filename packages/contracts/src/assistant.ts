@@ -99,7 +99,7 @@ interface RoleRoutes {
 function routesFor(role: AssistantRole): RoleRoutes {
   switch (role) {
     case "driver":
-      return { loads: "/driver/loads", trips: "/driver/trips", equipment: "/driver/equipment", performance: "/driver/profile", loadDetail: (id) => `/driver/loads/${id}` }
+      return { loads: "/driver/loads", trips: "/driver/schedule", equipment: "/driver/equipment", performance: "/driver/profile", loadDetail: (id) => `/driver/loads/${id}` }
     case "fleet":
       return { loads: "/fleet/opportunities", trips: "/fleet/trips", equipment: "/fleet/trucks", performance: "/fleet/performance", loadDetail: (id) => `/fleet/opportunities/${id}` }
     case "host":

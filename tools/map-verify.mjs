@@ -12,7 +12,7 @@ page.on("pageerror", (err) => errors.push(`PAGEERROR: ${String(err).slice(0, 160
 await page.goto(`${BASE}/sign-in`, { waitUntil: "networkidle" })
 await page.fill('input[name="email"]', "hank@northpine.example")
 await page.click('button[type="submit"]')
-await page.waitForURL("**/driver/today", { timeout: 30000 }).catch(() => {})
+await page.waitForURL("**/driver/map", { timeout: 30000 }).catch(() => {})
 
 await page.goto(`${BASE}/driver/map`, { waitUntil: "networkidle" })
 await page.waitForTimeout(4000)

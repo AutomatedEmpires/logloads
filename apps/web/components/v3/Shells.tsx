@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 import { useState, useTransition, type ReactNode } from "react"
 import { Badge, Icon, type IconKey } from "@logloads/ui"
 
@@ -45,12 +46,10 @@ export interface EmptyStateProps {
 
 export const publicNav: Array<[string, string]> = [
   ["Loads", "/loads"],
-  ["How it works", "/how-it-works"],
-  ["Haulers", "/for-haulers"],
-  ["Fleets", "/for-fleets"],
+  ["Drivers", "/for-haulers"],
+  ["Dispatch", "/for-fleets"],
   ["Hosts", "/for-landings"],
-  ["Pricing", "/pricing"],
-  ["Trust", "/trust"]
+  ["Pricing", "/pricing"]
 ]
 
 const navByRole: Record<ShellProps["role"], Array<{ href: string; icon: IconKey; label: string }>> = {
@@ -62,11 +61,10 @@ const navByRole: Record<ShellProps["role"], Array<{ href: string; icon: IconKey;
     { href: "/admin/billing", icon: "load.pay", label: "Billing" }
   ],
   driver: [
-    { href: "/driver/today", icon: "nav.today", label: "Today" },
+    { href: "/driver/map", icon: "nav.map", label: "Map" },
     { href: "/driver/loads", icon: "nav.loads", label: "Loads" },
-    { href: "/driver/trips", icon: "nav.trips", label: "Trips" },
-    { href: "/driver/messages", icon: "nav.messages", label: "Messages" },
-    { href: "/driver/profile", icon: "nav.admin", label: "Me" }
+    { href: "/driver/schedule", icon: "load.schedule", label: "Schedule" },
+    { href: "/driver/profile", icon: "nav.profile", label: "Profile" }
   ],
   fleet: [
     { href: "/fleet/command", icon: "ops.queue", label: "Command" },
@@ -93,7 +91,7 @@ const desktopMoreByRole: Record<ShellProps["role"], Array<{ href: string; icon: 
     { href: "/admin/audit", icon: "ops.audit", label: "History" }
   ],
   driver: [
-    { href: "/driver/map", icon: "nav.map", label: "Map" },
+    { href: "/driver/messages", icon: "nav.messages", label: "Messages" },
     { href: "/driver/equipment", icon: "load.equipment", label: "Equipment" },
     { href: "/driver/assistant", icon: "action.search", label: "Assistant" },
     { href: "/driver/network", icon: "map.network", label: "Network" }
@@ -223,7 +221,9 @@ const footerColumns: Array<{ heading: string; links: Array<[string, string]> }> 
     heading: "Company",
     links: [
       ["About", "/about"],
-      ["Contact", "/contact"]
+      ["Contact", "/contact"],
+      ["Facebook", "https://www.facebook.com/logloads"],
+      ["Instagram", "https://www.instagram.com/logloads"]
     ]
   },
   {
@@ -341,7 +341,7 @@ function notificationHref(role: ShellProps["role"], type: string | null, id: str
         ? (id ? `/driver/loads/${id}` : "/driver/loads")
         : role === "host" ? "/host/opportunities" : "/fleet/opportunities"
     case "assignment":
-      return role === "driver" ? "/driver/trips" : role === "host" ? "/host/live-board" : "/fleet/dispatch"
+      return role === "driver" ? "/driver/schedule" : role === "host" ? "/host/live-board" : "/fleet/dispatch"
     case "direct_offer":
       return "/fleet/opportunities"
     default:
@@ -495,7 +495,9 @@ function AccountMenu({ account }: { account: ShellAccount }) {
 }
 
 export function AppShell({ account, children, kicker, orgName, role, title }: ShellProps) {
+  const pathname = usePathname()
   const nav = [...navByRole[role], ...desktopMoreByRole[role]]
+  const isCurrent = (href: string) => pathname === href || pathname.startsWith(`${href}/`)
 
   return (
     <div className={`app-shell app-shell--${role}`}>
@@ -506,7 +508,7 @@ export function AppShell({ account, children, kicker, orgName, role, title }: Sh
         </Link>
         <nav aria-label={`${role} navigation`}>
           {nav.map((item) => (
-            <Link href={item.href} key={item.href}>
+            <Link aria-current={isCurrent(item.href) ? "page" : undefined} href={item.href} key={item.href}>
               <Icon aria-hidden name={item.icon} size={20} />
               <span>{item.label}</span>
             </Link>
@@ -534,7 +536,7 @@ export function AppShell({ account, children, kicker, orgName, role, title }: Sh
       </div>
       <nav className="mobile-app-nav" aria-label={`${role} mobile navigation`}>
         {navByRole[role].map((item) => (
-          <Link href={item.href} key={item.href}>
+          <Link aria-current={isCurrent(item.href) ? "page" : undefined} href={item.href} key={item.href}>
             <Icon aria-hidden name={item.icon} size={20} />
             <span>{item.label}</span>
           </Link>

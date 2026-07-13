@@ -1,10 +1,7 @@
-import { DriverTrips } from "@/components/v3"
-import { getCockpitContext, shellAccountFor } from "@/lib/v3"
+import { redirect } from "next/navigation"
 
 export const dynamic = "force-dynamic"
 
 export default async function Page() {
-  const context = await getCockpitContext("driver")
-
-  return <DriverTrips account={shellAccountFor(context)} network={context.network} />
+  redirect("/driver/schedule")
 }

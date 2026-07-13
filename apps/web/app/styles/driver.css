@@ -1,5 +1,73 @@
 /* Driver cockpit — mobile-first field surfaces */
 
+/* --- Directed operating flow ---------------------------------------------- */
+.driver-flow-summary,
+.schedule-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.65fr);
+  gap: 24px;
+  margin: 18px 24px 0;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--ink), var(--pine));
+  color: #fff;
+  padding: 24px;
+  box-shadow: var(--shadow);
+}
+.driver-flow-summary h2,
+.schedule-summary h2 { margin: 0; font-size: clamp(1.8rem, 4vw, 3.1rem); line-height: 1; }
+.driver-flow-summary p,
+.schedule-summary p { color: rgba(255, 255, 255, 0.78); }
+.driver-flow-summary dl { align-content: center; }
+.driver-flow-summary dl div { border-color: rgba(255, 255, 255, 0.2); }
+.driver-flow-summary dt { color: rgba(255, 255, 255, 0.68); }
+.driver-flow-summary dd { color: #fff; font-size: 1.2rem; }
+
+.map-availability-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 18px 24px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 14px 16px;
+}
+.map-availability-bar div { display: grid; gap: 3px; }
+.map-availability-bar strong { color: var(--pine); font-size: 1.12rem; }
+.map-availability-bar span { color: var(--ink-soft); }
+
+.schedule-counts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  align-content: center;
+  background: rgba(255, 255, 255, 0.2);
+}
+.schedule-counts span { display: grid; gap: 2px; background: rgba(255, 255, 255, 0.08); padding: 14px; color: rgba(255, 255, 255, 0.75); font-size: 0.82rem; font-weight: 800; }
+.schedule-counts strong { color: #fff; font-size: 1.5rem; }
+.schedule-request-list { display: grid; gap: 10px; }
+.schedule-request-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 16px;
+}
+.schedule-request-card header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.schedule-request-card header strong { display: block; margin-top: 4px; color: var(--pine); font-size: 1.45rem; }
+.schedule-request-card h3,
+.schedule-request-card p { margin: 0; }
+.schedule-request-card p { color: var(--ink-soft); }
+.schedule-request-card__facts { display: flex; flex-wrap: wrap; gap: 8px; }
+.schedule-request-card__facts span { border-radius: 999px; background: var(--bone); color: var(--ink-soft); padding: 6px 10px; font-size: 0.84rem; font-weight: 800; }
+.schedule-request-card .action-link { justify-self: start; }
+
+.load-decision-lead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
+.load-decision-lead strong { flex-basis: 100%; color: var(--pine); font-size: clamp(1.5rem, 4vw, 2.25rem); }
+.load-decision-lead span { border-radius: 999px; background: var(--paper); color: var(--ink-soft); padding: 7px 11px; font-weight: 800; }
+
 /* --- Primary trip action ------------------------------------------------- */
 .trip-advance { display: grid; gap: 8px; margin-top: 18px; justify-items: start; }
 .advance-button {
@@ -251,6 +319,16 @@
 }
 
 @media (max-width: 760px) {
+  .driver-flow-summary,
+  .schedule-summary { grid-template-columns: 1fr; margin: 12px 12px 0; padding: 18px; }
+  .driver-flow-summary h2,
+  .schedule-summary h2 { font-size: 1.85rem; }
+  .driver-flow-summary dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; }
+  .driver-flow-summary dl div { display: grid; gap: 3px; border: 0; background: rgba(255, 255, 255, 0.08); padding: 9px; }
+  .driver-flow-summary dt { font-size: 0.7rem; line-height: 1.2; }
+  .driver-flow-summary dd { text-align: left; }
+  .map-availability-bar { align-items: stretch; flex-direction: column; margin: 12px 12px 0; }
+  .map-availability-bar .action-link { justify-content: center; }
   .detail-layout--app { margin: 12px 12px 0; }
   .advance-button { max-width: none; }
   .trip-advance { justify-items: stretch; }

@@ -60,12 +60,12 @@ export function TripProgressButton({ status, tone = "row", tripId }: { status: T
 }
 
 const ASSIGNMENT_STATE: Record<string, { badge: string; body: string; tone: "success" | "warning" | "info" }> = {
-  accepted: { badge: "Assigned to you", body: "Route Pack and exact access are unlocked. Your next action lives in Trips.", tone: "success" },
-  checked_in: { badge: "At the landing", body: "You are checked in on this load. Keep the trip record moving from Trips.", tone: "success" },
-  hauled: { badge: "Hauled", body: "Close out the delivery record from Trips.", tone: "success" },
-  loading: { badge: "Loading", body: "Loading is underway. Confirm loaded from Trips when the wood is on.", tone: "success" },
-  offered: { badge: "Offered to you", body: "The host sent this to you directly. Coordinate acceptance in Messages.", tone: "info" },
-  requested: { badge: "Requested", body: "Waiting for host approval. You will see the assignment here once it is accepted.", tone: "warning" }
+  accepted: { badge: "You're booked", body: "This haul is yours. Exact access is unlocked and your next action is in Schedule.", tone: "success" },
+  checked_in: { badge: "At the landing", body: "You are checked in. Open Schedule when loading begins.", tone: "success" },
+  hauled: { badge: "Hauled", body: "Open Schedule to finish the delivery record.", tone: "success" },
+  loading: { badge: "Loading", body: "Loading is underway. Confirm loaded from Schedule when the wood is on.", tone: "success" },
+  offered: { badge: "Offered to you", body: "This host invited you to the haul. Review the details before you commit.", tone: "info" },
+  requested: { badge: "Request sent", body: "The host is deciding. We will notify you as soon as you are booked or not selected.", tone: "warning" }
 }
 
 /** Sticky decision panel for the load detail page: request, requested, or filled. */
@@ -86,7 +86,7 @@ export function RequestCapacityPanel({ load }: { load: NetworkLoadView }) {
         <Badge tone={state.tone}>{state.badge}</Badge>
         <p>{state.body}</p>
         <div className="request-links">
-          <Link className="action-link" href="/driver/trips">Open Trips</Link>
+          <Link className="action-link" href="/driver/schedule">Open Schedule</Link>
           <Link className="action-link action-link--secondary" href="/driver/messages">Message the host</Link>
         </div>
       </div>
@@ -96,15 +96,16 @@ export function RequestCapacityPanel({ load }: { load: NetworkLoadView }) {
   if (requested) {
     return (
       <div className="request-panel">
-        <Badge tone="warning">Requested</Badge>
+        <Badge tone="warning">Request sent</Badge>
         <strong>
           {load.allocationMode === "request_approval"
-            ? "Requested — waiting for host approval."
-            : "Requested — the host confirms your slot next."}
+            ? "The host is deciding."
+            : "The host is confirming your haul."}
         </strong>
-        <p>You can keep hauling other work. The assignment shows in Trips once it is accepted.</p>
+        <p>We will notify you when the decision is made. Track this request in Schedule.</p>
         <div className="request-links">
-          <Link className="action-link action-link--secondary" href="/driver/loads">Back to loads</Link>
+          <Link className="action-link" href="/driver/schedule">View Schedule</Link>
+          <Link className="action-link action-link--secondary" href="/driver/loads">Find another load</Link>
         </div>
       </div>
     )
@@ -145,14 +146,14 @@ export function RequestCapacityPanel({ load }: { load: NetworkLoadView }) {
   return (
     <div className="request-panel">
       <Badge tone="success">Capacity open</Badge>
-      <strong>Request 1 load</strong>
+      <strong>Request this haul</strong>
       <div className="request-panel__meta">
         <span>{load.capacity.remaining} of {load.capacity.total} loads open</span>
         <span>Next window: {load.slots.nextWindow}</span>
       </div>
       <p>Exact access and the Route Pack unlock after the host accepts.</p>
       <button className="advance-button" disabled={pending} onClick={request} type="button">
-        {pending ? "Sending request…" : "Request 1 load"}
+        {pending ? "Sending request…" : "Request haul"}
       </button>
       {error ? <p className="action-error" role="alert">{error}</p> : null}
     </div>

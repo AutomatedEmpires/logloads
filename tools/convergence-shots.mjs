@@ -19,7 +19,7 @@ const WIDTHS = [
 
 const PLANS = [
   { email: null, routes: ["/", "/loads", "/pricing", "/sign-in"] },
-  { email: "hank@northpine.example", routes: ["/driver/today", "/driver/loads", "/driver/trips", "/driver/equipment", "/driver/messages", "/driver/map"] },
+  { email: "hank@northpine.example", routes: ["/driver/map", "/driver/loads", "/driver/schedule", "/driver/equipment", "/driver/messages"] },
   { email: "cole@summit.example", routes: ["/host/command", "/host/opportunities", "/host/live-board", "/host/billing", "/host/settings"] },
   { email: "dispatch@northpine.example", routes: ["/fleet/command", "/fleet/dispatch", "/fleet/trucks", "/fleet/drivers"] },
   { email: "admin@logloads.example", routes: ["/admin", "/admin/verification", "/admin/organizations"] }
@@ -27,7 +27,7 @@ const PLANS = [
 
 // Full sweep on the anchor widths; spot-checks elsewhere.
 const FULL_WIDTHS = new Set(["390", "1440"])
-const SPOT_ROUTES = new Set(["/", "/driver/today", "/host/command", "/driver/loads"])
+const SPOT_ROUTES = new Set(["/", "/driver/map", "/host/command", "/driver/loads"])
 
 const browser = await chromium.launch()
 

@@ -14,7 +14,7 @@ const WIDTHS = [
 const PUBLIC_ROUTES = ["/", "/loads", "/how-it-works", "/pricing", "/trust", "/for-landings", "/sign-in", "/onboarding"]
 
 const SESSIONS = [
-  { email: "hank@northpine.example", role: "driver", routes: ["/driver/today", "/driver/loads", "/driver/map", "/driver/equipment", "/driver/trips", "/driver/messages", "/driver/profile"] },
+  { email: "hank@northpine.example", role: "driver", routes: ["/driver/map", "/driver/loads", "/driver/schedule", "/driver/equipment", "/driver/messages", "/driver/profile"] },
   { email: "dispatch@northpine.example", role: "fleet", routes: ["/fleet/command", "/fleet/dispatch", "/fleet/trucks", "/fleet/drivers", "/fleet/availability", "/fleet/billing", "/fleet/settings"] },
   { email: "cole@summit.example", role: "host", routes: ["/host/command", "/host/opportunities", "/host/live-board", "/host/landings", "/host/carriers", "/host/billing", "/host/settings"] },
   { email: "admin@logloads.example", role: "admin", routes: ["/admin", "/admin/verification", "/admin/organizations", "/admin/notices", "/admin/audit", "/admin/billing"] }

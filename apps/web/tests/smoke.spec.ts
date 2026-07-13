@@ -11,25 +11,25 @@ async function signIn(page: Page, email: string) {
 test("visitor understands the public product and can inspect public loads", async ({ page }) => {
   await page.goto("/")
 
-  await expect(page.getByRole("heading", { name: "TIMBER MOVES HERE." })).toBeVisible()
-  await expect(page.getByRole("link", { name: "Find loads" }).first()).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Move more loads. Make fewer calls." })).toBeVisible()
+  await expect(page.getByRole("link", { name: "Find a load — free" }).first()).toBeVisible()
 
   await page.goto("/loads")
   await expect(page.getByText("Exact access unlocks after assignment.").first()).toBeVisible()
 })
 
 test("cockpits are protected: unauthenticated visitors are sent to sign-in", async ({ page }) => {
-  for (const route of ["/driver/today", "/fleet/command", "/host/command", "/admin"]) {
+  for (const route of ["/driver/map", "/fleet/command", "/host/command", "/admin"]) {
     await page.goto(route)
     await expect(page).toHaveURL(/\/sign-in/)
   }
 })
 
-test("driver signs in and reaches Today", async ({ page }) => {
+test("driver signs in and reaches the map", async ({ page }) => {
   await signIn(page, "hank@northpine.example")
 
-  await expect(page).toHaveURL(/\/driver\/today/)
-  await expect(page.getByRole("heading", { name: "Today" })).toBeVisible()
+  await expect(page).toHaveURL(/\/driver\/map/)
+  await expect(page.getByRole("heading", { name: "Map" })).toBeVisible()
 })
 
 test("driver cannot open the admin console", async ({ page }) => {
@@ -61,8 +61,19 @@ test("onboarding provisions a working driver account", async ({ page }) => {
   await page.fill('input[name="fullName"]', "Smoke Test Driver")
   await page.fill('input[name="email"]', `driver-${Date.now()}@smoke.example`)
   await page.fill('input[name="phone"]', "555-0142")
+  await page.getByRole("button", { name: "Continue" }).click()
   await page.fill('input[name="region"]', "Test Valley")
-  await page.click('button[type="submit"]')
-  await page.waitForURL(/\/driver\/today/, { timeout: 30_000 })
-  await expect(page.getByRole("heading", { name: "Today" })).toBeVisible()
+  await page.getByRole("button", { name: "Continue" }).click()
+  await page.getByRole("button", { name: "Show me matching loads" }).click()
+  await page.waitForURL(/\/driver\/map/, { timeout: 30_000 })
+  await expect(page.getByRole("heading", { name: "Map" })).toBeVisible()
+})
+
+test("driver mobile navigation follows the directed flow", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await signIn(page, "hank@northpine.example")
+
+  const nav = page.getByRole("navigation", { name: "driver mobile navigation" })
+  await expect(nav.getByRole("link")).toHaveText(["Map", "Loads", "Schedule", "Profile"])
+  await expect(nav.getByRole("link", { name: "Map" })).toHaveAttribute("aria-current", "page")
 })

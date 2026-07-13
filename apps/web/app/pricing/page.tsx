@@ -4,7 +4,7 @@ import { PricingPage } from "@/components/v3"
 
 export const metadata: Metadata = {
   title: "Pricing",
-  description: "Drivers ride free. Fleet plans from $149/mo and host plans from $249/mo cover dispatch, publishing, private networks, and the live board."
+  description: "Drivers are free forever. Dispatch Pro is $499/month, and host pricing is 5% per completed load when LogLoads Payments is active."
 }
 
 export default function Page() {

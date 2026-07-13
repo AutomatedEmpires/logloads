@@ -160,7 +160,7 @@ export function homePathFor(actor: SessionActor): string {
   }
 
   if (actor.driverProfileId) {
-    return "/driver/today"
+    return "/driver/map"
   }
 
   const orgType = actor.activeOrganization?.type
