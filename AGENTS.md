@@ -22,7 +22,7 @@ Current implementation reality is a Supabase-canonical, versioned `operating_sta
 
 ## 3. Execution doctrine and authority
 
-Ship meaningful, tested improvements instead of producing repeated audits, inventories, or plans that leave the product unchanged. Investigate enough to choose a safe slice, implement it, exercise the real user path, and leave a reviewable artifact. Prefer a small end-to-end improvement over a wide unfinished scaffold.
+Agents are expected to ship meaningful, tested improvements, not produce endless audits, inventories, or plans that leave the product unchanged. Investigate enough to choose a safe slice, implement it, exercise the real user path, and leave a reviewable artifact on a reversible branch. Prefer a small end-to-end improvement over a wide unfinished scaffold.
 
 Without additional founder approval, an agent may perform reversible, non-destructive work inside an assigned lane, including:
 
