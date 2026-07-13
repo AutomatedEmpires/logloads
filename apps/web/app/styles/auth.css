@@ -59,6 +59,10 @@
   gap: 18px;
   max-width: 760px;
 }
+.onboarding-progress { display: grid; gap: 7px; color: var(--muted); font-size: 0.82rem; font-weight: 900; }
+.onboarding-progress > div { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.onboarding-progress i { height: 5px; border-radius: 999px; background: var(--line); }
+.onboarding-progress i.is-complete { background: var(--pine); }
 .onboarding-form fieldset {
   display: grid;
   gap: 12px;
@@ -68,6 +72,7 @@
   margin: 0;
   padding: 18px;
 }
+.onboarding-form fieldset[hidden] { display: none; }
 .onboarding-form legend {
   float: left;
   width: 100%;
@@ -78,6 +83,9 @@
   font-weight: 800;
 }
 .fieldset-note { margin: -4px 0 4px; color: var(--muted); font-size: 0.9rem; font-weight: 600; line-height: 1.45; }
+.onboarding-ready { display: grid; gap: 6px; border-radius: var(--radius); background: var(--green-bg); padding: 16px; }
+.onboarding-ready strong { color: var(--pine); font-size: 1.05rem; }
+.onboarding-ready span { color: var(--ink-soft); line-height: 1.45; }
 
 .radio-grid {
   display: grid;

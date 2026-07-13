@@ -16,23 +16,32 @@ const RealMap = dynamic(() => import("./RealMap"), {
 })
 
 export function LoadCard({ href, load }: { href?: string; load: NetworkLoadView }) {
+  const status = load.viewerAssignment?.status === "requested"
+    ? { label: "Request sent", tone: "warning" as const }
+    : load.viewerAssignment?.status === "accepted"
+      ? { label: "You're booked", tone: "success" as const }
+      : { label: fitLabel(load), tone: fitTone(load) }
   const content = (
     <>
-      <span className="card-kicker">{loadProductLabel(load)}</span>
-      <strong>{load.title}</strong>
+      <span className="load-card-v3__head">
+        <span className="card-kicker">{loadProductLabel(load)}</span>
+        <Badge tone={status.tone}>{status.label}</Badge>
+      </span>
+      <strong className="load-card-v3__pay">{load.payLabel}</strong>
+      <span className="load-card-v3__title">{load.title}</span>
       <span className="lane-line">
         <Icon aria-hidden name="load.origin" size={16} /> {load.landing.city} to {load.destination.name}
         {load.landing.approximate ? <em className="lane-approx">approx. area</em> : null}
       </span>
-      <span className="load-meta">
-        {load.scheduleLabel} · {load.payLabel}
-        {load.cadenceLabel !== "One-off" ? <em className="load-cadence">{load.cadenceLabel}</em> : null}
+      <span className="load-card-v3__facts">
+        <span><Icon aria-hidden name="load.schedule" size={16} />{load.scheduleLabel}</span>
+        <span className="load-cadence"><Icon aria-hidden name="status.scheduled" size={16} />{load.cadenceLabel}</span>
+        <span><Icon aria-hidden name="map.route" size={16} />{load.route.distanceMiles.toFixed(0)} miles</span>
+        <span><Icon aria-hidden name="nav.loads" size={16} />{load.capacity.remaining} of {load.capacity.total} open</span>
       </span>
-      <span className="load-meta">{load.capacity.remaining} of {load.capacity.total} loads open · {load.route.distanceMiles.toFixed(0)} mi haul</span>
       <span className="card-footer">
-        <Badge tone={fitTone(load)}>{fitLabel(load)}</Badge>
-        <span>{visibilityLabel(load)}</span>
         <ReputationChip reputation={load.sourceReputation} />
+        <span>{load.viewerAssignment ? "Open status" : "Check load"} →</span>
       </span>
     </>
   )
@@ -91,7 +100,7 @@ export function OperatingMap({ loads, onSelect, selectedLoadId, variant = "app" 
             <p className="map-selected-note"><Icon aria-hidden name="map.landing" size={14} /> Approximate area — exact access unlocks after assignment.</p>
           ) : null}
           <div className="map-selected-actions">
-            <Link className="action-link" href={detailHref}>View load</Link>
+            <Link className="action-link" href={detailHref}>Check this load</Link>
             <span className="map-selected-visibility">{visibilityLabel(selected)}</span>
           </div>
         </aside>
@@ -194,12 +203,12 @@ export function DecisionPanel({ load, publicMode = false }: { load: NetworkLoadV
   const positives = load.compatibility.positives.slice(0, 3)
   const cautions = [...load.compatibility.failures, ...load.compatibility.cautions, ...load.warnings].slice(0, 4)
   const heading = publicMode
-    ? "What drivers can see now"
+    ? "Know whether the load fits"
     : load.compatibility.eligibility === "ineligible"
-      ? "Why this doesn't fit your setup"
+      ? "This load does not match your setup"
       : load.compatibility.eligibility === "strong_match"
-        ? "Why this fits"
-        : "What to review before requesting"
+        ? "Your truck matches this load"
+        : "Check these details before requesting"
 
   return (
     <section className="decision-panel">
@@ -209,11 +218,11 @@ export function DecisionPanel({ load, publicMode = false }: { load: NetworkLoadV
       </div>
       <div className="fit-columns">
         <div>
-          <h3>Ready</h3>
+          <h3>{load.compatibility.eligibility === "strong_match" ? "You match" : "Works for you"}</h3>
           <ul>{(positives.length > 0 ? positives : ["Load is open for requests"]).map((item) => <li key={item}>{item}</li>)}</ul>
         </div>
         <div>
-          <h3>{load.compatibility.failures.length > 0 ? "Blocking issues" : "Review before requesting"}</h3>
+          <h3>{load.compatibility.failures.length > 0 ? "Why you cannot request it" : "Check before requesting"}</h3>
           <ul>{(cautions.length > 0 ? cautions : ["Exact access unlocks after assignment"]).map((item) => <li key={item}>{item}</li>)}</ul>
         </div>
       </div>

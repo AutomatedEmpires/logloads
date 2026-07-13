@@ -1,3 +1,3 @@
-import Page from "./today/page"
+import Page from "./map/page"
 
 export default Page

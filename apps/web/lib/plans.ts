@@ -32,16 +32,16 @@ const PLAN_DEFINITIONS: Record<PlanProduct, PlanDefinition> = {
     summary: "Multi-region timber operations with dedicated support."
   },
   fleet_operations: {
-    defaultFeatures: ["Dispatch board", "Truck planning", "Private partner work"],
-    name: "Fleet",
-    priceLine: "From $149/mo",
-    summary: "Dispatch, truck planning, and partner work for carriers."
+    defaultFeatures: ["Dispatch board", "Truck planning", "Free driver seats", "Private partner work"],
+    name: "Dispatch Pro",
+    priceLine: "$499/mo",
+    summary: "One operating account for the trucks and drivers you dispatch."
   },
   landing_operations: {
     defaultFeatures: ["Load publishing", "Live landing board", "Preferred carrier tools"],
     name: "Host",
-    priceLine: "From $249/mo",
-    summary: "Publishing, live board, and carrier tools for landings."
+    priceLine: "5% per completed load",
+    summary: "Post without a monthly fee and pay when completed loads settle through LogLoads."
   }
 }
 

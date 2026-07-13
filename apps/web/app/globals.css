@@ -286,6 +286,7 @@ a { color: inherit; text-decoration: none; }
   font-weight: 800;
 }
 .app-sidebar nav a:hover { background: rgba(255,255,255,0.08); color: #fff; }
+.app-sidebar nav a[aria-current="page"] { background: rgba(255,255,255,0.14); color: #fff; }
 .app-main { margin-left: 248px; min-height: 100vh; padding-bottom: 34px; }
 .app-topbar {
   position: sticky;
@@ -592,7 +593,11 @@ a { color: inherit; text-decoration: none; }
   padding: 16px;
   color: var(--ink);
 }
-.load-card-v3 > strong { font-size: 1.12rem; }
+.load-card-v3__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.load-card-v3__pay { color: var(--pine); font-family: var(--font-archivo), sans-serif; font-size: clamp(1.45rem, 4vw, 2rem); line-height: 1; }
+.load-card-v3__title { color: var(--ink); font-size: 1.06rem; font-weight: 900; }
+.load-card-v3__facts { display: grid; grid-template-columns: minmax(0, 1.5fr) repeat(2, minmax(0, 0.7fr)); gap: 8px; }
+.load-card-v3__facts > span { display: flex; align-items: center; gap: 6px; border-radius: 8px; background: var(--bone); color: var(--ink-soft); padding: 8px; font-size: 0.84rem; font-weight: 800; }
 .card-kicker { color: var(--muted); font-size: 0.78rem; font-weight: 900; text-transform: uppercase; }
 .lane-line { display: flex; align-items: center; gap: 6px; color: var(--ink-soft); font-weight: 800; }
 .load-meta { color: var(--muted); font-weight: 750; }
@@ -884,12 +889,15 @@ dd { margin: 0; font-weight: 900; text-align: right; }
     inset: auto 0 0 0;
     z-index: 60;
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     border-top: 1px solid var(--line);
     background: rgba(255,253,247,0.96);
     backdrop-filter: blur(14px);
   }
   .mobile-app-nav a { display: grid; min-height: 64px; place-items: center; gap: 3px; color: var(--ink-soft); font-size: 0.72rem; font-weight: 900; }
+  .mobile-app-nav a[aria-current="page"] { background: var(--green-bg); color: var(--pine); }
+  .mobile-app-nav a[aria-current="page"]::before { position: absolute; top: 0; width: 34px; height: 3px; border-radius: 0 0 4px 4px; background: var(--pine); content: ""; }
+  .mobile-app-nav a { position: relative; }
   .app-section,
   .driver-now,
   .equipment-setup,
@@ -911,6 +919,7 @@ dd { margin: 0; font-weight: 900; text-align: right; }
   .filter-bar { align-items: stretch; }
   .segmented-v3 { width: 100%; }
   .segmented-v3 button { flex: 1; }
+  .load-card-v3__facts { grid-template-columns: 1fr; }
   .operating-map,
   .map-surface { min-height: 360px; }
   .trip-row { grid-template-columns: 1fr; }

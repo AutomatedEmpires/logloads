@@ -209,16 +209,41 @@ export function DriverToday({ account, availability, network }: DriverPageProps 
 }
 
 export function DriverLoads({ account, network }: DriverPageProps) {
+  const availableLoads = network.loads.filter((load) =>
+    ["open", "scheduled"].includes(load.status) && load.capacity.remaining > 0 && !load.viewerAssignment
+  )
+  const openHauls = availableLoads.reduce((total, load) => total + load.capacity.remaining, 0)
+  const matches = availableLoads.filter((load) => load.compatibility?.eligibility === "strong_match")
+  const pendingRequests = network.loads.filter((load) => load.viewerAssignment?.status === "requested").length
+
   return (
-    <AppShell account={account} kicker="Find work" role="driver" title="Loads">
-      {network.topRecommendations.length > 0 ? (
+    <AppShell account={account} kicker="Available work" role="driver" title="Loads">
+      <section className="driver-flow-summary" aria-label="Your load board summary">
+        <div>
+          <p className="eyebrow">What can I haul?</p>
+          <h2>{openHauls} open {openHauls === 1 ? "haul" : "hauls"}</h2>
+          <p>
+            {matches.length > 0
+              ? `${matches.length} strong ${matches.length === 1 ? "match" : "matches"} for your active truck. Open one to see why it fits.`
+              : "Nothing is a perfect match right now. Open a load to see what needs review."}
+          </p>
+        </div>
+        <dl>
+          <div><dt>Load postings</dt><dd>{availableLoads.length}</dd></div>
+          <div><dt>Strong matches</dt><dd>{matches.length}</dd></div>
+          <div><dt>Waiting on hosts</dt><dd>{pendingRequests}</dd></div>
+        </dl>
+      </section>
+      {matches.length > 0 ? (
         <section className="app-section">
-          <SectionHeader eyebrow="Recommended for you" title="Ranked for your truck" />
-          <RecommendedLoads recommendations={network.topRecommendations} />
+          <SectionHeader eyebrow="Best matches" title="Start with the loads that fit your truck" />
+          <div className="load-list-v3">
+            {matches.map((load) => <LoadCard href={`/driver/loads/${load.id}`} key={load.id} load={load} />)}
+          </div>
         </section>
       ) : null}
       <div className="app-section">
-        <LoadDiscovery loads={network.loads} />
+        <LoadDiscovery loads={availableLoads} />
       </div>
     </AppShell>
   )
@@ -227,9 +252,10 @@ export function DriverLoads({ account, network }: DriverPageProps) {
 export function DriverMap({ account, network }: DriverPageProps) {
   const loads = network.loads.filter((load) => ["open", "scheduled"].includes(load.status))
   const selected = loads[0] ?? null
+  const openHauls = loads.reduce((total, load) => total + load.capacity.remaining, 0)
 
   return (
-    <AppShell account={account} kicker="Nearby work" role="driver" title="Map">
+    <AppShell account={account} kicker="Your area" role="driver" title="Map">
       {!selected ? (
         <div className="app-section">
           <EmptyState
@@ -240,9 +266,18 @@ export function DriverMap({ account, network }: DriverPageProps) {
           />
         </div>
       ) : (
-        <div className="map-layout map-layout--full">
-          <OperatingMap loads={loads} selectedLoadId={selected.id} />
-        </div>
+        <>
+          <section className="map-availability-bar">
+            <div>
+              <strong>{openHauls} open {openHauls === 1 ? "haul" : "hauls"}</strong>
+              <span>Tap a landing to see pay, timing, distance, and whether your truck matches.</span>
+            </div>
+            <Link className="action-link action-link--secondary" href="/driver/loads">See load list</Link>
+          </section>
+          <div className="map-layout map-layout--full">
+            <OperatingMap loads={loads} selectedLoadId={selected.id} />
+          </div>
+        </>
       )}
     </AppShell>
   )
@@ -261,11 +296,11 @@ function TripCard({ network, trip }: { network: NetworkView; trip: TripView }) {
           <strong>{trip.loadTitle}</strong>
         </div>
         <Badge tone={trip.status === "completed" ? "success" : trip.status === "cancelled" ? "critical" : "warning"}>
-          {tripStatusLabel(trip.status)}
+          {trip.status === "assigned" ? "Booked" : tripStatusLabel(trip.status)}
         </Badge>
       </header>
       <p className="trip-card__event">
-        {lastEvent ? `${lastEvent.note ?? lastEvent.type} · ${formatDateTime(lastEvent.occurredAt)}` : "No trip events logged yet."}
+        {lastEvent ? `Last update: ${lastEvent.note ?? lastEvent.type} · ${formatDateTime(lastEvent.occurredAt)}` : "This haul is booked. Start it when you head to the landing."}
       </p>
       {trip.documents.length > 0 ? (
         <ul className="doc-list">
@@ -297,50 +332,107 @@ function TripCard({ network, trip }: { network: NetworkView; trip: TripView }) {
           />
         )
       ) : null}
-      {load ? <Link className="text-link" href={`/driver/loads/${load.id}`}>Route Pack and load detail</Link> : null}
+      {load ? <Link className="text-link" href={`/driver/loads/${load.id}`}>Open haul details</Link> : null}
     </article>
   )
 }
 
-export function DriverTrips({ account, network }: DriverPageProps) {
-  const openTrips = network.trips.filter(isOpenTrip)
-  const closedTrips = network.trips.filter((trip) => !isOpenTrip(trip))
+function RequestedHaulCard({ load }: { load: NetworkLoadView }) {
+  const isOffer = load.viewerAssignment?.status === "offered"
 
   return (
-    <AppShell account={account} kicker="Haul actions" role="driver" title="Trips">
-      {network.trips.length === 0 ? (
+    <article className="schedule-request-card">
+      <header>
+        <div>
+          <span className="card-kicker">{load.landing.city} to {load.destination.name}</span>
+          <strong>{load.payLabel}</strong>
+        </div>
+        <Badge tone={isOffer ? "info" : "warning"}>{isOffer ? "Offered to you" : "Host deciding"}</Badge>
+      </header>
+      <h3>{load.title}</h3>
+      <div className="schedule-request-card__facts">
+        <span>{load.scheduleLabel}</span>
+        <span>{load.route.distanceMiles.toFixed(0)} miles</span>
+        <span>{load.capacity.remaining} of {load.capacity.total} still open</span>
+      </div>
+      <p>{isOffer ? "Review the load and decide whether it works for you." : "Your request is sent. We will notify you when the host makes a decision."}</p>
+      <Link className="action-link action-link--secondary" href={`/driver/loads/${load.id}`}>Open request</Link>
+    </article>
+  )
+}
+
+export function DriverSchedule({ account, network }: DriverPageProps) {
+  const requestedLoads = network.loads.filter((load) => ["requested", "offered"].includes(load.viewerAssignment?.status ?? ""))
+  const bookedTrips = network.trips.filter((trip) => trip.status === "assigned")
+  const activeTrips = network.trips.filter((trip) => isOpenTrip(trip) && trip.status !== "assigned")
+  const completedTrips = network.trips.filter((trip) => trip.status === "completed")
+  const cancelledTrips = network.trips.filter((trip) => trip.status === "cancelled")
+  const doingNow = bookedTrips.length + activeTrips.length
+
+  return (
+    <AppShell account={account} kicker="Your work" role="driver" title="Schedule">
+      <section className="schedule-summary" aria-label="Schedule summary">
+        <div>
+          <p className="eyebrow">What am I doing?</p>
+          <h2>{doingNow === 0 ? "No hauls booked yet" : `${doingNow} ${doingNow === 1 ? "haul" : "hauls"} on your schedule`}</h2>
+          <p>{requestedLoads.length === 0 ? "No host decisions are pending." : `${requestedLoads.length} ${requestedLoads.length === 1 ? "request is" : "requests are"} waiting on a host decision.`}</p>
+        </div>
+        <div className="schedule-counts">
+          <span><strong>{requestedLoads.length}</strong> Requested</span>
+          <span><strong>{bookedTrips.length}</strong> Booked</span>
+          <span><strong>{activeTrips.length}</strong> In progress</span>
+          <span><strong>{completedTrips.length}</strong> Completed</span>
+        </div>
+      </section>
+
+      {requestedLoads.length === 0 && network.trips.length === 0 ? (
         <div className="app-section">
           <EmptyState
-            title="You're clear right now."
-            body="Request capacity on a load that fits and your haul shows up here with its next action."
+            title="Nothing scheduled yet."
+            body="Find a load that matches your truck and request the haul. You will see the host's decision and every next step here."
             actionHref="/driver/loads"
             actionLabel="Find loads"
           />
         </div>
       ) : (
         <>
-          {openTrips.length > 0 ? (
+          {requestedLoads.length > 0 ? (
             <section className="app-section">
-              <SectionHeader eyebrow="In motion" title="One next action per haul" />
-              <div className="board-list board-list--flush">
-                {openTrips.map((trip) => <TripCard key={trip.id} network={network} trip={trip} />)}
+              <SectionHeader eyebrow="Waiting on a decision" title="Requested hauls" />
+              <div className="schedule-request-list">
+                {requestedLoads.map((load) => <RequestedHaulCard key={load.id} load={load} />)}
               </div>
             </section>
-          ) : (
+          ) : null}
+          {activeTrips.length > 0 ? (
             <section className="app-section">
-              <EmptyState
-                title="Nothing in motion."
-                body="Your open hauls appear here with their next action the moment a host accepts your request."
-                actionHref="/driver/loads"
-                actionLabel="Find loads"
-              />
-            </section>
-          )}
-          {closedTrips.length > 0 ? (
-            <section className="app-section">
-              <SectionHeader eyebrow="Delivered" title="Closed hauls and their records" />
+              <SectionHeader eyebrow="In progress" title="Do the next step shown" />
               <div className="board-list board-list--flush">
-                {closedTrips.map((trip) => <TripCard key={trip.id} network={network} trip={trip} />)}
+                {activeTrips.map((trip) => <TripCard key={trip.id} network={network} trip={trip} />)}
+              </div>
+            </section>
+          ) : null}
+          {bookedTrips.length > 0 ? (
+            <section className="app-section">
+              <SectionHeader eyebrow="You got it" title="Booked next" />
+              <div className="board-list board-list--flush">
+                {bookedTrips.map((trip) => <TripCard key={trip.id} network={network} trip={trip} />)}
+              </div>
+            </section>
+          ) : null}
+          {completedTrips.length > 0 ? (
+            <section className="app-section">
+              <SectionHeader eyebrow="Completed" title="Delivered hauls" />
+              <div className="board-list board-list--flush">
+                {completedTrips.map((trip) => <TripCard key={trip.id} network={network} trip={trip} />)}
+              </div>
+            </section>
+          ) : null}
+          {cancelledTrips.length > 0 ? (
+            <section className="app-section">
+              <SectionHeader eyebrow="History" title="Cancelled hauls" />
+              <div className="board-list board-list--flush">
+                {cancelledTrips.map((trip) => <TripCard key={trip.id} network={network} trip={trip} />)}
               </div>
             </section>
           ) : null}
@@ -416,7 +508,7 @@ export function DriverProfile({
   const verification = verificationBadge(network.activeOrganization.verificationStatus)
 
   return (
-    <AppShell account={account} kicker="Profile" role="driver" title="Me">
+    <AppShell account={account} kicker="Your setup" role="driver" title="Profile">
       <section className="profile-panel">
         <div className="profile-head">
           <div>
@@ -475,9 +567,9 @@ export function DriverProfile({
             <strong>Equipment</strong>
             <span>{network.currentEquipment ? network.currentEquipment.label : "Add your truck and trailer"}</span>
           </Link>
-          <Link href="/driver/trips">
-            <strong>Trips</strong>
-            <span>{network.trips.length === 0 ? "No hauls on record yet" : `${network.trips.length} on record`}</span>
+          <Link href="/driver/schedule">
+            <strong>Schedule</strong>
+            <span>{network.trips.length === 0 ? "No hauls on your schedule" : `${network.trips.length} hauls on record`}</span>
           </Link>
           <Link href="/driver/messages">
             <strong>Messages</strong>
@@ -504,7 +596,7 @@ export function DriverLoadDetail({ account, loadId, network }: DriverPageProps &
   const load = network.loads.find((item) => item.id === loadId)
 
   return (
-    <AppShell account={account} kicker="Request decision" role="driver" title="Load detail">
+    <AppShell account={account} kicker="Can I haul this?" role="driver" title="Load details">
       {!load ? (
         <div className="app-section">
           <EmptyState
@@ -520,7 +612,12 @@ export function DriverLoadDetail({ account, loadId, network }: DriverPageProps &
             <Link className="back-link" href="/driver/loads">Back to loads</Link>
             <p className="eyebrow">{load.landing.city} to {load.destination.name} · {load.sourceName}</p>
             <h1>{load.title}</h1>
-            <p className="lead">{load.scheduleLabel} · {load.payLabel} · {load.tonsLabel}</p>
+            <div className="load-decision-lead">
+              <strong>{load.payLabel}</strong>
+              <span>{load.scheduleLabel}</span>
+              <span>{load.route.distanceMiles.toFixed(0)} miles</span>
+              <span>{load.capacity.remaining} of {load.capacity.total} hauls open</span>
+            </div>
             <DecisionPanel load={load} />
             <RoutePackPreview load={load} locked={!load.access.unlocked} />
             <OperationSections load={load} />

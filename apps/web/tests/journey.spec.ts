@@ -42,7 +42,7 @@ test.describe.serial("operating loop", () => {
       // A prior project run may already hold this load in any assignment state
       // (Requested, Assigned to you, At the landing, ...).
       const alreadyCommitted = await page
-        .getByText(/Waiting for host approval|Assigned to you|At the landing|Loading|Hauled|On this load/)
+        .getByText(/The host is deciding|You're booked|At the landing|Loading|Hauled|On this load/)
         .first()
         .isVisible()
         .catch(() => false)
@@ -52,7 +52,7 @@ test.describe.serial("operating loop", () => {
         break
       }
 
-      const requestButton = page.getByRole("button", { name: "Request 1 load" })
+      const requestButton = page.getByRole("button", { name: "Request haul" })
 
       if (!(await requestButton.isVisible().catch(() => false))) {
         continue
@@ -62,15 +62,15 @@ test.describe.serial("operating loop", () => {
       // until the panel reacts (pending label, outcome copy, or error).
       await expect(async () => {
         await requestButton.click()
-        await expect(page.locator(".request-panel").first()).not.toContainText("Request 1 load", { timeout: 2_500 })
+        await expect(page.locator(".request-panel").first()).not.toContainText("Request haul", { timeout: 2_500 })
       }).toPass({ timeout: 30_000 })
 
       // Success renders either the optimistic "Requested — ..." confirmation or,
       // after revalidation, the persisted "Waiting for host approval" state. A
       // compatibility rejection renders an alert instead — move to the next card.
       const confirmed = await Promise.race([
-        page.getByText(/Requested — /).first().waitFor({ state: "visible", timeout: 30_000 }).then(() => true),
-        page.getByText("Waiting for host approval").first().waitFor({ state: "visible", timeout: 30_000 }).then(() => true),
+        page.getByText("The host is deciding.").first().waitFor({ state: "visible", timeout: 30_000 }).then(() => true),
+        page.getByText("Request sent").first().waitFor({ state: "visible", timeout: 30_000 }).then(() => true),
         page.locator(".action-error").first().waitFor({ state: "visible", timeout: 30_000 }).then(() => false)
       ]).catch(() => false)
 
@@ -79,7 +79,16 @@ test.describe.serial("operating loop", () => {
       }
     }
 
-    expect(requested, "driver should be able to request capacity on at least one visible load").toBe(true)
+    if (!requested) {
+      // The mobile project may already have requested, received, and advanced
+      // the only compatible seeded haul. Committed work correctly disappears
+      // from Available Loads and moves to Schedule, so verify it there.
+      await page.goto("/driver/schedule")
+      await page.waitForLoadState("networkidle")
+      requested = await page.locator(".trip-card").first().isVisible().catch(() => false)
+    }
+
+    expect(requested, "driver should be able to request a visible load or see committed work on Schedule").toBe(true)
   })
 
   test("host sees the capacity request and approves it", async ({ page }) => {
@@ -106,7 +115,7 @@ test.describe.serial("operating loop", () => {
 
   test("driver progresses the active trip one step", async ({ page }) => {
     await signIn(page, "hank@northpine.example")
-    await page.goto("/driver/trips")
+    await page.goto("/driver/schedule")
     await page.waitForLoadState("networkidle")
 
     const advance = page.locator("button.advance-button").first()

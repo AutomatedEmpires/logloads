@@ -6,16 +6,18 @@ import { getSessionActor, homePathFor, isClerkConfigured } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
 
-export default async function Page() {
+export default async function Page({ searchParams }: { searchParams: Promise<{ path?: string }> }) {
   const actor = await getSessionActor()
+  const requestedPath = (await searchParams).path
+  const path = requestedPath === "driver" || requestedPath === "fleet" || requestedPath === "host" ? requestedPath : null
 
   if (actor) {
     redirect(homePathFor(actor))
   }
 
   if (!isClerkConfigured()) {
-    redirect("/onboarding")
+    redirect(path ? `/onboarding/${path}` : "/onboarding")
   }
 
-  return <AuthPage clerkForm={<SignUp routing="hash" />} mode="sign-up" />
+  return <AuthPage clerkForm={<SignUp forceRedirectUrl={path ? `/onboarding/${path}` : "/onboarding"} routing="hash" />} mode="sign-up" />
 }

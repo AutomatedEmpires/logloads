@@ -8,15 +8,15 @@ const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
 const results = []
 
 // 1. Cockpit routes redirect unauthenticated visitors to sign-in
-await page.goto(`${BASE}/driver/today`, { waitUntil: "domcontentloaded", timeout: 60000 })
-results.push(`unauth /driver/today -> ${page.url().includes("/sign-in") ? "OK redirected" : `FAIL ${page.url()}`}`)
+await page.goto(`${BASE}/driver/map`, { waitUntil: "domcontentloaded", timeout: 60000 })
+results.push(`unauth /driver/map -> ${page.url().includes("/sign-in") ? "OK redirected" : `FAIL ${page.url()}`}`)
 
 // 2. Dev sign-in as seeded driver
 await page.goto(`${BASE}/sign-in`, { waitUntil: "domcontentloaded" })
 await page.fill('input[name="email"]', "hank@northpine.example")
 await page.click('button[type="submit"]')
-await page.waitForURL("**/driver/today", { timeout: 30000 }).catch(() => {})
-results.push(`dev sign-in -> ${page.url().includes("/driver/today") ? "OK /driver/today" : `FAIL ${page.url()}`}`)
+await page.waitForURL("**/driver/map", { timeout: 30000 }).catch(() => {})
+results.push(`dev sign-in -> ${page.url().includes("/driver/map") ? "OK /driver/map" : `FAIL ${page.url()}`}`)
 
 // 3. Driver page renders with real org
 const orgVisible = await page.locator("text=North Pine Logging").first().isVisible().catch(() => false)
@@ -39,9 +39,11 @@ await page2.waitForSelector('input[name="fullName"]', { timeout: 15000 })
 await page2.fill('input[name="fullName"]', "Test Host Owner")
 await page2.fill('input[name="email"]', `host-${Date.now()}@smoke.example`)
 await page2.fill('input[name="phone"]', "555-0199")
+await page2.getByRole("button", { name: "Continue" }).click()
 await page2.fill('input[name="organizationName"]', "Smoke Test Timber")
 await page2.fill('input[name="region"]', "Test Valley")
-await page2.click('button[type="submit"]')
+await page2.getByRole("button", { name: "Continue" }).click()
+await page2.getByRole("button", { name: "Open my workspace" }).click()
 await page2.waitForURL("**/host/command", { timeout: 30000 }).catch(() => {})
 results.push(`onboarding host -> ${page2.url().includes("/host/command") ? "OK /host/command" : `FAIL ${page2.url()}`}`)
 

@@ -1,7 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { useState, useTransition, type ReactNode } from "react"
+import { usePathname } from "next/navigation"
+import { useEffect, useState, useTransition, type ReactNode } from "react"
 import { Badge, Icon, type IconKey } from "@logloads/ui"
 
 import { markAllNotificationsReadAction, markNotificationReadAction } from "@/lib/cockpit-actions"
@@ -45,12 +46,10 @@ export interface EmptyStateProps {
 
 export const publicNav: Array<[string, string]> = [
   ["Loads", "/loads"],
-  ["How it works", "/how-it-works"],
-  ["Haulers", "/for-haulers"],
-  ["Fleets", "/for-fleets"],
+  ["Drivers", "/for-haulers"],
+  ["Dispatch", "/for-fleets"],
   ["Hosts", "/for-landings"],
-  ["Pricing", "/pricing"],
-  ["Trust", "/trust"]
+  ["Pricing", "/pricing"]
 ]
 
 const navByRole: Record<ShellProps["role"], Array<{ href: string; icon: IconKey; label: string }>> = {
@@ -62,11 +61,10 @@ const navByRole: Record<ShellProps["role"], Array<{ href: string; icon: IconKey;
     { href: "/admin/billing", icon: "load.pay", label: "Billing" }
   ],
   driver: [
-    { href: "/driver/today", icon: "nav.today", label: "Today" },
+    { href: "/driver/map", icon: "nav.map", label: "Map" },
     { href: "/driver/loads", icon: "nav.loads", label: "Loads" },
-    { href: "/driver/trips", icon: "nav.trips", label: "Trips" },
-    { href: "/driver/messages", icon: "nav.messages", label: "Messages" },
-    { href: "/driver/profile", icon: "nav.admin", label: "Me" }
+    { href: "/driver/schedule", icon: "load.schedule", label: "Schedule" },
+    { href: "/driver/profile", icon: "nav.profile", label: "Profile" }
   ],
   fleet: [
     { href: "/fleet/command", icon: "ops.queue", label: "Command" },
@@ -93,7 +91,7 @@ const desktopMoreByRole: Record<ShellProps["role"], Array<{ href: string; icon: 
     { href: "/admin/audit", icon: "ops.audit", label: "History" }
   ],
   driver: [
-    { href: "/driver/map", icon: "nav.map", label: "Map" },
+    { href: "/driver/messages", icon: "nav.messages", label: "Messages" },
     { href: "/driver/equipment", icon: "load.equipment", label: "Equipment" },
     { href: "/driver/assistant", icon: "action.search", label: "Assistant" },
     { href: "/driver/network", icon: "map.network", label: "Network" }
@@ -223,7 +221,9 @@ const footerColumns: Array<{ heading: string; links: Array<[string, string]> }> 
     heading: "Company",
     links: [
       ["About", "/about"],
-      ["Contact", "/contact"]
+      ["Contact", "/contact"],
+      ["Facebook", "https://www.facebook.com/logloads"],
+      ["Instagram", "https://www.instagram.com/logloads"]
     ]
   },
   {
@@ -341,7 +341,7 @@ function notificationHref(role: ShellProps["role"], type: string | null, id: str
         ? (id ? `/driver/loads/${id}` : "/driver/loads")
         : role === "host" ? "/host/opportunities" : "/fleet/opportunities"
     case "assignment":
-      return role === "driver" ? "/driver/trips" : role === "host" ? "/host/live-board" : "/fleet/dispatch"
+      return role === "driver" ? "/driver/schedule" : role === "host" ? "/host/live-board" : "/fleet/dispatch"
     case "direct_offer":
       return "/fleet/opportunities"
     default:
@@ -356,16 +356,39 @@ function NotificationBell({ notifications, role, unreadCount }: {
 }) {
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const [visibleNotifications, setVisibleNotifications] = useState(notifications)
+  const [visibleUnreadCount, setVisibleUnreadCount] = useState(unreadCount)
+
+  useEffect(() => {
+    setVisibleNotifications(notifications)
+    setVisibleUnreadCount(unreadCount)
+  }, [notifications, unreadCount])
 
   function markOne(notificationId: string): void {
     startTransition(async () => {
-      await markNotificationReadAction({ notificationId })
+      const result = await markNotificationReadAction({ notificationId })
+
+      if (result.ok) {
+        setVisibleNotifications((current) =>
+          current.map((notification) =>
+            notification.id === notificationId ? { ...notification, read: true } : notification
+          )
+        )
+        setVisibleUnreadCount((current) => Math.max(0, current - 1))
+      }
     })
   }
 
   function markAll(): void {
     startTransition(async () => {
-      await markAllNotificationsReadAction()
+      const result = await markAllNotificationsReadAction()
+
+      if (result.ok) {
+        setVisibleNotifications((current) =>
+          current.map((notification) => ({ ...notification, read: true }))
+        )
+        setVisibleUnreadCount(0)
+      }
     })
   }
 
@@ -374,13 +397,13 @@ function NotificationBell({ notifications, role, unreadCount }: {
       <button
         aria-expanded={open}
         aria-haspopup="menu"
-        aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
+        aria-label={visibleUnreadCount > 0 ? `Notifications, ${visibleUnreadCount} unread` : "Notifications"}
         className="notif-bell__trigger"
         onClick={() => setOpen((current) => !current)}
         type="button"
       >
         <Icon aria-hidden name="ops.notice" size={20} />
-        {unreadCount > 0 ? <span className="notif-bell__count">{unreadCount > 9 ? "9+" : unreadCount}</span> : null}
+        {visibleUnreadCount > 0 ? <span className="notif-bell__count">{visibleUnreadCount > 9 ? "9+" : visibleUnreadCount}</span> : null}
       </button>
       {open ? (
         <div className="notif-bell__menu" role="menu">
@@ -388,18 +411,18 @@ function NotificationBell({ notifications, role, unreadCount }: {
             <strong>Notifications</strong>
             <button
               className="notif-bell__markall"
-              disabled={unreadCount === 0 || isPending}
+              disabled={visibleUnreadCount === 0 || isPending}
               onClick={markAll}
               type="button"
             >
               Mark all read
             </button>
           </div>
-          {notifications.length === 0 ? (
+          {visibleNotifications.length === 0 ? (
             <p className="notif-bell__empty">You&rsquo;re all caught up.</p>
           ) : (
             <ul className="notif-bell__list">
-              {notifications.map((notification) => {
+              {visibleNotifications.map((notification) => {
                 const href = notificationHref(role, notification.relatedEntityType, notification.relatedEntityId)
                 const body = (
                   <>
@@ -495,7 +518,9 @@ function AccountMenu({ account }: { account: ShellAccount }) {
 }
 
 export function AppShell({ account, children, kicker, orgName, role, title }: ShellProps) {
+  const pathname = usePathname()
   const nav = [...navByRole[role], ...desktopMoreByRole[role]]
+  const isCurrent = (href: string) => pathname === href || pathname.startsWith(`${href}/`)
 
   return (
     <div className={`app-shell app-shell--${role}`}>
@@ -506,7 +531,7 @@ export function AppShell({ account, children, kicker, orgName, role, title }: Sh
         </Link>
         <nav aria-label={`${role} navigation`}>
           {nav.map((item) => (
-            <Link href={item.href} key={item.href}>
+            <Link aria-current={isCurrent(item.href) ? "page" : undefined} href={item.href} key={item.href}>
               <Icon aria-hidden name={item.icon} size={20} />
               <span>{item.label}</span>
             </Link>
@@ -534,7 +559,7 @@ export function AppShell({ account, children, kicker, orgName, role, title }: Sh
       </div>
       <nav className="mobile-app-nav" aria-label={`${role} mobile navigation`}>
         {navByRole[role].map((item) => (
-          <Link href={item.href} key={item.href}>
+          <Link aria-current={isCurrent(item.href) ? "page" : undefined} href={item.href} key={item.href}>
             <Icon aria-hidden name={item.icon} size={20} />
             <span>{item.label}</span>
           </Link>

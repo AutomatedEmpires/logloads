@@ -2,7 +2,7 @@ import { chromium } from "@playwright/test"
 
 const BASE = "http://127.0.0.1:3002"
 const email = process.argv[2]
-const target = process.argv[3] ?? "/driver/today"
+const target = process.argv[3] ?? "/driver/map"
 const browser = await chromium.launch()
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
 
