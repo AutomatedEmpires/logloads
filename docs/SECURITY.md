@@ -12,6 +12,18 @@ have to rediscover any of this.
 - PII access denied · sensitive RPCs no longer anonymous · function search_paths pinned
 - Supabase security advisor: **zero application-table ERRORs**
 
+## Distributed abuse controls
+
+- Sign-in, contact, onboarding, and authenticated mutation routes consume shared,
+  atomic fixed-window limits through a Redis REST-compatible adapter.
+- Store keys contain HMAC-SHA-256 digests rather than raw IPs, actor IDs, or emails. A dedicated secret is preferred, with the required Redis REST token as the safe fallback; secret material never enters command keys or bodies.
+- Rotating the effective HMAC secret resets active rate-limit buckets. Old keyed buckets expire naturally, so plan rotation with awareness of the brief counter reset.
+- Production fails closed if the external store is absent or unavailable. The
+  memory implementation is restricted to development and the explicit local E2E
+  harness.
+- Code and tests are complete; provider approval, provisioning, secret placement,
+  and exact-SHA multi-instance/outage proof remain public-cutover gates.
+
 ## How the RLS discrepancy arose (reconciled, proven)
 
 Two earlier reports appeared to conflict; both were true subsets of the same reality:

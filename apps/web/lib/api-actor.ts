@@ -2,7 +2,7 @@ import "server-only"
 
 import { NextResponse } from "next/server"
 
-import { RateLimitError, checkRateLimit } from "./rate-limit"
+import { RateLimitError, RateLimitUnavailableError, checkRateLimit } from "./rate-limit"
 import { serializeError } from "./services"
 import { getSessionActor, type SessionActor } from "./session"
 
@@ -36,10 +36,14 @@ export async function requireApiActor(requestedOrganizationId?: string | null): 
   }
 
   try {
-    checkRateLimit("api-actor", actor.profile.id, 120, 60_000)
+    await checkRateLimit("api-actor", actor.profile.id, 120, 60_000)
   } catch (error) {
     if (error instanceof RateLimitError) {
       throw new ApiError(error.message, 429, { "Retry-After": String(error.retryAfterSeconds) })
+    }
+
+    if (error instanceof RateLimitUnavailableError) {
+      throw new ApiError(error.message, 503, { "Retry-After": String(error.retryAfterSeconds) })
     }
 
     throw error

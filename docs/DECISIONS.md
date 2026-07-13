@@ -2,6 +2,13 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-07-12 — Distributed rate-limit store contract is production-required
+- Sign-in, contact, onboarding, and authenticated API mutation limits now consume an atomic fixed window through the provider-neutral `RateLimitStore` contract. The included external adapter speaks the Redis REST command protocol used by Upstash and compatible gateways; this decision does not select or provision a paid provider.
+- Each request runs one atomic Redis `EVAL` (`INCR` plus `PEXPIRE`/`PTTL`) so concurrent Vercel instances share the same bucket. Client IPs, actor IDs, and sign-in emails are pseudonymized with HMAC-SHA-256 before they enter store keys. A dedicated `LOGLOADS_RATE_LIMIT_HMAC_SECRET` is preferred; the required REST token is the safe keyed fallback when it is absent. Rotating the effective HMAC secret intentionally resets active buckets.
+- Production fails closed with a retryable service-unavailable response when the shared-store URL/token is absent, partial, unreachable, or returns an invalid result. It never silently falls back to process memory.
+- In-memory fixed windows remain only for non-production development and the explicitly flagged, single-process Playwright harness. `LOGLOADS_RATE_LIMIT_TEST_MODE` must never be set on a hosted Preview or Production deployment.
+- The remaining public-cutover gate is operational: the founder must approve/provision an external Redis REST service, place its generic URL/token in Doppler and Vercel, and prove shared enforcement plus outage behavior on the exact deployment SHA.
+
 ## 2026-07-10 — Supabase `operating_state` promoted to transitional canonical store
 - Supersedes the 2026-07-06 single-writer/local-disk launch decision. The service layer remains in-memory per operation, but Supabase is now authority: request entry points await the remote row and production fails closed without `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`.
 - Every mutation runs against a fresh draft and commits with `id=primary AND version=<expected>`. A stale update returns zero rows, reloads the latest document, and replays the deterministic service mutation (maximum four attempts). External effects run only after commit, preventing a stale Vercel instance from silently overwriting concurrent work.

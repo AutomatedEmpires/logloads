@@ -19,6 +19,7 @@ export default defineConfig({
     cwd: "..",
     env: {
       LOGLOADS_ENABLE_DEV_LOGIN: "true",
+      LOGLOADS_RATE_LIMIT_TEST_MODE: "true",
       LOGLOADS_SESSION_SECRET: "logloads-e2e-session-secret"
     },
     reuseExistingServer: !process.env.CI,
