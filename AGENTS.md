@@ -26,7 +26,7 @@ Future agents must refresh the portfolio rollout records, repository PRs, and cu
 - Agent work: `agent/<scope>-<short-description>`.
 - Product work: `feat/<lane>/<slug>`, `fix/<lane>/<slug>`, `docs/<lane>/<slug>`, or `chore/<lane>/<slug>`, all kebab-case.
 - Use one issue/slice, one owner, one branch, and one clearly owned artifact set. Before editing, run `git status -sb`, record the branch/HEAD, inspect open PRs, and confirm that another agent does not own the same files.
-- Open a small PR against `main`. The builder is not the sole approver. Do not merge, force-push, rewrite history, delete branches, or overwrite another agent's work.
+- Open a small PR against `main`. Implementing agents/builders do not merge their own PRs, force-push, rewrite history, delete unmerged branches, or overwrite another agent's work. A designated maintainer or approved automation may merge after independent review and green required checks, then delete the merged branch.
 
 ## 5. Required checks before PR
 
@@ -49,7 +49,7 @@ Run `pnpm db:check` when database contracts change and the local Supabase CLI/Do
 - Do not present partner leads as contracted partners, platform users, verified carriers, or available capacity.
 - Do not accept client-supplied actor IDs, place service-role credentials in the browser, bypass RLS/service authorization, or expose gates, private roads, exact access points, facility instructions, or other sensitive coordinates before assignment.
 - Do not add alternate providers, icon systems, duplicate domain contracts, direct DB access from UI, unrelated redesigns, or schema-breaking changes without a dated decision and approval.
-- Do not merge PRs, delete branches, send real email, charge/refund money, or alter production auth.
+- Do not self-merge or bypass independent review, delete unmerged branches, send real email, charge/refund money, or alter production auth.
 
 ## 7. Provider no-touch zones
 
@@ -89,7 +89,7 @@ Use `<Icon name="domain.action" />` through the semantic Phosphor registry in `p
 
 ## 10. Current known PRs and blockers
 
-Snapshot 2026-07-12: no open PRs were found. Refresh with GitHub before beginning a lane.
+Status last refreshed 2026-07-13 02:30 UTC (2026-07-12 America/Los_Angeles): draft PR #22, `feat: add shared production rate limiter`, is open and clean on `feat/security/shared-rate-limiter`. Do not start overlapping rate-limit work or edit its owned files/acceptance criteria without an explicit handoff. Refresh with GitHub before beginning any lane.
 
 Known blockers include live-data authority and backup/restore/upgrade policy, distributed production rate limiting and fail-open dependency review, security advisories, provider activation, functional rollback, and independent venture email. Freight-payment/brokerage work remains blocked on legal/entity/payment approval. Treat a blocker as an honest no-go; do not route around it with a temporary live mutation.
 
