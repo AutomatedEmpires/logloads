@@ -22,11 +22,19 @@ export async function deliverEmail(email: OutboundEmail): Promise<boolean> {
     return false
   }
 
+  const from = process.env.RESEND_FROM?.trim()
+    || process.env.LOGLOADS_EMAIL_FROM?.trim()
+    || "LogLoads <notifications@logloads.com>"
+  const replyTo = process.env.RESEND_REPLY_TO?.trim()
+    || process.env.SUPPORT_EMAIL?.trim()
+    || process.env.LOGLOADS_EMAIL_REPLY_TO?.trim()
+    || "support@logloads.com"
+
   try {
     const response = await fetch("https://api.resend.com/emails", {
       body: JSON.stringify({
-        from: process.env.LOGLOADS_EMAIL_FROM ?? "LogLoads <onboarding@resend.dev>",
-        reply_to: process.env.LOGLOADS_EMAIL_REPLY_TO ?? "support@logloads.com",
+        from,
+        reply_to: replyTo,
         subject: email.subject,
         text: email.text,
         to: [email.to]
