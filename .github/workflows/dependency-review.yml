@@ -16,7 +16,6 @@ jobs:
 
       - name: Dependency review
         id: review
-        continue-on-error: true
         uses: actions/dependency-review-action@v4
 
       - name: Write dependency review summary
@@ -30,7 +29,7 @@ jobs:
           else
             {
               echo "## Dependency review"
-              echo "- Result: skipped"
-              echo "- Reason: GitHub reports dependency review is not supported for this repository until the required dependency graph or security settings are enabled."
+              echo "- Result: failed closed"
+              echo "- Resolve the dependency finding or enable the required repository dependency graph/security settings."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
