@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useState, useTransition, type ReactNode } from "react"
+import { useEffect, useState, useTransition, type ReactNode } from "react"
 import { Badge, Icon, type IconKey } from "@logloads/ui"
 
 import { markAllNotificationsReadAction, markNotificationReadAction } from "@/lib/cockpit-actions"
@@ -356,16 +356,39 @@ function NotificationBell({ notifications, role, unreadCount }: {
 }) {
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const [visibleNotifications, setVisibleNotifications] = useState(notifications)
+  const [visibleUnreadCount, setVisibleUnreadCount] = useState(unreadCount)
+
+  useEffect(() => {
+    setVisibleNotifications(notifications)
+    setVisibleUnreadCount(unreadCount)
+  }, [notifications, unreadCount])
 
   function markOne(notificationId: string): void {
     startTransition(async () => {
-      await markNotificationReadAction({ notificationId })
+      const result = await markNotificationReadAction({ notificationId })
+
+      if (result.ok) {
+        setVisibleNotifications((current) =>
+          current.map((notification) =>
+            notification.id === notificationId ? { ...notification, read: true } : notification
+          )
+        )
+        setVisibleUnreadCount((current) => Math.max(0, current - 1))
+      }
     })
   }
 
   function markAll(): void {
     startTransition(async () => {
-      await markAllNotificationsReadAction()
+      const result = await markAllNotificationsReadAction()
+
+      if (result.ok) {
+        setVisibleNotifications((current) =>
+          current.map((notification) => ({ ...notification, read: true }))
+        )
+        setVisibleUnreadCount(0)
+      }
     })
   }
 
@@ -374,13 +397,13 @@ function NotificationBell({ notifications, role, unreadCount }: {
       <button
         aria-expanded={open}
         aria-haspopup="menu"
-        aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
+        aria-label={visibleUnreadCount > 0 ? `Notifications, ${visibleUnreadCount} unread` : "Notifications"}
         className="notif-bell__trigger"
         onClick={() => setOpen((current) => !current)}
         type="button"
       >
         <Icon aria-hidden name="ops.notice" size={20} />
-        {unreadCount > 0 ? <span className="notif-bell__count">{unreadCount > 9 ? "9+" : unreadCount}</span> : null}
+        {visibleUnreadCount > 0 ? <span className="notif-bell__count">{visibleUnreadCount > 9 ? "9+" : visibleUnreadCount}</span> : null}
       </button>
       {open ? (
         <div className="notif-bell__menu" role="menu">
@@ -388,18 +411,18 @@ function NotificationBell({ notifications, role, unreadCount }: {
             <strong>Notifications</strong>
             <button
               className="notif-bell__markall"
-              disabled={unreadCount === 0 || isPending}
+              disabled={visibleUnreadCount === 0 || isPending}
               onClick={markAll}
               type="button"
             >
               Mark all read
             </button>
           </div>
-          {notifications.length === 0 ? (
+          {visibleNotifications.length === 0 ? (
             <p className="notif-bell__empty">You&rsquo;re all caught up.</p>
           ) : (
             <ul className="notif-bell__list">
-              {notifications.map((notification) => {
+              {visibleNotifications.map((notification) => {
                 const href = notificationHref(role, notification.relatedEntityType, notification.relatedEntityId)
                 const body = (
                   <>

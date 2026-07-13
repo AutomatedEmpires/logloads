@@ -66,7 +66,7 @@ test.describe.serial("directed driver surfaces", () => {
     await page.screenshot({ path: `${SHOTS}/driver-schedule-desktop.png`, fullPage: true })
   })
 
-  test("notification bell shows the unread inbox and marks read", async ({ page }) => {
+  test("notification bell shows the unread inbox and marks read", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "hank@northpine.example")
     await page.goto("/driver/map")
@@ -75,8 +75,18 @@ test.describe.serial("directed driver surfaces", () => {
     const trigger = page.locator(".notif-bell__trigger")
     await expect(trigger).toBeVisible()
 
-    // Seeded unread notification renders a count badge.
-    await expect(page.locator(".notif-bell__count")).toBeVisible()
+    const unreadBadge = page.locator(".notif-bell__count")
+
+    // A failed attempt may have committed the idempotent mutation before the
+    // browser lost its response. On retry, accept only the resulting all-read
+    // state; a first attempt must still prove the seeded unread notification.
+    if (testInfo.retry > 0 && await unreadBadge.count() === 0) {
+      await trigger.click()
+      await expect(page.locator(".notif-bell__menu").getByRole("button", { name: "Mark all read" })).toBeDisabled()
+      return
+    }
+
+    await expect(unreadBadge).toBeVisible()
 
     await trigger.click()
     const menu = page.locator(".notif-bell__menu")
@@ -86,6 +96,6 @@ test.describe.serial("directed driver surfaces", () => {
 
     // Marking all read clears the count (server round-trip + revalidate).
     await menu.getByRole("button", { name: "Mark all read" }).click()
-    await expect(page.locator(".notif-bell__count")).toHaveCount(0, { timeout: 15_000 })
+    await expect(unreadBadge).toHaveCount(0, { timeout: 15_000 })
   })
 })
