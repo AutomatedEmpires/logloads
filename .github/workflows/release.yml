@@ -6,5 +6,9 @@ on:
 
 jobs:
   release:
-    uses: AutomatedEmpires/.github/.github/workflows/reusable-release.yml@main
-    secrets: inherit
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: AutomatedEmpires/.github/.github/workflows/reusable-release.yml@7f03a9b7a8304353a04addd5227f6eea87fe7769
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
