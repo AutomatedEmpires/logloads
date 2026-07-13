@@ -143,7 +143,7 @@ A change is done only when it:
 
 ## 11. Current PRs and blockers
 
-Refreshed 2026-07-13 UTC: draft PR **#23**, `docs: add agent operating standards`, is the only open PR and owns `AGENTS.md` on `agent/docs-operating-standards`. Its checks were green before this contract revision; refresh them after any push. PR #22, the shared production rate-limiter implementation, is merged to `main`; this docs branch is one commit behind that base at this snapshot.
+Refreshed 2026-07-13 UTC: draft PR **#23**, `docs: add agent operating standards`, is the only open PR and owns `AGENTS.md` on `agent/docs-operating-standards`. PR #22, the shared production rate-limiter implementation, is merged, and this local docs branch was synchronized with that `main` revision during the standards pass. Refresh remote checks after every push.
 
 Current blockers are operational proof and adoption, not permission to keep auditing: zero real users/customers; no validated partner pipeline or field usage; Redis REST credentials/provider activation and shared-deployment proof; exact-SHA protected preview and rollback proof; controlled live migration/provider cutover; production auth/email readiness; and the legal/entity/payment model for any freight-money concept. Refresh GitHub, provider-safe evidence, and dated decisions before relying on this list.
 
