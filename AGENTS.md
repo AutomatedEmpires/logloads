@@ -1,94 +1,106 @@
-# LogLoads — Agent Operating Contract
+# LogLoads — Agent Operating Standards
 
-> **Binding contract for every agent (human or AI: Copilot, Claude, Codex) that touches this repo. Read it fully before doing anything.**
-> Aligned to the Explore&Earn (E&E) doctrine. LogLoads is one of the AutomatedEmpires apps; E&E is the reference implementation.
+This file is binding for human and automated contributors. Read it before changing code or documentation. Notion and dated product decisions hold product/vision truth; this repository holds implementation truth. Use issues, PRs, and repo docs as durable handoff artifacts.
 
-## 0 · Prime doctrine
-**Notion decides and builds. GitHub reviews and ships. Figma shows. Everything else runs.**
+## 1. App purpose
 
-- **Notion** = product & vision truth (what we build and why), and where the bulk of the build — specs, architecture, data models, copy — is authored before code moves. The locked LogLoads canon (AutomatedEmpires — Ventures → LogLoads Source of Truth) is authoritative; this repo implements it and does not redefine it.
-- **This repo** = implementation truth (how it is actually built); GitHub validates, reviews, and ships what Notion produced.
-- Product/vision conflict → Notion decides. Implementation conflict → this repo decides.
+LogLoads is logistics/forestry/load-coordination software: a regional timber operating network that connects load opportunities with drivers, fleets, and landing hosts. Its operating loop is Plan → Publish → Match → Commit → Coordinate → Haul → Confirm → Repeat. It is coordination software and marketplace visibility, not a freight broker, carrier, or handler of hauling funds.
 
-## 1 · What LogLoads is
-The **timber truck operating network**: a regional load-board / marketplace connecting timber & log-truck capacity with available loads. Map-first, mobile-first. Name + domain are **LOCKED** (LogLoads · logloads.com); "LogBoard" is the retired placeholder. See `README.md`, `docs/`, and the Notion canon for the spec.
+The repository is a pnpm/Turborepo monorepo. Domain contracts belong in `packages/contracts`, state access in `packages/db`, business transitions in `packages/services`, reusable UI and the semantic Phosphor icon registry in `packages/ui`, and web surfaces in `apps/web`. UI and route files must not bypass those boundaries.
 
-**Positioning guardrail:** LogLoads is coordination software + marketplace visibility — **not** a payment handler or freight broker. Keep features inside that line unless the founder explicitly moves it.
+## 2. Business vision
 
-## 2 · The machine (where this is built)
-All AutomatedEmpires apps are built on ONE machine. Assume exactly:
-- Windows 11 ARM64 (Snapdragon X Elite) → WSL2 Ubuntu 24.04 → VS Code
-- Working path: `/home/jackson/automatedempires/ventures/logloads`
-- 16 GB RAM. **One agent at a time** — do not assume parallel heavy builds or long-running watchers.
+Build a trusted regional operating network that makes forestry capacity, load status, routes, assignments, and exceptions easier to coordinate without exposing sensitive operational details. Partner lead generation is allowed: agents may build a lawful prospect pipeline for fleets, mills, landing hosts, and other partners. A prospect is not a platform member, accepted load, endorsement, or brokered shipment.
 
-## 3 · Runtime (pinned — do not drift)
-- Node **24.16.0** (`.nvmrc`)
-- pnpm **10.12.4** (`packageManager` in `package.json`)
-- **Turborepo monorepo** (`apps/*`, `packages/*`). LogLoads is multi-surface (web now; public site, ops/admin, and a driver surface expected), so it is a monorepo from the start — unlike Sweepza's intentional flat-app exception.
-- Any version or shape change requires a new dated decision in `docs/DECISIONS.md`.
+Do not cross from software/lead generation into arranging transportation for compensation, representing LogLoads as a broker or carrier, or holding/moving freight money. Those activities require an approved legal entity, operating authority, contracts, insurance, tax treatment, and payment model.
 
-## 4 · Integration spine (cross-app standard)
-Shared providers across all AutomatedEmpires apps. Do not introduce alternates without a dated decision.
+## 3. Current rollout status
 
-| Concern | Provider |
-|---|---|
-| Secrets | Doppler |
-| Hosting | Vercel |
-| Database | Supabase Postgres (+ PostGIS for regions/geolocation) |
-| **Auth** | **Clerk** (standardized across all apps; Supabase RLS is keyed on Clerk identity) |
-| **Maps** | **Mapbox** (cross-app standard) — *core surface for LogLoads* |
-| Payments | Stripe (subscription/coordination only; Connect N/A until positioning changes) |
-| Media | Cloudinary |
-| Observability | PostHog + Sentry |
-| Email | Resend |
-| Icons | Phosphor through `@logloads/ui` semantic icon registry |
-| Language | TypeScript end-to-end |
-| Surfaces | Web: Next.js |
+Snapshot 2026-07-12: **blocked · security-risk**. Supabase-canonical source and strong exact-main CI/deployment provenance exist, but that does not establish a safe live rollout. No production, money, or transfer-readiness claim is authorized.
 
-**Icon policy:** LogLoads uses Phosphor through the semantic registry in `packages/ui`. Feature code renders icons with `<Icon name="domain.action" />`; do not import Lucide, Heroicons, Font Awesome, Material icons, `react-icons`, or ad hoc SVGs in feature code.
+Future agents must refresh the portfolio rollout records, repository PRs, and current branch before relying on this snapshot. Provider configuration names or a provider-hosted `READY` artifact are not proof of functional runtime, rollback, data authority, or live operations.
 
-## 5 · Repo layout
-- `apps/` — web (Next.js); additional surfaces (public site, ops/admin, driver) land here
-- `packages/contracts/` — canonical domain types, enums, Zod schemas, state machines, matching rules, permissions, shared helpers
-- `packages/ui/` — token-compatible UI primitives and the single semantic Phosphor icon registry
-- `packages/db/` — Supabase/Postgres state repository, migrations, deterministic bootstrap data, typed store helpers
-- `packages/services/` — business rules for loads, routes, slots, availability, assignments, notifications
-- `docs/` — canonical, deduped spec (DECISIONS first; ARCHITECTURE, DATA-MODEL, API, ROADMAP, GTM as they land)
+## 4. Branch naming rules
 
-## 6 · Core rule (no exceptions)
-No one codes from vague ideas. Every slice moves through:
+- Start from current `main`; never push directly to `main`.
+- Agent work: `agent/<scope>-<short-description>`.
+- Product work: `feat/<lane>/<slug>`, `fix/<lane>/<slug>`, `docs/<lane>/<slug>`, or `chore/<lane>/<slug>`, all kebab-case.
+- Use one issue/slice, one owner, one branch, and one clearly owned artifact set. Before editing, run `git status -sb`, record the branch/HEAD, inspect open PRs, and confirm that another agent does not own the same files.
+- Open a small PR against `main`. The builder is not the sole approver. Do not merge, force-push, rewrite history, delete branches, or overwrite another agent's work.
 
-**Spec → Acceptance Criteria → Branch → Implementation → PR → Review → CI → Merge → Deploy → Notion status update.**
+## 5. Required checks before PR
 
-- One feature branch per slice: `feat/<lane>/<slug>`.
-- Open a PR against `main`. Reference the issue and its acceptance criteria.
-- Nothing merges to `main` without a PR + at least one independent review + green CI. The builder is not the sole approver.
-- Squash-merge only. Merged branches are auto-deleted.
+Use Node `24.16.0` and pnpm `10.12.4` as pinned by the repository.
 
-## 7 · Security & access (server-enforced)
-- Roles are enforced via Supabase **RLS** keyed on Clerk identity. Client-side role checks are advisory only.
-- **Never commit secrets.** Values live in Doppler; CI uses GitHub Actions secrets and Vercel env.
+```text
+pnpm install --frozen-lockfile
+pnpm validate
+pnpm test:e2e
+git diff --check
+```
 
-## 8 · Quality bar
-- TypeScript strict. Mobile-first. Accessible (semantic HTML, labels, focus states, color-contrast).
-- SEO: per-route metadata, Open Graph, canonical URLs, semantic headings.
-- CI (lint + typecheck + unit tests + production build + fresh Supabase migration reset + browser journeys) must pass. Add tests for non-trivial logic.
-- Run `pnpm validate` before opening or updating a PR.
-- Keep route handlers thin: UI and API surfaces call `packages/services`, never reach directly into `packages/db`.
-- Domain contracts live in `packages/contracts`; do not recreate them in the app layer.
+Run `pnpm db:check` when database contracts change and the local Supabase CLI/Docker prerequisites are available. Do not point validation at production or run live migrations. For docs-only changes, `git diff --check` plus a focused Markdown/link review is the minimum; state which application checks were not run and why. The PR description must list exact commands and results.
 
-## 9 · GitHub management
-- Work on lane/feature branches → small PRs → review → merge. Never push straight to `main`.
-- CI (`.github/workflows/ci.yml`) runs the static/build gates plus an isolated Supabase-canonical browser path on every PR; keep it green.
-- Communicate through durable artifacts: issues, PRs, and `docs/` are the memory.
-- Respect founder gates: anything money-moving, legally binding, destructive, or schema-breaking waits for explicit founder sign-off.
+## 6. Forbidden actions
 
-## 11 · Backend foundation rules
-- No direct DB access from UI components or page files.
-- Add migrations in `supabase/migrations/` and deterministic bootstrap-state updates in `packages/db/src/seed-data.ts`.
-- Service functions own state transitions and rule enforcement.
-- PR descriptions must include exact verification commands and results.
-- Update `docs/BACKEND_ARCHITECTURE.md`, `docs/DATA_MODEL.md`, and `docs/API_CONTRACTS.md` whenever the backend contract changes.
+- Do not deploy, promote, change production aliases, touch DNS, mutate provider settings, rotate credentials, or edit secrets.
+- Do not run live SQL, migrations, seed/reset/purge operations, storage changes, or destructive cleanup.
+- Do not create freight-payment, brokerage, carrier, settlement, escrow, factoring, or hauling-fund features without explicit legal/entity/payment approval.
+- Do not present partner leads as contracted partners, platform users, verified carriers, or available capacity.
+- Do not accept client-supplied actor IDs, place service-role credentials in the browser, bypass RLS/service authorization, or expose gates, private roads, exact access points, facility instructions, or other sensitive coordinates before assignment.
+- Do not add alternate providers, icon systems, duplicate domain contracts, direct DB access from UI, unrelated redesigns, or schema-breaking changes without a dated decision and approval.
+- Do not merge PRs, delete branches, send real email, charge/refund money, or alter production auth.
 
-## 10 · Cross-app alignment
-E&E is the reference. LogLoads, BidSpace, Sweepza, and E&E share the same doctrine, machine, runtime, and integration spine so an agent moving between repos reads one contract. Differences are product scope only — never workflow.
+## 7. Provider no-touch zones
+
+Unless a task carries explicit founder/provider-owner approval, all write operations are out of scope for Doppler, Vercel, Supabase/Postgres/PostGIS, Clerk, Stripe, Resend and email/DNS, Mapbox, Cloudinary, PostHog, Sentry, and the shared production rate-limit store. This includes dashboard, CLI, API, webhook, environment, domain, billing, RBAC, project, token, migration, and deployment writes.
+
+Read-only inspection is permitted only when the task explicitly scopes it. Record identifiers and non-sensitive evidence, never secrets or customer/operator data. Provider/live migrations remain controlled cutovers, not ordinary implementation steps.
+
+## 8. Data, money, email, and auth guardrails
+
+### Data
+
+- Production data, backups, restore authority, retention, and migration windows are no-touch until an accountable data owner approves them.
+- UI/API surfaces call `packages/services`; services own transitions and repository access. RLS and server-side authorization are mandatory.
+- Redact sensitive forestry/logistics access details until assignment and least-privilege authorization. Use synthetic/local fixtures for tests.
+
+### Money
+
+- Fleet/host subscription concepts do not authorize live billing.
+- No Stripe Connect, freight payments, brokerage money, carrier funds, payouts, refunds, or financial custody until the legal/entity/payment model is explicitly approved.
+- Partner lead generation is allowed only while it remains prospecting, not compensated arranging of transportation.
+
+### Email
+
+- Resend is venture-scoped and key-gated. Do not activate domains, aliases, senders, webhooks, or sends.
+- If the key is absent, skipped delivery and the in-app record must be reported honestly; never claim an email was delivered without evidence.
+
+### Auth
+
+- Clerk identifies users; application memberships and server-side rules determine authorization. Client checks are advisory only.
+- Never enable development login paths in production, change production Clerk, or accept identity/role claims from the client.
+
+## 9. Design notes
+
+Preserve a map-first, mobile-first operational experience with distinct Driver, Fleet, Host, and Admin cockpits. Exact location and access details unlock only when operationally necessary. Favor direct status language, high-contrast accessible controls, resilient field use, and clear exception states over decorative complexity.
+
+Use `<Icon name="domain.action" />` through the semantic Phosphor registry in `packages/ui`; do not import competing icon libraries or ad hoc SVGs in feature code. `LogLoads` and `logloads.com` are locked; `LogBoard` is retired. Do not redesign the app as part of unrelated work.
+
+## 10. Current known PRs and blockers
+
+Snapshot 2026-07-12: no open PRs were found. Refresh with GitHub before beginning a lane.
+
+Known blockers include live-data authority and backup/restore/upgrade policy, distributed production rate limiting and fail-open dependency review, security advisories, provider activation, functional rollback, and independent venture email. Freight-payment/brokerage work remains blocked on legal/entity/payment approval. Treat a blocker as an honest no-go; do not route around it with a temporary live mutation.
+
+## 11. Output format for future agents
+
+Every handoff or final report must include:
+
+1. branch, HEAD SHA, issue/acceptance criteria, and source-of-truth citation;
+2. concise scope and exact files changed;
+3. commands run with pass/fail/skipped results and reasons;
+4. data, money, email, auth, provider, deployment, and DNS impact—normally `none`;
+5. screenshots and accessibility notes for UI work;
+6. assumptions, remaining risks/blockers, approvals required, and rollback implications; and
+7. PR URL and state, or a clear statement that no PR was created.
