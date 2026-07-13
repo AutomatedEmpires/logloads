@@ -2,20 +2,24 @@ import "server-only"
 
 import { headers } from "next/headers"
 
-import { SlidingWindowRateLimiter } from "./rate-limit-core"
+import { createRateLimiter } from "./rate-limit-config"
+import type { RateLimiter } from "./rate-limit-core"
 
-export { RateLimitError } from "./rate-limit-core"
+export { RateLimitError, RateLimitUnavailableError } from "./rate-limit-core"
 
-/**
- * Best-effort, per-runtime sliding-window rate limiter. It protects one Node
- * process but is not a distributed production abuse-control boundary; public
- * multi-instance traffic also needs provider-edge or shared-store limits.
- */
-const globalStore = globalThis as typeof globalThis & { __logloadsRateLimiter?: SlidingWindowRateLimiter }
-const limiter = globalStore.__logloadsRateLimiter ?? (globalStore.__logloadsRateLimiter = new SlidingWindowRateLimiter())
+const globalStore = globalThis as typeof globalThis & { __logloadsRateLimiter?: RateLimiter }
 
-export function checkRateLimit(bucket: string, key: string, limit: number, windowMs: number): void {
-  limiter.check(bucket, key, limit, windowMs)
+function limiter(): RateLimiter {
+  return globalStore.__logloadsRateLimiter ?? (globalStore.__logloadsRateLimiter = createRateLimiter(process.env))
+}
+
+export async function checkRateLimit(
+  bucket: string,
+  key: string,
+  limit: number,
+  windowMs: number
+): Promise<void> {
+  await limiter().check(bucket, key, limit, windowMs)
 }
 
 export async function requestClientKey(): Promise<string> {
