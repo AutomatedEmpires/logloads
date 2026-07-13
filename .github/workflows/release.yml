@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   release:
     uses: AutomatedEmpires/.github/.github/workflows/reusable-release.yml@main
