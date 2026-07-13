@@ -8,6 +8,7 @@ import { RedisRestRateLimitStore } from "./rate-limit-redis"
 
 export interface RateLimitEnvironment {
   LOGLOADS_ENABLE_DEV_LOGIN?: string
+  LOGLOADS_RATE_LIMIT_HMAC_SECRET?: string
   LOGLOADS_RATE_LIMIT_KEY_PREFIX?: string
   LOGLOADS_RATE_LIMIT_REST_TOKEN?: string
   LOGLOADS_RATE_LIMIT_REST_URL?: string
@@ -21,11 +22,13 @@ export function createRateLimitStore(
 ): RateLimitStore {
   const endpoint = environment.LOGLOADS_RATE_LIMIT_REST_URL?.trim()
   const token = environment.LOGLOADS_RATE_LIMIT_REST_TOKEN?.trim()
+  const keySecret = environment.LOGLOADS_RATE_LIMIT_HMAC_SECRET?.trim()
 
   if (endpoint && token) {
     return new RedisRestRateLimitStore({
       endpoint,
       fetch: fetchImplementation,
+      keySecret: keySecret || token,
       prefix: environment.LOGLOADS_RATE_LIMIT_KEY_PREFIX,
       token
     })

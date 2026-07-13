@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto"
+import { createHmac } from "node:crypto"
 
 import {
   RateLimitUnavailableError,
@@ -25,6 +25,7 @@ return {count, ttl}
 
 export interface RedisRestRateLimitStoreOptions {
   endpoint: string
+  keySecret: string
   prefix?: string
   timeoutMs?: number
   token: string
@@ -44,6 +45,7 @@ interface RedisRestResponse {
 export class RedisRestRateLimitStore implements RateLimitStore {
   private readonly endpoint: string
   private readonly fetchImplementation: typeof fetch
+  private readonly keySecret: string
   private readonly now: () => number
   private readonly prefix: string
   private readonly timeoutMs: number
@@ -52,6 +54,7 @@ export class RedisRestRateLimitStore implements RateLimitStore {
   constructor(options: RedisRestRateLimitStoreOptions) {
     this.endpoint = options.endpoint.replace(/\/$/, "")
     this.fetchImplementation = options.fetch ?? fetch
+    this.keySecret = options.keySecret
     this.now = options.now ?? (() => Date.now())
     this.prefix = options.prefix?.trim() || "logloads:rate-limit"
     this.timeoutMs = options.timeoutMs ?? 1_500
@@ -103,7 +106,7 @@ export class RedisRestRateLimitStore implements RateLimitStore {
 
   private storageKey(bucket: string, key: string): string {
     const safeBucket = bucket.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80)
-    const digest = createHash("sha256").update(key).digest("hex")
+    const digest = createHmac("sha256", this.keySecret).update(key).digest("hex")
 
     return `${this.prefix}:${safeBucket}:${digest}`
   }

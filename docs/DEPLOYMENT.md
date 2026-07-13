@@ -34,7 +34,9 @@ Redis-compatible REST adapter with `LOGLOADS_RATE_LIMIT_REST_URL` and
 `LOGLOADS_RATE_LIMIT_REST_TOKEN`. Each request executes one atomic fixed-window
 increment shared by all instances. Missing, partial, unavailable, or invalid
 external configuration fails closed; process memory is never an implicit
-production fallback.
+production fallback. `LOGLOADS_RATE_LIMIT_HMAC_SECRET` is the recommended
+dedicated keyed-pseudonymization secret; otherwise the REST token is used as the
+safe HMAC key. Rotating the effective key resets active rate-limit buckets.
 
 ## Required production environment
 
@@ -46,6 +48,10 @@ production fallback.
 - `CLERK_SECRET_KEY`
 - `LOGLOADS_RATE_LIMIT_REST_URL` (Redis REST command endpoint)
 - `LOGLOADS_RATE_LIMIT_REST_TOKEN` (server-only bearer credential)
+
+`LOGLOADS_RATE_LIMIT_HMAC_SECRET` is optional but recommended as a dedicated
+server-only HMAC key; without it, the required REST token supplies the key
+material.
 
 Optional provider variables are catalogued in
 [`ops/production-env-contract.json`](../ops/production-env-contract.json).

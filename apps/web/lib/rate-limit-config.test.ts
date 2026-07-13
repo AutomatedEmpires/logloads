@@ -53,4 +53,32 @@ describe("rate-limit runtime configuration", () => {
     await expect(limiter.check("contact", "client", 1, 60_000)).resolves.toBeUndefined()
     expect(request).toHaveBeenCalledOnce()
   })
+
+  it("prefers the dedicated HMAC secret and safely falls back to the REST token", async () => {
+    const request = vi.fn(async () => Response.json({ result: [1, 60_000] })) as unknown as typeof fetch
+    const baseEnvironment = {
+      LOGLOADS_RATE_LIMIT_REST_TOKEN: "secret-token",
+      LOGLOADS_RATE_LIMIT_REST_URL: "https://redis.example.test",
+      NODE_ENV: "production"
+    } as const
+
+    await createRateLimiter(baseEnvironment, request).check("contact", "client", 1, 60_000)
+    await createRateLimiter(
+      { ...baseEnvironment, LOGLOADS_RATE_LIMIT_HMAC_SECRET: "secret-token" },
+      request
+    ).check("contact", "client", 1, 60_000)
+    await createRateLimiter(
+      { ...baseEnvironment, LOGLOADS_RATE_LIMIT_HMAC_SECRET: "dedicated-hmac-secret" },
+      request
+    ).check("contact", "client", 1, 60_000)
+
+    const storageKeys = vi.mocked(request).mock.calls.map(([, init]) => {
+      const command = JSON.parse(String(init?.body)) as string[]
+
+      return command[3]
+    })
+
+    expect(storageKeys[0]).toBe(storageKeys[1])
+    expect(storageKeys[2]).not.toBe(storageKeys[0])
+  })
 })

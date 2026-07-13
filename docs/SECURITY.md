@@ -16,7 +16,8 @@ have to rediscover any of this.
 
 - Sign-in, contact, onboarding, and authenticated mutation routes consume shared,
   atomic fixed-window limits through a Redis REST-compatible adapter.
-- Store keys contain SHA-256 digests rather than raw IPs, actor IDs, or emails.
+- Store keys contain HMAC-SHA-256 digests rather than raw IPs, actor IDs, or emails. A dedicated secret is preferred, with the required Redis REST token as the safe fallback; secret material never enters command keys or bodies.
+- Rotating the effective HMAC secret resets active rate-limit buckets. Old keyed buckets expire naturally, so plan rotation with awareness of the brief counter reset.
 - Production fails closed if the external store is absent or unavailable. The
   memory implementation is restricted to development and the explicit local E2E
   harness.
