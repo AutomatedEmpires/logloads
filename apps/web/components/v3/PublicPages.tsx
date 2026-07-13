@@ -19,7 +19,8 @@ const driverFlow: Array<{ step: string; question: string; body: string }> = [
 ]
 
 export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
-  const featuredLoad = loads.find((load) => load.capacity.remaining > 0) ?? loads[0] ?? null
+  const openLoads = loads.filter((load) => load.capacity.remaining > 0)
+  const featuredLoad = openLoads[0] ?? null
 
   return (
     <PublicShell>
@@ -46,7 +47,7 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
                 <div><dt>Available</dt><dd>{featuredLoad.capacity.remaining} of {featuredLoad.capacity.total}</dd></div>
               </dl>
               <Link className="action-link" href="/loads">Check this load</Link>
-              <nav aria-label="Driver app preview"><span>Map</span><span className="is-active">Loads</span><span>Schedule</span><span>Profile</span></nav>
+              <div aria-hidden="true" className="hero-load-preview__nav"><span>Map</span><span className="is-active">Loads</span><span>Schedule</span><span>Profile</span></div>
             </div>
           ) : (
             <div className="hero-load-preview">
@@ -89,8 +90,8 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
         </section>
         <section className="loads-preview">
           <SectionHeader action={<Link className="action-link action-link--secondary" href="/loads">See all loads</Link>} eyebrow="Open work" title="Loads on the board right now." />
-          {loads.length > 0 ? (
-            <div className="load-card-grid">{loads.slice(0, 3).map((load) => <LoadCard key={load.id} load={load} />)}</div>
+          {openLoads.length > 0 ? (
+            <div className="load-card-grid">{openLoads.slice(0, 3).map((load) => <LoadCard key={load.id} load={load} />)}</div>
           ) : (
             <EmptyState
               actionHref="/for-landings"

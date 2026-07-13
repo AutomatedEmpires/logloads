@@ -138,9 +138,9 @@
 .hero-load-preview dt { color: rgba(255, 255, 255, 0.62); }
 .hero-load-preview dd { color: #fff; max-width: 65%; }
 .hero-load-preview .action-link { justify-content: center; margin-top: 4px; }
-.hero-load-preview nav { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; border-top: 1px solid rgba(255, 255, 255, 0.14); margin-top: 4px; padding-top: 10px; }
-.hero-load-preview nav span { border-radius: 6px; color: rgba(255, 255, 255, 0.58); padding: 7px 2px; text-align: center; font-size: 0.72rem; font-weight: 900; }
-.hero-load-preview nav span.is-active { background: rgba(185, 231, 200, 0.14); color: #b9e7c8; }
+.hero-load-preview__nav { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; border-top: 1px solid rgba(255, 255, 255, 0.14); margin-top: 4px; padding-top: 10px; }
+.hero-load-preview__nav span { border-radius: 6px; color: rgba(255, 255, 255, 0.58); padding: 7px 2px; text-align: center; font-size: 0.72rem; font-weight: 900; }
+.hero-load-preview__nav span.is-active { background: rgba(185, 231, 200, 0.14); color: #b9e7c8; }
 
 .promise-strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; border-block: 1px solid var(--line); background: var(--line); }
 .promise-strip div { display: grid; gap: 6px; background: var(--paper); padding: 22px clamp(16px, 4vw, 42px); }
