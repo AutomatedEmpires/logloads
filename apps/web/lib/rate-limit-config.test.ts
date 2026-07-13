@@ -39,6 +39,25 @@ describe("rate-limit runtime configuration", () => {
     await expect(limiter.check("contact", "client", 1, 60_000)).resolves.toBeUndefined()
   })
 
+  it("keeps E2E rate limits process-local while canonical state uses isolated Supabase", async () => {
+    const request = vi.fn(async () => {
+      throw new Error("the E2E override must not call the shared provider")
+    }) as unknown as typeof fetch
+    const limiter = createRateLimiter(
+      {
+        LOGLOADS_ENABLE_DEV_LOGIN: "true",
+        LOGLOADS_RATE_LIMIT_TEST_MODE: "true",
+        NODE_ENV: "production",
+        SUPABASE_SERVICE_ROLE_KEY: "local-service-role-key",
+        SUPABASE_URL: "http://127.0.0.1:54321"
+      },
+      request
+    )
+
+    await expect(limiter.check("contact", "client", 1, 60_000)).resolves.toBeUndefined()
+    expect(request).not.toHaveBeenCalled()
+  })
+
   it("uses Supabase whenever both canonical provider credentials are present", async () => {
     const request = vi.fn(async () =>
       Response.json([{ request_count: 1, retry_after_ms: 60_000 }])

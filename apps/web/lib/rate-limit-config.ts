@@ -24,6 +24,19 @@ export function createRateLimitStore(
   const serviceRoleKey = environment.SUPABASE_SERVICE_ROLE_KEY?.trim()
   const keySecret = environment.LOGLOADS_RATE_LIMIT_HMAC_SECRET?.trim()
 
+  // The production-built Playwright server is deliberately single-process.
+  // Its canonical application state still lives in the isolated local
+  // Supabase stack, but rate-limit counters must not leak across stateful
+  // journeys or their retries. Requiring both flags keeps this escape hatch
+  // unavailable to real Preview and Production deployments.
+  if (
+    environment.NODE_ENV === "production" &&
+    environment.LOGLOADS_RATE_LIMIT_TEST_MODE === "true" &&
+    environment.LOGLOADS_ENABLE_DEV_LOGIN === "true"
+  ) {
+    return new MemoryRateLimitStore()
+  }
+
   if (endpoint && serviceRoleKey) {
     return new SupabaseRateLimitStore({
       endpoint,
@@ -41,16 +54,6 @@ export function createRateLimitStore(
   }
 
   if (environment.NODE_ENV !== "production") {
-    return new MemoryRateLimitStore()
-  }
-
-  // The production-built Playwright server is deliberately single-process and
-  // credential-free. Requiring both flags prevents this escape hatch from being
-  // enabled accidentally on a real deployment.
-  if (
-    environment.LOGLOADS_RATE_LIMIT_TEST_MODE === "true" &&
-    environment.LOGLOADS_ENABLE_DEV_LOGIN === "true"
-  ) {
     return new MemoryRateLimitStore()
   }
 
