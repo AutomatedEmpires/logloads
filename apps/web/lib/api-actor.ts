@@ -7,7 +7,11 @@ import { serializeError } from "./services"
 import { getSessionActor, type SessionActor } from "./session"
 
 export class ApiError extends Error {
-  constructor(message: string, public readonly status: number) {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly headers?: HeadersInit
+  ) {
     super(message)
     this.name = "ApiError"
   }
@@ -35,7 +39,7 @@ export async function requireApiActor(requestedOrganizationId?: string | null): 
     checkRateLimit("api-actor", actor.profile.id, 120, 60_000)
   } catch (error) {
     if (error instanceof RateLimitError) {
-      throw new ApiError(error.message, 429)
+      throw new ApiError(error.message, 429, { "Retry-After": String(error.retryAfterSeconds) })
     }
 
     throw error
@@ -76,7 +80,7 @@ export async function requireAdminApiActor(): Promise<SessionActor> {
 
 export function apiErrorResponse(error: unknown): NextResponse {
   if (error instanceof ApiError) {
-    return NextResponse.json({ error: error.message }, { status: error.status })
+    return NextResponse.json({ error: error.message }, { headers: error.headers, status: error.status })
   }
 
   if (error instanceof Error && error.name === "ZodError") {
