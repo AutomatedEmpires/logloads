@@ -28,10 +28,13 @@ The full-state JSON document is a bounded transitional design. Relational tables
 remain the long-term scaling path, but no material service rewrite is required for
 the first Supabase-canonical deployment.
 
-The existing sliding-window rate limiter is process-local. Before public
-multi-instance traffic, configure equivalent provider-edge limits or move its
-buckets to an approved shared store; do not treat the current map as a global
-abuse-control boundary.
+Sign-in, contact, onboarding, and authenticated API mutation limits use the
+provider-neutral `RateLimitStore` contract. Production selects the included
+Redis-compatible REST adapter with `LOGLOADS_RATE_LIMIT_REST_URL` and
+`LOGLOADS_RATE_LIMIT_REST_TOKEN`. Each request executes one atomic fixed-window
+increment shared by all instances. Missing, partial, unavailable, or invalid
+external configuration fails closed; process memory is never an implicit
+production fallback.
 
 ## Required production environment
 
@@ -41,6 +44,8 @@ abuse-control boundary.
 - `SUPABASE_SERVICE_ROLE_KEY` (server-only)
 - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
 - `CLERK_SECRET_KEY`
+- `LOGLOADS_RATE_LIMIT_REST_URL` (Redis REST command endpoint)
+- `LOGLOADS_RATE_LIMIT_REST_TOKEN` (server-only bearer credential)
 
 Optional provider variables are catalogued in
 [`ops/production-env-contract.json`](../ops/production-env-contract.json).
@@ -76,8 +81,10 @@ passed locally on 2026-07-10.
 5. Prove two concurrent writers preserve independent changes and a forced cold
    start loads Supabase before serving health or product data.
 6. Confirm Doppler → Vercel production variables and exact deployment provenance.
-7. Prove distributed/provider-edge limits for sign-in, contact, and authenticated
-   mutation routes.
+7. On the exact Preview SHA, prove two instances share sign-in, contact,
+   onboarding, and mutation buckets; verify 429 `Retry-After` behavior and that a
+   simulated store outage fails closed with 503. Confirm
+   `LOGLOADS_RATE_LIMIT_TEST_MODE` is absent.
 8. Apply the additive migration, deploy the canonical-aware SHA, then smoke test.
 9. Cut DNS only after the preview and rollback gates are green.
 

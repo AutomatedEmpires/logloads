@@ -45,8 +45,12 @@ export async function signInWithEmail(_previous: AuthFormState, formData: FormDa
     // NAT, office wifi); the wider per-IP cap still stops bulk enumeration.
     const clientKey = await requestClientKey()
 
-    checkRateLimit("sign-in", `${clientKey}:${email.toLowerCase()}`, 10, 60_000)
-    checkRateLimit("sign-in-ip", clientKey, 60, 60_000)
+    // Consume the broad IP bucket first so an email-specific rejection cannot
+    // bypass the aggregate enumeration limit. The two checks are intentionally
+    // sequential: Promise.all would keep the shared-store calls running after an
+    // early rejection and make outage/rate-limit behavior harder to reason about.
+    await checkRateLimit("sign-in-ip", clientKey, 60, 60_000)
+    await checkRateLimit("sign-in", `${clientKey}:${email.toLowerCase()}`, 10, 60_000)
   } catch (error) {
     return { error: serializeError(error).error }
   }
@@ -122,7 +126,7 @@ export async function completeOnboardingAction(
   }
 
   try {
-    checkRateLimit("onboarding", await requestClientKey(), 5, 60 * 60_000)
+    await checkRateLimit("onboarding", await requestClientKey(), 5, 60 * 60_000)
   } catch (error) {
     return { error: serializeError(error).error }
   }

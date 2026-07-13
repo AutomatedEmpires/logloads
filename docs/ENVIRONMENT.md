@@ -58,6 +58,15 @@
 - `LOGLOADS_STATE_FILE` overrides the non-production fallback path (default `apps/web/.data/logloads-state.json`). Delete that file only to reset local development state.
 - `LOGLOADS_ALLOW_STATE_BOOTSTRAP=true` allows one controlled insert when the remote row is intentionally empty. Leave it unset in established production and remove it immediately after a planned bootstrap.
 
+## Distributed rate limiting
+- `LOGLOADS_RATE_LIMIT_REST_URL` + `LOGLOADS_RATE_LIMIT_REST_TOKEN` activate the production shared store. Both are required together; partial configuration fails closed.
+- The adapter uses the Redis REST command protocol (`EVAL`) supported by Upstash and compatible gateways. The application contract is provider-neutral, so replacing the adapter does not change callers.
+- `LOGLOADS_RATE_LIMIT_KEY_PREFIX` is optional and defaults to `logloads:rate-limit`. Use a unique prefix when Preview and Production share a provider account; separate databases are preferred.
+- Identifiers are SHA-256 hashed before becoming store keys. The store receives a bucket name and digest, never a raw IP, actor ID, or email.
+- Local development uses process memory. Production never falls back to memory: missing credentials, timeout, non-2xx response, or malformed result makes protected actions fail closed with a retryable service-unavailable response.
+- `LOGLOADS_RATE_LIMIT_TEST_MODE=true` is reserved for the single-process Playwright harness and works only alongside `LOGLOADS_ENABLE_DEV_LOGIN=true`. Never set either flag on hosted Preview or Production.
+- Provider provisioning, spend, secret placement, and exact-SHA runtime proof remain founder-controlled operations.
+
 ## Maps
 - `NEXT_PUBLIC_MAPBOX_TOKEN` activates Mapbox (locked provider). Without it, the map renders real geography through the MapLibre + Carto fallback.
 

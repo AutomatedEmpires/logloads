@@ -31,7 +31,7 @@ export async function submitContactInquiryAction(
   }
 
   try {
-    checkRateLimit("contact", await requestClientKey(), 5, 60 * 60_000)
+    await checkRateLimit("contact", await requestClientKey(), 5, 60 * 60_000)
   } catch (error) {
     return { error: serializeError(error).error, ok: false }
   }
