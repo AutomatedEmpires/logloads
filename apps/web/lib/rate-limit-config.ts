@@ -4,39 +4,39 @@ import {
   UnavailableRateLimitStore,
   type RateLimitStore
 } from "./rate-limit-core"
-import { RedisRestRateLimitStore } from "./rate-limit-redis"
+import { SupabaseRateLimitStore } from "./rate-limit-supabase"
 
 export interface RateLimitEnvironment {
   LOGLOADS_ENABLE_DEV_LOGIN?: string
   LOGLOADS_RATE_LIMIT_HMAC_SECRET?: string
   LOGLOADS_RATE_LIMIT_KEY_PREFIX?: string
-  LOGLOADS_RATE_LIMIT_REST_TOKEN?: string
-  LOGLOADS_RATE_LIMIT_REST_URL?: string
   LOGLOADS_RATE_LIMIT_TEST_MODE?: string
   NODE_ENV?: string
+  SUPABASE_SERVICE_ROLE_KEY?: string
+  SUPABASE_URL?: string
 }
 
 export function createRateLimitStore(
   environment: RateLimitEnvironment,
   fetchImplementation: typeof fetch = fetch
 ): RateLimitStore {
-  const endpoint = environment.LOGLOADS_RATE_LIMIT_REST_URL?.trim()
-  const token = environment.LOGLOADS_RATE_LIMIT_REST_TOKEN?.trim()
+  const endpoint = environment.SUPABASE_URL?.trim()
+  const serviceRoleKey = environment.SUPABASE_SERVICE_ROLE_KEY?.trim()
   const keySecret = environment.LOGLOADS_RATE_LIMIT_HMAC_SECRET?.trim()
 
-  if (endpoint && token) {
-    return new RedisRestRateLimitStore({
+  if (endpoint && serviceRoleKey) {
+    return new SupabaseRateLimitStore({
       endpoint,
       fetch: fetchImplementation,
-      keySecret: keySecret || token,
+      keySecret: keySecret || serviceRoleKey,
       prefix: environment.LOGLOADS_RATE_LIMIT_KEY_PREFIX,
-      token
+      serviceRoleKey
     })
   }
 
   // Partial external configuration is always an outage, never permission to
   // silently weaken a deployment to process-local enforcement.
-  if (endpoint || token) {
+  if (endpoint || serviceRoleKey) {
     return new UnavailableRateLimitStore()
   }
 

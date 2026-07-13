@@ -2,6 +2,7 @@ import "server-only"
 
 import { headers } from "next/headers"
 
+import { clientKeyFromHeaders } from "./rate-limit-client-key"
 import { createRateLimiter } from "./rate-limit-config"
 import type { RateLimiter } from "./rate-limit-core"
 
@@ -23,10 +24,5 @@ export async function checkRateLimit(
 }
 
 export async function requestClientKey(): Promise<string> {
-  const headerStore = await headers()
-  // Vercel overwrites this platform header at the edge. Prefer it so an
-  // upstream proxy cannot supply a spoofed first entry in x-forwarded-for.
-  const forwarded = headerStore.get("x-vercel-forwarded-for") ?? headerStore.get("x-forwarded-for")
-
-  return forwarded?.split(",")[0]?.trim() || headerStore.get("x-real-ip") || "local"
+  return clientKeyFromHeaders(await headers(), { VERCEL: process.env.VERCEL })
 }

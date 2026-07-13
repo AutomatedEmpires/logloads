@@ -59,14 +59,15 @@
 - `LOGLOADS_ALLOW_STATE_BOOTSTRAP=true` allows one controlled insert when the remote row is intentionally empty. Leave it unset in established production and remove it immediately after a planned bootstrap.
 
 ## Distributed rate limiting
-- `LOGLOADS_RATE_LIMIT_REST_URL` + `LOGLOADS_RATE_LIMIT_REST_TOKEN` activate the production shared store. Both are required together; partial configuration fails closed.
-- The adapter uses the Redis REST command protocol (`EVAL`) supported by Upstash and compatible gateways. The application contract is provider-neutral, so replacing the adapter does not change callers.
+- Production reuses `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` to call the service-role-only `consume_rate_limit` Postgres RPC. Both are already required for canonical operating state; partial configuration fails closed.
+- The RPC atomically upserts one fixed-window counter, so all Vercel instances share a bucket. Supabase is sufficient for the current workload; no separate KV/Redis provider is required.
 - `LOGLOADS_RATE_LIMIT_KEY_PREFIX` is optional and defaults to `logloads:rate-limit`. Use a unique prefix when Preview and Production share a provider account; separate databases are preferred.
-- `LOGLOADS_RATE_LIMIT_HMAC_SECRET` is the recommended dedicated high-entropy key for HMAC-SHA-256 pseudonymization. When absent, the already-required REST token is used as safe keyed-hash material; neither secret is placed in Redis keys or command bodies.
-- The store receives a bucket name and keyed digest, never a raw IP, actor ID, or email. Rotating the dedicated HMAC secret resets active buckets immediately. Rotating the REST token resets buckets only while it is serving as the fallback HMAC key; old keys expire naturally.
-- Local development uses process memory. Production never falls back to memory: missing credentials, timeout, non-2xx response, or malformed result makes protected actions fail closed with a retryable service-unavailable response.
+- `LOGLOADS_RATE_LIMIT_HMAC_SECRET` is the recommended dedicated high-entropy key for HMAC-SHA-256 pseudonymization. When absent, the already-required server-only service-role key supplies key material; no secret is placed in the RPC body.
+- The store receives a bucket name and keyed digest, never a raw IP, actor ID, or email. Rotating the effective HMAC secret resets active buckets; expired keyed rows are removed by bounded cleanup during later consumes.
+- On Vercel, only the platform-overwritten `x-vercel-forwarded-for` is trusted for the client IP. Generic forwarded headers are ignored outside that trust boundary, preventing callers from rotating spoofed header values around a limit.
+- Local development uses process memory when Supabase is completely absent. Production never falls back to memory: missing/partial credentials, timeout, non-2xx response, or malformed result makes protected actions fail closed with a retryable service-unavailable response.
 - `LOGLOADS_RATE_LIMIT_TEST_MODE=true` is reserved for the single-process Playwright harness and works only alongside `LOGLOADS_ENABLE_DEV_LOGIN=true`. Never set either flag on hosted Preview or Production.
-- Provider provisioning, spend, secret placement, and exact-SHA runtime proof remain founder-controlled operations.
+- Applying the migration, placing a dedicated HMAC secret, and exact-SHA multi-instance/outage proof remain founder-controlled operations. This change does not mutate provider settings.
 
 ## Maps
 - `NEXT_PUBLIC_MAPBOX_TOKEN` activates Mapbox (locked provider). Without it, the map renders real geography through the MapLibre + Carto fallback.

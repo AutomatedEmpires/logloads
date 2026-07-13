@@ -15,14 +15,16 @@ have to rediscover any of this.
 ## Distributed abuse controls
 
 - Sign-in, contact, onboarding, and authenticated mutation routes consume shared,
-  atomic fixed-window limits through a Redis REST-compatible adapter.
-- Store keys contain HMAC-SHA-256 digests rather than raw IPs, actor IDs, or emails. A dedicated secret is preferred, with the required Redis REST token as the safe fallback; secret material never enters command keys or bodies.
-- Rotating the effective HMAC secret resets active rate-limit buckets. Old keyed buckets expire naturally, so plan rotation with awareness of the brief counter reset.
-- Production fails closed if the external store is absent or unavailable. The
+  atomic fixed-window limits through the existing Supabase Postgres stack.
+- Migration `20260713053327_shared_rate_limit_windows.sql` adds an RLS-enabled table and `SECURITY INVOKER` RPC with service-role-only grants. The atomic upsert serializes concurrent consumes for the same bucket/key; bounded `FOR UPDATE SKIP LOCKED` cleanup removes only expired counter rows.
+- Store keys contain HMAC-SHA-256 digests rather than raw IPs, actor IDs, or emails. A dedicated secret is preferred, with the existing server-only Supabase service-role key as the safe fallback; secret material never enters the RPC body.
+- Rotating the effective HMAC secret resets active rate-limit buckets. Old keyed buckets expire and are removed by bounded cleanup during later requests.
+- Only Vercel's platform-overwritten forwarding header is trusted in production. Generic forwarding headers are ignored outside that trust boundary, and missing/invalid platform values share one fail-safe bucket.
+- Production fails closed if Supabase credentials or the RPC are absent or unavailable. The
   memory implementation is restricted to development and the explicit local E2E
   harness.
-- Code and tests are complete; provider approval, provisioning, secret placement,
-  and exact-SHA multi-instance/outage proof remain public-cutover gates.
+- Code and tests are complete; migration approval/application, optional dedicated
+  HMAC secret placement, and exact-SHA multi-instance/outage proof remain public-cutover gates. No KV/Redis provider is required.
 
 ## How the RLS discrepancy arose (reconciled, proven)
 
@@ -72,7 +74,8 @@ driver_profiles, dispatcher_profiles, loader_profiles, truck_profiles,
 trailer_profiles, landings, mills, haul_routes, rates, availability_windows,
 notifications, message_threads, message_events, audit_events.
 
-**RLS-enabled, NO policy (deny-all but service role) — intentional:** operating_state.
+**RLS-enabled, NO policy (deny-all but service role) — intentional:** operating_state;
+`rate_limit_windows` joins this category after its pending migration is applied.
 
 **RLS exempt (1):** `spatial_ref_sys` — PostGIS system table, extension-owned, cannot
 take RLS. Contains only public coordinate-reference definitions (SRIDs); no app data
@@ -95,6 +98,9 @@ or PII. This is the single accepted `rls_disabled_in_public` advisor ERROR.
   Clerk JWT) and `service_role`. **anon cannot execute them.**
 - `request_capacity` (mutating RPC): EXECUTE revoked from PUBLIC; granted to
   `service_role` only. Not callable by anon or authenticated over REST.
+- `consume_rate_limit` (mutating RPC, pending migration): `SECURITY INVOKER`, empty
+  `search_path`, EXECUTE revoked from PUBLIC/anon/authenticated and granted only to
+  `service_role`.
 - `set_updated_at` and `current_clerk_user_id`: `search_path` pinned (was mutable).
 
 ## Accepted advisor exceptions (documented, not defects)
