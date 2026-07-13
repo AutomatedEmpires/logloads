@@ -48,7 +48,7 @@ Stop and obtain the required accountable human action only for:
 - credential rotation or revocation;
 - account, organization, repository, or asset ownership transfer;
 - a public launch announcement;
-- a public ad buy, campaign send, or paid acquisition campaign;
+- buying or placing ads, starting or activating any public campaign, or sending a marketing broadcast;
 - a legal or regulatory filing; or
 - an action that requires MFA when the accountable person is unavailable.
 
