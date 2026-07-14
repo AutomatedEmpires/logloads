@@ -129,6 +129,53 @@ describe("canonical operating state", () => {
     await expect(pending).resolves.toMatchObject({ schemaVersion: 2, version: 7 })
   })
 
+  it("retries one transient network failure and returns canonical state", async () => {
+    const state = createInMemoryDatabase()
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("connection timed out"))
+      .mockResolvedValueOnce(
+        Response.json([{ id: "primary", schema_version: 2, state, version: 9 }])
+      )
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(loadRemoteOperatingState(config)).resolves.toMatchObject({
+      schemaVersion: 2,
+      version: 9
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it("retries one transient HTTP response and returns canonical state", async () => {
+    const state = createInMemoryDatabase()
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(
+        Response.json([{ id: "primary", schema_version: 2, state, version: 10 }])
+      )
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(loadRemoteOperatingState(config)).resolves.toMatchObject({
+      schemaVersion: 2,
+      version: 10
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it("fails closed after two transient read failures", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("connection timed out"))
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(loadRemoteOperatingState(config)).rejects.toThrow(
+      "Canonical operating state could not be reached: connection timed out"
+    )
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it("upgrades a legacy mirror without dropping existing data", async () => {
     const legacy = createInMemoryDatabase() as Partial<LogLoadsDatabaseState>
     const originalProfiles = legacy.profiles?.length ?? 0
