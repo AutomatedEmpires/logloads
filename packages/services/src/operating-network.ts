@@ -8,10 +8,13 @@ import {
   evaluateLoadCompatibility,
   notificationSchema,
   organizationRoleCan,
+  transitionAssignmentStatus,
+  transitionTruckSlotStatus,
   transitionTripStatus,
   tripDocumentSchema,
   tripEventSchema,
   tripSchemaV2,
+  truckSlotSchema,
   type Assignment,
   type AssignmentStatus,
   type DirectOffer,
@@ -30,7 +33,7 @@ import {
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
-import { assignDriverToSlot, declineAssignment, requestAssignment } from "./assignments"
+import { declineAssignment, requestAssignment } from "./assignments"
 import { assertCondition, assertFound, createUuid, nowIso } from "./utils"
 
 export const DEFAULT_ACTOR_USER_ID = "22222222-2222-4222-8222-222222222221"
@@ -286,6 +289,44 @@ export function listVisibleLoadsForOrganization(
   organizationId = DEFAULT_ORGANIZATION_ID
 ): LoadPosting[] {
   return state.loadPostings.filter((load) => load.status !== "archived" && isLoadVisibleToOrganization(state, load, organizationId))
+}
+
+/**
+ * A load belongs on a live discovery surface only while a driver can still
+ * acquire a future slot. Historical, filled, invite-only, and dispatch-assigned
+ * work stays in the operating record but never masquerades as available work.
+ */
+export function isLoadRequestableAt(
+  state: LogLoadsDatabaseState,
+  load: LoadPosting,
+  at = nowIso()
+): boolean {
+  if (load.archivedAt || !["open", "scheduled"].includes(load.status)) {
+    return false
+  }
+
+  const capacity = getOpportunityCapacity(state, load.id)
+
+  if (capacity && (capacity.remainingTruckloads <= 0 || capacity.allocationMode !== "request_approval")) {
+    return false
+  }
+
+  return state.truckSlots.some((slot) =>
+    slot.loadPostingId === load.id &&
+    ["open", "requested"].includes(slot.status) &&
+    slot.reservedCount < slot.capacity &&
+    slot.endAt > at
+  )
+}
+
+export function listRequestableLoadsForOrganization(
+  state: LogLoadsDatabaseState,
+  organizationId = DEFAULT_ORGANIZATION_ID,
+  at = nowIso()
+): LoadPosting[] {
+  return listVisibleLoadsForOrganization(state, organizationId).filter((load) =>
+    isLoadRequestableAt(state, load, at)
+  )
 }
 
 function findEquipmentCombinationForAssignment(state: LogLoadsDatabaseState, assignment: Assignment) {
@@ -547,22 +588,60 @@ export function approveCapacityRequest(
     "Only a requested or offered assignment can be approved"
   )
 
-  const acceptedAssignment = assignDriverToSlot(state, assignment.id)
   const existingTrip = state.tripsV2.find((trip) => trip.assignmentId === assignment.id)
   const routePack = state.routePacks.find((pack) => pack.loadPostingId === load.id) ?? null
-  const equipmentCombination = findEquipmentCombinationForAssignment(state, acceptedAssignment) ?? null
-
-  if (existingTrip) {
-    return { assignment: acceptedAssignment, trip: existingTrip }
-  }
-
+  const equipmentCombination = assertFound(
+    findEquipmentCombinationForAssignment(state, assignment),
+    "The requested equipment combination was not found"
+  )
+  const rate = assertFound(state.rates.find((candidate) => candidate.id === load.rateId), `Rate ${load.rateId} was not found`)
+  const route = assertFound(state.haulRoutes.find((candidate) => candidate.id === load.routeId), `Route ${load.routeId} was not found`)
+  const slot = assertFound(
+    state.truckSlots.find((candidate) => candidate.id === assignment.truckSlotId),
+    `Truck slot ${assignment.truckSlotId} was not found`
+  )
   const timestamp = nowIso()
-  const trip = tripSchemaV2.parse({
+  const offeredStatus = assignment.status === "requested"
+    ? transitionAssignmentStatus("requested", "offered")
+    : assignment.status
+  const acceptedStatus = transitionAssignmentStatus(offeredStatus, "accepted")
+  const acceptedAssignment = assignmentSchema.parse({
+    ...assignment,
+    assignedAt: timestamp,
+    status: acceptedStatus,
+    termsSnapshot: {
+      acceptedAt: timestamp,
+      baseRateCents: rate.baseRate.amountCents,
+      currency: rate.baseRate.currency,
+      estimatedDistanceMiles: route.estimatedDistanceMiles,
+      estimatedTonsPerLoad: load.estimatedTonsPerLoad ?? null,
+      fuelSurchargeCents: rate.fuelSurchargeCents,
+      haulerOrganizationId: equipmentCombination?.organizationId ?? null,
+      hostFee: {
+        collectionState: "disabled_pending_legal_and_payment_approval",
+        feeCents: null,
+        proposedRateBps: 500
+      },
+      hostOrganizationId: load.companyId,
+      loadPostingId: load.id,
+      loadVersion: load.updatedAt,
+      paymentMode: "off_platform",
+      rateBasis: rate.rateType,
+      rateId: rate.id
+    },
+    updatedAt: timestamp
+  })
+  const confirmedSlot = truckSlotSchema.parse({
+    ...slot,
+    status: slot.status === "requested" ? transitionTruckSlotStatus("requested", "reserved") : slot.status,
+    updatedAt: timestamp
+  })
+  const trip = existingTrip ?? tripSchemaV2.parse({
     assignmentId: acceptedAssignment.id,
     completedAt: null,
     createdAt: timestamp,
     driverProfileId: acceptedAssignment.driverProfileId,
-    equipmentCombinationId: equipmentCombination?.id ?? null,
+    equipmentCombinationId: equipmentCombination.id,
     id: createUuid(),
     lastSyncedAt: timestamp,
     loadPostingId: acceptedAssignment.loadPostingId,
@@ -573,9 +652,7 @@ export function approveCapacityRequest(
     status: "assigned",
     updatedAt: timestamp
   })
-
-  state.tripsV2.push(trip)
-  state.tripEvents.push(tripEventSchema.parse({
+  const tripEvent = existingTrip ? null : tripEventSchema.parse({
     actorUserId: context.actorUserId,
     createdAt: timestamp,
     id: createUuid(),
@@ -585,7 +662,21 @@ export function approveCapacityRequest(
     source: "dispatcher",
     tripId: trip.id,
     type: "assignment_created"
-  }))
+  })
+
+  state.assignments = state.assignments.map((current) =>
+    current.id === acceptedAssignment.id ? acceptedAssignment : current
+  )
+  state.truckSlots = state.truckSlots.map((current) =>
+    current.id === confirmedSlot.id ? confirmedSlot : current
+  )
+
+  if (existingTrip) {
+    return { assignment: acceptedAssignment, trip: existingTrip }
+  }
+
+  state.tripsV2.push(trip)
+  if (tripEvent) state.tripEvents.push(tripEvent)
   insertAuditEvent(state, context.actorUserId, "trip", trip.id, "created_from_assignment", {
     assignmentId: acceptedAssignment.id
   })

@@ -131,6 +131,7 @@
 }
 .hero-load-preview__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: rgba(255, 255, 255, 0.72); font-size: 0.82rem; font-weight: 900; text-transform: uppercase; }
 .hero-load-preview > strong { color: #b9e7c8; font-size: 2.15rem; line-height: 1; }
+.hero-load-preview__rate-terms { color: rgba(255, 255, 255, 0.76); font-size: 0.78rem; font-weight: 750; }
 .hero-load-preview h2 { margin: 0; font-size: 1.2rem; }
 .hero-load-preview > p { margin: 0; color: rgba(255, 255, 255, 0.76); font-size: 0.95rem; }
 .hero-load-preview dl { gap: 7px; }

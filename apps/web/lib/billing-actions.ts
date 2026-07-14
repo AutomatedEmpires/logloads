@@ -1,6 +1,7 @@
 "use server"
 
 import Stripe from "stripe"
+import { organizationRoleCan } from "@logloads/contracts"
 
 import type { PlanProduct } from "./plans"
 import { serializeError, services } from "./services"
@@ -14,18 +15,18 @@ export interface CheckoutResult {
 
 const BILLING_PENDING_MESSAGE = "Billing activation is pending for this workspace. Your plan and trial remain active."
 
-const CHECKOUT_PRICING: Record<string, { name: string; description: string; unitAmount: number; returnPath: string }> = {
+const CHECKOUT_PRICING: Partial<Record<PlanProduct, { priceEnv: "STRIPE_PRICE_DISPATCH"; returnPath: string }>> = {
   fleet_operations: {
-    description: "Dispatch board, truck planning, and private partner work for carriers.",
-    name: "LogLoads Fleet plan",
-    returnPath: "/fleet/billing",
-    unitAmount: 14_900
-  },
-  landing_operations: {
-    description: "Load publishing, live landing board, and preferred carrier tools.",
-    name: "LogLoads Host plan",
-    returnPath: "/host/billing",
-    unitAmount: 24_900
+    priceEnv: "STRIPE_PRICE_DISPATCH",
+    returnPath: "/fleet/billing"
+  }
+}
+
+function requireBillingManager(actor: NonNullable<Awaited<ReturnType<typeof getSessionActor>>>) {
+  const membership = actor.activeMembership
+
+  if (!membership || !organizationRoleCan(membership.role, "manage_billing")) {
+    throw new Error("Only an organization owner or billing manager can manage billing")
   }
 }
 
@@ -49,6 +50,8 @@ export async function startCheckoutAction(product: PlanProduct): Promise<Checkou
       throw new Error("Finish onboarding before managing billing")
     }
 
+    requireBillingManager(actor)
+
     if (product === "driver_core") {
       return { error: "The Driver plan is free. There is nothing to purchase for this workspace.", ok: false, url: null }
     }
@@ -56,6 +59,14 @@ export async function startCheckoutAction(product: PlanProduct): Promise<Checkou
     if (product === "enterprise") {
       return {
         error: "Enterprise plans are set up with our team. Reach out through Messages and we will configure billing for your regions.",
+        ok: false,
+        url: null
+      }
+    }
+
+    if (product === "landing_operations") {
+      return {
+        error: "Hosts are free during the launch pilot. The proposed 5% host fee is not active and no freight payment moves through LogLoads.",
         ok: false,
         url: null
       }
@@ -76,28 +87,21 @@ export async function startCheckoutAction(product: PlanProduct): Promise<Checkou
     const stripe = new Stripe(secretKey)
     const origin = process.env.NEXT_PUBLIC_APP_URL ?? "http://127.0.0.1:3002"
 
-    // Real Stripe price IDs (STRIPE_PRICE_FLEET / STRIPE_PRICE_HOST) take
-    // precedence; inline price_data is the bootstrap fallback so checkout works
-    // before prices are configured in the Stripe dashboard.
-    const configuredPriceId = product === "fleet_operations"
-      ? process.env.STRIPE_PRICE_FLEET
-      : process.env.STRIPE_PRICE_HOST
+    const configuredPriceId = process.env[pricing.priceEnv]
+
+    if (!configuredPriceId) {
+      return {
+        error: "Dispatch Pro billing is not activated yet. A verified $499 monthly Stripe Price must be configured before Checkout can open.",
+        ok: false,
+        url: null
+      }
+    }
 
     const session = await stripe.checkout.sessions.create({
       cancel_url: `${origin}${pricing.returnPath}?checkout=cancelled`,
       client_reference_id: organization.id,
       line_items: [
-        configuredPriceId
-          ? { price: configuredPriceId, quantity: 1 }
-          : {
-              price_data: {
-                currency: "usd",
-                product_data: { description: pricing.description, name: pricing.name },
-                recurring: { interval: "month" },
-                unit_amount: pricing.unitAmount
-              },
-              quantity: 1
-            }
+        { price: configuredPriceId, quantity: 1 }
       ],
       metadata: { organizationId: organization.id, product },
       mode: "subscription",
@@ -131,6 +135,16 @@ export async function startBillingPortalAction(product: PlanProduct): Promise<Ch
 
     if (!organization) {
       throw new Error("Finish onboarding before managing billing")
+    }
+
+    requireBillingManager(actor)
+
+    if (product === "landing_operations") {
+      return {
+        error: "Host billing is not active during the launch pilot.",
+        ok: false,
+        url: null
+      }
     }
 
     const secretKey = process.env.STRIPE_SECRET_KEY

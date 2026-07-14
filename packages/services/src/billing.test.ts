@@ -91,4 +91,47 @@ describe("billing service", () => {
     expect(found?.organizationId).toBe(FLEET_ORG)
     expect(found?.product).toBe("fleet_operations")
   })
+
+  it("deduplicates a retried Stripe event and preserves the renewal date", () => {
+    const state = createInMemoryDatabase()
+    const eventId = "evt_dispatch_renewal"
+    const currentPeriodEndsAt = "2026-08-14T00:00:00.000Z"
+
+    applyBillingUpdate(state, {
+      currentPeriodEndsAt,
+      eventId,
+      organizationId: FLEET_ORG,
+      product: "fleet_operations",
+      status: "active",
+      stripeSubscriptionId: "sub_dispatch"
+    })
+    applyBillingUpdate(state, {
+      currentPeriodEndsAt,
+      eventId,
+      organizationId: FLEET_ORG,
+      product: "fleet_operations",
+      status: "active",
+      stripeSubscriptionId: "sub_dispatch"
+    })
+
+    const matchingAudits = state.auditEvents.filter((event) => event.metadata.eventId === eventId)
+    const entitlement = findEntitlementByStripeSubscription(state, "sub_dispatch")
+
+    expect(matchingAudits).toHaveLength(1)
+    expect(entitlement?.currentPeriodEndsAt).toBe(currentPeriodEndsAt)
+  })
+
+  it("ignores legacy audit events that do not have metadata", () => {
+    const state = createInMemoryDatabase()
+    const legacyEvent = state.auditEvents[0] as unknown as { metadata?: Record<string, unknown> }
+
+    delete legacyEvent.metadata
+
+    expect(() => applyBillingUpdate(state, {
+      eventId: "evt_after_legacy_audit",
+      organizationId: FLEET_ORG,
+      product: "fleet_operations",
+      status: "active"
+    })).not.toThrow()
+  })
 })

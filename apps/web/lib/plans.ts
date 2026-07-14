@@ -40,8 +40,8 @@ const PLAN_DEFINITIONS: Record<PlanProduct, PlanDefinition> = {
   landing_operations: {
     defaultFeatures: ["Load publishing", "Live landing board", "Preferred carrier tools"],
     name: "Host",
-    priceLine: "5% per completed load",
-    summary: "Post without a monthly fee and pay when completed loads settle through LogLoads."
+    priceLine: "Free launch pilot",
+    summary: "Post without a monthly fee. The proposed 5% host fee is not active."
   }
 }
 
@@ -197,7 +197,15 @@ function planLimitLines(entitlement: Entitlement): string[] {
 
 function toPlanView(entitlement: Entitlement): PlanView {
   const definition = PLAN_DEFINITIONS[entitlement.product]
-  const status = planStatusView(entitlement.status, entitlement.currentPeriodEndsAt)
+  const status = entitlement.product === "landing_operations"
+    ? {
+        actionKind: null,
+        actionLabel: null,
+        statusDetail: "No host fee or freight settlement is active. Any future 5% model requires a separate approved release.",
+        statusLine: "Launch pilot — included",
+        statusTone: "success"
+      } satisfies PlanStatusView
+    : planStatusView(entitlement.status, entitlement.currentPeriodEndsAt)
   const features = entitlement.features.length > 0
     ? entitlement.features.map(planFeatureName)
     : definition.defaultFeatures
@@ -292,7 +300,7 @@ export function getBillingView(network: NetworkView): BillingView {
   }
 
   return {
-    billingReady: Boolean(process.env.STRIPE_SECRET_KEY),
+    billingReady: Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_PRICE_DISPATCH),
     plans: entitlements.map(toPlanView),
     usage
   }

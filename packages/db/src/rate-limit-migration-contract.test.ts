@@ -8,7 +8,7 @@ const migration = readFileSync(
     import.meta.url
   ),
   "utf8"
-).toLowerCase()
+).replaceAll("\r\n", "\n").toLowerCase()
 
 describe("shared rate-limit migration contract", () => {
   it("uses one atomic upsert for fixed-window consumption", () => {

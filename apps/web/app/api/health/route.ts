@@ -31,8 +31,9 @@ export async function GET() {
     integrations: {
       auth: isClerkConfigured() ? "clerk" : "dev-session",
       canonicalState: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
-      billing: Boolean(process.env.STRIPE_SECRET_KEY),
+      billing: Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_PRICE_DISPATCH),
       email: Boolean(process.env.RESEND_API_KEY),
+      media: Boolean(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET),
       analytics: Boolean(process.env.NEXT_PUBLIC_POSTHOG_KEY),
       errorTracking: Boolean(process.env.SENTRY_DSN)
     },

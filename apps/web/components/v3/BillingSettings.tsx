@@ -98,7 +98,7 @@ export function BillingPage({
           <EmptyState
             actionHref="/pricing"
             actionLabel="Compare plans"
-            body="Pick the plan that matches how this workspace operates. Trials start without a card."
+            body={role === "fleet" ? "Dispatch Pro is $499 per month. Drivers on the account stay free." : "Hosts are included in the free launch pilot."}
             title="No plan on this workspace yet"
           />
         ) : (
@@ -135,10 +135,10 @@ export function BillingPage({
               ))}
             </section>
 
-            {!billing.billingReady ? (
+            {role === "fleet" && !billing.billingReady ? (
               <p className="billing-pending" role="note">
                 <Icon aria-hidden name="status.lock" size={16} />
-                <span>Billing activation is pending for this workspace. Your plan and trial remain active.</span>
+                <span>Dispatch Pro checkout is temporarily unavailable. Current trial access stays active.</span>
               </p>
             ) : null}
 
@@ -246,8 +246,8 @@ export function SettingsPage({
             <div>
               <strong>Delivery: in-app</strong>
               <p>
-                Assignment, trip, and message updates appear in your cockpit as they happen. Email delivery activates
-                once an email provider is connected for this workspace.
+                Assignment, trip, and message updates appear in your cockpit as they happen. In-app notifications are
+                the operating record; enabled alerts and account messages also go to your account email.
               </p>
             </div>
           </div>
@@ -263,7 +263,7 @@ export function SettingsPage({
             <EmptyState
               actionHref="/pricing"
               actionLabel="Compare plans"
-              body="Pick the plan that matches how this workspace operates. Trials start without a card."
+              body={role === "fleet" ? "Dispatch Pro is $499 per month. Drivers on the account stay free." : "Hosts are included in the free launch pilot."}
               title="No plan on this workspace yet"
             />
           ) : (

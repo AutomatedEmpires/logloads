@@ -55,6 +55,13 @@ export function upgradeStateSnapshot(
     candidate.tripReviews = []
   }
 
+  if (Array.isArray(candidate.assignments)) {
+    candidate.assignments = candidate.assignments.map((assignment) => ({
+      ...assignment,
+      termsSnapshot: assignment.termsSnapshot ?? {}
+    }))
+  }
+
   if (!REQUIRED_TABLES.every((table) => Array.isArray(candidate[table]))) {
     return null
   }

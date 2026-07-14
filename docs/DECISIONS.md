@@ -2,6 +2,12 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-07-13 — Driver economics, private media, current weather, and billing activation boundaries
+- Driver load views now estimate gross pay, trip miles, optional deadhead from a saved home location, gallons, fuel cost, and gross after fuel. Saved truck MPG and fuel-price assumptions take precedence; otherwise the interface labels its 6.5 MPG and $4.25/gallon assumptions. This is an estimate, not net profit, a settlement, or a safety guarantee.
+- Open-Meteo supplies current destination weather through a server route cached for 15 minutes. The UI names the source and freshness, never returns exact private landing coordinates, and treats weather as supplemental planning context rather than operating instruction. No secret is required.
+- Cloudinary is the private media provider for profile, truck, and trailer photos. Uploads are server-signed, limited to JPEG/PNG/WebP up to 10 MB, stored as authenticated assets under an organization-scoped namespace, verified server-side before a reference is committed, and proxied only after the requesting member passes the same organization/driver/equipment authorization check.
+- Stripe remains subscription-only. Dispatch Pro requires a pre-created recurring Price at exactly $499/month via `STRIPE_PRICE_DISPATCH`; inline amounts are forbidden. Drivers remain free forever and hosts are free during the launch pilot. The proposed 5% host fee is recorded only as disabled terms architecture until legal, payment-flow, tax, refund, dispute, and regulatory approval are complete; LogLoads does not move freight funds in this release.
+
 ## 2026-07-12 — Shared rate limits use the existing Supabase production stack
 - Supersedes the Redis-specific provider gate in the earlier 2026-07-12 entry below. The requirement is shared atomic state, not Redis by name. Supabase is sufficient for the current fixed-window workload and is already required by the production runtime.
 - Migration `20260713053327_shared_rate_limit_windows.sql` adds a service-role-only, RLS-enabled counter table plus a `SECURITY INVOKER` RPC. One `INSERT ... ON CONFLICT DO UPDATE` atomically consumes the window across Vercel instances; bounded lock-safe cleanup removes expired pseudonymous rows without a scheduler.

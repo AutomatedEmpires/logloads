@@ -136,8 +136,8 @@ export function OnboardingFlow({
       </div>
 
       <fieldset data-onboarding-step="0" hidden={step !== 0}>
-        <legend>Tell us who you are</legend>
-        <p className="fieldset-note">This sets up the right LogLoads experience. You can change optional details later.</p>
+        <legend>What do you do?</legend>
+        <p className="fieldset-note">Pick the closest answer. You can change optional details later.</p>
         <div className="radio-grid">
           {types.map((type) => (
             <label className={selectedType === type.value ? "radio-card radio-card--active" : "radio-card"} key={type.value}>
@@ -155,7 +155,7 @@ export function OnboardingFlow({
         </div>
         <label>
           <span>Full name</span>
-          <input defaultValue={identityKnown?.fullName ?? ""} name="fullName" required type="text" />
+          <input autoComplete="name" defaultValue={identityKnown?.fullName ?? ""} name="fullName" required type="text" />
         </label>
         <label>
           <span>Email</span>
@@ -170,27 +170,27 @@ export function OnboardingFlow({
         </label>
         <label>
           <span>Phone</span>
-          <input autoComplete="tel" name="phone" placeholder="555-0100" required type="tel" />
+          <input autoComplete="tel" inputMode="tel" name="phone" placeholder="(555) 555-0100" required type="tel" />
         </label>
       </fieldset>
 
       <fieldset data-onboarding-step="1" hidden={step !== 1}>
-        <legend>Where do you work?</legend>
-        <p className="fieldset-note">We use your operating area to show relevant loads first.</p>
+        <legend>What area do you run?</legend>
+        <p className="fieldset-note">This puts nearby work first. A city, county, or timber region is enough.</p>
         <label>
           <span>{orgLabel}</span>
-          <input name="organizationName" required={path !== "driver"} type="text" />
+          <input autoComplete="organization" name="organizationName" required={path !== "driver"} type="text" />
         </label>
         <label>
           <span>Operating region</span>
-          <input name="region" placeholder="Cascade Foothills, OR" required type="text" />
+          <input name="region" placeholder="Roseburg, OR" required type="text" />
         </label>
       </fieldset>
 
       {needsEquipment ? (
         <fieldset data-onboarding-step="2" hidden={step !== 2}>
-          <legend>What do you run?</legend>
-          <p className="fieldset-note">Your truck and trailer determine which loads match. Add the primary setup now; add photos and other equipment later.</p>
+          <legend>Your main setup</legend>
+          <p className="fieldset-note">Choose the truck and trailer you use most. Photos and other equipment can wait.</p>
           <label>
             <span>Truck type</span>
             <select defaultValue="log_truck" name="truckType">
