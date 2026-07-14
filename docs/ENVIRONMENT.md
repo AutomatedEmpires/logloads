@@ -66,7 +66,7 @@
 - The store receives a bucket name and keyed digest, never a raw IP, actor ID, or email. Rotating the effective HMAC secret resets active buckets; expired keyed rows are removed by bounded cleanup during later consumes.
 - On Vercel, only the platform-overwritten `x-vercel-forwarded-for` is trusted for the client IP. Generic forwarded headers are ignored outside that trust boundary, preventing callers from rotating spoofed header values around a limit.
 - Local development uses process memory when Supabase is completely absent. Production never falls back to memory: missing/partial credentials, timeout, non-2xx response, or malformed result makes protected actions fail closed with a retryable service-unavailable response.
-- `LOGLOADS_RATE_LIMIT_TEST_MODE=true` is reserved for the single-process Playwright harness and works only alongside `LOGLOADS_ENABLE_DEV_LOGIN=true`. Never set either flag on hosted Preview or Production.
+- `LOGLOADS_RATE_LIMIT_TEST_MODE=true` lets the single-process Playwright harness bypass request counters so repeated seeded-user journeys remain deterministic. The bypass requires `LOGLOADS_ENABLE_DEV_LOGIN=true`, a loopback Supabase URL with local service credentials, and a non-Vercel runtime. Never set either flag on hosted Preview or Production.
 - Applying the migration, placing a dedicated HMAC secret, and exact-SHA multi-instance/outage proof remain founder-controlled operations. This change does not mutate provider settings.
 
 ## Maps

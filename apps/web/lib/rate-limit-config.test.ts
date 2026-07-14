@@ -33,9 +33,12 @@ describe("rate-limit runtime configuration", () => {
     const limiter = createRateLimiter({
       LOGLOADS_ENABLE_DEV_LOGIN: "true",
       LOGLOADS_RATE_LIMIT_TEST_MODE: "true",
-      NODE_ENV: "production"
+      NODE_ENV: "production",
+      SUPABASE_SERVICE_ROLE_KEY: "local-service-role-key",
+      SUPABASE_URL: "http://127.0.0.1:54321"
     })
 
+    await expect(limiter.check("contact", "client", 1, 60_000)).resolves.toBeUndefined()
     await expect(limiter.check("contact", "client", 1, 60_000)).resolves.toBeUndefined()
   })
 
@@ -56,6 +59,46 @@ describe("rate-limit runtime configuration", () => {
 
     await expect(limiter.check("contact", "client", 1, 60_000)).resolves.toBeUndefined()
     expect(request).not.toHaveBeenCalled()
+  })
+
+  it("never enables the test bypass on a hosted Vercel environment", async () => {
+    const request = vi.fn(async () =>
+      Response.json([{ request_count: 1, retry_after_ms: 60_000 }])
+    ) as unknown as typeof fetch
+    const limiter = createRateLimiter(
+      {
+        LOGLOADS_ENABLE_DEV_LOGIN: "true",
+        LOGLOADS_RATE_LIMIT_TEST_MODE: "true",
+        NODE_ENV: "production",
+        SUPABASE_SERVICE_ROLE_KEY: "local-service-role-key",
+        SUPABASE_URL: "http://127.0.0.1:54321",
+        VERCEL: "1",
+        VERCEL_ENV: "preview"
+      },
+      request
+    )
+
+    await expect(limiter.check("contact", "client", 1, 60_000)).resolves.toBeUndefined()
+    expect(request).toHaveBeenCalledOnce()
+  })
+
+  it("never enables the test bypass against a remote provider", async () => {
+    const request = vi.fn(async () =>
+      Response.json([{ request_count: 1, retry_after_ms: 60_000 }])
+    ) as unknown as typeof fetch
+    const limiter = createRateLimiter(
+      {
+        LOGLOADS_ENABLE_DEV_LOGIN: "true",
+        LOGLOADS_RATE_LIMIT_TEST_MODE: "true",
+        NODE_ENV: "production",
+        SUPABASE_SERVICE_ROLE_KEY: "remote-service-role-key",
+        SUPABASE_URL: "https://project.supabase.co"
+      },
+      request
+    )
+
+    await expect(limiter.check("contact", "client", 1, 60_000)).resolves.toBeUndefined()
+    expect(request).toHaveBeenCalledOnce()
   })
 
   it("uses Supabase whenever both canonical provider credentials are present", async () => {

@@ -40,11 +40,18 @@ function activeTripFor(network: NetworkView): TripView | null {
   return trips.find(isOpenTrip) ?? null
 }
 
-function matchingLoads(network: NetworkView): NetworkLoadView[] {
+function requestableLoads(network: NetworkView): NetworkLoadView[] {
   return network.loads.filter((load) =>
     ["open", "scheduled"].includes(load.status) &&
+    load.allocationMode === "request_approval" &&
     load.capacity.remaining > 0 &&
     !load.viewerAssignment &&
+    Boolean(load.slots.requestableSlotId)
+  )
+}
+
+function matchingLoads(network: NetworkView): NetworkLoadView[] {
+  return requestableLoads(network).filter((load) =>
     (!load.compatibility || load.compatibility.eligibility !== "ineligible")
   )
 }
@@ -209,9 +216,7 @@ export function DriverToday({ account, availability, network }: DriverPageProps 
 }
 
 export function DriverLoads({ account, network }: DriverPageProps) {
-  const availableLoads = network.loads.filter((load) =>
-    ["open", "scheduled"].includes(load.status) && load.capacity.remaining > 0 && !load.viewerAssignment
-  )
+  const availableLoads = requestableLoads(network)
   const openHauls = availableLoads.reduce((total, load) => total + load.capacity.remaining, 0)
   const matches = availableLoads.filter((load) => load.compatibility?.eligibility === "strong_match")
   const pendingRequests = network.loads.filter((load) => load.viewerAssignment?.status === "requested").length
@@ -250,7 +255,7 @@ export function DriverLoads({ account, network }: DriverPageProps) {
 }
 
 export function DriverMap({ account, network }: DriverPageProps) {
-  const loads = network.loads.filter((load) => ["open", "scheduled"].includes(load.status))
+  const loads = requestableLoads(network)
   const selected = loads[0] ?? null
   const openHauls = loads.reduce((total, load) => total + load.capacity.remaining, 0)
 
@@ -361,8 +366,31 @@ function RequestedHaulCard({ load }: { load: NetworkLoadView }) {
   )
 }
 
+function DecisionHaulCard({ load }: { load: NetworkLoadView }) {
+  return (
+    <article className="schedule-request-card">
+      <header>
+        <div>
+          <span className="card-kicker">{load.landing.city} to {load.destination.name}</span>
+          <strong>{load.payLabel}</strong>
+        </div>
+        <Badge tone="info">Not selected</Badge>
+      </header>
+      <h3>{load.title}</h3>
+      <p>The host chose another truck for that request. This is a decision, not a booked or cancelled haul.</p>
+      <div className="primary-action-row">
+        <Link className="action-link" href="/driver/loads">Find another load</Link>
+        {load.capacity.remaining > 0 && load.slots.requestableSlotId ? (
+          <Link className="action-link action-link--secondary" href={`/driver/loads/${load.id}`}>See reopened load</Link>
+        ) : null}
+      </div>
+    </article>
+  )
+}
+
 export function DriverSchedule({ account, network }: DriverPageProps) {
   const requestedLoads = network.loads.filter((load) => ["requested", "offered"].includes(load.viewerAssignment?.status ?? ""))
+  const decisionLoads = network.loads.filter((load) => load.viewerDecision?.status === "declined")
   const bookedTrips = network.trips.filter((trip) => trip.status === "assigned")
   const activeTrips = network.trips.filter((trip) => isOpenTrip(trip) && trip.status !== "assigned")
   const completedTrips = network.trips.filter((trip) => trip.status === "completed")
@@ -385,7 +413,7 @@ export function DriverSchedule({ account, network }: DriverPageProps) {
         </div>
       </section>
 
-      {requestedLoads.length === 0 && network.trips.length === 0 ? (
+      {requestedLoads.length === 0 && decisionLoads.length === 0 && network.trips.length === 0 ? (
         <div className="app-section">
           <EmptyState
             title="Nothing scheduled yet."
@@ -401,6 +429,14 @@ export function DriverSchedule({ account, network }: DriverPageProps) {
               <SectionHeader eyebrow="Waiting on a decision" title="Requested hauls" />
               <div className="schedule-request-list">
                 {requestedLoads.map((load) => <RequestedHaulCard key={load.id} load={load} />)}
+              </div>
+            </section>
+          ) : null}
+          {decisionLoads.length > 0 ? (
+            <section className="app-section">
+              <SectionHeader eyebrow="Host decisions" title="Not selected" />
+              <div className="schedule-request-list">
+                {decisionLoads.map((load) => <DecisionHaulCard key={load.id} load={load} />)}
               </div>
             </section>
           ) : null}

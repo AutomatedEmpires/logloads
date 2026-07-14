@@ -55,6 +55,11 @@ export function assignDriverToSlot(state: LogLoadsDatabaseState, assignmentId: s
     `Assignment ${assignmentId} was not found`
   )
 
+  assertCondition(
+    ["requested", "offered"].includes(assignment.status),
+    "Only a requested or offered assignment can be approved"
+  )
+
   const offered = assignment.status === "requested"
     ? transitionAssignmentStatus("requested", "offered")
     : assignment.status
@@ -72,6 +77,36 @@ export function assignDriverToSlot(state: LogLoadsDatabaseState, assignmentId: s
   state.assignments = state.assignments.map((current) =>
     current.id === assignmentId ? updated : current
   )
+
+  return updated
+}
+
+export function declineAssignment(
+  state: LogLoadsDatabaseState,
+  assignmentId: string,
+  reason: string
+): Assignment {
+  const assignment = assertFound(
+    state.assignments.find((current) => current.id === assignmentId),
+    `Assignment ${assignmentId} was not found`
+  )
+
+  assertCondition(
+    ["requested", "offered"].includes(assignment.status),
+    "Only a requested or offered assignment can be declined"
+  )
+
+  const timestamp = nowIso()
+  const updated = assignmentSchema.parse({
+    ...assignment,
+    cancelledAt: timestamp,
+    cancellationReason: reason,
+    status: transitionAssignmentStatus(assignment.status, "declined"),
+    updatedAt: timestamp
+  })
+
+  releaseTruckSlotReservation(state, assignment.truckSlotId)
+  state.assignments = state.assignments.map((current) => current.id === assignmentId ? updated : current)
 
   return updated
 }

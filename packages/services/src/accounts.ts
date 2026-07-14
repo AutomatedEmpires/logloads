@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 
 import {
+  availabilityWindowSchema,
   driverProfileSchema,
   entitlementSchema,
   equipmentCombinationSchema,
@@ -32,6 +33,8 @@ export const accountTypeSchema = z.enum([
   "landing_operator"
 ])
 
+export const onboardingAvailabilityPresetSchema = z.enum(["today", "three_days", "not_ready"])
+
 export const createAccountInputSchema = z.object({
   clerkUserId: z.string().min(1).optional().nullable(),
   fullName: z.string().min(2),
@@ -39,6 +42,7 @@ export const createAccountInputSchema = z.object({
   phone: z.string().min(7),
   path: accountPathSchema,
   accountType: accountTypeSchema,
+  availabilityPreset: onboardingAvailabilityPresetSchema.default("three_days"),
   organizationName: z.string().min(2).optional().nullable(),
   region: z.string().min(2),
   equipment: z
@@ -162,7 +166,8 @@ export function createAccount(state: LogLoadsDatabaseState, rawInput: unknown): 
     throw new Error("An account already exists for this sign-in")
   }
 
-  const now = new Date().toISOString()
+  const nowDate = new Date()
+  const now = nowDate.toISOString()
   const userId = randomUUID()
   const organizationId = randomUUID()
   const organizationName = input.organizationName?.trim() || `${input.fullName.trim()} Hauling`
@@ -234,7 +239,7 @@ export function createAccount(state: LogLoadsDatabaseState, rawInput: unknown): 
     driverProfileId = randomUUID()
     state.driverProfiles.push(
       driverProfileSchema.parse({
-        availabilityStatus: "available",
+        availabilityStatus: input.availabilityPreset === "not_ready" ? "unavailable" : "available",
         companyId: organizationId,
         createdAt: now,
         equipmentPreferences: [],
@@ -247,6 +252,26 @@ export function createAccount(state: LogLoadsDatabaseState, rawInput: unknown): 
         yearsExperience: 0
       })
     )
+
+    if (input.availabilityPreset !== "not_ready") {
+      const durationHours = input.availabilityPreset === "today" ? 24 : 72
+
+      state.availabilityWindows.push(
+        availabilityWindowSchema.parse({
+          createdAt: now,
+          driverProfileId,
+          endAt: new Date(nowDate.getTime() + durationHours * 60 * 60 * 1000).toISOString(),
+          id: randomUUID(),
+          notes: "Set during driver onboarding.",
+          preferredRouteIds: [],
+          recurringSchedule: null,
+          startAt: now,
+          status: "available",
+          truckProfileId: null,
+          updatedAt: now
+        })
+      )
+    }
   }
 
   if (input.equipment && (input.path === "driver" || input.path === "fleet")) {

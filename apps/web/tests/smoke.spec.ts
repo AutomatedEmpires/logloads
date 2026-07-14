@@ -64,9 +64,10 @@ test("onboarding provisions a working driver account", async ({ page }) => {
   await page.getByRole("button", { name: "Continue" }).click()
   await page.fill('input[name="region"]', "Test Valley")
   await page.getByRole("button", { name: "Continue" }).click()
+  await expect(page.getByRole("radio", { name: /Available today/ })).toBeChecked()
   await page.getByRole("button", { name: "Show me matching loads" }).click()
-  await page.waitForURL(/\/driver\/map/, { timeout: 30_000 })
-  await expect(page.getByRole("heading", { name: "Map" })).toBeVisible()
+  await page.waitForURL(/\/driver\/loads/, { timeout: 30_000 })
+  await expect(page.getByRole("heading", { name: "Loads" })).toBeVisible()
 })
 
 test("driver mobile navigation follows the directed flow", async ({ page }) => {

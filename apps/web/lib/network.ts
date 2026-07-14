@@ -192,6 +192,12 @@ export interface NetworkLoadView {
     id: string
     status: AssignmentStatus
   } | null
+  viewerDecision: {
+    id: string
+    status: "declined"
+    reason: string | null
+    decidedAt: string
+  } | null
 }
 
 export interface TruckView {
@@ -316,7 +322,8 @@ export interface NetworkView {
   }>
 }
 
-const ACTIVE_ASSIGNMENT_STATUSES = ["requested", "offered", "accepted", "checked_in", "loading", "hauled"]
+const VIEWER_ASSIGNMENT_STATUSES = ["requested", "offered", "accepted", "checked_in", "loading", "hauled"]
+const ACCESS_UNLOCKED_ASSIGNMENT_STATUSES = ["accepted", "checked_in", "loading", "hauled", "completed"]
 
 function requireRecord<T>(value: T | undefined | null, label: string): T {
   if (!value) {
@@ -535,16 +542,31 @@ export function buildNetworkView(state: LogLoadsDatabaseState, viewer: NetworkVi
     // --- Access: sensitive operational detail unlocks for the publishing
     // organization and for actively assigned haulers only. -----------------
     const ownsLoad = Boolean(activeOrganization && load.companyId === activeOrganization.id)
-    const viewerActiveAssignment = loadAssignments.find((assignment) =>
-      ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status) &&
-      (
+    const viewerAssignments = loadAssignments
+      .map((assignment, attemptIndex) => ({ assignment, attemptIndex }))
+      .filter(({ assignment }) =>
         (currentDriverProfile && assignment.driverProfileId === currentDriverProfile.id) ||
         (!currentDriverProfile && organizationDriverProfileIds.has(assignment.driverProfileId))
       )
+      .sort((left, right) =>
+        right.assignment.updatedAt.localeCompare(left.assignment.updatedAt) ||
+        right.attemptIndex - left.attemptIndex
+      )
+      .map(({ assignment }) => assignment)
+    const viewerActiveAssignment = viewerAssignments.find((assignment) =>
+      VIEWER_ASSIGNMENT_STATUSES.includes(assignment.status)
     ) ?? null
-    const unlocked = ownsLoad || Boolean(viewerActiveAssignment)
+    const viewerAccessAssignment = viewerAssignments.find((assignment) =>
+      ACCESS_UNLOCKED_ASSIGNMENT_STATUSES.includes(assignment.status)
+    ) ?? null
+    // A decline is a current decision only when it is the viewer's latest
+    // attempt. A newer request or booking supersedes the historical outcome.
+    const viewerDeclinedAssignment = viewerAssignments[0]?.status === "declined"
+      ? viewerAssignments[0]
+      : null
+    const unlocked = ownsLoad || Boolean(viewerAccessAssignment)
     const access: LoadAccess = {
-      reason: ownsLoad ? "owner" : viewerActiveAssignment ? "assigned" : "locked",
+      reason: ownsLoad ? "owner" : viewerAccessAssignment ? "assigned" : "locked",
       unlocked
     }
 
@@ -552,7 +574,7 @@ export function buildNetworkView(state: LogLoadsDatabaseState, viewer: NetworkVi
       currentDriverProfile &&
       loadAssignments.some((assignment) =>
         assignment.driverProfileId === currentDriverProfile.id &&
-        ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status)
+        VIEWER_ASSIGNMENT_STATUSES.includes(assignment.status)
       )
     )
     const requestableSlot = viewerHasActiveAssignment || viewer.kind === "public"
@@ -723,6 +745,14 @@ export function buildNetworkView(state: LogLoadsDatabaseState, viewer: NetworkVi
       viewerAssignment: viewerActiveAssignment
         ? { id: viewerActiveAssignment.id, status: viewerActiveAssignment.status }
         : null,
+      viewerDecision: viewerDeclinedAssignment
+        ? {
+            decidedAt: viewerDeclinedAssignment.cancelledAt ?? viewerDeclinedAssignment.updatedAt,
+            id: viewerDeclinedAssignment.id,
+            reason: viewerDeclinedAssignment.cancellationReason ?? null,
+            status: "declined"
+          }
+        : null,
       visibilityMode: capacity?.visibilityMode ?? "open_network",
       warnings: [roadWarning, routeWarning, weatherWarning, facilityWarning].filter((value): value is string => Boolean(value))
     }
@@ -757,6 +787,8 @@ export function buildNetworkView(state: LogLoadsDatabaseState, viewer: NetworkVi
         !recommendation ||
         recommendation.band === "not_recommended" ||
         !["open", "scheduled"].includes(entry.view.status) ||
+        entry.view.allocationMode !== "request_approval" ||
+        entry.view.capacity.remaining <= 0 ||
         entry.view.slots.requestableSlotId === null ||
         entry.view.viewerAssignment
       ) {
@@ -1044,7 +1076,7 @@ export function buildNetworkView(state: LogLoadsDatabaseState, viewer: NetworkVi
     messages,
     metrics: {
       activeAssignments: state.assignments.filter((assignment) =>
-        ACTIVE_ASSIGNMENT_STATUSES.includes(assignment.status) &&
+        VIEWER_ASSIGNMENT_STATUSES.includes(assignment.status) &&
         (organizationDriverProfileIds.has(assignment.driverProfileId) ||
           organizationLoadIds.has(assignment.loadPostingId))
       ).length,

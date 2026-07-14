@@ -111,16 +111,30 @@ export function RequestCapacityPanel({ load }: { load: NetworkLoadView }) {
     )
   }
 
+  if (load.allocationMode !== "request_approval") {
+    const directOffer = load.allocationMode === "direct_offer"
+
+    return (
+      <div className="request-panel">
+        <Badge tone="info">{directOffer ? "Invite only" : "Dispatch assigned"}</Badge>
+        <strong>{directOffer ? "The host sends this haul directly." : "A dispatcher assigns this haul."}</strong>
+        <p>This load is visible for planning, but it is not open for driver requests.</p>
+        <Link className="action-link action-link--secondary" href="/driver/loads">Find requestable loads</Link>
+      </div>
+    )
+  }
+
   const slotId = load.slots.requestableSlotId
 
   if (load.capacity.remaining <= 0 || !slotId) {
     return (
       <div className="request-panel">
-        <Badge tone="warning">Capacity filled</Badge>
+        <Badge tone={load.viewerDecision ? "info" : "warning"}>{load.viewerDecision ? "Not selected" : "Capacity filled"}</Badge>
         <strong>All {load.capacity.total} loads are committed.</strong>
         <p>
-          If a truck drops, the host reopens capacity here first. Tell the host you can cover overflow, or keep your
-          availability current so new work finds you.
+          {load.viewerDecision
+            ? "The host chose another truck for this window. Find another open load now; this one can reopen if a truck drops."
+            : "If a truck drops, the host reopens capacity here first. Keep your availability current so new work finds you."}
         </p>
         <div className="request-links">
           <Link className="action-link" href="/driver/messages">Message the host</Link>
@@ -145,15 +159,16 @@ export function RequestCapacityPanel({ load }: { load: NetworkLoadView }) {
 
   return (
     <div className="request-panel">
-      <Badge tone="success">Capacity open</Badge>
-      <strong>Request this haul</strong>
+      <Badge tone={load.viewerDecision ? "info" : "success"}>{load.viewerDecision ? "Not selected before" : "Capacity open"}</Badge>
+      <strong>{load.viewerDecision ? "This haul is open again" : "Request this haul"}</strong>
+      {load.viewerDecision ? <p>{load.viewerDecision.reason ?? "The host selected another truck for the earlier request."}</p> : null}
       <div className="request-panel__meta">
         <span>{load.capacity.remaining} of {load.capacity.total} loads open</span>
         <span>Next window: {load.slots.nextWindow}</span>
       </div>
       <p>Exact access and the Route Pack unlock after the host accepts.</p>
       <button className="advance-button" disabled={pending} onClick={request} type="button">
-        {pending ? "Sending request…" : "Request haul"}
+        {pending ? "Sending request…" : load.viewerDecision ? "Request again" : "Request haul"}
       </button>
       {error ? <p className="action-error" role="alert">{error}</p> : null}
     </div>

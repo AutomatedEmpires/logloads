@@ -75,6 +75,7 @@ test.describe.serial("operating loop", () => {
       ]).catch(() => false)
 
       if (confirmed) {
+        await expect(page.getByRole("heading", { name: "Route Pack unlocks after assignment." })).toBeVisible()
         requested = true
       }
     }
@@ -147,8 +148,12 @@ test.describe.serial("operating loop", () => {
     const existingThread = page.locator(".thread-item").first()
 
     if (await existingThread.isVisible().catch(() => false)) {
-      await existingThread.click()
+      const href = await existingThread.getAttribute("href")
+
+      expect(href, "an existing conversation should expose a navigable thread URL").toBeTruthy()
+      await page.goto(href!)
       await page.waitForLoadState("networkidle")
+      await expect(page.locator('textarea[aria-label="Message"]')).toBeVisible({ timeout: 15_000 })
     } else {
       await page.getByRole("button", { name: "New message" }).click()
       await page.locator(".messages-new__people button").first().click()
