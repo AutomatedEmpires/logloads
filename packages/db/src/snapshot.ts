@@ -183,6 +183,7 @@ export async function loadRemoteOperatingState(
       const transient = response.status === 408 || response.status === 429 || response.status >= 500
 
       if (transient && attempt < REMOTE_READ_ATTEMPTS) {
+        await response.body?.cancel().catch(() => undefined)
         continue
       }
 

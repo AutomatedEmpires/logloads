@@ -149,9 +149,18 @@ describe("canonical operating state", () => {
 
   it("retries one transient HTTP response and returns canonical state", async () => {
     const state = createInMemoryDatabase()
+    let responseBodyCanceled = false
+    const transientResponse = new Response(
+      new ReadableStream({
+        cancel() {
+          responseBodyCanceled = true
+        }
+      }),
+      { status: 503 }
+    )
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(transientResponse)
       .mockResolvedValueOnce(
         Response.json([{ id: "primary", schema_version: 2, state, version: 10 }])
       )
@@ -163,6 +172,7 @@ describe("canonical operating state", () => {
       version: 10
     })
     expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(responseBodyCanceled).toBe(true)
   })
 
   it("fails closed after two transient read failures", async () => {
