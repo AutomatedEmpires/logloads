@@ -5,6 +5,12 @@
   "engines": {
     "node": "24.16.0"
   },
+  "pnpm": {
+    "overrides": {
+      "esbuild": "0.28.1",
+      "postcss": "8.5.15"
+    }
+  },
   "scripts": {
     "build": "turbo run build",
     "db:assert": "bash ./tools/db-check.sh",

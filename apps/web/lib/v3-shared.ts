@@ -226,12 +226,12 @@ export const pricingPlans: PricingPlan[] = [
   },
   {
     name: "Host",
-    price: "5% per completed load",
+    price: "Free launch pilot",
     audience: "Landings and timber organizations",
-    summary: "Post without a monthly fee. Pay when a completed load is settled through LogLoads.",
-    features: ["No charge to post", "Qualified driver requests", "Live landing schedule", "Invoice and payment record when enabled"],
+    summary: "Post loads and coordinate trucks without a monthly fee during launch.",
+    features: ["No charge to post", "Qualified driver requests", "Live landing schedule", "Clear booking decisions"],
     cta: { href: "/sign-up?path=host", label: "Post a load" },
-    note: "LogLoads Payments is rolling out after legal and payment approval. No transaction fee is charged before activation."
+    note: "We will give advance notice before launch-pilot pricing changes."
   },
   {
     name: "Enterprise",

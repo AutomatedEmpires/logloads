@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { loadPostingSchema, truckSlotSchema } from "./schemas"
+import { driverProfileSchema, loadPostingSchema, truckProfileSchema, truckSlotSchema } from "./schemas"
 
 const baseTimestamp = "2026-06-05T12:00:00.000Z"
 
@@ -66,5 +66,56 @@ describe("schema validation", () => {
     })
 
     expect(result.success).toBe(false)
+  })
+
+  it("keeps driver fuel-price assumptions within persisted bounds", () => {
+    const profile = {
+      id: "11111111-1111-1111-1111-111111111111",
+      userId: "22222222-2222-2222-2222-222222222222",
+      companyId: null,
+      availabilityStatus: "available",
+      licenseNumber: "OR-12345",
+      yearsExperience: 8,
+      homeBase: "Eugene, OR",
+      homeBaseCoordinates: null,
+      operatingRadiusMiles: 150,
+      profilePhoto: null,
+      equipmentPreferences: [],
+      notes: null,
+      createdAt: baseTimestamp,
+      updatedAt: baseTimestamp
+    }
+
+    expect(driverProfileSchema.safeParse({ ...profile, preferredFuelPriceCentsPerGallon: 100 }).success).toBe(true)
+    expect(driverProfileSchema.safeParse({ ...profile, preferredFuelPriceCentsPerGallon: 1000 }).success).toBe(true)
+    expect(driverProfileSchema.safeParse({ ...profile, preferredFuelPriceCentsPerGallon: 99 }).success).toBe(false)
+    expect(driverProfileSchema.safeParse({ ...profile, preferredFuelPriceCentsPerGallon: 1001 }).success).toBe(false)
+  })
+
+  it("keeps truck fuel economy within persisted bounds", () => {
+    const truck = {
+      id: "11111111-1111-1111-1111-111111111111",
+      ownerUserId: "22222222-2222-2222-2222-222222222222",
+      companyId: null,
+      truckType: "log_truck",
+      unitNumber: "17",
+      make: "Kenworth",
+      model: "W900",
+      plateNumber: "OR-TRUCK",
+      vin: null,
+      axleCount: 5,
+      maxPayloadTons: 28,
+      photo: null,
+      equipmentTags: [],
+      roadAccessCapabilities: [],
+      archivedAt: null,
+      createdAt: baseTimestamp,
+      updatedAt: baseTimestamp
+    }
+
+    expect(truckProfileSchema.safeParse({ ...truck, fuelEconomyMpg: 3 }).success).toBe(true)
+    expect(truckProfileSchema.safeParse({ ...truck, fuelEconomyMpg: 15 }).success).toBe(true)
+    expect(truckProfileSchema.safeParse({ ...truck, fuelEconomyMpg: 2.9 }).success).toBe(false)
+    expect(truckProfileSchema.safeParse({ ...truck, fuelEconomyMpg: 15.1 }).success).toBe(false)
   })
 })

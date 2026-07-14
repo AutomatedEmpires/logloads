@@ -43,6 +43,10 @@
 - Dispatcher and loader contact data
 - Assignment cancellation metadata
 - One-off, recurring, and campaign scheduling
+- Driver home coordinates, operating radius, and preferred fuel price assumptions
+- Truck fuel economy plus private Cloudinary references for driver, truck, and trailer photos
+- Immutable assignment commercial-terms snapshots captured at host approval
+- Stripe event identifiers on billing audit metadata for replay-safe subscription updates
 
 ## Current storage shape
 - SQL migrations in `supabase/migrations/`

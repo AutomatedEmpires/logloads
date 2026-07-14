@@ -13,13 +13,15 @@ import { VerificationSubmit, type VerificationTypeOption } from "./VerificationS
 import {
   AddEquipmentForm,
   AvailabilityQuickSet,
+  DriverEconomicsForm,
   EquipmentStatusToggle,
   LogProofControl,
+  MediaUpload,
   RequestCapacityPanel,
   SignOutButton,
   TripProgressButton
 } from "./DriverActions"
-import { DecisionPanel, LoadCard, LoadDiscovery, OperatingMap, OperationSections, RoutePackPreview } from "./LoadMap"
+import { DecisionPanel, EconomicsPanel, LoadCard, LoadDiscovery, OperatingMap, OperationSections, RoutePackPreview, WeatherWidget } from "./LoadMap"
 import { AppShell, EmptyState, Metric, SectionHeader, type ShellAccount } from "./Shells"
 
 interface DriverPageProps {
@@ -42,9 +44,8 @@ function activeTripFor(network: NetworkView): TripView | null {
 
 function requestableLoads(network: NetworkView): NetworkLoadView[] {
   return network.loads.filter((load) =>
-    ["open", "scheduled"].includes(load.status) &&
-    load.allocationMode === "request_approval" &&
-    load.capacity.remaining > 0 &&
+    load.discovery.available &&
+    load.discovery.reason === "available" &&
     !load.viewerAssignment &&
     Boolean(load.slots.requestableSlotId)
   )
@@ -350,7 +351,7 @@ function RequestedHaulCard({ load }: { load: NetworkLoadView }) {
       <header>
         <div>
           <span className="card-kicker">{load.landing.city} to {load.destination.name}</span>
-          <strong>{load.payLabel}</strong>
+          <strong>{load.economics.grossLabel ? `${load.economics.grossLabel} est. gross` : load.payLabel}</strong>
         </div>
         <Badge tone={isOffer ? "info" : "warning"}>{isOffer ? "Offered to you" : "Host deciding"}</Badge>
       </header>
@@ -372,7 +373,7 @@ function DecisionHaulCard({ load }: { load: NetworkLoadView }) {
       <header>
         <div>
           <span className="card-kicker">{load.landing.city} to {load.destination.name}</span>
-          <strong>{load.payLabel}</strong>
+          <strong>{load.economics.grossLabel ? `${load.economics.grossLabel} est. gross` : load.payLabel}</strong>
         </div>
         <Badge tone="info">Not selected</Badge>
       </header>
@@ -593,6 +594,24 @@ export function DriverProfile({
         ) : null}
       </section>
       <section className="app-section">
+        <SectionHeader eyebrow="Fuel" title="Make earnings estimates yours" />
+        <p className="muted">Add your truck MPG and current diesel price. LogLoads shows gross after estimated fuel—not profit—and labels every assumption.</p>
+        <DriverEconomicsForm
+          currentFuelEconomyMpg={network.currentEquipment?.fuelEconomyMpg ?? null}
+          currentFuelPriceCentsPerGallon={network.currentDriver?.preferredFuelPriceCentsPerGallon ?? null}
+        />
+      </section>
+      <section className="app-section">
+        <SectionHeader eyebrow="Photos" title="Show your driver and primary equipment" />
+        <div className="media-upload-grid">
+          <MediaUpload hasCurrent={network.currentDriver?.hasProfilePhoto ?? false} kind="profile" label="Profile photo" />
+          <MediaUpload hasCurrent={network.currentEquipment?.hasTruckPhoto ?? false} kind="truck" label="Truck photo" />
+          {network.currentDriver?.trailerId ? (
+            <MediaUpload hasCurrent={network.currentEquipment?.hasTrailerPhoto ?? false} kind="trailer" label="Trailer photo" />
+          ) : null}
+        </div>
+      </section>
+      <section className="app-section">
         <SectionHeader eyebrow="Trust" title="Get verified" />
         <VerificationSubmit options={DRIVER_VERIFICATION_OPTIONS} records={verifications} subjectType="person" />
       </section>
@@ -649,11 +668,14 @@ export function DriverLoadDetail({ account, loadId, network }: DriverPageProps &
             <p className="eyebrow">{load.landing.city} to {load.destination.name} · {load.sourceName}</p>
             <h1>{load.title}</h1>
             <div className="load-decision-lead">
-              <strong>{load.payLabel}</strong>
+              <strong>{load.economics.grossLabel ? `${load.economics.grossLabel} est. gross` : load.payLabel}</strong>
+              {load.economics.grossLabel ? <span>Base {load.payLabel} · {load.fuelSurchargeLabel}</span> : null}
               <span>{load.scheduleLabel}</span>
               <span>{load.route.distanceMiles.toFixed(0)} miles</span>
               <span>{load.capacity.remaining} of {load.capacity.total} hauls open</span>
             </div>
+            <EconomicsPanel load={load} />
+            <WeatherWidget loadId={load.id} />
             <DecisionPanel load={load} />
             <RoutePackPreview load={load} locked={!load.access.unlocked} />
             <OperationSections load={load} />

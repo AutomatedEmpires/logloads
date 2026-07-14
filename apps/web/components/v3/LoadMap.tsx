@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic"
 import Link from "next/link"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
 import type { NetworkLoadView } from "@/lib/network"
@@ -27,7 +27,15 @@ export function LoadCard({ href, load }: { href?: string; load: NetworkLoadView 
         <span className="card-kicker">{loadProductLabel(load)}</span>
         <Badge tone={status.tone}>{status.label}</Badge>
       </span>
-      <strong className="load-card-v3__pay">{load.payLabel}</strong>
+      <strong className="load-card-v3__pay">
+        {load.economics.grossLabel ? `${load.economics.grossLabel} est. gross` : load.payLabel}
+      </strong>
+      {load.economics.grossLabel ? (
+        <span className="load-card-v3__rate-terms">Base {load.payLabel} · {load.fuelSurchargeLabel}</span>
+      ) : null}
+      {load.economics.afterFuelLabel ? (
+        <span className="load-card-v3__economics">Est. after fuel {load.economics.afterFuelLabel}</span>
+      ) : null}
       <span className="load-card-v3__title">{load.title}</span>
       <span className="lane-line">
         <Icon aria-hidden name="load.origin" size={16} /> {load.landing.city} to {load.destination.name}
@@ -165,7 +173,7 @@ export function LoadDiscovery({ loads, publicMode = false }: { loads: NetworkLoa
               >
                 <span className="card-kicker">{loadProductLabel(load)}</span>
                 <strong>{shortLane(load)}</strong>
-                <span className="load-meta">{load.scheduleLabel} · {load.payLabel}</span>
+                <span className="load-meta">{load.scheduleLabel} · {load.economics.grossLabel ? `${load.economics.grossLabel} est. gross` : load.payLabel}</span>
                 <Badge tone={fitTone(load)}>{fitLabel(load)}</Badge>
               </button>
             ))}
@@ -226,6 +234,95 @@ export function DecisionPanel({ load, publicMode = false }: { load: NetworkLoadV
           <ul>{(cautions.length > 0 ? cautions : ["Exact access unlocks after assignment"]).map((item) => <li key={item}>{item}</li>)}</ul>
         </div>
       </div>
+    </section>
+  )
+}
+
+export function EconomicsPanel({ load }: { load: NetworkLoadView }) {
+  const estimate = load.economics
+  const deadhead = estimate.deadheadMiles === null
+    ? "Not included — add a home location to calculate it"
+    : `${estimate.deadheadMiles.toFixed(0)} miles from home base`
+
+  return (
+    <section className="economics-panel" aria-label="Estimated haul economics">
+      <div>
+        <p className="eyebrow">Your estimate</p>
+        <h2>{estimate.afterFuelLabel ? `${estimate.afterFuelLabel} after estimated fuel` : "Fuel estimate"}</h2>
+        <p>This is gross after diesel, not profit. Maintenance, insurance, labor, taxes, and return miles are not deducted.</p>
+      </div>
+      <dl>
+        <div><dt>Estimated gross</dt><dd>{estimate.grossLabel ?? load.payLabel}</dd></div>
+        <div><dt>Trip miles</dt><dd>{estimate.tripMiles.toFixed(0)}</dd></div>
+        <div><dt>Deadhead</dt><dd>{deadhead}</dd></div>
+        <div><dt>Fuel</dt><dd>{estimate.gallons.toFixed(1)} gal · {estimate.fuelCostLabel}</dd></div>
+      </dl>
+      <p className="economics-panel__assumptions">
+        Using {estimate.fuelEconomyMpg.toFixed(1)} MPG ({estimate.fuelEconomySource === "profile" ? "your truck" : "LogLoads estimate"}) and ${(estimate.fuelPriceCentsPerGallon / 100).toFixed(2)}/gal ({estimate.fuelPriceSource === "profile" ? "your price" : "editable estimate"}).
+      </p>
+    </section>
+  )
+}
+
+interface WeatherSnapshot {
+  apparentTemperatureF: number
+  condition: string
+  fetchedAt: string
+  observedAt: string | null
+  precipitationInches: number
+  source: string
+  sourceUrl: string
+  temperatureF: number
+  windMph: number
+}
+
+export function WeatherWidget({ loadId }: { loadId: string }) {
+  const [weather, setWeather] = useState<WeatherSnapshot | null>(null)
+  const [unavailable, setUnavailable] = useState(false)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setWeather(null)
+    setUnavailable(false)
+
+    fetch(`/api/weather?loadId=${encodeURIComponent(loadId)}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("weather unavailable")
+        return response.json() as Promise<WeatherSnapshot>
+      })
+      .then((snapshot) => setWeather(snapshot))
+      .catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) setUnavailable(true)
+      })
+
+    return () => controller.abort()
+  }, [loadId])
+
+  if (unavailable) {
+    return (
+      <section className="weather-widget weather-widget--unavailable">
+        <div><p className="eyebrow">Landing weather</p><h2>Weather unavailable</h2></div>
+        <p>Check a local forecast before departure. Never rely on this widget for road or safety decisions.</p>
+      </section>
+    )
+  }
+
+  if (!weather) {
+    return <section aria-busy="true" className="weather-widget"><p>Loading landing weather…</p></section>
+  }
+
+  return (
+    <section className="weather-widget" aria-label="Live landing weather">
+      <div>
+        <p className="eyebrow">Landing weather</p>
+        <h2>{weather.condition} · {Math.round(weather.temperatureF)}°F</h2>
+        <p>Feels {Math.round(weather.apparentTemperatureF)}° · Wind {Math.round(weather.windMph)} mph · Precip. {weather.precipitationInches.toFixed(2)} in</p>
+      </div>
+      <p className="weather-widget__source">
+        <a href={weather.sourceUrl} rel="noreferrer" target="_blank">{weather.source}</a>
+        {weather.observedAt ? ` · observed ${formatDateTime(weather.observedAt)}` : ` · updated ${formatDateTime(weather.fetchedAt)}`}
+        {" · Forecast only—confirm local road conditions."}
+      </p>
     </section>
   )
 }
@@ -349,7 +446,10 @@ export function OperationSections({ load, publicMode = false }: { load: NetworkL
         <dl>
           <div><dt>Work</dt><dd>{loadProductLabel(load)}</dd></div>
           <div><dt>Window</dt><dd>{load.scheduleLabel}</dd></div>
-          <div><dt>Pay</dt><dd>{load.payLabel}</dd></div>
+          <div>
+            <dt>Pay</dt>
+            <dd>{load.economics.grossLabel ? `${load.economics.grossLabel} est. gross · base ${load.payLabel} · ${load.fuelSurchargeLabel}` : load.payLabel}</dd>
+          </div>
           <div><dt>Capacity</dt><dd>{load.capacity.remaining} remaining</dd></div>
         </dl>
       </article>

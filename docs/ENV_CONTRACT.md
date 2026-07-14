@@ -29,8 +29,9 @@ fails closed rather than silently replacing missing production data with seed da
 
 | Group | Variables |
 |---|---|
-| Billing | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_FLEET`, `STRIPE_PRICE_HOST` |
-| Email | `RESEND_API_KEY`, `LOGLOADS_EMAIL_FROM`, `LOGLOADS_EMAIL_REPLY_TO`, `LOGLOADS_CONTACT_EMAIL` |
+| Billing | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_DISPATCH` |
+| Private media | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` |
+| Email | `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_REPLY_TO`, `SUPPORT_EMAIL`, `LOGLOADS_CONTACT_EMAIL` |
 | Analytics | `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` |
 | Errors | `SENTRY_DSN` |
 | Maps | `NEXT_PUBLIC_MAPBOX_TOKEN` (keyless MapLibre fallback when absent) |
@@ -44,3 +45,6 @@ fails closed rather than silently replacing missing production data with seed da
 `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `DATABASE_URL`, `SUPABASE_ANON_KEY`, and
 `SUPABASE_PROJECT_REF` remain tooling/integration placeholders; runtime canonical
 state does not read them.
+
+`LOGLOADS_EMAIL_FROM` and `LOGLOADS_EMAIL_REPLY_TO` remain supported compatibility
+fallbacks. Production uses the scoped `RESEND_FROM` and `RESEND_REPLY_TO` names.

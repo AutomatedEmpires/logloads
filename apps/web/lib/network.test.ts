@@ -51,7 +51,7 @@ describe("driver network access", () => {
   it("keeps exact load access locked while a request is pending and unlocks it after approval", () => {
     const { request, services, sourceContext, viewer } = networkFixture()
     const assignment = request()
-    const pending = buildNetworkView(services.state, viewer).loads.find(
+    const pending = buildNetworkView(services.state, viewer, new Date("2026-06-05T12:00:00.000Z")).loads.find(
       (load) => load.id === assignment.loadPostingId
     )
 
@@ -67,7 +67,7 @@ describe("driver network access", () => {
       assignmentId: assignment.id
     })
 
-    const accepted = buildNetworkView(services.state, viewer).loads.find(
+    const accepted = buildNetworkView(services.state, viewer, new Date("2026-06-05T12:00:00.000Z")).loads.find(
       (load) => load.id === assignment.loadPostingId
     )
 
@@ -88,7 +88,7 @@ describe("driver network access", () => {
       reason: "A different truck was selected."
     })
 
-    const declined = buildNetworkView(services.state, viewer).loads.find(
+    const declined = buildNetworkView(services.state, viewer, new Date("2026-06-05T12:00:00.000Z")).loads.find(
       (load) => load.id === assignment.loadPostingId
     )
 
@@ -111,11 +111,23 @@ describe("driver network access", () => {
       reason: "A different truck was selected."
     })
     const requestedAgain = request()
-    const current = buildNetworkView(services.state, viewer).loads.find(
+    const current = buildNetworkView(services.state, viewer, new Date("2026-06-05T12:00:00.000Z")).loads.find(
       (load) => load.id === requestedAgain.loadPostingId
     )
 
     expect(current?.viewerAssignment).toMatchObject({ id: requestedAgain.id, status: "requested" })
     expect(current?.viewerDecision).toBeNull()
+  })
+
+  it("never labels a terminal load as available", () => {
+    const { load, services, viewer } = networkFixture()
+    load.status = "cancelled"
+
+    const current = buildNetworkView(services.state, viewer, new Date("2026-06-05T12:00:00.000Z")).loads.find(
+      (candidate) => candidate.id === load.id
+    )
+
+    expect(current?.discovery.available).toBe(false)
+    expect(current?.discovery.reason).toBe("not_requestable")
   })
 })

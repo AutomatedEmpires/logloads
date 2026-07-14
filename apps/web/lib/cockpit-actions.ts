@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 
 import { captureServerEvent } from "./analytics"
+import { mediaTarget, parseMediaKind, verifiedMediaReference, type MediaKind } from "./media"
 import { mutateState, serializeError, services } from "./services"
 import { getSessionActor, type SessionActor } from "./session"
 
@@ -218,6 +219,63 @@ export async function updateDriverAvailabilityAction(input: {
       })
     )
 
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function updateDriverEconomicsAction(input: {
+  fuelEconomyMpg: number
+  fuelPriceCentsPerGallon: number
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+    const organizationId = actorOrganizationId(actor)
+
+    if (!actor.driverProfileId) {
+      throw new Error("Add a driver profile before saving fuel assumptions")
+    }
+
+    await commit(["/driver"], (draft) => draft.updateDriverEconomics({
+      actorUserId: actor.profile.id,
+      driverProfileId: actor.driverProfileId,
+      fuelEconomyMpg: input.fuelEconomyMpg,
+      fuelPriceCentsPerGallon: input.fuelPriceCentsPerGallon,
+      organizationId
+    }))
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function saveDriverMediaAction(input: {
+  kind: MediaKind
+  publicId: string
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+    const organizationId = actorOrganizationId(actor)
+    const kind = parseMediaKind(input.kind)
+    const target = mediaTarget(services.state, actor, organizationId, kind)
+
+    if (!input.publicId.startsWith(`${target.publicIdPrefix}/uploads/`)) {
+      throw new Error("The uploaded photo does not belong to this profile")
+    }
+
+    const photo = await verifiedMediaReference(input.publicId)
+
+    await commit(["/driver"], (draft) => draft.saveDriverMediaReference({
+      actorUserId: actor.profile.id,
+      driverProfileId: actor.driverProfileId,
+      kind,
+      organizationId,
+      photo
+    }))
+
+    captureServerEvent("driver_media_saved", actor.profile.id, { kind })
     return OK
   } catch (error) {
     return failure(error)

@@ -19,6 +19,7 @@
     "@logloads/services": "workspace:*",
     "@logloads/ui": "workspace:*",
     "@sentry/nextjs": "^10.63.0",
+    "cloudinary": "2.10.0",
     "mapbox-gl": "^3.25.0",
     "maplibre-gl": "^4.7.1",
     "next": "^15.5.20",

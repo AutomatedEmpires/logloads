@@ -184,6 +184,28 @@ describe("logloads services", () => {
     expect(services.state.availabilityWindows.some((window) => window.driverProfileId === account.driverProfileId)).toBe(false)
   })
 
+  it("starts a new host in the free launch pilot without a billing deadline", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const account = services.createAccount({
+      accountType: "landing_operator",
+      availabilityPreset: "not_ready",
+      email: "launch-host@example.com",
+      equipment: null,
+      fullName: "Launch Host",
+      organizationName: "Launch Landing",
+      path: "host",
+      phone: "555-9003",
+      region: "Douglas County, OR"
+    })
+    const organizationId = account.memberships[0]?.organization.id
+    const entitlement = services.state.entitlements.find((candidate) =>
+      candidate.organizationId === organizationId && candidate.product === "landing_operations"
+    )
+
+    expect(entitlement?.status).toBe("active")
+    expect(entitlement?.currentPeriodEndsAt).toBeNull()
+  })
+
   it("rejects an availability update for an unknown id", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
 
@@ -256,6 +278,23 @@ describe("logloads services", () => {
     const visible = services.listVisibleLoadsForOrganization("33333333-3333-4333-8333-333333333331")
 
     expect(visible.map((load) => load.id)).toContain("cccccccc-cccc-4ccc-8ccc-ccccccccccc3")
+  })
+
+  it("keeps expired operating records out of live load discovery", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const organizationId = "33333333-3333-4333-8333-333333333331"
+    const beforeWindow = services.listRequestableLoadsForOrganization(
+      organizationId,
+      "2026-06-05T12:00:00.000Z"
+    )
+    const afterWindow = services.listRequestableLoadsForOrganization(
+      organizationId,
+      "2026-07-13T12:00:00.000Z"
+    )
+
+    expect(beforeWindow.length).toBeGreaterThan(0)
+    expect(afterWindow).toEqual([])
+    expect(services.listVisibleLoadsForOrganization(organizationId).length).toBeGreaterThan(0)
   })
 
   it("rejects duplicate active capacity requests for the same driver and load", () => {
@@ -370,11 +409,46 @@ describe("logloads services", () => {
     })
 
     expect(result.assignment.status).toBe("accepted")
+    expect(result.assignment.termsSnapshot).toMatchObject({
+      hostFee: {
+        collectionState: "disabled_pending_legal_and_payment_approval",
+        feeCents: null,
+        proposedRateBps: 500
+      },
+      paymentMode: "off_platform"
+    })
     expect(result.trip.assignmentId).toBe(assignment.id)
     expect(result.trip.routePackId).toBe("23232323-2323-4323-8323-232323232313")
     expect(services.state.notifications.find((notification) =>
       notification.relatedEntityId === assignment.id && notification.userId === "22222222-2222-4222-8222-222222222221"
     )?.type).toBe("assignment_confirmed")
+  })
+
+  it("does not consume an assignment or slot when approval validation fails", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const assignment = services.requestCapacityWithPolicy({
+      actorUserId: "22222222-2222-4222-8222-222222222221",
+      organizationId: "33333333-3333-4333-8333-333333333331",
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+      truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd4",
+      driverProfileId: "44444444-4444-4444-8444-444444444441",
+      truckProfileId: "77777777-7777-4777-8777-777777777771",
+      trailerProfileId: "88888888-8888-4888-8888-888888888881"
+    })
+    const load = services.state.loadPostings.find((candidate) => candidate.id === assignment.loadPostingId)!
+    const slotBefore = structuredClone(services.state.truckSlots.find((candidate) => candidate.id === assignment.truckSlotId))
+
+    services.state.rates = services.state.rates.filter((candidate) => candidate.id !== load.rateId)
+
+    expect(() => services.approveCapacityRequest({
+      actorUserId: "22222222-2222-4222-8222-222222222224",
+      organizationId: "33333333-3333-4333-8333-333333333332",
+      assignmentId: assignment.id
+    })).toThrow(/Rate/)
+
+    expect(services.state.assignments.find((candidate) => candidate.id === assignment.id)?.status).toBe("requested")
+    expect(services.state.truckSlots.find((candidate) => candidate.id === assignment.truckSlotId)).toEqual(slotBefore)
+    expect(services.state.tripsV2.some((candidate) => candidate.assignmentId === assignment.id)).toBe(false)
   })
 
   it("declines a capacity request, restores capacity, and records a durable driver decision", () => {

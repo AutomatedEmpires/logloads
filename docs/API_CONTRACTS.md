@@ -18,6 +18,10 @@
 - `GET /api/route-packs/:assignmentId` — authenticated; assignment-gated
 - `POST /api/trips/:tripId/events` — authenticated
 - `POST /api/trips/:tripId/documents` — authenticated
+- `POST /api/media/signature` — authenticated; returns a signed, immutable, organization-scoped Cloudinary upload target
+- `GET /api/media/asset` — authenticated; proxies the viewer-authorized private image with an upstream timeout
+- `GET /api/weather?loadId=...` — rate-limited; returns cached destination weather for a visible load
+- `POST /api/billing/webhook` — Stripe-signed subscription lifecycle events only; freight money is out of scope
 
 ## Contract rules
 - Route handlers call `packages/services` only.
@@ -25,6 +29,9 @@
 - Validation happens in shared schemas and service-layer functions.
 - Errors: `401` unauthenticated, `403` membership/permission, `422` invalid fields, `400` business-rule rejection, `429` shared rate limit exceeded, and `503` production safety check unavailable. Bodies are JSON `{ error }`; rate-limit `429`/`503` responses include integer-seconds `Retry-After`.
 - Successful mutations resolve only after `mutateState` commits a conditional Supabase update. A stale version reloads and replays the deterministic service operation; it never overwrites the newer row.
+- Driver economics and media writes are service-owned, verify active organization membership and driver ownership, and resolve the active equipment combination server-side.
+- Media uploads are immutable (`overwrite=false`); only verified JPG/PNG/WebP assets of 10 MB or less under the current target prefix can be attached.
+- Assignment approval performs all fallible commercial-terms and trip validation before consuming the assignment or confirming the slot.
 
 ## Current limitations
 - Backed by the transitional versioned `operating_state` document in Supabase. Normalizing service operations onto relational tables remains a later scale milestone.

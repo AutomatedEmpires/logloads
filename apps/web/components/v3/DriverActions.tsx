@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import Image from "next/image"
 import { useState, useTransition, type FormEvent } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
@@ -9,7 +10,9 @@ import {
   attachTripDocumentAction,
   progressTripAction,
   requestCapacityAction,
+  saveDriverMediaAction,
   updateDriverAvailabilityAction,
+  updateDriverEconomicsAction,
   updateEquipmentStatusAction
 } from "@/lib/cockpit-actions"
 import type { NetworkLoadView, NetworkView } from "@/lib/network"
@@ -254,6 +257,163 @@ export function AvailabilityQuickSet({
       {saved ? <p className="action-note">{saved}</p> : null}
       {error ? <p className="action-error" role="alert">{error}</p> : null}
     </div>
+  )
+}
+
+export function DriverEconomicsForm({
+  currentFuelEconomyMpg,
+  currentFuelPriceCentsPerGallon
+}: {
+  currentFuelEconomyMpg: number | null
+  currentFuelPriceCentsPerGallon: number | null
+}) {
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  const [pending, startTransition] = useTransition()
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const data = new FormData(event.currentTarget)
+    const fuelEconomyMpg = Number(data.get("fuelEconomyMpg"))
+    const fuelPrice = Number(data.get("fuelPrice"))
+
+    setError(null)
+    setSaved(false)
+    startTransition(async () => {
+      const result = await updateDriverEconomicsAction({
+        fuelEconomyMpg,
+        fuelPriceCentsPerGallon: Math.round(fuelPrice * 100)
+      })
+
+      if (!result.ok) {
+        setError(result.error ?? "Fuel assumptions could not be saved.")
+      } else {
+        setSaved(true)
+      }
+    })
+  }
+
+  return (
+    <form className="equipment-form" onSubmit={submit}>
+      <label>
+        Truck fuel economy (MPG)
+        <input defaultValue={currentFuelEconomyMpg ?? 6.5} inputMode="decimal" max="15" min="3" name="fuelEconomyMpg" required step="0.1" type="number" />
+      </label>
+      <label>
+        Diesel price per gallon
+        <input defaultValue={((currentFuelPriceCentsPerGallon ?? 425) / 100).toFixed(2)} inputMode="decimal" max="10" min="1" name="fuelPrice" required step="0.01" type="number" />
+      </label>
+      <div className="equipment-form__actions">
+        <button className="advance-button" disabled={pending} type="submit">{pending ? "Saving…" : "Save fuel assumptions"}</button>
+        {saved ? <p className="action-note">Fuel estimates now use your truck and diesel price.</p> : null}
+        {error ? <p className="action-error" role="alert">{error}</p> : null}
+      </div>
+    </form>
+  )
+}
+
+interface SignedUploadResponse {
+  apiKey: string
+  parameters: Record<string, string | number>
+  signature: string
+  uploadUrl: string
+}
+
+export function MediaUpload({
+  hasCurrent,
+  kind,
+  label
+}: {
+  hasCurrent: boolean
+  kind: "profile" | "truck" | "trailer"
+  label: string
+}) {
+  const [error, setError] = useState<string | null>(null)
+  const [photoAvailable, setPhotoAvailable] = useState(hasCurrent)
+  const [cacheBust, setCacheBust] = useState(0)
+  const [pending, startTransition] = useTransition()
+
+  const upload = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = event.currentTarget
+    const file = new FormData(form).get("photo")
+
+    if (!(file instanceof File) || file.size === 0) {
+      setError("Choose a photo first.")
+      return
+    }
+
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setError("Use a JPG, PNG, or WebP photo.")
+      return
+    }
+
+    if (file.size > 10_000_000) {
+      setError("Photos must be 10 MB or smaller.")
+      return
+    }
+
+    setError(null)
+    startTransition(async () => {
+      try {
+        const signatureResponse = await fetch("/api/media/signature", {
+          body: JSON.stringify({ kind }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST"
+        })
+        const signature = await signatureResponse.json() as SignedUploadResponse & { error?: string }
+
+        if (!signatureResponse.ok) {
+          throw new Error(signature.error ?? "Photo uploads are not available yet.")
+        }
+
+        const uploadBody = new FormData()
+        uploadBody.append("file", file)
+        uploadBody.append("api_key", signature.apiKey)
+        uploadBody.append("signature", signature.signature)
+        for (const [key, value] of Object.entries(signature.parameters)) {
+          uploadBody.append(key, String(value))
+        }
+
+        const cloudResponse = await fetch(signature.uploadUrl, { body: uploadBody, method: "POST" })
+        const cloudAsset = await cloudResponse.json() as { error?: { message?: string }; public_id?: string }
+
+        if (!cloudResponse.ok || !cloudAsset.public_id) {
+          throw new Error(cloudAsset.error?.message ?? "The photo could not be uploaded.")
+        }
+
+        const saved = await saveDriverMediaAction({ kind, publicId: cloudAsset.public_id })
+
+        if (!saved.ok) {
+          throw new Error(saved.error ?? "The uploaded photo could not be attached to your profile.")
+        }
+
+        setPhotoAvailable(true)
+        setCacheBust(Date.now())
+        form.reset()
+      } catch (uploadError) {
+        setError(uploadError instanceof Error ? uploadError.message : "The photo could not be uploaded.")
+      }
+    })
+  }
+
+  return (
+    <article className="media-upload-card">
+      {photoAvailable ? (
+        <Image alt={`${label} photo`} className="media-upload-card__image" height={360} src={`/api/media/asset?kind=${kind}&v=${cacheBust}`} unoptimized width={480} />
+      ) : (
+        <div className="media-upload-card__placeholder"><Icon aria-hidden name="ops.document" size={24} /> No photo yet</div>
+      )}
+      <form onSubmit={upload}>
+        <label>
+          {label}
+          <input accept="image/jpeg,image/png,image/webp" name="photo" required type="file" />
+        </label>
+        <button className="action-link action-link--secondary" disabled={pending} type="submit">{pending ? "Uploading…" : photoAvailable ? "Replace photo" : "Upload photo"}</button>
+      </form>
+      <p>JPG, PNG, or WebP · 10 MB max · private to your authenticated account.</p>
+      {error ? <p className="action-error" role="alert">{error}</p> : null}
+    </article>
   )
 }
 

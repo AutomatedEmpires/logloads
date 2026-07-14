@@ -26,6 +26,17 @@ export const coordinatesSchema = z.object({
   lng: z.number().min(-180).max(180)
 })
 
+export const mediaReferenceSchema = z.object({
+  provider: z.literal("cloudinary"),
+  publicId: z.string().min(1),
+  version: z.number().int().positive(),
+  format: z.enum(["jpg", "jpeg", "png", "webp"]),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  bytes: z.number().int().positive().max(10_000_000),
+  uploadedAt: timestampSchema
+})
+
 export const contactSchema = z.object({
   name: z.string().min(1),
   phone: z.string().min(7),
@@ -86,6 +97,10 @@ export const driverProfileSchema = z.object({
   licenseNumber: z.string().min(1),
   yearsExperience: z.number().int().min(0),
   homeBase: z.string().min(1),
+  homeBaseCoordinates: coordinatesSchema.optional().nullable(),
+  preferredFuelPriceCentsPerGallon: z.number().int().min(100).max(1000).optional().nullable(),
+  operatingRadiusMiles: z.number().positive().optional().nullable(),
+  profilePhoto: mediaReferenceSchema.optional().nullable(),
   equipmentPreferences: z.array(z.string()).default([]),
   notes: z.string().optional().nullable(),
   createdAt: timestampSchema,
@@ -125,6 +140,8 @@ export const truckProfileSchema = z.object({
   vin: z.string().min(6).optional().nullable(),
   axleCount: z.number().int().positive(),
   maxPayloadTons: z.number().positive(),
+  fuelEconomyMpg: z.number().min(3).max(15).optional().nullable(),
+  photo: mediaReferenceSchema.optional().nullable(),
   equipmentTags: z.array(z.string()).default([]),
   roadAccessCapabilities: z.array(z.string()).default([]),
   archivedAt: optionalTimestampSchema,
@@ -139,6 +156,7 @@ export const trailerProfileSchema = z.object({
   trailerType: trailerTypeSchema,
   unitNumber: z.string().min(1),
   capacityTons: z.number().positive(),
+  photo: mediaReferenceSchema.optional().nullable(),
   equipmentTags: z.array(z.string()).default([]),
   createdAt: timestampSchema,
   updatedAt: timestampSchema
@@ -288,6 +306,7 @@ export const assignmentSchema = z.object({
   cancelledAt: optionalTimestampSchema,
   cancellationReason: z.string().optional().nullable(),
   dispatcherNotes: z.string().optional().nullable(),
+  termsSnapshot: z.record(z.unknown()).default({}),
   createdAt: timestampSchema,
   updatedAt: timestampSchema
 })
@@ -338,6 +357,7 @@ export const auditEventSchema = z.object({
 
 export type User = z.infer<typeof userSchema>
 export type DriverProfile = z.infer<typeof driverProfileSchema>
+export type MediaReference = z.infer<typeof mediaReferenceSchema>
 export type TruckProfile = z.infer<typeof truckProfileSchema>
 export type TrailerProfile = z.infer<typeof trailerProfileSchema>
 export type LoggingCompany = z.infer<typeof loggingCompanySchema>

@@ -249,6 +249,33 @@
 }
 .equipment-form__actions { display: grid; gap: 8px; justify-items: start; }
 
+.economics-panel {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--pine) 9%, white), white);
+  border: 1px solid color-mix(in srgb, var(--pine) 20%, transparent);
+  border-radius: var(--radius);
+  display: grid;
+  gap: 18px;
+  padding: clamp(18px, 4vw, 28px);
+}
+
+.economics-panel h2 { color: var(--pine); margin: 3px 0 8px; }
+.economics-panel p { margin: 0; }
+.economics-panel dl { display: grid; gap: 10px; margin: 0; }
+.economics-panel dl div { align-items: flex-start; border-top: 1px solid var(--line); display: flex; gap: 16px; justify-content: space-between; padding-top: 10px; }
+.economics-panel dt { color: var(--ink-soft); }
+.economics-panel dd { font-weight: 800; margin: 0; max-width: 64%; text-align: right; }
+.economics-panel__assumptions { color: var(--ink-soft); font-size: .85rem; }
+
+.media-upload-grid { display: grid; gap: 14px; }
+.media-upload-card { border: 1px solid var(--line); border-radius: var(--radius); display: grid; gap: 12px; overflow: hidden; padding: 14px; }
+.media-upload-card__image,
+.media-upload-card__placeholder { aspect-ratio: 4 / 3; border-radius: var(--radius); object-fit: cover; width: 100%; }
+.media-upload-card__placeholder { align-items: center; background: var(--bone); color: var(--ink-soft); display: flex; flex-direction: column; gap: 8px; justify-content: center; }
+.media-upload-card form { display: grid; gap: 10px; }
+.media-upload-card label { display: grid; font-size: .9rem; font-weight: 800; gap: 7px; }
+.media-upload-card input[type="file"] { border: 1px solid var(--line); border-radius: var(--radius); font: inherit; padding: 10px; width: 100%; }
+.media-upload-card > p { color: var(--ink-soft); font-size: .78rem; margin: 0; }
+
 .status-toggle-block { display: grid; gap: 6px; }
 .status-toggle {
   display: inline-flex;
@@ -312,6 +339,7 @@
 @media (min-width: 761px) {
   .equipment-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .equipment-form__actions { grid-column: 1 / -1; }
+  .media-upload-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .trip-card__actions {
     grid-template-columns: auto 1fr;
     align-items: start;
