@@ -29,7 +29,7 @@ const assignmentTransitions: Record<AssignmentStatus, AssignmentStatus[]> = {
   hauled: ["completed", "cancelled"],
   loading: ["hauled", "cancelled"],
   offered: ["accepted", "declined", "cancelled"],
-  requested: ["offered", "cancelled"]
+  requested: ["offered", "declined", "cancelled"]
 }
 
 function transitionOrThrow<T extends string>(current: T, next: T, allowed: Record<T, T[]>): T {

@@ -96,6 +96,7 @@ export const notificationTypeSchema = z.enum([
   "slot_updated",
   "assignment_requested",
   "assignment_confirmed",
+  "assignment_declined",
   "assignment_cancelled",
   "availability_reminder",
   "message_received",

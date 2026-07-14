@@ -118,6 +118,7 @@ export async function completeOnboardingAction(
   const truckType = String(formData.get("truckType") ?? "")
   const trailerType = String(formData.get("trailerType") ?? "")
   const maxPayloadTons = Number(formData.get("maxPayloadTons") ?? 0)
+  const availabilityPreset = String(formData.get("availabilityPreset") ?? "three_days")
 
   const existingActor = await getSessionActor()
 
@@ -153,6 +154,7 @@ export async function completeOnboardingAction(
     const account = await mutateState((draft) =>
       draft.createAccount({
         accountType,
+        availabilityPreset,
         clerkUserId,
         email,
         equipment: truckType
@@ -185,5 +187,5 @@ export async function completeOnboardingAction(
 
   const actor = await getSessionActor()
 
-  redirect(actor ? homePathFor(actor) : "/")
+  redirect(path === "driver" ? "/driver/loads?welcome=1" : actor ? homePathFor(actor) : "/")
 }

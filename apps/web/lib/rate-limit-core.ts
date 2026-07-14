@@ -93,6 +93,13 @@ export class MemoryRateLimitStore implements RateLimitStore {
   }
 }
 
+/** Explicit no-op used only by the doubly flagged local Playwright server. */
+export class TestRateLimitStore implements RateLimitStore {
+  async consume({ windowMs }: RateLimitRequest): Promise<RateLimitWindow> {
+    return { count: 1, resetAt: Date.now() + windowMs }
+  }
+}
+
 /** Fail-closed store used when a production runtime is not safely configured. */
 export class UnavailableRateLimitStore implements RateLimitStore {
   async consume(): Promise<never> {

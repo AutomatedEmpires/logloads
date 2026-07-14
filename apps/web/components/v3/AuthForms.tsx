@@ -207,6 +207,29 @@ export function OnboardingFlow({
             <span>Max payload (tons)</span>
             <input defaultValue={30} max={60} min={1} name="maxPayloadTons" type="number" />
           </label>
+          {path === "driver" ? (
+            <div className="onboarding-availability">
+              <strong>When can you haul?</strong>
+              <p className="fieldset-note">Pick one. This keeps your first request simple.</p>
+              <div className="radio-grid">
+                <label className="radio-card">
+                  <input defaultChecked name="availabilityPreset" type="radio" value="today" />
+                  <strong>Available today</strong>
+                  <span>Show work I can request now.</span>
+                </label>
+                <label className="radio-card">
+                  <input name="availabilityPreset" type="radio" value="three_days" />
+                  <strong>Next 3 days</strong>
+                  <span>Keep me open for nearby work.</span>
+                </label>
+                <label className="radio-card">
+                  <input name="availabilityPreset" type="radio" value="not_ready" />
+                  <strong>Not ready yet</strong>
+                  <span>Set up my profile without saying I am available.</span>
+                </label>
+              </div>
+            </div>
+          ) : null}
         </fieldset>
       ) : (
         <fieldset data-onboarding-step="2" hidden={step !== 2}>
