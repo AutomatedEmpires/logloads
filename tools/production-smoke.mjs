@@ -37,11 +37,13 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
 try {
   // 2. Public product renders
   await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 30000 })
-  const heroOk = await page.getByRole("heading", { name: "Move more loads. Make fewer calls." }).isVisible().catch(() => false)
+  const heroOk = await page.getByRole("heading", { name: "Move more loads. Make fewer calls." })
+    .waitFor({ state: "visible", timeout: 5_000 }).then(() => true).catch(() => false)
   record(heroOk ? "PASS" : "FAIL", "public home renders")
 
   await page.goto(`${BASE}/loads`, { waitUntil: "domcontentloaded" })
-  const loadsOk = await page.getByText("Exact access unlocks after assignment.").first().isVisible().catch(() => false)
+  const loadsOk = await page.getByText("Exact access unlocks after assignment.").first()
+    .waitFor({ state: "visible", timeout: 5_000 }).then(() => true).catch(() => false)
   record(loadsOk ? "PASS" : "FAIL", "public loads renders")
 
   // 3. Cockpits are protected (unauthenticated → sign-in)
