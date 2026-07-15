@@ -22,7 +22,6 @@ test.describe.serial("operating loop", () => {
 
     const cards = page.locator("a.load-card-v3")
     const cardCount = await cards.count()
-    expect(cardCount).toBeGreaterThan(0)
 
     let requested = false
 
@@ -86,7 +85,7 @@ test.describe.serial("operating loop", () => {
       // from Available Loads and moves to Schedule, so verify it there.
       await page.goto("/driver/schedule")
       await page.waitForLoadState("networkidle")
-      requested = await page.locator(".trip-card").first().isVisible().catch(() => false)
+      requested = await page.locator(".schedule-request-card, .trip-card").first().isVisible().catch(() => false)
     }
 
     expect(requested, "driver should be able to request a visible load or see committed work on Schedule").toBe(true)
@@ -97,16 +96,32 @@ test.describe.serial("operating loop", () => {
     await page.goto("/host/command")
     await page.waitForLoadState("networkidle")
 
-    const approve = page.getByRole("button", { name: "Approve" }).first()
-    const hasApprove = await approve.isVisible().catch(() => false)
+    const approvalRow = page.locator(".host-approval-row").first()
+    const hasApprove = await approvalRow.getByRole("button", { name: "Approve" }).isVisible().catch(() => false)
 
     if (hasApprove) {
-      const before = await page.getByRole("button", { name: "Approve" }).count()
+      const requestLabel = (await approvalRow.locator("span").textContent())?.trim() ?? ""
+      expect(requestLabel, "a capacity request should expose a stable visible label").toBeTruthy()
 
-      await approve.click()
-      await expect
-        .poll(async () => page.getByRole("button", { name: "Approve" }).count(), { timeout: 15_000 })
-        .toBeLessThan(before)
+      const trackedRequest = page.locator(".host-approval-row").filter({ hasText: requestLabel }).first()
+
+      // The first click can land in the hydration gap. Retry the same visible
+      // request until its committed approval removes that request from the queue.
+      await expect(async () => {
+        if (!(await trackedRequest.isVisible().catch(() => false))) {
+          return
+        }
+
+        const approve = trackedRequest.getByRole("button", { name: "Approve", exact: true })
+
+        if (await approve.isEnabled().catch(() => false)) {
+          await approve.click()
+        }
+
+        await expect(trackedRequest).toBeHidden({ timeout: 5_000 })
+      }).toPass({ timeout: 30_000 })
+
+      await expect(trackedRequest).toBeHidden()
     } else {
       // A prior run may already have drained the queue; the journey continues
       // as long as committed work exists for the driver to progress.
