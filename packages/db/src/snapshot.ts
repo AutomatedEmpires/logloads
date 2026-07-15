@@ -7,6 +7,7 @@ import type { LogLoadsDatabaseState } from "./types"
 
 const REQUIRED_TABLES = Object.keys(seedDatabaseState) as Array<keyof LogLoadsDatabaseState>
 const SNAPSHOT_ROW_ID = "primary"
+const REMOTE_READ_ATTEMPTS = 2
 
 export const OPERATING_STATE_SCHEMA_VERSION = 2
 
@@ -53,6 +54,13 @@ export function upgradeStateSnapshot(
 
   if (candidate.tripReviews === undefined) {
     candidate.tripReviews = []
+  }
+
+  if (Array.isArray(candidate.assignments)) {
+    candidate.assignments = candidate.assignments.map((assignment) => ({
+      ...assignment,
+      termsSnapshot: assignment.termsSnapshot ?? {}
+    }))
   }
 
   if (!REQUIRED_TABLES.every((table) => Array.isArray(candidate[table]))) {
@@ -150,41 +158,56 @@ export async function loadRemoteOperatingState(
   config: RemoteSnapshotConfig,
   timeoutMs = 8000
 ): Promise<RemoteOperatingStateSnapshot | null> {
-  let response: Response
+  for (let attempt = 1; attempt <= REMOTE_READ_ATTEMPTS; attempt += 1) {
+    let response: Response
 
-  try {
-    response = await fetch(
-      `${config.url}/rest/v1/operating_state?id=eq.${SNAPSHOT_ROW_ID}&select=state,version,schema_version`,
-      {
-        headers: requestHeaders(config),
-        signal: AbortSignal.timeout(timeoutMs)
+    try {
+      response = await fetch(
+        `${config.url}/rest/v1/operating_state?id=eq.${SNAPSHOT_ROW_ID}&select=state,version,schema_version`,
+        {
+          headers: requestHeaders(config),
+          signal: AbortSignal.timeout(timeoutMs)
+        }
+      )
+    } catch (error) {
+      if (attempt < REMOTE_READ_ATTEMPTS) {
+        continue
       }
-    )
-  } catch (error) {
-    throw new OperatingStateUnavailableError(
-      `Canonical operating state could not be reached: ${error instanceof Error ? error.message : "network error"}`
-    )
+
+      throw new OperatingStateUnavailableError(
+        `Canonical operating state could not be reached: ${error instanceof Error ? error.message : "network error"}`
+      )
+    }
+
+    if (!response.ok) {
+      const transient = response.status === 408 || response.status === 429 || response.status >= 500
+
+      if (transient && attempt < REMOTE_READ_ATTEMPTS) {
+        await response.body?.cancel().catch(() => undefined)
+        continue
+      }
+
+      throw new OperatingStateUnavailableError(
+        `Canonical operating state read failed with status ${response.status}`
+      )
+    }
+
+    const rows = await responseRows(response)
+
+    if (rows.length === 0) {
+      return null
+    }
+
+    const snapshot = parseRemoteRow(rows[0])
+
+    if (!snapshot) {
+      throw new OperatingStateUnavailableError("Canonical operating state is invalid")
+    }
+
+    return snapshot
   }
 
-  if (!response.ok) {
-    throw new OperatingStateUnavailableError(
-      `Canonical operating state read failed with status ${response.status}`
-    )
-  }
-
-  const rows = await responseRows(response)
-
-  if (rows.length === 0) {
-    return null
-  }
-
-  const snapshot = parseRemoteRow(rows[0])
-
-  if (!snapshot) {
-    throw new OperatingStateUnavailableError("Canonical operating state is invalid")
-  }
-
-  return snapshot
+  throw new OperatingStateUnavailableError("Canonical operating state could not be reached")
 }
 
 /**

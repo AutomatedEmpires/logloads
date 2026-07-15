@@ -6,86 +6,97 @@ import { Badge } from "@logloads/ui"
 
 import { submitContactInquiryAction, type ContactFormState } from "@/lib/contact-actions"
 import type { NetworkLoadView } from "@/lib/network"
-import type { PublicHomeSnapshot } from "@/lib/v3"
-import { legalPages, loadProductLabel, pluralize, pricingPlans, type LegalPageContent, type PublicStoryPage, visibilityLabel } from "@/lib/v3-shared"
+import { legalPages, loadProductLabel, pricingPlans, type LegalPageContent, type PublicStoryPage, visibilityLabel } from "@/lib/v3-shared"
 import { DevSignInForm, OnboardingFlow } from "./AuthForms"
-import { DecisionPanel, LoadCard, LoadDiscovery, OperatingMap, OperationSections, RoutePackPreview } from "./LoadMap"
-import { EmptyState, Metric, PageIntro, PublicShell, SectionHeader } from "./Shells"
+import { DecisionPanel, EconomicsPanel, LoadCard, LoadDiscovery, OperationSections, RoutePackPreview, WeatherWidget } from "./LoadMap"
+import { EmptyState, PageIntro, PublicShell, SectionHeader } from "./Shells"
 
-const operatingLoop: Array<{ step: string; body: string }> = [
-  { body: "A landing counts the loads that have to move this week.", step: "Plan" },
-  { body: "The work goes up with schedule, equipment, and pay — private, verified, or open.", step: "Publish" },
-  { body: "Drivers see the loads that fit the truck and trailer they actually run.", step: "Match" },
-  { body: "An approved request becomes a real assignment on recorded terms.", step: "Commit" },
-  { body: "The Route Pack unlocks: gate access, road notes, who to call.", step: "Coordinate" },
-  { body: "Check in, load, roll. Everyone watches the same trip status.", step: "Haul" },
-  { body: "Tickets and photos land on the record, not in a text thread.", step: "Confirm" }
+const driverFlow: Array<{ step: string; question: string; body: string }> = [
+  { body: "See nearby work, pay, timing, distance, and how many hauls remain.", question: "What is available?", step: "Available" },
+  { body: "LogLoads checks the truck, trailer, capacity, schedule, and access requirements.", question: "Am I a match?", step: "Match" },
+  { body: "Request the haul with one clear action. The host gets what is needed to decide.", question: "Can I get it?", step: "Request" },
+  { body: "See the decision, booked work, active hauls, and next action in one schedule.", question: "What am I doing?", step: "Scheduled" }
 ]
 
-export function PublicHome({ loads, snapshot }: { loads: NetworkLoadView[]; snapshot: PublicHomeSnapshot }) {
+export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
+  const openLoads = loads.filter((load) => load.discovery.available && load.discovery.reason === "available")
+  const featuredLoad = openLoads[0] ?? null
+
   return (
     <PublicShell>
       <main>
         <section className="home-hero">
           <div className="home-hero__content">
-            <p className="eyebrow">Timber needs trucks. Trucks need work.</p>
-            <h1>TIMBER MOVES HERE.</h1>
-            <p>LogLoads is where landings post loads that need to move and log truckers find work that fits their rig — schedule, pay, access, and proof in one place.</p>
+            <p className="eyebrow">The timber trucking network</p>
+            <h1>Move more loads. Make fewer calls.</h1>
+            <p>Landings post the work. Drivers see what fits, what it pays, and when to show up. Everyone knows what happens next.</p>
             <div className="hero-actions">
-              <Link className="action-link" href="/loads">Find loads</Link>
-              <Link className="action-link action-link--secondary" href="/for-landings">Move timber</Link>
-              <Link className="text-link" href="/how-it-works">See how it works</Link>
+              <Link className="action-link" href="/sign-up?path=host">Post a load</Link>
+              <Link className="action-link action-link--secondary" href="/loads">Find a load — free</Link>
             </div>
           </div>
-          <div className="hero-signal" aria-label="Live network sample">
-            <span>Today</span>
-            <strong>{pluralize(snapshot.openLoads, "public load")}</strong>
-            <p>{pluralize(snapshot.trucksAvailable, "truck")} available across the network</p>
-          </div>
+          {featuredLoad ? (
+            <div className="hero-load-preview" aria-label="Available load preview">
+              <div className="hero-load-preview__head"><span>Available near {featuredLoad.landing.city}</span><Badge tone="success">Open</Badge></div>
+              <strong>{featuredLoad.economics.grossLabel ? `${featuredLoad.economics.grossLabel} est. gross` : featuredLoad.payLabel}</strong>
+              {featuredLoad.economics.grossLabel ? (
+                <span className="hero-load-preview__rate-terms">Base {featuredLoad.payLabel} · {featuredLoad.fuelSurchargeLabel}</span>
+              ) : null}
+              <h2>{featuredLoad.title}</h2>
+              <p>{featuredLoad.landing.city} to {featuredLoad.destination.name}</p>
+              <dl>
+                <div><dt>When</dt><dd>{featuredLoad.scheduleLabel}</dd></div>
+                <div><dt>Trip</dt><dd>{featuredLoad.route.distanceMiles.toFixed(0)} miles</dd></div>
+                <div><dt>Est. fuel</dt><dd>{featuredLoad.economics.fuelCostLabel}</dd></div>
+                <div><dt>After fuel</dt><dd>{featuredLoad.economics.afterFuelLabel ?? "See rate"}</dd></div>
+                <div><dt>Available</dt><dd>{featuredLoad.capacity.remaining} of {featuredLoad.capacity.total}</dd></div>
+              </dl>
+              <Link className="action-link" href={`/loads/${featuredLoad.id}`}>Check my match</Link>
+              <div aria-hidden="true" className="hero-load-preview__nav"><span>Map</span><span className="is-active">Loads</span><span>Schedule</span><span>Profile</span></div>
+            </div>
+          ) : (
+            <div className="hero-load-preview">
+              <span>For drivers</span>
+              <strong>Free forever</strong>
+              <h2>Your next load should be easy to understand.</h2>
+              <Link className="action-link" href="/sign-up?path=driver">Create driver profile</Link>
+            </div>
+          )}
         </section>
-        <section className="home-strip" aria-label="Current operating pulse">
-          <Metric label="Loads still open" value={loads.reduce((sum, load) => sum + load.capacity.remaining, 0)} />
-          <Metric label="Active landings" value={snapshot.landings} />
-          <Metric label="Destinations" value={snapshot.destinations} />
-          <Metric label="Trucks available" value={snapshot.trucksAvailable} />
+        <section className="promise-strip" aria-label="LogLoads promise">
+          <div><strong>Drivers are free forever.</strong><span>No subscription. No fee hidden from your pay.</span></div>
+          <div><strong>Know the match before you request.</strong><span>Truck, trailer, equipment, schedule, and capacity checked together.</span></div>
+          <div><strong>One schedule. One next action.</strong><span>Requested, booked, moving, and completed work stays clear.</span></div>
         </section>
-        <section className="loop-band" aria-label="How a haul runs">
+        <section className="driver-flow-band" aria-label="The driver flow">
           <div className="loop-band__intro">
-            <p className="eyebrow">One haul, start to finish</p>
-            <h2>Every load follows the same loop.</h2>
-            <p>From the first count at the landing to the last scale ticket, everyone works off the same record.</p>
+            <p className="eyebrow">Built around the decision</p>
+            <h2>No hunting through screens.</h2>
+            <p>LogLoads guides the driver from available work to a completed haul in four understandable states.</p>
           </div>
-          <ol className="loop-band__steps">
-            {operatingLoop.map((item, index) => (
+          <ol className="driver-flow-band__steps">
+            {driverFlow.map((item, index) => (
               <li key={item.step}>
                 <span className="loop-band__index">{index + 1}</span>
                 <strong>{item.step}</strong>
+                <em>{item.question}</em>
                 <p>{item.body}</p>
               </li>
             ))}
           </ol>
         </section>
-        <section className="split-section">
-          <div>
-            <p className="eyebrow">For drivers</p>
-            <h2>Open the app and know what to do next.</h2>
-            <p>Today starts with the active haul, the next action, the Route Pack, and anything that changed overnight — built for a phone in a truck cab.</p>
-            <Link className="action-link action-link--secondary" href="/sign-up">Start hauling</Link>
-          </div>
-          <OperatingMap loads={loads} selectedLoadId={loads[0]?.id} variant="public" />
-        </section>
         <section className="feature-band">
-          <SectionHeader eyebrow="One product, three seats" title="Different work needs different screens." />
+          <SectionHeader eyebrow="One network" title="The right screen for each job" />
           <div className="feature-grid">
-            <article><h3>Drivers</h3><p>The current trip, loads that fit, equipment, availability, messages, and proof — on a phone, at the landing.</p></article>
-            <article><h3>Fleets</h3><p>Which trucks are free, which work fits them, who is driving what, and where the exceptions are.</p></article>
-            <article><h3>Hosts</h3><p>Publish work, control who sees it, and run the live board as trucks commit, arrive, load, and roll.</p></article>
+            <article><span>Free forever</span><h3>Drivers</h3><p>See available work, know whether it fits, request it, and follow the schedule from a phone.</p><Link className="text-link" href="/sign-up?path=driver">Start driving</Link></article>
+            <article><span>$499/month</span><h3>Dispatchers</h3><p>Keep trucks, drivers, requests, schedules, and exceptions in one operating view.</p><Link className="text-link" href="/sign-up?path=fleet">Set up dispatch</Link></article>
+            <article><span>Free launch pilot</span><h3>Hosts</h3><p>Post the work, see qualified requests, choose the truck, and know what is arriving.</p><Link className="text-link" href="/sign-up?path=host">Post a load</Link></article>
           </div>
         </section>
         <section className="loads-preview">
           <SectionHeader action={<Link className="action-link action-link--secondary" href="/loads">See all loads</Link>} eyebrow="Open work" title="Loads on the board right now." />
-          {loads.length > 0 ? (
-            <div className="load-card-grid">{loads.slice(0, 3).map((load) => <LoadCard key={load.id} load={load} />)}</div>
+          {openLoads.length > 0 ? (
+            <div className="load-card-grid">{openLoads.slice(0, 3).map((load) => <LoadCard key={load.id} load={load} />)}</div>
           ) : (
             <EmptyState
               actionHref="/for-landings"
@@ -96,10 +107,10 @@ export function PublicHome({ loads, snapshot }: { loads: NetworkLoadView[]; snap
           )}
         </section>
         <section className="home-cta">
-          <h2>Put your first load — or your first truck — on the board.</h2>
-          <p>Setup takes a few minutes. Drivers ride free.</p>
+          <h2>Know what is available. Know what is moving.</h2>
+          <p>Start with one load or one truck. Drivers are free forever.</p>
           <div className="hero-actions">
-            <Link className="action-link" href="/sign-up">Get started</Link>
+            <Link className="action-link" href="/sign-up">Choose your role</Link>
             <Link className="text-link" href="/pricing">See pricing</Link>
           </div>
         </section>
@@ -137,7 +148,9 @@ export function PublicLoadDetail({ load }: { load: NetworkLoadView }) {
           <p className="eyebrow">{visibilityLabel(load)}</p>
           <h1>{load.title}</h1>
           <p className="lead">{loadProductLabel(load)} from {load.landing.city}, {load.landing.state} to {load.destination.name}.</p>
-          <div className="fact-row"><span>{load.scheduleLabel}</span><span>{load.payLabel}</span><span>{load.capacity.remaining} of {load.capacity.total} loads open</span></div>
+          <div className="fact-row"><span>{load.scheduleLabel}</span><span>{load.economics.grossLabel ? `${load.economics.grossLabel} est. gross` : load.payLabel}</span><span>{load.capacity.remaining} of {load.capacity.total} loads open</span></div>
+          <EconomicsPanel load={load} />
+          <WeatherWidget loadId={load.id} />
           <DecisionPanel load={load} publicMode />
           <RoutePackPreview load={load} locked />
           <OperationSections load={load} publicMode />
@@ -177,23 +190,23 @@ export function PricingPage() {
   return (
     <PublicShell>
       <main className="page-main pricing-page">
-        <PageIntro eyebrow="Pricing" title="Drivers ride free. Operations pay for the tools they run on." body="Finding work and requesting loads costs nothing. Fleets and hosts pay for the planning, dispatch, private network, and live board tools they use every day." />
+        <PageIntro eyebrow="Simple pricing" title="Drivers are free forever." body="Hosts are free during the launch pilot. Dispatch teams pay one monthly price for the operating tools their trucks run on." />
         <div className="pricing-grid">
           {pricingPlans.map((plan) => (
-            <article className={plan.price === "Free" ? "pricing-card pricing-card--free" : "pricing-card"} key={plan.name}>
+            <article className={plan.name === "Driver" ? "pricing-card pricing-card--free" : "pricing-card"} key={plan.name}>
               <span>{plan.audience}</span>
               <h2>{plan.name}</h2>
               <strong className="pricing-card__price">{plan.price}</strong>
               <p className="pricing-card__summary">{plan.summary}</p>
               <ul>{plan.features.map((feature) => <li key={feature}>{feature}</li>)}</ul>
-              <Link className={plan.price === "Free" ? "action-link" : "action-link action-link--secondary"} href={plan.cta.href}>{plan.cta.label}</Link>
+              <Link className={plan.name === "Driver" ? "action-link" : "action-link action-link--secondary"} href={plan.cta.href}>{plan.cta.label}</Link>
               {plan.note ? <p className="pricing-card__note">{plan.note}</p> : null}
             </article>
           ))}
         </div>
         <section className="legal-note">
-          <h2>Your hauling pay is not our business.</h2>
-          <p>LogLoads runs in coordination mode: no freight money moves through the platform and no loads are brokered. Hauling pay stays between you and the people you haul for, and paid plans cover software only. If that ever changes, it will be announced clearly — nothing switches on quietly.</p>
+          <h2>No surprise charges.</h2>
+          <p>The price you see is the price you pay. Driver accounts stay free, and hosts receive advance notice before launch-pilot pricing changes.</p>
         </section>
       </main>
     </PublicShell>
@@ -257,7 +270,7 @@ export function OnboardingPage({
   return (
     <PublicShell>
       <main className="page-main onboarding-page">
-        <PageIntro eyebrow="Get started" title={title} body="A short setup creates your account, your organization, and the first screen for your work." />
+        <PageIntro eyebrow="Get started" title={title} body="Three short steps. Then LogLoads opens the right first screen for your work." />
         <OnboardingFlow identityKnown={identityKnown} initialPath={mode} />
       </main>
     </PublicShell>

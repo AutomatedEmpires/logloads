@@ -59,6 +59,10 @@
   gap: 18px;
   max-width: 760px;
 }
+.onboarding-progress { display: grid; gap: 7px; color: var(--muted); font-size: 0.82rem; font-weight: 900; }
+.onboarding-progress > div { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.onboarding-progress i { height: 5px; border-radius: 999px; background: var(--line); }
+.onboarding-progress i.is-complete { background: var(--pine); }
 .onboarding-form fieldset {
   display: grid;
   gap: 12px;
@@ -68,6 +72,7 @@
   margin: 0;
   padding: 18px;
 }
+.onboarding-form fieldset[hidden] { display: none; }
 .onboarding-form legend {
   float: left;
   width: 100%;
@@ -78,6 +83,9 @@
   font-weight: 800;
 }
 .fieldset-note { margin: -4px 0 4px; color: var(--muted); font-size: 0.9rem; font-weight: 600; line-height: 1.45; }
+.onboarding-ready { display: grid; gap: 6px; border-radius: var(--radius); background: var(--green-bg); padding: 16px; }
+.onboarding-ready strong { color: var(--pine); font-size: 1.05rem; }
+.onboarding-ready span { color: var(--ink-soft); line-height: 1.45; }
 
 .radio-grid {
   display: grid;
@@ -105,13 +113,18 @@
 }
 .radio-card strong { color: var(--ink); font-weight: 800; }
 .radio-card span { color: var(--muted); font-size: 0.86rem; font-weight: 600; line-height: 1.4; }
-.radio-card--active {
+.radio-card--active,
+.radio-card:has(input:checked) {
   border-color: var(--pine);
   box-shadow: inset 0 0 0 1px var(--pine);
   background: var(--green-bg);
 }
-.radio-card--active span { color: var(--ink-soft); }
+.radio-card--active span,
+.radio-card:has(input:checked) span { color: var(--ink-soft); }
 .radio-card:has(input:focus-visible) { outline: 3px solid rgba(46, 118, 81, 0.36); outline-offset: 2px; }
+
+.onboarding-availability { display: grid; gap: 10px; border-top: 1px solid var(--line); margin-top: 4px; padding-top: 16px; }
+.onboarding-availability > strong { color: var(--ink); font-family: var(--font-display); font-size: 1rem; }
 
 .onboarding-form__actions {
   display: flex;

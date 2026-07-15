@@ -115,8 +115,47 @@
 
 /* ---------- Home: hero + bands ---------- */
 
-.home-hero h1 { text-wrap: balance; }
+.home-hero { align-items: center; grid-template-columns: minmax(0, 1fr) minmax(310px, 420px); }
+.home-hero h1 { max-width: 850px; font-size: clamp(3rem, 7vw, 6.5rem); text-wrap: balance; }
 .hero-signal p { margin: 6px 0 0; color: rgba(255, 255, 255, 0.82); }
+
+.hero-load-preview {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  border-radius: 20px;
+  background: rgba(17, 22, 16, 0.88);
+  padding: 18px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(14px);
+}
+.hero-load-preview__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: rgba(255, 255, 255, 0.72); font-size: 0.82rem; font-weight: 900; text-transform: uppercase; }
+.hero-load-preview > strong { color: #b9e7c8; font-size: 2.15rem; line-height: 1; }
+.hero-load-preview__rate-terms { color: rgba(255, 255, 255, 0.76); font-size: 0.78rem; font-weight: 750; }
+.hero-load-preview h2 { margin: 0; font-size: 1.2rem; }
+.hero-load-preview > p { margin: 0; color: rgba(255, 255, 255, 0.76); font-size: 0.95rem; }
+.hero-load-preview dl { gap: 7px; }
+.hero-load-preview dl div { border-color: rgba(255, 255, 255, 0.16); }
+.hero-load-preview dt { color: rgba(255, 255, 255, 0.62); }
+.hero-load-preview dd { color: #fff; max-width: 65%; }
+.hero-load-preview .action-link { justify-content: center; margin-top: 4px; }
+.hero-load-preview__nav { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; border-top: 1px solid rgba(255, 255, 255, 0.14); margin-top: 4px; padding-top: 10px; }
+.hero-load-preview__nav span { border-radius: 6px; color: rgba(255, 255, 255, 0.58); padding: 7px 2px; text-align: center; font-size: 0.72rem; font-weight: 900; }
+.hero-load-preview__nav span.is-active { background: rgba(185, 231, 200, 0.14); color: #b9e7c8; }
+
+.promise-strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; border-block: 1px solid var(--line); background: var(--line); }
+.promise-strip div { display: grid; gap: 6px; background: var(--paper); padding: 22px clamp(16px, 4vw, 42px); }
+.promise-strip strong { color: var(--pine); font-size: 1.05rem; }
+.promise-strip span { color: var(--ink-soft); line-height: 1.45; }
+
+.driver-flow-band { background: var(--ink); color: #fff; padding: 56px clamp(16px, 5vw, 70px) 62px; }
+.driver-flow-band__steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 34px 0 0; padding: 0; list-style: none; }
+.driver-flow-band__steps li { display: grid; align-content: start; gap: 7px; border-top: 2px solid rgba(255, 255, 255, 0.22); padding-top: 14px; }
+.driver-flow-band__steps strong { font-family: var(--font-display); font-size: 1.18rem; text-transform: uppercase; }
+.driver-flow-band__steps em { color: #b9e7c8; font-style: normal; font-weight: 900; }
+.driver-flow-band__steps p { margin: 0; color: rgba(255, 255, 255, 0.7); line-height: 1.45; }
+.feature-grid article > span { color: var(--pine); font-size: 0.78rem; font-weight: 900; text-transform: uppercase; }
+.feature-grid article .text-link { display: inline-flex; margin-top: 4px; }
 
 .loop-band {
   background: var(--ink);
@@ -168,9 +207,17 @@
 .loop-band__steps p { margin: 0; color: rgba(255, 255, 255, 0.72); font-size: 0.9rem; line-height: 1.45; }
 
 @media (max-width: 1100px) {
+  .home-hero { grid-template-columns: 1fr; }
+  .hero-load-preview { width: min(100%, 520px); }
+  .driver-flow-band__steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .loop-band__steps { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px 14px; }
 }
 @media (max-width: 760px) {
+  .home-hero { align-items: end; padding-top: 86px; }
+  .home-hero h1 { font-size: 3rem; }
+  .promise-strip,
+  .driver-flow-band__steps { grid-template-columns: 1fr; }
+  .driver-flow-band { padding: 36px 14px 42px; }
   .loop-band { padding: 36px 14px 42px; }
   .loop-band__steps { grid-template-columns: 1fr; gap: 16px; }
   .loop-band__steps li { grid-template-columns: auto 1fr; column-gap: 12px; }

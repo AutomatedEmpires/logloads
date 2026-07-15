@@ -5,44 +5,61 @@ honestly**: without `RESEND_API_KEY`, delivery is skipped and the in-app record 
 the source of truth — the code never reports a false success.
 
 ## Founder gate
-> **Create/authorize a Resend account, add a `logloads.com` sending domain with DNS
-> verification, and provide the API key.**
+> **Activate only with a Resend API key whose Sending access is restricted to the
+> verified `logloads.com` domain. Send as `LogLoads <notifications@logloads.com>` and
+> route replies to `support@logloads.com`. Do not substitute a shared, cross-account,
+> or unrestricted key.**
+
+Keep the Production `RESEND_API_KEY` absent until this identity change is merged and
+the production activation is explicitly authorized. Development and Preview may use
+the domain-scoped key for pre-production verification.
 
 ## What the code does
 - `deliverEmail({ to, subject, text })` POSTs to `https://api.resend.com/emails` with a
-  4s timeout; returns `false` (never throws) on any failure. No retry (fire-and-forget).
+  8s timeout; returns `false` (never throws) on any failure. No retry (fire-and-forget).
 - `isEmailDeliveryEnabled()` gates callers on `RESEND_API_KEY`.
-- **From identity:** `LOGLOADS_EMAIL_FROM` (default `LogLoads <onboarding@resend.dev>` —
-  replace with a `logloads.com` sender at activation).
-- **Support/reply identity:** `LOGLOADS_EMAIL_REPLY_TO` defaults to the existing
-  `support@logloads.com` mailbox.
+- **From identity:** `RESEND_FROM`, then legacy `LOGLOADS_EMAIL_FROM`, then the safe
+  default `LogLoads <notifications@logloads.com>`.
+- **Support/reply identity:** `RESEND_REPLY_TO`, then `SUPPORT_EMAIL`, then legacy
+  `LOGLOADS_EMAIL_REPLY_TO`, then the safe default `support@logloads.com`.
 - **Current email-triggering event:** contact-form inquiries
   (`apps/web/lib/contact-actions.ts`) → emails `LOGLOADS_CONTACT_EMAIL`
   (default `support@logloads.com`) AND writes an in-app notification to the
   platform admin. The in-app record is always written regardless of email outcome.
 
 ## Configuration
-1. Create Resend account (or reuse the family account).
-2. Add sending domain: recommended **`send.logloads.com`** (subdomain isolates
-   deliverability reputation from the apex).
-3. Add the DNS records Resend provides (SPF/DKIM/DMARC) at the `logloads.com` DNS
-   provider; wait for verification.
-4. Create an API key; store `RESEND_API_KEY` in Doppler → host.
-5. Set `LOGLOADS_EMAIL_FROM="LogLoads <noreply@send.logloads.com>"`, keep
-   `LOGLOADS_EMAIL_REPLY_TO=support@logloads.com`, and confirm
-   `LOGLOADS_CONTACT_EMAIL=support@logloads.com`.
+1. Confirm `logloads.com` remains verified in Resend. If verification is absent, stop;
+   do not switch to another product's domain or sender.
+2. Confirm the API key has **Sending** access restricted only to `logloads.com`. Store
+   `RESEND_API_KEY` through the approved Doppler-to-host path; never expose it to the
+   browser or commit it.
+3. Keep the canonical identity values aligned in every environment:
 
-## Activation path (once account + DNS exist)
-`create domain` → `add DNS` → `verify` → `set RESEND_API_KEY + LOGLOADS_EMAIL_FROM` →
-`deploy` → submit the `/contact` form on production → confirm the email arrives in the
-operations inbox and the in-app admin notification is written.
+   ```dotenv
+   RESEND_FROM="LogLoads <notifications@logloads.com>"
+   RESEND_REPLY_TO="support@logloads.com"
+   SUPPORT_EMAIL="support@logloads.com"
+   LOGLOADS_CONTACT_EMAIL="support@logloads.com"
+   ```
+
+   `LOGLOADS_EMAIL_FROM` and `LOGLOADS_EMAIL_REPLY_TO` remain compatibility fallbacks,
+   not the canonical controls.
+
+## Activation path
+`merge the identity fix` → `confirm domain-scoped key + canonical identities` →
+`authorize Production RESEND_API_KEY` → `deploy` → `submit the /contact form` →
+`confirm email delivery + the in-app admin notification`.
+
+This activates coordination notifications only. It does not make LogLoads a freight
+broker, payment handler, or authority for money-moving communication.
 
 ## Verification
 - `curl https://logloads.com/api/health` → `integrations.email: true`.
 - Submit `/contact` with a test message → email delivered to `LOGLOADS_CONTACT_EMAIL`;
   the admin's in-app notifications show the inquiry.
-- Confirm fail-open: with the key temporarily unset, the contact form still succeeds
-  (in-app record written) and shows no false "email sent" claim.
+- Run `corepack pnpm --filter @logloads/web exec vitest run lib/notify.test.ts` to verify
+  the exact sender/reply payload and the no-key/no-fetch behavior. Do not remove a
+  Production credential solely to exercise the fail-open path.
 
 ## Recipients to confirm with the founder
 - Operations/contact inbox (`LOGLOADS_CONTACT_EMAIL`).

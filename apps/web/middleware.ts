@@ -37,5 +37,8 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
 }
 
 export const config = {
-  matcher: ["/((?!_next|.*\\..*|api/health).*)"]
+  matcher: [
+    "/((?!_next|.*\\..*|api/health).*)",
+    "/__clerk/(.*)"
+  ]
 }

@@ -3,6 +3,15 @@ import Stripe from "stripe"
 
 import { mutateState } from "@/lib/services"
 
+function currentPeriodEndsAt(subscription: Stripe.Subscription): string | null {
+	const periodEnd = subscription.items.data.reduce(
+		(latest, item) => Math.max(latest, item.current_period_end),
+		0
+	)
+
+	return periodEnd > 0 ? new Date(periodEnd * 1000).toISOString() : null
+}
+
 /**
  * Stripe billing truth: checkout completion and subscription lifecycle events
  * update the organization's plan record. Subscriptions only — no freight money
@@ -37,20 +46,35 @@ export async function POST(request: NextRequest) {
 			const organizationId = session.metadata?.organizationId
 			const product = session.metadata?.product
 
-			if (organizationId) {
+			if (organizationId && product === "fleet_operations") {
+				const subscriptionId = typeof session.subscription === "string"
+					? session.subscription
+					: session.subscription?.id ?? null
+				const customerId = typeof session.customer === "string"
+					? session.customer
+					: session.customer?.id ?? null
+				const subscription = subscriptionId
+					? await stripe.subscriptions.retrieve(subscriptionId)
+					: null
 				await mutateState((draft) =>
 					draft.applyBillingUpdate({
+						currentPeriodEndsAt: subscription ? currentPeriodEndsAt(subscription) : null,
+						eventId: event.id,
 						organizationId,
 						product: product || undefined,
 						status: "active",
-						stripeCustomerId: typeof session.customer === "string" ? session.customer : null,
-						stripeSubscriptionId: typeof session.subscription === "string" ? session.subscription : null
+						stripeCustomerId: customerId,
+						stripeSubscriptionId: subscriptionId
 					})
 				)
 			}
 		}
 
-		if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
+		if (
+			event.type === "customer.subscription.created" ||
+			event.type === "customer.subscription.updated" ||
+			event.type === "customer.subscription.deleted"
+		) {
 			const subscription = event.data.object
 			const status = event.type === "customer.subscription.deleted"
 				? "cancelled"
@@ -70,6 +94,8 @@ export async function POST(request: NextRequest) {
 				}
 
 				return draft.applyBillingUpdate({
+					currentPeriodEndsAt: currentPeriodEndsAt(subscription),
+					eventId: event.id,
 					organizationId: entitlement.organizationId,
 					product: entitlement.product,
 					status,

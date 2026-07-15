@@ -132,6 +132,80 @@ describe("logloads services", () => {
     ).toThrow(/overlaps existing window/)
   })
 
+  it("creates a real availability window during driver onboarding", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    const account = services.createAccount({
+      accountType: "owner_operator",
+      availabilityPreset: "three_days",
+      email: "ready-driver@example.com",
+      equipment: {
+        maxPayloadTons: 30,
+        trailerType: "pole_trailer",
+        truckType: "log_truck"
+      },
+      fullName: "Ready Driver",
+      organizationName: "Ready Driver Hauling",
+      path: "driver",
+      phone: "555-9001",
+      region: "Cascade Foothills, OR"
+    })
+    const window = services.state.availabilityWindows.find(
+      (current) => current.driverProfileId === account.driverProfileId
+    )
+
+    expect(window?.status).toBe("available")
+    expect(Date.parse(window?.endAt ?? "") - Date.parse(window?.startAt ?? "")).toBeGreaterThanOrEqual(
+      71 * 60 * 60 * 1000
+    )
+  })
+
+  it("does not create false availability when a new driver is not ready", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    const account = services.createAccount({
+      accountType: "company_driver",
+      availabilityPreset: "not_ready",
+      email: "not-ready-driver@example.com",
+      equipment: {
+        maxPayloadTons: 30,
+        trailerType: "pole_trailer",
+        truckType: "log_truck"
+      },
+      fullName: "Not Ready Driver",
+      organizationName: null,
+      path: "driver",
+      phone: "555-9002",
+      region: "Cascade Foothills, OR"
+    })
+    const driver = services.state.driverProfiles.find((current) => current.id === account.driverProfileId)
+
+    expect(driver?.availabilityStatus).toBe("unavailable")
+    expect(services.state.availabilityWindows.some((window) => window.driverProfileId === account.driverProfileId)).toBe(false)
+  })
+
+  it("starts a new host in the free launch pilot without a billing deadline", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const account = services.createAccount({
+      accountType: "landing_operator",
+      availabilityPreset: "not_ready",
+      email: "launch-host@example.com",
+      equipment: null,
+      fullName: "Launch Host",
+      organizationName: "Launch Landing",
+      path: "host",
+      phone: "555-9003",
+      region: "Douglas County, OR"
+    })
+    const organizationId = account.memberships[0]?.organization.id
+    const entitlement = services.state.entitlements.find((candidate) =>
+      candidate.organizationId === organizationId && candidate.product === "landing_operations"
+    )
+
+    expect(entitlement?.status).toBe("active")
+    expect(entitlement?.currentPeriodEndsAt).toBeNull()
+  })
+
   it("rejects an availability update for an unknown id", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
 
@@ -206,6 +280,23 @@ describe("logloads services", () => {
     expect(visible.map((load) => load.id)).toContain("cccccccc-cccc-4ccc-8ccc-ccccccccccc3")
   })
 
+  it("keeps expired operating records out of live load discovery", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const organizationId = "33333333-3333-4333-8333-333333333331"
+    const beforeWindow = services.listRequestableLoadsForOrganization(
+      organizationId,
+      "2026-06-05T12:00:00.000Z"
+    )
+    const afterWindow = services.listRequestableLoadsForOrganization(
+      organizationId,
+      "2026-07-13T12:00:00.000Z"
+    )
+
+    expect(beforeWindow.length).toBeGreaterThan(0)
+    expect(afterWindow).toEqual([])
+    expect(services.listVisibleLoadsForOrganization(organizationId).length).toBeGreaterThan(0)
+  })
+
   it("rejects duplicate active capacity requests for the same driver and load", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
 
@@ -245,6 +336,58 @@ describe("logloads services", () => {
     expect(capacity?.remainingTruckloads).toBe(2)
   })
 
+  it("rejects driver-role attempts to request work for another driver", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const driverMembership = services.state.organizationMemberships.find((membership) =>
+      membership.organizationId === "33333333-3333-4333-8333-333333333331" &&
+      membership.role === "driver" &&
+      membership.status === "active"
+    )
+    const ownDriver = services.state.driverProfiles.find((driver) => driver.userId === driverMembership?.userId)
+    const otherCombination = services.state.equipmentCombinations.find((combination) =>
+      combination.organizationId === driverMembership?.organizationId &&
+      combination.assignedDriverProfileId !== ownDriver?.id &&
+      combination.status !== "inactive"
+    )
+
+    expect(driverMembership).toBeDefined()
+    expect(ownDriver).toBeDefined()
+    expect(otherCombination?.assignedDriverProfileId).toBeTruthy()
+    if (!driverMembership || !otherCombination?.assignedDriverProfileId) return
+    const otherDriverProfileId = otherCombination.assignedDriverProfileId
+
+    expect(() => services.requestCapacityWithPolicy({
+      actorUserId: driverMembership.userId,
+      driverProfileId: otherDriverProfileId,
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+      organizationId: driverMembership.organizationId,
+      trailerProfileId: otherCombination.trailerProfileId,
+      truckProfileId: otherCombination.truckProfileId,
+      truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd4"
+    })).toThrow(/own driver profile/)
+  })
+
+  it("rejects capacity requests against terminal loads", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const load = services.state.loadPostings.find(
+      (posting) => posting.id === "cccccccc-cccc-4ccc-8ccc-ccccccccccc3"
+    )
+
+    expect(load).toBeDefined()
+    if (!load) return
+    load.status = "cancelled"
+
+    expect(() => services.requestCapacityWithPolicy({
+      actorUserId: "22222222-2222-4222-8222-222222222221",
+      driverProfileId: "44444444-4444-4444-8444-444444444441",
+      loadPostingId: load.id,
+      organizationId: "33333333-3333-4333-8333-333333333331",
+      trailerProfileId: "88888888-8888-4888-8888-888888888881",
+      truckProfileId: "77777777-7777-4777-8777-777777777771",
+      truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd4"
+    })).toThrow(/not accepting requests while cancelled/)
+  })
+
   it("lets the source organization approve capacity and creates a trip snapshot", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const assignment = services.requestCapacityWithPolicy({
@@ -266,8 +409,141 @@ describe("logloads services", () => {
     })
 
     expect(result.assignment.status).toBe("accepted")
+    expect(result.assignment.termsSnapshot).toMatchObject({
+      hostFee: {
+        collectionState: "disabled_pending_legal_and_payment_approval",
+        feeCents: null,
+        proposedRateBps: 500
+      },
+      paymentMode: "off_platform"
+    })
     expect(result.trip.assignmentId).toBe(assignment.id)
     expect(result.trip.routePackId).toBe("23232323-2323-4323-8323-232323232313")
+    expect(services.state.notifications.find((notification) =>
+      notification.relatedEntityId === assignment.id && notification.userId === "22222222-2222-4222-8222-222222222221"
+    )?.type).toBe("assignment_confirmed")
+  })
+
+  it("does not consume an assignment or slot when approval validation fails", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const assignment = services.requestCapacityWithPolicy({
+      actorUserId: "22222222-2222-4222-8222-222222222221",
+      organizationId: "33333333-3333-4333-8333-333333333331",
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+      truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd4",
+      driverProfileId: "44444444-4444-4444-8444-444444444441",
+      truckProfileId: "77777777-7777-4777-8777-777777777771",
+      trailerProfileId: "88888888-8888-4888-8888-888888888881"
+    })
+    const load = services.state.loadPostings.find((candidate) => candidate.id === assignment.loadPostingId)!
+    const slotBefore = structuredClone(services.state.truckSlots.find((candidate) => candidate.id === assignment.truckSlotId))
+
+    services.state.rates = services.state.rates.filter((candidate) => candidate.id !== load.rateId)
+
+    expect(() => services.approveCapacityRequest({
+      actorUserId: "22222222-2222-4222-8222-222222222224",
+      organizationId: "33333333-3333-4333-8333-333333333332",
+      assignmentId: assignment.id
+    })).toThrow(/Rate/)
+
+    expect(services.state.assignments.find((candidate) => candidate.id === assignment.id)?.status).toBe("requested")
+    expect(services.state.truckSlots.find((candidate) => candidate.id === assignment.truckSlotId)).toEqual(slotBefore)
+    expect(services.state.tripsV2.some((candidate) => candidate.assignmentId === assignment.id)).toBe(false)
+  })
+
+  it("declines a capacity request, restores capacity, and records a durable driver decision", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const loadPostingId = "cccccccc-cccc-4ccc-8ccc-ccccccccccc3"
+    const truckSlotId = "dddddddd-dddd-4ddd-8ddd-ddddddddddd4"
+    const beforeCapacity = services.state.opportunityCapacities.find((item) => item.loadPostingId === loadPostingId)
+    const beforeSlot = services.state.truckSlots.find((item) => item.id === truckSlotId)
+    const assignment = services.requestCapacityWithPolicy({
+      actorUserId: "22222222-2222-4222-8222-222222222221",
+      organizationId: "33333333-3333-4333-8333-333333333331",
+      loadPostingId,
+      truckSlotId,
+      driverProfileId: "44444444-4444-4444-8444-444444444441",
+      truckProfileId: "77777777-7777-4777-8777-777777777771",
+      trailerProfileId: "88888888-8888-4888-8888-888888888881"
+    })
+
+    const declined = services.declineCapacityRequest({
+      actorUserId: "22222222-2222-4222-8222-222222222224",
+      assignmentId: assignment.id,
+      organizationId: "33333333-3333-4333-8333-333333333332",
+      reason: "Another truck was selected for this window."
+    })
+    const afterCapacity = services.state.opportunityCapacities.find((item) => item.loadPostingId === loadPostingId)
+    const afterSlot = services.state.truckSlots.find((item) => item.id === truckSlotId)
+
+    expect(declined.status).toBe("declined")
+    expect(declined.cancellationReason).toBe("Another truck was selected for this window.")
+    expect(afterCapacity).toMatchObject({
+      committedTruckloads: beforeCapacity?.committedTruckloads,
+      remainingTruckloads: beforeCapacity?.remainingTruckloads
+    })
+    expect(afterSlot?.reservedCount).toBe(beforeSlot?.reservedCount)
+    expect(services.state.tripsV2.some((trip) => trip.assignmentId === assignment.id)).toBe(false)
+    expect(services.state.notifications.find((notification) =>
+      notification.relatedEntityId === assignment.id && notification.userId === "22222222-2222-4222-8222-222222222221"
+    )).toMatchObject({ title: "Not selected for this haul", type: "assignment_declined" })
+
+    const requestedAgain = services.requestCapacityWithPolicy({
+      actorUserId: "22222222-2222-4222-8222-222222222221",
+      organizationId: "33333333-3333-4333-8333-333333333331",
+      loadPostingId,
+      truckSlotId,
+      driverProfileId: "44444444-4444-4444-8444-444444444441",
+      truckProfileId: "77777777-7777-4777-8777-777777777771",
+      trailerProfileId: "88888888-8888-4888-8888-888888888881"
+    })
+
+    expect(requestedAgain.status).toBe("requested")
+  })
+
+  it("allows only the source organization to decline a request", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const assignment = services.requestCapacityWithPolicy({
+      actorUserId: "22222222-2222-4222-8222-222222222221",
+      organizationId: "33333333-3333-4333-8333-333333333331",
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+      truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd4",
+      driverProfileId: "44444444-4444-4444-8444-444444444441",
+      truckProfileId: "77777777-7777-4777-8777-777777777771",
+      trailerProfileId: "88888888-8888-4888-8888-888888888881"
+    })
+
+    expect(() => services.declineCapacityRequest({
+      actorUserId: "22222222-2222-4222-8222-222222222224",
+      assignmentId: assignment.id,
+      organizationId: "33333333-3333-4333-8333-333333333331",
+      reason: "Not authorized"
+    })).toThrow(/Only the source organization/)
+  })
+
+  it("cannot approve a request after it has been declined", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const assignment = services.requestCapacityWithPolicy({
+      actorUserId: "22222222-2222-4222-8222-222222222221",
+      organizationId: "33333333-3333-4333-8333-333333333331",
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+      truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd4",
+      driverProfileId: "44444444-4444-4444-8444-444444444441",
+      truckProfileId: "77777777-7777-4777-8777-777777777771",
+      trailerProfileId: "88888888-8888-4888-8888-888888888881"
+    })
+
+    services.declineCapacityRequest({
+      actorUserId: "22222222-2222-4222-8222-222222222224",
+      assignmentId: assignment.id,
+      organizationId: "33333333-3333-4333-8333-333333333332"
+    })
+
+    expect(() => services.approveCapacityRequest({
+      actorUserId: "22222222-2222-4222-8222-222222222224",
+      assignmentId: assignment.id,
+      organizationId: "33333333-3333-4333-8333-333333333332"
+    })).toThrow(/requested or offered/)
   })
 
   it("protects route packs behind assignment participation", () => {
@@ -281,6 +557,43 @@ describe("logloads services", () => {
 
     expect(routePack.routePack.id).toBe("23232323-2323-4323-8323-232323232311")
     expect(routePack.notices.length).toBeGreaterThanOrEqual(0)
+  })
+
+  it("keeps route packs locked for a requesting hauler until approval", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const assignment = services.requestCapacityWithPolicy({
+      actorUserId: "22222222-2222-4222-8222-222222222221",
+      organizationId: "33333333-3333-4333-8333-333333333331",
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+      truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd4",
+      driverProfileId: "44444444-4444-4444-8444-444444444441",
+      truckProfileId: "77777777-7777-4777-8777-777777777771",
+      trailerProfileId: "88888888-8888-4888-8888-888888888881"
+    })
+
+    expect(() => services.getRoutePackForAssignment({
+      actorUserId: "22222222-2222-4222-8222-222222222221",
+      organizationId: "33333333-3333-4333-8333-333333333331",
+      assignmentId: assignment.id
+    })).toThrow(/unlocks after the host accepts/)
+
+    expect(services.getRoutePackForAssignment({
+      actorUserId: "22222222-2222-4222-8222-222222222224",
+      organizationId: "33333333-3333-4333-8333-333333333332",
+      assignmentId: assignment.id
+    }).routePack.id).toBe("23232323-2323-4323-8323-232323232313")
+
+    services.approveCapacityRequest({
+      actorUserId: "22222222-2222-4222-8222-222222222224",
+      assignmentId: assignment.id,
+      organizationId: "33333333-3333-4333-8333-333333333332"
+    })
+
+    expect(services.getRoutePackForAssignment({
+      actorUserId: "22222222-2222-4222-8222-222222222221",
+      organizationId: "33333333-3333-4333-8333-333333333331",
+      assignmentId: assignment.id
+    }).routePack.id).toBe("23232323-2323-4323-8323-232323232313")
   })
 
   it("rejects impossible trip transitions", () => {

@@ -2,11 +2,26 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-07-13 — Driver economics, private media, current weather, and billing activation boundaries
+- Driver load views now estimate gross pay, trip miles, optional deadhead from a saved home location, gallons, fuel cost, and gross after fuel. Saved truck MPG and fuel-price assumptions take precedence; otherwise the interface labels its 6.5 MPG and $4.25/gallon assumptions. This is an estimate, not net profit, a settlement, or a safety guarantee.
+- Open-Meteo supplies current destination weather through a server route cached for 15 minutes. The UI names the source and freshness, never returns exact private landing coordinates, and treats weather as supplemental planning context rather than operating instruction. No secret is required.
+- Cloudinary is the private media provider for profile, truck, and trailer photos. Uploads are server-signed, limited to JPEG/PNG/WebP up to 10 MB, stored as authenticated assets under an organization-scoped namespace, verified server-side before a reference is committed, and proxied only after the requesting member passes the same organization/driver/equipment authorization check.
+- Stripe remains subscription-only. Dispatch Pro requires a pre-created recurring Price at exactly $499/month via `STRIPE_PRICE_DISPATCH`; inline amounts are forbidden. Drivers remain free forever and hosts are free during the launch pilot. The proposed 5% host fee is recorded only as disabled terms architecture until legal, payment-flow, tax, refund, dispute, and regulatory approval are complete; LogLoads does not move freight funds in this release.
+
+## 2026-07-12 — Shared rate limits use the existing Supabase production stack
+- Supersedes the Redis-specific provider gate in the earlier 2026-07-12 entry below. The requirement is shared atomic state, not Redis by name. Supabase is sufficient for the current fixed-window workload and is already required by the production runtime.
+- Migration `20260713053327_shared_rate_limit_windows.sql` adds a service-role-only, RLS-enabled counter table plus a `SECURITY INVOKER` RPC. One `INSERT ... ON CONFLICT DO UPDATE` atomically consumes the window across Vercel instances; bounded lock-safe cleanup removes expired pseudonymous rows without a scheduler.
+- Raw IPs, actor IDs, and emails remain outside the store. The application sends HMAC-SHA-256 digests using `LOGLOADS_RATE_LIMIT_HMAC_SECRET` when present or the existing server-only Supabase service-role key as fallback. Rotating the effective secret resets active buckets.
+- Production remains fail-closed for missing/partial Supabase credentials, timeouts, non-2xx RPC responses, and malformed results. Process memory remains limited to non-production. The explicitly and doubly flagged local Playwright harness bypasses counters so serial seeded-user journeys do not rate-limit one another.
+- Vercel's overwritten `x-vercel-forwarded-for` is the only trusted production client-IP header. Spoofable forwarding headers are ignored outside that platform trust boundary; missing/invalid trusted values collapse into one fail-safe bucket.
+- KV/Redis is not required for this architecture. No provider setting, live schema, deployment, DNS, or production data was changed by this repository implementation.
+- Product scope remains coordination software: load/partner workflows, controlled route access, role-based operations, and trip/load status. This decision does not activate or claim freight brokerage, carrier, payment-processing, or dispatch-for-hire authority.
+
 ## 2026-07-12 — Distributed rate-limit store contract is production-required
 - Sign-in, contact, onboarding, and authenticated API mutation limits now consume an atomic fixed window through the provider-neutral `RateLimitStore` contract. The included external adapter speaks the Redis REST command protocol used by Upstash and compatible gateways; this decision does not select or provision a paid provider.
 - Each request runs one atomic Redis `EVAL` (`INCR` plus `PEXPIRE`/`PTTL`) so concurrent Vercel instances share the same bucket. Client IPs, actor IDs, and sign-in emails are pseudonymized with HMAC-SHA-256 before they enter store keys. A dedicated `LOGLOADS_RATE_LIMIT_HMAC_SECRET` is preferred; the required REST token is the safe keyed fallback when it is absent. Rotating the effective HMAC secret intentionally resets active buckets.
 - Production fails closed with a retryable service-unavailable response when the shared-store URL/token is absent, partial, unreachable, or returns an invalid result. It never silently falls back to process memory.
-- In-memory fixed windows remain only for non-production development and the explicitly flagged, single-process Playwright harness. `LOGLOADS_RATE_LIMIT_TEST_MODE` must never be set on a hosted Preview or Production deployment.
+- In-memory fixed windows remain only for non-production development. The explicitly flagged, single-process Playwright harness bypasses counters, and `LOGLOADS_RATE_LIMIT_TEST_MODE` must never be set on a hosted Preview or Production deployment.
 - The remaining public-cutover gate is operational: the founder must approve/provision an external Redis REST service, place its generic URL/token in Doppler and Vercel, and prove shared enforcement plus outage behavior on the exact deployment SHA.
 
 ## 2026-07-10 — Supabase `operating_state` promoted to transitional canonical store

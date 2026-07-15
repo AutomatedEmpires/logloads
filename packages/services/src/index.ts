@@ -21,6 +21,11 @@ import {
   updateEquipmentStatus
 } from "./equipment"
 import {
+  getDriverMediaTarget,
+  saveDriverMediaReference,
+  updateDriverEconomics
+} from "./driver-profile"
+import {
   createThread,
   listThreadMessages,
   listThreadsForUser,
@@ -43,6 +48,7 @@ import {
   attachTripDocument,
   createDirectOffer,
   createOperationalNotice,
+  declineCapacityRequest,
   getActiveOrganizationContext,
   getOrganizationMemberships,
   getRoutePackForAssignment,
@@ -50,7 +56,9 @@ import {
   listEntitlements,
   listFutureAvailabilityForOrganization,
   listPrivateNetworkRelationships,
+  listRequestableLoadsForOrganization,
   listVisibleLoadsForOrganization,
+  isLoadRequestableAt,
   progressTripStatus,
   publishFutureAvailability,
   requestCapacityWithPolicy
@@ -84,6 +92,7 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     findProfileByClerkId: (clerkUserId: string) => findProfileByClerkId(state, clerkUserId),
     findProfileByEmail: (email: string) => findProfileByEmail(state, email),
     getAccountContext: (userId: string) => getAccountContext(state, userId),
+    getDriverMediaTarget: (input: Parameters<typeof getDriverMediaTarget>[1]) => getDriverMediaTarget(state, input),
     linkProfileToClerkUser: (userId: string, clerkUserId: string) => linkProfileToClerkUser(state, userId, clerkUserId),
     listThreadMessages: (threadId: string, viewerUserId: string) => listThreadMessages(state, threadId, viewerUserId),
     listThreadsForUser: (userId: string) => listThreadsForUser(state, userId),
@@ -111,6 +120,7 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     createLoadPosting: (input: unknown) => createLoadPosting(state, input),
     createNotification: (input: unknown) => createNotification(state, input),
     createOperationalNotice: (input: Parameters<typeof createOperationalNotice>[1]) => createOperationalNotice(state, input),
+    declineCapacityRequest: (input: Parameters<typeof declineCapacityRequest>[1]) => declineCapacityRequest(state, input),
     createTruckSlot: (input: unknown) => createTruckSlot(state, input),
     getActiveOrganizationContext: (actorUserId?: string, organizationId?: string) => getActiveOrganizationContext(state, actorUserId, organizationId),
     getLoadById: (loadId: string) => getLoadById(state, loadId),
@@ -125,6 +135,8 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     markNotificationRead: (input: { userId: string; notificationId: string }) => markNotificationRead(state, input.userId, input.notificationId),
     markAllNotificationsRead: (userId: string) => markAllNotificationsRead(state, userId),
     listPrivateNetworkRelationships: (organizationId?: string) => listPrivateNetworkRelationships(state, organizationId),
+    isLoadRequestableAt: (load: Parameters<typeof isLoadRequestableAt>[1], at?: string) => isLoadRequestableAt(state, load, at),
+    listRequestableLoadsForOrganization: (organizationId?: string, at?: string) => listRequestableLoadsForOrganization(state, organizationId, at),
     listOpenLoads: () => listOpenLoads(state),
     listVisibleLoadsForOrganization: (organizationId?: string) => listVisibleLoadsForOrganization(state, organizationId),
     listRoutes: () => listRoutes(state),
@@ -133,9 +145,14 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     publishFutureAvailability: (input: Parameters<typeof publishFutureAvailability>[1]) => publishFutureAvailability(state, input),
     requestAssignment: (input: unknown) => requestAssignment(state, input),
     requestCapacityWithPolicy: (input: Parameters<typeof requestCapacityWithPolicy>[1]) => requestCapacityWithPolicy(state, input),
+    saveDriverMediaReference: (input: Parameters<typeof saveDriverMediaReference>[1]) => saveDriverMediaReference(state, input),
+    updateDriverEconomics: (input: Parameters<typeof updateDriverEconomics>[1]) => updateDriverEconomics(state, input),
     updateLoadPosting: (input: unknown) => updateLoadPosting(state, input),
     upsertAvailabilityWindow: (input: unknown) => upsertAvailabilityWindow(state, input)
   }
 }
 
 export type LogLoadsServices = ReturnType<typeof createLogLoadsServices>
+
+export { getDriverMediaTarget }
+export type { DriverMediaKind, DriverMediaTarget } from "./driver-profile"

@@ -91,6 +91,7 @@ export interface AssistantAnswer {
 interface RoleRoutes {
   loads: string
   trips: string
+  tripsLabel: string
   equipment: string
   performance: string
   loadDetail: (loadId: string) => string
@@ -99,13 +100,13 @@ interface RoleRoutes {
 function routesFor(role: AssistantRole): RoleRoutes {
   switch (role) {
     case "driver":
-      return { loads: "/driver/loads", trips: "/driver/trips", equipment: "/driver/equipment", performance: "/driver/profile", loadDetail: (id) => `/driver/loads/${id}` }
+      return { loads: "/driver/loads", trips: "/driver/schedule", tripsLabel: "Schedule", equipment: "/driver/equipment", performance: "/driver/profile", loadDetail: (id) => `/driver/loads/${id}` }
     case "fleet":
-      return { loads: "/fleet/opportunities", trips: "/fleet/trips", equipment: "/fleet/trucks", performance: "/fleet/performance", loadDetail: (id) => `/fleet/opportunities/${id}` }
+      return { loads: "/fleet/opportunities", trips: "/fleet/trips", tripsLabel: "Trips", equipment: "/fleet/trucks", performance: "/fleet/performance", loadDetail: (id) => `/fleet/opportunities/${id}` }
     case "host":
-      return { loads: "/host/opportunities", trips: "/host/live-board", equipment: "/host/landings", performance: "/host/reliability", loadDetail: () => "/host/opportunities" }
+      return { loads: "/host/opportunities", trips: "/host/live-board", tripsLabel: "Live board", equipment: "/host/landings", performance: "/host/reliability", loadDetail: () => "/host/opportunities" }
     default:
-      return { loads: "/admin/opportunities", trips: "/admin", equipment: "/admin", performance: "/admin/reliability", loadDetail: () => "/admin/opportunities" }
+      return { loads: "/admin/opportunities", trips: "/admin", tripsLabel: "Admin", equipment: "/admin", performance: "/admin/reliability", loadDetail: () => "/admin/opportunities" }
   }
 }
 
@@ -213,7 +214,7 @@ function answerTrips(g: AssistantGrounding, routes: RoleRoutes): AssistantAnswer
   if (g.trips.length === 0) {
     return {
       answer: "No active hauls on record. Once a request is approved, the trip and its next step show up here.",
-      citations: [{ href: routes.trips, label: "Trips" }],
+      citations: [{ href: routes.trips, label: routes.tripsLabel }],
       intent: "trips"
     }
   }
@@ -226,7 +227,7 @@ function answerTrips(g: AssistantGrounding, routes: RoleRoutes): AssistantAnswer
 
   return {
     answer: lines.join("\n"),
-    citations: [{ href: routes.trips, label: "Open trips" }],
+    citations: [{ href: routes.trips, label: routes.tripsLabel }],
     intent: "trips"
   }
 }
@@ -255,7 +256,7 @@ function answerAvailability(g: AssistantGrounding, routes: RoleRoutes): Assistan
   if (g.role === "host") {
     return {
       answer: "Carriers claim capacity as your loads post — I can't see other operations' trucks from here. Open your live board to see who's committed to your landings, and post more loads to draw capacity.",
-      citations: [{ href: routes.trips, label: "Live board" }, { href: routes.loads, label: "Your loads" }],
+      citations: [{ href: routes.trips, label: routes.tripsLabel }, { href: routes.loads, label: "Your loads" }],
       intent: "availability"
     }
   }
@@ -303,7 +304,7 @@ function answerOverview(g: AssistantGrounding, routes: RoleRoutes): AssistantAns
     lines.push(`Top match: ${g.recommendations[0]?.title} (${g.recommendations[0]?.lane}). Ask "what should I haul?" for the full ranking.`)
   }
 
-  const citations: AssistantCitation[] = [{ href: routes.loads, label: "Loads" }, { href: routes.trips, label: "Trips" }]
+  const citations: AssistantCitation[] = [{ href: routes.loads, label: "Loads" }, { href: routes.trips, label: routes.tripsLabel }]
 
   return { answer: lines.join("\n"), citations, intent: "overview" }
 }

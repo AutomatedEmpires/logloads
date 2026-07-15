@@ -86,6 +86,7 @@ describe("operator assistant engine", () => {
     expect(result.intent).toBe("trips")
     expect(result.answer).toContain("Oak saw-log morning run")
     expect(result.answer).toContain("Assigned")
+    expect(result.citations).toContainEqual({ href: "/driver/schedule", label: "Schedule" })
   })
 
   it("surfaces critical alerts first", () => {

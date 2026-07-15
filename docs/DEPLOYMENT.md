@@ -29,14 +29,14 @@ remain the long-term scaling path, but no material service rewrite is required f
 the first Supabase-canonical deployment.
 
 Sign-in, contact, onboarding, and authenticated API mutation limits use the
-provider-neutral `RateLimitStore` contract. Production selects the included
-Redis-compatible REST adapter with `LOGLOADS_RATE_LIMIT_REST_URL` and
-`LOGLOADS_RATE_LIMIT_REST_TOKEN`. Each request executes one atomic fixed-window
-increment shared by all instances. Missing, partial, unavailable, or invalid
-external configuration fails closed; process memory is never an implicit
-production fallback. `LOGLOADS_RATE_LIMIT_HMAC_SECRET` is the recommended
-dedicated keyed-pseudonymization secret; otherwise the REST token is used as the
-safe HMAC key. Rotating the effective key resets active rate-limit buckets.
+provider-neutral `RateLimitStore` contract. Production uses the existing
+Supabase URL and service-role key to call a service-role-only Postgres RPC. Each
+request executes one atomic fixed-window upsert shared by all instances. Missing,
+partial, unavailable, or invalid Supabase configuration fails closed; process
+memory is never an implicit production fallback. `LOGLOADS_RATE_LIMIT_HMAC_SECRET`
+is the recommended dedicated keyed-pseudonymization secret; otherwise the
+server-only service-role key supplies the HMAC key material. KV/Redis is not
+required for the current workload.
 
 ## Required production environment
 
@@ -46,12 +46,10 @@ safe HMAC key. Rotating the effective key resets active rate-limit buckets.
 - `SUPABASE_SERVICE_ROLE_KEY` (server-only)
 - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
 - `CLERK_SECRET_KEY`
-- `LOGLOADS_RATE_LIMIT_REST_URL` (Redis REST command endpoint)
-- `LOGLOADS_RATE_LIMIT_REST_TOKEN` (server-only bearer credential)
 
 `LOGLOADS_RATE_LIMIT_HMAC_SECRET` is optional but recommended as a dedicated
-server-only HMAC key; without it, the required REST token supplies the key
-material.
+server-only HMAC key; without it, the required Supabase service-role key supplies
+the key material.
 
 Optional provider variables are catalogued in
 [`ops/production-env-contract.json`](../ops/production-env-contract.json).
@@ -63,18 +61,27 @@ The established live project already has a row and should not need this switch.
 
 ## Migration order
 
-Apply `supabase/migrations/*.sql` in filename order. The new convergence migration is:
+Apply `supabase/migrations/*.sql` in filename order. The latest migrations are:
 
 5. `20260711034301_canonical_operating_state.sql`
+6. `20260713053327_shared_rate_limit_windows.sql`
 
-It is additive: it adds `schema_version` and `version`, backfills only a missing
+The convergence migration is additive: it adds `schema_version` and `version`, backfills only a missing
 `tripReviews` array, preserves all existing JSON, enables RLS, revokes broad grants,
 and explicitly grants only `SELECT`, `INSERT`, and `UPDATE` to `service_role`. It
 contains no `SECURITY DEFINER` function and no delete path.
 
-The migration is committed locally but has not been applied to a live provider in
-this pass. A fresh PostgreSQL 17 `supabase db reset` and catalog privilege check
-passed locally on 2026-07-10.
+The rate-limit migration is also additive. It creates only operational counter
+state, enables RLS without public policies, restricts its table and atomic RPC to
+`service_role`, and performs bounded cleanup only on expired rate-limit rows. It
+does not read, update, or delete business or user data.
+
+The rate-limit migration is committed but was not applied to a live provider in
+this pass. An isolated local Supabase PostgreSQL 17 database accepted it on
+2026-07-12; 12 concurrent sessions produced exactly the counts 1–12, reset behavior
+returned to count 1, anon/authenticated execution was denied, and the local
+advisors reported no limiter-specific finding. A complete fresh migration reset
+remains a preview/cutover gate.
 
 ## Preview and cutover gates
 
@@ -89,7 +96,7 @@ passed locally on 2026-07-10.
 6. Confirm Doppler → Vercel production variables and exact deployment provenance.
 7. On the exact Preview SHA, prove two instances share sign-in, contact,
    onboarding, and mutation buckets; verify 429 `Retry-After` behavior and that a
-   simulated store outage fails closed with 503. Confirm
+   simulated Supabase RPC outage fails closed with 503. Confirm
    `LOGLOADS_RATE_LIMIT_TEST_MODE` is absent.
 8. Apply the additive migration, deploy the canonical-aware SHA, then smoke test.
 9. Cut DNS only after the preview and rollback gates are green.

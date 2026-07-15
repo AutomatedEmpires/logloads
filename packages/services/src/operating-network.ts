@@ -8,15 +8,19 @@ import {
   evaluateLoadCompatibility,
   notificationSchema,
   organizationRoleCan,
+  transitionAssignmentStatus,
+  transitionTruckSlotStatus,
   transitionTripStatus,
   tripDocumentSchema,
   tripEventSchema,
   tripSchemaV2,
+  truckSlotSchema,
   type Assignment,
   type AssignmentStatus,
   type DirectOffer,
   type FutureAvailability,
   type LoadPosting,
+  type NotificationType,
   type OperationalNotice,
   type OrganizationAction,
   type OrganizationMembership,
@@ -29,7 +33,7 @@ import {
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
-import { assignDriverToSlot, requestAssignment } from "./assignments"
+import { declineAssignment, requestAssignment } from "./assignments"
 import { assertCondition, assertFound, createUuid, nowIso } from "./utils"
 
 export const DEFAULT_ACTOR_USER_ID = "22222222-2222-4222-8222-222222222221"
@@ -88,6 +92,10 @@ export interface ApproveCapacityRequestInput {
   actorUserId?: string
   organizationId?: string
   assignmentId: string
+}
+
+export interface DeclineCapacityRequestInput extends ApproveCapacityRequestInput {
+  reason?: string | null
 }
 
 export interface ProgressTripStatusInput {
@@ -283,6 +291,44 @@ export function listVisibleLoadsForOrganization(
   return state.loadPostings.filter((load) => load.status !== "archived" && isLoadVisibleToOrganization(state, load, organizationId))
 }
 
+/**
+ * A load belongs on a live discovery surface only while a driver can still
+ * acquire a future slot. Historical, filled, invite-only, and dispatch-assigned
+ * work stays in the operating record but never masquerades as available work.
+ */
+export function isLoadRequestableAt(
+  state: LogLoadsDatabaseState,
+  load: LoadPosting,
+  at = nowIso()
+): boolean {
+  if (load.archivedAt || !["open", "scheduled"].includes(load.status)) {
+    return false
+  }
+
+  const capacity = getOpportunityCapacity(state, load.id)
+
+  if (capacity && (capacity.remainingTruckloads <= 0 || capacity.allocationMode !== "request_approval")) {
+    return false
+  }
+
+  return state.truckSlots.some((slot) =>
+    slot.loadPostingId === load.id &&
+    ["open", "requested"].includes(slot.status) &&
+    slot.reservedCount < slot.capacity &&
+    slot.endAt > at
+  )
+}
+
+export function listRequestableLoadsForOrganization(
+  state: LogLoadsDatabaseState,
+  organizationId = DEFAULT_ORGANIZATION_ID,
+  at = nowIso()
+): LoadPosting[] {
+  return listVisibleLoadsForOrganization(state, organizationId).filter((load) =>
+    isLoadRequestableAt(state, load, at)
+  )
+}
+
 function findEquipmentCombinationForAssignment(state: LogLoadsDatabaseState, assignment: Assignment) {
   return state.equipmentCombinations.find((combination) =>
     combination.truckProfileId === assignment.truckProfileId &&
@@ -335,7 +381,8 @@ function insertNotification(
   title: string,
   body: string,
   relatedEntityType: string,
-  relatedEntityId: string
+  relatedEntityId: string,
+  type: NotificationType
 ): void {
   const timestamp = nowIso()
 
@@ -347,7 +394,7 @@ function insertNotification(
     relatedEntityId,
     relatedEntityType,
     title,
-    type: relatedEntityType === "assignment" ? "assignment_requested" : "system_alert",
+    type,
     updatedAt: timestamp,
     userId
   }))
@@ -363,6 +410,20 @@ function updateOpportunityCapacityAfterRequest(state: LogLoadsDatabaseState, cap
 
   state.opportunityCapacities = state.opportunityCapacities.map((current) =>
     current.id === capacity.id ? updated : current
+  )
+}
+
+function updateOpportunityCapacityAfterDecline(state: LogLoadsDatabaseState, capacity: OpportunityCapacity): void {
+  const committedTruckloads = Math.max(capacity.completedTruckloads, capacity.committedTruckloads - 1)
+  const remainingTruckloads = Math.min(
+    capacity.totalTruckloads - committedTruckloads,
+    capacity.remainingTruckloads + 1
+  )
+
+  state.opportunityCapacities = state.opportunityCapacities.map((current) =>
+    current.id === capacity.id
+      ? { ...current, committedTruckloads, remainingTruckloads, updatedAt: nowIso() }
+      : current
   )
 }
 
@@ -424,11 +485,23 @@ export function requestCapacityWithPolicy(state: LogLoadsDatabaseState, input: C
   }
   const context = getContextForInput(state, parsed)
   assertOrganizationAction(context, "request_assignment")
+  const selectedDriver = assertFound(
+    state.driverProfiles.find((driver) => driver.id === parsed.driverProfileId),
+    `Driver profile ${parsed.driverProfileId} was not found`
+  )
+  assertCondition(
+    context.membership.role !== "driver" || selectedDriver.userId === context.actorUserId,
+    "Drivers can only request assignments for their own driver profile"
+  )
   assertEquipmentBelongsToOrganization(state, context.organizationId, parsed)
 
   const load = assertFound(
     state.loadPostings.find((current) => current.id === parsed.loadPostingId),
     `Load posting ${parsed.loadPostingId} was not found`
+  )
+  assertCondition(
+    ["open", "scheduled"].includes(load.status),
+    `Load posting ${load.id} is not accepting requests while ${load.status}`
   )
   assertCondition(
     isLoadVisibleToOrganization(state, load, context.organizationId),
@@ -444,6 +517,10 @@ export function requestCapacityWithPolicy(state: LogLoadsDatabaseState, input: C
 
   const capacity = getOpportunityCapacity(state, parsed.loadPostingId)
   assertCondition(!capacity || capacity.remainingTruckloads > 0, "No opportunity capacity remains for this load")
+  assertCondition(
+    !capacity || capacity.allocationMode === "request_approval",
+    "This load is not accepting driver requests"
+  )
 
   const truck = assertFound(
     state.truckProfiles.find((current) => current.id === parsed.truckProfileId),
@@ -480,7 +557,8 @@ export function requestCapacityWithPolicy(state: LogLoadsDatabaseState, input: C
       "Capacity request received",
       `${context.organizationId} requested ${load.title}.`,
       "assignment",
-      assignment.id
+      assignment.id,
+      "assignment_requested"
     )
   }
 
@@ -505,23 +583,65 @@ export function approveCapacityRequest(
   )
 
   assertCondition(load.companyId === context.organizationId, "Only the source organization can approve capacity requests")
+  assertCondition(
+    ["requested", "offered"].includes(assignment.status),
+    "Only a requested or offered assignment can be approved"
+  )
 
-  const acceptedAssignment = assignDriverToSlot(state, assignment.id)
   const existingTrip = state.tripsV2.find((trip) => trip.assignmentId === assignment.id)
   const routePack = state.routePacks.find((pack) => pack.loadPostingId === load.id) ?? null
-  const equipmentCombination = findEquipmentCombinationForAssignment(state, acceptedAssignment) ?? null
-
-  if (existingTrip) {
-    return { assignment: acceptedAssignment, trip: existingTrip }
-  }
-
+  const equipmentCombination = assertFound(
+    findEquipmentCombinationForAssignment(state, assignment),
+    "The requested equipment combination was not found"
+  )
+  const rate = assertFound(state.rates.find((candidate) => candidate.id === load.rateId), `Rate ${load.rateId} was not found`)
+  const route = assertFound(state.haulRoutes.find((candidate) => candidate.id === load.routeId), `Route ${load.routeId} was not found`)
+  const slot = assertFound(
+    state.truckSlots.find((candidate) => candidate.id === assignment.truckSlotId),
+    `Truck slot ${assignment.truckSlotId} was not found`
+  )
   const timestamp = nowIso()
-  const trip = tripSchemaV2.parse({
+  const offeredStatus = assignment.status === "requested"
+    ? transitionAssignmentStatus("requested", "offered")
+    : assignment.status
+  const acceptedStatus = transitionAssignmentStatus(offeredStatus, "accepted")
+  const acceptedAssignment = assignmentSchema.parse({
+    ...assignment,
+    assignedAt: timestamp,
+    status: acceptedStatus,
+    termsSnapshot: {
+      acceptedAt: timestamp,
+      baseRateCents: rate.baseRate.amountCents,
+      currency: rate.baseRate.currency,
+      estimatedDistanceMiles: route.estimatedDistanceMiles,
+      estimatedTonsPerLoad: load.estimatedTonsPerLoad ?? null,
+      fuelSurchargeCents: rate.fuelSurchargeCents,
+      haulerOrganizationId: equipmentCombination?.organizationId ?? null,
+      hostFee: {
+        collectionState: "disabled_pending_legal_and_payment_approval",
+        feeCents: null,
+        proposedRateBps: 500
+      },
+      hostOrganizationId: load.companyId,
+      loadPostingId: load.id,
+      loadVersion: load.updatedAt,
+      paymentMode: "off_platform",
+      rateBasis: rate.rateType,
+      rateId: rate.id
+    },
+    updatedAt: timestamp
+  })
+  const confirmedSlot = truckSlotSchema.parse({
+    ...slot,
+    status: slot.status === "requested" ? transitionTruckSlotStatus("requested", "reserved") : slot.status,
+    updatedAt: timestamp
+  })
+  const trip = existingTrip ?? tripSchemaV2.parse({
     assignmentId: acceptedAssignment.id,
     completedAt: null,
     createdAt: timestamp,
     driverProfileId: acceptedAssignment.driverProfileId,
-    equipmentCombinationId: equipmentCombination?.id ?? null,
+    equipmentCombinationId: equipmentCombination.id,
     id: createUuid(),
     lastSyncedAt: timestamp,
     loadPostingId: acceptedAssignment.loadPostingId,
@@ -532,9 +652,7 @@ export function approveCapacityRequest(
     status: "assigned",
     updatedAt: timestamp
   })
-
-  state.tripsV2.push(trip)
-  state.tripEvents.push(tripEventSchema.parse({
+  const tripEvent = existingTrip ? null : tripEventSchema.parse({
     actorUserId: context.actorUserId,
     createdAt: timestamp,
     id: createUuid(),
@@ -544,7 +662,21 @@ export function approveCapacityRequest(
     source: "dispatcher",
     tripId: trip.id,
     type: "assignment_created"
-  }))
+  })
+
+  state.assignments = state.assignments.map((current) =>
+    current.id === acceptedAssignment.id ? acceptedAssignment : current
+  )
+  state.truckSlots = state.truckSlots.map((current) =>
+    current.id === confirmedSlot.id ? confirmedSlot : current
+  )
+
+  if (existingTrip) {
+    return { assignment: acceptedAssignment, trip: existingTrip }
+  }
+
+  state.tripsV2.push(trip)
+  if (tripEvent) state.tripEvents.push(tripEvent)
   insertAuditEvent(state, context.actorUserId, "trip", trip.id, "created_from_assignment", {
     assignmentId: acceptedAssignment.id
   })
@@ -557,11 +689,68 @@ export function approveCapacityRequest(
       "Assignment confirmed",
       `${load.title} is confirmed and the route pack is available.`,
       "assignment",
-      acceptedAssignment.id
+      acceptedAssignment.id,
+      "assignment_confirmed"
     )
   }
 
   return { assignment: acceptedAssignment, trip }
+}
+
+export function declineCapacityRequest(
+  state: LogLoadsDatabaseState,
+  input: DeclineCapacityRequestInput
+): Assignment {
+  const assignmentId = requireText(input.assignmentId, "assignmentId")
+  const context = getContextForInput(state, input)
+  assertOrganizationAction(context, "assign_capacity")
+
+  const assignment = assertFound(
+    state.assignments.find((current) => current.id === assignmentId),
+    `Assignment ${assignmentId} was not found`
+  )
+  const load = assertFound(
+    state.loadPostings.find((current) => current.id === assignment.loadPostingId),
+    `Load posting ${assignment.loadPostingId} was not found`
+  )
+
+  assertCondition(load.companyId === context.organizationId, "Only the source organization can decline capacity requests")
+  assertCondition(
+    ["requested", "offered"].includes(assignment.status),
+    "Only a requested or offered assignment can be declined"
+  )
+
+  const declined = declineAssignment(
+    state,
+    assignment.id,
+    input.reason?.trim() || "Another truck was selected for this haul."
+  )
+  const capacity = getOpportunityCapacity(state, load.id)
+
+  if (capacity) {
+    updateOpportunityCapacityAfterDecline(state, capacity)
+  }
+
+  insertAuditEvent(state, context.actorUserId, "assignment", declined.id, "capacity_declined", {
+    loadPostingId: load.id,
+    organizationId: context.organizationId,
+    reason: declined.cancellationReason
+  })
+
+  const driver = state.driverProfiles.find((profile) => profile.id === declined.driverProfileId)
+  if (driver) {
+    insertNotification(
+      state,
+      driver.userId,
+      "Not selected for this haul",
+      `${load.title} went to another truck. The capacity is available again if the host reopens the decision.`,
+      "assignment",
+      declined.id,
+      "assignment_declined"
+    )
+  }
+
+  return declined
 }
 
 export function progressTripStatus(
@@ -643,6 +832,18 @@ export function getRoutePackForAssignment(
     `Assignment ${input.assignmentId} was not found`
   )
   assertTripParticipant(state, context, assignment)
+
+  const load = assertFound(
+    state.loadPostings.find((current) => current.id === assignment.loadPostingId),
+    `Load posting ${assignment.loadPostingId} was not found`
+  )
+  const ownerAccess = load.companyId === context.organizationId
+  const acceptedAccess = ["accepted", "checked_in", "loading", "hauled", "completed"].includes(assignment.status)
+
+  assertCondition(
+    ownerAccess || acceptedAccess,
+    "The Route Pack unlocks after the host accepts the haul"
+  )
 
   const routePack = assertFound(
     state.routePacks.find((pack) => pack.loadPostingId === assignment.loadPostingId),
@@ -752,7 +953,8 @@ export function createOperationalNotice(state: LogLoadsDatabaseState, input: Cre
           notice.title,
           notice.body,
           "operational_notice",
-          notice.id
+          notice.id,
+          "system_alert"
         )
       }
     }
@@ -800,7 +1002,15 @@ export function createDirectOffer(state: LogLoadsDatabaseState, input: CreateDir
     membership.status === "active" &&
     ["owner", "admin", "dispatcher", "fleet_manager"].includes(membership.role)
   )) {
-    insertNotification(state, membership.userId, "Direct offer received", `${load.title} was offered directly to your organization.`, "direct_offer", offer.id)
+    insertNotification(
+      state,
+      membership.userId,
+      "Direct offer received",
+      `${load.title} was offered directly to your organization.`,
+      "direct_offer",
+      offer.id,
+      "system_alert"
+    )
   }
 
   return offer

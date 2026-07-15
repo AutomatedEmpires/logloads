@@ -209,29 +209,29 @@ export interface PricingPlan {
 export const pricingPlans: PricingPlan[] = [
   {
     name: "Driver",
-    price: "Free",
+    price: "Free forever",
     audience: "Owner-operators and company drivers",
-    summary: "Finding work never costs you anything.",
-    features: ["Find loads that fit your rig", "Route Pack access after assignment", "Trip status and delivery proof", "Availability updates"],
+    summary: "Find, request, schedule, and complete work without paying LogLoads.",
+    features: ["Loads ranked for your truck", "Plain-language match checks", "Request and booking status", "Mobile schedule and haul steps"],
     cta: { href: "/sign-up", label: "Create free account" }
   },
   {
-    name: "Fleet",
-    price: "From $149/mo",
-    audience: "Carriers and dispatch teams",
-    summary: "Dispatch tools for the trucks you already run.",
-    features: ["Truck and driver planning", "Dispatch board", "Private partner work", "Future availability publishing"],
-    cta: { href: "/sign-up", label: "Start fleet setup" },
-    note: "Set up your fleet free today. Paid features switch on when billing activation is live — we will tell you before anything is charged."
+    name: "Dispatch Pro",
+    price: "$499/mo",
+    audience: "Fleets and dispatch teams",
+    summary: "One operating account for the trucks and drivers you dispatch.",
+    features: ["Free driver seats", "Truck and driver planning", "Dispatch board and schedule", "Private partner work"],
+    cta: { href: "/sign-up?path=fleet", label: "Set up dispatch" },
+    note: "One clear monthly price. Billing is confirmed before paid access begins."
   },
   {
     name: "Host",
-    price: "From $249/mo",
+    price: "Free launch pilot",
     audience: "Landings and timber organizations",
-    summary: "Publish work, control who sees it, run the live board.",
-    features: ["Load publishing with visibility control", "Live landing board", "Preferred carrier tools", "Capacity planning"],
-    cta: { href: "/sign-up", label: "Start host setup" },
-    note: "Set up your operation free today. Paid features switch on when billing activation is live — we will tell you before anything is charged."
+    summary: "Post loads and coordinate trucks without a monthly fee during launch.",
+    features: ["No charge to post", "Qualified driver requests", "Live landing schedule", "Clear booking decisions"],
+    cta: { href: "/sign-up?path=host", label: "Post a load" },
+    note: "We will give advance notice before launch-pilot pricing changes."
   },
   {
     name: "Enterprise",

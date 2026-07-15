@@ -22,7 +22,6 @@ test.describe.serial("operating loop", () => {
 
     const cards = page.locator("a.load-card-v3")
     const cardCount = await cards.count()
-    expect(cardCount).toBeGreaterThan(0)
 
     let requested = false
 
@@ -42,7 +41,7 @@ test.describe.serial("operating loop", () => {
       // A prior project run may already hold this load in any assignment state
       // (Requested, Assigned to you, At the landing, ...).
       const alreadyCommitted = await page
-        .getByText(/Waiting for host approval|Assigned to you|At the landing|Loading|Hauled|On this load/)
+        .getByText(/The host is deciding|You're booked|At the landing|Loading|Hauled|On this load/)
         .first()
         .isVisible()
         .catch(() => false)
@@ -52,7 +51,7 @@ test.describe.serial("operating loop", () => {
         break
       }
 
-      const requestButton = page.getByRole("button", { name: "Request 1 load" })
+      const requestButton = page.getByRole("button", { name: "Request haul" })
 
       if (!(await requestButton.isVisible().catch(() => false))) {
         continue
@@ -62,24 +61,34 @@ test.describe.serial("operating loop", () => {
       // until the panel reacts (pending label, outcome copy, or error).
       await expect(async () => {
         await requestButton.click()
-        await expect(page.locator(".request-panel").first()).not.toContainText("Request 1 load", { timeout: 2_500 })
+        await expect(page.locator(".request-panel").first()).not.toContainText("Request haul", { timeout: 2_500 })
       }).toPass({ timeout: 30_000 })
 
       // Success renders either the optimistic "Requested — ..." confirmation or,
       // after revalidation, the persisted "Waiting for host approval" state. A
       // compatibility rejection renders an alert instead — move to the next card.
       const confirmed = await Promise.race([
-        page.getByText(/Requested — /).first().waitFor({ state: "visible", timeout: 30_000 }).then(() => true),
-        page.getByText("Waiting for host approval").first().waitFor({ state: "visible", timeout: 30_000 }).then(() => true),
+        page.getByText("The host is deciding.").first().waitFor({ state: "visible", timeout: 30_000 }).then(() => true),
+        page.getByText("Request sent").first().waitFor({ state: "visible", timeout: 30_000 }).then(() => true),
         page.locator(".action-error").first().waitFor({ state: "visible", timeout: 30_000 }).then(() => false)
       ]).catch(() => false)
 
       if (confirmed) {
+        await expect(page.getByRole("heading", { name: "Route Pack unlocks after assignment." })).toBeVisible()
         requested = true
       }
     }
 
-    expect(requested, "driver should be able to request capacity on at least one visible load").toBe(true)
+    if (!requested) {
+      // The mobile project may already have requested, received, and advanced
+      // the only compatible seeded haul. Committed work correctly disappears
+      // from Available Loads and moves to Schedule, so verify it there.
+      await page.goto("/driver/schedule")
+      await page.waitForLoadState("networkidle")
+      requested = await page.locator(".schedule-request-card, .trip-card").first().isVisible().catch(() => false)
+    }
+
+    expect(requested, "driver should be able to request a visible load or see committed work on Schedule").toBe(true)
   })
 
   test("host sees the capacity request and approves it", async ({ page }) => {
@@ -87,16 +96,32 @@ test.describe.serial("operating loop", () => {
     await page.goto("/host/command")
     await page.waitForLoadState("networkidle")
 
-    const approve = page.getByRole("button", { name: "Approve" }).first()
-    const hasApprove = await approve.isVisible().catch(() => false)
+    const approvalRow = page.locator(".host-approval-row").first()
+    const hasApprove = await approvalRow.getByRole("button", { name: "Approve" }).isVisible().catch(() => false)
 
     if (hasApprove) {
-      const before = await page.getByRole("button", { name: "Approve" }).count()
+      const requestLabel = (await approvalRow.locator("span").textContent())?.trim() ?? ""
+      expect(requestLabel, "a capacity request should expose a stable visible label").toBeTruthy()
 
-      await approve.click()
-      await expect
-        .poll(async () => page.getByRole("button", { name: "Approve" }).count(), { timeout: 15_000 })
-        .toBeLessThan(before)
+      const trackedRequest = page.locator(".host-approval-row").filter({ hasText: requestLabel }).first()
+
+      // The first click can land in the hydration gap. Retry the same visible
+      // request until its committed approval removes that request from the queue.
+      await expect(async () => {
+        if (!(await trackedRequest.isVisible().catch(() => false))) {
+          return
+        }
+
+        const approve = trackedRequest.getByRole("button", { name: "Approve", exact: true })
+
+        if (await approve.isEnabled().catch(() => false)) {
+          await approve.click()
+        }
+
+        await expect(trackedRequest).toBeHidden({ timeout: 5_000 })
+      }).toPass({ timeout: 30_000 })
+
+      await expect(trackedRequest).toBeHidden()
     } else {
       // A prior run may already have drained the queue; the journey continues
       // as long as committed work exists for the driver to progress.
@@ -106,7 +131,7 @@ test.describe.serial("operating loop", () => {
 
   test("driver progresses the active trip one step", async ({ page }) => {
     await signIn(page, "hank@northpine.example")
-    await page.goto("/driver/trips")
+    await page.goto("/driver/schedule")
     await page.waitForLoadState("networkidle")
 
     const advance = page.locator("button.advance-button").first()
@@ -138,8 +163,12 @@ test.describe.serial("operating loop", () => {
     const existingThread = page.locator(".thread-item").first()
 
     if (await existingThread.isVisible().catch(() => false)) {
-      await existingThread.click()
+      const href = await existingThread.getAttribute("href")
+
+      expect(href, "an existing conversation should expose a navigable thread URL").toBeTruthy()
+      await page.goto(href!)
       await page.waitForLoadState("networkidle")
+      await expect(page.locator('textarea[aria-label="Message"]')).toBeVisible({ timeout: 15_000 })
     } else {
       await page.getByRole("button", { name: "New message" }).click()
       await page.locator(".messages-new__people button").first().click()

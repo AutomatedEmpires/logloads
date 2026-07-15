@@ -11,7 +11,7 @@ page.on("pageerror", (err) => console.log("PAGEERR:", String(err).slice(0, 200))
 await page.goto(`${BASE}/sign-in`, { waitUntil: "networkidle" })
 await page.fill('input[name="email"]', "hank@northpine.example")
 await page.click('button[type="submit"]')
-await page.waitForURL("**/driver/today", { timeout: 30000 })
+await page.waitForURL("**/driver/map", { timeout: 30000 })
 
 await page.goto(`${BASE}/driver/loads`, { waitUntil: "networkidle" })
 const card = page.locator("a.load-card-v3").first()

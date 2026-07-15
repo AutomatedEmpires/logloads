@@ -37,15 +37,17 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
 try {
   // 2. Public product renders
   await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 30000 })
-  const heroOk = await page.getByRole("heading", { name: "TIMBER MOVES HERE." }).isVisible().catch(() => false)
+  const heroOk = await page.getByRole("heading", { name: "Move more loads. Make fewer calls." })
+    .waitFor({ state: "visible", timeout: 5_000 }).then(() => true).catch(() => false)
   record(heroOk ? "PASS" : "FAIL", "public home renders")
 
   await page.goto(`${BASE}/loads`, { waitUntil: "domcontentloaded" })
-  const loadsOk = await page.getByText("Exact access unlocks after assignment.").first().isVisible().catch(() => false)
+  const loadsOk = await page.getByText("Exact access unlocks after assignment.").first()
+    .waitFor({ state: "visible", timeout: 5_000 }).then(() => true).catch(() => false)
   record(loadsOk ? "PASS" : "FAIL", "public loads renders")
 
   // 3. Cockpits are protected (unauthenticated → sign-in)
-  await page.goto(`${BASE}/driver/today`, { waitUntil: "domcontentloaded" })
+  await page.goto(`${BASE}/driver/map`, { waitUntil: "domcontentloaded" })
   await page.waitForTimeout(800)
   record(page.url().includes("/sign-in") ? "PASS" : "FAIL", "cockpit protected", new URL(page.url()).pathname)
 
@@ -56,7 +58,7 @@ try {
     await page.fill('input[name="email"]', email)
     await page.click('button[type="submit"]')
     await page.waitForURL((u) => !u.pathname.startsWith("/sign-in"), { timeout: 30000 }).catch(() => {})
-    record(page.url().includes("/driver/today") ? "PASS" : "FAIL", "auth: driver reaches Today", new URL(page.url()).pathname)
+    record(page.url().includes("/driver/map") ? "PASS" : "FAIL", "auth: driver reaches Map", new URL(page.url()).pathname)
 
     await page.goto(`${BASE}/driver/loads`, { waitUntil: "networkidle" })
     const cards = await page.locator("a.load-card-v3").count()

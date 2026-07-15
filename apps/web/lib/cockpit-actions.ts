@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 
 import { captureServerEvent } from "./analytics"
+import { mediaTarget, parseMediaKind, verifiedMediaReference, type MediaKind } from "./media"
 import { mutateState, serializeError, services } from "./services"
 import { getSessionActor, type SessionActor } from "./session"
 
@@ -61,9 +62,16 @@ export async function requestCapacityAction(input: {
   try {
     const actor = await requireActor()
     const driverProfileId = input.driverProfileId ?? actor.driverProfileId
+    const canRequestForOtherDriver = ["owner", "admin", "dispatcher", "fleet_manager"].includes(
+      actor.activeMembership?.role ?? ""
+    )
 
     if (!driverProfileId) {
       throw new Error("Add a driver before requesting capacity")
+    }
+
+    if (driverProfileId !== actor.driverProfileId && !canRequestForOtherDriver) {
+      throw new Error("You can only request a haul for your own driver profile")
     }
 
     await commit(["/driver", "/fleet", "/host"], (draft) => {
@@ -73,6 +81,38 @@ export async function requestCapacityAction(input: {
 
       if (!combination) {
         throw new Error("Add your truck first. Equipment powers matching and assignments.")
+      }
+
+      const slot = draft.state.truckSlots.find((candidate) => candidate.id === input.truckSlotId)
+
+      if (!slot || slot.loadPostingId !== input.loadPostingId) {
+        throw new Error("This haul window is no longer available. Pick another open load.")
+      }
+
+      const driverWindows = draft.state.availabilityWindows.filter(
+        (window) => window.driverProfileId === driverProfileId
+      )
+      const coversSlot = driverWindows.some(
+        (window) => window.status !== "unavailable" && window.startAt <= slot.startAt && window.endAt >= slot.endAt
+      )
+
+      if (!coversSlot) {
+        const overlapsSlot = driverWindows.some(
+          (window) => window.startAt < slot.endAt && window.endAt > slot.startAt
+        )
+
+        if (overlapsSlot) {
+          throw new Error("Your posted availability does not cover this full haul window. Update availability, then request again.")
+        }
+
+        draft.upsertAvailabilityWindow({
+          driverProfileId,
+          endAt: slot.endAt,
+          notes: "Confirmed while requesting this haul.",
+          startAt: slot.startAt,
+          status: "available",
+          truckProfileId: combination.truckProfileId
+        })
       }
 
       return draft.requestCapacityWithPolicy({
@@ -179,6 +219,63 @@ export async function updateDriverAvailabilityAction(input: {
       })
     )
 
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function updateDriverEconomicsAction(input: {
+  fuelEconomyMpg: number
+  fuelPriceCentsPerGallon: number
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+    const organizationId = actorOrganizationId(actor)
+
+    if (!actor.driverProfileId) {
+      throw new Error("Add a driver profile before saving fuel assumptions")
+    }
+
+    await commit(["/driver"], (draft) => draft.updateDriverEconomics({
+      actorUserId: actor.profile.id,
+      driverProfileId: actor.driverProfileId,
+      fuelEconomyMpg: input.fuelEconomyMpg,
+      fuelPriceCentsPerGallon: input.fuelPriceCentsPerGallon,
+      organizationId
+    }))
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function saveDriverMediaAction(input: {
+  kind: MediaKind
+  publicId: string
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+    const organizationId = actorOrganizationId(actor)
+    const kind = parseMediaKind(input.kind)
+    const target = mediaTarget(services.state, actor, organizationId, kind)
+
+    if (!input.publicId.startsWith(`${target.publicIdPrefix}/uploads/`)) {
+      throw new Error("The uploaded photo does not belong to this profile")
+    }
+
+    const photo = await verifiedMediaReference(input.publicId)
+
+    await commit(["/driver"], (draft) => draft.saveDriverMediaReference({
+      actorUserId: actor.profile.id,
+      driverProfileId: actor.driverProfileId,
+      kind,
+      organizationId,
+      photo
+    }))
+
+    captureServerEvent("driver_media_saved", actor.profile.id, { kind })
     return OK
   } catch (error) {
     return failure(error)
@@ -300,10 +397,12 @@ export async function approveCapacityRequestAction(input: {
         })
       }
 
-      return draft.cancelAssignment(
-        input.assignmentId,
-        input.reason?.trim() || "Declined by the publishing organization"
-      )
+      return draft.declineCapacityRequest({
+        actorUserId: actor.profile.id,
+        assignmentId: input.assignmentId,
+        organizationId: actorOrganizationId(actor),
+        reason: input.reason?.trim() || null
+      })
     })
 
     captureServerEvent(input.approve ? "capacity_approved" : "capacity_declined", actor.profile.id, {

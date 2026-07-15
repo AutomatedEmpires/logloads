@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useActionState, useState } from "react"
+import { useActionState, useState, type MouseEvent } from "react"
 
 import {
   completeOnboardingAction,
@@ -85,6 +85,7 @@ export function OnboardingFlow({
 }) {
   const [path, setPath] = useState<OnboardingPath | null>(initialPath ?? null)
   const [accountType, setAccountType] = useState<string | null>(null)
+  const [step, setStep] = useState(0)
   const [state, formAction, pending] = useActionState(completeOnboardingAction, INITIAL_ONBOARDING_STATE)
 
   if (!path) {
@@ -105,11 +106,38 @@ export function OnboardingFlow({
   const needsEquipment = path !== "host"
   const orgLabel = path === "host" ? "Company or operation name" : path === "fleet" ? "Fleet name" : "Business name (optional)"
 
+  function advanceStep(event: MouseEvent<HTMLButtonElement>) {
+    // Prevent the browser's default action before React swaps this control for
+    // the final submit button. Without this, the reused DOM node can submit the
+    // form as soon as step 3 renders.
+    event.preventDefault()
+
+    const fields = Array.from(
+      event.currentTarget.form?.querySelectorAll<HTMLInputElement | HTMLSelectElement>(`[data-onboarding-step="${step}"] input, [data-onboarding-step="${step}"] select`) ?? []
+    )
+    const invalid = fields.find((field) => !field.checkValidity())
+
+    if (invalid) {
+      invalid.reportValidity()
+      return
+    }
+
+    setStep((current) => Math.min(current + 1, 2))
+  }
+
   return (
     <form action={formAction} className="onboarding-form">
       <input name="path" type="hidden" value={path} />
-      <fieldset>
-        <legend>What describes you best?</legend>
+      <div className="onboarding-progress" aria-label={`Step ${step + 1} of 3`}>
+        <span>Step {step + 1} of 3</span>
+        <div aria-hidden>
+          {[0, 1, 2].map((index) => <i className={index <= step ? "is-complete" : undefined} key={index} />)}
+        </div>
+      </div>
+
+      <fieldset data-onboarding-step="0" hidden={step !== 0}>
+        <legend>What do you do?</legend>
+        <p className="fieldset-note">Pick the closest answer. You can change optional details later.</p>
         <div className="radio-grid">
           {types.map((type) => (
             <label className={selectedType === type.value ? "radio-card radio-card--active" : "radio-card"} key={type.value}>
@@ -125,13 +153,9 @@ export function OnboardingFlow({
             </label>
           ))}
         </div>
-      </fieldset>
-
-      <fieldset>
-        <legend>About you</legend>
         <label>
           <span>Full name</span>
-          <input defaultValue={identityKnown?.fullName ?? ""} name="fullName" required type="text" />
+          <input autoComplete="name" defaultValue={identityKnown?.fullName ?? ""} name="fullName" required type="text" />
         </label>
         <label>
           <span>Email</span>
@@ -146,22 +170,27 @@ export function OnboardingFlow({
         </label>
         <label>
           <span>Phone</span>
-          <input autoComplete="tel" name="phone" placeholder="555-0100" required type="tel" />
+          <input autoComplete="tel" inputMode="tel" name="phone" placeholder="(555) 555-0100" required type="tel" />
         </label>
+      </fieldset>
+
+      <fieldset data-onboarding-step="1" hidden={step !== 1}>
+        <legend>What area do you run?</legend>
+        <p className="fieldset-note">This puts nearby work first. A city, county, or timber region is enough.</p>
         <label>
           <span>{orgLabel}</span>
-          <input name="organizationName" required={path !== "driver"} type="text" />
+          <input autoComplete="organization" name="organizationName" required={path !== "driver"} type="text" />
         </label>
         <label>
           <span>Operating region</span>
-          <input name="region" placeholder="Cascade Foothills, OR" required type="text" />
+          <input name="region" placeholder="Roseburg, OR" required type="text" />
         </label>
       </fieldset>
 
       {needsEquipment ? (
-        <fieldset>
-          <legend>First truck</legend>
-          <p className="fieldset-note">Equipment powers matching, availability, and assignments. You can add more later.</p>
+        <fieldset data-onboarding-step="2" hidden={step !== 2}>
+          <legend>Your main setup</legend>
+          <p className="fieldset-note">Choose the truck and trailer you use most. Photos and other equipment can wait.</p>
           <label>
             <span>Truck type</span>
             <select defaultValue="log_truck" name="truckType">
@@ -178,18 +207,56 @@ export function OnboardingFlow({
             <span>Max payload (tons)</span>
             <input defaultValue={30} max={60} min={1} name="maxPayloadTons" type="number" />
           </label>
+          {path === "driver" ? (
+            <div className="onboarding-availability">
+              <strong>When can you haul?</strong>
+              <p className="fieldset-note">Pick one. This keeps your first request simple.</p>
+              <div className="radio-grid">
+                <label className="radio-card">
+                  <input defaultChecked name="availabilityPreset" type="radio" value="today" />
+                  <strong>Available today</strong>
+                  <span>Show work I can request now.</span>
+                </label>
+                <label className="radio-card">
+                  <input name="availabilityPreset" type="radio" value="three_days" />
+                  <strong>Next 3 days</strong>
+                  <span>Keep me open for nearby work.</span>
+                </label>
+                <label className="radio-card">
+                  <input name="availabilityPreset" type="radio" value="not_ready" />
+                  <strong>Not ready yet</strong>
+                  <span>Set up my profile without saying I am available.</span>
+                </label>
+              </div>
+            </div>
+          ) : null}
         </fieldset>
-      ) : null}
+      ) : (
+        <fieldset data-onboarding-step="2" hidden={step !== 2}>
+          <legend>Your operation is ready</legend>
+          <p className="fieldset-note">Next, LogLoads will take you to your operation so you can post the work, set the schedule, and choose who can see it.</p>
+          <div className="onboarding-ready">
+            <strong>{path === "host" ? "Start by posting the timber that needs to move." : "Start by setting up your operation."}</strong>
+            <span>Only the information needed for the next decision appears on each screen.</span>
+          </div>
+        </fieldset>
+      )}
 
       {state.error ? <p className="form-error" role="alert">{state.error}</p> : null}
 
       <div className="onboarding-form__actions">
-        <button className="action-link" disabled={pending} type="submit">
-          {pending ? "Setting up..." : "Create my account"}
-        </button>
-        <button className="text-link" onClick={() => setPath(null)} type="button">
-          Choose a different path
-        </button>
+        {step < 2 ? (
+          <button className="action-link" onClick={advanceStep} type="button">Continue</button>
+        ) : (
+          <button className="action-link" disabled={pending} type="submit">
+            {pending ? "Setting up..." : path === "driver" ? "Show me matching loads" : "Open my workspace"}
+          </button>
+        )}
+        {step > 0 ? (
+          <button className="text-link" onClick={() => setStep((current) => Math.max(current - 1, 0))} type="button">Back</button>
+        ) : (
+          <button className="text-link" onClick={() => setPath(null)} type="button">Choose a different role</button>
+        )}
       </div>
     </form>
   )

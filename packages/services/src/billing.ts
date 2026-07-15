@@ -7,7 +7,8 @@ export const billingUpdateInputSchema = z.object({
   status: z.enum(["trialing", "active", "past_due", "cancelled", "comped"]),
   stripeCustomerId: z.string().optional().nullable(),
   stripeSubscriptionId: z.string().optional().nullable(),
-  currentPeriodEndsAt: z.string().datetime().optional().nullable()
+  currentPeriodEndsAt: z.string().datetime().optional().nullable(),
+  eventId: z.string().min(1).optional()
 })
 
 /**
@@ -23,6 +24,10 @@ export function applyBillingUpdate(state: LogLoadsDatabaseState, rawInput: unkno
 
   if (!entitlement) {
     throw new Error("No plan record found for this organization")
+  }
+
+  if (input.eventId && state.auditEvents.some((event) => event.metadata?.eventId === input.eventId)) {
+    return entitlement
   }
 
   const now = new Date().toISOString()
@@ -50,7 +55,7 @@ export function applyBillingUpdate(state: LogLoadsDatabaseState, rawInput: unkno
     entityId: entitlement.id,
     entityType: "entitlement",
     id: crypto.randomUUID(),
-    metadata: { source: "billing_provider" }
+    metadata: { eventId: input.eventId ?? null, source: "billing_provider" }
   })
 
   return entitlement
