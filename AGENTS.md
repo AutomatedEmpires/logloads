@@ -14,11 +14,11 @@ The repository is a pnpm/Turborepo monorepo. Domain contracts belong in `package
 
 ## 2. Current stage and operating posture
 
-LogLoads is pre-customer: the portfolio currently has **zero real users and zero real customers**. Seeded accounts, provider projects, green CI, a preview, or a populated development/canonical state are not adoption, revenue, or production-readiness evidence.
+LogLoads is publicly deployed but still pre-customer: the portfolio currently has **zero confirmed real users and zero confirmed real customers**. Seeded accounts and a populated canonical state are not adoption or revenue evidence. Production claims must be tied to exact-deployment proof, health checks, smoke results, and provider-safe evidence.
 
 Do not protect an imaginary installed base. Agents should change weak flows, copy, schemas, and architecture when evidence supports a better result; use synthetic data and protected previews to learn quickly. Continue to protect credentials, provider state, private access data, live infrastructure, and legal boundaries because those risks exist even with no customers.
 
-Current implementation reality is a Supabase-canonical, versioned `operating_state` document with optimistic compare-and-swap; normalized relational repositories remain a later scaling step. Exact route/access detail is assignment-gated. The shared Redis REST rate-limit adapter has landed on `main`, but production enforcement still requires approved credentials/configuration and exact-deployment proof.
+Current implementation reality is a Supabase-canonical, versioned `operating_state` document with optimistic compare-and-swap; normalized relational repositories remain a later scaling step. Exact route/access detail is assignment-gated. Shared rate-limit windows are also persisted through Supabase so production enforcement works across instances without introducing a second data provider.
 
 ## 3. Execution doctrine and authority
 
@@ -63,7 +63,7 @@ Work in roughly this order unless a current issue or incident proves otherwise:
 3. Preserve controlled visibility: public load summaries may be redacted, while exact coordinates, gates, private roads, facility instructions, contacts, and route packs unlock only for authorized assignments.
 4. Build a lawful, evidence-cited partner pipeline and onboarding path; keep prospects clearly separate from members, capacity, endorsements, or contracted relationships.
 5. Keep Supabase the canonical authority, with server-side authorization, RLS, deterministic migrations, compare-and-swap safety, and no UI-to-database shortcuts.
-6. Activate and prove the Redis-compatible shared limiter in an isolated/protected deployment when credentials exist; verify shared enforcement, pseudonymized keys, environment separation, and fail-closed outage behavior before public multi-instance traffic.
+6. Maintain and prove the Supabase-backed shared limiter; verify shared enforcement, HMAC-pseudonymized keys, environment separation, and fail-closed outage behavior before materially increasing public traffic.
 7. Resolve security, dependency, CI, rollback, observability, and accessibility defects that block a trustworthy product path.
 
 ## 6. Low-value and prohibited product work
@@ -79,7 +79,7 @@ Work in roughly this order unless a current issue or incident proves otherwise:
 
 ### Providers and deployment
 
-The intended spine is Doppler, Vercel, Supabase/Postgres/PostGIS, Clerk, Mapbox with the documented MapLibre fallback, Cloudinary, PostHog, Sentry, Resend, Stripe for possible software subscriptions only, and a provider-neutral Redis REST shared limiter. Do not introduce substitutes casually.
+The intended spine is Doppler, Vercel, Supabase/Postgres/PostGIS, Clerk, Mapbox with the documented MapLibre fallback, Cloudinary, PostHog, Sentry, Resend, and Stripe for LogLoads software subscriptions only. Shared rate limiting uses Supabase-backed windows. Do not introduce substitutes casually.
 
 Never print, commit, paste into PRs, or expose secrets/private provider URLs. Keep server credentials server-only. A preview must use isolated data or an isolated project/row and must not mutation-test production. A deployed artifact, provider status label, or green health endpoint is evidence only for what it actually proves.
 
@@ -93,7 +93,7 @@ Never print, commit, paste into PRs, or expose secrets/private provider URLs. Ke
 
 ### Legal and money
 
-Partner prospecting is allowed; compensated transportation arrangement is not. Do not claim LogLoads is the shipper, broker, carrier, dispatcher, employer, insurer, payment custodian, or guarantor. Sandbox subscription UX is allowed, but real subscriptions and every freight-money path remain blocked by the live-money hard stop and the unresolved legal/payment model.
+Partner prospecting is allowed; compensated transportation arrangement is not. Do not claim LogLoads is the shipper, broker, carrier, dispatcher, employer, insurer, payment custodian, or guarantor. Live Stripe configuration exists for the $499/month Dispatch Pro software subscription, but an agent must not create a real customer, subscription, charge, refund, or payout without explicit founder authorization. Drivers remain free forever. Hosts remain free during the launch pilot; a possible 5% host fee is not active. Every freight-money path remains blocked by the unresolved legal/entity/payment model.
 
 ### Email and auth
 
@@ -101,7 +101,11 @@ Internal Resend tests to controlled recipients are allowed in non-production. Pu
 
 ## 8. Design and product language
 
-Preserve a map-first, mobile-first field experience and distinct role cockpits. Favor clear load state, capacity, equipment fit, schedule, route access, exceptions, and next actions over decorative complexity. Use `<Icon name="domain.action" />` through the semantic Phosphor registry. `LogLoads` and `logloads.com` are locked; `LogBoard` is retired.
+Preserve a map-first, mobile-first field experience and distinct role cockpits. Driver navigation is **Map → Loads → Schedule → Profile** and must remain obvious from a phone. Every directed flow should answer, in plain language: what is available, what it pays, whether the driver and equipment match, whether the request was accepted, when it is scheduled, what is moving now, and what happens next.
+
+Favor clear load state, capacity, truck/trailer/equipment fit, trip length, estimated fuel economics, timing, weather at the landing, route access, exceptions, and next actions over decorative complexity. Driver profiles should make photos, truck, trailer, equipment, availability, and fuel economy easy to maintain. Avoid internal implementation notes, audit language, generic SaaS dashboards, and dense forms in customer-facing surfaces.
+
+The design system must be coherent across phone, tablet, and desktop, with phone behavior treated as the primary driver constraint. Reuse tokens and primitives from `packages/ui`; do not create page-local lookalike components. Use `<Icon name="domain.action" />` through the semantic Phosphor registry. `LogLoads` and `logloads.com` are locked; `LogBoard` is retired. The social identity is `logloads` on Facebook and Instagram.
 
 Copy may describe coordination software, network visibility, partner discovery, and operational records. It may not promise brokerage, dispatch services, guaranteed loads/capacity, verified carriers without evidence, freight payment, or regulatory coverage LogLoads does not possess.
 
@@ -141,11 +145,11 @@ A change is done only when it:
 - uses honest preview/test/synthetic labels and makes no unsupported user, partner, delivery, payment, or production claim; and
 - leaves a small reviewable PR with exact commands, impacts, risks, and remaining blockers.
 
-## 11. Current PRs and blockers
+## 11. Current production posture and blockers
 
-Refreshed 2026-07-13 UTC: draft PR **#23**, `docs: add agent operating standards`, is the only open PR and owns `AGENTS.md` on `agent/docs-operating-standards`. PR #22, the shared production rate-limiter implementation, is merged, and this local docs branch was synchronized with that `main` revision during the standards pass. Refresh remote checks after every push.
+Refreshed 2026-07-15 UTC: `logloads.com` is publicly deployed from `main`. Production health reports Clerk auth, Supabase canonical state, Dispatch Pro billing, Resend email, Cloudinary media, PostHog analytics, and Sentry error tracking configured. Dispatch Pro is $499/month, drivers are free forever, hosts are in a free launch pilot, and freight payments do not move through LogLoads.
 
-Current blockers are operational proof and adoption, not permission to keep auditing: zero real users/customers; no validated partner pipeline or field usage; Redis REST credentials/provider activation and shared-deployment proof; exact-SHA protected preview and rollback proof; controlled live migration/provider cutover; production auth/email readiness; and the legal/entity/payment model for any freight-money concept. Refresh GitHub, provider-safe evidence, and dated decisions before relying on this list.
+The last verified production pass reported eight automated smoke checks passing, no failures, a signed Stripe webhook probe accepted, and no fresh runtime error or 5xx clusters. Remaining operational proof includes the authenticated request → approval → trip → message loop and forced cold-start recovery. Business blockers remain adoption, field validation, a credible partner pipeline, and the legal/entity/payment model for any host percentage or freight-money concept. Refresh GitHub, production health, provider-safe evidence, and dated decisions before relying on this snapshot.
 
 ## 12. Future-agent output format
 
