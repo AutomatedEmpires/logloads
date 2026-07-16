@@ -12,6 +12,7 @@ import {
   progressTripAction,
   requestCapacityAction,
   saveDriverMediaAction,
+  submitHaulCompletionAction,
   updateDriverAvailabilityAction,
   updateDriverEconomicsAction,
   updateEquipmentStatusAction
@@ -553,6 +554,167 @@ export function LogProofControl({ tripId }: { tripId: string }) {
       {logged ? <p className="action-note">Proof record added to this trip.</p> : null}
       {error ? <p className="action-error" role="alert">{error}</p> : null}
     </div>
+  )
+}
+
+const QUANTITY_UNITS: Array<[string, string]> = [
+  ["tons", "Tons"],
+  ["mbf", "MBF"],
+  ["cords", "Cords"],
+  ["units", "Units"],
+  ["truckloads", "Truckloads"]
+]
+
+const EXCEPTION_TYPES: Array<[string, string]> = [
+  ["", "No exception — the haul went as planned"],
+  ["short_load", "Short load"],
+  ["rejected_at_scale", "Rejected at the scale"],
+  ["access_blocked", "Access blocked"],
+  ["equipment_failure", "Equipment failure"],
+  ["weather_hold", "Weather hold"],
+  ["wait_time", "Excessive wait"],
+  ["other", "Something else"]
+]
+
+/**
+ * The driver's account of the haul: what came off the truck, and anything that
+ * explains it. The host settles against this figure, so it is recorded before
+ * the haul closes rather than reconstructed afterward.
+ */
+export function CompletionForm({
+  completion,
+  tripId
+}: {
+  completion: NetworkView["trips"][number]["completion"]
+  tripId: string
+}) {
+  // Held as plain strings from the selects; the service parses both through zod.
+  const [unit, setUnit] = useState<string>(completion.deliveredQuantity?.unit ?? "tons")
+  const [exceptionType, setExceptionType] = useState<string>(completion.exception?.type ?? "")
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  const [pending, startTransition] = useTransition()
+
+  if (completion.status === "confirmed") {
+    const delivered = completion.deliveredQuantity
+
+    return (
+      <p className="action-note">
+        <Icon aria-hidden name="status.verified" size={16} />{" "}
+        {delivered ? `${delivered.value} ${delivered.unit} confirmed by the host.` : "Delivery confirmed by the host."}
+      </p>
+    )
+  }
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const data = new FormData(event.currentTarget)
+    const rawValue = String(data.get("quantityValue") ?? "").trim()
+    const note = String(data.get("exceptionNote") ?? "").trim()
+
+    // A chosen exception with no note would otherwise be dropped silently and
+    // the haul would record as clean — the opposite of what the driver said.
+    if (exceptionType && !note) {
+      setError("Say what happened, or set the exception back to none.")
+      return
+    }
+
+    // "1e" and friends parse to NaN. Catch it here so the driver reads a
+    // sentence rather than a schema error.
+    if (rawValue !== "" && !Number.isFinite(Number(rawValue))) {
+      setError("Enter the delivered amount as a number.")
+      return
+    }
+
+    setError(null)
+    setSaved(false)
+    startTransition(async () => {
+      const result = await submitHaulCompletionAction({
+        exceptionNote: note || null,
+        exceptionType: exceptionType || null,
+        quantityUnit: unit,
+        quantityValue: rawValue === "" ? null : Number(rawValue),
+        ticketNumber: String(data.get("ticketNumber") ?? "").trim() || null,
+        tripId
+      })
+
+      if (!result.ok) {
+        setError(result.error ?? "The delivery could not be recorded. Try again.")
+      } else {
+        setSaved(true)
+      }
+    })
+  }
+
+  return (
+    <form className="completion-form" onSubmit={submit}>
+      {completion.status === "disputed" && completion.disputeReason ? (
+        <p className="action-error" role="alert">
+          The host contests this record: {completion.disputeReason}
+        </p>
+      ) : null}
+      {completion.requiredEvidence.length > 0 ? (
+        <p className="completion-form__required">
+          This haul needs: {completion.requiredEvidence.join("; ")}.{" "}
+          {/* We know a proof record exists; we cannot know it is the right one.
+              Say what is true and let the host check it. */}
+          {completion.hasEvidence
+            ? "A proof record is logged — the host checks it against this."
+            : "Log the proof with the record control above before closing."}
+        </p>
+      ) : null}
+      <div className="completion-form__row">
+        <label>
+          Delivered
+          <input
+            defaultValue={completion.deliveredQuantity?.value ?? ""}
+            inputMode="decimal"
+            min="0"
+            name="quantityValue"
+            step="0.1"
+            type="number"
+          />
+        </label>
+        <label>
+          Unit
+          <select onChange={(event) => setUnit(event.target.value)} value={unit}>
+            {QUANTITY_UNITS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>
+        <label>
+          Ticket number
+          <input
+            defaultValue={completion.deliveredQuantity?.ticketNumber ?? ""}
+            maxLength={60}
+            name="ticketNumber"
+            type="text"
+          />
+        </label>
+      </div>
+      <label>
+        Exception
+        <select onChange={(event) => setExceptionType(event.target.value)} value={exceptionType}>
+          {EXCEPTION_TYPES.map(([value, label]) => <option key={value || "none"} value={value}>{label}</option>)}
+        </select>
+      </label>
+      {exceptionType ? (
+        <label>
+          What happened
+          <input
+            defaultValue={completion.exception?.note ?? ""}
+            maxLength={500}
+            name="exceptionNote"
+            placeholder="Say what the host needs to know."
+            type="text"
+          />
+        </label>
+      ) : null}
+      <button className="advance-button" disabled={pending} type="submit">
+        {pending ? "Recording…" : completion.status === "pending" ? "Record delivery" : "Update delivery"}
+      </button>
+      {saved ? <p className="action-note">Delivery recorded. The host will confirm it.</p> : null}
+      {error ? <p className="action-error" role="alert">{error}</p> : null}
+    </form>
   )
 }
 

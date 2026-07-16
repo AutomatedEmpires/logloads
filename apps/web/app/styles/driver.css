@@ -220,6 +220,55 @@
 .proof-control .action-note,
 .proof-control .action-error { flex-basis: 100%; }
 
+/* --- Delivered record ------------------------------------------------------ */
+.completion-form {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 12px;
+}
+.completion-form__required {
+  margin: 0;
+  color: var(--ink-soft);
+  font-weight: 750;
+  line-height: 1.4;
+}
+.completion-form__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.completion-form label {
+  display: grid;
+  gap: 4px;
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+.completion-form input,
+.completion-form select {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+  padding: 6px 10px;
+  font-weight: 700;
+}
+.delivered-record {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.delivered-record p { margin: 0; font-weight: 750; }
+.delivered-record__exception { color: var(--ink-soft); }
+
+@media (max-width: 480px) {
+  .completion-form__row { grid-template-columns: 1fr; }
+}
+
 .cancel-haul__trigger {
   justify-self: start;
   min-height: 42px;

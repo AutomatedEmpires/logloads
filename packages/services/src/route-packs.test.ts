@@ -347,6 +347,19 @@ describe("route pack access", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const { assignment, trip } = bookRuntimeHaul(services)
 
+    // The destination requires a scale ticket; a haul no longer closes without
+    // the proof its Route Pack demanded.
+    services.attachTripDocument({
+      actorUserId: HAULER_DRIVER_ACTOR,
+      contentType: "image/jpeg",
+      filename: "scale-ticket.jpg",
+      organizationId: HAULER_ORG,
+      storageKey: `trips/${trip.id}/scale-ticket.jpg`,
+      storageProvider: "external",
+      tripId: trip.id,
+      type: "scale_ticket"
+    })
+
     for (const nextStatus of [
       "en_route_to_landing",
       "checked_in",

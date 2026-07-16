@@ -10,6 +10,9 @@ import {
   type MatchEligibility,
   type OpportunityVisibilityMode,
   type RecommendationBand,
+  type DeliveredQuantity,
+  type HaulCompletionStatus,
+  type HaulException,
   type RecommendationVisibility,
   type ReputationBand,
   type RoadCondition,
@@ -292,6 +295,16 @@ export interface NetworkView {
     routePackId: string | null
     lastSyncedAt: string | null
     completedAt: string | null
+    completion: {
+      status: HaulCompletionStatus
+      deliveredQuantity: DeliveredQuantity | null
+      exception: HaulException | null
+      disputeReason: string | null
+      submittedAt: string | null
+      confirmedAt: string | null
+      requiredEvidence: string[]
+      hasEvidence: boolean
+    }
     reviewable: {
       direction: "host_rates_hauler" | "hauler_rates_host"
       counterpartyName: string
@@ -1043,9 +1056,35 @@ export function buildNetworkView(
         }
       }
 
+      // The proof this haul owes comes from the Route Pack the driver accepted,
+      // not from the destination record as it reads today. Mirrors the service:
+      // fall back to the host's load-level source, so the page shows the same
+      // requirement the gate enforces.
+      const assignmentPack = state.routePacks
+        .filter((pack) => pack.assignmentId === trip.assignmentId && !pack.supersededAt)
+        .sort((left, right) => right.version - left.version)[0]
+      const evidencePack = assignmentPack ??
+        state.routePacks.find((pack) => pack.loadPostingId === trip.loadPostingId && !pack.assignmentId)
+      const requiredEvidence = evidencePack?.snapshot?.completionEvidence ?? []
+      const hasEvidence = state.tripDocuments.some(
+        (document) =>
+          document.tripId === trip.id &&
+          ["scale_ticket", "load_slip", "delivery_record", "photo"].includes(document.type)
+      )
+
       return {
         assignmentId: trip.assignmentId,
         completedAt: trip.completedAt ?? null,
+        completion: {
+          confirmedAt: trip.completionConfirmedAt ?? null,
+          deliveredQuantity: trip.deliveredQuantity ?? null,
+          disputeReason: trip.completionDisputeReason ?? null,
+          exception: trip.haulException ?? null,
+          hasEvidence,
+          requiredEvidence,
+          status: trip.completionStatus,
+          submittedAt: trip.completionSubmittedAt ?? null
+        },
         documents,
         driverName: driverUser?.fullName ?? "Driver",
         driverProfileId: trip.driverProfileId,

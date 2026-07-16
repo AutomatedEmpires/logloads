@@ -21,7 +21,9 @@ import {
   truckSlotSchema,
   type Assignment,
   type AssignmentStatus,
+  type DeliveredQuantity,
   type DirectOffer,
+  type HaulException,
   type FutureAvailability,
   type LoadPosting,
   type LoadStatus,
@@ -39,6 +41,15 @@ import {
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { declineAssignment, requestAssignment } from "./assignments"
+import {
+  applyHaulCompletionConfirmation,
+  applyHaulCompletionDispute,
+  applyHaulCompletionSubmission,
+  exceptionWaivesEvidence,
+  getTripById,
+  hasCompletionEvidence,
+  requiredCompletionEvidence
+} from "./haul-completion"
 import { createLoadPosting, parsePublishModes, provisionLoadCapacity } from "./loads"
 import {
   buildAssignmentRoutePack,
@@ -998,6 +1009,14 @@ export function cancelAssignmentWithPolicy(
     `Only an active assignment can be cancelled, and this one is ${assignment.status}`
   )
 
+  // Delivered work that both sides already settled is not cancellable — that
+  // would roll back a confirmed record and the capacity it consumed.
+  const settledTrip = state.tripsV2.find((current) => current.assignmentId === assignment.id)
+  assertCondition(
+    settledTrip?.completionStatus !== "confirmed",
+    "This delivery is confirmed and cannot be cancelled"
+  )
+
   const providedReason = input.reason?.trim() ?? ""
   assertCondition(
     providedReason.length <= MAX_CANCELLATION_REASON_LENGTH,
@@ -1270,6 +1289,21 @@ export function progressTripStatus(
     cancellationSide = assertCancellationAuthority(state, context, assignment, load).side
   }
 
+  // A haul does not become delivered because a button was pressed. When the
+  // Route Pack the driver accepted named the proof required, that proof has to
+  // exist before the trip can close. A haul with a reported exception closes
+  // without it — "rejected at the scale" has no scale ticket to give.
+  if (input.nextStatus === "completed") {
+    const required = requiredCompletionEvidence(state, trip)
+
+    assertCondition(
+      required.length === 0 ||
+        hasCompletionEvidence(state, trip.id) ||
+        exceptionWaivesEvidence(trip.haulException),
+      `Attach the proof this haul needs before closing it: ${required.join("; ")}`
+    )
+  }
+
   const nextStatus = transitionTripStatus(trip.status, input.nextStatus)
   const timestamp = nowIso()
   const updatedTrip = tripSchemaV2.parse({
@@ -1346,6 +1380,203 @@ export function progressTripStatus(
  * assigned to the haul and for the host staff who published the work. A
  * teammate of the assigned driver has no operational need for it.
  */
+export interface SubmitCompletionInput {
+  actorUserId?: string
+  organizationId?: string
+  tripId: string
+  deliveredQuantity?: DeliveredQuantity | null
+  exception?: { type: HaulException["type"]; note: string } | null
+}
+
+/**
+ * The driver's account of what came off the truck. Only the assigned driver —
+ * or the fleet staff coordinating them — may give it: this is the figure the
+ * host settles against, so it must come from the side that did the haul.
+ */
+export function submitHaulCompletion(
+  state: LogLoadsDatabaseState,
+  input: SubmitCompletionInput
+): { trip: TripV2 } {
+  const context = getContextForInput(state, input)
+  assertOrganizationAction(context, "progress_trip")
+
+  const trip = getTripById(state, requireText(input.tripId, "tripId"))
+  const assignment = assertFound(
+    state.assignments.find((current) => current.id === trip.assignmentId),
+    `Assignment ${trip.assignmentId} was not found`
+  )
+  const load = assertFound(
+    state.loadPostings.find((current) => current.id === trip.loadPostingId),
+    `Load posting ${trip.loadPostingId} was not found`
+  )
+  assertTripParticipant(state, context, assignment)
+
+  // The account comes from the hauling side. A host confirms it; it must not
+  // also author it.
+  assertCondition(
+    load.companyId !== context.organizationId,
+    "The hauling organization records what was delivered; the host confirms it"
+  )
+  const driver = state.driverProfiles.find((current) => current.id === assignment.driverProfileId)
+  assertCondition(
+    context.membership.role !== "driver" || driver?.userId === context.actorUserId,
+    "Drivers can only record their own hauls"
+  )
+  assertCondition(
+    ["at_destination", "unloading", "completed"].includes(trip.status),
+    `Record the delivery once the load is at the destination, and this haul is ${trip.status.replaceAll("_", " ")}`
+  )
+
+  // A closed haul that only passed the evidence gate because an exception
+  // excused the missing proof must not have that excuse quietly deleted. The
+  // record would then read as a clean ticketed delivery with neither the proof
+  // nor the reason it was absent.
+  if (trip.status === "completed" && exceptionWaivesEvidence(trip.haulException)) {
+    const stillWaived = exceptionWaivesEvidence(
+      input.exception ? { ...input.exception, reportedAt: trip.haulException?.reportedAt ?? nowIso() } : null
+    )
+
+    assertCondition(
+      stillWaived ||
+        requiredCompletionEvidence(state, trip).length === 0 ||
+        hasCompletionEvidence(state, trip.id),
+      "This haul closed on an exception. Attach the proof before removing it from the record"
+    )
+  }
+
+  const timestamp = nowIso()
+  const { trip: updated, previousStatus } = applyHaulCompletionSubmission(
+    state,
+    {
+      actorUserId: context.actorUserId,
+      deliveredQuantity: input.deliveredQuantity ?? null,
+      exception: input.exception ?? null,
+      trip
+    },
+    timestamp
+  )
+
+  state.tripEvents.push(tripEventSchema.parse({
+    actorUserId: context.actorUserId,
+    createdAt: timestamp,
+    id: createUuid(),
+    metadata: {
+      deliveredQuantity: updated.deliveredQuantity,
+      exception: updated.haulException?.type ?? null,
+      previousStatus
+    },
+    note: updated.haulException
+      ? `Delivery recorded with an exception: ${updated.haulException.note}`
+      : "Delivery recorded.",
+    occurredAt: timestamp,
+    source: "driver",
+    tripId: trip.id,
+    type: "delivery_recorded"
+  }))
+  insertAuditEvent(state, context.actorUserId, "trip", trip.id, "haul_completion_submitted", {
+    assignmentId: assignment.id,
+    exception: updated.haulException?.type ?? null,
+    previousStatus
+  })
+
+  const dispatcher = state.dispatcherProfiles.find((profile) => profile.id === load.dispatcherProfileId)
+  if (dispatcher) {
+    insertNotification(
+      state,
+      dispatcher.userId,
+      updated.haulException ? "Delivery recorded with an exception" : "Delivery recorded",
+      `${load.title}: confirm the delivered record when you have checked it.`,
+      "assignment",
+      assignment.id,
+      "system_alert"
+    )
+  }
+
+  return { trip: updated }
+}
+
+export interface SettleCompletionInput {
+  actorUserId?: string
+  organizationId?: string
+  tripId: string
+  reason?: string | null
+}
+
+/**
+ * The host settling the driver's account: confirming it, or disputing it with
+ * a reason. Disputing leaves the driver's figures on the record and lets them
+ * resubmit — it is a disagreement, not an erasure.
+ */
+export function settleHaulCompletion(
+  state: LogLoadsDatabaseState,
+  input: SettleCompletionInput & { decision: "confirm" | "dispute" }
+): { trip: TripV2 } {
+  const context = getContextForInput(state, input)
+  assertOrganizationAction(context, "assign_capacity")
+
+  const trip = getTripById(state, requireText(input.tripId, "tripId"))
+  const assignment = assertFound(
+    state.assignments.find((current) => current.id === trip.assignmentId),
+    `Assignment ${trip.assignmentId} was not found`
+  )
+  const load = assertFound(
+    state.loadPostings.find((current) => current.id === trip.loadPostingId),
+    `Load posting ${trip.loadPostingId} was not found`
+  )
+
+  assertCondition(
+    load.companyId === context.organizationId,
+    "Only the posting organization can settle this delivery"
+  )
+  // Separation of duties is between people, not organizations. A dispatcher
+  // holding memberships on both sides of a haul could otherwise record a figure
+  // as the hauler, switch organization, and rubber-stamp their own number into
+  // a terminal record with no second party involved.
+  assertCondition(
+    context.actorUserId !== trip.completionSubmittedByUserId,
+    "Whoever recorded this delivery cannot also settle it"
+  )
+  assertCondition(
+    trip.status !== "cancelled",
+    "This haul was cancelled; there is no delivery to settle"
+  )
+
+  const timestamp = nowIso()
+  const result = input.decision === "confirm"
+    ? applyHaulCompletionConfirmation(state, { actorUserId: context.actorUserId, trip }, timestamp)
+    : applyHaulCompletionDispute(
+        state,
+        { actorUserId: context.actorUserId, reason: input.reason ?? "", trip },
+        timestamp
+      )
+
+  insertAuditEvent(
+    state,
+    context.actorUserId,
+    "trip",
+    trip.id,
+    input.decision === "confirm" ? "haul_completion_confirmed" : "haul_completion_disputed",
+    { assignmentId: assignment.id, previousStatus: result.previousStatus, reason: input.reason ?? null }
+  )
+
+  const driver = state.driverProfiles.find((profile) => profile.id === assignment.driverProfileId)
+  if (driver) {
+    insertNotification(
+      state,
+      driver.userId,
+      input.decision === "confirm" ? "Delivery confirmed" : "Delivery record disputed",
+      input.decision === "confirm"
+        ? `${load.title} is settled. The delivered record is on your haul history.`
+        : `${load.title}: the host contests the record. ${result.trip.completionDisputeReason ?? ""}`,
+      "assignment",
+      assignment.id,
+      "system_alert"
+    )
+  }
+
+  return { trip: result.trip }
+}
+
 export function getRoutePackForAssignment(
   state: LogLoadsDatabaseState,
   input: RoutePackAccessInput
