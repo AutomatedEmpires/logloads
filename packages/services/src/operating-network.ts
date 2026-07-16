@@ -91,7 +91,14 @@ export interface CapacityRequestInput {
   trailerProfileId?: string | null
   cancellationReason?: string | null
   dispatcherNotes?: string | null
-  /** Clock for slot-window validation; defaults to now. Tests pin it to the fixture window. */
+}
+
+/**
+ * Deliberately NOT part of CapacityRequestInput: web boundaries forward client
+ * JSON into the input, and the validation clock must never be client-supplied.
+ * Only trusted callers (tests pinning the fixture window) pass this.
+ */
+export interface CapacityRequestOptions {
   at?: string
 }
 
@@ -523,7 +530,11 @@ function assertTripParticipant(
   )
 }
 
-export function requestCapacityWithPolicy(state: LogLoadsDatabaseState, input: CapacityRequestInput): Assignment {
+export function requestCapacityWithPolicy(
+  state: LogLoadsDatabaseState,
+  input: CapacityRequestInput,
+  options: CapacityRequestOptions = {}
+): Assignment {
   const parsed: CapacityRequestInput = {
     actorUserId: input.actorUserId,
     cancellationReason: input.cancellationReason ?? null,
@@ -580,7 +591,7 @@ export function requestCapacityWithPolicy(state: LogLoadsDatabaseState, input: C
     state.truckSlots.find((current) => current.id === parsed.truckSlotId),
     `Truck slot ${parsed.truckSlotId} was not found`
   )
-  const requestedAt = input.at ?? nowIso()
+  const requestedAt = options.at ?? nowIso()
   assertCondition(slot.endAt > requestedAt, "This haul window has already passed")
 
   const truck = assertFound(
@@ -827,7 +838,8 @@ function applyAssignmentCancellationEffects(
   state: LogLoadsDatabaseState,
   assignment: Assignment,
   reason: string,
-  timestamp: string
+  timestamp: string,
+  actor: { actorUserId: string; cancelledBy: "host" | "hauler"; organizationId: string }
 ): Assignment | null {
   if (!canTransitionAssignmentStatus(assignment.status, "cancelled")) {
     return null
@@ -849,6 +861,15 @@ function applyAssignmentCancellationEffects(
     updateOpportunityCapacityAfterDecline(state, capacity)
     syncLoadStatusWithCapacity(state, assignment.loadPostingId)
   }
+
+  // Every cancellation surface writes the same audit record, so the audit log
+  // reads identically whether the booking or the trip was cancelled first.
+  insertAuditEvent(state, actor.actorUserId, "assignment", cancelled.id, "assignment_cancelled", {
+    cancelledBy: actor.cancelledBy,
+    loadPostingId: assignment.loadPostingId,
+    organizationId: actor.organizationId,
+    reason
+  })
 
   return cancelled
 }
@@ -987,18 +1008,16 @@ export function cancelAssignmentWithPolicy(
     })
   }
 
-  const cancelled = applyAssignmentCancellationEffects(state, assignment, reason, timestamp)
+  const cancelled = applyAssignmentCancellationEffects(state, assignment, reason, timestamp, {
+    actorUserId: context.actorUserId,
+    cancelledBy: side,
+    organizationId: context.organizationId
+  })
 
   if (!cancelled) {
     throw new Error(`Assignment ${assignment.id} cannot be cancelled while ${assignment.status}`)
   }
 
-  insertAuditEvent(state, context.actorUserId, "assignment", cancelled.id, "assignment_cancelled", {
-    cancelledBy: side,
-    loadPostingId: load.id,
-    organizationId: context.organizationId,
-    reason
-  })
   notifyAssignmentCancelled(state, load, cancelled, reason, context.actorUserId, wasBooked)
 
   return { assignment: cancelled, trip: cancelledTrip ?? trip }
@@ -1023,12 +1042,13 @@ export function progressTripStatus(
 
   // Cancelling a trip cancels the booking, so it demands the same authority
   // as cancelAssignmentWithPolicy — trip-progression rights are not enough.
+  let cancellationSide: "host" | "hauler" | null = null
   if (input.nextStatus === "cancelled") {
     const load = assertFound(
       state.loadPostings.find((current) => current.id === trip.loadPostingId),
       `Load posting ${trip.loadPostingId} was not found`
     )
-    assertCancellationAuthority(state, context, assignment, load)
+    cancellationSide = assertCancellationAuthority(state, context, assignment, load).side
   }
 
   const nextStatus = transitionTripStatus(trip.status, input.nextStatus)
@@ -1066,7 +1086,11 @@ export function progressTripStatus(
   if (nextStatus === "cancelled") {
     const reason = (input.note?.trim() || "Trip cancelled.").slice(0, MAX_CANCELLATION_REASON_LENGTH)
     const wasBooked = !["requested", "offered"].includes(assignment.status)
-    const cancelledAssignment = applyAssignmentCancellationEffects(state, assignment, reason, timestamp)
+    const cancelledAssignment = applyAssignmentCancellationEffects(state, assignment, reason, timestamp, {
+      actorUserId: context.actorUserId,
+      cancelledBy: cancellationSide ?? "hauler",
+      organizationId: context.organizationId
+    })
 
     if (cancelledAssignment) {
       const load = state.loadPostings.find((current) => current.id === trip.loadPostingId)

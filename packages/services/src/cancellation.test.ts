@@ -20,14 +20,13 @@ const FRESH_WINDOW = `${FRESH_LOAD_DATE}T12:00:00.000Z`
 function requestSeedLoad(services: LogLoadsServices) {
   return services.requestCapacityWithPolicy({
     actorUserId: HAULER_ACTOR,
-    at: SEED_WINDOW,
     organizationId: HAULER_ORG,
     loadPostingId: SEED_LOAD,
     truckSlotId: SEED_SLOT,
     driverProfileId: DRIVER_PROFILE,
     truckProfileId: TRUCK_PROFILE,
     trailerProfileId: TRAILER_PROFILE
-  })
+  }, { at: SEED_WINDOW })
 }
 
 /**
@@ -88,14 +87,13 @@ function publishFreshLoad(services: LogLoadsServices, dailyTruckCountNeeded = 1,
 function requestFreshLoad(services: LogLoadsServices, loadPostingId: string, truckSlotId: string) {
   return services.requestCapacityWithPolicy({
     actorUserId: HAULER_ACTOR,
-    at: FRESH_WINDOW,
     organizationId: HAULER_ORG,
     loadPostingId,
     truckSlotId,
     driverProfileId: DRIVER_PROFILE,
     truckProfileId: TRUCK_PROFILE,
     trailerProfileId: TRAILER_PROFILE
-  })
+  }, { at: FRESH_WINDOW })
 }
 
 function capacityFor(services: LogLoadsServices, loadPostingId: string) {
@@ -313,6 +311,13 @@ describe("assignment cancellation", () => {
     expect(slotAfter?.reservedCount).toBe(0)
     expect(loadFor(services, load.id)?.status).toBe("open")
 
+    // The trip surface writes the same audit record as the policy surface.
+    const audit = services.state.auditEvents.find((event) =>
+      event.entityId === assignment.id && event.action === "assignment_cancelled"
+    )
+
+    expect(audit?.metadata).toMatchObject({ cancelledBy: "hauler", loadPostingId: load.id })
+
     const load2 = loadFor(services, load.id)
     const dispatcher = services.state.dispatcherProfiles.find((profile) => profile.id === load2?.dispatcherProfileId)
     const dispatcherNotification = services.state.notifications.find((candidate) =>
@@ -397,14 +402,32 @@ describe("assignment cancellation", () => {
 
     expect(() => services.requestCapacityWithPolicy({
       actorUserId: HAULER_ACTOR,
-      at: "2026-07-13T12:00:00.000Z",
       organizationId: HAULER_ORG,
       loadPostingId: SEED_LOAD,
       truckSlotId: SEED_SLOT,
       driverProfileId: DRIVER_PROFILE,
       truckProfileId: TRUCK_PROFILE,
       trailerProfileId: TRAILER_PROFILE
-    })).toThrow(/haul window has already passed/)
+    }, { at: "2026-07-13T12:00:00.000Z" })).toThrow(/haul window has already passed/)
+  })
+
+  it("ignores a client-smuggled clock in the request input", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    // A REST caller spreading JSON into the input must not be able to move
+    // the validation clock: `at` inside the input is dead weight, and with
+    // no trusted option the real (post-fixture) clock rejects the request.
+    const smuggled = {
+      actorUserId: HAULER_ACTOR,
+      at: SEED_WINDOW,
+      organizationId: HAULER_ORG,
+      loadPostingId: SEED_LOAD,
+      truckSlotId: SEED_SLOT,
+      driverProfileId: DRIVER_PROFILE,
+      truckProfileId: TRUCK_PROFILE,
+      trailerProfileId: TRAILER_PROFILE
+    } as unknown as Parameters<LogLoadsServices["requestCapacityWithPolicy"]>[0]
+
+    expect(() => services.requestCapacityWithPolicy(smuggled)).toThrow(/haul window has already passed/)
   })
 
   it("marks a fully committed load as filled and keeps a partially reserved day requestable", () => {

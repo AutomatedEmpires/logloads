@@ -147,7 +147,10 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     progressTripStatus: (input: Parameters<typeof progressTripStatus>[1]) => progressTripStatus(state, input),
     publishFutureAvailability: (input: Parameters<typeof publishFutureAvailability>[1]) => publishFutureAvailability(state, input),
     requestAssignment: (input: unknown) => requestAssignment(state, input),
-    requestCapacityWithPolicy: (input: Parameters<typeof requestCapacityWithPolicy>[1]) => requestCapacityWithPolicy(state, input),
+    requestCapacityWithPolicy: (
+      input: Parameters<typeof requestCapacityWithPolicy>[1],
+      options?: Parameters<typeof requestCapacityWithPolicy>[2]
+    ) => requestCapacityWithPolicy(state, input, options),
     saveDriverMediaReference: (input: Parameters<typeof saveDriverMediaReference>[1]) => saveDriverMediaReference(state, input),
     updateDriverEconomics: (input: Parameters<typeof updateDriverEconomics>[1]) => updateDriverEconomics(state, input),
     updateLoadPosting: (input: unknown) => updateLoadPosting(state, input),
