@@ -39,7 +39,7 @@ import {
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { declineAssignment, requestAssignment } from "./assignments"
-import { createLoadPosting, provisionLoadCapacity } from "./loads"
+import { createLoadPosting, parsePublishModes, provisionLoadCapacity } from "./loads"
 import { releaseTruckSlotReservation } from "./truck-slots"
 import { assertCondition, assertFound, createUuid, nowIso } from "./utils"
 
@@ -1094,6 +1094,13 @@ export function openDraftLoadPosting(state: LogLoadsDatabaseState, input: OpenDr
     "This work already has provisioned capacity"
   )
 
+  // Validate the reach before touching the load: a refused mode must not leave
+  // the work flipped to open with no capacity behind it.
+  const modes = parsePublishModes(
+    input.visibilityMode ?? "open_network",
+    input.allocationMode ?? "request_approval"
+  )
+
   const timestamp = nowIso()
   const updated = loadPostingSchema.parse({
     ...load,
@@ -1102,13 +1109,7 @@ export function openDraftLoadPosting(state: LogLoadsDatabaseState, input: OpenDr
   })
 
   state.loadPostings = state.loadPostings.map((current) => (current.id === load.id ? updated : current))
-  provisionLoadCapacity(
-    state,
-    updated,
-    input.visibilityMode ?? "open_network",
-    input.allocationMode ?? "request_approval",
-    timestamp
-  )
+  provisionLoadCapacity(state, updated, modes.visibilityMode, modes.allocationMode, timestamp)
 
   insertAuditEvent(state, context.actorUserId, "load_posting", load.id, "load_published", {
     organizationId: context.organizationId,

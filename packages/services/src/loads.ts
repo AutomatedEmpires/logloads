@@ -7,7 +7,9 @@ import {
   transitionLoadPostingStatus,
   truckSlotSchema,
   updateLoadPostingInputSchema,
-  type LoadPosting
+  type AllocationMode,
+  type LoadPosting,
+  type OpportunityVisibilityMode
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
@@ -100,6 +102,33 @@ function scheduleDates(entity: LoadPosting, fallbackDate: string): string[] {
   return dates.slice(0, MAX_SCHEDULE_SLOTS)
 }
 
+export interface PublishModes {
+  visibilityMode: OpportunityVisibilityMode
+  allocationMode: AllocationMode
+}
+
+/**
+ * Validates reach and allocation strictly: an unrecognized value is refused,
+ * never coerced, because coercing visibility would silently widen a load to
+ * the whole network. Callers pass an explicit default when the publisher
+ * chose nothing. Call this BEFORE mutating state so a bad value cannot leave
+ * a half-published load behind.
+ */
+export function parsePublishModes(visibilityMode: string, allocationMode: string): PublishModes {
+  const visibility = opportunityVisibilityModeSchema.safeParse(visibilityMode)
+  const allocation = allocationModeSchema.safeParse(allocationMode)
+
+  if (!visibility.success) {
+    throw new Error(`Unknown visibility mode: ${visibilityMode}`)
+  }
+
+  if (!allocation.success) {
+    throw new Error(`Unknown allocation mode: ${allocationMode}`)
+  }
+
+  return { allocationMode: allocation.data, visibilityMode: visibility.data }
+}
+
 /**
  * Mints the capacity that makes a live load requestable: an opportunity-
  * capacity ledger plus one loading slot per scheduled day. Used at publish
@@ -112,8 +141,10 @@ export function provisionLoadCapacity(
   allocationMode: string,
   timestamp = nowIso()
 ): void {
-  const parsedVisibility = opportunityVisibilityModeSchema.catch("open_network").parse(visibilityMode)
-  const parsedAllocation = allocationModeSchema.catch("request_approval").parse(allocationMode)
+  const { allocationMode: parsedAllocation, visibilityMode: parsedVisibility } = parsePublishModes(
+    visibilityMode,
+    allocationMode
+  )
   const dates = scheduleDates(entity, timestamp.slice(0, 10))
 
   if (dates.length === 0) {
@@ -188,10 +219,15 @@ export function createLoadPosting(
     updatedAt: timestamp
   })
 
+  // Validate reach before touching state: a refused mode must not leave an
+  // orphan posting behind. A draft carries no reach, so nothing to validate —
+  // it is chosen when the draft is published.
+  const modes = LIVE_STATUSES.has(entity.status) ? parsePublishModes(visibilityMode, allocationMode) : null
+
   state.loadPostings.push(entity)
 
-  if (LIVE_STATUSES.has(entity.status)) {
-    provisionLoadCapacity(state, entity, visibilityMode, allocationMode, timestamp)
+  if (modes) {
+    provisionLoadCapacity(state, entity, modes.visibilityMode, modes.allocationMode, timestamp)
   }
 
   return entity

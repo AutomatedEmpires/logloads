@@ -171,6 +171,31 @@ describe("load publishing authority", () => {
     })).toThrow(/already has provisioned capacity/)
   })
 
+  it("refuses an unrecognized reach instead of widening to the open network", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    // Coercing an unknown reach would silently publish to the whole network.
+    expect(() => publishAsOwner(services, "open", { visibilityMode: "partners-only" }))
+      .toThrow(/Unknown visibility mode/)
+    expect(() => publishAsOwner(services, "open", { allocationMode: "whoever-shows-up" }))
+      .toThrow(/Unknown allocation mode/)
+
+    const draft = publishAsOwner(services, "draft")
+
+    expect(() => services.openDraftLoadPosting({
+      actorUserId: HOST_OWNER,
+      loadPostingId: draft.id,
+      organizationId: HOST_ORG,
+      visibilityMode: "everyone"
+    })).toThrow(/Unknown visibility mode/)
+
+    // Every rejected publish left the operating record untouched: no orphan
+    // posting, no half-provisioned ledger, and the draft is still a draft.
+    expect(services.state.loadPostings.filter((load) => load.title === "Load management fixture")).toHaveLength(1)
+    expect(services.state.opportunityCapacities.some((capacity) => capacity.loadPostingId === draft.id)).toBe(false)
+    expect(services.state.loadPostings.find((load) => load.id === draft.id)?.status).toBe("draft")
+  })
+
   it("keeps draft publishing inside the posting organization and to drafts only", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const draft = publishAsOwner(services, "draft")
