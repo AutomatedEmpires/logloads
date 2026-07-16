@@ -392,12 +392,66 @@ export async function createLoadPostingAction(input: Record<string, unknown>): P
   try {
     const actor = await requireActor()
 
-    await commit(["/host", "/fleet", "/driver", "/loads", "/"], (draft) =>
-      draft.createLoadPosting({
+    const created = await commit(["/host", "/fleet", "/driver", "/loads", "/"], (draft) =>
+      draft.createLoadPostingWithPolicy({
         ...input,
-        companyId: actorOrganizationId(actor)
+        actorUserId: actor.profile.id,
+        organizationId: actorOrganizationId(actor)
       })
     )
+
+    captureServerEvent(created.status === "draft" ? "load_drafted" : "load_published", actor.profile.id, {
+      loadPostingId: created.id
+    })
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function publishDraftAction(input: {
+  loadPostingId: string
+  visibilityMode?: string
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    await commit(["/host", "/fleet", "/driver", "/loads", "/"], (draft) =>
+      draft.openDraftLoadPosting({
+        actorUserId: actor.profile.id,
+        loadPostingId: input.loadPostingId,
+        organizationId: actorOrganizationId(actor),
+        visibilityMode: input.visibilityMode
+      })
+    )
+
+    captureServerEvent("load_published", actor.profile.id, { loadPostingId: input.loadPostingId })
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function closeLoadAction(input: {
+  loadPostingId: string
+  reason?: string | null
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    await commit(["/host", "/fleet", "/driver", "/loads", "/"], (draft) =>
+      draft.closeLoadPosting({
+        actorUserId: actor.profile.id,
+        loadPostingId: input.loadPostingId,
+        organizationId: actorOrganizationId(actor),
+        reason: input.reason?.trim() || null
+      })
+    )
+
+    // Event only — the free-text reason stays out of analytics.
+    captureServerEvent("load_closed", actor.profile.id, { loadPostingId: input.loadPostingId })
 
     return OK
   } catch (error) {

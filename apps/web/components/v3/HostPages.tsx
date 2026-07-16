@@ -11,9 +11,11 @@ import { DecisionList, toneForNotice } from "./Common"
 import {
   CancelAssignmentButton,
   CapacityApprovalList,
+  CloseWorkButton,
   DirectOfferPanel,
   NoticeComposer,
   OpportunityBuilder,
+  PublishDraftButton,
   type PendingCapacityRequest
 } from "./HostActions"
 import { TripReviewForm } from "./Reputation"
@@ -146,16 +148,28 @@ export function HostCommand({ account, network }: HostPageProps) {
 
 export function HostOpportunities({
   account,
+  canPublish,
   network,
   options,
   planFacts
-}: HostPageProps & { options: HostPublishingOptions; planFacts: HostLoadPlanFacts }) {
+}: HostPageProps & { canPublish: boolean; options: HostPublishingOptions; planFacts: HostLoadPlanFacts }) {
   const own = ownLoads(network)
 
   return (
     <AppShell account={account} kicker="Publish capacity" role="host" title="Work">
       <section className="builder-layout">
-        <OpportunityBuilder options={options} />
+        {canPublish ? (
+          <OpportunityBuilder options={options} />
+        ) : (
+          <article className="opportunity-builder host-builder">
+            <p className="eyebrow">Opportunity builder</p>
+            <h2>Your role does not publish work</h2>
+            <p className="host-builder-note">
+              You can follow this operation&rsquo;s work here. Posting, publishing, and closing work is done by an
+              owner, admin, dispatcher, or landing manager.
+            </p>
+          </article>
+        )}
         <div className="host-published">
           <div>
             <p className="eyebrow">Published work</p>
@@ -192,6 +206,10 @@ export function HostOpportunities({
                       <Link className="text-link" href="/host/command">
                         {waiting} request{waiting === 1 ? "" : "s"} waiting
                       </Link>
+                    ) : null}
+                    {canPublish && load.status === "draft" ? <PublishDraftButton loadPostingId={load.id} /> : null}
+                    {canPublish && ["open", "scheduled", "filled"].includes(load.status) ? (
+                      <CloseWorkButton loadPostingId={load.id} waitingRequests={waiting} />
                     ) : null}
                   </div>
                 </article>

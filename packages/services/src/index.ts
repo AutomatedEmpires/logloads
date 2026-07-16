@@ -47,9 +47,12 @@ import {
   approveCapacityRequest,
   attachTripDocument,
   cancelAssignmentWithPolicy,
+  closeLoadPosting,
   createDirectOffer,
+  createLoadPostingWithPolicy,
   createOperationalNotice,
   declineCapacityRequest,
+  openDraftLoadPosting,
   getActiveOrganizationContext,
   getOrganizationMemberships,
   getRoutePackForAssignment,
@@ -119,6 +122,10 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
       cancelAssignment(state, assignmentId, cancellationReason),
     cancelAssignmentWithPolicy: (input: Parameters<typeof cancelAssignmentWithPolicy>[1]) =>
       cancelAssignmentWithPolicy(state, input),
+    closeLoadPosting: (input: Parameters<typeof closeLoadPosting>[1]) => closeLoadPosting(state, input),
+    createLoadPostingWithPolicy: (input: Parameters<typeof createLoadPostingWithPolicy>[1]) =>
+      createLoadPostingWithPolicy(state, input),
+    openDraftLoadPosting: (input: Parameters<typeof openDraftLoadPosting>[1]) => openDraftLoadPosting(state, input),
     createDirectOffer: (input: Parameters<typeof createDirectOffer>[1]) => createDirectOffer(state, input),
     createLoadPosting: (input: unknown) => createLoadPosting(state, input),
     createNotification: (input: unknown) => createNotification(state, input),

@@ -58,10 +58,15 @@ export const ORGANIZATION_ROLE_ACTIONS = {
     "view_private_location",
     "view_audit_log"
   ],
+  // Dispatchers are an operating role: they run their organization's work end
+  // to end (publish, assign, coordinate, close). They deliberately hold no
+  // manage_members or manage_billing — ownership and money stay with owners,
+  // admins, and billing.
   dispatcher: [
     "view_network",
     "manage_trucks",
     "manage_drivers",
+    "publish_load",
     "assign_capacity",
     "request_assignment",
     "progress_trip",

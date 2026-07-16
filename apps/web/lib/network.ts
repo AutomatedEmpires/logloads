@@ -539,7 +539,10 @@ export function buildNetworkView(
         const capacity = state.opportunityCapacities.find((item) => item.loadPostingId === load.id)
         const visibilityMode = capacity?.visibilityMode ?? "open_network"
 
-        return ["open_network", "verified_network"].includes(visibilityMode) && services.isLoadRequestableAt(load, atIso)
+        // Anonymous browsing shows open-network work only — verified-network
+        // work is gated to verified member organizations, so it never leaks
+        // onto the public board.
+        return visibilityMode === "open_network" && services.isLoadRequestableAt(load, atIso)
       })
     : services.listVisibleLoadsForOrganization(activeOrganization.id)
 

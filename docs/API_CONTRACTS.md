@@ -3,13 +3,15 @@
 ## Implemented routes
 - `GET /api/health`
 - `GET /api/loads` — public, redacted network load views
-- `POST /api/loads` — authenticated; `companyId` forced to the actor's organization
+- `POST /api/loads` — authenticated; requires the `publish_load` role action; `companyId` forced to the actor's organization
 - `GET /api/loads/:loadId` — viewer-aware (public redaction vs actor view)
 - `GET /api/network` — authenticated actor network view
 - `GET /api/truck-slots?date=YYYY-MM-DD` — authenticated
 - `POST /api/truck-slots` — authenticated
 - `POST /api/assignments/request` — authenticated
 - `POST /api/assignments/:assignmentId/approve` — authenticated
+- `POST /api/assignments/:assignmentId/decline` — authenticated; source organization only; optional `reason`
+- `POST /api/assignments/:assignmentId/cancel` — authenticated; assignment participants under the cancellation policy; optional `reason` (max 140 chars)
 - `GET /api/availability` — authenticated; scoped to the actor's driver profile
 - `POST /api/availability` — authenticated; `driverProfileId` forced to the actor's own
 - `POST /api/direct-offers` — authenticated

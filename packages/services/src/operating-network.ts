@@ -12,6 +12,7 @@ import {
   notificationSchema,
   organizationRoleCan,
   transitionAssignmentStatus,
+  transitionLoadPostingStatus,
   transitionTruckSlotStatus,
   transitionTripStatus,
   tripDocumentSchema,
@@ -38,6 +39,7 @@ import {
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { declineAssignment, requestAssignment } from "./assignments"
+import { createLoadPosting, parsePublishModes, provisionLoadCapacity } from "./loads"
 import { releaseTruckSlotReservation } from "./truck-slots"
 import { assertCondition, assertFound, createUuid, nowIso } from "./utils"
 
@@ -291,8 +293,16 @@ export function isLoadVisibleToOrganization(
     return load.status === "open"
   }
 
-  if (["open_network", "verified_network"].includes(capacity.visibilityMode)) {
+  if (capacity.visibilityMode === "open_network") {
     return true
+  }
+
+  // "verified_network" is a real gate, not a label: only organizations that
+  // passed platform verification see the work.
+  if (capacity.visibilityMode === "verified_network") {
+    const organization = state.organizations.find((current) => current.id === organizationId)
+
+    return organization?.verificationStatus === "verified"
   }
 
   if (capacity.visibilityMode === "direct_offer") {
@@ -1021,6 +1031,195 @@ export function cancelAssignmentWithPolicy(
   notifyAssignmentCancelled(state, load, cancelled, reason, context.actorUserId, wasBooked)
 
   return { assignment: cancelled, trip: cancelledTrip ?? trip }
+}
+
+export interface CreateLoadPostingWithPolicyInput {
+  actorUserId?: string
+  organizationId?: string
+  [key: string]: unknown
+}
+
+/**
+ * The authorized publishing entry point: only members whose role carries
+ * publish_load may post work, and the posting is always stamped with the
+ * actor's own organization — client payloads can never publish as another org.
+ */
+export function createLoadPostingWithPolicy(
+  state: LogLoadsDatabaseState,
+  input: CreateLoadPostingWithPolicyInput
+): LoadPosting {
+  const context = getContextForInput(state, input)
+  assertOrganizationAction(context, "publish_load")
+
+  const entity = createLoadPosting(state, { ...input, companyId: context.organizationId })
+
+  insertAuditEvent(
+    state,
+    context.actorUserId,
+    "load_posting",
+    entity.id,
+    entity.status === "draft" ? "load_drafted" : "load_published",
+    { organizationId: context.organizationId, status: entity.status }
+  )
+
+  return entity
+}
+
+export interface OpenDraftLoadPostingInput {
+  actorUserId?: string
+  organizationId?: string
+  loadPostingId: string
+  visibilityMode?: string
+  allocationMode?: string
+}
+
+/**
+ * Publishes a draft: the status transitions draft -> open and the capacity
+ * ledger plus loading slots are minted, exactly as if the load had been
+ * published live — closing the dead end where a draft could never become
+ * requestable work.
+ */
+export function openDraftLoadPosting(state: LogLoadsDatabaseState, input: OpenDraftLoadPostingInput): LoadPosting {
+  const context = getContextForInput(state, input)
+  assertOrganizationAction(context, "publish_load")
+
+  const load = assertFound(
+    state.loadPostings.find((current) => current.id === input.loadPostingId),
+    `Load posting ${input.loadPostingId} was not found`
+  )
+  assertCondition(load.companyId === context.organizationId, "Only the posting organization can publish this draft")
+  assertCondition(load.status === "draft", `Only a draft can be published this way, and this work is ${load.status}`)
+  assertCondition(
+    !state.opportunityCapacities.some((capacity) => capacity.loadPostingId === load.id),
+    "This work already has provisioned capacity"
+  )
+
+  // Validate the reach before touching the load: a refused mode must not leave
+  // the work flipped to open with no capacity behind it.
+  const modes = parsePublishModes(
+    input.visibilityMode ?? "open_network",
+    input.allocationMode ?? "request_approval"
+  )
+
+  const timestamp = nowIso()
+  const updated = loadPostingSchema.parse({
+    ...load,
+    status: canTransitionLoadPostingStatus(load.status, "open") ? "open" : load.status,
+    updatedAt: timestamp
+  })
+
+  state.loadPostings = state.loadPostings.map((current) => (current.id === load.id ? updated : current))
+  provisionLoadCapacity(state, updated, modes.visibilityMode, modes.allocationMode, timestamp)
+
+  insertAuditEvent(state, context.actorUserId, "load_posting", load.id, "load_published", {
+    organizationId: context.organizationId,
+    previousStatus: "draft",
+    status: updated.status
+  })
+
+  return updated
+}
+
+export interface CloseLoadPostingInput {
+  actorUserId?: string
+  organizationId?: string
+  loadPostingId: string
+  reason?: string | null
+}
+
+/**
+ * Closes availability: pending requests are declined (with capacity returned
+ * and drivers notified), remaining loading slots are cancelled, and the load
+ * goes terminal. Booked hauls block the close — cancel them individually
+ * first, so committed work is never silently destroyed.
+ */
+export function closeLoadPosting(state: LogLoadsDatabaseState, input: CloseLoadPostingInput): LoadPosting {
+  const context = getContextForInput(state, input)
+  assertOrganizationAction(context, "publish_load")
+
+  const load = assertFound(
+    state.loadPostings.find((current) => current.id === input.loadPostingId),
+    `Load posting ${input.loadPostingId} was not found`
+  )
+  assertCondition(load.companyId === context.organizationId, "Only the posting organization can close this work")
+  assertCondition(
+    canTransitionLoadPostingStatus(load.status, "cancelled"),
+    `This work is already ${load.status} and cannot be closed`
+  )
+
+  const providedReason = input.reason?.trim() ?? ""
+  assertCondition(
+    providedReason.length <= MAX_CANCELLATION_REASON_LENGTH,
+    `Keep the cancellation reason under ${MAX_CANCELLATION_REASON_LENGTH} characters`
+  )
+  const reason = providedReason || "The host closed this work."
+
+  const bookedStatuses: AssignmentStatus[] = ["accepted", "checked_in", "loading", "hauled"]
+  const booked = state.assignments.filter(
+    (assignment) => assignment.loadPostingId === load.id && bookedStatuses.includes(assignment.status)
+  )
+  assertCondition(booked.length === 0, "Cancel the booked hauls first, then close this work")
+
+  const pending = state.assignments.filter(
+    (assignment) => assignment.loadPostingId === load.id && ["requested", "offered"].includes(assignment.status)
+  )
+
+  for (const assignment of pending) {
+    const declined = declineAssignment(state, assignment.id, reason)
+    const capacity = getOpportunityCapacity(state, load.id)
+
+    if (capacity) {
+      updateOpportunityCapacityAfterDecline(state, capacity)
+    }
+
+    const driver = state.driverProfiles.find((profile) => profile.id === declined.driverProfileId)
+    if (driver) {
+      insertNotification(
+        state,
+        driver.userId,
+        "Work closed by the host",
+        `${load.title} is no longer available. ${reason}`,
+        "assignment",
+        declined.id,
+        "assignment_declined"
+      )
+    }
+  }
+
+  const timestamp = nowIso()
+
+  state.truckSlots = state.truckSlots.map((slot) => {
+    if (slot.loadPostingId !== load.id || ["cancelled", "completed"].includes(slot.status)) {
+      return slot
+    }
+
+    return truckSlotSchema.parse({
+      ...slot,
+      status: transitionTruckSlotStatus(slot.status, "cancelled"),
+      updatedAt: timestamp
+    })
+  })
+
+  const current = assertFound(
+    state.loadPostings.find((candidate) => candidate.id === load.id),
+    `Load posting ${load.id} was not found`
+  )
+  const closed = loadPostingSchema.parse({
+    ...current,
+    cancellationReason: reason,
+    status: transitionLoadPostingStatus(current.status, "cancelled"),
+    updatedAt: timestamp
+  })
+
+  state.loadPostings = state.loadPostings.map((candidate) => (candidate.id === closed.id ? closed : candidate))
+
+  insertAuditEvent(state, context.actorUserId, "load_posting", closed.id, "load_closed", {
+    declinedRequests: pending.length,
+    organizationId: context.organizationId,
+    reason
+  })
+
+  return closed
 }
 
 export function progressTripStatus(
