@@ -3,8 +3,11 @@ import {
   auditEventSchema,
   directOfferSchema,
   futureAvailabilitySchema,
+  loadPostingSchema,
   operationalNoticeSchema,
+  canTransitionAssignmentStatus,
   canTransitionAssignmentStatusV2,
+  canTransitionLoadPostingStatus,
   evaluateLoadCompatibility,
   notificationSchema,
   organizationRoleCan,
@@ -20,6 +23,7 @@ import {
   type DirectOffer,
   type FutureAvailability,
   type LoadPosting,
+  type LoadStatus,
   type NotificationType,
   type OperationalNotice,
   type OrganizationAction,
@@ -34,6 +38,7 @@ import {
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { declineAssignment, requestAssignment } from "./assignments"
+import { releaseTruckSlotReservation } from "./truck-slots"
 import { assertCondition, assertFound, createUuid, nowIso } from "./utils"
 
 export const DEFAULT_ACTOR_USER_ID = "22222222-2222-4222-8222-222222222221"
@@ -88,6 +93,15 @@ export interface CapacityRequestInput {
   dispatcherNotes?: string | null
 }
 
+/**
+ * Deliberately NOT part of CapacityRequestInput: web boundaries forward client
+ * JSON into the input, and the validation clock must never be client-supplied.
+ * Only trusted callers (tests pinning the fixture window) pass this.
+ */
+export interface CapacityRequestOptions {
+  at?: string
+}
+
 export interface ApproveCapacityRequestInput {
   actorUserId?: string
   organizationId?: string
@@ -95,6 +109,10 @@ export interface ApproveCapacityRequestInput {
 }
 
 export interface DeclineCapacityRequestInput extends ApproveCapacityRequestInput {
+  reason?: string | null
+}
+
+export interface CancelAssignmentWithPolicyInput extends ApproveCapacityRequestInput {
   reason?: string | null
 }
 
@@ -311,9 +329,11 @@ export function isLoadRequestableAt(
     return false
   }
 
+  // "reserved" stays requestable: a multi-truck loading day keeps accepting
+  // requests until every position is taken (reservedCount reaches capacity).
   return state.truckSlots.some((slot) =>
     slot.loadPostingId === load.id &&
-    ["open", "requested"].includes(slot.status) &&
+    ["open", "requested", "reserved"].includes(slot.status) &&
     slot.reservedCount < slot.capacity &&
     slot.endAt > at
   )
@@ -441,6 +461,45 @@ function updateOpportunityCapacityAfterCompletion(state: LogLoadsDatabaseState, 
   )
 }
 
+/**
+ * The opportunity-capacity ledger is the source of truth for how full a load
+ * is; the load's own status follows it. Runs after every capacity movement so
+ * a load reads "filled" while fully committed, returns to "open" when a
+ * cancellation or decline frees a truckload, and closes as "completed" once
+ * every truckload is delivered. Loads a host cancelled (or that cannot legally
+ * transition) are left untouched.
+ */
+function syncLoadStatusWithCapacity(state: LogLoadsDatabaseState, loadPostingId: string): void {
+  const load = state.loadPostings.find((current) => current.id === loadPostingId)
+  const capacity = getOpportunityCapacity(state, loadPostingId)
+
+  if (!load || !capacity) {
+    return
+  }
+
+  let next: LoadStatus | null = null
+
+  if (capacity.remainingTruckloads <= 0) {
+    next = capacity.completedTruckloads >= capacity.totalTruckloads ? "completed" : "filled"
+  } else if (load.status === "filled") {
+    next = "open"
+  }
+
+  if (!next || next === load.status || !canTransitionLoadPostingStatus(load.status, next)) {
+    return
+  }
+
+  const previousStatus = load.status
+  const updated = loadPostingSchema.parse({ ...load, status: next, updatedAt: nowIso() })
+
+  state.loadPostings = state.loadPostings.map((current) => (current.id === load.id ? updated : current))
+  insertAuditEvent(state, null, "load_posting", load.id, `status_${next}`, {
+    nextStatus: next,
+    previousStatus,
+    source: "capacity_sync"
+  })
+}
+
 function assignmentParticipantOrganizationIds(state: LogLoadsDatabaseState, assignment: Assignment): string[] {
   const load = assertFound(
     state.loadPostings.find((current) => current.id === assignment.loadPostingId),
@@ -471,7 +530,11 @@ function assertTripParticipant(
   )
 }
 
-export function requestCapacityWithPolicy(state: LogLoadsDatabaseState, input: CapacityRequestInput): Assignment {
+export function requestCapacityWithPolicy(
+  state: LogLoadsDatabaseState,
+  input: CapacityRequestInput,
+  options: CapacityRequestOptions = {}
+): Assignment {
   const parsed: CapacityRequestInput = {
     actorUserId: input.actorUserId,
     cancellationReason: input.cancellationReason ?? null,
@@ -522,6 +585,15 @@ export function requestCapacityWithPolicy(state: LogLoadsDatabaseState, input: C
     "This load is not accepting driver requests"
   )
 
+  // The write path re-checks what discovery checks: a slot whose loading
+  // window has passed must reject the request even when called directly.
+  const slot = assertFound(
+    state.truckSlots.find((current) => current.id === parsed.truckSlotId),
+    `Truck slot ${parsed.truckSlotId} was not found`
+  )
+  const requestedAt = options.at ?? nowIso()
+  assertCondition(slot.endAt > requestedAt, "This haul window has already passed")
+
   const truck = assertFound(
     state.truckProfiles.find((current) => current.id === parsed.truckProfileId),
     `Truck profile ${parsed.truckProfileId} was not found`
@@ -542,6 +614,7 @@ export function requestCapacityWithPolicy(state: LogLoadsDatabaseState, input: C
 
   if (capacity) {
     updateOpportunityCapacityAfterRequest(state, capacity)
+    syncLoadStatusWithCapacity(state, parsed.loadPostingId)
   }
 
   insertAuditEvent(state, context.actorUserId, "assignment", assignment.id, "capacity_requested", {
@@ -729,6 +802,7 @@ export function declineCapacityRequest(
 
   if (capacity) {
     updateOpportunityCapacityAfterDecline(state, capacity)
+    syncLoadStatusWithCapacity(state, load.id)
   }
 
   insertAuditEvent(state, context.actorUserId, "assignment", declined.id, "capacity_declined", {
@@ -753,6 +827,202 @@ export function declineCapacityRequest(
   return declined
 }
 
+/**
+ * Cancelling an assignment must return everything the booking consumed:
+ * the assignment row goes terminal, the truck-slot reservation is released,
+ * committed opportunity capacity is restored, and the load's status follows
+ * the ledger (a "filled" load reopens). Completed truckloads are never rolled
+ * back — the clamp in the capacity math protects delivered work.
+ */
+function applyAssignmentCancellationEffects(
+  state: LogLoadsDatabaseState,
+  assignment: Assignment,
+  reason: string,
+  timestamp: string,
+  actor: { actorUserId: string; cancelledBy: "host" | "hauler"; organizationId: string }
+): Assignment | null {
+  if (!canTransitionAssignmentStatus(assignment.status, "cancelled")) {
+    return null
+  }
+
+  const cancelled = assignmentSchema.parse({
+    ...assignment,
+    cancellationReason: reason,
+    cancelledAt: timestamp,
+    status: transitionAssignmentStatus(assignment.status, "cancelled"),
+    updatedAt: timestamp
+  })
+
+  state.assignments = state.assignments.map((current) => (current.id === cancelled.id ? cancelled : current))
+  releaseTruckSlotReservation(state, assignment.truckSlotId)
+
+  const capacity = getOpportunityCapacity(state, assignment.loadPostingId)
+  if (capacity) {
+    updateOpportunityCapacityAfterDecline(state, capacity)
+    syncLoadStatusWithCapacity(state, assignment.loadPostingId)
+  }
+
+  // Every cancellation surface writes the same audit record, so the audit log
+  // reads identically whether the booking or the trip was cancelled first.
+  insertAuditEvent(state, actor.actorUserId, "assignment", cancelled.id, "assignment_cancelled", {
+    cancelledBy: actor.cancelledBy,
+    loadPostingId: assignment.loadPostingId,
+    organizationId: actor.organizationId,
+    reason
+  })
+
+  return cancelled
+}
+
+function notifyAssignmentCancelled(
+  state: LogLoadsDatabaseState,
+  load: LoadPosting,
+  assignment: Assignment,
+  reason: string,
+  excludeUserId: string,
+  wasBooked: boolean
+): void {
+  const driver = state.driverProfiles.find((profile) => profile.id === assignment.driverProfileId)
+  const dispatcher = state.dispatcherProfiles.find((profile) => profile.id === load.dispatcherProfileId)
+  const recipients = new Set(
+    [driver?.userId, dispatcher?.userId].filter((userId): userId is string => Boolean(userId) && userId !== excludeUserId)
+  )
+
+  // A withdrawn pending request never was a booked haul — say so honestly.
+  const title = wasBooked ? "Haul cancelled" : "Request withdrawn"
+  const body = wasBooked
+    ? `A booked haul on ${load.title} was cancelled. ${reason}`
+    : `The request for ${load.title} was withdrawn. ${reason}`
+
+  for (const userId of recipients) {
+    insertNotification(
+      state,
+      userId,
+      title,
+      body,
+      "assignment",
+      assignment.id,
+      "assignment_cancelled"
+    )
+  }
+}
+
+const MAX_CANCELLATION_REASON_LENGTH = 140
+
+/**
+ * One authorization rule for every cancellation surface (the policy entry
+ * point AND the trip-cancel mirror): the assigned driver may always cancel
+ * their own haul; any other driver-role member may not; host-organization
+ * staff need assign_capacity; hauler-organization staff need
+ * request_assignment. Callers must already have proven trip participation.
+ */
+function assertCancellationAuthority(
+  state: LogLoadsDatabaseState,
+  context: ActiveOrganizationContext,
+  assignment: Assignment,
+  load: LoadPosting
+): { side: "host" | "hauler" } {
+  const driver = assertFound(
+    state.driverProfiles.find((current) => current.id === assignment.driverProfileId),
+    `Driver profile ${assignment.driverProfileId} was not found`
+  )
+
+  if (driver.userId === context.actorUserId) {
+    assertOrganizationAction(context, "request_assignment")
+    return { side: "hauler" }
+  }
+
+  assertCondition(context.membership.role !== "driver", "Drivers can only cancel their own hauls")
+
+  if (load.companyId === context.organizationId) {
+    assertOrganizationAction(context, "assign_capacity")
+    return { side: "host" }
+  }
+
+  assertOrganizationAction(context, "request_assignment")
+  return { side: "hauler" }
+}
+
+export function cancelAssignmentWithPolicy(
+  state: LogLoadsDatabaseState,
+  input: CancelAssignmentWithPolicyInput
+): { assignment: Assignment; trip: TripV2 | null } {
+  const assignmentId = requireText(input.assignmentId, "assignmentId")
+  const context = getContextForInput(state, input)
+
+  const assignment = assertFound(
+    state.assignments.find((current) => current.id === assignmentId),
+    `Assignment ${assignmentId} was not found`
+  )
+  const load = assertFound(
+    state.loadPostings.find((current) => current.id === assignment.loadPostingId),
+    `Load posting ${assignment.loadPostingId} was not found`
+  )
+
+  assertTripParticipant(state, context, assignment)
+
+  const { side } = assertCancellationAuthority(state, context, assignment, load)
+
+  assertCondition(
+    activeAssignmentStatuses.has(assignment.status),
+    `Only an active assignment can be cancelled, and this one is ${assignment.status}`
+  )
+
+  const providedReason = input.reason?.trim() ?? ""
+  assertCondition(
+    providedReason.length <= MAX_CANCELLATION_REASON_LENGTH,
+    `Keep the cancellation reason under ${MAX_CANCELLATION_REASON_LENGTH} characters`
+  )
+
+  const reason = providedReason || (side === "host" ? "Cancelled by the host." : "Cancelled by the hauler.")
+  const wasBooked = !["requested", "offered"].includes(assignment.status)
+  const timestamp = nowIso()
+
+  const trip = state.tripsV2.find((current) => current.assignmentId === assignment.id) ?? null
+  let cancelledTrip: TripV2 | null = null
+
+  if (trip && !["cancelled", "completed"].includes(trip.status)) {
+    cancelledTrip = tripSchemaV2.parse({
+      ...trip,
+      lastSyncedAt: timestamp,
+      locationSharingEndsAt: timestamp,
+      status: transitionTripStatus(trip.status, "cancelled"),
+      updatedAt: timestamp
+    })
+    state.tripsV2 = state.tripsV2.map((current) => (current.id === trip.id ? cancelledTrip! : current))
+    state.tripEvents.push(tripEventSchema.parse({
+      actorUserId: context.actorUserId,
+      createdAt: timestamp,
+      id: createUuid(),
+      metadata: { assignmentId: assignment.id, reason },
+      note: reason,
+      occurredAt: timestamp,
+      source: side === "host" ? "dispatcher" : "driver",
+      tripId: trip.id,
+      type: "cancelled"
+    }))
+    insertAuditEvent(state, context.actorUserId, "trip", trip.id, "status_cancelled", {
+      nextStatus: "cancelled",
+      previousStatus: trip.status,
+      reason
+    })
+  }
+
+  const cancelled = applyAssignmentCancellationEffects(state, assignment, reason, timestamp, {
+    actorUserId: context.actorUserId,
+    cancelledBy: side,
+    organizationId: context.organizationId
+  })
+
+  if (!cancelled) {
+    throw new Error(`Assignment ${assignment.id} cannot be cancelled while ${assignment.status}`)
+  }
+
+  notifyAssignmentCancelled(state, load, cancelled, reason, context.actorUserId, wasBooked)
+
+  return { assignment: cancelled, trip: cancelledTrip ?? trip }
+}
+
 export function progressTripStatus(
   state: LogLoadsDatabaseState,
   input: ProgressTripStatusInput
@@ -769,6 +1039,17 @@ export function progressTripStatus(
     `Assignment ${trip.assignmentId} was not found`
   )
   assertTripParticipant(state, context, assignment)
+
+  // Cancelling a trip cancels the booking, so it demands the same authority
+  // as cancelAssignmentWithPolicy — trip-progression rights are not enough.
+  let cancellationSide: "host" | "hauler" | null = null
+  if (input.nextStatus === "cancelled") {
+    const load = assertFound(
+      state.loadPostings.find((current) => current.id === trip.loadPostingId),
+      `Load posting ${trip.loadPostingId} was not found`
+    )
+    cancellationSide = assertCancellationAuthority(state, context, assignment, load).side
+  }
 
   const nextStatus = transitionTripStatus(trip.status, input.nextStatus)
   const timestamp = nowIso()
@@ -797,6 +1078,26 @@ export function progressTripStatus(
 
   if (nextStatus === "completed") {
     updateOpportunityCapacityAfterCompletion(state, trip.loadPostingId)
+    syncLoadStatusWithCapacity(state, trip.loadPostingId)
+  }
+
+  // A cancelled trip cancels its booking: the assignment goes terminal, the
+  // slot reservation is released, and committed capacity returns to the load.
+  if (nextStatus === "cancelled") {
+    const reason = (input.note?.trim() || "Trip cancelled.").slice(0, MAX_CANCELLATION_REASON_LENGTH)
+    const wasBooked = !["requested", "offered"].includes(assignment.status)
+    const cancelledAssignment = applyAssignmentCancellationEffects(state, assignment, reason, timestamp, {
+      actorUserId: context.actorUserId,
+      cancelledBy: cancellationSide ?? "hauler",
+      organizationId: context.organizationId
+    })
+
+    if (cancelledAssignment) {
+      const load = state.loadPostings.find((current) => current.id === trip.loadPostingId)
+      if (load) {
+        notifyAssignmentCancelled(state, load, cancelledAssignment, reason, context.actorUserId, wasBooked)
+      }
+    }
   }
 
   const event = tripEventSchema.parse({

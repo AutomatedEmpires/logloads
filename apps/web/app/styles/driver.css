@@ -220,6 +220,56 @@
 .proof-control .action-note,
 .proof-control .action-error { flex-basis: 100%; }
 
+.cancel-haul__trigger {
+  justify-self: start;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--red);
+  padding: 8px 12px;
+  font-weight: 800;
+}
+.cancel-haul {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--red);
+  border-radius: var(--radius);
+  background: var(--red-bg);
+  padding: 12px;
+}
+.cancel-haul p { margin: 0; font-weight: 750; }
+.cancel-haul input {
+  min-height: 42px;
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+  padding: 6px 10px;
+  font-weight: 700;
+}
+.cancel-haul__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.cancel-haul__confirm,
+.cancel-haul__keep {
+  min-height: 42px;
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  font-weight: 800;
+}
+.cancel-haul__confirm {
+  border: 1px solid var(--red);
+  background: var(--red);
+  color: #fff;
+}
+.cancel-haul__keep {
+  border: 1px solid var(--line-strong);
+  background: var(--paper);
+  color: var(--ink);
+}
+.cancel-haul__confirm:disabled,
+.cancel-haul__keep:disabled { opacity: 0.6; }
+
 /* --- Equipment ------------------------------------------------------------ */
 .equipment-form {
   display: grid;

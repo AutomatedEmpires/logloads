@@ -38,7 +38,7 @@ function networkFixture() {
     trailerProfileId: equipment.trailerProfileId,
     truckProfileId: equipment.truckProfileId,
     truckSlotId: slot.id
-  })
+  }, { at: "2026-06-05T12:00:00.000Z" })
   const sourceContext = {
     actorUserId: sourceMembership.userId,
     organizationId: load.companyId

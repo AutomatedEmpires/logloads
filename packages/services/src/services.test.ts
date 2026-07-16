@@ -1,7 +1,16 @@
 import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
-import { createLogLoadsServices } from "./index"
+import { createLogLoadsServices, type LogLoadsServices } from "./index"
+
+// The seed fixtures live in early June 2026; pin the request clock inside
+// that window. The clock is an explicit trusted option — never client input.
+function requestJune(
+  services: LogLoadsServices,
+  input: Parameters<LogLoadsServices["requestCapacityWithPolicy"]>[0]
+) {
+  return services.requestCapacityWithPolicy(input, { at: "2026-06-05T12:00:00.000Z" })
+}
 
 describe("logloads services", () => {
   it("creates a valid load posting", () => {
@@ -301,7 +310,7 @@ describe("logloads services", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
 
     expect(() =>
-      services.requestCapacityWithPolicy({
+      requestJune(services, {
         actorUserId: "22222222-2222-4222-8222-222222222221",
         organizationId: "33333333-3333-4333-8333-333333333331",
         loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
@@ -318,7 +327,7 @@ describe("logloads services", () => {
   it("updates opportunity capacity when a connected hauler requests private work", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
 
-    const assignment = services.requestCapacityWithPolicy({
+    const assignment = requestJune(services, {
       actorUserId: "22222222-2222-4222-8222-222222222221",
       organizationId: "33333333-3333-4333-8333-333333333331",
       loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
@@ -356,7 +365,7 @@ describe("logloads services", () => {
     if (!driverMembership || !otherCombination?.assignedDriverProfileId) return
     const otherDriverProfileId = otherCombination.assignedDriverProfileId
 
-    expect(() => services.requestCapacityWithPolicy({
+    expect(() => requestJune(services, {
       actorUserId: driverMembership.userId,
       driverProfileId: otherDriverProfileId,
       loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
@@ -377,7 +386,7 @@ describe("logloads services", () => {
     if (!load) return
     load.status = "cancelled"
 
-    expect(() => services.requestCapacityWithPolicy({
+    expect(() => requestJune(services, {
       actorUserId: "22222222-2222-4222-8222-222222222221",
       driverProfileId: "44444444-4444-4444-8444-444444444441",
       loadPostingId: load.id,
@@ -390,7 +399,7 @@ describe("logloads services", () => {
 
   it("lets the source organization approve capacity and creates a trip snapshot", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    const assignment = services.requestCapacityWithPolicy({
+    const assignment = requestJune(services, {
       actorUserId: "22222222-2222-4222-8222-222222222221",
       organizationId: "33333333-3333-4333-8333-333333333331",
       loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
@@ -426,7 +435,7 @@ describe("logloads services", () => {
 
   it("does not consume an assignment or slot when approval validation fails", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    const assignment = services.requestCapacityWithPolicy({
+    const assignment = requestJune(services, {
       actorUserId: "22222222-2222-4222-8222-222222222221",
       organizationId: "33333333-3333-4333-8333-333333333331",
       loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
@@ -457,7 +466,7 @@ describe("logloads services", () => {
     const truckSlotId = "dddddddd-dddd-4ddd-8ddd-ddddddddddd4"
     const beforeCapacity = services.state.opportunityCapacities.find((item) => item.loadPostingId === loadPostingId)
     const beforeSlot = services.state.truckSlots.find((item) => item.id === truckSlotId)
-    const assignment = services.requestCapacityWithPolicy({
+    const assignment = requestJune(services, {
       actorUserId: "22222222-2222-4222-8222-222222222221",
       organizationId: "33333333-3333-4333-8333-333333333331",
       loadPostingId,
@@ -488,7 +497,7 @@ describe("logloads services", () => {
       notification.relatedEntityId === assignment.id && notification.userId === "22222222-2222-4222-8222-222222222221"
     )).toMatchObject({ title: "Not selected for this haul", type: "assignment_declined" })
 
-    const requestedAgain = services.requestCapacityWithPolicy({
+    const requestedAgain = requestJune(services, {
       actorUserId: "22222222-2222-4222-8222-222222222221",
       organizationId: "33333333-3333-4333-8333-333333333331",
       loadPostingId,
@@ -503,7 +512,7 @@ describe("logloads services", () => {
 
   it("allows only the source organization to decline a request", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    const assignment = services.requestCapacityWithPolicy({
+    const assignment = requestJune(services, {
       actorUserId: "22222222-2222-4222-8222-222222222221",
       organizationId: "33333333-3333-4333-8333-333333333331",
       loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
@@ -523,7 +532,7 @@ describe("logloads services", () => {
 
   it("cannot approve a request after it has been declined", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    const assignment = services.requestCapacityWithPolicy({
+    const assignment = requestJune(services, {
       actorUserId: "22222222-2222-4222-8222-222222222221",
       organizationId: "33333333-3333-4333-8333-333333333331",
       loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
@@ -561,7 +570,7 @@ describe("logloads services", () => {
 
   it("keeps route packs locked for a requesting hauler until approval", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    const assignment = services.requestCapacityWithPolicy({
+    const assignment = requestJune(services, {
       actorUserId: "22222222-2222-4222-8222-222222222221",
       organizationId: "33333333-3333-4333-8333-333333333331",
       loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",

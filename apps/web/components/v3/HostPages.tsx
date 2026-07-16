@@ -9,6 +9,7 @@ import type { NetworkLoadView, NetworkView } from "@/lib/network"
 import { formatDateTime, formatHuman, tripStatusLabel } from "@/lib/v3-shared"
 import { DecisionList, toneForNotice } from "./Common"
 import {
+  CancelAssignmentButton,
   CapacityApprovalList,
   DirectOfferPanel,
   NoticeComposer,
@@ -281,6 +282,9 @@ export function HostLiveBoard({ account, network }: HostPageProps) {
                             tripId={trip.id}
                           />
                         )
+                      ) : null}
+                      {!["cancelled", "completed"].includes(trip.status) ? (
+                        <CancelAssignmentButton assignmentId={trip.assignmentId} driverName={trip.driverName} />
                       ) : null}
                     </div>
                   ))

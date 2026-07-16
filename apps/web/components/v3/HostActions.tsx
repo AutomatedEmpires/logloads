@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react"
 
 import {
   approveCapacityRequestAction,
+  cancelAssignmentAction,
   createDirectOfferAction,
   createLoadPostingAction,
   createOperationalNoticeAction
@@ -139,6 +140,82 @@ export function CapacityApprovalList({ requests }: { requests: PendingCapacityRe
       {requests.map((request) => (
         <ApprovalRow key={request.assignmentId} request={request} />
       ))}
+    </div>
+  )
+}
+
+// --- Booked-haul cancellation -------------------------------------------------
+
+/**
+ * Two-step cancel for a booked haul: the truckload returns to the load's open
+ * capacity and the driver is notified with the reason entered here.
+ */
+export function CancelAssignmentButton({ assignmentId, driverName }: { assignmentId: string; driverName: string }) {
+  const [confirming, setConfirming] = useState(false)
+  const [reason, setReason] = useState("")
+  const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null)
+  const [pending, startTransition] = useTransition()
+
+  if (feedback?.ok) {
+    return (
+      <p className="host-form-feedback host-form-feedback--success" role="status">
+        {feedback.text}
+      </p>
+    )
+  }
+
+  if (!confirming) {
+    return (
+      <button className="host-btn host-btn--quiet" onClick={() => setConfirming(true)} type="button">
+        Cancel haul
+      </button>
+    )
+  }
+
+  const cancel = () => {
+    startTransition(async () => {
+      setFeedback(null)
+
+      const result = await cancelAssignmentAction({ assignmentId, reason: reason.trim() || null })
+
+      setFeedback(
+        result.ok
+          ? {
+              ok: true,
+              text: `The haul with ${driverName} is cancelled. The truckload is open again and the driver was notified.`
+            }
+          : { ok: false, text: result.error ?? "The haul could not be cancelled. Try again." }
+      )
+    })
+  }
+
+  return (
+    <div className="host-stack-form">
+      <label>
+        Reason the driver sees (optional)
+        <input maxLength={140} onChange={(event) => setReason(event.target.value)} type="text" value={reason} />
+      </label>
+      <div className="host-approval-actions">
+        <button className="host-btn" disabled={pending} onClick={cancel} type="button">
+          {pending ? "Cancelling…" : "Yes, cancel the haul"}
+        </button>
+        <button
+          className="host-btn host-btn--quiet"
+          disabled={pending}
+          onClick={() => {
+            setFeedback(null)
+            setConfirming(false)
+          }}
+          type="button"
+        >
+          Keep it
+        </button>
+      </div>
+      {feedback && !feedback.ok ? (
+        <p className="host-form-feedback host-form-feedback--error" role="alert">
+          {feedback.text}
+        </p>
+      ) : null}
     </div>
   )
 }

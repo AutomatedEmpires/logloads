@@ -46,6 +46,7 @@ import {
   DEFAULT_ORGANIZATION_ID,
   approveCapacityRequest,
   attachTripDocument,
+  cancelAssignmentWithPolicy,
   createDirectOffer,
   createOperationalNotice,
   declineCapacityRequest,
@@ -116,6 +117,8 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     attachTripDocument: (input: Parameters<typeof attachTripDocument>[1]) => attachTripDocument(state, input),
     cancelAssignment: (assignmentId: string, cancellationReason: string) =>
       cancelAssignment(state, assignmentId, cancellationReason),
+    cancelAssignmentWithPolicy: (input: Parameters<typeof cancelAssignmentWithPolicy>[1]) =>
+      cancelAssignmentWithPolicy(state, input),
     createDirectOffer: (input: Parameters<typeof createDirectOffer>[1]) => createDirectOffer(state, input),
     createLoadPosting: (input: unknown) => createLoadPosting(state, input),
     createNotification: (input: unknown) => createNotification(state, input),
@@ -144,7 +147,10 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     progressTripStatus: (input: Parameters<typeof progressTripStatus>[1]) => progressTripStatus(state, input),
     publishFutureAvailability: (input: Parameters<typeof publishFutureAvailability>[1]) => publishFutureAvailability(state, input),
     requestAssignment: (input: unknown) => requestAssignment(state, input),
-    requestCapacityWithPolicy: (input: Parameters<typeof requestCapacityWithPolicy>[1]) => requestCapacityWithPolicy(state, input),
+    requestCapacityWithPolicy: (
+      input: Parameters<typeof requestCapacityWithPolicy>[1],
+      options?: Parameters<typeof requestCapacityWithPolicy>[2]
+    ) => requestCapacityWithPolicy(state, input, options),
     saveDriverMediaReference: (input: Parameters<typeof saveDriverMediaReference>[1]) => saveDriverMediaReference(state, input),
     updateDriverEconomics: (input: Parameters<typeof updateDriverEconomics>[1]) => updateDriverEconomics(state, input),
     updateLoadPosting: (input: unknown) => updateLoadPosting(state, input),

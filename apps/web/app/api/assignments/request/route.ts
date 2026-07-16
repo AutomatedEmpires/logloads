@@ -7,11 +7,19 @@ export async function POST(request: NextRequest) {
 	try {
 		const payload = await request.json()
 		const { actorUserId, organizationId } = await requireApiActor(payload.organizationId)
+		// Explicit field list — client JSON must never smuggle extra inputs
+		// (identity, clocks) into the service layer.
 		const assignment = await mutateState((draft) =>
 			draft.requestCapacityWithPolicy({
-				...payload,
 				actorUserId,
-				organizationId
+				cancellationReason: payload.cancellationReason ?? null,
+				dispatcherNotes: payload.dispatcherNotes ?? null,
+				driverProfileId: payload.driverProfileId,
+				loadPostingId: payload.loadPostingId,
+				organizationId,
+				trailerProfileId: payload.trailerProfileId ?? null,
+				truckProfileId: payload.truckProfileId,
+				truckSlotId: payload.truckSlotId
 			})
 		)
 
