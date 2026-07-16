@@ -119,6 +119,72 @@ describe("driver network access", () => {
     expect(current?.viewerDecision).toBeNull()
   })
 
+  it("shows a driver the host's source pack when their haul predates assignment snapshots", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    // A seeded accepted assignment: exactly the state of every in-flight haul
+    // at deploy — the host published a pack, but not a per-assignment snapshot.
+    const legacyAssignmentId = "ffffffff-ffff-4fff-8fff-fffffffffff1"
+    const legacy = services.state.assignments.find((candidate) => candidate.id === legacyAssignmentId)
+    const driver = services.state.driverProfiles.find((candidate) => candidate.id === legacy?.driverProfileId)
+    const membership = services.state.organizationMemberships.find((candidate) =>
+      candidate.userId === driver?.userId && candidate.status === "active"
+    )
+
+    expect(legacy && driver && membership).toBeTruthy()
+    if (!legacy || !driver || !membership) return
+
+    const viewer = {
+      actorUserId: driver.userId,
+      kind: "actor" as const,
+      organizationId: membership.organizationId
+    }
+    const view = buildNetworkView(services.state, viewer, new Date("2026-06-05T12:00:00.000Z")).loads.find(
+      (load) => load.id === legacy.loadPostingId
+    )
+    const served = services.getRoutePackForAssignment({
+      actorUserId: driver.userId,
+      assignmentId: legacyAssignmentId,
+      organizationId: membership.organizationId
+    }).routePack
+
+    // The page must not tell the driver no briefing exists while the server
+    // hands one over.
+    expect(view?.access.unlocked).toBe(true)
+    expect(view?.routePack).not.toBeNull()
+    expect(view?.routePack?.id).toBe(served.id)
+  })
+
+  it("never shows a driver a route pack minted for another driver's assignment", () => {
+    const { request, services, sourceContext, viewer } = networkFixture()
+    const assignment = request()
+
+    services.approveCapacityRequest({ ...sourceContext, assignmentId: assignment.id })
+
+    const mintedForViewer = services.state.routePacks.find((pack) => pack.assignmentId === assignment.id)
+
+    expect(mintedForViewer).toBeDefined()
+    if (!mintedForViewer) return
+
+    // Another driver in the same hauling organization. They may have their own
+    // standing on this load, but they must never be handed the snapshot minted
+    // for someone else's assignment — it carries that haul's entrance pin and
+    // gate detail.
+    const otherDriver = services.state.driverProfiles.find(
+      (candidate) => candidate.id !== assignment.driverProfileId && candidate.companyId === viewer.organizationId
+    )
+
+    expect(otherDriver).toBeDefined()
+    if (!otherDriver) return
+
+    const view = buildNetworkView(
+      services.state,
+      { actorUserId: otherDriver.userId, kind: "actor", organizationId: viewer.organizationId },
+      new Date("2026-06-05T12:00:00.000Z")
+    ).loads.find((load) => load.id === assignment.loadPostingId)
+
+    expect(view?.routePack?.id).not.toBe(mintedForViewer.id)
+  })
+
   it("never labels a terminal load as available", () => {
     const { load, services, viewer } = networkFixture()
     load.status = "cancelled"

@@ -9,7 +9,8 @@ import {
   createDirectOfferAction,
   createLoadPostingAction,
   createOperationalNoticeAction,
-  publishDraftAction
+  publishDraftAction,
+  refreshRoutePackAction
 } from "@/lib/cockpit-actions"
 import type { HostPublishingOptions, RequirementOption } from "@/lib/host-data"
 import { formatHuman, humanizeTag } from "@/lib/v3-shared"
@@ -215,6 +216,53 @@ export function CancelAssignmentButton({ assignmentId, driverName }: { assignmen
       </div>
       {feedback && !feedback.ok ? (
         <p className="host-form-feedback host-form-feedback--error" role="alert">
+          {feedback.text}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+// --- Route Pack ---------------------------------------------------------------
+
+/**
+ * Re-issues the Route Pack a booked driver holds from the load's current
+ * instructions. Only a material change mints a new version and alerts them.
+ */
+export function RefreshRoutePackButton({ assignmentId, driverName }: { assignmentId: string; driverName: string }) {
+  const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null)
+  const [pending, startTransition] = useTransition()
+
+  const refresh = () => {
+    startTransition(async () => {
+      setFeedback(null)
+
+      const result = await refreshRoutePackAction({ assignmentId })
+
+      if (!result.ok) {
+        setFeedback({ ok: false, text: result.error ?? "The Route Pack could not be updated. Try again." })
+        return
+      }
+
+      setFeedback({
+        ok: true,
+        text: result.changed
+          ? `Version ${result.version} issued. ${driverName} was alerted to read it before rolling.`
+          : "Nothing operational changed, so the driver keeps the version they have."
+      })
+    })
+  }
+
+  return (
+    <div className="host-row-actions">
+      <button className="host-btn host-btn--quiet" disabled={pending} onClick={refresh} type="button">
+        {pending ? "Checking…" : "Re-issue Route Pack"}
+      </button>
+      {feedback ? (
+        <p
+          className={`host-form-feedback ${feedback.ok ? "host-form-feedback--success" : "host-form-feedback--error"}`}
+          role={feedback.ok ? "status" : "alert"}
+        >
           {feedback.text}
         </p>
       ) : null}

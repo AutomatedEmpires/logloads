@@ -370,7 +370,7 @@ export function RoutePackPreview({ load, locked = false }: { load: NetworkLoadVi
           <li><Icon aria-hidden name="map.landing" size={18} /><span>Exact landing location, gate instructions, and private road notes</span></li>
           <li><Icon aria-hidden name="map.route" size={18} /><span>Calculated route with current road conditions and local cautions</span></li>
           <li><Icon aria-hidden name="map.destination" size={18} /><span>Destination check-in, scale process, and receiving hours</span></li>
-          <li><Icon aria-hidden name="action.save" size={18} /><span>Offline access for low-signal hauls when the host enables it</span></li>
+          <li><Icon aria-hidden name="ops.document" size={18} /><span>Safety requirements and the proof you need to bring back</span></li>
         </ul>
       </section>
     )
@@ -393,33 +393,49 @@ export function RoutePackPreview({ load, locked = false }: { load: NetworkLoadVi
     )
   }
 
+  const snapshot = pack.snapshot
+  // Critical first: a driver skimming this on a phone at the landing needs
+  // safety, gate, and scale before anything else.
+  const critical = pack.instructions.filter((entry) => entry.severity === "critical")
+  const rest = pack.instructions.filter((entry) => entry.severity !== "critical")
+
   return (
     <section className="route-pack-preview">
-      <SectionHeader eyebrow="Route Pack" title="Operational briefing for this move." />
-      <div className="briefing-grid">
-        <article>
-          <h3>Landing</h3>
-          <p>{load.landingDetails?.privateRoadNotes ?? load.landing.accessNotes ?? "No special landing access notes."}</p>
-          {load.landingDetails?.gateInstructions ? <p className="briefing-note">Gate: {load.landingDetails.gateInstructions}</p> : null}
-        </article>
-        <article>
-          <h3>Route</h3>
-          <p>{pack.calculatedRouteSummary}</p>
-          <p className="briefing-note">Road condition: {formatHuman(pack.currentRoadCondition)}</p>
-        </article>
-        <article>
-          <h3>Destination</h3>
-          <p>{load.destinationFacility?.checkInProcess ?? load.destination.accessNotes ?? "No check-in notes listed."}</p>
-          {load.destinationFacility ? <p className="briefing-note">Receiving: {load.destinationFacility.receivingHours}</p> : null}
-        </article>
-        <article>
-          <h3>Changes</h3>
-          <p>{load.warnings[0] ?? "No active change for this move."}</p>
-        </article>
-      </div>
-      {pack.instructions.length > 0 ? (
-        <ul className="route-pack-instructions">
-          {pack.instructions.map((instruction) => (
+      <SectionHeader
+        eyebrow={snapshot ? `Route Pack · version ${pack.version}` : "Route Pack"}
+        title="Operational briefing for this move."
+      />
+
+      {snapshot ? (
+        <dl className="route-pack-facts">
+          <div>
+            <dt>Haul window</dt>
+            <dd>{snapshot.haulWindowStartAt ? formatDateTime(snapshot.haulWindowStartAt) : "Not stated"}</dd>
+          </div>
+          <div>
+            <dt>Contact</dt>
+            <dd>
+              {snapshot.contactPhone ? (
+                <a href={`tel:${snapshot.contactPhone}`}>{snapshot.contactName ?? "Dispatch"} · {snapshot.contactPhone}</a>
+              ) : (
+                snapshot.contactName ?? "Not stated"
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt>Load out</dt>
+            <dd>{snapshot.originName}{snapshot.originArea ? ` · ${snapshot.originArea}` : ""}</dd>
+          </div>
+          <div>
+            <dt>Deliver to</dt>
+            <dd>{snapshot.destinationName}{snapshot.destinationReceivingHours ? ` · ${snapshot.destinationReceivingHours}` : ""}</dd>
+          </div>
+        </dl>
+      ) : null}
+
+      {critical.length > 0 ? (
+        <ul className="route-pack-instructions route-pack-instructions--critical">
+          {critical.map((instruction) => (
             <li key={`${instruction.title}-${instruction.detail}`}>
               <Badge tone={instructionTone(instruction.severity)}>{instructionSeverityLabel(instruction.severity)}</Badge>
               <div>
@@ -430,9 +446,56 @@ export function RoutePackPreview({ load, locked = false }: { load: NetworkLoadVi
           ))}
         </ul>
       ) : null}
+
+      <div className="briefing-grid">
+        <article>
+          <h3>Bring back</h3>
+          {!snapshot ? (
+            // No snapshot means this pack predates the field — the requirement
+            // was never captured either way. Saying the host stated nothing
+            // would be inventing a fact from a gap in our own record.
+            <p>This briefing was issued before completion requirements were recorded. Confirm what proof is needed with the host.</p>
+          ) : snapshot.completionEvidence.length > 0 ? (
+            <ul className="route-pack-evidence">
+              {snapshot.completionEvidence.map((evidence) => <li key={evidence}>{evidence}</li>)}
+            </ul>
+          ) : (
+            <p>The host has not stated what proof this haul needs. Confirm before you leave the scale.</p>
+          )}
+        </article>
+        <article>
+          <h3>Route</h3>
+          <p>{pack.calculatedRouteSummary}</p>
+          <p className="briefing-note">
+            Road condition: {formatHuman(pack.currentRoadCondition)}
+            {snapshot?.routeDistanceMiles != null ? ` · ${snapshot.routeDistanceMiles.toFixed(0)} mi` : ""}
+            {snapshot?.routeRunTimeMinutes != null ? ` · about ${snapshot.routeRunTimeMinutes} min` : ""}
+          </p>
+        </article>
+        <article>
+          <h3>Changes</h3>
+          <p>{load.warnings[0] ?? "No active change for this move."}</p>
+        </article>
+      </div>
+
+      {rest.length > 0 ? (
+        <ul className="route-pack-instructions">
+          {rest.map((instruction) => (
+            <li key={`${instruction.title}-${instruction.detail}`}>
+              <Badge tone={instructionTone(instruction.severity)}>{instructionSeverityLabel(instruction.severity)}</Badge>
+              <div>
+                <strong>{instruction.title}</strong>
+                <p>{instruction.detail}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
       <p className="route-pack-footnote">
-        Verified {formatDateTime(pack.lastVerifiedAt)}
-        {pack.cacheableOffline ? " · Available offline once the trip starts" : ""}
+        {snapshot
+          ? `Issued for your assignment ${formatDateTime(snapshot.capturedAt)}. These are the instructions that govern this haul; you will be told if they change.`
+          : `Verified ${formatDateTime(pack.lastVerifiedAt)}`}
       </p>
     </section>
   )
