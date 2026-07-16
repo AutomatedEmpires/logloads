@@ -210,6 +210,71 @@ describe("canonical operating state", () => {
     expect(snapshot?.state.profiles).toHaveLength(originalProfiles)
   })
 
+  it("normalizes route packs stored before assignment snapshots existed", () => {
+    const legacy = createInMemoryDatabase() as Partial<LogLoadsDatabaseState>
+
+    // A document written before packs were per-assignment: no assignmentId,
+    // no version, no snapshot. Readers must not receive undefined for fields
+    // the contract types as present.
+    legacy.routePacks = (legacy.routePacks ?? []).map((pack) => {
+      const stored: Record<string, unknown> = { ...pack }
+
+      delete stored.assignmentId
+      delete stored.version
+      delete stored.snapshot
+      delete stored.supersededAt
+
+      return stored as (typeof pack)
+    })
+
+    const upgraded = upgradeStateSnapshot(legacy)
+    const first = upgraded?.routePacks[0]
+
+    expect(upgraded?.routePacks.length).toBeGreaterThan(0)
+    // No assignmentId means it is the host's load-level source, version 1.
+    expect(first?.assignmentId).toBeNull()
+    expect(first?.version).toBe(1)
+    expect(first?.snapshot).toBeNull()
+    expect(first?.supersededAt).toBeNull()
+    // Existing operational content is untouched.
+    expect(first?.calculatedRouteSummary).toBeTruthy()
+  })
+
+  it("keeps an assignment pack's own version and snapshot on upgrade", () => {
+    const legacy = createInMemoryDatabase() as Partial<LogLoadsDatabaseState>
+    const [pack] = legacy.routePacks ?? []
+
+    expect(pack).toBeDefined()
+    if (!pack) return
+
+    legacy.routePacks = [{ ...pack, assignmentId: "ffffffff-ffff-4fff-8fff-fffffffffff1", version: 3 }]
+
+    const upgraded = upgradeStateSnapshot(legacy)
+
+    expect(upgraded?.routePacks[0]?.assignmentId).toBe("ffffffff-ffff-4fff-8fff-fffffffffff1")
+    expect(upgraded?.routePacks[0]?.version).toBe(3)
+  })
+
+  it("backfills landing safety and destination completion evidence", () => {
+    const legacy = createInMemoryDatabase() as Partial<LogLoadsDatabaseState>
+
+    legacy.richLandingDetails = (legacy.richLandingDetails ?? []).map((details) => {
+      const stored: Record<string, unknown> = { ...details }
+      delete stored.safetyRequirements
+      return stored as (typeof details)
+    })
+    legacy.destinationFacilities = (legacy.destinationFacilities ?? []).map((facility) => {
+      const stored: Record<string, unknown> = { ...facility }
+      delete stored.completionEvidence
+      return stored as (typeof facility)
+    })
+
+    const upgraded = upgradeStateSnapshot(legacy)
+
+    expect(upgraded?.richLandingDetails[0]?.safetyRequirements).toEqual([])
+    expect(upgraded?.destinationFacilities[0]?.completionEvidence).toEqual([])
+  })
+
   it("fails closed on a future snapshot schema", async () => {
     vi.stubGlobal(
       "fetch",

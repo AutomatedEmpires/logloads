@@ -61,10 +61,12 @@ import {
   listFutureAvailabilityForOrganization,
   listPrivateNetworkRelationships,
   listRequestableLoadsForOrganization,
+  listRoutePackVersionsForAssignment,
   listVisibleLoadsForOrganization,
   isLoadRequestableAt,
   progressTripStatus,
   publishFutureAvailability,
+  refreshRoutePackForAssignment,
   requestCapacityWithPolicy
 } from "./operating-network"
 import { getRouteById, listRoutes } from "./routes"
@@ -137,6 +139,10 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     getOrganizationMemberships: (actorUserId: string) => getOrganizationMemberships(state, actorUserId),
     getRouteById: (routeId: string) => getRouteById(state, routeId),
     getRoutePackForAssignment: (input: Parameters<typeof getRoutePackForAssignment>[1]) => getRoutePackForAssignment(state, input),
+    listRoutePackVersionsForAssignment: (input: Parameters<typeof listRoutePackVersionsForAssignment>[1]) =>
+      listRoutePackVersionsForAssignment(state, input),
+    refreshRoutePackForAssignment: (input: Parameters<typeof refreshRoutePackForAssignment>[1]) =>
+      refreshRoutePackForAssignment(state, input),
     listAttentionItems: (organizationId?: string) => listAttentionItems(state, organizationId),
     listDriverAvailability: (driverProfileId?: string) => listDriverAvailability(state, driverProfileId),
     listEntitlements: (organizationId?: string) => listEntitlements(state, organizationId),

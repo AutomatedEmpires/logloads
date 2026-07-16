@@ -146,6 +146,8 @@ export const richLandingDetailsSchema = z.object({
   turnaroundConstraints: z.array(z.string()).default([]),
   stagingInstructions: z.string().optional().nullable(),
   communicationInstructions: z.string().optional().nullable(),
+  /** PPE and safety rules a driver must follow on this landing. */
+  safetyRequirements: z.array(z.string()).default([]),
   lastVerifiedAt: timestampSchema,
   createdAt: timestampSchema,
   updatedAt: timestampSchema
@@ -164,6 +166,8 @@ export const destinationFacilitySchema = z.object({
   checkInProcess: z.string().min(1),
   scaleProcess: z.string().min(1),
   unloadingInstructions: z.string().min(1),
+  /** Proof a driver must come away with (scale ticket, signed record). */
+  completionEvidence: z.array(z.string()).default([]),
   currentStatus: z.enum(["open", "delayed", "closed", "limited"]),
   currentNotice: z.string().optional().nullable(),
   lastVerifiedAt: timestampSchema,
@@ -201,9 +205,55 @@ export const routePackInstructionSchema = z.object({
   verifiedAt: optionalTimestampSchema
 })
 
+/**
+ * The operational facts that governed an accepted haul, resolved from the load,
+ * route, landing, destination, and assignment at approval time. Held on the
+ * pack itself rather than read back through references, so a later edit to the
+ * load never rewrites the instructions a driver already committed to.
+ *
+ * Every field a source may genuinely lack is nullable: an absent gate pin or
+ * receiving window reads as unknown rather than as a confident wrong answer.
+ */
+export const routePackSnapshotSchema = z.object({
+  capturedAt: timestampSchema,
+  driverName: z.string().min(1),
+  driverPhone: z.string().optional().nullable(),
+  equipmentLabel: z.string().optional().nullable(),
+  equipmentUnitNumber: z.string().optional().nullable(),
+  hostOrganizationName: z.string().min(1),
+  hostVerificationStatus: verificationStatusSchema.optional().nullable(),
+  contactName: z.string().optional().nullable(),
+  contactPhone: z.string().optional().nullable(),
+  contactEmail: z.string().optional().nullable(),
+  haulWindowStartAt: optionalTimestampSchema,
+  haulWindowEndAt: optionalTimestampSchema,
+  originName: z.string().min(1),
+  originArea: z.string().optional().nullable(),
+  originEntranceLat: z.number().min(-90).max(90).optional().nullable(),
+  originEntranceLng: z.number().min(-180).max(180).optional().nullable(),
+  destinationName: z.string().min(1),
+  destinationReceivingHours: z.string().optional().nullable(),
+  routeDistanceMiles: z.number().nonnegative().optional().nullable(),
+  routeRunTimeMinutes: z.number().nonnegative().optional().nullable(),
+  materialType: z.string().optional().nullable(),
+  estimatedTonsPerLoad: z.number().positive().optional().nullable(),
+  rateSummary: z.string().optional().nullable(),
+  equipmentRequirements: z.array(z.string()).default([]),
+  completionEvidence: z.array(z.string()).default([])
+})
+
 export const routePackSchema = z.object({
   id: uuidSchema,
   loadPostingId: uuidSchema,
+  /**
+   * null = the load-level source a host maintains. Set = an assignment-specific
+   * snapshot minted when the host approved that haul. Only the latter is shown
+   * to a driver as their route pack.
+   */
+  assignmentId: uuidSchema.optional().nullable().default(null),
+  version: z.number().int().positive().default(1),
+  /** Set when a newer version replaced this one; the row itself is retained. */
+  supersededAt: optionalTimestampSchema,
   landingId: uuidSchema,
   destinationId: uuidSchema,
   haulRouteId: uuidSchema,
@@ -212,6 +262,7 @@ export const routePackSchema = z.object({
   calculatedRouteSummary: z.string().min(1),
   localInstructions: z.array(routePackInstructionSchema).default([]),
   currentRoadCondition: roadConditionSchema,
+  snapshot: routePackSnapshotSchema.optional().nullable().default(null),
   lastVerifiedAt: timestampSchema,
   createdAt: timestampSchema,
   updatedAt: timestampSchema
@@ -374,6 +425,7 @@ export type RichLandingDetails = z.infer<typeof richLandingDetailsSchema>
 export type DestinationFacility = z.infer<typeof destinationFacilitySchema>
 export type OpportunityCapacity = z.infer<typeof opportunityCapacitySchema>
 export type RoutePackInstruction = z.infer<typeof routePackInstructionSchema>
+export type RoutePackSnapshot = z.infer<typeof routePackSnapshotSchema>
 export type RoutePack = z.infer<typeof routePackSchema>
 export type TripStatusV2 = z.infer<typeof tripStatusV2Schema>
 export type TripEventTypeV2 = z.infer<typeof tripEventTypeV2Schema>

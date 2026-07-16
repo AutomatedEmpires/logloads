@@ -16,6 +16,7 @@ import {
   NoticeComposer,
   OpportunityBuilder,
   PublishDraftButton,
+  RefreshRoutePackButton,
   type PendingCapacityRequest
 } from "./HostActions"
 import { TripReviewForm } from "./Reputation"
@@ -302,7 +303,10 @@ export function HostLiveBoard({ account, network }: HostPageProps) {
                         )
                       ) : null}
                       {!["cancelled", "completed"].includes(trip.status) ? (
-                        <CancelAssignmentButton assignmentId={trip.assignmentId} driverName={trip.driverName} />
+                        <>
+                          <RefreshRoutePackButton assignmentId={trip.assignmentId} driverName={trip.driverName} />
+                          <CancelAssignmentButton assignmentId={trip.assignmentId} driverName={trip.driverName} />
+                        </>
                       ) : null}
                     </div>
                   ))

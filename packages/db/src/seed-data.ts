@@ -1294,6 +1294,7 @@ export const seedRichLandingDetails: RichLandingDetails[] = parseMany(richLandin
     turnaroundConstraints: ["single-lane bridge", "no chip vans past upper spur"],
     stagingInstructions: "Stage on the gravel apron west of the loader, nose out.",
     communicationInstructions: "Call loader before entering the one-lane bridge.",
+    safetyRequirements: ["hard hat and hi-vis outside the cab", "no foot traffic inside the loader swing"],
     lastVerifiedAt: timestamps.updated,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
@@ -1312,6 +1313,7 @@ export const seedRichLandingDetails: RichLandingDetails[] = parseMany(richLandin
     turnaroundConstraints: ["short wheelbase preferred", "bridge control at county crossing"],
     stagingInstructions: "Hold at the lower landing until radio clearance.",
     communicationInstructions: "Use VHF channel 7; cell coverage is intermittent.",
+    safetyRequirements: ["hard hat, hi-vis, and caulk boots on the switchback", "chains carried when the road is restricted"],
     lastVerifiedAt: timestamps.updated,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
@@ -1332,6 +1334,7 @@ export const seedDestinationFacilities: DestinationFacility[] = parseMany(destin
     checkInProcess: "Use gate 2 kiosk, then wait for scale light.",
     scaleProcess: "Gross scale before unload, tare scale after sweep-out.",
     unloadingInstructions: "Unload at bay 3 unless scale house redirects.",
+    completionEvidence: ["scale ticket showing gross and tare", "bay 3 delivery record"],
     currentStatus: "open",
     currentNotice: null,
     lastVerifiedAt: timestamps.updated,
@@ -1351,6 +1354,7 @@ export const seedDestinationFacilities: DestinationFacility[] = parseMany(destin
     checkInProcess: "Call unload desk before entering the west gate.",
     scaleProcess: "Auto-scale lane records inbound and outbound weights.",
     unloadingInstructions: "Follow yard marshal to live-bottom bay.",
+    completionEvidence: ["auto-scale ticket printed at the west lane"],
     currentStatus: "limited",
     currentNotice: "West entrance queue is running 20 minutes behind.",
     lastVerifiedAt: timestamps.updated,

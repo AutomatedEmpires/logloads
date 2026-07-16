@@ -434,6 +434,41 @@ export async function publishDraftAction(input: {
   }
 }
 
+export interface RefreshRoutePackResult extends ActionResult {
+  changed: boolean
+  version: number | null
+}
+
+/**
+ * Re-issues an assignment's Route Pack from the load's current instructions.
+ * A material change mints a new version and alerts the driver; an immaterial
+ * one changes nothing, so routine edits never cry wolf at someone driving.
+ */
+export async function refreshRoutePackAction(input: {
+  assignmentId: string
+}): Promise<RefreshRoutePackResult> {
+  try {
+    const actor = await requireActor()
+
+    const result = await commit(["/host", "/fleet", "/driver"], (draft) =>
+      draft.refreshRoutePackForAssignment({
+        actorUserId: actor.profile.id,
+        assignmentId: input.assignmentId,
+        organizationId: actorOrganizationId(actor)
+      })
+    )
+
+    captureServerEvent("route_pack_refreshed", actor.profile.id, {
+      assignmentId: input.assignmentId,
+      changed: result.changed
+    })
+
+    return { ...OK, changed: result.changed, version: result.routePack.version }
+  } catch (error) {
+    return { ...failure(error), changed: false, version: null }
+  }
+}
+
 export async function closeLoadAction(input: {
   loadPostingId: string
   reason?: string | null

@@ -40,6 +40,12 @@ import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { declineAssignment, requestAssignment } from "./assignments"
 import { createLoadPosting, parsePublishModes, provisionLoadCapacity } from "./loads"
+import {
+  buildAssignmentRoutePack,
+  findAssignmentRoutePack,
+  listAssignmentRoutePackVersions,
+  regenerateAssignmentRoutePack
+} from "./route-packs"
 import { releaseTruckSlotReservation } from "./truck-slots"
 import { assertCondition, assertFound, createUuid, nowIso } from "./utils"
 
@@ -672,7 +678,6 @@ export function approveCapacityRequest(
   )
 
   const existingTrip = state.tripsV2.find((trip) => trip.assignmentId === assignment.id)
-  const routePack = state.routePacks.find((pack) => pack.loadPostingId === load.id) ?? null
   const equipmentCombination = assertFound(
     findEquipmentCombinationForAssignment(state, assignment),
     "The requested equipment combination was not found"
@@ -719,6 +724,17 @@ export function approveCapacityRequest(
     status: slot.status === "requested" ? transitionTruckSlotStatus("requested", "reserved") : slot.status,
     updatedAt: timestamp
   })
+  // The pack is minted in the approval itself: any gap would leave an accepted
+  // haul whose promised route pack does not exist yet. Built purely here and
+  // pushed with the other mutations below, and idempotent by assignment so a
+  // retry or a compare-and-swap replay cannot mint a second, conflicting pack.
+  const existingPack = findAssignmentRoutePack(state, assignment.id)
+  const routePack = existingPack ?? buildAssignmentRoutePack(
+    state,
+    { assignment: acceptedAssignment, load, rate, route, slot: confirmedSlot },
+    1,
+    timestamp
+  )
   const trip = existingTrip ?? tripSchemaV2.parse({
     assignmentId: acceptedAssignment.id,
     completedAt: null,
@@ -753,6 +769,10 @@ export function approveCapacityRequest(
   state.truckSlots = state.truckSlots.map((current) =>
     current.id === confirmedSlot.id ? confirmedSlot : current
   )
+
+  if (!existingPack) {
+    state.routePacks.push(routePack)
+  }
 
   if (existingTrip) {
     return { assignment: acceptedAssignment, trip: existingTrip }
@@ -1320,6 +1340,12 @@ export function progressTripStatus(
   return { event, trip: updatedTrip }
 }
 
+/**
+ * A pack carries the exact entrance pin, gate codes, and private-road detail,
+ * so organization membership is not enough: it opens for the driver actually
+ * assigned to the haul and for the host staff who published the work. A
+ * teammate of the assigned driver has no operational need for it.
+ */
 export function getRoutePackForAssignment(
   state: LogLoadsDatabaseState,
   input: RoutePackAccessInput
@@ -1337,16 +1363,26 @@ export function getRoutePackForAssignment(
     state.loadPostings.find((current) => current.id === assignment.loadPostingId),
     `Load posting ${assignment.loadPostingId} was not found`
   )
-  const ownerAccess = load.companyId === context.organizationId
-  const acceptedAccess = ["accepted", "checked_in", "loading", "hauled", "completed"].includes(assignment.status)
+  const driver = state.driverProfiles.find((current) => current.id === assignment.driverProfileId)
+  const hostAccess = load.companyId === context.organizationId
+  const assignedDriverAccess = driver?.userId === context.actorUserId
+  // Fleet staff coordinating the haul keep access; another *driver* does not.
+  const haulerStaffAccess = !hostAccess && context.membership.role !== "driver"
 
   assertCondition(
-    ownerAccess || acceptedAccess,
+    hostAccess || assignedDriverAccess || haulerStaffAccess,
+    "Only the assigned driver and the organizations running this haul can open the Route Pack"
+  )
+  assertCondition(
+    hostAccess || ["accepted", "checked_in", "loading", "hauled", "completed"].includes(assignment.status),
     "The Route Pack unlocks after the host accepts the haul"
   )
 
+  // Prefer the assignment's own snapshot; fall back to the host's load-level
+  // source for hauls booked before packs were minted per assignment.
   const routePack = assertFound(
-    state.routePacks.find((pack) => pack.loadPostingId === assignment.loadPostingId),
+    findAssignmentRoutePack(state, assignment.id) ??
+      state.routePacks.find((pack) => pack.loadPostingId === assignment.loadPostingId && !pack.assignmentId),
     `Route pack for assignment ${assignment.id} was not found`
   )
 
@@ -1357,6 +1393,109 @@ export function getRoutePackForAssignment(
   )
 
   return { notices, routePack }
+}
+
+export type RoutePackHistoryInput = RoutePackAccessInput
+
+/** Every version minted for an assignment, oldest first. Same access rules. */
+export function listRoutePackVersionsForAssignment(
+  state: LogLoadsDatabaseState,
+  input: RoutePackHistoryInput
+): RoutePack[] {
+  // Reuse the access check; it throws unless this actor may see the pack.
+  getRoutePackForAssignment(state, input)
+
+  return listAssignmentRoutePackVersions(state, requireText(input.assignmentId, "assignmentId"))
+}
+
+export interface RefreshRoutePackInput {
+  actorUserId?: string
+  organizationId?: string
+  assignmentId: string
+}
+
+/**
+ * Re-resolves an assignment's pack from current source data. Used when a host
+ * changes operational instructions after a haul was booked: the driver keeps
+ * the version they were given until a material change mints a new one, and is
+ * told when that happens.
+ */
+export function refreshRoutePackForAssignment(
+  state: LogLoadsDatabaseState,
+  input: RefreshRoutePackInput
+): { routePack: RoutePack; changed: boolean } {
+  const context = getContextForInput(state, input)
+  assertOrganizationAction(context, "publish_load")
+
+  const assignment = assertFound(
+    state.assignments.find((current) => current.id === requireText(input.assignmentId, "assignmentId")),
+    `Assignment ${input.assignmentId} was not found`
+  )
+  const load = assertFound(
+    state.loadPostings.find((current) => current.id === assignment.loadPostingId),
+    `Load posting ${assignment.loadPostingId} was not found`
+  )
+  assertCondition(
+    load.companyId === context.organizationId,
+    "Only the posting organization can update this Route Pack"
+  )
+  assertCondition(
+    activeAssignmentStatuses.has(assignment.status),
+    `Route Pack updates apply to an active haul, and this one is ${assignment.status}`
+  )
+
+  const route = assertFound(
+    state.haulRoutes.find((candidate) => candidate.id === load.routeId),
+    `Route ${load.routeId} was not found`
+  )
+  const slot = state.truckSlots.find((candidate) => candidate.id === assignment.truckSlotId) ?? null
+  const rate = state.rates.find((candidate) => candidate.id === load.rateId) ?? null
+  const timestamp = nowIso()
+
+  const result = regenerateAssignmentRoutePack(state, { assignment, load, rate, route, slot }, timestamp)
+
+  if (!result) {
+    return {
+      changed: false,
+      routePack: assertFound(
+        findAssignmentRoutePack(state, assignment.id),
+        `Route pack for assignment ${assignment.id} was not found`
+      )
+    }
+  }
+
+  // A first snapshot for a haul booked before packs were per-assignment pins
+  // what the driver was already reading. Recorded, but not announced as a
+  // change — nothing changed for them.
+  if (!result.previous) {
+    insertAuditEvent(state, context.actorUserId, "route_pack", result.pack.id, "route_pack_issued", {
+      assignmentId: assignment.id,
+      version: result.pack.version
+    })
+
+    return { changed: false, routePack: result.pack }
+  }
+
+  insertAuditEvent(state, context.actorUserId, "route_pack", result.pack.id, "route_pack_updated", {
+    assignmentId: assignment.id,
+    previousVersion: result.previous.version,
+    version: result.pack.version
+  })
+
+  const driver = state.driverProfiles.find((profile) => profile.id === assignment.driverProfileId)
+  if (driver) {
+    insertNotification(
+      state,
+      driver.userId,
+      "Route Pack updated",
+      `${load.title} instructions changed. Open the Route Pack and read version ${result.pack.version} before you roll.`,
+      "assignment",
+      assignment.id,
+      "system_alert"
+    )
+  }
+
+  return { changed: true, routePack: result.pack }
 }
 
 export function attachTripDocument(state: LogLoadsDatabaseState, input: AttachTripDocumentInput): TripDocument {

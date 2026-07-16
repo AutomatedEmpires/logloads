@@ -427,7 +427,11 @@ describe("logloads services", () => {
       paymentMode: "off_platform"
     })
     expect(result.trip.assignmentId).toBe(assignment.id)
-    expect(result.trip.routePackId).toBe("23232323-2323-4323-8323-232323232313")
+    // The trip points at the snapshot minted for THIS assignment, not at the
+    // host's mutable load-level source pack.
+    const mintedPack = services.state.routePacks.find((pack) => pack.assignmentId === assignment.id)
+    expect(mintedPack).toBeDefined()
+    expect(result.trip.routePackId).toBe(mintedPack?.id)
     expect(services.state.notifications.find((notification) =>
       notification.relatedEntityId === assignment.id && notification.userId === "22222222-2222-4222-8222-222222222221"
     )?.type).toBe("assignment_confirmed")
@@ -586,6 +590,8 @@ describe("logloads services", () => {
       assignmentId: assignment.id
     })).toThrow(/unlocks after the host accepts/)
 
+    // Before approval there is no assignment snapshot yet, so the host sees
+    // its own load-level source pack.
     expect(services.getRoutePackForAssignment({
       actorUserId: "22222222-2222-4222-8222-222222222224",
       organizationId: "33333333-3333-4333-8333-333333333332",
@@ -598,11 +604,16 @@ describe("logloads services", () => {
       organizationId: "33333333-3333-4333-8333-333333333332"
     })
 
-    expect(services.getRoutePackForAssignment({
+    // Approval mints the driver's own snapshot of that source.
+    const unlocked = services.getRoutePackForAssignment({
       actorUserId: "22222222-2222-4222-8222-222222222221",
       organizationId: "33333333-3333-4333-8333-333333333331",
       assignmentId: assignment.id
-    }).routePack.id).toBe("23232323-2323-4323-8323-232323232313")
+    }).routePack
+
+    expect(unlocked.assignmentId).toBe(assignment.id)
+    expect(unlocked.version).toBe(1)
+    expect(unlocked.id).not.toBe("23232323-2323-4323-8323-232323232313")
   })
 
   it("rejects impossible trip transitions", () => {

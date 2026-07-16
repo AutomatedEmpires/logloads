@@ -63,6 +63,37 @@ export function upgradeStateSnapshot(
     }))
   }
 
+  // Route packs predate assignment-specific snapshots. A stored pack carries no
+  // assignmentId, so it is a load-level source the host maintains — normalize it
+  // here rather than leaving undefined fields for every reader to guess at.
+  // Defaults come first so a pack that already has these keeps its own values.
+  if (Array.isArray(candidate.routePacks)) {
+    candidate.routePacks = candidate.routePacks.map((pack) => ({
+      ...pack,
+      assignmentId: pack.assignmentId ?? null,
+      snapshot: pack.snapshot ?? null,
+      supersededAt: pack.supersededAt ?? null,
+      version: pack.version ?? 1
+    }))
+  }
+
+  // Landing safety rules and destination completion evidence are newer than the
+  // documents that hold them. The contract types them as arrays, so a stored row
+  // without them would hand every reader an undefined the types deny.
+  if (Array.isArray(candidate.richLandingDetails)) {
+    candidate.richLandingDetails = candidate.richLandingDetails.map((details) => ({
+      ...details,
+      safetyRequirements: details.safetyRequirements ?? []
+    }))
+  }
+
+  if (Array.isArray(candidate.destinationFacilities)) {
+    candidate.destinationFacilities = candidate.destinationFacilities.map((facility) => ({
+      ...facility,
+      completionEvidence: facility.completionEvidence ?? []
+    }))
+  }
+
   if (!REQUIRED_TABLES.every((table) => Array.isArray(candidate[table]))) {
     return null
   }

@@ -366,6 +366,64 @@
   font-weight: 800;
 }
 
+/* The facts a driver checks first: window, who to call, where in, where out. */
+.route-pack-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+  margin: 14px 0 0;
+}
+
+.route-pack-facts div {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 10px 12px;
+}
+
+.route-pack-facts dt {
+  margin: 0 0 2px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.route-pack-facts dd {
+  margin: 0;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.route-pack-facts a {
+  color: var(--pine);
+  text-decoration: underline;
+}
+
+/* Safety, gate, and scale carry the haul — they lead, not trail. */
+.route-pack-instructions--critical {
+  margin-top: 14px;
+}
+
+.route-pack-instructions--critical li {
+  border-color: var(--red);
+  background: var(--red-bg);
+}
+
+.route-pack-evidence {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+
+@media (max-width: 640px) {
+  .route-pack-facts { grid-template-columns: 1fr; }
+}
+
 /* Breakpoints */
 
 @media (max-width: 1100px) {

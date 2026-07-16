@@ -13,6 +13,7 @@ import {
   type RecommendationVisibility,
   type ReputationBand,
   type RoadCondition,
+  type RoutePackSnapshot,
   type TripStatusV2
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
@@ -142,11 +143,13 @@ export interface NetworkLoadView {
   }
   routePack: {
     id: string
+    version: number
     visibility: string
     cacheableOffline: boolean
     calculatedRouteSummary: string
     currentRoadCondition: RoadCondition
     lastVerifiedAt: string
+    snapshot: RoutePackSnapshot | null
     instructions: Array<{
       title: string
       detail: string
@@ -553,7 +556,12 @@ export function buildNetworkView(
     const destination = requireRecord(state.mills.find((item) => item.id === load.dropoffMillId), `destination ${load.dropoffMillId}`)
     const destinationFacility = state.destinationFacilities.find((item) => item.millId === destination.id) ?? null
     const route = requireRecord(state.haulRoutes.find((item) => item.id === load.routeId), `route ${load.routeId}`)
-    const routePack = state.routePacks.find((item) => item.loadPostingId === load.id) ?? null
+    // Route packs are per-assignment snapshots now, so "a pack for this load"
+    // could belong to a different driver. Resolved below against the viewer's
+    // own assignment; the host falls back to its load-level source pack.
+    const sourceRoutePack = state.routePacks.find(
+      (item) => item.loadPostingId === load.id && !item.assignmentId
+    ) ?? null
     const rate = requireRecord(state.rates.find((item) => item.id === load.rateId), `rate ${load.rateId}`)
     const capacity = state.opportunityCapacities.find((item) => item.loadPostingId === load.id) ?? null
     const slots = state.truckSlots.filter((slot) => slot.loadPostingId === load.id)
@@ -589,6 +597,19 @@ export function buildNetworkView(
       reason: ownsLoad ? "owner" : viewerAccessAssignment ? "assigned" : "locked",
       unlocked
     }
+    // The viewer's own snapshot, newest live version.
+    const viewerRoutePack = viewerAccessAssignment
+      ? state.routePacks
+          .filter((pack) => pack.assignmentId === viewerAccessAssignment.id && !pack.supersededAt)
+          .sort((left, right) => right.version - left.version)[0] ?? null
+      : null
+    // Mirrors getRoutePackForAssignment: whoever may open the pack falls back to
+    // the host's load-level source when no assignment snapshot exists — every
+    // haul booked before packs were minted per assignment is in that state, and
+    // showing them nothing would claim the host published no briefing when it
+    // did. A viewer without access still gets null, so a driver never sees a
+    // pack belonging to someone else's assignment.
+    const routePack = viewerRoutePack ?? (unlocked ? sourceRoutePack : null)
 
     const viewerHasActiveAssignment = Boolean(
       currentDriverProfile &&
@@ -770,6 +791,8 @@ export function buildNetworkView(
               verifiedAt: instruction.verifiedAt ?? null
             })),
             lastVerifiedAt: routePack.lastVerifiedAt,
+            snapshot: routePack.snapshot ?? null,
+            version: routePack.version,
             visibility: routePack.visibility
           }
         : null,
