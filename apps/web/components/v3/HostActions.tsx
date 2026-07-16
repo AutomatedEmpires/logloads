@@ -5,9 +5,11 @@ import { useMemo, useState, useTransition } from "react"
 import {
   approveCapacityRequestAction,
   cancelAssignmentAction,
+  closeLoadAction,
   createDirectOfferAction,
   createLoadPostingAction,
-  createOperationalNoticeAction
+  createOperationalNoticeAction,
+  publishDraftAction
 } from "@/lib/cockpit-actions"
 import type { HostPublishingOptions, RequirementOption } from "@/lib/host-data"
 import { formatHuman, humanizeTag } from "@/lib/v3-shared"
@@ -209,6 +211,141 @@ export function CancelAssignmentButton({ assignmentId, driverName }: { assignmen
           type="button"
         >
           Keep it
+        </button>
+      </div>
+      {feedback && !feedback.ok ? (
+        <p className="host-form-feedback host-form-feedback--error" role="alert">
+          {feedback.text}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+// --- Published-work management ---------------------------------------------
+
+/**
+ * Opens a draft to the network: capacity and loading slots are minted on
+ * publish. Reach is chosen here because a draft carries none — the builder's
+ * earlier reach selection applies only to work published live.
+ */
+export function PublishDraftButton({ loadPostingId }: { loadPostingId: string }) {
+  const [visibilityMode, setVisibilityMode] = useState("open_network")
+  const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null)
+  const [pending, startTransition] = useTransition()
+
+  if (feedback?.ok) {
+    return (
+      <p className="host-form-feedback host-form-feedback--success" role="status">
+        {feedback.text}
+      </p>
+    )
+  }
+
+  const publish = () => {
+    startTransition(async () => {
+      setFeedback(null)
+
+      const result = await publishDraftAction({ loadPostingId, visibilityMode })
+
+      setFeedback(
+        result.ok
+          ? { ok: true, text: "This work is live on the network." }
+          : { ok: false, text: result.error ?? "The draft could not be published. Try again." }
+      )
+    })
+  }
+
+  return (
+    <div className="host-stack-form">
+      <label>
+        Who can see this work
+        <select onChange={(event) => setVisibilityMode(event.target.value)} value={visibilityMode}>
+          {VISIBILITY_MODES.map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button className="host-btn" disabled={pending} onClick={publish} type="button">
+        {pending ? "Publishing…" : "Publish now"}
+      </button>
+      {feedback && !feedback.ok ? (
+        <p className="host-form-feedback host-form-feedback--error" role="alert">
+          {feedback.text}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * Two-step close for published work: waiting requests are declined with the
+ * reason entered here, remaining loading slots are cancelled, and the work
+ * leaves the network. Booked hauls block the close.
+ */
+export function CloseWorkButton({ loadPostingId, waitingRequests }: { loadPostingId: string; waitingRequests: number }) {
+  const [confirming, setConfirming] = useState(false)
+  const [reason, setReason] = useState("")
+  const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null)
+  const [pending, startTransition] = useTransition()
+
+  if (feedback?.ok) {
+    return (
+      <p className="host-form-feedback host-form-feedback--success" role="status">
+        {feedback.text}
+      </p>
+    )
+  }
+
+  if (!confirming) {
+    return (
+      <button className="host-btn host-btn--quiet" onClick={() => setConfirming(true)} type="button">
+        Close work
+      </button>
+    )
+  }
+
+  const close = () => {
+    startTransition(async () => {
+      setFeedback(null)
+
+      const result = await closeLoadAction({ loadPostingId, reason: reason.trim() || null })
+
+      setFeedback(
+        result.ok
+          ? { ok: true, text: "This work is closed and off the network." }
+          : { ok: false, text: result.error ?? "The work could not be closed. Try again." }
+      )
+    })
+  }
+
+  return (
+    <div className="host-stack-form">
+      <p className="host-builder-note">
+        {waitingRequests > 0
+          ? `Closing declines ${waitingRequests} waiting request${waitingRequests === 1 ? "" : "s"} and takes this work off the network.`
+          : "Closing takes this work off the network."}
+      </p>
+      <label>
+        Reason drivers see (optional)
+        <input maxLength={140} onChange={(event) => setReason(event.target.value)} type="text" value={reason} />
+      </label>
+      <div className="host-approval-actions">
+        <button className="host-btn" disabled={pending} onClick={close} type="button">
+          {pending ? "Closing…" : "Yes, close this work"}
+        </button>
+        <button
+          className="host-btn host-btn--quiet"
+          disabled={pending}
+          onClick={() => {
+            setFeedback(null)
+            setConfirming(false)
+          }}
+          type="button"
+        >
+          Keep it open
         </button>
       </div>
       {feedback && !feedback.ok ? (

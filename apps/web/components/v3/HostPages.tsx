@@ -11,9 +11,11 @@ import { DecisionList, toneForNotice } from "./Common"
 import {
   CancelAssignmentButton,
   CapacityApprovalList,
+  CloseWorkButton,
   DirectOfferPanel,
   NoticeComposer,
   OpportunityBuilder,
+  PublishDraftButton,
   type PendingCapacityRequest
 } from "./HostActions"
 import { TripReviewForm } from "./Reputation"
@@ -192,6 +194,10 @@ export function HostOpportunities({
                       <Link className="text-link" href="/host/command">
                         {waiting} request{waiting === 1 ? "" : "s"} waiting
                       </Link>
+                    ) : null}
+                    {load.status === "draft" ? <PublishDraftButton loadPostingId={load.id} /> : null}
+                    {["open", "scheduled", "filled"].includes(load.status) ? (
+                      <CloseWorkButton loadPostingId={load.id} waitingRequests={waiting} />
                     ) : null}
                   </div>
                 </article>

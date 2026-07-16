@@ -101,6 +101,68 @@ function scheduleDates(entity: LoadPosting, fallbackDate: string): string[] {
 }
 
 /**
+ * Mints the capacity that makes a live load requestable: an opportunity-
+ * capacity ledger plus one loading slot per scheduled day. Used at publish
+ * time — both when a load is created live and when a draft is opened later.
+ */
+export function provisionLoadCapacity(
+  state: LogLoadsDatabaseState,
+  entity: LoadPosting,
+  visibilityMode: string,
+  allocationMode: string,
+  timestamp = nowIso()
+): void {
+  const parsedVisibility = opportunityVisibilityModeSchema.catch("open_network").parse(visibilityMode)
+  const parsedAllocation = allocationModeSchema.catch("request_approval").parse(allocationMode)
+  const dates = scheduleDates(entity, timestamp.slice(0, 10))
+
+  if (dates.length === 0) {
+    return
+  }
+
+  const perDay = Math.max(1, entity.dailyTruckCountNeeded)
+  const totalTruckloads = perDay * dates.length
+
+  state.opportunityCapacities.push(
+    opportunityCapacitySchema.parse({
+      acceptedTermsSnapshot: {},
+      allocationMode: parsedAllocation,
+      committedTruckloads: 0,
+      completedTruckloads: 0,
+      createdAt: timestamp,
+      id: createUuid(),
+      loadPostingId: entity.id,
+      remainingTruckloads: totalTruckloads,
+      totalTruckloads,
+      updatedAt: timestamp,
+      visibilityMode: parsedVisibility
+    })
+  )
+
+  for (const slotDate of dates) {
+    const window = loadingWindow(slotDate)
+
+    state.truckSlots.push(
+      truckSlotSchema.parse({
+        capacity: perDay,
+        createdAt: timestamp,
+        endAt: window.endAt,
+        id: createUuid(),
+        landingId: entity.pickupLandingId,
+        loaderProfileId: entity.loaderProfileId ?? null,
+        loadPostingId: entity.id,
+        notes: null,
+        reservedCount: 0,
+        slotDate,
+        startAt: window.startAt,
+        status: "open",
+        updatedAt: timestamp
+      })
+    )
+  }
+}
+
+/**
  * Publishes a load AND, for live loads, the capacity that makes it requestable:
  * an opportunity-capacity ledger plus a loading slot. Without this a freshly
  * posted load has no requestable slot and haulers cannot request it — the core
@@ -113,10 +175,8 @@ export function createLoadPosting(
 ): LoadPosting {
   const parsed = createLoadPostingInputSchema.parse(input)
   const raw = (input && typeof input === "object" ? input : {}) as Record<string, unknown>
-  const visibilityMode = opportunityVisibilityModeSchema
-    .catch("open_network")
-    .parse(raw.visibilityMode ?? raw.visibility ?? "open_network")
-  const allocationMode = allocationModeSchema.catch("request_approval").parse(raw.allocationMode ?? "request_approval")
+  const visibilityMode = String(raw.visibilityMode ?? raw.visibility ?? "open_network")
+  const allocationMode = String(raw.allocationMode ?? "request_approval")
 
   const timestamp = nowIso()
   const entity = loadPostingSchema.parse({
@@ -130,49 +190,8 @@ export function createLoadPosting(
 
   state.loadPostings.push(entity)
 
-  const dates = LIVE_STATUSES.has(entity.status) ? scheduleDates(entity, timestamp.slice(0, 10)) : []
-
-  if (dates.length > 0) {
-    const perDay = Math.max(1, entity.dailyTruckCountNeeded)
-    const totalTruckloads = perDay * dates.length
-
-    state.opportunityCapacities.push(
-      opportunityCapacitySchema.parse({
-        acceptedTermsSnapshot: {},
-        allocationMode,
-        committedTruckloads: 0,
-        completedTruckloads: 0,
-        createdAt: timestamp,
-        id: createUuid(),
-        loadPostingId: entity.id,
-        remainingTruckloads: totalTruckloads,
-        totalTruckloads,
-        updatedAt: timestamp,
-        visibilityMode
-      })
-    )
-
-    for (const slotDate of dates) {
-      const window = loadingWindow(slotDate)
-
-      state.truckSlots.push(
-        truckSlotSchema.parse({
-          capacity: perDay,
-          createdAt: timestamp,
-          endAt: window.endAt,
-          id: createUuid(),
-          landingId: entity.pickupLandingId,
-          loaderProfileId: entity.loaderProfileId ?? null,
-          loadPostingId: entity.id,
-          notes: null,
-          reservedCount: 0,
-          slotDate,
-          startAt: window.startAt,
-          status: "open",
-          updatedAt: timestamp
-        })
-      )
-    }
+  if (LIVE_STATUSES.has(entity.status)) {
+    provisionLoadCapacity(state, entity, visibilityMode, allocationMode, timestamp)
   }
 
   return entity

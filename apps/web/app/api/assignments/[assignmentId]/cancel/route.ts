@@ -11,16 +11,16 @@ export async function POST(
 		const { assignmentId } = await context.params
 		const payload = await request.json().catch(() => ({}))
 		const { actorUserId, organizationId } = await requireApiActor(payload.organizationId)
-		// Explicit field list — client JSON must never smuggle extra inputs.
-		const assignment = await mutateState((draft) =>
-			draft.approveCapacityRequest({
-				assignmentId,
+		const result = await mutateState((draft) =>
+			draft.cancelAssignmentWithPolicy({
 				actorUserId,
-				organizationId
+				assignmentId,
+				organizationId,
+				reason: typeof payload.reason === "string" ? payload.reason : null
 			})
 		)
 
-		return NextResponse.json({ assignment })
+		return NextResponse.json({ assignment: result.assignment, trip: result.trip })
 	} catch (error) {
 		return apiErrorResponse(error)
 	}

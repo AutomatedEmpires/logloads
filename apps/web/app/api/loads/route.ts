@@ -13,11 +13,14 @@ export async function GET() {
 export async function POST(request: NextRequest) {
 	try {
 		const payload = await request.json()
-		const { organizationId } = await requireApiActor(payload.organizationId ?? payload.companyId)
+		const { actorUserId, organizationId } = await requireApiActor(payload.organizationId ?? payload.companyId)
+		// Publishing is role-gated (publish_load) and the posting is stamped with
+		// the actor's own organization inside the policy.
 		const load = await mutateState((draft) =>
-			draft.createLoadPosting({
+			draft.createLoadPostingWithPolicy({
 				...payload,
-				companyId: organizationId
+				actorUserId,
+				organizationId
 			})
 		)
 
