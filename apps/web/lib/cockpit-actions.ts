@@ -167,6 +167,31 @@ export async function progressTripAction(input: {
   }
 }
 
+export async function cancelAssignmentAction(input: {
+  assignmentId: string
+  reason?: string | null
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    await commit(["/driver", "/fleet", "/host"], (draft) =>
+      draft.cancelAssignmentWithPolicy({
+        actorUserId: actor.profile.id,
+        assignmentId: input.assignmentId,
+        organizationId: actorOrganizationId(actor),
+        reason: input.reason?.trim() || null
+      })
+    )
+
+    // Event only — the free-text reason stays out of analytics.
+    captureServerEvent("assignment_cancelled", actor.profile.id, { assignmentId: input.assignmentId })
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
 export async function attachTripDocumentAction(input: {
   tripId: string
   type: string

@@ -596,8 +596,10 @@ export function buildNetworkView(
     )
     const capacityRemaining = capacity?.remainingTruckloads ??
       slots.reduce((sum, slot) => sum + Math.max(0, slot.capacity - slot.reservedCount), 0)
+    // Matches services.isLoadRequestableAt: a "reserved" multi-truck day keeps
+    // accepting requests until reservedCount reaches capacity.
     const futureOpenSlots = slots.filter((slot) =>
-      ["open", "requested"].includes(slot.status) &&
+      ["open", "requested", "reserved"].includes(slot.status) &&
       slot.reservedCount < slot.capacity &&
       slot.endAt > atIso
     )

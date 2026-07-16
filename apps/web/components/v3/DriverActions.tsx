@@ -8,6 +8,7 @@ import { Badge, Icon } from "@logloads/ui"
 import {
   addEquipmentAction,
   attachTripDocumentAction,
+  cancelAssignmentAction,
   progressTripAction,
   requestCapacityAction,
   saveDriverMediaAction,
@@ -173,6 +174,92 @@ export function RequestCapacityPanel({ load }: { load: NetworkLoadView }) {
       <button className="advance-button" disabled={pending} onClick={request} type="button">
         {pending ? "Sending request…" : load.viewerDecision ? "Request again" : "Request haul"}
       </button>
+      {error ? <p className="action-error" role="alert">{error}</p> : null}
+    </div>
+  )
+}
+
+const CANCEL_COPY = {
+  haul: {
+    confirm: "Yes, cancel the haul",
+    done: "Haul cancelled. The host has been notified and the truckload is open again.",
+    prompt: "Cancel this haul? The host is notified and the truckload reopens for other drivers.",
+    trigger: "Cancel haul"
+  },
+  request: {
+    confirm: "Yes, withdraw it",
+    done: "Request withdrawn. The truckload is open for other drivers.",
+    prompt: "Withdraw this request? The host will see the truckload as open again.",
+    trigger: "Withdraw request"
+  }
+} as const
+
+/**
+ * Two-step cancel so a pocket tap can't kill a booked haul: a quiet trigger,
+ * then an explicit confirmation with an optional reason the host will see.
+ */
+export function CancelHaulControl({ assignmentId, kind }: { assignmentId: string; kind: keyof typeof CANCEL_COPY }) {
+  const copy = CANCEL_COPY[kind]
+  const [confirming, setConfirming] = useState(false)
+  const [reason, setReason] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [done, setDone] = useState(false)
+  const [pending, startTransition] = useTransition()
+
+  if (done) {
+    return <p className="action-note">{copy.done}</p>
+  }
+
+  if (!confirming) {
+    return (
+      <button className="cancel-haul__trigger" onClick={() => setConfirming(true)} type="button">
+        {copy.trigger}
+      </button>
+    )
+  }
+
+  const cancel = () => {
+    setError(null)
+    startTransition(async () => {
+      const result = await cancelAssignmentAction({ assignmentId, reason: reason.trim() || null })
+
+      if (!result.ok) {
+        setError(result.error ?? "The haul could not be cancelled. Try again.")
+      } else {
+        setDone(true)
+      }
+    })
+  }
+
+  return (
+    <div aria-label={copy.prompt} className="cancel-haul" role="group">
+      <p>{copy.prompt}</p>
+      <label>
+        <span className="sr-only">Reason the host sees (optional)</span>
+        <input
+          maxLength={140}
+          onChange={(event) => setReason(event.target.value)}
+          placeholder="Reason (optional)"
+          type="text"
+          value={reason}
+        />
+      </label>
+      <div className="cancel-haul__actions">
+        <button className="cancel-haul__confirm" disabled={pending} onClick={cancel} type="button">
+          {pending ? "Cancelling…" : copy.confirm}
+        </button>
+        <button
+          className="cancel-haul__keep"
+          disabled={pending}
+          onClick={() => {
+            setError(null)
+            setConfirming(false)
+          }}
+          type="button"
+        >
+          Keep it
+        </button>
+      </div>
       {error ? <p className="action-error" role="alert">{error}</p> : null}
     </div>
   )

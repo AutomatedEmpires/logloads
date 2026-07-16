@@ -321,6 +321,7 @@ describe("logloads services", () => {
     const assignment = services.requestCapacityWithPolicy({
       actorUserId: "22222222-2222-4222-8222-222222222221",
       organizationId: "33333333-3333-4333-8333-333333333331",
+      at: "2026-06-05T12:00:00.000Z",
       loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
       truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd4",
       driverProfileId: "44444444-4444-4444-8444-444444444441",
@@ -359,6 +360,7 @@ describe("logloads services", () => {
     expect(() => services.requestCapacityWithPolicy({
       actorUserId: driverMembership.userId,
       driverProfileId: otherDriverProfileId,
+      at: "2026-06-05T12:00:00.000Z",
       loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
       organizationId: driverMembership.organizationId,
       trailerProfileId: otherCombination.trailerProfileId,
@@ -393,6 +395,7 @@ describe("logloads services", () => {
     const assignment = services.requestCapacityWithPolicy({
       actorUserId: "22222222-2222-4222-8222-222222222221",
       organizationId: "33333333-3333-4333-8333-333333333331",
+      at: "2026-06-05T12:00:00.000Z",
       loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
       truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd4",
       driverProfileId: "44444444-4444-4444-8444-444444444441",
@@ -429,6 +432,7 @@ describe("logloads services", () => {
     const assignment = services.requestCapacityWithPolicy({
       actorUserId: "22222222-2222-4222-8222-222222222221",
       organizationId: "33333333-3333-4333-8333-333333333331",
+      at: "2026-06-05T12:00:00.000Z",
       loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
       truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd4",
       driverProfileId: "44444444-4444-4444-8444-444444444441",
@@ -459,6 +463,7 @@ describe("logloads services", () => {
     const beforeSlot = services.state.truckSlots.find((item) => item.id === truckSlotId)
     const assignment = services.requestCapacityWithPolicy({
       actorUserId: "22222222-2222-4222-8222-222222222221",
+      at: "2026-06-05T12:00:00.000Z",
       organizationId: "33333333-3333-4333-8333-333333333331",
       loadPostingId,
       truckSlotId,
@@ -490,6 +495,7 @@ describe("logloads services", () => {
 
     const requestedAgain = services.requestCapacityWithPolicy({
       actorUserId: "22222222-2222-4222-8222-222222222221",
+      at: "2026-06-05T12:00:00.000Z",
       organizationId: "33333333-3333-4333-8333-333333333331",
       loadPostingId,
       truckSlotId,
@@ -506,6 +512,7 @@ describe("logloads services", () => {
     const assignment = services.requestCapacityWithPolicy({
       actorUserId: "22222222-2222-4222-8222-222222222221",
       organizationId: "33333333-3333-4333-8333-333333333331",
+      at: "2026-06-05T12:00:00.000Z",
       loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
       truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd4",
       driverProfileId: "44444444-4444-4444-8444-444444444441",
@@ -526,6 +533,7 @@ describe("logloads services", () => {
     const assignment = services.requestCapacityWithPolicy({
       actorUserId: "22222222-2222-4222-8222-222222222221",
       organizationId: "33333333-3333-4333-8333-333333333331",
+      at: "2026-06-05T12:00:00.000Z",
       loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
       truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd4",
       driverProfileId: "44444444-4444-4444-8444-444444444441",
@@ -564,6 +572,7 @@ describe("logloads services", () => {
     const assignment = services.requestCapacityWithPolicy({
       actorUserId: "22222222-2222-4222-8222-222222222221",
       organizationId: "33333333-3333-4333-8333-333333333331",
+      at: "2026-06-05T12:00:00.000Z",
       loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
       truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd4",
       driverProfileId: "44444444-4444-4444-8444-444444444441",

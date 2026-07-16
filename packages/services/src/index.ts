@@ -46,6 +46,7 @@ import {
   DEFAULT_ORGANIZATION_ID,
   approveCapacityRequest,
   attachTripDocument,
+  cancelAssignmentWithPolicy,
   createDirectOffer,
   createOperationalNotice,
   declineCapacityRequest,
@@ -116,6 +117,8 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     attachTripDocument: (input: Parameters<typeof attachTripDocument>[1]) => attachTripDocument(state, input),
     cancelAssignment: (assignmentId: string, cancellationReason: string) =>
       cancelAssignment(state, assignmentId, cancellationReason),
+    cancelAssignmentWithPolicy: (input: Parameters<typeof cancelAssignmentWithPolicy>[1]) =>
+      cancelAssignmentWithPolicy(state, input),
     createDirectOffer: (input: Parameters<typeof createDirectOffer>[1]) => createDirectOffer(state, input),
     createLoadPosting: (input: unknown) => createLoadPosting(state, input),
     createNotification: (input: unknown) => createNotification(state, input),

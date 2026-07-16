@@ -13,6 +13,7 @@ import { VerificationSubmit, type VerificationTypeOption } from "./VerificationS
 import {
   AddEquipmentForm,
   AvailabilityQuickSet,
+  CancelHaulControl,
   DriverEconomicsForm,
   EquipmentStatusToggle,
   LogProofControl,
@@ -323,6 +324,9 @@ function TripCard({ network, trip }: { network: NetworkView; trip: TripView }) {
         <div className="trip-card__actions">
           <TripProgressButton status={trip.status} tripId={trip.id} />
           <LogProofControl tripId={trip.id} />
+          {trip.driverProfileId === network.currentDriver?.id ? (
+            <CancelHaulControl assignmentId={trip.assignmentId} kind="haul" />
+          ) : null}
         </div>
       ) : null}
       {trip.reviewable ? (
@@ -362,7 +366,12 @@ function RequestedHaulCard({ load }: { load: NetworkLoadView }) {
         <span>{load.capacity.remaining} of {load.capacity.total} still open</span>
       </div>
       <p>{isOffer ? "Review the load and decide whether it works for you." : "Your request is sent. We will notify you when the host makes a decision."}</p>
-      <Link className="action-link action-link--secondary" href={`/driver/loads/${load.id}`}>Open request</Link>
+      <div className="primary-action-row">
+        <Link className="action-link action-link--secondary" href={`/driver/loads/${load.id}`}>Open request</Link>
+        {load.viewerAssignment ? (
+          <CancelHaulControl assignmentId={load.viewerAssignment.id} kind="request" />
+        ) : null}
+      </div>
     </article>
   )
 }

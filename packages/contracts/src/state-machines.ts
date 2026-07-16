@@ -5,7 +5,10 @@ const loadPostingTransitions: Record<LoadStatus, LoadStatus[]> = {
   cancelled: ["archived"],
   completed: ["archived"],
   draft: ["open", "cancelled"],
-  filled: ["in_transit", "cancelled"],
+  // filled -> open: a cancellation or decline returns committed capacity.
+  // filled -> completed: the final truckload delivered (mirrors the v2
+  // opportunity machine, which never required passing through in_transit).
+  filled: ["open", "in_transit", "completed", "cancelled"],
   in_transit: ["completed", "cancelled"],
   open: ["scheduled", "filled", "cancelled"],
   scheduled: ["filled", "cancelled"]
