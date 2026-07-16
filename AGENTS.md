@@ -1,3 +1,19 @@
+<!-- ae-control-plane v1 (2026-07-16). Machine operating contract; product docs follow below. -->
+# Operating contract — Automated Empires control plane
+
+- **Canonical clone (the ONLY writable copy):** WSL `Ubuntu-24.04-Recovered` → `/home/jackson/automatedempires/ventures/logloads`.
+  Never clone this repository anywhere else on the machine. Parallel work uses controlled
+  worktrees: `ae start logloads -t <task> -a <agent> --worktree`.
+- **Sessions:** acquire the single-writer lease first (`ae start logloads -t <task> -a <agent>`);
+  end with `ae finish logloads`. Work counts as done ONLY when pushed and remote-SHA-verified.
+- **Deploys:** merging `main` auto-deploys production via Vercel.
+- **Validate before merge:** `pnpm typecheck && pnpm guardrails` (CI must be green; squash merges).
+- **Providers (fixed — never swap or cross-wire):** db=supabase, auth=clerk.
+- **LOCKED:** Follow the in-repo operating contract (merged PR #23)
+- Full policy: `github.com/AutomatedEmpires/ae-control` → `POLICY.md`. Briefing: `ae info logloads`.
+
+---
+
 # LogLoads — Venture Operating Contract
 
 This contract binds human and automated contributors. Read it before changing the repository. Notion and dated product decisions hold product/vision truth; this repository holds implementation truth. Issues, pull requests, decisions, and repository documentation are durable memory.
