@@ -546,6 +546,33 @@ describe("completion evidence gate", () => {
     })).toThrow(/Attach the proof this haul needs/)
   })
 
+  it("reads the requirement from whichever pack the driver is actually looking at", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { trip } = bookHaul(services)
+    const live = services.state.tripsV2.find((current) => current.id === trip.id)!
+
+    // The assignment's own snapshot is the requirement.
+    expect(services.requiredCompletionEvidence(live).length).toBeGreaterThan(0)
+
+    // A haul booked before packs carried snapshots reads the host's load-level
+    // source, which records no requirement — so no gate applies. Holding a
+    // driver to something they were never told would be inventing a rule.
+    services.state.routePacks = services.state.routePacks.map((pack) =>
+      pack.assignmentId === trip.assignmentId ? { ...pack, assignmentId: null, snapshot: null } : pack
+    )
+
+    expect(services.requiredCompletionEvidence(live)).toEqual([])
+
+    // The host establishes one by re-issuing the pack, which mints a snapshot.
+    services.refreshRoutePackForAssignment({
+      actorUserId: HOST_OWNER,
+      assignmentId: trip.assignmentId,
+      organizationId: HOST_ORG
+    })
+
+    expect(services.requiredCompletionEvidence(live).length).toBeGreaterThan(0)
+  })
+
   it("does not let the exception that closed a haul be quietly deleted afterwards", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const { trip } = bookHaul(services)

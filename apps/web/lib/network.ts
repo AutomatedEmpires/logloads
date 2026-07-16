@@ -1057,11 +1057,15 @@ export function buildNetworkView(
       }
 
       // The proof this haul owes comes from the Route Pack the driver accepted,
-      // not from the destination record as it reads today.
+      // not from the destination record as it reads today. Mirrors the service:
+      // fall back to the host's load-level source, so the page shows the same
+      // requirement the gate enforces.
       const assignmentPack = state.routePacks
-        .filter((pack) => pack.assignmentId === trip.assignmentId)
+        .filter((pack) => pack.assignmentId === trip.assignmentId && !pack.supersededAt)
         .sort((left, right) => right.version - left.version)[0]
-      const requiredEvidence = assignmentPack?.snapshot?.completionEvidence ?? []
+      const evidencePack = assignmentPack ??
+        state.routePacks.find((pack) => pack.loadPostingId === trip.loadPostingId && !pack.assignmentId)
+      const requiredEvidence = evidencePack?.snapshot?.completionEvidence ?? []
       const hasEvidence = state.tripDocuments.some(
         (document) =>
           document.tripId === trip.id &&

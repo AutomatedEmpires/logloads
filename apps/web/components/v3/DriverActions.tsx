@@ -619,6 +619,13 @@ export function CompletionForm({
       return
     }
 
+    // "1e" and friends parse to NaN. Catch it here so the driver reads a
+    // sentence rather than a schema error.
+    if (rawValue !== "" && !Number.isFinite(Number(rawValue))) {
+      setError("Enter the delivered amount as a number.")
+      return
+    }
+
     setError(null)
     setSaved(false)
     startTransition(async () => {

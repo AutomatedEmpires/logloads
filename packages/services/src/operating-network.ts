@@ -1471,7 +1471,7 @@ export function submitHaulCompletion(
     occurredAt: timestamp,
     source: "driver",
     tripId: trip.id,
-    type: "ticket_uploaded"
+    type: "delivery_recorded"
   }))
   insertAuditEvent(state, context.actorUserId, "trip", trip.id, "haul_completion_submitted", {
     assignmentId: assignment.id,

@@ -52,11 +52,22 @@ export function hasCompletionEvidence(state: LogLoadsDatabaseState, tripId: stri
  * What the host asked the driver to come away with, as it was written into the
  * Route Pack the driver accepted — not as the destination record reads today.
  * The requirement a driver was given is the requirement they are held to.
+ *
+ * Falls back to the host's load-level source the same way getRoutePackForAssignment
+ * does, so the gate reads whichever pack the driver is actually looking at. A
+ * haul booked before packs carried snapshots has no recorded requirement and so
+ * no gate — the host establishes one by re-issuing the pack, which mints a
+ * snapshot. Inventing a requirement from today's destination record would hold
+ * a driver to something they were never told.
  */
 export function requiredCompletionEvidence(state: LogLoadsDatabaseState, trip: TripV2): string[] {
-  const pack = state.routePacks
-    .filter((candidate) => candidate.assignmentId === trip.assignmentId)
+  const assignmentPack = state.routePacks
+    .filter((candidate) => candidate.assignmentId === trip.assignmentId && !candidate.supersededAt)
     .sort((left, right) => right.version - left.version)[0]
+  const pack = assignmentPack ??
+    state.routePacks.find(
+      (candidate) => candidate.loadPostingId === trip.loadPostingId && !candidate.assignmentId
+    )
 
   return pack?.snapshot?.completionEvidence ?? []
 }

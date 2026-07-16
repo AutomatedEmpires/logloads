@@ -292,6 +292,11 @@ export const tripEventTypeV2Schema = z.enum([
   "destination_arrival",
   "unloading_started",
   "ticket_uploaded",
+  // The driver stating what came off the truck. Distinct from ticket_uploaded:
+  // a delivery can be recorded without any document, and a document can be
+  // uploaded without a delivered figure. Trip timelines render the type, so
+  // conflating them would tell a reader a ticket arrived when none did.
+  "delivery_recorded",
   "condition_changed",
   "completed",
   "cancelled"
