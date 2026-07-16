@@ -243,6 +243,19 @@ describe("assignment cancellation", () => {
       organizationId: HOST_ORG
     })
 
+    // The destination requires a scale ticket; a haul no longer closes without
+    // the proof its Route Pack demanded.
+    services.attachTripDocument({
+      actorUserId: HAULER_ACTOR,
+      contentType: "image/jpeg",
+      filename: "scale-ticket.jpg",
+      organizationId: HAULER_ORG,
+      storageKey: `trips/${trip.id}/scale-ticket.jpg`,
+      storageProvider: "external",
+      tripId: trip.id,
+      type: "scale_ticket"
+    })
+
     const steps = [
       "en_route_to_landing",
       "checked_in",

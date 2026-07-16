@@ -304,6 +304,37 @@ export const locationVisibilitySchema = z.enum([
   "never_public"
 ])
 
+/** What actually came off the truck, in the unit the scale reported it. */
+export const deliveredQuantitySchema = z.object({
+  value: z.number().nonnegative(),
+  unit: z.enum(["tons", "mbf", "cords", "units", "truckloads"]),
+  /** The ticket this figure was read from, when the destination issued one. */
+  ticketNumber: z.string().trim().max(60).optional().nullable()
+})
+
+export const haulExceptionSchema = z.object({
+  type: z.enum([
+    "short_load",
+    "rejected_at_scale",
+    "access_blocked",
+    "equipment_failure",
+    "weather_hold",
+    "wait_time",
+    "other"
+  ]),
+  note: z.string().trim().min(1).max(500),
+  reportedAt: timestampSchema
+})
+
+/**
+ * A haul is delivered when the driver says what came off the truck and the host
+ * agrees. `submitted` is the driver's account; `confirmed` is the host
+ * accepting it; `disputed` is the host contesting it with a reason. A trip may
+ * be status "completed" while its completion is still `submitted` — physical
+ * delivery and agreement about it are different facts.
+ */
+export const haulCompletionStatusSchema = z.enum(["pending", "submitted", "confirmed", "disputed"])
+
 export const tripSchemaV2 = z.object({
   id: uuidSchema,
   assignmentId: uuidSchema,
@@ -316,6 +347,14 @@ export const tripSchemaV2 = z.object({
   locationSharingStartedAt: optionalTimestampSchema,
   locationSharingEndsAt: optionalTimestampSchema,
   lastSyncedAt: optionalTimestampSchema,
+  completionStatus: haulCompletionStatusSchema.default("pending"),
+  deliveredQuantity: deliveredQuantitySchema.optional().nullable().default(null),
+  haulException: haulExceptionSchema.optional().nullable().default(null),
+  completionSubmittedAt: optionalTimestampSchema,
+  completionSubmittedByUserId: uuidSchema.optional().nullable(),
+  completionConfirmedAt: optionalTimestampSchema,
+  completionConfirmedByUserId: uuidSchema.optional().nullable(),
+  completionDisputeReason: z.string().trim().max(500).optional().nullable(),
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
   completedAt: optionalTimestampSchema
@@ -427,6 +466,9 @@ export type OpportunityCapacity = z.infer<typeof opportunityCapacitySchema>
 export type RoutePackInstruction = z.infer<typeof routePackInstructionSchema>
 export type RoutePackSnapshot = z.infer<typeof routePackSnapshotSchema>
 export type RoutePack = z.infer<typeof routePackSchema>
+export type DeliveredQuantity = z.infer<typeof deliveredQuantitySchema>
+export type HaulException = z.infer<typeof haulExceptionSchema>
+export type HaulCompletionStatus = z.infer<typeof haulCompletionStatusSchema>
 export type TripStatusV2 = z.infer<typeof tripStatusV2Schema>
 export type TripEventTypeV2 = z.infer<typeof tripEventTypeV2Schema>
 export type LocationVisibility = z.infer<typeof locationVisibilitySchema>

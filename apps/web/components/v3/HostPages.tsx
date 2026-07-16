@@ -17,6 +17,7 @@ import {
   OpportunityBuilder,
   PublishDraftButton,
   RefreshRoutePackButton,
+  SettleDeliveryControl,
   type PendingCapacityRequest
 } from "./HostActions"
 import { TripReviewForm } from "./Reputation"
@@ -301,6 +302,35 @@ export function HostLiveBoard({ account, network }: HostPageProps) {
                             tripId={trip.id}
                           />
                         )
+                      ) : null}
+                      {/* Settling unmounts the control below, so the outcome
+                          lives on the card rather than in a message that
+                          disappears with it. */}
+                      {trip.completion.status === "confirmed" ? (
+                        <span className="review-done">
+                          <Icon aria-hidden name="status.verified" size={14} />{" "}
+                          {trip.completion.deliveredQuantity
+                            ? `${trip.completion.deliveredQuantity.value} ${trip.completion.deliveredQuantity.unit} confirmed`
+                            : "Delivery confirmed"}
+                        </span>
+                      ) : null}
+                      {/* A recorded delivery waits on the host, whether or not
+                          the trip itself has closed. */}
+                      {["submitted", "disputed"].includes(trip.completion.status) ? (
+                        <SettleDeliveryControl
+                          driverName={trip.driverName}
+                          record={{
+                            exceptionLabel: trip.completion.exception
+                              ? `${formatHuman(trip.completion.exception.type)}: ${trip.completion.exception.note}`
+                              : null,
+                            quantityLabel: trip.completion.deliveredQuantity
+                              ? `${trip.completion.deliveredQuantity.value} ${trip.completion.deliveredQuantity.unit} delivered`
+                              : null,
+                            status: trip.completion.status,
+                            ticketNumber: trip.completion.deliveredQuantity?.ticketNumber ?? null
+                          }}
+                          tripId={trip.id}
+                        />
                       ) : null}
                       {!["cancelled", "completed"].includes(trip.status) ? (
                         <>

@@ -10,7 +10,8 @@ import {
   createLoadPostingAction,
   createOperationalNoticeAction,
   publishDraftAction,
-  refreshRoutePackAction
+  refreshRoutePackAction,
+  settleHaulCompletionAction
 } from "@/lib/cockpit-actions"
 import type { HostPublishingOptions, RequirementOption } from "@/lib/host-data"
 import { formatHuman, humanizeTag } from "@/lib/v3-shared"
@@ -213,6 +214,118 @@ export function CancelAssignmentButton({ assignmentId, driverName }: { assignmen
         >
           Keep it
         </button>
+      </div>
+      {feedback && !feedback.ok ? (
+        <p className="host-form-feedback host-form-feedback--error" role="alert">
+          {feedback.text}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+// --- Delivered record settlement ------------------------------------------------
+
+export interface DeliveredRecordSummary {
+  status: string
+  quantityLabel: string | null
+  exceptionLabel: string | null
+  ticketNumber: string | null
+}
+
+/**
+ * The host settling the driver's account: confirming it, or contesting it with
+ * a reason. Disputing keeps the driver's figures and lets them resubmit — it
+ * is a disagreement, not an erasure.
+ */
+export function SettleDeliveryControl({
+  driverName,
+  record,
+  tripId
+}: {
+  driverName: string
+  record: DeliveredRecordSummary
+  tripId: string
+}) {
+  const [disputing, setDisputing] = useState(false)
+  const [reason, setReason] = useState("")
+  const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null)
+  const [pending, startTransition] = useTransition()
+
+  if (feedback?.ok) {
+    return (
+      <p className="host-form-feedback host-form-feedback--success" role="status">
+        {feedback.text}
+      </p>
+    )
+  }
+
+  const settle = (decision: "confirm" | "dispute") => {
+    startTransition(async () => {
+      setFeedback(null)
+
+      const result = await settleHaulCompletionAction({
+        decision,
+        reason: decision === "dispute" ? reason.trim() : null,
+        tripId
+      })
+
+      setFeedback(
+        result.ok
+          ? {
+              ok: true,
+              text: decision === "confirm"
+                ? `Delivery confirmed. ${driverName}'s record is settled.`
+                : `Record contested. ${driverName} was asked to resubmit.`
+            }
+          : { ok: false, text: result.error ?? "That decision did not go through. Try again." }
+      )
+    })
+  }
+
+  return (
+    <div className="host-stack-form">
+      <p className="host-builder-note">
+        {record.quantityLabel ?? "No delivered quantity recorded"}
+        {record.ticketNumber ? ` · ticket ${record.ticketNumber}` : ""}
+      </p>
+      {record.exceptionLabel ? (
+        <p className="host-form-feedback host-form-feedback--error">{record.exceptionLabel}</p>
+      ) : null}
+      {disputing ? (
+        <label>
+          What is wrong with the record
+          <input maxLength={500} onChange={(event) => setReason(event.target.value)} type="text" value={reason} />
+        </label>
+      ) : null}
+      <div className="host-approval-actions">
+        {disputing ? (
+          <>
+            <button className="host-btn" disabled={pending || !reason.trim()} onClick={() => settle("dispute")} type="button">
+              {pending ? "Sending…" : "Send dispute"}
+            </button>
+            <button
+              className="host-btn host-btn--quiet"
+              disabled={pending}
+              onClick={() => {
+                setFeedback(null)
+                setDisputing(false)
+              }}
+              type="button"
+            >
+              Back
+            </button>
+          </>
+        ) : (
+          <>
+            <button className="host-btn" disabled={pending} onClick={() => settle("confirm")} type="button">
+              {pending ? "Confirming…" : "Confirm delivery"}
+            </button>
+            <button className="host-btn host-btn--quiet" disabled={pending} onClick={() => setDisputing(true)} type="button">
+              Dispute
+            </button>
+          </>
+        )}
       </div>
       {feedback && !feedback.ok ? (
         <p className="host-form-feedback host-form-feedback--error" role="alert">

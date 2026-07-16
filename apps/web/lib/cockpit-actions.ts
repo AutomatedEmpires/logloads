@@ -1,5 +1,6 @@
 "use server"
 
+import type { DeliveredQuantity, HaulException } from "@logloads/contracts"
 import { revalidatePath } from "next/cache"
 
 import { captureServerEvent } from "./analytics"
@@ -427,6 +428,77 @@ export async function publishDraftAction(input: {
     )
 
     captureServerEvent("load_published", actor.profile.id, { loadPostingId: input.loadPostingId })
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function submitHaulCompletionAction(input: {
+  tripId: string
+  quantityValue?: number | null
+  quantityUnit?: string | null
+  ticketNumber?: string | null
+  exceptionType?: string | null
+  exceptionNote?: string | null
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    await commit(["/driver", "/fleet", "/host"], (draft) =>
+      // The unit and exception type are narrowed here only to satisfy the
+      // boundary; the service parses both through zod, so an invalid value is
+      // refused server-side rather than trusted.
+      draft.submitHaulCompletion({
+        actorUserId: actor.profile.id,
+        deliveredQuantity: input.quantityValue != null
+          ? {
+              ticketNumber: input.ticketNumber?.trim() || null,
+              unit: (input.quantityUnit ?? "tons") as DeliveredQuantity["unit"],
+              value: input.quantityValue
+            }
+          : null,
+        exception: input.exceptionType && input.exceptionNote?.trim()
+          ? { note: input.exceptionNote.trim(), type: input.exceptionType as HaulException["type"] }
+          : null,
+        organizationId: actorOrganizationId(actor),
+        tripId: input.tripId
+      })
+    )
+
+    captureServerEvent("haul_completion_submitted", actor.profile.id, { tripId: input.tripId })
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function settleHaulCompletionAction(input: {
+  tripId: string
+  decision: "confirm" | "dispute"
+  reason?: string | null
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    await commit(["/driver", "/fleet", "/host"], (draft) =>
+      draft.settleHaulCompletion({
+        actorUserId: actor.profile.id,
+        decision: input.decision,
+        organizationId: actorOrganizationId(actor),
+        reason: input.reason?.trim() || null,
+        tripId: input.tripId
+      })
+    )
+
+    // Event only — the dispute reason stays out of analytics.
+    captureServerEvent(
+      input.decision === "confirm" ? "haul_completion_confirmed" : "haul_completion_disputed",
+      actor.profile.id,
+      { tripId: input.tripId }
+    )
 
     return OK
   } catch (error) {

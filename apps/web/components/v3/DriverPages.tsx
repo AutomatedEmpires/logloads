@@ -14,6 +14,7 @@ import {
   AddEquipmentForm,
   AvailabilityQuickSet,
   CancelHaulControl,
+  CompletionForm,
   DriverEconomicsForm,
   EquipmentStatusToggle,
   LogProofControl,
@@ -34,6 +35,20 @@ type TripView = NetworkView["trips"][number]
 
 function isOpenTrip(trip: TripView): boolean {
   return trip.status !== "completed" && trip.status !== "cancelled"
+}
+
+/**
+ * Mirrors the server window: the delivery can be recorded from the destination
+ * onward, and stays open until the host confirms it. A completed haul whose
+ * record is still pending or disputed is exactly the case that most needs the
+ * form — hiding it would strand the record with no way to author it.
+ */
+function canRecordDelivery(trip: TripView): boolean {
+  return (
+    ["at_destination", "unloading", "completed"].includes(trip.status) &&
+    trip.status !== "cancelled" &&
+    trip.completion.status !== "confirmed"
+  )
 }
 
 function activeTripFor(network: NetworkView): TripView | null {
@@ -290,10 +305,51 @@ export function DriverMap({ account, network }: DriverPageProps) {
   )
 }
 
+const COMPLETION_TONE: Record<string, "success" | "warning" | "critical" | "neutral"> = {
+  confirmed: "success",
+  disputed: "critical",
+  pending: "neutral",
+  submitted: "warning"
+}
+
+const COMPLETION_LABEL: Record<string, string> = {
+  confirmed: "Confirmed by the host",
+  disputed: "Host contests this record",
+  pending: "No delivery recorded",
+  submitted: "Waiting on the host"
+}
+
+/** The settled account of a finished haul, as it will read in history. */
+function DeliveredRecord({ completion }: { completion: TripView["completion"] }) {
+  const delivered = completion.deliveredQuantity
+
+  return (
+    <div className="delivered-record">
+      <Badge tone={COMPLETION_TONE[completion.status] ?? "neutral"}>
+        {COMPLETION_LABEL[completion.status] ?? formatHuman(completion.status)}
+      </Badge>
+      <p>
+        {delivered
+          ? `${delivered.value} ${delivered.unit} delivered${delivered.ticketNumber ? ` · ticket ${delivered.ticketNumber}` : ""}`
+          : "No delivered quantity was recorded for this haul."}
+      </p>
+      {completion.exception ? (
+        <p className="delivered-record__exception">
+          {formatHuman(completion.exception.type)}: {completion.exception.note}
+        </p>
+      ) : null}
+      {completion.disputeReason ? (
+        <p className="delivered-record__exception">Host: {completion.disputeReason}</p>
+      ) : null}
+    </div>
+  )
+}
+
 function TripCard({ network, trip }: { network: NetworkView; trip: TripView }) {
   const load = network.loads.find((item) => item.id === trip.loadPostingId) ?? null
   const lastEvent = trip.events[trip.events.length - 1] ?? null
   const open = isOpenTrip(trip)
+  const isOwnHaul = trip.driverProfileId === network.currentDriver?.id
 
   return (
     <article className="trip-card">
@@ -324,10 +380,27 @@ function TripCard({ network, trip }: { network: NetworkView; trip: TripView }) {
         <div className="trip-card__actions">
           <TripProgressButton status={trip.status} tripId={trip.id} />
           <LogProofControl tripId={trip.id} />
-          {trip.driverProfileId === network.currentDriver?.id ? (
-            <CancelHaulControl assignmentId={trip.assignmentId} kind="haul" />
+          {/* Recorded at the destination, while the driver is standing at the
+              scale — not reconstructed from memory later. */}
+          {canRecordDelivery(trip) && isOwnHaul ? (
+            <CompletionForm completion={trip.completion} tripId={trip.id} />
           ) : null}
+          {isOwnHaul ? <CancelHaulControl assignmentId={trip.assignmentId} kind="haul" /> : null}
         </div>
+      ) : null}
+      {trip.status === "completed" ? (
+        <>
+          <DeliveredRecord completion={trip.completion} />
+          {/* A haul closed before its delivery was recorded, or a figure the
+              host disputed, must still be answerable — otherwise the record is
+              stranded with no way to author it. */}
+          {canRecordDelivery(trip) && isOwnHaul ? (
+            <div className="trip-card__actions">
+              <LogProofControl tripId={trip.id} />
+              <CompletionForm completion={trip.completion} tripId={trip.id} />
+            </div>
+          ) : null}
+        </>
       ) : null}
       {trip.reviewable ? (
         trip.reviewable.alreadyReviewed ? (

@@ -67,8 +67,11 @@ import {
   progressTripStatus,
   publishFutureAvailability,
   refreshRoutePackForAssignment,
-  requestCapacityWithPolicy
+  requestCapacityWithPolicy,
+  settleHaulCompletion,
+  submitHaulCompletion
 } from "./operating-network"
+import { listTripDocuments, requiredCompletionEvidence } from "./haul-completion"
 import { getRouteById, listRoutes } from "./routes"
 import { createTruckSlot, listTruckSlotsForDate } from "./truck-slots"
 import {
@@ -143,6 +146,11 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
       listRoutePackVersionsForAssignment(state, input),
     refreshRoutePackForAssignment: (input: Parameters<typeof refreshRoutePackForAssignment>[1]) =>
       refreshRoutePackForAssignment(state, input),
+    submitHaulCompletion: (input: Parameters<typeof submitHaulCompletion>[1]) => submitHaulCompletion(state, input),
+    settleHaulCompletion: (input: Parameters<typeof settleHaulCompletion>[1]) => settleHaulCompletion(state, input),
+    listTripDocuments: (tripId: string) => listTripDocuments(state, tripId),
+    requiredCompletionEvidence: (trip: Parameters<typeof requiredCompletionEvidence>[1]) =>
+      requiredCompletionEvidence(state, trip),
     listAttentionItems: (organizationId?: string) => listAttentionItems(state, organizationId),
     listDriverAvailability: (driverProfileId?: string) => listDriverAvailability(state, driverProfileId),
     listEntitlements: (organizationId?: string) => listEntitlements(state, organizationId),

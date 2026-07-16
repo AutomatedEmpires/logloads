@@ -77,6 +77,25 @@ export function upgradeStateSnapshot(
     }))
   }
 
+  // Trips predate completion tracking. A stored trip has no completionStatus,
+  // and "pending" is the honest reading: nobody has said what came off the
+  // truck. A trip already marked completed is left pending too — the delivery
+  // happened, the accounting of it never did, and inventing agreement here
+  // would fabricate a host confirmation that no one gave.
+  if (Array.isArray(candidate.tripsV2)) {
+    candidate.tripsV2 = candidate.tripsV2.map((trip) => ({
+      ...trip,
+      completionConfirmedAt: trip.completionConfirmedAt ?? null,
+      completionConfirmedByUserId: trip.completionConfirmedByUserId ?? null,
+      completionDisputeReason: trip.completionDisputeReason ?? null,
+      completionStatus: trip.completionStatus ?? "pending",
+      completionSubmittedAt: trip.completionSubmittedAt ?? null,
+      completionSubmittedByUserId: trip.completionSubmittedByUserId ?? null,
+      deliveredQuantity: trip.deliveredQuantity ?? null,
+      haulException: trip.haulException ?? null
+    }))
+  }
+
   // Landing safety rules and destination completion evidence are newer than the
   // documents that hold them. The contract types them as arrays, so a stored row
   // without them would hand every reader an undefined the types deny.
