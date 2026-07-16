@@ -468,8 +468,8 @@ export function RoutePackPreview({ load, locked = false }: { load: NetworkLoadVi
           <p>{pack.calculatedRouteSummary}</p>
           <p className="briefing-note">
             Road condition: {formatHuman(pack.currentRoadCondition)}
-            {snapshot?.routeDistanceMiles ? ` · ${snapshot.routeDistanceMiles.toFixed(0)} mi` : ""}
-            {snapshot?.routeRunTimeMinutes ? ` · about ${snapshot.routeRunTimeMinutes} min` : ""}
+            {snapshot?.routeDistanceMiles != null ? ` · ${snapshot.routeDistanceMiles.toFixed(0)} mi` : ""}
+            {snapshot?.routeRunTimeMinutes != null ? ` · about ${snapshot.routeRunTimeMinutes} min` : ""}
           </p>
         </article>
         <article>

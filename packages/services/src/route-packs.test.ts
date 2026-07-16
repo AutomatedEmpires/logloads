@@ -1,3 +1,4 @@
+import { organizationMembershipSchema } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
@@ -260,6 +261,50 @@ describe("route pack access", () => {
       assignmentId: assignment.id,
       organizationId: HAULER_ORG
     })).toThrow(/Only the assigned driver/)
+  })
+
+  it("refuses members with no operational need on either side of the haul", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { assignment } = bookRuntimeHaul(services)
+
+    // A pack carries the entrance pin and gate codes. Being in a participating
+    // organization is not a reason to see them — viewer and billing hold no
+    // view_private_location, on the hauling side or the host's.
+    const denied: Array<[string, string, string]> = [
+      ["hauler viewer", "viewer", HAULER_ORG],
+      ["hauler billing", "billing", HAULER_ORG],
+      ["host viewer", "viewer", HOST_ORG],
+      ["host billing", "billing", HOST_ORG]
+    ]
+
+    denied.forEach(([label, role, organizationId], index) => {
+      const userId = `2c2c2c2c-2c2c-4c2c-8c2c-2c2c2c2c2c${index.toString().padStart(2, "0")}`
+
+      services.state.organizationMemberships.push(
+        organizationMembershipSchema.parse({
+          createdAt: "2026-06-05T00:00:00.000Z",
+          id: `2d2d2d2d-2d2d-4d2d-8d2d-2d2d2d2d2d${index.toString().padStart(2, "0")}`,
+          organizationId,
+          role,
+          status: "active",
+          updatedAt: "2026-06-05T00:00:00.000Z",
+          userId
+        })
+      )
+
+      expect(() => services.getRoutePackForAssignment({
+        actorUserId: userId,
+        assignmentId: assignment.id,
+        organizationId
+      }), `${label} must not open the pack`).toThrow()
+    })
+
+    // A host dispatcher, who does coordinate the haul, still may.
+    expect(services.getRoutePackForAssignment({
+      actorUserId: HOST_DISPATCHER,
+      assignmentId: assignment.id,
+      organizationId: HOST_ORG
+    }).routePack.assignmentId).toBe(assignment.id)
   })
 
   it("refuses an organization that is not part of the haul", () => {

@@ -1366,12 +1366,18 @@ export function getRoutePackForAssignment(
   const driver = state.driverProfiles.find((current) => current.id === assignment.driverProfileId)
   const hostAccess = load.companyId === context.organizationId
   const assignedDriverAccess = driver?.userId === context.actorUserId
-  // Fleet staff coordinating the haul keep access; another *driver* does not.
-  const haulerStaffAccess = !hostAccess && context.membership.role !== "driver"
+  // Everyone other than the assigned driver needs an operational reason to see
+  // an entrance pin or a gate code, on either side of the haul —
+  // view_private_location is exactly that action, and it excludes viewer and
+  // billing. The role check excludes a driver who is not on this haul, who
+  // holds the action but has no need for someone else's briefing.
+  const staffAccess =
+    context.membership.role !== "driver" &&
+    organizationRoleCan(context.membership.role, "view_private_location")
 
   assertCondition(
-    hostAccess || assignedDriverAccess || haulerStaffAccess,
-    "Only the assigned driver and the organizations running this haul can open the Route Pack"
+    assignedDriverAccess || staffAccess,
+    "Only the assigned driver and the staff running this haul can open the Route Pack"
   )
   assertCondition(
     hostAccess || ["accepted", "checked_in", "loading", "hauled", "completed"].includes(assignment.status),
