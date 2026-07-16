@@ -1,3 +1,4 @@
+import { organizationMembershipSchema } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
@@ -90,25 +91,152 @@ function slotFor(services: LogLoadsServices, loadPostingId: string) {
   return slot
 }
 
+/** Grants `role` in HOST_ORG to a synthetic member and returns their user id. */
+function memberWithRole(services: LogLoadsServices, role: string, index: number): string {
+  const userId = `2a2a2a2a-2a2a-4a2a-8a2a-2a2a2a2a2a${index.toString().padStart(2, "0")}`
+
+  services.state.organizationMemberships.push(
+    organizationMembershipSchema.parse({
+      createdAt: "2026-06-05T00:00:00.000Z",
+      id: `2b2b2b2b-2b2b-4b2b-8b2b-2b2b2b2b2b${index.toString().padStart(2, "0")}`,
+      organizationId: HOST_ORG,
+      role,
+      status: "active",
+      updatedAt: "2026-06-05T00:00:00.000Z",
+      userId
+    })
+  )
+
+  return userId
+}
+
 describe("load publishing authority", () => {
-  it("requires publish authority to post work", () => {
+  it("lets every operating role publish for its own organization", () => {
+    // Owner and dispatcher are seeded in HOST_ORG; admin and landing_manager
+    // are granted here so the whole matrix is proven against the real service.
+    const roles: Array<[string, string]> = [
+      ["owner", HOST_OWNER],
+      ["dispatcher", HOST_DISPATCHER]
+    ]
     const services = createLogLoadsServices(createInMemoryDatabase())
 
+    roles.push(["admin", memberWithRole(services, "admin", 1)])
+    roles.push(["landing_manager", memberWithRole(services, "landing_manager", 2)])
+
+    for (const [role, actorUserId] of roles) {
+      const created = services.createLoadPostingWithPolicy({
+        ...postingInput("open", { title: `Published by ${role}` }),
+        actorUserId,
+        organizationId: HOST_ORG
+      })
+
+      expect(created.status, `${role} should publish`).toBe("open")
+      expect(created.companyId).toBe(HOST_ORG)
+    }
+  })
+
+  it("refuses every non-publishing role", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const denied: Array<[string, string]> = [
+      ["viewer", memberWithRole(services, "viewer", 3)],
+      ["billing", memberWithRole(services, "billing", 4)],
+      ["destination_manager", memberWithRole(services, "destination_manager", 5)]
+    ]
+
+    for (const [role, actorUserId] of denied) {
+      expect(() => services.createLoadPostingWithPolicy({
+        ...postingInput("open"),
+        actorUserId,
+        organizationId: HOST_ORG
+      }), `${role} must not publish`).toThrow(/cannot publish load/)
+    }
+
+    // A driver in the hauling organization cannot publish there either.
     expect(() => services.createLoadPostingWithPolicy({
       ...postingInput("open"),
       actorUserId: HAULER_DRIVER_ACTOR,
       organizationId: HAULER_ORG
     })).toThrow(/cannot publish load/)
 
+    expect(services.state.loadPostings.some((load) => load.title === "Load management fixture")).toBe(false)
+  })
+
+  it("refuses a member of another organization", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    // The host's own dispatcher has publish authority — but not in an
+    // organization they are not an active member of.
     expect(() => services.createLoadPostingWithPolicy({
       ...postingInput("open"),
+      actorUserId: HOST_OWNER,
+      organizationId: HAULER_ORG
+    })).toThrow(/not an active member/)
+
+    const outsider = services.createAccount({
+      accountType: "landing_operator",
+      availabilityPreset: "not_ready",
+      email: "outside-host@example.com",
+      equipment: null,
+      fullName: "Outside Host",
+      organizationName: "Outside Landing",
+      path: "host",
+      phone: "555-9300",
+      region: "Elsewhere, OR"
+    })
+
+    // An owner of a different landing outfit cannot publish into HOST_ORG,
+    // nor mutate HOST_ORG's work.
+    expect(() => services.createLoadPostingWithPolicy({
+      ...postingInput("open"),
+      actorUserId: outsider.profile.id,
+      organizationId: HOST_ORG
+    })).toThrow(/not an active member/)
+
+    const load = publishAsOwner(services)
+    const outsiderOrgId = outsider.memberships[0]?.organization.id
+
+    expect(outsiderOrgId).toBeTruthy()
+    if (!outsiderOrgId) return
+
+    expect(() => services.closeLoadPosting({
+      actorUserId: outsider.profile.id,
+      loadPostingId: load.id,
+      organizationId: outsiderOrgId
+    })).toThrow(/Only the posting organization/)
+
+    expect(() => services.openDraftLoadPosting({
+      actorUserId: outsider.profile.id,
+      loadPostingId: load.id,
+      organizationId: outsiderOrgId
+    })).toThrow(/Only the posting organization/)
+
+    expect(services.state.loadPostings.find((candidate) => candidate.id === load.id)?.status).toBe("open")
+  })
+
+  it("lets a dispatcher run the whole load lifecycle for its organization", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const draft = services.createLoadPostingWithPolicy({
+      ...postingInput("draft"),
       actorUserId: HOST_DISPATCHER,
       organizationId: HOST_ORG
-    })).toThrow(/cannot publish load/)
+    })
 
-    const created = publishAsOwner(services)
+    const opened = services.openDraftLoadPosting({
+      actorUserId: HOST_DISPATCHER,
+      loadPostingId: draft.id,
+      organizationId: HOST_ORG
+    })
 
-    expect(created.status).toBe("open")
+    expect(opened.status).toBe("open")
+
+    const closed = services.closeLoadPosting({
+      actorUserId: HOST_DISPATCHER,
+      loadPostingId: draft.id,
+      organizationId: HOST_ORG,
+      reason: "Weather closed the block."
+    })
+
+    expect(closed.status).toBe("cancelled")
   })
 
   it("stamps the posting with the actor's organization, ignoring a spoofed companyId", () => {

@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test"
 
+import { fillWhenReady, selectWhenReady } from "./builder-input"
+
 /**
  * Proves the withdraw side of the operating loop end to end: a host publishes
  * a single-truckload day, the driver's request fills it, the driver withdraws
@@ -28,15 +30,15 @@ test.describe.serial("request withdrawal", () => {
     await expect(page.getByText("Publish timber movement")).toBeVisible()
 
     // Step 0 — Timber: title only, no equipment requirement (any truck fits).
-    await page.getByLabel("Work title").fill(TITLE)
+    await fillWhenReady(page, "Work title", TITLE)
     await page.getByRole("button", { name: "Next" }).click()
 
     // Step 1 — Movement: pick a real haul route.
-    await page.getByLabel("Haul route").selectOption({ index: 1 })
+    await selectWhenReady(page, "Haul route", { index: 1 })
     await page.getByRole("button", { name: "Next" }).click()
 
     // Step 2 — Capacity: exactly one truckload on the default one-off date.
-    await page.getByLabel("Truckloads needed per day").fill("1")
+    await fillWhenReady(page, "Truckloads needed per day", "1")
     await page.getByRole("button", { name: "Next" }).click()
 
     // Step 3 — Terms, Step 4 — Visibility: defaults.

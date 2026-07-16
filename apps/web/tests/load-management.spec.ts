@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test"
 
+import { fillWhenReady, selectWhenReady } from "./builder-input"
+
 /**
  * Proves the host's published-work lifecycle end to end: save a draft through
  * the guided builder, publish it to the network from the Work list (capacity
@@ -30,11 +32,11 @@ test.describe.serial("published-work lifecycle", () => {
 
     await expect(page.getByText("Publish timber movement")).toBeVisible()
 
-    await page.getByLabel("Work title").fill(TITLE)
+    await fillWhenReady(page, "Work title", TITLE)
     await page.getByRole("button", { name: "Next" }).click()
-    await page.getByLabel("Haul route").selectOption({ index: 1 })
+    await selectWhenReady(page, "Haul route", { index: 1 })
     await page.getByRole("button", { name: "Next" }).click()
-    await page.getByLabel("Truckloads needed per day").fill("1")
+    await fillWhenReady(page, "Truckloads needed per day", "1")
     await page.getByRole("button", { name: "Next" }).click()
     await page.getByRole("button", { name: "Next" }).click()
 
