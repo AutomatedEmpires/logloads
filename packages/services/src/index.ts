@@ -33,6 +33,15 @@ import {
   postMessage,
   unreadThreadCounts
 } from "./messaging"
+import {
+  activeLandingLimitFor,
+  countActiveLandings,
+  createHaulRoute,
+  createLanding,
+  createRate,
+  setLandingActive,
+  updateLanding
+} from "./host-workspace"
 import { listDriverAvailability, upsertAvailabilityWindow } from "./availability"
 import { createLoadPosting, getLoadById, listOpenLoads, updateLoadPosting } from "./loads"
 import {
@@ -135,6 +144,13 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     openDraftLoadPosting: (input: Parameters<typeof openDraftLoadPosting>[1]) => openDraftLoadPosting(state, input),
     createDirectOffer: (input: Parameters<typeof createDirectOffer>[1]) => createDirectOffer(state, input),
     createLoadPosting: (input: unknown) => createLoadPosting(state, input),
+    createHaulRoute: (input: Parameters<typeof createHaulRoute>[1]) => createHaulRoute(state, input),
+    createLanding: (input: Parameters<typeof createLanding>[1]) => createLanding(state, input),
+    createRate: (input: Parameters<typeof createRate>[1]) => createRate(state, input),
+    updateLanding: (input: Parameters<typeof updateLanding>[1]) => updateLanding(state, input),
+    setLandingActive: (input: Parameters<typeof setLandingActive>[1]) => setLandingActive(state, input),
+    activeLandingLimitFor: (organizationId: string) => activeLandingLimitFor(state, organizationId),
+    countActiveLandings: (organizationId: string) => countActiveLandings(state, organizationId),
     createNotification: (input: unknown) => createNotification(state, input),
     createOperationalNotice: (input: Parameters<typeof createOperationalNotice>[1]) => createOperationalNotice(state, input),
     declineCapacityRequest: (input: Parameters<typeof declineCapacityRequest>[1]) => declineCapacityRequest(state, input),
@@ -188,5 +204,12 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
 export type LogLoadsServices = ReturnType<typeof createLogLoadsServices>
 
 export { getDriverMediaTarget, getTripDocumentTarget, tripDocumentPublicIdPrefix }
+export type {
+  CreateHaulRouteInput,
+  CreateLandingInput,
+  CreateRateInput,
+  SetLandingActiveInput,
+  UpdateLandingInput
+} from "./host-workspace"
 export type { DriverMediaKind, DriverMediaTarget } from "./driver-profile"
 export type { TripDocumentAccess, TripDocumentTarget } from "./operating-network"

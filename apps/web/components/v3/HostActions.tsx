@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useMemo, useState, useTransition } from "react"
 
 import {
@@ -578,8 +579,13 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
         <p className="host-builder-note">
           {!options.dispatcher
             ? "Every posting carries a dispatch contact so drivers know who runs the move. Add a dispatcher to your workspace before publishing work."
-            : `Your workspace still needs ${missingSetup.join(", ")} on file before work can be published. These records come from onboarding — contact LogLoads support to add them.`}
+            : `Your workspace still needs ${missingSetup.join(", ")} on file before work can be published.`}
         </p>
+        {options.dispatcher ? (
+          <Link className="action-link" href="/host/landings">
+            Set these up
+          </Link>
+        ) : null}
       </article>
     )
   }

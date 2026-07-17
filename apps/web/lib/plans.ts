@@ -249,6 +249,23 @@ function usageRow(id: string, label: string, unit: string, used: number, limit: 
     }
   }
 
+  // A plan covering none of something is a real answer now that a lapsed plan
+  // reports 0 rather than "no limit". Dividing by it yields NaN, which the page
+  // would render as "NaN%".
+  if (limit === 0) {
+    return {
+      detail: used === 0
+        ? `Your plan does not cover ${unit}s`
+        : `${used} ${unit}${used === 1 ? "" : "s"} in use, and your plan covers none`,
+      id,
+      label,
+      limit,
+      percent: 100,
+      tone: "critical",
+      used
+    }
+  }
+
   const percent = Math.min(100, Math.round((used / limit) * 100))
   let tone: PlanTone = "success"
   let detail = `${used} of ${limit} in use`
@@ -282,12 +299,15 @@ export function getBillingView(network: NetworkView): BillingView {
   const activeTrucks = state.equipmentCombinations.filter(
     (combination) => combination.organizationId === organizationId && combination.status !== "inactive"
   ).length
-  const activeLandings = state.richLandingDetails.filter(
-    (details) => details.controlledByOrganizationId === organizationId
-  ).length
+  // The same two numbers the service enforces, from the same functions. Billing
+  // used to count `richLandingDetails` rows and take the first entitlement with
+  // any stated limit, regardless of status — so it could read "1 of 3 in use"
+  // at the moment a host was being refused for standing at 3 of 3. What the
+  // plan page says you have left has to be what you actually have left.
+  const activeLandings = services.countActiveLandings(organizationId)
 
   const truckLimit = entitlements.find((entitlement) => entitlement.activeTruckLimit)?.activeTruckLimit ?? null
-  const landingLimit = entitlements.find((entitlement) => entitlement.activeLandingLimit)?.activeLandingLimit ?? null
+  const landingLimit = services.activeLandingLimitFor(organizationId)
 
   const usage: PlanUsageView[] = []
 

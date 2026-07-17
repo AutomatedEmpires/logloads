@@ -166,6 +166,81 @@ export interface HostLandingRecord {
   openLoadCount: number
   lastVerifiedAt: string | null
   contactName: string
+  /** Everything the edit form needs to round-trip the record unchanged. */
+  editable: HostLandingDraft
+  isActive: boolean
+  lanes: HostLaneRecord[]
+}
+
+export interface HostLandingDraft {
+  accessNotes: string
+  addressLine1: string
+  city: string
+  contactEmail: string
+  contactName: string
+  contactPhone: string
+  lat: number
+  lng: number
+  name: string
+  postalCode: string
+  roadCondition: string
+  state: string
+}
+
+export interface HostLaneRecord {
+  id: string
+  routeName: string
+  millLabel: string
+  distanceMiles: number
+  runTimeMinutes: number
+  roadCondition: string
+}
+
+export interface HostRateRecord {
+  id: string
+  label: string
+  effectiveDate: string
+  notes: string | null
+}
+
+export interface HostMillOption {
+  id: string
+  label: string
+}
+
+/**
+ * What the host's plan allows, and what they are already using. The number was
+ * advertised on the billing page long before anything enforced it; now that a
+ * landing can actually be created, the page has to say where they stand.
+ */
+export interface HostWorkspaceSetup {
+  landingLimit: number | null
+  activeLandingCount: number
+  mills: HostMillOption[]
+  rates: HostRateRecord[]
+}
+
+export function getHostWorkspaceSetup(organizationId: string): HostWorkspaceSetup {
+  const state = services.state
+
+  return {
+    activeLandingCount: services.countActiveLandings(organizationId),
+    landingLimit: services.activeLandingLimitFor(organizationId),
+    mills: state.mills
+      .map((mill) => ({ id: mill.id, label: `${mill.name} — ${mill.city}, ${mill.state}` }))
+      .sort((left, right) => left.label.localeCompare(right.label)),
+    rates: state.rates
+      .filter((rate) => rate.companyId === organizationId)
+      .map((rate) => ({
+        effectiveDate: rate.effectiveDate,
+        id: rate.id,
+        label:
+          rate.fuelSurchargeCents > 0
+            ? `${formatRateLabel(rate.baseRate, rate.rateType)} + ${formatMoney({ amountCents: rate.fuelSurchargeCents, currency: rate.baseRate.currency })} fuel`
+            : formatRateLabel(rate.baseRate, rate.rateType),
+        notes: rate.notes ?? null
+      }))
+  }
 }
 
 const DEFAULT_ACCESS_LINE =
@@ -181,6 +256,7 @@ const ACCESS_POLICY_LINES: Record<string, string> = {
 
 export function getHostLandingRecords(organizationId: string): HostLandingRecord[] {
   const state = services.state
+  const millsById = new Map(state.mills.map((mill) => [mill.id, mill]))
 
   return state.landings
     .filter((landing) => landing.companyId === organizationId)
@@ -194,7 +270,36 @@ export function getHostLandingRecords(organizationId: string): HostLandingRecord
         accessPolicyLine: ACCESS_POLICY_LINES[policy] ?? DEFAULT_ACCESS_LINE,
         area: details?.publicApproximateArea ?? `${landing.city}, ${landing.state}`,
         contactName: landing.contact.name,
+        editable: {
+          accessNotes: landing.accessNotes ?? "",
+          addressLine1: landing.addressLine1,
+          city: landing.city,
+          contactEmail: landing.contact.email ?? "",
+          contactName: landing.contact.name,
+          contactPhone: landing.contact.phone,
+          lat: landing.coordinates.lat,
+          lng: landing.coordinates.lng,
+          name: landing.name,
+          postalCode: landing.postalCode,
+          roadCondition: landing.roadCondition ?? "",
+          state: landing.state
+        },
         id: landing.id,
+        isActive: landing.isActive,
+        lanes: state.haulRoutes
+          .filter((route) => route.landingId === landing.id && route.companyId === organizationId)
+          .map((route) => {
+            const mill = millsById.get(route.millId)
+
+            return {
+              distanceMiles: route.estimatedDistanceMiles,
+              id: route.id,
+              millLabel: mill ? `${mill.name} — ${mill.city}, ${mill.state}` : "Destination on file",
+              roadCondition: route.roadCondition,
+              routeName: route.routeName,
+              runTimeMinutes: route.estimatedRunTimeMinutes
+            }
+          }),
         lastVerifiedAt: details?.lastVerifiedAt ?? null,
         loadingEquipment: details?.loadingEquipment ?? [],
         name: landing.name,

@@ -262,6 +262,72 @@
 }
 .live-card__docs em { color: var(--muted); font-style: normal; text-transform: capitalize; }
 
+/* Workspace setup ------------------------------------------------------------ */
+
+.workspace-section {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 16px;
+  margin-bottom: 18px;
+}
+.workspace-section__head { margin-bottom: 12px; }
+.workspace-section__head h2 { margin: 0 0 4px; font-size: 1.05rem; }
+.workspace-section__head p { margin: 0; color: var(--muted); font-size: 0.9rem; }
+
+.workspace-form { display: grid; gap: 12px; }
+.workspace-form--inline { margin-top: 12px; }
+.workspace-form__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+.workspace-form label,
+.workspace-form__wide {
+  display: grid;
+  gap: 4px;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  font-weight: 750;
+}
+.workspace-form input,
+.workspace-form select,
+.workspace-form textarea {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+  padding: 8px 10px;
+  font: inherit;
+  font-weight: 500;
+}
+.workspace-form textarea { min-height: 60px; resize: vertical; }
+.workspace-form__actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.workspace-form__actions button:disabled { opacity: 0.6; }
+
+.workspace-hint { margin: 0; color: var(--muted); font-size: 0.88rem; }
+
+.workspace-list { display: grid; gap: 6px; margin: 0 0 4px; padding: 0; list-style: none; }
+.workspace-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 6px;
+  font-size: 0.9rem;
+}
+.workspace-list li:last-child { border-bottom: none; }
+.workspace-list span { color: var(--muted); font-size: 0.85rem; }
+
+.workspace-lanes { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
+.workspace-lanes h3 { margin: 0 0 8px; font-size: 0.95rem; }
+
+.workspace-edit { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
+.workspace-edit summary { cursor: pointer; font-weight: 800; color: var(--pine); }
+.workspace-edit .workspace-form { margin-top: 12px; }
+
 /* Landings ------------------------------------------------------------------- */
 
 .host-landing-grid {

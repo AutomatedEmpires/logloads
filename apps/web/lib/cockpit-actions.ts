@@ -1,6 +1,12 @@
 "use server"
 
-import type { DeliveredQuantity, HaulException } from "@logloads/contracts"
+import {
+  rateTypeSchema,
+  roadConditionSchema,
+  type DeliveredQuantity,
+  type HaulException,
+  type RoadCondition
+} from "@logloads/contracts"
 import { revalidatePath } from "next/cache"
 
 import { captureServerEvent } from "./analytics"
@@ -428,6 +434,201 @@ export async function createLoadPostingAction(input: Record<string, unknown>): P
       loadPostingId: created.id
     })
 
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+// --- Host workspace setup ---------------------------------------------------
+// The records publishing requires. Until these existed in-product, a real host
+// organization could never post work at all: the builder refused without a
+// landing, a lane, and a rate, and told them to contact a support desk that
+// does not exist for records onboarding never created.
+
+const HOST_SETUP_PATHS = ["/host", "/host/landings", "/host/opportunities", "/loads", "/"]
+
+/**
+ * Validated against the domain enum rather than cast. A road condition a driver
+ * is quoted has to be one the matching rules actually understand.
+ */
+function parseRoadCondition(value: string | null | undefined): RoadCondition | null {
+  return value ? roadConditionSchema.parse(value) : null
+}
+
+export async function createLandingAction(input: {
+  name: string
+  addressLine1: string
+  city: string
+  state: string
+  postalCode: string
+  lat: number
+  lng: number
+  contactName: string
+  contactPhone: string
+  contactEmail?: string | null
+  roadCondition?: string | null
+  accessNotes?: string | null
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+    const landing = await commit(HOST_SETUP_PATHS, (draft) =>
+      draft.createLanding({
+        accessNotes: input.accessNotes ?? null,
+        actorUserId: actor.profile.id,
+        addressLine1: input.addressLine1,
+        city: input.city,
+        contact: {
+          email: input.contactEmail || null,
+          name: input.contactName,
+          phone: input.contactPhone
+        },
+        coordinates: { lat: input.lat, lng: input.lng },
+        name: input.name,
+        organizationId: actorOrganizationId(actor),
+        postalCode: input.postalCode,
+        roadCondition: parseRoadCondition(input.roadCondition),
+        state: input.state
+      })
+    )
+
+    captureServerEvent("landing_created", actor.profile.id, { landingId: landing.id })
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function updateLandingAction(input: {
+  landingId: string
+  name: string
+  addressLine1: string
+  city: string
+  state: string
+  postalCode: string
+  lat: number
+  lng: number
+  contactName: string
+  contactPhone: string
+  contactEmail?: string | null
+  roadCondition?: string | null
+  accessNotes?: string | null
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    await commit(HOST_SETUP_PATHS, (draft) =>
+      draft.updateLanding({
+        accessNotes: input.accessNotes ?? null,
+        actorUserId: actor.profile.id,
+        addressLine1: input.addressLine1,
+        city: input.city,
+        contact: {
+          email: input.contactEmail || null,
+          name: input.contactName,
+          phone: input.contactPhone
+        },
+        coordinates: { lat: input.lat, lng: input.lng },
+        landingId: input.landingId,
+        name: input.name,
+        organizationId: actorOrganizationId(actor),
+        postalCode: input.postalCode,
+        roadCondition: parseRoadCondition(input.roadCondition),
+        state: input.state
+      })
+    )
+
+    captureServerEvent("landing_updated", actor.profile.id, { landingId: input.landingId })
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+/**
+ * Retires or restores a landing without touching anything else about it. The
+ * page cannot send a stale copy of the record back, because it does not send
+ * the record at all.
+ */
+export async function setLandingActiveAction(input: {
+  landingId: string
+  isActive: boolean
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    await commit(HOST_SETUP_PATHS, (draft) =>
+      draft.setLandingActive({
+        actorUserId: actor.profile.id,
+        isActive: input.isActive,
+        landingId: input.landingId,
+        organizationId: actorOrganizationId(actor)
+      })
+    )
+
+    captureServerEvent(input.isActive ? "landing_restored" : "landing_retired", actor.profile.id, {
+      landingId: input.landingId
+    })
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function createHaulRouteAction(input: {
+  landingId: string
+  millId: string
+  routeName: string
+  estimatedDistanceMiles: number
+  estimatedRunTimeMinutes: number
+  roadCondition: string
+  roadNotes?: string | null
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+    const route = await commit(HOST_SETUP_PATHS, (draft) =>
+      draft.createHaulRoute({
+        actorUserId: actor.profile.id,
+        estimatedDistanceMiles: input.estimatedDistanceMiles,
+        estimatedRunTimeMinutes: input.estimatedRunTimeMinutes,
+        landingId: input.landingId,
+        millId: input.millId,
+        organizationId: actorOrganizationId(actor),
+        roadCondition: roadConditionSchema.parse(input.roadCondition),
+        roadNotes: input.roadNotes ?? null,
+        routeName: input.routeName
+      })
+    )
+
+    captureServerEvent("haul_route_created", actor.profile.id, { routeId: route.id })
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function createRateAction(input: {
+  rateType: string
+  amountCents: number
+  fuelSurchargeCents?: number
+  effectiveDate: string
+  notes?: string | null
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+    const rate = await commit(HOST_SETUP_PATHS, (draft) =>
+      draft.createRate({
+        actorUserId: actor.profile.id,
+        amountCents: input.amountCents,
+        effectiveDate: input.effectiveDate,
+        fuelSurchargeCents: input.fuelSurchargeCents ?? 0,
+        notes: input.notes ?? null,
+        organizationId: actorOrganizationId(actor),
+        rateType: rateTypeSchema.parse(input.rateType)
+      })
+    )
+
+    captureServerEvent("rate_created", actor.profile.id, { rateId: rate.id })
     return OK
   } catch (error) {
     return failure(error)

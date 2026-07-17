@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 
 import {
   availabilityWindowSchema,
+  dispatcherProfileSchema,
   driverProfileSchema,
   entitlementSchema,
   equipmentCombinationSchema,
@@ -229,6 +230,23 @@ export function createAccount(state: LogLoadsDatabaseState, rawInput: unknown): 
         slug: organization.slug,
         updatedAt: now,
         verificationStatus: "pending"
+      })
+    )
+
+    // Every posting carries a dispatch contact so a driver knows who runs the
+    // move, and publishing refuses without one. For a host that just signed up
+    // that person is whoever signed up — the same reasoning that gives a driver
+    // a driver profile here rather than making them ask for one. They can hand
+    // dispatch to someone else later; they cannot post work before they do.
+    state.dispatcherProfiles.push(
+      dispatcherProfileSchema.parse({
+        companyId: organizationId,
+        contact: { email: normalizedEmail, name: profile.fullName, phone: profile.phone },
+        createdAt: now,
+        dispatchRegion: input.region.trim(),
+        id: randomUUID(),
+        updatedAt: now,
+        userId
       })
     )
   }
