@@ -17,7 +17,10 @@ async function signIn(page: Page, email: string) {
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 30_000 })
 }
 
-// Unique per run so persisted state from earlier runs can never collide.
+// Unique per run so records from earlier runs can never collide by name. It does
+// NOT make the run repeatable: each one permanently spends one of Summit Ridge's
+// three active landings, so a third run against an un-reset database correctly
+// meets the at-limit notice and the add form is gone.
 const STAMP = Date.now()
 const LANDING = `Cedar Spur ${STAMP}`
 const LANE = `Cedar to Cascade ${STAMP}`
@@ -115,22 +118,29 @@ test.describe.serial("host workspace setup", () => {
     }).toPass({ timeout: 30_000 })
   })
 
-  test("the new landing and lane reach the publishing builder", async ({ page }) => {
+  test("the builder offers the landing AND the lane the host just made", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "cole@summit.example")
     await page.goto("/host/opportunities")
     await page.waitForLoadState("networkidle")
 
-    // The records a host just made themselves are the records publishing offers
-    // them — which is the whole point of letting them make any.
     await expect(page.getByText("Publish timber movement")).toBeVisible({ timeout: 15_000 })
     await fillWhenReady(page, "Work title", `Cedar haul ${STAMP}`)
     await page.getByRole("button", { name: "Next" }).click()
 
-    // Asserted on the option rather than the select: these selects sit inside
-    // their labels, so the accessible name is the label text plus whatever is
+    // Asserted on the options rather than the selects: these selects sit inside
+    // their labels, so an accessible name is the label text plus whatever is
     // currently chosen — "Landing" never matches on its own, and a substring
-    // match would land on the neighbouring "Landing road" select instead.
-    await expect(page.locator("option").filter({ hasText: LANDING })).toHaveCount(1)
+    // match lands on the neighbouring "Landing road" select instead.
+    const landingOption = page.locator("option").filter({ hasText: LANDING })
+    await expect(landingOption).toHaveCount(1)
+
+    // The lane only appears once its landing is the chosen one — the builder
+    // filters routes by landing — so this also proves the two records the host
+    // made are linked, not merely both present.
+    const landingValue = await landingOption.getAttribute("value")
+    await page.locator("select").filter({ has: landingOption }).selectOption(landingValue as string)
+
+    await expect(page.locator("option").filter({ hasText: LANE })).toHaveCount(1)
   })
 })

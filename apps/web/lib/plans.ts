@@ -282,12 +282,15 @@ export function getBillingView(network: NetworkView): BillingView {
   const activeTrucks = state.equipmentCombinations.filter(
     (combination) => combination.organizationId === organizationId && combination.status !== "inactive"
   ).length
-  const activeLandings = state.richLandingDetails.filter(
-    (details) => details.controlledByOrganizationId === organizationId
-  ).length
+  // The same two numbers the service enforces, from the same functions. Billing
+  // used to count `richLandingDetails` rows and take the first entitlement with
+  // any stated limit, regardless of status — so it could read "1 of 3 in use"
+  // at the moment a host was being refused for standing at 3 of 3. What the
+  // plan page says you have left has to be what you actually have left.
+  const activeLandings = services.countActiveLandings(organizationId)
 
   const truckLimit = entitlements.find((entitlement) => entitlement.activeTruckLimit)?.activeTruckLimit ?? null
-  const landingLimit = entitlements.find((entitlement) => entitlement.activeLandingLimit)?.activeLandingLimit ?? null
+  const landingLimit = services.activeLandingLimitFor(organizationId)
 
   const usage: PlanUsageView[] = []
 

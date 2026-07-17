@@ -208,13 +208,69 @@ describe("the plan's landing allowance", () => {
     ).toThrow(/plan covers 1 active landing/)
   })
 
-  it("leaves an organization with no stated limit unmetered", () => {
+  it("leaves an organization whose live plan states no cap unmetered", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     setLandingAllowance(services, HOST_ORG, null)
 
     services.createLanding(landingInput())
     services.createLanding(landingInput({ name: "Second Spur" }))
 
+    expect(services.activeLandingLimitFor(HOST_ORG)).toBeNull()
+  })
+
+  it("does not read a lapsed plan as an unlimited one", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    setLandingAllowance(services, HOST_ORG, 3)
+    services.state.landings = services.state.landings.filter(
+      (landing) => landing.companyId !== HOST_ORG
+    )
+
+    // "A live plan states no cap" and "there is no live plan" are different
+    // answers. Collapsing them means the Stripe webhook writing `cancelled`
+    // LIFTS the cap — a lapsed host creating landings without end while a
+    // paying one is held to three. The advertised limit failing open is worse
+    // than never having enforced it.
+    for (const status of ["past_due", "cancelled"] as const) {
+      services.state.entitlements = services.state.entitlements.map((entitlement) =>
+        entitlement.organizationId === HOST_ORG ? { ...entitlement, status } : entitlement
+      )
+
+      expect(services.activeLandingLimitFor(HOST_ORG)).toBe(0)
+      expect(() => services.createLanding(landingInput({ name: `Lapsed ${status}` })))
+        .toThrow(/does not cover any active landings/)
+    }
+  })
+
+  it("refuses an organization carrying no plan at all", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    services.state.entitlements = services.state.entitlements.filter(
+      (entitlement) => entitlement.organizationId !== HOST_ORG
+    )
+
+    expect(services.activeLandingLimitFor(HOST_ORG)).toBe(0)
+    expect(() => services.createLanding(landingInput())).toThrow(/does not cover any active landings/)
+  })
+
+  it("lets a live uncapped plan beat a capped one rather than the reverse", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    setLandingAllowance(services, HOST_ORG, 1)
+    services.state.entitlements.push(entitlementSchema.parse({
+      activeLandingLimit: null,
+      activeTruckLimit: null,
+      createdAt: "2026-06-05T00:00:00.000Z",
+      currentPeriodEndsAt: null,
+      features: [],
+      id: "3f3f3f3f-3f3f-4f3f-8f3f-3f3f3f3f3f02",
+      organizationId: HOST_ORG,
+      product: "enterprise",
+      status: "active",
+      stripeCustomerId: null,
+      stripeSubscriptionId: null,
+      updatedAt: "2026-06-05T00:00:00.000Z"
+    }))
+
+    // A plan that granted no cap said so for the whole organization; a stated
+    // number sitting beside it cannot take back what the other one gave.
     expect(services.activeLandingLimitFor(HOST_ORG)).toBeNull()
   })
 })
@@ -279,6 +335,110 @@ describe("retiring a landing", () => {
 
     // And nothing half-made is left behind.
     expect(services.state.loadPostings.some((load) => load.title === "Should not publish")).toBe(false)
+  })
+
+  it("stops a draft written before the retirement from being published after it", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    setLandingAllowance(services, HOST_ORG, null)
+    const landing = services.createLanding(landingInput())
+    const route = services.createHaulRoute({
+      actorUserId: HOST_OWNER,
+      estimatedDistanceMiles: 40,
+      estimatedRunTimeMinutes: 70,
+      landingId: landing.id,
+      millId: MILL,
+      organizationId: HOST_ORG,
+      roadCondition: "good",
+      routeName: "Draft lane"
+    })
+    const rate = services.createRate({
+      actorUserId: HOST_OWNER,
+      amountCents: 4_000,
+      effectiveDate: "2026-06-25",
+      organizationId: HOST_ORG,
+      rateType: "per_ton"
+    })
+    const dispatcher = services.state.dispatcherProfiles[0]!
+    const draft = services.createLoadPostingWithPolicy({
+      accessRequirements: [],
+      actorUserId: HOST_OWNER,
+      campaignEndDate: null,
+      campaignStartDate: null,
+      companyId: HOST_ORG,
+      dailyTruckCountNeeded: 1,
+      dispatcherContact: dispatcher.contact,
+      dispatcherProfileId: dispatcher.id,
+      dropoffMillId: MILL,
+      equipmentRequirements: [],
+      estimatedTonsPerLoad: 27,
+      loadDate: "2026-06-25",
+      loadType: "saw_logs",
+      loaderContact: null,
+      loaderProfileId: null,
+      organizationId: HOST_ORG,
+      pickupLandingId: landing.id,
+      rateId: rate.id,
+      recurringSchedule: null,
+      roadCondition: "good",
+      routeId: route.id,
+      scheduleType: "one_off",
+      status: "draft",
+      title: "Drafted before retirement",
+      weatherNotes: null
+    })
+
+    // A draft outliving the landing it names is the whole point of a draft, so
+    // publishing one is the second way work reaches the network — and the host
+    // Work page offers exactly that button.
+    services.updateLanding({ ...landingInput(), isActive: false, landingId: landing.id })
+
+    expect(() =>
+      services.openDraftLoadPosting({
+        actorUserId: HOST_OWNER,
+        loadPostingId: draft.id,
+        organizationId: HOST_ORG
+      })
+    ).toThrow(/is retired/)
+
+    expect(services.state.loadPostings.find((load) => load.id === draft.id)?.status).toBe("draft")
+    expect(services.state.truckSlots.some((slot) => slot.loadPostingId === draft.id)).toBe(false)
+  })
+
+  it("refuses a posting that names a landing nobody has", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const dispatcher = services.state.dispatcherProfiles[0]!
+
+    // The guard reads a landing off the id it is given; a missing one must fail
+    // closed rather than sail through for want of anything to check.
+    expect(() =>
+      services.createLoadPostingWithPolicy({
+        accessRequirements: [],
+        actorUserId: HOST_OWNER,
+        campaignEndDate: null,
+        campaignStartDate: null,
+        companyId: HOST_ORG,
+        dailyTruckCountNeeded: 1,
+        dispatcherContact: dispatcher.contact,
+        dispatcherProfileId: dispatcher.id,
+        dropoffMillId: MILL,
+        equipmentRequirements: [],
+        estimatedTonsPerLoad: 27,
+        loadDate: "2026-06-25",
+        loadType: "saw_logs",
+        loaderContact: null,
+        loaderProfileId: null,
+        organizationId: HOST_ORG,
+        pickupLandingId: "11111111-2222-4333-8444-555555555555",
+        rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
+        recurringSchedule: null,
+        roadCondition: "good",
+        routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
+        scheduleType: "one_off",
+        status: "open",
+        title: "Landing does not exist",
+        weatherNotes: null
+      })
+    ).toThrow(/landing was not found/)
   })
 })
 
@@ -446,14 +606,19 @@ describe("host onboarding", () => {
     expect(dispatcher?.contact.phone).toBe("555-9100")
   })
 
-  it("takes a brand-new host from sign-up to published work with no seed data", () => {
+  it("takes a brand-new host from sign-up to published work on records it made itself", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
 
-    // This is the whole point of the slice, so it is asserted end to end rather
-    // than inferred from the parts. Before this, every record below was
-    // uncreatable in-product and a real host could never publish anything: the
-    // builder refused, and told them to contact a support desk that does not
-    // exist for records onboarding never made.
+    // This is the whole point of the slice, so it is asserted rather than
+    // inferred from the parts. Before this, every record below was uncreatable
+    // in-product and a real host could never publish anything: the builder
+    // refused, and told them to contact a support desk that does not exist for
+    // records onboarding never made.
+    //
+    // The seed is loaded — the destination it hauls to is a platform record and
+    // has to come from somewhere — but the organization is minted here and owns
+    // nothing at the start. What this proves is that a host needs no seeded
+    // records OF ITS OWN, which is the thing that was untrue.
     const account = services.createAccount({
       accountType: "timber_organization",
       email: "owner@newtimber.example",

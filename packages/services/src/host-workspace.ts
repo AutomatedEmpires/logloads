@@ -8,6 +8,7 @@ import {
   rateSchema,
   rateTypeSchema,
   roadConditionSchema,
+  type Entitlement,
   type HaulRoute,
   type Landing,
   type Rate
@@ -79,27 +80,54 @@ export type UpdateLandingInput = z.input<typeof updateLandingInputSchema>
 export type CreateHaulRouteInput = z.input<typeof haulRouteInputSchema>
 export type CreateRateInput = z.input<typeof rateInputSchema>
 
+/** Statuses under which a plan is actually carrying the organization. */
+const PLAN_IS_LIVE: ReadonlyArray<Entitlement["status"]> = ["trialing", "active", "comped"]
+
+export function livePlansFor(state: LogLoadsDatabaseState, organizationId: string): Entitlement[] {
+  return state.entitlements.filter(
+    (entitlement) =>
+      entitlement.organizationId === organizationId &&
+      PLAN_IS_LIVE.includes(entitlement.status)
+  )
+}
+
 /**
- * How many active landings this organization's plan allows, or null for no
- * limit — mirroring how the plan surfaces read it. The number was already being
- * advertised ("Up to 1 active landings") while nothing enforced it, which cost
- * nothing only because landings could not be created at all. Now they can, so
- * the advertised limit has to bind or the plan is decorative in the other
- * direction.
+ * How many active landings this organization's plan allows: a number, or null
+ * for genuinely uncapped. The number was already advertised ("Up to 1 active
+ * landings") while nothing enforced it, which cost nothing only because landings
+ * could not be created at all.
+ *
+ * "An live plan states no cap" and "there is no live plan" are different
+ * answers and must not collapse into the same one. Reading a missing limit as
+ * null would mean a `past_due` or `cancelled` plan — which the Stripe webhook
+ * sets — lifts the cap entirely, so a lapsed host could create landings without
+ * end while a paying host is held to three. That is the advertised limit failing
+ * open, which is worse than never having enforced it.
  */
 export function activeLandingLimitFor(
   state: LogLoadsDatabaseState,
   organizationId: string
 ): number | null {
-  const limits = state.entitlements
-    .filter((entitlement) =>
-      entitlement.organizationId === organizationId &&
-      ["trialing", "active", "comped"].includes(entitlement.status)
-    )
-    .map((entitlement) => entitlement.activeLandingLimit)
-    .filter((limit): limit is number => typeof limit === "number")
+  const plans = livePlansFor(state, organizationId)
 
-  return limits.length === 0 ? null : Math.max(...limits)
+  if (plans.length === 0) {
+    return 0
+  }
+
+  // A live plan that states no cap is uncapped, and says so for the whole
+  // organization — a stated number alongside it cannot narrow what it granted.
+  if (plans.some((entitlement) => typeof entitlement.activeLandingLimit !== "number")) {
+    return null
+  }
+
+  return Math.max(...plans.map((entitlement) => entitlement.activeLandingLimit as number))
+}
+
+/** The refusal, worded for which of the two reasons actually applies. */
+function landingAllowanceRefusal(limit: number): string {
+  return limit === 0
+    ? "Your plan does not cover any active landings. Check your billing to add one."
+    : `Your plan covers ${limit} active landing${limit === 1 ? "" : "s"}. Retire one, or talk to us about more.`
 }
 
 export function countActiveLandings(state: LogLoadsDatabaseState, organizationId: string): number {
@@ -108,7 +136,7 @@ export function countActiveLandings(state: LogLoadsDatabaseState, organizationId
   ).length
 }
 
-export function createLanding(state: LogLoadsDatabaseState, rawInput: unknown): Landing {
+export function createLanding(state: LogLoadsDatabaseState, rawInput: CreateLandingInput): Landing {
   const input = landingInputSchema.parse(rawInput)
   const context = getActiveOrganizationContext(state, input.actorUserId, input.organizationId)
   assertOrganizationAction(context, "manage_landing")
@@ -117,7 +145,7 @@ export function createLanding(state: LogLoadsDatabaseState, rawInput: unknown): 
 
   assertCondition(
     limit === null || countActiveLandings(state, input.organizationId) < limit,
-    `Your plan covers ${limit} active landing${limit === 1 ? "" : "s"}. Retire one, or talk to us about more.`
+    landingAllowanceRefusal(limit ?? 0)
   )
 
   const timestamp = nowIso()
@@ -173,7 +201,7 @@ function requireOwnLanding(
   return landing
 }
 
-export function updateLanding(state: LogLoadsDatabaseState, rawInput: unknown): Landing {
+export function updateLanding(state: LogLoadsDatabaseState, rawInput: UpdateLandingInput): Landing {
   const input = updateLandingInputSchema.parse(rawInput)
   const context = getActiveOrganizationContext(state, input.actorUserId, input.organizationId)
   assertOrganizationAction(context, "manage_landing")
@@ -188,7 +216,7 @@ export function updateLanding(state: LogLoadsDatabaseState, rawInput: unknown): 
   if (nextActive && !existing.isActive) {
     assertCondition(
       limit === null || countActiveLandings(state, input.organizationId) < limit,
-      `Your plan covers ${limit} active landing${limit === 1 ? "" : "s"}. Retire one, or talk to us about more.`
+      landingAllowanceRefusal(limit ?? 0)
     )
   }
 
@@ -225,7 +253,7 @@ export function updateLanding(state: LogLoadsDatabaseState, rawInput: unknown): 
   return updated
 }
 
-export function createHaulRoute(state: LogLoadsDatabaseState, rawInput: unknown): HaulRoute {
+export function createHaulRoute(state: LogLoadsDatabaseState, rawInput: CreateHaulRouteInput): HaulRoute {
   const input = haulRouteInputSchema.parse(rawInput)
   const context = getActiveOrganizationContext(state, input.actorUserId, input.organizationId)
   assertOrganizationAction(context, "publish_load")
@@ -269,7 +297,7 @@ export function createHaulRoute(state: LogLoadsDatabaseState, rawInput: unknown)
   return route
 }
 
-export function createRate(state: LogLoadsDatabaseState, rawInput: unknown): Rate {
+export function createRate(state: LogLoadsDatabaseState, rawInput: CreateRateInput): Rate {
   const input = rateInputSchema.parse(rawInput)
   const context = getActiveOrganizationContext(state, input.actorUserId, input.organizationId)
   assertOrganizationAction(context, "publish_load")

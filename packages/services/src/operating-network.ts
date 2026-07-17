@@ -1133,15 +1133,15 @@ export interface CreateLoadPostingWithPolicyInput {
  * state the suite has modelled since before this work, and untangling it is a
  * change to those tests, not to this feature.
  */
-function assertLandingAcceptsWork(
-  state: LogLoadsDatabaseState,
-  input: CreateLoadPostingWithPolicyInput
-): void {
-  const landing = state.landings.find((current) => current.id === input.pickupLandingId)
+function assertLandingAcceptsWork(state: LogLoadsDatabaseState, pickupLandingId: unknown): void {
+  const landing = assertFound(
+    state.landings.find((current) => current.id === pickupLandingId),
+    "That landing was not found"
+  )
 
   assertCondition(
-    !landing || landing.isActive,
-    `${landing?.name ?? "That landing"} is retired. Restore it before publishing work from it.`
+    landing.isActive,
+    `${landing.name} is retired. Restore it before publishing work from it.`
   )
 }
 
@@ -1151,7 +1151,7 @@ export function createLoadPostingWithPolicy(
 ): LoadPosting {
   const context = getContextForInput(state, input)
   assertOrganizationAction(context, "publish_load")
-  assertLandingAcceptsWork(state, input)
+  assertLandingAcceptsWork(state, input.pickupLandingId)
 
   const entity = createLoadPosting(state, { ...input, companyId: context.organizationId })
 
@@ -1195,6 +1195,11 @@ export function openDraftLoadPosting(state: LogLoadsDatabaseState, input: OpenDr
     !state.opportunityCapacities.some((capacity) => capacity.loadPostingId === load.id),
     "This work already has provisioned capacity"
   )
+  // Publishing a draft is publishing. A draft can outlive the landing it names
+  // — that is the whole point of a draft — so the retirement is checked here and
+  // not only where the draft was written, or the second publishing path quietly
+  // undoes what the first refuses.
+  assertLandingAcceptsWork(state, load.pickupLandingId)
 
   // Validate the reach before touching the load: a refused mode must not leave
   // the work flipped to open with no capacity behind it.
