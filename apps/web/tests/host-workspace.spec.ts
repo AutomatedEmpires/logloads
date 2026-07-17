@@ -34,9 +34,13 @@ test.describe.serial("host workspace setup", () => {
   // It also runs once rather than once per project, for the same reason.
   test.beforeEach(({ page }, testInfo) => {
     void page
+    // Not a claim of mobile coverage: the host workspace is a desktop surface
+    // and every test here sets a desktop viewport, as the repo's other host
+    // journeys do. It runs on one project because it consumes an active landing
+    // from the host's plan and must not spend two.
     test.skip(
       testInfo.project.name === "desktop-chrome",
-      "consumes an active landing from the host's plan; mobile-chrome covers it"
+      "consumes plan capacity; runs once, on the mobile-chrome project"
     )
   })
 
