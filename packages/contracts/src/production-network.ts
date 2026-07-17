@@ -10,6 +10,7 @@ import {
   verificationStatusSchema
 } from "./enums"
 import { organizationRoleSchema } from "./operating-network"
+import { mediaReferenceSchema } from "./schemas"
 
 const uuidSchema = z.string().uuid()
 const timestampSchema = z.string().datetime()
@@ -292,6 +293,11 @@ export const tripEventTypeV2Schema = z.enum([
   "destination_arrival",
   "unloading_started",
   "ticket_uploaded",
+  // Proof that is not a scale ticket: a photo of the load, a load slip, a
+  // delivery record. Distinct from ticket_uploaded for the same reason
+  // delivery_recorded is — the timeline renders the type verbatim, so reusing
+  // "ticket uploaded" would announce a ticket that does not exist.
+  "document_uploaded",
   // The driver stating what came off the truck. Distinct from ticket_uploaded:
   // a delivery can be recorded without any document, and a document can be
   // uploaded without a delivered figure. Trip timelines render the type, so
@@ -410,6 +416,14 @@ export const tripDocumentSchema = z.object({
   uploadedByUserId: uuidSchema,
   uploadedAt: timestampSchema,
   processingStatus: z.enum(["uploaded", "processing", "ready", "failed"]),
+  /**
+   * The stored asset, as the server read it back from the provider after upload
+   * — the only field here that proves bytes exist. `storageKey` is a name and
+   * `storageProvider` is a label; a record can carry both and reference nothing.
+   * Optional because records written before uploads were wired do exactly that,
+   * and they stay readable. Only a document with `media` can be delivered.
+   */
+  media: mediaReferenceSchema.optional().nullable(),
   auditMetadata: z.record(z.unknown()).default({})
 })
 

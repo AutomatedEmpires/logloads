@@ -370,7 +370,13 @@ function TripCard({ network, trip }: { network: NetworkView; trip: TripView }) {
           {trip.documents.map((document) => (
             <li key={document.id}>
               <Icon aria-hidden name="ops.document" size={14} />
-              <span>{document.filename}</span>
+              {document.viewable ? (
+                <a href={`/api/trip-documents/asset?documentId=${document.id}`} rel="noreferrer" target="_blank">
+                  {document.filename}
+                </a>
+              ) : (
+                <span>{document.filename}</span>
+              )}
               <em>{document.type}</em>
             </li>
           ))}

@@ -2,6 +2,7 @@ import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
 import { createLogLoadsServices, type LogLoadsServices } from "./index"
+import { stubTripDocumentMedia } from "./test-helpers"
 
 const HAULER_ORG = "33333333-3333-4333-8333-333333333331"
 const HOST_ORG = "33333333-3333-4333-8333-333333333332"
@@ -247,11 +248,9 @@ describe("assignment cancellation", () => {
     // the proof its Route Pack demanded.
     services.attachTripDocument({
       actorUserId: HAULER_ACTOR,
-      contentType: "image/jpeg",
       filename: "scale-ticket.jpg",
+      media: stubTripDocumentMedia(trip.id),
       organizationId: HAULER_ORG,
-      storageKey: `trips/${trip.id}/scale-ticket.jpg`,
-      storageProvider: "external",
       tripId: trip.id,
       type: "scale_ticket"
     })

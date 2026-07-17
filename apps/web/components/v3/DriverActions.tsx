@@ -407,6 +407,19 @@ interface SignedUploadResponse {
   uploadUrl: string
 }
 
+/**
+ * Reads a JSON body without letting a non-JSON one become the error the user
+ * reads. Gateways and crashed functions answer with HTML; the caller's own
+ * status check is what should decide the message.
+ */
+async function readJson<T>(response: Response): Promise<T | null> {
+  try {
+    return await response.json() as T
+  } catch {
+    return null
+  }
+}
+
 export function MediaUpload({
   hasCurrent,
   kind,
@@ -512,48 +525,109 @@ const PROOF_TYPES: Array<[string, string]> = [
 ]
 
 /**
- * Logs a proof record against the trip. File upload infrastructure is not wired
- * yet, so this records the proof type honestly with a generated reference name.
+ * Attaches proof of the haul: the file goes to Cloudinary under a signature
+ * scoped to this trip, then the server reads the stored asset back and records
+ * it. The evidence gate downstream trusts these records, so the record is only
+ * written once the bytes are known to exist.
  */
 export function LogProofControl({ tripId }: { tripId: string }) {
   const [type, setType] = useState("scale_ticket")
   const [error, setError] = useState<string | null>(null)
-  const [logged, setLogged] = useState(false)
+  const [logged, setLogged] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
-  const submit = () => {
-    setError(null)
-    setLogged(false)
-    startTransition(async () => {
-      const result = await attachTripDocumentAction({
-        filename: `proof-${type.replaceAll("_", "-")}-${Date.now()}.jpg`,
-        tripId,
-        type
-      })
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = event.currentTarget
+    const file = new FormData(form).get("proof")
 
-      if (!result.ok) {
-        setError(result.error ?? "The proof record could not be logged.")
-      } else {
-        setLogged(true)
+    if (!(file instanceof File) || file.size === 0) {
+      setError("Choose a photo of the ticket first.")
+      return
+    }
+
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setError("Use a JPG, PNG, or WebP photo.")
+      return
+    }
+
+    if (file.size > 10_000_000) {
+      setError("Photos must be 10 MB or smaller.")
+      return
+    }
+
+    setError(null)
+    setLogged(null)
+    startTransition(async () => {
+      try {
+        const signatureResponse = await fetch("/api/trip-documents/signature", {
+          body: JSON.stringify({ tripId }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST"
+        })
+        // A crashed function or a gateway timeout answers with HTML, so parsing
+        // before checking the status would put a JSON parser error in front of a
+        // driver standing at a scale.
+        const signature = await readJson<SignedUploadResponse & { error?: string }>(signatureResponse)
+
+        if (!signatureResponse.ok || !signature) {
+          throw new Error(signature?.error ?? "Proof uploads are not available right now.")
+        }
+
+        const uploadBody = new FormData()
+        uploadBody.append("file", file)
+        uploadBody.append("api_key", signature.apiKey)
+        uploadBody.append("signature", signature.signature)
+        for (const [key, value] of Object.entries(signature.parameters)) {
+          uploadBody.append(key, String(value))
+        }
+
+        const cloudResponse = await fetch(signature.uploadUrl, { body: uploadBody, method: "POST" })
+        const cloudAsset = await readJson<{ error?: { message?: string }; public_id?: string }>(cloudResponse)
+
+        if (!cloudResponse.ok || !cloudAsset?.public_id) {
+          throw new Error(cloudAsset?.error?.message ?? "The proof could not be uploaded.")
+        }
+
+        const result = await attachTripDocumentAction({
+          filename: file.name,
+          publicId: cloudAsset.public_id,
+          tripId,
+          type
+        })
+
+        if (!result.ok) {
+          throw new Error(result.error ?? "The proof could not be attached to this trip.")
+        }
+
+        setLogged(file.name)
+        form.reset()
+      } catch (uploadError) {
+        setError(uploadError instanceof Error ? uploadError.message : "The proof could not be uploaded.")
       }
     })
   }
 
   return (
-    <div className="proof-control">
+    <form className="proof-control" onSubmit={submit}>
       <label className="proof-control__type">
         <span className="sr-only">Proof type</span>
         <select onChange={(event) => setType(event.target.value)} value={type}>
           {PROOF_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
       </label>
-      <button className="proof-control__submit" disabled={pending} onClick={submit} type="button">
+      <label className="proof-control__file">
+        <span className="sr-only">Proof file</span>
+        <input accept="image/jpeg,image/png,image/webp" name="proof" required type="file" />
+      </label>
+      <button className="proof-control__submit" disabled={pending} type="submit">
         <Icon aria-hidden name="ops.document" size={18} />
-        {pending ? "Logging…" : "Log proof record"}
+        {pending ? "Uploading…" : "Attach proof"}
       </button>
-      {logged ? <p className="action-note">Proof record added to this trip.</p> : null}
+      <p className="proof-control__hint">JPG, PNG, or WebP · 10 MB max · visible to this haul only.</p>
+      {logged ? <p className="action-note">{logged} attached to this trip.</p> : null}
       {error ? <p className="action-error" role="alert">{error}</p> : null}
-    </div>
+    </form>
   )
 }
 

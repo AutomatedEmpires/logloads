@@ -4,7 +4,14 @@ import type { DeliveredQuantity, HaulException } from "@logloads/contracts"
 import { revalidatePath } from "next/cache"
 
 import { captureServerEvent } from "./analytics"
-import { mediaTarget, parseMediaKind, verifiedMediaReference, type MediaKind } from "./media"
+import {
+  mediaTarget,
+  parseMediaKind,
+  parseTripDocumentType,
+  tripDocumentTarget,
+  verifiedMediaReference,
+  type MediaKind
+} from "./media"
 import { mutateState, serializeError, services } from "./services"
 import { getSessionActor, type SessionActor } from "./session"
 
@@ -193,29 +200,45 @@ export async function cancelAssignmentAction(input: {
   }
 }
 
+/**
+ * Attaches proof the browser has already uploaded to Cloudinary.
+ *
+ * Order matters. Authorize against the trip first, so an unauthorized caller
+ * never reaches the provider; check the public id against the namespace that
+ * authorization returned, so we only ask about assets this trip could own; then
+ * read the asset back, so the record describes a file that exists rather than
+ * one the client asserted.
+ */
 export async function attachTripDocumentAction(input: {
   tripId: string
   type: string
+  publicId: string
   filename: string
 }): Promise<ActionResult> {
   try {
     const actor = await requireActor()
-    const extension = input.filename.split(".").pop()?.toLowerCase() ?? "jpg"
-    const contentType = extension === "pdf" ? "application/pdf" : `image/${extension === "jpg" ? "jpeg" : extension}`
+    const organizationId = actorOrganizationId(actor)
+    const type = parseTripDocumentType(input.type)
+    const target = tripDocumentTarget(services.state, actor, organizationId, input.tripId, "write")
+
+    if (!input.publicId.startsWith(`${target.publicIdPrefix}/uploads/`)) {
+      throw new Error("The uploaded document does not belong to this trip")
+    }
+
+    const media = await verifiedMediaReference(input.publicId)
 
     await commit(["/driver", "/fleet", "/host"], (draft) =>
       draft.attachTripDocument({
         actorUserId: actor.profile.id,
-        contentType,
         filename: input.filename,
-        organizationId: actorOrganizationId(actor),
-        storageKey: `trips/${input.tripId}/${Date.now()}-${input.filename}`,
-        storageProvider: "external",
-        tripId: input.tripId,
-        type: input.type as Parameters<typeof services.attachTripDocument>[0]["type"]
+        media,
+        organizationId,
+        tripId: target.tripId,
+        type
       })
     )
 
+    captureServerEvent("trip_document_attached", actor.profile.id, { type })
     return OK
   } catch (error) {
     return failure(error)

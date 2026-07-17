@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 vi.mock("server-only", () => ({}))
 
 import { ApiError } from "./api-actor"
-import { mediaTarget } from "./media"
+import { mediaTarget, parseTripDocumentType, tripDocumentTarget } from "./media"
 import type { SessionActor } from "./session"
 
 function fixture() {
@@ -53,5 +53,52 @@ describe("driver media authorization", () => {
 
     expect(otherOrganization).toBeDefined()
     expect(() => mediaTarget(state, actor, otherOrganization!.id, "profile")).toThrow(ApiError)
+  })
+})
+
+describe("trip document proof types", () => {
+  it("accepts every type the domain defines", () => {
+    for (const value of ["scale_ticket", "load_slip", "delivery_record", "photo", "other"]) {
+      expect(parseTripDocumentType(value)).toBe(value)
+    }
+  })
+
+  it("refuses anything else rather than passing it through", () => {
+    // The type decides whether a document answers the completion evidence gate,
+    // so an unknown value must fail closed instead of being cast.
+    for (const value of ["scale_ticket ", "SCALE_TICKET", "", "__proto__", null, undefined, 7, {}]) {
+      expect(() => parseTripDocumentType(value)).toThrow(ApiError)
+    }
+  })
+})
+
+describe("trip document authorization", () => {
+  it("hands a participant the trip-keyed namespace", () => {
+    const { actor, organization, state } = fixture()
+    const trip = state.tripsV2.find((candidate) => {
+      const assignment = state.assignments.find((entry) => entry.id === candidate.assignmentId)
+
+      return Boolean(assignment) && candidate.driverProfileId === actor.driverProfileId
+    })
+
+    expect(trip).toBeDefined()
+
+    const target = tripDocumentTarget(state, actor, organization.id, trip!.id, "write")
+
+    // Keyed by trip, not by organization — both sides of the haul file here.
+    expect(target.publicIdPrefix).toBe(`logloads/trip-documents/${trip!.id}`)
+    expect(target.tripId).toBe(trip!.id)
+  })
+
+  it("answers 404 for a trip that does not exist", () => {
+    const { actor, organization, state } = fixture()
+
+    try {
+      tripDocumentTarget(state, actor, organization.id, "11111111-2222-4333-8444-555555555555", "read")
+      throw new Error("expected a refusal")
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError)
+      expect((error as ApiError).status).toBe(404)
+    }
   })
 })

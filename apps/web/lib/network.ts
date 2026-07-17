@@ -311,7 +311,14 @@ export interface NetworkView {
       alreadyReviewed: boolean
     } | null
     events: Array<{ id: string; type: string; note: string | null; occurredAt: string; source: string }>
-    documents: Array<{ id: string; type: string; filename: string; processingStatus: string }>
+    documents: Array<{
+      id: string
+      type: string
+      filename: string
+      processingStatus: string
+      /** Whether a stored file backs this record and can be delivered. */
+      viewable: boolean
+    }>
   }>
   entitlements: Array<{
     id: string
@@ -1020,13 +1027,18 @@ export function buildNetworkView(
           source: event.source,
           type: event.type.replaceAll("_", " ")
         }))
+      // `viewable` tracks stored bytes, not `storageProvider`: records written
+      // before uploads were wired name a provider and a key for a file that was
+      // never uploaded. Offering those a download would hand the driver a broken
+      // link on the one screen that has to be trustworthy.
       const documents = state.tripDocuments
         .filter((document) => document.tripId === trip.id)
         .map((document) => ({
           filename: document.filename,
           id: document.id,
           processingStatus: document.processingStatus,
-          type: document.type.replaceAll("_", " ")
+          type: document.type.replaceAll("_", " "),
+          viewable: Boolean(document.media)
         }))
 
       // A completed cross-org haul opens a review prompt for the viewer's side.

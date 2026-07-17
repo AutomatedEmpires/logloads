@@ -314,6 +314,27 @@ export function HostLiveBoard({ account, network }: HostPageProps) {
                             : "Delivery confirmed"}
                         </span>
                       ) : null}
+                      {/* The host is being asked to accept a figure. The proof
+                          behind it belongs on the same card as the decision —
+                          confirming a number you cannot check is not settling,
+                          it is guessing. */}
+                      {trip.documents.length > 0 ? (
+                        <ul className="live-card__docs">
+                          {trip.documents.map((document) => (
+                            <li key={document.id}>
+                              <Icon aria-hidden name="ops.document" size={14} />
+                              {document.viewable ? (
+                                <a href={`/api/trip-documents/asset?documentId=${document.id}`} rel="noreferrer" target="_blank">
+                                  {document.filename}
+                                </a>
+                              ) : (
+                                <span>{document.filename}</span>
+                              )}
+                              <em>{document.type}</em>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
                       {/* A recorded delivery waits on the host, whether or not
                           the trip itself has closed. */}
                       {["submitted", "disputed"].includes(trip.completion.status) ? (

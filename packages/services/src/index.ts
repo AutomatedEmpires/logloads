@@ -56,6 +56,8 @@ import {
   getActiveOrganizationContext,
   getOrganizationMemberships,
   getRoutePackForAssignment,
+  getTripDocumentTarget,
+  tripDocumentPublicIdPrefix,
   listAttentionItems,
   listEntitlements,
   listFutureAvailabilityForOrganization,
@@ -142,6 +144,10 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     getOrganizationMemberships: (actorUserId: string) => getOrganizationMemberships(state, actorUserId),
     getRouteById: (routeId: string) => getRouteById(state, routeId),
     getRoutePackForAssignment: (input: Parameters<typeof getRoutePackForAssignment>[1]) => getRoutePackForAssignment(state, input),
+    getTripDocumentTarget: (
+      input: Parameters<typeof getTripDocumentTarget>[1],
+      access: Parameters<typeof getTripDocumentTarget>[2]
+    ) => getTripDocumentTarget(state, input, access),
     listRoutePackVersionsForAssignment: (input: Parameters<typeof listRoutePackVersionsForAssignment>[1]) =>
       listRoutePackVersionsForAssignment(state, input),
     refreshRoutePackForAssignment: (input: Parameters<typeof refreshRoutePackForAssignment>[1]) =>
@@ -181,5 +187,6 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
 
 export type LogLoadsServices = ReturnType<typeof createLogLoadsServices>
 
-export { getDriverMediaTarget }
+export { getDriverMediaTarget, getTripDocumentTarget, tripDocumentPublicIdPrefix }
 export type { DriverMediaKind, DriverMediaTarget } from "./driver-profile"
+export type { TripDocumentAccess, TripDocumentTarget } from "./operating-network"

@@ -2,6 +2,7 @@ import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
 import { createLogLoadsServices, type LogLoadsServices } from "./index"
+import { stubTripDocumentMedia } from "./test-helpers"
 
 const HAULER_ORG = "33333333-3333-4333-8333-333333333331"
 const HOST_ORG = "33333333-3333-4333-8333-333333333332"
@@ -99,11 +100,9 @@ function haulToDestination(services: LogLoadsServices, tripId: string) {
 function attachTicket(services: LogLoadsServices, tripId: string) {
   return services.attachTripDocument({
     actorUserId: HAULER_DRIVER_ACTOR,
-    contentType: "image/jpeg",
     filename: "scale-ticket.jpg",
+    media: stubTripDocumentMedia(tripId),
     organizationId: HAULER_ORG,
-    storageKey: `trips/${tripId}/scale-ticket.jpg`,
-    storageProvider: "external",
     tripId,
     type: "scale_ticket"
   })
