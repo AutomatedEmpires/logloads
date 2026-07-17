@@ -127,9 +127,10 @@ export function tripDocumentTarget(
  * where a caller may write; `allowed_formats` bounds what, so a participant who
  * drives the signature directly cannot park arbitrary bytes in an account shared
  * with every other product. Cloudinary reports a JPEG as `jpg`, so the list
- * carries no `jpeg`. Size stays on read-back: `max_file_size` is not an upload
- * parameter, and Cloudinary omits parameters it does not know from its own
- * string-to-sign — signing one fails every upload with 401 Invalid Signature.
+ * carries no `jpeg`. `max_file_size` is not an upload parameter, and Cloudinary
+ * omits parameters it does not know from its own string-to-sign — signing one
+ * fails every upload with 401 Invalid Signature. Size is still rechecked on
+ * read-back before writing a record.
  */
 export function signedUpload(target: { publicIdPrefix: string }) {
   const config = environment()
