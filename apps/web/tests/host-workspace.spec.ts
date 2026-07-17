@@ -63,6 +63,12 @@ test.describe.serial("host workspace setup", () => {
     await fillWhenReady(addForm, "Site contact", "Cole Cedar")
     await fillWhenReady(addForm, "Contact phone", "555-3001")
 
+    // A road condition the form offers but the schema refuses fails every
+    // submission a host tries. This spec passed while three of the five options
+    // were invented, because it never touched the field — so it picks a real
+    // one the default would not have covered.
+    await selectWhenReady(addForm, "Road condition", "muddy")
+
     await addForm.getByRole("button", { name: "Add landing" }).click()
 
     // The landing itself on the page is the durable proof, not a flash message.
@@ -81,6 +87,11 @@ test.describe.serial("host workspace setup", () => {
 
     const card = page.locator(".host-landing-card").filter({ hasText: LANDING }).first()
     await expect(card).toBeVisible({ timeout: 15_000 })
+
+    // The condition chosen when it was added survived the round trip, rather
+    // than being silently rewritten by a form whose options did not match the
+    // values the record can hold.
+    await expect(card.getByText("Road Muddy")).toBeVisible()
     await expect(card.getByText(/No lanes yet/)).toBeVisible()
 
     await card.getByLabel("Lane name").fill(LANE)

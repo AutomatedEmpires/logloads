@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useTransition, type FormEvent } from "react"
+import { rateTypeSchema, roadConditionSchema } from "@logloads/contracts"
 import { Icon } from "@logloads/ui"
 
 import {
@@ -10,22 +11,19 @@ import {
   updateLandingAction
 } from "@/lib/cockpit-actions"
 import type { HostLandingDraft, HostMillOption } from "@/lib/host-data"
+import { formatHuman } from "@/lib/v3-shared"
 
-const ROAD_CONDITIONS: Array<[string, string]> = [
-  ["", "Not recorded"],
-  ["good", "Good"],
-  ["wet", "Wet"],
-  ["soft", "Soft"],
-  ["frozen", "Frozen"],
-  ["impassable", "Impassable"]
-]
-
-const RATE_TYPES: Array<[string, string]> = [
-  ["per_ton", "Per ton"],
-  ["per_load", "Per load"],
-  ["per_hour", "Per hour"],
-  ["per_mile", "Per mile"]
-]
+/**
+ * Read from the domain enums, never typed out beside them.
+ *
+ * A hand-kept copy drifts, and both directions of drift are silent: a value the
+ * form offers that the schema refuses fails every submission the host tries,
+ * and a value the schema has that the form omits cannot be chosen at all — and
+ * worse, has no matching option when an existing record carries it, so opening
+ * the edit form on a landing shows the wrong condition and saving rewrites it.
+ */
+const ROAD_CONDITIONS = roadConditionSchema.options
+const RATE_TYPES = rateTypeSchema.options
 
 const EMPTY_LANDING: HostLandingDraft = {
   accessNotes: "",
@@ -144,8 +142,9 @@ export function LandingForm({
         <label>
           Road condition
           <select defaultValue={current.roadCondition} name="roadCondition">
-            {ROAD_CONDITIONS.map(([value, label]) => (
-              <option key={value || "none"} value={value}>{label}</option>
+            <option value="">Not recorded</option>
+            {ROAD_CONDITIONS.map((value) => (
+              <option key={value} value={value}>{formatHuman(value)}</option>
             ))}
           </select>
         </label>
@@ -308,8 +307,8 @@ export function HaulRouteForm({ landingId, mills }: { landingId: string; mills: 
         <label>
           Road condition
           <select defaultValue="good" name="roadCondition">
-            {ROAD_CONDITIONS.filter(([value]) => value !== "").map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
+            {ROAD_CONDITIONS.map((value) => (
+              <option key={value} value={value}>{formatHuman(value)}</option>
             ))}
           </select>
         </label>
@@ -369,7 +368,7 @@ export function RateForm() {
         <label>
           Pay basis
           <select defaultValue="per_ton" name="rateType">
-            {RATE_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            {RATE_TYPES.map((value) => <option key={value} value={value}>{formatHuman(value)}</option>)}
           </select>
         </label>
         <label>

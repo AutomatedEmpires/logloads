@@ -405,16 +405,23 @@ export function HostLandings({
         <section className="workspace-section">
           <header className="workspace-section__head">
             <h2>Add a landing</h2>
+            {/* No live plan and a full plan are different problems and read
+                differently: there is no slot to free when the plan covers none,
+                so telling them to retire one would send them somewhere that
+                cannot help. The service refuses these two the same way. */}
             <p>
               {setup.landingLimit === null
                 ? "Your plan does not cap active landings."
-                : `Your plan covers ${setup.landingLimit} active landing${setup.landingLimit === 1 ? "" : "s"} — ${setup.activeLandingCount} in use.`}
+                : setup.landingLimit === 0
+                  ? "Your plan does not cover any active landings."
+                  : `Your plan covers ${setup.landingLimit} active landing${setup.landingLimit === 1 ? "" : "s"} — ${setup.activeLandingCount} in use.`}
             </p>
           </header>
           {atLimit ? (
             <p className="workspace-hint">
-              You are using every active landing your plan covers. Retire one below to free the slot, or talk to us
-              about more.
+              {setup.landingLimit === 0
+                ? "Check your billing to add landing coverage before setting one up."
+                : "You are using every active landing your plan covers. Retire one below to free the slot, or talk to us about more."}
             </p>
           ) : (
             <LandingForm />
