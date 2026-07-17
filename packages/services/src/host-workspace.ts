@@ -284,6 +284,14 @@ export function setLandingActive(
 
   const existing = requireOwnLanding(state, input.landingId, input.organizationId)
 
+  // Nothing happened, so nothing is recorded. Writing `updatedAt` and an audit
+  // event for a no-op would put a retirement in the history of a landing that
+  // was already retired — the log is meant to say what changed, and a reader
+  // reconstructing this landing's life would find transitions nobody made.
+  if (input.isActive === existing.isActive) {
+    return existing
+  }
+
   // Restoring asks for plan capacity exactly as creating does; retiring returns
   // it. Re-saving a landing that is already active asks for nothing.
   if (input.isActive && !existing.isActive) {

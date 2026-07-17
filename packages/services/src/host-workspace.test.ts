@@ -494,6 +494,27 @@ describe("retiring without rewriting", () => {
     expect(edited.isActive).toBe(false)
   })
 
+  it("records nothing when the landing is already in that state", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    setLandingAllowance(services, HOST_ORG, null)
+    const landing = services.createLanding(landingInput())
+
+    const unchanged = services.setLandingActive({
+      actorUserId: HOST_OWNER,
+      isActive: true,
+      landingId: landing.id,
+      organizationId: HOST_ORG
+    })
+
+    // The audit log says what changed. A retirement in the history of a landing
+    // that was never retired is a transition nobody made, and a reader
+    // reconstructing this landing's life would believe it.
+    expect(unchanged.updatedAt).toBe(landing.updatedAt)
+    expect(services.state.auditEvents.filter((event) =>
+      ["landing_retired", "landing_restored"].includes(event.action) && event.entityId === landing.id
+    )).toHaveLength(0)
+  })
+
   it("refuses to retire another organization's landing", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const foreign = services.state.landings.find((landing) => landing.companyId !== HOST_ORG)
