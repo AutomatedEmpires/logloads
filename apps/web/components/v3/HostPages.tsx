@@ -4,7 +4,12 @@ import Link from "next/link"
 import type { CSSProperties } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
-import type { HostLandingRecord, HostLoadPlanFacts, HostPublishingOptions } from "@/lib/host-data"
+import type {
+  HostLandingRecord,
+  HostLoadPlanFacts,
+  HostPublishingOptions,
+  HostWorkspaceSetup
+} from "@/lib/host-data"
 import type { NetworkLoadView, NetworkView } from "@/lib/network"
 import { formatDateTime, formatHuman, tripStatusLabel } from "@/lib/v3-shared"
 import { DecisionList, toneForNotice } from "./Common"
@@ -20,6 +25,12 @@ import {
   SettleDeliveryControl,
   type PendingCapacityRequest
 } from "./HostActions"
+import {
+  HaulRouteForm,
+  LandingActiveToggle,
+  LandingForm,
+  RateForm
+} from "./HostWorkspaceActions"
 import { TripReviewForm } from "./Reputation"
 import { AppShell, EmptyState, Metric, type ShellAccount } from "./Shells"
 
@@ -375,15 +386,72 @@ export function HostLiveBoard({ account, network }: HostPageProps) {
 
 export function HostLandings({
   account,
+  canManageLandings,
+  canPublish,
   landings,
-  network
-}: HostPageProps & { landings: HostLandingRecord[] }) {
+  network,
+  setup
+}: HostPageProps & {
+  canManageLandings: boolean
+  canPublish: boolean
+  landings: HostLandingRecord[]
+  setup: HostWorkspaceSetup
+}) {
+  const atLimit = setup.landingLimit !== null && setup.activeLandingCount >= setup.landingLimit
+
   return (
     <AppShell account={account} kicker="Access control" role="host" title="Landings">
+      {canManageLandings ? (
+        <section className="workspace-section">
+          <header className="workspace-section__head">
+            <h2>Add a landing</h2>
+            <p>
+              {setup.landingLimit === null
+                ? "Your plan does not cap active landings."
+                : `Your plan covers ${setup.landingLimit} active landing${setup.landingLimit === 1 ? "" : "s"} — ${setup.activeLandingCount} in use.`}
+            </p>
+          </header>
+          {atLimit ? (
+            <p className="workspace-hint">
+              You are using every active landing your plan covers. Retire one below to free the slot, or talk to us
+              about more.
+            </p>
+          ) : (
+            <LandingForm />
+          )}
+        </section>
+      ) : null}
+
+      {canPublish ? (
+        <section className="workspace-section">
+          <header className="workspace-section__head">
+            <h2>Rates you pay</h2>
+            <p>Every posting carries one. Add the rates you haul at, then pick one when you publish.</p>
+          </header>
+          {setup.rates.length > 0 ? (
+            <ul className="workspace-list">
+              {setup.rates.map((rate) => (
+                <li key={rate.id}>
+                  <strong>{rate.label}</strong>
+                  <span>from {rate.effectiveDate}{rate.notes ? ` · ${rate.notes}` : ""}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="workspace-hint">No rates on file yet. Work cannot be published without one.</p>
+          )}
+          <RateForm />
+        </section>
+      ) : null}
+
       <section className="host-landing-grid">
         {landings.length === 0 ? (
           <EmptyState
-            body={`No landing records are linked to ${network.activeOrganization.name} yet. Landing records are set up during onboarding — contact LogLoads support to add your first landing.`}
+            body={
+              canManageLandings
+                ? `No landings are on file for ${network.activeOrganization.name} yet. Add the first one above — work is published from a landing, so nothing can be posted until one exists.`
+                : `No landings are on file for ${network.activeOrganization.name} yet. An owner, admin, or landing manager can add one.`
+            }
             title="No landings on file."
           />
         ) : (
@@ -428,11 +496,50 @@ export function HostLandings({
                 <Icon aria-hidden name="status.lock" size={16} />
                 {landing.accessPolicyLine}
               </p>
+
+              {/* A lane is what a posting quotes a driver: where the logs go, how
+                  far, how long. Lanes hang off the landing they leave from. */}
+              <div className="workspace-lanes">
+                <h3>Lanes from this landing</h3>
+                {landing.lanes.length === 0 ? (
+                  <p className="workspace-hint">
+                    No lanes yet. Work published from this landing needs one, so a driver knows where the load is going.
+                  </p>
+                ) : (
+                  <ul className="workspace-list">
+                    {landing.lanes.map((lane) => (
+                      <li key={lane.id}>
+                        <strong>{lane.routeName}</strong>
+                        <span>
+                          {lane.millLabel} · {lane.distanceMiles} mi · {lane.runTimeMinutes} min ·{" "}
+                          {formatHuman(lane.roadCondition)} road
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {canPublish ? <HaulRouteForm landingId={landing.id} mills={setup.mills} /> : null}
+              </div>
+
+              {canManageLandings ? (
+                <details className="workspace-edit">
+                  <summary>Edit landing</summary>
+                  <LandingForm landing={landing.editable} landingId={landing.id} />
+                  <LandingActiveToggle
+                    isActive={landing.isActive}
+                    landing={landing.editable}
+                    landingId={landing.id}
+                  />
+                </details>
+              ) : null}
+
               <footer>
                 <span>
-                  {landing.lastVerifiedAt
-                    ? `Details verified ${formatDateTime(landing.lastVerifiedAt)}`
-                    : "Details not yet verified"}
+                  {landing.isActive
+                    ? landing.lastVerifiedAt
+                      ? `Details verified ${formatDateTime(landing.lastVerifiedAt)}`
+                      : "Details not yet verified"
+                    : "Retired — not available for new work"}
                 </span>
                 <Link className="action-link action-link--secondary" href="/host/opportunities">
                   Publish from this landing
