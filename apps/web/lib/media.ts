@@ -2,8 +2,14 @@ import "server-only"
 
 import { v2 as cloudinary } from "cloudinary"
 import type { LogLoadsDatabaseState } from "@logloads/db"
-import type { MediaReference } from "@logloads/contracts"
-import { getDriverMediaTarget, type DriverMediaTarget } from "@logloads/services"
+import { tripDocumentSchema, type MediaReference, type TripDocument } from "@logloads/contracts"
+import {
+  getDriverMediaTarget,
+  getTripDocumentTarget,
+  type DriverMediaTarget,
+  type TripDocumentAccess,
+  type TripDocumentTarget
+} from "@logloads/services"
 
 import { ApiError } from "./api-actor"
 import type { SessionActor } from "./session"
@@ -25,7 +31,7 @@ function environment(): CloudinaryEnvironment {
   const apiSecret = process.env.CLOUDINARY_API_SECRET
 
   if (!cloudName || !apiKey || !apiSecret) {
-    throw new ApiError("Photo uploads are not activated for this environment", 503)
+    throw new ApiError("File uploads are not activated for this environment", 503)
   }
 
   cloudinary.config({ api_key: apiKey, api_secret: apiSecret, cloud_name: cloudName, secure: true })
@@ -38,6 +44,35 @@ export function parseMediaKind(value: unknown): MediaKind {
   }
 
   return value as MediaKind
+}
+
+/**
+ * A request body as an object, or a refusal. `null` and `7` are both valid JSON,
+ * so reading a field straight off `request.json()` throws a TypeError that
+ * surfaces as a raw 400 instead of the 422 the route meant to give.
+ */
+export function parseJsonObject(body: unknown): Record<string, unknown> {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    throw new ApiError("The request body must be a JSON object", 422)
+  }
+
+  return body as Record<string, unknown>
+}
+
+/**
+ * Validated, never cast, and read from the domain schema rather than copied —
+ * a hand-kept list would silently reject a proof type the domain later adds.
+ * The type decides whether a document answers the completion evidence gate, so
+ * a caller must not be able to invent one either.
+ */
+export function parseTripDocumentType(value: unknown): TripDocument["type"] {
+  const parsed = tripDocumentSchema.shape.type.safeParse(value)
+
+  if (!parsed.success) {
+    throw new ApiError("Choose a supported proof type", 422)
+  }
+
+  return parsed.data
 }
 
 export function mediaTarget(
@@ -65,7 +100,30 @@ export function mediaTarget(
   }
 }
 
-export function signedUpload(target: MediaTarget) {
+/**
+ * Resolves the trip's document namespace, or refuses. Authorization is the
+ * service's rule (participation in the trip, plus the action the access level
+ * names) — this only maps the refusal onto an HTTP status.
+ */
+export function tripDocumentTarget(
+  state: LogLoadsDatabaseState,
+  actor: SessionActor,
+  organizationId: string,
+  tripId: string,
+  access: TripDocumentAccess
+): TripDocumentTarget {
+  try {
+    return getTripDocumentTarget(state, { actorUserId: actor.profile.id, organizationId, tripId }, access)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "The trip could not be resolved"
+    const status = message.includes("not a participant") || message.includes("cannot") ? 403 : 404
+
+    throw new ApiError(message, status)
+  }
+}
+
+/** Signs an upload into one namespace. The prefix is the whole authorization. */
+export function signedUpload(target: { publicIdPrefix: string }) {
   const config = environment()
   const timestamp = Math.floor(Date.now() / 1000)
   const publicId = `${target.publicIdPrefix}/uploads/${crypto.randomUUID()}`
@@ -83,6 +141,18 @@ export function signedUpload(target: MediaTarget) {
     signature: cloudinary.utils.api_sign_request(parameters, config.apiSecret),
     uploadUrl: `https://api.cloudinary.com/v1_1/${config.cloudName}/image/upload`
   }
+}
+
+/**
+ * The provider's own stored-at time, falling back to now when it is missing or
+ * unparseable. `mediaReferenceSchema` demands a real timestamp, so a malformed
+ * one would reject an asset that genuinely exists — the read-back moment is a
+ * close enough truth to keep a driver's proof attachable.
+ */
+function assetCreatedAt(createdAt: unknown): string {
+  const parsed = typeof createdAt === "string" ? new Date(createdAt) : null
+
+  return parsed && !Number.isNaN(parsed.getTime()) ? parsed.toISOString() : new Date().toISOString()
 }
 
 export async function verifiedMediaReference(publicId: string): Promise<MediaReference> {
@@ -104,7 +174,10 @@ export async function verifiedMediaReference(publicId: string): Promise<MediaRef
     height: asset.height,
     provider: "cloudinary",
     publicId: asset.public_id,
-    uploadedAt: new Date().toISOString(),
+    // When the asset was stored, per the provider that stored it — not when we
+    // got around to reading it back. Trip documents sort on this, and a retried
+    // attach would otherwise date a ticket to the retry rather than the scale.
+    uploadedAt: assetCreatedAt(asset.created_at),
     version: asset.version,
     width: asset.width
   }
@@ -124,5 +197,23 @@ export function signedDeliveryUrl(photo: MediaReference): string {
     type: "authenticated",
     version: photo.version,
     width: 900
+  })
+}
+
+/**
+ * Delivers a trip document as uploaded — no downscale, no re-encode, no
+ * quality heuristic. A profile photo can be resized to fit a card; a scale
+ * ticket is evidence, and the number the whole settlement turns on is printed
+ * small. A derivative that dropped a digit would still look like a document.
+ */
+export function signedDocumentUrl(media: MediaReference): string {
+  environment()
+
+  return cloudinary.url(media.publicId, {
+    format: media.format,
+    secure: true,
+    sign_url: true,
+    type: "authenticated",
+    version: media.version
   })
 }

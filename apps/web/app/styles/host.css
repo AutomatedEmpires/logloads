@@ -251,6 +251,16 @@
 .live-board .live-card strong {
   font-size: 1rem;
 }
+.live-card__docs { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.live-card__docs li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.live-card__docs em { color: var(--muted); font-style: normal; text-transform: capitalize; }
 
 /* Landings ------------------------------------------------------------------- */
 

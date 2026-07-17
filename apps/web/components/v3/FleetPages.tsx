@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useMemo, useState, type ReactNode } from "react"
+import { Fragment, useMemo, useState, type ReactNode } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
 import type { NetworkLoadView, NetworkView } from "@/lib/network"
@@ -599,8 +599,22 @@ export function FleetTrips({ account, network }: FleetShellProps) {
                     {trip.documents.length > 0 ? (
                       <li>
                         <span className="fleet-trip-timeline__time">Documents</span>
+                        {/* A dispatcher chasing a disputed figure needs the
+                            ticket itself, not its filename. Records with no
+                            stored file stay listed, unlinked. */}
                         <span className="fleet-trip-timeline__note">
-                          {trip.documents.map((document) => document.filename).join(", ")}
+                          {trip.documents.map((document, index) => (
+                            <Fragment key={document.id}>
+                              {index > 0 ? ", " : null}
+                              {document.viewable ? (
+                                <a href={`/api/trip-documents/asset?documentId=${document.id}`} rel="noreferrer" target="_blank">
+                                  {document.filename}
+                                </a>
+                              ) : (
+                                document.filename
+                              )}
+                            </Fragment>
+                          ))}
                         </span>
                       </li>
                     ) : null}

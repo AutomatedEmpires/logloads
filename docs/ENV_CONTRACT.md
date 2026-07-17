@@ -30,11 +30,23 @@ fails closed rather than silently replacing missing production data with seed da
 | Group | Variables |
 |---|---|
 | Billing | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_DISPATCH` |
-| Private media | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` |
+| Private media | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` — see note below |
 | Email | `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_REPLY_TO`, `SUPPORT_EMAIL`, `LOGLOADS_CONTACT_EMAIL` |
 | Analytics | `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` |
 | Errors | `SENTRY_DSN` |
 | Maps | `NEXT_PUBLIC_MAPBOX_TOKEN` (keyless MapLibre fallback when absent) |
+
+**Cloudinary is genuinely optional only for driver and equipment photos.** Trip
+documents — the proof a haul was delivered — go through the same variables, and
+a proof record can no longer be created without a stored file. So in an
+environment without them a driver cannot attach proof at all, and a haul whose
+Route Pack requires a scale ticket cannot reach `completed`. Treat them as
+required wherever hauling is live.
+
+(Records written before uploads were wired still satisfy the completion gate,
+which asks only for a document of an evidence type — but they carry no file and
+are never offered for download. That residue is bounded to hauls already in
+flight; no new record can be medialess.)
 
 ## Must not be set in production
 

@@ -9,6 +9,7 @@ import {
   canTransitionAssignmentStatusV2,
   canTransitionLoadPostingStatus,
   evaluateLoadCompatibility,
+  mediaReferenceSchema,
   notificationSchema,
   organizationRoleCan,
   transitionAssignmentStatus,
@@ -27,6 +28,7 @@ import {
   type FutureAvailability,
   type LoadPosting,
   type LoadStatus,
+  type MediaReference,
   type NotificationType,
   type OperationalNotice,
   type OrganizationAction,
@@ -156,11 +158,37 @@ export interface AttachTripDocumentInput {
   organizationId?: string
   tripId: string
   type: TripDocument["type"]
-  storageProvider: TripDocument["storageProvider"]
-  storageKey: string
+  /**
+   * The asset as the caller's provider read it back — never as a client
+   * described it. Storage provider, key, and content type are derived from
+   * this, so a caller cannot name a file it did not upload.
+   */
+  media: MediaReference
   filename: string
-  contentType: string
-  auditMetadata?: Record<string, unknown>
+}
+
+export interface TripDocumentTarget {
+  tripId: string
+  publicIdPrefix: string
+}
+
+/**
+ * Reading a haul's paperwork and adding to it are different rights.
+ *
+ * Filing proof is operating the haul (`progress_trip`). Reading it is not: the
+ * role that settles a delivery is `assign_capacity`, and `landing_manager` holds
+ * that without ever holding `progress_trip`. Gating the read on the write action
+ * would hand the settling role a document it is forbidden to open — asking it to
+ * confirm a figure it cannot check, which is the exact failure this feature
+ * exists to end. A scale ticket is the commercial record of the haul, not the
+ * private location detail `view_private_location` guards on a Route Pack, so
+ * anyone who can see the trip can see what it delivered.
+ */
+export type TripDocumentAccess = "read" | "write"
+
+const TRIP_DOCUMENT_ACTIONS: Record<TripDocumentAccess, OrganizationAction> = {
+  read: "view_network",
+  write: "progress_trip"
 }
 
 export interface CreateOperationalNoticeInput {
@@ -1735,9 +1763,37 @@ export function refreshRoutePackForAssignment(
   return { changed: true, routePack: result.pack }
 }
 
-export function attachTripDocument(state: LogLoadsDatabaseState, input: AttachTripDocumentInput): TripDocument {
+/**
+ * Where this trip's documents live in the media provider's namespace.
+ *
+ * Keyed by trip, not by organization: two organizations haul one trip, and the
+ * thing a document belongs to is the trip. An org-keyed prefix would scatter one
+ * trip's proof across two namespaces depending on who happened to upload it, and
+ * every reader would then have to accept both — a wider door than the rule it
+ * was meant to enforce. Authorization is participation in the trip, so the path
+ * says the same thing the check does.
+ *
+ * The id is not a secret and is not doing security work: assets are stored
+ * `authenticated`, so delivery needs a URL only this server signs, and only
+ * after `getTripDocumentTarget` has agreed.
+ */
+export function tripDocumentPublicIdPrefix(tripId: string): string {
+  return `logloads/trip-documents/${tripId}`
+}
+
+/**
+ * Resolves — and authorizes — the upload namespace for a trip's documents.
+ * Shared by the signing endpoint, the attach transaction, and the read path, so
+ * all three answer "may this actor touch this trip's paperwork" with one rule
+ * rather than three that drift.
+ */
+export function getTripDocumentTarget(
+  state: LogLoadsDatabaseState,
+  input: { actorUserId?: string; organizationId?: string; tripId: string },
+  access: TripDocumentAccess
+): TripDocumentTarget {
   const context = getContextForInput(state, input)
-  assertOrganizationAction(context, "progress_trip")
+  assertOrganizationAction(context, TRIP_DOCUMENT_ACTIONS[access])
 
   const trip = assertFound(
     state.tripsV2.find((current) => current.id === input.tripId),
@@ -1749,17 +1805,89 @@ export function attachTripDocument(state: LogLoadsDatabaseState, input: AttachTr
   )
   assertTripParticipant(state, context, assignment)
 
+  return { publicIdPrefix: tripDocumentPublicIdPrefix(trip.id), tripId: trip.id }
+}
+
+/**
+ * Who filed this paperwork, in the timeline's own vocabulary.
+ *
+ * Only two answers are true. The haul's own driver photographs the ticket at the
+ * scale; anyone else is office staff on one side or the other, which the seed's
+ * own timelines already call `dispatcher`. Notably NOT `destination`: a
+ * destination is a mill, and mills are not organizations here — `mills.companyId`
+ * and `destinationFacilities.managedByOrganizationId` are both null, so no
+ * destination has members and none can file anything. The organization that
+ * posted the load is the *host* (`loadPostings.companyId`, the same field the
+ * network view reads as `hostOrgId`), and it sits at the landing end. Calling it
+ * the destination would tell a dispatcher that a mill with no login uploaded the
+ * ticket.
+ */
+function tripDocumentEventSource(
+  state: LogLoadsDatabaseState,
+  context: ActiveOrganizationContext,
+  trip: TripV2
+): TripEvent["source"] {
+  const driver = state.driverProfiles.find((candidate) => candidate.id === trip.driverProfileId)
+
+  return driver?.userId === context.actorUserId ? "driver" : "dispatcher"
+}
+
+/**
+ * `ticket_uploaded` means a ticket. A photo of the load or a delivery record is
+ * proof, but it is not a scale ticket, and the timeline renders the event type
+ * verbatim — so reusing it would print "ticket uploaded" above a note reading
+ * "photo uploaded." and tell a reader a ticket arrived when none did.
+ */
+function tripDocumentEventType(type: TripDocument["type"]): TripEvent["type"] {
+  return type === "scale_ticket" ? "ticket_uploaded" : "document_uploaded"
+}
+
+export function attachTripDocument(state: LogLoadsDatabaseState, input: AttachTripDocumentInput): TripDocument {
+  const context = getContextForInput(state, input)
+  const target = getTripDocumentTarget(state, input, "write")
+  const trip = getTripById(state, target.tripId)
+  // Validated before the namespace check, so the check runs on a known shape
+  // rather than on whatever the caller's types claimed at compile time.
+  const media = mediaReferenceSchema.parse(input.media)
+
+  // The signature this asset was uploaded under is scoped to one trip, so an
+  // asset outside this trip's prefix was signed for something else. Re-checked
+  // here and not only at the edge: this is the last point before the record is
+  // written, and the record is what the evidence gate trusts.
+  assertCondition(
+    media.publicId.startsWith(`${target.publicIdPrefix}/uploads/`),
+    "The uploaded document does not belong to this trip"
+  )
+
+  // Idempotent by asset. A compare-and-swap replay, or a retry of a call whose
+  // response was lost, must not file one physical ticket as two records and two
+  // timeline events. Public ids are minted server-side per signature, so the
+  // same id genuinely means the same upload.
+  const existing = state.tripDocuments.find(
+    (candidate) => candidate.tripId === target.tripId && candidate.storageKey === media.publicId
+  )
+
+  if (existing) {
+    return existing
+  }
+
   const document = tripDocumentSchema.parse({
-    auditMetadata: input.auditMetadata ?? {},
-    contentType: requireText(input.contentType, "contentType"),
+    // Deliberately not caller-supplied. The asset's own facts live on `media`;
+    // an open metadata bag on the input would be a way back in for exactly the
+    // client-described evidence this path exists to stop.
+    auditMetadata: {},
+    contentType: `image/${media.format === "jpg" ? "jpeg" : media.format}`,
     filename: requireText(input.filename, "filename"),
     id: createUuid(),
-    processingStatus: "uploaded",
-    storageKey: requireText(input.storageKey, "storageKey"),
-    storageProvider: input.storageProvider,
-    tripId: trip.id,
+    media,
+    // The asset was read back from the provider before we got here, so it is
+    // stored and readable now — not queued for someone to confirm later.
+    processingStatus: "ready",
+    storageKey: media.publicId,
+    storageProvider: "cloudinary",
+    tripId: target.tripId,
     type: input.type,
-    uploadedAt: nowIso(),
+    uploadedAt: media.uploadedAt,
     uploadedByUserId: context.actorUserId
   })
 
@@ -1771,9 +1899,9 @@ export function attachTripDocument(state: LogLoadsDatabaseState, input: AttachTr
     metadata: { documentId: document.id },
     note: `${document.type.replaceAll("_", " ")} uploaded.`,
     occurredAt: document.uploadedAt,
-    source: "driver",
-    tripId: trip.id,
-    type: "ticket_uploaded"
+    source: tripDocumentEventSource(state, context, trip),
+    tripId: document.tripId,
+    type: tripDocumentEventType(document.type)
   }))
 
   return document

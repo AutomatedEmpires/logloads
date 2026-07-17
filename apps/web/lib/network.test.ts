@@ -47,6 +47,39 @@ function networkFixture() {
   return { load, request, services, sourceContext, viewer }
 }
 
+describe("trip document deliverability", () => {
+  it("offers no download for a record that names a file nobody stored", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const legacy = services.state.tripDocuments[0]
+
+    if (!legacy) throw new Error("the fixture has no pre-existing trip document")
+
+    const trip = services.state.tripsV2.find((candidate) => candidate.id === legacy.tripId)
+    const driver = services.state.driverProfiles.find((candidate) => candidate.id === trip?.driverProfileId)
+
+    if (!trip || !driver) throw new Error("the legacy trip document fixture is incomplete")
+
+    const view = buildNetworkView(
+      services.state,
+      { actorUserId: driver.userId, kind: "actor", organizationId: driver.companyId },
+      new Date("2026-06-05T12:00:00.000Z")
+    )
+    const document = view.trips
+      .find((candidate) => candidate.id === trip.id)
+      ?.documents.find((candidate) => candidate.id === legacy.id)
+
+    expect(document).toBeDefined()
+    // This record claims `storageProvider: "cloudinary"` and carries a storage
+    // key, but no file was ever uploaded — so keying the download on either of
+    // those would render a link that 404s on the one screen that has to be
+    // trustworthy. Stored bytes are the only honest signal.
+    expect(legacy.storageProvider).toBe("cloudinary")
+    expect(legacy.storageKey.length).toBeGreaterThan(0)
+    expect(legacy.media ?? null).toBeNull()
+    expect(document?.viewable).toBe(false)
+  })
+})
+
 describe("driver network access", () => {
   it("keeps exact load access locked while a request is pending and unlocks it after approval", () => {
     const { request, services, sourceContext, viewer } = networkFixture()

@@ -217,8 +217,20 @@
   font-weight: 800;
 }
 .proof-control__submit:disabled { opacity: 0.6; }
+.proof-control__file input {
+  max-width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+  padding: 8px 10px;
+  font: inherit;
+}
+.proof-control__hint,
 .proof-control .action-note,
 .proof-control .action-error { flex-basis: 100%; }
+.proof-control__hint { margin: 0; color: var(--muted); font-size: 13px; }
 
 /* --- Delivered record ------------------------------------------------------ */
 .completion-form {
@@ -462,6 +474,7 @@
   .quickset button { flex: 1 1 100%; }
   .proof-control__submit { flex: 1; justify-content: center; }
   .proof-control select { flex: 1; }
+  .proof-control__file { flex-basis: 100%; }
   .signout-button { width: 100%; }
 }
 
