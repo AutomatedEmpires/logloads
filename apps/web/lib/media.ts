@@ -47,6 +47,19 @@ export function parseMediaKind(value: unknown): MediaKind {
 }
 
 /**
+ * A request body as an object, or a refusal. `null` and `7` are both valid JSON,
+ * so reading a field straight off `request.json()` throws a TypeError that
+ * surfaces as a raw 400 instead of the 422 the route meant to give.
+ */
+export function parseJsonObject(body: unknown): Record<string, unknown> {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    throw new ApiError("The request body must be a JSON object", 422)
+  }
+
+  return body as Record<string, unknown>
+}
+
+/**
  * Validated, never cast, and read from the domain schema rather than copied —
  * a hand-kept list would silently reject a proof type the domain later adds.
  * The type decides whether a document answers the completion evidence gate, so

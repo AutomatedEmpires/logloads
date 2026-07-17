@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 vi.mock("server-only", () => ({}))
 
 import { ApiError } from "./api-actor"
-import { mediaTarget, parseTripDocumentType, tripDocumentTarget } from "./media"
+import { mediaTarget, parseJsonObject, parseTripDocumentType, tripDocumentTarget } from "./media"
 import type { SessionActor } from "./session"
 
 function fixture() {
@@ -53,6 +53,20 @@ describe("driver media authorization", () => {
 
     expect(otherOrganization).toBeDefined()
     expect(() => mediaTarget(state, actor, otherOrganization!.id, "profile")).toThrow(ApiError)
+  })
+})
+
+describe("request bodies", () => {
+  it("refuses JSON that is valid but is not an object", () => {
+    // `null` and `7` parse fine, so reading a field straight off request.json()
+    // throws a TypeError and surfaces as a raw 400 instead of the route's 422.
+    for (const body of [null, 7, "text", true, ["a"]]) {
+      expect(() => parseJsonObject(body)).toThrow(ApiError)
+    }
+  })
+
+  it("passes an object through", () => {
+    expect(parseJsonObject({ tripId: "abc" })).toEqual({ tripId: "abc" })
   })
 })
 

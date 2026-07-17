@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 
 import { ApiError, apiErrorResponse, requireApiActor } from "@/lib/api-actor"
-import { signedUpload, tripDocumentTarget } from "@/lib/media"
+import { parseJsonObject, signedUpload, tripDocumentTarget } from "@/lib/media"
 import { services } from "@/lib/services"
 
 /**
@@ -12,7 +12,7 @@ import { services } from "@/lib/services"
 export async function POST(request: NextRequest) {
   try {
     const { actor, organizationId } = await requireApiActor()
-    const payload = await request.json() as { tripId?: unknown }
+    const payload = parseJsonObject(await request.json())
 
     if (typeof payload.tripId !== "string" || payload.tripId.length === 0) {
       throw new ApiError("A trip is required to upload proof", 422)

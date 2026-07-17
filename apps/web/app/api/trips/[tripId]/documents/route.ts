@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 
 import { ApiError, apiErrorResponse, requireApiActor } from "@/lib/api-actor"
-import { parseTripDocumentType, tripDocumentTarget, verifiedMediaReference } from "@/lib/media"
+import { parseJsonObject, parseTripDocumentType, tripDocumentTarget, verifiedMediaReference } from "@/lib/media"
 import { mutateState, services } from "@/lib/services"
 
 /**
@@ -18,13 +18,11 @@ export async function POST(
 ) {
 	try {
 		const { tripId } = await context.params
-		const payload = await request.json() as {
-			organizationId?: string
-			type?: unknown
-			publicId?: unknown
-			filename?: unknown
-		}
-		const { actor, organizationId } = await requireApiActor(payload.organizationId)
+		const payload = parseJsonObject(await request.json())
+		const requestedOrganizationId = typeof payload.organizationId === "string"
+			? payload.organizationId
+			: undefined
+		const { actor, organizationId } = await requireApiActor(requestedOrganizationId)
 		const type = parseTripDocumentType(payload.type)
 
 		if (typeof payload.publicId !== "string" || payload.publicId.length === 0) {

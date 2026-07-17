@@ -36,11 +36,17 @@ fails closed rather than silently replacing missing production data with seed da
 | Errors | `SENTRY_DSN` |
 | Maps | `NEXT_PUBLIC_MAPBOX_TOKEN` (keyless MapLibre fallback when absent) |
 
-**Private media is only feature-gated for driver and equipment photos.** Trip
+**Cloudinary is genuinely optional only for driver and equipment photos.** Trip
 documents — the proof a haul was delivered — go through the same variables, and
-the completion evidence gate will not accept a record without a stored file. In
-an environment without them, a haul whose Route Pack requires a scale ticket
-cannot reach `completed`. Treat them as required wherever hauling is live.
+a proof record can no longer be created without a stored file. So in an
+environment without them a driver cannot attach proof at all, and a haul whose
+Route Pack requires a scale ticket cannot reach `completed`. Treat them as
+required wherever hauling is live.
+
+(Records written before uploads were wired still satisfy the completion gate,
+which asks only for a document of an evidence type — but they carry no file and
+are never offered for download. That residue is bounded to hauls already in
+flight; no new record can be medialess.)
 
 ## Must not be set in production
 

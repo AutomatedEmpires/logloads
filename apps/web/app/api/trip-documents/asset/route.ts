@@ -56,7 +56,11 @@ export async function GET(request: NextRequest) {
 
     return new NextResponse(response.body, {
       headers: {
-        "Cache-Control": "private, max-age=300",
+        // Not cached, not merely private. Trip access is re-checked on every
+        // request, and a cached copy would keep answering for five minutes after
+        // a membership was revoked or a shared cab tablet was signed out of.
+        // This is evidence in a settlement; one extra fetch per click is cheap.
+        "Cache-Control": "private, no-store",
         // RFC 6266 extended form: the driver's own filename survives spaces and
         // non-ASCII intact, and percent-encoding it keeps quotes and newlines
         // from breaking out of the header.
