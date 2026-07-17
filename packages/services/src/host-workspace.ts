@@ -43,9 +43,18 @@ const landingInputSchema = actorContextSchema.extend({
   slotWindowMinutes: z.number().int().positive().max(480).optional().nullable()
 })
 
+/**
+ * Editing a landing's details. Deliberately cannot retire or restore it —
+ * that is `setLandingActive`, which sends an id and a flag rather than a whole
+ * record. One way to do it means no path where a stale form quietly flips it.
+ */
 const updateLandingInputSchema = landingInputSchema.extend({
+  landingId: z.string().uuid()
+})
+
+const setLandingActiveInputSchema = actorContextSchema.extend({
   landingId: z.string().uuid(),
-  isActive: z.boolean().optional()
+  isActive: z.boolean()
 })
 
 /**
@@ -77,6 +86,7 @@ const rateInputSchema = actorContextSchema.extend({
 
 export type CreateLandingInput = z.input<typeof landingInputSchema>
 export type UpdateLandingInput = z.input<typeof updateLandingInputSchema>
+export type SetLandingActiveInput = z.input<typeof setLandingActiveInputSchema>
 export type CreateHaulRouteInput = z.input<typeof haulRouteInputSchema>
 export type CreateRateInput = z.input<typeof rateInputSchema>
 
@@ -121,6 +131,15 @@ export function activeLandingLimitFor(
   }
 
   return Math.max(...plans.map((entitlement) => entitlement.activeLandingLimit as number))
+}
+
+/**
+ * An optional field an update did not mention keeps what it had. Only an
+ * explicit `null` clears it — "I said nothing about this" and "remove this" are
+ * different instructions and must not share a representation.
+ */
+function keepUnlessGiven<T>(given: T | null | undefined, existing: T | null): T | null {
+  return given === undefined ? existing : given
 }
 
 /** The refusal, worded for which of the two reasons actually applies. */
@@ -207,32 +226,26 @@ export function updateLanding(state: LogLoadsDatabaseState, rawInput: UpdateLand
   assertOrganizationAction(context, "manage_landing")
 
   const existing = requireOwnLanding(state, input.landingId, input.organizationId)
-  const nextActive = input.isActive ?? existing.isActive
-  const limit = activeLandingLimitFor(state, input.organizationId)
 
-  // Reactivating a retired landing consumes plan capacity exactly as creating
-  // one does, so it answers to the same limit. Editing a landing that is already
-  // active must not: it is not asking for capacity it does not already hold.
-  if (nextActive && !existing.isActive) {
-    assertCondition(
-      limit === null || countActiveLandings(state, input.organizationId) < limit,
-      landingAllowanceRefusal(limit ?? 0)
-    )
-  }
-
+  // No allowance check: an edit cannot change whether the landing is active, so
+  // it never asks for capacity the organization does not already hold. Asking
+  // for capacity is `createLanding` and `setLandingActive`, and both check.
   const timestamp = nowIso()
+  // `null` clears, `undefined` leaves alone. Collapsing the two with `?? null`
+  // makes every optional field an erasure hazard: a caller that simply did not
+  // mention the approach notes would delete them, and the caller with the most
+  // to lose is the one editing a landing it did not author.
   const updated = landingSchema.parse({
     ...existing,
-    accessNotes: input.accessNotes ?? null,
+    accessNotes: keepUnlessGiven(input.accessNotes, existing.accessNotes),
     addressLine1: input.addressLine1,
     city: input.city,
     contact: input.contact,
     coordinates: input.coordinates,
-    isActive: nextActive,
     name: input.name,
     postalCode: input.postalCode,
-    roadCondition: input.roadCondition ?? null,
-    slotWindowMinutes: input.slotWindowMinutes ?? null,
+    roadCondition: keepUnlessGiven(input.roadCondition, existing.roadCondition),
+    slotWindowMinutes: keepUnlessGiven(input.slotWindowMinutes, existing.slotWindowMinutes),
     state: input.state,
     updatedAt: timestamp
   })
@@ -248,6 +261,54 @@ export function updateLanding(state: LogLoadsDatabaseState, rawInput: UpdateLand
     entityType: "landing",
     id: createUuid(),
     metadata: { isActive: updated.isActive, name: updated.name }
+  }))
+
+  return updated
+}
+
+/**
+ * Retires or restores a landing, and touches nothing else.
+ *
+ * Deliberately not `updateLanding` with a flipped flag: that would resubmit
+ * every field from whatever the page was rendered with, so retiring a landing
+ * somebody else had just renamed would quietly revert their edit. A control that
+ * means "stop work here" must not carry a stale copy of the whole record.
+ */
+export function setLandingActive(
+  state: LogLoadsDatabaseState,
+  rawInput: SetLandingActiveInput
+): Landing {
+  const input = setLandingActiveInputSchema.parse(rawInput)
+  const context = getActiveOrganizationContext(state, input.actorUserId, input.organizationId)
+  assertOrganizationAction(context, "manage_landing")
+
+  const existing = requireOwnLanding(state, input.landingId, input.organizationId)
+
+  // Restoring asks for plan capacity exactly as creating does; retiring returns
+  // it. Re-saving a landing that is already active asks for nothing.
+  if (input.isActive && !existing.isActive) {
+    const limit = activeLandingLimitFor(state, input.organizationId)
+
+    assertCondition(
+      limit === null || countActiveLandings(state, input.organizationId) < limit,
+      landingAllowanceRefusal(limit ?? 0)
+    )
+  }
+
+  const timestamp = nowIso()
+  const updated = landingSchema.parse({ ...existing, isActive: input.isActive, updatedAt: timestamp })
+
+  state.landings = state.landings.map((candidate) =>
+    candidate.id === updated.id ? updated : candidate
+  )
+  state.auditEvents.push(auditEventSchema.parse({
+    action: updated.isActive ? "landing_restored" : "landing_retired",
+    actorUserId: input.actorUserId,
+    createdAt: timestamp,
+    entityId: updated.id,
+    entityType: "landing",
+    id: createUuid(),
+    metadata: { name: updated.name }
   }))
 
   return updated

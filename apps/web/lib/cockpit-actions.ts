@@ -513,7 +513,6 @@ export async function updateLandingAction(input: {
   contactEmail?: string | null
   roadCondition?: string | null
   accessNotes?: string | null
-  isActive?: boolean
 }): Promise<ActionResult> {
   try {
     const actor = await requireActor()
@@ -530,7 +529,6 @@ export async function updateLandingAction(input: {
           phone: input.contactPhone
         },
         coordinates: { lat: input.lat, lng: input.lng },
-        isActive: input.isActive,
         landingId: input.landingId,
         name: input.name,
         organizationId: actorOrganizationId(actor),
@@ -541,6 +539,36 @@ export async function updateLandingAction(input: {
     )
 
     captureServerEvent("landing_updated", actor.profile.id, { landingId: input.landingId })
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+/**
+ * Retires or restores a landing without touching anything else about it. The
+ * page cannot send a stale copy of the record back, because it does not send
+ * the record at all.
+ */
+export async function setLandingActiveAction(input: {
+  landingId: string
+  isActive: boolean
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    await commit(HOST_SETUP_PATHS, (draft) =>
+      draft.setLandingActive({
+        actorUserId: actor.profile.id,
+        isActive: input.isActive,
+        landingId: input.landingId,
+        organizationId: actorOrganizationId(actor)
+      })
+    )
+
+    captureServerEvent(input.isActive ? "landing_restored" : "landing_retired", actor.profile.id, {
+      landingId: input.landingId
+    })
     return OK
   } catch (error) {
     return failure(error)

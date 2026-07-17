@@ -8,6 +8,7 @@ import {
   createHaulRouteAction,
   createLandingAction,
   createRateAction,
+  setLandingActiveAction,
   updateLandingAction
 } from "@/lib/cockpit-actions"
 import type { HostLandingDraft, HostMillOption } from "@/lib/host-data"
@@ -189,14 +190,18 @@ export function LandingForm({
   )
 }
 
-/** Retires or restores a landing. Retiring frees the plan's active-landing slot. */
+/**
+ * Retires or restores a landing. Retiring frees the plan's active-landing slot.
+ *
+ * Sends the id and the flag, nothing else. Resubmitting the whole record from
+ * the snapshot this page was rendered with would make retiring a landing revert
+ * any edit somebody made to it in the meantime.
+ */
 export function LandingActiveToggle({
   isActive,
-  landing,
   landingId
 }: {
   isActive: boolean
-  landing: HostLandingDraft
   landingId: string
 }) {
   const [error, setError] = useState<string | null>(null)
@@ -205,22 +210,7 @@ export function LandingActiveToggle({
   const toggle = () => {
     setError(null)
     startTransition(async () => {
-      const result = await updateLandingAction({
-        accessNotes: landing.accessNotes || null,
-        addressLine1: landing.addressLine1,
-        city: landing.city,
-        contactEmail: landing.contactEmail || null,
-        contactName: landing.contactName,
-        contactPhone: landing.contactPhone,
-        isActive: !isActive,
-        landingId,
-        lat: landing.lat,
-        lng: landing.lng,
-        name: landing.name,
-        postalCode: landing.postalCode,
-        roadCondition: landing.roadCondition || null,
-        state: landing.state
-      })
+      const result = await setLandingActiveAction({ isActive: !isActive, landingId })
 
       if (!result.ok) setError(result.error ?? "That could not be changed.")
     })

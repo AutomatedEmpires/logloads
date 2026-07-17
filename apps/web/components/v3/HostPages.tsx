@@ -532,11 +532,7 @@ export function HostLandings({
                 <details className="workspace-edit">
                   <summary>Edit landing</summary>
                   <LandingForm landing={landing.editable} landingId={landing.id} />
-                  <LandingActiveToggle
-                    isActive={landing.isActive}
-                    landing={landing.editable}
-                    landingId={landing.id}
-                  />
+                  <LandingActiveToggle isActive={landing.isActive} landingId={landing.id} />
                 </details>
               ) : null}
 

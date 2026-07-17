@@ -249,6 +249,23 @@ function usageRow(id: string, label: string, unit: string, used: number, limit: 
     }
   }
 
+  // A plan covering none of something is a real answer now that a lapsed plan
+  // reports 0 rather than "no limit". Dividing by it yields NaN, which the page
+  // would render as "NaN%".
+  if (limit === 0) {
+    return {
+      detail: used === 0
+        ? `Your plan does not cover ${unit}s`
+        : `${used} ${unit}${used === 1 ? "" : "s"} in use, and your plan covers none`,
+      id,
+      label,
+      limit,
+      percent: 100,
+      tone: "critical",
+      used
+    }
+  }
+
   const percent = Math.min(100, Math.round((used / limit) * 100))
   let tone: PlanTone = "success"
   let detail = `${used} of ${limit} in use`

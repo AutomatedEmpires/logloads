@@ -165,7 +165,12 @@ describe("the plan's landing allowance", () => {
 
     const first = services.createLanding(landingInput())
 
-    services.updateLanding({ ...landingInput(), isActive: false, landingId: first.id })
+    services.setLandingActive({
+      actorUserId: HOST_OWNER,
+      isActive: false,
+      landingId: first.id,
+      organizationId: HOST_ORG
+    })
 
     expect(services.countActiveLandings(HOST_ORG)).toBe(0)
     expect(services.createLanding(landingInput({ name: "Second Spur" })).isActive).toBe(true)
@@ -198,13 +203,13 @@ describe("the plan's landing allowance", () => {
     )
 
     const retired = services.createLanding(landingInput())
-    services.updateLanding({ ...landingInput(), isActive: false, landingId: retired.id })
+    services.setLandingActive({ actorUserId: HOST_OWNER, isActive: false, landingId: retired.id, organizationId: HOST_ORG })
     services.createLanding(landingInput({ name: "Second Spur" }))
 
     // The slot is spoken for now, so switching the old one back on must refuse
     // rather than quietly put the org over its plan.
     expect(() =>
-      services.updateLanding({ ...landingInput(), isActive: true, landingId: retired.id })
+      services.setLandingActive({ actorUserId: HOST_OWNER, isActive: true, landingId: retired.id, organizationId: HOST_ORG })
     ).toThrow(/plan covers 1 active landing/)
   })
 
@@ -299,7 +304,7 @@ describe("retiring a landing", () => {
     })
     const dispatcher = services.state.dispatcherProfiles[0]!
 
-    services.updateLanding({ ...landingInput(), isActive: false, landingId: landing.id })
+    services.setLandingActive({ actorUserId: HOST_OWNER, isActive: false, landingId: landing.id, organizationId: HOST_ORG })
 
     // Hiding it from the builder's picker is not enforcement: the REST route
     // takes a landing id straight from the caller.
@@ -390,7 +395,7 @@ describe("retiring a landing", () => {
     // A draft outliving the landing it names is the whole point of a draft, so
     // publishing one is the second way work reaches the network — and the host
     // Work page offers exactly that button.
-    services.updateLanding({ ...landingInput(), isActive: false, landingId: landing.id })
+    services.setLandingActive({ actorUserId: HOST_OWNER, isActive: false, landingId: landing.id, organizationId: HOST_ORG })
 
     expect(() =>
       services.openDraftLoadPosting({
@@ -442,7 +447,106 @@ describe("retiring a landing", () => {
   })
 })
 
+describe("retiring without rewriting", () => {
+  it("changes only whether work happens there", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    setLandingAllowance(services, HOST_ORG, null)
+    const landing = services.createLanding(landingInput())
+
+    // Someone renames it after this page was rendered.
+    services.updateLanding({ ...landingInput({ name: "Renamed by someone else" }), landingId: landing.id })
+
+    const retired = services.setLandingActive({
+      actorUserId: HOST_OWNER,
+      isActive: false,
+      landingId: landing.id,
+      organizationId: HOST_ORG
+    })
+
+    // Retiring must not carry a stale copy of the record back with it and undo
+    // their edit. It sends an id and a flag; there is nothing stale to send.
+    expect(retired.isActive).toBe(false)
+    expect(retired.name).toBe("Renamed by someone else")
+    expect(services.state.auditEvents.some((event) =>
+      event.action === "landing_retired" && event.entityId === landing.id
+    )).toBe(true)
+  })
+
+  it("keeps an edit from touching whether the landing is active at all", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    setLandingAllowance(services, HOST_ORG, null)
+    const landing = services.createLanding(landingInput())
+
+    services.setLandingActive({
+      actorUserId: HOST_OWNER,
+      isActive: false,
+      landingId: landing.id,
+      organizationId: HOST_ORG
+    })
+
+    // One way to retire, one way to edit. An edit form cannot resurrect a
+    // retired landing as a side effect of saving a new phone number.
+    const edited = services.updateLanding({
+      ...landingInput({ name: "Still retired" }),
+      landingId: landing.id
+    })
+
+    expect(edited.isActive).toBe(false)
+  })
+
+  it("refuses to retire another organization's landing", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const foreign = services.state.landings.find((landing) => landing.companyId !== HOST_ORG)
+
+    expect(foreign).toBeDefined()
+    expect(() =>
+      services.setLandingActive({
+        actorUserId: HOST_OWNER,
+        isActive: false,
+        landingId: foreign!.id,
+        organizationId: HOST_ORG
+      })
+    ).toThrow(/belongs to another organization/)
+  })
+})
+
 describe("editing a landing", () => {
+  it("keeps optional fields an update never mentioned", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    setLandingAllowance(services, HOST_ORG, null)
+    const landing = services.createLanding(landingInput({
+      accessNotes: "Turn at the second gate.",
+      roadCondition: "muddy"
+    }))
+
+    // A caller that says nothing about the approach notes is not asking for
+    // them to be deleted. Only an explicit null clears.
+    const renamed = services.updateLanding({
+      actorUserId: HOST_OWNER,
+      addressLine1: landing.addressLine1,
+      city: landing.city,
+      contact: landing.contact,
+      coordinates: landing.coordinates,
+      landingId: landing.id,
+      name: "Renamed only",
+      organizationId: HOST_ORG,
+      postalCode: landing.postalCode,
+      state: landing.state
+    })
+
+    expect(renamed.name).toBe("Renamed only")
+    expect(renamed.accessNotes).toBe("Turn at the second gate.")
+    expect(renamed.roadCondition).toBe("muddy")
+
+    // And an explicit null still clears, because that is a real instruction.
+    const cleared = services.updateLanding({
+      ...landingInput({ accessNotes: null, name: "Cleared" }),
+      landingId: landing.id
+    })
+
+    expect(cleared.accessNotes).toBeNull()
+  })
+
   it("refuses to touch another organization's landing", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     setLandingAllowance(services, HOST_ORG, null)

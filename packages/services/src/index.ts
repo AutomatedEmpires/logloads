@@ -39,6 +39,7 @@ import {
   createHaulRoute,
   createLanding,
   createRate,
+  setLandingActive,
   updateLanding
 } from "./host-workspace"
 import { listDriverAvailability, upsertAvailabilityWindow } from "./availability"
@@ -147,6 +148,7 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     createLanding: (input: Parameters<typeof createLanding>[1]) => createLanding(state, input),
     createRate: (input: Parameters<typeof createRate>[1]) => createRate(state, input),
     updateLanding: (input: Parameters<typeof updateLanding>[1]) => updateLanding(state, input),
+    setLandingActive: (input: Parameters<typeof setLandingActive>[1]) => setLandingActive(state, input),
     activeLandingLimitFor: (organizationId: string) => activeLandingLimitFor(state, organizationId),
     countActiveLandings: (organizationId: string) => countActiveLandings(state, organizationId),
     createNotification: (input: unknown) => createNotification(state, input),
@@ -206,6 +208,7 @@ export type {
   CreateHaulRouteInput,
   CreateLandingInput,
   CreateRateInput,
+  SetLandingActiveInput,
   UpdateLandingInput
 } from "./host-workspace"
 export type { DriverMediaKind, DriverMediaTarget } from "./driver-profile"
