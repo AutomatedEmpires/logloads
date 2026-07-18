@@ -1106,36 +1106,47 @@ export interface CreateLoadPostingWithPolicyInput {
   [key: string]: unknown
 }
 
+export interface PostingSources {
+  dropoffMillId: unknown
+  pickupLandingId: unknown
+  rateId: unknown
+  routeId: unknown
+}
+
 /**
- * The authorized publishing entry point: only members whose role carries
- * publish_load may post work, and the posting is always stamped with the
- * actor's own organization — client payloads can never publish as another org.
- */
-/**
- * A retired landing is not a place work happens.
+ * A posting may only name records the posting organization owns, and a retired
+ * landing is not a place work happens.
  *
- * Retiring one is a decision, and the plan counts only active landings against
- * the allowance — so publishing has to honour it or the control is decorative:
- * the picker would hide the landing while the REST route happily posted work
- * from it anyway.
+ * Publishing stamps the posting with the actor's own organization, so the source
+ * ids were the one remaining way a payload could reach across organizations —
+ * and the reach was not theoretical. `buildAssignmentRoutePack` resolves the
+ * landing and its rich detail straight from `load.pickupLandingId`, so a posting
+ * naming another organization's landing handed that organization's entrance pin,
+ * gate instructions, and private-road notes to drivers it never approved. Route
+ * Pack access was tightened precisely because packs carry that.
+ *
+ * Retirement is checked for the same reason the allowance counts only active
+ * landings: otherwise the control is decorative, and the picker would hide the
+ * landing while the REST route happily posted work from it anyway.
+ *
+ * A foreign id is refused as not-found rather than as forbidden. Distinguishing
+ * the two would answer "does this id exist?" for records the caller cannot see,
+ * which is exactly the enumeration a caller probing other organizations wants.
+ *
+ * Mills are not ownership-checked: they are platform records with a null
+ * companyId, shared by every host. The lane check below still pins the
+ * destination, because a route only reaches the mill it was drawn to.
  *
  * Checked before `createLoadPosting`, which pushes: refusing afterwards would
  * leave the posting it was meant to prevent.
- *
- * NOT checked here, and it should be: that the landing, lane, and rate belong to
- * the posting organization at all. That hole predates hosts being able to create
- * any of them — every one was seed data — but it is real and it is worse than it
- * looks, because `buildRoutePack` resolves instructions straight from
- * `load.pickupLandingId`, so a posting naming another organization's landing
- * would hand that organization's entrance pin and gate codes to drivers it never
- * approved. It is left for its own slice because the fixtures across five test
- * files publish as Summit Ridge from North Pine's Oak Landing — an impossible
- * state the suite has modelled since before this work, and untangling it is a
- * change to those tests, not to this feature.
  */
-function assertLandingAcceptsWork(state: LogLoadsDatabaseState, pickupLandingId: unknown): void {
+function assertPostingSourcesAreUsable(
+  state: LogLoadsDatabaseState,
+  organizationId: string,
+  sources: PostingSources
+): void {
   const landing = assertFound(
-    state.landings.find((current) => current.id === pickupLandingId),
+    state.landings.find((current) => current.id === sources.pickupLandingId && current.companyId === organizationId),
     "That landing was not found"
   )
 
@@ -1143,15 +1154,47 @@ function assertLandingAcceptsWork(state: LogLoadsDatabaseState, pickupLandingId:
     landing.isActive,
     `${landing.name} is retired. Restore it before publishing work from it.`
   )
+
+  const route = assertFound(
+    state.haulRoutes.find((current) => current.id === sources.routeId && current.companyId === organizationId),
+    "That haul route was not found"
+  )
+
+  assertFound(
+    state.rates.find((current) => current.id === sources.rateId && current.companyId === organizationId),
+    "That rate was not found"
+  )
+
+  // A lane that does not connect the posting's own endpoints is incoherent: the
+  // driver would be handed a distance, a run time, and road notes measured
+  // between two other places.
+  assertCondition(
+    route.landingId === sources.pickupLandingId,
+    `${route.routeName} does not start at ${landing.name}`
+  )
+  assertCondition(
+    route.millId === sources.dropoffMillId,
+    `${route.routeName} does not run to the destination this work names`
+  )
 }
 
+/**
+ * The authorized publishing entry point: only members whose role carries
+ * publish_load may post work, and the posting is always stamped with the
+ * actor's own organization — client payloads can never publish as another org.
+ */
 export function createLoadPostingWithPolicy(
   state: LogLoadsDatabaseState,
   input: CreateLoadPostingWithPolicyInput
 ): LoadPosting {
   const context = getContextForInput(state, input)
   assertOrganizationAction(context, "publish_load")
-  assertLandingAcceptsWork(state, input.pickupLandingId)
+  assertPostingSourcesAreUsable(state, context.organizationId, {
+    dropoffMillId: input.dropoffMillId,
+    pickupLandingId: input.pickupLandingId,
+    rateId: input.rateId,
+    routeId: input.routeId
+  })
 
   const entity = createLoadPosting(state, { ...input, companyId: context.organizationId })
 
