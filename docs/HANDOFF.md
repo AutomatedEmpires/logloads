@@ -26,14 +26,15 @@ Reports, audits, and design exercises without implementation are failure modes.
 
 | What | Where |
 |---|---|
-| **Canonical clone (the only one)** | WSL `Ubuntu-24.04-Recovered`: `/home/jackson/automatedempires/ventures/logloads` |
+| **Canonical clone (the only one)** | `ae path logloads` — resolve it, never hardcode it |
 | Remote | `git@github.com:AutomatedEmpires/logloads.git` |
 | Live | logloads.com (pre-customer) |
-| Operating contract | `AGENTS.md` in repo (PR #23) |
+| Operating contract | `AGENTS.md` in repo (PR #23) — **the authority** |
 | Decision log | `docs/DECISIONS.md` — append-only, newest first, **every runtime change needs a dated entry** |
 | Env contract | `docs/ENV_CONTRACT.md` |
 
-**Never create another clone.** Resolve paths with `ae path logloads`; list with `ae repos`.
+**Never create another clone** (`AGENTS.md` §1). Resolve paths with `ae path logloads`; list
+with `ae repos`. Parallel work uses controlled worktrees, not a second clone.
 
 ### The control plane (mandatory)
 
@@ -45,7 +46,7 @@ ae status logloads                          # dirty / stash / unpushed / lock
 ae doctor                                   # portfolio health
 ```
 
-Full policy: `\\wsl.localhost\Ubuntu-24.04-Recovered\home\jackson\automatedempires\control\POLICY.md`
+Full policy: `POLICY.md` in the control repo (`ae path control`).
 Authority order: **founder > POLICY.md > registry > repo AGENTS.md**
 
 ---
@@ -178,23 +179,46 @@ pack already treats absent detail as unknown), so this is a gap, not a lie. Natu
 3. **PDF trip documents.** Cloudinary blocks PDF delivery by default; that account setting
    is founder-owned. Trip documents ship images-only. The seed's own canonical scale ticket
    is a PDF, so this is a real gap once the setting is confirmed.
-4. **LogLoads prod points at Explore & Earn's Cloudinary cloud** (`dwiwyt9vi`). One env var
-   to separate, **zero assets to migrate — but only until hauling activates.**
-   ⚠️ An earlier alarm that this account was "shared estate-wide with live customer
-   domains on a near-full plan" was **FALSE** — sweepza and pinnedatlas use no Cloudinary
-   at all, and the plan is at 6.2%. Do not repeat that claim.
+4. **LogLoads production media is pointed at another venture's Cloudinary tenant.** One env
+   var to separate, **zero assets to migrate — but only while that stays true**, i.e. until
+   hauling activates. Ask the founder for the current tenant mapping; it is deliberately not
+   written here.
+   ⚠️ An earlier alarm that this account was "shared estate-wide with live customer domains
+   on a near-full plan" was **investigated and found FALSE**. Do not repeat it.
 5. **Dispatcher RLS migration** `20260716120000_dispatcher_publish_load.sql` is committed
-   but **not applied to production**. Harmless today (service_role bypasses RLS); must be
-   applied before the relational path is activated.
-6. `.env.local` findings from a separate audit (see that agent's notes): a live prod DB URL
-   sits one uncommented line from disaster, and Cloudinary **prod** creds are mislabeled
-   "sandbox". Fixes decided, not applied.
+   but **not applied to production**. Harmless today (the app writes `operating_state` via
+   service_role and bypasses RLS); must be applied before the relational path is ever
+   activated. `packages/db/src/role-matrix-contract.test.ts` guards TS↔SQL drift meanwhile.
+6. A separate agent audited `.env.local` and found real issues in **local developer
+   configuration**, including a credential label that does not match what the credential
+   actually is. Fixes were decided but not applied. **Details are deliberately omitted from
+   this repository** — ask the founder for that audit. `AGENTS.md` §7: *never print, commit,
+   paste into PRs, or expose secrets or private provider URLs*, and a description of exactly
+   where a production credential is weak is the same disclosure as the credential.
 
-### Hard stops (standing)
-No production migrations · no production email · no payments/live Stripe · no cron/queues/
-workers · no Clerk prod config · no domain/DNS changes · no new production providers · no
-live FMCSA/DOT/carrier-verification calls · **never push `main`** · PRs only · never
-force-push shared branches.
+### Hard stops — read `AGENTS.md` §4, not this list
+
+`AGENTS.md` §4 is the authority and it is deliberately **narrow**: paid plan upgrades, domain
+purchase/DNS cutover, live money, destructive deletion of a provider resource, a **destructive**
+production database migration or data purge, credential rotation, ownership transfer, public
+launch announcements, ads/campaigns/broadcasts, legal filings, and actions needing MFA when
+the accountable person is unavailable.
+
+It then says, in terms: **"Do not broaden this list into generic founder gating."** Normal
+review, reversible preview work, test-mode integrations, and additive local/dev migrations
+proceed through the ordinary workflow. An explicitly assigned live-provider or additive
+production-data operation that hits no hard stop still needs exact scope, least privilege,
+backup/rollback evidence, independent review, and a recorded result — but it is *not* forbidden.
+
+⚠️ **An earlier draft of this handoff listed a blanket "no production migrations".** That was
+wrong twice over: it broadened §4 against its own instruction, and it contradicted item 5
+above, which says the dispatcher RLS migration must be applied. The constraints that produced
+the six shipped slices were a *session-scoped brief given to one agent*, not repository policy.
+Do not inherit them as if they were. If your own brief imposes tighter limits, follow your
+brief — and know the difference.
+
+Always true regardless: **never push `main`** (protected, deploys on merge), PRs only, never
+force-push a shared branch.
 
 ---
 
