@@ -23,7 +23,7 @@ export default async function Page() {
       account={shellAccountFor(context)}
       canManageLandings={canManageLandings}
       canPublish={canPublish}
-      landings={getHostLandingRecords(organizationId)}
+      landings={getHostLandingRecords(organizationId, role)}
       network={context.network}
       setup={getHostWorkspaceSetup(organizationId)}
     />

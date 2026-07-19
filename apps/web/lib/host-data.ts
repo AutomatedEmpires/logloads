@@ -1,6 +1,12 @@
 import "server-only"
 
-import { formatMoney, formatRateLabel, loadTypeSchema } from "@logloads/contracts"
+import {
+  formatMoney,
+  formatRateLabel,
+  loadTypeSchema,
+  organizationRoleCan,
+  type OrganizationRole
+} from "@logloads/contracts"
 
 import { services } from "./services"
 import { humanizeTag } from "./v3-shared"
@@ -161,6 +167,8 @@ export interface HostLandingRecord {
   contactName: string
   /** Everything the edit form needs to round-trip the record unchanged. */
   editable: HostLandingDraft
+  /** Private operational facts captured into future assignment Route Packs. */
+  details: HostLandingDetailsDraft | null
   isActive: boolean
   lanes: HostLaneRecord[]
 }
@@ -178,6 +186,19 @@ export interface HostLandingDraft {
   postalCode: string
   roadCondition: string
   state: string
+}
+
+export interface HostLandingDetailsDraft {
+  communicationInstructions: string
+  entranceLat: number
+  entranceLng: number
+  gateInstructions: string
+  loadingEquipment: string[]
+  privateRoadNotes: string
+  publicApproximateArea: string
+  safetyRequirements: string[]
+  stagingInstructions: string
+  turnaroundConstraints: string[]
 }
 
 export interface HostLaneRecord {
@@ -247,15 +268,27 @@ const ACCESS_POLICY_LINES: Record<string, string> = {
   public: "Entrance details are visible to any signed-in hauler viewing work at this landing."
 }
 
-export function getHostLandingRecords(organizationId: string): HostLandingRecord[] {
+export function getHostLandingRecords(
+  organizationId: string,
+  role: OrganizationRole | null | undefined
+): HostLandingRecord[] {
   const state = services.state
   const millsById = new Map(state.mills.map((mill) => [mill.id, mill]))
+  const canManageLandings = role !== null && role !== undefined && organizationRoleCan(role, "manage_landing")
 
   return state.landings
     .filter((landing) => landing.companyId === organizationId)
     .map((landing) => {
-      const details = state.richLandingDetails.find((entry) => entry.landingId === landing.id) ?? null
-      const policy = details?.exactLocationVisibility ?? "assigned_only"
+      const matchingDetails = state.richLandingDetails.filter(
+        (entry) =>
+          entry.landingId === landing.id &&
+          entry.controlledByOrganizationId === organizationId
+      )
+      const details = matchingDetails.length === 1 ? matchingDetails[0]! : null
+      // Exact site facts currently have one implemented disclosure rule:
+      // owning host or approved assignment. A broader value on a legacy row
+      // must not become a promise the readers deliberately do not honor.
+      const policy = "assigned_only"
 
       return {
         accessNotes: landing.accessNotes ?? null,
@@ -263,6 +296,20 @@ export function getHostLandingRecords(organizationId: string): HostLandingRecord
         accessPolicyLine: ACCESS_POLICY_LINES[policy] ?? DEFAULT_ACCESS_LINE,
         area: details?.publicApproximateArea ?? `${landing.city}, ${landing.state}`,
         contactName: landing.contact.name,
+        details: canManageLandings
+          ? {
+              communicationInstructions: details?.communicationInstructions ?? "",
+              entranceLat: details?.entranceLat ?? landing.coordinates.lat,
+              entranceLng: details?.entranceLng ?? landing.coordinates.lng,
+              gateInstructions: details?.gateInstructions ?? "",
+              loadingEquipment: details?.loadingEquipment ?? [],
+              privateRoadNotes: details?.privateRoadNotes ?? "",
+              publicApproximateArea: details?.publicApproximateArea ?? `${landing.city}, ${landing.state}`,
+              safetyRequirements: details?.safetyRequirements ?? [],
+              stagingInstructions: details?.stagingInstructions ?? "",
+              turnaroundConstraints: details?.turnaroundConstraints ?? []
+            }
+          : null,
         editable: {
           accessNotes: landing.accessNotes ?? "",
           addressLine1: landing.addressLine1,

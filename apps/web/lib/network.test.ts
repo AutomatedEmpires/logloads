@@ -82,7 +82,8 @@ describe("trip document deliverability", () => {
 
 describe("driver network access", () => {
   it("keeps exact load access locked while a request is pending and unlocks it after approval", () => {
-    const { request, services, sourceContext, viewer } = networkFixture()
+    const { load, request, services, sourceContext, viewer } = networkFixture()
+    const details = services.state.richLandingDetails.find((item) => item.landingId === load.pickupLandingId)
     const assignment = request()
     const pending = buildNetworkView(services.state, viewer, new Date("2026-06-05T12:00:00.000Z")).loads.find(
       (load) => load.id === assignment.loadPostingId
@@ -107,8 +108,120 @@ describe("driver network access", () => {
     expect(accepted?.viewerAssignment?.status).toBe("accepted")
     expect(accepted?.access.unlocked).toBe(true)
     expect(accepted?.landing.approximate).toBe(false)
+    expect(accepted?.landing.lat).toBe(details?.entranceLat)
+    expect(accepted?.landing.lng).toBe(details?.entranceLng)
     expect(accepted?.criticalInstructions.length).toBeGreaterThan(0)
     expect(accepted?.routePack).not.toBeNull()
+  })
+
+  it("keeps a host viewer out of exact location and instruction fields", () => {
+    const { load, services, sourceContext } = networkFixture()
+    const membership = services.state.organizationMemberships.find(
+      (item) =>
+        item.userId === sourceContext.actorUserId &&
+        item.organizationId === sourceContext.organizationId
+    )
+
+    expect(membership).toBeDefined()
+    if (!membership) return
+    membership.role = "viewer"
+
+    const view = buildNetworkView(services.state, {
+      actorUserId: sourceContext.actorUserId,
+      kind: "actor",
+      organizationId: sourceContext.organizationId
+    }, new Date("2026-06-05T12:00:00.000Z")).loads.find((candidate) => candidate.id === load.id)
+
+    expect(view?.access).toEqual({ reason: "locked", unlocked: false })
+    expect(view?.landing.approximate).toBe(true)
+    expect(view?.landingDetails?.gateInstructions).toBeNull()
+    expect(view?.criticalInstructions).toEqual([])
+    expect(view?.routePack).toBeNull()
+  })
+
+  it("lets operational staff with their own driver profile open a coworker's accepted briefing", () => {
+    const { load, request, services, sourceContext, viewer } = networkFixture()
+    const assignment = request()
+    services.approveCapacityRequest({ ...sourceContext, assignmentId: assignment.id })
+
+    const staffUserId = services.state.profiles.find((profile) => profile.email === "maya@northpine.example")?.id
+    const staffMembership = services.state.organizationMemberships.find(
+      (item) => item.userId === staffUserId && item.organizationId === viewer.organizationId
+    )
+
+    expect(staffUserId).toBeDefined()
+    expect(staffMembership).toBeDefined()
+    if (!staffUserId || !staffMembership) return
+    staffMembership.role = "fleet_manager"
+
+    const view = buildNetworkView(services.state, {
+      actorUserId: staffUserId,
+      kind: "actor",
+      organizationId: staffMembership.organizationId
+    }, new Date("2026-06-05T12:00:00.000Z")).loads.find((candidate) => candidate.id === load.id)
+
+    expect(view?.access).toEqual({ reason: "assigned", unlocked: true })
+    expect(view?.landing.approximate).toBe(false)
+    expect(view?.landingDetails?.gateInstructions).toBeTruthy()
+    expect(view?.routePack).not.toBeNull()
+  })
+
+  it("does not unlock rich details controlled by another organization", () => {
+    const { load, request, services, sourceContext, viewer } = networkFixture()
+    const landing = services.state.landings.find((item) => item.id === load.pickupLandingId)
+
+    services.state.richLandingDetails = services.state.richLandingDetails.map((details) =>
+      details.landingId === load.pickupLandingId
+        ? {
+            ...details,
+            controlledByOrganizationId: viewer.organizationId,
+            entranceLat: 10,
+            entranceLng: 20,
+            gateInstructions: "FOREIGN GATE SECRET"
+          }
+        : details
+    )
+
+    const assignment = request()
+    services.approveCapacityRequest({ ...sourceContext, assignmentId: assignment.id })
+
+    const accepted = buildNetworkView(services.state, viewer, new Date("2026-06-05T12:00:00.000Z")).loads.find(
+      (candidate) => candidate.id === assignment.loadPostingId
+    )
+
+    expect(accepted?.landingDetails).toBeNull()
+    expect(accepted?.criticalInstructions).not.toContain("Gate: FOREIGN GATE SECRET")
+    expect(accepted?.landing.lat).toBe(landing?.coordinates.lat)
+    expect(accepted?.landing.lng).toBe(landing?.coordinates.lng)
+  })
+
+  it("does not choose between duplicate owned landing briefings", () => {
+    const { load, request, services, sourceContext, viewer } = networkFixture()
+    const landing = services.state.landings.find((item) => item.id === load.pickupLandingId)
+    const original = services.state.richLandingDetails.find((details) => details.landingId === load.pickupLandingId)
+
+    expect(original).toBeDefined()
+    if (!original) return
+    services.state.richLandingDetails.push({
+      ...original,
+      gateInstructions: "CONFLICTING GATE SECRET",
+      id: "4f4f4f4f-4f4f-4f4f-8f4f-4f4f4f4f4f01"
+    })
+
+    const assignment = request()
+    services.approveCapacityRequest({ ...sourceContext, assignmentId: assignment.id })
+    const accepted = buildNetworkView(services.state, viewer, new Date("2026-06-05T12:00:00.000Z")).loads.find(
+      (candidate) => candidate.id === assignment.loadPostingId
+    )
+
+    expect(accepted?.landingDetails).toBeNull()
+    expect(accepted?.landing.lat).toBe(landing?.coordinates.lat)
+    expect(accepted?.landing.lng).toBe(landing?.coordinates.lng)
+    expect(accepted?.routePack?.instructions.some((instruction) =>
+      instruction.detail === "CONFLICTING GATE SECRET" || instruction.detail === original.gateInstructions
+    )).toBe(false)
+    expect(accepted?.routePack?.snapshot?.originEntranceLat).toBe(landing?.coordinates.lat)
+    expect(accepted?.routePack?.snapshot?.originEntranceLng).toBe(landing?.coordinates.lng)
   })
 
   it("keeps a declined request visible as a driver decision without treating it as active", () => {

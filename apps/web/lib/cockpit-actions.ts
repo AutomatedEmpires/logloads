@@ -545,6 +545,39 @@ export async function updateLandingAction(input: {
   }
 }
 
+export async function upsertLandingDetailsAction(input: {
+  landingId: string
+  publicApproximateArea: string
+  entranceLat: number
+  entranceLng: number
+  privateRoadNotes: string | null
+  gateInstructions: string | null
+  loadingEquipment: string[]
+  turnaroundConstraints: string[]
+  stagingInstructions: string | null
+  communicationInstructions: string | null
+  safetyRequirements: string[]
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    await commit(HOST_SETUP_PATHS, (draft) =>
+      draft.upsertLandingDetails({
+        ...input,
+        actorUserId: actor.profile.id,
+        organizationId: actorOrganizationId(actor)
+      })
+    )
+
+    captureServerEvent("landing_details_verified", actor.profile.id, {
+      landingId: input.landingId
+    })
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
 /**
  * Retires or restores a landing without touching anything else about it. The
  * page cannot send a stale copy of the record back, because it does not send

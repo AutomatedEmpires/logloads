@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 
 vi.mock("server-only", () => ({}))
 
-import { getHostPublishingOptions } from "./host-data"
+import { getHostLandingRecords, getHostPublishingOptions } from "./host-data"
 import { services } from "./services"
 
 describe("host publishing options", () => {
@@ -36,5 +36,71 @@ describe("host publishing options", () => {
       name: ownedDispatcher.contact.name
     })
     expect(options.dispatcher?.id).not.toBe(sharedDispatcher.id)
+  })
+})
+
+describe("host landing records", () => {
+  const hostOrganizationId = "33333333-3333-4333-8333-333333333332"
+  const landingId = "66666666-6666-4666-8666-666666666662"
+
+  it("only serializes the private briefing for a role that may manage landings", () => {
+    const summary = getHostLandingRecords(hostOrganizationId, "viewer").find((landing) => landing.id === landingId)
+    const manageable = getHostLandingRecords(hostOrganizationId, "landing_manager").find((landing) => landing.id === landingId)
+
+    expect(summary?.details).toBeNull()
+    expect(manageable?.details?.gateInstructions).toBeTruthy()
+    expect(manageable?.accessPolicy).toBe("assigned_only")
+    expect(manageable?.accessPolicyLine).toMatch(/only to drivers after you approve/)
+  })
+
+  it("ignores a detail row controlled by another organization", () => {
+    const index = services.state.richLandingDetails.findIndex((details) => details.landingId === landingId)
+    const original = services.state.richLandingDetails[index]
+
+    expect(original).toBeDefined()
+    if (!original) return
+
+    services.state.richLandingDetails[index] = {
+      ...original,
+      controlledByOrganizationId: "33333333-3333-4333-8333-333333333331",
+      gateInstructions: "FOREIGN GATE SECRET",
+      loadingEquipment: ["foreign loader"]
+    }
+
+    try {
+      const record = getHostLandingRecords(hostOrganizationId, "landing_manager").find((landing) => landing.id === landingId)
+
+      expect(record?.details?.gateInstructions).toBe("")
+      expect(record?.loadingEquipment).toEqual([])
+    } finally {
+      services.state.richLandingDetails[index] = original
+    }
+  })
+
+  it("does not choose arbitrarily between duplicate owned briefings", () => {
+    const original = services.state.richLandingDetails.find((details) => details.landingId === landingId)
+    const duplicateId = "4e4e4e4e-4e4e-4e4e-8e4e-4e4e4e4e4e01"
+
+    expect(original).toBeDefined()
+    if (!original) return
+
+    services.state.richLandingDetails.push({
+      ...original,
+      gateInstructions: "CONFLICTING GATE SECRET",
+      id: duplicateId
+    })
+
+    try {
+      const record = getHostLandingRecords(hostOrganizationId, "landing_manager").find(
+        (landing) => landing.id === landingId
+      )
+
+      expect(record?.details?.gateInstructions).toBe("")
+      expect(record?.loadingEquipment).toEqual([])
+    } finally {
+      services.state.richLandingDetails = services.state.richLandingDetails.filter(
+        (details) => details.id !== duplicateId
+      )
+    }
   })
 })

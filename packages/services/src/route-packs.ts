@@ -139,9 +139,17 @@ export function buildAssignmentRoutePack(
   const landing = state.landings.find(
     (current) => current.id === load.pickupLandingId && current.companyId === load.companyId
   ) ?? null
-  const landingDetails = landing
-    ? state.richLandingDetails.find((current) => current.landingId === landing.id) ?? null
-    : null
+  const matchingLandingDetails = landing
+    ? state.richLandingDetails.filter(
+        (current) =>
+          current.landingId === landing.id &&
+          current.controlledByOrganizationId === load.companyId
+      )
+    : []
+  // The SQL mirror has a unique landing_id constraint, but legacy/corrupt
+  // operating-state documents can still contain duplicates. Ambiguity is not
+  // authority: omit the private briefing rather than pick whichever came first.
+  const landingDetails = matchingLandingDetails.length === 1 ? matchingLandingDetails[0]! : null
   const destination = state.mills.find((current) => current.id === load.dropoffMillId) ?? null
   const facility = destination
     ? state.destinationFacilities.find((current) => current.millId === destination.id) ?? null

@@ -7,10 +7,12 @@ import {
   moneySchema,
   rateSchema,
   rateTypeSchema,
+  richLandingDetailsSchema,
   roadConditionSchema,
   type Entitlement,
   type HaulRoute,
   type Landing,
+  type RichLandingDetails,
   type Rate
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
@@ -52,6 +54,31 @@ const updateLandingInputSchema = landingInputSchema.extend({
   landingId: z.string().uuid()
 })
 
+const landingDetailListSchema = z
+  .array(z.string().trim().min(1).max(200))
+  .max(12)
+  .transform((items) => [...new Set(items)])
+
+/**
+ * The private driver briefing for a landing. The caller supplies only facts;
+ * ownership, visibility, identity, and verification timestamps are stamped by
+ * the service so a browser cannot broaden access or move a briefing between
+ * organizations.
+ */
+const upsertLandingDetailsInputSchema = actorContextSchema.extend({
+  landingId: z.string().uuid(),
+  publicApproximateArea: z.string().trim().min(1).max(160),
+  entranceLat: z.number().min(-90).max(90),
+  entranceLng: z.number().min(-180).max(180),
+  privateRoadNotes: z.string().trim().max(1000).nullable(),
+  gateInstructions: z.string().trim().max(1000).nullable(),
+  loadingEquipment: landingDetailListSchema,
+  turnaroundConstraints: landingDetailListSchema,
+  stagingInstructions: z.string().trim().max(1000).nullable(),
+  communicationInstructions: z.string().trim().max(1000).nullable(),
+  safetyRequirements: landingDetailListSchema
+})
+
 const setLandingActiveInputSchema = actorContextSchema.extend({
   landingId: z.string().uuid(),
   isActive: z.boolean()
@@ -86,6 +113,7 @@ const rateInputSchema = actorContextSchema.extend({
 
 export type CreateLandingInput = z.input<typeof landingInputSchema>
 export type UpdateLandingInput = z.input<typeof updateLandingInputSchema>
+export type UpsertLandingDetailsInput = z.input<typeof upsertLandingDetailsInputSchema>
 export type SetLandingActiveInput = z.input<typeof setLandingActiveInputSchema>
 export type CreateHaulRouteInput = z.input<typeof haulRouteInputSchema>
 export type CreateRateInput = z.input<typeof rateInputSchema>
@@ -264,6 +292,74 @@ export function updateLanding(state: LogLoadsDatabaseState, rawInput: UpdateLand
   }))
 
   return updated
+}
+
+/**
+ * Creates or replaces the current driver briefing for an owned landing.
+ *
+ * Existing assignment Route Packs are immutable snapshots. This mutation
+ * changes what a newly approved assignment will capture; it does not rewrite
+ * instructions a driver already accepted.
+ */
+export function upsertLandingDetails(
+  state: LogLoadsDatabaseState,
+  rawInput: UpsertLandingDetailsInput
+): RichLandingDetails {
+  const input = upsertLandingDetailsInputSchema.parse(rawInput)
+  const context = getActiveOrganizationContext(state, input.actorUserId, input.organizationId)
+  assertOrganizationAction(context, "manage_landing")
+
+  requireOwnLanding(state, input.landingId, input.organizationId)
+
+  const matches = state.richLandingDetails.filter((details) => details.landingId === input.landingId)
+  assertCondition(matches.length <= 1, "That landing has conflicting driver briefing records")
+
+  const existing = matches[0] ?? null
+  assertCondition(
+    !existing || existing.controlledByOrganizationId === input.organizationId,
+    "That landing's driver briefing belongs to another organization"
+  )
+
+  const timestamp = nowIso()
+  const details = richLandingDetailsSchema.parse({
+    communicationInstructions: input.communicationInstructions,
+    controlledByOrganizationId: input.organizationId,
+    createdAt: existing?.createdAt ?? timestamp,
+    entranceLat: input.entranceLat,
+    entranceLng: input.entranceLng,
+    exactLocationVisibility: "assigned_only",
+    gateInstructions: input.gateInstructions,
+    id: existing?.id ?? createUuid(),
+    landingId: input.landingId,
+    lastVerifiedAt: timestamp,
+    loadingEquipment: input.loadingEquipment,
+    privateRoadNotes: input.privateRoadNotes,
+    publicApproximateArea: input.publicApproximateArea,
+    safetyRequirements: input.safetyRequirements,
+    stagingInstructions: input.stagingInstructions,
+    turnaroundConstraints: input.turnaroundConstraints,
+    updatedAt: timestamp
+  })
+
+  if (existing) {
+    state.richLandingDetails = state.richLandingDetails.map((candidate) =>
+      candidate.id === existing.id ? details : candidate
+    )
+  } else {
+    state.richLandingDetails.push(details)
+  }
+
+  state.auditEvents.push(auditEventSchema.parse({
+    action: existing ? "landing_details_updated" : "landing_details_created",
+    actorUserId: input.actorUserId,
+    createdAt: timestamp,
+    entityId: details.id,
+    entityType: "rich_landing_details",
+    id: createUuid(),
+    metadata: { landingId: details.landingId }
+  }))
+
+  return details
 }
 
 /**

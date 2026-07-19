@@ -25,6 +25,25 @@ function landingInput(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function landingDetailsInput(landingId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    actorUserId: HOST_OWNER,
+    communicationInstructions: "Call the loader before the bridge.",
+    entranceLat: 44.051,
+    entranceLng: -121.311,
+    gateInstructions: "Use the day code from dispatch.",
+    landingId,
+    loadingEquipment: ["heel-boom loader"],
+    organizationId: HOST_ORG,
+    privateRoadNotes: "Stay right at the fork.",
+    publicApproximateArea: "Bend, OR — north woods",
+    safetyRequirements: ["Hard hat and hi-vis outside the cab"],
+    stagingInstructions: "Stage nose-out on the gravel apron.",
+    turnaroundConstraints: ["No chip vans above the bridge"],
+    ...overrides
+  }
+}
+
 /** Gives an actor a role in an organization so a boundary can be probed from it. */
 function grantMembership(
   services: LogLoadsServices,
@@ -581,6 +600,102 @@ describe("editing a landing", () => {
     expect(() =>
       services.updateLanding({ ...landingInput(), landingId: foreign!.id })
     ).toThrow(/belongs to another organization/)
+  })
+})
+
+describe("maintaining a landing driver briefing", () => {
+  it("stamps ownership and assignment-only visibility, then audits the verification", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    setLandingAllowance(services, HOST_ORG, null)
+    const landing = services.createLanding(landingInput())
+
+    const details = services.upsertLandingDetails(landingDetailsInput(landing.id))
+
+    expect(details.landingId).toBe(landing.id)
+    expect(details.controlledByOrganizationId).toBe(HOST_ORG)
+    expect(details.exactLocationVisibility).toBe("assigned_only")
+    expect(details.gateInstructions).toBe("Use the day code from dispatch.")
+    expect(details.lastVerifiedAt).toBe(details.updatedAt)
+    expect(services.state.auditEvents).toContainEqual(expect.objectContaining({
+      action: "landing_details_created",
+      entityId: details.id,
+      entityType: "rich_landing_details"
+    }))
+  })
+
+  it("updates the one briefing without changing its identity or creation time", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    setLandingAllowance(services, HOST_ORG, null)
+    const landing = services.createLanding(landingInput())
+    const original = services.upsertLandingDetails(landingDetailsInput(landing.id))
+
+    const updated = services.upsertLandingDetails(landingDetailsInput(landing.id, {
+      gateInstructions: "Gate is open; check in by radio.",
+      safetyRequirements: ["Eye protection at the scale"]
+    }))
+
+    expect(updated.id).toBe(original.id)
+    expect(updated.createdAt).toBe(original.createdAt)
+    expect(updated.gateInstructions).toBe("Gate is open; check in by radio.")
+    expect(services.state.richLandingDetails.filter((item) => item.landingId === landing.id)).toHaveLength(1)
+    expect(services.state.auditEvents).toContainEqual(expect.objectContaining({
+      action: "landing_details_updated",
+      entityId: original.id
+    }))
+  })
+
+  it("deduplicates repeated list facts and refuses conflicting stored rows", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    setLandingAllowance(services, HOST_ORG, null)
+    const landing = services.createLanding(landingInput())
+    const original = services.upsertLandingDetails(landingDetailsInput(landing.id, {
+      loadingEquipment: ["heel-boom loader", "heel-boom loader"]
+    }))
+
+    expect(original.loadingEquipment).toEqual(["heel-boom loader"])
+
+    services.state.richLandingDetails.push({
+      ...original,
+      id: "4d4d4d4d-4d4d-4d4d-8d4d-4d4d4d4d4d01"
+    })
+
+    expect(() => services.upsertLandingDetails(landingDetailsInput(landing.id)))
+      .toThrow(/conflicting driver briefing records/)
+  })
+
+  it("lets a landing manager verify details but refuses a dispatcher", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    setLandingAllowance(services, HOST_ORG, null)
+    const landing = services.createLanding(landingInput())
+    const manager = "3c3c3c3c-3c3c-4c3c-8c3c-3c3c3c3c3c04"
+
+    grantMembership(services, { index: 4, organizationId: HOST_ORG, role: "landing_manager", userId: manager })
+
+    expect(services.upsertLandingDetails(landingDetailsInput(landing.id, { actorUserId: manager })).id).toBeTruthy()
+    expect(() => services.upsertLandingDetails(landingDetailsInput(landing.id, {
+      actorUserId: HOST_DISPATCHER
+    }))).toThrow(/cannot manage landing/)
+  })
+
+  it("refuses another organization's landing or an already cross-wired briefing", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    setLandingAllowance(services, HOST_ORG, null)
+    const foreignLanding = services.state.landings.find((landing) => landing.companyId !== HOST_ORG)
+
+    expect(foreignLanding).toBeDefined()
+    expect(() => services.upsertLandingDetails(landingDetailsInput(foreignLanding!.id)))
+      .toThrow(/belongs to another organization/)
+
+    const ownLanding = services.createLanding(landingInput())
+    services.upsertLandingDetails(landingDetailsInput(ownLanding.id))
+    services.state.richLandingDetails = services.state.richLandingDetails.map((details) =>
+      details.landingId === ownLanding.id
+        ? { ...details, controlledByOrganizationId: HAULER_ORG }
+        : details
+    )
+
+    expect(() => services.upsertLandingDetails(landingDetailsInput(ownLanding.id)))
+      .toThrow(/briefing belongs to another organization/)
   })
 })
 

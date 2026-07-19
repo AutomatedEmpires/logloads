@@ -2,6 +2,7 @@ import {
   evaluateLoadCompatibility,
   explainCompatibility,
   formatRateLabel,
+  organizationRoleCan,
   recommendLoad,
   reputationLabel,
   summarizeReviews,
@@ -448,7 +449,8 @@ function pointFromSite(
     accessNotes?: string | null
     roadCondition?: RoadCondition | null
   },
-  exact: boolean
+  exact: boolean,
+  exactCoordinates?: { lat: number; lng: number } | null
 ): NetworkPoint {
   return {
     accessNotes: exact ? site.accessNotes ?? null : null,
@@ -456,8 +458,8 @@ function pointFromSite(
     city: site.city,
     freshness: (site.roadCondition ?? "good") === "good" ? "verified" : "recent",
     id: site.id,
-    lat: exact ? site.coordinates.lat : approximateCoordinate(site.coordinates.lat),
-    lng: exact ? site.coordinates.lng : approximateCoordinate(site.coordinates.lng),
+    lat: exact ? (exactCoordinates?.lat ?? site.coordinates.lat) : approximateCoordinate(site.coordinates.lat),
+    lng: exact ? (exactCoordinates?.lng ?? site.coordinates.lng) : approximateCoordinate(site.coordinates.lng),
     name: site.name,
     roadCondition: site.roadCondition ?? "good",
     state: site.state
@@ -572,7 +574,12 @@ export function buildNetworkView(
   const loadsWithScore = visibleLoadRecords.map((load) => {
     const source = requireRecord(state.companies.find((company) => company.id === load.companyId), `company ${load.companyId}`)
     const landing = requireRecord(state.landings.find((item) => item.id === load.pickupLandingId), `landing ${load.pickupLandingId}`)
-    const landingDetails = state.richLandingDetails.find((item) => item.landingId === landing.id) ?? null
+    const matchingLandingDetails = state.richLandingDetails.filter(
+      (item) =>
+        item.landingId === landing.id &&
+        item.controlledByOrganizationId === load.companyId
+    )
+    const landingDetails = matchingLandingDetails.length === 1 ? matchingLandingDetails[0]! : null
     const destination = requireRecord(state.mills.find((item) => item.id === load.dropoffMillId), `destination ${load.dropoffMillId}`)
     const destinationFacility = state.destinationFacilities.find((item) => item.millId === destination.id) ?? null
     const route = requireRecord(state.haulRoutes.find((item) => item.id === load.routeId), `route ${load.routeId}`)
@@ -593,11 +600,16 @@ export function buildNetworkView(
     // --- Access: sensitive operational detail unlocks for the publishing
     // organization and for actively assigned haulers only. -----------------
     const ownsLoad = Boolean(activeOrganization && load.companyId === activeOrganization.id)
+    const staffCanViewPrivateLocation = Boolean(
+      activeMembership &&
+      activeMembership.role !== "driver" &&
+      organizationRoleCan(activeMembership.role, "view_private_location")
+    )
     const viewerAssignments = loadAssignments
       .map((assignment, attemptIndex) => ({ assignment, attemptIndex }))
       .filter(({ assignment }) =>
         (currentDriverProfile && assignment.driverProfileId === currentDriverProfile.id) ||
-        (!currentDriverProfile && organizationDriverProfileIds.has(assignment.driverProfileId))
+        (staffCanViewPrivateLocation && organizationDriverProfileIds.has(assignment.driverProfileId))
       )
       .sort((left, right) =>
         right.assignment.updatedAt.localeCompare(left.assignment.updatedAt) ||
@@ -615,13 +627,24 @@ export function buildNetworkView(
     const viewerDeclinedAssignment = viewerAssignments[0]?.status === "declined"
       ? viewerAssignments[0]
       : null
-    const unlocked = ownsLoad || Boolean(viewerAccessAssignment)
+    const assignedDriverAccess = Boolean(
+      currentDriverProfile &&
+      viewerAccessAssignment?.driverProfileId === currentDriverProfile.id
+    )
+    const assignedStaffAccess = Boolean(
+      staffCanViewPrivateLocation &&
+      viewerAccessAssignment &&
+      organizationDriverProfileIds.has(viewerAccessAssignment.driverProfileId)
+    )
+    const ownerStaffAccess = ownsLoad && staffCanViewPrivateLocation
+    const canOpenViewerAssignmentPack = assignedDriverAccess || assignedStaffAccess
+    const unlocked = ownerStaffAccess || canOpenViewerAssignmentPack
     const access: LoadAccess = {
-      reason: ownsLoad ? "owner" : viewerAccessAssignment ? "assigned" : "locked",
+      reason: ownerStaffAccess ? "owner" : canOpenViewerAssignmentPack ? "assigned" : "locked",
       unlocked
     }
     // The viewer's own snapshot, newest live version.
-    const viewerRoutePack = viewerAccessAssignment
+    const viewerRoutePack = canOpenViewerAssignmentPack && viewerAccessAssignment
       ? state.routePacks
           .filter(
             (pack) =>
@@ -781,10 +804,14 @@ export function buildNetworkView(
         ? `+ ${formatRateLabel({ amountCents: rate.fuelSurchargeCents, currency: "USD" }, "flat_rate")} fuel`
         : "Fuel included in terms",
       id: load.id,
-      landing: pointFromSite(landing, unlocked),
+      landing: pointFromSite(
+        landing,
+        unlocked,
+        landingDetails ? { lat: landingDetails.entranceLat, lng: landingDetails.entranceLng } : null
+      ),
       landingDetails: landingDetails
         ? {
-            exactLocationVisibility: landingDetails.exactLocationVisibility,
+            exactLocationVisibility: "assigned_only",
             gateInstructions: unlocked ? landingDetails.gateInstructions ?? null : null,
             lastVerifiedAt: landingDetails.lastVerifiedAt,
             loadingEquipment: landingDetails.loadingEquipment,

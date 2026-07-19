@@ -150,6 +150,40 @@ describe("route pack generation", () => {
     expect(routePack.localInstructions.some((entry) => entry.title === "Completion evidence")).toBe(false)
   })
 
+  it("captures a host-authored landing briefing when the haul is approved", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    services.upsertLandingDetails({
+      actorUserId: HOST_OWNER,
+      communicationInstructions: "Call loader on channel 6.",
+      entranceLat: 44.199,
+      entranceLng: -122.099,
+      gateInstructions: "Use the north gate after 06:00.",
+      landingId: "66666666-6666-4666-8666-666666666662",
+      loadingEquipment: ["heel-boom loader"],
+      organizationId: HOST_ORG,
+      privateRoadNotes: "Keep right above mile 18.",
+      publicApproximateArea: "Blue River, OR — upper corridor",
+      safetyRequirements: ["Hard hat and hi-vis outside the cab"],
+      stagingInstructions: "Stage nose-out below the loader.",
+      turnaroundConstraints: ["No chip vans above the bridge"]
+    })
+
+    const { assignment } = bookRuntimeHaul(services)
+    const { routePack } = driverPack(services, assignment.id)
+
+    expect(routePack.snapshot).toMatchObject({
+      originEntranceLat: 44.199,
+      originEntranceLng: -122.099,
+      originArea: "Blue River, OR — upper corridor"
+    })
+    expect(routePack.localInstructions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ detail: "Use the north gate after 06:00.", title: "Gate access" }),
+      expect.objectContaining({ detail: "Stage nose-out below the loader.", title: "Staging" }),
+      expect.objectContaining({ detail: "Hard hat and hi-vis outside the cab", title: "Safety and PPE" })
+    ]))
+  })
+
   it("rejects a request for a legacy posting whose dispatcher belongs to another organization", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const { load, slot } = publishRuntimeLoad(services)
@@ -361,6 +395,56 @@ describe("route pack generation", () => {
     // No invented certainty: absent sources contribute no instructions.
     expect(routePack.localInstructions.some((entry) => entry.title === "Gate access")).toBe(false)
     expect(routePack.snapshot?.destinationReceivingHours).toBeNull()
+  })
+
+  it("ignores a rich-detail row controlled by another organization", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    services.state.richLandingDetails = services.state.richLandingDetails.map((details) =>
+      details.landingId === "66666666-6666-4666-8666-666666666662"
+        ? {
+            ...details,
+            controlledByOrganizationId: HAULER_ORG,
+            entranceLat: 10,
+            entranceLng: 20,
+            gateInstructions: "FOREIGN GATE SECRET"
+          }
+        : details
+    )
+
+    const { assignment } = bookRuntimeHaul(services)
+    const { routePack } = driverPack(services, assignment.id)
+
+    expect(routePack.localInstructions.some((entry) => entry.detail === "FOREIGN GATE SECRET")).toBe(false)
+    expect(routePack.snapshot?.originEntranceLat).not.toBe(10)
+    expect(routePack.snapshot?.originEntranceLng).not.toBe(20)
+  })
+
+  it("omits an ambiguous duplicate landing briefing instead of choosing one", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const original = services.state.richLandingDetails.find(
+      (details) => details.landingId === "66666666-6666-4666-8666-666666666662"
+    )
+
+    expect(original).toBeDefined()
+    if (!original) return
+    services.state.richLandingDetails.push({
+      ...original,
+      entranceLat: 10,
+      entranceLng: 20,
+      gateInstructions: "CONFLICTING GATE SECRET",
+      id: "4a4a4a4a-4a4a-4a4a-8a4a-4a4a4a4a4a01"
+    })
+
+    const { assignment } = bookRuntimeHaul(services)
+    const { routePack } = driverPack(services, assignment.id)
+    const landing = services.state.landings.find((item) => item.id === original.landingId)
+
+    expect(routePack.localInstructions.some((entry) =>
+      entry.detail === "CONFLICTING GATE SECRET" || entry.detail === original.gateInstructions
+    )).toBe(false)
+    expect(routePack.snapshot?.originEntranceLat).toBe(landing?.coordinates.lat)
+    expect(routePack.snapshot?.originEntranceLng).toBe(landing?.coordinates.lng)
   })
 })
 
