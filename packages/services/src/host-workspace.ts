@@ -56,8 +56,8 @@ const updateLandingInputSchema = landingInputSchema.extend({
 
 const landingDetailListSchema = z
   .array(z.string().trim().min(1).max(200))
-  .max(12)
   .transform((items) => [...new Set(items)])
+  .pipe(z.array(z.string()).max(12))
 
 /**
  * The private driver briefing for a landing. The caller supplies only facts;

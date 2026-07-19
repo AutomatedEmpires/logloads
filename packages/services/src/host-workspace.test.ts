@@ -649,7 +649,10 @@ describe("maintaining a landing driver briefing", () => {
     setLandingAllowance(services, HOST_ORG, null)
     const landing = services.createLanding(landingInput())
     const original = services.upsertLandingDetails(landingDetailsInput(landing.id, {
-      loadingEquipment: ["heel-boom loader", "heel-boom loader"]
+      // The limit is on unique facts, not repeated lines pasted by a user.
+      // This is intentionally over the raw 12-line cap and only one after
+      // normalization, so max-before-dedupe would fail this regression.
+      loadingEquipment: Array.from({ length: 13 }, () => "heel-boom loader")
     }))
 
     expect(original.loadingEquipment).toEqual(["heel-boom loader"])

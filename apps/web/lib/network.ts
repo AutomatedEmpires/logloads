@@ -605,23 +605,33 @@ export function buildNetworkView(
       activeMembership.role !== "driver" &&
       organizationRoleCan(activeMembership.role, "view_private_location")
     )
-    const viewerAssignments = loadAssignments
+    const orderedAssignments = loadAssignments
       .map((assignment, attemptIndex) => ({ assignment, attemptIndex }))
-      .filter(({ assignment }) =>
-        (currentDriverProfile && assignment.driverProfileId === currentDriverProfile.id) ||
-        (staffCanViewPrivateLocation && organizationDriverProfileIds.has(assignment.driverProfileId))
-      )
       .sort((left, right) =>
         right.assignment.updatedAt.localeCompare(left.assignment.updatedAt) ||
         right.attemptIndex - left.attemptIndex
       )
       .map(({ assignment }) => assignment)
+    // The viewer's own decision state must never be borrowed from a coworker:
+    // driver/fleet cards use it for "You're booked", request suppression, and
+    // cancellation links. Staff access to a coworker's private pack is tracked
+    // separately below.
+    const viewerAssignments = currentDriverProfile
+      ? orderedAssignments.filter((assignment) => assignment.driverProfileId === currentDriverProfile.id)
+      : []
     const viewerActiveAssignment = viewerAssignments.find((assignment) =>
       VIEWER_ASSIGNMENT_STATUSES.includes(assignment.status)
     ) ?? null
     const viewerAccessAssignment = viewerAssignments.find((assignment) =>
       ACCESS_UNLOCKED_ASSIGNMENT_STATUSES.includes(assignment.status)
     ) ?? null
+    const staffAccessAssignment = staffCanViewPrivateLocation
+      ? orderedAssignments.find(
+          (assignment) =>
+            organizationDriverProfileIds.has(assignment.driverProfileId) &&
+            ACCESS_UNLOCKED_ASSIGNMENT_STATUSES.includes(assignment.status)
+        ) ?? null
+      : null
     // A decline is a current decision only when it is the viewer's latest
     // attempt. A newer request or booking supersedes the historical outcome.
     const viewerDeclinedAssignment = viewerAssignments[0]?.status === "declined"
@@ -633,22 +643,22 @@ export function buildNetworkView(
     )
     const assignedStaffAccess = Boolean(
       staffCanViewPrivateLocation &&
-      viewerAccessAssignment &&
-      organizationDriverProfileIds.has(viewerAccessAssignment.driverProfileId)
+      staffAccessAssignment
     )
     const ownerStaffAccess = ownsLoad && staffCanViewPrivateLocation
     const canOpenViewerAssignmentPack = assignedDriverAccess || assignedStaffAccess
+    const privateAccessAssignment = viewerAccessAssignment ?? staffAccessAssignment
     const unlocked = ownerStaffAccess || canOpenViewerAssignmentPack
     const access: LoadAccess = {
       reason: ownerStaffAccess ? "owner" : canOpenViewerAssignmentPack ? "assigned" : "locked",
       unlocked
     }
     // The viewer's own snapshot, newest live version.
-    const viewerRoutePack = canOpenViewerAssignmentPack && viewerAccessAssignment
+    const viewerRoutePack = canOpenViewerAssignmentPack && privateAccessAssignment
       ? state.routePacks
           .filter(
             (pack) =>
-              pack.assignmentId === viewerAccessAssignment.id &&
+              pack.assignmentId === privateAccessAssignment.id &&
               !pack.supersededAt &&
               routePackIsSafeToRead(state, load, pack)
           )
@@ -661,6 +671,28 @@ export function buildNetworkView(
     // did. A viewer without access still gets null, so a driver never sees a
     // pack belonging to someone else's assignment.
     const routePack = viewerRoutePack ?? (unlocked ? sourceRoutePack : null)
+    const issuedInstruction = (title: string) =>
+      viewerRoutePack?.localInstructions.find((instruction) => instruction.title === title)?.detail ?? null
+    const effectiveGateInstructions = viewerRoutePack
+      ? issuedInstruction("Gate access")
+      : landingDetails?.gateInstructions ?? null
+    const effectivePrivateRoadNotes = viewerRoutePack
+      ? issuedInstruction("Private road")
+      : landingDetails?.privateRoadNotes ?? null
+    const effectiveLandingAccess = viewerRoutePack
+      ? effectivePrivateRoadNotes ?? issuedInstruction("Landing access")
+      : effectivePrivateRoadNotes ?? landing.accessNotes ?? null
+    const issuedEntrance =
+      viewerRoutePack?.snapshot?.originEntranceLat != null &&
+      viewerRoutePack.snapshot.originEntranceLng != null
+        ? {
+            lat: viewerRoutePack.snapshot.originEntranceLat,
+            lng: viewerRoutePack.snapshot.originEntranceLng
+          }
+        : null
+    const effectiveEntrance = issuedEntrance ?? (
+      landingDetails ? { lat: landingDetails.entranceLat, lng: landingDetails.entranceLng } : null
+    )
 
     const viewerHasActiveAssignment = Boolean(
       currentDriverProfile &&
@@ -779,8 +811,8 @@ export function buildNetworkView(
         : null,
       criticalInstructions: unlocked
         ? [
-            landingDetails?.gateInstructions ? `Gate: ${landingDetails.gateInstructions}` : null,
-            landingDetails?.privateRoadNotes ? `Landing access: ${landingDetails.privateRoadNotes}` : landing.accessNotes ? `Landing: ${landing.accessNotes}` : null,
+            effectiveGateInstructions ? `Gate: ${effectiveGateInstructions}` : null,
+            effectiveLandingAccess ? `Landing access: ${effectiveLandingAccess}` : null,
             destinationFacility?.checkInProcess ? `Destination check-in: ${destinationFacility.checkInProcess}` : destination.accessNotes ? `Destination: ${destination.accessNotes}` : null,
             routePack?.calculatedRouteSummary ? `Route pack: ${routePack.calculatedRouteSummary}` : route.roadNotes ? `Local route: ${route.roadNotes}` : null
           ].filter((value): value is string => Boolean(value))
@@ -807,15 +839,15 @@ export function buildNetworkView(
       landing: pointFromSite(
         landing,
         unlocked,
-        landingDetails ? { lat: landingDetails.entranceLat, lng: landingDetails.entranceLng } : null
+        effectiveEntrance
       ),
       landingDetails: landingDetails
         ? {
             exactLocationVisibility: "assigned_only",
-            gateInstructions: unlocked ? landingDetails.gateInstructions ?? null : null,
+            gateInstructions: unlocked ? effectiveGateInstructions : null,
             lastVerifiedAt: landingDetails.lastVerifiedAt,
             loadingEquipment: landingDetails.loadingEquipment,
-            privateRoadNotes: unlocked ? landingDetails.privateRoadNotes ?? null : null,
+            privateRoadNotes: unlocked ? effectivePrivateRoadNotes : null,
             publicApproximateArea: landingDetails.publicApproximateArea,
             turnaroundConstraints: landingDetails.turnaroundConstraints
           }

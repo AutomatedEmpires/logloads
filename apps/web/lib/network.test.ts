@@ -164,6 +164,55 @@ describe("driver network access", () => {
     expect(view?.landing.approximate).toBe(false)
     expect(view?.landingDetails?.gateInstructions).toBeTruthy()
     expect(view?.routePack).not.toBeNull()
+    expect(view?.viewerAssignment).toBeNull()
+  })
+
+  it("keeps an accepted driver's map and gate on the issued pack until reissue", () => {
+    const { load, request, services, sourceContext, viewer } = networkFixture()
+    const assignment = request()
+    services.approveCapacityRequest({ ...sourceContext, assignmentId: assignment.id })
+
+    const issued = buildNetworkView(services.state, viewer, new Date("2026-06-05T12:00:00.000Z")).loads.find(
+      (candidate) => candidate.id === load.id
+    )
+    const issuedGate = issued?.landingDetails?.gateInstructions
+
+    services.state.richLandingDetails = services.state.richLandingDetails.map((details) =>
+      details.landingId === load.pickupLandingId
+        ? {
+            ...details,
+            entranceLat: 10,
+            entranceLng: 20,
+            gateInstructions: "NEW GATE AFTER BRIEFING EDIT"
+          }
+        : details
+    )
+
+    const beforeReissue = buildNetworkView(
+      services.state,
+      viewer,
+      new Date("2026-06-05T12:00:00.000Z")
+    ).loads.find((candidate) => candidate.id === load.id)
+
+    expect(beforeReissue?.landing.lat).toBe(issued?.landing.lat)
+    expect(beforeReissue?.landing.lng).toBe(issued?.landing.lng)
+    expect(beforeReissue?.landingDetails?.gateInstructions).toBe(issuedGate)
+    expect(beforeReissue?.criticalInstructions).not.toContain("Gate: NEW GATE AFTER BRIEFING EDIT")
+
+    services.refreshRoutePackForAssignment({
+      ...sourceContext,
+      assignmentId: assignment.id
+    })
+
+    const afterReissue = buildNetworkView(
+      services.state,
+      viewer,
+      new Date("2026-06-05T12:00:00.000Z")
+    ).loads.find((candidate) => candidate.id === load.id)
+
+    expect(afterReissue?.landing).toMatchObject({ approximate: false, lat: 10, lng: 20 })
+    expect(afterReissue?.landingDetails?.gateInstructions).toBe("NEW GATE AFTER BRIEFING EDIT")
+    expect(afterReissue?.routePack?.version).toBe(2)
   })
 
   it("does not unlock rich details controlled by another organization", () => {
