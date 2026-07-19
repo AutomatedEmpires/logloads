@@ -1111,12 +1111,47 @@ export interface CreateLoadPostingWithPolicyInput {
  * publish_load may post work, and the posting is always stamped with the
  * actor's own organization — client payloads can never publish as another org.
  */
+/**
+ * A retired landing is not a place work happens.
+ *
+ * Retiring one is a decision, and the plan counts only active landings against
+ * the allowance — so publishing has to honour it or the control is decorative:
+ * the picker would hide the landing while the REST route happily posted work
+ * from it anyway.
+ *
+ * Checked before `createLoadPosting`, which pushes: refusing afterwards would
+ * leave the posting it was meant to prevent.
+ *
+ * NOT checked here, and it should be: that the landing, lane, and rate belong to
+ * the posting organization at all. That hole predates hosts being able to create
+ * any of them — every one was seed data — but it is real and it is worse than it
+ * looks, because `buildRoutePack` resolves instructions straight from
+ * `load.pickupLandingId`, so a posting naming another organization's landing
+ * would hand that organization's entrance pin and gate codes to drivers it never
+ * approved. It is left for its own slice because the fixtures across five test
+ * files publish as Summit Ridge from North Pine's Oak Landing — an impossible
+ * state the suite has modelled since before this work, and untangling it is a
+ * change to those tests, not to this feature.
+ */
+function assertLandingAcceptsWork(state: LogLoadsDatabaseState, pickupLandingId: unknown): void {
+  const landing = assertFound(
+    state.landings.find((current) => current.id === pickupLandingId),
+    "That landing was not found"
+  )
+
+  assertCondition(
+    landing.isActive,
+    `${landing.name} is retired. Restore it before publishing work from it.`
+  )
+}
+
 export function createLoadPostingWithPolicy(
   state: LogLoadsDatabaseState,
   input: CreateLoadPostingWithPolicyInput
 ): LoadPosting {
   const context = getContextForInput(state, input)
   assertOrganizationAction(context, "publish_load")
+  assertLandingAcceptsWork(state, input.pickupLandingId)
 
   const entity = createLoadPosting(state, { ...input, companyId: context.organizationId })
 
@@ -1160,6 +1195,11 @@ export function openDraftLoadPosting(state: LogLoadsDatabaseState, input: OpenDr
     !state.opportunityCapacities.some((capacity) => capacity.loadPostingId === load.id),
     "This work already has provisioned capacity"
   )
+  // Publishing a draft is publishing. A draft can outlive the landing it names
+  // — that is the whole point of a draft — so the retirement is checked here and
+  // not only where the draft was written, or the second publishing path quietly
+  // undoes what the first refuses.
+  assertLandingAcceptsWork(state, load.pickupLandingId)
 
   // Validate the reach before touching the load: a refused mode must not leave
   // the work flipped to open with no capacity behind it.
