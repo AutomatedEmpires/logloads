@@ -637,6 +637,19 @@ export function requestCapacityWithPolicy(
     `Load posting ${load.id} is not visible to organization ${context.organizationId}`
   )
 
+  // Open postings may predate the publication guard. Re-check the immutable
+  // ownership/lane boundary before a request creates an assignment or consumes
+  // capacity. A landing retired after publication is a separate operating-state
+  // concern; do not misreport it as a legacy ownership defect here.
+  const postingSources = assertPostingSourcesAreUsable(state, load.companyId, {
+    dispatcherProfileId: load.dispatcherProfileId,
+    dropoffMillId: load.dropoffMillId,
+    loaderProfileId: load.loaderProfileId,
+    pickupLandingId: load.pickupLandingId,
+    rateId: load.rateId,
+    routeId: load.routeId
+  }, { requireActiveLanding: false })
+
   const duplicate = state.assignments.find((assignment) =>
     assignment.loadPostingId === parsed.loadPostingId &&
     assignment.driverProfileId === parsed.driverProfileId &&
@@ -667,7 +680,7 @@ export function requestCapacityWithPolicy(
   const trailer = parsed.trailerProfileId
     ? assertFound(state.trailerProfiles.find((current) => current.id === parsed.trailerProfileId), `Trailer profile ${parsed.trailerProfileId} was not found`)
     : null
-  const route = state.haulRoutes.find((current) => current.id === load.routeId) ?? null
+  const route = postingSources.route
   const availabilityWindows = state.availabilityWindows.filter((window) => window.driverProfileId === parsed.driverProfileId)
   const compatibility = evaluateLoadCompatibility({ availabilityWindows, load, route, trailer, truck })
 
@@ -727,13 +740,24 @@ export function approveCapacityRequest(
     "Only a requested or offered assignment can be approved"
   )
 
+  // A request may itself predate this guard, or its stored posting may have
+  // been corrupted after request time. Re-check before terms, Route Pack, trip,
+  // slot, assignment, or audit state is minted.
+  const postingSources = assertPostingSourcesAreUsable(state, load.companyId, {
+    dispatcherProfileId: load.dispatcherProfileId,
+    dropoffMillId: load.dropoffMillId,
+    loaderProfileId: load.loaderProfileId,
+    pickupLandingId: load.pickupLandingId,
+    rateId: load.rateId,
+    routeId: load.routeId
+  }, { requireActiveLanding: false })
+
   const existingTrip = state.tripsV2.find((trip) => trip.assignmentId === assignment.id)
   const equipmentCombination = assertFound(
     findEquipmentCombinationForAssignment(state, assignment),
     "The requested equipment combination was not found"
   )
-  const rate = assertFound(state.rates.find((candidate) => candidate.id === load.rateId), `Rate ${load.rateId} was not found`)
-  const route = assertFound(state.haulRoutes.find((candidate) => candidate.id === load.routeId), `Route ${load.routeId} was not found`)
+  const { rate, route } = postingSources
   const slot = assertFound(
     state.truckSlots.find((candidate) => candidate.id === assignment.truckSlotId),
     `Truck slot ${assignment.truckSlotId} was not found`
@@ -1120,9 +1144,14 @@ export interface CreateLoadPostingWithPolicyInput {
 export interface PostingSources {
   dispatcherProfileId: unknown
   dropoffMillId: unknown
+  loaderProfileId: unknown
   pickupLandingId: unknown
   rateId: unknown
   routeId: unknown
+}
+
+interface PostingSourceOptions {
+  requireActiveLanding?: boolean
 }
 
 /**
@@ -1135,9 +1164,10 @@ export interface PostingSources {
  * landing and its rich detail straight from `load.pickupLandingId`, so a posting
  * naming another organization's landing handed that organization's entrance pin,
  * gate instructions, and private-road notes to drivers it never approved. Route
- * Pack access was tightened precisely because packs carry that. The dispatcher
- * is organization-owned too: later transitions dereference that profile to
- * route operational notifications, and Route Packs carry its contact.
+ * Pack access was tightened precisely because packs carry that. Dispatcher and
+ * loader profiles are organization-owned too: later transitions dereference
+ * the dispatcher to route operational notifications, Route Packs carry its
+ * contact, and loading slots carry the optional loader profile id.
  *
  * Retirement is checked for the same reason the allowance counts only active
  * landings: otherwise the control is decorative, and the picker would hide the
@@ -1157,7 +1187,8 @@ export interface PostingSources {
 function assertPostingSourcesAreUsable(
   state: LogLoadsDatabaseState,
   organizationId: string,
-  sources: PostingSources
+  sources: PostingSources,
+  options: PostingSourceOptions = {}
 ) {
   const landing = assertFound(
     state.landings.find((current) => current.id === sources.pickupLandingId && current.companyId === organizationId),
@@ -1171,17 +1202,28 @@ function assertPostingSourcesAreUsable(
     "That dispatcher profile was not found"
   )
 
-  assertCondition(
-    landing.isActive,
-    `${landing.name} is retired. Restore it before publishing work from it.`
-  )
+  const loader = sources.loaderProfileId === null || sources.loaderProfileId === undefined
+    ? null
+    : assertFound(
+      state.loaderProfiles.find(
+        (current) => current.id === sources.loaderProfileId && current.companyId === organizationId
+      ),
+      "That loader profile was not found"
+    )
+
+  if (options.requireActiveLanding !== false) {
+    assertCondition(
+      landing.isActive,
+      `${landing.name} is retired. Restore it before publishing work from it.`
+    )
+  }
 
   const route = assertFound(
     state.haulRoutes.find((current) => current.id === sources.routeId && current.companyId === organizationId),
     "That haul route was not found"
   )
 
-  assertFound(
+  const rate = assertFound(
     state.rates.find((current) => current.id === sources.rateId && current.companyId === organizationId),
     "That rate was not found"
   )
@@ -1198,7 +1240,7 @@ function assertPostingSourcesAreUsable(
     `${route.routeName} does not run to the destination this work names`
   )
 
-  return { dispatcher }
+  return { dispatcher, landing, loader, rate, route }
 }
 
 /**
@@ -1215,6 +1257,7 @@ export function createLoadPostingWithPolicy(
   const sources = assertPostingSourcesAreUsable(state, context.organizationId, {
     dispatcherProfileId: input.dispatcherProfileId,
     dropoffMillId: input.dropoffMillId,
+    loaderProfileId: input.loaderProfileId,
     pickupLandingId: input.pickupLandingId,
     rateId: input.rateId,
     routeId: input.routeId
@@ -1223,7 +1266,9 @@ export function createLoadPostingWithPolicy(
   const entity = createLoadPosting(state, {
     ...input,
     companyId: context.organizationId,
-    dispatcherContact: sources.dispatcher.contact
+    dispatcherContact: sources.dispatcher.contact,
+    loaderContact: sources.loader?.contact ?? null,
+    loaderProfileId: sources.loader?.id ?? null
   })
 
   insertAuditEvent(
@@ -1273,6 +1318,7 @@ export function openDraftLoadPosting(state: LogLoadsDatabaseState, input: OpenDr
   const sources = assertPostingSourcesAreUsable(state, context.organizationId, {
     dispatcherProfileId: load.dispatcherProfileId,
     dropoffMillId: load.dropoffMillId,
+    loaderProfileId: load.loaderProfileId,
     pickupLandingId: load.pickupLandingId,
     rateId: load.rateId,
     routeId: load.routeId
@@ -1289,6 +1335,8 @@ export function openDraftLoadPosting(state: LogLoadsDatabaseState, input: OpenDr
   const updated = loadPostingSchema.parse({
     ...load,
     dispatcherContact: sources.dispatcher.contact,
+    loaderContact: sources.loader?.contact ?? null,
+    loaderProfileId: sources.loader?.id ?? null,
     status: canTransitionLoadPostingStatus(load.status, "open") ? "open" : load.status,
     updatedAt: timestamp
   })

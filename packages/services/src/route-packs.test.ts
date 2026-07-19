@@ -150,7 +150,7 @@ describe("route pack generation", () => {
     expect(routePack.localInstructions.some((entry) => entry.title === "Completion evidence")).toBe(false)
   })
 
-  it("fails closed for a legacy posting whose dispatcher belongs to another organization", () => {
+  it("rejects a request for a legacy posting whose dispatcher belongs to another organization", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const { load, slot } = publishRuntimeLoad(services)
     const foreignDispatcher = services.state.dispatcherProfiles.find(
@@ -160,31 +160,71 @@ describe("route pack generation", () => {
     expect(foreignDispatcher).toBeDefined()
     if (!foreignDispatcher) return
 
+    const notificationsBefore = services.state.notifications.filter(
+      (notification) => notification.userId === foreignDispatcher.userId
+    ).length
+
     // Simulate a stored pre-guard posting. New publications cannot create this
     // state, but readers and notification paths must remain safe until old data
     // is repaired.
     load.dispatcherProfileId = foreignDispatcher.id
     load.dispatcherContact = foreignDispatcher.contact
 
-    const assignment = requestRuntimeLoad(services, load.id, slot.id)
+    expect(() => requestRuntimeLoad(services, load.id, slot.id)).toThrow(/That dispatcher profile was not found/)
 
-    expect(services.state.notifications.some(
-      (notification) =>
-        notification.relatedEntityId === assignment.id &&
-        notification.userId === foreignDispatcher.userId
-    )).toBe(false)
+    expect(services.state.notifications.filter(
+      (notification) => notification.userId === foreignDispatcher.userId
+    )).toHaveLength(notificationsBefore)
+    expect(services.state.assignments.some((assignment) => assignment.loadPostingId === load.id)).toBe(false)
+  })
 
-    services.approveCapacityRequest({
+  it("scrubs a foreign dispatcher when an accepted legacy Route Pack is regenerated", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { assignment, load } = bookRuntimeHaul(services)
+    const stored = services.state.loadPostings.find((candidate) => candidate.id === load.id)
+    const foreignDispatcher = services.state.dispatcherProfiles.find(
+      (profile) => profile.companyId === HAULER_ORG
+    )
+
+    expect(stored).toBeDefined()
+    expect(foreignDispatcher).toBeDefined()
+    if (!stored || !foreignDispatcher) return
+
+    stored.dispatcherProfileId = foreignDispatcher.id
+    stored.dispatcherContact = foreignDispatcher.contact
+
+    const refreshed = services.refreshRoutePackForAssignment({
       actorUserId: HOST_OWNER,
       assignmentId: assignment.id,
       organizationId: HOST_ORG
     })
 
-    const snapshot = driverPack(services, assignment.id).routePack.snapshot
+    expect(refreshed.changed).toBe(true)
+    expect(refreshed.routePack.snapshot?.contactEmail).toBeNull()
+    expect(refreshed.routePack.snapshot?.contactName).toBeNull()
+    expect(refreshed.routePack.snapshot?.contactPhone).toBeNull()
+  })
 
-    expect(snapshot?.contactEmail).toBeNull()
-    expect(snapshot?.contactName).toBeNull()
-    expect(snapshot?.contactPhone).toBeNull()
+  it("refuses to regenerate an accepted legacy Route Pack from a foreign route", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { assignment, load } = bookRuntimeHaul(services)
+    const stored = services.state.loadPostings.find((candidate) => candidate.id === load.id)
+    const before = services.state.routePacks.filter((pack) => pack.assignmentId === assignment.id)
+
+    expect(stored).toBeDefined()
+    if (!stored) return
+
+    stored.routeId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"
+
+    expect(() => services.refreshRoutePackForAssignment({
+      actorUserId: HOST_OWNER,
+      assignmentId: assignment.id,
+      organizationId: HOST_ORG
+    })).toThrow(/Route Pack sources are unavailable/)
+
+    const after = services.state.routePacks.filter((pack) => pack.assignmentId === assignment.id)
+    expect(after).toEqual(before)
+    expect(after[0]?.supersededAt).toBeNull()
   })
 
   it("treats a completion-evidence change as material even though it is not an instruction", () => {

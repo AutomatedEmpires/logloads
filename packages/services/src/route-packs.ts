@@ -58,8 +58,26 @@ export function buildAssignmentRoutePack(
 ): RoutePack {
   const { assignment, load, route, slot, rate } = sources
 
-  const landing = state.landings.find((current) => current.id === load.pickupLandingId) ?? null
-  const landingDetails = state.richLandingDetails.find((current) => current.landingId === load.pickupLandingId) ?? null
+  // Approval normally validates these before calling the builder, but accepted
+  // legacy assignments and direct regeneration calls can predate that boundary.
+  // Never snapshot another organization's route/rate facts or an incoherent
+  // lane even when the stored posting itself is malformed.
+  if (
+    route.id !== load.routeId ||
+    route.companyId !== load.companyId ||
+    route.landingId !== load.pickupLandingId ||
+    route.millId !== load.dropoffMillId ||
+    (rate !== null && (rate.id !== load.rateId || rate.companyId !== load.companyId))
+  ) {
+    throw new Error("Route Pack sources are unavailable")
+  }
+
+  const landing = state.landings.find(
+    (current) => current.id === load.pickupLandingId && current.companyId === load.companyId
+  ) ?? null
+  const landingDetails = landing
+    ? state.richLandingDetails.find((current) => current.landingId === landing.id) ?? null
+    : null
   const destination = state.mills.find((current) => current.id === load.dropoffMillId) ?? null
   const facility = destination
     ? state.destinationFacilities.find((current) => current.millId === destination.id) ?? null
