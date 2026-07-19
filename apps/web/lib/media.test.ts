@@ -113,7 +113,8 @@ describe("signed upload", () => {
     // Cloudinary drops parameters it does not know before computing its own
     // string-to-sign, so signing `max_file_size` — which reads like the obvious
     // companion to `allowed_formats` — desynchronises the signature and fails
-    // every photo and proof upload with 401. Size stays on read-back.
+    // every photo and proof upload with 401. The account ceiling and the
+    // application's stricter read-back check remain separate size defenses.
     const { parameters } = signedUpload({ publicIdPrefix: "logloads/trip-documents/t1" })
 
     expect(parameters).not.toHaveProperty("max_file_size")

@@ -125,12 +125,12 @@ export function tripDocumentTarget(
 /**
  * Signs an upload into one namespace, in one of three formats. The prefix bounds
  * where a caller may write; `allowed_formats` bounds what, so a participant who
- * drives the signature directly cannot park arbitrary bytes in an account shared
- * with every other product. Cloudinary reports a JPEG as `jpg`, so the list
- * carries no `jpeg`. `max_file_size` is not an upload parameter, and Cloudinary
- * omits parameters it does not know from its own string-to-sign — signing one
- * fails every upload with 401 Invalid Signature. Size is still rechecked on
- * read-back before writing a record.
+ * drives the signature directly cannot park arbitrary bytes in an account that
+ * is not dedicated to LogLoads. Cloudinary reports a JPEG as `jpg`, so the list
+ * carries no `jpeg`. `max_file_size` is not a signable upload parameter, and
+ * Cloudinary omits parameters it does not know from its own string-to-sign —
+ * signing one fails every upload with 401 Invalid Signature. Size is still
+ * rechecked on read-back before writing a record.
  */
 export function signedUpload(target: { publicIdPrefix: string }) {
   const config = environment()
