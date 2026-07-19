@@ -311,6 +311,26 @@ describe("route pack generation", () => {
 })
 
 describe("route pack access", () => {
+  it("refuses current and historical access to a pre-existing pack with foreign source ids", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { assignment } = bookRuntimeHaul(services)
+    const stored = services.state.routePacks.find((pack) => pack.assignmentId === assignment.id)
+
+    expect(stored).toBeDefined()
+    if (!stored) return
+
+    // Simulate a pack persisted before the ownership guard existed. Keeping the
+    // bytes for audit history must not make those private details readable.
+    stored.landingId = "66666666-6666-4666-8666-666666666661"
+
+    expect(() => driverPack(services, assignment.id)).toThrow(/Route Pack sources are unavailable/)
+    expect(() => services.listRoutePackVersionsForAssignment({
+      actorUserId: HAULER_DRIVER_ACTOR,
+      assignmentId: assignment.id,
+      organizationId: HAULER_ORG
+    })).toThrow(/Route Pack sources are unavailable/)
+  })
+
   it("opens for the assigned driver and the host, and refuses everyone else", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const { assignment } = bookRuntimeHaul(services)

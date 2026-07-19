@@ -21,6 +21,63 @@ export interface RoutePackSources {
   rate: Rate | null
 }
 
+/**
+ * A non-throwing boundary for read paths. Legacy documents can predate the
+ * publication guard, so callers that list or serve work must be able to omit
+ * malformed records without turning discovery into an exception surface.
+ */
+export function loadPostingHasOwnedCoherentSources(
+  state: LogLoadsDatabaseState,
+  load: LoadPosting
+): boolean {
+  const dispatcher = state.dispatcherProfiles.find(
+    (profile) => profile.id === load.dispatcherProfileId && profile.companyId === load.companyId
+  )
+  const loader = load.loaderProfileId
+    ? state.loaderProfiles.find(
+      (profile) => profile.id === load.loaderProfileId && profile.companyId === load.companyId
+    )
+    : null
+  const landing = state.landings.find(
+    (candidate) => candidate.id === load.pickupLandingId && candidate.companyId === load.companyId
+  )
+  const rate = state.rates.find(
+    (candidate) => candidate.id === load.rateId && candidate.companyId === load.companyId
+  )
+  const route = state.haulRoutes.find(
+    (candidate) => candidate.id === load.routeId && candidate.companyId === load.companyId
+  )
+
+  return Boolean(
+    dispatcher &&
+    (!load.loaderProfileId || loader) &&
+    landing &&
+    rate &&
+    route &&
+    route.landingId === load.pickupLandingId &&
+    route.millId === load.dropoffMillId
+  )
+}
+
+/**
+ * A stored Route Pack is safe to serve only while both the current posting and
+ * the pack's own source identifiers remain inside the posting organization.
+ * This blocks pre-guard snapshots without rewriting or deleting history.
+ */
+export function routePackIsSafeToRead(
+  state: LogLoadsDatabaseState,
+  load: LoadPosting,
+  pack: RoutePack
+): boolean {
+  return (
+    loadPostingHasOwnedCoherentSources(state, load) &&
+    pack.loadPostingId === load.id &&
+    pack.landingId === load.pickupLandingId &&
+    pack.haulRouteId === load.routeId &&
+    pack.destinationId === load.dropoffMillId
+  )
+}
+
 function instruction(
   source: RoutePackInstruction["source"],
   severity: RoutePackInstruction["severity"],

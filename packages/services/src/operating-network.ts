@@ -56,8 +56,10 @@ import { createLoadPosting, parsePublishModes, provisionLoadCapacity } from "./l
 import {
   buildAssignmentRoutePack,
   findAssignmentRoutePack,
+  loadPostingHasOwnedCoherentSources,
   listAssignmentRoutePackVersions,
-  regenerateAssignmentRoutePack
+  regenerateAssignmentRoutePack,
+  routePackIsSafeToRead
 } from "./route-packs"
 import { releaseTruckSlotReservation } from "./truck-slots"
 import { assertCondition, assertFound, createUuid, nowIso } from "./utils"
@@ -361,7 +363,11 @@ export function listVisibleLoadsForOrganization(
   state: LogLoadsDatabaseState,
   organizationId = DEFAULT_ORGANIZATION_ID
 ): LoadPosting[] {
-  return state.loadPostings.filter((load) => load.status !== "archived" && isLoadVisibleToOrganization(state, load, organizationId))
+  return state.loadPostings.filter((load) =>
+    load.status !== "archived" &&
+    loadPostingHasOwnedCoherentSources(state, load) &&
+    isLoadVisibleToOrganization(state, load, organizationId)
+  )
 }
 
 /**
@@ -375,6 +381,10 @@ export function isLoadRequestableAt(
   at = nowIso()
 ): boolean {
   if (load.archivedAt || !["open", "scheduled"].includes(load.status)) {
+    return false
+  }
+
+  if (!loadPostingHasOwnedCoherentSources(state, load)) {
     return false
   }
 
@@ -1816,6 +1826,10 @@ export function getRoutePackForAssignment(
       state.routePacks.find((pack) => pack.loadPostingId === assignment.loadPostingId && !pack.assignmentId),
     `Route pack for assignment ${assignment.id} was not found`
   )
+  assertCondition(
+    routePackIsSafeToRead(state, load, routePack),
+    "Route Pack sources are unavailable"
+  )
 
   const notices = state.operationalNotices.filter((notice) =>
     notice.relatedLoadId === assignment.loadPostingId ||
@@ -1836,7 +1850,23 @@ export function listRoutePackVersionsForAssignment(
   // Reuse the access check; it throws unless this actor may see the pack.
   getRoutePackForAssignment(state, input)
 
-  return listAssignmentRoutePackVersions(state, requireText(input.assignmentId, "assignmentId"))
+  const assignmentId = requireText(input.assignmentId, "assignmentId")
+  const assignment = assertFound(
+    state.assignments.find((current) => current.id === assignmentId),
+    `Assignment ${assignmentId} was not found`
+  )
+  const load = assertFound(
+    state.loadPostings.find((current) => current.id === assignment.loadPostingId),
+    `Load posting ${assignment.loadPostingId} was not found`
+  )
+  const versions = listAssignmentRoutePackVersions(state, assignmentId)
+
+  assertCondition(
+    versions.every((pack) => routePackIsSafeToRead(state, load, pack)),
+    "Route Pack sources are unavailable"
+  )
+
+  return versions
 }
 
 export interface RefreshRoutePackInput {

@@ -20,7 +20,7 @@ import {
   type TripStatusV2
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
-import { createLogLoadsServices } from "@logloads/services"
+import { createLogLoadsServices, routePackIsSafeToRead } from "@logloads/services"
 
 import { estimateLoadEconomics, type LoadEconomicsEstimate } from "./economics"
 
@@ -580,7 +580,10 @@ export function buildNetworkView(
     // could belong to a different driver. Resolved below against the viewer's
     // own assignment; the host falls back to its load-level source pack.
     const sourceRoutePack = state.routePacks.find(
-      (item) => item.loadPostingId === load.id && !item.assignmentId
+      (item) =>
+        item.loadPostingId === load.id &&
+        !item.assignmentId &&
+        routePackIsSafeToRead(state, load, item)
     ) ?? null
     const rate = requireRecord(state.rates.find((item) => item.id === load.rateId), `rate ${load.rateId}`)
     const capacity = state.opportunityCapacities.find((item) => item.loadPostingId === load.id) ?? null
@@ -620,7 +623,12 @@ export function buildNetworkView(
     // The viewer's own snapshot, newest live version.
     const viewerRoutePack = viewerAccessAssignment
       ? state.routePacks
-          .filter((pack) => pack.assignmentId === viewerAccessAssignment.id && !pack.supersededAt)
+          .filter(
+            (pack) =>
+              pack.assignmentId === viewerAccessAssignment.id &&
+              !pack.supersededAt &&
+              routePackIsSafeToRead(state, load, pack)
+          )
           .sort((left, right) => right.version - left.version)[0] ?? null
       : null
     // Mirrors getRoutePackForAssignment: whoever may open the pack falls back to
@@ -1073,10 +1081,20 @@ export function buildNetworkView(
       // fall back to the host's load-level source, so the page shows the same
       // requirement the gate enforces.
       const assignmentPack = state.routePacks
-        .filter((pack) => pack.assignmentId === trip.assignmentId && !pack.supersededAt)
+        .filter(
+          (pack) =>
+            pack.assignmentId === trip.assignmentId &&
+            !pack.supersededAt &&
+            routePackIsSafeToRead(state, load, pack)
+        )
         .sort((left, right) => right.version - left.version)[0]
       const evidencePack = assignmentPack ??
-        state.routePacks.find((pack) => pack.loadPostingId === trip.loadPostingId && !pack.assignmentId)
+        state.routePacks.find(
+          (pack) =>
+            pack.loadPostingId === trip.loadPostingId &&
+            !pack.assignmentId &&
+            routePackIsSafeToRead(state, load, pack)
+        )
       const requiredEvidence = evidencePack?.snapshot?.completionEvidence ?? []
       const hasEvidence = state.tripDocuments.some(
         (document) =>

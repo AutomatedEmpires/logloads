@@ -503,14 +503,21 @@ describe("posting source ownership and lane coherence", () => {
     // private landing. The request path must not rely only on publish-time checks.
     load.pickupLandingId = "66666666-6666-4666-8666-666666666661"
 
+    expect(services.isLoadRequestableAt(load, WINDOW)).toBe(false)
+    expect(services.listVisibleLoadsForOrganization(HAULER_ORG)).not.toContainEqual(load)
     expect(() => requestAsHauler(services, load.id, slot.id)).toThrow(/That landing was not found/)
+    const capacityAfter = services.state.opportunityCapacities.find(
+      (candidate) => candidate.loadPostingId === load.id
+    )
+    const slotAfter = services.state.truckSlots.find((candidate) => candidate.id === slot.id)
+
     expect({
       assignments: services.state.assignments.length,
       auditEvents: services.state.auditEvents.length,
       notifications: services.state.notifications.length,
-      remainingTruckloads: capacity?.remainingTruckloads,
-      reservedCount: slot.reservedCount,
-      slotStatus: slot.status
+      remainingTruckloads: capacityAfter?.remainingTruckloads,
+      reservedCount: slotAfter?.reservedCount,
+      slotStatus: slotAfter?.status
     }).toEqual(before)
   })
 
@@ -520,15 +527,17 @@ describe("posting source ownership and lane coherence", () => {
     const slot = slotFor(services, load.id)
     const assignment = requestAsHauler(services, load.id, slot.id)
     const stored = services.state.loadPostings.find((candidate) => candidate.id === load.id)
+    const slotBeforeApproval = services.state.truckSlots.find((candidate) => candidate.id === slot.id)
 
     expect(stored).toBeDefined()
-    if (!stored) return
+    expect(slotBeforeApproval).toBeDefined()
+    if (!stored || !slotBeforeApproval) return
 
     const before = {
       assignmentStatus: assignment.status,
       auditEvents: services.state.auditEvents.length,
       routePacks: services.state.routePacks.length,
-      slotStatus: slot.status,
+      slotStatus: slotBeforeApproval.status,
       trips: services.state.tripsV2.length
     }
 
@@ -542,11 +551,14 @@ describe("posting source ownership and lane coherence", () => {
       organizationId: HOST_ORG
     })).toThrow(/That rate was not found/)
 
+    const assignmentAfter = services.state.assignments.find((candidate) => candidate.id === assignment.id)
+    const slotAfter = services.state.truckSlots.find((candidate) => candidate.id === slot.id)
+
     expect({
-      assignmentStatus: assignment.status,
+      assignmentStatus: assignmentAfter?.status,
       auditEvents: services.state.auditEvents.length,
       routePacks: services.state.routePacks.length,
-      slotStatus: slot.status,
+      slotStatus: slotAfter?.status,
       trips: services.state.tripsV2.length
     }).toEqual(before)
   })

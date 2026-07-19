@@ -570,6 +570,17 @@ describe("completion evidence gate", () => {
     })
 
     expect(services.requiredCompletionEvidence(live).length).toBeGreaterThan(0)
+
+    const currentPack = services.state.routePacks.find(
+      (pack) => pack.assignmentId === trip.assignmentId && !pack.supersededAt
+    )
+
+    expect(currentPack).toBeDefined()
+    if (!currentPack) return
+
+    // A pre-guard foreign pack is not an authoritative completion contract.
+    currentPack.landingId = "66666666-6666-4666-8666-666666666661"
+    expect(services.requiredCompletionEvidence(live)).toEqual([])
   })
 
   it("does not let the exception that closed a haul be quietly deleted afterwards", () => {
