@@ -21,6 +21,12 @@ export interface RoutePackSources {
   rate: Rate | null
 }
 
+function resolveOwnedDispatcher(state: LogLoadsDatabaseState, load: LoadPosting) {
+  return state.dispatcherProfiles.find(
+    (profile) => profile.id === load.dispatcherProfileId && profile.companyId === load.companyId
+  )
+}
+
 /**
  * A non-throwing boundary for read paths. Legacy documents can predate the
  * publication guard, so callers that list or serve work must be able to omit
@@ -30,9 +36,7 @@ export function loadPostingHasOwnedCoherentSources(
   state: LogLoadsDatabaseState,
   load: LoadPosting
 ): boolean {
-  const dispatcher = state.dispatcherProfiles.find(
-    (profile) => profile.id === load.dispatcherProfileId && profile.companyId === load.companyId
-  )
+  const dispatcher = resolveOwnedDispatcher(state, load)
   const loader = load.loaderProfileId
     ? state.loaderProfiles.find(
       (profile) => profile.id === load.loaderProfileId && profile.companyId === load.companyId
@@ -104,8 +108,9 @@ const HAZARD_ROAD_CONDITIONS = new Set(["icy", "snow", "muddy", "restricted", "c
  * runs once, at approval, and the result is stored — a later edit to the load
  * cannot rewrite instructions the driver already committed to.
  *
- * Missing sources degrade honestly: an absent landing record simply contributes
- * no access instructions rather than failing the approval or inventing detail.
+ * Missing optional details degrade honestly: an absent rich landing-detail or
+ * destination-facility record contributes no instructions rather than
+ * inventing them. Required organization-owned sources fail closed.
  */
 export function buildAssignmentRoutePack(
   state: LogLoadsDatabaseState,
@@ -120,11 +125,13 @@ export function buildAssignmentRoutePack(
   // Never snapshot another organization's route/rate facts or an incoherent
   // lane even when the stored posting itself is malformed.
   if (
+    rate === null ||
     route.id !== load.routeId ||
     route.companyId !== load.companyId ||
     route.landingId !== load.pickupLandingId ||
     route.millId !== load.dropoffMillId ||
-    (rate !== null && (rate.id !== load.rateId || rate.companyId !== load.companyId))
+    rate.id !== load.rateId ||
+    rate.companyId !== load.companyId
   ) {
     throw new Error("Route Pack sources are unavailable")
   }
@@ -190,9 +197,7 @@ export function buildAssignmentRoutePack(
 
   // Legacy stored postings may carry a dispatcher id from another organization.
   // Never copy that profile's contact into an assignment-gated Route Pack.
-  const dispatcher = state.dispatcherProfiles.find(
-    (profile) => profile.id === load.dispatcherProfileId && profile.companyId === load.companyId
-  )
+  const dispatcher = resolveOwnedDispatcher(state, load)
 
   const snapshot: RoutePackSnapshot = {
     capturedAt: timestamp,
@@ -219,7 +224,7 @@ export function buildAssignmentRoutePack(
     originEntranceLat: landingDetails?.entranceLat ?? landing?.coordinates?.lat ?? null,
     originEntranceLng: landingDetails?.entranceLng ?? landing?.coordinates?.lng ?? null,
     originName: landing?.name ?? "Landing on file",
-    rateSummary: rate ? `${(rate.baseRate.amountCents / 100).toFixed(2)} ${rate.baseRate.currency} ${rate.rateType.replaceAll("_", " ")}` : null,
+    rateSummary: `${(rate.baseRate.amountCents / 100).toFixed(2)} ${rate.baseRate.currency} ${rate.rateType.replaceAll("_", " ")}`,
     routeDistanceMiles: route.estimatedDistanceMiles,
     routeRunTimeMinutes: route.estimatedRunTimeMinutes
   }

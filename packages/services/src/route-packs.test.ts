@@ -227,6 +227,26 @@ describe("route pack generation", () => {
     expect(after[0]?.supersededAt).toBeNull()
   })
 
+  it("refuses to supersede a pack when its required rate no longer resolves", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { assignment, load } = bookRuntimeHaul(services)
+    const before = structuredClone(
+      services.state.routePacks.filter((pack) => pack.assignmentId === assignment.id)
+    )
+
+    services.state.rates = services.state.rates.filter((rate) => rate.id !== load.rateId)
+
+    expect(() => services.refreshRoutePackForAssignment({
+      actorUserId: HOST_OWNER,
+      assignmentId: assignment.id,
+      organizationId: HOST_ORG
+    })).toThrow(/Route Pack sources are unavailable/)
+
+    expect(services.state.routePacks.filter(
+      (pack) => pack.assignmentId === assignment.id
+    )).toEqual(before)
+  })
+
   it("does not launder foreign load-level instructions into a new assignment pack", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const { load, slot } = publishRuntimeLoad(services)
