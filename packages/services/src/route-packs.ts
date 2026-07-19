@@ -110,12 +110,18 @@ export function buildAssignmentRoutePack(
     instruction("operator_provided", "standard", "Weather", load.weatherNotes ?? route.weatherNotes)
   ].filter((entry): entry is RoutePackInstruction => entry !== null)
 
+  // Legacy stored postings may carry a dispatcher id from another organization.
+  // Never copy that profile's contact into an assignment-gated Route Pack.
+  const dispatcher = state.dispatcherProfiles.find(
+    (profile) => profile.id === load.dispatcherProfileId && profile.companyId === load.companyId
+  )
+
   const snapshot: RoutePackSnapshot = {
     capturedAt: timestamp,
     completionEvidence: facility?.completionEvidence ?? [],
-    contactEmail: load.dispatcherContact?.email ?? null,
-    contactName: load.dispatcherContact?.name ?? null,
-    contactPhone: load.dispatcherContact?.phone ?? null,
+    contactEmail: dispatcher?.contact.email ?? null,
+    contactName: dispatcher?.contact.name ?? null,
+    contactPhone: dispatcher?.contact.phone ?? null,
     destinationName: destination?.name ?? "Destination on file",
     destinationReceivingHours: facility?.receivingHours ?? null,
     driverName: driverUser?.fullName ?? "Assigned driver",

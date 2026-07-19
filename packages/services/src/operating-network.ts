@@ -585,6 +585,17 @@ function assertTripParticipant(
   )
 }
 
+/**
+ * Stored postings predate source ownership enforcement. Fail closed when an
+ * old posting points at another organization's dispatcher so later workflow
+ * events cannot route notifications across the organization boundary.
+ */
+function findPostingDispatcher(state: LogLoadsDatabaseState, load: LoadPosting) {
+  return state.dispatcherProfiles.find(
+    (profile) => profile.id === load.dispatcherProfileId && profile.companyId === load.companyId
+  )
+}
+
 export function requestCapacityWithPolicy(
   state: LogLoadsDatabaseState,
   input: CapacityRequestInput,
@@ -677,7 +688,7 @@ export function requestCapacityWithPolicy(
     organizationId: context.organizationId
   })
 
-  const dispatcher = state.dispatcherProfiles.find((profile) => profile.id === load.dispatcherProfileId)
+  const dispatcher = findPostingDispatcher(state, load)
   if (dispatcher) {
     insertNotification(
       state,
@@ -952,7 +963,7 @@ function notifyAssignmentCancelled(
   wasBooked: boolean
 ): void {
   const driver = state.driverProfiles.find((profile) => profile.id === assignment.driverProfileId)
-  const dispatcher = state.dispatcherProfiles.find((profile) => profile.id === load.dispatcherProfileId)
+  const dispatcher = findPostingDispatcher(state, load)
   const recipients = new Set(
     [driver?.userId, dispatcher?.userId].filter((userId): userId is string => Boolean(userId) && userId !== excludeUserId)
   )
@@ -1107,6 +1118,7 @@ export interface CreateLoadPostingWithPolicyInput {
 }
 
 export interface PostingSources {
+  dispatcherProfileId: unknown
   dropoffMillId: unknown
   pickupLandingId: unknown
   rateId: unknown
@@ -1117,13 +1129,15 @@ export interface PostingSources {
  * A posting may only name records the posting organization owns, and a retired
  * landing is not a place work happens.
  *
- * Publishing stamps the posting with the actor's own organization, so the source
- * ids were the one remaining way a payload could reach across organizations —
+ * Publishing stamps the posting with the actor's own organization, so source
+ * references were the one remaining way a payload could reach across organizations —
  * and the reach was not theoretical. `buildAssignmentRoutePack` resolves the
  * landing and its rich detail straight from `load.pickupLandingId`, so a posting
  * naming another organization's landing handed that organization's entrance pin,
  * gate instructions, and private-road notes to drivers it never approved. Route
- * Pack access was tightened precisely because packs carry that.
+ * Pack access was tightened precisely because packs carry that. The dispatcher
+ * is organization-owned too: later transitions dereference that profile to
+ * route operational notifications, and Route Packs carry its contact.
  *
  * Retirement is checked for the same reason the allowance counts only active
  * landings: otherwise the control is decorative, and the picker would hide the
@@ -1144,10 +1158,17 @@ function assertPostingSourcesAreUsable(
   state: LogLoadsDatabaseState,
   organizationId: string,
   sources: PostingSources
-): void {
+) {
   const landing = assertFound(
     state.landings.find((current) => current.id === sources.pickupLandingId && current.companyId === organizationId),
     "That landing was not found"
+  )
+
+  const dispatcher = assertFound(
+    state.dispatcherProfiles.find(
+      (current) => current.id === sources.dispatcherProfileId && current.companyId === organizationId
+    ),
+    "That dispatcher profile was not found"
   )
 
   assertCondition(
@@ -1176,6 +1197,8 @@ function assertPostingSourcesAreUsable(
     route.millId === sources.dropoffMillId,
     `${route.routeName} does not run to the destination this work names`
   )
+
+  return { dispatcher }
 }
 
 /**
@@ -1189,14 +1212,19 @@ export function createLoadPostingWithPolicy(
 ): LoadPosting {
   const context = getContextForInput(state, input)
   assertOrganizationAction(context, "publish_load")
-  assertPostingSourcesAreUsable(state, context.organizationId, {
+  const sources = assertPostingSourcesAreUsable(state, context.organizationId, {
+    dispatcherProfileId: input.dispatcherProfileId,
     dropoffMillId: input.dropoffMillId,
     pickupLandingId: input.pickupLandingId,
     rateId: input.rateId,
     routeId: input.routeId
   })
 
-  const entity = createLoadPosting(state, { ...input, companyId: context.organizationId })
+  const entity = createLoadPosting(state, {
+    ...input,
+    companyId: context.organizationId,
+    dispatcherContact: sources.dispatcher.contact
+  })
 
   insertAuditEvent(
     state,
@@ -1242,7 +1270,13 @@ export function openDraftLoadPosting(state: LogLoadsDatabaseState, input: OpenDr
   // — that is the whole point of a draft — so the retirement is checked here and
   // not only where the draft was written, or the second publishing path quietly
   // undoes what the first refuses.
-  assertLandingAcceptsWork(state, load.pickupLandingId)
+  const sources = assertPostingSourcesAreUsable(state, context.organizationId, {
+    dispatcherProfileId: load.dispatcherProfileId,
+    dropoffMillId: load.dropoffMillId,
+    pickupLandingId: load.pickupLandingId,
+    rateId: load.rateId,
+    routeId: load.routeId
+  })
 
   // Validate the reach before touching the load: a refused mode must not leave
   // the work flipped to open with no capacity behind it.
@@ -1254,6 +1288,7 @@ export function openDraftLoadPosting(state: LogLoadsDatabaseState, input: OpenDr
   const timestamp = nowIso()
   const updated = loadPostingSchema.parse({
     ...load,
+    dispatcherContact: sources.dispatcher.contact,
     status: canTransitionLoadPostingStatus(load.status, "open") ? "open" : load.status,
     updatedAt: timestamp
   })
@@ -1590,7 +1625,7 @@ export function submitHaulCompletion(
     previousStatus
   })
 
-  const dispatcher = state.dispatcherProfiles.find((profile) => profile.id === load.dispatcherProfileId)
+  const dispatcher = findPostingDispatcher(state, load)
   if (dispatcher) {
     insertNotification(
       state,

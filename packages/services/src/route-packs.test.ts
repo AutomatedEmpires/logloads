@@ -29,8 +29,8 @@ function publishRuntimeLoad(services: LogLoadsServices, overrides: Record<string
     campaignStartDate: null,
     companyId: HOST_ORG,
     dailyTruckCountNeeded: 1,
-    dispatcherContact: { email: "dispatch@northpine.example", name: "Dana Dispatch", phone: "555-2001" },
-    dispatcherProfileId: "55555555-5555-4555-8555-555555555551",
+    dispatcherContact: { email: "dispatch@summit.example", name: "Cole Cedar", phone: "555-3001" },
+    dispatcherProfileId: "55555555-5555-4555-8555-555555555553",
     dropoffMillId: "99999999-9999-4999-8999-999999999991",
     equipmentRequirements: ["pole-trailer"],
     estimatedTonsPerLoad: 27,
@@ -39,11 +39,11 @@ function publishRuntimeLoad(services: LogLoadsServices, overrides: Record<string
     loaderContact: null,
     loaderProfileId: null,
     organizationId: HOST_ORG,
-    pickupLandingId: "66666666-6666-4666-8666-666666666661",
-    rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+    pickupLandingId: "66666666-6666-4666-8666-666666666662",
+    rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
     recurringSchedule: null,
     roadCondition: "good",
-    routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+    routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
     scheduleType: "one_off",
     status: "open",
     title: "Route pack runtime load",
@@ -127,7 +127,7 @@ describe("route pack generation", () => {
     expect(snapshot).toBeTruthy()
     expect(snapshot?.driverName).toBe("Hank Hauler")
     expect(snapshot?.hostOrganizationName).toBeTruthy()
-    expect(snapshot?.contactName).toBe("Dana Dispatch")
+    expect(snapshot?.contactName).toBe("Cole Cedar")
     expect(snapshot?.haulWindowStartAt).toBe(slot.startAt)
     expect(snapshot?.haulWindowEndAt).toBe(slot.endAt)
     expect(snapshot?.materialType).toBe("saw_logs")
@@ -148,6 +148,43 @@ describe("route pack generation", () => {
     // duplicating it as an instruction makes a driver read it twice.
     expect(snapshot?.completionEvidence.length).toBeGreaterThan(0)
     expect(routePack.localInstructions.some((entry) => entry.title === "Completion evidence")).toBe(false)
+  })
+
+  it("fails closed for a legacy posting whose dispatcher belongs to another organization", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { load, slot } = publishRuntimeLoad(services)
+    const foreignDispatcher = services.state.dispatcherProfiles.find(
+      (profile) => profile.companyId === HAULER_ORG
+    )
+
+    expect(foreignDispatcher).toBeDefined()
+    if (!foreignDispatcher) return
+
+    // Simulate a stored pre-guard posting. New publications cannot create this
+    // state, but readers and notification paths must remain safe until old data
+    // is repaired.
+    load.dispatcherProfileId = foreignDispatcher.id
+    load.dispatcherContact = foreignDispatcher.contact
+
+    const assignment = requestRuntimeLoad(services, load.id, slot.id)
+
+    expect(services.state.notifications.some(
+      (notification) =>
+        notification.relatedEntityId === assignment.id &&
+        notification.userId === foreignDispatcher.userId
+    )).toBe(false)
+
+    services.approveCapacityRequest({
+      actorUserId: HOST_OWNER,
+      assignmentId: assignment.id,
+      organizationId: HOST_ORG
+    })
+
+    const snapshot = driverPack(services, assignment.id).routePack.snapshot
+
+    expect(snapshot?.contactEmail).toBeNull()
+    expect(snapshot?.contactName).toBeNull()
+    expect(snapshot?.contactPhone).toBeNull()
   })
 
   it("treats a completion-evidence change as material even though it is not an instruction", () => {
@@ -177,7 +214,7 @@ describe("route pack generation", () => {
 
     // A host edits the landing after the haul was accepted.
     services.state.richLandingDetails = services.state.richLandingDetails.map((details) =>
-      details.landingId === "66666666-6666-4666-8666-666666666661"
+      details.landingId === "66666666-6666-4666-8666-666666666662"
         ? { ...details, gateInstructions: "TOTALLY DIFFERENT GATE" }
         : details
     )
@@ -409,7 +446,7 @@ describe("route pack material updates", () => {
     const original = driverPack(services, assignment.id).routePack
 
     services.state.richLandingDetails = services.state.richLandingDetails.map((details) =>
-      details.landingId === "66666666-6666-4666-8666-666666666661"
+      details.landingId === "66666666-6666-4666-8666-666666666662"
         ? { ...details, gateInstructions: "Gate moved to the north spur after the washout." }
         : details
     )
