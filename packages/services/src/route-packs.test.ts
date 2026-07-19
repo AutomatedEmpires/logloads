@@ -227,6 +227,40 @@ describe("route pack generation", () => {
     expect(after[0]?.supersededAt).toBeNull()
   })
 
+  it("does not launder foreign load-level instructions into a new assignment pack", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { load, slot } = publishRuntimeLoad(services)
+    const foreignSource = services.state.routePacks.find(
+      (pack) => !pack.assignmentId && pack.landingId !== load.pickupLandingId
+    )
+
+    expect(foreignSource).toBeDefined()
+    if (!foreignSource) return
+
+    // Simulate a pre-guard source pack cross-wired to this load while retaining
+    // another organization's landing and route identifiers.
+    foreignSource.loadPostingId = load.id
+    foreignSource.localInstructions = [{
+      detail: "FOREIGN PRIVATE ROAD SECRET",
+      severity: "critical",
+      source: "operator_provided",
+      title: "Foreign instruction",
+      verifiedAt: null
+    }]
+
+    const assignment = requestRuntimeLoad(services, load.id, slot.id)
+    services.approveCapacityRequest({
+      actorUserId: HOST_OWNER,
+      assignmentId: assignment.id,
+      organizationId: HOST_ORG
+    })
+
+    const routePack = driverPack(services, assignment.id).routePack
+    expect(routePack.localInstructions.some(
+      (instruction) => instruction.detail === "FOREIGN PRIVATE ROAD SECRET"
+    )).toBe(false)
+  })
+
   it("treats a completion-evidence change as material even though it is not an instruction", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const { assignment } = bookRuntimeHaul(services)

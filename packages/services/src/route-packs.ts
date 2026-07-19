@@ -152,7 +152,10 @@ export function buildAssignmentRoutePack(
   // The host's load-level pack is the source a host maintains; its operator
   // instructions carry into every assignment snapshot taken from this load.
   const sourcePack = state.routePacks.find(
-    (pack) => pack.loadPostingId === load.id && !pack.assignmentId
+    (pack) =>
+      pack.loadPostingId === load.id &&
+      !pack.assignmentId &&
+      routePackIsSafeToRead(state, load, pack)
   ) ?? null
 
   const instructions = [
