@@ -228,6 +228,19 @@ export async function requireCockpitActor(cockpit: Cockpit): Promise<SessionActo
   return actor
 }
 
+/** Guard for authenticated pages shared across every provisioned cockpit. */
+export async function requireAuthenticatedActor(nextPath = "/support"): Promise<SessionActor> {
+  const actor = await getSessionActor()
+
+  if (!actor) {
+    const clerkUserId = await getClerkUserId()
+
+    redirect(clerkUserId ? "/onboarding" : `/sign-in?next=${encodeURIComponent(nextPath)}`)
+  }
+
+  return actor
+}
+
 /**
  * Actor resolution for API routes: returns null instead of redirecting so the
  * route can respond 401/403.
