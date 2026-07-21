@@ -1,6 +1,7 @@
 import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
+import { DEMO_EMAIL_SIGN_IN_ALLOWLIST, DEMO_PERSONAS, isDemoSignInEmail } from "./demo-personas"
 import { canAccessCockpit, homePathFor, type SessionActor } from "./session-policy"
 
 const state = createInMemoryDatabase()
@@ -52,5 +53,17 @@ describe("membership-driven cockpit routing", () => {
     expect(canAccessCockpit(lee, "fleet")).toBe(false)
     expect(canAccessCockpit(lee, "host")).toBe(false)
     expect(homePathFor(lee)).toBe("/")
+  })
+
+  it("keeps demo email sign-in limited to identities with a valid cockpit recovery path", () => {
+    expect(new Set(DEMO_EMAIL_SIGN_IN_ALLOWLIST).size).toBe(DEMO_EMAIL_SIGN_IN_ALLOWLIST.length)
+    expect(DEMO_PERSONAS.every((persona) => isDemoSignInEmail(persona.email))).toBe(true)
+    expect(isDemoSignInEmail("MAYA@NORTHPINE.EXAMPLE")).toBe(true)
+    expect(isDemoSignInEmail("loader@northpine.example")).toBe(false)
+
+    for (const email of DEMO_EMAIL_SIGN_IN_ALLOWLIST) {
+      expect(["/admin", "/driver/map", "/fleet/command", "/host/command"], email)
+        .toContain(homePathFor(actorFor(email)))
+    }
   })
 })

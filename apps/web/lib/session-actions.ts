@@ -6,7 +6,7 @@ import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
 import { captureServerEvent } from "./analytics"
-import { DEMO_PERSONAS } from "./demo-personas"
+import { DEMO_PERSONAS, isDemoSignInEmail } from "./demo-personas"
 import { checkRateLimit, requestClientKey } from "./rate-limit"
 import { mutateState, refreshState, serializeError, services } from "./services"
 import {
@@ -46,6 +46,10 @@ export async function signInWithEmail(_previous: AuthFormState, formData: FormDa
 }
 
 async function signInDevProfile(email: string, next: string): Promise<AuthFormState> {
+  if (await isFounderDemoMode() && !isDemoSignInEmail(email)) {
+    return { error: "Use one of the available founder demo accounts." }
+  }
+
   try {
     // Per-identity limit catches guessing without punishing shared IPs (crew
     // NAT, office wifi); the wider per-IP cap still stops bulk enumeration.

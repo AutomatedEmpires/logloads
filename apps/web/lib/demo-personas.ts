@@ -37,3 +37,17 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
     start: "Fleet empty states"
   }
 ] as const
+
+// The five launchers are the curated founder walkthrough. Maya remains
+// available for the two-sided reputation journey, but every other seeded
+// identity is deliberately unreachable through demo email sign-in.
+export const DEMO_EMAIL_SIGN_IN_ALLOWLIST: readonly string[] = [
+  ...DEMO_PERSONAS.map((persona) => persona.email),
+  "maya@northpine.example"
+] as const
+
+const DEMO_EMAIL_SIGN_IN_SET = new Set(DEMO_EMAIL_SIGN_IN_ALLOWLIST)
+
+export function isDemoSignInEmail(email: string): boolean {
+  return DEMO_EMAIL_SIGN_IN_SET.has(email.trim().toLowerCase())
+}

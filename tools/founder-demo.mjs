@@ -13,6 +13,7 @@ import {
   DEMO_URL,
   assertDisposableDemoDirectory,
   buildDemoEnvironment,
+  createDemoShutdownController,
   validateDemoLaunchEnvironment
 } from "./founder-demo-policy.mjs"
 
@@ -55,38 +56,27 @@ const child = spawn(
   }
 )
 
-let stopping = false
-
 function cleanDemoState() {
   const disposableDirectory = assertDisposableDemoDirectory(demoDirectory)
 
   rmSync(disposableDirectory, { force: true, recursive: true })
 }
 
-for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.on(signal, () => {
-    if (stopping) return
+const shutdown = createDemoShutdownController({
+  childKill: (signal) => child.kill(signal),
+  cleanup: cleanDemoState,
+  exit: (code) => process.exit(code),
+  onStopped: () => console.log("Founder demo stopped. Temporary state deleted."),
+  onStopping: () => console.log("\nStopping LogLoads founder demo and deleting temporary state...")
+})
 
-    stopping = true
-    console.log("\nStopping LogLoads founder demo and deleting temporary state...")
-    child.kill(signal)
-  })
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(signal, () => shutdown.signal(signal))
 }
 
 child.on("error", (error) => {
   console.error(`Unable to start the founder demo: ${error.message}`)
-  cleanDemoState()
-  process.exitCode = 1
+  shutdown.childError()
 })
 
-child.on("exit", (code, signal) => {
-  cleanDemoState()
-
-  if (signal && stopping) {
-    console.log("Founder demo stopped. Temporary state deleted.")
-    process.exitCode = 0
-    return
-  }
-
-  process.exitCode = code ?? 1
-})
+child.on("exit", (code) => shutdown.childExit(code))

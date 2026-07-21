@@ -7,6 +7,7 @@ import {
   PROVIDER_ENVIRONMENT_VARIABLES,
   assertDisposableDemoDirectory,
   buildDemoEnvironment,
+  createDemoShutdownController,
   validateDemoLaunchEnvironment
 } from "./founder-demo-policy.mjs"
 
@@ -42,4 +43,64 @@ test("cleanup guard accepts only the exact temporary demo namespace", () => {
   assert.match(assertDisposableDemoDirectory(join("/tmp", "logloads-founder-demo-safe")), /logloads-founder-demo-safe$/)
   assert.throws(() => assertDisposableDemoDirectory("/tmp"), /Refusing/)
   assert.throws(() => assertDisposableDemoDirectory(join("/tmp", "other-demo")), /Refusing/)
+})
+
+function shutdownHarness() {
+  const calls = { cleanup: 0, cleared: [], exits: [], kills: [], stopped: 0, stopping: 0 }
+  const timers = []
+  const controller = createDemoShutdownController({
+    childKill: (signal) => calls.kills.push(signal),
+    cleanup: () => { calls.cleanup += 1 },
+    clearTimer: (timer) => calls.cleared.push(timer),
+    exit: (code) => calls.exits.push(code),
+    onStopped: () => { calls.stopped += 1 },
+    onStopping: () => { calls.stopping += 1 },
+    setTimer: (callback) => {
+      const timer = { callback }
+      timers.push(timer)
+      return timer
+    }
+  })
+
+  return { calls, controller, timers }
+}
+
+test("founder demo shutdown cleans once after a graceful child exit", () => {
+  const { calls, controller, timers } = shutdownHarness()
+
+  controller.signal("SIGTERM")
+  assert.deepEqual(calls.kills, ["SIGTERM"])
+  assert.equal(timers.length, 1)
+  controller.childExit(null)
+
+  assert.equal(calls.cleanup, 1)
+  assert.deepEqual(calls.exits, [0])
+  assert.equal(calls.stopping, 1)
+  assert.equal(calls.stopped, 1)
+
+  controller.childExit(1)
+  assert.equal(calls.cleanup, 1)
+})
+
+test("founder demo shutdown escalates a repeated signal immediately", () => {
+  const { calls, controller } = shutdownHarness()
+
+  controller.signal("SIGINT")
+  controller.signal("SIGINT")
+
+  assert.deepEqual(calls.kills, ["SIGINT", "SIGKILL"])
+  assert.equal(calls.cleanup, 1)
+  assert.deepEqual(calls.exits, [0])
+})
+
+test("founder demo shutdown bounds a hung child and handles SIGHUP", () => {
+  const { calls, controller, timers } = shutdownHarness()
+
+  controller.signal("SIGHUP")
+  assert.deepEqual(calls.kills, ["SIGTERM"])
+  timers[0].callback()
+
+  assert.deepEqual(calls.kills, ["SIGTERM", "SIGKILL"])
+  assert.equal(calls.cleanup, 1)
+  assert.deepEqual(calls.exits, [0])
 })

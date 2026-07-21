@@ -15,7 +15,7 @@ export interface DemoRuntimeEnvironment {
 
 export type DevSessionDecision =
   | { demoMode: boolean; enabled: true; reason: "demo" | "development" | "local-production" }
-  | { demoMode: false; enabled: false; reason: "ci" | "clerk" | "hosted" | "non-loopback" | "not-enabled" }
+  | { demoMode: false; enabled: false; reason: "clerk" | "hosted" | "non-loopback" | "not-enabled" }
 
 function enabledFlag(value: string | undefined): boolean {
   return value?.trim().toLowerCase() === "true" || value === "1"
@@ -61,7 +61,7 @@ export function isLoopbackHost(value: string | null | undefined): boolean {
 
 export function isLoopbackAppUrl(value: string | undefined): boolean {
   if (!value) {
-    return true
+    return false
   }
 
   try {
@@ -79,10 +79,6 @@ export function decideDevSession(
 ): DevSessionDecision {
   if (environment.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && environment.CLERK_SECRET_KEY) {
     return { demoMode: false, enabled: false, reason: "clerk" }
-  }
-
-  if (enabledFlag(environment.CI)) {
-    return { demoMode: false, enabled: false, reason: "ci" }
   }
 
   if (enabledFlag(environment.VERCEL) || environment.VERCEL_ENV || environment.VERCEL_URL) {

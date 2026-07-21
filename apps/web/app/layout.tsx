@@ -60,7 +60,11 @@ export default function RootLayout({
 }) {
 	return (
 		<AuthBoundary>
-			<html className={`${inter.variable} ${archivo.variable}`} lang="en">
+			<html
+				className={`${inter.variable} ${archivo.variable}`}
+				data-demo-mode={process.env.LOGLOADS_DEMO_MODE === "true" ? "true" : undefined}
+				lang="en"
+			>
 				<body>
 					{children}
 					<AnalyticsProvider />

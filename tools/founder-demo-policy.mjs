@@ -5,6 +5,7 @@ export const DEMO_HOST = "127.0.0.1"
 export const DEMO_PORT = 3002
 export const DEMO_URL = `http://${DEMO_HOST}:${DEMO_PORT}`
 export const DEMO_DIRECTORY_PREFIX = "logloads-founder-demo-"
+export const DEMO_SHUTDOWN_GRACE_MS = 5_000
 
 export const PROVIDER_ENVIRONMENT_VARIABLES = [
   "ANTHROPIC_API_KEY",
@@ -109,4 +110,73 @@ export function assertDisposableDemoDirectory(directory) {
   }
 
   return resolvedDirectory
+}
+
+export function createDemoShutdownController({
+  childKill,
+  cleanup,
+  clearTimer = clearTimeout,
+  exit,
+  graceMs = DEMO_SHUTDOWN_GRACE_MS,
+  onStopped = () => {},
+  onStopping = () => {},
+  setTimer = setTimeout
+}) {
+  let escalationTimer = null
+  let finished = false
+  let stopping = false
+
+  function kill(signal) {
+    try {
+      childKill(signal)
+    } catch {
+      // A concurrent child exit is expected during signal escalation. The
+      // idempotent finalizer below still owns cleanup and parent termination.
+    }
+  }
+
+  function finalize(code) {
+    if (finished) return
+
+    finished = true
+
+    if (escalationTimer !== null) {
+      clearTimer(escalationTimer)
+      escalationTimer = null
+    }
+
+    try {
+      cleanup()
+      if (stopping) onStopped()
+    } finally {
+      exit(code)
+    }
+  }
+
+  function forceStop() {
+    kill("SIGKILL")
+    finalize(stopping ? 0 : 1)
+  }
+
+  return {
+    childError() {
+      finalize(1)
+    },
+    childExit(code) {
+      finalize(stopping ? 0 : code ?? 1)
+    },
+    signal(signal) {
+      if (finished) return
+
+      if (stopping) {
+        forceStop()
+        return
+      }
+
+      stopping = true
+      onStopping(signal)
+      kill(signal === "SIGHUP" ? "SIGTERM" : signal)
+      escalationTimer = setTimer(forceStop, graceMs)
+    }
+  }
 }
