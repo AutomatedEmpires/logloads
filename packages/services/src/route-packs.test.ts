@@ -29,8 +29,8 @@ function publishRuntimeLoad(services: LogLoadsServices, overrides: Record<string
     campaignStartDate: null,
     companyId: HOST_ORG,
     dailyTruckCountNeeded: 1,
-    dispatcherContact: { email: "dispatch@northpine.example", name: "Dana Dispatch", phone: "555-2001" },
-    dispatcherProfileId: "55555555-5555-4555-8555-555555555551",
+    dispatcherContact: { email: "dispatch@summit.example", name: "Cole Cedar", phone: "555-3001" },
+    dispatcherProfileId: "55555555-5555-4555-8555-555555555553",
     dropoffMillId: "99999999-9999-4999-8999-999999999991",
     equipmentRequirements: ["pole-trailer"],
     estimatedTonsPerLoad: 27,
@@ -39,11 +39,11 @@ function publishRuntimeLoad(services: LogLoadsServices, overrides: Record<string
     loaderContact: null,
     loaderProfileId: null,
     organizationId: HOST_ORG,
-    pickupLandingId: "66666666-6666-4666-8666-666666666661",
-    rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+    pickupLandingId: "66666666-6666-4666-8666-666666666662",
+    rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
     recurringSchedule: null,
     roadCondition: "good",
-    routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+    routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
     scheduleType: "one_off",
     status: "open",
     title: "Route pack runtime load",
@@ -127,7 +127,7 @@ describe("route pack generation", () => {
     expect(snapshot).toBeTruthy()
     expect(snapshot?.driverName).toBe("Hank Hauler")
     expect(snapshot?.hostOrganizationName).toBeTruthy()
-    expect(snapshot?.contactName).toBe("Dana Dispatch")
+    expect(snapshot?.contactName).toBe("Cole Cedar")
     expect(snapshot?.haulWindowStartAt).toBe(slot.startAt)
     expect(snapshot?.haulWindowEndAt).toBe(slot.endAt)
     expect(snapshot?.materialType).toBe("saw_logs")
@@ -148,6 +148,137 @@ describe("route pack generation", () => {
     // duplicating it as an instruction makes a driver read it twice.
     expect(snapshot?.completionEvidence.length).toBeGreaterThan(0)
     expect(routePack.localInstructions.some((entry) => entry.title === "Completion evidence")).toBe(false)
+  })
+
+  it("rejects a request for a legacy posting whose dispatcher belongs to another organization", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { load, slot } = publishRuntimeLoad(services)
+    const foreignDispatcher = services.state.dispatcherProfiles.find(
+      (profile) => profile.companyId === HAULER_ORG
+    )
+
+    expect(foreignDispatcher).toBeDefined()
+    if (!foreignDispatcher) return
+
+    const notificationsBefore = services.state.notifications.filter(
+      (notification) => notification.userId === foreignDispatcher.userId
+    ).length
+
+    // Simulate a stored pre-guard posting. New publications cannot create this
+    // state, but readers and notification paths must remain safe until old data
+    // is repaired.
+    load.dispatcherProfileId = foreignDispatcher.id
+    load.dispatcherContact = foreignDispatcher.contact
+
+    expect(() => requestRuntimeLoad(services, load.id, slot.id)).toThrow(/That dispatcher profile was not found/)
+
+    expect(services.state.notifications.filter(
+      (notification) => notification.userId === foreignDispatcher.userId
+    )).toHaveLength(notificationsBefore)
+    expect(services.state.assignments.some((assignment) => assignment.loadPostingId === load.id)).toBe(false)
+  })
+
+  it("scrubs a foreign dispatcher when an accepted legacy Route Pack is regenerated", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { assignment, load } = bookRuntimeHaul(services)
+    const stored = services.state.loadPostings.find((candidate) => candidate.id === load.id)
+    const foreignDispatcher = services.state.dispatcherProfiles.find(
+      (profile) => profile.companyId === HAULER_ORG
+    )
+
+    expect(stored).toBeDefined()
+    expect(foreignDispatcher).toBeDefined()
+    if (!stored || !foreignDispatcher) return
+
+    stored.dispatcherProfileId = foreignDispatcher.id
+    stored.dispatcherContact = foreignDispatcher.contact
+
+    const refreshed = services.refreshRoutePackForAssignment({
+      actorUserId: HOST_OWNER,
+      assignmentId: assignment.id,
+      organizationId: HOST_ORG
+    })
+
+    expect(refreshed.changed).toBe(true)
+    expect(refreshed.routePack.snapshot?.contactEmail).toBeNull()
+    expect(refreshed.routePack.snapshot?.contactName).toBeNull()
+    expect(refreshed.routePack.snapshot?.contactPhone).toBeNull()
+  })
+
+  it("refuses to regenerate an accepted legacy Route Pack from a foreign route", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { assignment, load } = bookRuntimeHaul(services)
+    const stored = services.state.loadPostings.find((candidate) => candidate.id === load.id)
+    const before = services.state.routePacks.filter((pack) => pack.assignmentId === assignment.id)
+
+    expect(stored).toBeDefined()
+    if (!stored) return
+
+    stored.routeId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"
+
+    expect(() => services.refreshRoutePackForAssignment({
+      actorUserId: HOST_OWNER,
+      assignmentId: assignment.id,
+      organizationId: HOST_ORG
+    })).toThrow(/Route Pack sources are unavailable/)
+
+    const after = services.state.routePacks.filter((pack) => pack.assignmentId === assignment.id)
+    expect(after).toEqual(before)
+    expect(after[0]?.supersededAt).toBeNull()
+  })
+
+  it("refuses to supersede a pack when its required rate no longer resolves", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { assignment, load } = bookRuntimeHaul(services)
+    const before = structuredClone(
+      services.state.routePacks.filter((pack) => pack.assignmentId === assignment.id)
+    )
+
+    services.state.rates = services.state.rates.filter((rate) => rate.id !== load.rateId)
+
+    expect(() => services.refreshRoutePackForAssignment({
+      actorUserId: HOST_OWNER,
+      assignmentId: assignment.id,
+      organizationId: HOST_ORG
+    })).toThrow(/Route Pack sources are unavailable/)
+
+    expect(services.state.routePacks.filter(
+      (pack) => pack.assignmentId === assignment.id
+    )).toEqual(before)
+  })
+
+  it("does not launder foreign load-level instructions into a new assignment pack", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { load, slot } = publishRuntimeLoad(services)
+    const foreignSource = services.state.routePacks.find(
+      (pack) => !pack.assignmentId && pack.landingId !== load.pickupLandingId
+    )
+
+    expect(foreignSource).toBeDefined()
+    if (!foreignSource) return
+
+    // Simulate a pre-guard source pack cross-wired to this load while retaining
+    // another organization's landing and route identifiers.
+    foreignSource.loadPostingId = load.id
+    foreignSource.localInstructions = [{
+      detail: "FOREIGN PRIVATE ROAD SECRET",
+      severity: "critical",
+      source: "operator_provided",
+      title: "Foreign instruction",
+      verifiedAt: null
+    }]
+
+    const assignment = requestRuntimeLoad(services, load.id, slot.id)
+    services.approveCapacityRequest({
+      actorUserId: HOST_OWNER,
+      assignmentId: assignment.id,
+      organizationId: HOST_ORG
+    })
+
+    const routePack = driverPack(services, assignment.id).routePack
+    expect(routePack.localInstructions.some(
+      (instruction) => instruction.detail === "FOREIGN PRIVATE ROAD SECRET"
+    )).toBe(false)
   })
 
   it("treats a completion-evidence change as material even though it is not an instruction", () => {
@@ -177,7 +308,7 @@ describe("route pack generation", () => {
 
     // A host edits the landing after the haul was accepted.
     services.state.richLandingDetails = services.state.richLandingDetails.map((details) =>
-      details.landingId === "66666666-6666-4666-8666-666666666661"
+      details.landingId === "66666666-6666-4666-8666-666666666662"
         ? { ...details, gateInstructions: "TOTALLY DIFFERENT GATE" }
         : details
     )
@@ -234,6 +365,26 @@ describe("route pack generation", () => {
 })
 
 describe("route pack access", () => {
+  it("refuses current and historical access to a pre-existing pack with foreign source ids", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { assignment } = bookRuntimeHaul(services)
+    const stored = services.state.routePacks.find((pack) => pack.assignmentId === assignment.id)
+
+    expect(stored).toBeDefined()
+    if (!stored) return
+
+    // Simulate a pack persisted before the ownership guard existed. Keeping the
+    // bytes for audit history must not make those private details readable.
+    stored.landingId = "66666666-6666-4666-8666-666666666661"
+
+    expect(() => driverPack(services, assignment.id)).toThrow(/Route Pack sources are unavailable/)
+    expect(() => services.listRoutePackVersionsForAssignment({
+      actorUserId: HAULER_DRIVER_ACTOR,
+      assignmentId: assignment.id,
+      organizationId: HAULER_ORG
+    })).toThrow(/Route Pack sources are unavailable/)
+  })
+
   it("opens for the assigned driver and the host, and refuses everyone else", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const { assignment } = bookRuntimeHaul(services)
@@ -409,7 +560,7 @@ describe("route pack material updates", () => {
     const original = driverPack(services, assignment.id).routePack
 
     services.state.richLandingDetails = services.state.richLandingDetails.map((details) =>
-      details.landingId === "66666666-6666-4666-8666-666666666661"
+      details.landingId === "66666666-6666-4666-8666-666666666662"
         ? { ...details, gateInstructions: "Gate moved to the north spur after the washout." }
         : details
     )

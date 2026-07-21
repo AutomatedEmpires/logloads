@@ -457,7 +457,7 @@ describe("logloads services", () => {
       actorUserId: "22222222-2222-4222-8222-222222222224",
       organizationId: "33333333-3333-4333-8333-333333333332",
       assignmentId: assignment.id
-    })).toThrow(/Rate/)
+    })).toThrow(/rate/i)
 
     expect(services.state.assignments.find((candidate) => candidate.id === assignment.id)?.status).toBe("requested")
     expect(services.state.truckSlots.find((candidate) => candidate.id === assignment.truckSlotId)).toEqual(slotBefore)

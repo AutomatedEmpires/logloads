@@ -672,7 +672,7 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
   {
     id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
     companyId: "33333333-3333-4333-8333-333333333332",
-    dispatcherProfileId: "55555555-5555-4555-8555-555555555551",
+    dispatcherProfileId: "55555555-5555-4555-8555-555555555553",
     loaderProfileId: null,
     pickupLandingId: "66666666-6666-4666-8666-666666666662",
     dropoffMillId: "99999999-9999-4999-8999-999999999991",
@@ -693,9 +693,9 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
     roadCondition: "restricted",
     weatherNotes: "Evening snow possible above 3000 ft.",
     dispatcherContact: {
-      name: "Dana Dispatch",
-      phone: "555-2001",
-      email: "dispatch@northpine.example"
+      name: "Cole Cedar",
+      phone: "555-3001",
+      email: "dispatch@summit.example"
     },
     loaderContact: null,
     cancellationReason: null,
@@ -706,7 +706,7 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
   {
     id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc4",
     companyId: "33333333-3333-4333-8333-333333333332",
-    dispatcherProfileId: "55555555-5555-4555-8555-555555555551",
+    dispatcherProfileId: "55555555-5555-4555-8555-555555555553",
     loaderProfileId: null,
     pickupLandingId: "66666666-6666-4666-8666-666666666662",
     dropoffMillId: "99999999-9999-4999-8999-999999999992",
@@ -727,9 +727,9 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
     roadCondition: "restricted",
     weatherNotes: null,
     dispatcherContact: {
-      name: "Dana Dispatch",
-      phone: "555-2001",
-      email: "dispatch@northpine.example"
+      name: "Cole Cedar",
+      phone: "555-3001",
+      email: "dispatch@summit.example"
     },
     loaderContact: null,
     cancellationReason: null,
@@ -778,7 +778,7 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
   {
     id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc6",
     companyId: "33333333-3333-4333-8333-333333333332",
-    dispatcherProfileId: "55555555-5555-4555-8555-555555555551",
+    dispatcherProfileId: "55555555-5555-4555-8555-555555555553",
     loaderProfileId: null,
     pickupLandingId: "66666666-6666-4666-8666-666666666662",
     dropoffMillId: "99999999-9999-4999-8999-999999999991",
@@ -799,9 +799,9 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
     roadCondition: "wet",
     weatherNotes: null,
     dispatcherContact: {
-      name: "Dana Dispatch",
-      phone: "555-2001",
-      email: "dispatch@northpine.example"
+      name: "Cole Cedar",
+      phone: "555-3001",
+      email: "dispatch@summit.example"
     },
     loaderContact: null,
     cancellationReason: null,
