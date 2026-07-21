@@ -303,7 +303,71 @@ a { color: inherit; text-decoration: none; }
   backdrop-filter: blur(16px);
 }
 .app-topbar h1 { margin: 0; font-size: 1.45rem; }
-.account-switcher { display: flex; align-items: center; gap: 10px; font-weight: 900; }
+.account-switcher { position: relative; display: flex; align-items: center; gap: 10px; font-weight: 900; }
+.account-switcher__trigger {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  padding: 8px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+.account-switcher__trigger:hover { border-color: var(--pine); }
+.account-switcher__profile-icon { display: none; }
+.account-switcher__menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 70;
+  display: grid;
+  gap: 8px;
+  width: min(320px, calc(100vw - 24px));
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  padding: 12px;
+  box-shadow: var(--shadow-3);
+  text-align: left;
+}
+.account-switcher__user { margin: 0; padding: 2px 4px 8px; border-bottom: 1px solid var(--line); }
+.account-switcher__orgs { display: grid; gap: 6px; }
+.account-switcher__orgs > span { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.account-switcher__orgs button,
+.account-switcher__support,
+.account-switcher__signout {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) - 2px);
+  background: transparent;
+  color: var(--ink);
+  padding: 9px 10px;
+  font: inherit;
+  font-weight: 800;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.account-switcher__orgs button { justify-content: space-between; }
+.account-switcher__orgs button:hover,
+.account-switcher__orgs button.is-active,
+.account-switcher__support:hover,
+.account-switcher__signout:hover { border-color: var(--line); background: var(--green-bg); }
+.account-switcher__orgs em { color: var(--muted); font-size: 0.78rem; font-style: normal; }
+.account-switcher__support { border-top-color: var(--line); border-radius: 0; }
+.account-switcher__signout { color: var(--red, #a82e24); }
 
 /* --- Notification bell ----------------------------------------------------- */
 .app-topbar__account { display: flex; align-items: center; gap: 12px; }
@@ -900,7 +964,13 @@ dd { margin: 0; font-weight: 900; text-align: right; }
   .app-main { margin-left: 0; padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
   .app-topbar { min-height: 64px; padding: 10px 12px; }
   .app-topbar h1 { font-size: 1.18rem; }
-  .account-switcher { display: none; }
+  .app-topbar > .account-switcher { display: none; }
+  .app-topbar__account .account-switcher { display: flex; }
+  .account-switcher__trigger { width: 42px; min-height: 42px; justify-content: center; border-radius: 999px; padding: 0; }
+  .account-switcher__profile-icon { display: block; }
+  .account-switcher__label,
+  .account-switcher__trigger .ui-badge { display: none; }
+  .account-switcher__menu { position: fixed; top: 66px; right: 12px; max-height: calc(100vh - 158px); }
   .mobile-app-nav {
     position: fixed;
     inset: auto 0 0 0;

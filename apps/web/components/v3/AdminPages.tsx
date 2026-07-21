@@ -12,11 +12,11 @@ import type {
   AdminOpportunityRow,
   AdminOrganizationRow,
   AdminOverview,
-  AdminReportRow,
+  AdminReportsData,
   AdminVerificationItem
 } from "@/lib/admin-data"
 import { toneForNotice } from "./Common"
-import { OrganizationDecision, ResolveNoticeButton, VerificationDecision } from "./AdminActions"
+import { AdminReportDecision, OrganizationDecision, ResolveNoticeButton, VerificationDecision } from "./AdminActions"
 import { AppShell, EmptyState, Metric, SectionHeader, type ShellAccount } from "./Shells"
 
 const KICKER = "Platform operations"
@@ -262,28 +262,123 @@ export function AdminNoticesPage({ account, notices }: { account: ShellAccount; 
 
 // --- Reports ------------------------------------------------------------------------
 
-export function AdminReportsPage({ account, reports }: { account: ShellAccount; reports: AdminReportRow[] }) {
+function supportLabel(value: string): string {
+  const human = value.replaceAll("_", " ")
+
+  return human.charAt(0).toUpperCase() + human.slice(1)
+}
+
+function supportStatusTone(status: string): "success" | "warning" | "info" {
+  if (status === "resolved") return "success"
+  if (status === "open" || status === "in_review") return "warning"
+
+  return "info"
+}
+
+export function AdminReportsPage({ account, reports }: { account: ShellAccount; reports: AdminReportsData }) {
+  const [statusFilter, setStatusFilter] = useState<"attention" | "all" | "terminal">("attention")
+  const [kindFilter, setKindFilter] = useState<"all" | "problem" | "feature_request">("all")
+  const filteredRequests = useMemo(
+    () => reports.requests.filter((request) => {
+      const statusMatches = statusFilter === "all"
+        || (statusFilter === "attention" && (request.status === "open" || request.status === "in_review"))
+        || (statusFilter === "terminal" && (request.status === "resolved" || request.status === "closed"))
+      const kindMatches = kindFilter === "all" || request.kind === kindFilter
+
+      return statusMatches && kindMatches
+    }),
+    [kindFilter, reports.requests, statusFilter]
+  )
+
   return (
     <AppShell account={account} kicker={KICKER} role="admin" title="Reports">
       <section className="app-section admin-panel">
-        <SectionHeader eyebrow={`${reports.length} recorded`} title="Flagged and blocked activity" />
-        {reports.length === 0 ? (
+        <SectionHeader eyebrow={`${reports.requests.length} recorded`} title="User requests" />
+        <div className="filter-bar admin-filter-bar" aria-label="Filter user requests">
+          <label>
+            <span className="sr-only">Request status</span>
+            <select
+              className="admin-select"
+              onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
+              value={statusFilter}
+            >
+              <option value="attention">Needs attention</option>
+              <option value="all">All statuses</option>
+              <option value="terminal">Resolved and closed</option>
+            </select>
+          </label>
+          <label>
+            <span className="sr-only">Request kind</span>
+            <select
+              className="admin-select"
+              onChange={(event) => setKindFilter(event.target.value as typeof kindFilter)}
+              value={kindFilter}
+            >
+              <option value="all">Problems and features</option>
+              <option value="problem">Problems</option>
+              <option value="feature_request">Feature requests</option>
+            </select>
+          </label>
+        </div>
+        {filteredRequests.length === 0 ? (
           <EmptyState
-            body="Reports from users appear here for human review. Blocked or flagged marketplace activity also shows up in this queue."
-            title="No open reports."
+            body="New product problems and feature requests will appear here for a platform response."
+            title={reports.requests.length === 0 ? "No user requests yet." : "No requests match these filters."}
           />
         ) : (
           <div className="admin-rows">
-            {reports.map((report) => (
+            {filteredRequests.map((request) => (
+              <article className="admin-row admin-support-row" id={`support-request-${request.id}`} key={request.id}>
+                <div className="admin-row__main">
+                  <div className="admin-row__head">
+                    <h3>{request.title}</h3>
+                    <Badge tone={supportStatusTone(request.status)}>{supportLabel(request.status)}</Badge>
+                  </div>
+                  <div className="admin-support-row__badges">
+                    <Badge tone="info">{request.kind === "problem" ? "Problem" : "Feature request"}</Badge>
+                    <Badge tone="info">{supportLabel(request.impact)}</Badge>
+                  </div>
+                  <p className="admin-row__meta">
+                    {request.reporterName} · {request.organizationName}
+                  </p>
+                  <p className="admin-row__body admin-support-row__details">{request.details}</p>
+                  <p className="admin-row__meta">
+                    {request.pagePath ? `Page ${request.pagePath}` : "No page context"}
+                    {request.appCommitSha ? ` · Build ${request.appCommitSha.slice(0, 12)}` : ""}
+                  </p>
+                  <span className="admin-row__when">
+                    Submitted {request.createdLabel} · Updated {request.updatedLabel}
+                  </span>
+                  {request.resolutionNote ? (
+                    <div className="admin-support-row__resolution">
+                      <strong>{request.resolutionCode ? supportLabel(request.resolutionCode) : "Outcome"}</strong>
+                      <p>{request.resolutionNote}</p>
+                      {request.closedLabel ? <span>Recorded {request.closedLabel}</span> : null}
+                    </div>
+                  ) : null}
+                </div>
+                <AdminReportDecision requestId={request.id} status={request.status} />
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="app-section admin-panel">
+        <SectionHeader eyebrow={`${reports.systemFlags.length} recorded`} title="System flags" />
+        <p className="admin-panel__intro">Blocked or flagged operating events remain read-only system history; they do not share the user-request lifecycle.</p>
+        {reports.systemFlags.length === 0 ? (
+          <EmptyState body="Blocked or flagged operating events will appear here." title="No system flags." />
+        ) : (
+          <div className="admin-rows">
+            {reports.systemFlags.map((report) => (
               <article className="admin-row" key={report.id}>
                 <div className="admin-row__main">
                   <div className="admin-row__head">
-                    <strong>{report.actionLabel}</strong>
-                    <Badge tone="critical">Needs review</Badge>
+                    <h3>{report.actionLabel}</h3>
+                    <Badge tone="critical">System flag</Badge>
                   </div>
-                  <p className="admin-row__meta">
-                    {report.entityLabel} · {report.actorName}
-                  </p>
+                  <p className="admin-row__meta">{report.entityLabel} · {report.actorName}</p>
                   {report.detail ? <p className="admin-row__body">{report.detail}</p> : null}
                   <span className="admin-row__when">{report.whenLabel}</span>
                 </div>
