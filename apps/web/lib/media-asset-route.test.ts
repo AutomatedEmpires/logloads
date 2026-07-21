@@ -62,9 +62,7 @@ describe("driver media asset route", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     routeMocks.requireApiActor.mockResolvedValue({
-      actor: {},
-      actorUserId: "11111111-1111-4111-8111-111111111111",
-      organizationId: "22222222-2222-4222-8222-222222222222"
+      organizationId: "test-organization-id"
     })
     routeMocks.mediaTarget.mockReturnValue({ photo: storedMedia })
     routeMocks.signedDeliveryUrl.mockRejectedValue(
