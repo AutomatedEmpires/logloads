@@ -1,6 +1,5 @@
 import "server-only"
 
-import { v2 as cloudinary } from "cloudinary"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 import { tripDocumentSchema, type MediaReference, type TripDocument } from "@logloads/contracts"
 import {
@@ -20,20 +19,44 @@ export type MediaKind = (typeof MEDIA_KINDS)[number]
 
 export type MediaTarget = DriverMediaTarget
 
+const MEDIA_UNAVAILABLE_MESSAGE = "File uploads are not activated for this environment"
+
 function environment() {
   const config = dedicatedCloudinaryConfiguration(process.env)
 
   if (!config) {
-    throw new ApiError("File uploads are not activated for this environment", 503)
+    throw new ApiError(MEDIA_UNAVAILABLE_MESSAGE, 503)
   }
 
-  cloudinary.config({
-    api_key: config.apiKey,
-    api_secret: config.apiSecret,
-    cloud_name: config.cloudName,
-    secure: true
-  })
   return config
+}
+
+/**
+ * Loads the provider only after the dedicated-tenancy gate succeeds. The pinned
+ * SDK's `config(true)` is its supported full reset: it clears the singleton,
+ * then reloads only CLOUDINARY_URL / CLOUDINARY_ACCOUNT_URL /
+ * CLOUDINARY_API_PROXY. The pure gate rejects every nonblank CLOUDINARY_* name
+ * outside our three-value allowlist before import, so the reset cannot retain an
+ * ambient tenant, proxy, OAuth token, private CDN, or delivery host.
+ */
+async function provider() {
+  const config = environment()
+
+  try {
+    const { v2: cloudinary } = await import("cloudinary")
+
+    cloudinary.config(true)
+    cloudinary.config({
+      api_key: config.apiKey,
+      api_secret: config.apiSecret,
+      cloud_name: config.cloudName,
+      secure: true
+    })
+
+    return { cloudinary, config }
+  } catch {
+    throw new ApiError(MEDIA_UNAVAILABLE_MESSAGE, 503)
+  }
 }
 
 export function parseMediaKind(value: unknown): MediaKind {
@@ -130,8 +153,8 @@ export function tripDocumentTarget(
  * signing one fails every upload with 401 Invalid Signature. Size is still
  * rechecked on read-back before writing a record.
  */
-export function signedUpload(target: { publicIdPrefix: string }) {
-  const config = environment()
+export async function signedUpload(target: { publicIdPrefix: string }) {
+  const { cloudinary, config } = await provider()
   const timestamp = Math.floor(Date.now() / 1000)
   const publicId = `${target.publicIdPrefix}/uploads/${crypto.randomUUID()}`
   const parameters = {
@@ -164,7 +187,7 @@ function assetCreatedAt(createdAt: unknown): string {
 }
 
 export async function verifiedMediaReference(publicId: string): Promise<MediaReference> {
-  environment()
+  const { cloudinary } = await provider()
   const asset = await cloudinary.api.resource(publicId, { resource_type: "image", type: "authenticated" })
   const format = String(asset.format ?? "").toLowerCase()
 
@@ -191,8 +214,8 @@ export async function verifiedMediaReference(publicId: string): Promise<MediaRef
   }
 }
 
-export function signedDeliveryUrl(photo: MediaReference): string {
-  environment()
+export async function signedDeliveryUrl(photo: MediaReference): Promise<string> {
+  const { cloudinary } = await provider()
 
   return cloudinary.url(photo.publicId, {
     crop: "limit",
@@ -214,8 +237,8 @@ export function signedDeliveryUrl(photo: MediaReference): string {
  * ticket is evidence, and the number the whole settlement turns on is printed
  * small. A derivative that dropped a digit would still look like a document.
  */
-export function signedDocumentUrl(media: MediaReference): string {
-  environment()
+export async function signedDocumentUrl(media: MediaReference): Promise<string> {
+  const { cloudinary } = await provider()
 
   return cloudinary.url(media.publicId, {
     format: media.format,

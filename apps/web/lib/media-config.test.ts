@@ -53,4 +53,25 @@ describe("dedicated Cloudinary configuration", () => {
       }
     }
   )
+
+  it.each([
+    "CLOUDINARY_URL",
+    "CLOUDINARY_ACCOUNT_URL",
+    "CLOUDINARY_API_PROXY",
+    "CLOUDINARY_OAUTH_TOKEN",
+    "CLOUDINARY_PRIVATE_CDN",
+    "CLOUDINARY_SECURE_DISTRIBUTION",
+    "CLOUDINARY_FUTURE_SDK_OPTION"
+  ])("rejects nonblank ambient SDK configuration through %s", (name) => {
+    const environment = { ...configuredEnvironment, [name]: "ambient-value" }
+
+    expect(dedicatedCloudinaryConfiguration(environment)).toBeNull()
+    expect(isDedicatedMediaConfigured(environment)).toBe(false)
+  })
+
+  it("ignores an explicitly empty unknown Cloudinary variable", () => {
+    const environment = { ...configuredEnvironment, CLOUDINARY_FUTURE_SDK_OPTION: "" }
+
+    expect(isDedicatedMediaConfigured(environment)).toBe(true)
+  })
 })

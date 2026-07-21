@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     const kind = parseMediaKind(payload.kind)
     const target = mediaTarget(services.state, actor, organizationId, kind)
 
-    return NextResponse.json(signedUpload(target))
+    return NextResponse.json(await signedUpload(target))
   } catch (error) {
     return apiErrorResponse(error)
   }

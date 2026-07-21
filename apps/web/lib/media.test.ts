@@ -39,7 +39,13 @@ const configuredMediaEnvironment = {
   CLOUDINARY_API_SECRET: "test-secret"
 } as const
 
-type MediaEnvironmentOverride = Partial<Record<keyof typeof configuredMediaEnvironment, string | undefined>>
+type MediaEnvironmentOverride = Record<string, string | undefined>
+
+const allowedCloudinaryEnvironmentNames = new Set([
+  "CLOUDINARY_CLOUD_NAME",
+  "CLOUDINARY_API_KEY",
+  "CLOUDINARY_API_SECRET"
+])
 
 const storedMedia: MediaReference = {
   provider: "cloudinary",
@@ -53,6 +59,12 @@ const storedMedia: MediaReference = {
 }
 
 function stubMediaEnvironment(overrides: MediaEnvironmentOverride = {}) {
+  for (const name of Object.keys(process.env)) {
+    if (name.startsWith("CLOUDINARY_") && !allowedCloudinaryEnvironmentNames.has(name)) {
+      vi.stubEnv(name, undefined)
+    }
+  }
+
   for (const [name, value] of Object.entries({ ...configuredMediaEnvironment, ...overrides })) {
     vi.stubEnv(name, value)
   }
@@ -147,15 +159,16 @@ describe("signed upload", () => {
     stubMediaEnvironment()
   })
 
-  it("permits at the edge only what the domain accepts on read-back", () => {
+  it("permits at the edge only what the domain accepts on read-back", async () => {
     // The two checks must agree. A format the signature permits but
     // `verifiedMediaReference` refuses would be stored and only then rejected —
     // the exact waste moving the check to the edge exists to end.
-    const { parameters } = signedUpload({ publicIdPrefix: "logloads/trip-documents/t1" })
+    const { parameters } = await signedUpload({ publicIdPrefix: "logloads/trip-documents/t1" })
 
     const formats = String(parameters.allowed_formats).split(",")
 
-    expect(cloudinaryAdapter.config).toHaveBeenCalledWith({
+    expect(cloudinaryAdapter.config).toHaveBeenNthCalledWith(1, true)
+    expect(cloudinaryAdapter.config).toHaveBeenNthCalledWith(2, {
       api_key: "test-key",
       api_secret: "test-secret",
       cloud_name: "test-cloud",
@@ -168,13 +181,13 @@ describe("signed upload", () => {
     }
   })
 
-  it("does not sign a restriction the provider has no parameter for", () => {
+  it("does not sign a restriction the provider has no parameter for", async () => {
     // Cloudinary drops parameters it does not know before computing its own
     // string-to-sign, so signing `max_file_size` — which reads like the obvious
     // companion to `allowed_formats` — desynchronises the signature and fails
     // every photo and proof upload with 401. The account ceiling and the
     // application's stricter read-back check remain separate size defenses.
-    const { parameters } = signedUpload({ publicIdPrefix: "logloads/trip-documents/t1" })
+    const { parameters } = await signedUpload({ publicIdPrefix: "logloads/trip-documents/t1" })
 
     expect(parameters).not.toHaveProperty("max_file_size")
   })
@@ -190,7 +203,13 @@ describe("dedicated media tenancy gate", () => {
     ["missing API key", { CLOUDINARY_API_KEY: undefined }],
     ["blank API key", { CLOUDINARY_API_KEY: "\t" }],
     ["missing API secret", { CLOUDINARY_API_SECRET: undefined }],
-    ["blank API secret", { CLOUDINARY_API_SECRET: "\n" }]
+    ["blank API secret", { CLOUDINARY_API_SECRET: "\n" }],
+    ["ambient Cloudinary URL", { CLOUDINARY_URL: "not-a-provider-url" }],
+    ["ambient proxy", { CLOUDINARY_API_PROXY: "https://proxy.example.test" }],
+    ["ambient OAuth token", { CLOUDINARY_OAUTH_TOKEN: "ambient-token" }],
+    ["ambient private CDN", { CLOUDINARY_PRIVATE_CDN: "true" }],
+    ["ambient delivery host", { CLOUDINARY_SECURE_DISTRIBUTION: "media.example.test" }],
+    ["future ambient option", { CLOUDINARY_FUTURE_SDK_OPTION: "enabled" }]
   ]
 
   it.each(invalidEnvironments)("fails closed before every provider adapter call when %s", async (_name, overrides) => {
