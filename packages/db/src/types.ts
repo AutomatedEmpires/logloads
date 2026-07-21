@@ -27,6 +27,7 @@ import type {
   Rate,
   RichLandingDetails,
   RoutePack,
+  SupportRequest,
   TrailerProfile,
   TripDocument,
   TripEvent,
@@ -73,6 +74,7 @@ export interface LogLoadsDatabaseState {
   entitlements: Entitlement[]
   operationalNotices: OperationalNotice[]
   notifications: Notification[]
+  supportRequests: SupportRequest[]
   messageThreads: MessageThread[]
   messageEvents: MessageEvent[]
   auditEvents: AuditEvent[]
