@@ -1,8 +1,11 @@
+"use client"
+
 import { Badge } from "@logloads/ui"
+import { useState } from "react"
 
 import type { SupportPageData } from "@/lib/support-data"
 import { formatDateTime } from "@/lib/v3-shared"
-import { SupportRequestForm } from "./SupportActions"
+import { SupportRequestForm, type SupportRequestReceipt } from "./SupportActions"
 import { AppShell, EmptyState, SectionHeader } from "./Shells"
 
 function statusTone(status: string): "success" | "warning" | "info" {
@@ -19,6 +22,12 @@ function label(value: string): string {
 }
 
 export function SupportPage({ account, fromPath, requests, role }: SupportPageData) {
+  const [visibleRequests, setVisibleRequests] = useState(requests)
+
+  function recordSavedRequest(request: SupportRequestReceipt): void {
+    setVisibleRequests((current) => [request, ...current.filter((candidate) => candidate.id !== request.id)])
+  }
+
   return (
     <AppShell account={account} kicker="Help improve LogLoads" role={role} title="Product feedback">
       <section className="app-section support-panel support-panel--form">
@@ -34,23 +43,23 @@ export function SupportPage({ account, fromPath, requests, role }: SupportPageDa
           </p>
           <p>Do not include passwords, access codes, gate combinations, or private contact details.</p>
         </div>
-        <SupportRequestForm fromPath={fromPath} />
+        <SupportRequestForm fromPath={fromPath} onSaved={recordSavedRequest} />
       </section>
 
       <section className="app-section support-panel" aria-labelledby="your-support-requests">
         <SectionHeader
-          eyebrow={`${requests.length} recorded`}
+          eyebrow={`${visibleRequests.length} recorded`}
           title="Your requests"
         />
         <span className="sr-only" id="your-support-requests">Your product feedback requests</span>
-        {requests.length === 0 ? (
+        {visibleRequests.length === 0 ? (
           <EmptyState
             body="Problems and feature ideas you send will appear here with their current review status."
             title="No product feedback yet."
           />
         ) : (
           <div className="support-request-list">
-            {requests.map((request) => (
+            {visibleRequests.map((request) => (
               <article className="support-request-card" id={`support-request-${request.id}`} key={request.id}>
                 <div className="support-request-card__head">
                   <h3>{request.title}</h3>
