@@ -218,6 +218,28 @@ describe("driver network access", () => {
     expect(view?.routePack?.id).not.toBe(mintedForViewer.id)
   })
 
+  it("never serves a pre-guard Route Pack whose stored source ids cross organizations", () => {
+    const { request, services, sourceContext, viewer } = networkFixture()
+    const assignment = request()
+
+    services.approveCapacityRequest({ ...sourceContext, assignmentId: assignment.id })
+    const stored = services.state.routePacks.find((pack) => pack.assignmentId === assignment.id)
+
+    expect(stored).toBeDefined()
+    if (!stored) return
+
+    stored.landingId = "66666666-6666-4666-8666-666666666661"
+
+    const current = buildNetworkView(
+      services.state,
+      viewer,
+      new Date("2026-06-05T12:00:00.000Z")
+    ).loads.find((load) => load.id === assignment.loadPostingId)
+
+    expect(current?.access.unlocked).toBe(true)
+    expect(current?.routePack?.id).not.toBe(stored.id)
+  })
+
   it("never labels a terminal load as available", () => {
     const { load, services, viewer } = networkFixture()
     load.status = "cancelled"

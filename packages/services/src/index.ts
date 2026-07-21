@@ -204,6 +204,7 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
 export type LogLoadsServices = ReturnType<typeof createLogLoadsServices>
 
 export { getDriverMediaTarget, getTripDocumentTarget, tripDocumentPublicIdPrefix }
+export { loadPostingHasOwnedCoherentSources, routePackIsSafeToRead } from "./route-packs"
 export type {
   CreateHaulRouteInput,
   CreateLandingInput,

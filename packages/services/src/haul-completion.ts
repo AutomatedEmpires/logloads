@@ -10,6 +10,7 @@ import {
 
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
+import { routePackIsSafeToRead } from "./route-packs"
 import { assertCondition, assertFound, nowIso } from "./utils"
 
 /** Documents a driver may offer as proof a haul was delivered. */
@@ -61,12 +62,26 @@ export function hasCompletionEvidence(state: LogLoadsDatabaseState, tripId: stri
  * a driver to something they were never told.
  */
 export function requiredCompletionEvidence(state: LogLoadsDatabaseState, trip: TripV2): string[] {
+  const load = state.loadPostings.find((candidate) => candidate.id === trip.loadPostingId)
+
+  if (!load) {
+    return []
+  }
+
   const assignmentPack = state.routePacks
-    .filter((candidate) => candidate.assignmentId === trip.assignmentId && !candidate.supersededAt)
+    .filter(
+      (candidate) =>
+        candidate.assignmentId === trip.assignmentId &&
+        !candidate.supersededAt &&
+        routePackIsSafeToRead(state, load, candidate)
+    )
     .sort((left, right) => right.version - left.version)[0]
   const pack = assignmentPack ??
     state.routePacks.find(
-      (candidate) => candidate.loadPostingId === trip.loadPostingId && !candidate.assignmentId
+      (candidate) =>
+        candidate.loadPostingId === trip.loadPostingId &&
+        !candidate.assignmentId &&
+        routePackIsSafeToRead(state, load, candidate)
     )
 
   return pack?.snapshot?.completionEvidence ?? []

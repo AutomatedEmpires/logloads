@@ -66,19 +66,12 @@ function sortedOptions(values: Set<string>): RequirementOption[] {
 export function getHostPublishingOptions(organizationId: string): HostPublishingOptions {
   const state = services.state
 
-  const memberUserIds = new Set(
-    state.organizationMemberships
-      .filter((membership) => membership.organizationId === organizationId && membership.status === "active")
-      .map((membership) => membership.userId)
-  )
-
-  // A dispatch coordinate is required on every posting. Prefer a dispatcher
-  // profile registered to this organization, then any active member who holds
-  // a dispatcher profile elsewhere (shared dispatch across partner outfits).
-  const dispatcherProfile =
-    state.dispatcherProfiles.find((profile) => profile.companyId === organizationId) ??
-    state.dispatcherProfiles.find((profile) => memberUserIds.has(profile.userId)) ??
-    null
+  // A dispatch coordinate is required on every posting and is an
+  // organization-owned source. Never advertise another outfit's profile as a
+  // publishable fallback merely because the same user belongs to both.
+  const dispatcherProfile = state.dispatcherProfiles.find(
+    (profile) => profile.companyId === organizationId
+  ) ?? null
 
   const millsById = new Map(state.mills.map((mill) => [mill.id, mill]))
 

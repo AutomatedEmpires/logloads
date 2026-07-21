@@ -21,6 +21,67 @@ export interface RoutePackSources {
   rate: Rate | null
 }
 
+function resolveOwnedDispatcher(state: LogLoadsDatabaseState, load: LoadPosting) {
+  return state.dispatcherProfiles.find(
+    (profile) => profile.id === load.dispatcherProfileId && profile.companyId === load.companyId
+  )
+}
+
+/**
+ * A non-throwing boundary for read paths. Legacy documents can predate the
+ * publication guard, so callers that list or serve work must be able to omit
+ * malformed records without turning discovery into an exception surface.
+ */
+export function loadPostingHasOwnedCoherentSources(
+  state: LogLoadsDatabaseState,
+  load: LoadPosting
+): boolean {
+  const dispatcher = resolveOwnedDispatcher(state, load)
+  const loader = load.loaderProfileId
+    ? state.loaderProfiles.find(
+      (profile) => profile.id === load.loaderProfileId && profile.companyId === load.companyId
+    )
+    : null
+  const landing = state.landings.find(
+    (candidate) => candidate.id === load.pickupLandingId && candidate.companyId === load.companyId
+  )
+  const rate = state.rates.find(
+    (candidate) => candidate.id === load.rateId && candidate.companyId === load.companyId
+  )
+  const route = state.haulRoutes.find(
+    (candidate) => candidate.id === load.routeId && candidate.companyId === load.companyId
+  )
+
+  return Boolean(
+    dispatcher &&
+    (!load.loaderProfileId || loader) &&
+    landing &&
+    rate &&
+    route &&
+    route.landingId === load.pickupLandingId &&
+    route.millId === load.dropoffMillId
+  )
+}
+
+/**
+ * A stored Route Pack is safe to serve only while both the current posting and
+ * the pack's own source identifiers remain inside the posting organization.
+ * This blocks pre-guard snapshots without rewriting or deleting history.
+ */
+export function routePackIsSafeToRead(
+  state: LogLoadsDatabaseState,
+  load: LoadPosting,
+  pack: RoutePack
+): boolean {
+  return (
+    loadPostingHasOwnedCoherentSources(state, load) &&
+    pack.loadPostingId === load.id &&
+    pack.landingId === load.pickupLandingId &&
+    pack.haulRouteId === load.routeId &&
+    pack.destinationId === load.dropoffMillId
+  )
+}
+
 function instruction(
   source: RoutePackInstruction["source"],
   severity: RoutePackInstruction["severity"],
@@ -47,8 +108,9 @@ const HAZARD_ROAD_CONDITIONS = new Set(["icy", "snow", "muddy", "restricted", "c
  * runs once, at approval, and the result is stored — a later edit to the load
  * cannot rewrite instructions the driver already committed to.
  *
- * Missing sources degrade honestly: an absent landing record simply contributes
- * no access instructions rather than failing the approval or inventing detail.
+ * Missing optional details degrade honestly: an absent rich landing-detail or
+ * destination-facility record contributes no instructions rather than
+ * inventing them. Required organization-owned sources fail closed.
  */
 export function buildAssignmentRoutePack(
   state: LogLoadsDatabaseState,
@@ -58,8 +120,28 @@ export function buildAssignmentRoutePack(
 ): RoutePack {
   const { assignment, load, route, slot, rate } = sources
 
-  const landing = state.landings.find((current) => current.id === load.pickupLandingId) ?? null
-  const landingDetails = state.richLandingDetails.find((current) => current.landingId === load.pickupLandingId) ?? null
+  // Approval normally validates these before calling the builder, but accepted
+  // legacy assignments and direct regeneration calls can predate that boundary.
+  // Never snapshot another organization's route/rate facts or an incoherent
+  // lane even when the stored posting itself is malformed.
+  if (
+    rate === null ||
+    route.id !== load.routeId ||
+    route.companyId !== load.companyId ||
+    route.landingId !== load.pickupLandingId ||
+    route.millId !== load.dropoffMillId ||
+    rate.id !== load.rateId ||
+    rate.companyId !== load.companyId
+  ) {
+    throw new Error("Route Pack sources are unavailable")
+  }
+
+  const landing = state.landings.find(
+    (current) => current.id === load.pickupLandingId && current.companyId === load.companyId
+  ) ?? null
+  const landingDetails = landing
+    ? state.richLandingDetails.find((current) => current.landingId === landing.id) ?? null
+    : null
   const destination = state.mills.find((current) => current.id === load.dropoffMillId) ?? null
   const facility = destination
     ? state.destinationFacilities.find((current) => current.millId === destination.id) ?? null
@@ -77,7 +159,10 @@ export function buildAssignmentRoutePack(
   // The host's load-level pack is the source a host maintains; its operator
   // instructions carry into every assignment snapshot taken from this load.
   const sourcePack = state.routePacks.find(
-    (pack) => pack.loadPostingId === load.id && !pack.assignmentId
+    (pack) =>
+      pack.loadPostingId === load.id &&
+      !pack.assignmentId &&
+      routePackIsSafeToRead(state, load, pack)
   ) ?? null
 
   const instructions = [
@@ -110,12 +195,16 @@ export function buildAssignmentRoutePack(
     instruction("operator_provided", "standard", "Weather", load.weatherNotes ?? route.weatherNotes)
   ].filter((entry): entry is RoutePackInstruction => entry !== null)
 
+  // Legacy stored postings may carry a dispatcher id from another organization.
+  // Never copy that profile's contact into an assignment-gated Route Pack.
+  const dispatcher = resolveOwnedDispatcher(state, load)
+
   const snapshot: RoutePackSnapshot = {
     capturedAt: timestamp,
     completionEvidence: facility?.completionEvidence ?? [],
-    contactEmail: load.dispatcherContact?.email ?? null,
-    contactName: load.dispatcherContact?.name ?? null,
-    contactPhone: load.dispatcherContact?.phone ?? null,
+    contactEmail: dispatcher?.contact.email ?? null,
+    contactName: dispatcher?.contact.name ?? null,
+    contactPhone: dispatcher?.contact.phone ?? null,
     destinationName: destination?.name ?? "Destination on file",
     destinationReceivingHours: facility?.receivingHours ?? null,
     driverName: driverUser?.fullName ?? "Assigned driver",
@@ -135,7 +224,7 @@ export function buildAssignmentRoutePack(
     originEntranceLat: landingDetails?.entranceLat ?? landing?.coordinates?.lat ?? null,
     originEntranceLng: landingDetails?.entranceLng ?? landing?.coordinates?.lng ?? null,
     originName: landing?.name ?? "Landing on file",
-    rateSummary: rate ? `${(rate.baseRate.amountCents / 100).toFixed(2)} ${rate.baseRate.currency} ${rate.rateType.replaceAll("_", " ")}` : null,
+    rateSummary: `${(rate.baseRate.amountCents / 100).toFixed(2)} ${rate.baseRate.currency} ${rate.rateType.replaceAll("_", " ")}`,
     routeDistanceMiles: route.estimatedDistanceMiles,
     routeRunTimeMinutes: route.estimatedRunTimeMinutes
   }

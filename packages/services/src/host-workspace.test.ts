@@ -302,7 +302,7 @@ describe("retiring a landing", () => {
       organizationId: HOST_ORG,
       rateType: "per_ton"
     })
-    const dispatcher = services.state.dispatcherProfiles[0]!
+    const dispatcher = services.state.dispatcherProfiles.find((profile) => profile.companyId === HOST_ORG)!
 
     services.setLandingActive({ actorUserId: HOST_OWNER, isActive: false, landingId: landing.id, organizationId: HOST_ORG })
 
@@ -363,7 +363,7 @@ describe("retiring a landing", () => {
       organizationId: HOST_ORG,
       rateType: "per_ton"
     })
-    const dispatcher = services.state.dispatcherProfiles[0]!
+    const dispatcher = services.state.dispatcherProfiles.find((profile) => profile.companyId === HOST_ORG)!
     const draft = services.createLoadPostingWithPolicy({
       accessRequirements: [],
       actorUserId: HOST_OWNER,
@@ -411,7 +411,7 @@ describe("retiring a landing", () => {
 
   it("refuses a posting that names a landing nobody has", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    const dispatcher = services.state.dispatcherProfiles[0]!
+    const dispatcher = services.state.dispatcherProfiles.find((profile) => profile.companyId === HOST_ORG)!
 
     // The guard reads a landing off the id it is given; a missing one must fail
     // closed rather than sail through for want of anything to check.

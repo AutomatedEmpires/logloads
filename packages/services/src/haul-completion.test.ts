@@ -23,8 +23,8 @@ function bookHaul(services: LogLoadsServices) {
     campaignStartDate: null,
     companyId: HOST_ORG,
     dailyTruckCountNeeded: 1,
-    dispatcherContact: { email: "dispatch@northpine.example", name: "Dana Dispatch", phone: "555-2001" },
-    dispatcherProfileId: "55555555-5555-4555-8555-555555555551",
+    dispatcherContact: { email: "dispatch@summit.example", name: "Cole Cedar", phone: "555-3001" },
+    dispatcherProfileId: "55555555-5555-4555-8555-555555555553",
     dropoffMillId: "99999999-9999-4999-8999-999999999991",
     equipmentRequirements: ["pole-trailer"],
     estimatedTonsPerLoad: 27,
@@ -33,11 +33,11 @@ function bookHaul(services: LogLoadsServices) {
     loaderContact: null,
     loaderProfileId: null,
     organizationId: HOST_ORG,
-    pickupLandingId: "66666666-6666-4666-8666-666666666661",
-    rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+    pickupLandingId: "66666666-6666-4666-8666-666666666662",
+    rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
     recurringSchedule: null,
     roadCondition: "good",
-    routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+    routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
     scheduleType: "one_off",
     status: "open",
     title: "Completion fixture",
@@ -129,7 +129,7 @@ describe("driver submission", () => {
     expect(result.trip.completionSubmittedByUserId).toBe(HAULER_DRIVER_ACTOR)
 
     const dispatcher = services.state.dispatcherProfiles.find(
-      (profile) => profile.id === "55555555-5555-4555-8555-555555555551"
+      (profile) => profile.id === "55555555-5555-4555-8555-555555555553"
     )
     const notified = services.state.notifications.find((notification) =>
       notification.relatedEntityId === assignment.id && notification.title === "Delivery recorded"
@@ -570,6 +570,17 @@ describe("completion evidence gate", () => {
     })
 
     expect(services.requiredCompletionEvidence(live).length).toBeGreaterThan(0)
+
+    const currentPack = services.state.routePacks.find(
+      (pack) => pack.assignmentId === trip.assignmentId && !pack.supersededAt
+    )
+
+    expect(currentPack).toBeDefined()
+    if (!currentPack) return
+
+    // A pre-guard foreign pack is not an authoritative completion contract.
+    currentPack.landingId = "66666666-6666-4666-8666-666666666661"
+    expect(services.requiredCompletionEvidence(live)).toEqual([])
   })
 
   it("does not let the exception that closed a haul be quietly deleted afterwards", () => {

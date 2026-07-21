@@ -1,4 +1,4 @@
-import { organizationMembershipSchema } from "@logloads/contracts"
+import { loaderProfileSchema, organizationMembershipSchema } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
@@ -20,12 +20,12 @@ const WINDOW = `${LOAD_DATE}T12:00:00.000Z`
 function postingInput(status: "open" | "draft", overrides: Record<string, unknown> = {}) {
   return {
     companyId: HOST_ORG,
-    dispatcherProfileId: "55555555-5555-4555-8555-555555555551",
+    dispatcherProfileId: "55555555-5555-4555-8555-555555555553",
     loaderProfileId: null,
-    pickupLandingId: "66666666-6666-4666-8666-666666666661",
+    pickupLandingId: "66666666-6666-4666-8666-666666666662",
     dropoffMillId: "99999999-9999-4999-8999-999999999991",
-    routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
-    rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+    routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
+    rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
     title: "Load management fixture",
     loadType: "saw_logs",
     status,
@@ -41,9 +41,9 @@ function postingInput(status: "open" | "draft", overrides: Record<string, unknow
     roadCondition: "good",
     weatherNotes: null,
     dispatcherContact: {
-      name: "Dana Dispatch",
-      phone: "555-2001",
-      email: "dispatch@northpine.example"
+      name: "Cole Cedar",
+      phone: "555-3001",
+      email: "dispatch@summit.example"
     },
     loaderContact: null,
     ...overrides
@@ -89,6 +89,15 @@ function slotFor(services: LogLoadsServices, loadPostingId: string) {
   }
 
   return slot
+}
+
+function publicationStateCounts(services: LogLoadsServices) {
+  return {
+    assignments: services.state.assignments.length,
+    loadPostings: services.state.loadPostings.length,
+    opportunityCapacities: services.state.opportunityCapacities.length,
+    truckSlots: services.state.truckSlots.length
+  }
 }
 
 /** Grants `role` in HOST_ORG to a synthetic member and returns their user id. */
@@ -341,6 +350,217 @@ describe("load publishing authority", () => {
       loadPostingId: live.id,
       organizationId: HOST_ORG
     })).toThrow(/Only a draft/)
+  })
+})
+
+describe("posting source ownership and lane coherence", () => {
+  it("derives published operator contacts from owned profiles instead of trusting payload contact data", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const spoofed = { email: "wrong@example.com", name: "Wrong dispatcher", phone: "555-9999" }
+    const loaderContact = { email: "loader@summit.example", name: "Lane Loader", phone: "555-3010" }
+    const loaderProfileId = "55555555-5555-4555-8555-555555555559"
+
+    services.state.loaderProfiles.push(loaderProfileSchema.parse({
+      companyId: HOST_ORG,
+      contact: loaderContact,
+      createdAt: "2026-06-05T00:00:00.000Z",
+      id: loaderProfileId,
+      landingId: "66666666-6666-4666-8666-666666666662",
+      shiftNotes: null,
+      updatedAt: "2026-06-05T00:00:00.000Z",
+      userId: HOST_OWNER
+    }))
+
+    const published = publishAsOwner(services, "open", {
+      dispatcherContact: spoofed,
+      loaderContact: spoofed,
+      loaderProfileId
+    })
+    const draft = publishAsOwner(services, "draft", { loaderContact: spoofed, loaderProfileId })
+    const stored = services.state.loadPostings.find((candidate) => candidate.id === draft.id)
+
+    expect(published.dispatcherContact).toEqual({
+      email: "dispatch@summit.example",
+      name: "Cole Cedar",
+      phone: "555-3001"
+    })
+    expect(published.loaderContact).toEqual(loaderContact)
+
+    expect(stored).toBeDefined()
+    if (!stored) return
+
+    stored.dispatcherContact = spoofed
+    stored.loaderContact = spoofed
+    const opened = services.openDraftLoadPosting({
+      actorUserId: HOST_OWNER,
+      loadPostingId: draft.id,
+      organizationId: HOST_ORG
+    })
+
+    expect(opened.dispatcherContact).toEqual(published.dispatcherContact)
+    expect(opened.loaderContact).toEqual(loaderContact)
+  })
+
+  it.each([
+    ["landing", { pickupLandingId: "66666666-6666-4666-8666-666666666661" }, /That landing was not found/],
+    ["haul route", { routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1" }, /That haul route was not found/],
+    ["rate", { rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1" }, /That rate was not found/],
+    [
+      "loader profile",
+      { loaderProfileId: "55555555-5555-4555-8555-555555555552" },
+      /That loader profile was not found/
+    ],
+    [
+      "dispatcher profile",
+      { dispatcherProfileId: "55555555-5555-4555-8555-555555555551" },
+      /That dispatcher profile was not found/
+    ]
+  ])("refuses another organization's %s before creating any publication state", (_label, overrides, error) => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const before = publicationStateCounts(services)
+
+    // Negative control: without the service-layer ownership guard the lower-level
+    // writer accepts these structurally valid foreign ids and this assertion fails.
+    expect(() => publishAsOwner(services, "open", overrides)).toThrow(error)
+    expect(publicationStateCounts(services)).toEqual(before)
+  })
+
+  it("refuses a route that does not begin at the selected landing or end at the selected mill", () => {
+    const wrongStart = createLogLoadsServices(createInMemoryDatabase())
+    const route = wrongStart.state.haulRoutes.find(
+      (candidate) => candidate.id === "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3"
+    )
+
+    expect(route).toBeDefined()
+    if (!route) return
+
+    route.landingId = "66666666-6666-4666-8666-666666666661"
+    const beforeWrongStart = publicationStateCounts(wrongStart)
+
+    expect(() => publishAsOwner(wrongStart)).toThrow(/does not start at Blue River Landing/)
+    expect(publicationStateCounts(wrongStart)).toEqual(beforeWrongStart)
+
+    const wrongDestination = createLogLoadsServices(createInMemoryDatabase())
+    const beforeWrongDestination = publicationStateCounts(wrongDestination)
+
+    expect(() => publishAsOwner(wrongDestination, "open", {
+      routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4"
+    })).toThrow(/does not run to the destination/)
+    expect(publicationStateCounts(wrongDestination)).toEqual(beforeWrongDestination)
+  })
+
+  it.each([
+    ["landing", { pickupLandingId: "66666666-6666-4666-8666-666666666661" }, /That landing was not found/],
+    ["haul route", { routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1" }, /That haul route was not found/],
+    ["rate", { rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1" }, /That rate was not found/],
+    [
+      "loader profile",
+      { loaderProfileId: "55555555-5555-4555-8555-555555555552" },
+      /That loader profile was not found/
+    ],
+    [
+      "dispatcher profile",
+      { dispatcherProfileId: "55555555-5555-4555-8555-555555555551" },
+      /That dispatcher profile was not found/
+    ],
+    ["destination", { routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4" }, /does not run to the destination/]
+  ])("applies the same %s protection when a stored draft is published", (_label, corruption, error) => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const draft = publishAsOwner(services, "draft")
+    const stored = services.state.loadPostings.find((candidate) => candidate.id === draft.id)
+
+    expect(stored).toBeDefined()
+    if (!stored) return
+
+    Object.assign(stored, corruption)
+    const before = publicationStateCounts(services)
+
+    expect(() => services.openDraftLoadPosting({
+      actorUserId: HOST_OWNER,
+      loadPostingId: draft.id,
+      organizationId: HOST_ORG
+    })).toThrow(error)
+
+    expect(publicationStateCounts(services)).toEqual(before)
+    expect(stored.status).toBe("draft")
+  })
+
+  it("rejects a malformed legacy open posting before a request mutates capacity or assignment state", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const load = publishAsOwner(services)
+    const slot = slotFor(services, load.id)
+    const capacity = services.state.opportunityCapacities.find((candidate) => candidate.loadPostingId === load.id)
+    const before = {
+      assignments: services.state.assignments.length,
+      auditEvents: services.state.auditEvents.length,
+      notifications: services.state.notifications.length,
+      remainingTruckloads: capacity?.remainingTruckloads,
+      reservedCount: slot.reservedCount,
+      slotStatus: slot.status
+    }
+
+    // Simulate an already-open pre-guard posting pointing at another host's
+    // private landing. The request path must not rely only on publish-time checks.
+    load.pickupLandingId = "66666666-6666-4666-8666-666666666661"
+
+    expect(services.isLoadRequestableAt(load, WINDOW)).toBe(false)
+    expect(services.listVisibleLoadsForOrganization(HAULER_ORG)).not.toContainEqual(load)
+    expect(() => requestAsHauler(services, load.id, slot.id)).toThrow(/That landing was not found/)
+    const capacityAfter = services.state.opportunityCapacities.find(
+      (candidate) => candidate.loadPostingId === load.id
+    )
+    const slotAfter = services.state.truckSlots.find((candidate) => candidate.id === slot.id)
+
+    expect({
+      assignments: services.state.assignments.length,
+      auditEvents: services.state.auditEvents.length,
+      notifications: services.state.notifications.length,
+      remainingTruckloads: capacityAfter?.remainingTruckloads,
+      reservedCount: slotAfter?.reservedCount,
+      slotStatus: slotAfter?.status
+    }).toEqual(before)
+  })
+
+  it("revalidates a pending legacy request before approval mints terms, a trip, or a Route Pack", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const load = publishAsOwner(services)
+    const slot = slotFor(services, load.id)
+    const assignment = requestAsHauler(services, load.id, slot.id)
+    const stored = services.state.loadPostings.find((candidate) => candidate.id === load.id)
+    const slotBeforeApproval = services.state.truckSlots.find((candidate) => candidate.id === slot.id)
+
+    expect(stored).toBeDefined()
+    expect(slotBeforeApproval).toBeDefined()
+    if (!stored || !slotBeforeApproval) return
+
+    const before = {
+      assignmentStatus: assignment.status,
+      auditEvents: services.state.auditEvents.length,
+      routePacks: services.state.routePacks.length,
+      slotStatus: slotBeforeApproval.status,
+      trips: services.state.tripsV2.length
+    }
+
+    // A stored posting can be corrupted after request time. Approval is the
+    // last boundary before foreign commercial facts become accepted terms.
+    stored.rateId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1"
+
+    expect(() => services.approveCapacityRequest({
+      actorUserId: HOST_OWNER,
+      assignmentId: assignment.id,
+      organizationId: HOST_ORG
+    })).toThrow(/That rate was not found/)
+
+    const assignmentAfter = services.state.assignments.find((candidate) => candidate.id === assignment.id)
+    const slotAfter = services.state.truckSlots.find((candidate) => candidate.id === slot.id)
+
+    expect({
+      assignmentStatus: assignmentAfter?.status,
+      auditEvents: services.state.auditEvents.length,
+      routePacks: services.state.routePacks.length,
+      slotStatus: slotAfter?.status,
+      trips: services.state.tripsV2.length
+    }).toEqual(before)
   })
 })
 

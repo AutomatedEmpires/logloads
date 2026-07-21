@@ -36,14 +36,29 @@ function requestSeedLoad(services: LogLoadsServices) {
  * the full request -> approve -> haul -> cancel/complete loop end to end.
  */
 function publishFreshLoad(services: LogLoadsServices, dailyTruckCountNeeded = 1, companyId = HOST_ORG) {
+  const sources = companyId === HOST_ORG
+    ? {
+        dispatcherContact: { name: "Cole Cedar", phone: "555-3001", email: "dispatch@summit.example" },
+        dispatcherProfileId: "55555555-5555-4555-8555-555555555553",
+        pickupLandingId: "66666666-6666-4666-8666-666666666662",
+        rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
+        routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3"
+      }
+    : {
+        dispatcherContact: { name: "Dana Dispatch", phone: "555-2001", email: "dispatch@northpine.example" },
+        dispatcherProfileId: "55555555-5555-4555-8555-555555555551",
+        pickupLandingId: "66666666-6666-4666-8666-666666666661",
+        rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+        routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"
+      }
   const load = services.createLoadPosting({
     companyId,
-    dispatcherProfileId: "55555555-5555-4555-8555-555555555551",
+    dispatcherProfileId: sources.dispatcherProfileId,
     loaderProfileId: null,
-    pickupLandingId: "66666666-6666-4666-8666-666666666661",
+    pickupLandingId: sources.pickupLandingId,
     dropoffMillId: "99999999-9999-4999-8999-999999999991",
-    routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
-    rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+    routeId: sources.routeId,
+    rateId: sources.rateId,
     title: "Cancellation loop fixture",
     loadType: "saw_logs",
     status: "open",
@@ -58,11 +73,7 @@ function publishFreshLoad(services: LogLoadsServices, dailyTruckCountNeeded = 1,
     accessRequirements: [],
     roadCondition: "good",
     weatherNotes: null,
-    dispatcherContact: {
-      name: "Dana Dispatch",
-      phone: "555-2001",
-      email: "dispatch@northpine.example"
-    },
+    dispatcherContact: sources.dispatcherContact,
     loaderContact: null
   })
   const slot = services.state.truckSlots.find((candidate) => candidate.loadPostingId === load.id)
