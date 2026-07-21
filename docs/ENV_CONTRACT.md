@@ -30,23 +30,50 @@ fails closed rather than silently replacing missing production data with seed da
 | Group | Variables |
 |---|---|
 | Billing | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_DISPATCH` |
-| Private media | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` — see note below |
+| Private media | `LOGLOADS_CLOUDINARY_TENANCY=dedicated`, `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` — see activation sequence below |
 | Email | `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_REPLY_TO`, `SUPPORT_EMAIL`, `LOGLOADS_CONTACT_EMAIL` |
 | Analytics | `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` |
 | Errors | `SENTRY_DSN` |
 | Maps | `NEXT_PUBLIC_MAPBOX_TOKEN` (keyless MapLibre fallback when absent) |
 
-**Cloudinary is genuinely optional only for driver and equipment photos.** Trip
-documents — the proof a haul was delivered — go through the same variables, and
-a proof record can no longer be created without a stored file. So in an
-environment without them a driver cannot attach proof at all, and a haul whose
-Route Pack requires a scale ticket cannot reach `completed`. Treat them as
-required wherever hauling is live.
+**Private media activates only with the exact non-secret tenancy marker and all
+three trimmed, nonblank credentials.** Without that complete configuration,
+`/api/health` keeps its overall status tied to the operating engine but reports
+`integrations.media=false`; upload signing, provider verification, photo
+delivery, and trip-document delivery all return the same retryable unavailable
+response before a Cloudinary adapter call. Trip documents are delivery proof,
+so a haul whose Route Pack requires one cannot reach `completed` while media is
+inactive. Treat dedicated media as required wherever hauling is live.
 
 (Records written before uploads were wired still satisfy the completion gate,
 which asks only for a document of an evidence type — but they carry no file and
 are never offered for download. That residue is bounded to hauls already in
 flight; no new record can be medialess.)
+
+### Production-only Cloudinary activation
+
+1. An accountable operator provisions or confirms a Cloudinary tenant owned for
+   LogLoads alone and verifies its ownership boundary outside the application.
+2. The operator replaces all three `CLOUDINARY_*` values in the LogLoads Doppler
+   project and Vercel **Production** environment while leaving
+   `LOGLOADS_CLOUDINARY_TENANCY` unset. Deploying in that state is safe:
+   `integrations.media` stays false and media remains fail-closed.
+3. On the exact intended production deployment, the operator rechecks that all
+   three values resolve to the dedicated tenant, then sets the marker to exactly
+   `dedicated` in Vercel Production and redeploys. Do not copy it into Preview or
+   Development as a convenience.
+4. Verify the deployed SHA, `integrations.media=true`, and an approved synthetic
+   signed-upload → provider-read-back → authenticated-delivery round trip in the
+   dedicated LogLoads namespace. If any evidence is uncertain, remove the marker
+   and redeploy to return every media path to the 503 gate.
+
+The marker is an **operator attestation, not cryptographic tenancy proof**. The
+runtime can prove only that the exact marker and three nonblank values are
+present; it cannot infer who owns the provider account or distinguish dedicated
+credentials from confidently miswired ones. `integrations.media=true` therefore
+means operator-attested dedicated activation, not independent provider-ownership
+verification. Record the accountable operator and dated provider evidence at
+activation without recording identifiers or secret values in the repository.
 
 ## Must not be set in production
 
