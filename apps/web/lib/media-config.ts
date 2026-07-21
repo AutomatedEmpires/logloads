@@ -4,6 +4,12 @@ export const DEDICATED_CLOUDINARY_TENANCY = "dedicated"
 
 type RuntimeEnvironment = Readonly<Record<string, string | undefined>>
 
+const CLOUDINARY_ENVIRONMENT_ALLOWLIST = new Set([
+  "CLOUDINARY_CLOUD_NAME",
+  "CLOUDINARY_API_KEY",
+  "CLOUDINARY_API_SECRET"
+])
+
 export interface DedicatedCloudinaryConfiguration {
   apiKey: string
   apiSecret: string
@@ -25,6 +31,18 @@ export function dedicatedCloudinaryConfiguration(
   environment: RuntimeEnvironment
 ): DedicatedCloudinaryConfiguration | null {
   if (environment.LOGLOADS_CLOUDINARY_TENANCY !== DEDICATED_CLOUDINARY_TENANCY) {
+    return null
+  }
+
+  const hasAmbientCloudinaryConfiguration = Object.entries(environment).some(
+    ([name, value]) =>
+      name.startsWith("CLOUDINARY_") &&
+      !CLOUDINARY_ENVIRONMENT_ALLOWLIST.has(name) &&
+      value !== undefined &&
+      value.length > 0
+  )
+
+  if (hasAmbientCloudinaryConfiguration) {
     return null
   }
 

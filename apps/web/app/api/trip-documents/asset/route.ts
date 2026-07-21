@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
     // Signed outside the try: building the URL needs Cloudinary credentials, and
     // their absence is a 503 configuration fact. Catching it alongside the fetch
     // would report an unconfigured environment as a provider blip.
-    const url = signedDocumentUrl(document.media)
+    const url = await signedDocumentUrl(document.media)
     let response: Response
 
     try {

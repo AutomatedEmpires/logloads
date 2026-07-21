@@ -37,11 +37,16 @@ fails closed rather than silently replacing missing production data with seed da
 | Maps | `NEXT_PUBLIC_MAPBOX_TOKEN` (keyless MapLibre fallback when absent) |
 
 **Private media activates only with the exact non-secret tenancy marker and all
-three trimmed, nonblank credentials.** Without that complete configuration,
+three trimmed, nonblank credentials. Every other nonblank `CLOUDINARY_*`
+variable is forbidden and makes the configuration inactive, including SDK URL,
+account, proxy, OAuth, private-CDN, secure-distribution, and future ambient
+options.** Without that complete isolated configuration,
 `/api/health` keeps its overall status tied to the operating engine but reports
 `integrations.media=false`; upload signing, provider verification, photo
 delivery, and trip-document delivery all return the same retryable unavailable
-response before a Cloudinary adapter call. Trip documents are delivery proof,
+response before the Cloudinary SDK is loaded or a provider adapter is called.
+After the gate passes, the pinned SDK singleton is fully reset before only the
+three allowlisted values are applied. Trip documents are delivery proof,
 so a haul whose Route Pack requires one cannot reach `completed` while media is
 inactive. Treat dedicated media as required wherever hauling is live.
 
@@ -56,7 +61,9 @@ flight; no new record can be medialess.)
    LogLoads alone and verifies its ownership boundary outside the application.
 2. The operator replaces all three `CLOUDINARY_*` values in the LogLoads Doppler
    project and Vercel **Production** environment while leaving
-   `LOGLOADS_CLOUDINARY_TENANCY` unset. Deploying in that state is safe:
+   `LOGLOADS_CLOUDINARY_TENANCY` unset, and removes every other `CLOUDINARY_*`
+   variable rather than retaining an SDK URL, proxy, token, or delivery-host
+   override. Deploying in that state is safe:
    `integrations.media` stays false and media remains fail-closed.
 3. On the exact intended production deployment, the operator rechecks that all
    three values resolve to the dedicated tenant, then sets the marker to exactly
@@ -78,6 +85,9 @@ activation without recording identifiers or secret values in the repository.
 ## Must not be set in production
 
 - `LOGLOADS_ENABLE_DEV_LOGIN` — credential-free development sign-in.
+- Any `CLOUDINARY_*` variable except `CLOUDINARY_CLOUD_NAME`,
+  `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` — ambient SDK configuration
+  disables media even when the dedicated-tenancy marker is present.
 - `SUPABASE_ANON_KEY` as an operating-state credential — `operating_state` is
   explicitly service-role only.
 
