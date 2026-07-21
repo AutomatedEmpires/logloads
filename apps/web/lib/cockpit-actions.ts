@@ -80,7 +80,7 @@ function ensureDriverAvailabilityForSlot(
   )
 
   if (!combination) {
-    throw new Error("Assign the driver to this truck before continuing.")
+    throw new Error("No equipment is assigned to this driver. Add or assign a truck before continuing.")
   }
 
   const slot = draft.state.truckSlots.find((candidate) => candidate.id === input.truckSlotId)
