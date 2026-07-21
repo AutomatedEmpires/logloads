@@ -3,37 +3,44 @@ import "server-only"
 import { createHmac, timingSafeEqual } from "node:crypto"
 
 import { auth } from "@clerk/nextjs/server"
-import type { Organization, OrganizationMembership, User } from "@logloads/contracts"
-import { cookies } from "next/headers"
+import type { User } from "@logloads/contracts"
+import { cookies, headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { cache } from "react"
 
+import { decideDevSession } from "./demo-mode"
 import { refreshState, services } from "./services"
+import {
+  canAccessCockpit,
+  homePathFor,
+  type Cockpit,
+  type SessionActor
+} from "./session-policy"
+
+export { canAccessCockpit, homePathFor } from "./session-policy"
+export type { Cockpit, SessionActor } from "./session-policy"
 
 export const SESSION_COOKIE = "ll_session"
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14
-
-export type Cockpit = "driver" | "fleet" | "host" | "admin"
-
-export interface SessionActor {
-  profile: User
-  memberships: Array<{ membership: OrganizationMembership; organization: Organization }>
-  activeOrganization: Organization | null
-  activeMembership: OrganizationMembership | null
-  driverProfileId: string | null
-  isPlatformAdmin: boolean
-}
 
 export function isClerkConfigured(): boolean {
   return Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY)
 }
 
-export function isDevSessionEnabled(): boolean {
-  if (isClerkConfigured()) {
-    return false
-  }
+async function devSessionDecision() {
+  const requestHeaders = await headers()
 
-  return process.env.NODE_ENV !== "production" || process.env.LOGLOADS_ENABLE_DEV_LOGIN === "true"
+  return decideDevSession(process.env, requestHeaders.get("host"))
+}
+
+export async function isDevSessionEnabled(): Promise<boolean> {
+  return (await devSessionDecision()).enabled
+}
+
+export async function isFounderDemoMode(): Promise<boolean> {
+  const decision = await devSessionDecision()
+
+  return decision.enabled && decision.demoMode
 }
 
 function sessionSecret(): string {
@@ -141,7 +148,7 @@ export const getSessionActor = cache(async (): Promise<SessionActor | null> => {
     return buildSessionActor(clerkProfile, devSession?.organizationId ?? null)
   }
 
-  if (!isDevSessionEnabled() || !devSession) {
+  if (!(await isDevSessionEnabled()) || !devSession) {
     return null
   }
 
@@ -153,58 +160,6 @@ export const getSessionActor = cache(async (): Promise<SessionActor | null> => {
 
   return buildSessionActor(profile, devSession.organizationId)
 })
-
-export function homePathFor(actor: SessionActor): string {
-  if (actor.isPlatformAdmin) {
-    return "/admin"
-  }
-
-  if (actor.driverProfileId) {
-    return "/driver/map"
-  }
-
-  const orgType = actor.activeOrganization?.type
-
-  if (orgType === "landing_source" || orgType === "destination") {
-    return "/host/command"
-  }
-
-  if (orgType === "fleet" || orgType === "carrier") {
-    return "/fleet/command"
-  }
-
-  return "/onboarding"
-}
-
-const FLEET_ROLES = new Set(["owner", "admin", "dispatcher", "fleet_manager"])
-const HOST_ROLES = new Set(["owner", "admin", "dispatcher", "landing_manager", "destination_manager", "billing"])
-
-export function canAccessCockpit(actor: SessionActor, cockpit: Cockpit): boolean {
-  if (cockpit === "admin") {
-    return actor.isPlatformAdmin
-  }
-
-  if (actor.isPlatformAdmin) {
-    return true
-  }
-
-  if (cockpit === "driver") {
-    return Boolean(actor.driverProfileId) || actor.activeMembership?.role === "driver"
-  }
-
-  const orgType = actor.activeOrganization?.type
-  const role = actor.activeMembership?.role
-
-  if (!orgType || !role) {
-    return false
-  }
-
-  if (cockpit === "fleet") {
-    return (orgType === "fleet" || orgType === "carrier") && FLEET_ROLES.has(role)
-  }
-
-  return (orgType === "landing_source" || orgType === "destination") && HOST_ROLES.has(role)
-}
 
 /**
  * Guard for cockpit pages: unauthenticated visitors go to sign-in, authenticated

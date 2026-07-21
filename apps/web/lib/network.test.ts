@@ -445,19 +445,21 @@ describe("direct-offer network views", () => {
     const targetAtSend = buildNetworkView(services.state, targetViewer, new Date("2026-06-05T12:00:00.000Z"))
     const sourceAtSend = buildNetworkView(services.state, sourceViewer, new Date("2026-06-05T12:00:00.000Z"))
 
-    expect(targetAtSend.directOffers).toEqual([
-      expect.objectContaining({
-        acceptedTruckloads: 0,
-        actionable: true,
-        direction: "received",
-        offeredTruckloads: 2,
-        remainingTruckloads: 2,
-        status: "sent"
-      })
-    ])
-    expect(sourceAtSend.directOffers).toEqual([
-      expect.objectContaining({ direction: "sent", status: "sent" })
-    ])
+    const targetPartial = targetAtSend.directOffers.find((offer) => offer.id === "29292929-2929-4929-8929-292929292911")
+    const sourcePartial = sourceAtSend.directOffers.find((offer) => offer.id === "29292929-2929-4929-8929-292929292911")
+
+    expect(targetPartial).toMatchObject({
+      acceptedTruckloads: 1,
+      actionable: true,
+      direction: "received",
+      offeredTruckloads: 2,
+      remainingTruckloads: 1,
+      status: "sent"
+    })
+    expect(sourcePartial).toMatchObject({ direction: "sent", status: "sent" })
+    expect(targetAtSend.directOffers.map((offer) => offer.status)).toEqual(
+      expect.arrayContaining(["sent", "declined", "revoked", "expired"])
+    )
 
     const unrelatedOrganizationId = "33333333-3333-4333-8333-333333333333"
     const unrelatedUser = services.state.profiles.find((profile) => profile.email === "loader@northpine.example")
@@ -475,7 +477,7 @@ describe("direct-offer network views", () => {
     })
     services.state.organizationMemberships.push({
       ...templateMembership,
-      id: "16161616-1616-4616-8616-161616161617",
+      id: "16161616-1616-4616-8616-161616161619",
       organizationId: unrelatedOrganizationId,
       role: "dispatcher",
       userId: unrelatedUser.id
@@ -490,17 +492,33 @@ describe("direct-offer network views", () => {
     capacity.visibilityMode = "direct_offer"
     const expired = buildNetworkView(services.state, targetViewer, new Date("2026-06-07T12:00:00.000Z"))
 
-    expect(expired.directOffers[0]).toMatchObject({ actionable: false, status: "expired" })
-    expect(expired.loads.some((load) => load.id === loadId)).toBe(false)
+    expect(expired.directOffers.find((offer) => offer.id === "29292929-2929-4929-8929-292929292911"))
+      .toMatchObject({ actionable: false, status: "expired" })
+    // The unused invitation expires, while the truckload already accepted from
+    // that offer keeps its participant-scoped operating record visible.
+    expect(expired.loads.some((load) => load.id === loadId)).toBe(true)
   })
 
-  it("reports partial acceptance and unlocks only the assignment Route Pack for authorized target staff", () => {
+  it("starts from partial acceptance and completes the remaining offered truckload", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const { targetViewer } = participantViewers(services)
     const load = services.state.loadPostings.find((candidate) => candidate.id === "cccccccc-cccc-4ccc-8ccc-ccccccccccc3")
     if (!load) throw new Error("Direct-offer claim fixture is incomplete")
     load.accessRequirements = []
     load.equipmentRequirements = []
+
+    const beforeClaim = buildNetworkView(
+      services.state,
+      targetViewer,
+      new Date("2026-06-05T12:00:00.000Z")
+    ).directOffers.find((candidate) => candidate.id === "29292929-2929-4929-8929-292929292911")
+
+    expect(beforeClaim).toMatchObject({
+      acceptedTruckloads: 1,
+      actionable: true,
+      remainingTruckloads: 1,
+      status: "sent"
+    })
 
     const accepted = services.claimDirectOffer({
       actorUserId: targetViewer.actorUserId,
@@ -514,10 +532,10 @@ describe("direct-offer network views", () => {
     const networkLoad = view.loads.find((candidate) => candidate.id === load.id)
 
     expect(offer).toMatchObject({
-      acceptedTruckloads: 1,
-      actionable: true,
-      remainingTruckloads: 1,
-      status: "sent"
+      acceptedTruckloads: 2,
+      actionable: false,
+      remainingTruckloads: 0,
+      status: "accepted"
     })
     expect(networkLoad?.access).toEqual({ reason: "assigned", unlocked: true })
     expect(networkLoad?.routePack?.id).toBe(accepted.trip.routePackId)

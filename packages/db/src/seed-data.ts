@@ -167,6 +167,45 @@ export const seedProfiles: User[] = parseMany(userSchema, [
     isActive: true,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
+  },
+  {
+    id: "22222222-2222-4222-8222-222222222226",
+    clerkUserId: "clerk-driver-4",
+    role: "driver",
+    fullName: "Riley Rivers",
+    phone: "555-1004",
+    email: "riley@northpine.example",
+    companyId: "33333333-3333-4333-8333-333333333331",
+    verificationStatus: "verified",
+    isActive: true,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "22222222-2222-4222-8222-222222222227",
+    clerkUserId: "clerk-empty-fleet-1",
+    role: "dispatcher",
+    fullName: "Morgan Newfleet",
+    phone: "555-4001",
+    email: "emptyfleet@logloads.example",
+    companyId: "33333333-3333-4333-8333-333333333334",
+    verificationStatus: "pending",
+    isActive: true,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "22222222-2222-4222-8222-222222222228",
+    clerkUserId: "clerk-driver-5",
+    role: "driver",
+    fullName: "Taylor Timber",
+    phone: "555-1005",
+    email: "taylor@summit.example",
+    companyId: "33333333-3333-4333-8333-333333333332",
+    verificationStatus: "verified",
+    isActive: true,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
   }
 ])
 
@@ -201,6 +240,23 @@ export const seedCompanies: LoggingCompany[] = parseMany(loggingCompanySchema, [
       email: "cole@summit.example"
     },
     notes: "Owner-operator heavy outfit handling mixed terrain landings.",
+    archivedAt: null,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "33333333-3333-4333-8333-333333333334",
+    slug: "new-river-hauling",
+    legalName: "New River Hauling LLC",
+    displayName: "New River Hauling",
+    verificationStatus: "pending",
+    primaryRegion: "Cascade Foothills",
+    contact: {
+      name: "Morgan Newfleet",
+      phone: "555-4001",
+      email: "emptyfleet@logloads.example"
+    },
+    notes: "Synthetic empty-state organization for the local founder demo.",
     archivedAt: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
@@ -244,6 +300,32 @@ export const seedDriverProfiles: DriverProfile[] = parseMany(driverProfileSchema
     homeBase: "Blue River",
     equipmentPreferences: ["bunk-trailer", "chains"],
     notes: "Comfortable with snowy high-grade routes.",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "44444444-4444-4444-8444-444444444444",
+    userId: "22222222-2222-4222-8222-222222222226",
+    companyId: "33333333-3333-4333-8333-333333333331",
+    availabilityStatus: "unavailable",
+    licenseNumber: "CDL-A-9004",
+    yearsExperience: 5,
+    homeBase: "Cascade Foothills",
+    equipmentPreferences: ["pole-trailer"],
+    notes: "Truck is out of service; do not assign until availability changes.",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "44444444-4444-4444-8444-444444444445",
+    userId: "22222222-2222-4222-8222-222222222228",
+    companyId: "33333333-3333-4333-8333-333333333332",
+    availabilityStatus: "available",
+    licenseNumber: "CDL-A-9005",
+    yearsExperience: 9,
+    homeBase: "Blue River",
+    equipmentPreferences: ["bunk-trailer", "chains"],
+    notes: "Assigned to Summit Ridge high-grade work.",
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
   }
@@ -349,6 +431,24 @@ export const seedTruckProfiles: TruckProfile[] = parseMany(truckProfileSchema, [
     archivedAt: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
+  },
+  {
+    id: "77777777-7777-4777-8777-777777777774",
+    ownerUserId: "22222222-2222-4222-8222-222222222228",
+    companyId: "33333333-3333-4333-8333-333333333332",
+    truckType: "log_truck",
+    unitNumber: "SR-440",
+    make: "Kenworth",
+    model: "T880",
+    plateNumber: "LOG440",
+    vin: "VIN-SR-440",
+    axleCount: 4,
+    maxPayloadTons: 29,
+    equipmentTags: ["chains", "snow-kit"],
+    roadAccessCapabilities: ["forest-road", "snow"],
+    archivedAt: null,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
   }
 ])
 
@@ -381,6 +481,17 @@ export const seedTrailerProfiles: TrailerProfile[] = parseMany(trailerProfileSch
     truckId: "77777777-7777-4777-8777-777777777773",
     trailerType: "bunk_trailer",
     unitNumber: "TRL-330",
+    capacityTons: 29,
+    equipmentTags: ["chains"],
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "88888888-8888-4888-8888-888888888884",
+    ownerUserId: "22222222-2222-4222-8222-222222222228",
+    truckId: "77777777-7777-4777-8777-777777777774",
+    trailerType: "bunk_trailer",
+    unitNumber: "TRL-440",
     capacityTons: 29,
     equipmentTags: ["chains"],
     createdAt: timestamps.created,
@@ -808,6 +919,40 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
     archivedAt: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
+  },
+  {
+    id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc7",
+    companyId: "33333333-3333-4333-8333-333333333332",
+    dispatcherProfileId: "55555555-5555-4555-8555-555555555553",
+    loaderProfileId: null,
+    pickupLandingId: "66666666-6666-4666-8666-666666666662",
+    dropoffMillId: "99999999-9999-4999-8999-999999999991",
+    routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
+    rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
+    title: "Blue River assigned mountain run",
+    loadType: "saw_logs",
+    status: "scheduled",
+    scheduleType: "one_off",
+    loadDate: "2026-06-06",
+    campaignStartDate: null,
+    campaignEndDate: null,
+    recurringSchedule: null,
+    dailyTruckCountNeeded: 1,
+    estimatedTonsPerLoad: 29,
+    equipmentRequirements: ["chains"],
+    accessRequirements: ["snow-kit"],
+    roadCondition: "restricted",
+    weatherNotes: "Assigned demo haul; evening snow possible above 3000 ft.",
+    dispatcherContact: {
+      name: "Cole Cedar",
+      phone: "555-3001",
+      email: "dispatch@summit.example"
+    },
+    loaderContact: null,
+    cancellationReason: null,
+    archivedAt: null,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.assigned
   }
 ])
 
@@ -886,6 +1031,21 @@ export const seedTruckSlots: TruckSlot[] = parseMany(truckSlotSchema, [
     notes: "Completed contingency run.",
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
+  },
+  {
+    id: "dddddddd-dddd-4ddd-8ddd-ddddddddddd6",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc7",
+    landingId: "66666666-6666-4666-8666-666666666662",
+    loaderProfileId: null,
+    slotDate: "2026-06-06",
+    startAt: "2026-06-06T15:00:00.000Z",
+    endAt: "2026-06-06T15:30:00.000Z",
+    capacity: 1,
+    reservedCount: 1,
+    status: "reserved",
+    notes: "Confirmed Summit Ridge mountain run.",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.assigned
   }
 ])
 
@@ -918,8 +1078,8 @@ export const seedAvailabilityWindows: AvailabilityWindow[] = parseMany(availabil
   },
   {
     id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3",
-    driverProfileId: "44444444-4444-4444-8444-444444444443",
-    truckProfileId: "77777777-7777-4777-8777-777777777773",
+    driverProfileId: "44444444-4444-4444-8444-444444444445",
+    truckProfileId: "77777777-7777-4777-8777-777777777774",
     status: "available",
     startAt: "2026-06-06T14:00:00.000Z",
     endAt: "2026-06-06T23:00:00.000Z",
@@ -999,6 +1159,23 @@ export const seedAssignments: Assignment[] = parseMany(assignmentSchema, [
     dispatcherNotes: "Reassign when weather clears.",
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
+  },
+  {
+    id: "ffffffff-ffff-4fff-8fff-fffffffffff5",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc7",
+    truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd6",
+    driverProfileId: "44444444-4444-4444-8444-444444444445",
+    truckProfileId: "77777777-7777-4777-8777-777777777774",
+    trailerProfileId: "88888888-8888-4888-8888-888888888884",
+    status: "accepted",
+    requestedAt: timestamps.requested,
+    assignedAt: timestamps.assigned,
+    completedAt: null,
+    cancelledAt: null,
+    cancellationReason: null,
+    dispatcherNotes: "Cole confirmed the high-grade mountain run.",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.assigned
   }
 ])
 
@@ -1117,6 +1294,18 @@ export const seedOrganizations: Organization[] = parseMany(organizationSchema, [
     archivedAt: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
+  },
+  {
+    id: "33333333-3333-4333-8333-333333333334",
+    slug: "new-river-hauling",
+    type: "fleet",
+    legalName: "New River Hauling LLC",
+    displayName: "New River Hauling",
+    primaryRegion: "Cascade Foothills",
+    verificationStatus: "pending",
+    archivedAt: null,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
   }
 ])
 
@@ -1171,6 +1360,33 @@ export const seedOrganizationMemberships: OrganizationMembership[] = parseMany(o
     organizationId: "33333333-3333-4333-8333-333333333332",
     userId: "22222222-2222-4222-8222-222222222224",
     role: "dispatcher",
+    status: "active",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "16161616-1616-4616-8616-161616161617",
+    organizationId: "33333333-3333-4333-8333-333333333331",
+    userId: "22222222-2222-4222-8222-222222222226",
+    role: "driver",
+    status: "active",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "16161616-1616-4616-8616-161616161618",
+    organizationId: "33333333-3333-4333-8333-333333333334",
+    userId: "22222222-2222-4222-8222-222222222227",
+    role: "owner",
+    status: "active",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "16161616-1616-4616-8616-161616161619",
+    organizationId: "33333333-3333-4333-8333-333333333332",
+    userId: "22222222-2222-4222-8222-222222222228",
+    role: "driver",
     status: "active",
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
@@ -1265,6 +1481,25 @@ export const seedEquipmentCombinations: EquipmentCombination[] = parseMany(equip
     trailerProfileId: "88888888-8888-4888-8888-888888888883",
     assignedDriverProfileId: "44444444-4444-4444-8444-444444444443",
     label: "SR-330 mountain bunk",
+    truckTypes: ["log_truck"],
+    trailerTypes: ["bunk_trailer"],
+    capabilityTags: ["chains", "snow-kit", "forest-road"],
+    productLengthMinFeet: 16,
+    productLengthMaxFeet: 40,
+    maxPayloadTons: 29,
+    status: "committed",
+    homeRegion: "Blue River Corridor",
+    lastVerifiedAt: timestamps.updated,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "18181818-1818-4818-8818-181818181814",
+    organizationId: "33333333-3333-4333-8333-333333333332",
+    truckProfileId: "77777777-7777-4777-8777-777777777774",
+    trailerProfileId: "88888888-8888-4888-8888-888888888884",
+    assignedDriverProfileId: "44444444-4444-4444-8444-444444444445",
+    label: "SR-440 mountain bunk",
     truckTypes: ["log_truck"],
     trailerTypes: ["bunk_trailer"],
     capabilityTags: ["chains", "snow-kit", "forest-road"],
@@ -1441,6 +1676,19 @@ export const seedOpportunityCapacities: OpportunityCapacity[] = parseMany(opport
     acceptedTermsSnapshot: {},
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
+  },
+  {
+    id: "21212121-2121-4121-8121-212121212117",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc7",
+    visibilityMode: "private_network",
+    allocationMode: "dispatcher_assignment",
+    totalTruckloads: 1,
+    committedTruckloads: 1,
+    completedTruckloads: 0,
+    remainingTruckloads: 0,
+    acceptedTermsSnapshot: { rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3", restriction: "chains required" },
+    createdAt: timestamps.created,
+    updatedAt: timestamps.assigned
   }
 ])
 
@@ -1527,6 +1775,29 @@ export const seedRoutePacks: RoutePack[] = parseMany(routePackSchema, [
     lastVerifiedAt: timestamps.updated,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
+  },
+  {
+    id: "23232323-2323-4323-8323-232323232314",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc7",
+    landingId: "66666666-6666-4666-8666-666666666662",
+    destinationId: "99999999-9999-4999-8999-999999999991",
+    haulRouteId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
+    visibility: "assigned_only",
+    cacheableOffline: true,
+    calculatedRouteSummary: "Blue River lower hold point to Cascade Mill; high-grade restriction after mile 18.",
+    localInstructions: [
+      {
+        source: "operator_provided",
+        severity: "critical",
+        title: "Chains required above mile 18",
+        detail: "Dispatch will pause the run if snow begins above 3000 feet.",
+        verifiedAt: timestamps.updated
+      }
+    ],
+    currentRoadCondition: "restricted",
+    lastVerifiedAt: timestamps.updated,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
   }
 ])
 
@@ -1538,13 +1809,13 @@ export const seedTripsV2: TripV2[] = parseMany(tripSchemaV2, [
     routePackId: "23232323-2323-4323-8323-232323232311",
     driverProfileId: "44444444-4444-4444-8444-444444444441",
     equipmentCombinationId: "18181818-1818-4818-8818-181818181811",
-    status: "assigned",
+    status: "en_route_to_landing",
     locationVisibility: "active_trip_participants",
-    locationSharingStartedAt: null,
+    locationSharingStartedAt: "2026-06-05T13:15:00.000Z",
     locationSharingEndsAt: null,
-    lastSyncedAt: timestamps.assigned,
+    lastSyncedAt: "2026-06-05T13:20:00.000Z",
     createdAt: timestamps.assigned,
-    updatedAt: timestamps.assigned,
+    updatedAt: "2026-06-05T13:20:00.000Z",
     completedAt: null
   },
   {
@@ -1562,6 +1833,22 @@ export const seedTripsV2: TripV2[] = parseMany(tripSchemaV2, [
     createdAt: timestamps.assigned,
     updatedAt: timestamps.completed,
     completedAt: timestamps.completed
+  },
+  {
+    id: "24242424-2424-4424-8424-242424242415",
+    assignmentId: "ffffffff-ffff-4fff-8fff-fffffffffff5",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc7",
+    routePackId: "23232323-2323-4323-8323-232323232314",
+    driverProfileId: "44444444-4444-4444-8444-444444444445",
+    equipmentCombinationId: "18181818-1818-4818-8818-181818181814",
+    status: "assigned",
+    locationVisibility: "active_trip_participants",
+    locationSharingStartedAt: null,
+    locationSharingEndsAt: null,
+    lastSyncedAt: timestamps.assigned,
+    createdAt: timestamps.assigned,
+    updatedAt: timestamps.assigned,
+    completedAt: null
   }
 ])
 
@@ -1653,6 +1940,28 @@ export const seedTripEvents: TripEvent[] = parseMany(tripEventSchema, [
     note: "Delivery accepted by receiving facility.",
     metadata: {},
     createdAt: timestamps.completed
+  },
+  {
+    id: "25252525-2525-4525-8525-252525252519",
+    tripId: "24242424-2424-4424-8424-242424242411",
+    type: "driver_status",
+    actorUserId: "22222222-2222-4222-8222-222222222221",
+    source: "driver",
+    occurredAt: "2026-06-05T13:15:00.000Z",
+    note: "Hank started toward Oak Landing; location is visible only to trip participants.",
+    metadata: { status: "en_route_to_landing" },
+    createdAt: "2026-06-05T13:15:00.000Z"
+  },
+  {
+    id: "25252525-2525-4525-8525-252525252520",
+    tripId: "24242424-2424-4424-8424-242424242415",
+    type: "assignment_created",
+    actorUserId: "22222222-2222-4222-8222-222222222223",
+    source: "dispatcher",
+    occurredAt: timestamps.assigned,
+    note: "Cole assigned Taylor to the Summit Ridge mountain run.",
+    metadata: { slotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd6" },
+    createdAt: timestamps.assigned
   }
 ])
 
@@ -1669,6 +1978,24 @@ export const seedTripDocuments: TripDocument[] = parseMany(tripDocumentSchema, [
     uploadedAt: timestamps.completed,
     processingStatus: "ready",
     auditMetadata: { grossTons: 30.4, source: "driver_upload" }
+  },
+  {
+    id: "26262626-2626-4626-8626-262626262612",
+    tripId: "24242424-2424-4424-8424-242424242411",
+    type: "photo",
+    storageProvider: "cloudinary",
+    storageKey: "logloads/demo/provider-disabled-photo.jpg",
+    filename: "oak-landing-condition.jpg",
+    contentType: "image/jpeg",
+    uploadedByUserId: "22222222-2222-4222-8222-222222222221",
+    uploadedAt: "2026-06-05T13:18:00.000Z",
+    processingStatus: "failed",
+    media: null,
+    auditMetadata: {
+      demoScenario: "provider-free-failure",
+      failureCode: "upload_not_completed",
+      synthetic: true
+    }
   }
 ])
 
@@ -1713,6 +2040,7 @@ export const seedCrossOrgAssignments: Assignment[] = parseMany(assignmentSchema,
   {
     id: "ffffffff-ffff-4fff-8fff-ffffffffaaa1",
     loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+    directOfferId: "29292929-2929-4929-8929-292929292911",
     truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddaaa1",
     driverProfileId: "44444444-4444-4444-8444-444444444442",
     truckProfileId: "77777777-7777-4777-8777-777777777772",
@@ -1724,6 +2052,20 @@ export const seedCrossOrgAssignments: Assignment[] = parseMany(assignmentSchema,
     cancelledAt: null,
     cancellationReason: null,
     dispatcherNotes: "High-grade run for Summit Ridge.",
+    termsSnapshot: {
+      baseRateCents: 210000,
+      capacityReservation: "none_until_truck_claimed",
+      currency: "USD",
+      estimatedDistanceMiles: 67.8,
+      estimatedTonsPerLoad: 29,
+      fuelSurchargeCents: 15000,
+      hostOrganizationId: "33333333-3333-4333-8333-333333333332",
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+      loadVersion: timestamps.updated,
+      paymentMode: "off_platform",
+      rateBasis: "flat_rate",
+      rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3"
+    },
     createdAt: timestamps.created,
     updatedAt: "2026-06-06T18:00:00.000Z"
   },
@@ -1954,6 +2296,63 @@ export const seedDirectOffers: DirectOffer[] = parseMany(directOfferSchema, [
     respondedAt: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
+  },
+  {
+    id: "29292929-2929-4929-8929-292929292912",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+    offeredByOrganizationId: "33333333-3333-4333-8333-333333333332",
+    offeredToOrganizationId: "33333333-3333-4333-8333-333333333331",
+    status: "declined",
+    offeredTruckloads: 1,
+    termsSnapshot: {
+      baseRateCents: 210000,
+      currency: "USD",
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+      paymentMode: "off_platform",
+      rateBasis: "flat_rate"
+    },
+    expiresAt: "2026-06-07T20:00:00.000Z",
+    respondedAt: "2026-06-05T15:00:00.000Z",
+    createdAt: timestamps.created,
+    updatedAt: "2026-06-05T15:00:00.000Z"
+  },
+  {
+    id: "29292929-2929-4929-8929-292929292913",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+    offeredByOrganizationId: "33333333-3333-4333-8333-333333333332",
+    offeredToOrganizationId: "33333333-3333-4333-8333-333333333331",
+    status: "revoked",
+    offeredTruckloads: 1,
+    termsSnapshot: {
+      baseRateCents: 210000,
+      currency: "USD",
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+      paymentMode: "off_platform",
+      rateBasis: "flat_rate"
+    },
+    expiresAt: "2026-06-08T20:00:00.000Z",
+    respondedAt: null,
+    createdAt: timestamps.created,
+    updatedAt: "2026-06-05T16:00:00.000Z"
+  },
+  {
+    id: "29292929-2929-4929-8929-292929292914",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+    offeredByOrganizationId: "33333333-3333-4333-8333-333333333332",
+    offeredToOrganizationId: "33333333-3333-4333-8333-333333333331",
+    status: "expired",
+    offeredTruckloads: 1,
+    termsSnapshot: {
+      baseRateCents: 210000,
+      currency: "USD",
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+      paymentMode: "off_platform",
+      rateBasis: "flat_rate"
+    },
+    expiresAt: "2026-06-05T10:00:00.000Z",
+    respondedAt: null,
+    createdAt: timestamps.created,
+    updatedAt: "2026-06-05T10:00:00.000Z"
   }
 ])
 

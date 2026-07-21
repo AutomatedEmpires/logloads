@@ -8,6 +8,7 @@ import { submitContactInquiryAction, type ContactFormState } from "@/lib/contact
 import type { NetworkLoadView } from "@/lib/network"
 import { legalPages, loadProductLabel, pricingPlans, type LegalPageContent, type PublicStoryPage, visibilityLabel } from "@/lib/v3-shared"
 import { DevSignInForm, OnboardingFlow } from "./AuthForms"
+import type { DemoPersona } from "@/lib/demo-personas"
 import { DecisionPanel, EconomicsPanel, LoadCard, LoadDiscovery, OperationSections, RoutePackPreview, WeatherWidget } from "./LoadMap"
 import { EmptyState, PageIntro, PublicShell, SectionHeader } from "./Shells"
 
@@ -228,11 +229,13 @@ export function LegalPage({ content }: { content: LegalPageContent }) {
 export function AuthPage({
   mode,
   next,
-  clerkForm
+  clerkForm,
+  demoPersonas
 }: {
   mode: "sign-in" | "sign-up"
   next?: string
   clerkForm?: ReactNode
+  demoPersonas?: readonly DemoPersona[]
 }) {
   const isSignUp = mode === "sign-up"
 
@@ -245,7 +248,7 @@ export function AuthPage({
           <p>{isSignUp ? "Tell us how you work and LogLoads sets up the right first screen." : "Your account opens the driver, fleet, host, or admin tools your membership grants."}</p>
           {clerkForm ?? (isSignUp
             ? <p className="auth-form__note">Account creation happens in onboarding. <Link className="action-link" href="/onboarding">Start setup</Link></p>
-            : <DevSignInForm next={next} />)}
+            : <DevSignInForm demoPersonas={demoPersonas} next={next} />)}
         </section>
       </main>
     </PublicShell>
