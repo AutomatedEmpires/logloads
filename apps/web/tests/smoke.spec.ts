@@ -19,7 +19,7 @@ test("visitor understands the public product and can inspect public loads", asyn
 })
 
 test("cockpits are protected: unauthenticated visitors are sent to sign-in", async ({ page }) => {
-  for (const route of ["/driver/map", "/fleet/command", "/host/command", "/admin"]) {
+  for (const route of ["/driver/map", "/fleet/command", "/host/command", "/admin", "/support"]) {
     await page.goto(route)
     await expect(page).toHaveURL(/\/sign-in/)
   }

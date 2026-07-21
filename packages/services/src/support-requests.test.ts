@@ -273,6 +273,106 @@ describe("authenticated support requests", () => {
     )
   })
 
+  it("rejects inactive identities and inactive organization context without mutation", () => {
+    const first = fixture()
+    first.reporter.isActive = false
+    const firstCounts = {
+      audits: first.state.auditEvents.length,
+      notifications: first.state.notifications.length,
+      requests: first.state.supportRequests.length
+    }
+    expect(() =>
+      createSupportRequest(first.state, {
+        organizationId: first.organizationId,
+        reporterUserId: first.reporter.id,
+        submission: submission()
+      })
+    ).toThrow(SupportRequestAuthorizationError)
+    expect({
+      audits: first.state.auditEvents.length,
+      notifications: first.state.notifications.length,
+      requests: first.state.supportRequests.length
+    }).toEqual(firstCounts)
+
+    const second = fixture()
+    const membership = second.state.organizationMemberships.find(
+      (entry) => entry.userId === second.reporter.id && entry.organizationId === second.organizationId
+    )!
+    membership.status = "revoked"
+    expect(() =>
+      createSupportRequest(second.state, {
+        organizationId: second.organizationId,
+        reporterUserId: second.reporter.id,
+        submission: submission()
+      })
+    ).toThrow(SupportRequestAuthorizationError)
+    expect(second.state.supportRequests).toEqual([])
+
+    const third = fixture()
+    third.admin.isActive = false
+    expect(() => listSupportRequestsForAdmin(third.state, third.admin.id)).toThrow(SupportRequestAuthorizationError)
+  })
+
+  it("keeps terminal retries side-effect free and requires reopening before a different outcome", () => {
+    const { admin, organizationId, reporter, state } = fixture()
+    const firstSubmission = submission()
+    const created = createSupportRequest(state, {
+      organizationId,
+      reporterUserId: reporter.id,
+      submission: firstSubmission
+    })
+    const duplicateSubmissionId = randomUUID()
+    createSupportRequest(state, {
+      organizationId,
+      reporterUserId: reporter.id,
+      submission: { ...firstSubmission, submissionId: duplicateSubmissionId }
+    })
+    const review = {
+      requestId: created.request.id,
+      review: {
+        resolutionCode: "answered" as const,
+        resolutionNote: "The expected product behavior was clarified.",
+        status: "resolved" as const
+      },
+      reviewerUserId: admin.id
+    }
+    reviewSupportRequest(state, review)
+    const terminalCounts = {
+      audits: state.auditEvents.length,
+      notifications: state.notifications.length,
+      requests: state.supportRequests.length
+    }
+
+    expect(reviewSupportRequest(state, review).changed).toBe(false)
+    expect(() =>
+      reviewSupportRequest(state, {
+        requestId: created.request.id,
+        review: {
+          resolutionCode: "duplicate",
+          resolutionNote: "A different terminal outcome.",
+          status: "closed"
+        },
+        reviewerUserId: admin.id
+      })
+    ).toThrow(SupportRequestConflictError)
+    expect(
+      createSupportRequest(
+        state,
+        {
+          organizationId,
+          reporterUserId: reporter.id,
+          submission: { ...firstSubmission, submissionId: duplicateSubmissionId }
+        },
+        new Date("2026-07-30T12:00:00.000Z")
+      ).request.id
+    ).toBe(created.request.id)
+    expect({
+      audits: state.auditEvents.length,
+      notifications: state.notifications.length,
+      requests: state.supportRequests.length
+    }).toEqual(terminalCounts)
+  })
+
   it("triages, resolves, and reopens with idempotent side effects and private audit metadata", () => {
     const { admin, organizationId, reporter, state } = fixture()
     const created = createSupportRequest(
