@@ -1,3 +1,4 @@
+import { evaluateLoadCompatibility } from "@logloads/contracts"
 import { describe, expect, it } from "vitest"
 
 import { createInMemoryDatabase } from "./index"
@@ -33,14 +34,59 @@ describe("seed load posting sources", () => {
 describe("founder demo operating states", () => {
   it("keeps a claimable partial offer beside honest terminal offer history", () => {
     const state = createInMemoryDatabase()
-    const partial = state.directOffers.find((offer) => offer.id === "29292929-2929-4929-8929-292929292911")
+    const partial = state.directOffers.find((offer) => offer.id === "29292929-2929-4929-8929-292929292915")
     const partialClaims = state.assignments.filter((assignment) => assignment.directOfferId === partial?.id)
+    const claim = partialClaims[0]
+    const load = state.loadPostings.find((candidate) => candidate.id === partial?.loadPostingId)
+    const capacity = state.opportunityCapacities.find((candidate) => candidate.loadPostingId === load?.id)
+    const combination = state.equipmentCombinations.find((candidate) =>
+      candidate.assignedDriverProfileId === claim?.driverProfileId &&
+      candidate.truckProfileId === claim?.truckProfileId &&
+      candidate.trailerProfileId === claim?.trailerProfileId
+    )
+    const truck = state.truckProfiles.find((candidate) => candidate.id === combination?.truckProfileId)
+    const trailer = state.trailerProfiles.find((candidate) => candidate.id === combination?.trailerProfileId)
+    const route = state.haulRoutes.find((candidate) => candidate.id === load?.routeId)
+    const trip = state.tripsV2.find((candidate) => candidate.assignmentId === claim?.id)
+
+    if (!partial || !claim || !load || !capacity || !combination || !truck || !trailer || !route || !trip) {
+      throw new Error("The partial direct-offer seed is incomplete")
+    }
 
     expect(partial).toMatchObject({ offeredTruckloads: 2, status: "sent" })
     expect(partialClaims).toHaveLength(1)
+    expect(partial.respondedAt).toBe(claim.assignedAt)
+    expect(partial.updatedAt).toBe(claim.assignedAt)
+    expect(capacity).toMatchObject({
+      committedTruckloads: 1,
+      completedTruckloads: 1,
+      remainingTruckloads: 1,
+      totalTruckloads: 2
+    })
+    expect(capacity.committedTruckloads + capacity.remainingTruckloads).toBe(capacity.totalTruckloads)
+    expect(trip.equipmentCombinationId).toBe(combination.id)
+    expect(evaluateLoadCompatibility({
+      availabilityWindows: state.availabilityWindows.filter((window) =>
+        window.driverProfileId === claim.driverProfileId && window.truckProfileId === claim.truckProfileId
+      ),
+      load,
+      route,
+      trailer,
+      truck
+    }).eligibility).not.toBe("ineligible")
     expect(new Set(state.directOffers.map((offer) => offer.status))).toEqual(
       new Set(["sent", "declined", "revoked", "expired"])
     )
+  })
+
+  it("keeps deterministic primary keys unique in every persisted seed table", () => {
+    const state = createInMemoryDatabase()
+
+    for (const [table, rows] of Object.entries(state)) {
+      const ids = rows.map((row) => row.id)
+
+      expect(new Set(ids).size, table).toBe(ids.length)
+    }
   })
 
   it("preserves scheduled, active, and completed trip states plus unavailable capacity", () => {

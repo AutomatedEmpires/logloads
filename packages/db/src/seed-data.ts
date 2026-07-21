@@ -449,6 +449,24 @@ export const seedTruckProfiles: TruckProfile[] = parseMany(truckProfileSchema, [
     archivedAt: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
+  },
+  {
+    id: "77777777-7777-4777-8777-777777777775",
+    ownerUserId: "22222222-2222-4222-8222-222222222222",
+    companyId: "33333333-3333-4333-8333-333333333331",
+    truckType: "log_truck",
+    unitNumber: "NP-220",
+    make: "Kenworth",
+    model: "T880",
+    plateNumber: "LOG220",
+    vin: "VIN-NP-220",
+    axleCount: 4,
+    maxPayloadTons: 30,
+    equipmentTags: ["chains", "snow-kit"],
+    roadAccessCapabilities: ["forest-road", "snow"],
+    archivedAt: null,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
   }
 ])
 
@@ -493,6 +511,17 @@ export const seedTrailerProfiles: TrailerProfile[] = parseMany(trailerProfileSch
     trailerType: "bunk_trailer",
     unitNumber: "TRL-440",
     capacityTons: 29,
+    equipmentTags: ["chains"],
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "88888888-8888-4888-8888-888888888885",
+    ownerUserId: "22222222-2222-4222-8222-222222222222",
+    truckId: "77777777-7777-4777-8777-777777777775",
+    trailerType: "bunk_trailer",
+    unitNumber: "TRL-220",
+    capacityTons: 30,
     equipmentTags: ["chains"],
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
@@ -953,6 +982,74 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
     archivedAt: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.assigned
+  },
+  {
+    id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc8",
+    companyId: "33333333-3333-4333-8333-333333333332",
+    dispatcherProfileId: "55555555-5555-4555-8555-555555555553",
+    loaderProfileId: null,
+    pickupLandingId: "66666666-6666-4666-8666-666666666662",
+    dropoffMillId: "99999999-9999-4999-8999-999999999991",
+    routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
+    rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
+    title: "Blue River partner high-grade block",
+    loadType: "saw_logs",
+    status: "open",
+    scheduleType: "one_off",
+    loadDate: "2026-06-06",
+    campaignStartDate: null,
+    campaignEndDate: null,
+    recurringSchedule: null,
+    dailyTruckCountNeeded: 2,
+    estimatedTonsPerLoad: 29,
+    equipmentRequirements: ["chains"],
+    accessRequirements: ["snow-kit"],
+    roadCondition: "restricted",
+    weatherNotes: "Synthetic partner offer with one completed and one invited truckload.",
+    dispatcherContact: {
+      name: "Cole Cedar",
+      phone: "555-3001",
+      email: "dispatch@summit.example"
+    },
+    loaderContact: null,
+    cancellationReason: null,
+    archivedAt: null,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc9",
+    companyId: "33333333-3333-4333-8333-333333333332",
+    dispatcherProfileId: "55555555-5555-4555-8555-555555555553",
+    loaderProfileId: null,
+    pickupLandingId: "66666666-6666-4666-8666-666666666662",
+    dropoffMillId: "99999999-9999-4999-8999-999999999991",
+    routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
+    rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
+    title: "Blue River partner offer history",
+    loadType: "saw_logs",
+    status: "open",
+    scheduleType: "one_off",
+    loadDate: "2026-06-09",
+    campaignStartDate: null,
+    campaignEndDate: null,
+    recurringSchedule: null,
+    dailyTruckCountNeeded: 1,
+    estimatedTonsPerLoad: 29,
+    equipmentRequirements: ["chains"],
+    accessRequirements: ["snow-kit"],
+    roadCondition: "restricted",
+    weatherNotes: "Synthetic terminal invitation history; no truckload was committed.",
+    dispatcherContact: {
+      name: "Cole Cedar",
+      phone: "555-3001",
+      email: "dispatch@summit.example"
+    },
+    loaderContact: null,
+    cancellationReason: null,
+    archivedAt: null,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
   }
 ])
 
@@ -1046,6 +1143,21 @@ export const seedTruckSlots: TruckSlot[] = parseMany(truckSlotSchema, [
     notes: "Confirmed Summit Ridge mountain run.",
     createdAt: timestamps.created,
     updatedAt: timestamps.assigned
+  },
+  {
+    id: "dddddddd-dddd-4ddd-8ddd-ddddddddddd7",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc8",
+    landingId: "66666666-6666-4666-8666-666666666662",
+    loaderProfileId: null,
+    slotDate: "2026-06-06",
+    startAt: "2026-06-06T20:30:00.000Z",
+    endAt: "2026-06-06T20:50:00.000Z",
+    capacity: 1,
+    reservedCount: 0,
+    status: "open",
+    notes: "Remaining partner-offer truckload window.",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
   }
 ])
 
@@ -1085,6 +1197,19 @@ export const seedAvailabilityWindows: AvailabilityWindow[] = parseMany(availabil
     endAt: "2026-06-06T23:00:00.000Z",
     preferredRouteIds: ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4"],
     notes: "Mountain haul capable.",
+    recurringSchedule: null,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee4",
+    driverProfileId: "44444444-4444-4444-8444-444444444442",
+    truckProfileId: "77777777-7777-4777-8777-777777777775",
+    status: "available",
+    startAt: "2026-06-06T15:30:00.000Z",
+    endAt: "2026-06-06T19:30:00.000Z",
+    preferredRouteIds: ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3"],
+    notes: "NP-220 covered the completed partner high-grade claim.",
     recurringSchedule: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
@@ -1511,6 +1636,25 @@ export const seedEquipmentCombinations: EquipmentCombination[] = parseMany(equip
     lastVerifiedAt: timestamps.updated,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
+  },
+  {
+    id: "18181818-1818-4818-8818-181818181815",
+    organizationId: "33333333-3333-4333-8333-333333333331",
+    truckProfileId: "77777777-7777-4777-8777-777777777775",
+    trailerProfileId: "88888888-8888-4888-8888-888888888885",
+    assignedDriverProfileId: "44444444-4444-4444-8444-444444444442",
+    label: "NP-220 mountain bunk",
+    truckTypes: ["log_truck"],
+    trailerTypes: ["bunk_trailer"],
+    capabilityTags: ["chains", "snow-kit", "forest-road"],
+    productLengthMinFeet: 16,
+    productLengthMaxFeet: 40,
+    maxPayloadTons: 30,
+    status: "available",
+    homeRegion: "Cascade Foothills",
+    lastVerifiedAt: timestamps.updated,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
   }
 ])
 
@@ -1689,6 +1833,32 @@ export const seedOpportunityCapacities: OpportunityCapacity[] = parseMany(opport
     acceptedTermsSnapshot: { rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3", restriction: "chains required" },
     createdAt: timestamps.created,
     updatedAt: timestamps.assigned
+  },
+  {
+    id: "21212121-2121-4121-8121-212121212118",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc8",
+    visibilityMode: "direct_offer",
+    allocationMode: "direct_offer",
+    totalTruckloads: 2,
+    committedTruckloads: 1,
+    completedTruckloads: 1,
+    remainingTruckloads: 1,
+    acceptedTermsSnapshot: { rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3", restriction: "chains required" },
+    createdAt: timestamps.created,
+    updatedAt: "2026-06-06T18:00:00.000Z"
+  },
+  {
+    id: "21212121-2121-4121-8121-212121212119",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc9",
+    visibilityMode: "direct_offer",
+    allocationMode: "direct_offer",
+    totalTruckloads: 1,
+    committedTruckloads: 0,
+    completedTruckloads: 0,
+    remainingTruckloads: 1,
+    acceptedTermsSnapshot: { rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3" },
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
   }
 ])
 
@@ -1791,6 +1961,29 @@ export const seedRoutePacks: RoutePack[] = parseMany(routePackSchema, [
         severity: "critical",
         title: "Chains required above mile 18",
         detail: "Dispatch will pause the run if snow begins above 3000 feet.",
+        verifiedAt: timestamps.updated
+      }
+    ],
+    currentRoadCondition: "restricted",
+    lastVerifiedAt: timestamps.updated,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "23232323-2323-4323-8323-232323232315",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc8",
+    landingId: "66666666-6666-4666-8666-666666666662",
+    destinationId: "99999999-9999-4999-8999-999999999991",
+    haulRouteId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
+    visibility: "assigned_only",
+    cacheableOffline: true,
+    calculatedRouteSummary: "Blue River lower hold point to Cascade Mill; high-grade restriction after mile 18.",
+    localInstructions: [
+      {
+        source: "operator_provided",
+        severity: "critical",
+        title: "Chains required above mile 18",
+        detail: "Dispatch pauses the partner block if snow begins above 3000 feet.",
         verifiedAt: timestamps.updated
       }
     ],
@@ -2033,6 +2226,21 @@ export const seedCrossOrgTruckSlots: TruckSlot[] = parseMany(truckSlotSchema, [
     notes: "Second high-grade truckload.",
     createdAt: timestamps.created,
     updatedAt: "2026-06-07T18:00:00.000Z"
+  },
+  {
+    id: "dddddddd-dddd-4ddd-8ddd-ddddddddaaa3",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc8",
+    landingId: "66666666-6666-4666-8666-666666666662",
+    loaderProfileId: null,
+    slotDate: "2026-06-06",
+    startAt: "2026-06-06T16:00:00.000Z",
+    endAt: "2026-06-06T16:20:00.000Z",
+    capacity: 1,
+    reservedCount: 1,
+    status: "filled",
+    notes: "Completed first truckload from the partner offer.",
+    createdAt: timestamps.created,
+    updatedAt: "2026-06-06T18:00:00.000Z"
   }
 ])
 
@@ -2040,7 +2248,6 @@ export const seedCrossOrgAssignments: Assignment[] = parseMany(assignmentSchema,
   {
     id: "ffffffff-ffff-4fff-8fff-ffffffffaaa1",
     loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
-    directOfferId: "29292929-2929-4929-8929-292929292911",
     truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddaaa1",
     driverProfileId: "44444444-4444-4444-8444-444444444442",
     truckProfileId: "77777777-7777-4777-8777-777777777772",
@@ -2052,20 +2259,6 @@ export const seedCrossOrgAssignments: Assignment[] = parseMany(assignmentSchema,
     cancelledAt: null,
     cancellationReason: null,
     dispatcherNotes: "High-grade run for Summit Ridge.",
-    termsSnapshot: {
-      baseRateCents: 210000,
-      capacityReservation: "none_until_truck_claimed",
-      currency: "USD",
-      estimatedDistanceMiles: 67.8,
-      estimatedTonsPerLoad: 29,
-      fuelSurchargeCents: 15000,
-      hostOrganizationId: "33333333-3333-4333-8333-333333333332",
-      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
-      loadVersion: timestamps.updated,
-      paymentMode: "off_platform",
-      rateBasis: "flat_rate",
-      rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3"
-    },
     createdAt: timestamps.created,
     updatedAt: "2026-06-06T18:00:00.000Z"
   },
@@ -2085,6 +2278,38 @@ export const seedCrossOrgAssignments: Assignment[] = parseMany(assignmentSchema,
     dispatcherNotes: "Second high-grade run for Summit Ridge.",
     createdAt: timestamps.created,
     updatedAt: "2026-06-07T18:00:00.000Z"
+  },
+  {
+    id: "ffffffff-ffff-4fff-8fff-ffffffffaaa3",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc8",
+    directOfferId: "29292929-2929-4929-8929-292929292915",
+    truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddaaa3",
+    driverProfileId: "44444444-4444-4444-8444-444444444442",
+    truckProfileId: "77777777-7777-4777-8777-777777777775",
+    trailerProfileId: "88888888-8888-4888-8888-888888888885",
+    status: "completed",
+    requestedAt: timestamps.requested,
+    assignedAt: timestamps.assigned,
+    completedAt: "2026-06-06T18:00:00.000Z",
+    cancelledAt: null,
+    cancellationReason: null,
+    dispatcherNotes: "First partner-offer truckload completed with a compatible mountain rig.",
+    termsSnapshot: {
+      baseRateCents: 210000,
+      capacityReservation: "none_until_truck_claimed",
+      currency: "USD",
+      estimatedDistanceMiles: 67.8,
+      estimatedTonsPerLoad: 29,
+      fuelSurchargeCents: 15000,
+      hostOrganizationId: "33333333-3333-4333-8333-333333333332",
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc8",
+      loadVersion: timestamps.updated,
+      paymentMode: "off_platform",
+      rateBasis: "flat_rate",
+      rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3"
+    },
+    createdAt: timestamps.created,
+    updatedAt: "2026-06-06T18:00:00.000Z"
   }
 ])
 
@@ -2120,6 +2345,22 @@ export const seedCrossOrgTrips: TripV2[] = parseMany(tripSchemaV2, [
     createdAt: timestamps.assigned,
     updatedAt: "2026-06-07T18:00:00.000Z",
     completedAt: "2026-06-07T18:00:00.000Z"
+  },
+  {
+    id: "24242424-2424-4424-8424-242424242416",
+    assignmentId: "ffffffff-ffff-4fff-8fff-ffffffffaaa3",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc8",
+    routePackId: "23232323-2323-4323-8323-232323232315",
+    driverProfileId: "44444444-4444-4444-8444-444444444442",
+    equipmentCombinationId: "18181818-1818-4818-8818-181818181815",
+    status: "completed",
+    locationVisibility: "never_public",
+    locationSharingStartedAt: null,
+    locationSharingEndsAt: "2026-06-06T18:00:00.000Z",
+    lastSyncedAt: "2026-06-06T18:00:00.000Z",
+    createdAt: timestamps.assigned,
+    updatedAt: "2026-06-06T18:00:00.000Z",
+    completedAt: "2026-06-06T18:00:00.000Z"
   }
 ])
 
@@ -2298,8 +2539,34 @@ export const seedDirectOffers: DirectOffer[] = parseMany(directOfferSchema, [
     updatedAt: timestamps.updated
   },
   {
+    id: "29292929-2929-4929-8929-292929292915",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc8",
+    offeredByOrganizationId: "33333333-3333-4333-8333-333333333332",
+    offeredToOrganizationId: "33333333-3333-4333-8333-333333333331",
+    status: "sent",
+    offeredTruckloads: 2,
+    termsSnapshot: {
+      baseRateCents: 210000,
+      capacityReservation: "none_until_truck_claimed",
+      currency: "USD",
+      estimatedDistanceMiles: 67.8,
+      estimatedTonsPerLoad: 29,
+      fuelSurchargeCents: 15000,
+      hostOrganizationId: "33333333-3333-4333-8333-333333333332",
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc8",
+      loadVersion: timestamps.updated,
+      paymentMode: "off_platform",
+      rateBasis: "flat_rate",
+      rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3"
+    },
+    expiresAt: "2026-06-06T23:00:00.000Z",
+    respondedAt: timestamps.assigned,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.assigned
+  },
+  {
     id: "29292929-2929-4929-8929-292929292912",
-    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc9",
     offeredByOrganizationId: "33333333-3333-4333-8333-333333333332",
     offeredToOrganizationId: "33333333-3333-4333-8333-333333333331",
     status: "declined",
@@ -2307,7 +2574,7 @@ export const seedDirectOffers: DirectOffer[] = parseMany(directOfferSchema, [
     termsSnapshot: {
       baseRateCents: 210000,
       currency: "USD",
-      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc9",
       paymentMode: "off_platform",
       rateBasis: "flat_rate"
     },
@@ -2318,7 +2585,7 @@ export const seedDirectOffers: DirectOffer[] = parseMany(directOfferSchema, [
   },
   {
     id: "29292929-2929-4929-8929-292929292913",
-    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc9",
     offeredByOrganizationId: "33333333-3333-4333-8333-333333333332",
     offeredToOrganizationId: "33333333-3333-4333-8333-333333333331",
     status: "revoked",
@@ -2326,7 +2593,7 @@ export const seedDirectOffers: DirectOffer[] = parseMany(directOfferSchema, [
     termsSnapshot: {
       baseRateCents: 210000,
       currency: "USD",
-      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc9",
       paymentMode: "off_platform",
       rateBasis: "flat_rate"
     },
@@ -2337,7 +2604,7 @@ export const seedDirectOffers: DirectOffer[] = parseMany(directOfferSchema, [
   },
   {
     id: "29292929-2929-4929-8929-292929292914",
-    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc9",
     offeredByOrganizationId: "33333333-3333-4333-8333-333333333332",
     offeredToOrganizationId: "33333333-3333-4333-8333-333333333331",
     status: "expired",
@@ -2345,7 +2612,7 @@ export const seedDirectOffers: DirectOffer[] = parseMany(directOfferSchema, [
     termsSnapshot: {
       baseRateCents: 210000,
       currency: "USD",
-      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc9",
       paymentMode: "off_platform",
       rateBasis: "flat_rate"
     },

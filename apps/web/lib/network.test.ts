@@ -440,13 +440,13 @@ describe("direct-offer network views", () => {
   it("serializes offers only to participants and makes expiry effective on discovery", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const { sourceViewer, targetViewer } = participantViewers(services)
-    const loadId = "cccccccc-cccc-4ccc-8ccc-ccccccccccc3"
+    const loadId = "cccccccc-cccc-4ccc-8ccc-ccccccccccc8"
     const capacity = services.state.opportunityCapacities.find((item) => item.loadPostingId === loadId)
     const targetAtSend = buildNetworkView(services.state, targetViewer, new Date("2026-06-05T12:00:00.000Z"))
     const sourceAtSend = buildNetworkView(services.state, sourceViewer, new Date("2026-06-05T12:00:00.000Z"))
 
-    const targetPartial = targetAtSend.directOffers.find((offer) => offer.id === "29292929-2929-4929-8929-292929292911")
-    const sourcePartial = sourceAtSend.directOffers.find((offer) => offer.id === "29292929-2929-4929-8929-292929292911")
+    const targetPartial = targetAtSend.directOffers.find((offer) => offer.id === "29292929-2929-4929-8929-292929292915")
+    const sourcePartial = sourceAtSend.directOffers.find((offer) => offer.id === "29292929-2929-4929-8929-292929292915")
 
     expect(targetPartial).toMatchObject({
       acceptedTruckloads: 1,
@@ -477,7 +477,7 @@ describe("direct-offer network views", () => {
     })
     services.state.organizationMemberships.push({
       ...templateMembership,
-      id: "16161616-1616-4616-8616-161616161619",
+      id: "16161616-1616-4616-8616-161616161620",
       organizationId: unrelatedOrganizationId,
       role: "dispatcher",
       userId: unrelatedUser.id
@@ -492,7 +492,7 @@ describe("direct-offer network views", () => {
     capacity.visibilityMode = "direct_offer"
     const expired = buildNetworkView(services.state, targetViewer, new Date("2026-06-07T12:00:00.000Z"))
 
-    expect(expired.directOffers.find((offer) => offer.id === "29292929-2929-4929-8929-292929292911"))
+    expect(expired.directOffers.find((offer) => offer.id === "29292929-2929-4929-8929-292929292915"))
       .toMatchObject({ actionable: false, status: "expired" })
     // The unused invitation expires, while the truckload already accepted from
     // that offer keeps its participant-scoped operating record visible.
@@ -502,16 +502,14 @@ describe("direct-offer network views", () => {
   it("starts from partial acceptance and completes the remaining offered truckload", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const { targetViewer } = participantViewers(services)
-    const load = services.state.loadPostings.find((candidate) => candidate.id === "cccccccc-cccc-4ccc-8ccc-ccccccccccc3")
+    const load = services.state.loadPostings.find((candidate) => candidate.id === "cccccccc-cccc-4ccc-8ccc-ccccccccccc8")
     if (!load) throw new Error("Direct-offer claim fixture is incomplete")
-    load.accessRequirements = []
-    load.equipmentRequirements = []
 
     const beforeClaim = buildNetworkView(
       services.state,
       targetViewer,
       new Date("2026-06-05T12:00:00.000Z")
-    ).directOffers.find((candidate) => candidate.id === "29292929-2929-4929-8929-292929292911")
+    ).directOffers.find((candidate) => candidate.id === "29292929-2929-4929-8929-292929292915")
 
     expect(beforeClaim).toMatchObject({
       acceptedTruckloads: 1,
@@ -522,10 +520,10 @@ describe("direct-offer network views", () => {
 
     const accepted = services.claimDirectOffer({
       actorUserId: targetViewer.actorUserId,
-      directOfferId: "29292929-2929-4929-8929-292929292911",
+      directOfferId: "29292929-2929-4929-8929-292929292915",
       equipmentCombinationId: "18181818-1818-4818-8818-181818181811",
       organizationId: targetViewer.organizationId,
-      truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd4"
+      truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd7"
     }, { at: "2026-06-05T12:00:00.000Z" })
     const view = buildNetworkView(services.state, targetViewer, new Date("2026-06-05T12:00:00.000Z"))
     const offer = view.directOffers.find((candidate) => candidate.id === accepted.directOffer.id)
@@ -537,6 +535,9 @@ describe("direct-offer network views", () => {
       remainingTruckloads: 0,
       status: "accepted"
     })
+    expect(services.state.opportunityCapacities.find((candidate) => candidate.loadPostingId === load.id))
+      .toMatchObject({ committedTruckloads: 2, completedTruckloads: 1, remainingTruckloads: 0, totalTruckloads: 2 })
+    expect(services.state.loadPostings.find((candidate) => candidate.id === load.id)?.status).toBe("filled")
     expect(networkLoad?.access).toEqual({ reason: "assigned", unlocked: true })
     expect(networkLoad?.routePack?.id).toBe(accepted.trip.routePackId)
     expect(networkLoad?.routePack?.snapshot?.originEntranceLat).toBeTypeOf("number")
