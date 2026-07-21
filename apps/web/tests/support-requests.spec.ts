@@ -65,7 +65,7 @@ test("driver feedback is triaged and resolved without losing retry state", async
   })
 
   await reporter.page.getByRole("button", { name: "Send product feedback" }).click()
-  await expect(reporter.page.getByRole("alert")).toContainText("connection dropped")
+  await expect(reporter.page.locator(".support-form__error")).toContainText("connection dropped")
   await expect(reporter.page.getByLabel("Short summary")).toHaveValue(title)
   await expect(reporter.page.getByLabel("Details")).toHaveValue(details)
   await reporter.page.unroute("**/api/support-requests")
@@ -77,6 +77,10 @@ test("driver feedback is triaged and resolved without losing retry state", async
   await expect.poll(() => reporter.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   const submitBox = await reporter.page.getByRole("button", { name: "Send product feedback" }).boundingBox()
   expect(submitBox?.height ?? 0).toBeGreaterThanOrEqual(48)
+  await testInfo.attach(`reporter-support-${testInfo.project.name}`, {
+    body: await reporter.page.screenshot({ fullPage: true }),
+    contentType: "image/png"
+  })
   await reporter.close()
 
   const reviewer = await authenticatedPage(browser, "admin@logloads.example")
@@ -113,6 +117,10 @@ test("driver feedback is triaged and resolved without losing retry state", async
   await expect(adminCard.getByText(resolutionNote)).toBeVisible()
   await expect(reviewer.page.getByRole("heading", { name: "System flags" })).toBeVisible()
   await expect.poll(() => reviewer.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await testInfo.attach(`admin-resolution-${testInfo.project.name}`, {
+    body: await reviewer.page.screenshot({ fullPage: true }),
+    contentType: "image/png"
+  })
   await reviewer.close()
 
   const resolvedReporter = await authenticatedPage(browser, "hank@northpine.example")

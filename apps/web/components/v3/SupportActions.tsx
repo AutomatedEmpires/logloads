@@ -1,14 +1,33 @@
 "use client"
 
+import type { SupportRequest } from "@logloads/contracts"
 import { useRef, useState, type FormEvent } from "react"
-import { useRouter } from "next/navigation"
 
 type RequestKind = "problem" | "feature_request"
 type ProblemImpact = "blocked" | "degraded" | "minor"
 
+export type SupportRequestReceipt = Pick<
+  SupportRequest,
+  | "appCommitSha"
+  | "closedAt"
+  | "createdAt"
+  | "details"
+  | "id"
+  | "impact"
+  | "kind"
+  | "pagePath"
+  | "resolutionCode"
+  | "resolutionNote"
+  | "status"
+  | "title"
+  | "triagedAt"
+  | "updatedAt"
+>
+
 interface ApiResult {
   deduplicated?: boolean
   error?: string
+  request?: SupportRequestReceipt
 }
 
 async function parseApiResult(response: Response): Promise<ApiResult> {
@@ -25,8 +44,13 @@ async function parseApiResult(response: Response): Promise<ApiResult> {
   }
 }
 
-export function SupportRequestForm({ fromPath }: { fromPath: string | null }) {
-  const router = useRouter()
+export function SupportRequestForm({
+  fromPath,
+  onSaved
+}: {
+  fromPath: string | null
+  onSaved: (request: SupportRequestReceipt) => void
+}) {
   const submissionId = useRef<string | null>(null)
   const [kind, setKind] = useState<RequestKind>("problem")
   const [impact, setImpact] = useState<ProblemImpact>("degraded")
@@ -66,6 +90,11 @@ export function SupportRequestForm({ fromPath }: { fromPath: string | null }) {
         throw new Error(result.error ?? "We could not save your feedback. Check your connection and try again.")
       }
 
+      if (!result.request) {
+        throw new Error("Your feedback was saved, but its receipt was unavailable. Reload to confirm it.")
+      }
+
+      onSaved(result.request)
       setSuccess(
         result.deduplicated
           ? "That feedback was already saved. Your request history is up to date."
@@ -74,7 +103,6 @@ export function SupportRequestForm({ fromPath }: { fromPath: string | null }) {
       setTitle("")
       setDetails("")
       submissionId.current = null
-      router.refresh()
     } catch (caught) {
       setError(
         caught instanceof DOMException && caught.name === "AbortError"
