@@ -57,11 +57,13 @@ import {
   approveCapacityRequest,
   attachTripDocument,
   cancelAssignmentWithPolicy,
+  claimDirectOffer,
   closeLoadPosting,
   createDirectOffer,
   createLoadPostingWithPolicy,
   createOperationalNotice,
   declineCapacityRequest,
+  declineDirectOffer,
   openDraftLoadPosting,
   getActiveOrganizationContext,
   getOrganizationMemberships,
@@ -80,6 +82,7 @@ import {
   publishFutureAvailability,
   refreshRoutePackForAssignment,
   requestCapacityWithPolicy,
+  revokeDirectOffer,
   settleHaulCompletion,
   submitHaulCompletion
 } from "./operating-network"
@@ -143,7 +146,14 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     createLoadPostingWithPolicy: (input: Parameters<typeof createLoadPostingWithPolicy>[1]) =>
       createLoadPostingWithPolicy(state, input),
     openDraftLoadPosting: (input: Parameters<typeof openDraftLoadPosting>[1]) => openDraftLoadPosting(state, input),
-    createDirectOffer: (input: Parameters<typeof createDirectOffer>[1]) => createDirectOffer(state, input),
+    createDirectOffer: (
+      input: Parameters<typeof createDirectOffer>[1],
+      options?: Parameters<typeof createDirectOffer>[2]
+    ) => createDirectOffer(state, input, options),
+    claimDirectOffer: (
+      input: Parameters<typeof claimDirectOffer>[1],
+      options?: Parameters<typeof claimDirectOffer>[2]
+    ) => claimDirectOffer(state, input, options),
     createLoadPosting: (input: unknown) => createLoadPosting(state, input),
     createHaulRoute: (input: Parameters<typeof createHaulRoute>[1]) => createHaulRoute(state, input),
     createLanding: (input: Parameters<typeof createLanding>[1]) => createLanding(state, input),
@@ -156,6 +166,10 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     createNotification: (input: unknown) => createNotification(state, input),
     createOperationalNotice: (input: Parameters<typeof createOperationalNotice>[1]) => createOperationalNotice(state, input),
     declineCapacityRequest: (input: Parameters<typeof declineCapacityRequest>[1]) => declineCapacityRequest(state, input),
+    declineDirectOffer: (
+      input: Parameters<typeof declineDirectOffer>[1],
+      options?: Parameters<typeof declineDirectOffer>[2]
+    ) => declineDirectOffer(state, input, options),
     createTruckSlot: (input: unknown) => createTruckSlot(state, input),
     getActiveOrganizationContext: (actorUserId?: string, organizationId?: string) => getActiveOrganizationContext(state, actorUserId, organizationId),
     getLoadById: (loadId: string) => getLoadById(state, loadId),
@@ -186,7 +200,8 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     isLoadRequestableAt: (load: Parameters<typeof isLoadRequestableAt>[1], at?: string) => isLoadRequestableAt(state, load, at),
     listRequestableLoadsForOrganization: (organizationId?: string, at?: string) => listRequestableLoadsForOrganization(state, organizationId, at),
     listOpenLoads: () => listOpenLoads(state),
-    listVisibleLoadsForOrganization: (organizationId?: string) => listVisibleLoadsForOrganization(state, organizationId),
+    listVisibleLoadsForOrganization: (organizationId?: string, at?: string) =>
+      listVisibleLoadsForOrganization(state, organizationId, at),
     listRoutes: () => listRoutes(state),
     listTruckSlotsForDate: (date: string) => listTruckSlotsForDate(state, date),
     progressTripStatus: (input: Parameters<typeof progressTripStatus>[1]) => progressTripStatus(state, input),
@@ -196,6 +211,10 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
       input: Parameters<typeof requestCapacityWithPolicy>[1],
       options?: Parameters<typeof requestCapacityWithPolicy>[2]
     ) => requestCapacityWithPolicy(state, input, options),
+    revokeDirectOffer: (
+      input: Parameters<typeof revokeDirectOffer>[1],
+      options?: Parameters<typeof revokeDirectOffer>[2]
+    ) => revokeDirectOffer(state, input, options),
     saveDriverMediaReference: (input: Parameters<typeof saveDriverMediaReference>[1]) => saveDriverMediaReference(state, input),
     updateDriverEconomics: (input: Parameters<typeof updateDriverEconomics>[1]) => updateDriverEconomics(state, input),
     updateLoadPosting: (input: unknown) => updateLoadPosting(state, input),
@@ -207,6 +226,7 @@ export type LogLoadsServices = ReturnType<typeof createLogLoadsServices>
 
 export { getDriverMediaTarget, getTripDocumentTarget, tripDocumentPublicIdPrefix }
 export { loadPostingHasOwnedCoherentSources, routePackIsSafeToRead } from "./route-packs"
+export { directOfferClaimCount, directOfferIsClaimable, effectiveDirectOfferStatus } from "./operating-network"
 export type {
   CreateHaulRouteInput,
   CreateLandingInput,

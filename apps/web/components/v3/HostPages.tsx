@@ -577,6 +577,19 @@ export function HostCarriers({ account, network }: HostPageProps) {
   const partners = network.privateNetwork
     .filter((relationship) => relationship.status === "active")
     .map((relationship) => ({ id: relationship.partnerOrganizationId, name: relationship.partnerName }))
+  const sentOffers = network.directOffers
+    .filter((offer) => offer.direction === "sent")
+    .map((offer) => ({
+      acceptedTruckloads: offer.acceptedTruckloads,
+      actionable: offer.actionable,
+      counterpartName: offer.counterpartName,
+      expiresAt: offer.expiresAt,
+      id: offer.id,
+      loadTitle: offer.loadTitle,
+      offeredTruckloads: offer.offeredTruckloads,
+      remainingTruckloads: offer.remainingTruckloads,
+      status: offer.status
+    }))
   const noticeTargets = activeLoads(own).map((load) => ({ id: load.id, title: load.title }))
 
   return (
@@ -601,8 +614,8 @@ export function HostCarriers({ account, network }: HostPageProps) {
       <section className="host-carrier-tools">
         <article className="host-panel">
           <h2>Send a direct offer</h2>
-          <p>Hold truckloads on your open work for a trusted partner before the wider network fills them.</p>
-          <DirectOfferPanel loads={offerable} partners={partners} />
+          <p>Invite a trusted partner to assign trucks. Capacity is committed only when each truck is accepted.</p>
+          <DirectOfferPanel loads={offerable} partners={partners} sentOffers={sentOffers} />
         </article>
         <article className="host-panel">
           <h2>Publish an operational notice</h2>

@@ -12,10 +12,11 @@ import {
   createOperationalNoticeAction,
   publishDraftAction,
   refreshRoutePackAction,
+  revokeDirectOfferAction,
   settleHaulCompletionAction
 } from "@/lib/cockpit-actions"
 import type { HostPublishingOptions, RequirementOption } from "@/lib/host-data"
-import { formatHuman, humanizeTag } from "@/lib/v3-shared"
+import { formatDateTime, formatHuman, humanizeTag } from "@/lib/v3-shared"
 import { EmptyState } from "./Shells"
 
 const ROAD_CONDITIONS = ["good", "wet", "muddy", "icy", "snow", "restricted", "closed"] as const
@@ -1093,32 +1094,75 @@ export interface OfferPartner {
   name: string
 }
 
-export function DirectOfferPanel({ loads, partners }: { loads: OfferableLoad[]; partners: OfferPartner[] }) {
+export interface SentDirectOffer {
+  id: string
+  loadTitle: string
+  counterpartName: string
+  status: string
+  offeredTruckloads: number
+  acceptedTruckloads: number
+  remainingTruckloads: number
+  expiresAt: string
+  actionable: boolean
+}
+
+function RevokeDirectOfferButton({ directOfferId }: { directOfferId: string }) {
+  const [confirming, setConfirming] = useState(false)
+  const [pending, startTransition] = useTransition()
+  const [error, setError] = useState<string | null>(null)
+  const [revoked, setRevoked] = useState(false)
+
+  if (revoked) return <span>Remaining invitation closed.</span>
+
+  if (!confirming) {
+    return (
+      <button className="host-btn host-btn--quiet" onClick={() => setConfirming(true)} type="button">
+        Close remaining invitation
+      </button>
+    )
+  }
+
+  return (
+    <div>
+      <p>Already confirmed trucks stay assigned. Close only the unclaimed truckloads?</p>
+      <button
+        className="host-btn host-btn--quiet"
+        disabled={pending}
+        onClick={() => {
+          setError(null)
+          startTransition(async () => {
+            const result = await revokeDirectOfferAction({ directOfferId })
+
+            if (result.ok) setRevoked(true)
+            else setError(result.error ?? "The invitation could not be closed.")
+          })
+        }}
+        type="button"
+      >
+        {pending ? "Closing…" : "Confirm close"}
+      </button>
+      <button className="host-btn host-btn--quiet" disabled={pending} onClick={() => setConfirming(false)} type="button">
+        Keep it open
+      </button>
+      {error ? <p className="host-form-feedback host-form-feedback--error" role="alert">{error}</p> : null}
+    </div>
+  )
+}
+
+export function DirectOfferPanel({
+  loads,
+  partners,
+  sentOffers
+}: {
+  loads: OfferableLoad[]
+  partners: OfferPartner[]
+  sentOffers: SentDirectOffer[]
+}) {
   const [loadPostingId, setLoadPostingId] = useState(loads[0]?.id ?? "")
   const [partnerId, setPartnerId] = useState(partners[0]?.id ?? "")
   const [truckloads, setTruckloads] = useState("1")
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null)
   const [pending, startTransition] = useTransition()
-
-  if (partners.length === 0) {
-    return (
-      <EmptyState
-        body="Direct offers need an active private-network relationship. Once a partner outfit is connected, reserve truckloads for them here."
-        title="No active partners yet."
-      />
-    )
-  }
-
-  if (loads.length === 0) {
-    return (
-      <EmptyState
-        actionHref="/host/opportunities"
-        actionLabel="Publish work"
-        body="Publish open work first, then hold truckloads on it for a trusted partner."
-        title="No open work to offer."
-      />
-    )
-  }
 
   const count = Number.parseInt(truckloads, 10)
   const ready = Boolean(loadPostingId && partnerId) && Number.isInteger(count) && count > 0
@@ -1138,7 +1182,7 @@ export function DirectOfferPanel({ loads, partners }: { loads: OfferableLoad[]; 
         result.ok
           ? {
               ok: true,
-              text: `Direct offer sent: ${count} truckload${count === 1 ? "" : "s"} held for ${partner?.name ?? "the partner"}. The offer stays open for 3 days.`
+              text: `Direct offer sent to ${partner?.name ?? "the partner"} for ${count} truckload${count === 1 ? "" : "s"}. Capacity remains open until each truck is accepted; the invitation expires in 3 days.`
             }
           : { ok: false, text: result.error ?? "The offer could not be sent." }
       )
@@ -1147,46 +1191,79 @@ export function DirectOfferPanel({ loads, partners }: { loads: OfferableLoad[]; 
 
   return (
     <div className="host-stack-form">
-      <label>
-        Open work
-        <select onChange={(event) => setLoadPostingId(event.target.value)} value={loadPostingId}>
-          {loads.map((load) => (
-            <option key={load.id} value={load.id}>
-              {load.title} · {load.detail}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Partner
-        <select onChange={(event) => setPartnerId(event.target.value)} value={partnerId}>
-          {partners.map((partner) => (
-            <option key={partner.id} value={partner.id}>
-              {partner.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Truckloads to hold
-        <input
-          inputMode="numeric"
-          min="1"
-          onChange={(event) => setTruckloads(event.target.value)}
-          type="number"
-          value={truckloads}
+      {partners.length === 0 ? (
+        <EmptyState
+          body="Direct offers need an active private-network relationship. Once a partner outfit is connected, invite its trucks here."
+          title="No active partners yet."
         />
-      </label>
-      <button className="host-btn" disabled={pending || !ready} onClick={send} type="button">
-        {pending ? "Sending…" : "Send direct offer"}
-      </button>
-      {feedback ? (
-        <p
-          className={`host-form-feedback ${feedback.ok ? "host-form-feedback--success" : "host-form-feedback--error"}`}
-          role={feedback.ok ? "status" : "alert"}
-        >
-          {feedback.text}
-        </p>
+      ) : loads.length === 0 ? (
+        <EmptyState
+          actionHref="/host/opportunities"
+          actionLabel="Publish work"
+          body="Publish open work first, then invite a trusted partner to assign trucks."
+          title="No open work to offer."
+        />
+      ) : (
+        <>
+          <label>
+            Open work
+            <select onChange={(event) => setLoadPostingId(event.target.value)} value={loadPostingId}>
+              {loads.map((load) => (
+                <option key={load.id} value={load.id}>
+                  {load.title} · {load.detail}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Partner
+            <select onChange={(event) => setPartnerId(event.target.value)} value={partnerId}>
+              {partners.map((partner) => (
+                <option key={partner.id} value={partner.id}>
+                  {partner.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Truckloads to invite
+            <input
+              inputMode="numeric"
+              min="1"
+              onChange={(event) => setTruckloads(event.target.value)}
+              type="number"
+              value={truckloads}
+            />
+          </label>
+          <button className="host-btn" disabled={pending || !ready} onClick={send} type="button">
+            {pending ? "Sending…" : "Send direct offer"}
+          </button>
+          {feedback ? (
+            <p
+              className={`host-form-feedback ${feedback.ok ? "host-form-feedback--success" : "host-form-feedback--error"}`}
+              role={feedback.ok ? "status" : "alert"}
+            >
+              {feedback.text}
+            </p>
+          ) : null}
+        </>
+      )}
+      {sentOffers.length > 0 ? (
+        <div className="board-list" aria-label="Sent direct offers">
+          {sentOffers.map((offer) => (
+            <article className="trip-row" key={offer.id}>
+              <div>
+                <strong>{offer.loadTitle}</strong>
+                <span>
+                  {offer.counterpartName} · {offer.acceptedTruckloads} of {offer.offeredTruckloads} accepted · {formatHuman(offer.status)} · expires {formatDateTime(offer.expiresAt)}
+                </span>
+              </div>
+              {offer.actionable && offer.remainingTruckloads > 0 ? (
+                <RevokeDirectOfferButton directOfferId={offer.id} />
+              ) : null}
+            </article>
+          ))}
+        </div>
       ) : null}
     </div>
   )
