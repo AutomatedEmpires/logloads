@@ -104,7 +104,10 @@ describe("signed upload", () => {
     // the exact waste moving the check to the edge exists to end.
     const { parameters } = signedUpload({ publicIdPrefix: "logloads/trip-documents/t1" })
 
-    for (const format of String(parameters.allowed_formats).split(",")) {
+    const formats = String(parameters.allowed_formats).split(",")
+
+    expect(new Set(formats)).toEqual(new Set(["jpg", "png", "webp"]))
+    for (const format of formats) {
       expect(mediaReferenceSchema.shape.format.safeParse(format).success).toBe(true)
     }
   })
