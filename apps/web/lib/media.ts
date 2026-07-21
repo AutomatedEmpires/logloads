@@ -12,30 +12,28 @@ import {
 } from "@logloads/services"
 
 import { ApiError } from "./api-actor"
+import { dedicatedCloudinaryConfiguration } from "./media-config"
 import type { SessionActor } from "./session"
 
 export const MEDIA_KINDS = ["profile", "truck", "trailer"] as const
 export type MediaKind = (typeof MEDIA_KINDS)[number]
 
-interface CloudinaryEnvironment {
-  apiKey: string
-  apiSecret: string
-  cloudName: string
-}
-
 export type MediaTarget = DriverMediaTarget
 
-function environment(): CloudinaryEnvironment {
-  const cloudName = process.env.CLOUDINARY_CLOUD_NAME
-  const apiKey = process.env.CLOUDINARY_API_KEY
-  const apiSecret = process.env.CLOUDINARY_API_SECRET
+function environment() {
+  const config = dedicatedCloudinaryConfiguration(process.env)
 
-  if (!cloudName || !apiKey || !apiSecret) {
+  if (!config) {
     throw new ApiError("File uploads are not activated for this environment", 503)
   }
 
-  cloudinary.config({ api_key: apiKey, api_secret: apiSecret, cloud_name: cloudName, secure: true })
-  return { apiKey, apiSecret, cloudName }
+  cloudinary.config({
+    api_key: config.apiKey,
+    api_secret: config.apiSecret,
+    cloud_name: config.cloudName,
+    secure: true
+  })
+  return config
 }
 
 export function parseMediaKind(value: unknown): MediaKind {
