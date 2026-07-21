@@ -17,7 +17,9 @@ test("local founder launcher opens Cole in Host without exposing an invalid pers
   await page.locator('input[name="email"]').fill("loader@northpine.example")
   await page.getByRole("button", { name: "Sign in" }).click()
   await expect(page).toHaveURL(/\/sign-in$/)
-  await expect(page.getByRole("alert")).toHaveText("Use one of the available founder demo accounts.")
+  await expect(page.locator(".form-error[role='alert']")).toHaveText(
+    "Use one of the available founder demo accounts."
+  )
 
   await page.screenshot({ fullPage: true, path: testInfo.outputPath("founder-demo-launcher.png") })
   await page.getByRole("button", { name: "Continue as Cole Cedar, Host" }).click()

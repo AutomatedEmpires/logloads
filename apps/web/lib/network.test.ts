@@ -437,6 +437,34 @@ describe("direct-offer network views", () => {
     }
   }
 
+  it("consumes the canonical campaign's sole remaining truckload without phantom capacity", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { targetViewer } = participantViewers(services)
+    const loadId = "cccccccc-cccc-4ccc-8ccc-ccccccccccc3"
+    const accepted = services.claimDirectOffer({
+      actorUserId: targetViewer.actorUserId,
+      directOfferId: "29292929-2929-4929-8929-292929292911",
+      equipmentCombinationId: "18181818-1818-4818-8818-181818181811",
+      organizationId: targetViewer.organizationId,
+      truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd4"
+    }, { at: "2026-06-05T12:00:00.000Z" })
+    const capacity = services.state.opportunityCapacities.find((candidate) => candidate.loadPostingId === loadId)
+    const slot = services.state.truckSlots.find((candidate) => candidate.id === "dddddddd-dddd-4ddd-8ddd-ddddddddddd4")
+    const assignmentHistory = services.state.assignments.filter((assignment) => assignment.loadPostingId === loadId)
+
+    expect(accepted.directOffer.status).toBe("accepted")
+    expect(capacity).toMatchObject({
+      committedTruckloads: 4,
+      completedTruckloads: 2,
+      remainingTruckloads: 0,
+      totalTruckloads: 4
+    })
+    expect(slot).toMatchObject({ capacity: 2, reservedCount: 2, status: "reserved" })
+    expect(assignmentHistory).toHaveLength(4)
+    expect(assignmentHistory.filter((assignment) => assignment.status === "completed")).toHaveLength(2)
+    expect(services.state.loadPostings.find((load) => load.id === loadId)?.status).toBe("filled")
+  })
+
   it("serializes offers only to participants and makes expiry effective on discovery", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const { sourceViewer, targetViewer } = participantViewers(services)

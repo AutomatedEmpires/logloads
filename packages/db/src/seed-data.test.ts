@@ -32,6 +32,30 @@ describe("seed load posting sources", () => {
 })
 
 describe("founder demo operating states", () => {
+  it("reconciles the canonical campaign ledger to its real assignment and slot history", () => {
+    const state = createInMemoryDatabase()
+    const loadId = "cccccccc-cccc-4ccc-8ccc-ccccccccccc3"
+    const assignments = state.assignments.filter((assignment) =>
+      assignment.loadPostingId === loadId && !["cancelled", "declined"].includes(assignment.status)
+    )
+    const capacity = state.opportunityCapacities.find((candidate) => candidate.loadPostingId === loadId)
+    const offer = state.directOffers.find((candidate) => candidate.id === "29292929-2929-4929-8929-292929292911")
+    const openSlotCapacity = state.truckSlots
+      .filter((slot) => slot.loadPostingId === loadId && ["open", "requested", "reserved"].includes(slot.status))
+      .reduce((total, slot) => total + slot.capacity - slot.reservedCount, 0)
+
+    expect(assignments).toHaveLength(3)
+    expect(assignments.filter((assignment) => assignment.status === "completed")).toHaveLength(2)
+    expect(capacity).toMatchObject({
+      committedTruckloads: 3,
+      completedTruckloads: 2,
+      remainingTruckloads: 1,
+      totalTruckloads: 4
+    })
+    expect(openSlotCapacity).toBe(1)
+    expect(offer).toMatchObject({ offeredTruckloads: 1, status: "sent" })
+  })
+
   it("keeps a claimable partial offer beside honest terminal offer history", () => {
     const state = createInMemoryDatabase()
     const partial = state.directOffers.find((offer) => offer.id === "29292929-2929-4929-8929-292929292915")
@@ -91,10 +115,24 @@ describe("founder demo operating states", () => {
 
   it("preserves scheduled, active, and completed trip states plus unavailable capacity", () => {
     const state = createInMemoryDatabase()
+    const inheritedAvailability = state.availabilityWindows.find((window) =>
+      window.id === "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3"
+    )
+    const inheritedTrip = state.tripsV2.find((trip) => trip.id === "24242424-2424-4424-8424-242424242411")
 
     expect(state.tripsV2.map((trip) => trip.status)).toEqual(
       expect.arrayContaining(["assigned", "en_route_to_landing", "completed"])
     )
+    expect(inheritedAvailability).toMatchObject({
+      driverProfileId: "44444444-4444-4444-8444-444444444443",
+      truckProfileId: "77777777-7777-4777-8777-777777777773"
+    })
+    expect(inheritedTrip).toMatchObject({
+      lastSyncedAt: "2026-06-05T13:00:00.000Z",
+      locationSharingStartedAt: null,
+      status: "assigned",
+      updatedAt: "2026-06-05T13:00:00.000Z"
+    })
     expect(new Set(state.driverProfiles.map((driver) => driver.availabilityStatus))).toEqual(
       new Set(["available", "limited", "unavailable"])
     )

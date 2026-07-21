@@ -38,16 +38,29 @@ test.describe.serial("reputation + reliability", () => {
 
     const form = page.locator(".review-form").first()
     await expect(form).toBeVisible({ timeout: 15_000 })
+    const tripId = await form
+      .locator("xpath=ancestor::article[contains(@class, 'trip-card')]")
+      .getAttribute("data-trip-id")
+
+    if (!tripId) {
+      throw new Error("The reviewable trip is missing its identity")
+    }
+
+    const submittedTrip = page.locator(`.trip-card[data-trip-id="${tripId}"]`)
+    await expect(submittedTrip).toHaveCount(1)
 
     await form.locator(".review-star").nth(4).click() // 5 stars
     await form.locator(".review-tag").first().click()
     await page.screenshot({ path: `${SHOTS}/reputation-review.png`, fullPage: true })
 
     await form.getByRole("button", { name: "Submit review" }).click()
-    // After submit, the action revalidates and the trip re-renders as reviewed, so
-    // the open review form disappears and a "You reviewed …" mark takes its place.
-    await expect(page.locator(".review-form")).toHaveCount(0, { timeout: 15_000 })
-    await expect(page.getByText(/You reviewed/).first()).toBeVisible()
+    // Another completed haul may remain reviewable. Wait for this trip's durable
+    // success marker instead of assuming every review form should disappear.
+    await expect(submittedTrip.locator(".review-done")).toContainText(
+      /(?:Thanks — your review of|You reviewed)/,
+      { timeout: 15_000 }
+    )
+    await expect(submittedTrip.locator(".review-form")).toHaveCount(0)
   })
 
   test("reputation surfaces on the driver profile and load cards", async ({ page }) => {

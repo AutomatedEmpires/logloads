@@ -20,13 +20,20 @@ const THIRD_SLOT_ID = "d5d5d5d5-d5d5-4d5d-8d5d-d5d5d5d5d5d5"
 function directOfferServices() {
   const services = createLogLoadsServices(createInMemoryDatabase())
   const load = services.state.loadPostings.find((candidate) => candidate.id === LOAD_ID)
+  const capacity = services.state.opportunityCapacities.find((candidate) => candidate.loadPostingId === LOAD_ID)
+  const offer = services.state.directOffers.find((candidate) => candidate.id === OFFER_ID)
 
-  if (!load) throw new Error("Direct-offer test load is missing")
+  if (!load || !capacity || !offer) throw new Error("Direct-offer test fixture is missing")
 
   // These tests target lifecycle integrity, not a particular seed equipment
-  // tag. Compatibility is exercised by the normal request policy underneath.
+  // tag or historical ledger. Start from an explicit multi-claim lifecycle
+  // state while production seed tests preserve the real 3/2/1 campaign.
   load.accessRequirements = []
   load.equipmentRequirements = []
+  capacity.committedTruckloads = 1
+  capacity.completedTruckloads = 0
+  capacity.remainingTruckloads = 3
+  offer.offeredTruckloads = 2
 
   return services
 }
