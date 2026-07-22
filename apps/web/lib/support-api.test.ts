@@ -83,6 +83,39 @@ describe("support API boundary", () => {
     ).rejects.toMatchObject({ status: 413 })
   })
 
+  it("refuses an oversized chunked body without buffering it whole", async () => {
+    // No Content-Length header: the body streams in chunks and the limit must
+    // trip during the read, not after the whole payload has been allocated.
+    const chunk = new TextEncoder().encode("y".repeat(1024))
+    const chunkCount = Math.ceil((SUPPORT_REQUEST_BODY_LIMIT_BYTES * 4) / chunk.byteLength)
+    let pulled = 0
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (pulled >= chunkCount) {
+          controller.close()
+
+          return
+        }
+
+        pulled += 1
+        controller.enqueue(chunk)
+      }
+    })
+
+    await expect(
+      readBoundedJsonObject(
+        new Request("https://logloads.test/api/support-requests", {
+          // @ts-expect-error -- duplex is required for streaming bodies in Node's fetch types
+          duplex: "half",
+          body,
+          method: "POST"
+        })
+      )
+    ).rejects.toMatchObject({ status: 413 })
+    // The reader cancelled early: nowhere near the whole stream was pulled.
+    expect(pulled).toBeLessThan(chunkCount)
+  })
+
   it("maps support, storage, and validation failures to stable HTTP responses", async () => {
     const cases: Array<[unknown, number]> = [
       [new ApiError("Authentication required", 401), 401],

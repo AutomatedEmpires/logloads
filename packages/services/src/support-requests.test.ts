@@ -335,7 +335,10 @@ describe("authenticated support requests", () => {
       requestId: created.request.id,
       review: {
         expectedStatus: "open" as const,
-        expectedUpdatedAt: created.request.updatedAt,
+        // Read live: the duplicate submission above aliased the record and
+        // bumped updatedAt; the created-time value only matches when both
+        // writes land in the same millisecond.
+        expectedUpdatedAt: state.supportRequests[0]!.updatedAt,
         resolutionCode: "answered" as const,
         resolutionNote: "The expected product behavior was clarified.",
         status: "resolved" as const
