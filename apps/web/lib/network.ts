@@ -228,6 +228,8 @@ export interface TruckView {
   driverProfileId: string | null
   configuration: string
   status: string
+  /** The stored combination status — what the status controls act on. */
+  combinationStatus: string
   payload: string
   region: string
   matchCount: number
@@ -1056,6 +1058,10 @@ export function buildNetworkView(
     const verification = state.verificationRecords.find((record) => record.subjectId === combination.id)?.status ?? "pending"
 
     return {
+      // What the status controls read and write. The display status below may
+      // substitute a published availability window; a toggle acting on that
+      // substituted value would claim a stored fact the store does not hold.
+      combinationStatus: combination.status,
       configuration: `${combination.truckTypes.join(", ").replaceAll("_", " ")} / ${combination.trailerTypes.join(", ").replaceAll("_", " ") || "standard"}`,
       driverName: user?.fullName ?? "Unassigned",
       driverProfileId: driver?.id ?? null,

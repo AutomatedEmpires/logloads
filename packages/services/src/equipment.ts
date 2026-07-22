@@ -12,12 +12,15 @@ import {
   type AssignmentStatus,
   type DriverProfile,
   type EquipmentCombination,
+  type LoadPosting,
   type OrganizationAction,
   type OrganizationMembership,
   type TripStatusV2
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 import { z } from "zod"
+
+import { applyEquipmentDownConsequence } from "./operating-network"
 
 const ACTIVE_ASSIGNMENT_STATUSES: ReadonlySet<AssignmentStatus> = new Set([
   "requested",
@@ -269,6 +272,31 @@ function requireOrgCombination(
   return combination
 }
 
+/**
+ * Every load posting that active work on this rig currently serves — the loads
+ * that go at-risk the moment the rig cannot roll.
+ */
+export function listActiveLoadsUsingCombination(
+  state: LogLoadsDatabaseState,
+  combination: EquipmentCombination
+): LoadPosting[] {
+  const loadIds = new Set<string>()
+
+  for (const trip of state.tripsV2) {
+    if (trip.equipmentCombinationId === combination.id && ACTIVE_TRIP_STATUSES.has(trip.status)) {
+      loadIds.add(trip.loadPostingId)
+    }
+  }
+
+  for (const assignment of state.assignments) {
+    if (ACTIVE_ASSIGNMENT_STATUSES.has(assignment.status) && assignmentUsesCombination(assignment, combination)) {
+      loadIds.add(assignment.loadPostingId)
+    }
+  }
+
+  return state.loadPostings.filter((load) => loadIds.has(load.id))
+}
+
 export function updateEquipmentStatus(state: LogLoadsDatabaseState, rawInput: unknown): EquipmentCombination {
   const input = updateEquipmentStatusInputSchema.parse(rawInput)
   const membership = requireActiveMembership(state, input.actorUserId, input.organizationId)
@@ -287,12 +315,19 @@ export function updateEquipmentStatus(state: LogLoadsDatabaseState, rawInput: un
     requireOrganizationAction(membership, "manage_trucks")
   }
 
-  if (
-    (input.status === "inactive" || input.status === "maintenance") &&
-    hasActiveEquipmentUse(state, combination)
-  ) {
-    throw new Error("Equipment cannot enter maintenance or inactive status while it has an active assignment or trip")
+  // Parking a rig mid-haul is a choice, and the answer is no. A breakdown is
+  // not a choice: "In shop" is allowed even with an active load, because that
+  // is when it happens — the honest half follows below.
+  if (input.status === "inactive" && hasActiveEquipmentUse(state, combination)) {
+    throw new Error(
+      "Equipment cannot be parked while it has an active assignment or trip. Mark it In shop instead — dispatch will be told the load is at risk."
+    )
   }
+
+  const impactedLoads =
+    input.status === "maintenance" && combination.status !== "maintenance"
+      ? listActiveLoadsUsingCombination(state, combination)
+      : []
 
   const now = new Date().toISOString()
   const updated = equipmentCombinationSchema.parse({ ...combination, status: input.status, updatedAt: now })
@@ -303,13 +338,31 @@ export function updateEquipmentStatus(state: LogLoadsDatabaseState, rawInput: un
     entityId: combination.id,
     entityType: "equipment_combination",
     id: randomUUID(),
-    metadata: { previousStatus: combination.status, status: input.status }
+    metadata: {
+      flaggedLoadIds: impactedLoads.map((load) => load.id),
+      previousStatus: combination.status,
+      status: input.status
+    }
   })
 
   state.equipmentCombinations = state.equipmentCombinations.map((candidate) =>
     candidate.id === updated.id ? updated : candidate
   )
   state.auditEvents.push(auditEvent)
+
+  // A rig going down with work attached never strands the load silently:
+  // dispatch on both sides is notified and the load is flagged at risk on the
+  // boards. Reassignment stays a human decision.
+  for (const load of impactedLoads) {
+    applyEquipmentDownConsequence(state, {
+      actorUserId: input.actorUserId,
+      cause: "truck marked In shop",
+      combinationId: null,
+      detail: null,
+      load,
+      organizationId: input.organizationId
+    })
+  }
 
   return updated
 }

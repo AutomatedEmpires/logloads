@@ -488,13 +488,18 @@ function assertEquipmentBelongsToOrganization(
     current.organizationId === organizationId &&
     current.truckProfileId === input.truckProfileId &&
     current.trailerProfileId === (input.trailerProfileId ?? null) &&
-    current.assignedDriverProfileId === input.driverProfileId &&
-    current.status !== "inactive"
+    current.assignedDriverProfileId === input.driverProfileId
   )
 
   assertCondition(
-    Boolean(combination),
+    Boolean(combination) && combination?.status !== "inactive",
     "Requested driver, truck, and trailer must be an active equipment combination for the organization"
+  )
+  // A rig in the shop keeps its current work flagged for a human decision, but
+  // it must not book NEW work while it cannot roll.
+  assertCondition(
+    combination?.status !== "maintenance",
+    "This truck is marked In shop. Set it back to Ready before requesting new work."
   )
 }
 

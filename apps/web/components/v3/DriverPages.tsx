@@ -613,7 +613,7 @@ export function DriverEquipment({ account, network }: DriverPageProps) {
                     <Badge tone={verification.tone}>{verification.label}</Badge>
                     <ReputationChip reputation={truck.reputation} />
                   </div>
-                  <EquipmentStatusToggle combinationId={truck.id} status={truck.status} />
+                  <EquipmentStatusToggle combinationId={truck.id} status={truck.combinationStatus} />
                 </article>
               )
             })}

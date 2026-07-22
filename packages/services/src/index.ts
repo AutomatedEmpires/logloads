@@ -18,6 +18,7 @@ import { applyBillingUpdate, findEntitlementByStripeSubscription } from "./billi
 import {
   addEquipmentCombination,
   assignDriverToEquipment,
+  listActiveLoadsUsingCombination,
   updateEquipmentStatus
 } from "./equipment"
 import {
@@ -230,6 +231,7 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
 export type LogLoadsServices = ReturnType<typeof createLogLoadsServices>
 
 export { getDriverMediaTarget, getTripDocumentTarget, tripDocumentPublicIdPrefix }
+export { listActiveLoadsUsingCombination } from "./equipment"
 export { loadPostingHasOwnedCoherentSources, routePackIsSafeToRead } from "./route-packs"
 export { directOfferClaimCount, directOfferIsClaimable, effectiveDirectOfferStatus } from "./operating-network"
 export type {

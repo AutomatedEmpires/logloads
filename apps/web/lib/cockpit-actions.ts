@@ -18,6 +18,8 @@ import {
   verifiedMediaReference,
   type MediaKind
 } from "./media"
+import { listActiveLoadsUsingCombination } from "@logloads/services"
+
 import { mutateState, serializeError, services } from "./services"
 import { getSessionActor, type SessionActor } from "./session"
 
@@ -432,20 +434,32 @@ export async function addEquipmentAction(input: {
 export async function updateEquipmentStatusAction(input: {
   combinationId: string
   status: string
-}): Promise<ActionResult> {
+}): Promise<ActionResult & { flaggedLoads?: number }> {
   try {
     const actor = await requireActor()
 
-    await commit(["/driver", "/fleet"], (draft) =>
+    // Counted inside the same mutation that applies the change, so the number
+    // reported back is the number of loads the service actually flagged.
+    const flaggedLoads = await commit(["/driver", "/fleet", "/host"], (draft) => {
+      const combination = draft.state.equipmentCombinations.find(
+        (candidate) => candidate.id === input.combinationId
+      )
+      const impacted =
+        combination && input.status === "maintenance" && combination.status !== "maintenance"
+          ? listActiveLoadsUsingCombination(draft.state, combination).length
+          : 0
+
       draft.updateEquipmentStatus({
         actorUserId: actor.profile.id,
         combinationId: input.combinationId,
         organizationId: actorOrganizationId(actor),
         status: input.status
       })
-    )
 
-    return OK
+      return impacted
+    })
+
+    return { error: null, flaggedLoads, ok: true }
   } catch (error) {
     return failure(error)
   }

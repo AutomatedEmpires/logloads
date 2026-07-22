@@ -1054,6 +1054,7 @@ const EQUIPMENT_STATUSES: Array<[string, string]> = [
 /** Per-combination status control wired to the equipment store. */
 export function EquipmentStatusToggle({ combinationId, status }: { combinationId: string; status: string }) {
   const [error, setError] = useState<string | null>(null)
+  const [consequence, setConsequence] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   const setStatus = (next: string) => {
@@ -1062,11 +1063,20 @@ export function EquipmentStatusToggle({ combinationId, status }: { combinationId
     }
 
     setError(null)
+    setConsequence(null)
     startTransition(async () => {
       const result = await updateEquipmentStatusAction({ combinationId, status: next })
 
       if (!result.ok) {
         setError(result.error ?? "Status could not be updated.")
+      } else if (next === "maintenance" && (result.flaggedLoads ?? 0) > 0) {
+        // Breakdowns happen mid-haul; the change goes through, and the driver
+        // sees exactly what it set in motion rather than a silent success.
+        setConsequence(
+          result.flaggedLoads === 1
+            ? "In shop recorded. Your active haul is flagged at risk and dispatch has been notified — reassignment is their call."
+            : `In shop recorded. ${result.flaggedLoads} active hauls are flagged at risk and dispatch has been notified — reassignment is their call.`
+        )
       }
     })
   }
@@ -1086,6 +1096,7 @@ export function EquipmentStatusToggle({ combinationId, status }: { combinationId
           </button>
         ))}
       </div>
+      {consequence ? <p className="action-note" role="status">{consequence}</p> : null}
       {error ? <p className="action-error" role="alert">{error}</p> : null}
     </div>
   )
