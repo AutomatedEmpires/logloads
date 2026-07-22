@@ -17,7 +17,13 @@ export type DevSessionDecision =
   | { demoMode: boolean; enabled: true; reason: "demo" | "development" | "local-production" }
   | { demoMode: false; enabled: false; reason: "clerk" | "hosted" | "non-loopback" | "not-enabled" }
 
-function enabledFlag(value: string | undefined): boolean {
+/**
+ * One truth for "is this flag on". Exported so client-facing markup (the
+ * layout's data-demo-mode attribute) cannot drift from the server policy —
+ * a stricter duplicate check would leave the page claiming demo mode is off
+ * while the session policy has it on.
+ */
+export function enabledFlag(value: string | undefined): boolean {
   return value?.trim().toLowerCase() === "true" || value === "1"
 }
 

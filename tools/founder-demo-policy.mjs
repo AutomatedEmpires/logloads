@@ -57,7 +57,9 @@ export function isLoopbackUrl(value) {
   try {
     const url = new URL(value)
 
-    return url.protocol === "http:" && (url.hostname === "127.0.0.1" || url.hostname === "localhost" || url.hostname === "[::1]")
+    // URL.hostname strips the brackets from an IPv6 literal: new
+    // URL("http://[::1]:3002").hostname is "::1", never "[::1]".
+    return url.protocol === "http:" && (url.hostname === "127.0.0.1" || url.hostname === "localhost" || url.hostname === "::1")
   } catch {
     return false
   }
