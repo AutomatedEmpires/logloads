@@ -62,6 +62,14 @@ export function upgradeStateSnapshot(
     candidate.tripInspections = []
   }
 
+  // Driver profiles predate the featured-rig flag; absent means not featured.
+  if (Array.isArray(candidate.driverProfiles)) {
+    candidate.driverProfiles = candidate.driverProfiles.map((profile) => ({
+      ...profile,
+      featureTruckPhoto: profile.featureTruckPhoto ?? false
+    }))
+  }
+
   if (Array.isArray(candidate.assignments)) {
     candidate.assignments = candidate.assignments.map((assignment) => ({
       ...assignment,

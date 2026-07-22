@@ -23,7 +23,9 @@ import {
 } from "./equipment"
 import {
   getDriverMediaTarget,
+  getFeaturedTruckPhotoReference,
   saveDriverMediaReference,
+  setFeaturedTruckPhoto,
   updateDriverEconomics
 } from "./driver-profile"
 import {
@@ -222,6 +224,9 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
       options?: Parameters<typeof revokeDirectOffer>[2]
     ) => revokeDirectOffer(state, input, options),
     saveDriverMediaReference: (input: Parameters<typeof saveDriverMediaReference>[1]) => saveDriverMediaReference(state, input),
+    getFeaturedTruckPhotoReference: (input: Parameters<typeof getFeaturedTruckPhotoReference>[1]) =>
+      getFeaturedTruckPhotoReference(state, input),
+    setFeaturedTruckPhoto: (input: Parameters<typeof setFeaturedTruckPhoto>[1]) => setFeaturedTruckPhoto(state, input),
     updateDriverEconomics: (input: Parameters<typeof updateDriverEconomics>[1]) => updateDriverEconomics(state, input),
     updateLoadPosting: (input: unknown) => updateLoadPosting(state, input),
     upsertAvailabilityWindow: (input: unknown) => upsertAvailabilityWindow(state, input)

@@ -465,6 +465,31 @@ export async function updateEquipmentStatusAction(input: {
   }
 }
 
+export async function featureTruckPhotoAction(input: { featured: boolean }): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    if (!actor.driverProfileId) {
+      throw new Error("Only a driver can feature a truck photo")
+    }
+
+    await commit(["/driver", "/fleet"], (draft) =>
+      draft.setFeaturedTruckPhoto({
+        actorUserId: actor.profile.id,
+        driverProfileId: actor.driverProfileId,
+        featured: input.featured,
+        organizationId: actorOrganizationId(actor)
+      })
+    )
+
+    captureServerEvent("truck_photo_feature_toggled", actor.profile.id, { featured: input.featured })
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
 export async function assignDriverToEquipmentAction(input: {
   combinationId: string
   driverProfileId: string | null

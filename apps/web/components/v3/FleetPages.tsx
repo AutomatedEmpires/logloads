@@ -438,6 +438,19 @@ export function FleetDrivers({ account, drivers, network }: FleetShellProps & { 
         <div className="fleet-driver-list">
           {drivers.map((driver) => (
             <article className="fleet-driver-row" key={driver.id}>
+              {/* The rig the driver chose to show off — streamed through the
+                  authorized delivery route, never a raw provider URL. */}
+              {driver.hasFeaturedTruckPhoto ? (
+                // eslint-disable-next-line @next/next/no-img-element -- authorized streaming route, not a static asset
+                <img
+                  alt={`${driver.name}'s truck`}
+                  className="fleet-driver-row__truck-photo"
+                  height={56}
+                  loading="lazy"
+                  src={`/api/media/featured-truck?driverProfileId=${driver.id}`}
+                  width={56}
+                />
+              ) : null}
               <div className="fleet-driver-row__who">
                 <strong>{driver.name}</strong>
                 <span>{driver.homeBase} · {driver.yearsExperience} yrs</span>

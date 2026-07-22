@@ -276,6 +276,7 @@ export interface NetworkView {
     trailerId: string | null
     preferredFuelPriceCentsPerGallon: number | null
     hasProfilePhoto: boolean
+    featureTruckPhoto: boolean
   } | null
   currentEquipment: {
     combinationId: string
@@ -1355,6 +1356,7 @@ export function buildNetworkView(
     currentDriver: currentDriverProfile
       ? {
           id: currentDriverProfile.id,
+          featureTruckPhoto: currentDriverProfile.featureTruckPhoto ?? false,
           hasProfilePhoto: Boolean(currentDriverProfile.profilePhoto),
           name: currentUser.fullName,
           preferredFuelPriceCentsPerGallon: currentDriverProfile.preferredFuelPriceCentsPerGallon ?? null,

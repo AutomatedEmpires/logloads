@@ -2,6 +2,7 @@ import {
   auditEventSchema,
   driverProfileSchema,
   mediaReferenceSchema,
+  organizationRoleCan,
   trailerProfileSchema,
   truckProfileSchema,
   type MediaReference
@@ -164,6 +165,116 @@ export function updateDriverEconomics(state: LogLoadsDatabaseState, rawInput: un
   }))
 
   return { driver: updatedDriver, truck: updatedTruck }
+}
+
+const setFeaturedTruckPhotoInputSchema = driverContextSchema.extend({
+  featured: z.boolean()
+})
+
+/**
+ * The driver's choice to show off their rig. It must never claim a photo that
+ * is not there: featuring requires the active truck to actually carry one.
+ * Un-featuring is always allowed.
+ */
+export function setFeaturedTruckPhoto(state: LogLoadsDatabaseState, rawInput: unknown) {
+  const input = setFeaturedTruckPhotoInputSchema.parse(rawInput)
+  const driver = requireOwnedDriver(state, input)
+
+  if (input.featured) {
+    const combination = requireActiveEquipment(state, input)
+    const truck = assertFound(
+      state.truckProfiles.find((candidate) => candidate.id === combination.truckProfileId),
+      "The active truck could not be found"
+    )
+
+    if (!truck.photo) {
+      throw new Error("Upload a truck photo before featuring it")
+    }
+  }
+
+  const timestamp = nowIso()
+  const updated = driverProfileSchema.parse({ ...driver, featureTruckPhoto: input.featured, updatedAt: timestamp })
+
+  state.driverProfiles = state.driverProfiles.map((candidate) =>
+    candidate.id === updated.id ? updated : candidate
+  )
+  state.auditEvents.push(auditEventSchema.parse({
+    action: input.featured ? "truck_photo_featured" : "truck_photo_unfeatured",
+    actorUserId: input.actorUserId,
+    createdAt: timestamp,
+    entityId: driver.id,
+    entityType: "driver_profile",
+    id: createUuid(),
+    metadata: {}
+  }))
+
+  return updated
+}
+
+const featuredTruckPhotoViewerSchema = z.object({
+  driverProfileId: z.string().uuid(),
+  viewerOrganizationId: z.string().uuid(),
+  viewerUserId: z.string().uuid()
+})
+
+/**
+ * The one read that shows a driver's rig to someone else. Authorization lives
+ * here, not in the route: the viewer holds view_network through an active
+ * membership, and the driver is visible to that organization — their own
+ * outfit's roster, or an organization whose posted load this driver has an
+ * assignment on. Un-featuring turns the tap off at the next request, and the
+ * photo is re-resolved through the CURRENT active equipment so a reassigned
+ * truck never shows under the wrong driver.
+ */
+export function getFeaturedTruckPhotoReference(state: LogLoadsDatabaseState, rawInput: unknown): MediaReference {
+  const input = featuredTruckPhotoViewerSchema.parse(rawInput)
+  const membership = state.organizationMemberships.find((candidate) =>
+    candidate.organizationId === input.viewerOrganizationId &&
+    candidate.status === "active" &&
+    candidate.userId === input.viewerUserId
+  )
+
+  if (!membership || !organizationRoleCan(membership.role, "view_network")) {
+    throw new Error("You are not authorized to view this photo")
+  }
+
+  const driver = assertFound(
+    state.driverProfiles.find((candidate) => candidate.id === input.driverProfileId),
+    "Driver profile not found"
+  )
+
+  if (!driver.featureTruckPhoto) {
+    throw new Error("This driver has not featured a truck photo")
+  }
+
+  const sameOrganization = driver.companyId === input.viewerOrganizationId
+  const hostOfDriverWork = state.assignments.some((assignment) => {
+    if (assignment.driverProfileId !== driver.id) {
+      return false
+    }
+
+    const load = state.loadPostings.find((candidate) => candidate.id === assignment.loadPostingId)
+
+    return load?.companyId === input.viewerOrganizationId
+  })
+
+  if (!sameOrganization && !hostOfDriverWork) {
+    throw new Error("This driver is not visible to your organization")
+  }
+
+  const combination = state.equipmentCombinations.find((candidate) =>
+    candidate.assignedDriverProfileId === driver.id &&
+    candidate.status !== "inactive"
+  )
+  const truck = combination
+    ? state.truckProfiles.find((candidate) => candidate.id === combination.truckProfileId)
+    : undefined
+
+  if (!truck?.photo) {
+    throw new Error("This driver has no truck photo to show")
+  }
+
+  return truck.photo
 }
 
 export function saveDriverMediaReference(state: LogLoadsDatabaseState, rawInput: unknown): MediaReference {

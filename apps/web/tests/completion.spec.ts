@@ -41,6 +41,41 @@ async function advance(page: Page, label: string, nextLabel: string) {
   }).toPass({ timeout: 25_000 })
 }
 
+/**
+ * Rolling starts with the walk-around: "Head to landing" opens the pre-trip
+ * checklist, every item passes, and the record submits and rolls in one
+ * action. This drives the real gate — the service refuses the transition
+ * without a passing recorded inspection.
+ */
+async function passPreTripAndRoll(page: Page) {
+  await page.goto("/driver/schedule")
+  await page.waitForLoadState("networkidle")
+
+  const card = () => page.locator(".trip-card").filter({ hasText: TITLE }).first()
+  await expect(card()).toBeVisible({ timeout: 15_000 })
+  await card().getByRole("button", { name: "Head to landing" }).click()
+
+  const panel = card().locator(".pre-trip")
+  await expect(panel).toBeVisible({ timeout: 5_000 })
+
+  const passButtons = panel.locator(".pre-trip__pass")
+  const itemCount = await passButtons.count()
+
+  expect(itemCount).toBeGreaterThan(0)
+  for (let index = 0; index < itemCount; index += 1) {
+    await passButtons.nth(index).click()
+    await expect(passButtons.nth(index)).toHaveAttribute("aria-pressed", "true")
+  }
+
+  await panel.getByRole("button", { name: "Record & roll" }).click()
+
+  await expect(async () => {
+    await page.reload()
+    await page.waitForLoadState("networkidle")
+    await expect(card().getByRole("button", { name: "Arrived at landing" })).toBeVisible({ timeout: 2_000 })
+  }).toPass({ timeout: 25_000 })
+}
+
 const TITLE = `Delivery record ${Date.now()}`
 
 test.describe.serial("delivered record", () => {
@@ -110,7 +145,7 @@ test.describe.serial("delivered record", () => {
     await page.setViewportSize({ width: 390, height: 844 })
     await signIn(page, "hank@northpine.example")
 
-    await advance(page, "Head to landing", "Arrived at landing")
+    await passPreTripAndRoll(page)
     await advance(page, "Arrived at landing", "Start loading")
     await advance(page, "Start loading", "Confirm loaded")
     await advance(page, "Confirm loaded", "Head to mill")

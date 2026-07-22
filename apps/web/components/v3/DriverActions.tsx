@@ -10,6 +10,7 @@ import {
   addEquipmentAction,
   attachTripDocumentAction,
   cancelAssignmentAction,
+  featureTruckPhotoAction,
   progressTripAction,
   recordPreTripInspectionAction,
   requestCapacityAction,
@@ -1097,6 +1098,43 @@ export function EquipmentStatusToggle({ combinationId, status }: { combinationId
         ))}
       </div>
       {consequence ? <p className="action-note" role="status">{consequence}</p> : null}
+      {error ? <p className="action-error" role="alert">{error}</p> : null}
+    </div>
+  )
+}
+
+/**
+ * The driver's choice to put their rig on their profile. The photo itself is
+ * uploaded on the Equipment page; this only controls whether the people they
+ * work with see it. The service refuses featuring when no photo exists.
+ */
+export function FeatureTruckPhotoToggle({ featured, hasPhoto }: { featured: boolean; hasPhoto: boolean }) {
+  const [error, setError] = useState<string | null>(null)
+  const [pending, startTransition] = useTransition()
+
+  const toggle = () => {
+    setError(null)
+    startTransition(async () => {
+      const result = await featureTruckPhotoAction({ featured: !featured })
+
+      if (!result.ok) {
+        setError(result.error ?? "The setting could not be saved. Try again.")
+      }
+    })
+  }
+
+  if (!hasPhoto && !featured) {
+    return <p className="action-note action-note--muted">Upload a truck photo on the Equipment page, then feature it here.</p>
+  }
+
+  return (
+    <div className="feature-toggle-block">
+      <button aria-pressed={featured} className="feature-toggle" disabled={pending} onClick={toggle} type="button">
+        {pending ? "Saving…" : featured ? "Featured on your profile — tap to remove" : "Feature your rig on your profile"}
+      </button>
+      {featured ? (
+        <p className="action-note">Dispatchers and hosts you work with can see your truck photo.</p>
+      ) : null}
       {error ? <p className="action-error" role="alert">{error}</p> : null}
     </div>
   )

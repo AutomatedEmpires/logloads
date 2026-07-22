@@ -32,6 +32,8 @@ export interface FleetDriverRow {
   availabilityLabel: string
   equipmentLabel: string | null
   activeTrip: { id: string; loadTitle: string; statusLabel: string } | null
+  /** The driver chose to show their rig; the photo streams via /api/media/featured-truck. */
+  hasFeaturedTruckPhoto: boolean
 }
 
 export interface FleetTruckRow {
@@ -258,6 +260,11 @@ export async function getFleetCockpitData(): Promise<FleetCockpitData> {
       availabilityLabel: availability.label,
       availabilityStatus: availability.status,
       equipmentLabel: equipment?.label ?? null,
+      hasFeaturedTruckPhoto: Boolean(
+        driver.featureTruckPhoto &&
+        equipment &&
+        state.truckProfiles.find((truck) => truck.id === equipment.truckProfileId)?.photo
+      ),
       homeBase: driver.homeBase,
       id: driver.id,
       name: user?.fullName ?? "Driver",

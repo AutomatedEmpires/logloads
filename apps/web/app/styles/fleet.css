@@ -313,6 +313,16 @@
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.6fr) minmax(0, 1fr);
   align-items: center;
   gap: 14px;
+}
+.fleet-driver-row:has(.fleet-driver-row__truck-photo) {
+  grid-template-columns: auto minmax(0, 1.2fr) minmax(0, 1.6fr) minmax(0, 1fr);
+}
+.fleet-driver-row__truck-photo {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  object-fit: cover;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--paper);

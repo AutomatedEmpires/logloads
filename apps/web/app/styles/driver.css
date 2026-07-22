@@ -333,6 +333,23 @@
 
 .trip-card__badges { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 
+.feature-toggle-block { display: grid; gap: 6px; margin-top: 12px; justify-items: start; }
+.feature-toggle {
+  min-height: 44px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  padding: 8px 14px;
+  font-weight: 800;
+}
+.feature-toggle[aria-pressed="true"] {
+  border-color: var(--pine);
+  background: var(--pine);
+  color: #fff;
+}
+.action-note--muted { color: var(--ink-soft, var(--ink)); font-weight: 700; }
+
 /* --- Pre-trip inspection --------------------------------------------------- */
 .pre-trip {
   display: grid;
