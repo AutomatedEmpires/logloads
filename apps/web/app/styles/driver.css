@@ -422,6 +422,7 @@
 .request-panel .advance-button { max-width: none; min-height: 48px; }
 .request-links { display: grid; gap: 8px; }
 .detail-layout--app { margin: 18px 24px 0; }
+.load-detail-summary { display: grid; gap: 10px; }
 
 /* --- Profile ---------------------------------------------------------------- */
 .profile-head {
@@ -469,6 +470,10 @@
   .map-availability-bar { align-items: stretch; flex-direction: column; margin: 12px 12px 0; }
   .map-availability-bar .action-link { justify-content: center; }
   .detail-layout--app { margin: 12px 12px 0; }
+  .detail-layout--app .detail-main { display: contents; }
+  .detail-layout--app .detail-main > * { order: 3; }
+  .detail-layout--app .load-detail-summary { order: 1; }
+  .detail-layout--app .sticky-action { order: 2; border-color: var(--pine); box-shadow: var(--shadow-2); }
   .advance-button { max-width: none; }
   .trip-advance { justify-items: stretch; }
   .quickset button { flex: 1 1 100%; }

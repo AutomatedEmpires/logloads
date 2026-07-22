@@ -20,13 +20,17 @@ function useDecision() {
     setError(null)
     setRunningLabel(label)
     startTransition(async () => {
-      const result = await action()
+      try {
+        const result = await action()
 
-      if (!result.ok) {
-        setError(result.error ?? "Something went wrong. Try again.")
+        if (!result.ok) {
+          setError(result.error ?? "Something went wrong. Try again.")
+        }
+      } catch {
+        setError("That decision could not be saved. Check your connection and try again.")
+      } finally {
+        setRunningLabel(null)
       }
-
-      setRunningLabel(null)
     })
   }
 
@@ -180,7 +184,7 @@ export function AdminReportDecision({
   status: SupportRequestStatus
 }) {
   const router = useRouter()
-  const [resolutionCode, setResolutionCode] = useState<ResolutionCode>("fixed")
+  const [resolutionCode, setResolutionCode] = useState<ResolutionCode | "">("")
   const [resolutionNote, setResolutionNote] = useState("")
   const [pending, setPending] = useState(false)
   const [confirmReopen, setConfirmReopen] = useState(false)
@@ -207,6 +211,10 @@ export function AdminReportDecision({
 
   function resolve(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault()
+    if (!resolutionCode) {
+      setError("Choose an outcome before closing this request.")
+      return
+    }
     const nextStatus = resolutionCode === "fixed" || resolutionCode === "answered" ? "resolved" : "closed"
 
     void run(
@@ -241,6 +249,7 @@ export function AdminReportDecision({
               onChange={(event) => setResolutionCode(event.target.value as ResolutionCode)}
               value={resolutionCode}
             >
+              <option disabled value="">Choose an outcome</option>
               {RESOLUTION_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
@@ -255,10 +264,12 @@ export function AdminReportDecision({
               required
               value={resolutionNote}
             />
-            <button className="admin-btn admin-btn--primary" disabled={pending} type="submit">
+            <button className="admin-btn admin-btn--primary" disabled={pending || !resolutionCode} type="submit">
               {pending
                 ? "Saving…"
-                : resolutionCode === "fixed" || resolutionCode === "answered"
+                : !resolutionCode
+                  ? "Choose an outcome"
+                  : resolutionCode === "fixed" || resolutionCode === "answered"
                   ? "Resolve request"
                   : "Close request"}
             </button>

@@ -399,13 +399,13 @@ export function AdminReportsPage({ account, reports }: { account: ShellAccount; 
 
 export function AdminDisputesPage({ account, disputes }: { account: ShellAccount; disputes: AdminDisputeRow[] }) {
   return (
-    <AppShell account={account} kicker={KICKER} role="admin" title="Disputes">
+    <AppShell account={account} kicker={KICKER} role="admin" title="Cancellations">
       <section className="app-section admin-panel">
         <SectionHeader eyebrow={`${disputes.length} recorded`} title="Cancelled assignments" />
         {disputes.length === 0 ? (
           <EmptyState
-            body="When an assignment is cancelled, it appears here with the reason each party gave so a reviewer can follow up."
-            title="No open disputes."
+            body="When an assignment is cancelled, it appears here with its recorded reason so a reviewer can follow up."
+            title="No cancelled assignments."
           />
         ) : (
           <div className="admin-rows">
@@ -451,10 +451,10 @@ export function AdminActivityPage({ account, history }: { account: ShellAccount;
   return (
     <AppShell account={account} kicker={KICKER} role="admin" title="Activity history">
       <section className="app-section admin-panel">
-        <SectionHeader eyebrow={`${history.totalCount} entries`} title="Everything recorded on the platform" />
+        <SectionHeader eyebrow={`${history.totalCount} entries`} title="Recorded platform activity" />
         {history.events.length === 0 ? (
           <EmptyState
-            body="Every action taken on the platform — reviews, assignments, cancellations — is recorded here with who did it and when."
+            body="Supported reviews, assignments, cancellations, and other operating events appear here with the recorded actor and time."
             title="No activity yet."
           />
         ) : (

@@ -21,6 +21,7 @@ import type { NetworkLoadView, NetworkView } from "@/lib/network"
 import { signOutAction } from "@/lib/session-actions"
 
 type TripStatus = NetworkView["trips"][number]["status"]
+type CompletionStatus = NetworkView["trips"][number]["completion"]["status"]
 
 const TRIP_STEPS: Partial<Record<TripStatus, { label: string; next: TripStatus }>> = {
   assigned: { label: "Head to landing", next: "en_route_to_landing" },
@@ -30,11 +31,21 @@ const TRIP_STEPS: Partial<Record<TripStatus, { label: string; next: TripStatus }
   en_route_to_landing: { label: "Arrived at landing", next: "checked_in" },
   loaded: { label: "Head to mill", next: "en_route_to_destination" },
   loading: { label: "Confirm loaded", next: "loaded" },
-  unloading: { label: "Confirm delivery", next: "completed" }
+  unloading: { label: "Finish trip", next: "completed" }
 }
 
 /** The single next field action for a trip, wired to the real trip state machine. */
-export function TripProgressButton({ status, tone = "row", tripId }: { status: TripStatus; tone?: "hero" | "row"; tripId: string }) {
+export function TripProgressButton({
+  completionStatus,
+  status,
+  tone = "row",
+  tripId
+}: {
+  completionStatus: CompletionStatus
+  status: TripStatus
+  tone?: "hero" | "row"
+  tripId: string
+}) {
   const step = TRIP_STEPS[status]
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
@@ -43,13 +54,26 @@ export function TripProgressButton({ status, tone = "row", tripId }: { status: T
     return null
   }
 
+  if (step.next === "completed" && completionStatus === "pending") {
+    return (
+      <div className={`trip-advance trip-advance--${tone}`}>
+        <button className="advance-button" disabled type="button">Finish trip</button>
+        <p className="action-note" role="note">Record the delivery before finishing this trip.</p>
+      </div>
+    )
+  }
+
   const advance = () => {
     setError(null)
     startTransition(async () => {
-      const result = await progressTripAction({ nextStatus: step.next, tripId })
+      try {
+        const result = await progressTripAction({ nextStatus: step.next, tripId })
 
-      if (!result.ok) {
-        setError(result.error ?? "The trip could not be updated. Try again.")
+        if (!result.ok) {
+          setError(result.error ?? "The trip could not be updated. Try again.")
+        }
+      } catch {
+        setError("The trip could not be updated. Check your connection and try again.")
       }
     })
   }
@@ -421,10 +445,12 @@ async function readJson<T>(response: Response): Promise<T | null> {
 }
 
 export function MediaUpload({
+  available,
   hasCurrent,
   kind,
   label
 }: {
+  available: boolean
   hasCurrent: boolean
   kind: "profile" | "truck" | "trailer"
   label: string
@@ -500,19 +526,21 @@ export function MediaUpload({
 
   return (
     <article className="media-upload-card">
-      {photoAvailable ? (
+      {available && photoAvailable ? (
         <Image alt={`${label} photo`} className="media-upload-card__image" height={360} src={`/api/media/asset?kind=${kind}&v=${cacheBust}`} unoptimized width={480} />
       ) : (
-        <div className="media-upload-card__placeholder"><Icon aria-hidden name="ops.document" size={24} /> No photo yet</div>
+        <div className="media-upload-card__placeholder"><Icon aria-hidden name="ops.document" size={24} /> {photoAvailable ? "Photo on file · preview unavailable" : "No photo yet"}</div>
       )}
-      <form onSubmit={upload}>
+      {available ? <form onSubmit={upload}>
         <label>
           {label}
           <input accept="image/jpeg,image/png,image/webp" name="photo" required type="file" />
         </label>
         <button className="action-link action-link--secondary" disabled={pending} type="submit">{pending ? "Uploading…" : photoAvailable ? "Replace photo" : "Upload photo"}</button>
-      </form>
-      <p>JPG, PNG, or WebP · 10 MB max · private to your authenticated account.</p>
+      </form> : (
+        <p className="action-note" role="note">Photo uploads are currently unavailable.</p>
+      )}
+      {available ? <p>JPG, PNG, or WebP · 10 MB max · private to your authenticated account.</p> : null}
       {error ? <p className="action-error" role="alert">{error}</p> : null}
     </article>
   )
@@ -530,7 +558,7 @@ const PROOF_TYPES: Array<[string, string]> = [
  * it. The evidence gate downstream trusts these records, so the record is only
  * written once the bytes are known to exist.
  */
-export function LogProofControl({ tripId }: { tripId: string }) {
+export function LogProofControl({ available, tripId }: { available: boolean; tripId: string }) {
   const [type, setType] = useState("scale_ticket")
   const [error, setError] = useState<string | null>(null)
   const [logged, setLogged] = useState<string | null>(null)
@@ -606,6 +634,10 @@ export function LogProofControl({ tripId }: { tripId: string }) {
         setError(uploadError instanceof Error ? uploadError.message : "The proof could not be uploaded.")
       }
     })
+  }
+
+  if (!available) {
+    return <p className="action-note" role="note">Proof uploads are currently unavailable. Delivery details can still be recorded when that step becomes available.</p>
   }
 
   return (
@@ -703,19 +735,23 @@ export function CompletionForm({
     setError(null)
     setSaved(false)
     startTransition(async () => {
-      const result = await submitHaulCompletionAction({
-        exceptionNote: note || null,
-        exceptionType: exceptionType || null,
-        quantityUnit: unit,
-        quantityValue: rawValue === "" ? null : Number(rawValue),
-        ticketNumber: String(data.get("ticketNumber") ?? "").trim() || null,
-        tripId
-      })
+      try {
+        const result = await submitHaulCompletionAction({
+          exceptionNote: note || null,
+          exceptionType: exceptionType || null,
+          quantityUnit: unit,
+          quantityValue: rawValue === "" ? null : Number(rawValue),
+          ticketNumber: String(data.get("ticketNumber") ?? "").trim() || null,
+          tripId
+        })
 
-      if (!result.ok) {
-        setError(result.error ?? "The delivery could not be recorded. Try again.")
-      } else {
-        setSaved(true)
+        if (!result.ok) {
+          setError(result.error ?? "The delivery could not be recorded. Try again.")
+        } else {
+          setSaved(true)
+        }
+      } catch {
+        setError("The delivery could not be recorded. Check your connection and try again.")
       }
     })
   }

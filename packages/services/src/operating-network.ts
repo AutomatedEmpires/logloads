@@ -1576,7 +1576,7 @@ export function closeLoadPosting(state: LogLoadsDatabaseState, input: CloseLoadP
 export function progressTripStatus(
   state: LogLoadsDatabaseState,
   input: ProgressTripStatusInput
-): { trip: TripV2; event: TripEvent } {
+): { changed: boolean; trip: TripV2; event: TripEvent | null } {
   const context = getContextForInput(state, input)
   assertOrganizationAction(context, "progress_trip")
 
@@ -1590,6 +1590,13 @@ export function progressTripStatus(
   )
   assertTripParticipant(state, context, assignment)
 
+  // A lost response may cause a field device to retry the final action. Once
+  // authorization and participation have been proven, an exact completed
+  // retry is a no-op: never double-count capacity or duplicate history.
+  if (trip.status === "completed" && input.nextStatus === "completed") {
+    return { changed: false, event: null, trip }
+  }
+
   // Cancelling a trip cancels the booking, so it demands the same authority
   // as cancelAssignmentWithPolicy — trip-progression rights are not enough.
   let cancellationSide: "host" | "hauler" | null = null
@@ -1601,12 +1608,21 @@ export function progressTripStatus(
     cancellationSide = assertCancellationAuthority(state, context, assignment, load).side
   }
 
+  // Validate the state-machine edge before applying completion-specific
+  // requirements so impossible jumps still report the actual invalid edge.
+  const nextStatus = transitionTripStatus(trip.status, input.nextStatus)
+
   // A haul does not become delivered because a button was pressed. When the
   // Route Pack the driver accepted named the proof required, that proof has to
   // exist before the trip can close. A haul with a reported exception closes
   // without it — "rejected at the scale" has no scale ticket to give.
   if (input.nextStatus === "completed") {
     const required = requiredCompletionEvidence(state, trip)
+
+    assertCondition(
+      trip.completionStatus !== "pending",
+      "Record the delivery before finishing this trip"
+    )
 
     assertCondition(
       required.length === 0 ||
@@ -1616,7 +1632,6 @@ export function progressTripStatus(
     )
   }
 
-  const nextStatus = transitionTripStatus(trip.status, input.nextStatus)
   const timestamp = nowIso()
   const updatedTrip = tripSchemaV2.parse({
     ...trip,
@@ -1683,7 +1698,7 @@ export function progressTripStatus(
     nextStatus
   })
 
-  return { event, trip: updatedTrip }
+  return { changed: true, event, trip: updatedTrip }
 }
 
 /**
@@ -1708,7 +1723,7 @@ export interface SubmitCompletionInput {
 export function submitHaulCompletion(
   state: LogLoadsDatabaseState,
   input: SubmitCompletionInput
-): { trip: TripV2 } {
+): { changed: boolean; trip: TripV2 } {
   const context = getContextForInput(state, input)
   assertOrganizationAction(context, "progress_trip")
 
@@ -1757,7 +1772,7 @@ export function submitHaulCompletion(
   }
 
   const timestamp = nowIso()
-  const { trip: updated, previousStatus } = applyHaulCompletionSubmission(
+  const { changed, trip: updated, previousStatus } = applyHaulCompletionSubmission(
     state,
     {
       actorUserId: context.actorUserId,
@@ -1767,6 +1782,10 @@ export function submitHaulCompletion(
     },
     timestamp
   )
+
+  if (!changed) {
+    return { changed: false, trip: updated }
+  }
 
   state.tripEvents.push(tripEventSchema.parse({
     actorUserId: context.actorUserId,
@@ -1804,7 +1823,7 @@ export function submitHaulCompletion(
     )
   }
 
-  return { trip: updated }
+  return { changed: true, trip: updated }
 }
 
 export interface SettleCompletionInput {

@@ -91,19 +91,24 @@ export interface PendingCapacityRequest {
 
 function ApprovalRow({ request }: { request: PendingCapacityRequest }) {
   const [pending, startTransition] = useTransition()
-  const [decision, setDecision] = useState<"approve" | "decline" | null>(null)
+  const [confirming, setConfirming] = useState<"approve" | "decline" | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const decide = (approve: boolean) => {
     startTransition(async () => {
       setError(null)
-      setDecision(approve ? "approve" : "decline")
 
-      const result = await approveCapacityRequestAction({ approve, assignmentId: request.assignmentId })
+      try {
+        const result = await approveCapacityRequestAction({ approve, assignmentId: request.assignmentId })
 
-      if (!result.ok) {
-        setDecision(null)
-        setError(result.error ?? "That decision did not go through. Try again.")
+        if (!result.ok) {
+          setError(result.error ?? "That decision did not go through. Try again.")
+          return
+        }
+
+        setConfirming(null)
+      } catch {
+        setError("That decision did not go through. Check your connection and try again.")
       }
     })
   }
@@ -114,14 +119,28 @@ function ApprovalRow({ request }: { request: PendingCapacityRequest }) {
       <span>
         {request.truckUnit} · {request.loadTitle} · {request.scheduleLabel}
       </span>
-      <div className="host-approval-actions">
-        <button className="host-btn" disabled={pending} onClick={() => decide(true)} type="button">
-          {pending && decision === "approve" ? "Approving…" : "Approve"}
-        </button>
-        <button className="host-btn host-btn--quiet" disabled={pending} onClick={() => decide(false)} type="button">
-          {pending && decision === "decline" ? "Declining…" : "Decline"}
-        </button>
-      </div>
+      {confirming ? (
+        <div className="host-stack-form" role="group" aria-label={`Confirm ${confirming} request`}>
+          <p className="host-builder-note">
+            {confirming === "approve"
+              ? `Reserve one truckload for ${request.driverName} in ${request.truckUnit}. Approval unlocks the assignment Route Pack.`
+              : `Decline ${request.driverName}'s request. No truckload will be reserved.`}
+          </p>
+          <div className="host-approval-actions">
+            <button className="host-btn" disabled={pending} onClick={() => decide(confirming === "approve")} type="button">
+              {pending ? "Saving…" : confirming === "approve" ? "Confirm approval" : "Confirm decline"}
+            </button>
+            <button className="host-btn host-btn--quiet" disabled={pending} onClick={() => setConfirming(null)} type="button">
+              Go back
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="host-approval-actions">
+          <button className="host-btn" disabled={pending} onClick={() => setConfirming("approve")} type="button">Review approval</button>
+          <button className="host-btn host-btn--quiet" disabled={pending} onClick={() => setConfirming("decline")} type="button">Review decline</button>
+        </div>
+      )}
       {error ? (
         <p className="host-form-feedback host-form-feedback--error" role="alert">
           {error}
@@ -250,6 +269,7 @@ export function SettleDeliveryControl({
   tripId: string
 }) {
   const [disputing, setDisputing] = useState(false)
+  const [confirmingDelivery, setConfirmingDelivery] = useState(false)
   const [reason, setReason] = useState("")
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null)
   const [pending, startTransition] = useTransition()
@@ -266,22 +286,26 @@ export function SettleDeliveryControl({
     startTransition(async () => {
       setFeedback(null)
 
-      const result = await settleHaulCompletionAction({
-        decision,
-        reason: decision === "dispute" ? reason.trim() : null,
-        tripId
-      })
+      try {
+        const result = await settleHaulCompletionAction({
+          decision,
+          reason: decision === "dispute" ? reason.trim() : null,
+          tripId
+        })
 
-      setFeedback(
-        result.ok
-          ? {
-              ok: true,
-              text: decision === "confirm"
-                ? `Delivery confirmed. ${driverName}'s record is settled.`
-                : `Record contested. ${driverName} was asked to resubmit.`
-            }
-          : { ok: false, text: result.error ?? "That decision did not go through. Try again." }
-      )
+        setFeedback(
+          result.ok
+            ? {
+                ok: true,
+                text: decision === "confirm"
+                  ? `Delivery confirmed. ${driverName}'s record is settled.`
+                  : `Record contested. ${driverName} was asked to resubmit.`
+              }
+            : { ok: false, text: result.error ?? "That decision did not go through. Try again." }
+        )
+      } catch {
+        setFeedback({ ok: false, text: "That decision did not go through. Check your connection and try again." })
+      }
     })
   }
 
@@ -300,7 +324,17 @@ export function SettleDeliveryControl({
           <input maxLength={500} onChange={(event) => setReason(event.target.value)} type="text" value={reason} />
         </label>
       ) : null}
-      <div className="host-approval-actions">
+      {confirmingDelivery ? (
+        <div className="host-stack-form" role="group" aria-label="Confirm delivery record">
+          <p className="host-builder-note">Confirm this record only after checking the quantity, ticket, and any exception above. This settles the host-side delivery record.</p>
+          <div className="host-approval-actions">
+            <button className="host-btn" disabled={pending} onClick={() => settle("confirm")} type="button">
+              {pending ? "Confirming…" : "Yes, confirm delivery"}
+            </button>
+            <button className="host-btn host-btn--quiet" disabled={pending} onClick={() => setConfirmingDelivery(false)} type="button">Go back</button>
+          </div>
+        </div>
+      ) : <div className="host-approval-actions">
         {disputing ? (
           <>
             <button className="host-btn" disabled={pending || !reason.trim()} onClick={() => settle("dispute")} type="button">
@@ -320,15 +354,15 @@ export function SettleDeliveryControl({
           </>
         ) : (
           <>
-            <button className="host-btn" disabled={pending} onClick={() => settle("confirm")} type="button">
-              {pending ? "Confirming…" : "Confirm delivery"}
+            <button className="host-btn" disabled={pending} onClick={() => setConfirmingDelivery(true)} type="button">
+              Review confirmation
             </button>
             <button className="host-btn host-btn--quiet" disabled={pending} onClick={() => setDisputing(true)} type="button">
               Dispute
             </button>
           </>
         )}
-      </div>
+      </div>}
       {feedback && !feedback.ok ? (
         <p className="host-form-feedback host-form-feedback--error" role="alert">
           {feedback.text}
@@ -549,7 +583,7 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
   const [days, setDays] = useState<Set<number>>(new Set([1, 3, 5]))
   const [until, setUntil] = useState("")
   const [rateId, setRateId] = useState(options.rates[0]?.id ?? "")
-  const [visibility, setVisibility] = useState<BuilderVisibility>("open")
+  const [visibility, setVisibility] = useState<BuilderVisibility>("draft")
   const [visibilityMode, setVisibilityMode] = useState<string>("open_network")
   const [error, setError] = useState<string | null>(null)
   const [published, setPublished] = useState<{ title: string; visibility: BuilderVisibility } | null>(null)
@@ -681,7 +715,7 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
         setCampaignEnd("")
         setDays(new Set([1, 3, 5]))
         setUntil("")
-        setVisibility("open")
+        setVisibility("draft")
         setVisibilityMode("open_network")
       } else {
         setError(result.error ?? "Publishing failed. Check the details and try again.")
@@ -1002,6 +1036,10 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
                   ? `every day, ${campaignStart} to ${campaignEnd}`
                   : `weekly on ${weekdayNames([...days])} until ${until}`}
             </dd>
+          </div>
+          <div>
+            <dt>Loading window</dt>
+            <dd>1:00 PM–9:00 PM UTC for each scheduled truckload</dd>
           </div>
           <div>
             <dt>Equipment</dt>

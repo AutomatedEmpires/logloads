@@ -285,6 +285,15 @@ describe("assignment cancellation", () => {
         nextStatus,
         source: "driver"
       })
+
+      if (nextStatus === "at_destination") {
+        services.submitHaulCompletion({
+          actorUserId: HAULER_ACTOR,
+          deliveredQuantity: { ticketNumber: "SC-CANCEL", unit: "tons", value: 26.4 },
+          organizationId: HAULER_ORG,
+          tripId: trip.id
+        })
+      }
     }
 
     expect(loadFor(services, load.id)?.status).toBe("completed")

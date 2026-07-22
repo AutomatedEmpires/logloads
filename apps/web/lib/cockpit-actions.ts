@@ -183,7 +183,7 @@ export async function progressTripAction(input: {
         ? "landing"
         : "dispatcher"
 
-    await commit(["/driver", "/fleet", "/host"], (draft) =>
+    const result = await commit(["/driver", "/fleet", "/host"], (draft) =>
       draft.progressTripStatus({
         actorUserId: actor.profile.id,
         nextStatus: input.nextStatus as Parameters<typeof services.progressTripStatus>[0]["nextStatus"],
@@ -194,7 +194,9 @@ export async function progressTripAction(input: {
       })
     )
 
-    captureServerEvent("trip_progressed", actor.profile.id, { tripId: input.tripId, nextStatus: input.nextStatus })
+    if (result.changed) {
+      captureServerEvent("trip_progressed", actor.profile.id, { tripId: input.tripId, nextStatus: input.nextStatus })
+    }
 
     return OK
   } catch (error) {
@@ -731,7 +733,7 @@ export async function submitHaulCompletionAction(input: {
   try {
     const actor = await requireActor()
 
-    await commit(["/driver", "/fleet", "/host"], (draft) =>
+    const result = await commit(["/driver", "/fleet", "/host"], (draft) =>
       // The unit and exception type are narrowed here only to satisfy the
       // boundary; the service parses both through zod, so an invalid value is
       // refused server-side rather than trusted.
@@ -752,7 +754,9 @@ export async function submitHaulCompletionAction(input: {
       })
     )
 
-    captureServerEvent("haul_completion_submitted", actor.profile.id, { tripId: input.tripId })
+    if (result.changed) {
+      captureServerEvent("haul_completion_submitted", actor.profile.id, { tripId: input.tripId })
+    }
 
     return OK
   } catch (error) {

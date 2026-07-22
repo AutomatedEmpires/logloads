@@ -611,6 +611,15 @@ describe("route pack access", () => {
         source: "driver",
         tripId: trip.id
       })
+
+      if (nextStatus === "at_destination") {
+        services.submitHaulCompletion({
+          actorUserId: HAULER_DRIVER_ACTOR,
+          deliveredQuantity: { ticketNumber: "SC-PACK", unit: "tons", value: 26.4 },
+          organizationId: HAULER_ORG,
+          tripId: trip.id
+        })
+      }
     }
 
     expect(driverPack(services, assignment.id).routePack.assignmentId).toBe(assignment.id)

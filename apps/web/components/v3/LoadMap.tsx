@@ -15,8 +15,12 @@ const RealMap = dynamic(() => import("./RealMap"), {
   ssr: false
 })
 
-export function LoadCard({ href, load }: { href?: string; load: NetworkLoadView }) {
-  const status = load.viewerAssignment?.status === "requested"
+export function LoadCard({ href, load, publicMode = false }: { href?: string; load: NetworkLoadView; publicMode?: boolean }) {
+  const status = publicMode
+    ? load.capacity.remaining > 0
+      ? { label: `${load.capacity.remaining} open`, tone: "success" as const }
+      : { label: "Filled", tone: "info" as const }
+    : load.viewerAssignment?.status === "requested"
     ? { label: "Request sent", tone: "warning" as const }
     : load.viewerAssignment?.status === "accepted"
       ? { label: "You're booked", tone: "success" as const }
@@ -49,7 +53,7 @@ export function LoadCard({ href, load }: { href?: string; load: NetworkLoadView 
       </span>
       <span className="card-footer">
         <ReputationChip reputation={load.sourceReputation} />
-        <span>{load.viewerAssignment ? "Open status" : "Check load"} →</span>
+        <span>{publicMode ? "View load details" : load.viewerAssignment ? "Open status" : "Check load"} →</span>
       </span>
     </>
   )
@@ -99,7 +103,9 @@ export function OperatingMap({ loads, onSelect, selectedLoadId, variant = "app" 
         <aside aria-label="Selected load" className="map-selected-sheet">
           <div className="map-selected-head">
             <span className="card-kicker">{loadProductLabel(selected)}</span>
-            <Badge tone={fitTone(selected)}>{fitLabel(selected)}</Badge>
+            <Badge tone={variant === "public" ? (selected.capacity.remaining > 0 ? "success" : "info") : fitTone(selected)}>
+              {variant === "public" ? (selected.capacity.remaining > 0 ? `${selected.capacity.remaining} open` : "Filled") : fitLabel(selected)}
+            </Badge>
           </div>
           <strong>{shortLane(selected)}</strong>
           <p className="map-selected-meta">{selected.route.distanceMiles.toFixed(0)} mi · {selected.route.runTimeMinutes} min planned · {selected.payLabel}</p>
@@ -128,11 +134,11 @@ export function LoadDiscovery({ loads, publicMode = false }: { loads: NetworkLoa
     return loads.filter((load) => {
       const matchesQuery = normalized.length === 0 || [load.title, load.landing.city, load.destination.name, load.sourceName, load.loadType]
         .some((value) => value.toLowerCase().includes(normalized))
-      const matchesFit = fit === "all" || fitLabel(load).toLowerCase().startsWith(fit)
+      const matchesFit = publicMode || fit === "all" || fitLabel(load).toLowerCase().startsWith(fit)
 
       return matchesQuery && matchesFit
     })
-  }, [fit, loads, query])
+  }, [fit, loads, publicMode, query])
 
   const activeSelectedId = filteredLoads.some((load) => load.id === selectedLoadId)
     ? selectedLoadId
@@ -146,19 +152,27 @@ export function LoadDiscovery({ loads, publicMode = false }: { loads: NetworkLoa
           <span className="sr-only">Search loads</span>
           <input onChange={(event) => setQuery(event.target.value)} placeholder="Search landing, mill, product" type="search" value={query} />
         </label>
-        <div className="segmented-v3" aria-label="Fit filter">
-          {["all", "strong", "review"].map((value) => (
-            <button aria-pressed={fit === value} key={value} onClick={() => setFit(value)} type="button">{value === "all" ? "All" : value === "strong" ? "Strong fit" : "Review"}</button>
-          ))}
-        </div>
+        {publicMode ? null : (
+          <div className="segmented-v3" aria-label="Fit filter">
+            {["all", "strong", "review"].map((value) => (
+              <button aria-pressed={fit === value} key={value} onClick={() => setFit(value)} type="button">{value === "all" ? "All" : value === "strong" ? "Strong fit" : "Review"}</button>
+            ))}
+          </div>
+        )}
         <div className="segmented-v3" aria-label="View mode">
           <button aria-pressed={view === "list"} onClick={() => setView("list")} type="button">List</button>
           <button aria-pressed={view === "map"} onClick={() => setView("map")} type="button">Map</button>
         </div>
       </div>
+      <p aria-live="polite" className="discovery-result-count">{filteredLoads.length} {filteredLoads.length === 1 ? "load" : "loads"} shown</p>
 
       {filteredLoads.length === 0 ? (
-        <EmptyState title="No current loads fit this setup." body="Try a different search, change equipment, or expand your operating area." actionHref={publicMode ? "/sign-up" : "/driver/equipment"} actionLabel={publicMode ? "Create account" : "Change equipment"} />
+        <EmptyState
+          title={publicMode ? "No public loads match that search." : "No current loads fit this setup."}
+          body={publicMode ? "Try a landing, mill, region, or timber product. New public work appears here as landings publish it." : "Try a different search, change equipment, or expand your operating area."}
+          actionHref={publicMode ? "/loads" : "/driver/equipment"}
+          actionLabel={publicMode ? "Clear search" : "Change equipment"}
+        />
       ) : view === "map" ? (
         <div className="discovery-map-split">
           <OperatingMap loads={filteredLoads} onSelect={setSelectedLoadId} selectedLoadId={activeSelectedId} variant={publicMode ? "public" : "app"} />
@@ -174,14 +188,16 @@ export function LoadDiscovery({ loads, publicMode = false }: { loads: NetworkLoa
                 <span className="card-kicker">{loadProductLabel(load)}</span>
                 <strong>{shortLane(load)}</strong>
                 <span className="load-meta">{load.scheduleLabel} · {load.economics.grossLabel ? `${load.economics.grossLabel} est. gross` : load.payLabel}</span>
-                <Badge tone={fitTone(load)}>{fitLabel(load)}</Badge>
+                <Badge tone={publicMode ? (load.capacity.remaining > 0 ? "success" : "info") : fitTone(load)}>
+                  {publicMode ? (load.capacity.remaining > 0 ? `${load.capacity.remaining} open` : "Filled") : fitLabel(load)}
+                </Badge>
               </button>
             ))}
           </aside>
         </div>
       ) : (
         <div className="load-list-v3">
-          {filteredLoads.map((load) => <LoadCard href={publicMode ? publicLoadHref(load) : `/driver/loads/${load.id}`} key={load.id} load={load} />)}
+          {filteredLoads.map((load) => <LoadCard href={publicMode ? publicLoadHref(load) : `/driver/loads/${load.id}`} key={load.id} load={load} publicMode={publicMode} />)}
         </div>
       )}
     </section>
@@ -201,8 +217,11 @@ export function DecisionPanel({ load, publicMode = false }: { load: NetworkLoadV
             ? "Fit compares a load's equipment, access, and payload needs against your active truck and trailer. Create a free account and add your setup to see whether this haul works for you."
             : "Fit compares this load's equipment, access, and payload needs against your active truck and trailer. Add your setup once and every load shows where it fits."}
         </p>
-        <Link className="action-link action-link--secondary" href={publicMode ? "/sign-up" : "/driver/equipment"}>
-          {publicMode ? "Create account" : "Add equipment"}
+        <Link
+          className="action-link action-link--secondary"
+          href={publicMode ? { pathname: "/sign-up", query: { next: `/driver/loads/${load.id}`, path: "driver" } } : "/driver/equipment"}
+        >
+          {publicMode ? "Create a driver profile" : "Add equipment"}
         </Link>
       </section>
     )
@@ -355,6 +374,55 @@ function instructionSeverityLabel(severity: string): string {
   return formatHuman(severity)
 }
 
+function RouteDirections({ load }: { load: NetworkLoadView }) {
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle")
+  const snapshot = load.routePack?.snapshot
+  const entranceLat = snapshot?.originEntranceLat ?? (!load.landing.approximate ? load.landing.lat : null)
+  const entranceLng = snapshot?.originEntranceLng ?? (!load.landing.approximate ? load.landing.lng : null)
+  const hasEntrance = entranceLat != null && entranceLng != null
+  const coordinates = hasEntrance ? `${entranceLat.toFixed(6)}, ${entranceLng.toFixed(6)}` : null
+  const directionsUrl = (lat: number, lng: number) => `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${lat},${lng}`)}`
+
+  const copyEntrance = async () => {
+    if (!coordinates) return
+
+    try {
+      await navigator.clipboard.writeText(coordinates)
+      setCopyState("copied")
+    } catch {
+      setCopyState("error")
+    }
+  }
+
+  return (
+    <section aria-label="Directions" className="route-directions">
+      <div className="route-directions__warning">
+        <Icon aria-hidden name="status.warning" size={20} />
+        <span>Confirm private-road, gate, and radio instructions in this Route Pack before following map directions.</span>
+      </div>
+      <div className="route-directions__grid">
+        <article>
+          <span>Landing entrance</span>
+          <strong>{coordinates ?? "Exact entrance pin not attached"}</strong>
+          {hasEntrance ? (
+            <div className="route-directions__actions">
+              <a className="action-link" href={directionsUrl(entranceLat, entranceLng)} rel="noreferrer" target="_blank">Open landing directions</a>
+              <button className="action-link action-link--secondary" onClick={copyEntrance} type="button">Copy coordinates</button>
+            </div>
+          ) : null}
+          {copyState === "copied" ? <p className="action-note" role="status">Entrance coordinates copied.</p> : null}
+          {copyState === "error" ? <p className="action-error" role="alert">Copy failed. Select the coordinates above and copy them manually.</p> : null}
+        </article>
+        <article>
+          <span>Receiving facility</span>
+          <strong>{load.destination.name} · {load.destination.city}, {load.destination.state}</strong>
+          <a className="action-link action-link--secondary" href={directionsUrl(load.destination.lat, load.destination.lng)} rel="noreferrer" target="_blank">Open mill directions</a>
+        </article>
+      </div>
+    </section>
+  )
+}
+
 export function RoutePackPreview({ load, locked = false }: { load: NetworkLoadView; locked?: boolean }) {
   const isLocked = locked || !load.access.unlocked
 
@@ -383,6 +451,7 @@ export function RoutePackPreview({ load, locked = false }: { load: NetworkLoadVi
       <section className="route-pack-preview">
         <SectionHeader eyebrow="Route Pack" title="No Route Pack published for this move yet." />
         <p className="route-pack-lede">The host has not attached an operational briefing. Use the notes below and confirm access with the host before rolling.</p>
+        <RouteDirections load={load} />
         <div className="briefing-grid">
           <article><h3>Landing</h3><p>{load.landingDetails?.privateRoadNotes ?? load.landing.accessNotes ?? "No landing access notes listed."}</p></article>
           <article><h3>Route</h3><p>{load.route.localNotes}</p></article>
@@ -432,6 +501,8 @@ export function RoutePackPreview({ load, locked = false }: { load: NetworkLoadVi
           </div>
         </dl>
       ) : null}
+
+      <RouteDirections load={load} />
 
       {critical.length > 0 ? (
         <ul className="route-pack-instructions route-pack-instructions--critical">

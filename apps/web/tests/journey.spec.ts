@@ -97,7 +97,7 @@ test.describe.serial("operating loop", () => {
     await page.waitForLoadState("networkidle")
 
     const approvalRow = page.locator(".host-approval-row").first()
-    const hasApprove = await approvalRow.getByRole("button", { name: "Approve" }).isVisible().catch(() => false)
+    const hasApprove = await approvalRow.getByRole("button", { name: "Review approval" }).isVisible().catch(() => false)
 
     if (hasApprove) {
       const requestLabel = (await approvalRow.locator("span").textContent())?.trim() ?? ""
@@ -112,10 +112,11 @@ test.describe.serial("operating loop", () => {
           return
         }
 
-        const approve = trackedRequest.getByRole("button", { name: "Approve", exact: true })
+        const approve = trackedRequest.getByRole("button", { name: "Review approval", exact: true })
 
         if (await approve.isEnabled().catch(() => false)) {
           await approve.click()
+          await trackedRequest.getByRole("button", { name: "Confirm approval" }).click()
         }
 
         await expect(trackedRequest).toBeHidden({ timeout: 5_000 })

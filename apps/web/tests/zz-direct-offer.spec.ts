@@ -34,6 +34,7 @@ test.describe("direct-offer commitment", () => {
     await page.getByLabel("Load date").fill(loadDate)
     await page.getByRole("button", { name: "Next" }).click()
     await page.getByRole("button", { name: "Next" }).click()
+    await page.getByRole("radio", { name: /Publish now/ }).check()
     await page.getByRole("button", { name: "Next" }).click()
     await page.getByRole("button", { name: "Publish to the network" }).click()
     await expect(page.getByText(new RegExp(`${loadTitle}.*live on the network`))).toBeVisible({ timeout: 15_000 })

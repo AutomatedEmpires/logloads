@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useActionState, useState, type MouseEvent } from "react"
+import { useActionState, useEffect, useRef, useState, type MouseEvent } from "react"
 
 import {
   completeOnboardingAction,
@@ -113,21 +113,37 @@ const TRAILER_TYPES = [
 
 export function OnboardingFlow({
   identityKnown,
-  initialPath
+  initialPath,
+  next
 }: {
   identityKnown?: { fullName?: string | null; email?: string | null }
   initialPath?: OnboardingPath
+  next?: string
 }) {
   const [path, setPath] = useState<OnboardingPath | null>(initialPath ?? null)
   const [accountType, setAccountType] = useState<string | null>(null)
   const [step, setStep] = useState(0)
   const [state, formAction, pending] = useActionState(completeOnboardingAction, INITIAL_ONBOARDING_STATE)
+  const formRef = useRef<HTMLFormElement>(null)
+
+  useEffect(() => {
+    if (!path) return
+
+    formRef.current?.querySelector<HTMLElement>(`[data-onboarding-step="${step}"] legend`)?.focus()
+  }, [path, step])
 
   if (!path) {
     return (
       <div className="choice-grid" role="group" aria-label="How will you use LogLoads?">
         {PATH_CHOICES.map((choice) => (
-          <button key={choice.path} onClick={() => setPath(choice.path)} type="button">
+          <button
+            key={choice.path}
+            onClick={() => {
+              setAccountType(null)
+              setPath(choice.path)
+            }}
+            type="button"
+          >
             <strong>{choice.title}</strong>
             <span>{choice.body}</span>
           </button>
@@ -140,6 +156,7 @@ export function OnboardingFlow({
   const selectedType = accountType ?? types[0]?.value ?? "owner_operator"
   const needsEquipment = path !== "host"
   const orgLabel = path === "host" ? "Company or operation name" : path === "fleet" ? "Fleet name" : "Business name (optional)"
+  const stepLabels = ["Your role", "Operating area", needsEquipment ? "Equipment" : "Ready"]
 
   function advanceStep(event: MouseEvent<HTMLButtonElement>) {
     // Prevent the browser's default action before React swaps this control for
@@ -161,17 +178,23 @@ export function OnboardingFlow({
   }
 
   return (
-    <form action={formAction} className="onboarding-form">
+    <form action={formAction} className="onboarding-form" ref={formRef}>
       <input name="path" type="hidden" value={path} />
-      <div className="onboarding-progress" aria-label={`Step ${step + 1} of 3`}>
-        <span>Step {step + 1} of 3</span>
-        <div aria-hidden>
-          {[0, 1, 2].map((index) => <i className={index <= step ? "is-complete" : undefined} key={index} />)}
-        </div>
+      <input name="next" type="hidden" value={next ?? ""} />
+      <div className="onboarding-progress" aria-live="polite">
+        <span>Step {step + 1} of 3: {stepLabels[step]}</span>
+        <ol aria-label="Setup progress">
+          {stepLabels.map((label, index) => (
+            <li aria-current={index === step ? "step" : undefined} className={index <= step ? "is-complete" : undefined} key={label}>
+              <i aria-hidden />
+              <span>{label}</span>
+            </li>
+          ))}
+        </ol>
       </div>
 
       <fieldset data-onboarding-step="0" hidden={step !== 0}>
-        <legend>What do you do?</legend>
+        <legend tabIndex={-1}>What do you do?</legend>
         <p className="fieldset-note">Pick the closest answer. You can change optional details later.</p>
         <div className="radio-grid">
           {types.map((type) => (
@@ -210,7 +233,7 @@ export function OnboardingFlow({
       </fieldset>
 
       <fieldset data-onboarding-step="1" hidden={step !== 1}>
-        <legend>What area do you run?</legend>
+        <legend tabIndex={-1}>What area do you run?</legend>
         <p className="fieldset-note">This puts nearby work first. A city, county, or timber region is enough.</p>
         <label>
           <span>{orgLabel}</span>
@@ -224,7 +247,7 @@ export function OnboardingFlow({
 
       {needsEquipment ? (
         <fieldset data-onboarding-step="2" hidden={step !== 2}>
-          <legend>Your main setup</legend>
+          <legend tabIndex={-1}>Your main setup</legend>
           <p className="fieldset-note">Choose the truck and trailer you use most. Photos and other equipment can wait.</p>
           <label>
             <span>Truck type</span>
@@ -268,7 +291,7 @@ export function OnboardingFlow({
         </fieldset>
       ) : (
         <fieldset data-onboarding-step="2" hidden={step !== 2}>
-          <legend>Your operation is ready</legend>
+          <legend tabIndex={-1}>Your operation is ready</legend>
           <p className="fieldset-note">Next, LogLoads will take you to your operation so you can post the work, set the schedule, and choose who can see it.</p>
           <div className="onboarding-ready">
             <strong>{path === "host" ? "Start by posting the timber that needs to move." : "Start by setting up your operation."}</strong>
@@ -278,6 +301,10 @@ export function OnboardingFlow({
       )}
 
       {state.error ? <p className="form-error" role="alert">{state.error}</p> : null}
+
+      {step === 2 ? (
+        <p className="onboarding-consent">By opening your workspace, you agree to the <Link href="/terms">Terms</Link> and acknowledge the <Link href="/privacy">Privacy Notice</Link>.</p>
+      ) : null}
 
       <div className="onboarding-form__actions">
         {step < 2 ? (
@@ -290,7 +317,17 @@ export function OnboardingFlow({
         {step > 0 ? (
           <button className="text-link" onClick={() => setStep((current) => Math.max(current - 1, 0))} type="button">Back</button>
         ) : (
-          <button className="text-link" onClick={() => setPath(null)} type="button">Choose a different role</button>
+          <button
+            className="text-link"
+            onClick={() => {
+              setAccountType(null)
+              setPath(null)
+              setStep(0)
+            }}
+            type="button"
+          >
+            Choose a different role
+          </button>
         )}
       </div>
     </form>

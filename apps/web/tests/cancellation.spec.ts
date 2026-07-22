@@ -43,6 +43,7 @@ test.describe.serial("request withdrawal", () => {
 
     // Step 3 — Terms, Step 4 — Visibility: defaults.
     await page.getByRole("button", { name: "Next" }).click()
+    await page.getByRole("radio", { name: /Publish now/ }).check()
     await page.getByRole("button", { name: "Next" }).click()
 
     await page.getByRole("button", { name: "Publish to the network" }).click()

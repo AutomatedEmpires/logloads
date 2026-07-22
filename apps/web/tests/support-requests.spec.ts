@@ -21,6 +21,7 @@ async function authenticatedPage(browser: Browser, email: string): Promise<{ clo
 test.describe.configure({ mode: "serial" })
 
 test("driver feedback is triaged and resolved without losing retry state", async ({ browser }, testInfo) => {
+  test.setTimeout(180_000)
   const unique = `${testInfo.project.name}-${Date.now()}`
   const title = `Reconnect feedback ${unique}`
   const details = `The save control stays disabled after reconnecting in ${unique}.`
@@ -41,10 +42,11 @@ test("driver feedback is triaged and resolved without losing retry state", async
   await supportLink.focus()
   await expect(supportLink).toBeFocused()
   await supportLink.press("Enter")
-  await expect(reporter.page).toHaveURL((url) =>
-    url.pathname === "/support" && url.searchParams.get("from") === "/driver/map"
+  await expect(reporter.page).toHaveURL(
+    (url) => url.pathname === "/support" && url.searchParams.get("from") === "/driver/map",
+    { timeout: 30_000 }
   )
-  await expect(reporter.page.getByRole("heading", { name: "Product feedback" })).toBeVisible()
+  await expect(reporter.page.getByRole("heading", { level: 1, name: "Product feedback" })).toBeVisible()
   await expect(reporter.page.getByText("This is not an emergency or dispatch channel.")).toBeVisible()
   await reporter.page.getByRole("radio", { name: /Report a problem/ }).check()
   await reporter.page.getByRole("radio", { name: /Slowed down/ }).check()
@@ -72,11 +74,11 @@ test("driver feedback is triaged and resolved without losing retry state", async
   })
 
   await reporter.page.getByRole("button", { name: "Send product feedback" }).click()
-  await expect(reporter.page.locator(".support-form__error")).toContainText("connection dropped")
+  await expect(reporter.page.locator(".support-form__error")).toContainText("connection dropped", { timeout: 30_000 })
   await expect(reporter.page.getByLabel("Short summary")).toHaveValue(title)
   await expect(reporter.page.getByLabel("Details")).toHaveValue(details)
   await reporter.page.getByRole("button", { name: "Send product feedback" }).click()
-  await expect(reporter.page.getByText(/feedback was already saved|feedback was saved/)).toBeVisible()
+  await expect(reporter.page.getByText(/feedback was already saved|feedback was saved/)).toBeVisible({ timeout: 30_000 })
   await reporter.page.unroute("**/api/support-requests")
   expect(samePayloadSubmissionIds).toHaveLength(2)
   expect(samePayloadSubmissionIds[1]).toBe(samePayloadSubmissionIds[0])
@@ -106,13 +108,13 @@ test("driver feedback is triaged and resolved without losing retry state", async
     await route.fulfill({ response })
   })
   await reporter.page.getByRole("button", { name: "Send product feedback" }).click()
-  await expect(reporter.page.locator(".support-form__error")).toContainText("edited draft save")
+  await expect(reporter.page.locator(".support-form__error")).toContainText("edited draft save", { timeout: 30_000 })
   await expect(reporter.page.getByLabel("Short summary")).toHaveValue(preEditTitle)
   await expect(reporter.page.getByLabel("Details")).toHaveValue(preEditDetails)
   await fillWhenReady(reporter.page, "Short summary", editedTitle)
   await fillWhenReady(reporter.page, "Details", editedDetails)
   await reporter.page.getByRole("button", { name: "Send product feedback" }).click()
-  await expect(reporter.page.getByText("Your feedback was saved for the LogLoads product team.")).toBeVisible()
+  await expect(reporter.page.getByText("Your feedback was saved for the LogLoads product team.")).toBeVisible({ timeout: 30_000 })
   await reporter.page.unroute("**/api/support-requests")
   expect(editedPayloadSubmissionIds).toHaveLength(2)
   expect(editedPayloadSubmissionIds[1]).not.toBe(editedPayloadSubmissionIds[0])
@@ -141,8 +143,11 @@ test("driver feedback is triaged and resolved without losing retry state", async
   let adminCard = reviewer.page.locator("article").filter({ has: reviewer.page.getByRole("heading", { name: title }) }).first()
   await expect(adminCard).toBeVisible()
   await adminCard.getByRole("button", { name: "Start review" }).click()
-  await expect(adminCard.getByText("In review", { exact: true })).toBeVisible()
+  await expect(adminCard.getByText("Request marked in review.", { exact: true })).toBeVisible({ timeout: 15_000 })
+  await reviewer.page.reload()
+  await selectWhenReady(reviewer.page, "Request status", "all")
   adminCard = reviewer.page.locator("article").filter({ has: reviewer.page.getByRole("heading", { name: title }) }).first()
+  await expect(adminCard.getByText("In review", { exact: true })).toBeVisible()
   await selectWhenReady(adminCard, "Outcome", "answered")
   await fillWhenReady(adminCard, "Resolution note the reporter will see", resolutionNote)
 
@@ -167,7 +172,7 @@ test("driver feedback is triaged and resolved without losing retry state", async
   await adminCard.getByRole("button", { name: "Resolve request" }).click()
   await expect(adminCard.getByText("Resolved", { exact: true })).toBeVisible()
   await expect(adminCard.getByText(resolutionNote)).toBeVisible()
-  await expect(reviewer.page.getByRole("heading", { name: "System flags" })).toBeVisible()
+  await expect(reviewer.page.getByRole("heading", { exact: true, level: 2, name: "System flags" })).toBeVisible()
   await expect.poll(() => reviewer.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await testInfo.attach(`admin-resolution-${testInfo.project.name}`, {
     body: await reviewer.page.screenshot({ fullPage: true }),

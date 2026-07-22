@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition, type FormEvent } from "react"
+import { useId, useState, useTransition, type FormEvent } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
 import { submitVerificationAction } from "@/lib/cockpit-actions"
@@ -25,6 +25,7 @@ export function VerificationSubmit({
   const [submittedType, setSubmittedType] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   const [selected, setSelected] = useState(options[0]?.value ?? "")
+  const feedbackId = useId()
 
   const activeHint = options.find((option) => option.value === selected)?.hint ?? ""
 
@@ -53,14 +54,14 @@ export function VerificationSubmit({
         const result = await submitVerificationAction({ evidenceSummary, subjectType, verificationType })
 
         if (!result.ok) {
-          setError(result.error ?? "That couldn't be submitted. Try again.")
+          setError("We couldn't confirm the submission. Refresh this page and check the verification list before retrying.")
         } else {
           setSubmittedType(verificationType)
           form.reset()
           setSelected(options[0]?.value ?? "")
         }
       } catch {
-        setError("That couldn't be submitted. Check your connection and try again.")
+        setError("We couldn't confirm the submission. Refresh this page and check the verification list before retrying.")
       }
     })
   }
@@ -103,22 +104,25 @@ export function VerificationSubmit({
         </label>
         {activeHint ? <p className="verify-form__hint">{activeHint}</p> : null}
         <label>
-          Evidence
+          Evidence summary
           <textarea
+            aria-describedby={feedbackId}
+            aria-invalid={Boolean(error)}
             maxLength={1000}
             name="evidenceSummary"
-            placeholder="Describe the document or record you can provide (e.g. license number, insurance carrier + policy, MC/DOT number)."
+            placeholder="Describe the evidence and who issued it. Do not enter full license, policy, identity, or account numbers."
             rows={3}
           />
         </label>
+        <p className="verify-form__hint" id={feedbackId}>A reviewer can request sensitive evidence through an appropriate follow-up channel.</p>
         <div className="verify-form__actions">
           <button className="advance-button" disabled={pending} type="submit">
             <Icon aria-hidden name="action.upload" size={18} />
             {pending ? "Submitting…" : "Submit for review"}
           </button>
         </div>
-        {error ? <p className="action-error">{error}</p> : null}
-        {submittedType ? <p className="action-note">Submitted for review. A verifier will follow up.</p> : null}
+        {error ? <p className="action-error" role="alert">{error}</p> : null}
+        {submittedType ? <p className="action-note" role="status">Submitted for review. A verifier will follow up.</p> : null}
       </form>
     </div>
   )

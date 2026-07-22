@@ -716,7 +716,7 @@ export function FleetOpportunityDetail({
     : null
 
   return (
-    <AppShell account={account} role="fleet" title="Load detail" kicker="Dispatch decision" orgName={network.activeOrganization.name}>
+    <AppShell account={account} contentOwnsHeading role="fleet" title="Load detail" kicker="Dispatch decision" orgName={network.activeOrganization.name}>
       {!load ? (
         <EmptyState
           title="Load not found."
@@ -725,15 +725,17 @@ export function FleetOpportunityDetail({
           actionLabel="Back to opportunities"
         />
       ) : (
-        <main className="fleet-detail">
+        <div className="fleet-detail">
           <div className="fleet-detail__main">
-            <Link className="back-link" href="/fleet/opportunities">Back to opportunities</Link>
-            <p className="eyebrow">{load.landing.city} to {load.destination.name}</p>
-            <h1>{load.title}</h1>
-            <p className="lead">{load.scheduleLabel} · {load.payLabel} · {load.capacity.remaining} of {load.capacity.total} loads open</p>
-            <div className="fleet-detail__badges">
-              <Badge tone={load.visibilityMode === "private_network" ? "info" : "neutral"}>{visibilityLabel(load)}</Badge>
-              <Badge tone={load.capacity.remaining > 0 ? "success" : "warning"}>{load.capacity.remaining > 0 ? "Capacity open" : "All loads assigned"}</Badge>
+            <div className="fleet-detail__summary">
+              <Link className="back-link" href="/fleet/opportunities">Back to opportunities</Link>
+              <p className="eyebrow">{load.landing.city} to {load.destination.name}</p>
+              <h1>{load.title}</h1>
+              <p className="lead">{load.scheduleLabel} · {load.payLabel} · {load.capacity.remaining} of {load.capacity.total} loads open</p>
+              <div className="fleet-detail__badges">
+                <Badge tone={load.visibilityMode === "private_network" ? "info" : "neutral"}>{visibilityLabel(load)}</Badge>
+                <Badge tone={load.capacity.remaining > 0 ? "success" : "warning"}>{load.capacity.remaining > 0 ? "Capacity open" : "All loads assigned"}</Badge>
+              </div>
             </div>
             {directOffer ? (
               <section className="fleet-panel" aria-label="Direct offer">
@@ -820,7 +822,7 @@ export function FleetOpportunityDetail({
               ))
             )}
           </aside>
-        </main>
+        </div>
       )}
     </AppShell>
   )

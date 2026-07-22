@@ -23,7 +23,7 @@ function formatWindow(startAt: string, endAt: string): string {
     timeZone: "UTC"
   })
 
-  return `${formatter.format(new Date(startAt))} - ${formatter.format(new Date(endAt))}`
+  return `${formatter.format(new Date(startAt))} - ${formatter.format(new Date(endAt))} UTC`
 }
 
 function toView(window: AvailabilityWindow): AvailabilityWindowView {

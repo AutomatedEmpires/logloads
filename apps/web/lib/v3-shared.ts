@@ -177,7 +177,8 @@ export function formatDateTime(value: string | null): string {
     hour: "numeric",
     minute: "2-digit",
     month: "short",
-    timeZone: "UTC"
+    timeZone: "UTC",
+    timeZoneName: "short"
   }).format(new Date(value))
 }
 
@@ -278,7 +279,7 @@ export const storyPages: Record<string, PublicStoryPage> = {
       { title: "Know what unlocks when", body: "Public loads show the general area and the work. When you are assigned, the exact entrance, road notes, and contact unlock.", points: ["Exact access after assignment", "Private road notes", "Destination check-in details"] },
       { title: "Keep the record", body: "Trip status, scale tickets, and photos stay attached to the haul instead of getting lost in calls and texts.", points: ["Scale tickets", "Field photos", "Delay history that protects you"] }
     ],
-    cta: { href: "/sign-up", label: "Start hauling" }
+    cta: { href: "/sign-up?path=driver", label: "Create a driver profile" }
   },
   "for-fleets": {
     slug: "for-fleets",
@@ -290,11 +291,11 @@ export const storyPages: Record<string, PublicStoryPage> = {
       { title: "Partner work", body: "Show selected availability to hosts you trust and take direct offers when they need trucks.", points: ["Private relationships", "Future availability", "Direct offers"] },
       { title: "Exceptions stay visible", body: "Delays, route changes, and paperwork sit on the trip itself, so dispatch can step in before a problem grows.", points: ["Live trip state", "Route change notices", "Documents on the record"] }
     ],
-    cta: { href: "/sign-up", label: "Set up your fleet" }
+    cta: { href: "/sign-up?path=fleet", label: "Set up your fleet" }
   },
   "for-landings": {
     slug: "for-landings",
-    eyebrow: "For hosts",
+    eyebrow: "For landing and logging teams",
     title: "Know exactly how many trucks you still need.",
     intro: "Post the timber that has to move, decide who sees it, and watch the board as trucks commit, arrive, load, and roll.",
     sections: [
@@ -302,7 +303,7 @@ export const storyPages: Record<string, PublicStoryPage> = {
       { title: "Run the landing", body: "The live board shows who is expected, who is arriving, who is loading, and who is late — without a phone call.", points: ["Truck identity at the gate", "Trip status as it changes", "Issues flagged, not buried"] },
       { title: "Keep good carriers close", body: "Invite the haulers you already work with, share your future schedule, and send direct offers when it matters.", points: ["Preferred carriers", "Shared forward schedule", "Direct offers"] }
     ],
-    cta: { href: "/sign-up", label: "Publish your first load" }
+    cta: { href: "/sign-up?path=host", label: "Publish your first load" }
   },
   about: {
     slug: "about",
@@ -314,8 +315,7 @@ export const storyPages: Record<string, PublicStoryPage> = {
       { title: "Trust with context", body: "Verification on LogLoads shows what was actually reviewed and where the information came from — never just a badge.", points: ["Identity", "Organization", "Equipment", "Landing authorization"] },
       { title: "More than a load board", body: "An assignment is not an introduction. It carries the Route Pack, live status, documents, and the history that makes the next haul easier.", points: ["Commitments on the record", "Repeat work with the same people", "History you can point to"] }
     ],
-    cta: { href: "/how-it-works", label: "See how a haul runs" },
-    attribution: "Photography: Wikimedia Commons contributors."
+    cta: { href: "/how-it-works", label: "See how a haul runs" }
   },
   trust: {
     slug: "trust",
@@ -323,7 +323,7 @@ export const storyPages: Record<string, PublicStoryPage> = {
     title: "Trust is shown with evidence, not a magic badge.",
     intro: "Before you commit a truck or open a gate, you can see why a carrier, organization, truck, or landing earned its status.",
     sections: [
-      { title: "Reviewed information", body: "Verification records keep self-reported details separate from what platform review actually checked.", points: ["Carrier information", "Equipment", "Landing authorization"] },
+      { title: "Reviewed information", body: "Verification records keep self-reported details separate from what platform review actually checked. Verification is context, not a carrier, route, or performance guarantee.", points: ["Carrier information", "Equipment", "Landing authorization"] },
       { title: "Controlled release", body: "Gate access, exact locations, and contact details unlock only when someone has accepted work that needs them.", points: ["Approximate areas in public", "Exact access after assignment", "Trip location shared with trip participants only"] },
       { title: "Moderation", body: "Reports and suspicious marketplace behavior go to human review. Legitimate field calls are never the problem.", points: ["Human review", "Abuse reports", "Blocked organizations stay blocked"] }
     ],
@@ -381,4 +381,3 @@ export const legalPages: Record<string, LegalPageContent> = {
     ]
   }
 }
-

@@ -12,10 +12,13 @@ test("visitor understands the public product and can inspect public loads", asyn
   await page.goto("/")
 
   await expect(page.getByRole("heading", { name: "Move more loads. Make fewer calls." })).toBeVisible()
-  await expect(page.getByRole("link", { name: "Find a load — free" }).first()).toBeVisible()
+  await expect(page.getByRole("link", { name: "Find a load" }).first()).toBeVisible()
+  await expect(page.locator('img[src*="logloads-hero"]')).toBeVisible()
+  await expect(page.locator('img[src*="logloads-logo"]').first()).toBeVisible()
 
   await page.goto("/loads")
   await expect(page.getByText("Exact access unlocks after assignment.").first()).toBeVisible()
+  await expect(page.getByRole("button", { name: "Strong fit" })).toHaveCount(0)
 })
 
 test("cockpits are protected: unauthenticated visitors are sent to sign-in", async ({ page }) => {
@@ -30,6 +33,10 @@ test("driver signs in and reaches the map", async ({ page }) => {
 
   await expect(page).toHaveURL(/\/driver\/map/)
   await expect(page.getByRole("heading", { name: "Map" })).toBeVisible()
+
+  await page.goto("/driver/profile")
+  await expect(page.getByText("Photo uploads are currently unavailable.").first()).toBeVisible()
+  await expect(page.locator('input[type="file"][name="photo"]')).toHaveCount(0)
 })
 
 test("driver cannot open the admin console", async ({ page }) => {
@@ -57,6 +64,13 @@ test("onboarding provisions a working driver account", async ({ page }) => {
   await page.goto("/onboarding")
   await page.waitForLoadState("networkidle")
   await page.click("text=I haul timber")
+  await expect(page.getByRole("radio", { name: /Owner-operator/ })).toBeChecked()
+  await page.getByRole("button", { name: "Choose a different role" }).click()
+  await page.getByRole("button", { name: /I have timber to move/ }).click()
+  await expect(page.getByRole("radio", { name: /Logging contractor/ })).toBeChecked()
+  await page.getByRole("button", { name: "Choose a different role" }).click()
+  await page.getByRole("button", { name: /I haul timber/ }).click()
+  await expect(page.getByRole("radio", { name: /Owner-operator/ })).toBeChecked()
   await page.waitForSelector('input[name="fullName"]')
   await page.fill('input[name="fullName"]', "Smoke Test Driver")
   await page.fill('input[name="email"]', `driver-${Date.now()}@smoke.example`)
@@ -77,4 +91,8 @@ test("driver mobile navigation follows the directed flow", async ({ page }) => {
   const nav = page.getByRole("navigation", { name: "driver mobile navigation" })
   await expect(nav.getByRole("link")).toHaveText(["Map", "Loads", "Schedule", "Profile"])
   await expect(nav.getByRole("link", { name: "Map" })).toHaveAttribute("aria-current", "page")
+  await page.getByRole("button", { name: "Open more tools" }).click()
+  await expect(page.getByRole("navigation", { name: "More tools" }).getByRole("link", { name: "Assistant" })).toBeVisible()
+  await page.keyboard.press("Escape")
+  await expect(page.getByRole("button", { name: "Open more tools" })).toBeFocused()
 })

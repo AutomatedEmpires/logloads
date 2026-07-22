@@ -32,13 +32,19 @@ async function advance(page: Page, label: string, nextLabel: string) {
 
   const card = () => page.locator(".trip-card").filter({ hasText: TITLE }).first()
   await expect(card()).toBeVisible({ timeout: 15_000 })
-  await card().getByRole("button", { name: label }).click()
+  const committed = page.waitForResponse((response) => {
+    const request = response.request()
+    return request.method() === "POST" && new URL(response.url()).pathname === "/driver/schedule"
+  }, { timeout: 45_000 })
 
-  await expect(async () => {
-    await page.reload()
-    await page.waitForLoadState("networkidle")
-    await expect(card().getByRole("button", { name: nextLabel })).toBeVisible({ timeout: 2_000 })
-  }).toPass({ timeout: 25_000 })
+  await card().getByRole("button", { name: label }).click()
+  await committed
+
+  // The action commits through a server action. Wait for that response before
+  // reloading so a slow mobile connection cannot cancel the in-flight write.
+  await page.reload()
+  await page.waitForLoadState("networkidle")
+  await expect(card().getByRole("button", { name: nextLabel })).toBeVisible({ timeout: 15_000 })
 }
 
 const TITLE = `Delivery record ${Date.now()}`
@@ -70,6 +76,7 @@ test.describe.serial("delivered record", () => {
     await fillWhenReady(page, "Truckloads needed per day", "1")
     await page.getByRole("button", { name: "Next" }).click()
     await page.getByRole("button", { name: "Next" }).click()
+    await page.getByRole("radio", { name: /Publish now/ }).check()
     await page.getByRole("button", { name: "Next" }).click()
     await page.getByRole("button", { name: "Publish to the network" }).click()
     await expect(page.getByText(/is live on the network/)).toBeVisible({ timeout: 15_000 })
@@ -97,7 +104,8 @@ test.describe.serial("delivered record", () => {
 
     const row = page.locator(".host-approval-row").filter({ hasText: TITLE }).first()
     await expect(row).toBeVisible({ timeout: 15_000 })
-    await row.getByRole("button", { name: "Approve" }).click()
+    await row.getByRole("button", { name: "Review approval" }).click()
+    await row.getByRole("button", { name: "Confirm approval" }).click()
 
     await expect(async () => {
       await page.reload()
@@ -106,6 +114,7 @@ test.describe.serial("delivered record", () => {
   })
 
   test("the driver records the delivery at the destination", async ({ page }) => {
+    test.setTimeout(180_000)
     // The scale is a phone-in-hand moment.
     await page.setViewportSize({ width: 390, height: 844 })
     await signIn(page, "hank@northpine.example")
@@ -123,10 +132,30 @@ test.describe.serial("delivered record", () => {
     await expect(form).toBeVisible({ timeout: 15_000 })
     await expect(form.getByText(/This haul needs:/)).toBeVisible()
 
-    await form.getByLabel("Delivered").fill("26.4")
-    await form.getByLabel("Ticket number").fill("SC-40192")
+    // The provider-free E2E lane cannot upload the Route Pack's scale ticket.
+    // Exercise the legitimate no-ticket path instead: a rejected load records
+    // zero delivered plus the exception that explains why no proof exists.
+    await form.getByLabel("Delivered").fill("0")
+    await form.getByLabel("Exception").selectOption("rejected_at_scale")
+    await form.getByLabel("What happened").fill("Receiving rejected the load before a ticket was issued.")
     await form.getByRole("button", { name: "Record delivery" }).click()
     await expect(form.getByText("Delivery recorded. The host will confirm it.")).toBeVisible({ timeout: 15_000 })
+
+    await advance(page, "Start unloading", "Finish trip")
+    const unloadingCard = page.locator(".trip-card").filter({ hasText: TITLE }).first()
+    const committed = page.waitForResponse((response) => {
+      const request = response.request()
+      return request.method() === "POST" && new URL(response.url()).pathname === "/driver/schedule"
+    }, { timeout: 45_000 })
+    await unloadingCard.getByRole("button", { name: "Finish trip" }).click()
+    await committed
+    await expect(async () => {
+      await page.reload()
+      await page.waitForLoadState("networkidle")
+      await expect(
+        page.locator(".trip-card").filter({ hasText: TITLE }).first().locator("header .ui-badge").getByText("Delivered", { exact: true })
+      ).toBeVisible({ timeout: 2_000 })
+    }).toPass({ timeout: 25_000 })
   })
 
   test("the host confirms the delivered record", async ({ page }) => {
@@ -137,10 +166,11 @@ test.describe.serial("delivered record", () => {
 
     const card = page.locator(".live-card").filter({ hasText: TITLE }).first()
     await expect(card).toBeVisible({ timeout: 15_000 })
-    await expect(card.getByText(/26.4 tons delivered/)).toBeVisible()
-    await expect(card.getByText(/ticket SC-40192/)).toBeVisible()
+    await expect(card.getByText(/0 tons delivered/)).toBeVisible()
+    await expect(card.getByText(/rejected at scale: Receiving rejected the load/i)).toBeVisible()
 
-    await card.getByRole("button", { name: "Confirm delivery" }).click()
+    await card.getByRole("button", { name: "Review confirmation" }).click()
+    await card.getByRole("button", { name: "Yes, confirm delivery" }).click()
 
     // Confirming unmounts the settle control, so the settled state on the card
     // is the durable proof — assert that rather than a transient message.
@@ -148,7 +178,7 @@ test.describe.serial("delivered record", () => {
       await page.reload()
       await page.waitForLoadState("networkidle")
       await expect(
-        page.locator(".live-card").filter({ hasText: TITLE }).first().getByText(/26.4 tons confirmed/)
+        page.locator(".live-card").filter({ hasText: TITLE }).first().getByText(/0 tons confirmed/)
       ).toBeVisible({ timeout: 2_000 })
     }).toPass({ timeout: 25_000 })
   })

@@ -443,7 +443,7 @@ function formatSlotWindow(startAt: string, endAt: string): string {
     timeZone: "UTC"
   })
 
-  return `${formatter.format(new Date(startAt))} - ${formatter.format(new Date(endAt))}`
+  return `${formatter.format(new Date(startAt))} - ${formatter.format(new Date(endAt))} UTC`
 }
 
 function formatWindow(startAt: string, endAt: string): string {
@@ -455,7 +455,7 @@ function formatWindow(startAt: string, endAt: string): string {
     timeZone: "UTC"
   })
 
-  return `${formatter.format(new Date(startAt))} - ${formatter.format(new Date(endAt))}`
+  return `${formatter.format(new Date(startAt))} - ${formatter.format(new Date(endAt))} UTC`
 }
 
 function approximateCoordinate(value: number): number {
