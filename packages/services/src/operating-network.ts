@@ -47,6 +47,7 @@ import {
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { declineAssignment, requestAssignment } from "./assignments"
+import { upsertAvailabilityWindow } from "./availability"
 import {
   applyHaulCompletionConfirmation,
   applyHaulCompletionDispute,
@@ -127,6 +128,11 @@ export interface CapacityRequestInput {
  */
 export interface CapacityRequestOptions {
   at?: string
+}
+
+interface InternalCapacityRequestOptions extends CapacityRequestOptions {
+  directOfferId?: string
+  suppressRequestNotification?: boolean
 }
 
 export interface ApproveCapacityRequestInput {
@@ -217,7 +223,22 @@ export interface CreateDirectOfferInput {
   offeredToOrganizationId: string
   offeredTruckloads: number
   expiresAt: string
-  termsSnapshot?: Record<string, unknown>
+}
+
+/** Trusted clock override for deterministic service tests; never client input. */
+export interface DirectOfferMutationOptions {
+  at?: string
+}
+
+export interface DirectOfferResponseInput {
+  actorUserId?: string
+  organizationId?: string
+  directOfferId: string
+}
+
+export interface ClaimDirectOfferInput extends DirectOfferResponseInput {
+  equipmentCombinationId: string
+  truckSlotId: string
 }
 
 export interface PublishFutureAvailabilityInput {
@@ -320,19 +341,50 @@ function getOpportunityCapacity(state: LogLoadsDatabaseState, loadPostingId: str
   return state.opportunityCapacities.find((capacity) => capacity.loadPostingId === loadPostingId)
 }
 
-function hasDirectOffer(state: LogLoadsDatabaseState, loadPostingId: string, organizationId: string): boolean {
-  return state.directOffers.some(
-    (offer) =>
-      offer.loadPostingId === loadPostingId &&
-      offer.offeredToOrganizationId === organizationId &&
-      ["sent", "accepted"].includes(offer.status)
+export function directOfferClaimCount(state: LogLoadsDatabaseState, directOfferId: string): number {
+  // A claim is historical once accepted. Cancellation releases operating
+  // capacity, but it must not silently reopen an invitation the host already
+  // acted on; the host sends a new offer when replacement work is wanted.
+  return state.assignments.filter((assignment) => assignment.directOfferId === directOfferId).length
+}
+
+export function effectiveDirectOfferStatus(offer: DirectOffer, at = nowIso()): DirectOffer["status"] {
+  return offer.status === "sent" && Date.parse(offer.expiresAt) <= Date.parse(at) ? "expired" : offer.status
+}
+
+export function directOfferIsClaimable(
+  state: LogLoadsDatabaseState,
+  offer: DirectOffer,
+  at = nowIso()
+): boolean {
+  return (
+    effectiveDirectOfferStatus(offer, at) === "sent" &&
+    directOfferClaimCount(state, offer.id) < offer.offeredTruckloads
   )
+}
+
+function hasDirectOffer(
+  state: LogLoadsDatabaseState,
+  loadPostingId: string,
+  organizationId: string,
+  at = nowIso()
+): boolean {
+  return state.directOffers.some((offer) => {
+    if (offer.loadPostingId !== loadPostingId || offer.offeredToOrganizationId !== organizationId) {
+      return false
+    }
+
+    // Once a truck was accepted, the receiving organization keeps access to
+    // that operating record even after the unused invitation window closes.
+    return directOfferClaimCount(state, offer.id) > 0 || ["sent", "accepted"].includes(effectiveDirectOfferStatus(offer, at))
+  })
 }
 
 export function isLoadVisibleToOrganization(
   state: LogLoadsDatabaseState,
   load: LoadPosting,
-  organizationId: string
+  organizationId: string,
+  at = nowIso()
 ): boolean {
   if (load.companyId === organizationId) {
     return true
@@ -357,20 +409,21 @@ export function isLoadVisibleToOrganization(
   }
 
   if (capacity.visibilityMode === "direct_offer") {
-    return hasDirectOffer(state, load.id, organizationId)
+    return hasDirectOffer(state, load.id, organizationId, at)
   }
 
-  return activeRelationshipExists(state, load.companyId, organizationId) || hasDirectOffer(state, load.id, organizationId)
+  return activeRelationshipExists(state, load.companyId, organizationId) || hasDirectOffer(state, load.id, organizationId, at)
 }
 
 export function listVisibleLoadsForOrganization(
   state: LogLoadsDatabaseState,
-  organizationId = DEFAULT_ORGANIZATION_ID
+  organizationId = DEFAULT_ORGANIZATION_ID,
+  at = nowIso()
 ): LoadPosting[] {
   return state.loadPostings.filter((load) =>
     load.status !== "archived" &&
     loadPostingHasOwnedCoherentSources(state, load) &&
-    isLoadVisibleToOrganization(state, load, organizationId)
+    isLoadVisibleToOrganization(state, load, organizationId, at)
   )
 }
 
@@ -413,7 +466,7 @@ export function listRequestableLoadsForOrganization(
   organizationId = DEFAULT_ORGANIZATION_ID,
   at = nowIso()
 ): LoadPosting[] {
-  return listVisibleLoadsForOrganization(state, organizationId).filter((load) =>
+  return listVisibleLoadsForOrganization(state, organizationId, at).filter((load) =>
     isLoadRequestableAt(state, load, at)
   )
 }
@@ -610,10 +663,10 @@ function findPostingDispatcher(state: LogLoadsDatabaseState, load: LoadPosting) 
   )
 }
 
-export function requestCapacityWithPolicy(
+function requestCapacityWithPolicyInternal(
   state: LogLoadsDatabaseState,
   input: CapacityRequestInput,
-  options: CapacityRequestOptions = {}
+  options: InternalCapacityRequestOptions = {}
 ): Assignment {
   const parsed: CapacityRequestInput = {
     actorUserId: input.actorUserId,
@@ -674,7 +727,9 @@ export function requestCapacityWithPolicy(
   const capacity = getOpportunityCapacity(state, parsed.loadPostingId)
   assertCondition(!capacity || capacity.remainingTruckloads > 0, "No opportunity capacity remains for this load")
   assertCondition(
-    !capacity || capacity.allocationMode === "request_approval",
+    !capacity ||
+      capacity.allocationMode === "request_approval" ||
+      (Boolean(options.directOfferId) && capacity.allocationMode === "direct_offer"),
     "This load is not accepting driver requests"
   )
 
@@ -703,7 +758,11 @@ export function requestCapacityWithPolicy(
     `Equipment is not eligible for this load: ${compatibility.hardFailures[0] ?? "compatibility failed"}`
   )
 
-  const assignment = requestAssignment(state, parsed)
+  const assignment = requestAssignment(state, {
+    ...parsed,
+    directOfferId: options.directOfferId ?? null,
+    termsSnapshot: {}
+  })
 
   if (capacity) {
     updateOpportunityCapacityAfterRequest(state, capacity)
@@ -716,7 +775,7 @@ export function requestCapacityWithPolicy(
   })
 
   const dispatcher = findPostingDispatcher(state, load)
-  if (dispatcher) {
+  if (dispatcher && !options.suppressRequestNotification) {
     insertNotification(
       state,
       dispatcher.userId,
@@ -729,6 +788,14 @@ export function requestCapacityWithPolicy(
   }
 
   return assignment
+}
+
+export function requestCapacityWithPolicy(
+  state: LogLoadsDatabaseState,
+  input: CapacityRequestInput,
+  options: CapacityRequestOptions = {}
+): Assignment {
+  return requestCapacityWithPolicyInternal(state, input, options)
 }
 
 export function approveCapacityRequest(
@@ -749,6 +816,29 @@ export function approveCapacityRequest(
   )
 
   assertCondition(load.companyId === context.organizationId, "Only the source organization can approve capacity requests")
+
+  return finalizeCapacityAssignment(state, assignment, {
+    actorUserId: context.actorUserId,
+    source: "host_approval"
+  })
+}
+
+interface FinalizeCapacityAssignmentOptions {
+  actorUserId: string
+  directOfferId?: string
+  source: "host_approval" | "direct_offer"
+}
+
+function finalizeCapacityAssignment(
+  state: LogLoadsDatabaseState,
+  assignment: Assignment,
+  options: FinalizeCapacityAssignmentOptions
+): { assignment: Assignment; trip: TripV2 } {
+  const load = assertFound(
+    state.loadPostings.find((current) => current.id === assignment.loadPostingId),
+    `Load posting ${assignment.loadPostingId} was not found`
+  )
+
   assertCondition(
     ["requested", "offered"].includes(assignment.status),
     "Only a requested or offered assignment can be approved"
@@ -784,8 +874,10 @@ export function approveCapacityRequest(
   const acceptedAssignment = assignmentSchema.parse({
     ...assignment,
     assignedAt: timestamp,
+    directOfferId: options.directOfferId ?? assignment.directOfferId ?? null,
     status: acceptedStatus,
     termsSnapshot: {
+      acceptanceSource: options.source,
       acceptedAt: timestamp,
       baseRateCents: rate.baseRate.amountCents,
       currency: rate.baseRate.currency,
@@ -840,11 +932,17 @@ export function approveCapacityRequest(
     updatedAt: timestamp
   })
   const tripEvent = existingTrip ? null : tripEventSchema.parse({
-    actorUserId: context.actorUserId,
+    actorUserId: options.actorUserId,
     createdAt: timestamp,
     id: createUuid(),
-    metadata: { assignmentId: acceptedAssignment.id, routePackId: routePack?.id ?? null },
-    note: "Assignment approved and trip created.",
+    metadata: {
+      assignmentId: acceptedAssignment.id,
+      directOfferId: options.directOfferId ?? null,
+      routePackId: routePack?.id ?? null
+    },
+    note: options.source === "direct_offer"
+      ? "Direct offer claimed and trip created."
+      : "Assignment approved and trip created.",
     occurredAt: timestamp,
     source: "dispatcher",
     tripId: trip.id,
@@ -868,17 +966,27 @@ export function approveCapacityRequest(
 
   state.tripsV2.push(trip)
   if (tripEvent) state.tripEvents.push(tripEvent)
-  insertAuditEvent(state, context.actorUserId, "trip", trip.id, "created_from_assignment", {
-    assignmentId: acceptedAssignment.id
-  })
+  insertAuditEvent(
+    state,
+    options.actorUserId,
+    "trip",
+    trip.id,
+    options.source === "direct_offer" ? "created_from_direct_offer" : "created_from_assignment",
+    {
+      assignmentId: acceptedAssignment.id,
+      directOfferId: options.directOfferId ?? null
+    }
+  )
 
   const driver = state.driverProfiles.find((profile) => profile.id === acceptedAssignment.driverProfileId)
   if (driver) {
     insertNotification(
       state,
       driver.userId,
-      "Assignment confirmed",
-      `${load.title} is confirmed and the route pack is available.`,
+      options.source === "direct_offer" ? "Direct offer truck confirmed" : "Assignment confirmed",
+      options.source === "direct_offer"
+        ? `${load.title} was accepted for your truck. The route pack is available.`
+        : `${load.title} is confirmed and the route pack is available.`,
       "assignment",
       acceptedAssignment.id,
       "assignment_confirmed"
@@ -2414,31 +2522,132 @@ export function createOperationalNotice(state: LogLoadsDatabaseState, input: Cre
   return notice
 }
 
-export function createDirectOffer(state: LogLoadsDatabaseState, input: CreateDirectOfferInput): DirectOffer {
+function directOfferOperatingMemberships(state: LogLoadsDatabaseState, organizationId: string) {
+  return state.organizationMemberships.filter((membership) =>
+    membership.organizationId === organizationId &&
+    membership.status === "active" &&
+    ["owner", "admin", "dispatcher", "fleet_manager"].includes(membership.role)
+  )
+}
+
+function transactState<T>(state: LogLoadsDatabaseState, mutation: (draft: LogLoadsDatabaseState) => T): T {
+  const draft = structuredClone(state)
+  const result = mutation(draft)
+
+  Object.assign(state, draft)
+
+  return result
+}
+
+function directOfferTermsSnapshot(
+  load: LoadPosting,
+  postingSources: ReturnType<typeof assertPostingSourcesAreUsable>
+) {
+  const { rate, route } = postingSources
+
+  return {
+    baseRateCents: rate.baseRate.amountCents,
+    capacityReservation: "none_until_truck_claimed",
+    currency: rate.baseRate.currency,
+    estimatedDistanceMiles: route.estimatedDistanceMiles,
+    estimatedTonsPerLoad: load.estimatedTonsPerLoad ?? null,
+    fuelSurchargeCents: rate.fuelSurchargeCents,
+    hostOrganizationId: load.companyId,
+    loadPostingId: load.id,
+    loadVersion: load.updatedAt,
+    paymentMode: "off_platform",
+    rateBasis: rate.rateType,
+    rateId: rate.id
+  }
+}
+
+function directOfferTermsAreCurrent(
+  offer: DirectOffer,
+  load: LoadPosting,
+  postingSources: ReturnType<typeof assertPostingSourcesAreUsable>
+): boolean {
+  return Object.entries(directOfferTermsSnapshot(load, postingSources)).every(
+    ([key, value]) => offer.termsSnapshot[key] === value
+  )
+}
+
+function createDirectOfferMutation(
+  state: LogLoadsDatabaseState,
+  input: CreateDirectOfferInput,
+  options: DirectOfferMutationOptions = {}
+): DirectOffer {
   const context = getContextForInput(state, input)
   assertOrganizationAction(context, "assign_capacity")
+  const timestamp = options.at ?? nowIso()
   const load = assertFound(
     state.loadPostings.find((current) => current.id === input.loadPostingId),
     `Load posting ${input.loadPostingId} was not found`
   )
-  assertCondition(load.companyId === context.organizationId, "Only the source organization can send a direct offer")
-  assertCondition(
-    activeRelationshipExists(state, context.organizationId, input.offeredToOrganizationId),
-    "Direct offers require an active private-network relationship"
+  const targetOrganizationId = requireText(input.offeredToOrganizationId, "offeredToOrganizationId")
+  const target = assertFound(
+    state.organizations.find((organization) => organization.id === targetOrganizationId && !organization.archivedAt),
+    `Organization ${targetOrganizationId} was not found`
   )
 
+  assertCondition(load.companyId === context.organizationId, "Only the source organization can send a direct offer")
+  assertCondition(!load.archivedAt && ["open", "scheduled"].includes(load.status), "Direct offers require open work")
+  assertCondition(target.id !== context.organizationId, "Direct offers must be sent to another organization")
+  assertCondition(["carrier", "fleet"].includes(target.type), "Direct offers must be sent to a hauling organization")
+  assertCondition(
+    activeRelationshipExists(state, context.organizationId, target.id),
+    "Direct offers require an active private-network relationship"
+  )
+  assertCondition(
+    Number.isInteger(input.offeredTruckloads) && input.offeredTruckloads > 0,
+    "offeredTruckloads must be a positive whole number"
+  )
+  assertCondition(
+    Number.isFinite(Date.parse(input.expiresAt)) && Date.parse(input.expiresAt) > Date.parse(timestamp),
+    "Direct offers require a future expiration"
+  )
+
+  const postingSources = assertPostingSourcesAreUsable(state, load.companyId, {
+    dispatcherProfileId: load.dispatcherProfileId,
+    dropoffMillId: load.dropoffMillId,
+    loaderProfileId: load.loaderProfileId,
+    pickupLandingId: load.pickupLandingId,
+    rateId: load.rateId,
+    routeId: load.routeId
+  }, { requireActiveLanding: false })
+  const capacity = assertFound(
+    getOpportunityCapacity(state, load.id),
+    `Opportunity capacity for load posting ${load.id} was not found`
+  )
+
+  assertCondition(
+    ["request_approval", "direct_offer"].includes(capacity.allocationMode),
+    "This load does not accept direct offers"
+  )
+  assertCondition(capacity.remainingTruckloads > 0, "No opportunity capacity remains for this load")
+  assertCondition(
+    input.offeredTruckloads <= capacity.remainingTruckloads,
+    `Only ${capacity.remainingTruckloads} truckload${capacity.remainingTruckloads === 1 ? "" : "s"} remain`
+  )
+
+  const duplicate = state.directOffers.find((offer) =>
+    offer.loadPostingId === load.id &&
+    offer.offeredToOrganizationId === target.id &&
+    directOfferIsClaimable(state, offer, timestamp)
+  )
+  assertCondition(!duplicate, "An active direct offer already exists for this partner and load")
+
   const offer = directOfferSchema.parse({
-    createdAt: nowIso(),
+    createdAt: timestamp,
     expiresAt: input.expiresAt,
     id: createUuid(),
     loadPostingId: load.id,
     offeredByOrganizationId: context.organizationId,
-    offeredToOrganizationId: requireText(input.offeredToOrganizationId, "offeredToOrganizationId"),
+    offeredToOrganizationId: target.id,
     offeredTruckloads: input.offeredTruckloads,
     respondedAt: null,
     status: "sent",
-    termsSnapshot: input.termsSnapshot ?? {},
-    updatedAt: nowIso()
+    termsSnapshot: directOfferTermsSnapshot(load, postingSources),
+    updatedAt: timestamp
   })
 
   state.directOffers.push(offer)
@@ -2448,11 +2657,7 @@ export function createDirectOffer(state: LogLoadsDatabaseState, input: CreateDir
     offeredTruckloads: offer.offeredTruckloads
   })
 
-  for (const membership of state.organizationMemberships.filter((membership) =>
-    membership.organizationId === offer.offeredToOrganizationId &&
-    membership.status === "active" &&
-    ["owner", "admin", "dispatcher", "fleet_manager"].includes(membership.role)
-  )) {
+  for (const membership of directOfferOperatingMemberships(state, offer.offeredToOrganizationId)) {
     insertNotification(
       state,
       membership.userId,
@@ -2465,6 +2670,344 @@ export function createDirectOffer(state: LogLoadsDatabaseState, input: CreateDir
   }
 
   return offer
+}
+
+export function createDirectOffer(
+  state: LogLoadsDatabaseState,
+  input: CreateDirectOfferInput,
+  options: DirectOfferMutationOptions = {}
+): DirectOffer {
+  return transactState(state, (draft) => createDirectOfferMutation(draft, input, options))
+}
+
+function claimDirectOfferMutation(
+  state: LogLoadsDatabaseState,
+  input: ClaimDirectOfferInput,
+  options: DirectOfferMutationOptions
+): { assignment: Assignment; directOffer: DirectOffer; trip: TripV2 } {
+  const context = getContextForInput(state, input)
+  // Accepting company work is a fleet operating decision. Requiring both
+  // capabilities admits owner/admin/dispatcher/fleet_manager while keeping a
+  // driver, landing manager, billing user, or viewer from committing a truck.
+  assertOrganizationAction(context, "assign_capacity")
+  assertOrganizationAction(context, "request_assignment")
+  const timestamp = options.at ?? nowIso()
+  const directOfferId = requireText(input.directOfferId, "directOfferId")
+  const offer = assertFound(
+    state.directOffers.find((candidate) => candidate.id === directOfferId),
+    `Direct offer ${directOfferId} was not found`
+  )
+
+  assertCondition(
+    offer.offeredToOrganizationId === context.organizationId,
+    `Direct offer ${offer.id} was not found`
+  )
+
+  const equipmentCombinationId = requireText(input.equipmentCombinationId, "equipmentCombinationId")
+  const truckSlotId = requireText(input.truckSlotId, "truckSlotId")
+  const existingTrip = state.tripsV2.find((trip) =>
+    trip.equipmentCombinationId === equipmentCombinationId &&
+    state.assignments.some((assignment) =>
+      assignment.id === trip.assignmentId &&
+      assignment.directOfferId === offer.id &&
+      assignment.truckSlotId === truckSlotId
+    )
+  )
+
+  if (existingTrip) {
+    const existingAssignment = assertFound(
+      state.assignments.find((assignment) => assignment.id === existingTrip.assignmentId),
+      `Assignment ${existingTrip.assignmentId} was not found`
+    )
+
+    assertCondition(
+      !["cancelled", "declined"].includes(existingAssignment.status),
+      "This truck's earlier claim was cancelled; a new direct offer is required"
+    )
+
+    return { assignment: existingAssignment, directOffer: offer, trip: existingTrip }
+  }
+
+  assertCondition(directOfferIsClaimable(state, offer, timestamp), "This direct offer is no longer actionable")
+  assertCondition(
+    activeRelationshipExists(state, offer.offeredByOrganizationId, offer.offeredToOrganizationId),
+    "The private-network relationship is no longer active"
+  )
+
+  const load = assertFound(
+    state.loadPostings.find((candidate) => candidate.id === offer.loadPostingId),
+    `Load posting ${offer.loadPostingId} was not found`
+  )
+  assertCondition(load.companyId === offer.offeredByOrganizationId, "Direct offer source no longer owns this load")
+  assertCondition(!load.archivedAt && ["open", "scheduled"].includes(load.status), "This load is no longer accepting trucks")
+  const postingSources = assertPostingSourcesAreUsable(state, load.companyId, {
+    dispatcherProfileId: load.dispatcherProfileId,
+    dropoffMillId: load.dropoffMillId,
+    loaderProfileId: load.loaderProfileId,
+    pickupLandingId: load.pickupLandingId,
+    rateId: load.rateId,
+    routeId: load.routeId
+  }, { requireActiveLanding: false })
+  assertCondition(
+    directOfferTermsAreCurrent(offer, load, postingSources),
+    "Direct offer terms changed after it was sent; ask the host to send a new offer"
+  )
+
+  const combination = assertFound(
+    state.equipmentCombinations.find((candidate) => candidate.id === equipmentCombinationId),
+    `Equipment combination ${equipmentCombinationId} was not found`
+  )
+  assertCondition(combination.organizationId === context.organizationId, `Equipment combination ${equipmentCombinationId} was not found`)
+  assertCondition(combination.status === "available", "Only available equipment can claim a direct offer")
+  const driverProfileId = assertFound(combination.assignedDriverProfileId, "Assign a driver before accepting this offer")
+  const driver = assertFound(
+    state.driverProfiles.find((candidate) => candidate.id === driverProfileId),
+    `Driver profile ${driverProfileId} was not found`
+  )
+  const driverIsActive = state.profiles.some((profile) =>
+    profile.id === driver.userId && profile.isActive
+  )
+  const driverMembership = state.organizationMemberships.find((membership) =>
+    membership.organizationId === context.organizationId &&
+    membership.status === "active" &&
+    membership.userId === driver.userId
+  )
+
+  assertCondition(
+    driverIsActive && Boolean(driverMembership && organizationRoleCan(driverMembership.role, "progress_trip")),
+    "The assigned driver is not active in this organization"
+  )
+  const truck = assertFound(
+    state.truckProfiles.find((candidate) => candidate.id === combination.truckProfileId),
+    `Truck profile ${combination.truckProfileId} was not found`
+  )
+  const trailer = combination.trailerProfileId
+    ? assertFound(
+        state.trailerProfiles.find((candidate) => candidate.id === combination.trailerProfileId),
+        `Trailer profile ${combination.trailerProfileId} was not found`
+      )
+    : null
+
+  assertCondition(driver.companyId === context.organizationId, "The assigned driver does not belong to this organization")
+  assertCondition(truck.companyId === context.organizationId, "The selected truck does not belong to this organization")
+  assertCondition(!truck.archivedAt, "The selected truck is archived")
+  assertCondition(!trailer || trailer.truckId === truck.id, "The selected trailer is not attached to this truck")
+
+  const slot = assertFound(
+    state.truckSlots.find((candidate) => candidate.id === truckSlotId),
+    `Truck slot ${truckSlotId} was not found`
+  )
+  assertCondition(slot.loadPostingId === load.id, "The selected truck slot does not belong to this load")
+  assertCondition(slot.landingId === load.pickupLandingId, "The selected truck slot does not belong to this landing")
+  assertCondition(["open", "requested", "reserved"].includes(slot.status), "This haul window is no longer open")
+  assertCondition(slot.reservedCount < slot.capacity, "This haul window is already full")
+  assertCondition(slot.endAt > timestamp, "This haul window has already passed")
+
+  const driverWindows = state.availabilityWindows.filter((window) => window.driverProfileId === driver.id)
+  const coversSlot = driverWindows.some(
+    (window) => window.status !== "unavailable" && window.startAt <= slot.startAt && window.endAt >= slot.endAt
+  )
+
+  if (!coversSlot) {
+    const overlapsSlot = driverWindows.some(
+      (window) => window.startAt < slot.endAt && window.endAt > slot.startAt
+    )
+    assertCondition(
+      !overlapsSlot,
+      "The driver's posted availability does not cover this full haul window; update availability before accepting"
+    )
+    upsertAvailabilityWindow(state, {
+      driverProfileId: driver.id,
+      endAt: slot.endAt,
+      notes: "Confirmed while accepting a direct offer.",
+      startAt: slot.startAt,
+      status: "available",
+      truckProfileId: truck.id
+    })
+  }
+
+  const overlappingAssignment = state.assignments.find((assignment) => {
+    if (!activeAssignmentStatuses.has(assignment.status)) {
+      return false
+    }
+
+    const sameEquipment =
+      assignment.driverProfileId === driver.id ||
+      assignment.truckProfileId === truck.id ||
+      Boolean(trailer && assignment.trailerProfileId === trailer.id)
+
+    if (!sameEquipment) {
+      return false
+    }
+
+    const otherSlot = state.truckSlots.find((candidate) => candidate.id === assignment.truckSlotId)
+
+    return Boolean(otherSlot && otherSlot.startAt < slot.endAt && otherSlot.endAt > slot.startAt)
+  })
+  assertCondition(!overlappingAssignment, "This driver or equipment is already committed during that haul window")
+
+  const capacity = assertFound(
+    getOpportunityCapacity(state, load.id),
+    `Opportunity capacity for load posting ${load.id} was not found`
+  )
+  assertCondition(capacity.remainingTruckloads > 0, "No opportunity capacity remains for this load")
+
+  const assignment = requestCapacityWithPolicyInternal(state, {
+    actorUserId: context.actorUserId,
+    dispatcherNotes: "Accepted through a direct offer.",
+    driverProfileId: driver.id,
+    loadPostingId: load.id,
+    organizationId: context.organizationId,
+    trailerProfileId: trailer?.id ?? null,
+    truckProfileId: truck.id,
+    truckSlotId: slot.id
+  }, {
+    at: timestamp,
+    directOfferId: offer.id,
+    suppressRequestNotification: true
+  })
+  const accepted = finalizeCapacityAssignment(state, assignment, {
+    actorUserId: context.actorUserId,
+    directOfferId: offer.id,
+    source: "direct_offer"
+  })
+  const acceptedTruckloads = directOfferClaimCount(state, offer.id)
+  const updatedOffer = directOfferSchema.parse({
+    ...offer,
+    respondedAt: offer.respondedAt ?? timestamp,
+    status: acceptedTruckloads >= offer.offeredTruckloads ? "accepted" : "sent",
+    updatedAt: timestamp
+  })
+
+  state.directOffers = state.directOffers.map((candidate) => candidate.id === offer.id ? updatedOffer : candidate)
+  insertAuditEvent(state, context.actorUserId, "direct_offer", offer.id, "truckload_claimed", {
+    acceptedTruckloads,
+    assignmentId: accepted.assignment.id,
+    offeredTruckloads: offer.offeredTruckloads
+  })
+
+  const dispatcher = findPostingDispatcher(state, load)
+  if (dispatcher) {
+    insertNotification(
+      state,
+      dispatcher.userId,
+      "Direct offer truck accepted",
+      `${targetDisplayName(state, context.organizationId)} accepted ${acceptedTruckloads} of ${offer.offeredTruckloads} truckloads on ${load.title}.`,
+      "direct_offer",
+      offer.id,
+      "assignment_confirmed"
+    )
+  }
+
+  return { ...accepted, directOffer: updatedOffer }
+}
+
+function targetDisplayName(state: LogLoadsDatabaseState, organizationId: string): string {
+  return state.organizations.find((organization) => organization.id === organizationId)?.displayName ?? "The partner"
+}
+
+export function claimDirectOffer(
+  state: LogLoadsDatabaseState,
+  input: ClaimDirectOfferInput,
+  options: DirectOfferMutationOptions = {}
+): { assignment: Assignment; directOffer: DirectOffer; trip: TripV2 } {
+  return transactState(state, (draft) => claimDirectOfferMutation(draft, input, options))
+}
+
+function declineDirectOfferMutation(
+  state: LogLoadsDatabaseState,
+  input: DirectOfferResponseInput,
+  options: DirectOfferMutationOptions = {}
+): DirectOffer {
+  const context = getContextForInput(state, input)
+  assertOrganizationAction(context, "assign_capacity")
+  assertOrganizationAction(context, "request_assignment")
+  const timestamp = options.at ?? nowIso()
+  const offer = assertFound(
+    state.directOffers.find((candidate) => candidate.id === input.directOfferId),
+    `Direct offer ${input.directOfferId} was not found`
+  )
+
+  assertCondition(offer.offeredToOrganizationId === context.organizationId, `Direct offer ${offer.id} was not found`)
+  assertCondition(directOfferIsClaimable(state, offer, timestamp), "This direct offer is no longer actionable")
+  const declined = directOfferSchema.parse({
+    ...offer,
+    respondedAt: offer.respondedAt ?? timestamp,
+    status: "declined",
+    updatedAt: timestamp
+  })
+
+  state.directOffers = state.directOffers.map((candidate) => candidate.id === offer.id ? declined : candidate)
+  const acceptedTruckloads = directOfferClaimCount(state, offer.id)
+  insertAuditEvent(state, context.actorUserId, "direct_offer", offer.id, "declined", { acceptedTruckloads })
+
+  const load = state.loadPostings.find((candidate) => candidate.id === offer.loadPostingId)
+  const dispatcher = load ? findPostingDispatcher(state, load) : null
+  if (dispatcher) {
+    insertNotification(
+      state,
+      dispatcher.userId,
+      "Direct offer declined",
+      `${targetDisplayName(state, context.organizationId)} declined the remaining direct offer${load ? ` on ${load.title}` : ""}.`,
+      "direct_offer",
+      offer.id,
+      "system_alert"
+    )
+  }
+
+  return declined
+}
+
+export function declineDirectOffer(
+  state: LogLoadsDatabaseState,
+  input: DirectOfferResponseInput,
+  options: DirectOfferMutationOptions = {}
+): DirectOffer {
+  return transactState(state, (draft) => declineDirectOfferMutation(draft, input, options))
+}
+
+function revokeDirectOfferMutation(
+  state: LogLoadsDatabaseState,
+  input: DirectOfferResponseInput,
+  options: DirectOfferMutationOptions = {}
+): DirectOffer {
+  const context = getContextForInput(state, input)
+  assertOrganizationAction(context, "assign_capacity")
+  const timestamp = options.at ?? nowIso()
+  const offer = assertFound(
+    state.directOffers.find((candidate) => candidate.id === input.directOfferId),
+    `Direct offer ${input.directOfferId} was not found`
+  )
+
+  assertCondition(offer.offeredByOrganizationId === context.organizationId, `Direct offer ${offer.id} was not found`)
+  assertCondition(directOfferIsClaimable(state, offer, timestamp), "This direct offer is no longer actionable")
+  const revoked = directOfferSchema.parse({ ...offer, status: "revoked", updatedAt: timestamp })
+
+  state.directOffers = state.directOffers.map((candidate) => candidate.id === offer.id ? revoked : candidate)
+  const acceptedTruckloads = directOfferClaimCount(state, offer.id)
+  insertAuditEvent(state, context.actorUserId, "direct_offer", offer.id, "revoked", { acceptedTruckloads })
+
+  for (const membership of directOfferOperatingMemberships(state, offer.offeredToOrganizationId)) {
+    insertNotification(
+      state,
+      membership.userId,
+      "Direct offer closed",
+      "The host closed the remaining invitation. Any already confirmed trucks stay assigned.",
+      "direct_offer",
+      offer.id,
+      "system_alert"
+    )
+  }
+
+  return revoked
+}
+
+export function revokeDirectOffer(
+  state: LogLoadsDatabaseState,
+  input: DirectOfferResponseInput,
+  options: DirectOfferMutationOptions = {}
+): DirectOffer {
+  return transactState(state, (draft) => revokeDirectOfferMutation(draft, input, options))
 }
 
 export function publishFutureAvailability(

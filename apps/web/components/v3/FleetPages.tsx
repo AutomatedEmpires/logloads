@@ -17,6 +17,8 @@ import { RelationshipGrid } from "./Common"
 import {
   AddEquipmentForm,
   AvailabilityPublisher,
+  ClaimDirectOfferButton,
+  DeclineDirectOfferButton,
   DriverAssignSelect,
   EquipmentStatusSelect,
   RequestForTruckButton
@@ -652,9 +654,30 @@ export function FleetOpportunities({ account, network }: FleetShellProps) {
 
     return matchesQuery && matchesPartner
   })
+  const receivedOffers = network.directOffers.filter((offer) =>
+    offer.direction === "received" && offer.actionable && offer.remainingTruckloads > 0
+  )
 
   return (
     <AppShell account={account} role="fleet" title="Opportunities" kicker="Put trucks to work" orgName={network.activeOrganization.name}>
+      {receivedOffers.length > 0 ? (
+        <section className="fleet-panel" aria-label="Direct offers awaiting a truck">
+          <SectionHeader eyebrow="Direct offers" title="Partners invited your trucks" />
+          <div className="board-list">
+            {receivedOffers.map((offer) => (
+              <article className="trip-row" key={offer.id}>
+                <div>
+                  <strong>{offer.loadTitle}</strong>
+                  <span>
+                    {offer.counterpartName} · {offer.acceptedTruckloads} of {offer.offeredTruckloads} accepted · expires {formatDateTime(offer.expiresAt)}
+                  </span>
+                </div>
+                <Link className="action-link" href={opportunityHref(offer.loadPostingId)} prefetch={false}>Review offer</Link>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
       <section className="discovery-v3" aria-label="Fleet load discovery">
         <div className="filter-bar">
           <label className="search-field-v3">
@@ -692,6 +715,15 @@ export function FleetOpportunityDetail({
   network,
   options
 }: FleetShellProps & { load: NetworkLoadView | null; options: LoadDispatchOption[] }) {
+  const directOffer = load
+    ? network.directOffers.find((offer) =>
+        offer.direction === "received" &&
+        offer.loadPostingId === load.id &&
+        offer.actionable &&
+        offer.remainingTruckloads > 0
+      ) ?? null
+    : null
+
   return (
     <AppShell account={account} role="fleet" title="Load detail" kicker="Dispatch decision" orgName={network.activeOrganization.name}>
       {!load ? (
@@ -712,6 +744,16 @@ export function FleetOpportunityDetail({
               <Badge tone={load.visibilityMode === "private_network" ? "info" : "neutral"}>{visibilityLabel(load)}</Badge>
               <Badge tone={load.capacity.remaining > 0 ? "success" : "warning"}>{load.capacity.remaining > 0 ? "Capacity open" : "All loads assigned"}</Badge>
             </div>
+            {directOffer ? (
+              <section className="fleet-panel" aria-label="Direct offer">
+                <SectionHeader eyebrow="Direct offer" title={`${directOffer.remainingTruckloads} truckload${directOffer.remainingTruckloads === 1 ? "" : "s"} still invited`} />
+                <p>
+                  {directOffer.counterpartName} invited up to {directOffer.offeredTruckloads} trucks. Capacity is committed only when each truck is accepted below.
+                </p>
+                <p>Offer expires {formatDateTime(directOffer.expiresAt)}.</p>
+                <DeclineDirectOfferButton directOfferId={directOffer.id} />
+              </section>
+            ) : null}
             <div className="fact-row">
               <span>{load.tonsLabel}</span>
               <span>{load.fuelSurchargeLabel}</span>
@@ -751,7 +793,7 @@ export function FleetOpportunityDetail({
           </div>
 
           <aside className="fleet-detail__aside">
-            <h2>Send a truck</h2>
+            <h2>{directOffer ? "Accept with a truck" : "Send a truck"}</h2>
             {options.length === 0 ? (
               <EmptyState
                 title="No truck can take this right now."
@@ -769,11 +811,19 @@ export function FleetOpportunityDetail({
                   <span>{option.driverName} · {option.payload}</span>
                   {option.reasons.map((reason) => <p key={reason}>{reason}</p>)}
                   {option.eligible ? (
-                    <RequestForTruckButton
-                      driverProfileId={option.driverProfileId}
-                      loadPostingId={load.id}
-                      truckSlotId={load.slots.requestableSlotId}
-                    />
+                    directOffer ? (
+                      <ClaimDirectOfferButton
+                        directOfferId={directOffer.id}
+                        equipmentCombinationId={option.combinationId}
+                        truckSlotId={load.slots.claimableSlotId}
+                      />
+                    ) : (
+                      <RequestForTruckButton
+                        driverProfileId={option.driverProfileId}
+                        loadPostingId={load.id}
+                        truckSlotId={load.slots.requestableSlotId}
+                      />
+                    )
                   ) : null}
                 </article>
               ))

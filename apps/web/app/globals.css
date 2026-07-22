@@ -897,7 +897,7 @@ dd { margin: 0; font-weight: 900; text-align: right; }
   .builder-form { grid-template-columns: 1fr; }
   .section-heading { align-items: start; flex-direction: column; }
   .app-sidebar { display: none; }
-  .app-main { margin-left: 0; padding-bottom: 84px; }
+  .app-main { margin-left: 0; padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
   .app-topbar { min-height: 64px; padding: 10px 12px; }
   .app-topbar h1 { font-size: 1.18rem; }
   .account-switcher { display: none; }
@@ -906,11 +906,13 @@ dd { margin: 0; font-weight: 900; text-align: right; }
     inset: auto 0 0 0;
     z-index: 60;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    padding-bottom: env(safe-area-inset-bottom);
     border-top: 1px solid var(--line);
     background: rgba(255,253,247,0.96);
     backdrop-filter: blur(14px);
   }
+  .app-shell--driver .mobile-app-nav { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .mobile-app-nav a { display: grid; min-height: 64px; place-items: center; gap: 3px; color: var(--ink-soft); font-size: 0.72rem; font-weight: 900; }
   .mobile-app-nav a[aria-current="page"] { background: var(--green-bg); color: var(--pine); }
   .mobile-app-nav a[aria-current="page"]::before { position: absolute; top: 0; width: 34px; height: 3px; border-radius: 0 0 4px 4px; background: var(--pine); content: ""; }

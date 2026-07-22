@@ -6,6 +6,8 @@ import { Badge, Button } from "@logloads/ui"
 import {
   addEquipmentAction,
   assignDriverToEquipmentAction,
+  claimDirectOfferAction,
+  declineDirectOfferAction,
   publishFutureAvailabilityAction,
   updateEquipmentStatusAction,
   requestCapacityAction
@@ -61,6 +63,114 @@ export function RequestForTruckButton({
         {pending ? "Requesting…" : "Request for this truck"}
       </Button>
       {!truckSlotId ? <p className="fleet-action__hint">No open slot window on this load right now.</p> : null}
+      {error ? <p className="fleet-action__error" role="alert">{error}</p> : null}
+    </div>
+  )
+}
+
+export function ClaimDirectOfferButton({
+  directOfferId,
+  equipmentCombinationId,
+  truckSlotId
+}: {
+  directOfferId: string
+  equipmentCombinationId: string
+  truckSlotId: string | null
+}) {
+  const [pending, startTransition] = useTransition()
+  const [confirming, setConfirming] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [claimed, setClaimed] = useState(false)
+
+  if (claimed) {
+    return (
+      <div className="fleet-action" role="status">
+        <Badge tone="success">Truck confirmed</Badge>
+        <p className="fleet-action__hint">The assignment and field Route Pack are ready.</p>
+      </div>
+    )
+  }
+
+  if (confirming) {
+    return (
+      <div className="fleet-action">
+        <p className="fleet-action__hint">Confirm this truck for the shown haul window. This immediately creates the assignment.</p>
+        <Button
+          disabled={pending || !truckSlotId}
+          icon="action.request"
+          onClick={() => {
+            if (!truckSlotId) return
+
+            setError(null)
+            startTransition(async () => {
+              const result = await claimDirectOfferAction({ directOfferId, equipmentCombinationId, truckSlotId })
+
+              if (result.ok) {
+                setClaimed(true)
+              } else {
+                setError(result.error ?? "The truck could not be assigned.")
+              }
+            })
+          }}
+        >
+          {pending ? "Confirming…" : "Confirm assignment"}
+        </Button>
+        <button className="action-link action-link--secondary" disabled={pending} onClick={() => setConfirming(false)} type="button">
+          Go back
+        </button>
+        {error ? <p className="fleet-action__error" role="alert">{error}</p> : null}
+      </div>
+    )
+  }
+
+  return (
+    <div className="fleet-action">
+      <Button disabled={!truckSlotId} icon="action.request" onClick={() => setConfirming(true)}>
+        Accept and assign
+      </Button>
+      {!truckSlotId ? <p className="fleet-action__hint">No open haul window is available now.</p> : null}
+    </div>
+  )
+}
+
+export function DeclineDirectOfferButton({ directOfferId }: { directOfferId: string }) {
+  const [pending, startTransition] = useTransition()
+  const [confirming, setConfirming] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [declined, setDeclined] = useState(false)
+
+  if (declined) {
+    return <Badge tone="neutral">Remaining offer declined</Badge>
+  }
+
+  return (
+    <div className="fleet-action">
+      {confirming ? (
+        <>
+          <p className="fleet-action__hint">Already confirmed trucks stay assigned. Decline only the unclaimed truckloads?</p>
+          <Button
+            disabled={pending}
+            onClick={() => {
+              setError(null)
+              startTransition(async () => {
+                const result = await declineDirectOfferAction({ directOfferId })
+
+                if (result.ok) setDeclined(true)
+                else setError(result.error ?? "The offer could not be declined.")
+              })
+            }}
+          >
+            {pending ? "Declining…" : "Confirm decline"}
+          </Button>
+          <button className="action-link action-link--secondary" disabled={pending} onClick={() => setConfirming(false)} type="button">
+            Keep offer open
+          </button>
+        </>
+      ) : (
+        <button className="action-link action-link--secondary" onClick={() => setConfirming(true)} type="button">
+          Decline remaining offer
+        </button>
+      )}
       {error ? <p className="fleet-action__error" role="alert">{error}</p> : null}
     </div>
   )

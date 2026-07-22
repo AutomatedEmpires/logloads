@@ -295,6 +295,12 @@ export const availabilityWindowSchema = z
 export const assignmentSchema = z.object({
   id: uuidSchema,
   loadPostingId: uuidSchema,
+  /**
+   * The invitation that authorized this assignment, when capacity was claimed
+   * through a direct offer. This is a typed relationship rather than a value
+   * hidden in termsSnapshot so retries, limits, and audits can be enforced.
+   */
+  directOfferId: uuidSchema.optional().nullable().default(null),
   truckSlotId: uuidSchema,
   driverProfileId: uuidSchema,
   truckProfileId: uuidSchema,

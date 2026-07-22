@@ -65,6 +65,59 @@ async function commit<T>(
   return value
 }
 
+function ensureDriverAvailabilityForSlot(
+  draft: typeof services,
+  input: {
+    driverProfileId: string
+    loadPostingId: string
+    note: string
+    organizationId: string
+    truckSlotId: string
+  }
+) {
+  const combination = draft.state.equipmentCombinations.find((candidate) =>
+    candidate.organizationId === input.organizationId && candidate.assignedDriverProfileId === input.driverProfileId
+  )
+
+  if (!combination) {
+    throw new Error("No equipment is assigned to this driver. Add or assign a truck before continuing.")
+  }
+
+  const slot = draft.state.truckSlots.find((candidate) => candidate.id === input.truckSlotId)
+
+  if (!slot || slot.loadPostingId !== input.loadPostingId) {
+    throw new Error("This haul window is no longer available. Pick another open load.")
+  }
+
+  const driverWindows = draft.state.availabilityWindows.filter(
+    (window) => window.driverProfileId === input.driverProfileId
+  )
+  const coversSlot = driverWindows.some(
+    (window) => window.status !== "unavailable" && window.startAt <= slot.startAt && window.endAt >= slot.endAt
+  )
+
+  if (!coversSlot) {
+    const overlapsSlot = driverWindows.some(
+      (window) => window.startAt < slot.endAt && window.endAt > slot.startAt
+    )
+
+    if (overlapsSlot) {
+      throw new Error("The driver's posted availability does not cover this full haul window. Update availability, then try again.")
+    }
+
+    draft.upsertAvailabilityWindow({
+      driverProfileId: input.driverProfileId,
+      endAt: slot.endAt,
+      notes: input.note,
+      startAt: slot.startAt,
+      status: "available",
+      truckProfileId: combination.truckProfileId
+    })
+  }
+
+  return combination
+}
+
 // --- Driver / hauling side -------------------------------------------------
 
 export async function requestCapacityAction(input: {
@@ -89,45 +142,13 @@ export async function requestCapacityAction(input: {
     }
 
     await commit(["/driver", "/fleet", "/host"], (draft) => {
-      const combination = draft.state.equipmentCombinations.find(
-        (candidate) => candidate.assignedDriverProfileId === driverProfileId
-      )
-
-      if (!combination) {
-        throw new Error("Add your truck first. Equipment powers matching and assignments.")
-      }
-
-      const slot = draft.state.truckSlots.find((candidate) => candidate.id === input.truckSlotId)
-
-      if (!slot || slot.loadPostingId !== input.loadPostingId) {
-        throw new Error("This haul window is no longer available. Pick another open load.")
-      }
-
-      const driverWindows = draft.state.availabilityWindows.filter(
-        (window) => window.driverProfileId === driverProfileId
-      )
-      const coversSlot = driverWindows.some(
-        (window) => window.status !== "unavailable" && window.startAt <= slot.startAt && window.endAt >= slot.endAt
-      )
-
-      if (!coversSlot) {
-        const overlapsSlot = driverWindows.some(
-          (window) => window.startAt < slot.endAt && window.endAt > slot.startAt
-        )
-
-        if (overlapsSlot) {
-          throw new Error("Your posted availability does not cover this full haul window. Update availability, then request again.")
-        }
-
-        draft.upsertAvailabilityWindow({
-          driverProfileId,
-          endAt: slot.endAt,
-          notes: "Confirmed while requesting this haul.",
-          startAt: slot.startAt,
-          status: "available",
-          truckProfileId: combination.truckProfileId
-        })
-      }
+      const combination = ensureDriverAvailabilityForSlot(draft, {
+        driverProfileId,
+        loadPostingId: input.loadPostingId,
+        note: "Confirmed while requesting this haul.",
+        organizationId: actorOrganizationId(actor),
+        truckSlotId: input.truckSlotId
+      })
 
       return draft.requestCapacityWithPolicy({
         actorUserId: actor.profile.id,
@@ -380,15 +401,20 @@ export async function addEquipmentAction(input: {
 }): Promise<ActionResult> {
   try {
     const actor = await requireActor()
+    const assignedDriverProfileId = input.assignToSelf ? actor.driverProfileId : null
+
+    if (input.assignToSelf && !assignedDriverProfileId) {
+      throw new Error("Finish your driver profile before adding personal equipment")
+    }
 
     await commit(["/driver", "/fleet"], (draft) =>
       draft.addEquipmentCombination({
-        assignedDriverProfileId: input.assignToSelf ? actor.driverProfileId : null,
+        actorUserId: actor.profile.id,
+        assignedDriverProfileId,
         homeRegion: actor.activeOrganization?.primaryRegion ?? "Unspecified",
         label: input.label,
         maxPayloadTons: input.maxPayloadTons,
         organizationId: actorOrganizationId(actor),
-        ownerUserId: actor.profile.id,
         trailerType: input.trailerType || null,
         truckMake: input.truckMake ?? null,
         truckModel: input.truckModel ?? null,
@@ -412,6 +438,7 @@ export async function updateEquipmentStatusAction(input: {
 
     await commit(["/driver", "/fleet"], (draft) =>
       draft.updateEquipmentStatus({
+        actorUserId: actor.profile.id,
         combinationId: input.combinationId,
         organizationId: actorOrganizationId(actor),
         status: input.status
@@ -433,6 +460,7 @@ export async function assignDriverToEquipmentAction(input: {
 
     await commit(["/fleet", "/driver"], (draft) =>
       draft.assignDriverToEquipment({
+        actorUserId: actor.profile.id,
         combinationId: input.combinationId,
         driverProfileId: input.driverProfileId,
         organizationId: actorOrganizationId(actor)
@@ -905,6 +933,72 @@ export async function createDirectOfferAction(input: {
         organizationId: actorOrganizationId(actor)
       })
     )
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function claimDirectOfferAction(input: {
+  directOfferId: string
+  equipmentCombinationId: string
+  truckSlotId: string
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    await commit(["/fleet", "/host", "/driver"], (draft) =>
+      draft.claimDirectOffer({
+        actorUserId: actor.profile.id,
+        directOfferId: input.directOfferId,
+        equipmentCombinationId: input.equipmentCombinationId,
+        organizationId: actorOrganizationId(actor),
+        truckSlotId: input.truckSlotId
+      })
+    )
+
+    captureServerEvent("direct_offer_claimed", actor.profile.id, { directOfferId: input.directOfferId })
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function declineDirectOfferAction(input: { directOfferId: string }): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    await commit(["/fleet", "/host"], (draft) =>
+      draft.declineDirectOffer({
+        actorUserId: actor.profile.id,
+        directOfferId: input.directOfferId,
+        organizationId: actorOrganizationId(actor)
+      })
+    )
+
+    captureServerEvent("direct_offer_declined", actor.profile.id, { directOfferId: input.directOfferId })
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function revokeDirectOfferAction(input: { directOfferId: string }): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    await commit(["/host", "/fleet"], (draft) =>
+      draft.revokeDirectOffer({
+        actorUserId: actor.profile.id,
+        directOfferId: input.directOfferId,
+        organizationId: actorOrganizationId(actor)
+      })
+    )
+
+    captureServerEvent("direct_offer_revoked", actor.profile.id, { directOfferId: input.directOfferId })
 
     return OK
   } catch (error) {
