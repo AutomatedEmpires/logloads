@@ -114,7 +114,7 @@ function ApprovalRow({ request }: { request: PendingCapacityRequest }) {
   }
 
   return (
-    <div className="host-approval-row">
+    <div className="host-approval-row" data-assignment-id={request.assignmentId}>
       <strong>{request.driverName}</strong>
       <span>
         {request.truckUnit} · {request.loadTitle} · {request.scheduleLabel}

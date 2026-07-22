@@ -100,10 +100,13 @@ test.describe.serial("operating loop", () => {
     const hasApprove = await approvalRow.getByRole("button", { name: "Review approval" }).isVisible().catch(() => false)
 
     if (hasApprove) {
-      const requestLabel = (await approvalRow.locator("span").textContent())?.trim() ?? ""
-      expect(requestLabel, "a capacity request should expose a stable visible label").toBeTruthy()
+      const assignmentId = await approvalRow.getAttribute("data-assignment-id")
+      expect(assignmentId, "a capacity request should expose a stable assignment identity").toBeTruthy()
 
-      const trackedRequest = page.locator(".host-approval-row").filter({ hasText: requestLabel }).first()
+      // Labels can legitimately repeat when the same truck requests multiple
+      // slots on one campaign. Track the exact assignment so removing it does
+      // not cause this locator to rebind to the next visually identical row.
+      const trackedRequest = page.locator(`.host-approval-row[data-assignment-id="${assignmentId}"]`)
 
       // The first click can land in the hydration gap. Retry the same visible
       // request until its committed approval removes that request from the queue.
