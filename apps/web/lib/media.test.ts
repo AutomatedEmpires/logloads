@@ -1,10 +1,11 @@
+import { mediaReferenceSchema } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("server-only", () => ({}))
 
 import { ApiError } from "./api-actor"
-import { mediaTarget, parseJsonObject, parseTripDocumentType, tripDocumentTarget } from "./media"
+import { mediaTarget, parseJsonObject, parseTripDocumentType, signedUpload, tripDocumentTarget } from "./media"
 import type { SessionActor } from "./session"
 
 function fixture() {
@@ -83,6 +84,43 @@ describe("trip document proof types", () => {
     for (const value of ["scale_ticket ", "SCALE_TICKET", "", "__proto__", null, undefined, 7, {}]) {
       expect(() => parseTripDocumentType(value)).toThrow(ApiError)
     }
+  })
+})
+
+describe("signed upload", () => {
+  beforeEach(() => {
+    vi.stubEnv("CLOUDINARY_CLOUD_NAME", "test-cloud")
+    vi.stubEnv("CLOUDINARY_API_KEY", "test-key")
+    vi.stubEnv("CLOUDINARY_API_SECRET", "test-secret")
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it("permits at the edge only what the domain accepts on read-back", () => {
+    // The two checks must agree. A format the signature permits but
+    // `verifiedMediaReference` refuses would be stored and only then rejected —
+    // the exact waste moving the check to the edge exists to end.
+    const { parameters } = signedUpload({ publicIdPrefix: "logloads/trip-documents/t1" })
+
+    const formats = String(parameters.allowed_formats).split(",")
+
+    expect(new Set(formats)).toEqual(new Set(["jpg", "png", "webp"]))
+    for (const format of formats) {
+      expect(mediaReferenceSchema.shape.format.safeParse(format).success).toBe(true)
+    }
+  })
+
+  it("does not sign a restriction the provider has no parameter for", () => {
+    // Cloudinary drops parameters it does not know before computing its own
+    // string-to-sign, so signing `max_file_size` — which reads like the obvious
+    // companion to `allowed_formats` — desynchronises the signature and fails
+    // every photo and proof upload with 401. The account ceiling and the
+    // application's stricter read-back check remain separate size defenses.
+    const { parameters } = signedUpload({ publicIdPrefix: "logloads/trip-documents/t1" })
+
+    expect(parameters).not.toHaveProperty("max_file_size")
   })
 })
 
