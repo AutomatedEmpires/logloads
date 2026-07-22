@@ -2369,7 +2369,7 @@ export const seedCrossOrgTrips: TripV2[] = parseMany(tripSchemaV2, [
     status: "completed",
     locationVisibility: "never_public",
     locationSharingStartedAt: null,
-    locationSharingEndsAt: "2026-06-06T18:00:00.000Z",
+    locationSharingEndsAt: null,
     lastSyncedAt: "2026-06-06T18:00:00.000Z",
     createdAt: timestamps.assigned,
     updatedAt: "2026-06-06T18:00:00.000Z",

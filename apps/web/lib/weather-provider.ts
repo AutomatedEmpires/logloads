@@ -56,7 +56,15 @@ export async function fetchLiveWeather({
   url.searchParams.set("precipitation_unit", "inch")
   url.searchParams.set("timeformat", "unixtime")
 
-  const response = await fetcher(url, { next: { revalidate: 900 }, signal: AbortSignal.timeout(6_000) })
+  // fetch REJECTS on timeout and network failure rather than resolving with a
+  // non-ok response — both are the same fact to a caller: no live weather now.
+  let response: Response
+
+  try {
+    response = await fetcher(url, { next: { revalidate: 900 }, signal: AbortSignal.timeout(6_000) })
+  } catch {
+    throw new LiveWeatherUnavailableError("Live weather is temporarily unavailable")
+  }
 
   if (!response.ok) {
     throw new LiveWeatherUnavailableError("Live weather is temporarily unavailable")
