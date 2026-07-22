@@ -3,9 +3,12 @@ import type { SubmitSupportRequestInput } from "@logloads/contracts"
 export type SupportSubmissionDraft = Omit<SubmitSupportRequestInput, "submissionId">
 
 export interface SupportSubmissionAttempt {
+  organizationScope: string
   payloadKey: string
   submissionId: string
 }
+
+const PLATFORM_ADMIN_SCOPE = "platform-admin"
 
 function normalizeAttemptText(value: string): string {
   return value
@@ -29,13 +32,15 @@ export function supportSubmissionPayloadKey(draft: SupportSubmissionDraft): stri
 export function bindSupportSubmissionAttempt(
   current: SupportSubmissionAttempt | null,
   draft: SupportSubmissionDraft,
+  activeOrganizationId: string | null,
   createSubmissionId: () => string = () => crypto.randomUUID()
 ): SupportSubmissionAttempt {
   const payloadKey = supportSubmissionPayloadKey(draft)
+  const organizationScope = activeOrganizationId ?? PLATFORM_ADMIN_SCOPE
 
-  if (current?.payloadKey === payloadKey) {
+  if (current?.organizationScope === organizationScope && current.payloadKey === payloadKey) {
     return current
   }
 
-  return { payloadKey, submissionId: createSubmissionId() }
+  return { organizationScope, payloadKey, submissionId: createSubmissionId() }
 }
