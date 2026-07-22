@@ -7,6 +7,7 @@ import { stubTripDocumentMedia } from "./test-helpers"
 const HAULER_ORG = "33333333-3333-4333-8333-333333333331"
 const HOST_ORG = "33333333-3333-4333-8333-333333333332"
 const HAULER_DRIVER_ACTOR = "22222222-2222-4222-8222-222222222221"
+const HAULER_COWORKER_DRIVER_ACTOR = "22222222-2222-4222-8222-222222222222"
 const HOST_OWNER = "22222222-2222-4222-8222-222222222223"
 const DRIVER_PROFILE = "44444444-4444-4444-8444-444444444441"
 const TRUCK_PROFILE = "77777777-7777-4777-8777-777777777771"
@@ -195,6 +196,21 @@ describe("driver submission", () => {
       source: "driver",
       tripId: trip.id
     })).toThrow(/Record the delivery before finishing/)
+  })
+
+  it("prevents a driver from progressing a coworker's haul", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { trip } = bookHaul(services)
+
+    expect(() => services.progressTripStatus({
+      actorUserId: HAULER_COWORKER_DRIVER_ACTOR,
+      nextStatus: "en_route_to_landing",
+      organizationId: HAULER_ORG,
+      source: "driver",
+      tripId: trip.id
+    })).toThrow(/only progress their own hauls/)
+
+    expect(services.state.tripsV2.find((current) => current.id === trip.id)?.status).toBe("assigned")
   })
 
   it("refuses a delivery recorded before the load reaches the destination", () => {

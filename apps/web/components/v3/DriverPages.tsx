@@ -396,16 +396,16 @@ function TripCard({ mediaReady, network, trip }: { mediaReady: boolean; network:
           ))}
         </ul>
       ) : null}
-      {open ? (
+      {open && isOwnHaul ? (
         <div className="trip-card__actions">
           <TripProgressButton completionStatus={trip.completion.status} status={trip.status} tripId={trip.id} />
           <LogProofControl available={mediaReady} tripId={trip.id} />
           {/* Recorded at the destination, while the driver is standing at the
               scale — not reconstructed from memory later. */}
-          {canRecordDelivery(trip) && isOwnHaul ? (
+          {canRecordDelivery(trip) ? (
             <CompletionForm completion={trip.completion} tripId={trip.id} />
           ) : null}
-          {isOwnHaul ? <CancelHaulControl assignmentId={trip.assignmentId} kind="haul" /> : null}
+          <CancelHaulControl assignmentId={trip.assignmentId} kind="haul" />
         </div>
       ) : null}
       {trip.status === "completed" ? (

@@ -649,6 +649,29 @@ function assertTripParticipant(
 }
 
 /**
+ * Fleet and host staff operate organization-wide work; a driver operates only
+ * the haul assigned to their own profile. Participant-organization membership
+ * alone is not sufficient because several drivers can share that membership.
+ */
+function assertAssignedDriverForDriverRole(
+  state: LogLoadsDatabaseState,
+  context: ActiveOrganizationContext,
+  assignment: Assignment,
+  message: string
+): void {
+  if (context.membership.role !== "driver") {
+    return
+  }
+
+  const driver = assertFound(
+    state.driverProfiles.find((current) => current.id === assignment.driverProfileId),
+    `Driver profile ${assignment.driverProfileId} was not found`
+  )
+
+  assertCondition(driver.userId === context.actorUserId, message)
+}
+
+/**
  * Stored postings predate source ownership enforcement. Fail closed when an
  * old posting points at another organization's dispatcher so later workflow
  * events cannot route notifications across the organization boundary.
@@ -1589,6 +1612,12 @@ export function progressTripStatus(
     `Assignment ${trip.assignmentId} was not found`
   )
   assertTripParticipant(state, context, assignment)
+  assertAssignedDriverForDriverRole(
+    state,
+    context,
+    assignment,
+    "Drivers can only progress their own hauls"
+  )
 
   // A lost response may cause a field device to retry the final action. Once
   // authorization and participation have been proven, an exact completed
@@ -1744,9 +1773,10 @@ export function submitHaulCompletion(
     load.companyId !== context.organizationId,
     "The hauling organization records what was delivered; the host confirms it"
   )
-  const driver = state.driverProfiles.find((current) => current.id === assignment.driverProfileId)
-  assertCondition(
-    context.membership.role !== "driver" || driver?.userId === context.actorUserId,
+  assertAssignedDriverForDriverRole(
+    state,
+    context,
+    assignment,
     "Drivers can only record their own hauls"
   )
   assertCondition(
@@ -2127,6 +2157,12 @@ export function getTripDocumentTarget(
     `Assignment ${trip.assignmentId} was not found`
   )
   assertTripParticipant(state, context, assignment)
+  assertAssignedDriverForDriverRole(
+    state,
+    context,
+    assignment,
+    "Drivers can only access documents for their own hauls"
+  )
 
   return { publicIdPrefix: tripDocumentPublicIdPrefix(trip.id), tripId: trip.id }
 }

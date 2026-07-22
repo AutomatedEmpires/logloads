@@ -81,6 +81,26 @@ describe("trip document deliverability", () => {
 })
 
 describe("driver network access", () => {
+  it("returns only the signed-in driver's hauls and assignment details", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const driverUser = services.state.profiles.find((profile) => profile.email === "hank@northpine.example")
+    const driver = services.state.driverProfiles.find((profile) => profile.userId === driverUser?.id)
+
+    if (!driverUser || !driver?.companyId) throw new Error("the driver scope fixture is incomplete")
+
+    const view = buildNetworkView(
+      services.state,
+      { actorUserId: driverUser.id, kind: "actor", organizationId: driver.companyId },
+      new Date("2026-06-05T12:00:00.000Z")
+    )
+
+    expect(view.trips.length).toBeGreaterThan(0)
+    expect(view.trips.every((trip) => trip.driverProfileId === driver.id)).toBe(true)
+    expect(view.loads.flatMap((load) => load.assignments).every(
+      (assignment) => assignment.driverProfileId === driver.id
+    )).toBe(true)
+  })
+
   it("keeps exact load access locked while a request is pending and unlocks it after approval", () => {
     const { load, request, services, sourceContext, viewer } = networkFixture()
     const details = services.state.richLandingDetails.find((item) => item.landingId === load.pickupLandingId)
