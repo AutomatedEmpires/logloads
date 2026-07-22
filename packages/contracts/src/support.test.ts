@@ -54,25 +54,38 @@ describe("support request contracts", () => {
       "/driver/loads?trip=private",
       "/driver/loads#ticket",
       "/driver\\loads",
-      "/driver/loads\u0000"
+      "/driver/loads\u0000",
+      "/driver/\u001floads",
+      "/driver/loads\u007f"
     ]) {
       expect(supportRequestPagePathSchema.safeParse(value).success, value).toBe(false)
     }
   })
 
   it("requires lifecycle-compatible resolution fields", () => {
-    expect(reviewSupportRequestInputSchema.parse({ status: "in_review" })).toEqual({ status: "in_review" })
+    expect(reviewSupportRequestInputSchema.parse({ expectedStatus: "open", status: "in_review" })).toEqual({
+      expectedStatus: "open",
+      status: "in_review"
+    })
     expect(
       reviewSupportRequestInputSchema.parse({
+        expectedStatus: "in_review",
         resolutionCode: "fixed",
         resolutionNote: "The reconnect path now restores the save action.",
         status: "resolved"
       })
     ).toMatchObject({ resolutionCode: "fixed", status: "resolved" })
 
-    expect(reviewSupportRequestInputSchema.safeParse({ status: "resolved" }).success).toBe(false)
+    expect(reviewSupportRequestInputSchema.safeParse({ status: "in_review" }).success).toBe(false)
+    expect(
+      reviewSupportRequestInputSchema.safeParse({ expectedStatus: "not_a_status", status: "in_review" }).success
+    ).toBe(false)
+    expect(
+      reviewSupportRequestInputSchema.safeParse({ expectedStatus: "in_review", status: "resolved" }).success
+    ).toBe(false)
     expect(
       reviewSupportRequestInputSchema.safeParse({
+        expectedStatus: "in_review",
         resolutionCode: "not_planned",
         resolutionNote: "No change planned.",
         status: "resolved"
@@ -80,6 +93,7 @@ describe("support request contracts", () => {
     ).toBe(false)
     expect(
       reviewSupportRequestInputSchema.safeParse({
+        expectedStatus: "in_review",
         resolutionCode: "fixed",
         resolutionNote: "Done.",
         status: "closed"

@@ -15,9 +15,16 @@ export const supportRequestResolutionCodeSchema = z.enum([
 const timestampSchema = z.string().datetime()
 const nullableTimestampSchema = timestampSchema.nullable()
 const nullableUserIdSchema = z.string().uuid().nullable()
-const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/
 const RESOLVED_CODES = new Set(["fixed", "answered"])
 const CLOSED_CODES = new Set(["planned", "not_planned", "duplicate", "unable_to_reproduce"])
+
+function containsControlCharacter(value: string): boolean {
+  return Array.from(value).some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0
+
+    return codePoint <= 0x1f || codePoint === 0x7f
+  })
+}
 
 export const supportRequestPagePathSchema = z
   .string()
@@ -31,7 +38,7 @@ export const supportRequestPagePathSchema = z
       !value.includes("\\") &&
       !value.includes("?") &&
       !value.includes("#") &&
-      !CONTROL_CHARACTERS.test(value),
+      !containsControlCharacter(value),
     "Page path must be a relative application pathname without a query or fragment"
   )
 
@@ -128,6 +135,7 @@ export const submitSupportRequestInputSchema = z
 
 export const reviewSupportRequestInputSchema = z
   .object({
+    expectedStatus: supportRequestStatusSchema,
     status: z.enum(["in_review", "resolved", "closed"]),
     resolutionCode: supportRequestResolutionCodeSchema.optional().nullable(),
     resolutionNote: z.string().trim().min(1).max(1000).optional().nullable()

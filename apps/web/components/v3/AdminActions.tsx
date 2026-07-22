@@ -1,5 +1,6 @@
 "use client"
 
+import type { SupportRequestStatus } from "@logloads/contracts"
 import { useState, useTransition, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 
@@ -169,7 +170,13 @@ async function supportDecisionRequest(
   return result
 }
 
-export function AdminReportDecision({ requestId, status }: { requestId: string; status: string }) {
+export function AdminReportDecision({
+  requestId,
+  status
+}: {
+  requestId: string
+  status: SupportRequestStatus
+}) {
   const router = useRouter()
   const [resolutionCode, setResolutionCode] = useState<ResolutionCode>("fixed")
   const [resolutionNote, setResolutionNote] = useState("")
@@ -201,7 +208,7 @@ export function AdminReportDecision({ requestId, status }: { requestId: string; 
     const nextStatus = resolutionCode === "fixed" || resolutionCode === "answered" ? "resolved" : "closed"
 
     void run(
-      { resolutionCode, resolutionNote, status: nextStatus },
+      { expectedStatus: status, resolutionCode, resolutionNote, status: nextStatus },
       nextStatus === "resolved" ? "Request resolved." : "Request closed."
     )
   }
@@ -214,7 +221,10 @@ export function AdminReportDecision({ requestId, status }: { requestId: string; 
             <button
               className="admin-btn admin-btn--primary"
               disabled={pending}
-              onClick={() => void run({ status: "in_review" }, "Request marked in review.")}
+              onClick={() => void run(
+                { expectedStatus: status, status: "in_review" },
+                "Request marked in review."
+              )}
               type="button"
             >
               {pending ? "Saving…" : "Start review"}
@@ -259,7 +269,10 @@ export function AdminReportDecision({ requestId, status }: { requestId: string; 
             <button
               className="admin-btn admin-btn--primary"
               disabled={pending}
-              onClick={() => void run({ status: "in_review" }, "Request reopened for review.")}
+              onClick={() => void run(
+                { expectedStatus: status, status: "in_review" },
+                "Request reopened for review."
+              )}
               type="button"
             >
               {pending ? "Reopening…" : "Confirm reopen"}
