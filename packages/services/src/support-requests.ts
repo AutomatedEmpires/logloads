@@ -255,9 +255,12 @@ export function createSupportRequest(
   )
 
   if (duplicate) {
+    // Aliasing a repeat submission mutates the record, and triage sorts by
+    // updatedAt — a re-report after a lost response must surface as recent.
     const withAlias = supportRequestSchema.parse({
       ...duplicate,
-      submissionIds: [...duplicate.submissionIds, submission.submissionId]
+      submissionIds: [...duplicate.submissionIds, submission.submissionId],
+      updatedAt: now
     })
     state.supportRequests = state.supportRequests.map((request) =>
       request.id === withAlias.id ? withAlias : request
