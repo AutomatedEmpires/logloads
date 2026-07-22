@@ -1,5 +1,7 @@
 import "server-only"
 
+import type { SupportRequest } from "@logloads/contracts"
+
 import { services } from "./services"
 import { requireCockpitActor } from "./session"
 import { getCockpitContext, shellAccountFor, shellNotificationsFor, type ShellAccount } from "./v3"
@@ -141,8 +143,8 @@ export async function getAdminOverview(): Promise<AdminOverview> {
   const billingExceptions = state.entitlements.filter(
     (entitlement) => entitlement.status === "past_due" || entitlement.status === "cancelled"
   ).length
-  const openReports = state.auditEvents.filter(
-    (event) => event.action.includes("blocked") || event.action.includes("flagged")
+  const openReports = state.supportRequests.filter(
+    (request) => request.status === "open" || request.status === "in_review"
   ).length
   const openDisputes = state.assignments.filter((assignment) => assignment.status === "cancelled").length
 
@@ -177,7 +179,7 @@ export async function getAdminOverview(): Promise<AdminOverview> {
     },
     {
       count: openReports,
-      description: "Blocked or flagged marketplace activity queued for human review.",
+      description: "Product problems and feature requests waiting for a platform response.",
       href: "/admin/reports",
       label: "Reports",
       tone: openReports > 0 ? "critical" : "clear"
@@ -320,7 +322,7 @@ export async function getAdminNotices(): Promise<AdminNoticeRow[]> {
 
 // --- Reports and disputes -----------------------------------------------------------
 
-export interface AdminReportRow {
+export interface AdminSystemFlagRow {
   actionLabel: string
   actorName: string
   detail: string | null
@@ -329,12 +331,56 @@ export interface AdminReportRow {
   whenLabel: string
 }
 
-export async function getAdminReports(): Promise<AdminReportRow[]> {
-  await requireCockpitActor("admin")
+export interface AdminSupportRequestRow {
+  appCommitSha: string | null
+  closedLabel: string | null
+  createdLabel: string
+  details: string
+  id: string
+  impact: SupportRequest["impact"]
+  kind: SupportRequest["kind"]
+  organizationName: string
+  pagePath: string | null
+  reporterName: string
+  resolutionCode: SupportRequest["resolutionCode"]
+  resolutionNote: string | null
+  status: SupportRequest["status"]
+  title: string
+  triagedLabel: string | null
+  updatedAt: string
+  updatedLabel: string
+}
+
+export interface AdminReportsData {
+  requests: AdminSupportRequestRow[]
+  systemFlags: AdminSystemFlagRow[]
+}
+
+export async function getAdminReports(): Promise<AdminReportsData> {
+  const actor = await requireCockpitActor("admin")
 
   const state = services.state
+  const requests = services.listSupportRequestsForAdmin(actor.profile.id).map((request) => ({
+    appCommitSha: request.appCommitSha,
+    closedLabel: request.closedAt ? formatDateTime(request.closedAt) : null,
+    createdLabel: formatDateTime(request.createdAt),
+    details: request.details,
+    id: request.id,
+    impact: request.impact,
+    kind: request.kind,
+    organizationName: request.organizationId ? organizationName(state, request.organizationId) : "Platform",
+    pagePath: request.pagePath,
+    reporterName: actorName(state, request.reporterUserId),
+    resolutionCode: request.resolutionCode,
+    resolutionNote: request.resolutionNote,
+    status: request.status,
+    title: request.title,
+    triagedLabel: request.triagedAt ? formatDateTime(request.triagedAt) : null,
+    updatedAt: request.updatedAt,
+    updatedLabel: formatDateTime(request.updatedAt)
+  }))
 
-  return state.auditEvents
+  const systemFlags = state.auditEvents
     .filter((event) => event.action.includes("blocked") || event.action.includes("flagged"))
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
     .map((event) => ({
@@ -345,6 +391,8 @@ export async function getAdminReports(): Promise<AdminReportRow[]> {
       id: event.id,
       whenLabel: formatDateTime(event.createdAt)
     }))
+
+  return { requests, systemFlags }
 }
 
 export interface AdminDisputeRow {

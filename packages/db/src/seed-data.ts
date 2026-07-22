@@ -2048,6 +2048,7 @@ export const seedDatabaseState: LogLoadsDatabaseState = {
   entitlements: seedEntitlements,
   operationalNotices: seedOperationalNotices,
   notifications: seedNotifications,
+  supportRequests: [],
   messageThreads: seedMessageThreads,
   messageEvents: seedMessageEvents,
   auditEvents: seedAuditEvents

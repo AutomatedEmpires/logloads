@@ -11,5 +11,6 @@ export * from "./recommendations"
 export * from "./reputation"
 export * from "./schemas"
 export * from "./state-machines"
+export * from "./support"
 
 export const LOGLOADS_DOMAIN_VERSION = "operating-network-v1"

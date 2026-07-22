@@ -44,13 +44,22 @@ export class OperatingStateConflictError extends Error {
 
 /**
  * Upgrade an older snapshot without discarding data. Schema v2 introduced the
- * tripReviews collection; every other collection remains required so a corrupt
- * or unrelated JSON document can never become runtime state.
+ * tripReviews collection. supportRequests is an additive, schema-v2-compatible
+ * collection so old and new deployments can overlap during rollout and rollback.
+ * Every other collection remains required so a corrupt or unrelated JSON document
+ * can never become runtime state.
  */
 export function upgradeStateSnapshot(
   value: Partial<LogLoadsDatabaseState>
 ): LogLoadsDatabaseState | null {
   const candidate: Partial<LogLoadsDatabaseState> = { ...value }
+
+  // This must happen before REQUIRED_TABLES validation. The SQL migration applies
+  // the same additive backfill, while this runtime guard keeps code-first deploys
+  // and local snapshots safe without advancing the persisted schema version.
+  if (candidate.supportRequests === undefined) {
+    candidate.supportRequests = []
+  }
 
   if (candidate.tripReviews === undefined) {
     candidate.tripReviews = []

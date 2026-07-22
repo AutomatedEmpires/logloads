@@ -15,6 +15,7 @@ import "./styles/admin.css"
 import "./styles/messages.css"
 import "./styles/billing.css"
 import "./styles/assistant.css"
+import "./styles/support.css"
 
 const inter = Inter({
 	display: "swap",

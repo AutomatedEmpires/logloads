@@ -8,36 +8,13 @@
 }
 .app-shell--admin .app-topbar .eyebrow { color: #d8b98a; }
 .app-shell--admin .app-topbar h1 { color: #fff; }
-.app-shell--admin .account-switcher { position: relative; color: #fff; }
+.app-shell--admin .account-switcher { color: #fff; }
 .app-shell--admin .account-switcher__trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 42px;
   border: 1px solid rgba(255, 255, 255, 0.26);
-  border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.06);
   color: #fff;
-  padding: 8px 12px;
-  font-weight: 800;
 }
 .app-shell--admin .account-switcher__trigger:hover { background: rgba(255, 255, 255, 0.12); }
-.app-shell--admin .account-switcher__menu {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 50;
-  min-width: 240px;
-  display: grid;
-  gap: 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--paper);
-  color: var(--ink);
-  padding: 14px;
-  box-shadow: var(--shadow);
-  text-align: left;
-}
 .app-shell--admin .app-sidebar nav a[aria-current="page"],
 .app-shell--admin .app-sidebar nav a:hover { color: #f3e0bf; }
 
@@ -91,7 +68,8 @@
 .admin-row:last-child { padding-bottom: 4px; }
 .admin-row__main { display: grid; gap: 6px; min-width: 0; }
 .admin-row__head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.admin-row__head strong { font-size: 1.05rem; }
+.admin-row__head strong,
+.admin-row__head h3 { margin: 0; font-size: 1.05rem; }
 .admin-row__meta { margin: 0; color: var(--muted); font-size: 0.86rem; font-weight: 800; }
 .admin-row__body { margin: 0; max-width: 72ch; color: var(--ink-soft); line-height: 1.5; }
 .admin-row__when { color: var(--muted); font-size: 0.82rem; font-weight: 800; }
@@ -107,7 +85,7 @@
 }
 .admin-decision__buttons { display: flex; gap: 8px; }
 .admin-btn {
-  min-height: 40px;
+  min-height: 44px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   background: #fff;
@@ -129,6 +107,23 @@
   font-weight: 800;
   text-align: right;
 }
+.admin-decision__success { min-height: 1.3em; margin: 0; color: var(--green); font-size: 0.85rem; font-weight: 800; text-align: right; }
+.admin-support-row { align-items: flex-start; scroll-margin-top: 84px; }
+.admin-support-row:target { border-radius: var(--radius); box-shadow: 0 0 0 3px rgba(46, 118, 81, 0.16); }
+.admin-support-row__badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.admin-support-row__details,
+.admin-support-row__resolution p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.admin-support-row__resolution { display: grid; gap: 4px; max-width: 72ch; border-left: 3px solid var(--green); background: var(--green-bg); padding: 10px 12px; }
+.admin-support-row__resolution p { margin: 0; line-height: 1.5; }
+.admin-support-row__resolution span { color: var(--muted); font-size: 0.8rem; font-weight: 700; }
+.admin-panel__intro { margin: 0 0 10px; color: var(--muted); line-height: 1.5; }
+.admin-report-decision { width: min(100%, 340px); justify-items: stretch; }
+.admin-resolution-form { display: grid; gap: 7px; width: 100%; }
+.admin-resolution-form label { color: var(--ink-soft); font-size: 0.82rem; font-weight: 900; }
+.admin-resolution-form textarea { width: 100%; min-height: 112px; resize: vertical; border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; color: var(--ink); font: inherit; line-height: 1.45; }
+.admin-resolution-form textarea:focus-visible { outline: 3px solid rgba(46, 118, 81, 0.36); outline-offset: 2px; }
+.admin-reopen-confirm { display: grid; gap: 8px; }
+.admin-reopen-confirm p { margin: 0; color: var(--ink-soft); line-height: 1.45; }
 
 /* --- Activity history --------------------------------------------------------- */
 
@@ -193,6 +188,10 @@
   .admin-decision { justify-items: stretch; }
   .admin-decision__buttons { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
   .admin-decision__error { max-width: none; text-align: left; }
+  .admin-decision__success { text-align: left; }
+  .admin-report-decision { width: 100%; }
+  .admin-resolution-form textarea { min-height: 140px; font-size: 16px; }
+  .admin-btn { min-height: 48px; }
   .admin-activity-strip em { margin-left: 0; flex-basis: 100%; }
   .admin-select { width: 100%; }
 }
