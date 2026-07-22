@@ -29,6 +29,7 @@ import type {
   RoutePack,
   TrailerProfile,
   TripDocument,
+  TripInspection,
   TripEvent,
   TripReview,
   TripV2,
@@ -68,6 +69,7 @@ export interface LogLoadsDatabaseState {
   tripsV2: TripV2[]
   tripEvents: TripEvent[]
   tripDocuments: TripDocument[]
+  tripInspections: TripInspection[]
   tripReviews: TripReview[]
   verificationRecords: VerificationRecord[]
   entitlements: Entitlement[]

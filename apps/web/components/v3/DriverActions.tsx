@@ -3,6 +3,7 @@
 import Link from "next/link"
 import Image from "next/image"
 import { useState, useTransition, type FormEvent } from "react"
+import { PRE_TRIP_INSPECTION_CHECKLIST } from "@logloads/contracts"
 import { Badge, Icon } from "@logloads/ui"
 
 import {
@@ -10,6 +11,7 @@ import {
   attachTripDocumentAction,
   cancelAssignmentAction,
   progressTripAction,
+  recordPreTripInspectionAction,
   requestCapacityAction,
   saveDriverMediaAction,
   submitHaulCompletionAction,
@@ -39,6 +41,13 @@ export function TripProgressButton({ status, tone = "row", tripId }: { status: T
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
+  // Rolling starts with the walk-around. The service refuses the transition
+  // without a passing recorded inspection, so this panel is the paved path,
+  // not the enforcement.
+  if (status === "assigned") {
+    return <PreTripRollControl tone={tone} tripId={tripId} />
+  }
+
   if (!step) {
     return null
   }
@@ -59,6 +68,147 @@ export function TripProgressButton({ status, tone = "row", tripId }: { status: T
       <button className="advance-button" disabled={pending} onClick={advance} type="button">
         {pending ? "Updating…" : step.label}
       </button>
+      {error ? <p className="action-error" role="alert">{error}</p> : null}
+    </div>
+  )
+}
+
+type InspectionAnswer = { status: "pass" | "fail"; note: string }
+
+/**
+ * The DVIR-style walk-around gate on the one button that starts a haul.
+ * "Head to landing" first opens the checklist; every item is answered pass or
+ * fail, a fail says what the driver found, and the record is written before
+ * the truck moves. A fail is recorded too — the truck goes to the shop and
+ * dispatch hears about it rather than the app pretending nothing happened.
+ */
+function PreTripRollControl({ tone, tripId }: { tone: "hero" | "row"; tripId: string }) {
+  const [open, setOpen] = useState(false)
+  const [answers, setAnswers] = useState<Record<string, InspectionAnswer>>({})
+  const [error, setError] = useState<string | null>(null)
+  const [failRecorded, setFailRecorded] = useState(false)
+  const [pending, startTransition] = useTransition()
+
+  if (failRecorded) {
+    return (
+      <p className="action-note" role="status">
+        Inspection recorded. Your truck is marked In shop and dispatch has been
+        notified — fix what failed, set the truck back to Ready, and re-inspect
+        before rolling.
+      </p>
+    )
+  }
+
+  if (!open) {
+    return (
+      <div className={`trip-advance trip-advance--${tone}`}>
+        <button className="advance-button" onClick={() => setOpen(true)} type="button">
+          Head to landing
+        </button>
+      </div>
+    )
+  }
+
+  const answerFor = (key: string): InspectionAnswer | null => answers[key] ?? null
+  const allAnswered = PRE_TRIP_INSPECTION_CHECKLIST.every((item) => {
+    const answer = answerFor(item.key)
+
+    return answer !== null && (answer.status === "pass" || answer.note.trim().length > 0)
+  })
+  const anyFail = PRE_TRIP_INSPECTION_CHECKLIST.some((item) => answerFor(item.key)?.status === "fail")
+
+  const submit = () => {
+    setError(null)
+    startTransition(async () => {
+      const items = PRE_TRIP_INSPECTION_CHECKLIST.map((item) => ({
+        key: item.key,
+        note: answers[item.key]?.note.trim() || null,
+        status: answers[item.key]?.status ?? ("fail" as const)
+      }))
+      const recorded = await recordPreTripInspectionAction({ items, tripId })
+
+      if (!recorded.ok) {
+        setError(recorded.error ?? "The inspection could not be recorded. Try again.")
+
+        return
+      }
+
+      if (recorded.outcome === "fail") {
+        setFailRecorded(true)
+
+        return
+      }
+
+      const advanced = await progressTripAction({ nextStatus: "en_route_to_landing", tripId })
+
+      if (!advanced.ok) {
+        setError(advanced.error ?? "The trip could not be updated. Try again.")
+      }
+    })
+  }
+
+  return (
+    <div aria-label="Pre-trip inspection" className={`pre-trip pre-trip--${tone}`} role="group">
+      <p className="pre-trip__title">Pre-trip walk-around — answer every item before rolling.</p>
+      {PRE_TRIP_INSPECTION_CHECKLIST.map((item) => {
+        const answer = answerFor(item.key)
+
+        return (
+          <div className="pre-trip__item" key={item.key}>
+            <span className="pre-trip__label">{item.label}</span>
+            <div className="pre-trip__choices">
+              <button
+                aria-pressed={answer?.status === "pass"}
+                className="pre-trip__pass"
+                disabled={pending}
+                onClick={() => setAnswers((current) => ({ ...current, [item.key]: { note: "", status: "pass" } }))}
+                type="button"
+              >
+                Pass
+              </button>
+              <button
+                aria-pressed={answer?.status === "fail"}
+                className="pre-trip__fail"
+                disabled={pending}
+                onClick={() =>
+                  setAnswers((current) => ({
+                    ...current,
+                    [item.key]: { note: current[item.key]?.note ?? "", status: "fail" }
+                  }))
+                }
+                type="button"
+              >
+                Fail
+              </button>
+            </div>
+            {answer?.status === "fail" ? (
+              <label>
+                <span className="sr-only">{`What failed for ${item.label}`}</span>
+                <input
+                  maxLength={300}
+                  onChange={(event) =>
+                    setAnswers((current) => ({
+                      ...current,
+                      [item.key]: { note: event.target.value, status: "fail" }
+                    }))
+                  }
+                  placeholder="What did you find?"
+                  type="text"
+                  value={answer.note}
+                />
+              </label>
+            ) : null}
+          </div>
+        )
+      })}
+      <div className="pre-trip__actions">
+        <button className="advance-button" disabled={pending || !allAnswered} onClick={submit} type="button">
+          {pending ? "Recording…" : anyFail ? "Record inspection" : "Record & roll"}
+        </button>
+        <button className="cancel-haul__keep" disabled={pending} onClick={() => setOpen(false)} type="button">
+          Not yet
+        </button>
+      </div>
       {error ? <p className="action-error" role="alert">{error}</p> : null}
     </div>
   )

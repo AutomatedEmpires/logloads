@@ -331,6 +331,60 @@
 .cancel-haul__confirm:disabled,
 .cancel-haul__keep:disabled { opacity: 0.6; }
 
+.trip-card__badges { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+
+/* --- Pre-trip inspection --------------------------------------------------- */
+.pre-trip {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  max-width: 420px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  padding: 12px;
+  text-align: left;
+}
+.pre-trip--hero { box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28); }
+.pre-trip__title { margin: 0; font-weight: 900; }
+.pre-trip__item { display: grid; gap: 6px; }
+.pre-trip__label { font-weight: 800; }
+.pre-trip__choices { display: flex; gap: 8px; }
+.pre-trip__pass,
+.pre-trip__fail {
+  min-height: 42px;
+  flex: 1;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  padding: 8px 12px;
+  font-weight: 800;
+}
+.pre-trip__pass[aria-pressed="true"] {
+  border-color: var(--pine);
+  background: var(--pine);
+  color: #fff;
+}
+.pre-trip__fail[aria-pressed="true"] {
+  border-color: var(--red);
+  background: var(--red);
+  color: #fff;
+}
+.pre-trip__item input {
+  min-height: 42px;
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+  padding: 6px 10px;
+  font-weight: 700;
+}
+.pre-trip__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.pre-trip .action-error { color: var(--red); }
+
 /* --- Equipment ------------------------------------------------------------ */
 .equipment-form {
   display: grid;

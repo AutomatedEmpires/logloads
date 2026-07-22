@@ -181,6 +181,35 @@ export async function progressTripAction(input: {
   }
 }
 
+export async function recordPreTripInspectionAction(input: {
+  tripId: string
+  items: Array<{ key: string; status: "pass" | "fail"; note?: string | null }>
+  note?: string | null
+}): Promise<ActionResult & { outcome?: "pass" | "fail" }> {
+  try {
+    const actor = await requireActor()
+
+    const { inspection } = await commit(["/driver", "/fleet", "/host"], (draft) =>
+      draft.recordPreTripInspection({
+        actorUserId: actor.profile.id,
+        items: input.items,
+        note: input.note ?? undefined,
+        organizationId: actorOrganizationId(actor),
+        tripId: input.tripId
+      })
+    )
+
+    captureServerEvent("pre_trip_inspection_recorded", actor.profile.id, {
+      outcome: inspection.outcome,
+      tripId: input.tripId
+    })
+
+    return { error: null, ok: true, outcome: inspection.outcome }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
 export async function cancelAssignmentAction(input: {
   assignmentId: string
   reason?: string | null

@@ -569,6 +569,15 @@ export function FleetTrips({ account, network }: FleetShellProps) {
                   <div className="fleet-trip-row__status">
                     <Badge tone={tripBadgeTone(trip)}>{tripStatusLabel(trip.status)}</Badge>
                     {stalled ? <Badge tone="critical">Stalled</Badge> : null}
+                    {trip.status === "assigned" ? (
+                      <Badge tone={trip.inspection?.outcome === "pass" ? "success" : trip.inspection ? "critical" : "warning"}>
+                        {trip.inspection?.outcome === "pass"
+                          ? "Pre-trip passed"
+                          : trip.inspection
+                            ? "Pre-trip failed"
+                            : "Pre-trip pending"}
+                      </Badge>
+                    ) : null}
                   </div>
                   <div className="fleet-trip-row__last">
                     {lastEvent ? (

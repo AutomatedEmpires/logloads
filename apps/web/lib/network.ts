@@ -311,6 +311,12 @@ export interface NetworkView {
       counterpartyName: string
       alreadyReviewed: boolean
     } | null
+    /** The live pre-trip walk-around record, if the driver has given one. */
+    inspection: {
+      outcome: "pass" | "fail"
+      occurredAt: string
+      failedItems: string[]
+    } | null
     events: Array<{ id: string; type: string; note: string | null; occurredAt: string; source: string }>
     documents: Array<{
       id: string
@@ -1108,6 +1114,12 @@ export function buildNetworkView(
           viewable: Boolean(document.media)
         }))
 
+      // The live pre-trip record, if one exists. Superseded records are kept
+      // for later review, but the boards show only the current answer.
+      const inspectionRecord = state.tripInspections
+        .filter((inspection) => inspection.tripId === trip.id && !inspection.supersededAt)
+        .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))[0] ?? null
+
       // A completed cross-org haul opens a review prompt for the viewer's side.
       // The counterparty (who they'd rate) and whether they've already rated come
       // straight from state so the UI shows the right prompt or a "Reviewed" mark.
@@ -1179,6 +1191,15 @@ export function buildNetworkView(
         driverProfileId: trip.driverProfileId,
         events,
         id: trip.id,
+        inspection: inspectionRecord
+          ? {
+              failedItems: inspectionRecord.items
+                .filter((item) => item.status === "fail")
+                .map((item) => item.label),
+              occurredAt: inspectionRecord.occurredAt,
+              outcome: inspectionRecord.outcome
+            }
+          : null,
         lastSyncedAt: trip.lastSyncedAt ?? null,
         loadPostingId: trip.loadPostingId,
         loadTitle: load.title,

@@ -158,6 +158,12 @@ function TodayActiveTrip({ load, network, trip }: { load: NetworkLoadView | null
         <Metric label="Route miles" value={load ? Math.round(load.route.distanceMiles) : "—"} />
         <Metric label="Status" value={tripStatusLabel(trip.status)} />
         <Metric label="Last update" value={lastEvent ? formatDateTime(lastEvent.occurredAt) : "No updates yet"} />
+        {trip.status === "assigned" ? (
+          <Metric
+            label="Pre-trip"
+            value={trip.inspection?.outcome === "pass" ? "Passed" : trip.inspection ? "Failed" : "Required"}
+          />
+        ) : null}
       </div>
       {interrupt ? (
         <div className="interrupt">
@@ -358,9 +364,20 @@ function TripCard({ network, trip }: { network: NetworkView; trip: TripView }) {
           <span className="card-kicker">{load ? `${load.landing.city} to ${load.destination.name}` : "Assignment"}</span>
           <strong>{trip.loadTitle}</strong>
         </div>
-        <Badge tone={trip.status === "completed" ? "success" : trip.status === "cancelled" ? "critical" : "warning"}>
-          {trip.status === "assigned" ? "Booked" : tripStatusLabel(trip.status)}
-        </Badge>
+        <div className="trip-card__badges">
+          <Badge tone={trip.status === "completed" ? "success" : trip.status === "cancelled" ? "critical" : "warning"}>
+            {trip.status === "assigned" ? "Booked" : tripStatusLabel(trip.status)}
+          </Badge>
+          {trip.status === "assigned" ? (
+            <Badge tone={trip.inspection?.outcome === "pass" ? "success" : trip.inspection ? "critical" : "warning"}>
+              {trip.inspection?.outcome === "pass"
+                ? "Pre-trip passed"
+                : trip.inspection
+                  ? "Pre-trip failed"
+                  : "Pre-trip pending"}
+            </Badge>
+          ) : null}
+        </div>
       </header>
       <p className="trip-card__event">
         {lastEvent ? `Last update: ${lastEvent.note ?? lastEvent.type} · ${formatDateTime(lastEvent.occurredAt)}` : "This haul is booked. Start it when you head to the landing."}

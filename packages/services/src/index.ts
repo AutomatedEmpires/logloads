@@ -76,8 +76,10 @@ import {
   listRoutePackVersionsForAssignment,
   listVisibleLoadsForOrganization,
   isLoadRequestableAt,
+  latestTripInspection,
   progressTripStatus,
   publishFutureAvailability,
+  recordPreTripInspection,
   refreshRoutePackForAssignment,
   requestCapacityWithPolicy,
   settleHaulCompletion,
@@ -189,7 +191,10 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     listVisibleLoadsForOrganization: (organizationId?: string) => listVisibleLoadsForOrganization(state, organizationId),
     listRoutes: () => listRoutes(state),
     listTruckSlotsForDate: (date: string) => listTruckSlotsForDate(state, date),
+    latestTripInspection: (tripId: string) => latestTripInspection(state, tripId),
     progressTripStatus: (input: Parameters<typeof progressTripStatus>[1]) => progressTripStatus(state, input),
+    recordPreTripInspection: (input: Parameters<typeof recordPreTripInspection>[1]) =>
+      recordPreTripInspection(state, input),
     publishFutureAvailability: (input: Parameters<typeof publishFutureAvailability>[1]) => publishFutureAvailability(state, input),
     requestAssignment: (input: unknown) => requestAssignment(state, input),
     requestCapacityWithPolicy: (

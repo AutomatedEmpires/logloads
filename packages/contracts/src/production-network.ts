@@ -304,6 +304,10 @@ export const tripEventTypeV2Schema = z.enum([
   // conflating them would tell a reader a ticket arrived when none did.
   "delivery_recorded",
   "condition_changed",
+  // The driver's walk-around before rolling. A distinct member because the
+  // timeline renders the type verbatim — folding it into "driver_status" would
+  // hide the one safety record a reviewer looks for after an incident.
+  "pre_trip_inspection",
   "completed",
   "cancelled"
 ])
@@ -427,6 +431,50 @@ export const tripDocumentSchema = z.object({
   auditMetadata: z.record(z.unknown()).default({})
 })
 
+/**
+ * The walk-around items every pre-trip inspection answers. Defined here so the
+ * service can refuse a partial checklist and the UI renders the same list —
+ * a client cannot pass the gate by submitting one trivial item.
+ */
+export const PRE_TRIP_INSPECTION_CHECKLIST = [
+  { key: "brakes", label: "Brakes & air system" },
+  { key: "lights", label: "Lights & reflectors" },
+  { key: "tires", label: "Tires, wheels & lugs" },
+  { key: "coupling", label: "Coupling & trailer hookup" },
+  { key: "leaks", label: "Engine & fluid leaks" },
+  { key: "securement", label: "Load securement & binders" }
+] as const
+
+export const tripInspectionItemSchema = z.object({
+  key: z.string().min(1).max(40),
+  label: z.string().min(1).max(80),
+  status: z.enum(["pass", "fail"]),
+  /** What the driver found. The service requires this when the item failed. */
+  note: z.string().trim().max(300).optional().nullable()
+})
+
+/**
+ * A DVIR-style pre-trip inspection: the driver's recorded walk-around before a
+ * trip may leave "assigned". A record, not a checkbox — attributed, itemized,
+ * and kept. A re-inspection supersedes the previous record without deleting it,
+ * the same retention rule Route Packs use.
+ */
+export const tripInspectionSchema = z.object({
+  id: uuidSchema,
+  tripId: uuidSchema,
+  assignmentId: uuidSchema,
+  loadPostingId: uuidSchema,
+  driverProfileId: uuidSchema,
+  equipmentCombinationId: uuidSchema.optional().nullable(),
+  performedByUserId: uuidSchema,
+  outcome: z.enum(["pass", "fail"]),
+  items: z.array(tripInspectionItemSchema).min(1),
+  note: z.string().trim().max(500).optional().nullable(),
+  supersededAt: optionalTimestampSchema,
+  occurredAt: timestampSchema,
+  createdAt: timestampSchema
+})
+
 export const entitlementSchema = z.object({
   id: uuidSchema,
   organizationId: uuidSchema,
@@ -495,6 +543,8 @@ export type TripV2 = z.infer<typeof tripSchemaV2>
 export type TripEvent = z.infer<typeof tripEventSchema>
 export type TripReview = z.infer<typeof tripReviewSchema>
 export type TripDocument = z.infer<typeof tripDocumentSchema>
+export type TripInspection = z.infer<typeof tripInspectionSchema>
+export type TripInspectionItem = z.infer<typeof tripInspectionItemSchema>
 export type Entitlement = z.infer<typeof entitlementSchema>
 export type DirectOffer = z.infer<typeof directOfferSchema>
 export type FutureAvailability = z.infer<typeof futureAvailabilitySchema>

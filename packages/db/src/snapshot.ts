@@ -44,8 +44,10 @@ export class OperatingStateConflictError extends Error {
 
 /**
  * Upgrade an older snapshot without discarding data. Schema v2 introduced the
- * tripReviews collection; every other collection remains required so a corrupt
- * or unrelated JSON document can never become runtime state.
+ * tripReviews collection; tripInspections arrived later under the same version
+ * with the same backfill (an older document simply has no inspections yet).
+ * Every other collection remains required so a corrupt or unrelated JSON
+ * document can never become runtime state.
  */
 export function upgradeStateSnapshot(
   value: Partial<LogLoadsDatabaseState>
@@ -54,6 +56,10 @@ export function upgradeStateSnapshot(
 
   if (candidate.tripReviews === undefined) {
     candidate.tripReviews = []
+  }
+
+  if (candidate.tripInspections === undefined) {
+    candidate.tripInspections = []
   }
 
   if (Array.isArray(candidate.assignments)) {
