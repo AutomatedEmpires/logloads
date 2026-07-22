@@ -31,20 +31,20 @@ test.describe.serial("request withdrawal", () => {
 
     // Step 0 — Timber: title only, no equipment requirement (any truck fits).
     await fillWhenReady(page, "Work title", TITLE)
-    await page.getByRole("button", { name: "Next" }).click()
+    await page.getByRole("button", { name: "Next", exact: true }).click()
 
     // Step 1 — Movement: pick a real haul route.
     await selectWhenReady(page, "Haul route", { index: 1 })
-    await page.getByRole("button", { name: "Next" }).click()
+    await page.getByRole("button", { name: "Next", exact: true }).click()
 
     // Step 2 — Capacity: exactly one truckload on the default one-off date.
     await fillWhenReady(page, "Truckloads needed per day", "1")
-    await page.getByRole("button", { name: "Next" }).click()
+    await page.getByRole("button", { name: "Next", exact: true }).click()
 
     // Step 3 — Terms, Step 4 — Visibility: defaults.
-    await page.getByRole("button", { name: "Next" }).click()
+    await page.getByRole("button", { name: "Next", exact: true }).click()
     await page.getByRole("radio", { name: /Publish now/ }).check()
-    await page.getByRole("button", { name: "Next" }).click()
+    await page.getByRole("button", { name: "Next", exact: true }).click()
 
     await page.getByRole("button", { name: "Publish to the network" }).click()
     await expect(page.getByText(/is live on the network/)).toBeVisible({ timeout: 15_000 })
@@ -73,14 +73,23 @@ test.describe.serial("request withdrawal", () => {
     const requestCard = page.locator(".schedule-request-card").filter({ hasText: TITLE }).first()
     await expect(requestCard).toBeVisible({ timeout: 15_000 })
     await requestCard.getByRole("button", { name: "Withdraw request" }).click()
-    await requestCard.getByRole("button", { name: "Yes, withdraw it" }).click()
+    const confirmWithdrawal = requestCard.getByRole("button", { name: "Yes, withdraw it" })
+    const refreshedSchedule = page.waitForEvent("framenavigated")
+    await confirmWithdrawal.click()
+    await refreshedSchedule
+    await page.waitForLoadState("networkidle")
 
-    // The server refresh removes the pending card from the Schedule queue.
-    await expect(page.locator(".schedule-request-card").filter({ hasText: TITLE })).toHaveCount(0, { timeout: 15_000 })
-
-    // The load reopened: the same detail page offers the haul again.
+    // The load detail is a fresh server projection and is the authoritative
+    // capacity check: the same truckload must be requestable again.
     await page.goto(detailUrl)
     await page.waitForLoadState("networkidle")
     await expect(page.getByRole("button", { name: "Request haul" })).toBeVisible({ timeout: 15_000 })
+
+    // Returning to Schedule must no longer classify the cancelled assignment
+    // as pending. Navigating away first avoids racing the confirmation state's
+    // deliberate background refresh on a slow field connection.
+    await page.goto("/driver/schedule")
+    await page.waitForLoadState("networkidle")
+    await expect(page.locator(".schedule-request-card").filter({ hasText: TITLE })).toHaveCount(0, { timeout: 15_000 })
   })
 })

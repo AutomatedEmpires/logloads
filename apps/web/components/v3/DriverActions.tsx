@@ -252,6 +252,10 @@ export function CancelHaulControl({ assignmentId, kind }: { assignmentId: string
         setError(result.error ?? "The haul could not be cancelled. Try again.")
       } else {
         setDone(true)
+        // Cancellation changes capacity, schedule, and load-detail projections
+        // at once. A full same-page refresh clears Next's client route cache so
+        // no previously visited surface can keep showing the cancelled booking.
+        window.location.reload()
       }
     })
   }
