@@ -43,7 +43,11 @@ export function SupportPage({ account, fromPath, requests, role }: SupportPageDa
           </p>
           <p>Do not include passwords, access codes, gate combinations, or private contact details.</p>
         </div>
-        <SupportRequestForm fromPath={fromPath} onSaved={recordSavedRequest} />
+        <SupportRequestForm
+          activeOrganizationId={account.activeOrganizationId}
+          fromPath={fromPath}
+          onSaved={recordSavedRequest}
+        />
       </section>
 
       <section className="app-section support-panel" aria-labelledby="your-support-requests">

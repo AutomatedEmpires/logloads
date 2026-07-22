@@ -51,9 +51,11 @@ async function parseApiResult(response: Response): Promise<ApiResult> {
 }
 
 export function SupportRequestForm({
+  activeOrganizationId,
   fromPath,
   onSaved
 }: {
+  activeOrganizationId: string | null
   fromPath: string | null
   onSaved: (request: SupportRequestReceipt) => void
 }) {
@@ -78,7 +80,11 @@ export function SupportRequestForm({
       pagePath: fromPath,
       title
     }
-    const attempt = bindSupportSubmissionAttempt(submissionAttempt.current, draft)
+    const attempt = bindSupportSubmissionAttempt(
+      submissionAttempt.current,
+      draft,
+      activeOrganizationId
+    )
     submissionAttempt.current = attempt
 
     const controller = new AbortController()
