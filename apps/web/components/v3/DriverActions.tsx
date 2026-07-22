@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import Image from "next/image"
+import { useRouter } from "next/navigation"
 import { useState, useTransition, type FormEvent } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
@@ -225,6 +226,7 @@ const CANCEL_COPY = {
  */
 export function CancelHaulControl({ assignmentId, kind }: { assignmentId: string; kind: keyof typeof CANCEL_COPY }) {
   const copy = CANCEL_COPY[kind]
+  const router = useRouter()
   const [confirming, setConfirming] = useState(false)
   const [reason, setReason] = useState("")
   const [error, setError] = useState<string | null>(null)
@@ -252,10 +254,10 @@ export function CancelHaulControl({ assignmentId, kind }: { assignmentId: string
         setError(result.error ?? "The haul could not be cancelled. Try again.")
       } else {
         setDone(true)
-        // Cancellation changes capacity, schedule, and load-detail projections
-        // at once. A full same-page refresh clears Next's client route cache so
-        // no previously visited surface can keep showing the cancelled booking.
-        window.location.reload()
+        // Keep the success copy on screen if a field connection drops while
+        // the fresh server projection is loading. A router refresh can remove
+        // the active card when online without throwing away the usable page.
+        router.refresh()
       }
     })
   }

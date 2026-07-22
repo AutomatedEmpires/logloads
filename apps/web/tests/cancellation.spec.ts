@@ -74,21 +74,29 @@ test.describe.serial("request withdrawal", () => {
     await expect(requestCard).toBeVisible({ timeout: 15_000 })
     await requestCard.getByRole("button", { name: "Withdraw request" }).click()
     const confirmWithdrawal = requestCard.getByRole("button", { name: "Yes, withdraw it" })
-    const refreshedSchedule = page.waitForEvent("framenavigated")
     await confirmWithdrawal.click()
-    await refreshedSchedule
-    await page.waitForLoadState("networkidle")
+    await expect.poll(async () => {
+      const removed = (await requestCard.count()) === 0
+      const confirmed = await page
+        .getByText("Request withdrawn. The truckload is open for other drivers.")
+        .isVisible()
+        .catch(() => false)
+
+      return removed || confirmed
+    }, { timeout: 15_000 }).toBe(true)
 
     // The load detail is a fresh server projection and is the authoritative
     // capacity check: the same truckload must be requestable again.
-    await page.goto(detailUrl)
+    const detailVerificationUrl = new URL(detailUrl)
+    detailVerificationUrl.searchParams.set("verify", String(Date.now()))
+    await page.goto(detailVerificationUrl.toString())
     await page.waitForLoadState("networkidle")
     await expect(page.getByRole("button", { name: "Request haul" })).toBeVisible({ timeout: 15_000 })
 
     // Returning to Schedule must no longer classify the cancelled assignment
     // as pending. Navigating away first avoids racing the confirmation state's
     // deliberate background refresh on a slow field connection.
-    await page.goto("/driver/schedule")
+    await page.goto(`/driver/schedule?verify=${Date.now()}`)
     await page.waitForLoadState("networkidle")
     await expect(page.locator(".schedule-request-card").filter({ hasText: TITLE })).toHaveCount(0, { timeout: 15_000 })
   })
