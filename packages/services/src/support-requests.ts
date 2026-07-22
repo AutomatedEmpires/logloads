@@ -369,6 +369,12 @@ export function reviewSupportRequest(
     throw new SupportRequestConflictError("Reopen the request before changing its recorded resolution")
   }
 
+  if (existing.status !== command.review.expectedStatus) {
+    throw new SupportRequestConflictError(
+      "This request changed since the page loaded. Refresh before trying again."
+    )
+  }
+
   if (!transitionAllowed(existing.status, command.review.status)) {
     throw new SupportRequestConflictError(`Cannot move a ${existing.status} request to ${command.review.status}`)
   }

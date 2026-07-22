@@ -1,5 +1,7 @@
 import "server-only"
 
+import type { SupportRequest } from "@logloads/contracts"
+
 import { services } from "./services"
 import { requireCockpitActor } from "./session"
 import { getCockpitContext, shellAccountFor, shellNotificationsFor, type ShellAccount } from "./v3"
@@ -335,14 +337,14 @@ export interface AdminSupportRequestRow {
   createdLabel: string
   details: string
   id: string
-  impact: string
-  kind: string
+  impact: SupportRequest["impact"]
+  kind: SupportRequest["kind"]
   organizationName: string
   pagePath: string | null
   reporterName: string
-  resolutionCode: string | null
+  resolutionCode: SupportRequest["resolutionCode"]
   resolutionNote: string | null
-  status: string
+  status: SupportRequest["status"]
   title: string
   triagedLabel: string | null
   updatedLabel: string
