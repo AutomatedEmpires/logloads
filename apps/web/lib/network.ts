@@ -21,7 +21,13 @@ import {
   type TripStatusV2
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
-import { createLogLoadsServices, routePackIsSafeToRead } from "@logloads/services"
+import {
+  createLogLoadsServices,
+  directOfferClaimCount,
+  directOfferIsClaimable,
+  effectiveDirectOfferStatus,
+  routePackIsSafeToRead
+} from "@logloads/services"
 
 import { estimateLoadEconomics, type LoadEconomicsEstimate } from "./economics"
 
@@ -178,6 +184,7 @@ export interface NetworkLoadView {
     reserved: number
     open: number
     nextWindow: string
+    claimableSlotId: string | null
     requestableSlotId: string | null
   }
   compatibility: {
@@ -236,6 +243,21 @@ export interface NoticeView {
   relatedLoadId?: string | null
 }
 
+export interface DirectOfferView {
+  id: string
+  loadPostingId: string
+  loadTitle: string
+  counterpartName: string
+  direction: "received" | "sent"
+  status: "draft" | "sent" | "accepted" | "declined" | "expired" | "revoked"
+  offeredTruckloads: number
+  acceptedTruckloads: number
+  remainingTruckloads: number
+  expiresAt: string
+  respondedAt: string | null
+  actionable: boolean
+}
+
 export interface NetworkView {
   activeOrganization: {
     id: string
@@ -262,6 +284,7 @@ export interface NetworkView {
     hasTruckPhoto: boolean
     hasTrailerPhoto: boolean
   } | null
+  directOffers: DirectOfferView[]
   loads: NetworkLoadView[]
   topRecommendations: Array<{
     loadId: string
@@ -569,7 +592,7 @@ export function buildNetworkView(
         // onto the public board.
         return visibilityMode === "open_network" && services.isLoadRequestableAt(load, atIso)
       })
-    : services.listVisibleLoadsForOrganization(activeOrganization.id)
+    : services.listVisibleLoadsForOrganization(activeOrganization.id, atIso)
 
   const loadsWithScore = visibleLoadRecords.map((load) => {
     const source = requireRecord(state.companies.find((company) => company.id === load.companyId), `company ${load.companyId}`)
@@ -886,7 +909,10 @@ export function buildNetworkView(
       scheduleLabel: formatDateRange(load),
       cadenceLabel: cadenceLabel(load),
       slots: {
-        nextWindow: requestableSlot ? formatSlotWindow(requestableSlot.startAt, requestableSlot.endAt) : "No open slot",
+        claimableSlotId: futureOpenSlots[0]?.id ?? null,
+        nextWindow: futureOpenSlots[0]
+          ? formatSlotWindow(futureOpenSlots[0].startAt, futureOpenSlots[0].endAt)
+          : "No open slot",
         open: slots.reduce((sum, slot) => sum + Math.max(0, slot.capacity - slot.reservedCount), 0),
         requestableSlotId: requestableSlot?.id ?? null,
         reserved: slots.reduce((sum, slot) => sum + slot.reservedCount, 0),
@@ -975,6 +1001,7 @@ export function buildNetworkView(
       auditEvents: [],
       currentDriver: null,
       currentEquipment: null,
+      directOffers: [],
       entitlements: [],
       futureAvailability: [],
       loads,
@@ -1217,6 +1244,52 @@ export function buildNetworkView(
     }
   })
 
+  const directOffers: DirectOfferView[] = state.directOffers
+    .filter((offer) =>
+      offer.offeredByOrganizationId === activeOrganization.id ||
+      offer.offeredToOrganizationId === activeOrganization.id
+    )
+    .map((offer) => {
+      const direction: DirectOfferView["direction"] = offer.offeredByOrganizationId === activeOrganization.id
+        ? "sent"
+        : "received"
+      const counterpartOrganizationId = direction === "sent"
+        ? offer.offeredToOrganizationId
+        : offer.offeredByOrganizationId
+      const counterpart = state.organizations.find((organization) => organization.id === counterpartOrganizationId)
+      const load = state.loadPostings.find((candidate) => candidate.id === offer.loadPostingId)
+      const capacity = state.opportunityCapacities.find((candidate) => candidate.loadPostingId === offer.loadPostingId)
+      const acceptedTruckloads = directOfferClaimCount(state, offer.id)
+      const relationshipActive = state.privateNetworkRelationships.some((relationship) =>
+        relationship.status === "active" &&
+        (
+          (relationship.ownerOrganizationId === offer.offeredByOrganizationId &&
+            relationship.partnerOrganizationId === offer.offeredToOrganizationId) ||
+          (relationship.ownerOrganizationId === offer.offeredToOrganizationId &&
+            relationship.partnerOrganizationId === offer.offeredByOrganizationId)
+        )
+      )
+
+      return {
+        acceptedTruckloads,
+        actionable: directOfferIsClaimable(state, offer, atIso) &&
+          Boolean(load && !load.archivedAt && ["open", "scheduled"].includes(load.status)) &&
+          Boolean(capacity && capacity.remainingTruckloads > 0) &&
+          relationshipActive,
+        counterpartName: counterpart?.displayName ?? "Partner organization",
+        direction,
+        expiresAt: offer.expiresAt,
+        id: offer.id,
+        loadPostingId: offer.loadPostingId,
+        loadTitle: load?.title ?? "Load no longer available",
+        offeredTruckloads: offer.offeredTruckloads,
+        remainingTruckloads: Math.max(0, offer.offeredTruckloads - acceptedTruckloads),
+        respondedAt: offer.respondedAt ?? null,
+        status: effectiveDirectOfferStatus(offer, atIso)
+      }
+    })
+    .sort((left, right) => right.expiresAt.localeCompare(left.expiresAt))
+
   const organizationMemberIds = new Set(
     state.organizationMemberships
       .filter((membership) => membership.organizationId === activeOrganization.id && membership.status === "active")
@@ -1271,8 +1344,9 @@ export function buildNetworkView(
           label: currentCombination.label,
           trailerId: currentTrailer?.id ?? null,
           truckId: currentTruck.id
-        }
+      }
       : null,
+    directOffers,
     entitlements,
     futureAvailability,
     loads,

@@ -658,24 +658,24 @@ describe("logloads services", () => {
 
   it("sends direct offers through active private-network relationships", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
+    services.state.directOffers = []
 
     const offer = services.createDirectOffer({
-      actorUserId: "22222222-2222-4222-8222-222222222224",
-      organizationId: "33333333-3333-4333-8333-333333333331",
-      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
-      offeredToOrganizationId: "33333333-3333-4333-8333-333333333332",
+      actorUserId: "22222222-2222-4222-8222-222222222223",
+      organizationId: "33333333-3333-4333-8333-333333333332",
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+      offeredToOrganizationId: "33333333-3333-4333-8333-333333333331",
       offeredTruckloads: 1,
-      expiresAt: "2026-06-06T20:00:00.000Z",
-      termsSnapshot: { route: "Oak Landing to Cascade Mill" }
-    })
+      expiresAt: "2026-06-06T20:00:00.000Z"
+    }, { at: "2026-06-05T12:00:00.000Z" })
 
     const targetNotification = services.state.notifications.find((notification) =>
-      notification.userId === "22222222-2222-4222-8222-222222222223" &&
+      notification.userId === "22222222-2222-4222-8222-222222222224" &&
       notification.relatedEntityId === offer.id
     )
 
     expect(offer.status).toBe("sent")
-    expect(offer.offeredByOrganizationId).toBe("33333333-3333-4333-8333-333333333331")
+    expect(offer.offeredByOrganizationId).toBe("33333333-3333-4333-8333-333333333332")
     expect(targetNotification?.relatedEntityType).toBe("direct_offer")
   })
 

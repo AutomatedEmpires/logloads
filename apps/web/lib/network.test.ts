@@ -414,3 +414,113 @@ describe("driver network access", () => {
     expect(current?.discovery.reason).toBe("not_requestable")
   })
 })
+
+describe("direct-offer network views", () => {
+  function participantViewers(services: ReturnType<typeof createLogLoadsServices>) {
+    const targetActor = services.state.profiles.find((profile) => profile.email === "dispatch@northpine.example")
+    const sourceActor = services.state.profiles.find((profile) => profile.email === "cole@summit.example")
+    const offer = services.state.directOffers[0]
+
+    if (!targetActor || !sourceActor || !offer) throw new Error("Direct-offer participants are missing")
+
+    return {
+      sourceViewer: {
+        actorUserId: sourceActor.id,
+        kind: "actor" as const,
+        organizationId: offer.offeredByOrganizationId
+      },
+      targetViewer: {
+        actorUserId: targetActor.id,
+        kind: "actor" as const,
+        organizationId: offer.offeredToOrganizationId
+      }
+    }
+  }
+
+  it("serializes offers only to participants and makes expiry effective on discovery", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { sourceViewer, targetViewer } = participantViewers(services)
+    const loadId = "cccccccc-cccc-4ccc-8ccc-ccccccccccc3"
+    const capacity = services.state.opportunityCapacities.find((item) => item.loadPostingId === loadId)
+    const targetAtSend = buildNetworkView(services.state, targetViewer, new Date("2026-06-05T12:00:00.000Z"))
+    const sourceAtSend = buildNetworkView(services.state, sourceViewer, new Date("2026-06-05T12:00:00.000Z"))
+
+    expect(targetAtSend.directOffers).toEqual([
+      expect.objectContaining({
+        acceptedTruckloads: 0,
+        actionable: true,
+        direction: "received",
+        offeredTruckloads: 2,
+        remainingTruckloads: 2,
+        status: "sent"
+      })
+    ])
+    expect(sourceAtSend.directOffers).toEqual([
+      expect.objectContaining({ direction: "sent", status: "sent" })
+    ])
+
+    const unrelatedOrganizationId = "33333333-3333-4333-8333-333333333333"
+    const unrelatedUser = services.state.profiles.find((profile) => profile.email === "loader@northpine.example")
+    const templateOrganization = services.state.organizations[0]
+    const templateMembership = services.state.organizationMemberships[0]
+    if (!templateOrganization || !templateMembership || !capacity || !unrelatedUser) {
+      throw new Error("Direct-offer view fixture is incomplete")
+    }
+    services.state.organizations.push({
+      ...templateOrganization,
+      displayName: "Unrelated Fleet",
+      id: unrelatedOrganizationId,
+      legalName: "Unrelated Fleet LLC",
+      slug: "unrelated-fleet"
+    })
+    services.state.organizationMemberships.push({
+      ...templateMembership,
+      id: "16161616-1616-4616-8616-161616161617",
+      organizationId: unrelatedOrganizationId,
+      role: "dispatcher",
+      userId: unrelatedUser.id
+    })
+    const unrelated = buildNetworkView(
+      services.state,
+      { actorUserId: unrelatedUser.id, kind: "actor", organizationId: unrelatedOrganizationId },
+      new Date("2026-06-05T12:00:00.000Z")
+    )
+    expect(unrelated.directOffers).toEqual([])
+
+    capacity.visibilityMode = "direct_offer"
+    const expired = buildNetworkView(services.state, targetViewer, new Date("2026-06-07T12:00:00.000Z"))
+
+    expect(expired.directOffers[0]).toMatchObject({ actionable: false, status: "expired" })
+    expect(expired.loads.some((load) => load.id === loadId)).toBe(false)
+  })
+
+  it("reports partial acceptance and unlocks only the assignment Route Pack for authorized target staff", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { targetViewer } = participantViewers(services)
+    const load = services.state.loadPostings.find((candidate) => candidate.id === "cccccccc-cccc-4ccc-8ccc-ccccccccccc3")
+    if (!load) throw new Error("Direct-offer claim fixture is incomplete")
+    load.accessRequirements = []
+    load.equipmentRequirements = []
+
+    const accepted = services.claimDirectOffer({
+      actorUserId: targetViewer.actorUserId,
+      directOfferId: "29292929-2929-4929-8929-292929292911",
+      equipmentCombinationId: "18181818-1818-4818-8818-181818181811",
+      organizationId: targetViewer.organizationId,
+      truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd4"
+    }, { at: "2026-06-05T12:00:00.000Z" })
+    const view = buildNetworkView(services.state, targetViewer, new Date("2026-06-05T12:00:00.000Z"))
+    const offer = view.directOffers.find((candidate) => candidate.id === accepted.directOffer.id)
+    const networkLoad = view.loads.find((candidate) => candidate.id === load.id)
+
+    expect(offer).toMatchObject({
+      acceptedTruckloads: 1,
+      actionable: true,
+      remainingTruckloads: 1,
+      status: "sent"
+    })
+    expect(networkLoad?.access).toEqual({ reason: "assigned", unlocked: true })
+    expect(networkLoad?.routePack?.id).toBe(accepted.trip.routePackId)
+    expect(networkLoad?.routePack?.snapshot?.originEntranceLat).toBeTypeOf("number")
+  })
+})
