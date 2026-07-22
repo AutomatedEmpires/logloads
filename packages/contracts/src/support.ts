@@ -136,6 +136,7 @@ export const submitSupportRequestInputSchema = z
 export const reviewSupportRequestInputSchema = z
   .object({
     expectedStatus: supportRequestStatusSchema,
+    expectedUpdatedAt: timestampSchema,
     status: z.enum(["in_review", "resolved", "closed"]),
     resolutionCode: supportRequestResolutionCodeSchema.optional().nullable(),
     resolutionNote: z.string().trim().min(1).max(1000).optional().nullable()

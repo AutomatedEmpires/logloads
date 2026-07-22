@@ -63,13 +63,21 @@ describe("support request contracts", () => {
   })
 
   it("requires lifecycle-compatible resolution fields", () => {
-    expect(reviewSupportRequestInputSchema.parse({ expectedStatus: "open", status: "in_review" })).toEqual({
+    const expectedUpdatedAt = "2026-07-21T12:00:00.000Z"
+
+    expect(reviewSupportRequestInputSchema.parse({
       expectedStatus: "open",
+      expectedUpdatedAt,
+      status: "in_review"
+    })).toEqual({
+      expectedStatus: "open",
+      expectedUpdatedAt,
       status: "in_review"
     })
     expect(
       reviewSupportRequestInputSchema.parse({
         expectedStatus: "in_review",
+        expectedUpdatedAt,
         resolutionCode: "fixed",
         resolutionNote: "The reconnect path now restores the save action.",
         status: "resolved"
@@ -78,14 +86,33 @@ describe("support request contracts", () => {
 
     expect(reviewSupportRequestInputSchema.safeParse({ status: "in_review" }).success).toBe(false)
     expect(
-      reviewSupportRequestInputSchema.safeParse({ expectedStatus: "not_a_status", status: "in_review" }).success
+      reviewSupportRequestInputSchema.safeParse({
+        expectedStatus: "not_a_status",
+        expectedUpdatedAt,
+        status: "in_review"
+      }).success
     ).toBe(false)
     expect(
-      reviewSupportRequestInputSchema.safeParse({ expectedStatus: "in_review", status: "resolved" }).success
+      reviewSupportRequestInputSchema.safeParse({ expectedStatus: "open", status: "in_review" }).success
+    ).toBe(false)
+    expect(
+      reviewSupportRequestInputSchema.safeParse({
+        expectedStatus: "open",
+        expectedUpdatedAt: "not-a-timestamp",
+        status: "in_review"
+      }).success
     ).toBe(false)
     expect(
       reviewSupportRequestInputSchema.safeParse({
         expectedStatus: "in_review",
+        expectedUpdatedAt,
+        status: "resolved"
+      }).success
+    ).toBe(false)
+    expect(
+      reviewSupportRequestInputSchema.safeParse({
+        expectedStatus: "in_review",
+        expectedUpdatedAt,
         resolutionCode: "not_planned",
         resolutionNote: "No change planned.",
         status: "resolved"
@@ -94,6 +121,7 @@ describe("support request contracts", () => {
     expect(
       reviewSupportRequestInputSchema.safeParse({
         expectedStatus: "in_review",
+        expectedUpdatedAt,
         resolutionCode: "fixed",
         resolutionNote: "Done.",
         status: "closed"

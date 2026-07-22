@@ -357,7 +357,11 @@ export function AdminReportsPage({ account, reports }: { account: ShellAccount; 
                     </div>
                   ) : null}
                 </div>
-                <AdminReportDecision requestId={request.id} status={request.status} />
+                <AdminReportDecision
+                  expectedUpdatedAt={request.updatedAt}
+                  requestId={request.id}
+                  status={request.status}
+                />
               </article>
             ))}
           </div>

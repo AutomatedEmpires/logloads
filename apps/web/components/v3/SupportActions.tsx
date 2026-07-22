@@ -3,6 +3,12 @@
 import type { SupportRequest } from "@logloads/contracts"
 import { useRef, useState, type FormEvent } from "react"
 
+import {
+  bindSupportSubmissionAttempt,
+  type SupportSubmissionAttempt,
+  type SupportSubmissionDraft
+} from "@/lib/support-submission"
+
 type RequestKind = "problem" | "feature_request"
 type ProblemImpact = "blocked" | "degraded" | "minor"
 
@@ -51,7 +57,7 @@ export function SupportRequestForm({
   fromPath: string | null
   onSaved: (request: SupportRequestReceipt) => void
 }) {
-  const submissionId = useRef<string | null>(null)
+  const submissionAttempt = useRef<SupportSubmissionAttempt | null>(null)
   const [kind, setKind] = useState<RequestKind>("problem")
   const [impact, setImpact] = useState<ProblemImpact>("degraded")
   const [title, setTitle] = useState("")
@@ -65,7 +71,15 @@ export function SupportRequestForm({
     setError(null)
     setSuccess("")
     setPending(true)
-    submissionId.current ??= crypto.randomUUID()
+    const draft: SupportSubmissionDraft = {
+      details,
+      impact: kind === "feature_request" ? "idea" : impact,
+      kind,
+      pagePath: fromPath,
+      title
+    }
+    const attempt = bindSupportSubmissionAttempt(submissionAttempt.current, draft)
+    submissionAttempt.current = attempt
 
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), 12_000)
@@ -73,12 +87,8 @@ export function SupportRequestForm({
     try {
       const response = await fetch("/api/support-requests", {
         body: JSON.stringify({
-          details,
-          impact: kind === "feature_request" ? "idea" : impact,
-          kind,
-          pagePath: fromPath,
-          submissionId: submissionId.current,
-          title
+          ...draft,
+          submissionId: attempt.submissionId
         }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
@@ -102,7 +112,7 @@ export function SupportRequestForm({
       )
       setTitle("")
       setDetails("")
-      submissionId.current = null
+      submissionAttempt.current = null
     } catch (caught) {
       setError(
         caught instanceof DOMException && caught.name === "AbortError"
@@ -119,7 +129,7 @@ export function SupportRequestForm({
 
   return (
     <form className="support-form" onSubmit={(event) => void submit(event)}>
-      <fieldset>
+      <fieldset disabled={pending}>
         <legend>What do you need?</legend>
         <div className="support-choice-grid support-choice-grid--kind">
           <label className="radio-card">
@@ -148,7 +158,7 @@ export function SupportRequestForm({
       </fieldset>
 
       {kind === "problem" ? (
-        <fieldset>
+        <fieldset disabled={pending}>
           <legend>How is this affecting your work?</legend>
           <div className="support-choice-grid support-choice-grid--impact">
             {([
@@ -176,6 +186,7 @@ export function SupportRequestForm({
         <span>Short summary</span>
         <input
           autoComplete="off"
+          disabled={pending}
           id="support-title"
           maxLength={120}
           minLength={5}
@@ -191,6 +202,7 @@ export function SupportRequestForm({
         <span>Details</span>
         <textarea
           id="support-details"
+          disabled={pending}
           maxLength={4000}
           minLength={10}
           onChange={(event) => setDetails(event.target.value)}

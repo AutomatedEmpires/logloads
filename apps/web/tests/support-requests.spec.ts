@@ -24,6 +24,10 @@ test("driver feedback is triaged and resolved without losing retry state", async
   const unique = `${testInfo.project.name}-${Date.now()}`
   const title = `Reconnect feedback ${unique}`
   const details = `The save control stays disabled after reconnecting in ${unique}.`
+  const preEditTitle = `Edit retry draft ${unique}`
+  const preEditDetails = `The retry draft before editing is ${unique}.`
+  const editedTitle = `Edited retry draft ${unique}`
+  const editedDetails = `The retry draft was changed after the failed response in ${unique}.`
   const resolutionNote = `The expected reconnect behavior was clarified for ${unique}.`
 
   const reporter = await authenticatedPage(browser, "hank@northpine.example")
@@ -48,7 +52,10 @@ test("driver feedback is triaged and resolved without losing retry state", async
   await fillWhenReady(reporter.page, "Details", details)
 
   let obscureFirstResponse = true
+  const samePayloadSubmissionIds: string[] = []
   await reporter.page.route("**/api/support-requests", async (route) => {
+    const body = route.request().postDataJSON() as { submissionId: string }
+    samePayloadSubmissionIds.push(body.submissionId)
     const response = await route.fetch()
 
     if (obscureFirstResponse) {
@@ -68,12 +75,57 @@ test("driver feedback is triaged and resolved without losing retry state", async
   await expect(reporter.page.locator(".support-form__error")).toContainText("connection dropped")
   await expect(reporter.page.getByLabel("Short summary")).toHaveValue(title)
   await expect(reporter.page.getByLabel("Details")).toHaveValue(details)
-  await reporter.page.unroute("**/api/support-requests")
   await reporter.page.getByRole("button", { name: "Send product feedback" }).click()
   await expect(reporter.page.getByText(/feedback was already saved|feedback was saved/)).toBeVisible()
+  await reporter.page.unroute("**/api/support-requests")
+  expect(samePayloadSubmissionIds).toHaveLength(2)
+  expect(samePayloadSubmissionIds[1]).toBe(samePayloadSubmissionIds[0])
   const reporterCard = reporter.page.locator("article").filter({ has: reporter.page.getByRole("heading", { name: title }) })
   await expect(reporterCard).toHaveCount(1)
   await expect(reporterCard.getByText("Open", { exact: true })).toBeVisible()
+
+  await fillWhenReady(reporter.page, "Short summary", preEditTitle)
+  await fillWhenReady(reporter.page, "Details", preEditDetails)
+  let obscureEditedResponse = true
+  const editedPayloadSubmissionIds: string[] = []
+  await reporter.page.route("**/api/support-requests", async (route) => {
+    const body = route.request().postDataJSON() as { submissionId: string }
+    editedPayloadSubmissionIds.push(body.submissionId)
+    const response = await route.fetch()
+
+    if (obscureEditedResponse) {
+      obscureEditedResponse = false
+      await route.fulfill({
+        body: JSON.stringify({ error: "The connection dropped after the edited draft save." }),
+        contentType: "application/json",
+        status: 503
+      })
+      return
+    }
+
+    await route.fulfill({ response })
+  })
+  await reporter.page.getByRole("button", { name: "Send product feedback" }).click()
+  await expect(reporter.page.locator(".support-form__error")).toContainText("edited draft save")
+  await expect(reporter.page.getByLabel("Short summary")).toHaveValue(preEditTitle)
+  await expect(reporter.page.getByLabel("Details")).toHaveValue(preEditDetails)
+  await fillWhenReady(reporter.page, "Short summary", editedTitle)
+  await fillWhenReady(reporter.page, "Details", editedDetails)
+  await reporter.page.getByRole("button", { name: "Send product feedback" }).click()
+  await expect(reporter.page.getByText("Your feedback was saved for the LogLoads product team.")).toBeVisible()
+  await reporter.page.unroute("**/api/support-requests")
+  expect(editedPayloadSubmissionIds).toHaveLength(2)
+  expect(editedPayloadSubmissionIds[1]).not.toBe(editedPayloadSubmissionIds[0])
+  await reporter.page.reload()
+  const preEditCard = reporter.page.locator("article").filter({
+    has: reporter.page.getByRole("heading", { name: preEditTitle })
+  })
+  const editedCard = reporter.page.locator("article").filter({
+    has: reporter.page.getByRole("heading", { name: editedTitle })
+  })
+  await expect(preEditCard).toHaveCount(1)
+  await expect(editedCard).toHaveCount(1)
+  await expect(editedCard).toContainText(editedDetails)
   await expect.poll(() => reporter.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   const submitBox = await reporter.page.getByRole("button", { name: "Send product feedback" }).boundingBox()
   expect(submitBox?.height ?? 0).toBeGreaterThanOrEqual(48)
