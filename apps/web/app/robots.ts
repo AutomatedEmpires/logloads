@@ -15,7 +15,8 @@ export default function robots(): MetadataRoute.Robots {
           "/host",
           "/onboarding",
           "/sign-in",
-          "/sign-up"
+          "/sign-up",
+          "/support"
         ],
         userAgent: "*"
       }

@@ -23,31 +23,62 @@ export interface ApiActor {
   organizationId: string
 }
 
-/**
- * Resolves the authenticated actor for API routes. The organization is always one
- * of the actor's own active memberships; client payloads can never select another
- * identity.
- */
-export async function requireApiActor(requestedOrganizationId?: string | null): Promise<ApiActor> {
+export interface SupportApiActor {
+  actor: SessionActor
+  actorUserId: string
+  organizationId: string | null
+}
+
+export function rateLimitApiError(error: unknown): ApiError | null {
+  if (error instanceof RateLimitError) {
+    return new ApiError(error.message, 429, { "Retry-After": String(error.retryAfterSeconds) })
+  }
+
+  if (error instanceof RateLimitUnavailableError) {
+    return new ApiError(error.message, 503, { "Retry-After": String(error.retryAfterSeconds) })
+  }
+
+  return null
+}
+
+export async function enforceApiRateLimit(
+  bucket: string,
+  actorUserId: string,
+  limit: number,
+  windowMs: number
+): Promise<void> {
+  try {
+    await checkRateLimit(bucket, actorUserId, limit, windowMs)
+  } catch (error) {
+    const apiError = rateLimitApiError(error)
+
+    if (apiError) {
+      throw apiError
+    }
+
+    throw error
+  }
+}
+
+async function requireBaseApiActor(): Promise<SessionActor> {
   const actor = await getSessionActor()
 
   if (!actor) {
     throw new ApiError("Authentication required", 401)
   }
 
-  try {
-    await checkRateLimit("api-actor", actor.profile.id, 120, 60_000)
-  } catch (error) {
-    if (error instanceof RateLimitError) {
-      throw new ApiError(error.message, 429, { "Retry-After": String(error.retryAfterSeconds) })
-    }
+  await enforceApiRateLimit("api-actor", actor.profile.id, 120, 60_000)
 
-    if (error instanceof RateLimitUnavailableError) {
-      throw new ApiError(error.message, 503, { "Retry-After": String(error.retryAfterSeconds) })
-    }
+  return actor
+}
 
-    throw error
-  }
+/**
+ * Resolves the authenticated actor for API routes. The organization is always one
+ * of the actor's own active memberships; client payloads can never select another
+ * identity.
+ */
+export async function requireApiActor(requestedOrganizationId?: string | null): Promise<ApiActor> {
+  const actor = await requireBaseApiActor()
 
   const membership = requestedOrganizationId
     ? actor.memberships.find((entry) => entry.organization.id === requestedOrganizationId)
@@ -68,12 +99,19 @@ export async function requireApiActor(requestedOrganizationId?: string | null): 
   }
 }
 
-export async function requireAdminApiActor(): Promise<SessionActor> {
-  const actor = await getSessionActor()
+export async function requireSupportApiActor(): Promise<SupportApiActor> {
+  const actor = await requireBaseApiActor()
+  const organizationId = actor.activeOrganization?.id ?? actor.memberships[0]?.organization.id ?? null
 
-  if (!actor) {
-    throw new ApiError("Authentication required", 401)
+  if (!organizationId && !actor.isPlatformAdmin) {
+    throw new ApiError("Finish onboarding before using product feedback", 403)
   }
+
+  return { actor, actorUserId: actor.profile.id, organizationId }
+}
+
+export async function requireAdminApiActor(): Promise<SessionActor> {
+  const actor = await requireBaseApiActor()
 
   if (!actor.isPlatformAdmin) {
     throw new ApiError("Platform access required", 403)
