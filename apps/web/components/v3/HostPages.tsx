@@ -28,6 +28,7 @@ import {
 import {
   HaulRouteForm,
   LandingActiveToggle,
+  LandingDetailsForm,
   LandingForm,
   RateForm
 } from "./HostWorkspaceActions"
@@ -528,12 +529,18 @@ export function HostLandings({
                 {canPublish ? <HaulRouteForm landingId={landing.id} mills={setup.mills} /> : null}
               </div>
 
-              {canManageLandings ? (
-                <details className="workspace-edit">
-                  <summary>Edit landing</summary>
-                  <LandingForm landing={landing.editable} landingId={landing.id} />
-                  <LandingActiveToggle isActive={landing.isActive} landingId={landing.id} />
-                </details>
+              {canManageLandings && landing.details ? (
+                <>
+                  <details className="workspace-edit">
+                    <summary>Driver briefing</summary>
+                    <LandingDetailsForm details={landing.details} landingId={landing.id} />
+                  </details>
+                  <details className="workspace-edit">
+                    <summary>Edit landing</summary>
+                    <LandingForm landing={landing.editable} landingId={landing.id} />
+                    <LandingActiveToggle isActive={landing.isActive} landingId={landing.id} />
+                  </details>
+                </>
               ) : null}
 
               <footer>

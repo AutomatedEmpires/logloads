@@ -2,6 +2,7 @@ import {
   evaluateLoadCompatibility,
   explainCompatibility,
   formatRateLabel,
+  organizationRoleCan,
   recommendLoad,
   reputationLabel,
   summarizeReviews,
@@ -448,7 +449,8 @@ function pointFromSite(
     accessNotes?: string | null
     roadCondition?: RoadCondition | null
   },
-  exact: boolean
+  exact: boolean,
+  exactCoordinates?: { lat: number; lng: number } | null
 ): NetworkPoint {
   return {
     accessNotes: exact ? site.accessNotes ?? null : null,
@@ -456,8 +458,8 @@ function pointFromSite(
     city: site.city,
     freshness: (site.roadCondition ?? "good") === "good" ? "verified" : "recent",
     id: site.id,
-    lat: exact ? site.coordinates.lat : approximateCoordinate(site.coordinates.lat),
-    lng: exact ? site.coordinates.lng : approximateCoordinate(site.coordinates.lng),
+    lat: exact ? (exactCoordinates?.lat ?? site.coordinates.lat) : approximateCoordinate(site.coordinates.lat),
+    lng: exact ? (exactCoordinates?.lng ?? site.coordinates.lng) : approximateCoordinate(site.coordinates.lng),
     name: site.name,
     roadCondition: site.roadCondition ?? "good",
     state: site.state
@@ -572,7 +574,12 @@ export function buildNetworkView(
   const loadsWithScore = visibleLoadRecords.map((load) => {
     const source = requireRecord(state.companies.find((company) => company.id === load.companyId), `company ${load.companyId}`)
     const landing = requireRecord(state.landings.find((item) => item.id === load.pickupLandingId), `landing ${load.pickupLandingId}`)
-    const landingDetails = state.richLandingDetails.find((item) => item.landingId === landing.id) ?? null
+    const matchingLandingDetails = state.richLandingDetails.filter(
+      (item) =>
+        item.landingId === landing.id &&
+        item.controlledByOrganizationId === load.companyId
+    )
+    const landingDetails = matchingLandingDetails.length === 1 ? matchingLandingDetails[0]! : null
     const destination = requireRecord(state.mills.find((item) => item.id === load.dropoffMillId), `destination ${load.dropoffMillId}`)
     const destinationFacility = state.destinationFacilities.find((item) => item.millId === destination.id) ?? null
     const route = requireRecord(state.haulRoutes.find((item) => item.id === load.routeId), `route ${load.routeId}`)
@@ -593,39 +600,65 @@ export function buildNetworkView(
     // --- Access: sensitive operational detail unlocks for the publishing
     // organization and for actively assigned haulers only. -----------------
     const ownsLoad = Boolean(activeOrganization && load.companyId === activeOrganization.id)
-    const viewerAssignments = loadAssignments
+    const staffCanViewPrivateLocation = Boolean(
+      activeMembership &&
+      activeMembership.role !== "driver" &&
+      organizationRoleCan(activeMembership.role, "view_private_location")
+    )
+    const orderedAssignments = loadAssignments
       .map((assignment, attemptIndex) => ({ assignment, attemptIndex }))
-      .filter(({ assignment }) =>
-        (currentDriverProfile && assignment.driverProfileId === currentDriverProfile.id) ||
-        (!currentDriverProfile && organizationDriverProfileIds.has(assignment.driverProfileId))
-      )
       .sort((left, right) =>
         right.assignment.updatedAt.localeCompare(left.assignment.updatedAt) ||
         right.attemptIndex - left.attemptIndex
       )
       .map(({ assignment }) => assignment)
+    // The viewer's own decision state must never be borrowed from a coworker:
+    // driver/fleet cards use it for "You're booked", request suppression, and
+    // cancellation links. Staff access to a coworker's private pack is tracked
+    // separately below.
+    const viewerAssignments = currentDriverProfile
+      ? orderedAssignments.filter((assignment) => assignment.driverProfileId === currentDriverProfile.id)
+      : []
     const viewerActiveAssignment = viewerAssignments.find((assignment) =>
       VIEWER_ASSIGNMENT_STATUSES.includes(assignment.status)
     ) ?? null
     const viewerAccessAssignment = viewerAssignments.find((assignment) =>
       ACCESS_UNLOCKED_ASSIGNMENT_STATUSES.includes(assignment.status)
     ) ?? null
+    const staffAccessAssignment = staffCanViewPrivateLocation
+      ? orderedAssignments.find(
+          (assignment) =>
+            organizationDriverProfileIds.has(assignment.driverProfileId) &&
+            ACCESS_UNLOCKED_ASSIGNMENT_STATUSES.includes(assignment.status)
+        ) ?? null
+      : null
     // A decline is a current decision only when it is the viewer's latest
     // attempt. A newer request or booking supersedes the historical outcome.
     const viewerDeclinedAssignment = viewerAssignments[0]?.status === "declined"
       ? viewerAssignments[0]
       : null
-    const unlocked = ownsLoad || Boolean(viewerAccessAssignment)
+    const assignedDriverAccess = Boolean(
+      currentDriverProfile &&
+      viewerAccessAssignment?.driverProfileId === currentDriverProfile.id
+    )
+    const assignedStaffAccess = Boolean(
+      staffCanViewPrivateLocation &&
+      staffAccessAssignment
+    )
+    const ownerStaffAccess = ownsLoad && staffCanViewPrivateLocation
+    const canOpenViewerAssignmentPack = assignedDriverAccess || assignedStaffAccess
+    const privateAccessAssignment = viewerAccessAssignment ?? staffAccessAssignment
+    const unlocked = ownerStaffAccess || canOpenViewerAssignmentPack
     const access: LoadAccess = {
-      reason: ownsLoad ? "owner" : viewerAccessAssignment ? "assigned" : "locked",
+      reason: ownerStaffAccess ? "owner" : canOpenViewerAssignmentPack ? "assigned" : "locked",
       unlocked
     }
     // The viewer's own snapshot, newest live version.
-    const viewerRoutePack = viewerAccessAssignment
+    const viewerRoutePack = canOpenViewerAssignmentPack && privateAccessAssignment
       ? state.routePacks
           .filter(
             (pack) =>
-              pack.assignmentId === viewerAccessAssignment.id &&
+              pack.assignmentId === privateAccessAssignment.id &&
               !pack.supersededAt &&
               routePackIsSafeToRead(state, load, pack)
           )
@@ -638,6 +671,28 @@ export function buildNetworkView(
     // did. A viewer without access still gets null, so a driver never sees a
     // pack belonging to someone else's assignment.
     const routePack = viewerRoutePack ?? (unlocked ? sourceRoutePack : null)
+    const issuedInstruction = (title: string) =>
+      viewerRoutePack?.localInstructions.find((instruction) => instruction.title === title)?.detail ?? null
+    const effectiveGateInstructions = viewerRoutePack
+      ? issuedInstruction("Gate access")
+      : landingDetails?.gateInstructions ?? null
+    const effectivePrivateRoadNotes = viewerRoutePack
+      ? issuedInstruction("Private road")
+      : landingDetails?.privateRoadNotes ?? null
+    const effectiveLandingAccess = viewerRoutePack
+      ? effectivePrivateRoadNotes ?? issuedInstruction("Landing access")
+      : effectivePrivateRoadNotes ?? landing.accessNotes ?? null
+    const issuedEntrance =
+      viewerRoutePack?.snapshot?.originEntranceLat != null &&
+      viewerRoutePack.snapshot.originEntranceLng != null
+        ? {
+            lat: viewerRoutePack.snapshot.originEntranceLat,
+            lng: viewerRoutePack.snapshot.originEntranceLng
+          }
+        : null
+    const effectiveEntrance = issuedEntrance ?? (
+      landingDetails ? { lat: landingDetails.entranceLat, lng: landingDetails.entranceLng } : null
+    )
 
     const viewerHasActiveAssignment = Boolean(
       currentDriverProfile &&
@@ -756,8 +811,8 @@ export function buildNetworkView(
         : null,
       criticalInstructions: unlocked
         ? [
-            landingDetails?.gateInstructions ? `Gate: ${landingDetails.gateInstructions}` : null,
-            landingDetails?.privateRoadNotes ? `Landing access: ${landingDetails.privateRoadNotes}` : landing.accessNotes ? `Landing: ${landing.accessNotes}` : null,
+            effectiveGateInstructions ? `Gate: ${effectiveGateInstructions}` : null,
+            effectiveLandingAccess ? `Landing access: ${effectiveLandingAccess}` : null,
             destinationFacility?.checkInProcess ? `Destination check-in: ${destinationFacility.checkInProcess}` : destination.accessNotes ? `Destination: ${destination.accessNotes}` : null,
             routePack?.calculatedRouteSummary ? `Route pack: ${routePack.calculatedRouteSummary}` : route.roadNotes ? `Local route: ${route.roadNotes}` : null
           ].filter((value): value is string => Boolean(value))
@@ -781,14 +836,18 @@ export function buildNetworkView(
         ? `+ ${formatRateLabel({ amountCents: rate.fuelSurchargeCents, currency: "USD" }, "flat_rate")} fuel`
         : "Fuel included in terms",
       id: load.id,
-      landing: pointFromSite(landing, unlocked),
+      landing: pointFromSite(
+        landing,
+        unlocked,
+        effectiveEntrance
+      ),
       landingDetails: landingDetails
         ? {
-            exactLocationVisibility: landingDetails.exactLocationVisibility,
-            gateInstructions: unlocked ? landingDetails.gateInstructions ?? null : null,
+            exactLocationVisibility: "assigned_only",
+            gateInstructions: unlocked ? effectiveGateInstructions : null,
             lastVerifiedAt: landingDetails.lastVerifiedAt,
             loadingEquipment: landingDetails.loadingEquipment,
-            privateRoadNotes: unlocked ? landingDetails.privateRoadNotes ?? null : null,
+            privateRoadNotes: unlocked ? effectivePrivateRoadNotes : null,
             publicApproximateArea: landingDetails.publicApproximateArea,
             turnaroundConstraints: landingDetails.turnaroundConstraints
           }

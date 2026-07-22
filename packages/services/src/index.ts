@@ -40,7 +40,8 @@ import {
   createLanding,
   createRate,
   setLandingActive,
-  updateLanding
+  updateLanding,
+  upsertLandingDetails
 } from "./host-workspace"
 import { listDriverAvailability, upsertAvailabilityWindow } from "./availability"
 import { createLoadPosting, getLoadById, listOpenLoads, updateLoadPosting } from "./loads"
@@ -148,6 +149,7 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     createLanding: (input: Parameters<typeof createLanding>[1]) => createLanding(state, input),
     createRate: (input: Parameters<typeof createRate>[1]) => createRate(state, input),
     updateLanding: (input: Parameters<typeof updateLanding>[1]) => updateLanding(state, input),
+    upsertLandingDetails: (input: Parameters<typeof upsertLandingDetails>[1]) => upsertLandingDetails(state, input),
     setLandingActive: (input: Parameters<typeof setLandingActive>[1]) => setLandingActive(state, input),
     activeLandingLimitFor: (organizationId: string) => activeLandingLimitFor(state, organizationId),
     countActiveLandings: (organizationId: string) => countActiveLandings(state, organizationId),
@@ -210,7 +212,8 @@ export type {
   CreateLandingInput,
   CreateRateInput,
   SetLandingActiveInput,
-  UpdateLandingInput
+  UpdateLandingInput,
+  UpsertLandingDetailsInput
 } from "./host-workspace"
 export type { DriverMediaKind, DriverMediaTarget } from "./driver-profile"
 export type { TripDocumentAccess, TripDocumentTarget } from "./operating-network"

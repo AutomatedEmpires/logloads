@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useState, useTransition, type FormEvent } from "react"
 import { rateTypeSchema, roadConditionSchema } from "@logloads/contracts"
 import { Icon } from "@logloads/ui"
@@ -9,9 +10,10 @@ import {
   createLandingAction,
   createRateAction,
   setLandingActiveAction,
-  updateLandingAction
+  updateLandingAction,
+  upsertLandingDetailsAction
 } from "@/lib/cockpit-actions"
-import type { HostLandingDraft, HostMillOption } from "@/lib/host-data"
+import type { HostLandingDetailsDraft, HostLandingDraft, HostMillOption } from "@/lib/host-data"
 import { formatHuman } from "@/lib/v3-shared"
 
 /**
@@ -51,11 +53,19 @@ function numberOrNull(value: FormDataEntryValue | null): number | null {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+function nonEmptyLines(value: FormDataEntryValue | null): string[] {
+  return String(value ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
 /**
  * Creates or edits a landing. Coordinates are typed rather than picked off a
- * map: a pin is the one fact a driver navigates to, so inventing one from a
- * postal code would put a truck on the wrong spur. Asking for it plainly is
- * honest until a geocoder is a founder-approved provider.
+ * map. This base pin supplies the public approximation and the driver fallback
+ * until a landing manager verifies the exact truck entrance in the private
+ * briefing. Inventing either coordinate from a postal code would put a truck
+ * on the wrong spur, so both are typed until a geocoder is founder-approved.
  */
 export function LandingForm({
   landing,
@@ -80,7 +90,7 @@ export function LandingForm({
     const lng = numberOrNull(data.get("lng"))
 
     if (lat === null || lng === null) {
-      setError("Give the entrance coordinates so drivers can navigate to it.")
+      setError("Give the landing map coordinates.")
       return
     }
 
@@ -150,11 +160,11 @@ export function LandingForm({
           </select>
         </label>
         <label>
-          Entrance latitude
+          Landing map latitude
           <input defaultValue={editing ? current.lat : ""} name="lat" placeholder="44.05" required step="any" type="number" />
         </label>
         <label>
-          Entrance longitude
+          Landing map longitude
           <input defaultValue={editing ? current.lng : ""} name="lng" placeholder="-121.31" required step="any" type="number" />
         </label>
         <label>
@@ -184,6 +194,118 @@ export function LandingForm({
           {pending ? "Saving…" : editing ? "Save landing" : "Add landing"}
         </button>
         {saved ? <span className="action-note">Saved.</span> : null}
+      </div>
+      {error ? <p className="action-error" role="alert">{error}</p> : null}
+    </form>
+  )
+}
+
+/**
+ * Maintains the private site briefing copied into future assignment Route
+ * Packs. Exact entrance facts stay assignment-only; this form deliberately has
+ * no visibility selector that could imply a wider access policy the product
+ * does not safely serve.
+ */
+export function LandingDetailsForm({
+  details,
+  landingId
+}: {
+  details: HostLandingDetailsDraft
+  landingId: string
+}) {
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  const [pending, startTransition] = useTransition()
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const data = new FormData(event.currentTarget)
+    const entranceLat = numberOrNull(data.get("entranceLat"))
+    const entranceLng = numberOrNull(data.get("entranceLng"))
+
+    if (entranceLat === null || entranceLng === null) {
+      setError("Give the exact entrance coordinates drivers should use.")
+      return
+    }
+
+    setError(null)
+    setSaved(false)
+    startTransition(async () => {
+      const result = await upsertLandingDetailsAction({
+        communicationInstructions: String(data.get("communicationInstructions") ?? "").trim() || null,
+        entranceLat,
+        entranceLng,
+        gateInstructions: String(data.get("gateInstructions") ?? "").trim() || null,
+        landingId,
+        loadingEquipment: nonEmptyLines(data.get("loadingEquipment")),
+        privateRoadNotes: String(data.get("privateRoadNotes") ?? "").trim() || null,
+        publicApproximateArea: String(data.get("publicApproximateArea") ?? "").trim(),
+        safetyRequirements: nonEmptyLines(data.get("safetyRequirements")),
+        stagingInstructions: String(data.get("stagingInstructions") ?? "").trim() || null,
+        turnaroundConstraints: nonEmptyLines(data.get("turnaroundConstraints"))
+      })
+
+      if (!result.ok) {
+        setError(result.error ?? "The driver briefing could not be saved.")
+        return
+      }
+
+      setSaved(true)
+    })
+  }
+
+  return (
+    <form className="workspace-form" onSubmit={submit}>
+      <p className="workspace-hint">
+        Exact entrance, gate, road, and staging facts unlock only after an assignment is approved. Saving verifies them now for future Route Packs; existing assignment snapshots do not change. Re-issue an active driver&apos;s pack from the <Link href="/host/live-board">Live Board</Link> when a changed instruction applies to their haul.
+      </p>
+      <div className="workspace-form__grid">
+        <label>
+          Public approximate area
+          <input defaultValue={details.publicApproximateArea} name="publicApproximateArea" required type="text" />
+        </label>
+        <label>
+          Exact entrance latitude
+          <input defaultValue={details.entranceLat} name="entranceLat" required step="any" type="number" />
+        </label>
+        <label>
+          Exact entrance longitude
+          <input defaultValue={details.entranceLng} name="entranceLng" required step="any" type="number" />
+        </label>
+      </div>
+      <label className="workspace-form__wide">
+        Gate instructions
+        <textarea defaultValue={details.gateInstructions} name="gateInstructions" rows={2} />
+      </label>
+      <label className="workspace-form__wide">
+        Private road notes
+        <textarea defaultValue={details.privateRoadNotes} name="privateRoadNotes" rows={2} />
+      </label>
+      <label className="workspace-form__wide">
+        Loading equipment (one per line)
+        <textarea defaultValue={details.loadingEquipment.join("\n")} name="loadingEquipment" rows={3} />
+      </label>
+      <label className="workspace-form__wide">
+        Turnaround constraints (one per line)
+        <textarea defaultValue={details.turnaroundConstraints.join("\n")} name="turnaroundConstraints" rows={3} />
+      </label>
+      <label className="workspace-form__wide">
+        Staging instructions
+        <textarea defaultValue={details.stagingInstructions} name="stagingInstructions" rows={2} />
+      </label>
+      <label className="workspace-form__wide">
+        Communication instructions
+        <textarea defaultValue={details.communicationInstructions} name="communicationInstructions" rows={2} />
+      </label>
+      <label className="workspace-form__wide">
+        Safety and PPE requirements (one per line)
+        <textarea defaultValue={details.safetyRequirements.join("\n")} name="safetyRequirements" rows={3} />
+      </label>
+      <div className="workspace-form__actions">
+        <button className="action-link" disabled={pending} type="submit">
+          {pending ? "Saving…" : "Save and verify briefing"}
+        </button>
+        {saved ? <span className="action-note">Verified for future Route Packs.</span> : null}
       </div>
       {error ? <p className="action-error" role="alert">{error}</p> : null}
     </form>

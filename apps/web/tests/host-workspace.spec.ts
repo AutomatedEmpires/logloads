@@ -25,6 +25,7 @@ const STAMP = Date.now()
 const LANDING = `Cedar Spur ${STAMP}`
 const LANE = `Cedar to Cascade ${STAMP}`
 const RATE_NOTE = `Cedar rate ${STAMP}`
+const GATE_NOTE = `Call dispatch for cedar gate ${STAMP}`
 
 test.describe.serial("host workspace setup", () => {
   // This journey consumes the seed host's plan capacity: it adds an active
@@ -62,8 +63,8 @@ test.describe.serial("host workspace setup", () => {
     await fillWhenReady(addForm, "City", "Sisters")
     await fillWhenReady(addForm, "State", "OR")
     await fillWhenReady(addForm, "Postal code", "97759")
-    await fillWhenReady(addForm, "Entrance latitude", "44.29")
-    await fillWhenReady(addForm, "Entrance longitude", "-121.55")
+    await fillWhenReady(addForm, "Landing map latitude", "44.29")
+    await fillWhenReady(addForm, "Landing map longitude", "-121.55")
     await fillWhenReady(addForm, "Site contact", "Cole Cedar")
     await fillWhenReady(addForm, "Contact phone", "555-3001")
 
@@ -109,6 +110,39 @@ test.describe.serial("host workspace setup", () => {
       const refreshed = page.locator(".host-landing-card").filter({ hasText: LANDING }).first()
       await expect(refreshed.getByText(LANE)).toBeVisible()
     }).toPass({ timeout: 30_000 })
+  })
+
+  test("the host verifies the private driver briefing for that landing", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await signIn(page, "cole@summit.example")
+    await page.goto("/host/landings")
+    await page.waitForLoadState("networkidle")
+
+    const card = page.locator(".host-landing-card").filter({ hasText: LANDING }).first()
+    const briefing = card.locator("details").filter({ hasText: "Driver briefing" })
+    await briefing.getByText("Driver briefing", { exact: true }).click()
+
+    await fillWhenReady(briefing, "Public approximate area", "Sisters, OR — cedar district")
+    await fillWhenReady(briefing, "Exact entrance latitude", "44.291")
+    await fillWhenReady(briefing, "Exact entrance longitude", "-121.551")
+    await fillWhenReady(briefing, "Gate instructions", GATE_NOTE)
+    await fillWhenReady(briefing, "Loading equipment (one per line)", "heel-boom loader\nlanding radio channel 6")
+    await fillWhenReady(briefing, "Turnaround constraints (one per line)", "No chip vans above the bridge")
+    await fillWhenReady(briefing, "Safety and PPE requirements (one per line)", "Hard hat and hi-vis outside the cab")
+    await briefing.getByRole("button", { name: "Save and verify briefing" }).click()
+
+    await expect(async () => {
+      await page.reload()
+      await page.waitForLoadState("networkidle")
+      const refreshed = page.locator(".host-landing-card").filter({ hasText: LANDING }).first()
+      await expect(refreshed.locator("dd").filter({ hasText: "heel-boom loader" })).toBeVisible()
+      await expect(refreshed.getByText(/Details verified/)).toBeVisible()
+    }).toPass({ timeout: 30_000 })
+
+    const refreshed = page.locator(".host-landing-card").filter({ hasText: LANDING }).first()
+    const refreshedBriefing = refreshed.locator("details").filter({ hasText: "Driver briefing" })
+    await refreshedBriefing.getByText("Driver briefing", { exact: true }).click()
+    await expect(refreshedBriefing.getByLabel("Gate instructions")).toHaveValue(GATE_NOTE)
   })
 
   test("the host adds a rate to pay at", async ({ page }) => {
