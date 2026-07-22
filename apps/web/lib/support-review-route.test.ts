@@ -75,12 +75,16 @@ describe("support review API", () => {
     mocks.enforceApiRateLimit.mockResolvedValue(undefined)
   })
 
-  it("returns 409 without analytics when a stale status precondition conflicts", async () => {
+  it("returns 409 without analytics when an ABA version precondition conflicts", async () => {
     mocks.mutateState.mockRejectedValue(
       new SupportRequestConflictError("This request changed since the page loaded. Refresh before trying again.")
     )
 
-    const response = await patch({ expectedStatus: "open", status: "in_review" })
+    const response = await patch({
+      expectedStatus: "resolved",
+      expectedUpdatedAt: "2026-07-21T13:00:00.000Z",
+      status: "in_review"
+    })
 
     expect(response.status).toBe(409)
     await expect(response.json()).resolves.toEqual({
@@ -94,6 +98,7 @@ describe("support review API", () => {
 
     const response = await patch({
       expectedStatus: "in_review",
+      expectedUpdatedAt: "2026-07-21T13:00:00.000Z",
       resolutionCode: "answered",
       resolutionNote: supportRequest.resolutionNote,
       status: "resolved"
@@ -103,8 +108,8 @@ describe("support review API", () => {
     expect(mocks.captureServerEvent).not.toHaveBeenCalled()
   })
 
-  it("rejects review bodies without the current-status precondition", async () => {
-    const response = await patch({ status: "in_review" })
+  it("rejects review bodies without the current-version precondition", async () => {
+    const response = await patch({ expectedStatus: "open", status: "in_review" })
 
     expect(response.status).toBe(422)
     expect(mocks.mutateState).not.toHaveBeenCalled()

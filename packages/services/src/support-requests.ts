@@ -369,7 +369,10 @@ export function reviewSupportRequest(
     throw new SupportRequestConflictError("Reopen the request before changing its recorded resolution")
   }
 
-  if (existing.status !== command.review.expectedStatus) {
+  if (
+    existing.status !== command.review.expectedStatus ||
+    existing.updatedAt !== command.review.expectedUpdatedAt
+  ) {
     throw new SupportRequestConflictError(
       "This request changed since the page loaded. Refresh before trying again."
     )
@@ -380,7 +383,9 @@ export function reviewSupportRequest(
   }
 
   const previousStatus = existing.status
-  const now = nowDate.toISOString()
+  const now = new Date(
+    Math.max(nowDate.getTime(), Date.parse(existing.updatedAt) + 1)
+  ).toISOString()
   const next = supportRequestSchema.parse({
     ...existing,
     closedAt: command.review.status === "resolved" || command.review.status === "closed" ? now : null,

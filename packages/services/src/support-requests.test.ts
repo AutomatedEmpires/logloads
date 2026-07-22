@@ -263,7 +263,11 @@ describe("authenticated support requests", () => {
     expect(() =>
       reviewSupportRequest(state, {
         requestId: created.request.id,
-        review: { expectedStatus: "open", status: "in_review" },
+        review: {
+          expectedStatus: "open",
+          expectedUpdatedAt: created.request.updatedAt,
+          status: "in_review"
+        },
         reviewerUserId: reporter.id
       })
     ).toThrow(SupportRequestAuthorizationError)
@@ -331,6 +335,7 @@ describe("authenticated support requests", () => {
       requestId: created.request.id,
       review: {
         expectedStatus: "open" as const,
+        expectedUpdatedAt: created.request.updatedAt,
         resolutionCode: "answered" as const,
         resolutionNote: "The expected product behavior was clarified.",
         status: "resolved" as const
@@ -350,6 +355,7 @@ describe("authenticated support requests", () => {
         requestId: created.request.id,
         review: {
           expectedStatus: "resolved",
+          expectedUpdatedAt: state.supportRequests[0]!.updatedAt,
           resolutionCode: "duplicate",
           resolutionNote: "A different terminal outcome.",
           status: "closed"
@@ -375,7 +381,7 @@ describe("authenticated support requests", () => {
     }).toEqual(terminalCounts)
   })
 
-  it("rejects stale concurrent admin decisions while preserving idempotent lost-response retries", () => {
+  it("rejects stale and ABA admin decisions while preserving idempotent lost-response retries", () => {
     const { admin, organizationId, reporter, state } = fixture()
     const secondAdmin = {
       ...admin,
@@ -385,21 +391,26 @@ describe("authenticated support requests", () => {
       id: randomUUID()
     }
     state.profiles.push(secondAdmin)
-    const created = createSupportRequest(state, {
-      organizationId,
-      reporterUserId: reporter.id,
-      submission: submission()
-    })
-    const resolved = reviewSupportRequest(state, {
-      requestId: created.request.id,
-      review: {
-        expectedStatus: "open",
-        resolutionCode: "answered",
-        resolutionNote: "The expected behavior was explained.",
-        status: "resolved"
+    const created = createSupportRequest(
+      state,
+      { organizationId, reporterUserId: reporter.id, submission: submission() },
+      new Date("2026-07-21T12:00:00.000Z")
+    )
+    const resolutionA = reviewSupportRequest(
+      state,
+      {
+        requestId: created.request.id,
+        review: {
+          expectedStatus: "open",
+          expectedUpdatedAt: created.request.updatedAt,
+          resolutionCode: "answered",
+          resolutionNote: "The expected behavior was explained.",
+          status: "resolved"
+        },
+        reviewerUserId: admin.id
       },
-      reviewerUserId: admin.id
-    })
+      new Date("2026-07-21T13:00:00.000Z")
+    )
     const afterResolution = {
       audits: state.auditEvents.length,
       notifications: state.notifications.length,
@@ -409,7 +420,11 @@ describe("authenticated support requests", () => {
     expect(() =>
       reviewSupportRequest(state, {
         requestId: created.request.id,
-        review: { expectedStatus: "open", status: "in_review" },
+        review: {
+          expectedStatus: "open",
+          expectedUpdatedAt: created.request.updatedAt,
+          status: "in_review"
+        },
         reviewerUserId: secondAdmin.id
       })
     ).toThrow(SupportRequestConflictError)
@@ -419,23 +434,36 @@ describe("authenticated support requests", () => {
       request: state.supportRequests[0]
     }).toEqual(afterResolution)
 
-    reviewSupportRequest(state, {
-      requestId: created.request.id,
-      review: { expectedStatus: "resolved", status: "in_review" },
-      reviewerUserId: secondAdmin.id
-    })
-    const closeCommand = {
+    const reopened = reviewSupportRequest(
+      state,
+      {
+        requestId: created.request.id,
+        review: {
+          expectedStatus: "resolved",
+          expectedUpdatedAt: resolutionA.request.updatedAt,
+          status: "in_review"
+        },
+        reviewerUserId: secondAdmin.id
+      },
+      new Date("2026-07-21T14:00:00.000Z")
+    )
+    const resolutionBCommand = {
       requestId: created.request.id,
       review: {
         expectedStatus: "in_review" as const,
-        resolutionCode: "duplicate" as const,
-        resolutionNote: "This is tracked by the existing request.",
-        status: "closed" as const
+        expectedUpdatedAt: reopened.request.updatedAt,
+        resolutionCode: "fixed" as const,
+        resolutionNote: "A later reviewer confirmed and fixed the defect.",
+        status: "resolved" as const
       },
       reviewerUserId: secondAdmin.id
     }
-    const closed = reviewSupportRequest(state, closeCommand)
-    const afterClose = {
+    const resolutionB = reviewSupportRequest(
+      state,
+      resolutionBCommand,
+      new Date("2026-07-21T15:00:00.000Z")
+    )
+    const afterResolutionB = {
       audits: state.auditEvents.length,
       notifications: state.notifications.length,
       request: structuredClone(state.supportRequests[0])
@@ -444,19 +472,38 @@ describe("authenticated support requests", () => {
     expect(() =>
       reviewSupportRequest(state, {
         requestId: created.request.id,
-        review: { expectedStatus: resolved.request.status, status: "in_review" },
+        review: {
+          expectedStatus: resolutionA.request.status,
+          expectedUpdatedAt: resolutionA.request.updatedAt,
+          status: "in_review"
+        },
         reviewerUserId: admin.id
       })
     ).toThrow(SupportRequestConflictError)
-    expect(reviewSupportRequest(state, closeCommand)).toMatchObject({
+    expect(() =>
+      reviewSupportRequest(state, {
+        requestId: created.request.id,
+        review: {
+          expectedStatus: resolutionA.request.status,
+          expectedUpdatedAt: resolutionA.request.updatedAt,
+          resolutionCode: "duplicate",
+          resolutionNote: "A stale terminal decision.",
+          status: "closed"
+        },
+        reviewerUserId: admin.id
+      })
+    ).toThrow(SupportRequestConflictError)
+    expect(reviewSupportRequest(state, resolutionBCommand)).toMatchObject({
       changed: false,
-      request: { id: closed.request.id, status: "closed" }
+      request: { id: resolutionB.request.id, resolutionCode: "fixed", status: "resolved" }
     })
+    expect(Date.parse(resolutionA.request.updatedAt)).toBeLessThan(Date.parse(reopened.request.updatedAt))
+    expect(Date.parse(reopened.request.updatedAt)).toBeLessThan(Date.parse(resolutionB.request.updatedAt))
     expect({
       audits: state.auditEvents.length,
       notifications: state.notifications.length,
       request: state.supportRequests[0]
-    }).toEqual(afterClose)
+    }).toEqual(afterResolutionB)
   })
 
   it("triages, resolves, and reopens with idempotent side effects and private audit metadata", () => {
@@ -471,7 +518,11 @@ describe("authenticated support requests", () => {
       state,
       {
         requestId: created.request.id,
-        review: { expectedStatus: "open", status: "in_review" },
+        review: {
+          expectedStatus: "open",
+          expectedUpdatedAt: created.request.updatedAt,
+          status: "in_review"
+        },
         reviewerUserId: admin.id
       },
       new Date("2026-07-21T13:00:00.000Z")
@@ -480,7 +531,11 @@ describe("authenticated support requests", () => {
       state,
       {
         requestId: created.request.id,
-        review: { expectedStatus: "open", status: "in_review" },
+        review: {
+          expectedStatus: "open",
+          expectedUpdatedAt: created.request.updatedAt,
+          status: "in_review"
+        },
         reviewerUserId: admin.id
       },
       new Date("2026-07-21T13:05:00.000Z")
@@ -492,6 +547,7 @@ describe("authenticated support requests", () => {
         requestId: created.request.id,
         review: {
           expectedStatus: "in_review",
+          expectedUpdatedAt: inReview.request.updatedAt,
           resolutionCode: "fixed",
           resolutionNote,
           status: "resolved"
@@ -504,7 +560,11 @@ describe("authenticated support requests", () => {
       state,
       {
         requestId: created.request.id,
-        review: { expectedStatus: "resolved", status: "in_review" },
+        review: {
+          expectedStatus: "resolved",
+          expectedUpdatedAt: resolved.request.updatedAt,
+          status: "in_review"
+        },
         reviewerUserId: admin.id
       },
       new Date("2026-07-21T15:00:00.000Z")

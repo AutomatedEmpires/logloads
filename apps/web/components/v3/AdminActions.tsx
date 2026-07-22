@@ -171,9 +171,11 @@ async function supportDecisionRequest(
 }
 
 export function AdminReportDecision({
+  expectedUpdatedAt,
   requestId,
   status
 }: {
+  expectedUpdatedAt: string
   requestId: string
   status: SupportRequestStatus
 }) {
@@ -208,7 +210,7 @@ export function AdminReportDecision({
     const nextStatus = resolutionCode === "fixed" || resolutionCode === "answered" ? "resolved" : "closed"
 
     void run(
-      { expectedStatus: status, resolutionCode, resolutionNote, status: nextStatus },
+      { expectedStatus: status, expectedUpdatedAt, resolutionCode, resolutionNote, status: nextStatus },
       nextStatus === "resolved" ? "Request resolved." : "Request closed."
     )
   }
@@ -222,7 +224,7 @@ export function AdminReportDecision({
               className="admin-btn admin-btn--primary"
               disabled={pending}
               onClick={() => void run(
-                { expectedStatus: status, status: "in_review" },
+                { expectedStatus: status, expectedUpdatedAt, status: "in_review" },
                 "Request marked in review."
               )}
               type="button"
@@ -270,7 +272,7 @@ export function AdminReportDecision({
               className="admin-btn admin-btn--primary"
               disabled={pending}
               onClick={() => void run(
-                { expectedStatus: status, status: "in_review" },
+                { expectedStatus: status, expectedUpdatedAt, status: "in_review" },
                 "Request reopened for review."
               )}
               type="button"

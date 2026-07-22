@@ -347,6 +347,7 @@ export interface AdminSupportRequestRow {
   status: SupportRequest["status"]
   title: string
   triagedLabel: string | null
+  updatedAt: string
   updatedLabel: string
 }
 
@@ -375,6 +376,7 @@ export async function getAdminReports(): Promise<AdminReportsData> {
     status: request.status,
     title: request.title,
     triagedLabel: request.triagedAt ? formatDateTime(request.triagedAt) : null,
+    updatedAt: request.updatedAt,
     updatedLabel: formatDateTime(request.updatedAt)
   }))
 
