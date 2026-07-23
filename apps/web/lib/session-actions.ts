@@ -279,7 +279,7 @@ export async function completeOnboardingAction(
 
     const joinedActor = await getSessionActor()
 
-    redirect(joinedActor ? homePathFor(joinedActor) : "/workspace")
+    redirect(safeInternalPath(next, joinedActor ? homePathFor(joinedActor) : "/workspace"))
   }
 
   try {

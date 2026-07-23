@@ -151,6 +151,7 @@ export function OnboardingFlow({
               <form action={formAction} className="invite-panel__join" key={invitation.id}>
                 <input name="invitationId" type="hidden" value={invitation.id} />
                 <input name="email" type="hidden" value={invitation.email} />
+                <input name="next" type="hidden" value={next ?? ""} />
                 <p>
                   <strong>{invitation.organizationName}</strong> invited you to join as{" "}
                   {invitation.roleLabel}. Joining puts you in their workspace — no new operation is
