@@ -8,7 +8,7 @@ import { Badge } from "@logloads/ui"
 import { submitContactInquiryAction, type ContactFormState } from "@/lib/contact-actions"
 import type { NetworkLoadView } from "@/lib/network"
 import { legalPages, loadProductLabel, pricingPlans, slugify, type LegalPageContent, type PublicStoryPage, visibilityLabel } from "@/lib/v3-shared"
-import { DevSignInForm, OnboardingFlow } from "./AuthForms"
+import { DevSignInForm, OnboardingFlow, type PendingInvitationOffer } from "./AuthForms"
 import type { DemoPersona } from "@/lib/demo-personas"
 import { DecisionPanel, EconomicsPanel, LoadCard, LoadDiscovery, OperationSections, RoutePackPreview, WeatherWidget } from "./LoadMap"
 import { BrandMark } from "./Brand"
@@ -306,10 +306,12 @@ export function AuthPage({
 
 export function OnboardingPage({
   identityKnown,
+  invitations,
   mode,
   next
 }: {
   identityKnown?: { fullName?: string | null; email?: string | null }
+  invitations?: PendingInvitationOffer[]
   mode?: "driver" | "fleet" | "host"
   next?: string
 }) {
@@ -325,7 +327,7 @@ export function OnboardingPage({
     <PublicShell>
       <main className="page-main onboarding-page">
         <PageIntro eyebrow="Get started" title={title} body="Three short steps. Then LogLoads opens the right first screen for your work." />
-        <OnboardingFlow identityKnown={identityKnown} initialPath={mode} next={next} />
+        <OnboardingFlow identityKnown={identityKnown} initialPath={mode} invitations={invitations} next={next} />
       </main>
     </PublicShell>
   )

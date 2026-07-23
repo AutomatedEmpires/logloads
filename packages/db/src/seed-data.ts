@@ -1532,15 +1532,19 @@ export const seedOrganizationMemberships: OrganizationMembership[] = parseMany(o
 ])
 
 export const seedOrganizationInvitations: OrganizationInvitation[] = parseMany(organizationInvitationSchema, [
+  // A live pending invitation: Summit invites a landing manager who has not
+  // signed up yet, so the onboarding join path is demonstrable from seed.
+  // Status is "created", not "sent" — nothing sends email, and the seed must
+  // not model a delivery that never happened.
   {
     id: "17171717-1717-4717-8717-171717171711",
     organizationId: "33333333-3333-4333-8333-333333333332",
-    invitedEmail: "loader@summit.example",
+    invitedEmail: "casey@summit.example",
     invitedRole: "landing_manager",
-    status: "sent",
+    status: "created",
     invitedByUserId: "22222222-2222-4222-8222-222222222223",
     acceptedByUserId: null,
-    expiresAt: "2026-06-18T18:00:00.000Z",
+    expiresAt: "2026-07-05T18:00:00.000Z",
     acceptedAt: null,
     revokedAt: null,
     createdAt: timestamps.created,

@@ -8,6 +8,7 @@ import { startBillingPortalAction, startCheckoutAction } from "@/lib/billing-act
 import type { BillingView, PlanProduct, SettingsView } from "@/lib/plans"
 import type { VerificationRecordView } from "@/lib/verification-data"
 import { AppShell, EmptyState, SectionHeader, type ShellAccount } from "./Shells"
+import { InviteMemberForm, RevokeInvitationButton } from "./TeamActions"
 import { VerificationSubmit, type VerificationTypeOption } from "./VerificationSubmit"
 
 type CockpitRole = "fleet" | "host"
@@ -177,11 +178,15 @@ export function BillingPage({
 
 export function SettingsPage({
   account,
+  canManageMembers,
+  inviteRoleOptions,
   role,
   settings,
   verifications
 }: {
   account: ShellAccount
+  canManageMembers: boolean
+  inviteRoleOptions: Array<{ label: string; value: string }>
   role: CockpitRole
   settings: SettingsView
   verifications: VerificationRecordView[]
@@ -223,14 +228,7 @@ export function SettingsPage({
 
         <section className="settings-panel" aria-label="Team">
           <SectionHeader eyebrow="Team" title="Who works in this workspace" />
-          {settings.team.length === 0 ? (
-            <EmptyState
-              actionHref="/support"
-              actionLabel="Contact support"
-              body="Self-service invitations are not available yet. Contact LogLoads support to add or remove a workspace member."
-              title="No members yet"
-            />
-          ) : (
+          {settings.team.length > 0 ? (
             <ul className="team-list">
               {settings.team.map((member) => (
                 <li key={member.id}>
@@ -242,10 +240,32 @@ export function SettingsPage({
                 </li>
               ))}
             </ul>
-          )}
-          {settings.team.length > 0 ? (
-            <p className="settings-meaning">Need to change workspace access? Contact LogLoads support; self-service invitations are not available yet.</p>
           ) : null}
+          {settings.pendingInvitations.length > 0 ? (
+            <div className="invite-panel" role="group" aria-label="Waiting invitations">
+              <ul className="team-list">
+                {settings.pendingInvitations.map((invitation) => (
+                  <li key={invitation.id}>
+                    <div>
+                      <strong>{invitation.invitedEmail}</strong>
+                      <span>
+                        {invitation.roleLabel} · appears at their sign-in · open until{" "}
+                        {new Date(invitation.expiresAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                    {canManageMembers ? <RevokeInvitationButton invitationId={invitation.id} /> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {canManageMembers ? (
+            <InviteMemberForm roleOptions={inviteRoleOptions} />
+          ) : (
+            <p className="settings-meaning">
+              Ask a workspace owner or administrator to change who works here.
+            </p>
+          )}
         </section>
 
         <section className="settings-panel settings-panel--muted" aria-label="Notifications">

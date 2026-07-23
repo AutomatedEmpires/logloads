@@ -46,6 +46,15 @@ import {
   upsertLandingDetails
 } from "./host-workspace"
 import { listDriverAvailability, upsertAvailabilityWindow } from "./availability"
+import {
+  acceptInvitationAsNewAccount,
+  acceptInvitationForExistingUser,
+  createOrganizationInvitation,
+  declineOrganizationInvitation,
+  listPendingInvitationsForEmail,
+  listPendingInvitationsForOrganization,
+  revokeOrganizationInvitation
+} from "./invitations"
 import { createLoadPosting, getLoadById, listOpenLoads, updateLoadPosting } from "./loads"
 import {
   createNotification,
@@ -121,7 +130,20 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     applyBillingUpdate: (input: unknown) => applyBillingUpdate(state, input),
     findEntitlementByStripeSubscription: (stripeSubscriptionId: string) => findEntitlementByStripeSubscription(state, stripeSubscriptionId),
     assignDriverToEquipment: (input: unknown) => assignDriverToEquipment(state, input),
+    acceptInvitationAsNewAccount: (input: Parameters<typeof acceptInvitationAsNewAccount>[1]) =>
+      acceptInvitationAsNewAccount(state, input),
+    acceptInvitationForExistingUser: (input: Parameters<typeof acceptInvitationForExistingUser>[1]) =>
+      acceptInvitationForExistingUser(state, input),
     createAccount: (input: unknown) => createAccount(state, input),
+    createOrganizationInvitation: (input: Parameters<typeof createOrganizationInvitation>[1]) =>
+      createOrganizationInvitation(state, input),
+    declineOrganizationInvitation: (input: Parameters<typeof declineOrganizationInvitation>[1]) =>
+      declineOrganizationInvitation(state, input),
+    listPendingInvitationsForEmail: (email: string) => listPendingInvitationsForEmail(state, email),
+    listPendingInvitationsForOrganization: (organizationId: string) =>
+      listPendingInvitationsForOrganization(state, organizationId),
+    revokeOrganizationInvitation: (input: Parameters<typeof revokeOrganizationInvitation>[1]) =>
+      revokeOrganizationInvitation(state, input),
     createThread: (input: unknown) => createThread(state, input),
     createSupportRequest: (
       input: Parameters<typeof createSupportRequest>[1],

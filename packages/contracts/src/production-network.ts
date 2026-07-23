@@ -34,8 +34,14 @@ export const networkRelationshipStatusSchema = z.enum([
 
 export const invitationStatusSchema = z.enum([
   "created",
+  // "sent" is reserved for a future email provider. No sender exists, so
+  // nothing may write it: an invitation that was only recorded in-product
+  // claiming "sent" would be the exact class of lie this codebase refuses.
   "sent",
   "accepted",
+  // The invited person said no. Distinct from "revoked" (the organization
+  // withdrew it) because the two read differently on the pending list.
+  "declined",
   "expired",
   "revoked"
 ])

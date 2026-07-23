@@ -484,6 +484,50 @@ export async function updateEquipmentStatusAction(input: {
   }
 }
 
+export async function createOrganizationInvitationAction(input: {
+  invitedEmail: string
+  invitedRole: string
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    await commit(["/fleet", "/host"], (draft) =>
+      draft.createOrganizationInvitation({
+        actorUserId: actor.profile.id,
+        invitedEmail: input.invitedEmail,
+        invitedRole: input.invitedRole,
+        organizationId: actorOrganizationId(actor)
+      })
+    )
+
+    captureServerEvent("invitation_created", actor.profile.id, { invitedRole: input.invitedRole })
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function revokeOrganizationInvitationAction(input: { invitationId: string }): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    await commit(["/fleet", "/host"], (draft) =>
+      draft.revokeOrganizationInvitation({
+        actorUserId: actor.profile.id,
+        invitationId: input.invitationId,
+        organizationId: actorOrganizationId(actor)
+      })
+    )
+
+    captureServerEvent("invitation_revoked", actor.profile.id, { invitationId: input.invitationId })
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
 export async function featureTruckPhotoAction(input: { featured: boolean }): Promise<ActionResult> {
   try {
     const actor = await requireActor()

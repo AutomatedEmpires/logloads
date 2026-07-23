@@ -105,3 +105,24 @@ export const ORGANIZATION_ROLE_ACTIONS = {
 export function organizationRoleCan(role: OrganizationRole, action: OrganizationAction): boolean {
   return (ORGANIZATION_ROLE_ACTIONS[role] as readonly OrganizationAction[]).includes(action)
 }
+
+/**
+ * The roles an organization may INVITE, by organization type. This is a
+ * lifecycle rule, so it lives here rather than in a UI option list: every
+ * listed role resolves to a real cockpit for that organization type. `owner`
+ * is never grantable by invitation — ownership transfer is a separate,
+ * heavier operation — and `viewer` maps to no cockpit anywhere, so inviting
+ * one would strand a person on a blank workspace. `billing` reaches the host
+ * cockpit only, which is why it is absent from the hauling side.
+ */
+export const INVITABLE_ROLES_BY_ORGANIZATION_TYPE = {
+  carrier: ["admin", "dispatcher", "fleet_manager", "driver"],
+  fleet: ["admin", "dispatcher", "fleet_manager", "driver"],
+  landing_source: ["admin", "dispatcher", "landing_manager", "destination_manager", "billing"],
+  destination: ["admin", "dispatcher", "landing_manager", "destination_manager", "billing"],
+  platform: []
+} as const satisfies Record<OrganizationType, readonly OrganizationRole[]>
+
+export function invitableRolesForOrganizationType(type: OrganizationType): readonly OrganizationRole[] {
+  return INVITABLE_ROLES_BY_ORGANIZATION_TYPE[type]
+}

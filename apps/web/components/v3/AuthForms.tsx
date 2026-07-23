@@ -111,13 +111,23 @@ const TRAILER_TYPES = [
   { label: "Other", value: "other" }
 ]
 
+/** A waiting workspace invitation the onboarding flow can accept directly. */
+export interface PendingInvitationOffer {
+  email: string
+  id: string
+  organizationName: string
+  roleLabel: string
+}
+
 export function OnboardingFlow({
   identityKnown,
   initialPath,
+  invitations,
   next
 }: {
   identityKnown?: { fullName?: string | null; email?: string | null }
   initialPath?: OnboardingPath
+  invitations?: PendingInvitationOffer[]
   next?: string
 }) {
   const [path, setPath] = useState<OnboardingPath | null>(initialPath ?? null)
@@ -134,21 +144,57 @@ export function OnboardingFlow({
 
   if (!path) {
     return (
-      <div className="choice-grid" role="group" aria-label="How will you use LogLoads?">
-        {PATH_CHOICES.map((choice) => (
-          <button
-            key={choice.path}
-            onClick={() => {
-              setAccountType(null)
-              setPath(choice.path)
-            }}
-            type="button"
-          >
-            <strong>{choice.title}</strong>
-            <span>{choice.body}</span>
-          </button>
-        ))}
-      </div>
+      <>
+        {invitations && invitations.length > 0 ? (
+          <div aria-label="Pending workspace invitations" className="invite-panel" role="group">
+            {invitations.map((invitation) => (
+              <form action={formAction} className="invite-panel__join" key={invitation.id}>
+                <input name="invitationId" type="hidden" value={invitation.id} />
+                <input name="email" type="hidden" value={invitation.email} />
+                <input name="next" type="hidden" value={next ?? ""} />
+                <p>
+                  <strong>{invitation.organizationName}</strong> invited you to join as{" "}
+                  {invitation.roleLabel}. Joining puts you in their workspace — no new operation is
+                  created.
+                </p>
+                <label>
+                  Full name
+                  <input
+                    defaultValue={identityKnown?.fullName ?? ""}
+                    maxLength={80}
+                    name="fullName"
+                    required
+                  />
+                </label>
+                <label>
+                  Phone
+                  <input maxLength={25} minLength={7} name="phone" required />
+                </label>
+                <button disabled={pending} type="submit">
+                  {pending ? "Joining…" : `Join ${invitation.organizationName}`}
+                </button>
+              </form>
+            ))}
+            {state.error ? <p className="action-error" role="alert">{state.error}</p> : null}
+            <p className="action-note">Or set up a separate operation below.</p>
+          </div>
+        ) : null}
+        <div className="choice-grid" role="group" aria-label="How will you use LogLoads?">
+          {PATH_CHOICES.map((choice) => (
+            <button
+              key={choice.path}
+              onClick={() => {
+                setAccountType(null)
+                setPath(choice.path)
+              }}
+              type="button"
+            >
+              <strong>{choice.title}</strong>
+              <span>{choice.body}</span>
+            </button>
+          ))}
+        </div>
+      </>
     )
   }
 
