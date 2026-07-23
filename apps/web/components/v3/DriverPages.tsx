@@ -17,6 +17,7 @@ import {
   CompletionForm,
   DriverEconomicsForm,
   EquipmentStatusToggle,
+  FeatureTruckPhotoToggle,
   LogProofControl,
   MediaUpload,
   RequestCapacityPanel,
@@ -158,6 +159,12 @@ function TodayActiveTrip({ load, network, trip }: { load: NetworkLoadView | null
         <Metric label="Route miles" value={load ? Math.round(load.route.distanceMiles) : "—"} />
         <Metric label="Status" value={tripStatusLabel(trip.status)} />
         <Metric label="Last update" value={lastEvent ? formatDateTime(lastEvent.occurredAt) : "No updates yet"} />
+        {trip.status === "assigned" ? (
+          <Metric
+            label="Pre-trip"
+            value={trip.inspection?.outcome === "pass" ? "Passed" : trip.inspection ? "Failed" : "Required"}
+          />
+        ) : null}
       </div>
       {interrupt ? (
         <div className="interrupt">
@@ -358,9 +365,20 @@ function TripCard({ network, trip }: { network: NetworkView; trip: TripView }) {
           <span className="card-kicker">{load ? `${load.landing.city} to ${load.destination.name}` : "Assignment"}</span>
           <strong>{trip.loadTitle}</strong>
         </div>
-        <Badge tone={trip.status === "completed" ? "success" : trip.status === "cancelled" ? "critical" : "warning"}>
-          {trip.status === "assigned" ? "Booked" : tripStatusLabel(trip.status)}
-        </Badge>
+        <div className="trip-card__badges">
+          <Badge tone={trip.status === "completed" ? "success" : trip.status === "cancelled" ? "critical" : "warning"}>
+            {trip.status === "assigned" ? "Booked" : tripStatusLabel(trip.status)}
+          </Badge>
+          {trip.status === "assigned" ? (
+            <Badge tone={trip.inspection?.outcome === "pass" ? "success" : trip.inspection ? "critical" : "warning"}>
+              {trip.inspection?.outcome === "pass"
+                ? "Pre-trip passed"
+                : trip.inspection
+                  ? "Pre-trip failed"
+                  : "Pre-trip pending"}
+            </Badge>
+          ) : null}
+        </div>
       </header>
       <p className="trip-card__event">
         {lastEvent ? `Last update: ${lastEvent.note ?? lastEvent.type} · ${formatDateTime(lastEvent.occurredAt)}` : "This haul is booked. Start it when you head to the landing."}
@@ -582,6 +600,10 @@ export function DriverEquipment({ account, network }: DriverPageProps) {
             {network.trucks.map((truck) => {
               const verification = verificationBadge(truck.verification)
 
+              const isOwnRig = Boolean(
+                network.currentDriver && truck.driverProfileId === network.currentDriver.id
+              )
+
               return (
                 <article className="truck-card-v3" key={truck.id}>
                   <span>{truck.unitNumber}</span>
@@ -596,7 +618,17 @@ export function DriverEquipment({ account, network }: DriverPageProps) {
                     <Badge tone={verification.tone}>{verification.label}</Badge>
                     <ReputationChip reputation={truck.reputation} />
                   </div>
-                  <EquipmentStatusToggle combinationId={truck.id} status={truck.status} />
+                  <EquipmentStatusToggle combinationId={truck.id} status={truck.combinationStatus} />
+                  {/* The rig's photo lives here, with the rig — upload works
+                      only on the combination assigned to the signed-in driver
+                      (the service refuses anyone else's). */}
+                  {isOwnRig ? (
+                    <MediaUpload
+                      hasCurrent={network.currentEquipment?.hasTruckPhoto ?? false}
+                      kind="truck"
+                      label="Truck photo"
+                    />
+                  ) : null}
                 </article>
               )
             })}
@@ -698,6 +730,10 @@ export function DriverProfile({
             <MediaUpload hasCurrent={network.currentEquipment?.hasTrailerPhoto ?? false} kind="trailer" label="Trailer photo" />
           ) : null}
         </div>
+        <FeatureTruckPhotoToggle
+          featured={network.currentDriver?.featureTruckPhoto ?? false}
+          hasPhoto={network.currentEquipment?.hasTruckPhoto ?? false}
+        />
       </section>
       <section className="app-section">
         <SectionHeader eyebrow="Trust" title="Get verified" />

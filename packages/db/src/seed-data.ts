@@ -2722,6 +2722,7 @@ export const seedDatabaseState: LogLoadsDatabaseState = {
   tripsV2: [...seedTripsV2, ...seedCrossOrgTrips],
   tripEvents: seedTripEvents,
   tripDocuments: seedTripDocuments,
+  tripInspections: [],
   tripReviews: seedTripReviews,
   verificationRecords: seedVerificationRecords,
   entitlements: seedEntitlements,

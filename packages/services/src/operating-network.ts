@@ -2,6 +2,7 @@ import {
   assignmentSchema,
   auditEventSchema,
   directOfferSchema,
+  equipmentCombinationSchema,
   futureAvailabilitySchema,
   loadPostingSchema,
   operationalNoticeSchema,
@@ -12,12 +13,14 @@ import {
   mediaReferenceSchema,
   notificationSchema,
   organizationRoleCan,
+  PRE_TRIP_INSPECTION_CHECKLIST,
   transitionAssignmentStatus,
   transitionLoadPostingStatus,
   transitionTruckSlotStatus,
   transitionTripStatus,
   tripDocumentSchema,
   tripEventSchema,
+  tripInspectionSchema,
   tripSchemaV2,
   truckSlotSchema,
   type Assignment,
@@ -37,6 +40,7 @@ import {
   type RoutePack,
   type TripDocument,
   type TripEvent,
+  type TripInspection,
   type TripStatusV2,
   type TripV2
 } from "@logloads/contracts"
@@ -484,13 +488,18 @@ function assertEquipmentBelongsToOrganization(
     current.organizationId === organizationId &&
     current.truckProfileId === input.truckProfileId &&
     current.trailerProfileId === (input.trailerProfileId ?? null) &&
-    current.assignedDriverProfileId === input.driverProfileId &&
-    current.status !== "inactive"
+    current.assignedDriverProfileId === input.driverProfileId
   )
 
   assertCondition(
-    Boolean(combination),
+    Boolean(combination) && combination?.status !== "inactive",
     "Requested driver, truck, and trailer must be an active equipment combination for the organization"
+  )
+  // A rig in the shop keeps its current work flagged for a human decision, but
+  // it must not book NEW work while it cannot roll.
+  assertCondition(
+    combination?.status !== "maintenance",
+    "This truck is marked In shop. Set it back to Ready before requesting new work."
   )
 }
 
@@ -1573,6 +1582,237 @@ export function closeLoadPosting(state: LogLoadsDatabaseState, input: CloseLoadP
   return closed
 }
 
+export interface RecordPreTripInspectionInput {
+  actorUserId?: string
+  organizationId?: string
+  tripId: string
+  items: Array<{ key: string; status: "pass" | "fail"; note?: string | null }>
+  note?: string | null
+}
+
+export function latestTripInspection(state: LogLoadsDatabaseState, tripId: string): TripInspection | null {
+  return state.tripInspections
+    .filter((inspection) => inspection.tripId === tripId && !inspection.supersededAt)
+    .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))[0] ?? null
+}
+
+/**
+ * The honest consequence of a rig going down with work attached: the
+ * combination leaves matching, dispatch staff on the hauling side and the
+ * posting dispatcher both hear about it, and the load is flagged at risk on
+ * the boards. Reassignment stays a human decision through
+ * cancelAssignmentWithPolicy — this never silently cancels a booking.
+ */
+export function applyEquipmentDownConsequence(
+  state: LogLoadsDatabaseState,
+  input: {
+    actorUserId: string
+    cause: string
+    combinationId: string | null
+    load: LoadPosting
+    detail: string | null
+    organizationId: string
+  }
+): void {
+  const timestamp = nowIso()
+  const combination = input.combinationId
+    ? state.equipmentCombinations.find((current) => current.id === input.combinationId)
+    : undefined
+
+  if (combination && combination.status !== "maintenance") {
+    const updated = equipmentCombinationSchema.parse({
+      ...combination,
+      status: "maintenance",
+      updatedAt: timestamp
+    })
+
+    state.equipmentCombinations = state.equipmentCombinations.map((current) =>
+      current.id === updated.id ? updated : current
+    )
+    insertAuditEvent(state, input.actorUserId, "equipment_combination", combination.id, "equipment_status_updated", {
+      cause: input.cause,
+      previousStatus: combination.status,
+      status: "maintenance"
+    })
+  }
+
+  const detailLine = input.detail ? ` ${input.detail}` : ""
+  const noticeBody =
+    `${input.load.title} has a truck out of service (${input.cause}).${detailLine} ` +
+    "The haul will not progress until the truck returns to service or a dispatcher reassigns the work."
+
+  for (const membership of state.organizationMemberships.filter((membership) =>
+    membership.organizationId === input.organizationId &&
+    membership.status === "active" &&
+    membership.userId !== input.actorUserId &&
+    ["owner", "admin", "dispatcher", "fleet_manager"].includes(membership.role)
+  )) {
+    insertNotification(
+      state,
+      membership.userId,
+      "Truck out of service",
+      noticeBody,
+      "load_posting",
+      input.load.id,
+      "system_alert"
+    )
+  }
+
+  const postingDispatcher = findPostingDispatcher(state, input.load)
+  if (postingDispatcher && postingDispatcher.userId !== input.actorUserId) {
+    insertNotification(
+      state,
+      postingDispatcher.userId,
+      "Truck out of service on your load",
+      noticeBody,
+      "load_posting",
+      input.load.id,
+      "system_alert"
+    )
+  }
+
+  state.operationalNotices.push(operationalNoticeSchema.parse({
+    body: noticeBody,
+    createdAt: timestamp,
+    effectiveAt: timestamp,
+    expiresAt: null,
+    id: createUuid(),
+    organizationId: input.organizationId,
+    relatedDestinationId: null,
+    relatedLandingId: null,
+    relatedLoadId: input.load.id,
+    severity: "critical",
+    title: "Truck out of service — load at risk"
+  }))
+}
+
+/**
+ * The driver's recorded walk-around before rolling. Only the assigned driver
+ * gives it — a dispatcher can no more perform a walk-around from the office
+ * than a host can record what came off the truck. The full contract checklist
+ * must be answered, a failed item must say what the driver found, and a fail
+ * puts the rig in the shop with the load flagged rather than quietly parked.
+ */
+export function recordPreTripInspection(
+  state: LogLoadsDatabaseState,
+  input: RecordPreTripInspectionInput
+): { inspection: TripInspection; event: TripEvent } {
+  const context = getContextForInput(state, input)
+  assertOrganizationAction(context, "progress_trip")
+
+  const trip = assertFound(
+    state.tripsV2.find((current) => current.id === input.tripId),
+    `Trip ${input.tripId} was not found`
+  )
+  const assignment = assertFound(
+    state.assignments.find((current) => current.id === trip.assignmentId),
+    `Assignment ${trip.assignmentId} was not found`
+  )
+  const load = assertFound(
+    state.loadPostings.find((current) => current.id === trip.loadPostingId),
+    `Load posting ${trip.loadPostingId} was not found`
+  )
+  assertTripParticipant(state, context, assignment)
+
+  const driver = assertFound(
+    state.driverProfiles.find((current) => current.id === assignment.driverProfileId),
+    `Driver profile ${assignment.driverProfileId} was not found`
+  )
+  assertCondition(
+    driver.userId === context.actorUserId,
+    "Only the assigned driver records the pre-trip inspection"
+  )
+  assertCondition(
+    trip.status === "assigned",
+    `A pre-trip inspection is recorded before rolling, and this haul is ${trip.status.replaceAll("_", " ")}`
+  )
+
+  const submitted = new Map((input.items ?? []).map((item) => [item.key, item]))
+  assertCondition(
+    submitted.size === (input.items ?? []).length &&
+      submitted.size === PRE_TRIP_INSPECTION_CHECKLIST.length &&
+      PRE_TRIP_INSPECTION_CHECKLIST.every((item) => submitted.has(item.key)),
+    "Answer every item on the pre-trip checklist"
+  )
+
+  const timestamp = nowIso()
+  const items = PRE_TRIP_INSPECTION_CHECKLIST.map((item) => {
+    const answer = submitted.get(item.key)
+    assertCondition(
+      answer?.status === "pass" || Boolean(answer?.note?.trim()),
+      `Describe what failed for: ${item.label}`
+    )
+
+    return {
+      key: item.key,
+      label: item.label,
+      note: answer?.note?.trim() || null,
+      status: answer?.status === "pass" ? "pass" as const : "fail" as const
+    }
+  })
+  const failedItems = items.filter((item) => item.status === "fail")
+  const outcome = failedItems.length === 0 ? "pass" as const : "fail" as const
+
+  // A re-inspection supersedes; the earlier record stays, like Route Packs.
+  state.tripInspections = state.tripInspections.map((inspection) =>
+    inspection.tripId === trip.id && !inspection.supersededAt
+      ? { ...inspection, supersededAt: timestamp }
+      : inspection
+  )
+
+  const inspection = tripInspectionSchema.parse({
+    assignmentId: assignment.id,
+    createdAt: timestamp,
+    driverProfileId: driver.id,
+    equipmentCombinationId: trip.equipmentCombinationId ?? null,
+    id: createUuid(),
+    items,
+    loadPostingId: load.id,
+    note: input.note?.trim() || null,
+    occurredAt: timestamp,
+    outcome,
+    performedByUserId: context.actorUserId,
+    supersededAt: null,
+    tripId: trip.id
+  })
+
+  state.tripInspections.push(inspection)
+
+  const event = tripEventSchema.parse({
+    actorUserId: context.actorUserId,
+    createdAt: timestamp,
+    id: createUuid(),
+    metadata: {
+      failedItems: failedItems.map((item) => item.key),
+      outcome
+    },
+    note: input.note?.trim() || null,
+    occurredAt: timestamp,
+    source: "driver",
+    tripId: trip.id,
+    type: "pre_trip_inspection"
+  })
+
+  state.tripEvents.push(event)
+  insertAuditEvent(state, context.actorUserId, "trip_inspection", inspection.id, `pre_trip_${outcome}`, {
+    failedItems: failedItems.map((item) => item.key),
+    tripId: trip.id
+  })
+
+  if (outcome === "fail") {
+    applyEquipmentDownConsequence(state, {
+      actorUserId: context.actorUserId,
+      cause: "pre-trip inspection failure",
+      combinationId: trip.equipmentCombinationId ?? null,
+      detail: failedItems.map((item) => `${item.label}: ${item.note}`).join("; "),
+      load,
+      organizationId: context.organizationId
+    })
+  }
+
+  return { event, inspection }
+}
+
 export function progressTripStatus(
   state: LogLoadsDatabaseState,
   input: ProgressTripStatusInput
@@ -1599,6 +1839,22 @@ export function progressTripStatus(
       `Load posting ${trip.loadPostingId} was not found`
     )
     cancellationSide = assertCancellationAuthority(state, context, assignment, load).side
+  }
+
+  // A truck does not roll because a button was pressed. The driver's recorded
+  // walk-around must exist and have passed before a haul may leave "assigned".
+  // Enforced here, not in the UI: the trip-events API reaches this same
+  // function with no interface at all, and a checklist only a button knows
+  // about would be decorative.
+  if (trip.status === "assigned" && input.nextStatus === "en_route_to_landing") {
+    const inspection = latestTripInspection(state, trip.id)
+
+    assertCondition(
+      inspection?.outcome === "pass",
+      inspection
+        ? "The pre-trip inspection failed. Fix what failed and re-inspect before rolling."
+        : "Complete the pre-trip inspection before rolling."
+    )
   }
 
   // A haul does not become delivered because a button was pressed. When the

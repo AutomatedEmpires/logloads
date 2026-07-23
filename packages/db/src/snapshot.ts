@@ -44,10 +44,12 @@ export class OperatingStateConflictError extends Error {
 
 /**
  * Upgrade an older snapshot without discarding data. Schema v2 introduced the
- * tripReviews collection. supportRequests is an additive, schema-v2-compatible
- * collection so old and new deployments can overlap during rollout and rollback.
- * Every other collection remains required so a corrupt or unrelated JSON document
- * can never become runtime state.
+ * tripReviews collection. supportRequests is additive and schema-v2-compatible
+ * (its SQL migration applies the same backfill). tripInspections is additive
+ * and RUNTIME-ONLY — no SQL migration exists for it; this guard is the only
+ * backfill. Old and new deployments can overlap during rollout and rollback.
+ * Every other collection remains required so a corrupt or unrelated JSON
+ * document can never become runtime state.
  */
 export function upgradeStateSnapshot(
   value: Partial<LogLoadsDatabaseState>
@@ -63,6 +65,18 @@ export function upgradeStateSnapshot(
 
   if (candidate.tripReviews === undefined) {
     candidate.tripReviews = []
+  }
+
+  if (candidate.tripInspections === undefined) {
+    candidate.tripInspections = []
+  }
+
+  // Driver profiles predate the featured-rig flag; absent means not featured.
+  if (Array.isArray(candidate.driverProfiles)) {
+    candidate.driverProfiles = candidate.driverProfiles.map((profile) => ({
+      ...profile,
+      featureTruckPhoto: profile.featureTruckPhoto ?? false
+    }))
   }
 
   if (Array.isArray(candidate.assignments)) {
