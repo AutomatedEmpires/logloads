@@ -104,6 +104,12 @@ import {
 } from "./trip-reviews"
 import { createServiceState } from "./utils"
 import { submitVerificationRecord } from "./verification"
+import {
+  createSupportRequest,
+  listSupportRequestsForAdmin,
+  listSupportRequestsForReporter,
+  reviewSupportRequest
+} from "./support-requests"
 
 export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
   const state = createServiceState(seed)
@@ -118,12 +124,18 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     assignDriverToEquipment: (input: unknown) => assignDriverToEquipment(state, input),
     createAccount: (input: unknown) => createAccount(state, input),
     createThread: (input: unknown) => createThread(state, input),
+    createSupportRequest: (
+      input: Parameters<typeof createSupportRequest>[1],
+      now?: Parameters<typeof createSupportRequest>[2]
+    ) => createSupportRequest(state, input, now),
     findProfileByClerkId: (clerkUserId: string) => findProfileByClerkId(state, clerkUserId),
     findProfileByEmail: (email: string) => findProfileByEmail(state, email),
     getAccountContext: (userId: string) => getAccountContext(state, userId),
     getDriverMediaTarget: (input: Parameters<typeof getDriverMediaTarget>[1]) => getDriverMediaTarget(state, input),
     linkProfileToClerkUser: (userId: string, clerkUserId: string) => linkProfileToClerkUser(state, userId, clerkUserId),
     listThreadMessages: (threadId: string, viewerUserId: string) => listThreadMessages(state, threadId, viewerUserId),
+    listSupportRequestsForAdmin: (reviewerUserId: string) => listSupportRequestsForAdmin(state, reviewerUserId),
+    listSupportRequestsForReporter: (reporterUserId: string) => listSupportRequestsForReporter(state, reporterUserId),
     listThreadsForUser: (userId: string) => listThreadsForUser(state, userId),
     markThreadRead: (input: { threadId: string; userId: string }) => markThreadRead(state, input),
     unreadThreadCounts: (userId: string) => unreadThreadCounts(state, userId),
@@ -131,6 +143,10 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     postMessage: (input: unknown) => postMessage(state, input),
     resolveOperationalNotice: (input: { noticeId: string; reviewerUserId: string }) => resolveOperationalNotice(state, input),
     reviewOrganization: (input: unknown) => reviewOrganization(state, input),
+    reviewSupportRequest: (
+      input: Parameters<typeof reviewSupportRequest>[1],
+      now?: Parameters<typeof reviewSupportRequest>[2]
+    ) => reviewSupportRequest(state, input, now),
     reviewVerificationRecord: (input: unknown) => reviewVerificationRecord(state, input),
     submitVerificationRecord: (input: unknown) => submitVerificationRecord(state, input),
     submitTripReview: (input: unknown) => submitTripReview(state, input),
@@ -237,6 +253,11 @@ export type LogLoadsServices = ReturnType<typeof createLogLoadsServices>
 
 export { getDriverMediaTarget, getTripDocumentTarget, tripDocumentPublicIdPrefix }
 export { listActiveLoadsUsingCombination } from "./equipment"
+export {
+  SupportRequestAuthorizationError,
+  SupportRequestConflictError,
+  SupportRequestNotFoundError
+} from "./support-requests"
 export { loadPostingHasOwnedCoherentSources, routePackIsSafeToRead } from "./route-packs"
 export { directOfferClaimCount, directOfferIsClaimable, effectiveDirectOfferStatus } from "./operating-network"
 export type {

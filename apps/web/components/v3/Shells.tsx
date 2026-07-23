@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useEffect, useState, useTransition, type ReactNode } from "react"
+import { useEffect, useRef, useState, useTransition, type ReactNode } from "react"
 import { Badge, Icon, type IconKey } from "@logloads/ui"
 
 import { markAllNotificationsReadAction, markNotificationReadAction } from "@/lib/cockpit-actions"
@@ -344,6 +344,10 @@ function notificationHref(role: ShellProps["role"], type: string | null, id: str
       return role === "driver" ? "/driver/schedule" : role === "host" ? "/host/live-board" : "/fleet/dispatch"
     case "direct_offer":
       return "/fleet/opportunities"
+    case "support_request":
+      return role === "admin"
+        ? (id ? `/admin/reports#support-request-${id}` : "/admin/reports")
+        : (id ? `/support#support-request-${id}` : "/support")
     default:
       return null
   }
@@ -471,23 +475,41 @@ function NotificationBell({ notifications, role, unreadCount }: {
   )
 }
 
-function AccountMenu({ account }: { account: ShellAccount }) {
+function AccountMenu({ account, pathname }: { account: ShellAccount; pathname: string }) {
   const [open, setOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
+
+    document.addEventListener("keydown", closeOnEscape)
+    return () => document.removeEventListener("keydown", closeOnEscape)
+  }, [open])
 
   return (
     <div className="account-switcher">
       <button
+        aria-controls="account-switcher-panel"
         aria-expanded={open}
-        aria-haspopup="menu"
+        aria-label="Account and product feedback"
         className="account-switcher__trigger"
         onClick={() => setOpen((current) => !current)}
+        ref={triggerRef}
         type="button"
       >
-        <span>{account.organizationName}</span>
+        <Icon aria-hidden className="account-switcher__profile-icon" name="nav.profile" size={20} />
+        <span className="account-switcher__label">{account.organizationName}</span>
         <Badge tone={verificationTone(account.verificationStatus)}>{verificationLabel(account.verificationStatus)}</Badge>
       </button>
       {open ? (
-        <div className="account-switcher__menu" role="menu">
+        <div className="account-switcher__menu" id="account-switcher-panel">
           <p className="account-switcher__user">{account.userName}</p>
           {account.memberships.length > 1 ? (
             <div className="account-switcher__orgs">
@@ -508,6 +530,14 @@ function AccountMenu({ account }: { account: ShellAccount }) {
               ))}
             </div>
           ) : null}
+          <Link
+            className="account-switcher__support"
+            href={{ pathname: "/support", query: { from: pathname } }}
+            onClick={() => setOpen(false)}
+          >
+            <Icon aria-hidden name="ops.notice" size={18} />
+            <span>Report a problem or request a feature</span>
+          </Link>
           <button className="account-switcher__signout" onClick={() => void signOutAction()} type="button">
             Sign out
           </button>
@@ -547,7 +577,7 @@ export function AppShell({ account, children, kicker, orgName, role, title }: Sh
           {account ? (
             <div className="app-topbar__account">
               <NotificationBell notifications={account.notifications} role={role} unreadCount={account.unreadCount} />
-              <AccountMenu account={account} />
+              <AccountMenu account={account} pathname={pathname} />
             </div>
           ) : (
             <div className="account-switcher">

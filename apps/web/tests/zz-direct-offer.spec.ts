@@ -44,7 +44,9 @@ test.describe("direct-offer commitment", () => {
     const loadOption = offerPanel.locator("option").filter({ hasText: loadTitle })
     const loadPostingId = await loadOption.getAttribute("value")
     await offerPanel.locator("select").first().selectOption(loadPostingId as string)
-    await offerPanel.getByLabel("Partner").selectOption({ label: "North Pine Logging" })
+    await offerPanel.locator("label").filter({ hasText: /^Partner/ }).locator("select").selectOption({
+      label: "North Pine Logging"
+    })
     await offerPanel.getByLabel("Truckloads to invite").fill("2")
     await offerPanel.getByRole("button", { name: "Send direct offer" }).click()
     await expect(offerPanel.getByText(/Direct offer sent to North Pine Logging for 2 truckloads/)).toBeVisible({ timeout: 15_000 })
@@ -66,8 +68,20 @@ test.describe("direct-offer commitment", () => {
     await page.waitForLoadState("networkidle")
     const addedRig = page.locator(".fleet-truck-card").filter({ hasText: rigLabel })
     await expect(addedRig).toBeVisible()
-    await addedRig.getByLabel("Driver").selectOption({ label: "Maya Mills" })
-    await expect(addedRig.getByLabel("Driver")).toHaveValue(/.+/)
+    const driverSelect = addedRig.getByLabel("Driver")
+    await Promise.all([
+      page.waitForResponse((response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === "/fleet/trucks" &&
+        response.ok()
+      ),
+      driverSelect.selectOption({ label: "Maya Mills" })
+    ])
+    await page.reload()
+    await page.waitForLoadState("networkidle")
+    await expect(
+      page.locator(".fleet-truck-card").filter({ hasText: rigLabel }).getByLabel("Driver")
+    ).toHaveValue(/.+/)
 
     await page.goto("/fleet/opportunities")
     await page.waitForLoadState("networkidle")

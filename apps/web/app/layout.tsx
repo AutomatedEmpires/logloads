@@ -3,6 +3,7 @@ import { Archivo, Inter } from "next/font/google"
 import type { ReactNode } from "react"
 
 import { AnalyticsProvider } from "@/components/analytics/AnalyticsProvider"
+import { enabledFlag } from "@/lib/demo-mode"
 
 import "./globals.css"
 import "./styles/public.css"
@@ -15,6 +16,7 @@ import "./styles/admin.css"
 import "./styles/messages.css"
 import "./styles/billing.css"
 import "./styles/assistant.css"
+import "./styles/support.css"
 
 const inter = Inter({
 	display: "swap",
@@ -60,7 +62,11 @@ export default function RootLayout({
 }) {
 	return (
 		<AuthBoundary>
-			<html className={`${inter.variable} ${archivo.variable}`} lang="en">
+			<html
+				className={`${inter.variable} ${archivo.variable}`}
+				data-demo-mode={enabledFlag(process.env.LOGLOADS_DEMO_MODE) ? "true" : undefined}
+				lang="en"
+			>
 				<body>
 					{children}
 					<AnalyticsProvider />

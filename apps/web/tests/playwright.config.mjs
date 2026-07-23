@@ -18,9 +18,11 @@ export default defineConfig({
     command: "node node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3002",
     cwd: "..",
     env: {
+      LOGLOADS_DEMO_MODE: "true",
       LOGLOADS_ENABLE_DEV_LOGIN: "true",
       LOGLOADS_RATE_LIMIT_TEST_MODE: "true",
-      LOGLOADS_SESSION_SECRET: "logloads-e2e-session-secret"
+      LOGLOADS_SESSION_SECRET: "logloads-e2e-session-secret",
+      NEXT_PUBLIC_APP_URL: "http://127.0.0.1:3002"
     },
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

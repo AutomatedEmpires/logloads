@@ -359,7 +359,7 @@ function TripCard({ network, trip }: { network: NetworkView; trip: TripView }) {
   const isOwnHaul = trip.driverProfileId === network.currentDriver?.id
 
   return (
-    <article className="trip-card">
+    <article className="trip-card" data-trip-id={trip.id}>
       <header>
         <div>
           <span className="card-kicker">{load ? `${load.landing.city} to ${load.destination.name}` : "Assignment"}</span>

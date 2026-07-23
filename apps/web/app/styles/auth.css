@@ -38,6 +38,36 @@
 .auth-form__note { margin: 4px 0 0; color: var(--ink-soft); line-height: 1.5; }
 .auth-form__note a { color: var(--pine); font-weight: 800; text-decoration: underline; text-underline-offset: 4px; }
 
+.demo-personas {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+  border: 1px solid rgba(46, 118, 81, 0.3);
+  border-radius: var(--radius);
+  background: var(--green-bg);
+  padding: 16px;
+}
+.demo-personas h2 { margin: 0; font-size: 1.2rem; }
+.demo-personas p { margin: 4px 0 0; }
+.demo-personas__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.demo-personas__grid form { min-width: 0; }
+.demo-personas__grid button {
+  display: grid;
+  width: 100%;
+  min-height: 84px;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 12px;
+  color: var(--ink);
+  text-align: left;
+}
+.demo-personas__grid button:hover { border-color: var(--pine); }
+.demo-personas__grid button span { color: var(--pine); font-size: 0.72rem; font-weight: 900; text-transform: uppercase; }
+.demo-personas__grid button strong { font-size: 1rem; }
+.demo-personas__grid button small { color: var(--muted); font-weight: 700; }
+
 .form-error {
   display: flex;
   align-items: center;
@@ -153,6 +183,8 @@
   .radio-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
+  .demo-personas__grid { grid-template-columns: 1fr; }
+  .demo-personas__grid button { min-height: 72px; }
   .onboarding-form fieldset { padding: 14px; }
   .radio-grid { grid-template-columns: 1fr; }
   .auth-form .action-link,

@@ -191,12 +191,15 @@ describe("canonical operating state", () => {
     const originalProfiles = legacy.profiles?.length ?? 0
 
     delete legacy.tripReviews
-    // Stored documents predate pre-trip inspections the same way; an absent
-    // collection means no inspections have happened, not corrupt state.
+    // Stored documents predate pre-trip inspections and support requests the
+    // same way; an absent collection means none have happened, not corrupt
+    // state.
     delete legacy.tripInspections
+    delete legacy.supportRequests
 
     expect(upgradeStateSnapshot(legacy)).toMatchObject({
       profiles: expect.arrayContaining([expect.any(Object)]),
+      supportRequests: [],
       tripInspections: [],
       tripReviews: []
     })
@@ -211,6 +214,7 @@ describe("canonical operating state", () => {
     expect(snapshot?.schemaVersion).toBe(1)
     expect(snapshot?.version).toBe(0)
     expect(snapshot?.state.tripReviews).toEqual([])
+    expect(snapshot?.state.supportRequests).toEqual([])
     expect(snapshot?.state.profiles).toHaveLength(originalProfiles)
   })
 

@@ -6,6 +6,7 @@ import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
 import { captureServerEvent } from "./analytics"
+import { DEMO_PERSONAS, isDemoSignInEmail } from "./demo-personas"
 import { checkRateLimit, requestClientKey } from "./rate-limit"
 import { mutateState, refreshState, serializeError, services } from "./services"
 import {
@@ -14,7 +15,8 @@ import {
   getSessionActor,
   homePathFor,
   isClerkConfigured,
-  isDevSessionEnabled
+  isDevSessionEnabled,
+  isFounderDemoMode
 } from "./session"
 
 const COOKIE_OPTIONS = {
@@ -30,7 +32,7 @@ export interface AuthFormState {
 }
 
 export async function signInWithEmail(_previous: AuthFormState, formData: FormData): Promise<AuthFormState> {
-  if (!isDevSessionEnabled()) {
+  if (!(await isDevSessionEnabled())) {
     return { error: "Email sign-in is not enabled in this environment." }
   }
 
@@ -38,6 +40,14 @@ export async function signInWithEmail(_previous: AuthFormState, formData: FormDa
 
   if (!email) {
     return { error: "Enter the email address on your account." }
+  }
+
+  return signInDevProfile(email, String(formData.get("next") ?? ""))
+}
+
+async function signInDevProfile(email: string, next: string): Promise<AuthFormState> {
+  if (await isFounderDemoMode() && !isDemoSignInEmail(email)) {
+    return { error: "Use one of the available founder demo accounts." }
   }
 
   try {
@@ -67,10 +77,28 @@ export async function signInWithEmail(_previous: AuthFormState, formData: FormDa
   cookieStore.set(SESSION_COOKIE, createSessionCookieValue(profile.id, null), COOKIE_OPTIONS)
 
   const actor = await getSessionActor()
-  const next = String(formData.get("next") ?? "")
   const destination = next.startsWith("/") && !next.startsWith("//") ? next : actor ? homePathFor(actor) : "/"
 
   redirect(destination)
+}
+
+export async function signInDemoPersona(formData: FormData): Promise<void> {
+  if (!(await isFounderDemoMode())) {
+    redirect("/sign-in")
+  }
+
+  const email = String(formData.get("persona") ?? "").trim().toLowerCase()
+  const persona = DEMO_PERSONAS.find((candidate) => candidate.email === email)
+
+  if (!persona) {
+    redirect("/sign-in")
+  }
+
+  const result = await signInDevProfile(persona.email, "")
+
+  if (result.error) {
+    redirect("/sign-in?demoError=1")
+  }
 }
 
 export async function signOutAction(): Promise<void> {
@@ -146,7 +174,7 @@ export async function completeOnboardingAction(
     if (!clerkUserId) {
       return { error: "Sign in first, then finish setting up your account." }
     }
-  } else if (!isDevSessionEnabled()) {
+  } else if (!(await isDevSessionEnabled())) {
     return { error: "Account creation requires a configured sign-in provider in this environment." }
   }
 
