@@ -30,8 +30,9 @@ export async function GET(request: NextRequest) {
       throw new ApiError(error instanceof Error ? error.message : "Photo not found", 404)
     }
 
-    // Signing is configuration, not provider I/O. Keep it outside the fetch
-    // catch so an inactive dedicated-tenancy gate remains the truthful 503.
+    // Signing is configuration, not provider I/O. Keep it outside the
+    // fetch-specific try/catch (but inside the route's outer try) so an
+    // inactive dedicated-tenancy gate remains the truthful 503.
     const url = await signedDeliveryUrl(photo)
     let response: Response
 

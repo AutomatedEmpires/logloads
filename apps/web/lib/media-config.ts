@@ -38,8 +38,7 @@ export function dedicatedCloudinaryConfiguration(
     ([name, value]) =>
       name.startsWith("CLOUDINARY_") &&
       !CLOUDINARY_ENVIRONMENT_ALLOWLIST.has(name) &&
-      value !== undefined &&
-      value.length > 0
+      trimmedValue(value) !== null
   )
 
   if (hasAmbientCloudinaryConfiguration) {
