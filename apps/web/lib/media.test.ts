@@ -1,12 +1,79 @@
-import { mediaReferenceSchema } from "@logloads/contracts"
+import { mediaReferenceSchema, type MediaReference } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+const cloudinaryAdapter = vi.hoisted(() => ({
+  apiSignRequest: vi.fn(() => "test-signature"),
+  config: vi.fn(),
+  resource: vi.fn(),
+  url: vi.fn(() => "https://media.example.test/signed")
+}))
+
+vi.mock("cloudinary", () => ({
+  v2: {
+    api: { resource: cloudinaryAdapter.resource },
+    config: cloudinaryAdapter.config,
+    url: cloudinaryAdapter.url,
+    utils: { api_sign_request: cloudinaryAdapter.apiSignRequest }
+  }
+}))
 vi.mock("server-only", () => ({}))
 
 import { ApiError } from "./api-actor"
-import { mediaTarget, parseJsonObject, parseTripDocumentType, signedUpload, tripDocumentTarget } from "./media"
+import {
+  mediaTarget,
+  parseJsonObject,
+  parseTripDocumentType,
+  signedDeliveryUrl,
+  signedDocumentUrl,
+  signedUpload,
+  tripDocumentTarget,
+  verifiedMediaReference
+} from "./media"
 import type { SessionActor } from "./session"
+
+const configuredMediaEnvironment = {
+  LOGLOADS_CLOUDINARY_TENANCY: "dedicated",
+  CLOUDINARY_CLOUD_NAME: "test-cloud",
+  CLOUDINARY_API_KEY: "test-key",
+  CLOUDINARY_API_SECRET: "test-secret"
+} as const
+
+type MediaEnvironmentOverride = Record<string, string | undefined>
+
+const allowedCloudinaryEnvironmentNames = new Set([
+  "CLOUDINARY_CLOUD_NAME",
+  "CLOUDINARY_API_KEY",
+  "CLOUDINARY_API_SECRET"
+])
+
+const storedMedia: MediaReference = {
+  provider: "cloudinary",
+  publicId: "logloads/trip-documents/trip-1/uploads/photo-1",
+  version: 1,
+  format: "jpg",
+  width: 1200,
+  height: 900,
+  bytes: 500_000,
+  uploadedAt: "2026-07-21T12:00:00.000Z"
+}
+
+function stubMediaEnvironment(overrides: MediaEnvironmentOverride = {}) {
+  for (const name of Object.keys(process.env)) {
+    if (name.startsWith("CLOUDINARY_") && !allowedCloudinaryEnvironmentNames.has(name)) {
+      vi.stubEnv(name, undefined)
+    }
+  }
+
+  for (const [name, value] of Object.entries({ ...configuredMediaEnvironment, ...overrides })) {
+    vi.stubEnv(name, value)
+  }
+}
+
+afterEach(() => {
+  vi.clearAllMocks()
+  vi.unstubAllEnvs()
+})
 
 function fixture() {
   const state = createInMemoryDatabase()
@@ -89,38 +156,83 @@ describe("trip document proof types", () => {
 
 describe("signed upload", () => {
   beforeEach(() => {
-    vi.stubEnv("CLOUDINARY_CLOUD_NAME", "test-cloud")
-    vi.stubEnv("CLOUDINARY_API_KEY", "test-key")
-    vi.stubEnv("CLOUDINARY_API_SECRET", "test-secret")
+    stubMediaEnvironment()
   })
 
-  afterEach(() => {
-    vi.unstubAllEnvs()
-  })
-
-  it("permits at the edge only what the domain accepts on read-back", () => {
+  it("permits at the edge only what the domain accepts on read-back", async () => {
     // The two checks must agree. A format the signature permits but
     // `verifiedMediaReference` refuses would be stored and only then rejected —
     // the exact waste moving the check to the edge exists to end.
-    const { parameters } = signedUpload({ publicIdPrefix: "logloads/trip-documents/t1" })
+    const { parameters } = await signedUpload({ publicIdPrefix: "logloads/trip-documents/t1" })
 
     const formats = String(parameters.allowed_formats).split(",")
 
+    expect(cloudinaryAdapter.config).toHaveBeenNthCalledWith(1, true)
+    expect(cloudinaryAdapter.config).toHaveBeenNthCalledWith(2, {
+      api_key: "test-key",
+      api_secret: "test-secret",
+      cloud_name: "test-cloud",
+      secure: true
+    })
+    expect(cloudinaryAdapter.apiSignRequest).toHaveBeenCalledTimes(1)
     expect(new Set(formats)).toEqual(new Set(["jpg", "png", "webp"]))
     for (const format of formats) {
       expect(mediaReferenceSchema.shape.format.safeParse(format).success).toBe(true)
     }
   })
 
-  it("does not sign a restriction the provider has no parameter for", () => {
+  it("does not sign a restriction the provider has no parameter for", async () => {
     // Cloudinary drops parameters it does not know before computing its own
     // string-to-sign, so signing `max_file_size` — which reads like the obvious
     // companion to `allowed_formats` — desynchronises the signature and fails
     // every photo and proof upload with 401. The account ceiling and the
     // application's stricter read-back check remain separate size defenses.
-    const { parameters } = signedUpload({ publicIdPrefix: "logloads/trip-documents/t1" })
+    const { parameters } = await signedUpload({ publicIdPrefix: "logloads/trip-documents/t1" })
 
     expect(parameters).not.toHaveProperty("max_file_size")
+  })
+})
+
+describe("dedicated media tenancy gate", () => {
+  const invalidEnvironments: Array<[string, MediaEnvironmentOverride]> = [
+    ["missing marker", { LOGLOADS_CLOUDINARY_TENANCY: undefined }],
+    ["wrong marker", { LOGLOADS_CLOUDINARY_TENANCY: "shared" }],
+    ["case-varied marker", { LOGLOADS_CLOUDINARY_TENANCY: "Dedicated" }],
+    ["missing cloud name", { CLOUDINARY_CLOUD_NAME: undefined }],
+    ["blank cloud name", { CLOUDINARY_CLOUD_NAME: "  " }],
+    ["missing API key", { CLOUDINARY_API_KEY: undefined }],
+    ["blank API key", { CLOUDINARY_API_KEY: "\t" }],
+    ["missing API secret", { CLOUDINARY_API_SECRET: undefined }],
+    ["blank API secret", { CLOUDINARY_API_SECRET: "\n" }],
+    ["ambient Cloudinary URL", { CLOUDINARY_URL: "not-a-provider-url" }],
+    ["ambient proxy", { CLOUDINARY_API_PROXY: "https://proxy.example.test" }],
+    ["ambient OAuth token", { CLOUDINARY_OAUTH_TOKEN: "ambient-token" }],
+    ["ambient private CDN", { CLOUDINARY_PRIVATE_CDN: "true" }],
+    ["ambient delivery host", { CLOUDINARY_SECURE_DISTRIBUTION: "media.example.test" }],
+    ["future ambient option", { CLOUDINARY_FUTURE_SDK_OPTION: "enabled" }]
+  ]
+
+  it.each(invalidEnvironments)("fails closed before every provider adapter call when %s", async (_name, overrides) => {
+    stubMediaEnvironment(overrides)
+
+    const operations: Array<() => unknown | Promise<unknown>> = [
+      () => signedUpload({ publicIdPrefix: "logloads/trip-documents/trip-1" }),
+      () => verifiedMediaReference(storedMedia.publicId),
+      () => signedDeliveryUrl(storedMedia),
+      () => signedDocumentUrl(storedMedia)
+    ]
+
+    for (const operation of operations) {
+      await expect(Promise.resolve().then(() => operation())).rejects.toMatchObject({
+        message: "File uploads are not activated for this environment",
+        status: 503
+      })
+    }
+
+    expect(cloudinaryAdapter.config).not.toHaveBeenCalled()
+    expect(cloudinaryAdapter.apiSignRequest).not.toHaveBeenCalled()
+    expect(cloudinaryAdapter.resource).not.toHaveBeenCalled()
+    expect(cloudinaryAdapter.url).not.toHaveBeenCalled()
   })
 })
 

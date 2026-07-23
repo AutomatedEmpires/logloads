@@ -14,10 +14,13 @@ export async function GET(request: NextRequest) {
       throw new ApiError("Photo not found", 404)
     }
 
+    // Signing is configuration, not provider I/O. Keep it outside the fetch
+    // catch so an inactive dedicated-tenancy gate remains the truthful 503.
+    const url = await signedDeliveryUrl(target.photo)
     let response: Response
 
     try {
-      response = await fetch(signedDeliveryUrl(target.photo), { signal: AbortSignal.timeout(8_000) })
+      response = await fetch(url, { signal: AbortSignal.timeout(8_000) })
     } catch {
       throw new ApiError("Photo is temporarily unavailable", 502)
     }
