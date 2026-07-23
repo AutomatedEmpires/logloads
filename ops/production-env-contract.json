@@ -1,6 +1,6 @@
 {
   "app": "logloads",
-  "generated": "2026-07-21",
+  "generated": "2026-07-22",
   "note": "Authoritative inventory of every environment variable the code reads. Values live in Doppler (logloads project) and Vercel; never commit real values. `status` reflects repo truth and must be provider-verified before cutover.",
   "canonical_app_url": "https://logloads.com",
   "variables": [
