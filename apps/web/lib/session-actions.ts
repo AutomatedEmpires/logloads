@@ -159,9 +159,10 @@ export async function acceptInvitationAction(invitationId: string): Promise<void
       createSessionCookieValue(actor.profile.id, membership.organizationId),
       COOKIE_OPTIONS
     )
-  } catch {
+  } catch (error) {
     // The pending item only disappears on success; a refused accept stays
     // visible and retryable rather than vanishing with no explanation.
+    console.error("invitation accept refused", serializeError(error))
   }
 
   revalidatePath("/", "layout")
@@ -180,8 +181,9 @@ export async function declineInvitationAction(invitationId: string): Promise<voi
       draft.declineOrganizationInvitation({ actorUserId: actor.profile.id, invitationId })
     )
     captureServerEvent("invitation_declined", actor.profile.id, { invitationId })
-  } catch {
+  } catch (error) {
     // Same stance as accept: failure leaves the item in place.
+    console.error("invitation decline refused", serializeError(error))
   }
 
   revalidatePath("/", "layout")

@@ -18,6 +18,14 @@ async function signIn(page: Page, email: string) {
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 30_000 })
 }
 
+// The account-menu trigger's accessible name is its aria-label, not the
+// workspace label it displays — target it by that name and assert the active
+// workspace via its text content (the label span is display:none on mobile,
+// so textContent, not visible text, is the reliable signal).
+function accountTrigger(page: Page) {
+  return page.getByRole("button", { name: "Account and product feedback" })
+}
+
 test.describe.serial("workspace invitations", () => {
   test.beforeEach(({ page }, testInfo) => {
     void page
@@ -33,17 +41,33 @@ test.describe.serial("workspace invitations", () => {
     await page.goto("/host/settings")
     await page.waitForLoadState("networkidle")
 
-    await page.getByLabel("Email address").fill("maya@northpine.example")
-    await page.getByLabel("Role").selectOption({ label: "Dispatcher" })
-    await page.getByRole("button", { name: "Invite to workspace" }).click()
+    // Serial-group retries reuse the same database, so a previous attempt may
+    // already have recorded the invitation (pending row) or carried it all the
+    // way through acceptance (Maya on the roster; re-inviting an active member
+    // is refused — a real rule, not a flake). Submit only from the fresh state;
+    // otherwise the durable row IS the proof.
+    const pendingRow = page
+      .getByRole("group", { name: "Waiting invitations" })
+      .getByText("maya@northpine.example")
+    const rosterRow = page.locator(".team-list").getByText("Maya Mills")
 
-    await expect(page.getByText(/Invitation recorded/)).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByText(/does not send email/)).toBeVisible()
+    if (await rosterRow.isVisible()) {
+      return
+    }
+
+    if (!(await pendingRow.isVisible())) {
+      await page.getByLabel("Email address").fill("maya@northpine.example")
+      await page.getByLabel("Role").selectOption({ label: "Dispatcher" })
+      await page.getByRole("button", { name: "Invite to workspace" }).click()
+
+      await expect(page.getByText(/Invitation recorded/)).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByText(/does not send email/)).toBeVisible()
+    }
 
     await expect(async () => {
       await page.reload()
       await page.waitForLoadState("networkidle")
-      await expect(page.getByText("maya@northpine.example")).toBeVisible({ timeout: 2_000 })
+      await expect(pendingRow).toBeVisible({ timeout: 2_000 })
     }).toPass({ timeout: 20_000 })
   })
 
@@ -51,23 +75,43 @@ test.describe.serial("workspace invitations", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "maya@northpine.example")
 
-    await page.getByRole("button", { name: /North Pine/ }).click()
+    await accountTrigger(page).click()
     const menu = page.locator(".account-switcher__menu")
-    await expect(menu.getByText("Invitations")).toBeVisible({ timeout: 10_000 })
-    await expect(menu.getByText(/Summit Ridge/)).toBeVisible()
+    await expect(menu).toBeVisible()
 
-    await menu.getByRole("button", { name: "Accept" }).click()
+    // On a serial-group retry the invitation may already be consumed; the
+    // switcher then lists Summit directly and there is nothing left to accept.
+    const pendingInvite = menu.getByRole("group", { name: "Workspace invitations" })
 
-    // Accepting moves the session to the joined workspace; the trigger now
-    // names Summit and the switcher lists both outfits.
-    await expect(async () => {
-      await page.reload()
-      await page.waitForLoadState("networkidle")
-      await expect(page.getByRole("button", { name: /Summit Ridge/ })).toBeVisible({ timeout: 2_000 })
-    }).toPass({ timeout: 25_000 })
+    if (await pendingInvite.isVisible()) {
+      await expect(pendingInvite.getByText(/Summit Ridge/)).toBeVisible()
 
-    await page.getByRole("button", { name: /Summit Ridge/ }).click()
+      // The accept is a fire-and-forget action from the menu; wait for its
+      // POST to complete (it carries the session-cookie switch) before
+      // reloading — an immediate reload would abort the request in flight.
+      const acceptRoundTrip = page.waitForResponse(
+        (response) => response.request().method() === "POST",
+        { timeout: 15_000 }
+      )
+      await menu.getByRole("button", { name: "Accept" }).click()
+      await acceptRoundTrip
+
+      // Accepting moves the session to the joined workspace; the trigger now
+      // labels Summit and the switcher lists both outfits.
+      await expect(async () => {
+        await page.reload()
+        await page.waitForLoadState("networkidle")
+        await expect(accountTrigger(page)).toContainText("Summit Ridge", { timeout: 2_000 })
+      }).toPass({ timeout: 25_000 })
+
+      await accountTrigger(page).click()
+    }
+
+    // Either path ends the same way: Maya holds both workspaces.
     await expect(page.locator(".account-switcher__menu").getByText("Switch workspace")).toBeVisible()
+    await expect(
+      page.locator(".account-switcher__menu").getByRole("button", { name: /Summit Ridge/ })
+    ).toBeVisible()
     await expect(
       page.locator(".account-switcher__menu").getByRole("button", { name: /North Pine/ })
     ).toBeVisible()
@@ -81,15 +125,27 @@ test.describe.serial("workspace invitations", () => {
     await page.waitForLoadState("networkidle")
 
     const joinCard = page.locator(".invite-panel__join")
-    await expect(joinCard.getByText(/Summit Ridge/)).toBeVisible({ timeout: 15_000 })
-    await expect(joinCard.getByText(/no new operation is created/)).toBeVisible()
 
-    await joinCard.getByLabel("Full name").fill("Casey Crew")
-    await joinCard.getByLabel("Phone").fill("555-7007")
-    await joinCard.getByRole("button", { name: /Join Summit Ridge/ }).click()
+    // On a serial-group retry Casey may already have joined (the invitation
+    // is consumed, so no join card renders). Demo-mode sign-in only covers
+    // seeded personas — Casey's account was minted mid-run — so the joined
+    // state is proven from the inviter's side: a seat on Summit's roster.
+    if (await joinCard.isVisible()) {
+      await expect(joinCard.locator("strong", { hasText: "Summit Ridge" })).toBeVisible()
+      await expect(joinCard.getByText(/no new operation is created/)).toBeVisible()
 
-    // A landing manager lands in the host cockpit of the outfit they joined.
-    await page.waitForURL((url) => url.pathname.startsWith("/host"), { timeout: 30_000 })
-    await expect(page.getByRole("button", { name: /Summit Ridge/ })).toBeVisible({ timeout: 15_000 })
+      await joinCard.getByLabel("Full name").fill("Casey Crew")
+      await joinCard.getByLabel("Phone").fill("555-7007")
+      await joinCard.getByRole("button", { name: /Join Summit Ridge/ }).click()
+
+      // A landing manager lands in the host cockpit of the outfit they joined.
+      await page.waitForURL((url) => url.pathname.startsWith("/host"), { timeout: 30_000 })
+      await expect(accountTrigger(page)).toContainText("Summit Ridge", { timeout: 15_000 })
+    } else {
+      await signIn(page, "cole@summit.example")
+      await page.goto("/host/settings")
+      await page.waitForLoadState("networkidle")
+      await expect(page.locator(".team-list").getByText("Casey Crew")).toBeVisible()
+    }
   })
 })
