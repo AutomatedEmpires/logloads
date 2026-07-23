@@ -18,7 +18,6 @@ import { applyBillingUpdate, findEntitlementByStripeSubscription } from "./billi
 import {
   addEquipmentCombination,
   assignDriverToEquipment,
-  listActiveLoadsUsingCombination,
   updateEquipmentStatus
 } from "./equipment"
 import {
