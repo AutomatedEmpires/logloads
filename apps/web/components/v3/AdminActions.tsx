@@ -201,6 +201,11 @@ export function AdminReportDecision({
       await supportDecisionRequest(requestId, body)
       setSuccess(message)
       setConfirmReopen(false)
+      // The next decision starts from a blank form: a reopened request must
+      // not re-offer the previous cycle's outcome and note for accidental
+      // resubmission. Blank, not a default — choosing an outcome is explicit.
+      setResolutionCode("")
+      setResolutionNote("")
       router.refresh()
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The review could not be saved. Try again.")

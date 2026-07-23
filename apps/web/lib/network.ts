@@ -228,6 +228,8 @@ export interface TruckView {
   driverProfileId: string | null
   configuration: string
   status: string
+  /** The stored combination status — what the status controls act on. */
+  combinationStatus: string
   payload: string
   region: string
   matchCount: number
@@ -274,6 +276,7 @@ export interface NetworkView {
     trailerId: string | null
     preferredFuelPriceCentsPerGallon: number | null
     hasProfilePhoto: boolean
+    featureTruckPhoto: boolean
   } | null
   currentEquipment: {
     combinationId: string
@@ -333,6 +336,12 @@ export interface NetworkView {
       direction: "host_rates_hauler" | "hauler_rates_host"
       counterpartyName: string
       alreadyReviewed: boolean
+    } | null
+    /** The live pre-trip walk-around record, if the driver has given one. */
+    inspection: {
+      outcome: "pass" | "fail"
+      occurredAt: string
+      failedItems: string[]
     } | null
     events: Array<{ id: string; type: string; note: string | null; occurredAt: string; source: string }>
     documents: Array<{
@@ -1053,6 +1062,10 @@ export function buildNetworkView(
     const verification = state.verificationRecords.find((record) => record.subjectId === combination.id)?.status ?? "pending"
 
     return {
+      // What the status controls read and write. The display status below may
+      // substitute a published availability window; a toggle acting on that
+      // substituted value would claim a stored fact the store does not hold.
+      combinationStatus: combination.status,
       configuration: `${combination.truckTypes.join(", ").replaceAll("_", " ")} / ${combination.trailerTypes.join(", ").replaceAll("_", " ") || "standard"}`,
       driverName: user?.fullName ?? "Unassigned",
       driverProfileId: driver?.id ?? null,
@@ -1145,6 +1158,12 @@ export function buildNetworkView(
           viewable: Boolean(document.media)
         }))
 
+      // The live pre-trip record, if one exists. Superseded records are kept
+      // for later review, but the boards show only the current answer.
+      const inspectionRecord = state.tripInspections
+        .filter((inspection) => inspection.tripId === trip.id && !inspection.supersededAt)
+        .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))[0] ?? null
+
       // A completed cross-org haul opens a review prompt for the viewer's side.
       // The counterparty (who they'd rate) and whether they've already rated come
       // straight from state so the UI shows the right prompt or a "Reviewed" mark.
@@ -1216,6 +1235,15 @@ export function buildNetworkView(
         driverProfileId: trip.driverProfileId,
         events,
         id: trip.id,
+        inspection: inspectionRecord
+          ? {
+              failedItems: inspectionRecord.items
+                .filter((item) => item.status === "fail")
+                .map((item) => item.label),
+              occurredAt: inspectionRecord.occurredAt,
+              outcome: inspectionRecord.outcome
+            }
+          : null,
         lastSyncedAt: trip.lastSyncedAt ?? null,
         loadPostingId: trip.loadPostingId,
         loadTitle: load.title,
@@ -1338,6 +1366,7 @@ export function buildNetworkView(
     currentDriver: currentDriverProfile
       ? {
           id: currentDriverProfile.id,
+          featureTruckPhoto: currentDriverProfile.featureTruckPhoto ?? false,
           hasProfilePhoto: Boolean(currentDriverProfile.profilePhoto),
           name: currentUser.fullName,
           preferredFuelPriceCentsPerGallon: currentDriverProfile.preferredFuelPriceCentsPerGallon ?? null,

@@ -1,6 +1,7 @@
-import type { MediaReference } from "@logloads/contracts"
+import { PRE_TRIP_INSPECTION_CHECKLIST, type MediaReference } from "@logloads/contracts"
 
-import { tripDocumentPublicIdPrefix } from "./operating-network"
+import { tripDocumentPublicIdPrefix, recordPreTripInspection } from "./operating-network"
+import type { LogLoadsDatabaseState } from "@logloads/db"
 
 /**
  * A stored asset as the server would have read it back from Cloudinary after a
@@ -8,6 +9,24 @@ import { tripDocumentPublicIdPrefix } from "./operating-network"
  * a change to the namespace rule breaks these fixtures instead of quietly
  * leaving them testing a path production no longer accepts.
  */
+/**
+ * Records the assigned driver's passing walk-around so a fixture may roll.
+ * Trip progression refuses to leave "assigned" without it — a fixture that
+ * drives a haul forward declares the inspection explicitly, the same way a
+ * driver does.
+ */
+export function recordPassingPreTripInspection(
+  state: LogLoadsDatabaseState,
+  input: { actorUserId: string; organizationId: string; tripId: string }
+): void {
+  recordPreTripInspection(state, {
+    actorUserId: input.actorUserId,
+    items: PRE_TRIP_INSPECTION_CHECKLIST.map((item) => ({ key: item.key, note: null, status: "pass" as const })),
+    organizationId: input.organizationId,
+    tripId: input.tripId
+  })
+}
+
 export function stubTripDocumentMedia(
   tripId: string,
   overrides: Partial<MediaReference> = {}

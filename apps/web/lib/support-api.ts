@@ -86,10 +86,48 @@ export async function readBoundedJsonObject(request: Request): Promise<Record<st
     throw new ApiError("Product feedback is too large", 413)
   }
 
-  const text = await request.text()
+  // The limit is enforced while reading, not after: a chunked body with no
+  // Content-Length must not buffer arbitrarily far past the cap before it is
+  // refused.
+  let text: string
 
-  if (new TextEncoder().encode(text).byteLength > SUPPORT_REQUEST_BODY_LIMIT_BYTES) {
-    throw new ApiError("Product feedback is too large", 413)
+  if (request.body) {
+    const reader = request.body.getReader()
+    const chunks: Uint8Array[] = []
+    let received = 0
+
+    for (;;) {
+      const { done, value } = await reader.read()
+
+      if (done) {
+        break
+      }
+
+      received += value.byteLength
+
+      if (received > SUPPORT_REQUEST_BODY_LIMIT_BYTES) {
+        await reader.cancel()
+        throw new ApiError("Product feedback is too large", 413)
+      }
+
+      chunks.push(value)
+    }
+
+    const merged = new Uint8Array(received)
+    let offset = 0
+
+    for (const chunk of chunks) {
+      merged.set(chunk, offset)
+      offset += chunk.byteLength
+    }
+
+    text = new TextDecoder().decode(merged)
+  } else {
+    text = await request.text()
+
+    if (new TextEncoder().encode(text).byteLength > SUPPORT_REQUEST_BODY_LIMIT_BYTES) {
+      throw new ApiError("Product feedback is too large", 413)
+    }
   }
 
   let value: unknown

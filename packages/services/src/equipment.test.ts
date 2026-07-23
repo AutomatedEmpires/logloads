@@ -328,24 +328,120 @@ describe("equipment mutation authorization", () => {
     expect(services.state).toEqual(before)
   })
 
-  it.each(["maintenance", "inactive"])(
-    "blocks %s status while an accepted assignment uses the combination",
-    (status) => {
-      const services = createLogLoadsServices()
-      const trip = services.state.tripsV2.find((candidate) => candidate.id === HANK_TRIP_ID)
-      if (!trip) {
-        throw new Error("Hank trip fixture missing")
-      }
-      trip.status = "cancelled"
-      const before = structuredClone(services.state)
-
-      expect(() => services.updateEquipmentStatus(statusInput({
-        combinationId: HANK_EQUIPMENT_ID,
-        status
-      }))).toThrow(/active assignment or trip/)
-      expect(services.state).toEqual(before)
+  it("blocks parking while an accepted assignment uses the combination", () => {
+    const services = createLogLoadsServices()
+    const trip = services.state.tripsV2.find((candidate) => candidate.id === HANK_TRIP_ID)
+    if (!trip) {
+      throw new Error("Hank trip fixture missing")
     }
-  )
+    trip.status = "cancelled"
+    const before = structuredClone(services.state)
+
+    expect(() => services.updateEquipmentStatus(statusInput({
+      combinationId: HANK_EQUIPMENT_ID,
+      status: "inactive"
+    }))).toThrow(/active assignment or trip/)
+    expect(services.state).toEqual(before)
+  })
+
+  it("allows In shop while an accepted assignment uses the combination, and flags the load honestly", () => {
+    // Breakdowns happen mid-haul. The escape hatch goes through — and the
+    // consequence is explicit: rig out of matching, dispatch notified on both
+    // sides, load flagged at risk. Never silently stranded.
+    const services = createLogLoadsServices()
+    const trip = services.state.tripsV2.find((candidate) => candidate.id === HANK_TRIP_ID)
+    if (!trip) {
+      throw new Error("Hank trip fixture missing")
+    }
+    trip.status = "cancelled"
+    const assignment = services.state.assignments.find((candidate) => candidate.id === HANK_ASSIGNMENT_ID)
+    if (!assignment) {
+      throw new Error("Hank assignment fixture missing")
+    }
+
+    // The driver declares their own truck down — the founder's scenario.
+    const updated = services.updateEquipmentStatus(statusInput({
+      actorUserId: HANK_USER_ID,
+      combinationId: HANK_EQUIPMENT_ID,
+      status: "maintenance"
+    }))
+
+    expect(updated.status).toBe("maintenance")
+    expect(
+      services.state.operationalNotices.some(
+        (notice) => notice.relatedLoadId === assignment.loadPostingId && notice.severity === "critical"
+      )
+    ).toBe(true)
+    expect(
+      services.state.notifications.some(
+        (notification) =>
+          notification.relatedEntityId === assignment.loadPostingId &&
+          notification.title.startsWith("Truck out of service")
+      )
+    ).toBe(true)
+    expect(
+      services.state.auditEvents.some(
+        (event) =>
+          event.entityId === HANK_EQUIPMENT_ID &&
+          event.action === "equipment_status_updated" &&
+          Array.isArray(event.metadata.flaggedLoadIds) &&
+          (event.metadata.flaggedLoadIds as string[]).includes(assignment.loadPostingId)
+      )
+    ).toBe(true)
+  })
+
+  it("does not flag anything when In shop is set with no active work", () => {
+    const services = createLogLoadsServices()
+    const noticesBefore = services.state.operationalNotices.length
+    const notificationsBefore = services.state.notifications.length
+
+    const updated = services.updateEquipmentStatus(statusInput({ status: "maintenance" }))
+
+    expect(updated.status).toBe("maintenance")
+    expect(services.state.operationalNotices).toHaveLength(noticesBefore)
+    expect(services.state.notifications).toHaveLength(notificationsBefore)
+  })
+
+  it("refuses NEW capacity requests for a rig that is In shop", () => {
+    const services = createLogLoadsServices()
+
+    services.updateEquipmentStatus(statusInput({
+      actorUserId: HANK_USER_ID,
+      combinationId: HANK_EQUIPMENT_ID,
+      status: "maintenance"
+    }))
+
+    const candidates = services.state.loadPostings.filter((candidate) => candidate.status === "open")
+    const pick = candidates
+      .map((candidate) => ({
+        load: candidate,
+        slot: services.state.truckSlots.find(
+          (slot) => slot.loadPostingId === candidate.id && slot.status === "open"
+        )
+      }))
+      .find((entry) => entry.slot)
+
+    expect(pick).toBeTruthy()
+    if (!pick?.slot) return
+
+    const { load, slot } = pick as { load: (typeof candidates)[number]; slot: NonNullable<typeof pick.slot> }
+
+    const combination = services.state.equipmentCombinations.find(
+      (candidate) => candidate.id === HANK_EQUIPMENT_ID
+    )
+
+    expect(() =>
+      services.requestCapacityWithPolicy({
+        actorUserId: HANK_USER_ID,
+        driverProfileId: HANK_DRIVER_ID,
+        loadPostingId: load.id,
+        organizationId: NORTH_PINE_ORG_ID,
+        trailerProfileId: combination?.trailerProfileId ?? null,
+        truckProfileId: combination?.truckProfileId ?? "",
+        truckSlotId: slot.id
+      }, { at: slot.startAt })
+    ).toThrow(/marked In shop/)
+  })
 
   it("blocks reassigning or unassigning equipment used by an accepted assignment", () => {
     const services = createLogLoadsServices()
@@ -393,7 +489,7 @@ describe("equipment mutation authorization", () => {
     }
   )
 
-  it("blocks disruptive changes when an active trip uses the combination even after its assignment completed", () => {
+  it("still treats an active trip as active use even after its assignment completed", () => {
     const services = createLogLoadsServices()
     const trip = services.state.tripsV2.find((candidate) => candidate.id === MAYA_TRIP_ID)
     if (!trip) {
@@ -407,11 +503,20 @@ describe("equipment mutation authorization", () => {
     assignment.status = "completed"
     const before = structuredClone(services.state)
 
-    expect(() => services.updateEquipmentStatus(statusInput({ status: "maintenance" }))).toThrow(
+    // Parking and reassignment stay blocked; In shop goes through with the
+    // load flagged, because the active trip is exactly the work at risk.
+    expect(() => services.updateEquipmentStatus(statusInput({ status: "inactive" }))).toThrow(
       /active assignment or trip/
     )
     expect(() => services.assignDriverToEquipment(assignmentInput())).toThrow(/active assignment or trip/)
     expect(services.state).toEqual(before)
+
+    services.updateEquipmentStatus(statusInput({ status: "maintenance" }))
+    expect(
+      services.state.operationalNotices.some(
+        (notice) => notice.relatedLoadId === trip.loadPostingId && notice.severity === "critical"
+      )
+    ).toBe(true)
   })
 
   it("still allows non-disruptive status updates while equipment is in active use", () => {
