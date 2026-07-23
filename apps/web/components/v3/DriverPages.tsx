@@ -55,8 +55,17 @@ function canRecordDelivery(trip: TripView): boolean {
 function activeTripFor(network: NetworkView): TripView | null {
   const driverId = network.currentDriver?.id ?? null
   const trips = driverId ? network.trips.filter((trip) => trip.driverProfileId === driverId) : network.trips
+  const mostRecentlyUpdated = (left: TripView, right: TripView) =>
+    (right.lastSyncedAt ?? right.events.at(-1)?.occurredAt ?? "")
+      .localeCompare(left.lastSyncedAt ?? left.events.at(-1)?.occurredAt ?? "")
+  const inProgress = trips
+    .filter((trip) => isOpenTrip(trip) && trip.status !== "assigned")
+    .sort(mostRecentlyUpdated)
 
-  return trips.find(isOpenTrip) ?? null
+  // A future booking must never displace a haul that is already moving. When
+  // no haul is in progress, the most recent assigned trip becomes the clear
+  // "booked next" fallback.
+  return inProgress[0] ?? trips.filter((trip) => trip.status === "assigned").sort(mostRecentlyUpdated)[0] ?? null
 }
 
 function requestableLoads(network: NetworkView): NetworkLoadView[] {
@@ -135,6 +144,7 @@ function verificationBadge(status: string): { label: string; tone: "success" | "
 }
 
 function TodayActiveTrip({ load, network, trip }: { load: NetworkLoadView | null; network: NetworkView; trip: TripView }) {
+  const isBookedNext = trip.status === "assigned"
   const headingToLanding = ["assigned", "en_route_to_landing", "checked_in", "loading"].includes(trip.status)
   const stop = load ? (headingToLanding ? load.landing : load.destination) : null
   const lastEvent = trip.events[trip.events.length - 1] ?? null
@@ -145,7 +155,7 @@ function TodayActiveTrip({ load, network, trip }: { load: NetworkLoadView | null
 
   return (
     <section className="driver-now">
-      <p className="eyebrow">Now hauling</p>
+      <p className="eyebrow">{isBookedNext ? "Booked next" : "Now hauling"}</p>
       <h2>{load?.title ?? trip.loadTitle}</h2>
       {stop ? (
         <p className="now-stop">
@@ -172,7 +182,7 @@ function TodayActiveTrip({ load, network, trip }: { load: NetworkLoadView | null
           <span>{interrupt}</span>
         </div>
       ) : null}
-      <TripProgressButton status={trip.status} tone="hero" tripId={trip.id} />
+      <TripProgressButton completionStatus={trip.completion.status} status={trip.status} tone="hero" tripId={trip.id} />
       <div className="primary-action-row">
         <Link className="action-link action-link--secondary" href={`/driver/loads/${trip.loadPostingId}`}>Open Route Pack</Link>
         <Link className="action-link action-link--secondary" href="/driver/messages">Message dispatch</Link>
@@ -279,12 +289,16 @@ export function DriverLoads({ account, network }: DriverPageProps) {
 }
 
 export function DriverMap({ account, network }: DriverPageProps) {
-  const loads = requestableLoads(network)
-  const selected = loads[0] ?? null
-  const openHauls = loads.reduce((total, load) => total + load.capacity.remaining, 0)
+  const requestable = requestableLoads(network)
+  const activeTrip = activeTripFor(network)
+  const activeLoad = activeTrip ? network.loads.find((load) => load.id === activeTrip.loadPostingId) ?? null : null
+  const loads = activeLoad ? [activeLoad, ...requestable.filter((load) => load.id !== activeLoad.id)] : requestable
+  const selected = activeLoad ?? loads[0] ?? null
+  const openHauls = requestable.reduce((total, load) => total + load.capacity.remaining, 0)
 
   return (
     <AppShell account={account} kicker="Your area" role="driver" title="Map">
+      {activeTrip ? <TodayActiveTrip load={activeLoad} network={network} trip={activeTrip} /> : null}
       {!selected ? (
         <div className="app-section">
           <EmptyState
@@ -299,7 +313,7 @@ export function DriverMap({ account, network }: DriverPageProps) {
           <section className="map-availability-bar">
             <div>
               <strong>{openHauls} open {openHauls === 1 ? "haul" : "hauls"}</strong>
-              <span>Tap a landing to see pay, timing, distance, and whether your truck matches.</span>
+              <span>{activeTrip ? "Your active route is selected. Open another landing to compare upcoming work." : "Tap a landing to see pay, timing, distance, and whether your truck matches."}</span>
             </div>
             <Link className="action-link action-link--secondary" href="/driver/loads">See load list</Link>
           </section>
@@ -352,7 +366,7 @@ function DeliveredRecord({ completion }: { completion: TripView["completion"] })
   )
 }
 
-function TripCard({ network, trip }: { network: NetworkView; trip: TripView }) {
+function TripCard({ mediaReady, network, trip }: { mediaReady: boolean; network: NetworkView; trip: TripView }) {
   const load = network.loads.find((item) => item.id === trip.loadPostingId) ?? null
   const lastEvent = trip.events[trip.events.length - 1] ?? null
   const open = isOpenTrip(trip)
@@ -400,16 +414,16 @@ function TripCard({ network, trip }: { network: NetworkView; trip: TripView }) {
           ))}
         </ul>
       ) : null}
-      {open ? (
+      {open && isOwnHaul ? (
         <div className="trip-card__actions">
-          <TripProgressButton status={trip.status} tripId={trip.id} />
-          <LogProofControl tripId={trip.id} />
+          <TripProgressButton completionStatus={trip.completion.status} status={trip.status} tripId={trip.id} />
+          <LogProofControl available={mediaReady} tripId={trip.id} />
           {/* Recorded at the destination, while the driver is standing at the
               scale — not reconstructed from memory later. */}
-          {canRecordDelivery(trip) && isOwnHaul ? (
+          {canRecordDelivery(trip) ? (
             <CompletionForm completion={trip.completion} tripId={trip.id} />
           ) : null}
-          {isOwnHaul ? <CancelHaulControl assignmentId={trip.assignmentId} kind="haul" /> : null}
+          <CancelHaulControl assignmentId={trip.assignmentId} kind="haul" />
         </div>
       ) : null}
       {trip.status === "completed" ? (
@@ -420,7 +434,7 @@ function TripCard({ network, trip }: { network: NetworkView; trip: TripView }) {
               stranded with no way to author it. */}
           {canRecordDelivery(trip) && isOwnHaul ? (
             <div className="trip-card__actions">
-              <LogProofControl tripId={trip.id} />
+              <LogProofControl available={mediaReady} tripId={trip.id} />
               <CompletionForm completion={trip.completion} tripId={trip.id} />
             </div>
           ) : null}
@@ -495,7 +509,7 @@ function DecisionHaulCard({ load }: { load: NetworkLoadView }) {
   )
 }
 
-export function DriverSchedule({ account, network }: DriverPageProps) {
+export function DriverSchedule({ account, mediaReady, network }: DriverPageProps & { mediaReady: boolean }) {
   const requestedLoads = network.loads.filter((load) => ["requested", "offered"].includes(load.viewerAssignment?.status ?? ""))
   const decisionLoads = network.loads.filter((load) => load.viewerDecision?.status === "declined")
   const bookedTrips = network.trips.filter((trip) => trip.status === "assigned")
@@ -551,7 +565,7 @@ export function DriverSchedule({ account, network }: DriverPageProps) {
             <section className="app-section">
               <SectionHeader eyebrow="In progress" title="Do the next step shown" />
               <div className="board-list board-list--flush">
-                {activeTrips.map((trip) => <TripCard key={trip.id} network={network} trip={trip} />)}
+                {activeTrips.map((trip) => <TripCard key={trip.id} mediaReady={mediaReady} network={network} trip={trip} />)}
               </div>
             </section>
           ) : null}
@@ -559,7 +573,7 @@ export function DriverSchedule({ account, network }: DriverPageProps) {
             <section className="app-section">
               <SectionHeader eyebrow="You got it" title="Booked next" />
               <div className="board-list board-list--flush">
-                {bookedTrips.map((trip) => <TripCard key={trip.id} network={network} trip={trip} />)}
+                {bookedTrips.map((trip) => <TripCard key={trip.id} mediaReady={mediaReady} network={network} trip={trip} />)}
               </div>
             </section>
           ) : null}
@@ -567,7 +581,7 @@ export function DriverSchedule({ account, network }: DriverPageProps) {
             <section className="app-section">
               <SectionHeader eyebrow="Completed" title="Delivered hauls" />
               <div className="board-list board-list--flush">
-                {completedTrips.map((trip) => <TripCard key={trip.id} network={network} trip={trip} />)}
+                {completedTrips.map((trip) => <TripCard key={trip.id} mediaReady={mediaReady} network={network} trip={trip} />)}
               </div>
             </section>
           ) : null}
@@ -575,7 +589,7 @@ export function DriverSchedule({ account, network }: DriverPageProps) {
             <section className="app-section">
               <SectionHeader eyebrow="History" title="Cancelled hauls" />
               <div className="board-list board-list--flush">
-                {cancelledTrips.map((trip) => <TripCard key={trip.id} network={network} trip={trip} />)}
+                {cancelledTrips.map((trip) => <TripCard key={trip.id} mediaReady={mediaReady} network={network} trip={trip} />)}
               </div>
             </section>
           ) : null}
@@ -585,7 +599,7 @@ export function DriverSchedule({ account, network }: DriverPageProps) {
   )
 }
 
-export function DriverEquipment({ account, network }: DriverPageProps) {
+export function DriverEquipment({ account, mediaReady, network }: DriverPageProps & { mediaReady: boolean }) {
   return (
     <AppShell account={account} kicker="Garage" role="driver" title="Equipment">
       <section className="app-section">
@@ -624,6 +638,7 @@ export function DriverEquipment({ account, network }: DriverPageProps) {
                       (the service refuses anyone else's). */}
                   {isOwnRig ? (
                     <MediaUpload
+                      available={mediaReady}
                       hasCurrent={network.currentEquipment?.hasTruckPhoto ?? false}
                       kind="truck"
                       label="Truck photo"
@@ -652,16 +667,17 @@ export function DriverNetwork({ account, network }: DriverPageProps) {
 }
 
 const DRIVER_VERIFICATION_OPTIONS: VerificationTypeOption[] = [
-  { value: "identity", label: "Identity", hint: "A driver's license or government ID number a reviewer can confirm." },
-  { value: "contact", label: "Contact details", hint: "A phone number or email we can reach you at for dispatch." }
+  { value: "identity", label: "Identity", hint: "Describe the identity evidence available. Do not enter a full license or government ID number here." },
+  { value: "contact", label: "Contact details", hint: "Tell us whether to review the phone or email already on your account; do not repeat the full value here." }
 ]
 
 export function DriverProfile({
   account,
   availability,
+  mediaReady,
   network,
   verifications
-}: DriverPageProps & { availability: DriverAvailabilitySummary; verifications: VerificationRecordView[] }) {
+}: DriverPageProps & { availability: DriverAvailabilitySummary; mediaReady: boolean; verifications: VerificationRecordView[] }) {
   const verification = verificationBadge(network.activeOrganization.verificationStatus)
 
   return (
@@ -724,10 +740,10 @@ export function DriverProfile({
       <section className="app-section">
         <SectionHeader eyebrow="Photos" title="Show your driver and primary equipment" />
         <div className="media-upload-grid">
-          <MediaUpload hasCurrent={network.currentDriver?.hasProfilePhoto ?? false} kind="profile" label="Profile photo" />
-          <MediaUpload hasCurrent={network.currentEquipment?.hasTruckPhoto ?? false} kind="truck" label="Truck photo" />
+          <MediaUpload available={mediaReady} hasCurrent={network.currentDriver?.hasProfilePhoto ?? false} kind="profile" label="Profile photo" />
+          <MediaUpload available={mediaReady} hasCurrent={network.currentEquipment?.hasTruckPhoto ?? false} kind="truck" label="Truck photo" />
           {network.currentDriver?.trailerId ? (
-            <MediaUpload hasCurrent={network.currentEquipment?.hasTrailerPhoto ?? false} kind="trailer" label="Trailer photo" />
+            <MediaUpload available={mediaReady} hasCurrent={network.currentEquipment?.hasTrailerPhoto ?? false} kind="trailer" label="Trailer photo" />
           ) : null}
         </div>
         <FeatureTruckPhotoToggle
@@ -775,7 +791,7 @@ export function DriverLoadDetail({ account, loadId, network }: DriverPageProps &
   const load = network.loads.find((item) => item.id === loadId)
 
   return (
-    <AppShell account={account} kicker="Can I haul this?" role="driver" title="Load details">
+    <AppShell account={account} contentOwnsHeading kicker="Can I haul this?" role="driver" title="Load details">
       {!load ? (
         <div className="app-section">
           <EmptyState
@@ -786,17 +802,19 @@ export function DriverLoadDetail({ account, loadId, network }: DriverPageProps &
           />
         </div>
       ) : (
-        <main className="detail-layout detail-layout--app">
+        <div className="detail-layout detail-layout--app">
           <div className="detail-main">
-            <Link className="back-link" href="/driver/loads">Back to loads</Link>
-            <p className="eyebrow">{load.landing.city} to {load.destination.name} · {load.sourceName}</p>
-            <h1>{load.title}</h1>
-            <div className="load-decision-lead">
-              <strong>{load.economics.grossLabel ? `${load.economics.grossLabel} est. gross` : load.payLabel}</strong>
-              {load.economics.grossLabel ? <span>Base {load.payLabel} · {load.fuelSurchargeLabel}</span> : null}
-              <span>{load.scheduleLabel}</span>
-              <span>{load.route.distanceMiles.toFixed(0)} miles</span>
-              <span>{load.capacity.remaining} of {load.capacity.total} hauls open</span>
+            <div className="load-detail-summary">
+              <Link className="back-link" href="/driver/loads">Back to loads</Link>
+              <p className="eyebrow">{load.landing.city} to {load.destination.name} · {load.sourceName}</p>
+              <h1>{load.title}</h1>
+              <div className="load-decision-lead">
+                <strong>{load.economics.grossLabel ? `${load.economics.grossLabel} est. gross` : load.payLabel}</strong>
+                {load.economics.grossLabel ? <span>Base {load.payLabel} · {load.fuelSurchargeLabel}</span> : null}
+                <span>{load.scheduleLabel}</span>
+                <span>{load.route.distanceMiles.toFixed(0)} miles</span>
+                <span>{load.capacity.remaining} of {load.capacity.total} hauls open</span>
+              </div>
             </div>
             <EconomicsPanel load={load} />
             <WeatherWidget loadId={load.id} />
@@ -807,7 +825,7 @@ export function DriverLoadDetail({ account, loadId, network }: DriverPageProps &
           <aside className="sticky-action">
             <RequestCapacityPanel load={load} />
           </aside>
-        </main>
+        </div>
       )}
     </AppShell>
   )

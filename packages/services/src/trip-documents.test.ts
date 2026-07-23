@@ -9,6 +9,7 @@ const HAULER_ORG = "33333333-3333-4333-8333-333333333331"
 const HOST_ORG = "33333333-3333-4333-8333-333333333332"
 const OUTSIDE_ORG = "33333333-3333-4333-8333-333333333333"
 const HAULER_DRIVER_ACTOR = "22222222-2222-4222-8222-222222222221"
+const HAULER_COWORKER_DRIVER_ACTOR = "22222222-2222-4222-8222-222222222222"
 const HOST_OWNER = "22222222-2222-4222-8222-222222222223"
 const DRIVER_PROFILE = "44444444-4444-4444-8444-444444444441"
 const TRUCK_PROFILE = "77777777-7777-4777-8777-777777777771"
@@ -152,6 +153,28 @@ describe("attaching trip documents", () => {
     ).toThrow(/does not belong to this trip/)
 
     expect(services.listTripDocuments(second.id)).toHaveLength(0)
+  })
+
+  it("prevents a driver from signing or attaching proof to a coworker's haul", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { trip } = bookHaul(services)
+    const actor = {
+      actorUserId: HAULER_COWORKER_DRIVER_ACTOR,
+      organizationId: HAULER_ORG,
+      tripId: trip.id
+    }
+
+    expect(() => services.getTripDocumentTarget(actor, "write"))
+      .toThrow(/only access documents for their own hauls/)
+
+    expect(() => services.attachTripDocument({
+      ...actor,
+      filename: "coworker-ticket.jpg",
+      media: stubTripDocumentMedia(trip.id),
+      type: "scale_ticket"
+    })).toThrow(/only access documents for their own hauls/)
+
+    expect(services.listTripDocuments(trip.id)).toHaveLength(0)
   })
 
   it("refuses an asset outside the trip document namespace", () => {

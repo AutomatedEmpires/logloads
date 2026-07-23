@@ -12,12 +12,14 @@ import { mutateState, refreshState, serializeError, services } from "./services"
 import {
   SESSION_COOKIE,
   createSessionCookieValue,
+  getClerkIdentity,
   getSessionActor,
   homePathFor,
   isClerkConfigured,
   isDevSessionEnabled,
   isFounderDemoMode
 } from "./session"
+import { safeInternalPath } from "./safe-redirect"
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
@@ -77,7 +79,7 @@ async function signInDevProfile(email: string, next: string): Promise<AuthFormSt
   cookieStore.set(SESSION_COOKIE, createSessionCookieValue(profile.id, null), COOKIE_OPTIONS)
 
   const actor = await getSessionActor()
-  const destination = next.startsWith("/") && !next.startsWith("//") ? next : actor ? homePathFor(actor) : "/"
+  const destination = safeInternalPath(next, actor ? homePathFor(actor) : "/workspace")
 
   redirect(destination)
 }
@@ -139,7 +141,7 @@ export async function completeOnboardingAction(
   const path = String(formData.get("path") ?? "")
   const accountType = String(formData.get("accountType") ?? "")
   const fullName = String(formData.get("fullName") ?? "").trim()
-  const email = String(formData.get("email") ?? "").trim()
+  let email = String(formData.get("email") ?? "").trim()
   const phone = String(formData.get("phone") ?? "").trim()
   const organizationName = String(formData.get("organizationName") ?? "").trim()
   const region = String(formData.get("region") ?? "").trim()
@@ -147,6 +149,7 @@ export async function completeOnboardingAction(
   const trailerType = String(formData.get("trailerType") ?? "")
   const maxPayloadTons = Number(formData.get("maxPayloadTons") ?? 0)
   const availabilityPreset = String(formData.get("availabilityPreset") ?? "three_days")
+  const next = String(formData.get("next") ?? "")
 
   const existingActor = await getSessionActor()
 
@@ -174,6 +177,14 @@ export async function completeOnboardingAction(
     if (!clerkUserId) {
       return { error: "Sign in first, then finish setting up your account." }
     }
+
+    const clerkIdentity = await getClerkIdentity()
+
+    if (!clerkIdentity) {
+      return { error: "We could not verify the email on your signed-in account. Sign in again and retry setup." }
+    }
+
+    email = clerkIdentity.email
   } else if (!(await isDevSessionEnabled())) {
     return { error: "Account creation requires a configured sign-in provider in this environment." }
   }
@@ -215,5 +226,6 @@ export async function completeOnboardingAction(
 
   const actor = await getSessionActor()
 
-  redirect(path === "driver" ? "/driver/loads?welcome=1" : actor ? homePathFor(actor) : "/")
+  const fallback = path === "driver" ? "/driver/loads?welcome=1" : actor ? homePathFor(actor) : "/workspace"
+  redirect(safeInternalPath(next, fallback))
 }

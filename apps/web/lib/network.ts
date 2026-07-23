@@ -452,7 +452,7 @@ function formatSlotWindow(startAt: string, endAt: string): string {
     timeZone: "UTC"
   })
 
-  return `${formatter.format(new Date(startAt))} - ${formatter.format(new Date(endAt))}`
+  return `${formatter.format(new Date(startAt))} - ${formatter.format(new Date(endAt))} UTC`
 }
 
 function formatWindow(startAt: string, endAt: string): string {
@@ -464,7 +464,7 @@ function formatWindow(startAt: string, endAt: string): string {
     timeZone: "UTC"
   })
 
-  return `${formatter.format(new Date(startAt))} - ${formatter.format(new Date(endAt))}`
+  return `${formatter.format(new Date(startAt))} - ${formatter.format(new Date(endAt))} UTC`
 }
 
 function approximateCoordinate(value: number): number {
@@ -781,11 +781,14 @@ export function buildNetworkView(
         })
       : null
 
-    const assignmentViews = (ownsLoad
+    const staffCanViewOrganizationAssignments = Boolean(
+      activeMembership && activeMembership.role !== "driver"
+    )
+    const assignmentViews = (ownsLoad && staffCanViewOrganizationAssignments
       ? loadAssignments
       : loadAssignments.filter((assignment) =>
           (currentDriverProfile && assignment.driverProfileId === currentDriverProfile.id) ||
-          organizationDriverProfileIds.has(assignment.driverProfileId)
+          (staffCanViewOrganizationAssignments && organizationDriverProfileIds.has(assignment.driverProfileId))
         )
     ).map((assignment) => {
       const driver = requireRecord(
@@ -1110,6 +1113,13 @@ export function buildNetworkView(
 
   const trips = state.tripsV2
     .filter((trip) => {
+      // A driver account is a personal cockpit, not a fleet board. Keeping the
+      // organization-wide branch below for dispatch/host staff is intentional;
+      // a driver must only receive the haul assigned to their own profile.
+      if (activeMembership.role === "driver") {
+        return Boolean(currentDriverProfile && trip.driverProfileId === currentDriverProfile.id)
+      }
+
       if (currentDriverProfile && trip.driverProfileId === currentDriverProfile.id) {
         return true
       }
@@ -1383,8 +1393,10 @@ export function buildNetworkView(
     metrics: {
       activeAssignments: state.assignments.filter((assignment) =>
         VIEWER_ASSIGNMENT_STATUSES.includes(assignment.status) &&
-        (organizationDriverProfileIds.has(assignment.driverProfileId) ||
-          organizationLoadIds.has(assignment.loadPostingId))
+        (activeMembership.role === "driver"
+          ? assignment.driverProfileId === currentDriverProfile?.id
+          : organizationDriverProfileIds.has(assignment.driverProfileId) ||
+            organizationLoadIds.has(assignment.loadPostingId))
       ).length,
       criticalNotices: notices.filter((notice) => notice.severity === "critical").length,
       openLoads: loads.filter((load) => load.status === "open").length,

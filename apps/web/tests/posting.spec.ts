@@ -53,7 +53,8 @@ test.describe.serial("rich load posting", () => {
 
   // Step 3 — Terms (rate pre-selected).
   await page.getByRole("button", { name: "Next" }).click()
-  // Step 4 — Visibility (defaults).
+  // Step 4 — Visibility requires an explicit publish choice.
+  await page.getByRole("radio", { name: /Publish now/ }).check()
   await page.getByRole("button", { name: "Next" }).click()
 
   // Step 5 — Review shows the cadence, then publish.

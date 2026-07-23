@@ -47,18 +47,17 @@
 /* Markers */
 
 .map-marker-hit {
-  display: block;
+  display: grid;
+  min-width: var(--control-min);
+  min-height: var(--control-min);
+  place-items: center;
   border: 0;
   background: none;
   padding: 0;
   cursor: pointer;
 }
 
-.map-marker-hit:focus-visible {
-  outline: 2px solid var(--pine);
-  outline-offset: 3px;
-  border-radius: 6px;
-}
+.map-marker-hit:focus-visible { border-radius: 6px; }
 
 .map-marker {
   position: relative;
@@ -336,6 +335,16 @@
   background: linear-gradient(160deg, var(--paper), var(--bone-2));
 }
 
+.route-directions { display: grid; gap: 12px; margin-top: 14px; }
+.route-directions__warning { display: flex; align-items: flex-start; gap: 10px; border: 1px solid rgba(172,104,29,0.42); border-radius: var(--radius); background: var(--amber-bg); padding: 12px; color: #6b3b10; font-weight: 850; line-height: 1.4; }
+.route-directions__warning svg { flex: 0 0 auto; margin-top: 1px; }
+.route-directions__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.route-directions__grid article { display: grid; align-content: start; gap: 9px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bone); padding: 14px; }
+.route-directions__grid article > span { color: var(--muted); font-size: 0.78rem; font-weight: 900; text-transform: uppercase; }
+.route-directions__grid article > strong { overflow-wrap: anywhere; }
+.route-directions__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.route-directions__actions > * { flex: 1 1 180px; }
+
 .route-pack-instructions {
   display: grid;
   gap: 10px;
@@ -440,6 +449,8 @@
 
 @media (max-width: 640px) {
   .route-pack-facts { grid-template-columns: 1fr; }
+  .route-directions__grid { grid-template-columns: 1fr; }
+  .route-directions .action-link { width: 100%; }
 }
 
 /* Breakpoints */

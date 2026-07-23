@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
 
     const target = tripDocumentTarget(services.state, actor, organizationId, payload.tripId, "write")
 
-    return NextResponse.json(signedUpload(target))
+    return NextResponse.json(await signedUpload(target))
   } catch (error) {
     return apiErrorResponse(error)
   }

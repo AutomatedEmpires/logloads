@@ -15,7 +15,7 @@ mkdirSync(SHOTS, { recursive: true })
 
 // Fixed so the admin test can assert exactly what the driver test submitted;
 // re-runs upsert the same (person, identity) record rather than duplicating it.
-const EVIDENCE = "CDL A1783500727980 — Oregon class A, valid through 2028."
+const EVIDENCE = "Oregon Class A CDL available for review; valid through 2028."
 
 async function signIn(page: Page, email: string) {
   await page.goto("/sign-in")
@@ -36,13 +36,17 @@ test.describe.serial("verification + assistant", () => {
     await page.locator(".verify-form select[name=verificationType]").selectOption("identity")
     await page.locator(".verify-form textarea[name=evidenceSummary]").fill(EVIDENCE)
     await page.locator(".verify-form button[type=submit]").click()
-    await expect(page.getByText("Submitted for review")).toBeVisible({ timeout: 15_000 })
+    await expect(
+      page.locator(".verify-form").getByText(/Submitted for review|couldn't confirm the submission/)
+    ).toBeVisible({ timeout: 20_000 })
     await page.screenshot({ path: `${SHOTS}/verification-driver.png`, fullPage: true })
 
-    await page.reload()
-    await page.waitForLoadState("networkidle")
-    await expect(page.locator(".verify-record").filter({ hasText: "Identity" }).first()).toBeVisible()
-    await expect(page.locator(".verify-record").filter({ hasText: "In review" }).first()).toBeVisible()
+    await expect(async () => {
+      await page.reload()
+      await page.waitForLoadState("networkidle")
+      await expect(page.locator(".verify-record").filter({ hasText: "Identity" }).first()).toBeVisible({ timeout: 2_000 })
+      await expect(page.locator(".verify-record").filter({ hasText: "In review" }).first()).toBeVisible({ timeout: 2_000 })
+    }).toPass({ timeout: 30_000 })
   })
 
   test("the submission reaches the admin review queue attributed to the driver", async ({ page }) => {

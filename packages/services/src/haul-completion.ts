@@ -95,8 +95,26 @@ export interface SubmitHaulCompletionInput {
 }
 
 export interface HaulCompletionResult {
+  changed: boolean
   trip: TripV2
   previousStatus: TripV2["completionStatus"]
+}
+
+function sameDeliveredQuantity(left: DeliveredQuantity | null | undefined, right: DeliveredQuantity | null): boolean {
+  if (!left || !right) return !left && !right
+
+  return left.value === right.value &&
+    left.unit === right.unit &&
+    (left.ticketNumber ?? null) === (right.ticketNumber ?? null)
+}
+
+function sameHaulException(
+  left: HaulException | null | undefined,
+  right: Omit<HaulException, "reportedAt"> | null
+): boolean {
+  if (!left || !right) return !left && !right
+
+  return left.type === right.type && left.note === right.note
 }
 
 /**
@@ -112,14 +130,12 @@ export function applyHaulCompletionSubmission(
 ): HaulCompletionResult {
   const { actorUserId, trip } = input
 
-  assertCondition(
-    trip.completionStatus !== "confirmed",
-    "This haul is confirmed; ask the host to reopen it before changing the record"
-  )
-
   const quantity = input.deliveredQuantity ? deliveredQuantitySchema.parse(input.deliveredQuantity) : null
-  const exception = input.exception
-    ? haulExceptionSchema.parse({ ...input.exception, reportedAt: timestamp })
+  const normalizedException = input.exception
+    ? { note: input.exception.note.trim(), type: input.exception.type }
+    : null
+  const exception = normalizedException
+    ? haulExceptionSchema.parse({ ...normalizedException, reportedAt: timestamp })
     : null
 
   assertCondition(
@@ -129,6 +145,25 @@ export function applyHaulCompletionSubmission(
   assertCondition(
     !quantity || quantity.value > 0 || Boolean(exception),
     "A zero delivery needs an exception explaining it"
+  )
+
+  // The device can retry after the host has already acted on the first
+  // submission (for example when the original response was lost). Preserve
+  // that downstream decision when the same author sends the exact same
+  // record; only changed content is a new submission.
+  const unchanged =
+    trip.completionStatus !== "pending" &&
+    trip.completionSubmittedByUserId === actorUserId &&
+    sameDeliveredQuantity(trip.deliveredQuantity, quantity) &&
+    sameHaulException(trip.haulException, normalizedException)
+
+  if (unchanged) {
+    return { changed: false, previousStatus: trip.completionStatus, trip }
+  }
+
+  assertCondition(
+    trip.completionStatus !== "confirmed",
+    "This haul is confirmed; ask the host to reopen it before changing the record"
   )
 
   const updated = tripSchemaV2.parse({
@@ -144,7 +179,7 @@ export function applyHaulCompletionSubmission(
 
   state.tripsV2 = state.tripsV2.map((current) => (current.id === trip.id ? updated : current))
 
-  return { previousStatus: trip.completionStatus, trip: updated }
+  return { changed: true, previousStatus: trip.completionStatus, trip: updated }
 }
 
 export interface ConfirmHaulCompletionInput {
@@ -178,7 +213,7 @@ export function applyHaulCompletionConfirmation(
 
   state.tripsV2 = state.tripsV2.map((current) => (current.id === trip.id ? updated : current))
 
-  return { previousStatus: trip.completionStatus, trip: updated }
+  return { changed: true, previousStatus: trip.completionStatus, trip: updated }
 }
 
 export interface DisputeHaulCompletionInput {
@@ -224,7 +259,7 @@ export function applyHaulCompletionDispute(
 
   state.tripsV2 = state.tripsV2.map((current) => (current.id === trip.id ? updated : current))
 
-  return { previousStatus: trip.completionStatus, trip: updated }
+  return { changed: true, previousStatus: trip.completionStatus, trip: updated }
 }
 
 export function getTripById(state: LogLoadsDatabaseState, tripId: string): TripV2 {

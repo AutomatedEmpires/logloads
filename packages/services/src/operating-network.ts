@@ -658,6 +658,29 @@ function assertTripParticipant(
 }
 
 /**
+ * Fleet and host staff operate organization-wide work; a driver operates only
+ * the haul assigned to their own profile. Participant-organization membership
+ * alone is not sufficient because several drivers can share that membership.
+ */
+function assertAssignedDriverForDriverRole(
+  state: LogLoadsDatabaseState,
+  context: ActiveOrganizationContext,
+  assignment: Assignment,
+  message: string
+): void {
+  if (context.membership.role !== "driver") {
+    return
+  }
+
+  const driver = assertFound(
+    state.driverProfiles.find((current) => current.id === assignment.driverProfileId),
+    `Driver profile ${assignment.driverProfileId} was not found`
+  )
+
+  assertCondition(driver.userId === context.actorUserId, message)
+}
+
+/**
  * Stored postings predate source ownership enforcement. Fail closed when an
  * old posting points at another organization's dispatcher so later workflow
  * events cannot route notifications across the organization boundary.
@@ -1816,7 +1839,7 @@ export function recordPreTripInspection(
 export function progressTripStatus(
   state: LogLoadsDatabaseState,
   input: ProgressTripStatusInput
-): { trip: TripV2; event: TripEvent } {
+): { changed: boolean; trip: TripV2; event: TripEvent | null } {
   const context = getContextForInput(state, input)
   assertOrganizationAction(context, "progress_trip")
 
@@ -1829,6 +1852,19 @@ export function progressTripStatus(
     `Assignment ${trip.assignmentId} was not found`
   )
   assertTripParticipant(state, context, assignment)
+  assertAssignedDriverForDriverRole(
+    state,
+    context,
+    assignment,
+    "Drivers can only progress their own hauls"
+  )
+
+  // A lost response may cause a field device to retry the final action. Once
+  // authorization and participation have been proven, an exact completed
+  // retry is a no-op: never double-count capacity or duplicate history.
+  if (trip.status === "completed" && input.nextStatus === "completed") {
+    return { changed: false, event: null, trip }
+  }
 
   // Cancelling a trip cancels the booking, so it demands the same authority
   // as cancelAssignmentWithPolicy — trip-progression rights are not enough.
@@ -1841,12 +1877,16 @@ export function progressTripStatus(
     cancellationSide = assertCancellationAuthority(state, context, assignment, load).side
   }
 
+  // Validate the state-machine edge before applying step-specific
+  // requirements so impossible jumps still report the actual invalid edge.
+  const nextStatus = transitionTripStatus(trip.status, input.nextStatus)
+
   // A truck does not roll because a button was pressed. The driver's recorded
   // walk-around must exist and have passed before a haul may leave "assigned".
   // Enforced here, not in the UI: the trip-events API reaches this same
   // function with no interface at all, and a checklist only a button knows
   // about would be decorative.
-  if (trip.status === "assigned" && input.nextStatus === "en_route_to_landing") {
+  if (trip.status === "assigned" && nextStatus === "en_route_to_landing") {
     const inspection = latestTripInspection(state, trip.id)
 
     assertCondition(
@@ -1865,6 +1905,11 @@ export function progressTripStatus(
     const required = requiredCompletionEvidence(state, trip)
 
     assertCondition(
+      trip.completionStatus !== "pending",
+      "Record the delivery before finishing this trip"
+    )
+
+    assertCondition(
       required.length === 0 ||
         hasCompletionEvidence(state, trip.id) ||
         exceptionWaivesEvidence(trip.haulException),
@@ -1872,7 +1917,6 @@ export function progressTripStatus(
     )
   }
 
-  const nextStatus = transitionTripStatus(trip.status, input.nextStatus)
   const timestamp = nowIso()
   const updatedTrip = tripSchemaV2.parse({
     ...trip,
@@ -1939,7 +1983,7 @@ export function progressTripStatus(
     nextStatus
   })
 
-  return { event, trip: updatedTrip }
+  return { changed: true, event, trip: updatedTrip }
 }
 
 /**
@@ -1964,7 +2008,7 @@ export interface SubmitCompletionInput {
 export function submitHaulCompletion(
   state: LogLoadsDatabaseState,
   input: SubmitCompletionInput
-): { trip: TripV2 } {
+): { changed: boolean; trip: TripV2 } {
   const context = getContextForInput(state, input)
   assertOrganizationAction(context, "progress_trip")
 
@@ -1985,9 +2029,10 @@ export function submitHaulCompletion(
     load.companyId !== context.organizationId,
     "The hauling organization records what was delivered; the host confirms it"
   )
-  const driver = state.driverProfiles.find((current) => current.id === assignment.driverProfileId)
-  assertCondition(
-    context.membership.role !== "driver" || driver?.userId === context.actorUserId,
+  assertAssignedDriverForDriverRole(
+    state,
+    context,
+    assignment,
     "Drivers can only record their own hauls"
   )
   assertCondition(
@@ -2013,7 +2058,7 @@ export function submitHaulCompletion(
   }
 
   const timestamp = nowIso()
-  const { trip: updated, previousStatus } = applyHaulCompletionSubmission(
+  const { changed, trip: updated, previousStatus } = applyHaulCompletionSubmission(
     state,
     {
       actorUserId: context.actorUserId,
@@ -2023,6 +2068,10 @@ export function submitHaulCompletion(
     },
     timestamp
   )
+
+  if (!changed) {
+    return { changed: false, trip: updated }
+  }
 
   state.tripEvents.push(tripEventSchema.parse({
     actorUserId: context.actorUserId,
@@ -2060,7 +2109,7 @@ export function submitHaulCompletion(
     )
   }
 
-  return { trip: updated }
+  return { changed: true, trip: updated }
 }
 
 export interface SettleCompletionInput {
@@ -2364,6 +2413,12 @@ export function getTripDocumentTarget(
     `Assignment ${trip.assignmentId} was not found`
   )
   assertTripParticipant(state, context, assignment)
+  assertAssignedDriverForDriverRole(
+    state,
+    context,
+    assignment,
+    "Drivers can only access documents for their own hauls"
+  )
 
   return { publicIdPrefix: tripDocumentPublicIdPrefix(trip.id), tripId: trip.id }
 }

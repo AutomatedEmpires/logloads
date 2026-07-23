@@ -5,6 +5,7 @@
 .public-header { flex-wrap: wrap; }
 .public-header__nav a { border-radius: 6px; padding: 6px 8px; }
 .public-header__nav a:hover { background: rgba(23, 61, 43, 0.08); color: var(--ink); }
+.public-header__nav a[aria-current="page"] { background: var(--green-bg); color: var(--pine); }
 
 .public-menu-toggle {
   display: none;
@@ -52,6 +53,7 @@
   font-size: 1rem;
 }
 .public-header .public-mobile-menu a:not(.action-link):hover { background: rgba(23, 61, 43, 0.08); }
+.public-header .public-mobile-menu a[aria-current="page"] { background: var(--green-bg); color: var(--pine); }
 .public-mobile-menu__actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -102,7 +104,7 @@
   margin-top: 30px;
   padding-top: 16px;
 }
-.public-footer__legal p { margin: 0; max-width: none; color: var(--muted); font-size: 0.86rem; }
+.public-footer__legal p { margin: 0; max-width: none; color: #4d574a; font-size: 0.86rem; }
 
 @media (max-width: 1100px) {
   .public-footer__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -115,8 +117,29 @@
 
 /* ---------- Home: hero + bands ---------- */
 
-.home-hero { align-items: center; grid-template-columns: minmax(0, 1fr) minmax(310px, 420px); }
-.home-hero h1 { max-width: 850px; font-size: clamp(3rem, 7vw, 6.5rem); text-wrap: balance; }
+.home-hero { display: block; overflow: hidden; background: var(--ink); }
+.home-hero__visual {
+  position: relative;
+  aspect-ratio: 3318 / 1264;
+  width: 100%;
+  overflow: hidden;
+  border-bottom: 1px solid rgba(255,255,255,0.18);
+  background: #183028;
+}
+.home-hero__visual img { object-fit: cover; object-position: center 52%; }
+.home-hero__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(310px, 420px);
+  gap: clamp(24px, 5vw, 72px);
+  align-items: center;
+  padding: 46px clamp(16px, 5vw, 70px) 52px;
+  background:
+    radial-gradient(70% 160% at 78% 0%, rgba(46,118,81,0.22), transparent 60%),
+    var(--ink);
+}
+.home-hero h1 { max-width: 850px; font-size: clamp(3rem, 6.2vw, 6rem); text-wrap: balance; }
+.home-hero__content > .eyebrow { color: #b9e7c8; }
+.hero-tertiary { min-height: var(--control-min); display: inline-flex; align-items: center; gap: 7px; color: #d9eee1; font-weight: 900; text-decoration: underline; text-underline-offset: 5px; }
 .hero-signal p { margin: 6px 0 0; color: rgba(255, 255, 255, 0.82); }
 
 .hero-load-preview {
@@ -207,14 +230,23 @@
 .loop-band__steps p { margin: 0; color: rgba(255, 255, 255, 0.72); font-size: 0.9rem; line-height: 1.45; }
 
 @media (max-width: 1100px) {
-  .home-hero { grid-template-columns: 1fr; }
+  .home-hero__body { grid-template-columns: 1fr; }
   .hero-load-preview { width: min(100%, 520px); }
   .driver-flow-band__steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .loop-band__steps { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px 14px; }
 }
 @media (max-width: 760px) {
-  .home-hero { align-items: end; padding-top: 86px; }
-  .home-hero h1 { font-size: 3rem; }
+  .home-hero { display: flex; flex-direction: column; }
+  .home-hero__body { display: contents; }
+  .home-hero__content { order: 1; padding: 34px 14px 28px; }
+  .home-hero__visual { order: 2; aspect-ratio: 3318 / 1264; }
+  .home-hero__visual img { object-position: center center; }
+  .hero-load-preview { order: 3; width: auto; margin: 18px 14px 28px; }
+  .home-hero h1 { font-size: clamp(2.65rem, 14vw, 3.4rem); }
+  .home-hero p { font-size: 1rem; }
+  .hero-actions { align-items: stretch; }
+  .hero-actions .action-link { flex: 1 1 145px; }
+  .hero-tertiary { flex-basis: 100%; }
   .promise-strip,
   .driver-flow-band__steps { grid-template-columns: 1fr; }
   .driver-flow-band { padding: 36px 14px 42px; }
@@ -254,6 +286,23 @@
 .story-grid ul { margin: 10px 0 0; padding-left: 18px; }
 .story-grid li { margin: 6px 0; color: var(--ink-soft); }
 .story-attribution { margin-top: 34px; color: var(--muted); font-size: 0.82rem; }
+.story-grid--timeline { margin: 0 0 28px; padding: 0; list-style: none; counter-reset: process; }
+.story-grid--timeline > li { min-width: 0; }
+.story-grid--timeline article { position: relative; height: 100%; padding-top: 56px; }
+.story-grid--timeline article > span {
+  position: absolute;
+  top: 16px;
+  left: 18px;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--pine);
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 900;
+}
 
 /* ---------- Pricing ---------- */
 
@@ -292,6 +341,23 @@
   font-size: 0.84rem;
   font-weight: 800;
 }
+.legal-page { max-width: 1080px; }
+.legal-page .page-intro,
+.legal-page > section { max-width: 72ch; }
+.legal-boundary-summary,
+.legal-toc {
+  max-width: 72ch;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  margin: 12px 0 18px;
+  padding: 16px;
+}
+.legal-boundary-summary { border-left: 4px solid var(--pine); }
+.legal-boundary-summary p { margin: 6px 0 0; color: var(--ink-soft); line-height: 1.5; }
+.legal-toc ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px 18px; margin: 10px 0 0; padding-left: 18px; }
+.legal-toc a { color: var(--pine); font-weight: 800; text-decoration: underline; text-underline-offset: 3px; }
+.legal-page section { scroll-margin-top: 88px; }
 
 /* ---------- Contact ---------- */
 
@@ -326,6 +392,8 @@
 .contact-form input:focus,
 .contact-form textarea:focus { border-color: var(--green); outline: 3px solid rgba(46, 118, 81, 0.2); outline-offset: 0; }
 .contact-form .action-link { justify-self: start; }
+.contact-form__privacy { margin: 0; color: var(--muted); font-size: 0.82rem; line-height: 1.45; }
+.contact-form__privacy a { color: var(--pine); font-weight: 800; text-decoration: underline; text-underline-offset: 3px; }
 .contact-success strong { font-family: var(--font-display); font-size: 1.4rem; }
 .contact-success p { margin: 0; color: var(--ink-soft); line-height: 1.5; }
 .contact-aside { display: grid; gap: 14px; align-content: start; }
@@ -344,4 +412,5 @@
   .contact-form,
   .contact-success { padding: 16px; }
   .contact-form .action-link { justify-self: stretch; }
+  .legal-toc ul { grid-template-columns: 1fr; }
 }

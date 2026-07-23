@@ -15,8 +15,8 @@ type CockpitRole = "fleet" | "host"
 const ORG_VERIFICATION_OPTIONS: Record<CockpitRole, VerificationTypeOption[]> = {
   fleet: [
     { value: "organization", label: "Business identity", hint: "Confirms this carrier is a real, active business — approval turns on your Verified badge." },
-    { value: "carrier_identifier", label: "Carrier (MC/DOT) number", hint: "Your motor-carrier or DOT number so hosts can look you up." },
-    { value: "insurance_document", label: "Insurance", hint: "Your liability/cargo carrier and policy number." }
+    { value: "carrier_identifier", label: "Carrier authority", hint: "Name the public authority record a reviewer should check. Do not enter a full private credential here." },
+    { value: "insurance_document", label: "Insurance", hint: "Name the insurer and evidence available. Do not enter a full policy number here." }
   ],
   host: [
     { value: "organization", label: "Business identity", hint: "Confirms this operation is a real, active business — approval turns on your Verified badge." },
@@ -41,16 +41,20 @@ function PlanAction({ kind, label, product }: { kind: "checkout" | "portal"; lab
         disabled={pending}
         onClick={() => {
           startTransition(async () => {
-            const result = kind === "portal"
-              ? await startBillingPortalAction(product)
-              : await startCheckoutAction(product)
+            try {
+              const result = kind === "portal"
+                ? await startBillingPortalAction(product)
+                : await startCheckoutAction(product)
 
-            if (result.ok && result.url) {
-              window.location.assign(result.url)
-              return
+              if (result.ok && result.url) {
+                window.location.assign(result.url)
+                return
+              }
+
+              setNotice(result.error ?? "Billing could not be opened. Try again.")
+            } catch {
+              setNotice("Billing could not be opened. Check your connection and try again.")
             }
-
-            setNotice(result.error ?? "Billing could not be opened. Try again.")
           })
         }}
         type="button"
@@ -185,7 +189,7 @@ export function SettingsPage({
   const billingHref = role === "fleet" ? "/fleet/billing" : "/host/billing"
 
   return (
-    <AppShell account={account} kicker="Organization" role={role} title="Settings">
+    <AppShell account={account} kicker="Organization" role={role} title="Workspace overview">
       <div className="settings-stack">
         <section className="settings-panel" aria-label="Organization identity">
           <SectionHeader eyebrow="Organization" title={settings.identity.name} />
@@ -221,7 +225,9 @@ export function SettingsPage({
           <SectionHeader eyebrow="Team" title="Who works in this workspace" />
           {settings.team.length === 0 ? (
             <EmptyState
-              body="Members appear here once they accept an invitation to this workspace."
+              actionHref="/support"
+              actionLabel="Contact support"
+              body="Self-service invitations are not available yet. Contact LogLoads support to add or remove a workspace member."
               title="No members yet"
             />
           ) : (
@@ -237,6 +243,9 @@ export function SettingsPage({
               ))}
             </ul>
           )}
+          {settings.team.length > 0 ? (
+            <p className="settings-meaning">Need to change workspace access? Contact LogLoads support; self-service invitations are not available yet.</p>
+          ) : null}
         </section>
 
         <section className="settings-panel settings-panel--muted" aria-label="Notifications">
@@ -244,10 +253,10 @@ export function SettingsPage({
           <div className="notify-line">
             <Icon aria-hidden name="nav.messages" size={20} />
             <div>
-              <strong>Delivery: in-app</strong>
+              <strong>Delivery: in-app only</strong>
               <p>
-                Assignment, trip, and message updates appear in your cockpit as they happen. In-app notifications are
-                the operating record; enabled alerts and account messages also go to your account email.
+                Assignment, trip, and message updates appear in your workspace as they happen. In-app notifications are
+                the operating record. Email delivery is not enabled for operational alerts.
               </p>
             </div>
           </div>
