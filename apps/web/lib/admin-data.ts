@@ -4,7 +4,13 @@ import type { SupportRequest } from "@logloads/contracts"
 
 import { services } from "./services"
 import { requireCockpitActor } from "./session"
-import { getCockpitContext, shellAccountFor, shellNotificationsFor, type ShellAccount } from "./v3"
+import {
+  getCockpitContext,
+  pendingInvitationsForEmail,
+  shellAccountFor,
+  shellNotificationsFor,
+  type ShellAccount
+} from "./v3"
 import { formatDateTime } from "./v3-shared"
 
 // --- Shared helpers ----------------------------------------------------------
@@ -102,9 +108,9 @@ export async function getAdminShellAccount(): Promise<ShellAccount> {
       })),
       notifications: inbox.notifications,
       organizationName: "Platform",
-      // Platform staff act on the platform, not as invitees; workspace
-      // invitations for their address still surface if they use a cockpit.
-      pendingInvitations: [],
+      // An org-less admin has no other cockpit, so invitations to their
+      // address must surface here or they would never see them.
+      pendingInvitations: pendingInvitationsForEmail(context.actor.profile.email),
       unreadCount: inbox.unreadCount,
       userName: context.actor.profile.fullName,
       verificationStatus: context.actor.profile.verificationStatus

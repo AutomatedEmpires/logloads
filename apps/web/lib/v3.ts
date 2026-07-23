@@ -89,22 +89,27 @@ export function shellNotificationsFor(userId: string): { notifications: ShellNot
   }
 }
 
-export function shellAccountFor(context: CockpitContext): ShellAccount {
-  const inbox = shellNotificationsFor(context.actor.profile.id)
+// Invitations waiting on a person's email surface in the account menu — the
+// one element every cockpit renders (including the org-less admin shell) — so
+// an invited existing user can accept without hunting for a page they have
+// never seen.
+export function pendingInvitationsForEmail(
+  email: string | null | undefined
+): ShellAccount["pendingInvitations"] {
   const state = services.state
 
-  // Invitations waiting on this person's email surface in the account menu —
-  // the one element every cockpit renders — so an invited existing user can
-  // accept without hunting for a page they have never seen.
-  const pendingInvitations = services
-    .listPendingInvitationsForEmail(context.actor.profile.email ?? "")
-    .map((invitation) => ({
-      id: invitation.id,
-      organizationName:
-        state.organizations.find((organization) => organization.id === invitation.organizationId)
-          ?.displayName ?? "A LogLoads workspace",
-      roleLabel: String(invitation.invitedRole).replaceAll("_", " ")
-    }))
+  return services.listPendingInvitationsForEmail(email ?? "").map((invitation) => ({
+    id: invitation.id,
+    organizationName:
+      state.organizations.find((organization) => organization.id === invitation.organizationId)
+        ?.displayName ?? "A LogLoads workspace",
+    roleLabel: String(invitation.invitedRole).replaceAll("_", " ")
+  }))
+}
+
+export function shellAccountFor(context: CockpitContext): ShellAccount {
+  const inbox = shellNotificationsFor(context.actor.profile.id)
+  const pendingInvitations = pendingInvitationsForEmail(context.actor.profile.email)
 
   return {
     activeOrganizationId: context.actor.activeOrganization?.id ?? null,
