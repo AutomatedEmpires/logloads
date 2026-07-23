@@ -56,6 +56,8 @@ export interface ShellAccount {
   verificationStatus: string
   activeOrganizationId: string | null
   memberships: Array<{ id: string; name: string; role: string }>
+  /** Workspace invitations waiting on THIS signed-in person's email. */
+  pendingInvitations: Array<{ id: string; organizationName: string; roleLabel: string }>
   notifications: ShellNotification[]
   unreadCount: number
 }
@@ -89,6 +91,20 @@ export function shellNotificationsFor(userId: string): { notifications: ShellNot
 
 export function shellAccountFor(context: CockpitContext): ShellAccount {
   const inbox = shellNotificationsFor(context.actor.profile.id)
+  const state = services.state
+
+  // Invitations waiting on this person's email surface in the account menu —
+  // the one element every cockpit renders — so an invited existing user can
+  // accept without hunting for a page they have never seen.
+  const pendingInvitations = services
+    .listPendingInvitationsForEmail(context.actor.profile.email ?? "")
+    .map((invitation) => ({
+      id: invitation.id,
+      organizationName:
+        state.organizations.find((organization) => organization.id === invitation.organizationId)
+          ?.displayName ?? "A LogLoads workspace",
+      roleLabel: String(invitation.invitedRole).replaceAll("_", " ")
+    }))
 
   return {
     activeOrganizationId: context.actor.activeOrganization?.id ?? null,
@@ -99,6 +115,7 @@ export function shellAccountFor(context: CockpitContext): ShellAccount {
     })),
     notifications: inbox.notifications,
     organizationName: context.network.activeOrganization.name,
+    pendingInvitations,
     unreadCount: inbox.unreadCount,
     userName: context.actor.profile.fullName,
     verificationStatus: context.network.activeOrganization.verificationStatus

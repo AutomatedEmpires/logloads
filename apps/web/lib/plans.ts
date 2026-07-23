@@ -1,4 +1,4 @@
-import type { Entitlement } from "@logloads/contracts"
+import type { Entitlement, OrganizationRole } from "@logloads/contracts"
 
 import type { NetworkView } from "./network"
 import { services } from "./services"
@@ -334,7 +334,9 @@ const ORGANIZATION_TYPE_LABELS: Record<string, string> = {
   platform: "Platform"
 }
 
-const MEMBER_ROLE_LABELS: Record<string, string> = {
+// `satisfies` forces coverage: adding a role to ORGANIZATION_ROLES without a
+// label is a compile error here, not a silently hand-rolled string somewhere.
+export const MEMBER_ROLE_LABELS = {
   admin: "Administrator",
   billing: "Billing",
   destination_manager: "Destination manager",
@@ -344,7 +346,7 @@ const MEMBER_ROLE_LABELS: Record<string, string> = {
   landing_manager: "Landing manager",
   owner: "Owner",
   viewer: "Viewer"
-}
+} satisfies Record<OrganizationRole, string>
 
 interface VerificationView {
   label: string
@@ -410,9 +412,17 @@ export interface PlanSummaryView {
   statusTone: PlanTone
 }
 
+export interface PendingInvitationView {
+  id: string
+  invitedEmail: string
+  roleLabel: string
+  expiresAt: string
+}
+
 export interface SettingsView {
   identity: OrganizationIdentityView
   team: TeamMemberView[]
+  pendingInvitations: PendingInvitationView[]
   planSummaries: PlanSummaryView[]
 }
 
@@ -466,6 +476,16 @@ export function getSettingsView(network: NetworkView): SettingsView {
     }
   })
 
+  const pendingInvitations = services
+    .listPendingInvitationsForOrganization(organizationId)
+    .map((invitation) => ({
+      expiresAt: invitation.expiresAt,
+      id: invitation.id,
+      invitedEmail: invitation.invitedEmail,
+      roleLabel: MEMBER_ROLE_LABELS[invitation.invitedRole] ?? planFeatureName(String(invitation.invitedRole))
+    }))
+    .sort((left, right) => left.invitedEmail.localeCompare(right.invitedEmail))
+
   return {
     identity: {
       legalName: organization?.legalName ?? network.activeOrganization.name,
@@ -476,6 +496,7 @@ export function getSettingsView(network: NetworkView): SettingsView {
       verificationMeaning: verification.meaning,
       verificationTone: verification.tone
     },
+    pendingInvitations,
     planSummaries,
     team
   }

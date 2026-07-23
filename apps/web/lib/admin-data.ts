@@ -102,6 +102,9 @@ export async function getAdminShellAccount(): Promise<ShellAccount> {
       })),
       notifications: inbox.notifications,
       organizationName: "Platform",
+      // Platform staff act on the platform, not as invitees; workspace
+      // invitations for their address still surface if they use a cockpit.
+      pendingInvitations: [],
       unreadCount: inbox.unreadCount,
       userName: context.actor.profile.fullName,
       verificationStatus: context.actor.profile.verificationStatus

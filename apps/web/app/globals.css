@@ -327,6 +327,24 @@ a { color: inherit; text-decoration: none; }
 .app-topbar h1,
 .app-topbar__title { margin: 0; font-family: var(--font-display); font-size: 1.45rem; font-weight: 800; letter-spacing: -0.01em; }
 .account-switcher { position: relative; display: flex; align-items: center; gap: 10px; font-weight: 900; }
+.account-switcher__invite { display: grid; gap: 6px; padding: 8px 0; border-top: 1px dashed var(--line); }
+.account-switcher__invite p { margin: 0; font-weight: 700; }
+.account-switcher__invite em { font-style: normal; color: var(--muted); }
+.account-switcher__invite button {
+  min-height: 38px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  padding: 6px 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.account-switcher__invite button:first-of-type {
+  border-color: var(--pine);
+  background: var(--pine);
+  color: #fff;
+}
 .account-switcher__trigger {
   display: inline-flex;
   min-height: var(--control-min);

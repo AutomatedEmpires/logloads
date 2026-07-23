@@ -6,7 +6,12 @@ import { useEffect, useRef, useState, useTransition, type ReactNode } from "reac
 import { Badge, Icon, type IconKey } from "@logloads/ui"
 
 import { markAllNotificationsReadAction, markNotificationReadAction } from "@/lib/cockpit-actions"
-import { signOutAction, switchOrganizationAction } from "@/lib/session-actions"
+import {
+  acceptInvitationAction,
+  declineInvitationAction,
+  signOutAction,
+  switchOrganizationAction
+} from "@/lib/session-actions"
 import { BrandMark } from "./Brand"
 
 export interface ShellNotification {
@@ -25,6 +30,8 @@ export interface ShellAccount {
   verificationStatus: string
   activeOrganizationId: string | null
   memberships: Array<{ id: string; name: string; role: string }>
+  /** Workspace invitations waiting on THIS signed-in person's email. */
+  pendingInvitations: Array<{ id: string; organizationName: string; roleLabel: string }>
   notifications: ShellNotification[]
   unreadCount: number
 }
@@ -618,6 +625,37 @@ function AccountMenu({ account, pathname }: { account: ShellAccount; pathname: s
                   {membership.name}
                   <em>{membership.role.replaceAll("_", " ")}</em>
                 </button>
+              ))}
+            </div>
+          ) : null}
+          {account.pendingInvitations.length > 0 ? (
+            <div className="account-switcher__orgs" role="group" aria-label="Workspace invitations">
+              <span>Invitations</span>
+              {account.pendingInvitations.map((invitation) => (
+                <div className="account-switcher__invite" key={invitation.id}>
+                  <p>
+                    <strong>{invitation.organizationName}</strong>
+                    <em> as {invitation.roleLabel}</em>
+                  </p>
+                  <button
+                    onClick={() => {
+                      setOpen(false)
+                      void acceptInvitationAction(invitation.id)
+                    }}
+                    type="button"
+                  >
+                    Accept
+                  </button>
+                  <button
+                    onClick={() => {
+                      setOpen(false)
+                      void declineInvitationAction(invitation.id)
+                    }}
+                    type="button"
+                  >
+                    Decline
+                  </button>
+                </div>
               ))}
             </div>
           ) : null}

@@ -430,9 +430,9 @@ export function FleetDrivers({ account, drivers, network }: FleetShellProps & { 
       {drivers.length === 0 ? (
         <EmptyState
           title="No drivers in this organization yet."
-          body="Invite drivers to your team or assign a driver profile to equipment so their work shows up here."
-          actionHref="/fleet/trucks"
-          actionLabel="Open trucks"
+          body="Invite drivers from Workspace settings — the invitation appears for them at sign-in — or assign a driver profile to equipment so their work shows up here."
+          actionHref="/fleet/settings"
+          actionLabel="Invite a driver"
         />
       ) : (
         <div className="fleet-driver-list">

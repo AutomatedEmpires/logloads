@@ -130,6 +130,63 @@ export async function switchOrganizationAction(organizationId: string): Promise<
   revalidatePath("/", "layout")
 }
 
+/**
+ * An already-onboarded person accepting a workspace invitation: one new
+ * active membership, then the session moves to the joined workspace so the
+ * switcher shows both. The service owns every rule (invited email match,
+ * expiry, duplicates); a refused accept simply leaves the invitation visible.
+ */
+export async function acceptInvitationAction(invitationId: string): Promise<void> {
+  const actor = await getSessionActor()
+
+  if (!actor) {
+    redirect("/sign-in")
+  }
+
+  try {
+    await checkRateLimit("invitation-respond", actor.profile.id, 10, 60_000)
+
+    const { membership } = await mutateState((draft) =>
+      draft.acceptInvitationForExistingUser({ actorUserId: actor.profile.id, invitationId })
+    )
+
+    captureServerEvent("invitation_accepted", actor.profile.id, { invitationId })
+
+    const cookieStore = await cookies()
+
+    cookieStore.set(
+      SESSION_COOKIE,
+      createSessionCookieValue(actor.profile.id, membership.organizationId),
+      COOKIE_OPTIONS
+    )
+  } catch {
+    // The pending item only disappears on success; a refused accept stays
+    // visible and retryable rather than vanishing with no explanation.
+  }
+
+  revalidatePath("/", "layout")
+}
+
+export async function declineInvitationAction(invitationId: string): Promise<void> {
+  const actor = await getSessionActor()
+
+  if (!actor) {
+    redirect("/sign-in")
+  }
+
+  try {
+    await checkRateLimit("invitation-respond", actor.profile.id, 10, 60_000)
+    await mutateState((draft) =>
+      draft.declineOrganizationInvitation({ actorUserId: actor.profile.id, invitationId })
+    )
+    captureServerEvent("invitation_declined", actor.profile.id, { invitationId })
+  } catch {
+    // Same stance as accept: failure leaves the item in place.
+  }
+
+  revalidatePath("/", "layout")
+}
+
 export interface OnboardingFormState {
   error: string | null
 }
@@ -187,6 +244,40 @@ export async function completeOnboardingAction(
     email = clerkIdentity.email
   } else if (!(await isDevSessionEnabled())) {
     return { error: "Account creation requires a configured sign-in provider in this environment." }
+  }
+
+  // Joining THROUGH an invitation: profile + membership in the inviting
+  // workspace, and deliberately no new organization. The service re-verifies
+  // that the invitation belongs to the resolved email — a posted id alone
+  // proves nothing.
+  const invitationId = String(formData.get("invitationId") ?? "")
+
+  if (invitationId) {
+    let joined: { organizationId: string; userId: string }
+
+    try {
+      joined = await mutateState((draft) =>
+        draft.acceptInvitationAsNewAccount({
+          clerkUserId,
+          email,
+          fullName,
+          invitationId,
+          phone
+        })
+      )
+
+      captureServerEvent("invitation_accepted", joined.userId, { invitationId, newAccount: true })
+
+      const cookieStore = await cookies()
+
+      cookieStore.set(SESSION_COOKIE, createSessionCookieValue(joined.userId, joined.organizationId), COOKIE_OPTIONS)
+    } catch (error) {
+      return { error: serializeError(error).error }
+    }
+
+    const joinedActor = await getSessionActor()
+
+    redirect(joinedActor ? homePathFor(joinedActor) : "/workspace")
   }
 
   try {
