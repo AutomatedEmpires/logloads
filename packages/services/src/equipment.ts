@@ -273,8 +273,21 @@ function requireOrgCombination(
 }
 
 /**
- * Every load posting that active work on this rig currently serves — the loads
- * that go at-risk the moment the rig cannot roll.
+ * Assignment statuses that mean the work is COMMITTED to this rig. A pending
+ * request or an unanswered offer is not stranded work — the host simply must
+ * not approve it onto a rig in the shop — so it earns no critical flag.
+ * (The broader ACTIVE set above still governs parking/reassignment blocks.)
+ */
+const COMMITTED_ASSIGNMENT_STATUSES: ReadonlySet<AssignmentStatus> = new Set([
+  "accepted",
+  "checked_in",
+  "loading",
+  "hauled"
+])
+
+/**
+ * Every load posting that committed work on this rig currently serves — the
+ * loads that go at-risk the moment the rig cannot roll.
  */
 export function listActiveLoadsUsingCombination(
   state: LogLoadsDatabaseState,
@@ -289,7 +302,7 @@ export function listActiveLoadsUsingCombination(
   }
 
   for (const assignment of state.assignments) {
-    if (ACTIVE_ASSIGNMENT_STATUSES.has(assignment.status) && assignmentUsesCombination(assignment, combination)) {
+    if (COMMITTED_ASSIGNMENT_STATUSES.has(assignment.status) && assignmentUsesCombination(assignment, combination)) {
       loadIds.add(assignment.loadPostingId)
     }
   }

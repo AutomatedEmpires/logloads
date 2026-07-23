@@ -262,8 +262,13 @@ export function getFeaturedTruckPhotoReference(state: LogLoadsDatabaseState, raw
     throw new Error("This driver is not visible to your organization")
   }
 
+  // Resolve exactly the way the upload path does (getDriverMediaTarget): the
+  // driver's own organization's active combination. Without the organization
+  // scope, a driver with combinations in two outfits could show one outfit's
+  // rig to the other's viewers.
   const combination = state.equipmentCombinations.find((candidate) =>
     candidate.assignedDriverProfileId === driver.id &&
+    candidate.organizationId === driver.companyId &&
     candidate.status !== "inactive"
   )
   const truck = combination
