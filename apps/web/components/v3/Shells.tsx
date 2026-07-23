@@ -7,6 +7,7 @@ import { Badge, Icon, type IconKey } from "@logloads/ui"
 
 import { markAllNotificationsReadAction, markNotificationReadAction } from "@/lib/cockpit-actions"
 import { signOutAction, switchOrganizationAction } from "@/lib/session-actions"
+import { BrandMark } from "./Brand"
 
 export interface ShellNotification {
   id: string
@@ -32,9 +33,16 @@ interface ShellProps {
   role: "driver" | "fleet" | "host" | "admin"
   title: string
   kicker: string
+  contentOwnsHeading?: boolean
   orgName?: string
   account?: ShellAccount
   children: ReactNode
+}
+
+interface NavItem {
+  href: string
+  icon: IconKey
+  label: string
 }
 
 export interface EmptyStateProps {
@@ -52,7 +60,7 @@ export const publicNav: Array<[string, string]> = [
   ["Pricing", "/pricing"]
 ]
 
-const navByRole: Record<ShellProps["role"], Array<{ href: string; icon: IconKey; label: string }>> = {
+const navByRole: Record<ShellProps["role"], NavItem[]> = {
   admin: [
     { href: "/admin", icon: "nav.admin", label: "Command" },
     { href: "/admin/organizations", icon: "nav.fleet", label: "Organizations" },
@@ -82,11 +90,11 @@ const navByRole: Record<ShellProps["role"], Array<{ href: string; icon: IconKey;
   ]
 }
 
-const desktopMoreByRole: Record<ShellProps["role"], Array<{ href: string; icon: IconKey; label: string }>> = {
+const desktopMoreByRole: Record<ShellProps["role"], NavItem[]> = {
   admin: [
     { href: "/admin/opportunities", icon: "nav.loads", label: "Opportunities" },
     { href: "/admin/reliability", icon: "status.verified", label: "Reliability" },
-    { href: "/admin/disputes", icon: "ops.notice", label: "Disputes" },
+    { href: "/admin/disputes", icon: "ops.notice", label: "Cancellations" },
     { href: "/admin/notices", icon: "ops.notice", label: "Notices" },
     { href: "/admin/audit", icon: "ops.audit", label: "History" }
   ],
@@ -104,7 +112,7 @@ const desktopMoreByRole: Record<ShellProps["role"], Array<{ href: string; icon: 
     { href: "/fleet/assistant", icon: "action.search", label: "Assistant" },
     { href: "/fleet/network", icon: "map.network", label: "Network" },
     { href: "/fleet/billing", icon: "load.pay", label: "Billing" },
-    { href: "/fleet/settings", icon: "truck.service", label: "Settings" }
+    { href: "/fleet/settings", icon: "truck.service", label: "Workspace" }
   ],
   host: [
     { href: "/host/landings", icon: "map.landing", label: "Landings" },
@@ -113,15 +121,18 @@ const desktopMoreByRole: Record<ShellProps["role"], Array<{ href: string; icon: 
     { href: "/host/assistant", icon: "action.search", label: "Assistant" },
     { href: "/host/analytics", icon: "ops.queue", label: "Analytics" },
     { href: "/host/billing", icon: "load.pay", label: "Billing" },
-    { href: "/host/settings", icon: "truck.service", label: "Settings" }
+    { href: "/host/settings", icon: "truck.service", label: "Workspace" }
   ]
 }
 
 export function EmptyState({ actionHref, actionLabel, body, title }: EmptyStateProps) {
   return (
     <div className="empty-state">
-      <strong>{title}</strong>
-      <p>{body}</p>
+      <Icon aria-hidden className="empty-state__icon" name="status.open" size={26} />
+      <div className="empty-state__copy">
+        <h2>{title}</h2>
+        <p>{body}</p>
+      </div>
       {actionHref && actionLabel ? <Link className="action-link action-link--secondary" href={actionHref}>{actionLabel}</Link> : null}
     </div>
   )
@@ -160,15 +171,47 @@ export function PageIntro({ body, eyebrow, title }: { body: string; eyebrow: str
 
 function PublicHeader() {
   const [menuOpen, setMenuOpen] = useState(false)
+  const pathname = usePathname()
+  const headerRef = useRef<HTMLElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    setMenuOpen(false)
+  }, [pathname])
+
+  useEffect(() => {
+    if (!menuOpen) return
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
+    const closeOnOutside = (event: PointerEvent) => {
+      if (headerRef.current && !headerRef.current.contains(event.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+
+    document.addEventListener("keydown", closeOnEscape)
+    document.addEventListener("pointerdown", closeOnOutside)
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape)
+      document.removeEventListener("pointerdown", closeOnOutside)
+    }
+  }, [menuOpen])
+
+  const isCurrent = (href: string) => pathname === href || (href !== "/" && pathname.startsWith(`${href}/`))
 
   return (
-    <header className="public-header">
+    <header className="public-header" ref={headerRef}>
       <Link className="brand" href="/" aria-label="LogLoads home" onClick={() => setMenuOpen(false)}>
-        <span className="brand-mark">LL</span>
+        <BrandMark priority size={44} />
         <span>LogLoads</span>
       </Link>
       <nav aria-label="Main navigation" className="public-header__nav">
-        {publicNav.map(([label, href]) => <Link href={href} key={href}>{label}</Link>)}
+        {publicNav.map(([label, href]) => <Link aria-current={isCurrent(href) ? "page" : undefined} href={href} key={href}>{label}</Link>)}
       </nav>
       <div className="public-actions">
         <Link href="/sign-in">Sign in</Link>
@@ -178,6 +221,7 @@ function PublicHeader() {
           aria-expanded={menuOpen}
           className={menuOpen ? "public-menu-toggle is-open" : "public-menu-toggle"}
           onClick={() => setMenuOpen((current) => !current)}
+          ref={triggerRef}
           type="button"
         >
           <span aria-hidden className="public-menu-toggle__bars"><i /><i /><i /></span>
@@ -187,7 +231,7 @@ function PublicHeader() {
       {menuOpen ? (
         <nav aria-label="Menu" className="public-mobile-menu" id="public-mobile-menu">
           {publicNav.map(([label, href]) => (
-            <Link href={href} key={href} onClick={() => setMenuOpen(false)}>{label}</Link>
+            <Link aria-current={isCurrent(href) ? "page" : undefined} href={href} key={href} onClick={() => setMenuOpen(false)}>{label}</Link>
           ))}
           <div className="public-mobile-menu__actions">
             <Link className="action-link action-link--secondary" href="/sign-in" onClick={() => setMenuOpen(false)}>Sign in</Link>
@@ -243,7 +287,7 @@ function PublicFooter() {
       <div className="public-footer__grid">
         <div className="public-footer__brand">
           <Link className="brand" href="/">
-            <span className="brand-mark">LL</span>
+            <BrandMark size={72} />
             <span>LogLoads</span>
           </Link>
           <p>Timber needs trucks. Trucks need work. LogLoads connects the operation from landing to mill.</p>
@@ -266,8 +310,9 @@ function PublicFooter() {
 export function PublicShell({ children }: { children: ReactNode }) {
   return (
     <div className="site-shell">
+      <a className="skip-link" href="#main-content">Skip to main content</a>
       <PublicHeader />
-      {children}
+      <div className="site-content" id="main-content" tabIndex={-1}>{children}</div>
       <PublicFooter />
     </div>
   )
@@ -343,7 +388,16 @@ function notificationHref(role: ShellProps["role"], type: string | null, id: str
     case "assignment":
       return role === "driver" ? "/driver/schedule" : role === "host" ? "/host/live-board" : "/fleet/dispatch"
     case "direct_offer":
-      return "/fleet/opportunities"
+      return role === "host" ? "/host/carriers" : "/fleet/opportunities"
+    case "message_thread": {
+      const messagesPath = role === "driver"
+        ? "/driver/messages"
+        : role === "host"
+          ? "/host/messages"
+          : "/fleet/messages"
+
+      return id ? `${messagesPath}?thread=${encodeURIComponent(id)}` : messagesPath
+    }
     case "support_request":
       return role === "admin"
         ? (id ? `/admin/reports#support-request-${id}` : "/admin/reports")
@@ -362,11 +416,36 @@ function NotificationBell({ notifications, role, unreadCount }: {
   const [isPending, startTransition] = useTransition()
   const [visibleNotifications, setVisibleNotifications] = useState(notifications)
   const [visibleUnreadCount, setVisibleUnreadCount] = useState(unreadCount)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     setVisibleNotifications(notifications)
     setVisibleUnreadCount(unreadCount)
   }, [notifications, unreadCount])
+
+  useEffect(() => {
+    if (!open) return
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
+    const closeOnOutside = (event: PointerEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+
+    document.addEventListener("keydown", closeOnEscape)
+    document.addEventListener("pointerdown", closeOnOutside)
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape)
+      document.removeEventListener("pointerdown", closeOnOutside)
+    }
+  }, [open])
 
   function markOne(notificationId: string): void {
     startTransition(async () => {
@@ -397,20 +476,22 @@ function NotificationBell({ notifications, role, unreadCount }: {
   }
 
   return (
-    <div className="notif-bell">
+    <div className="notif-bell" ref={containerRef}>
       <button
+        aria-controls="notifications-panel"
         aria-expanded={open}
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
         aria-label={visibleUnreadCount > 0 ? `Notifications, ${visibleUnreadCount} unread` : "Notifications"}
         className="notif-bell__trigger"
         onClick={() => setOpen((current) => !current)}
+        ref={triggerRef}
         type="button"
       >
         <Icon aria-hidden name="ops.notice" size={20} />
         {visibleUnreadCount > 0 ? <span className="notif-bell__count">{visibleUnreadCount > 9 ? "9+" : visibleUnreadCount}</span> : null}
       </button>
       {open ? (
-        <div className="notif-bell__menu" role="menu">
+        <div aria-label="Notifications" className="notif-bell__menu" id="notifications-panel" role="dialog">
           <div className="notif-bell__head">
             <strong>Notifications</strong>
             <button
@@ -478,6 +559,7 @@ function NotificationBell({ notifications, role, unreadCount }: {
 function AccountMenu({ account, pathname }: { account: ShellAccount; pathname: string }) {
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
@@ -488,13 +570,22 @@ function AccountMenu({ account, pathname }: { account: ShellAccount; pathname: s
         triggerRef.current?.focus()
       }
     }
+    const closeOnOutside = (event: PointerEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
 
     document.addEventListener("keydown", closeOnEscape)
-    return () => document.removeEventListener("keydown", closeOnEscape)
+    document.addEventListener("pointerdown", closeOnOutside)
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape)
+      document.removeEventListener("pointerdown", closeOnOutside)
+    }
   }, [open])
 
   return (
-    <div className="account-switcher">
+    <div className="account-switcher" ref={containerRef}>
       <button
         aria-controls="account-switcher-panel"
         aria-expanded={open}
@@ -547,20 +638,97 @@ function AccountMenu({ account, pathname }: { account: ShellAccount; pathname: s
   )
 }
 
-export function AppShell({ account, children, kicker, orgName, role, title }: ShellProps) {
+function MobileTools({ isCurrent, items }: { isCurrent: (href: string) => boolean; items: NavItem[] }) {
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
+    const closeOnOutside = (event: PointerEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+
+    document.addEventListener("keydown", closeOnEscape)
+    document.addEventListener("pointerdown", closeOnOutside)
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape)
+      document.removeEventListener("pointerdown", closeOnOutside)
+    }
+  }, [open])
+
+  return (
+    <div className="mobile-tools" ref={containerRef}>
+      <button
+        aria-controls="mobile-tools-panel"
+        aria-expanded={open}
+        aria-label={open ? "Close more tools" : "Open more tools"}
+        className="mobile-tools__trigger"
+        onClick={() => setOpen((current) => !current)}
+        ref={triggerRef}
+        type="button"
+      >
+        <Icon aria-hidden name="truck.service" size={20} />
+        <span>Tools</span>
+      </button>
+      {open ? (
+        <div className="mobile-tools__panel" id="mobile-tools-panel">
+          <div className="mobile-tools__head">
+            <div><span>More tools</span><strong>Everything in this workspace</strong></div>
+            <button onClick={() => { setOpen(false); triggerRef.current?.focus() }} type="button">Close</button>
+          </div>
+          <nav aria-label="More tools">
+            {items.map((item) => (
+              <Link aria-current={isCurrent(item.href) ? "page" : undefined} href={item.href} key={item.href} onClick={() => setOpen(false)}>
+                <Icon aria-hidden name={item.icon} size={20} />
+                <span>{item.label}</span>
+              </Link>
+            ))}
+          </nav>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+export function AppShell({ account, children, contentOwnsHeading = false, kicker, orgName, role, title }: ShellProps) {
   const pathname = usePathname()
-  const nav = [...navByRole[role], ...desktopMoreByRole[role]]
-  const isCurrent = (href: string) => pathname === href || pathname.startsWith(`${href}/`)
+  const primaryNav = navByRole[role]
+  const toolsNav = desktopMoreByRole[role]
+  const currentHref = [...primaryNav, ...toolsNav]
+    .filter((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))
+    .sort((left, right) => right.href.length - left.href.length)[0]?.href
+  const isCurrent = (href: string) => currentHref === href
 
   return (
     <div className={`app-shell app-shell--${role}`}>
+      <a className="skip-link" href="#app-content">Skip to main content</a>
       <aside className="app-sidebar">
         <Link className="brand" href="/">
-          <span className="brand-mark">LL</span>
+          <BrandMark priority size={44} />
           <span>LogLoads</span>
         </Link>
-        <nav aria-label={`${role} navigation`}>
-          {nav.map((item) => (
+        <nav aria-label={`${role} primary navigation`}>
+          <span className="app-sidebar__label">Workspace</span>
+          {primaryNav.map((item) => (
+            <Link aria-current={isCurrent(item.href) ? "page" : undefined} href={item.href} key={item.href}>
+              <Icon aria-hidden name={item.icon} size={20} />
+              <span>{item.label}</span>
+            </Link>
+          ))}
+        </nav>
+        <nav aria-label={`${role} tools`}>
+          <span className="app-sidebar__label">More tools</span>
+          {toolsNav.map((item) => (
             <Link aria-current={isCurrent(item.href) ? "page" : undefined} href={item.href} key={item.href}>
               <Icon aria-hidden name={item.icon} size={20} />
               <span>{item.label}</span>
@@ -568,27 +736,29 @@ export function AppShell({ account, children, kicker, orgName, role, title }: Sh
           ))}
         </nav>
       </aside>
-      <div className="app-main">
+      <main className="app-main" id="app-content" tabIndex={-1}>
         <header className="app-topbar">
           <div>
             <p className="eyebrow">{kicker}</p>
-            <h1>{title}</h1>
+            {contentOwnsHeading ? <p className="app-topbar__title">{title}</p> : <h1>{title}</h1>}
           </div>
           {account ? (
             <div className="app-topbar__account">
+              <MobileTools isCurrent={isCurrent} items={toolsNav} />
               <NotificationBell notifications={account.notifications} role={role} unreadCount={account.unreadCount} />
               <AccountMenu account={account} pathname={pathname} />
             </div>
           ) : (
-            <div className="account-switcher">
-              <span>{orgName ?? "Platform"}</span>
+            <div className="app-topbar__account">
+              <MobileTools isCurrent={isCurrent} items={toolsNav} />
+              <div className="account-switcher"><span>{orgName ?? "Platform"}</span></div>
             </div>
           )}
         </header>
         {children}
-      </div>
+      </main>
       <nav className="mobile-app-nav" aria-label={`${role} mobile navigation`}>
-        {navByRole[role].map((item) => (
+        {primaryNav.map((item) => (
           <Link aria-current={isCurrent(item.href) ? "page" : undefined} href={item.href} key={item.href}>
             <Icon aria-hidden name={item.icon} size={20} />
             <span>{item.label}</span>

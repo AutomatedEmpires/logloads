@@ -152,6 +152,26 @@ export async function refreshState(): Promise<void> {
   }
 
   const refresh = (async () => {
+    // Next can evaluate server actions and page renders in separate workers.
+    // Supabase keeps production workers converged; the provider-free founder
+    // demo uses one disposable file instead, so every local read must reload
+    // that file rather than trusting a worker's older in-memory singleton.
+    if (!remoteSnapshotConfig()) {
+      if (!localFallbackAllowed()) {
+        throw new OperatingStateUnavailableError(
+          "Local operating-state persistence is disabled in production"
+        )
+      }
+
+      const localSnapshot = loadStateSnapshot(stateFilePath)
+
+      if (localSnapshot) {
+        replaceStateContents(services.state, localSnapshot)
+      }
+
+      return
+    }
+
     const snapshot = await canonicalSnapshot()
 
     if (snapshot) {

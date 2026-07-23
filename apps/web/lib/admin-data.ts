@@ -186,9 +186,9 @@ export async function getAdminOverview(): Promise<AdminOverview> {
     },
     {
       count: openDisputes,
-      description: "Cancelled assignments and the reasons the parties gave.",
+      description: "Cancelled assignments and their recorded reasons.",
       href: "/admin/disputes",
-      label: "Disputes",
+      label: "Cancellations",
       tone: openDisputes > 0 ? "warning" : "clear"
     }
   ]

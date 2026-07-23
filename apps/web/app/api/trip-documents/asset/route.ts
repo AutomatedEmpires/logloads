@@ -38,9 +38,11 @@ export async function GET(request: NextRequest) {
       throw new ApiError("This record has no stored file", 404)
     }
 
-    // Signed outside the try: building the URL needs Cloudinary credentials, and
-    // their absence is a 503 configuration fact. Catching it alongside the fetch
-    // would report an unconfigured environment as a provider blip.
+    // Signed outside the fetch-specific try/catch (still inside the route's
+    // outer try, whose apiErrorResponse turns the gate's refusal into the 503):
+    // building the URL needs Cloudinary configuration, and its absence is a
+    // configuration fact. Catching it alongside the fetch would report an
+    // unconfigured environment as a provider blip.
     const url = await signedDocumentUrl(document.media)
     let response: Response
 

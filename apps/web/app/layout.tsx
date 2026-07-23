@@ -43,7 +43,19 @@ export const metadata = {
 		siteName: "LogLoads",
 		title: "LogLoads — Timber hauling, connected from landing to mill",
 		description: "Find capacity, put trucks to work, and keep every timber haul connected.",
+		images: [{
+			alt: "Log trucks hauling timber through a mountain forest",
+			height: 1264,
+			url: "/brand/logloads-hero.png",
+			width: 3318,
+		}],
 		type: "website",
+	},
+	twitter: {
+		card: "summary_large_image",
+		title: "LogLoads — Timber hauling, connected from landing to mill",
+		description: "Find capacity, put trucks to work, and keep every timber haul connected.",
+		images: ["/brand/logloads-hero.png"],
 	},
 }
 

@@ -7,6 +7,7 @@ import { recordPassingPreTripInspection, stubTripDocumentMedia } from "./test-he
 const HAULER_ORG = "33333333-3333-4333-8333-333333333331"
 const HOST_ORG = "33333333-3333-4333-8333-333333333332"
 const HAULER_DRIVER_ACTOR = "22222222-2222-4222-8222-222222222221"
+const HAULER_COWORKER_DRIVER_ACTOR = "22222222-2222-4222-8222-222222222222"
 const HOST_OWNER = "22222222-2222-4222-8222-222222222223"
 const DRIVER_PROFILE = "44444444-4444-4444-8444-444444444441"
 const TRUCK_PROFILE = "77777777-7777-4777-8777-777777777771"
@@ -144,6 +145,77 @@ describe("driver submission", () => {
     expect(services.state.auditEvents.some((event) =>
       event.entityId === trip.id && event.action === "haul_completion_submitted"
     )).toBe(true)
+  })
+
+  it("treats an identical same-actor delivery retry as a no-op", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { trip } = bookHaul(services)
+
+    haulToDestination(services, trip.id)
+    const first = services.submitHaulCompletion({
+      actorUserId: HAULER_DRIVER_ACTOR,
+      deliveredQuantity: { ticketNumber: "SC-RETRY", unit: "tons", value: 26.4 },
+      organizationId: HAULER_ORG,
+      tripId: trip.id
+    })
+    const before = {
+      audits: services.state.auditEvents.length,
+      events: services.state.tripEvents.length,
+      notifications: services.state.notifications.length,
+      submittedAt: first.trip.completionSubmittedAt,
+      updatedAt: first.trip.updatedAt
+    }
+
+    const retry = services.submitHaulCompletion({
+      actorUserId: HAULER_DRIVER_ACTOR,
+      deliveredQuantity: { ticketNumber: "SC-RETRY", unit: "tons", value: 26.4 },
+      organizationId: HAULER_ORG,
+      tripId: trip.id
+    })
+
+    expect(retry.changed).toBe(false)
+    expect(retry.trip.completionSubmittedAt).toBe(before.submittedAt)
+    expect(retry.trip.updatedAt).toBe(before.updatedAt)
+    expect(services.state.auditEvents).toHaveLength(before.audits)
+    expect(services.state.tripEvents).toHaveLength(before.events)
+    expect(services.state.notifications).toHaveLength(before.notifications)
+  })
+
+  it("requires a delivery record before the driver can finish the trip", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { trip } = bookHaul(services)
+
+    haulToDestination(services, trip.id)
+    services.progressTripStatus({
+      actorUserId: HAULER_DRIVER_ACTOR,
+      nextStatus: "unloading",
+      organizationId: HAULER_ORG,
+      source: "driver",
+      tripId: trip.id
+    })
+
+    expect(() => services.progressTripStatus({
+      actorUserId: HAULER_DRIVER_ACTOR,
+      nextStatus: "completed",
+      organizationId: HAULER_ORG,
+      source: "driver",
+      tripId: trip.id
+    })).toThrow(/Record the delivery before finishing/)
+  })
+
+  it("prevents a driver from progressing a coworker's haul", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { trip } = bookHaul(services)
+
+    expect(() => services.progressTripStatus({
+      actorUserId: HAULER_COWORKER_DRIVER_ACTOR,
+      nextStatus: "en_route_to_landing",
+      organizationId: HAULER_ORG,
+      source: "driver",
+      tripId: trip.id
+    })).toThrow(/only progress their own hauls/)
+
+    expect(services.state.tripsV2.find((current) => current.id === trip.id)?.status).toBe("assigned")
   })
 
   it("refuses a delivery recorded before the load reaches the destination", () => {
@@ -388,6 +460,90 @@ describe("host settlement", () => {
       organizationId: HAULER_ORG,
       tripId: trip.id
     })).toThrow(/confirmed; ask the host to reopen/)
+  })
+
+  it("preserves confirmation when an identical submission response is retried", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { trip } = bookHaul(services)
+    const deliveredQuantity = { ticketNumber: "SC-CONFIRMED-RETRY", unit: "tons" as const, value: 26.4 }
+
+    haulToDestination(services, trip.id)
+    services.submitHaulCompletion({
+      actorUserId: HAULER_DRIVER_ACTOR,
+      deliveredQuantity,
+      organizationId: HAULER_ORG,
+      tripId: trip.id
+    })
+    const confirmed = services.settleHaulCompletion({
+      actorUserId: HOST_OWNER,
+      decision: "confirm",
+      organizationId: HOST_ORG,
+      tripId: trip.id
+    })
+    const before = {
+      audits: services.state.auditEvents.length,
+      confirmedAt: confirmed.trip.completionConfirmedAt,
+      events: services.state.tripEvents.length,
+      notifications: services.state.notifications.length,
+      updatedAt: confirmed.trip.updatedAt
+    }
+
+    const retry = services.submitHaulCompletion({
+      actorUserId: HAULER_DRIVER_ACTOR,
+      deliveredQuantity,
+      organizationId: HAULER_ORG,
+      tripId: trip.id
+    })
+
+    expect(retry.changed).toBe(false)
+    expect(retry.trip.completionStatus).toBe("confirmed")
+    expect(retry.trip.completionConfirmedAt).toBe(before.confirmedAt)
+    expect(retry.trip.updatedAt).toBe(before.updatedAt)
+    expect(services.state.auditEvents).toHaveLength(before.audits)
+    expect(services.state.tripEvents).toHaveLength(before.events)
+    expect(services.state.notifications).toHaveLength(before.notifications)
+  })
+
+  it("preserves a dispute when the original submission is retried unchanged", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { trip } = bookHaul(services)
+    const deliveredQuantity = { ticketNumber: "SC-DISPUTED-RETRY", unit: "tons" as const, value: 30 }
+
+    haulToDestination(services, trip.id)
+    services.submitHaulCompletion({
+      actorUserId: HAULER_DRIVER_ACTOR,
+      deliveredQuantity,
+      organizationId: HAULER_ORG,
+      tripId: trip.id
+    })
+    const disputed = services.settleHaulCompletion({
+      actorUserId: HOST_OWNER,
+      decision: "dispute",
+      organizationId: HOST_ORG,
+      reason: "Our scale read 26.4 tons.",
+      tripId: trip.id
+    })
+    const before = {
+      audits: services.state.auditEvents.length,
+      events: services.state.tripEvents.length,
+      notifications: services.state.notifications.length,
+      updatedAt: disputed.trip.updatedAt
+    }
+
+    const retry = services.submitHaulCompletion({
+      actorUserId: HAULER_DRIVER_ACTOR,
+      deliveredQuantity,
+      organizationId: HAULER_ORG,
+      tripId: trip.id
+    })
+
+    expect(retry.changed).toBe(false)
+    expect(retry.trip.completionStatus).toBe("disputed")
+    expect(retry.trip.completionDisputeReason).toBe("Our scale read 26.4 tons.")
+    expect(retry.trip.updatedAt).toBe(before.updatedAt)
+    expect(services.state.auditEvents).toHaveLength(before.audits)
+    expect(services.state.tripEvents).toHaveLength(before.events)
+    expect(services.state.notifications).toHaveLength(before.notifications)
   })
 })
 
@@ -642,6 +798,12 @@ describe("completion evidence gate", () => {
     const { trip } = bookHaul(services)
 
     haulToDestination(services, trip.id)
+    services.submitHaulCompletion({
+      actorUserId: HAULER_DRIVER_ACTOR,
+      deliveredQuantity: { ticketNumber: "SC-PROOF", unit: "tons", value: 26.4 },
+      organizationId: HAULER_ORG,
+      tripId: trip.id
+    })
     services.progressTripStatus({
       actorUserId: HAULER_DRIVER_ACTOR,
       nextStatus: "unloading",
@@ -674,6 +836,56 @@ describe("completion evidence gate", () => {
     })
 
     expect(closed.trip.status).toBe("completed")
+  })
+
+  it("does not double-count an exact retry of a completed trip", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { load, trip } = bookHaul(services)
+
+    haulToDestination(services, trip.id)
+    attachTicket(services, trip.id)
+    services.submitHaulCompletion({
+      actorUserId: HAULER_DRIVER_ACTOR,
+      deliveredQuantity: { ticketNumber: "SC-FINAL", unit: "tons", value: 26.4 },
+      organizationId: HAULER_ORG,
+      tripId: trip.id
+    })
+    services.progressTripStatus({
+      actorUserId: HAULER_DRIVER_ACTOR,
+      nextStatus: "unloading",
+      organizationId: HAULER_ORG,
+      source: "driver",
+      tripId: trip.id
+    })
+    const closed = services.progressTripStatus({
+      actorUserId: HAULER_DRIVER_ACTOR,
+      nextStatus: "completed",
+      organizationId: HAULER_ORG,
+      source: "driver",
+      tripId: trip.id
+    })
+    const capacity = services.state.opportunityCapacities.find((candidate) => candidate.loadPostingId === load.id)
+    const before = {
+      audits: services.state.auditEvents.length,
+      completed: capacity?.completedTruckloads,
+      events: services.state.tripEvents.length,
+      updatedAt: closed.trip.updatedAt
+    }
+
+    const retry = services.progressTripStatus({
+      actorUserId: HAULER_DRIVER_ACTOR,
+      nextStatus: "completed",
+      organizationId: HAULER_ORG,
+      source: "driver",
+      tripId: trip.id
+    })
+
+    expect(retry.changed).toBe(false)
+    expect(retry.event).toBeNull()
+    expect(retry.trip.updatedAt).toBe(before.updatedAt)
+    expect(services.state.opportunityCapacities.find((candidate) => candidate.loadPostingId === load.id)?.completedTruckloads).toBe(before.completed)
+    expect(services.state.auditEvents).toHaveLength(before.audits)
+    expect(services.state.tripEvents).toHaveLength(before.events)
   })
 
   it("closes a haul that has no ticket to give when an exception explains it", () => {

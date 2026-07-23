@@ -1,15 +1,17 @@
 "use client"
 
+import Image from "next/image"
 import Link from "next/link"
 import { useActionState, type ReactNode } from "react"
 import { Badge } from "@logloads/ui"
 
 import { submitContactInquiryAction, type ContactFormState } from "@/lib/contact-actions"
 import type { NetworkLoadView } from "@/lib/network"
-import { legalPages, loadProductLabel, pricingPlans, type LegalPageContent, type PublicStoryPage, visibilityLabel } from "@/lib/v3-shared"
+import { legalPages, loadProductLabel, pricingPlans, slugify, type LegalPageContent, type PublicStoryPage, visibilityLabel } from "@/lib/v3-shared"
 import { DevSignInForm, OnboardingFlow } from "./AuthForms"
 import type { DemoPersona } from "@/lib/demo-personas"
 import { DecisionPanel, EconomicsPanel, LoadCard, LoadDiscovery, OperationSections, RoutePackPreview, WeatherWidget } from "./LoadMap"
+import { BrandMark } from "./Brand"
 import { EmptyState, PageIntro, PublicShell, SectionHeader } from "./Shells"
 
 const driverFlow: Array<{ step: string; question: string; body: string }> = [
@@ -27,42 +29,54 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
     <PublicShell>
       <main>
         <section className="home-hero">
-          <div className="home-hero__content">
-            <p className="eyebrow">The timber trucking network</p>
-            <h1>Move more loads. Make fewer calls.</h1>
-            <p>Landings post the work. Drivers see what fits, what it pays, and when to show up. Everyone knows what happens next.</p>
-            <div className="hero-actions">
-              <Link className="action-link" href="/sign-up?path=host">Post a load</Link>
-              <Link className="action-link action-link--secondary" href="/loads">Find a load — free</Link>
-            </div>
+          <div aria-hidden className="home-hero__visual">
+            <Image
+              alt=""
+              fill
+              priority
+              sizes="100vw"
+              src="/brand/logloads-hero.png"
+            />
           </div>
-          {featuredLoad ? (
-            <div className="hero-load-preview" aria-label="Available load preview">
-              <div className="hero-load-preview__head"><span>Available near {featuredLoad.landing.city}</span><Badge tone="success">Open</Badge></div>
-              <strong>{featuredLoad.economics.grossLabel ? `${featuredLoad.economics.grossLabel} est. gross` : featuredLoad.payLabel}</strong>
-              {featuredLoad.economics.grossLabel ? (
-                <span className="hero-load-preview__rate-terms">Base {featuredLoad.payLabel} · {featuredLoad.fuelSurchargeLabel}</span>
-              ) : null}
-              <h2>{featuredLoad.title}</h2>
-              <p>{featuredLoad.landing.city} to {featuredLoad.destination.name}</p>
-              <dl>
-                <div><dt>When</dt><dd>{featuredLoad.scheduleLabel}</dd></div>
-                <div><dt>Trip</dt><dd>{featuredLoad.route.distanceMiles.toFixed(0)} miles</dd></div>
-                <div><dt>Est. fuel</dt><dd>{featuredLoad.economics.fuelCostLabel}</dd></div>
-                <div><dt>After fuel</dt><dd>{featuredLoad.economics.afterFuelLabel ?? "See rate"}</dd></div>
-                <div><dt>Available</dt><dd>{featuredLoad.capacity.remaining} of {featuredLoad.capacity.total}</dd></div>
-              </dl>
-              <Link className="action-link" href={`/loads/${featuredLoad.id}`}>Check my match</Link>
-              <div aria-hidden="true" className="hero-load-preview__nav"><span>Map</span><span className="is-active">Loads</span><span>Schedule</span><span>Profile</span></div>
+          <div className="home-hero__body">
+            <div className="home-hero__content">
+              <p className="eyebrow">The timber trucking network</p>
+              <h1>Move more loads. Make fewer calls.</h1>
+              <p>Landings publish the work. Fleets commit capacity. Drivers see what fits, where to go, and what happens next.</p>
+              <div className="hero-actions">
+                <Link className="action-link" href="/sign-up?path=host">Post timber work</Link>
+                <Link className="action-link action-link--secondary" href="/loads">Find a load</Link>
+                <Link className="hero-tertiary" href="/for-fleets">Run fleet dispatch <span aria-hidden>→</span></Link>
+              </div>
             </div>
-          ) : (
-            <div className="hero-load-preview">
-              <span>For drivers</span>
-              <strong>Free forever</strong>
-              <h2>Your next load should be easy to understand.</h2>
-              <Link className="action-link" href="/sign-up?path=driver">Create driver profile</Link>
-            </div>
-          )}
+            {featuredLoad ? (
+              <div className="hero-load-preview" aria-label="Available load preview">
+                <div className="hero-load-preview__head"><span>Available near {featuredLoad.landing.city}</span><Badge tone="success">Open</Badge></div>
+                <strong>{featuredLoad.economics.grossLabel ? `${featuredLoad.economics.grossLabel} est. gross` : featuredLoad.payLabel}</strong>
+                {featuredLoad.economics.grossLabel ? (
+                  <span className="hero-load-preview__rate-terms">Base {featuredLoad.payLabel} · {featuredLoad.fuelSurchargeLabel}</span>
+                ) : null}
+                <h2>{featuredLoad.title}</h2>
+                <p>{featuredLoad.landing.city} to {featuredLoad.destination.name}</p>
+                <dl>
+                  <div><dt>When</dt><dd>{featuredLoad.scheduleLabel}</dd></div>
+                  <div><dt>Trip</dt><dd>{featuredLoad.route.distanceMiles.toFixed(0)} miles</dd></div>
+                  <div><dt>Est. fuel</dt><dd>{featuredLoad.economics.fuelCostLabel}</dd></div>
+                  <div><dt>After fuel</dt><dd>{featuredLoad.economics.afterFuelLabel ?? "See rate"}</dd></div>
+                  <div><dt>Available</dt><dd>{featuredLoad.capacity.remaining} of {featuredLoad.capacity.total}</dd></div>
+                </dl>
+                <Link className="action-link" href={`/loads/${featuredLoad.id}`}>View load details</Link>
+                <div aria-hidden="true" className="hero-load-preview__nav"><span>Map</span><span className="is-active">Loads</span><span>Schedule</span><span>Profile</span></div>
+              </div>
+            ) : (
+              <div className="hero-load-preview">
+                <span>For drivers</span>
+                <strong>Start free</strong>
+                <h2>Your next load should be easy to understand.</h2>
+                <Link className="action-link" href="/sign-up?path=driver">Create a driver profile</Link>
+              </div>
+            )}
+          </div>
         </section>
         <section className="promise-strip" aria-label="LogLoads promise">
           <div><strong>Drivers are free forever.</strong><span>No subscription. No fee hidden from your pay.</span></div>
@@ -89,7 +103,7 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
         <section className="feature-band">
           <SectionHeader eyebrow="One network" title="The right screen for each job" />
           <div className="feature-grid">
-            <article><span>Free forever</span><h3>Drivers</h3><p>See available work, know whether it fits, request it, and follow the schedule from a phone.</p><Link className="text-link" href="/sign-up?path=driver">Start driving</Link></article>
+            <article><span>Driver accounts</span><h3>Drivers &amp; owner-operators</h3><p>See available work, know whether it fits, request it, and follow the schedule from a phone.</p><Link className="text-link" href="/sign-up?path=driver">Create a driver profile</Link></article>
             <article><span>$499/month</span><h3>Dispatchers</h3><p>Keep trucks, drivers, requests, schedules, and exceptions in one operating view.</p><Link className="text-link" href="/sign-up?path=fleet">Set up dispatch</Link></article>
             <article><span>Free launch pilot</span><h3>Hosts</h3><p>Post the work, see qualified requests, choose the truck, and know what is arriving.</p><Link className="text-link" href="/sign-up?path=host">Post a load</Link></article>
           </div>
@@ -97,7 +111,11 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
         <section className="loads-preview">
           <SectionHeader action={<Link className="action-link action-link--secondary" href="/loads">See all loads</Link>} eyebrow="Open work" title="Loads on the board right now." />
           {openLoads.length > 0 ? (
-            <div className="load-card-grid">{openLoads.slice(0, 3).map((load) => <LoadCard key={load.id} load={load} />)}</div>
+            <div className="load-card-grid">
+              {openLoads.slice(0, 3).map((load) => (
+                <LoadCard href={`/loads/${load.id}`} key={load.id} load={load} publicMode />
+              ))}
+            </div>
           ) : (
             <EmptyState
               actionHref="/for-landings"
@@ -124,14 +142,14 @@ export function PublicLoadsPage({ loads }: { loads: NetworkLoadView[] }) {
   return (
     <PublicShell>
       <main className="page-main">
-        <PageIntro eyebrow="Current loads" title="Find timber work without exposing private access." body="Public listings show the work, region, equipment fit, and capacity. Exact access unlocks after assignment." />
+        <PageIntro eyebrow="Current loads" title="Find timber work without exposing private access." body="Public listings show the work, region, equipment requirements, and capacity. Personal fit appears after a driver adds their truck. Exact access unlocks after assignment." />
         {loads.length > 0 ? (
           <LoadDiscovery loads={loads} publicMode />
         ) : (
           <EmptyState
-            actionHref="/sign-up"
-            actionLabel="Create an account"
-            body="Nothing is public right now. Create an account to see partner and verified-network work, or check back — new loads post as landings fill their schedules."
+              actionHref="/sign-up"
+              actionLabel="Create an account"
+              body="Nothing is public right now. Partner and private work appears only when an organization invites or grants access. Check back as landings publish more work."
             title="No public loads at the moment."
           />
         )}
@@ -162,7 +180,11 @@ export function PublicLoadDetail({ load }: { load: NetworkLoadView }) {
           </Badge>
           <strong>{load.capacity.remaining > 0 ? "Capacity open" : "All loads assigned"}</strong>
           <p>Exact access unlocks after assignment.</p>
-          <Link className="action-link" href="/sign-up">Request this load</Link>
+          {load.capacity.remaining > 0 ? (
+            <Link className="action-link" href={{ pathname: "/sign-up", query: { next: `/driver/loads/${load.id}`, path: "driver" } }}>Create a driver profile to check fit</Link>
+          ) : (
+            <Link className="action-link action-link--secondary" href="/loads">See other open loads</Link>
+          )}
           <Link className="text-link" href="/marketplace-rules">How commitments work</Link>
         </aside>
       </main>
@@ -171,15 +193,25 @@ export function PublicLoadDetail({ load }: { load: NetworkLoadView }) {
 }
 
 export function StoryPage({ page }: { page: PublicStoryPage }) {
+  const isProcess = page.slug === "how-it-works"
+
   return (
     <PublicShell>
-      <main className="page-main story-page">
+      <main className={`page-main story-page story-page--${page.slug}`}>
         <PageIntro eyebrow={page.eyebrow} title={page.title} body={page.intro} />
-        <div className="story-grid">
-          {page.sections.map((section) => (
-            <article key={section.title}><h2>{section.title}</h2><p>{section.body}</p><ul>{section.points.map((point) => <li key={point}>{point}</li>)}</ul></article>
-          ))}
-        </div>
+        {isProcess ? (
+          <ol className="story-grid story-grid--timeline">
+            {page.sections.map((section, index) => (
+              <li key={section.title}><article><span aria-hidden>{index + 1}</span><h2>{section.title}</h2><p>{section.body}</p><ul>{section.points.map((point) => <li key={point}>{point}</li>)}</ul></article></li>
+            ))}
+          </ol>
+        ) : (
+          <div className="story-grid">
+            {page.sections.map((section) => (
+              <article key={section.title}><h2>{section.title}</h2><p>{section.body}</p><ul>{section.points.map((point) => <li key={point}>{point}</li>)}</ul></article>
+            ))}
+          </div>
+        )}
         <Link className="action-link" href={page.cta.href}>{page.cta.label}</Link>
         {page.attribution ? <p className="story-attribution">{page.attribution}</p> : null}
       </main>
@@ -220,7 +252,15 @@ export function LegalPage({ content }: { content: LegalPageContent }) {
       <main className="page-main legal-page">
         <PageIntro eyebrow="Legal" title={content.title} body={content.intro} />
         <p className="legal-effective">Effective {content.effectiveDate}</p>
-        {content.sections.map((section) => <section key={section.title}><h2>{section.title}</h2><p>{section.body}</p><ul>{section.points.map((point) => <li key={point}>{point}</li>)}</ul></section>)}
+        <aside className="legal-boundary-summary">
+          <strong>Product boundary</strong>
+          <p>LogLoads is coordination software. It does not broker freight, operate as a motor carrier, or move freight payment.</p>
+        </aside>
+        <nav aria-label="On this page" className="legal-toc">
+          <strong>On this page</strong>
+          <ul>{content.sections.map((section) => <li key={section.title}><a href={`#${slugify(section.title)}`}>{section.title}</a></li>)}</ul>
+        </nav>
+        {content.sections.map((section) => <section id={slugify(section.title)} key={section.title}><h2>{section.title}</h2><p>{section.body}</p><ul>{section.points.map((point) => <li key={point}>{point}</li>)}</ul></section>)}
       </main>
     </PublicShell>
   )
@@ -242,10 +282,19 @@ export function AuthPage({
   return (
     <PublicShell>
       <main className="auth-page">
+        <aside aria-label="LogLoads field coordination" className="auth-story">
+          <Image alt="" fill sizes="(max-width: 760px) 100vw, 42vw" src="/brand/logloads-hero.png" />
+          <div className="auth-story__content">
+            <BrandMark priority size={80} />
+            <p className="eyebrow">Built for timber operations</p>
+            <h2>One clear record from landing to mill.</h2>
+            <ul><li>Work and equipment fit</li><li>Schedules and next actions</li><li>Access details after assignment</li></ul>
+          </div>
+        </aside>
         <section className="auth-panel">
           <p className="eyebrow">{isSignUp ? "Create account" : "Welcome back"}</p>
-          <h1>{isSignUp ? "Start with the work you do." : "Sign in to your cockpit."}</h1>
-          <p>{isSignUp ? "Tell us how you work and LogLoads sets up the right first screen." : "Your account opens the driver, fleet, host, or admin tools your membership grants."}</p>
+          <h1>{isSignUp ? "Start with the work you do." : "Return to your workspace."}</h1>
+          <p>{isSignUp ? "Tell us how you work and LogLoads sets up the right first screen." : "Sign in to open the driver, fleet, landing, or admin tools your membership grants."}</p>
           {clerkForm ?? (isSignUp
             ? <p className="auth-form__note">Account creation happens in onboarding. <Link className="action-link" href="/onboarding">Start setup</Link></p>
             : <DevSignInForm demoPersonas={demoPersonas} next={next} />)}
@@ -257,10 +306,12 @@ export function AuthPage({
 
 export function OnboardingPage({
   identityKnown,
-  mode
+  mode,
+  next
 }: {
   identityKnown?: { fullName?: string | null; email?: string | null }
   mode?: "driver" | "fleet" | "host"
+  next?: string
 }) {
   const title = mode === "fleet"
     ? "Set up fleet operations."
@@ -274,7 +325,7 @@ export function OnboardingPage({
     <PublicShell>
       <main className="page-main onboarding-page">
         <PageIntro eyebrow="Get started" title={title} body="Three short steps. Then LogLoads opens the right first screen for your work." />
-        <OnboardingFlow identityKnown={identityKnown} initialPath={mode} />
+        <OnboardingFlow identityKnown={identityKnown} initialPath={mode} next={next} />
       </main>
     </PublicShell>
   )
@@ -288,8 +339,8 @@ function ContactForm() {
   if (state.ok) {
     return (
       <div className="contact-success" role="status">
-        <strong>Message sent.</strong>
-        <p>We read every message and reply by email — a person, not an autoresponder.</p>
+        <strong>Message recorded.</strong>
+        <p>We&rsquo;ll follow up at the email you provided when a response is needed.</p>
         <Link className="text-link" href="/">Back to the homepage</Link>
       </div>
     )
@@ -317,6 +368,7 @@ function ContactForm() {
       <button className="action-link" disabled={pending} type="submit">
         {pending ? "Sending..." : "Send message"}
       </button>
+      <p className="contact-form__privacy">We use these details only to respond to this request. <Link href="/privacy">Read our privacy notice.</Link></p>
     </form>
   )
 }
@@ -325,7 +377,7 @@ export function ContactPage() {
   return (
     <PublicShell>
       <main className="page-main contact-page">
-        <PageIntro eyebrow="Contact" title="Talk to a person at LogLoads." body="Plans, private carrier networks, verification, integrations, or a season of timber to move — send a note. We read every message." />
+        <PageIntro eyebrow="Contact" title="Talk with LogLoads." body="Plans, private carrier networks, verification, integrations, or a season of timber to move — send a note and include the context we need to follow up." />
         <div className="contact-layout">
           <ContactForm />
           <aside className="contact-aside">
