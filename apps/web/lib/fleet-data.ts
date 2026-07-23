@@ -260,10 +260,18 @@ export async function getFleetCockpitData(): Promise<FleetCockpitData> {
       availabilityLabel: availability.label,
       availabilityStatus: availability.status,
       equipmentLabel: equipment?.label ?? null,
+      // Mirrors getFeaturedTruckPhotoReference's resolution (active
+      // combination only) — a badge computed from an inactive rig would
+      // render a broken image against the streaming route.
       hasFeaturedTruckPhoto: Boolean(
         driver.featureTruckPhoto &&
-        equipment &&
-        state.truckProfiles.find((truck) => truck.id === equipment.truckProfileId)?.photo
+        (() => {
+          const active = combinations.find(
+            (candidate) => candidate.assignedDriverProfileId === driver.id && candidate.status !== "inactive"
+          )
+
+          return active && state.truckProfiles.find((truck) => truck.id === active.truckProfileId)?.photo
+        })()
       ),
       homeBase: driver.homeBase,
       id: driver.id,

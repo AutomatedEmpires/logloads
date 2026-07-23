@@ -172,24 +172,39 @@ const setFeaturedTruckPhotoInputSchema = driverContextSchema.extend({
 })
 
 /**
+ * The one resolution rule for a driver's featured rig, shared by the write
+ * (may they feature?) and the read (what do viewers see?): the active
+ * combination in the driver profile's OWN organization. Two rules here would
+ * let a dual-outfit driver turn the flag on against one organization's rig
+ * while viewers resolve the other's.
+ */
+function resolveOwnTruckPhoto(
+  state: LogLoadsDatabaseState,
+  driver: { id: string; companyId?: string | null }
+): MediaReference | null {
+  const combination = state.equipmentCombinations.find((candidate) =>
+    candidate.assignedDriverProfileId === driver.id &&
+    candidate.organizationId === driver.companyId &&
+    candidate.status !== "inactive"
+  )
+  const truck = combination
+    ? state.truckProfiles.find((candidate) => candidate.id === combination.truckProfileId)
+    : undefined
+
+  return truck?.photo ?? null
+}
+
+/**
  * The driver's choice to show off their rig. It must never claim a photo that
- * is not there: featuring requires the active truck to actually carry one.
- * Un-featuring is always allowed.
+ * is not there: featuring requires the photo the READ would serve — resolved
+ * by the same rule — to actually exist. Un-featuring is always allowed.
  */
 export function setFeaturedTruckPhoto(state: LogLoadsDatabaseState, rawInput: unknown) {
   const input = setFeaturedTruckPhotoInputSchema.parse(rawInput)
   const driver = requireOwnedDriver(state, input)
 
-  if (input.featured) {
-    const combination = requireActiveEquipment(state, input)
-    const truck = assertFound(
-      state.truckProfiles.find((candidate) => candidate.id === combination.truckProfileId),
-      "The active truck could not be found"
-    )
-
-    if (!truck.photo) {
-      throw new Error("Upload a truck photo before featuring it")
-    }
+  if (input.featured && !resolveOwnTruckPhoto(state, driver)) {
+    throw new Error("Upload a truck photo before featuring it")
   }
 
   const timestamp = nowIso()
@@ -262,24 +277,13 @@ export function getFeaturedTruckPhotoReference(state: LogLoadsDatabaseState, raw
     throw new Error("This driver is not visible to your organization")
   }
 
-  // Resolve exactly the way the upload path does (getDriverMediaTarget): the
-  // driver's own organization's active combination. Without the organization
-  // scope, a driver with combinations in two outfits could show one outfit's
-  // rig to the other's viewers.
-  const combination = state.equipmentCombinations.find((candidate) =>
-    candidate.assignedDriverProfileId === driver.id &&
-    candidate.organizationId === driver.companyId &&
-    candidate.status !== "inactive"
-  )
-  const truck = combination
-    ? state.truckProfiles.find((candidate) => candidate.id === combination.truckProfileId)
-    : undefined
+  const photo = resolveOwnTruckPhoto(state, driver)
 
-  if (!truck?.photo) {
+  if (!photo) {
     throw new Error("This driver has no truck photo to show")
   }
 
-  return truck.photo
+  return photo
 }
 
 export function saveDriverMediaReference(state: LogLoadsDatabaseState, rawInput: unknown): MediaReference {
