@@ -69,9 +69,12 @@ describe("dedicated Cloudinary configuration", () => {
     expect(isDedicatedMediaConfigured(environment)).toBe(false)
   })
 
-  it("ignores an explicitly empty unknown Cloudinary variable", () => {
-    const environment = { ...configuredEnvironment, CLOUDINARY_FUTURE_SDK_OPTION: "" }
+  it.each(["", " ", "\t\n"])(
+    "ignores an unknown Cloudinary variable that is blank after trimming (%j)",
+    (value) => {
+      const environment = { ...configuredEnvironment, CLOUDINARY_FUTURE_SDK_OPTION: value }
 
-    expect(isDedicatedMediaConfigured(environment)).toBe(true)
-  })
+      expect(isDedicatedMediaConfigured(environment)).toBe(true)
+    }
+  )
 })
