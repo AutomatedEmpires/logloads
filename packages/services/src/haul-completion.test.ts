@@ -2,7 +2,7 @@ import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
 import { createLogLoadsServices, type LogLoadsServices } from "./index"
-import { stubTripDocumentMedia } from "./test-helpers"
+import { recordPassingPreTripInspection, stubTripDocumentMedia } from "./test-helpers"
 
 const HAULER_ORG = "33333333-3333-4333-8333-333333333331"
 const HOST_ORG = "33333333-3333-4333-8333-333333333332"
@@ -79,6 +79,11 @@ function bookHaul(services: LogLoadsServices) {
 
 /** Drives the trip to the destination, where a delivery can be recorded. */
 function haulToDestination(services: LogLoadsServices, tripId: string) {
+  recordPassingPreTripInspection(services.state, {
+    actorUserId: HAULER_DRIVER_ACTOR,
+    organizationId: HAULER_ORG,
+    tripId
+  })
   for (const nextStatus of [
     "en_route_to_landing",
     "checked_in",

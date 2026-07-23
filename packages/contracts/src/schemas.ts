@@ -101,6 +101,13 @@ export const driverProfileSchema = z.object({
   preferredFuelPriceCentsPerGallon: z.number().int().min(100).max(1000).optional().nullable(),
   operatingRadiusMiles: z.number().positive().optional().nullable(),
   profilePhoto: mediaReferenceSchema.optional().nullable(),
+  /**
+   * The driver's choice to show their rig's photo on their profile to the
+   * people they work with. Presentation only — the photo itself lives on the
+   * truck profile, and readers re-resolve it through the current active
+   * equipment at request time.
+   */
+  featureTruckPhoto: z.boolean().default(false),
   equipmentPreferences: z.array(z.string()).default([]),
   notes: z.string().optional().nullable(),
   createdAt: timestampSchema,

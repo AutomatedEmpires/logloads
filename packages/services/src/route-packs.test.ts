@@ -3,7 +3,7 @@ import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
 import { createLogLoadsServices, type LogLoadsServices } from "./index"
-import { stubTripDocumentMedia } from "./test-helpers"
+import { recordPassingPreTripInspection, stubTripDocumentMedia } from "./test-helpers"
 
 const HAULER_ORG = "33333333-3333-4333-8333-333333333331"
 const HOST_ORG = "33333333-3333-4333-8333-333333333332"
@@ -594,6 +594,11 @@ describe("route pack access", () => {
       type: "scale_ticket"
     })
 
+    recordPassingPreTripInspection(services.state, {
+      actorUserId: HAULER_DRIVER_ACTOR,
+      organizationId: HAULER_ORG,
+      tripId: trip.id
+    })
     for (const nextStatus of [
       "en_route_to_landing",
       "checked_in",

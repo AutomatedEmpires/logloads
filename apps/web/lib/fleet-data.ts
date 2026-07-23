@@ -32,6 +32,8 @@ export interface FleetDriverRow {
   availabilityLabel: string
   equipmentLabel: string | null
   activeTrip: { id: string; loadTitle: string; statusLabel: string } | null
+  /** The driver chose to show their rig; the photo streams via /api/media/featured-truck. */
+  hasFeaturedTruckPhoto: boolean
 }
 
 export interface FleetTruckRow {
@@ -258,6 +260,19 @@ export async function getFleetCockpitData(): Promise<FleetCockpitData> {
       availabilityLabel: availability.label,
       availabilityStatus: availability.status,
       equipmentLabel: equipment?.label ?? null,
+      // Mirrors getFeaturedTruckPhotoReference's resolution (active
+      // combination only) — a badge computed from an inactive rig would
+      // render a broken image against the streaming route.
+      hasFeaturedTruckPhoto: Boolean(
+        driver.featureTruckPhoto &&
+        (() => {
+          const active = combinations.find(
+            (candidate) => candidate.assignedDriverProfileId === driver.id && candidate.status !== "inactive"
+          )
+
+          return active && state.truckProfiles.find((truck) => truck.id === active.truckProfileId)?.photo
+        })()
+      ),
       homeBase: driver.homeBase,
       id: driver.id,
       name: user?.fullName ?? "Driver",
