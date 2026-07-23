@@ -36,6 +36,7 @@ test.describe.serial("route pack unlocks after acceptance", () => {
     await fillWhenReady(page, "Truckloads needed per day", "1")
     await page.getByRole("button", { name: "Next" }).click()
     await page.getByRole("button", { name: "Next" }).click()
+    await page.getByRole("radio", { name: /Publish now/ }).check()
     await page.getByRole("button", { name: "Next" }).click()
     await page.getByRole("button", { name: "Publish to the network" }).click()
     await expect(page.getByText(/is live on the network/)).toBeVisible({ timeout: 15_000 })
@@ -75,7 +76,8 @@ test.describe.serial("route pack unlocks after acceptance", () => {
 
     const row = page.locator(".host-approval-row").filter({ hasText: TITLE }).first()
     await expect(row).toBeVisible({ timeout: 15_000 })
-    await row.getByRole("button", { name: "Approve" }).click()
+    await row.getByRole("button", { name: "Review approval" }).click()
+    await row.getByRole("button", { name: "Confirm approval" }).click()
 
     await expect(async () => {
       await page.reload()
@@ -101,6 +103,9 @@ test.describe.serial("route pack unlocks after acceptance", () => {
     await expect(pack.getByText("Scale and ticket")).toBeVisible()
     await expect(pack.getByText("Safety and PPE").first()).toBeVisible()
     await expect(pack.getByText("Bring back")).toBeVisible()
+    await expect(pack.getByRole("link", { name: "Open landing directions" })).toBeVisible()
+    await expect(pack.getByRole("button", { name: "Copy coordinates" })).toBeVisible()
+    await expect(pack.getByRole("link", { name: "Open mill directions" })).toBeVisible()
     // The instructions the driver must act on lead the pack.
     await expect(pack.locator(".route-pack-instructions--critical li").first()).toBeVisible()
 

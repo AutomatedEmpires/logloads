@@ -2,7 +2,7 @@ import "server-only"
 
 import { createHmac, timingSafeEqual } from "node:crypto"
 
-import { auth } from "@clerk/nextjs/server"
+import { auth, currentUser } from "@clerk/nextjs/server"
 import type { User } from "@logloads/contracts"
 import { cookies, headers } from "next/headers"
 import { redirect } from "next/navigation"
@@ -108,6 +108,22 @@ export async function getClerkUserId(): Promise<string | null> {
     return null
   }
 }
+
+export const getClerkIdentity = cache(async (): Promise<{ email: string; fullName: string } | null> => {
+  if (!isClerkConfigured()) {
+    return null
+  }
+
+  try {
+    const user = await currentUser()
+    const email = user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses[0]?.emailAddress ?? ""
+    const fullName = user?.fullName ?? [user?.firstName, user?.lastName].filter(Boolean).join(" ")
+
+    return user && email ? { email, fullName } : null
+  } catch {
+    return null
+  }
+})
 
 async function resolveClerkProfile(): Promise<User | null> {
   const clerkUserId = await getClerkUserId()
