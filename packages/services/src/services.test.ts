@@ -339,10 +339,21 @@ describe("logloads services", () => {
       dispatcherNotes: "North Pine can cover the high-grade window."
     })
     const capacity = services.state.opportunityCapacities.find((item) => item.loadPostingId === assignment.loadPostingId)
+    const load = services.state.loadPostings.find((item) => item.id === assignment.loadPostingId)
+    const slot = services.state.truckSlots.find((item) => item.id === assignment.truckSlotId)
+    const assignments = services.state.assignments.filter((item) => item.loadPostingId === assignment.loadPostingId)
 
     expect(assignment.status).toBe("requested")
-    expect(capacity?.committedTruckloads).toBe(2)
-    expect(capacity?.remainingTruckloads).toBe(2)
+    expect(capacity).toMatchObject({
+      committedTruckloads: 4,
+      completedTruckloads: 2,
+      remainingTruckloads: 0,
+      totalTruckloads: 4
+    })
+    expect(slot).toMatchObject({ capacity: 2, reservedCount: 2, status: "requested" })
+    expect(assignments).toHaveLength(4)
+    expect(assignments.filter((item) => item.status === "completed")).toHaveLength(2)
+    expect(load?.status).toBe("filled")
   })
 
   it("rejects driver-role attempts to request work for another driver", () => {

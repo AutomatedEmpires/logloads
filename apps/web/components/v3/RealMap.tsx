@@ -19,12 +19,10 @@ import MaplibreMap, {
 import "maplibre-gl/dist/maplibre-gl.css"
 import "mapbox-gl/dist/mapbox-gl.css"
 
+import { MAPBOX_STYLE, selectMapRuntime, type MapRuntime } from "@/lib/map-runtime"
 import type { NetworkLoadView } from "@/lib/network"
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ""
-const USE_MAPBOX = MAPBOX_TOKEN.length > 0
-const MAPBOX_STYLE = "mapbox://styles/mapbox/outdoors-v12"
-const MAPLIBRE_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
 const FIT_PADDING = { bottom: 150, left: 56, right: 56, top: 56 }
 const FIT_MAX_ZOOM = 11
 
@@ -198,7 +196,9 @@ function MapboxRealMap({ loads, onPick, selectedLoadId }: InnerMapProps) {
   )
 }
 
-function MaplibreRealMap({ loads, onPick, selectedLoadId }: InnerMapProps) {
+function MaplibreRealMap({ loads, mapStyle, onPick, selectedLoadId }: InnerMapProps & {
+  mapStyle: Extract<MapRuntime, { provider: "maplibre" | "offline-demo" }>["mapStyle"]
+}) {
   const mapRef = useRef<MaplibreMapRef>(null)
   const bounds = useMemo(() => boundsForLoads(loads), [loads])
 
@@ -216,7 +216,7 @@ function MaplibreRealMap({ loads, onPick, selectedLoadId }: InnerMapProps) {
       initialViewState={bounds
         ? { bounds, fitBoundsOptions: { maxZoom: FIT_MAX_ZOOM, padding: FIT_PADDING } }
         : { latitude: 44.5, longitude: -70.5, zoom: 6 }}
-      mapStyle={MAPLIBRE_STYLE}
+      mapStyle={mapStyle}
       ref={mapRef}
       style={{ height: "100%", width: "100%" }}
     >
@@ -244,11 +244,17 @@ export function RealMap({ loads, onSelect, selectedLoadId }: RealMapProps) {
     return null
   }
 
+  const demoMode = document.documentElement.dataset.demoMode === "true"
+  const runtime = selectMapRuntime(demoMode, MAPBOX_TOKEN)
+
   return (
-    <div className="real-map" data-provider={USE_MAPBOX ? "mapbox" : "maplibre"}>
-      {USE_MAPBOX
+    <div className="real-map" data-provider={runtime.provider}>
+      {runtime.provider === "offline-demo" ? (
+        <p className="map-demo-notice" role="status">Local demo map · synthetic lanes · live basemap disabled</p>
+      ) : null}
+      {runtime.provider === "mapbox"
         ? <MapboxRealMap loads={loads} onPick={handlePick} selectedLoadId={selectedLoadId} />
-        : <MaplibreRealMap loads={loads} onPick={handlePick} selectedLoadId={selectedLoadId} />}
+        : <MaplibreRealMap loads={loads} mapStyle={runtime.mapStyle} onPick={handlePick} selectedLoadId={selectedLoadId} />}
     </div>
   )
 }

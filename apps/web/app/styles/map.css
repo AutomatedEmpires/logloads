@@ -16,6 +16,24 @@
   font: inherit;
 }
 
+.map-demo-notice {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 6;
+  max-width: calc(100% - 80px);
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 253, 247, 0.96);
+  padding: 7px 11px;
+  color: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 850;
+  line-height: 1.2;
+  box-shadow: 0 3px 10px rgba(17, 22, 16, 0.14);
+}
+
 .map-loading {
   position: absolute;
   inset: 0;

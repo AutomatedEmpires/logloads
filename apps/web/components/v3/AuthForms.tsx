@@ -5,32 +5,67 @@ import { useActionState, useState, type MouseEvent } from "react"
 
 import {
   completeOnboardingAction,
+  signInDemoPersona,
   signInWithEmail,
   type AuthFormState,
   type OnboardingFormState
 } from "@/lib/session-actions"
+import type { DemoPersona } from "@/lib/demo-personas"
 
 const INITIAL_AUTH_STATE: AuthFormState = { error: null }
 const INITIAL_ONBOARDING_STATE: OnboardingFormState = { error: null }
 
-export function DevSignInForm({ next }: { next?: string }) {
+function DemoPersonaLauncher({ personas }: { personas: readonly DemoPersona[] }) {
+  return (
+    <section aria-labelledby="demo-persona-title" className="demo-personas">
+      <div>
+        <p className="eyebrow">Local founder demo</p>
+        <h2 id="demo-persona-title">Choose a working view.</h2>
+        <p>Synthetic records only. Each choice opens the cockpit granted by that account&apos;s membership.</p>
+      </div>
+      <div className="demo-personas__grid">
+        {personas.map((persona) => (
+          <form action={signInDemoPersona} key={persona.email}>
+            <input name="persona" type="hidden" value={persona.email} />
+            <button aria-label={`Continue as ${persona.label}, ${persona.role}`} type="submit">
+              <span>{persona.role}</span>
+              <strong>{persona.label}</strong>
+              <small>{persona.start}</small>
+            </button>
+          </form>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+export function DevSignInForm({
+  demoPersonas,
+  next
+}: {
+  demoPersonas?: readonly DemoPersona[]
+  next?: string
+}) {
   const [state, formAction, pending] = useActionState(signInWithEmail, INITIAL_AUTH_STATE)
 
   return (
-    <form action={formAction} className="auth-form">
-      <input name="next" type="hidden" value={next ?? ""} />
-      <label>
-        <span>Email</span>
-        <input autoComplete="email" name="email" placeholder="you@company.com" required type="email" />
-      </label>
-      {state.error ? <p className="form-error" role="alert">{state.error}</p> : null}
-      <button className="action-link" disabled={pending} type="submit">
-        {pending ? "Signing in..." : "Sign in"}
-      </button>
-      <p className="auth-form__note">
-        New to LogLoads? <Link href="/sign-up">Create your account</Link>.
-      </p>
-    </form>
+    <>
+      <form action={formAction} className="auth-form">
+        <input name="next" type="hidden" value={next ?? ""} />
+        <label>
+          <span>{demoPersonas?.length ? "Seeded account email" : "Email"}</span>
+          <input autoComplete="email" name="email" placeholder="you@company.com" required type="email" />
+        </label>
+        {state.error ? <p className="form-error" role="alert">{state.error}</p> : null}
+        <button className="action-link" disabled={pending} type="submit">
+          {pending ? "Signing in..." : "Sign in"}
+        </button>
+        <p className="auth-form__note">
+          New to LogLoads? <Link href="/sign-up">Create your account</Link>.
+        </p>
+      </form>
+      {demoPersonas?.length ? <DemoPersonaLauncher personas={demoPersonas} /> : null}
+    </>
   )
 }
 
