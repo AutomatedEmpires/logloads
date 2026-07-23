@@ -208,19 +208,36 @@ export async function recordPreTripInspectionAction(input: {
   tripId: string
   items: Array<{ key: string; status: "pass" | "fail"; note?: string | null }>
   note?: string | null
+  rollOnPass?: boolean
 }): Promise<ActionResult & { outcome?: "pass" | "fail" }> {
   try {
     const actor = await requireActor()
 
-    const { inspection } = await commit(["/driver", "/fleet", "/host"], (draft) =>
-      draft.recordPreTripInspection({
+    // Record and roll are one tap for the driver, so they are ONE mutation
+    // here: a client-side chain of two actions can lose its second half to
+    // the revalidation refresh, leaving a passed inspection on a truck that
+    // never rolled.
+    const { inspection } = await commit(["/driver", "/fleet", "/host"], (draft) => {
+      const recorded = draft.recordPreTripInspection({
         actorUserId: actor.profile.id,
         items: input.items,
         note: input.note ?? undefined,
         organizationId: actorOrganizationId(actor),
         tripId: input.tripId
       })
-    )
+
+      if (input.rollOnPass && recorded.inspection.outcome === "pass") {
+        draft.progressTripStatus({
+          actorUserId: actor.profile.id,
+          nextStatus: "en_route_to_landing",
+          organizationId: actorOrganizationId(actor),
+          source: "driver",
+          tripId: input.tripId
+        })
+      }
+
+      return recorded
+    })
 
     captureServerEvent("pre_trip_inspection_recorded", actor.profile.id, {
       outcome: inspection.outcome,

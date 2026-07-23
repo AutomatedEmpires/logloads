@@ -126,7 +126,10 @@ function PreTripRollControl({ tone, tripId }: { tone: "hero" | "row"; tripId: st
         note: answers[item.key]?.note.trim() || null,
         status: answers[item.key]?.status ?? ("fail" as const)
       }))
-      const recorded = await recordPreTripInspectionAction({ items, tripId })
+      // One action records AND rolls: the server does both in one mutation,
+      // so a dropped connection can never leave a passed inspection on a
+      // truck that silently stayed parked.
+      const recorded = await recordPreTripInspectionAction({ items, rollOnPass: true, tripId })
 
       if (!recorded.ok) {
         setError(recorded.error ?? "The inspection could not be recorded. Try again.")
@@ -136,14 +139,6 @@ function PreTripRollControl({ tone, tripId }: { tone: "hero" | "row"; tripId: st
 
       if (recorded.outcome === "fail") {
         setFailRecorded(true)
-
-        return
-      }
-
-      const advanced = await progressTripAction({ nextStatus: "en_route_to_landing", tripId })
-
-      if (!advanced.ok) {
-        setError(advanced.error ?? "The trip could not be updated. Try again.")
       }
     })
   }
