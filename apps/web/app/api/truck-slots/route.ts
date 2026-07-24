@@ -18,9 +18,13 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
 	try {
 		const payload = await request.json()
-		await requireApiActor(payload.organizationId)
+		// The organization comes from the verified membership, never from the
+		// body: requireApiActor only confirms the caller belongs to the org they
+		// named, so trusting the payload would let a member of one organization
+		// add slots to another organization's load posting.
+		const { organizationId } = await requireApiActor(payload.organizationId)
 
-		const slot = await mutateState((draft) => draft.createTruckSlot(payload))
+		const slot = await mutateState((draft) => draft.createTruckSlot(payload, { organizationId }))
 
 		return NextResponse.json({ slot }, { status: 201 })
 	} catch (error) {

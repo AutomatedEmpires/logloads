@@ -212,7 +212,8 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
       input: Parameters<typeof declineDirectOffer>[1],
       options?: Parameters<typeof declineDirectOffer>[2]
     ) => declineDirectOffer(state, input, options),
-    createTruckSlot: (input: unknown) => createTruckSlot(state, input),
+    createTruckSlot: (input: unknown, context: Parameters<typeof createTruckSlot>[2]) =>
+      createTruckSlot(state, input, context),
     getActiveOrganizationContext: (actorUserId?: string, organizationId?: string) => getActiveOrganizationContext(state, actorUserId, organizationId),
     getLoadById: (loadId: string) => getLoadById(state, loadId),
     getOrganizationMemberships: (actorUserId: string) => getOrganizationMemberships(state, actorUserId),
