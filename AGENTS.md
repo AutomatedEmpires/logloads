@@ -109,7 +109,19 @@ Never print, commit, paste into PRs, or expose secrets/private provider URLs. Ke
 
 ### Legal and money
 
-Partner prospecting is allowed; compensated transportation arrangement is not. Do not claim LogLoads is the shipper, broker, carrier, dispatcher, employer, insurer, payment custodian, or guarantor. Live Stripe configuration exists for the $499/month Dispatch Pro software subscription, but an agent must not create a real customer, subscription, charge, refund, or payout without explicit founder authorization. Drivers remain free forever. Hosts remain free during the launch pilot; a possible 5% host fee is not active. Every freight-money path remains blocked by the unresolved legal/entity/payment model.
+Partner prospecting is allowed; compensated transportation arrangement is not. Do not claim LogLoads is the shipper, broker, carrier, dispatcher, employer, insurer, payment custodian, or guarantor. Those disclaimers are not boilerplate — the revenue model below only works while every one of them stays true.
+
+**Operating model — founder-decided 2026-07-24. Supersedes the earlier "free launch pilot / fee not active / model unresolved" posture.**
+
+- **Load value is the flat driver pay the host states.** The driver sees exactly that number. It replaces the rate card as the figure any driver-facing surface shows. The rate entities remain a company price-card, not per-load driver pay.
+- **The platform fee is a flat 5% of driver pay per completed load, billed to the host on top, plus a ~$49/month minimum.** It is never deducted from driver pay. Deliberately not tiered: the load-series/slot model makes load *count* a host-controlled field, so any count-based tier is gameable by construction, and graduated tiers re-rate every other load in a period when one disputed load is reversed. Rate changes take 60 days notice and are never retroactive.
+- **There is no free host tier.** Hosts are charged from day one. Any surface still advertising a free host launch pilot is now false; that copy must be corrected in the same PR that first charges a host, so the claim and the code path land together.
+- **Strictly non-custodial, permanently.** LogLoads never holds, commingles, or moves driver funds — no wallet, no escrow, no balances. Driver pay is a direct host-to-driver obligation settled off-platform. Phase 0 records payment preference and status only: the host marks payment sent, and **only the driver** may mark it received.
+- **`transfer_data` and `application_fee_amount` are permanently banned on any driver payment path** and are guardrail-enforced. Destination charges and separate charges-and-transfers route money through the platform balance, which makes LogLoads a custodian; a nonzero `application_fee_amount` silently deducts the platform cut from driver pay, so a $500 load quietly pays $485. Stripe's own tutorials default to both patterns, which is exactly why this is a machine check and not a design note.
+- **Brokerage stays out of scope.** It would require FMCSA broker authority and a $75k BMC-84 surety bond, make LogLoads a contracting party liable for carrier vetting and cargo claims, and contradict the published Terms and both product footers. Revisit only as a deliberate, counsel-gated program — never as a pricing change.
+- **The fee base is host-authored.** Driver confirmation of the amount actually received is part of billable completion, and posted-versus-confirmed divergence must stay detectable.
+
+Live Stripe configuration exists for the $499/month Dispatch Pro software subscription; host fee billing is designed but not yet active. An agent must not create a real customer, subscription, charge, refund, or payout without explicit founder authorization. Drivers are free forever.
 
 ### Email and auth
 
