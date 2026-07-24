@@ -190,7 +190,13 @@ function TodayActiveTrip({ load, network, trip }: { load: NetworkLoadView | null
           <span>{interrupt}</span>
         </div>
       ) : null}
-      <TripProgressButton completionStatus={trip.completion.status} status={trip.status} tone="hero" tripId={trip.id} />
+      <TripProgressButton
+        completionStatus={trip.completion.status}
+        inspectionPassed={trip.inspection?.outcome === "pass"}
+        status={trip.status}
+        tone="hero"
+        tripId={trip.id}
+      />
       <div className="primary-action-row">
         <Link className="action-link action-link--secondary" href={`/driver/loads/${trip.loadPostingId}`}>Open Route Pack</Link>
         <Link className="action-link action-link--secondary" href="/driver/messages">Message dispatch</Link>
@@ -440,7 +446,12 @@ function TripCard({ mediaReady, network, trip }: { mediaReady: boolean; network:
       ) : null}
       {open && isOwnHaul ? (
         <div className="trip-card__actions">
-          <TripProgressButton completionStatus={trip.completion.status} status={trip.status} tripId={trip.id} />
+          <TripProgressButton
+            completionStatus={trip.completion.status}
+            inspectionPassed={trip.inspection?.outcome === "pass"}
+            status={trip.status}
+            tripId={trip.id}
+          />
           <LogProofControl available={mediaReady} tripId={trip.id} />
           {/* Recorded at the destination, while the driver is standing at the
               scale — not reconstructed from memory later. */}
@@ -544,8 +555,10 @@ type ScheduleTrip = NetworkView["trips"][number]
  * Both the panel and the card read from here so the two cannot drift.
  */
 function nextStepForTrip(trip: ScheduleTrip): string {
-  if (trip.status === "assigned") {
-    if (trip.inspection && trip.inspection.outcome !== "pass") {
+  const inspectionPassed = trip.inspection?.outcome === "pass"
+
+  if (trip.status === "assigned" && !inspectionPassed) {
+    if (trip.inspection) {
       return "Pre-trip failed — contact dispatch before rolling"
     }
 
@@ -555,7 +568,7 @@ function nextStepForTrip(trip: ScheduleTrip): string {
   // Read the label off the control itself, never off tripActionLabel: that
   // helper names the current leg, so it would tell a rolling driver to "Head
   // to landing" while the button beside it says "Arrived at landing".
-  return nextFieldStepLabel(trip.status, trip.completion.status) ?? tripStatusLabel(trip.status)
+  return nextFieldStepLabel(trip.status, trip.completion.status, inspectionPassed) ?? tripStatusLabel(trip.status)
 }
 
 /**
