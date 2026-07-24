@@ -172,6 +172,13 @@ export function formatDateTime(value: string | null): string {
     return "Not set"
   }
 
+  // Intl throws RangeError on an invalid Date, which would take down the whole
+  // render for one bad timestamp. A stored value that will not parse is the
+  // same practical thing as an absent one.
+  if (Number.isNaN(new Date(value).getTime())) {
+    return "Not set"
+  }
+
   return new Intl.DateTimeFormat("en-US", {
     day: "numeric",
     hour: "numeric",

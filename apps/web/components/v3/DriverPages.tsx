@@ -6,7 +6,7 @@ import { Badge, Icon } from "@logloads/ui"
 import type { DriverAvailabilitySummary } from "@/lib/driver-data"
 import type { NetworkLoadView, NetworkView } from "@/lib/network"
 import type { VerificationRecordView } from "@/lib/verification-data"
-import { formatDateTime, formatHuman, pluralize, tripActionLabel, tripStatusLabel } from "@/lib/v3-shared"
+import { formatDateTime, formatHuman, pluralize, tripStatusLabel } from "@/lib/v3-shared"
 import { LocalTime, RelationshipGrid } from "./Common"
 import { ReputationChip, TripReviewForm } from "./Reputation"
 import { VerificationSubmit, type VerificationTypeOption } from "./VerificationSubmit"
@@ -20,6 +20,7 @@ import {
   FeatureTruckPhotoToggle,
   LogProofControl,
   MediaUpload,
+  nextFieldStepLabel,
   RequestCapacityPanel,
   SignOutButton,
   TripProgressButton
@@ -536,15 +537,18 @@ type ScheduleTrip = NetworkView["trips"][number]
  * Both the panel and the card read from here so the two cannot drift.
  */
 function nextStepForTrip(trip: ScheduleTrip): string {
-  if (trip.status === "assigned" && !trip.inspection) {
+  if (trip.status === "assigned") {
+    if (trip.inspection && trip.inspection.outcome !== "pass") {
+      return "Pre-trip failed — contact dispatch before rolling"
+    }
+
     return "Complete your pre-trip inspection"
   }
 
-  if (trip.status === "assigned" && trip.inspection?.outcome !== "pass") {
-    return "Pre-trip failed — contact dispatch before rolling"
-  }
-
-  return tripActionLabel(trip.status)
+  // Read the label off the control itself, never off tripActionLabel: that
+  // helper names the current leg, so it would tell a rolling driver to "Head
+  // to landing" while the button beside it says "Arrived at landing".
+  return nextFieldStepLabel(trip.status, trip.completion.status) ?? tripStatusLabel(trip.status)
 }
 
 /**
@@ -578,20 +582,31 @@ function NextActionPanel({
     { label: "completed", value: completedTrips.length }
   ].filter((entry) => entry.value > 0)
 
+  // An offer is the host's decision already made — the driver is the one who
+  // has to answer it. Only a plain request is genuinely waiting on the host.
+  const offeredLoads = requestedLoads.filter((load) => load.viewerAssignment?.status === "offered")
+  const awaitingHost = requestedLoads.length - offeredLoads.length
+
   const headline = focus
     ? nextStepForTrip(focus)
-    : requestedLoads.length > 0
-      ? "Waiting on a host decision"
-      // "yet" would be wrong for a driver who has already run hauls.
-      : completedTrips.length > 0
-        ? "Nothing booked right now"
-        : "Nothing booked yet"
+    : offeredLoads.length > 0
+      ? offeredLoads.length === 1
+        ? "Answer the offer on your truck"
+        : "Answer the offers on your truck"
+      : awaitingHost > 0
+        ? "Waiting on a host decision"
+        // "yet" would be wrong for a driver who has already run hauls.
+        : completedTrips.length > 0
+          ? "Nothing booked right now"
+          : "Nothing booked yet"
 
   const detail = focus
     ? `${focus.loadTitle}${focusLoad ? ` · ${focusLoad.landing.city} to ${focusLoad.destination.name}` : ""}`
-    : requestedLoads.length > 0
-      ? `${pluralize(requestedLoads.length, "request")} waiting on a host decision.`
-      : "Find a load that fits your truck and request the haul."
+    : offeredLoads.length > 0
+      ? `${pluralize(offeredLoads.length, "offer")} to accept or decline.`
+      : awaitingHost > 0
+        ? `${pluralize(awaitingHost, "request")} waiting on a host decision.`
+        : "Find a load that fits your truck and request the haul."
 
   return (
     <section aria-label="What to do next" className="driver-next">
