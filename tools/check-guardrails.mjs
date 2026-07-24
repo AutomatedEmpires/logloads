@@ -45,7 +45,14 @@ const checks = [
     include: (file) => file.startsWith("apps/web/") || file.startsWith("packages/ui/")
   },
   {
-    message: "Stripe Connect/freight money movement is outside LogLoads positioning.",
+    // transfer_data and application_fee_amount are banned permanently, not as a
+    // posture: they route driver pay through the platform balance (custody) or
+    // silently deduct the platform cut from the driver ($500 posted, $475 paid
+    // at the decided 5%).
+    // Stripe's own tutorials default to both, so a plausible-looking custodial
+    // integration would otherwise pass review. Connect itself stays out until a
+    // counsel-gated direct-charges design. See AGENTS.md section 7.
+    message: "Driver pay must never route through LogLoads. transfer_data/application_fee_amount are permanently banned (custody + fee deduction); Stripe Connect is counsel-gated. See AGENTS.md section 7.",
     pattern: /Stripe Connect|stripe\.accounts|connect_account|transfer_data|application_fee_amount/g,
     include: (file) => file.startsWith("apps/") || file.startsWith("packages/") || file.startsWith("supabase/")
   },
