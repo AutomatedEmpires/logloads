@@ -103,10 +103,15 @@ type InspectionAnswer = { status: "pass" | "fail"; note: string }
 
 /**
  * The DVIR-style walk-around gate on the one button that starts a haul.
- * "Head to landing" first opens the checklist; every item is answered pass or
- * fail, a fail says what the driver found, and the record is written before
- * the truck moves. A fail is recorded too — the truck goes to the shop and
- * dispatch hears about it rather than the app pretending nothing happened.
+ * The button opens the checklist; every item is answered pass or fail, a fail
+ * says what the driver found, and the record is written before the truck
+ * moves. A fail is recorded too — the truck goes to the shop and dispatch
+ * hears about it rather than the app pretending nothing happened.
+ *
+ * It is labelled for what the tap actually does. It used to read "Head to
+ * landing" while the surface above it told the driver to complete a pre-trip
+ * inspection: one tap, two names, and the driver had to discover that the
+ * roll button was also the inspection button.
  */
 function PreTripRollControl({ tone, tripId }: { tone: "hero" | "row"; tripId: string }) {
   const [open, setOpen] = useState(false)
@@ -129,7 +134,7 @@ function PreTripRollControl({ tone, tripId }: { tone: "hero" | "row"; tripId: st
     return (
       <div className={`trip-advance trip-advance--${tone}`}>
         <button className="advance-button" onClick={() => setOpen(true)} type="button">
-          Head to landing
+          Start pre-trip inspection
         </button>
       </div>
     )
@@ -789,7 +794,9 @@ export function LogProofControl({ available, tripId }: { available: boolean; tri
   }
 
   if (!available) {
-    return <p className="action-note" role="note">Proof uploads are currently unavailable. Delivery details can still be recorded when that step becomes available.</p>
+    // A capability that is switched off is not good news: the muted tone keeps
+    // it from reading as a success in the driver's green-means-go palette.
+    return <p className="action-note action-note--muted" role="note">Photo proof is unavailable right now. You can still record delivery details.</p>
   }
 
   return (

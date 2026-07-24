@@ -48,7 +48,7 @@ async function advance(page: Page, label: string, nextLabel: string) {
 }
 
 /**
- * Rolling starts with the walk-around: "Head to landing" opens the pre-trip
+ * Rolling starts with the walk-around: "Start pre-trip inspection" opens the
  * checklist, every item passes, and the record submits and rolls in one
  * action. This drives the real gate — the service refuses the transition
  * without a passing recorded inspection.
@@ -59,7 +59,7 @@ async function passPreTripAndRoll(page: Page) {
 
   const card = () => page.locator(".trip-card").filter({ hasText: TITLE }).first()
   await expect(card()).toBeVisible({ timeout: 15_000 })
-  await card().getByRole("button", { name: "Head to landing" }).click()
+  await card().getByRole("button", { name: "Start pre-trip inspection" }).click()
 
   const panel = card().locator(".pre-trip")
   await expect(panel).toBeVisible({ timeout: 5_000 })

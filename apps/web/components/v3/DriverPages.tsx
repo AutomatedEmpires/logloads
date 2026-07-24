@@ -6,8 +6,8 @@ import { Badge, Icon } from "@logloads/ui"
 import type { DriverAvailabilitySummary } from "@/lib/driver-data"
 import type { NetworkLoadView, NetworkView } from "@/lib/network"
 import type { VerificationRecordView } from "@/lib/verification-data"
-import { formatDateTime, formatHuman, tripStatusLabel } from "@/lib/v3-shared"
-import { RelationshipGrid } from "./Common"
+import { formatDateTime, formatHuman, pluralize, tripActionLabel, tripStatusLabel } from "@/lib/v3-shared"
+import { LocalTime, RelationshipGrid } from "./Common"
 import { ReputationChip, TripReviewForm } from "./Reputation"
 import { VerificationSubmit, type VerificationTypeOption } from "./VerificationSubmit"
 import {
@@ -395,8 +395,24 @@ function TripCard({ mediaReady, network, trip }: { mediaReady: boolean; network:
         </div>
       </header>
       <p className="trip-card__event">
-        {lastEvent ? `Last update: ${lastEvent.note ?? lastEvent.type} · ${formatDateTime(lastEvent.occurredAt)}` : "This haul is booked. Start it when you head to the landing."}
+        {lastEvent ? (
+          <>
+            Last update: {lastEvent.note ?? lastEvent.type} · <LocalTime value={lastEvent.occurredAt} />
+          </>
+        ) : (
+          "This haul is booked. Start it when you head to the landing."
+        )}
       </p>
+      {/* The instruction, not just the badge: a driver should never have to
+          infer the required action from a status chip. */}
+      {open && isOwnHaul ? (
+        <p className="trip-card__next">
+          <Icon aria-hidden name="ops.queue" size={16} />
+          <span>
+            <strong>Next step:</strong> {nextStepForTrip(trip)}
+          </span>
+        </p>
+      ) : null}
       {trip.documents.length > 0 ? (
         <ul className="doc-list">
           {trip.documents.map((document) => (
@@ -509,6 +525,93 @@ function DecisionHaulCard({ load }: { load: NetworkLoadView }) {
   )
 }
 
+type ScheduleTrip = NetworkView["trips"][number]
+
+/**
+ * The one thing this driver should do next on a haul, in words.
+ *
+ * Status and required action are different ideas. "Pre-trip pending" is a
+ * state; "Complete your pre-trip inspection" is the instruction that clears
+ * it. Badges keep carrying the state — the driver is given the instruction.
+ * Both the panel and the card read from here so the two cannot drift.
+ */
+function nextStepForTrip(trip: ScheduleTrip): string {
+  if (trip.status === "assigned" && !trip.inspection) {
+    return "Complete your pre-trip inspection"
+  }
+
+  if (trip.status === "assigned" && trip.inspection?.outcome !== "pass") {
+    return "Pre-trip failed — contact dispatch before rolling"
+  }
+
+  return tripActionLabel(trip.status)
+}
+
+/**
+ * "Right now": the driver's next action, the haul it belongs to, and when it
+ * runs. This replaced a four-cell counter grid that spent roughly half the
+ * first screen — three of its four cells read zero for a driver with one
+ * haul, and its only real fact was repeated by the card directly beneath it.
+ * Counts still appear, but only the ones that are not zero.
+ */
+function NextActionPanel({
+  activeTrips,
+  bookedTrips,
+  completedTrips,
+  network,
+  requestedLoads
+}: {
+  activeTrips: ScheduleTrip[]
+  bookedTrips: ScheduleTrip[]
+  completedTrips: ScheduleTrip[]
+  network: NetworkView
+  requestedLoads: NetworkLoadView[]
+}) {
+  // A haul already rolling outranks one that is merely booked.
+  const focus = activeTrips[0] ?? bookedTrips[0] ?? null
+  const focusLoad = focus ? network.loads.find((load) => load.id === focus.loadPostingId) ?? null : null
+
+  const counts = [
+    { label: "requested", value: requestedLoads.length },
+    { label: "booked", value: bookedTrips.length },
+    { label: "in progress", value: activeTrips.length },
+    { label: "completed", value: completedTrips.length }
+  ].filter((entry) => entry.value > 0)
+
+  const headline = focus
+    ? nextStepForTrip(focus)
+    : requestedLoads.length > 0
+      ? "Waiting on a host decision"
+      // "yet" would be wrong for a driver who has already run hauls.
+      : completedTrips.length > 0
+        ? "Nothing booked right now"
+        : "Nothing booked yet"
+
+  const detail = focus
+    ? `${focus.loadTitle}${focusLoad ? ` · ${focusLoad.landing.city} to ${focusLoad.destination.name}` : ""}`
+    : requestedLoads.length > 0
+      ? `${pluralize(requestedLoads.length, "request")} waiting on a host decision.`
+      : "Find a load that fits your truck and request the haul."
+
+  return (
+    <section aria-label="What to do next" className="driver-next">
+      <p className="eyebrow">Right now</p>
+      <h2>{headline}</h2>
+      <p className="driver-next__haul">{detail}</p>
+      {focusLoad?.scheduleLabel ? <p className="driver-next__when">{focusLoad.scheduleLabel}</p> : null}
+      {counts.length > 0 ? (
+        <ul className="driver-next__counts">
+          {counts.map((entry) => (
+            <li key={entry.label}>
+              <strong>{entry.value}</strong> {entry.label}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  )
+}
+
 export function DriverSchedule({ account, mediaReady, network }: DriverPageProps & { mediaReady: boolean }) {
   const requestedLoads = network.loads.filter((load) => ["requested", "offered"].includes(load.viewerAssignment?.status ?? ""))
   const decisionLoads = network.loads.filter((load) => load.viewerDecision?.status === "declined")
@@ -516,23 +619,20 @@ export function DriverSchedule({ account, mediaReady, network }: DriverPageProps
   const activeTrips = network.trips.filter((trip) => isOpenTrip(trip) && trip.status !== "assigned")
   const completedTrips = network.trips.filter((trip) => trip.status === "completed")
   const cancelledTrips = network.trips.filter((trip) => trip.status === "cancelled")
-  const doingNow = bookedTrips.length + activeTrips.length
 
   return (
     <AppShell account={account} kicker="Your work" role="driver" title="Schedule">
-      <section className="schedule-summary" aria-label="Schedule summary">
-        <div>
-          <p className="eyebrow">What am I doing?</p>
-          <h2>{doingNow === 0 ? "No hauls booked yet" : `${doingNow} ${doingNow === 1 ? "haul" : "hauls"} on your schedule`}</h2>
-          <p>{requestedLoads.length === 0 ? "No host decisions are pending." : `${requestedLoads.length} ${requestedLoads.length === 1 ? "request is" : "requests are"} waiting on a host decision.`}</p>
-        </div>
-        <div className="schedule-counts">
-          <span><strong>{requestedLoads.length}</strong> Requested</span>
-          <span><strong>{bookedTrips.length}</strong> Booked</span>
-          <span><strong>{activeTrips.length}</strong> In progress</span>
-          <span><strong>{completedTrips.length}</strong> Completed</span>
-        </div>
-      </section>
+      {/* With nothing scheduled at all, the empty state below already says so
+          and offers the way out — a panel repeating it would be noise. */}
+      {network.trips.length > 0 || requestedLoads.length > 0 || decisionLoads.length > 0 ? (
+        <NextActionPanel
+          activeTrips={activeTrips}
+          bookedTrips={bookedTrips}
+          completedTrips={completedTrips}
+          network={network}
+          requestedLoads={requestedLoads}
+        />
+      ) : null}
 
       {requestedLoads.length === 0 && decisionLoads.length === 0 && network.trips.length === 0 ? (
         <div className="app-section">
@@ -571,7 +671,7 @@ export function DriverSchedule({ account, mediaReady, network }: DriverPageProps
           ) : null}
           {bookedTrips.length > 0 ? (
             <section className="app-section">
-              <SectionHeader eyebrow="You got it" title="Booked next" />
+              <SectionHeader eyebrow="Booked" title="Coming up" />
               <div className="board-list board-list--flush">
                 {bookedTrips.map((trip) => <TripCard key={trip.id} mediaReady={mediaReady} network={network} trip={trip} />)}
               </div>
