@@ -1,6 +1,7 @@
 import {
   evaluateLoadCompatibility,
   explainCompatibility,
+  driverPayLabel,
   formatRateLabel,
   organizationRoleCan,
   recommendLoad,
@@ -888,7 +889,11 @@ export function buildNetworkView(
           }
         : null,
       loadType: load.loadType.replaceAll("_", " "),
-      payLabel: formatRateLabel(rate.baseRate, rate.rateType),
+      // A host-stated figure outranks the rate card: it is what this load pays
+      // this driver, not what the company charges per ton. Loads posted before
+      // driverPayCents existed keep their derived label rather than having a
+      // commitment invented for them.
+      payLabel: driverPayLabel(load.driverPayCents, rate),
       reference: publicReference(load.id),
       route: {
         condition: route.roadCondition,
