@@ -38,6 +38,33 @@ const TRIP_STEPS: Partial<Record<TripStatus, { label: string; next: TripStatus }
   unloading: { label: "Finish trip", next: "completed" }
 }
 
+/**
+ * The label of the control `TripProgressButton` will actually render for this
+ * trip, or null when the pre-trip gate owns the state.
+ *
+ * Exported so surrounding copy ("Next step: …") cannot contradict the button
+ * sitting beside it. `tripActionLabel` is the wrong source for an instruction:
+ * it names the current leg, so `en_route_to_landing` reads "Head to landing"
+ * while the button performs "Arrived at landing".
+ */
+export function nextFieldStepLabel(status: TripStatus, completionStatus: CompletionStatus): string | null {
+  if (status === "assigned") {
+    return null
+  }
+
+  const step = TRIP_STEPS[status]
+
+  if (!step) {
+    return null
+  }
+
+  if (step.next === "completed" && completionStatus === "pending") {
+    return "Record the delivery before finishing this trip"
+  }
+
+  return step.label
+}
+
 /** The single next field action for a trip, wired to the real trip state machine. */
 export function TripProgressButton({
   completionStatus,
@@ -103,10 +130,15 @@ type InspectionAnswer = { status: "pass" | "fail"; note: string }
 
 /**
  * The DVIR-style walk-around gate on the one button that starts a haul.
- * "Head to landing" first opens the checklist; every item is answered pass or
- * fail, a fail says what the driver found, and the record is written before
- * the truck moves. A fail is recorded too — the truck goes to the shop and
- * dispatch hears about it rather than the app pretending nothing happened.
+ * The button opens the checklist; every item is answered pass or fail, a fail
+ * says what the driver found, and the record is written before the truck
+ * moves. A fail is recorded too — the truck goes to the shop and dispatch
+ * hears about it rather than the app pretending nothing happened.
+ *
+ * It is labelled for what the tap actually does. It used to read "Head to
+ * landing" while the surface above it told the driver to complete a pre-trip
+ * inspection: one tap, two names, and the driver had to discover that the
+ * roll button was also the inspection button.
  */
 function PreTripRollControl({ tone, tripId }: { tone: "hero" | "row"; tripId: string }) {
   const [open, setOpen] = useState(false)
@@ -129,7 +161,7 @@ function PreTripRollControl({ tone, tripId }: { tone: "hero" | "row"; tripId: st
     return (
       <div className={`trip-advance trip-advance--${tone}`}>
         <button className="advance-button" onClick={() => setOpen(true)} type="button">
-          Head to landing
+          Start pre-trip inspection
         </button>
       </div>
     )
@@ -789,7 +821,11 @@ export function LogProofControl({ available, tripId }: { available: boolean; tri
   }
 
   if (!available) {
-    return <p className="action-note" role="note">Proof uploads are currently unavailable. Delivery details can still be recorded when that step becomes available.</p>
+    // A capability that is switched off is not good news: the muted tone keeps
+    // it from reading as a success in the driver's green-means-go palette.
+    // The delivery form only appears once the haul reaches a recordable state,
+    // so this must not promise that recording is available now.
+    return <p className="action-note action-note--muted" role="note">Photo proof is unavailable right now. Delivery details can be recorded when this haul reaches that step.</p>
   }
 
   return (

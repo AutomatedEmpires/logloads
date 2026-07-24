@@ -22,6 +22,62 @@
 .driver-flow-summary dt { color: rgba(255, 255, 255, 0.68); }
 .driver-flow-summary dd { color: #fff; font-size: 1.2rem; }
 
+/* "Right now" — one action, the haul it belongs to, and when it runs. Single
+   column by design: this replaced a two-column summary whose counter grid ate
+   half the first screen to report three zeros. */
+.driver-next {
+  display: grid;
+  gap: 6px;
+  margin: 18px 24px 0;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--ink), var(--pine));
+  color: #fff;
+  padding: 24px;
+  box-shadow: var(--shadow);
+}
+.driver-next .eyebrow { color: rgba(255, 255, 255, 0.72); }
+.driver-next h2 { margin: 0; font-size: clamp(1.5rem, 5vw, 2.4rem); line-height: 1.1; }
+.driver-next__haul { margin: 0; color: #fff; font-weight: 700; }
+.driver-next__when { margin: 0; color: rgba(255, 255, 255, 0.78); }
+.driver-next__counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.driver-next__counts li {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 6px 12px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+.driver-next__counts strong { color: #fff; }
+
+/* The required action, stated in words directly above the control that does
+   it — carried by text and an icon, never by colour alone. */
+.trip-card__next {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  border-radius: 12px;
+  background: var(--sand, rgba(18, 48, 31, 0.06));
+  padding: 10px 12px;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+/* Inside a driver card these are thumb targets in a truck, not desktop links. */
+.trip-card .text-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-min);
+}
+
 .map-availability-bar {
   display: flex;
   align-items: center;
@@ -333,6 +389,16 @@
 
 .trip-card__badges { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 
+/* Every control a driver taps in the field clears the 44px minimum: these two
+   measured 42px and 26px, which is a mis-tap in a moving cab — and the star
+   row is the smallest target on the whole surface. */
+.cancel-haul__trigger { min-height: var(--control-min); }
+.review-stars button {
+  min-width: var(--control-min);
+  min-height: var(--control-min);
+}
+.review-tag { min-height: var(--control-min); }
+
 .feature-toggle-block { display: grid; gap: 6px; margin-top: 12px; justify-items: start; }
 .feature-toggle {
   min-height: 44px;
@@ -532,8 +598,10 @@
 @media (max-width: 760px) {
   .driver-flow-summary,
   .schedule-summary { grid-template-columns: 1fr; margin: 12px 12px 0; padding: 18px; }
+  .driver-next { margin: 12px 12px 0; padding: 18px; }
   .driver-flow-summary h2,
   .schedule-summary h2 { font-size: 1.85rem; }
+  .driver-next h2 { font-size: 1.7rem; }
   .driver-flow-summary dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; }
   .driver-flow-summary dl div { display: grid; gap: 3px; border: 0; background: rgba(255, 255, 255, 0.08); padding: 9px; }
   .driver-flow-summary dt { font-size: 0.7rem; line-height: 1.2; }
