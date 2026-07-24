@@ -47,7 +47,8 @@ const checks = [
   {
     // transfer_data and application_fee_amount are banned permanently, not as a
     // posture: they route driver pay through the platform balance (custody) or
-    // silently deduct the platform cut from the driver ($500 posted, $485 paid).
+    // silently deduct the platform cut from the driver ($500 posted, $475 paid
+    // at the decided 5%).
     // Stripe's own tutorials default to both, so a plausible-looking custodial
     // integration would otherwise pass review. Connect itself stays out until a
     // counsel-gated direct-charges design. See AGENTS.md section 7.

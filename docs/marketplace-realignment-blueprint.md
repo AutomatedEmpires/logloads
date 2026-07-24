@@ -3,7 +3,18 @@
 Generated 2026-07-24 by a 7-agent research + audit pass (payment rails, pricing economics, four codebase audits, synthesis).
 Operating model: host-stated flat driver pay; platform fee charged ON TOP to the host on completed loads only; strictly non-custodial; no free host tier.
 
-> NOTE: the synthesis narrative was truncated by its output limit and begins partway through the implementation sequence. The research and audit sections below are complete and are the primary evidence.
+> ## ⚠️ Read this before citing anything below
+>
+> **This document is research input, not the current plan.** It was produced *before* the founder decided the rate, and four things in it are now superseded:
+>
+> 1. **The rate is 5%, not 3%.** Every "3%", "3.00%", and the `$500 → $485` deduction example below predates the decision. At the decided 5% that example is **$500 → $475**. The authoritative rate lives in `AGENTS.md` section 7.
+> 2. **The implementation sequence here is incomplete.** The synthesis agent exceeded its output limit and its narrative begins partway through, at Step 3. Do not follow this sequence — the complete, adversarially-reviewed spec is **`docs/marketplace-implementation-spec.md`**.
+> 3. **Phase 0 payment records must never store payout credentials.** Where this document mentions "ACH details", Zelle handles, or check-by-mail addresses, the stored contract is **method + status + optional non-sensitive instructions only** — never account or routing numbers, credentials, or TINs. A record-only MVP must not quietly become a store of financial PII.
+> 4. **Uniqueness cannot be enforced in SQL.** Where this document recommends a database constraint against duplicate fee events: the live runtime is a single JSON snapshot row and the SQL mirror is not the execution path. Idempotency and at-most-one-per-slot must be enforced in the zod/service/CAS mutation path; SQL constraints are defence in depth only.
+>
+> **Authority order:** `AGENTS.md` section 7 (decisions) → `docs/marketplace-implementation-spec.md` (design) → this document (evidence).
+>
+> What remains valuable here and is *not* superseded: the payment-rail research, the pricing economics reasoning, and the four codebase audits — complete, and the reason the decisions came out as they did.
 
 ---
 
