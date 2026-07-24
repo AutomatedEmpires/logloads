@@ -6,7 +6,7 @@ import { Badge, Icon } from "@logloads/ui"
 import type { DriverAvailabilitySummary } from "@/lib/driver-data"
 import type { NetworkLoadView, NetworkView } from "@/lib/network"
 import type { VerificationRecordView } from "@/lib/verification-data"
-import { formatDateTime, formatHuman, pluralize, tripStatusLabel } from "@/lib/v3-shared"
+import { formatHuman, pluralize, tripStatusLabel } from "@/lib/v3-shared"
 import { LocalTime, RelationshipGrid } from "./Common"
 import { ReputationChip, TripReviewForm } from "./Reputation"
 import { VerificationSubmit, type VerificationTypeOption } from "./VerificationSubmit"
@@ -169,14 +169,21 @@ function TodayActiveTrip({ load, network, trip }: { load: NetworkLoadView | null
       <div className="now-grid">
         <Metric label="Route miles" value={load ? Math.round(load.route.distanceMiles) : "—"} />
         <Metric label="Status" value={tripStatusLabel(trip.status)} />
-        <Metric label="Last update" value={lastEvent ? formatDateTime(lastEvent.occurredAt) : "No updates yet"} />
-        {trip.status === "assigned" ? (
-          <Metric
-            label="Pre-trip"
-            value={trip.inspection?.outcome === "pass" ? "Passed" : trip.inspection ? "Failed" : "Required"}
-          />
-        ) : null}
+        <Metric
+          label="Last update"
+          value={lastEvent ? <LocalTime value={lastEvent.occurredAt} /> : "No updates yet"}
+        />
       </div>
+      {/* The pre-trip state used to sit here as a metric reading "Required"
+          over the label "Pre-trip" — a required action wearing a statistic's
+          clothes, and backwards to read. It is an instruction, in the same
+          words the Schedule uses and above the control that performs it. */}
+      <p className="trip-card__next">
+        <Icon aria-hidden name="ops.queue" size={16} />
+        <span>
+          <strong>Next step:</strong> {nextStepForTrip(trip)}
+        </span>
+      </p>
       {interrupt ? (
         <div className="interrupt">
           <Icon aria-hidden name="status.warning" size={18} />

@@ -702,8 +702,18 @@ a { color: inherit; text-decoration: none; }
 .driver-now p,
 .host-need p { color: rgba(255,255,255,0.78); }
 .now-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; margin: 20px 0; background: rgba(255,255,255,0.2); }
-.now-grid .metric-tile { background: rgba(255,255,255,0.09); color: #fff; }
-.now-grid .metric-tile span { color: rgba(255,255,255,0.72); }
+/* These are supporting facts, so they get a compact row rather than the
+   118px-tall, 2rem-type tiles used for headline figures elsewhere. */
+.now-grid .metric-tile { min-height: 0; padding: 12px; background: rgba(255,255,255,0.09); color: #fff; }
+.now-grid .metric-tile strong { font-size: 1.05rem; line-height: 1.25; }
+.now-grid .metric-tile span { display: block; margin-top: 4px; color: rgba(255,255,255,0.72); font-size: 0.78rem; }
+
+/* The next-step line sits on the dark "now" panel here, not on a card. */
+.driver-now .trip-card__next {
+  margin-top: 14px;
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+}
 .interrupt { display: flex; align-items: center; gap: 10px; border-radius: var(--radius); background: var(--amber-bg); color: #6b3b10; padding: 12px; font-weight: 900; }
 .primary-action-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
 
@@ -1085,7 +1095,10 @@ dd { margin: 0; font-weight: 900; text-align: right; }
   .settings-grid,
   .relationship-grid,
   .invite-panel { margin: 12px 12px 0; }
-  .now-grid { grid-template-columns: 1fr; }
+  /* Was 1fr, which stacked these supporting facts into roughly 1100px on a
+     phone and pushed the map off the first screen of a page called "Map".
+     They stay a row on the device the driver actually uses. */
+  .now-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .filter-bar { align-items: stretch; }
   .segmented-v3 { width: 100%; }
   .segmented-v3 button { flex: 1; }

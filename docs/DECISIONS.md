@@ -2,6 +2,13 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-07-24 — Supporting facts stop outranking the map on the driver map
+Second surface of the surface-by-surface usability review; inherits the language recorded in the entry above.
+- **A page named "Map" showed no map on the first screen.** `/driver/map` renders the active-haul panel, then an availability bar, then the map. The panel's fact grid was collapsed to a single column by a mobile media query, so four tiles at `min-height: 118px` and `2rem` type stacked into roughly 1100px — on the one device the surface is designed for. The grid now stays three across on mobile and its tiles carry supporting weight, not headline weight. Desktop moves the map to 691px inside a 900px viewport; mobile reaches the fold line rather than a second screen. The active haul deliberately keeps its place above the map: demoting it to raise the map would trade away the driver's most important content.
+- **A required action stopped wearing a statistic's clothes.** The pre-trip state rendered as a metric whose value read "Required" over the label "Pre-trip" — backwards to read, and a status where an instruction belongs. It is now the same `Next step:` line the Schedule uses, above the control that performs it.
+- **`Metric` accepts `ReactNode`.** Type-only widening so a metric can carry a live element rather than a pre-formatted string; every existing string/number call site across all four cockpits still type-checks. This is what lets `LocalTime` replace the last UTC timestamp on the surface.
+- **Third-party controls answer to the same touch floor.** MapLibre's 29px zoom buttons are a desktop-mouse default; they are now 44px. The rule needs a `.map-surface` prefix because MapLibre's stylesheet loads after ours and wins at equal specificity. The attribution link stays small by design — it is a credit, not a control.
+
 ## 2026-07-24 — Driver surfaces state the required action, in the driver's own time
 First surface of a methodical, surface-by-surface usability review. The rules below are the shared language later surfaces inherit; they are recorded here because they are cross-cutting, not local styling.
 - **Required action outranks status, and is written as an instruction.** "Pre-trip pending" is a state; "Complete your pre-trip inspection" is what the driver does about it. Badges keep carrying state, but every open haul now names the next step in words directly above the control that performs it, and the schedule's lead panel is headed by that same instruction. Both read from one `nextStepForTrip` helper so the panel and the card cannot drift apart. Status is never carried by colour alone — text plus an icon, per the product-wide rule.
