@@ -6,7 +6,7 @@ import { Badge, Icon } from "@logloads/ui"
 import type { DriverAvailabilitySummary } from "@/lib/driver-data"
 import type { NetworkLoadView, NetworkView } from "@/lib/network"
 import type { VerificationRecordView } from "@/lib/verification-data"
-import { formatDateTime, formatHuman, pluralize, tripStatusLabel } from "@/lib/v3-shared"
+import { formatHuman, pluralize, tripStatusLabel } from "@/lib/v3-shared"
 import { LocalTime, RelationshipGrid } from "./Common"
 import { ReputationChip, TripReviewForm } from "./Reputation"
 import { VerificationSubmit, type VerificationTypeOption } from "./VerificationSubmit"
@@ -169,21 +169,34 @@ function TodayActiveTrip({ load, network, trip }: { load: NetworkLoadView | null
       <div className="now-grid">
         <Metric label="Route miles" value={load ? Math.round(load.route.distanceMiles) : "—"} />
         <Metric label="Status" value={tripStatusLabel(trip.status)} />
-        <Metric label="Last update" value={lastEvent ? formatDateTime(lastEvent.occurredAt) : "No updates yet"} />
-        {trip.status === "assigned" ? (
-          <Metric
-            label="Pre-trip"
-            value={trip.inspection?.outcome === "pass" ? "Passed" : trip.inspection ? "Failed" : "Required"}
-          />
-        ) : null}
+        <Metric
+          label="Last update"
+          value={lastEvent ? <LocalTime value={lastEvent.occurredAt} /> : "No updates yet"}
+        />
       </div>
+      {/* The pre-trip state used to sit here as a metric reading "Required"
+          over the label "Pre-trip" — a required action wearing a statistic's
+          clothes, and backwards to read. It is an instruction, in the same
+          words the Schedule uses and above the control that performs it. */}
+      <p className="trip-card__next">
+        <Icon aria-hidden name="ops.queue" size={16} />
+        <span>
+          <strong>Next step:</strong> {nextStepForTrip(trip)}
+        </span>
+      </p>
       {interrupt ? (
         <div className="interrupt">
           <Icon aria-hidden name="status.warning" size={18} />
           <span>{interrupt}</span>
         </div>
       ) : null}
-      <TripProgressButton completionStatus={trip.completion.status} status={trip.status} tone="hero" tripId={trip.id} />
+      <TripProgressButton
+        completionStatus={trip.completion.status}
+        inspectionPassed={trip.inspection?.outcome === "pass"}
+        status={trip.status}
+        tone="hero"
+        tripId={trip.id}
+      />
       <div className="primary-action-row">
         <Link className="action-link action-link--secondary" href={`/driver/loads/${trip.loadPostingId}`}>Open Route Pack</Link>
         <Link className="action-link action-link--secondary" href="/driver/messages">Message dispatch</Link>
@@ -433,7 +446,12 @@ function TripCard({ mediaReady, network, trip }: { mediaReady: boolean; network:
       ) : null}
       {open && isOwnHaul ? (
         <div className="trip-card__actions">
-          <TripProgressButton completionStatus={trip.completion.status} status={trip.status} tripId={trip.id} />
+          <TripProgressButton
+            completionStatus={trip.completion.status}
+            inspectionPassed={trip.inspection?.outcome === "pass"}
+            status={trip.status}
+            tripId={trip.id}
+          />
           <LogProofControl available={mediaReady} tripId={trip.id} />
           {/* Recorded at the destination, while the driver is standing at the
               scale — not reconstructed from memory later. */}
@@ -537,8 +555,10 @@ type ScheduleTrip = NetworkView["trips"][number]
  * Both the panel and the card read from here so the two cannot drift.
  */
 function nextStepForTrip(trip: ScheduleTrip): string {
-  if (trip.status === "assigned") {
-    if (trip.inspection && trip.inspection.outcome !== "pass") {
+  const inspectionPassed = trip.inspection?.outcome === "pass"
+
+  if (trip.status === "assigned" && !inspectionPassed) {
+    if (trip.inspection) {
       return "Pre-trip failed — contact dispatch before rolling"
     }
 
@@ -548,7 +568,7 @@ function nextStepForTrip(trip: ScheduleTrip): string {
   // Read the label off the control itself, never off tripActionLabel: that
   // helper names the current leg, so it would tell a rolling driver to "Head
   // to landing" while the button beside it says "Arrived at landing".
-  return nextFieldStepLabel(trip.status, trip.completion.status) ?? tripStatusLabel(trip.status)
+  return nextFieldStepLabel(trip.status, trip.completion.status, inspectionPassed) ?? tripStatusLabel(trip.status)
 }
 
 /**

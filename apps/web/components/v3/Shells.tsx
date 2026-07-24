@@ -145,7 +145,10 @@ export function EmptyState({ actionHref, actionLabel, body, title }: EmptyStateP
   )
 }
 
-export function Metric({ label, value }: { label: string; value: string | number }) {
+// `value` is ReactNode so a metric can carry a live element — LocalTime, for
+// one — instead of a pre-formatted string. Widening only: every existing
+// string/number call site still type-checks.
+export function Metric({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="metric-tile">
       <strong>{value}</strong>

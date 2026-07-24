@@ -508,3 +508,13 @@
     left: 0;
   }
 }
+
+/* MapLibre ships 29px zoom buttons — a desktop-mouse default. This map is used
+   one-handed in a cab, so they get the same 44px floor as every other control
+   a driver taps in the field. The .map-surface prefix is required: MapLibre's
+   own stylesheet loads after ours and wins at equal specificity. */
+.map-surface .maplibregl-ctrl-group button,
+.map-surface--real .maplibregl-ctrl-group button {
+  width: var(--control-min);
+  height: var(--control-min);
+}

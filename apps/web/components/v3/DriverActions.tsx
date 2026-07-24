@@ -47,9 +47,15 @@ const TRIP_STEPS: Partial<Record<TripStatus, { label: string; next: TripStatus }
  * it names the current leg, so `en_route_to_landing` reads "Head to landing"
  * while the button performs "Arrived at landing".
  */
-export function nextFieldStepLabel(status: TripStatus, completionStatus: CompletionStatus): string | null {
+export function nextFieldStepLabel(
+  status: TripStatus,
+  completionStatus: CompletionStatus,
+  inspectionPassed = false
+): string | null {
   if (status === "assigned") {
-    return null
+    // A recorded pass clears the gate, so the haul can simply start; the
+    // control agrees, which is why this is not "re-run the inspection".
+    return inspectionPassed ? TRIP_STEPS.assigned?.label ?? null : null
   }
 
   const step = TRIP_STEPS[status]
@@ -68,11 +74,13 @@ export function nextFieldStepLabel(status: TripStatus, completionStatus: Complet
 /** The single next field action for a trip, wired to the real trip state machine. */
 export function TripProgressButton({
   completionStatus,
+  inspectionPassed = false,
   status,
   tone = "row",
   tripId
 }: {
   completionStatus: CompletionStatus
+  inspectionPassed?: boolean
   status: TripStatus
   tone?: "hero" | "row"
   tripId: string
@@ -84,7 +92,10 @@ export function TripProgressButton({
   // Rolling starts with the walk-around. The service refuses the transition
   // without a passing recorded inspection, so this panel is the paved path,
   // not the enforcement.
-  if (status === "assigned") {
+  // A pass is already recorded, so the gate is clear and the haul just starts.
+  // Without this the driver would be asked to re-run an inspection they have
+  // already passed — and the instruction above the button would say so too.
+  if (status === "assigned" && !inspectionPassed) {
     return <PreTripRollControl tone={tone} tripId={tripId} />
   }
 
