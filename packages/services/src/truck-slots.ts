@@ -7,6 +7,7 @@ import {
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
+import { assertOrganizationAction, getActiveOrganizationContext } from "./operating-network"
 import { assertFound, createUuid, nowIso } from "./utils"
 
 export function listTruckSlotsForDate(state: LogLoadsDatabaseState, date: string): TruckSlot[] {
@@ -32,7 +33,7 @@ export function getTruckSlotById(state: LogLoadsDatabaseState, slotId: string): 
 export function createTruckSlot(
   state: LogLoadsDatabaseState,
   input: unknown,
-  context: { organizationId: string }
+  context: { actorUserId: string; organizationId: string }
 ): TruckSlot {
   const parsed = createTruckSlotInputSchema.parse(input)
 
@@ -44,6 +45,14 @@ export function createTruckSlot(
   if (posting.companyId !== context.organizationId) {
     throw new Error("You cannot add slots to another organization's load posting")
   }
+
+  // Belonging to the organization is not permission to act for it. A slot is
+  // the capacity a posting offers, so adding one is publishing work —
+  // `viewer` holds only view_network and maps to no cockpit anywhere.
+  assertOrganizationAction(
+    getActiveOrganizationContext(state, context.actorUserId, context.organizationId),
+    "publish_load"
+  )
 
   const timestamp = nowIso()
   const entity = truckSlotSchema.parse({

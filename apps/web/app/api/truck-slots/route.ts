@@ -22,9 +22,11 @@ export async function POST(request: NextRequest) {
 		// body: requireApiActor only confirms the caller belongs to the org they
 		// named, so trusting the payload would let a member of one organization
 		// add slots to another organization's load posting.
-		const { organizationId } = await requireApiActor(payload.organizationId)
+		const { actorUserId, organizationId } = await requireApiActor(payload.organizationId)
 
-		const slot = await mutateState((draft) => draft.createTruckSlot(payload, { organizationId }))
+		const slot = await mutateState((draft) =>
+			draft.createTruckSlot(payload, { actorUserId, organizationId })
+		)
 
 		return NextResponse.json({ slot }, { status: 201 })
 	} catch (error) {
