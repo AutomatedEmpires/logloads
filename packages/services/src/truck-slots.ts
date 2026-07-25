@@ -7,6 +7,7 @@ import {
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
+import { assertOrganizationAction, getActiveOrganizationContext } from "./operating-network"
 import { assertFound, createUuid, nowIso } from "./utils"
 
 export function listTruckSlotsForDate(state: LogLoadsDatabaseState, date: string): TruckSlot[] {
@@ -17,8 +18,42 @@ export function getTruckSlotById(state: LogLoadsDatabaseState, slotId: string): 
   return state.truckSlots.find((slot) => slot.id === slotId)
 }
 
-export function createTruckSlot(state: LogLoadsDatabaseState, input: unknown): TruckSlot {
+/**
+ * Creating a slot writes to a specific load posting, so the caller must own
+ * that posting — membership in the organization they *name* is not the same
+ * question.
+ *
+ * `POST /api/truck-slots` guarded only with `requireApiActor(payload.organizationId)`,
+ * which asks "are you a member of the org you claimed?" and never "does this
+ * posting belong to it". A member of one organization could therefore pass
+ * their own organization id alongside another organization's `loadPostingId`
+ * and add slots to that stranger's work. The gate lives here rather than in
+ * the route because the route is not the only possible caller.
+ */
+export function createTruckSlot(
+  state: LogLoadsDatabaseState,
+  input: unknown,
+  context: { actorUserId: string; organizationId: string }
+): TruckSlot {
   const parsed = createTruckSlotInputSchema.parse(input)
+
+  const posting = assertFound(
+    state.loadPostings.find((entry) => entry.id === parsed.loadPostingId),
+    `Load posting ${parsed.loadPostingId} was not found`
+  )
+
+  if (posting.companyId !== context.organizationId) {
+    throw new Error("You cannot add slots to another organization's load posting")
+  }
+
+  // Belonging to the organization is not permission to act for it. A slot is
+  // the capacity a posting offers, so adding one is publishing work —
+  // `viewer` holds only view_network and maps to no cockpit anywhere.
+  assertOrganizationAction(
+    getActiveOrganizationContext(state, context.actorUserId, context.organizationId),
+    "publish_load"
+  )
+
   const timestamp = nowIso()
   const entity = truckSlotSchema.parse({
     ...parsed,
