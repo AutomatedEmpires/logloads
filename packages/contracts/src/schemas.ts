@@ -243,6 +243,20 @@ export const loadPostingSchema = z.object({
   campaignEndDate: z.string().date().optional().nullable(),
   recurringSchedule: recurringScheduleSchema.optional().nullable(),
   dailyTruckCountNeeded: z.number().int().positive(),
+  /**
+   * What the host states this load pays the driver, in whole cents.
+   *
+   * This is the authoritative figure a driver reads — not a derivation of the
+   * company rate card (`rateId`), which is a price list rather than a promise
+   * about one load. The platform fee is charged to the host ON TOP of this
+   * number and is never deducted from it.
+   *
+   * Optional only for the migration: loads posted before this field existed
+   * keep falling back to their rate-derived label, because backfilling an
+   * estimate into a field that means "the host said so" would manufacture a
+   * commitment nobody made. Newly posted loads carry a real number.
+   */
+  driverPayCents: z.number().int().positive().optional().nullable(),
   estimatedTonsPerLoad: z.number().positive().optional().nullable(),
   equipmentRequirements: z.array(z.string()).default([]),
   accessRequirements: z.array(z.string()).default([]),

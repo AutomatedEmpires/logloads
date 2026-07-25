@@ -747,6 +747,10 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
     campaignEndDate: null,
     recurringSchedule: null,
     dailyTruckCountNeeded: 3,
+    // The first load carrying a host-stated figure. Every other seeded load
+    // still falls back to its rate card, so the bench shows both sides of the
+    // migration at once rather than only the finished state.
+    driverPayCents: 52_500,
     estimatedTonsPerLoad: 28,
     equipmentRequirements: ["pole-trailer"],
     accessRequirements: ["radio"],
