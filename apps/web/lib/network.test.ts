@@ -82,6 +82,8 @@ describe("trip document deliverability", () => {
 
 describe("selectable slots", () => {
   const AT = new Date("2026-06-05T12:00:00.000Z")
+  // The seeded two-day series: six truckloads as one posting, three per day.
+  const SERIES_LOAD_ID = "cccccccc-cccc-4ccc-8ccc-ccccccccccd1"
 
   function driverView() {
     const services = createLogLoadsServices(createInMemoryDatabase())
@@ -106,60 +108,63 @@ describe("selectable slots", () => {
     // to be produced rather than assumed — a picker showing Thursday above
     // Tuesday would be read as the next available run.
     //
-    // The seed has no posting with two takeable slots, so the series case is
-    // built here: a later slot is inserted BEFORE an earlier one in storage,
-    // which is precisely the arrangement an unsorted read gets wrong.
+    // The seeded two-day series IS the series case, so this reverses that
+    // posting's own slots in storage rather than injecting clones: an unsorted
+    // read then returns day two first, which is precisely the arrangement that
+    // misleads. Anchoring on the real fixture also makes this test fail if the
+    // series ever collapses back to a single run.
     const services = createLogLoadsServices(createInMemoryDatabase())
     const driverUser = services.state.profiles.find((profile) => profile.email === "hank@northpine.example")
     const driver = services.state.driverProfiles.find((profile) => profile.userId === driverUser?.id)
 
     if (!driver) throw new Error("the driver fixture is incomplete")
 
-    // Anchor to a load this driver can actually request — slot-level capacity
-    // is not viewer eligibility, so an arbitrary open slot may belong to work
-    // they can never take, and the extra slots would never surface.
-    const baseline = buildNetworkView(
-      services.state,
-      { actorUserId: driver.userId, kind: "actor", organizationId: driver.companyId },
-      AT
-    )
-    const target = baseline.loads.find((candidate) => candidate.slots.selectable.length > 0)
-    const seedSlot = services.state.truckSlots.find((slot) => slot.id === target?.slots.selectable[0]?.id)
+    const seriesSlots = services.state.truckSlots.filter((slot) => slot.loadPostingId === SERIES_LOAD_ID)
 
-    if (!seedSlot) throw new Error("the slot fixture is incomplete")
+    expect(seriesSlots.length).toBeGreaterThan(1)
 
-    const later = {
-      ...seedSlot,
-      endAt: "2026-06-09T21:00:00.000Z",
-      id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee02",
-      slotDate: "2026-06-09",
-      startAt: "2026-06-09T13:00:00.000Z"
-    }
-    const earlier = {
-      ...seedSlot,
-      endAt: "2026-06-08T21:00:00.000Z",
-      id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee01",
-      slotDate: "2026-06-08",
-      startAt: "2026-06-08T13:00:00.000Z"
-    }
-
-    services.state.truckSlots.push(later, earlier)
+    services.state.truckSlots = [
+      ...[...seriesSlots].sort((left, right) => right.startAt.localeCompare(left.startAt)),
+      ...services.state.truckSlots.filter((slot) => slot.loadPostingId !== SERIES_LOAD_ID)
+    ]
 
     const view = buildNetworkView(
       services.state,
       { actorUserId: driver.userId, kind: "actor", organizationId: driver.companyId },
       AT
     )
-    const load = view.loads.find((candidate) => candidate.slots.selectable.length > 1)
+    const load = view.loads.find((candidate) => candidate.id === SERIES_LOAD_ID)
 
     expect(load).toBeDefined()
 
     const starts = load!.slots.selectable.map((slot) => slot.startAt)
 
+    expect(starts.length).toBeGreaterThan(1)
     expect(starts).toEqual([...starts].sort((left, right) => left.localeCompare(right)))
     expect(starts.indexOf("2026-06-08T13:00:00.000Z")).toBeLessThan(
       starts.indexOf("2026-06-09T13:00:00.000Z")
     )
+  })
+
+  it("offers the demo driver every run in the series, each labelled by its own day", () => {
+    // The picker renders only above one option, so a driver has to be able to
+    // take more than one run on a posting they can actually request. Until the
+    // two-day series existed this driver's only requestable posting carried a
+    // single slot, so the control shipped in #67 rendered on nothing.
+    const { view } = driverView()
+    const load = view.loads.find((candidate) => candidate.id === SERIES_LOAD_ID)
+
+    expect(load).toBeDefined()
+    expect(load!.slots.selectable.length).toBeGreaterThan(1)
+    expect(load!.slots.requestableSlotId).toBe(load!.slots.selectable[0]?.id)
+    // Three trucks a day, none of them worked yet.
+    expect(load!.slots.selectable.map((slot) => slot.remaining)).toEqual([3, 3])
+
+    // Each run has to be distinguishable. formatSlotWindow omitted the DATE
+    // until #67, which rendered runs on different days as identical labels.
+    const windows = load!.slots.selectable.map((slot) => slot.window)
+
+    expect(new Set(windows).size).toBe(windows.length)
   })
 
   it("reports remaining capacity per slot, never negative", () => {

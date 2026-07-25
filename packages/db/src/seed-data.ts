@@ -747,9 +747,10 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
     campaignEndDate: null,
     recurringSchedule: null,
     dailyTruckCountNeeded: 3,
-    // The first load carrying a host-stated figure. Every other seeded load
-    // still falls back to its rate card, so the bench shows both sides of the
-    // migration at once rather than only the finished state.
+    // One of two loads carrying a host-stated figure (the other is the two-day
+    // series at the end of this list). The remaining seeded loads still fall
+    // back to their rate card, so the bench shows both sides of the migration
+    // at once rather than only the finished state.
     driverPayCents: 52_500,
     estimatedTonsPerLoad: 28,
     equipmentRequirements: ["pole-trailer"],
@@ -1054,6 +1055,60 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
     archivedAt: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
+  },
+  // Six truckloads over two days, as ONE posting. A posting is a series, so the
+  // series case needs a loading slot per day rather than six listings — and it
+  // is the shape `provisionLoadCapacity` already produces for a two-day
+  // campaign (perDay x scheduled dates), not a hand-tuned arrangement.
+  //
+  // Appended, never prepended: `truck-slots.test.ts` and `economics.test.ts`
+  // both anchor on `loadPostings[0]`.
+  //
+  // Without this the seed had no posting offering ONE driver more than a single
+  // takeable slot, so the slot picker had nothing to pick. The only other
+  // multi-slot posting (…ccc1) is work the demo driver already holds, and
+  // `selectable` is viewer-gated, so his board showed one run and the control
+  // never rendered.
+  {
+    id: "cccccccc-cccc-4ccc-8ccc-ccccccccccd1",
+    companyId: "33333333-3333-4333-8333-333333333332",
+    dispatcherProfileId: "55555555-5555-4555-8555-555555555553",
+    loaderProfileId: null,
+    pickupLandingId: "66666666-6666-4666-8666-666666666662",
+    dropoffMillId: "99999999-9999-4999-8999-999999999991",
+    routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
+    rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
+    title: "Blue River two-day high-grade series",
+    loadType: "saw_logs",
+    status: "open",
+    scheduleType: "campaign",
+    loadDate: null,
+    campaignStartDate: "2026-06-08",
+    campaignEndDate: "2026-06-09",
+    recurringSchedule: null,
+    dailyTruckCountNeeded: 3,
+    driverPayCents: 62_500,
+    estimatedTonsPerLoad: 29,
+    // Chains only. The demo driver's rig carries chains, so the series he is
+    // meant to pick a run from must not require kit he does not have.
+    equipmentRequirements: ["chains"],
+    accessRequirements: [],
+    roadCondition: "good",
+    // Deliberately null. The load detail surface renders weatherNotes to the
+    // driver under "Check before requesting", so describing the fixture here
+    // would put fixture metadata in a safety caution. What this posting is gets
+    // said in its title and its slot notes instead.
+    weatherNotes: null,
+    dispatcherContact: {
+      name: "Cole Cedar",
+      phone: "555-3001",
+      email: "dispatch@summit.example"
+    },
+    loaderContact: null,
+    cancellationReason: null,
+    archivedAt: null,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
   }
 ])
 
@@ -1160,6 +1215,45 @@ export const seedTruckSlots: TruckSlot[] = parseMany(truckSlotSchema, [
     reservedCount: 0,
     status: "open",
     notes: "Remaining partner-offer truckload window.",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  // The two-day series: one loading slot per scheduled day, three trucks per
+  // day. Window and capacity are exactly what `provisionLoadCapacity` mints for
+  // a campaign (13:00-21:00Z, capacity = dailyTruckCountNeeded), so this models
+  // a posting the product can actually publish rather than an impossible state.
+  //
+  // Kept in the June band deliberately: `services.test.ts` asserts nothing is
+  // requestable at 2026-07-13T12:00Z, and the web app shifts the whole seed
+  // forward in whole days from 2026-06-05, so June dates land in the future on
+  // a bench booted today.
+  {
+    id: "dddddddd-dddd-4ddd-8ddd-ddddddddccd1",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccd1",
+    landingId: "66666666-6666-4666-8666-666666666662",
+    loaderProfileId: null,
+    slotDate: "2026-06-08",
+    startAt: "2026-06-08T13:00:00.000Z",
+    endAt: "2026-06-08T21:00:00.000Z",
+    capacity: 3,
+    reservedCount: 0,
+    status: "open",
+    notes: "Day one of the two-day series.",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "dddddddd-dddd-4ddd-8ddd-ddddddddccd2",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccd1",
+    landingId: "66666666-6666-4666-8666-666666666662",
+    loaderProfileId: null,
+    slotDate: "2026-06-09",
+    startAt: "2026-06-09T13:00:00.000Z",
+    endAt: "2026-06-09T21:00:00.000Z",
+    capacity: 3,
+    reservedCount: 0,
+    status: "open",
+    notes: "Day two of the two-day series.",
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
   }
@@ -1878,6 +1972,25 @@ export const seedOpportunityCapacities: OpportunityCapacity[] = parseMany(opport
     completedTruckloads: 0,
     remainingTruckloads: 1,
     acceptedTermsSnapshot: { rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3" },
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  // The two-day series ledger, nothing worked yet: 6 = 3 trucks x 2 days, which
+  // is both `provisionLoadCapacity`'s arithmetic and the sum of the two slots'
+  // capacity. `request_approval` because a driver must be able to ASK for a run
+  // — a direct_offer posting never offers a picker. An empty terms snapshot is
+  // what a real publish writes; the driver-facing figure is the host's stated
+  // pay on the posting, not this rate card.
+  {
+    id: "21212121-2121-4121-8121-212121212120",
+    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccd1",
+    visibilityMode: "private_network",
+    allocationMode: "request_approval",
+    totalTruckloads: 6,
+    committedTruckloads: 0,
+    completedTruckloads: 0,
+    remainingTruckloads: 6,
+    acceptedTermsSnapshot: {},
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
   }
