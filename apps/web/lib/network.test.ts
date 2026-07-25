@@ -80,6 +80,121 @@ describe("trip document deliverability", () => {
   })
 })
 
+describe("selectable slots", () => {
+  const AT = new Date("2026-06-05T12:00:00.000Z")
+
+  function driverView() {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const driverUser = services.state.profiles.find((profile) => profile.email === "hank@northpine.example")
+    const driver = services.state.driverProfiles.find((profile) => profile.userId === driverUser?.id)
+
+    if (!driver) throw new Error("the driver fixture is incomplete")
+
+    return {
+      driver,
+      services,
+      view: buildNetworkView(
+        services.state,
+        { actorUserId: driver.userId, kind: "actor", organizationId: driver.companyId },
+        AT
+      )
+    }
+  }
+
+  it("lists takeable slots earliest first", () => {
+    // state.truckSlots carries no ordering guarantee, so "earliest first" has
+    // to be produced rather than assumed — a picker showing Thursday above
+    // Tuesday would be read as the next available run.
+    //
+    // The seed has no posting with two takeable slots, so the series case is
+    // built here: a later slot is inserted BEFORE an earlier one in storage,
+    // which is precisely the arrangement an unsorted read gets wrong.
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const driverUser = services.state.profiles.find((profile) => profile.email === "hank@northpine.example")
+    const driver = services.state.driverProfiles.find((profile) => profile.userId === driverUser?.id)
+
+    if (!driver) throw new Error("the driver fixture is incomplete")
+
+    // Anchor to a load this driver can actually request — slot-level capacity
+    // is not viewer eligibility, so an arbitrary open slot may belong to work
+    // they can never take, and the extra slots would never surface.
+    const baseline = buildNetworkView(
+      services.state,
+      { actorUserId: driver.userId, kind: "actor", organizationId: driver.companyId },
+      AT
+    )
+    const target = baseline.loads.find((candidate) => candidate.slots.selectable.length > 0)
+    const seedSlot = services.state.truckSlots.find((slot) => slot.id === target?.slots.selectable[0]?.id)
+
+    if (!seedSlot) throw new Error("the slot fixture is incomplete")
+
+    const later = {
+      ...seedSlot,
+      endAt: "2026-06-09T21:00:00.000Z",
+      id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee02",
+      slotDate: "2026-06-09",
+      startAt: "2026-06-09T13:00:00.000Z"
+    }
+    const earlier = {
+      ...seedSlot,
+      endAt: "2026-06-08T21:00:00.000Z",
+      id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee01",
+      slotDate: "2026-06-08",
+      startAt: "2026-06-08T13:00:00.000Z"
+    }
+
+    services.state.truckSlots.push(later, earlier)
+
+    const view = buildNetworkView(
+      services.state,
+      { actorUserId: driver.userId, kind: "actor", organizationId: driver.companyId },
+      AT
+    )
+    const load = view.loads.find((candidate) => candidate.slots.selectable.length > 1)
+
+    expect(load).toBeDefined()
+
+    const starts = load!.slots.selectable.map((slot) => slot.startAt)
+
+    expect(starts).toEqual([...starts].sort((left, right) => left.localeCompare(right)))
+    expect(starts.indexOf("2026-06-08T13:00:00.000Z")).toBeLessThan(
+      starts.indexOf("2026-06-09T13:00:00.000Z")
+    )
+  })
+
+  it("reports remaining capacity per slot, never negative", () => {
+    const { view } = driverView()
+
+    for (const load of view.loads) {
+      for (const slot of load.slots.selectable) {
+        expect(slot.remaining).toBeGreaterThan(0)
+        expect(Number.isInteger(slot.remaining)).toBe(true)
+      }
+    }
+  })
+
+  it("offers nothing to a public viewer, who cannot take a slot at all", () => {
+    // Slot-level availability is not viewer eligibility. Rendering a picker to
+    // someone who cannot request would be a control that does nothing.
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const view = buildNetworkView(services.state, { kind: "public" }, AT)
+
+    for (const load of view.loads) {
+      expect(load.slots.selectable).toEqual([])
+    }
+  })
+
+  it("keeps the default in step with the list it comes from", () => {
+    // requestableSlotId is selectable[0]; if these ever disagree the picker
+    // and the button it defaults to would book different slots.
+    const { view } = driverView()
+
+    for (const load of view.loads) {
+      expect(load.slots.requestableSlotId).toBe(load.slots.selectable[0]?.id ?? null)
+    }
+  })
+})
+
 describe("driver network access", () => {
   it("returns only the signed-in driver's hauls and assignment details", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())

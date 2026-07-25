@@ -763,9 +763,23 @@ export function buildNetworkView(
             : !discoveryAvailable
               ? "not_requestable"
               : "available"
-    const requestableSlot = viewerHasActiveAssignment || viewer.kind === "public" || !discoveryAvailable
-      ? null
-      : futureOpenSlots[0] ?? null
+    const viewerCanRequest = !(viewerHasActiveAssignment || viewer.kind === "public" || !discoveryAvailable)
+    // Slot-level availability is not viewer eligibility. A public visitor, or a
+    // driver who already holds this load, can have open slots in front of them
+    // and still be unable to take one — offering them a picker would be a
+    // control that cannot work.
+    //
+    // Sorted because "earliest first" is the promised contract and
+    // state.truckSlots carries no ordering guarantee. This also corrects
+    // claimableSlotId and nextWindow, which took whatever slot happened to be
+    // first in storage while calling it "next".
+    const openSlotsByTime = [...futureOpenSlots].sort((left, right) =>
+      left.startAt.localeCompare(right.startAt)
+    )
+    // Not viewer-gated: claimableSlotId serves direct-offer claims, which
+    // answer to their own eligibility. Ordering alone is the fix there.
+    const selectableSlots = viewerCanRequest ? openSlotsByTime : []
+    const requestableSlot = selectableSlots[0] ?? null
 
     const compatibility = currentTruck
       ? evaluateLoadCompatibility({
@@ -934,9 +948,9 @@ export function buildNetworkView(
       scheduleLabel: formatDateRange(load),
       cadenceLabel: cadenceLabel(load),
       slots: {
-        claimableSlotId: futureOpenSlots[0]?.id ?? null,
-        nextWindow: futureOpenSlots[0]
-          ? formatSlotWindow(futureOpenSlots[0].startAt, futureOpenSlots[0].endAt)
+        claimableSlotId: openSlotsByTime[0]?.id ?? null,
+        nextWindow: openSlotsByTime[0]
+          ? formatSlotWindow(openSlotsByTime[0].startAt, openSlotsByTime[0].endAt)
           : "No open slot",
         open: slots.reduce((sum, slot) => sum + Math.max(0, slot.capacity - slot.reservedCount), 0),
         requestableSlotId: requestableSlot?.id ?? null,
@@ -949,10 +963,14 @@ export function buildNetworkView(
          * with six slots. Until now every surface booked `futureOpenSlots[0]`,
          * which silently decided *which day a driver works*. Assignment
          * uniqueness became per-slot in #65; this is the data a picker needs
-         * for that to be reachable. `claimableSlotId` stays as the default so
-         * nothing changes until the picker ships.
+         * for that to be reachable.
+         *
+         * Empty when the viewer cannot request — a public visitor, or a driver
+         * already holding this load, would otherwise be offered a picker that
+         * cannot work. `requestableSlotId` is this list's first entry, so the
+         * control and its default can never disagree.
          */
-        selectable: futureOpenSlots.map((slot) => ({
+        selectable: selectableSlots.map((slot) => ({
           endAt: slot.endAt,
           id: slot.id,
           remaining: Math.max(0, slot.capacity - slot.reservedCount),
