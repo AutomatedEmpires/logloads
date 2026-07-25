@@ -347,9 +347,13 @@ export function RequestCapacityPanel({ load }: { load: NetworkLoadView }) {
     )
   }
 
-  // A chosen slot only counts while it is still takeable: if it fills or
-  // expires between render and tap, fall back to the earliest rather than
-  // sending a request the service will refuse.
+  // Guards a stale CLIENT selection only: if a re-render drops the chosen slot
+  // from the list, fall back to the earliest rather than submitting an id that
+  // is no longer offered. It does not and cannot detect a slot filling
+  // server-side without a re-render — there is no tap-time refetch, so that
+  // request is sent and the service refuses it. The service is the authority
+  // on capacity; this just avoids submitting something the page itself has
+  // already stopped showing.
   const selectable = load.slots.selectable
   const slotId = selectable.some((slot) => slot.id === chosenSlotId)
     ? chosenSlotId
