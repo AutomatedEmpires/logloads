@@ -213,11 +213,25 @@ function parseRemoteRow(value: unknown): RemoteOperatingStateSnapshot | null {
   const schemaVersion = row.schema_version === undefined ? 1 : Number(row.schema_version)
   const version = row.version === undefined ? 0 : Number(row.version)
 
+  // A snapshot written by a NEWER deployment is accepted, provided every
+  // required table validates. `upgradeStateSnapshot` returning non-null is that
+  // proof, so the version number adds nothing to it.
+  //
+  // Why: `main` auto-deploys, so old and new instances serve traffic at the same
+  // time during every rollout. Refusing a higher schema version made the newer
+  // instance's first write break every older instance still running — the whole
+  // fleet returning "operating state is invalid" until the rollout finished. The
+  // additive migrator already handles unknown-to-us collections by leaving them
+  // alone, and an older instance writing back preserves them because the CAS
+  // writes the whole document it read.
+  //
+  // A version BELOW 1 is still refused: that is a malformed row, not a future
+  // one. This does not authorise a version bump — nothing in this program bumps
+  // it — it makes one survivable when it eventually happens.
   if (
     !state ||
     !Number.isSafeInteger(schemaVersion) ||
     schemaVersion < 1 ||
-    schemaVersion > OPERATING_STATE_SCHEMA_VERSION ||
     !Number.isSafeInteger(version) ||
     version < 0
   ) {
