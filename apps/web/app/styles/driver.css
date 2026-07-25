@@ -549,6 +549,32 @@
 .request-panel { display: grid; gap: 10px; }
 .request-panel strong { font-size: 1.18rem; line-height: 1.25; }
 .request-panel p { margin: 0; color: var(--ink-soft); line-height: 1.45; }
+/* Choosing which run to take. A whole row is the target, not just the radio —
+   this is tapped one-handed in a cab, so it clears the 44px floor. */
+.slot-picker {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+.slot-picker legend { padding: 0 4px; color: var(--ink-soft); font-size: 0.85rem; font-weight: 800; }
+.slot-picker__option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--control-min);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.slot-picker__option:has(input:checked) { border-color: var(--pine); background: rgba(18, 48, 31, 0.06); }
+.slot-picker__option input { width: 20px; height: 20px; accent-color: var(--pine); }
+.slot-picker__window { font-weight: 800; }
+.slot-picker__remaining { margin-left: auto; color: var(--ink-soft); font-style: normal; font-size: 0.85rem; }
+
 .request-panel__meta {
   display: grid;
   gap: 4px;

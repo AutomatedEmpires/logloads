@@ -291,6 +291,10 @@ const ASSIGNMENT_STATE: Record<string, { badge: string; body: string; tone: "suc
 export function RequestCapacityPanel({ load }: { load: NetworkLoadView }) {
   const [error, setError] = useState<string | null>(null)
   const [requested, setRequested] = useState(false)
+  // null means "whatever the load offers as earliest" — the driver has not
+  // overridden it. Storing the default explicitly would go stale if the
+  // earliest slot fills while this panel is open.
+  const [chosenSlotId, setChosenSlotId] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   if (load.viewerAssignment) {
@@ -343,7 +347,14 @@ export function RequestCapacityPanel({ load }: { load: NetworkLoadView }) {
     )
   }
 
-  const slotId = load.slots.requestableSlotId
+  // A chosen slot only counts while it is still takeable: if it fills or
+  // expires between render and tap, fall back to the earliest rather than
+  // sending a request the service will refuse.
+  const selectable = load.slots.selectable
+  const slotId = selectable.some((slot) => slot.id === chosenSlotId)
+    ? chosenSlotId
+    : load.slots.requestableSlotId
+  const chosenWindow = selectable.find((slot) => slot.id === slotId)?.window ?? load.slots.nextWindow
 
   if (load.capacity.remaining <= 0 || !slotId) {
     return (
@@ -383,8 +394,31 @@ export function RequestCapacityPanel({ load }: { load: NetworkLoadView }) {
       {load.viewerDecision ? <p>{load.viewerDecision.reason ?? "The host selected another truck for the earlier request."}</p> : null}
       <div className="request-panel__meta">
         <span>{load.capacity.remaining} of {load.capacity.total} loads open</span>
-        <span>Next window: {load.slots.nextWindow}</span>
+        <span>{selectable.length > 1 ? "Your slot" : "Next window"}: {chosenWindow}</span>
       </div>
+      {/* One posting can be a series of runs, so the driver picks which one
+          they are taking. With a single slot there is no choice to make and a
+          radio group would be a control that decides nothing. */}
+      {selectable.length > 1 ? (
+        <fieldset className="slot-picker">
+          <legend>Which run are you taking?</legend>
+          {selectable.map((slot) => (
+            <label className="slot-picker__option" key={slot.id}>
+              <input
+                checked={slot.id === slotId}
+                name={`slot-${load.id}`}
+                onChange={() => setChosenSlotId(slot.id)}
+                type="radio"
+                value={slot.id}
+              />
+              <span className="slot-picker__window">{slot.window}</span>
+              <em className="slot-picker__remaining">
+                {slot.remaining} {slot.remaining === 1 ? "load" : "loads"} open
+              </em>
+            </label>
+          ))}
+        </fieldset>
+      ) : null}
       <p>Exact access and the Route Pack unlock after the host accepts.</p>
       <button className="advance-button" disabled={pending} onClick={request} type="button">
         {pending ? "Sending request…" : load.viewerDecision ? "Request again" : "Request haul"}

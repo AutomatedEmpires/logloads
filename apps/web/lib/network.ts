@@ -454,14 +454,34 @@ function cadenceLabel(load: {
   return "One-off"
 }
 
+/**
+ * A slot window, carrying the day it falls on.
+ *
+ * The date is not decoration here. A posting is a series, so the same lane
+ * runs at the same hour on consecutive days — without the day, three runs
+ * render as three identical "3:00 PM - 3:20 PM" labels and a driver choosing
+ * between them is picking blind. That is exactly what the slot picker showed
+ * the first time it was driven.
+ *
+ * Still UTC: this is server-rendered and the server cannot know the reader's
+ * timezone. `LocalTime` is the client-side answer and should replace this
+ * once slot surfaces are converted.
+ */
 function formatSlotWindow(startAt: string, endAt: string): string {
-  const formatter = new Intl.DateTimeFormat("en-US", {
+  const day = new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+    weekday: "short"
+  })
+  const time = new Intl.DateTimeFormat("en-US", {
     hour: "numeric",
     minute: "2-digit",
     timeZone: "UTC"
   })
+  const start = new Date(startAt)
 
-  return `${formatter.format(new Date(startAt))} - ${formatter.format(new Date(endAt))} UTC`
+  return `${day.format(start)} · ${time.format(start)} - ${time.format(new Date(endAt))} UTC`
 }
 
 function formatWindow(startAt: string, endAt: string): string {
