@@ -1,3 +1,4 @@
+import { haversineMiles } from "@logloads/contracts"
 import type { DriverProfile, HaulRoute, Landing, LoadPosting, Rate, TruckProfile } from "@logloads/contracts"
 
 export const DEFAULT_FUEL_ECONOMY_MPG = 6.5
@@ -28,22 +29,13 @@ function dollars(cents: number): string {
   }).format(cents / 100)
 }
 
-function radians(value: number): number {
-  return value * Math.PI / 180
-}
-
-function distanceMiles(
-  from: { lat: number; lng: number },
-  to: { lat: number; lng: number }
-): number {
-  const earthRadiusMiles = 3958.8
-  const latDelta = radians(to.lat - from.lat)
-  const lngDelta = radians(to.lng - from.lng)
-  const a = Math.sin(latDelta / 2) ** 2 +
-    Math.cos(radians(from.lat)) * Math.cos(radians(to.lat)) * Math.sin(lngDelta / 2) ** 2
-
-  return earthRadiusMiles * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-}
+/**
+ * One haversine for the whole product. This was implemented here, out of reach
+ * of the domain layer, which meant scheduling could not measure the same road
+ * that pay maths measures. Re-exported rather than re-implemented: two copies
+ * would drift until deadhead pay and deadhead time disagreed about one haul.
+ */
+const distanceMiles = haversineMiles
 
 function grossEstimateCents(load: LoadPosting, rate: Rate, route: HaulRoute): number | null {
   const amount = rate.baseRate.amountCents

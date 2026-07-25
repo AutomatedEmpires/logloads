@@ -5,6 +5,7 @@ import {
   initializeRemoteOperatingState,
   loadRemoteOperatingState,
   mutateRemoteOperatingState,
+  OPERATING_STATE_SCHEMA_VERSION,
   updateRemoteOperatingState,
   upgradeStateSnapshot,
   type RemoteSnapshotConfig
@@ -283,12 +284,67 @@ describe("canonical operating state", () => {
     expect(upgraded?.destinationFacilities[0]?.completionEvidence).toEqual([])
   })
 
-  it("fails closed on a future snapshot schema", async () => {
+  // This replaces "fails closed on a future snapshot schema", which asserted the
+  // opposite and is deliberately reversed. `main` auto-deploys, so old and new
+  // instances serve traffic simultaneously during every rollout; refusing a
+  // higher schema version meant the newer instance's first write took the whole
+  // older fleet down with "operating state is invalid" until the rollout
+  // finished. Validity is decided by whether every required table is there, not
+  // by a number. Nothing in this program bumps the version — this only makes the
+  // eventual bump survivable.
+  it("accepts a snapshot written by a newer deployment when every required table validates", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
         Response.json([
-          { id: "primary", schema_version: 3, state: createInMemoryDatabase(), version: 1 }
+          {
+            id: "primary",
+            schema_version: OPERATING_STATE_SCHEMA_VERSION + 1,
+            state: createInMemoryDatabase(),
+            version: 1
+          }
+        ])
+      )
+    )
+
+    const snapshot = await loadRemoteOperatingState(config)
+
+    expect(snapshot?.schemaVersion).toBe(OPERATING_STATE_SCHEMA_VERSION + 1)
+    expect(snapshot?.state.loadPostings.length).toBeGreaterThan(0)
+  })
+
+  it("still fails closed when a required table is missing, whatever the version claims", async () => {
+    // The version is not the gate; the tables are. A document that happens to
+    // carry a plausible version number must never become runtime state.
+    const incomplete = createInMemoryDatabase() as Partial<LogLoadsDatabaseState>
+
+    delete incomplete.truckSlots
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json([
+          {
+            id: "primary",
+            schema_version: OPERATING_STATE_SCHEMA_VERSION + 1,
+            state: incomplete,
+            version: 1
+          }
+        ])
+      )
+    )
+
+    await expect(loadRemoteOperatingState(config)).rejects.toThrow(
+      "Canonical operating state is invalid"
+    )
+  })
+
+  it("still fails closed on a schema version below the first one", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json([
+          { id: "primary", schema_version: 0, state: createInMemoryDatabase(), version: 1 }
         ])
       )
     )
