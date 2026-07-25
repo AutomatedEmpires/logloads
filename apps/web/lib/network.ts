@@ -187,6 +187,14 @@ export interface NetworkLoadView {
     nextWindow: string
     claimableSlotId: string | null
     requestableSlotId: string | null
+    /** Every slot still takeable by this viewer, earliest first. */
+    selectable: Array<{
+      id: string
+      startAt: string
+      endAt: string
+      window: string
+      remaining: number
+    }>
   }
   compatibility: {
     eligibility: MatchEligibility
@@ -933,6 +941,24 @@ export function buildNetworkView(
         open: slots.reduce((sum, slot) => sum + Math.max(0, slot.capacity - slot.reservedCount), 0),
         requestableSlotId: requestableSlot?.id ?? null,
         reserved: slots.reduce((sum, slot) => sum + slot.reservedCount, 0),
+        /**
+         * Every slot this viewer could still take, earliest first — not just
+         * the one the surfaces default to.
+         *
+         * A posting is a series, so "six loads over two days" is one posting
+         * with six slots. Until now every surface booked `futureOpenSlots[0]`,
+         * which silently decided *which day a driver works*. Assignment
+         * uniqueness became per-slot in #65; this is the data a picker needs
+         * for that to be reachable. `claimableSlotId` stays as the default so
+         * nothing changes until the picker ships.
+         */
+        selectable: futureOpenSlots.map((slot) => ({
+          endAt: slot.endAt,
+          id: slot.id,
+          remaining: Math.max(0, slot.capacity - slot.reservedCount),
+          startAt: slot.startAt,
+          window: formatSlotWindow(slot.startAt, slot.endAt)
+        })),
         total: slots.reduce((sum, slot) => sum + slot.capacity, 0)
       },
       sourceName: source.displayName,
