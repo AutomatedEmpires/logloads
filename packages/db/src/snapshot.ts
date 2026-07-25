@@ -220,10 +220,17 @@ function parseRemoteRow(value: unknown): RemoteOperatingStateSnapshot | null {
   // Why: `main` auto-deploys, so old and new instances serve traffic at the same
   // time during every rollout. Refusing a higher schema version made the newer
   // instance's first write break every older instance still running — the whole
-  // fleet returning "operating state is invalid" until the rollout finished. The
-  // additive migrator already handles unknown-to-us collections by leaving them
-  // alone, and an older instance writing back preserves them because the CAS
-  // writes the whole document it read.
+  // fleet returning "operating state is invalid" until the rollout finished.
+  //
+  // What survives an older instance writing back, precisely: the STATE document
+  // does, including collections this build has never heard of, because
+  // `upgradeStateSnapshot` spreads the row it was given and the CAS writes that
+  // whole draft back. The `schema_version` LABEL does not —
+  // `updateRemoteOperatingState` always stamps it with this build's own
+  // constant, so during a rollout the row's version can go 3 → 2 → 3 while the
+  // data itself is never lost. That is safe only because every backfill keys on
+  // whether a field is present, never on the version number; nothing may be
+  // built on this label being monotonic.
   //
   // A version BELOW 1 is still refused: that is a malformed row, not a future
   // one. This does not authorise a version bump — nothing in this program bumps

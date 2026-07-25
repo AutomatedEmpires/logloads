@@ -57,10 +57,24 @@ describe("the clocks change", () => {
 })
 
 describe("rendering a time at its own site", () => {
-  it("uses the site's zone and abbreviation, not the reader's", () => {
-    expect(formatSiteLocal("2026-06-08T20:00:00.000Z", OREGON)).toBe("1:00 PM PDT")
-    expect(formatSiteLocal("2026-01-08T20:00:00.000Z", OREGON)).toBe("12:00 PM PST")
-    expect(formatSiteLocal("2026-06-08T20:00:00.000Z", "America/New_York")).toBe("4:00 PM EDT")
+  it("uses the site's zone, not the reader's, and names the zone somehow", () => {
+    // The CLOCK TIME is what this function decides, so it is asserted exactly:
+    // render the same instant against the wrong zone and these change. The
+    // abbreviation itself comes from ICU data, which differs by platform and
+    // Node build — a runtime that renders "GMT-7" instead of "PDT" is not a
+    // regression in this code — so the suffix is required to be present and
+    // plausible rather than pinned to one spelling.
+    const summer = formatSiteLocal("2026-06-08T20:00:00.000Z", OREGON)
+    const winter = formatSiteLocal("2026-01-08T20:00:00.000Z", OREGON)
+    const eastern = formatSiteLocal("2026-06-08T20:00:00.000Z", "America/New_York")
+
+    expect(summer).toMatch(/^1:00 PM \S+/)
+    expect(winter).toMatch(/^12:00 PM \S+/)
+    expect(eastern).toMatch(/^4:00 PM \S+/)
+    // Daylight saving must move the clock, not just relabel it: the same UTC
+    // instant is an hour apart in June and January.
+    expect(summer?.startsWith("1:00 PM")).toBe(true)
+    expect(winter?.startsWith("12:00 PM")).toBe(true)
   })
 
   it("renders nothing for a site whose zone nobody has stated", () => {
