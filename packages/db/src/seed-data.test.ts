@@ -56,6 +56,64 @@ describe("founder demo operating states", () => {
     expect(offer).toMatchObject({ offeredTruckloads: 1, status: "sent" })
   })
 
+  it("carries one posting that is genuinely a series, reconciled to the slots that make it one", () => {
+    // The slot picker is only reachable when ONE driver has more than one run to
+    // choose from. A series that collapses to a single slot — or to a single day
+    // — un-ships that control while every other test in the repo stays green,
+    // so the shape is pinned here rather than left to the surfaces to imply.
+    const state = createInMemoryDatabase()
+    const loadId = "cccccccc-cccc-4ccc-8ccc-ccccccccccd1"
+    const load = state.loadPostings.find((candidate) => candidate.id === loadId)
+    const capacity = state.opportunityCapacities.find((candidate) => candidate.loadPostingId === loadId)
+    const slots = state.truckSlots.filter((slot) => slot.loadPostingId === loadId)
+
+    if (!load || !capacity) {
+      throw new Error("The two-day series seed is incomplete")
+    }
+
+    const slotCapacity = slots.reduce((total, slot) => total + slot.capacity, 0)
+    const openCapacity = slots
+      .filter((slot) => ["open", "requested", "reserved"].includes(slot.status))
+      .reduce((total, slot) => total + slot.capacity - slot.reservedCount, 0)
+
+    expect(slots.length).toBeGreaterThan(1)
+    expect(new Set(slots.map((slot) => slot.slotDate)).size).toBeGreaterThan(1)
+    expect(load).toMatchObject({
+      campaignEndDate: "2026-06-09",
+      campaignStartDate: "2026-06-08",
+      dailyTruckCountNeeded: 3,
+      scheduleType: "campaign",
+      status: "open"
+    })
+
+    // provisionLoadCapacity's own arithmetic: one slot per scheduled date at
+    // capacity = dailyTruckCountNeeded, so total = perDay x dates. A fixture
+    // that disagrees models a posting the product cannot publish.
+    expect(slots).toHaveLength(2)
+    expect(slotCapacity).toBe(load.dailyTruckCountNeeded * slots.length)
+    expect(capacity).toMatchObject({
+      allocationMode: "request_approval",
+      committedTruckloads: 0,
+      completedTruckloads: 0,
+      remainingTruckloads: 6,
+      totalTruckloads: 6
+    })
+    expect(capacity.totalTruckloads).toBe(slotCapacity)
+    expect(capacity.remainingTruckloads).toBe(openCapacity)
+
+    // The services suite pins that nothing is requestable at this instant. A
+    // fixture dated past it would be requestable there and fail that test for a
+    // reason nobody would look for here.
+    const requestabilityCeiling = "2026-07-13T12:00:00.000Z"
+
+    for (const slot of slots) {
+      expect(
+        slot.endAt.localeCompare(requestabilityCeiling),
+        `slot ${slot.slotDate} must expire before the requestability ceiling`
+      ).toBeLessThan(0)
+    }
+  })
+
   it("keeps a claimable partial offer beside honest terminal offer history", () => {
     const state = createInMemoryDatabase()
     const partial = state.directOffers.find((offer) => offer.id === "29292929-2929-4929-8929-292929292915")
