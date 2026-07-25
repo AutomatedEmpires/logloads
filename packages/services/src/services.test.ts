@@ -306,7 +306,34 @@ describe("logloads services", () => {
     expect(services.listVisibleLoadsForOrganization(organizationId).length).toBeGreaterThan(0)
   })
 
-  it("rejects duplicate active capacity requests for the same driver and load", () => {
+  it("rejects a second active request for the same slot", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const request = (dispatcherNotes: string) =>
+      requestJune(services, {
+        actorUserId: "22222222-2222-4222-8222-222222222221",
+        organizationId: "33333333-3333-4333-8333-333333333331",
+        loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+        truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd2",
+        driverProfileId: "44444444-4444-4444-8444-444444444441",
+        truckProfileId: "77777777-7777-4777-8777-777777777771",
+        trailerProfileId: "88888888-8888-4888-8888-888888888881",
+        cancellationReason: null,
+        dispatcherNotes
+      })
+
+    // Self-contained rather than leaning on which slot the seed already holds:
+    // take the slot, then take it again.
+    request("First hold.")
+
+    expect(() => request("Duplicate hold.")).toThrow(/active assignment request/)
+  })
+
+  it("allows a second slot on the same posting, because a posting is a series", () => {
+    // This asserted the opposite until 2026-07-25. A posting is a series — six
+    // loads on one route across two days is one posting with six slots — so
+    // scoping uniqueness to the posting refused a driver taking Tuesday
+    // morning after already holding Monday afternoon. That is ordinary work,
+    // not a duplicate, and refusing it made the series model unusable.
     const services = createLogLoadsServices(createInMemoryDatabase())
 
     expect(() =>
@@ -319,9 +346,9 @@ describe("logloads services", () => {
         truckProfileId: "77777777-7777-4777-8777-777777777771",
         trailerProfileId: "88888888-8888-4888-8888-888888888881",
         cancellationReason: null,
-        dispatcherNotes: "Duplicate hold."
+        dispatcherNotes: "Second slot, same series."
       })
-    ).toThrow(/active assignment request/)
+    ).not.toThrow()
   })
 
   it("updates opportunity capacity when a connected hauler requests private work", () => {

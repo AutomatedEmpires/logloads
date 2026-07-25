@@ -745,12 +745,17 @@ function requestCapacityWithPolicyInternal(
     routeId: load.routeId
   }, { requireActiveLanding: false })
 
+  // Uniqueness is per SLOT, not per posting. A posting is a series — six loads
+  // on one route across two days is one posting with six slots — so scoping
+  // this to the posting stopped a driver taking Tuesday morning after already
+  // holding Monday afternoon, which is ordinary work rather than a duplicate.
+  // Taking the same slot twice is still refused.
   const duplicate = state.assignments.find((assignment) =>
-    assignment.loadPostingId === parsed.loadPostingId &&
+    assignment.truckSlotId === parsed.truckSlotId &&
     assignment.driverProfileId === parsed.driverProfileId &&
     activeAssignmentStatuses.has(assignment.status)
   )
-  assertCondition(!duplicate, "Driver already has an active assignment request for this load")
+  assertCondition(!duplicate, "Driver already has an active assignment request for this slot")
 
   const capacity = getOpportunityCapacity(state, parsed.loadPostingId)
   assertCondition(!capacity || capacity.remainingTruckloads > 0, "No opportunity capacity remains for this load")
