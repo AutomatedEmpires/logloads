@@ -1118,41 +1118,6 @@ export const seedTruckSlots: TruckSlot[] = parseMany(truckSlotSchema, [
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
   },
-  // The series case, which the seed could not previously show: one posting
-  // running the same lane across two more days. Without these, every posting
-  // offered exactly one takeable slot, so the slot picker had nothing to pick
-  // between and the founder's "six loads over two days" example was
-  // undemonstrable on the bench.
-  {
-    id: "dddddddd-dddd-4ddd-8ddd-ddddddddddda",
-    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
-    landingId: "66666666-6666-4666-8666-666666666662",
-    loaderProfileId: null,
-    slotDate: "2026-06-07",
-    startAt: "2026-06-07T15:00:00.000Z",
-    endAt: "2026-06-07T15:20:00.000Z",
-    capacity: 2,
-    reservedCount: 0,
-    status: "open",
-    notes: "Second day of the high-grade run.",
-    createdAt: timestamps.created,
-    updatedAt: timestamps.updated
-  },
-  {
-    id: "dddddddd-dddd-4ddd-8ddd-dddddddddddb",
-    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
-    landingId: "66666666-6666-4666-8666-666666666662",
-    loaderProfileId: null,
-    slotDate: "2026-06-08",
-    startAt: "2026-06-08T15:00:00.000Z",
-    endAt: "2026-06-08T15:20:00.000Z",
-    capacity: 2,
-    reservedCount: 0,
-    status: "open",
-    notes: "Third day of the high-grade run.",
-    createdAt: timestamps.created,
-    updatedAt: timestamps.updated
-  },
   {
     id: "dddddddd-dddd-4ddd-8ddd-ddddddddddd5",
     loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc4",
