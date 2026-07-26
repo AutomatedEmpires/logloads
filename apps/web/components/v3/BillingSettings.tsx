@@ -103,7 +103,7 @@ export function BillingPage({
           <EmptyState
             actionHref="/pricing"
             actionLabel="Compare plans"
-            body={role === "fleet" ? "Dispatch Pro is $499 per month. Drivers on the account stay free." : "Hosts are included in the free launch pilot."}
+            body={role === "fleet" ? "Dispatch Pro is $499 per month. Drivers on the account stay free." : "Hosts pay 5% of driver pay on completed loads. No monthly fee, and nothing is deducted from the driver."}
             title="No plan on this workspace yet"
           />
         ) : (
@@ -292,7 +292,7 @@ export function SettingsPage({
             <EmptyState
               actionHref="/pricing"
               actionLabel="Compare plans"
-              body={role === "fleet" ? "Dispatch Pro is $499 per month. Drivers on the account stay free." : "Hosts are included in the free launch pilot."}
+              body={role === "fleet" ? "Dispatch Pro is $499 per month. Drivers on the account stay free." : "Hosts pay 5% of driver pay on completed loads. No monthly fee, and nothing is deducted from the driver."}
               title="No plan on this workspace yet"
             />
           ) : (

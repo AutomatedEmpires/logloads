@@ -26,6 +26,9 @@ export async function POST(request: NextRequest) {
 			throw new ApiError("Add a driver profile before setting availability", 403)
 		}
 
+		// The driver comes from the session, never from the body. `id` still does
+		// come from the body, so the service — not this route — decides whether the
+		// window that id names belongs to this driver before replacing it.
 		const window = await mutateState((draft) =>
 			draft.upsertAvailabilityWindow({
 				...payload,

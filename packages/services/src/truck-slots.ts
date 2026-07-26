@@ -7,11 +7,53 @@ import {
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
-import { assertOrganizationAction, getActiveOrganizationContext } from "./operating-network"
+import {
+  assertOrganizationAction,
+  getActiveOrganizationContext,
+  isLoadVisibleToOrganization
+} from "./operating-network"
 import { assertFound, createUuid, nowIso } from "./utils"
 
-export function listTruckSlotsForDate(state: LogLoadsDatabaseState, date: string): TruckSlot[] {
-  return state.truckSlots.filter((slot) => toDateKey(slot.startAt) === date || slot.slotDate === date)
+/**
+ * Reading without naming an organization is a public read. Every clause of
+ * `isLoadVisibleToOrganization` asks whether one specific organization owns the
+ * posting, is connected to the host, holds an offer for it, or passed
+ * verification, and organization ids are uuids, so an id no organization can
+ * ever hold matches nothing but the postings already open to everyone. The
+ * services facade binds `listTruckSlotsForDate` with a date alone, and that
+ * public scope is the only safe answer for a caller who named no membership.
+ */
+const NO_ORGANIZATION = ""
+
+/**
+ * A slot is a window onto the posting behind it: which landing, which hours, how
+ * much capacity is left, and whatever the host typed into the notes. Reading
+ * slots is therefore reading load postings, so the same rule that decides
+ * whether an organization may see a posting decides whether it may see that
+ * posting's slots.
+ *
+ * `GET /api/truck-slots` filtered by date alone, which returned every
+ * organization's private_network, verified_network and direct_offer loading
+ * windows to anyone who could authenticate. The scope lives here rather than in
+ * the route because the route is not the only possible caller.
+ */
+export function listTruckSlotsForDate(
+  state: LogLoadsDatabaseState,
+  date: string,
+  organizationId: string = NO_ORGANIZATION,
+  at = nowIso()
+): TruckSlot[] {
+  const visibleLoadPostingIds = new Set(
+    state.loadPostings
+      .filter((load) => isLoadVisibleToOrganization(state, load, organizationId, at))
+      .map((load) => load.id)
+  )
+
+  return state.truckSlots.filter(
+    (slot) =>
+      visibleLoadPostingIds.has(slot.loadPostingId) &&
+      (toDateKey(slot.startAt) === date || slot.slotDate === date)
+  )
 }
 
 export function getTruckSlotById(state: LogLoadsDatabaseState, slotId: string): TruckSlot | undefined {

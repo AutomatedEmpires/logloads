@@ -1,4 +1,4 @@
-import { haversineMiles } from "@logloads/contracts"
+import { haversineMiles, SCHEDULING_BUFFER_DEFAULTS } from "@logloads/contracts"
 import type { DriverProfile, HaulRoute, Landing, LoadPosting, Rate, TruckProfile } from "@logloads/contracts"
 
 export const DEFAULT_FUEL_ECONOMY_MPG = 6.5
@@ -17,6 +17,13 @@ export interface LoadEconomicsEstimate {
   gallons: number
   grossCents: number | null
   grossLabel: string | null
+  /**
+   * Whether `grossCents` is the host's commitment or a rate-card derivation.
+   * Surfaces MUST consult this before wording the figure: a host-stated number
+   * may be presented as what the load pays, a derived one may only ever be
+   * presented as an estimate.
+   */
+  payBasis: PayBasis
   totalMiles: number
   tripMiles: number
 }
@@ -37,7 +44,31 @@ function dollars(cents: number): string {
  */
 const distanceMiles = haversineMiles
 
-function grossEstimateCents(load: LoadPosting, rate: Rate, route: HaulRoute): number | null {
+/**
+ * What this load pays the driver, and where that number came from.
+ *
+ * The host's stated figure OUTRANKS the rate card and is used as-is: it is a
+ * commitment to a person, not an entry in a price list, so nothing is added to
+ * it — no fuel surcharge, no per-ton multiplication. A $500 load pays $500.
+ *
+ * Before this, every surface headlined the rate-card derivation and demoted the
+ * host's commitment to a line labelled "Base", which meant the public homepage
+ * advertised $1,970 for a haul the host had committed $525 to — 3.75x. The rate
+ * card survives only as a fallback for postings created before hosts could state
+ * pay, and `basis` exists so no surface can print an estimate while implying it
+ * is a promise.
+ */
+export type PayBasis = "host_stated" | "rate_card"
+
+function driverPayEstimate(
+  load: LoadPosting,
+  rate: Rate,
+  route: HaulRoute
+): { basis: PayBasis; cents: number | null } {
+  if (typeof load.driverPayCents === "number") {
+    return { basis: "host_stated", cents: load.driverPayCents }
+  }
+
   const amount = rate.baseRate.amountCents
   let base: number | null = null
 
@@ -51,7 +82,7 @@ function grossEstimateCents(load: LoadPosting, rate: Rate, route: HaulRoute): nu
     base = Math.round(amount * route.estimatedRunTimeMinutes / 60)
   }
 
-  return base === null ? null : base + rate.fuelSurchargeCents
+  return { basis: "rate_card", cents: base === null ? null : base + rate.fuelSurchargeCents }
 }
 
 export function estimateLoadEconomics(input: {
@@ -64,8 +95,14 @@ export function estimateLoadEconomics(input: {
 }): LoadEconomicsEstimate {
   const profileMpg = input.truck?.fuelEconomyMpg ?? null
   const profileFuelPrice = input.driver?.preferredFuelPriceCentsPerGallon ?? null
+  // Road miles, not straight-line. A great-circle deadhead understates a logging
+  // road badly — measured 1.15x to 1.56x on this product's own seeded lanes — and
+  // this number becomes gallons, then dollars, then a driver's accept/decline.
+  // roadCircuityFactor is the platform's own correction; using it here is what
+  // makes the fuel figure and the scheduling deadhead measure the same road.
   const deadheadMiles = input.driver?.homeBaseCoordinates
-    ? distanceMiles(input.driver.homeBaseCoordinates, input.landing.coordinates)
+    ? distanceMiles(input.driver.homeBaseCoordinates, input.landing.coordinates) *
+      SCHEDULING_BUFFER_DEFAULTS.roadCircuityFactor
     : null
   const tripMiles = input.route.estimatedDistanceMiles
   const totalMiles = tripMiles + (deadheadMiles ?? 0)
@@ -73,7 +110,8 @@ export function estimateLoadEconomics(input: {
   const fuelPriceCentsPerGallon = profileFuelPrice ?? DEFAULT_FUEL_PRICE_CENTS_PER_GALLON
   const gallons = totalMiles / fuelEconomyMpg
   const fuelCostCents = Math.round(gallons * fuelPriceCentsPerGallon)
-  const grossCents = grossEstimateCents(input.load, input.rate, input.route)
+  const pay = driverPayEstimate(input.load, input.rate, input.route)
+  const grossCents = pay.cents
   const afterFuelCents = grossCents === null ? null : grossCents - fuelCostCents
 
   return {
@@ -89,6 +127,7 @@ export function estimateLoadEconomics(input: {
     gallons,
     grossCents,
     grossLabel: grossCents === null ? null : dollars(grossCents),
+    payBasis: pay.basis,
     totalMiles,
     tripMiles
   }

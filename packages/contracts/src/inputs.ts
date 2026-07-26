@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { availabilityStatusSchema, truckSlotStatusSchema } from "./enums"
+import { availabilityStatusSchema, loadStatusSchema, truckSlotStatusSchema } from "./enums"
 import {
   assignmentSchema,
   loadPostingSchema,
@@ -12,16 +12,41 @@ const optionalIdSchema = z.string().uuid().optional()
 const uuidSchema = z.string().uuid()
 const timestampSchema = z.string().datetime()
 
-export const createLoadPostingInputSchema = loadPostingSchema.omit({
-  archivedAt: true,
-  cancellationReason: true,
-  createdAt: true,
-  id: true,
-  updatedAt: true
-})
+/**
+ * The statuses a lifecycle may legitimately START in. Extracted from the domain
+ * enums, so renaming or dropping a status there fails the build here instead of
+ * silently widening what a client may post.
+ *
+ * A create call is the one write no state machine can guard: there is no prior
+ * status to transition from, so whatever the payload says becomes the record's
+ * status. Admitting the whole enum let a client post a load already "completed"
+ * or "in_transit" and a slot already "completed" — the platform fee is charged
+ * on completed loads, so a load that can be born completed is a fabricable
+ * billable event. Every later change goes through state-machines.ts.
+ */
+export const initialLoadStatusSchema = loadStatusSchema.extract(["draft", "open", "scheduled"])
+export const initialTruckSlotStatusSchema = truckSlotStatusSchema.extract(["open"])
 
+export const createLoadPostingInputSchema = loadPostingSchema
+  .omit({
+    archivedAt: true,
+    cancellationReason: true,
+    createdAt: true,
+    id: true,
+    updatedAt: true
+  })
+  .extend({
+    status: initialLoadStatusSchema
+  })
+
+/**
+ * Updates keep the full status range on purpose: updateLoadPosting() runs every
+ * change through transitionLoadPostingStatus, so the machine — not the payload —
+ * decides which move is legal from the load's current status.
+ */
 export const updateLoadPostingInputSchema = createLoadPostingInputSchema.partial().extend({
-  id: z.string().uuid()
+  id: z.string().uuid(),
+  status: loadStatusSchema.optional()
 })
 
 export const createTruckSlotInputSchema = z.object({
@@ -32,7 +57,7 @@ export const createTruckSlotInputSchema = z.object({
   startAt: timestampSchema,
   endAt: timestampSchema,
   capacity: z.number().int().positive(),
-  status: truckSlotStatusSchema,
+  status: initialTruckSlotStatusSchema,
   notes: z.string().optional().nullable()
 })
 
@@ -79,6 +104,8 @@ export const upsertAvailabilityWindowInputSchema = z.object({
     .nullable()
 })
 
+export type InitialLoadStatus = z.infer<typeof initialLoadStatusSchema>
+export type InitialTruckSlotStatus = z.infer<typeof initialTruckSlotStatusSchema>
 export type CreateLoadPostingInput = z.infer<typeof createLoadPostingInputSchema>
 export type UpdateLoadPostingInput = z.infer<typeof updateLoadPostingInputSchema>
 export type CreateTruckSlotInput = z.infer<typeof createTruckSlotInputSchema>

@@ -1,9 +1,9 @@
 import "server-only"
 
+import { OperatingStateConflictError, OperatingStateUnavailableError } from "@logloads/db"
 import { NextResponse } from "next/server"
 
 import { RateLimitError, RateLimitUnavailableError, checkRateLimit } from "./rate-limit"
-import { serializeError } from "./services"
 import { getSessionActor, type SessionActor } from "./session"
 
 export class ApiError extends Error {
@@ -120,14 +120,63 @@ export async function requireAdminApiActor(): Promise<SessionActor> {
   return actor
 }
 
+/**
+ * Client-facing text for every failure the route did not curate itself.
+ *
+ * A service message can name a record the caller is not allowed to know exists:
+ * "Load posting X was not found" and "Load posting X is not visible to
+ * organization Y" are the same refusal to an outsider, and returning them
+ * verbatim turned POST /api/assignments/request into a cross-tenant existence
+ * oracle. What a client reads may depend on the KIND of failure, never on its
+ * detail. Detail that a caller is entitled to belongs in an ApiError raised by
+ * the route.
+ */
+const GENERIC_FAILURE_MESSAGE = "We could not complete that request."
+const MALFORMED_BODY_MESSAGE = "The request body must be valid JSON."
+const INVALID_FIELDS_MESSAGE = "The request had missing or invalid fields."
+const BUSY_STATE_MESSAGE = "The service is busy. Try again shortly."
+
+// A lost compare-and-swap clears in milliseconds; an unreachable or
+// unconfigured backend needs longer before a retry can succeed.
+const CONFLICT_RETRY_AFTER_SECONDS = 1
+const UNAVAILABLE_RETRY_AFTER_SECONDS = 5
+
 export function apiErrorResponse(error: unknown): NextResponse {
   if (error instanceof ApiError) {
     return NextResponse.json({ error: error.message }, { headers: error.headers, status: error.status })
   }
 
-  if (error instanceof Error && error.name === "ZodError") {
-    return NextResponse.json({ error: "The request had missing or invalid fields." }, { status: 422 })
+  // Contention on the single global operating_state row is transient and the
+  // caller's write never landed. 400 is non-retryable by HTTP semantics, so
+  // answering 400 discarded a write that would have succeeded on a retry and
+  // blamed the caller for it.
+  if (error instanceof OperatingStateConflictError) {
+    return NextResponse.json(
+      { error: BUSY_STATE_MESSAGE },
+      { headers: { "Retry-After": String(CONFLICT_RETRY_AFTER_SECONDS) }, status: 503 }
+    )
   }
 
-  return NextResponse.json(serializeError(error), { status: 400 })
+  if (error instanceof OperatingStateUnavailableError) {
+    return NextResponse.json(
+      { error: BUSY_STATE_MESSAGE },
+      { headers: { "Retry-After": String(UNAVAILABLE_RETRY_AFTER_SECONDS) }, status: 503 }
+    )
+  }
+
+  if (error instanceof Error && error.name === "ZodError") {
+    return NextResponse.json({ error: INVALID_FIELDS_MESSAGE }, { status: 422 })
+  }
+
+  // request.json() on a body that is not JSON. The caller can fix this one, so
+  // it stays a 4xx rather than being reported as a server fault.
+  if (error instanceof SyntaxError) {
+    return NextResponse.json({ error: MALFORMED_BODY_MESSAGE }, { status: 400 })
+  }
+
+  // Anything left is a service invariant the route failed to translate into an
+  // ApiError, or a bug. The operator needs the detail; the client must not have it.
+  console.error("logloads: api request failed", error)
+
+  return NextResponse.json({ error: GENERIC_FAILURE_MESSAGE }, { status: 500 })
 }
