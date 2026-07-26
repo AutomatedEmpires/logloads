@@ -26,6 +26,7 @@ function bookRuntimeHaul(services: LogLoadsServices) {
     dailyTruckCountNeeded: 1,
     dispatcherContact: { email: "dispatch@summit.example", name: "Cole Cedar", phone: "555-3001" },
     dispatcherProfileId: "55555555-5555-4555-8555-555555555553",
+    driverPayCents: 52_500,
     dropoffMillId: "99999999-9999-4999-8999-999999999991",
     equipmentRequirements: ["pole-trailer"],
     estimatedTonsPerLoad: 27,

@@ -1,25 +1,16 @@
 "use server"
 
-import Stripe from "stripe"
 import { organizationRoleCan } from "@logloads/contracts"
 
+import { checkoutEligibility, checkoutPlanFor, resolveStripeBilling } from "./billing"
 import type { PlanProduct } from "./plans"
-import { serializeError, services } from "./services"
+import { readState, serializeError } from "./services"
 import { getSessionActor } from "./session"
 
 export interface CheckoutResult {
   ok: boolean
   url: string | null
   error: string | null
-}
-
-const BILLING_PENDING_MESSAGE = "Billing activation is pending for this workspace. Your plan and trial remain active."
-
-const CHECKOUT_PRICING: Partial<Record<PlanProduct, { priceEnv: "STRIPE_PRICE_DISPATCH"; returnPath: string }>> = {
-  fleet_operations: {
-    priceEnv: "STRIPE_PRICE_DISPATCH",
-    returnPath: "/fleet/billing"
-  }
 }
 
 function requireBillingManager(actor: NonNullable<Awaited<ReturnType<typeof getSessionActor>>>) {
@@ -30,11 +21,22 @@ function requireBillingManager(actor: NonNullable<Awaited<ReturnType<typeof getS
   }
 }
 
+function appOrigin(): string {
+  return process.env.NEXT_PUBLIC_APP_URL ?? "http://127.0.0.1:3002"
+}
+
 /**
  * Starts a real Stripe subscription checkout for the viewer's organization.
- * Subscriptions only — no freight money moves through LogLoads. When Stripe
- * keys are absent (local and pre-activation workspaces) it reports the honest
- * pending state instead of pretending a checkout exists.
+ *
+ * Subscriptions only — no driver pay moves through LogLoads.
+ *
+ * WHAT `manage_billing` DOES NOT ANSWER. Every organization owner holds it, on
+ * every organization type, so it says only "this person may spend this
+ * workspace's money". Whether the workspace can BUY this product is a separate
+ * question, and it is answered by `checkoutEligibility` before Stripe is called:
+ * the product must belong to this organization type, and the plan record the
+ * webhook will grant against must already exist. Without the second check a host
+ * could be charged $499/mo for a plan the webhook then failed to apply.
  */
 export async function startCheckoutAction(product: PlanProduct): Promise<CheckoutResult> {
   try {
@@ -52,60 +54,38 @@ export async function startCheckoutAction(product: PlanProduct): Promise<Checkou
 
     requireBillingManager(actor)
 
-    if (product === "driver_core") {
-      return { error: "The Driver plan is free. There is nothing to purchase for this workspace.", ok: false, url: null }
+    const eligibility = await readState((current) =>
+      checkoutEligibility(current.state.entitlements, { organization, product })
+    )
+
+    if (!eligibility.allowed) {
+      return { error: eligibility.message, ok: false, url: null }
     }
 
-    if (product === "enterprise") {
-      return {
-        error: "Enterprise plans are set up with our team. Reach out through Messages and we will configure billing for your regions.",
-        ok: false,
-        url: null
-      }
+    const billing = resolveStripeBilling()
+
+    if (!billing.ok) {
+      return { error: billing.message, ok: false, url: null }
     }
 
-    if (product === "landing_operations") {
-      return {
-        error: "Hosts are free during the launch pilot. The proposed 5% host fee is not active and no freight payment moves through LogLoads.",
-        ok: false,
-        url: null
-      }
-    }
-
-    const pricing = CHECKOUT_PRICING[product]
-
-    if (!pricing) {
-      throw new Error("This plan cannot be purchased from here")
-    }
-
-    const secretKey = process.env.STRIPE_SECRET_KEY
-
-    if (!secretKey) {
-      return { error: BILLING_PENDING_MESSAGE, ok: false, url: null }
-    }
-
-    const stripe = new Stripe(secretKey)
-    const origin = process.env.NEXT_PUBLIC_APP_URL ?? "http://127.0.0.1:3002"
-
-    const configuredPriceId = process.env[pricing.priceEnv]
+    const configuredPriceId = process.env[eligibility.priceEnv]
 
     if (!configuredPriceId) {
       return {
-        error: "Dispatch Pro billing is not activated yet. A verified $499 monthly Stripe Price must be configured before Checkout can open.",
+        error:
+          "Dispatch Pro billing is not activated yet. A verified $499 monthly Stripe Price must be configured before Checkout can open.",
         ok: false,
         url: null
       }
     }
 
-    const session = await stripe.checkout.sessions.create({
-      cancel_url: `${origin}${pricing.returnPath}?checkout=cancelled`,
-      client_reference_id: organization.id,
-      line_items: [
-        { price: configuredPriceId, quantity: 1 }
-      ],
+    const origin = appOrigin()
+    const session = await billing.value.createCheckoutSession({
+      cancelUrl: `${origin}${eligibility.returnPath}?checkout=cancelled`,
       metadata: { organizationId: organization.id, product },
-      mode: "subscription",
-      success_url: `${origin}${pricing.returnPath}?checkout=success`
+      organizationId: organization.id,
+      priceId: configuredPriceId,
+      successUrl: `${origin}${eligibility.returnPath}?checkout=success`
     })
 
     if (!session.url) {
@@ -119,9 +99,12 @@ export async function startCheckoutAction(product: PlanProduct): Promise<Checkou
 }
 
 /**
- * Opens the Stripe billing portal for an organization with an established
- * Stripe customer (update card, change plan, cancel). Falls back to the honest
- * pending message when billing is not activated or no customer exists yet.
+ * Opens the Stripe billing portal for an organization with an established Stripe
+ * customer (update card, change plan, cancel).
+ *
+ * Subscription products only. A host's card on file is not a subscription, so the
+ * portal is not where it lives — and saying otherwise would send a host to a page
+ * with nothing of theirs on it.
  */
 export async function startBillingPortalAction(product: PlanProduct): Promise<CheckoutResult> {
   try {
@@ -139,38 +122,37 @@ export async function startBillingPortalAction(product: PlanProduct): Promise<Ch
 
     requireBillingManager(actor)
 
-    if (product === "landing_operations") {
-      return {
-        error: "Host billing is not active during the launch pilot.",
-        ok: false,
-        url: null
-      }
+    const plan = checkoutPlanFor(product)
+
+    if (plan.kind !== "subscription") {
+      return { error: plan.message, ok: false, url: null }
     }
 
-    const secretKey = process.env.STRIPE_SECRET_KEY
+    const billing = resolveStripeBilling()
 
-    if (!secretKey) {
-      return { error: BILLING_PENDING_MESSAGE, ok: false, url: null }
+    if (!billing.ok) {
+      return { error: billing.message, ok: false, url: null }
     }
 
-    const entitlement = services.state.entitlements.find(
-      (candidate) => candidate.organizationId === organization.id && candidate.product === product
+    const stripeCustomerId = await readState(
+      (current) =>
+        current.state.entitlements.find(
+          (candidate) => candidate.organizationId === organization.id && candidate.product === product
+        )?.stripeCustomerId ?? null
     )
 
-    if (!entitlement?.stripeCustomerId) {
+    if (!stripeCustomerId) {
       return {
-        error: "No billing profile exists for this workspace yet. Start a plan first and the billing portal unlocks after payment.",
+        error:
+          "No billing profile exists for this workspace yet. Start a plan first and the billing portal unlocks after payment.",
         ok: false,
         url: null
       }
     }
 
-    const stripe = new Stripe(secretKey)
-    const origin = process.env.NEXT_PUBLIC_APP_URL ?? "http://127.0.0.1:3002"
-    const returnPath = CHECKOUT_PRICING[product]?.returnPath ?? "/"
-    const session = await stripe.billingPortal.sessions.create({
-      customer: entitlement.stripeCustomerId,
-      return_url: `${origin}${returnPath}`
+    const session = await billing.value.createBillingPortalSession({
+      customerId: stripeCustomerId,
+      returnUrl: `${appOrigin()}${plan.returnPath}`
     })
 
     return { error: null, ok: true, url: session.url }

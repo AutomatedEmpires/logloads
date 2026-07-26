@@ -1,10 +1,16 @@
 "use client"
 
 import Link from "next/link"
-import { useState, useTransition } from "react"
+import { useId, useState, useTransition } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
 import { startBillingPortalAction, startCheckoutAction } from "@/lib/billing-actions"
+import type {
+  HostBillingView,
+  HostFeeLineView,
+  HostFeeTotalsView,
+  HostInvoiceView
+} from "@/lib/host-billing-data"
 import type { BillingView, PlanProduct, SettingsView } from "@/lib/plans"
 import type { VerificationRecordView } from "@/lib/verification-data"
 import { AppShell, EmptyState, SectionHeader, type ShellAccount } from "./Shells"
@@ -72,17 +78,315 @@ function PlanAction({ kind, label, product }: { kind: "checkout" | "portal"; lab
   )
 }
 
+/**
+ * The three numbers, always together: what the driver is paid, what LogLoads
+ * charges the host on top of it, and what the load therefore costs the host.
+ *
+ * One component rather than three ad-hoc paragraphs, because the fee is only
+ * honest alongside the pay it is calculated from. Shown apart, "$76.25 in fees"
+ * invites the reading that it came out of somebody's pay — and it did not: the
+ * driver is paid exactly what the host stated, and the fee is added to what the
+ * host owes LogLoads.
+ */
+function FeeFigures({ label, totals }: { label: string; totals: HostFeeTotalsView }) {
+  return (
+    <dl aria-label={label} className="fee-figures">
+      <div>
+        <dt>Driver pay you stated</dt>
+        <dd>
+          {totals.driverPayLabel}
+          <span>Paid by you, directly to the driver</span>
+        </dd>
+      </div>
+      <div>
+        <dt>LogLoads fee, on top</dt>
+        <dd>
+          + {totals.platformFeeLabel}
+          <span>Not deducted from driver pay</span>
+        </dd>
+      </div>
+      <div className="fee-figures__total">
+        <dt>Your total cost</dt>
+        <dd>
+          {totals.hostTotalLabel}
+          <span>
+            {totals.truckloadCount} completed truckload{totals.truckloadCount === 1 ? "" : "s"}
+          </span>
+        </dd>
+      </div>
+    </dl>
+  )
+}
+
+/**
+ * The itemisation a host reconciles a bill against: one row per completed
+ * truckload, with the load it came from and the day it completed.
+ *
+ * A total with no lines under it is the difference between a bill a host trusts
+ * and a support ticket, so the fee column carries the rate FROZEN on each fee
+ * rather than today's rate — a bill from a month at a different rate has to
+ * still explain itself.
+ *
+ * The table is scrollable inside its own wrapper on a narrow screen instead of
+ * collapsing: on a phone, a money row that reflows loses which figure belongs to
+ * which column.
+ */
+function FeeTable({ caption, lines, totals }: { caption: string; lines: HostFeeLineView[]; totals: HostFeeTotalsView }) {
+  // The scroll container is focusable so the columns are reachable without a
+  // pointer, and it takes its name from the table's own caption so focusing it
+  // announces which figures are inside rather than nothing at all.
+  const captionId = useId()
+
+  return (
+    <div aria-labelledby={captionId} className="money-table-wrap" role="region" tabIndex={0}>
+      <table className="money-table">
+        <caption className="sr-only" id={captionId}>
+          {caption}
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Load</th>
+            <th scope="col">Completed</th>
+            <th scope="col">Driver pay</th>
+            <th scope="col">LogLoads fee</th>
+            <th scope="col">Your total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map((line) => (
+            <tr key={line.id}>
+              <th scope="row">{line.loadTitle}</th>
+              <td>{line.completedOnLabel}</td>
+              <td>{line.driverPayLabel}</td>
+              <td>
+                {line.platformFeeLabel}
+                <span className="money-table__rate">{line.rateLabel} of driver pay</span>
+              </td>
+              <td>{line.hostTotalLabel}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th scope="row">
+              {totals.truckloadCount} truckload{totals.truckloadCount === 1 ? "" : "s"}
+            </th>
+            <td />
+            <td>{totals.driverPayLabel}</td>
+            <td>{totals.platformFeeLabel}</td>
+            <td>{totals.hostTotalLabel}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
+function InvoiceCard({ invoice }: { invoice: HostInvoiceView }) {
+  return (
+    <article className="invoice-row">
+      <div className="invoice-row__head">
+        <div>
+          <strong>{invoice.periodLabel}</strong>
+          <span>
+            {invoice.issuedOnLabel ? `Billed ${invoice.issuedOnLabel}` : "Not billed yet"}
+            {invoice.paidOnLabel ? ` · Paid ${invoice.paidOnLabel}` : ""}
+          </span>
+        </div>
+        <div className="invoice-row__amount">
+          <Badge tone={invoice.tone}>{invoice.statusLabel}</Badge>
+          <strong>{invoice.billedLabel}</strong>
+        </div>
+      </div>
+      <p className="invoice-row__detail">{invoice.statusDetail}</p>
+      {invoice.reconciliationNote ? (
+        <p className="fee-alert" role="note">
+          <Icon aria-hidden name="status.warning" size={16} />
+          <span>{invoice.reconciliationNote}</span>
+        </p>
+      ) : null}
+      {invoice.lines.length > 0 ? (
+        <details className="fee-disclosure">
+          <summary>
+            What this bill covered ({invoice.lines.length} truckload{invoice.lines.length === 1 ? "" : "s"})
+          </summary>
+          <FeeTable
+            caption={`Truckloads billed for ${invoice.periodLabel}`}
+            lines={invoice.lines}
+            totals={invoice.totals}
+          />
+        </details>
+      ) : null}
+    </article>
+  )
+}
+
+/**
+ * Everything a host has to be able to answer about their own money without
+ * contacting anybody. Rendered from the read model only — no arithmetic happens
+ * in this file, so a figure on this page cannot disagree with the bill.
+ */
+function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
+  const { currentPeriod, fee, invoices, paymentMethod } = hostBilling
+
+  return (
+    <>
+      <section className="settings-panel" aria-label="What LogLoads charges you">
+        <SectionHeader eyebrow="What you pay" title={`${fee.rateLabel} of driver pay, on completed loads`} />
+        <p className="fee-headline">{fee.headline}</p>
+        {/* Named as an example in visible text, not only in the label: three
+            money figures with no lead-in read as this host's own money. */}
+        <p className="fee-example-lead">
+          For example, one truckload where you state the driver is paid {fee.example.driverPayLabel}:
+        </p>
+        <dl aria-label={`Example: a ${fee.example.driverPayLabel} truckload`} className="fee-figures">
+          <div>
+            <dt>You state the driver is paid</dt>
+            <dd>
+              {fee.example.driverPayLabel}
+              <span>The driver receives exactly this</span>
+            </dd>
+          </div>
+          <div>
+            <dt>LogLoads fee, on top</dt>
+            <dd>
+              + {fee.example.platformFeeLabel}
+              <span>{fee.rateLabel} of the pay you stated</span>
+            </dd>
+          </div>
+          <div className="fee-figures__total">
+            <dt>Your total cost</dt>
+            <dd>
+              {fee.example.hostTotalLabel}
+              <span>Once the truckload completes</span>
+            </dd>
+          </div>
+        </dl>
+        <ul className="fee-points">
+          {fee.points.map((point) => (
+            <li key={point}>
+              <Icon aria-hidden name="status.assigned" size={16} />
+              <span>{point}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="settings-panel" aria-label="Payment method">
+        <SectionHeader eyebrow="Payment method" title="The card LogLoads bills" />
+        <div className="pay-state">
+          <Badge tone={paymentMethod.tone}>{paymentMethod.statusLabel}</Badge>
+          {paymentMethod.cardLine ? <span className="pay-state__card">{paymentMethod.cardLine}</span> : null}
+        </div>
+        <p className="settings-meaning">{paymentMethod.consequence}</p>
+        {paymentMethod.failureLine ? (
+          <p className="fee-alert" role="note">
+            <Icon aria-hidden name="status.warning" size={16} />
+            <span>{paymentMethod.failureLine}</span>
+          </p>
+        ) : null}
+        {/* The instruction is text and not a button because no card-attach control
+            exists on this page yet. A button that opened nothing would be worse
+            than the sentence: the card is what unblocks publishing, so a host who
+            clicked and got nowhere would conclude the block is a bug. When the
+            setup flow lands, it belongs here, replacing this line. */}
+        {paymentMethod.nextStep ? (
+          <p className="fee-next-step">
+            <Icon aria-hidden name="status.lock" size={16} />
+            <strong>{paymentMethod.nextStep}</strong>
+          </p>
+        ) : null}
+      </section>
+
+      <section className="settings-panel" aria-label="Fees accrued this month">
+        <SectionHeader
+          eyebrow="This month"
+          title={
+            currentPeriod.lines.length === 0
+              ? `${currentPeriod.periodLabel} — nothing accrued yet`
+              : `${currentPeriod.periodLabel} — ${currentPeriod.totals.platformFeeLabel} in LogLoads fees`
+          }
+        />
+        {currentPeriod.lines.length === 0 ? (
+          <p className="settings-meaning">
+            Nothing has accrued in {currentPeriod.periodLabel}. A LogLoads fee appears here the first time
+            a truckload completes — posting work costs nothing, and a load that is never hauled is never
+            billed.
+          </p>
+        ) : (
+          <>
+            <FeeFigures label={`${currentPeriod.periodLabel} totals`} totals={currentPeriod.totals} />
+            <FeeTable
+              caption={`Completed truckloads that accrued a LogLoads fee in ${currentPeriod.periodLabel}`}
+              lines={currentPeriod.lines}
+              totals={currentPeriod.totals}
+            />
+            <p className="settings-meaning">
+              Nothing is charged until {currentPeriod.periodLabel} closes on {currentPeriod.closesOnLabel}.
+              LogLoads then bills the card on file for its own fee only. Driver pay is not part of that
+              charge — you pay your drivers directly.
+            </p>
+          </>
+        )}
+        {currentPeriod.voidedLines.length > 0 ? (
+          <details className="fee-disclosure">
+            <summary>
+              Fees withdrawn this month ({currentPeriod.voidedLines.length}) — you are charged nothing for
+              these
+            </summary>
+            <ul className="fee-voided">
+              {currentPeriod.voidedLines.map((line) => (
+                <li key={line.id}>
+                  <strong>{line.loadTitle}</strong>
+                  <span>
+                    {line.completedOnLabel} · {line.platformFeeLabel} withdrawn
+                    {line.voidReason ? ` · ${line.voidReason}` : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
+      </section>
+
+      <section className="settings-panel" aria-label="Bills">
+        <SectionHeader eyebrow="Bills" title="What you have been charged" />
+        {invoices.length === 0 ? (
+          <p className="settings-meaning">
+            No bill has been raised yet. Your first one covers {currentPeriod.periodLabel} and is charged
+            after it closes on {currentPeriod.closesOnLabel}.
+          </p>
+        ) : (
+          <div className="invoice-list">
+            {invoices.map((invoice) => (
+              <InvoiceCard invoice={invoice} key={invoice.id} />
+            ))}
+          </div>
+        )}
+      </section>
+    </>
+  )
+}
+
+/**
+ * `hostBilling` is required for a host and absent for a fleet, checked by the
+ * compiler rather than by remembering: a host billing page that forgot to pass it
+ * would render a host their fee ledger as though nothing had ever accrued, which
+ * is the one thing a billing page must never say by accident.
+ */
+export type BillingPageProps = {
+  account: ShellAccount
+  billing: BillingView
+  checkoutNotice?: CheckoutNotice | null
+} & ({ role: "fleet"; hostBilling?: never } | { role: "host"; hostBilling: HostBillingView })
+
 export function BillingPage({
   account,
   billing,
   checkoutNotice,
+  hostBilling,
   role
-}: {
-  account: ShellAccount
-  billing: BillingView
-  checkoutNotice?: CheckoutNotice | null
-  role: CockpitRole
-}) {
+}: BillingPageProps) {
   const addUsageHref = role === "fleet" ? "/fleet/trucks" : "/host/landings"
   const addUsageLabel = role === "fleet" ? "Go to trucks" : "Go to landings"
   const addUsageBody = role === "fleet"
@@ -96,6 +400,18 @@ export function BillingPage({
           <p className={`billing-banner billing-banner--${checkoutNotice.tone}`} role="status">
             <Icon aria-hidden name={checkoutNotice.tone === "success" ? "status.assigned" : "ops.notice"} size={18} />
             <span>{checkoutNotice.message}</span>
+          </p>
+        ) : null}
+
+        {/* First thing on the page when it is true, because it stops the host
+            working. The consequence is worded once in the read model, so this
+            banner and the payment-method panel cannot disagree about it. */}
+        {hostBilling?.paymentMethod.blocksPublishing ? (
+          <p className="billing-banner billing-banner--blocked" role="note">
+            <Icon aria-hidden name="status.lock" size={18} />
+            <span>
+              <strong>{hostBilling.paymentMethod.statusLabel}.</strong> {hostBilling.paymentMethod.consequence}
+            </span>
           </p>
         ) : null}
 
@@ -171,6 +487,11 @@ export function BillingPage({
             </section>
           </>
         )}
+
+        {/* Outside the plan branch on purpose: what a host owes LogLoads does not
+            depend on carrying a plan record, so a workspace with no entitlement
+            row must still be able to see its own fees and its own bills. */}
+        {hostBilling ? <HostMoneySections hostBilling={hostBilling} /> : null}
       </div>
     </AppShell>
   )

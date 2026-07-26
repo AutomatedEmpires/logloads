@@ -14,6 +14,8 @@ import {
   equipmentCombinationSchema,
   futureAvailabilitySchema,
   haulRouteSchema,
+  hostBillingProfileSchema,
+  hostInvoiceSchema,
   landingSchema,
   loadPostingSchema,
   loaderProfileSchema,
@@ -27,6 +29,7 @@ import {
   organizationInvitationSchema,
   organizationMembershipSchema,
   organizationSchema,
+  platformFeeEventSchema,
   privateNetworkRelationshipSchema,
   rateSchema,
   richLandingDetailsSchema,
@@ -92,6 +95,8 @@ const ROW_VALIDATORS: Record<LogLoadsTableName, RowValidator> = {
   equipmentCombinations: equipmentCombinationSchema,
   futureAvailability: futureAvailabilitySchema,
   haulRoutes: haulRouteSchema,
+  hostBillingProfiles: hostBillingProfileSchema,
+  hostInvoices: hostInvoiceSchema,
   landings: landingSchema,
   loadPostings: loadPostingSchema,
   loaderProfiles: loaderProfileSchema,
@@ -104,6 +109,7 @@ const ROW_VALIDATORS: Record<LogLoadsTableName, RowValidator> = {
   organizationInvitations: organizationInvitationSchema,
   organizationMemberships: organizationMembershipSchema,
   organizations: organizationSchema,
+  platformFeeEvents: platformFeeEventSchema,
   privateNetworkRelationships: privateNetworkRelationshipSchema,
   profiles: userSchema,
   rates: rateSchema,
@@ -166,6 +172,8 @@ const ROW_REFERENCES: Partial<Record<LogLoadsTableName, readonly RowReference[]>
     { field: "organizationId", target: "organizations" },
     { field: "truckProfileId", target: "truckProfiles" }
   ],
+  hostBillingProfiles: [{ field: "organizationId", target: "organizations" }],
+  hostInvoices: [{ field: "organizationId", target: "organizations" }],
   loadPostings: [
     { field: "dispatcherProfileId", target: "dispatcherProfiles" },
     { field: "dropoffMillId", target: "mills" },
@@ -179,6 +187,18 @@ const ROW_REFERENCES: Partial<Record<LogLoadsTableName, readonly RowReference[]>
   organizationMemberships: [
     { field: "organizationId", target: "organizations" },
     { field: "userId", target: "profiles" }
+  ],
+  // A fee is a claim about one specific completed load. If anything it names is
+  // missing, the charge can no longer be explained to the host it was billed to,
+  // which is the one thing a fee ledger must always be able to do. invoiceId is
+  // nullable and simply skipped while it is null. `feeEventIds` on an invoice is an
+  // array, which is outside what this checker reads.
+  platformFeeEvents: [
+    { field: "assignmentId", target: "assignments" },
+    { field: "invoiceId", target: "hostInvoices" },
+    { field: "loadPostingId", target: "loadPostings" },
+    { field: "organizationId", target: "organizations" },
+    { field: "truckSlotId", target: "truckSlots" }
   ],
   richLandingDetails: [{ field: "landingId", target: "landings" }],
   routePacks: [
@@ -355,8 +375,9 @@ function publishReport(report: OperatingStateReport): void {
  * introduced the tripReviews collection. supportRequests is additive and
  * schema-v2-compatible (its SQL migration applies the same backfill).
  * tripInspections is additive and RUNTIME-ONLY — no SQL migration exists for it;
- * this guard is the only backfill. Old and new deployments can overlap during
- * rollout and rollback.
+ * this guard is the only backfill. The three platform-fee billing collections are
+ * additive and RUNTIME-ONLY on the same terms. Old and new deployments can overlap
+ * during rollout and rollback.
  */
 function backfillStateSnapshot(
   value: Partial<LogLoadsDatabaseState>
@@ -377,6 +398,24 @@ function backfillStateSnapshot(
 
   if (candidate.tripInspections === undefined) {
     candidate.tripInspections = []
+  }
+
+  // Platform fee billing. These three are in REQUIRED_TABLES the moment they have a
+  // row validator, and the canonical document in production predates them, so
+  // without this guard the very first read after deploy would refuse the whole
+  // document and every request would fail. Empty is also the only honest default:
+  // no host has been charged anything, so an absent ledger means nothing accrued,
+  // never that a bill was lost.
+  if (candidate.hostBillingProfiles === undefined) {
+    candidate.hostBillingProfiles = []
+  }
+
+  if (candidate.platformFeeEvents === undefined) {
+    candidate.platformFeeEvents = []
+  }
+
+  if (candidate.hostInvoices === undefined) {
+    candidate.hostInvoices = []
   }
 
   // Driver profiles predate the featured-rig flag; absent means not featured.

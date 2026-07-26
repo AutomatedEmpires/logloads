@@ -100,6 +100,14 @@ import {
   submitHaulCompletion
 } from "./operating-network"
 import { listTripDocuments, requiredCompletionEvidence } from "./haul-completion"
+import {
+  accruePlatformFee,
+  hostFeeSummary,
+  markInvoicePaid,
+  markInvoiceUncollectible,
+  openInvoiceForPeriod,
+  voidPlatformFee
+} from "./platform-fees"
 import { getRouteById, listRoutes } from "./routes"
 import { createTruckSlot, listTruckSlotsForDate } from "./truck-slots"
 import {
@@ -128,6 +136,33 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     DEFAULT_ORGANIZATION_ID,
     addEquipmentCombination: (input: unknown) => addEquipmentCombination(state, input),
     applyBillingUpdate: (input: unknown) => applyBillingUpdate(state, input),
+    // The platform fee ledger. Separate from applyBillingUpdate above, which is the
+    // Dispatch Pro software subscription: a plan webhook must never be able to
+    // touch a per-load charge.
+    accruePlatformFee: (
+      input: Parameters<typeof accruePlatformFee>[1],
+      at?: Parameters<typeof accruePlatformFee>[2]
+    ) => accruePlatformFee(state, input, at),
+    voidPlatformFee: (
+      input: Parameters<typeof voidPlatformFee>[1],
+      at?: Parameters<typeof voidPlatformFee>[2]
+    ) => voidPlatformFee(state, input, at),
+    openInvoiceForPeriod: (
+      input: Parameters<typeof openInvoiceForPeriod>[1],
+      at?: Parameters<typeof openInvoiceForPeriod>[2]
+    ) => openInvoiceForPeriod(state, input, at),
+    markInvoicePaid: (
+      input: Parameters<typeof markInvoicePaid>[1],
+      at?: Parameters<typeof markInvoicePaid>[2]
+    ) => markInvoicePaid(state, input, at),
+    markInvoiceUncollectible: (
+      input: Parameters<typeof markInvoiceUncollectible>[1],
+      at?: Parameters<typeof markInvoiceUncollectible>[2]
+    ) => markInvoiceUncollectible(state, input, at),
+    hostFeeSummary: (
+      input: Parameters<typeof hostFeeSummary>[1],
+      at?: Parameters<typeof hostFeeSummary>[2]
+    ) => hostFeeSummary(state, input, at),
     findEntitlementByStripeSubscription: (stripeSubscriptionId: string) => findEntitlementByStripeSubscription(state, stripeSubscriptionId),
     assignDriverToEquipment: (input: unknown) => assignDriverToEquipment(state, input),
     acceptInvitationAsNewAccount: (input: Parameters<typeof acceptInvitationAsNewAccount>[1]) =>
@@ -282,6 +317,33 @@ export {
 } from "./support-requests"
 export { loadPostingHasOwnedCoherentSources, routePackIsSafeToRead } from "./route-packs"
 export { directOfferClaimCount, directOfferIsClaimable, effectiveDirectOfferStatus } from "./operating-network"
+/**
+ * Exported as free functions as well as bound methods: the accrual has to be
+ * callable from INSIDE the compare-and-swap mutation that settles a completion,
+ * where the caller holds a draft state rather than a services singleton. The
+ * at-most-one check only defends anything if it runs in that same mutation.
+ */
+export {
+  accruePlatformFee,
+  hostFeeSummary,
+  hostInvoiceId,
+  markInvoicePaid,
+  markInvoiceUncollectible,
+  openInvoiceForPeriod,
+  voidPlatformFee
+} from "./platform-fees"
+export type {
+  AccruePlatformFeeInput,
+  AccruePlatformFeeResult,
+  HostFeeSummary,
+  HostFeeSummaryInput,
+  InvoiceSettlementInput,
+  InvoiceSettlementResult,
+  OpenInvoiceForPeriodInput,
+  OpenInvoiceForPeriodResult,
+  VoidPlatformFeeInput,
+  VoidPlatformFeeResult
+} from "./platform-fees"
 export type {
   CreateHaulRouteInput,
   CreateLandingInput,

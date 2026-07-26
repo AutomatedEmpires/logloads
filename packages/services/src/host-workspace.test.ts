@@ -1,4 +1,4 @@
-import { entitlementSchema, organizationMembershipSchema } from "@logloads/contracts"
+import { entitlementSchema, hostBillingProfileSchema, organizationMembershipSchema } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
@@ -79,6 +79,33 @@ function setLandingAllowance(services: LogLoadsServices, organizationId: string,
     status: "active",
     stripeCustomerId: null,
     stripeSubscriptionId: null,
+    updatedAt: "2026-06-05T00:00:00.000Z"
+  }))
+}
+
+/**
+ * Puts a card on file for an organization, which is what publishing now requires:
+ * the platform fee is charged to the host, so work that cannot be billed cannot
+ * go on the network.
+ *
+ * Written straight into the document because there is no services-level way to
+ * attach one: card attachment is a Stripe round trip and lives in the web layer,
+ * which a services test cannot reach. This writes the row that flow produces, and
+ * the row contract is what refuses a status that does not carry its own facts.
+ */
+function attachCard(services: LogLoadsServices, organizationId: string) {
+  services.state.hostBillingProfiles.push(hostBillingProfileSchema.parse({
+    attachedAt: "2026-06-05T00:00:00.000Z",
+    createdAt: "2026-06-05T00:00:00.000Z",
+    defaultPaymentMethodId: "pm_test_host_workspace",
+    id: "34343434-3434-4434-8434-3434343434f1",
+    lastFailureAt: null,
+    lastFailureReason: null,
+    organizationId,
+    paymentMethodBrand: "visa",
+    paymentMethodLast4: "4242",
+    status: "attached",
+    stripeCustomerId: "cus_test_host_workspace",
     updatedAt: "2026-06-05T00:00:00.000Z"
   }))
 }
@@ -337,6 +364,7 @@ describe("retiring a landing", () => {
         dailyTruckCountNeeded: 1,
         dispatcherContact: dispatcher.contact,
         dispatcherProfileId: dispatcher.id,
+        driverPayCents: 52_500,
         dropoffMillId: MILL,
         equipmentRequirements: [],
         estimatedTonsPerLoad: 27,
@@ -392,6 +420,7 @@ describe("retiring a landing", () => {
       dailyTruckCountNeeded: 1,
       dispatcherContact: dispatcher.contact,
       dispatcherProfileId: dispatcher.id,
+      driverPayCents: 52_500,
       dropoffMillId: MILL,
       equipmentRequirements: [],
       estimatedTonsPerLoad: 27,
@@ -444,6 +473,7 @@ describe("retiring a landing", () => {
         dailyTruckCountNeeded: 1,
         dispatcherContact: dispatcher.contact,
         dispatcherProfileId: dispatcher.id,
+        driverPayCents: 52_500,
         dropoffMillId: MILL,
         equipmentRequirements: [],
         estimatedTonsPerLoad: 27,
@@ -906,7 +936,7 @@ describe("host onboarding", () => {
 
     expect(dispatcher).toBeDefined()
 
-    const load = services.createLoadPostingWithPolicy({
+    const posting = {
       accessRequirements: [],
       actorUserId,
       campaignEndDate: null,
@@ -915,6 +945,9 @@ describe("host onboarding", () => {
       dailyTruckCountNeeded: 1,
       dispatcherContact: dispatcher!.contact,
       dispatcherProfileId: dispatcher!.id,
+      // What one truckload pays the driver. The host states it; the fee is
+      // charged to the host on top of it.
+      driverPayCents: 52_500,
       dropoffMillId: route.millId,
       equipmentRequirements: [],
       estimatedTonsPerLoad: 27,
@@ -932,10 +965,23 @@ describe("host onboarding", () => {
       status: "open",
       title: "First haul off the new spur",
       weatherNotes: null
-    })
+    }
+
+    // REWRITTEN when the platform fee became real. This spec used to end at
+    // "rate, then publish", which is no longer true and must not keep passing as
+    // though it were: the fee is charged to the host's card, so an organization
+    // with no card on file cannot put work on the network. Attaching one is now
+    // part of onboarding, and it is asserted here rather than assumed.
+    expect(() => services.createLoadPostingWithPolicy(posting)).toThrow(/no payment card on file/)
+    expect(services.state.loadPostings.some((load) => load.title === posting.title)).toBe(false)
+
+    attachCard(services, organizationId)
+
+    const load = services.createLoadPostingWithPolicy(posting)
 
     expect(load.status).toBe("open")
     expect(load.pickupLandingId).toBe(landing.id)
+    expect(load.driverPayCents).toBe(52_500)
 
     // And the work is real capacity a driver can request, not an orphan record.
     expect(services.state.truckSlots.some((slot) => slot.loadPostingId === load.id)).toBe(true)

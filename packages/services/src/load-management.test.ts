@@ -23,6 +23,7 @@ function postingInput(status: "open" | "draft", overrides: Record<string, unknow
     dispatcherProfileId: "55555555-5555-4555-8555-555555555553",
     loaderProfileId: null,
     pickupLandingId: "66666666-6666-4666-8666-666666666662",
+    driverPayCents: 52_500,
     dropoffMillId: "99999999-9999-4999-8999-999999999991",
     routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
     rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",

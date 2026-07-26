@@ -1,5 +1,6 @@
 "use client"
 
+import { PLATFORM_FEE_BPS, FEE_BPS_SCALE, createMoney, formatMoney } from "@logloads/contracts"
 import Link from "next/link"
 import { useMemo, useState, useTransition } from "react"
 
@@ -15,6 +16,7 @@ import {
   revokeDirectOfferAction,
   settleHaulCompletionAction
 } from "@/lib/cockpit-actions"
+import { driverPayQuote, parseDriverPayCents, payOutlookForTruckloads } from "@/lib/driver-pay-input"
 import type { HostPublishingOptions, RequirementOption } from "@/lib/host-data"
 import { formatDateTime, formatHuman, humanizeTag } from "@/lib/v3-shared"
 import { EmptyState } from "./Shells"
@@ -34,6 +36,21 @@ const VISIBILITY_MODES: Array<[string, string, string]> = [
   ["private_network", "Private — partners only", "Only your trusted partner organizations see it."],
   ["verified_network", "Verified carriers", "Limited to carriers building a verified track record."]
 ]
+
+/**
+ * The rate as a host reads it, derived from the constant the ledger charges at.
+ * A typed "5%" beside a changed constant is a lie printed next to a real number.
+ */
+const FEE_PERCENT_LABEL = `${(PLATFORM_FEE_BPS / FEE_BPS_SCALE) * 100}%`
+
+/**
+ * Whole cents, as a host reads them. Goes through the contracts money helpers so
+ * the currency is the one the rest of the system uses and the division by 100
+ * happens in exactly one place.
+ */
+function money(amountCents: number): string {
+  return formatMoney(createMoney(amountCents))
+}
 
 type ScheduleKind = "one_off" | "recurring" | "campaign"
 
@@ -583,6 +600,9 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
   const [days, setDays] = useState<Set<number>>(new Set([1, 3, 5]))
   const [until, setUntil] = useState("")
   const [rateId, setRateId] = useState(options.rates[0]?.id ?? "")
+  // What this work pays a driver for ONE truckload, as the host types it. Held as
+  // the typed string so a half-entered "52." is never silently read as $52.
+  const [driverPay, setDriverPay] = useState("")
   const [visibility, setVisibility] = useState<BuilderVisibility>("draft")
   const [visibilityMode, setVisibilityMode] = useState<string>("open_network")
   const [error, setError] = useState<string | null>(null)
@@ -599,6 +619,15 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
 
   const truckloadCount = Number.parseInt(truckloads, 10)
   const tonsValue = tons.trim() === "" ? null : Number(tons)
+
+  // One parse, used for the quote AND for the payload, so the host cannot be
+  // shown one number and have another one published.
+  const driverPayCents = parseDriverPayCents(driverPay)
+  const payQuote = driverPayQuote(driverPay)
+  const perDayOutlook =
+    driverPayCents !== null && Number.isInteger(truckloadCount) && truckloadCount > 0
+      ? payOutlookForTruckloads(driverPayCents, truckloadCount)
+      : null
 
   const missingSetup = [
     options.landings.length === 0 ? "a landing" : null,
@@ -650,13 +679,17 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
     title.trim().length > 0,
     Boolean(landing && route),
     Number.isInteger(truckloadCount) && truckloadCount > 0 && scheduleReady,
-    Boolean(rate),
+    // Stated driver pay is required to leave Terms, not merely encouraged: it is
+    // what a driver is promised and the base LogLoads charges its fee on. The
+    // service refuses a publish without it too — this only means the host is
+    // asked here rather than rejected at the last step.
+    Boolean(rate) && driverPayCents !== null,
     true,
     true
   ]
 
   const publish = () => {
-    if (!route || !rate || !landing) {
+    if (!route || !rate || !landing || driverPayCents === null) {
       return
     }
 
@@ -676,6 +709,10 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
           phone: dispatcher.phone
         },
         dispatcherProfileId: dispatcher.id,
+        // Per truckload. One assignment is one truckload hauled by one driver, and
+        // the fee ledger keys on the assignment, so a series of N truckloads is N
+        // payments of this figure and N fees on it.
+        driverPayCents,
         dropoffMillId: route.millId,
         equipmentRequirements: [...equipment],
         estimatedTonsPerLoad: tonsValue && tonsValue > 0 ? tonsValue : null,
@@ -705,6 +742,7 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
         setTons("")
         setEquipment(new Set())
         setAccess(new Set())
+        setDriverPay("")
         setRoadOverride("")
         setWeather("")
         setRouteId("")
@@ -945,21 +983,81 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
       ) : null}
 
       {step === 3 ? (
-        <div className="host-choice host-step">
-          {options.rates.map((entry) => (
-            <label key={entry.id}>
+        <div className="host-step">
+          <div className="builder-form">
+            <label className="host-field--full">
+              What this work pays a driver, per truckload
               <input
-                checked={rateId === entry.id}
-                name="host-rate"
-                onChange={() => setRateId(entry.id)}
-                type="radio"
+                aria-describedby="host-driver-pay-help"
+                inputMode="decimal"
+                onChange={(event) => setDriverPay(event.target.value)}
+                placeholder="e.g. 525.00"
+                type="text"
+                value={driverPay}
               />
-              <span>
-                <strong>{entry.label}</strong>
-                {entry.detail ? <span>{entry.detail}</span> : null}
-              </span>
             </label>
-          ))}
+            <p className="host-builder-note host-field--full" id="host-driver-pay-help">
+              The flat amount one truckload pays the driver, in dollars. Every truckload on this
+              work pays the same figure, so {truckloadCount > 1 ? `${truckloadCount} truckloads a day means ${truckloadCount} payments of it` : "each truckload is one payment of it"}.
+              Drivers see this number and are paid exactly it.
+            </p>
+          </div>
+
+          {payQuote ? (
+            <div className="host-route-fact host-field--full" aria-label="What one truckload costs you">
+              <span>Driver is paid {money(payQuote.driverPayCents)} per truckload</span>
+              <span>
+                LogLoads fee {FEE_PERCENT_LABEL}, added on top:{" "}
+                {money(payQuote.platformFeeCents)}
+              </span>
+              <span>
+                <strong>
+                  Your cost per truckload {money(payQuote.hostTotalCents)}
+                </strong>
+              </span>
+              {perDayOutlook && perDayOutlook.truckloads > 1 ? (
+                <span>
+                  Each loading day, if all {perDayOutlook.truckloads} truckloads run:{" "}
+                  {money(perDayOutlook.driverPayCents)} to drivers
+                  + {money(perDayOutlook.platformFeeCents)} fee ={" "}
+                  {money(perDayOutlook.hostTotalCents)}
+                </span>
+              ) : null}
+            </div>
+          ) : (
+            <p className="host-builder-note">
+              Enter what one truckload pays a driver to see the {FEE_PERCENT_LABEL} LogLoads fee and your total.
+            </p>
+          )}
+
+          <p className="host-builder-note">
+            The fee is charged to you, on top of driver pay — never taken out of it. It is billed
+            monthly and only on truckloads that actually complete. Posting costs nothing, and a
+            truckload nobody hauls costs nothing.
+          </p>
+
+          <span className="req-label">Rate card for this lane</span>
+          <div className="host-choice">
+            {options.rates.map((entry) => (
+              <label key={entry.id}>
+                <input
+                  checked={rateId === entry.id}
+                  name="host-rate"
+                  onChange={() => setRateId(entry.id)}
+                  type="radio"
+                />
+                <span>
+                  <strong>{entry.label}</strong>
+                  {entry.detail ? <span>{entry.detail}</span> : null}
+                </span>
+              </label>
+            ))}
+          </div>
+          <p className="host-builder-note">
+            Your standing price list, kept on the posting for your own records and for the lanes and
+            older work that still reference it. The driver pay above is what a driver is shown and
+            what the fee is calculated from.
+          </p>
         </div>
       ) : null}
 
@@ -1056,7 +1154,35 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
             <dd>{formatHuman(roadCondition)}{weather.trim() ? ` · ${weather.trim()}` : ""}</dd>
           </div>
           <div>
-            <dt>Terms</dt>
+            <dt>Driver pay</dt>
+            <dd>
+              {payQuote
+                ? `${money(payQuote.driverPayCents)} per truckload, paid in full to the driver`
+                : "Not stated — go back to Terms"}
+            </dd>
+          </div>
+          <div>
+            <dt>LogLoads fee</dt>
+            <dd>
+              {payQuote
+                ? `${money(payQuote.platformFeeCents)} per completed truckload (${FEE_PERCENT_LABEL}, charged to you on top), billed monthly`
+                : `${FEE_PERCENT_LABEL} of stated driver pay, charged to you on top of it`}
+            </dd>
+          </div>
+          <div>
+            <dt>Your cost</dt>
+            <dd>
+              {payQuote
+                ? `${money(payQuote.hostTotalCents)} per truckload that completes${
+                    perDayOutlook && perDayOutlook.truckloads > 1
+                      ? ` · ${money(perDayOutlook.hostTotalCents)} a loading day if all ${perDayOutlook.truckloads} run`
+                      : ""
+                  }`
+                : "Stated driver pay plus the fee"}
+            </dd>
+          </div>
+          <div>
+            <dt>Rate card</dt>
             <dd>{rate?.label}</dd>
           </div>
           <div>

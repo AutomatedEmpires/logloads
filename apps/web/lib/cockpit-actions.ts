@@ -581,6 +581,18 @@ export async function createLoadPostingAction(input: Record<string, unknown>): P
   try {
     const actor = await requireActor()
 
+    // `driverPayCents` — what the host states one truckload pays the driver —
+    // travels through here to the service, which refuses to publish work without
+    // it and stores it on the posting. It is money, so it arrives as whole cents
+    // or not at all: a dollars string or a fractional cent would otherwise reach
+    // the fee base as a zod error from three layers down, and the builder's own
+    // parse is not a guarantee about what a client sends.
+    const statedPay = input.driverPayCents
+
+    if (statedPay !== undefined && statedPay !== null && !Number.isSafeInteger(statedPay)) {
+      throw new Error("Driver pay must be sent as a whole number of cents.")
+    }
+
     const created = await commit(["/host", "/fleet", "/driver", "/loads", "/"], (draft) =>
       draft.createLoadPostingWithPolicy({
         ...input,

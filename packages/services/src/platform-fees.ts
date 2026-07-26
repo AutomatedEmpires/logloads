@@ -1,0 +1,854 @@
+import {
+  auditEventSchema,
+  computePlatformFeeCents,
+  deterministicUuidV5,
+  hostInvoiceSchema,
+  invoicePeriodFor,
+  invoiceSubtotalCents,
+  platformFeeEventId,
+  platformFeeEventSchema,
+  PLATFORM_FEE_BPS,
+  type Assignment,
+  type AssignmentStatus,
+  type HostInvoice,
+  type HostInvoiceStatus,
+  type InvoicePeriod,
+  type LoadPosting,
+  type OrganizationAction,
+  type PlatformFeeEvent,
+  type TripV2
+} from "@logloads/contracts"
+import type { LogLoadsDatabaseState } from "@logloads/db"
+
+import { assertOrganizationAction, getActiveOrganizationContext } from "./operating-network"
+import { assertCondition, assertFound, createUuid, nowIso } from "./utils"
+
+/**
+ * The platform fee ledger: what a completed load accrued, what a host owes, and
+ * the monthly bill it lands on.
+ *
+ * WHAT IS BEING CHARGED. A host posts a load and states what it pays the driver.
+ * LogLoads charges the HOST a percentage of that stated pay, ON TOP of it, once
+ * the load is completed. Nothing in this module reduces driver pay, and nothing
+ * here holds, escrows, routes or pays out driver money: driver funds move host →
+ * driver directly and off-platform. The only money LogLoads collects is its own
+ * fee, charged in arrears to a card the host attached, and even that is recorded
+ * here rather than moved — no function in this file performs I/O.
+ *
+ * WHY EVERY WRITE IS IDEMPOTENT ON A DETERMINISTIC ID. The whole database is one
+ * JSONB document read and written whole under a version compare-and-swap. On a
+ * conflict the caller's mutation is REPLAYED against a fresh draft, so any write
+ * that is not idempotent bills twice under nothing more exotic than two hosts
+ * saving at the same moment. There is no unique index, no foreign key and no
+ * CHECK constraint behind this store: a deterministic id plus an explicit
+ * "already present?" assertion made INSIDE the same mutation as the write is the
+ * entire defence against double-billing.
+ *
+ * WHY IT IS PURE-ISH. Every function takes the draft state and a clock, mutates
+ * the draft, and returns. No Stripe call, no network, no `Date.now()` hidden
+ * inside a branch. That is what lets the guards above be tested at all, and what
+ * lets the caller run them inside the compare-and-swap mutator where they must
+ * run to mean anything.
+ *
+ * WHY REFUSALS ARE TYPED RATHER THAN THROWN. Accrual runs inside the same
+ * mutation as the completion the host and driver just agreed on. A throw would
+ * roll that agreement back, so a billing-side gap (a load posted before hosts
+ * stated driver pay) must not be able to destroy an operating record. Refusals a
+ * caller could legitimately hit are therefore discriminated outcomes with no
+ * `event`/`invoice` field at all, so a caller cannot read one as success without
+ * the compiler stopping them. Refusals that can only mean a caller bug or an
+ * authorization failure still throw.
+ */
+
+// ── Deterministic ids ─────────────────────────────────────────────────────────
+
+/**
+ * The namespace every host invoice id is derived under. FROZEN FOREVER.
+ *
+ * Changing it re-mints the id of every bill ever opened, which would make the
+ * at-most-one check in `openInvoiceForPeriod` fail to recognise months that were
+ * already billed and raise a second bill for each of them. Distinct from the fee
+ * event namespace so a fee and a bill can never collide on one id.
+ */
+const HOST_INVOICE_NAMESPACE = "2d9f6c1a-4b83-4f0e-9a71-6e5c8d3b47f2"
+
+/**
+ * The id of one host's bill for one calendar month. Same host, same month, same
+ * id, forever.
+ *
+ * `periodStart` must already be the CANONICAL start `invoicePeriodFor` emits.
+ * The same month boundary has several valid ISO spellings, and deriving from the
+ * caller's spelling would let "2026-07-01T00:00:00Z" and
+ * "2026-07-01T00:00:00.000Z" mint two bills for the same month.
+ */
+export function hostInvoiceId(organizationId: string, canonicalPeriodStart: string): string {
+  return deterministicUuidV5(
+    HOST_INVOICE_NAMESPACE,
+    `${organizationId.toLowerCase()}:${canonicalPeriodStart}`
+  )
+}
+
+// ── What may be billed ────────────────────────────────────────────────────────
+
+/**
+ * Whether an assignment in this status can carry a delivered haul.
+ *
+ * An exhaustive record, not an `includes` list: adding an assignment status will
+ * not compile until somebody decides whether a host owes a fee for it.
+ *
+ * `hauled` is billable because the assignment row lags the trip. A host confirms
+ * the delivered record while the trip is at the destination or unloading, and the
+ * assignment only reaches `completed` when the trip does. Refusing `hauled` would
+ * silently skip the fee on a haul both parties already agreed was delivered.
+ */
+const ASSIGNMENT_STATUS_CAN_CARRY_A_COMPLETED_HAUL: Record<AssignmentStatus, boolean> = {
+  accepted: false,
+  cancelled: false,
+  checked_in: false,
+  completed: true,
+  declined: false,
+  hauled: true,
+  loading: false,
+  offered: false,
+  requested: false
+}
+
+/**
+ * Which statuses a bill may be marked paid from.
+ *
+ * Exhaustive for the same reason: a status is a claim to the host about their
+ * money, and an unmapped one would make that claim with nothing behind it.
+ * `uncollectible` stays payable because a host can pay a written-off bill late.
+ * `draft` cannot: nothing was ever issued, so nothing can have been paid.
+ */
+const INVOICE_CAN_BE_PAID_FROM: Record<HostInvoiceStatus, boolean> = {
+  draft: false,
+  open: true,
+  paid: false,
+  uncollectible: true,
+  void: false
+}
+
+/**
+ * Which statuses a bill may be written off from. `paid` is deliberately absent:
+ * writing off a paid bill would erase a payment that actually happened.
+ */
+const INVOICE_CAN_BE_UNCOLLECTIBLE_FROM: Record<HostInvoiceStatus, boolean> = {
+  draft: false,
+  open: true,
+  paid: false,
+  uncollectible: false,
+  void: false
+}
+
+// ── Local helpers ─────────────────────────────────────────────────────────────
+
+/**
+ * The acting member, with the right to perform a money action asserted.
+ *
+ * `actorUserId` and `organizationId` are REQUIRED here, unlike the operating
+ * surfaces where they default to the demo actor and organization. Web boundaries
+ * forward client JSON straight into these inputs, and a defaulted organization on
+ * a billing call would read, void or bill the wrong host's money. Absent is
+ * refused rather than substituted.
+ */
+function billingContext(
+  state: LogLoadsDatabaseState,
+  input: { actorUserId?: string; organizationId?: string },
+  action: OrganizationAction
+) {
+  const actorUserId = input.actorUserId
+  const organizationId = input.organizationId
+
+  assertCondition(
+    typeof actorUserId === "string" && actorUserId.length > 0,
+    "actorUserId is required for a platform fee action"
+  )
+  assertCondition(
+    typeof organizationId === "string" && organizationId.length > 0,
+    "organizationId is required for a platform fee action"
+  )
+
+  // getActiveOrganizationContext refuses anyone who is not an ACTIVE member of
+  // this organization, which is the membership half of the rule; the action
+  // assertion below is the permission half.
+  const context = getActiveOrganizationContext(state, actorUserId, organizationId)
+
+  assertOrganizationAction(context, action)
+
+  return context
+}
+
+/**
+ * A local audit insert rather than the one in operating-network.ts, which is not
+ * exported. Every money-affecting write in this module records who did it, to
+ * what, and enough metadata to explain the amount without re-deriving it.
+ */
+function insertBillingAuditEvent(
+  state: LogLoadsDatabaseState,
+  input: {
+    action: string
+    actorUserId: string | null
+    entityId: string
+    entityType: string
+    metadata: Record<string, unknown>
+    at: string
+  }
+): void {
+  state.auditEvents.push(
+    auditEventSchema.parse({
+      action: input.action,
+      actorUserId: input.actorUserId,
+      createdAt: input.at,
+      entityId: input.entityId,
+      entityType: input.entityType,
+      id: createUuid(),
+      metadata: input.metadata
+    })
+  )
+}
+
+/**
+ * Half-open containment, compared as instants. A fee stamped exactly at the
+ * boundary belongs to the month that starts there and not to the one that ends
+ * there, so consecutive bills neither overlap nor leave a gap.
+ */
+function withinPeriod(instant: string, period: InvoicePeriod): boolean {
+  const at = Date.parse(instant)
+
+  return at >= Date.parse(period.periodStart) && at < Date.parse(period.periodEnd)
+}
+
+/**
+ * The canonical UTC calendar month the caller named, or a refusal.
+ *
+ * Compared as instants rather than strings because the same boundary has several
+ * valid ISO spellings; returned canonically because the invoice id is derived
+ * from it.
+ */
+function canonicalPeriod(periodStart: string, periodEnd: string): InvoicePeriod {
+  const period = invoicePeriodFor(periodStart)
+
+  assertCondition(
+    Date.parse(period.periodStart) === Date.parse(periodStart) &&
+      Date.parse(period.periodEnd) === Date.parse(periodEnd),
+    "A bill covers exactly one UTC calendar month, from its first instant to the first instant of the next"
+  )
+
+  return period
+}
+
+function feeEventsForOrganization(
+  state: LogLoadsDatabaseState,
+  organizationId: string
+): PlatformFeeEvent[] {
+  return state.platformFeeEvents.filter((event) => event.organizationId === organizationId)
+}
+
+// ── Accrual ───────────────────────────────────────────────────────────────────
+
+export interface AccruePlatformFeeInput {
+  assignmentId: string
+  /**
+   * ATTRIBUTION ONLY — never authorization. Accrual is not a discretionary money
+   * action somebody chooses to take; it is the ledger recording a completion the
+   * caller was already authorized to settle. Gating it on `manage_billing` would
+   * mean a dispatcher confirming a delivery silently fails to bill for it, since
+   * dispatchers deliberately hold no billing right. The actor is recorded so the
+   * charge can be traced back to the person who settled the haul.
+   */
+  actorUserId?: string | null
+  /**
+   * The rate to FREEZE onto this fee. Defaults to the currently published rate,
+   * because accrual is the one moment where "the current rate" is the correct
+   * rate — it is where the rate stops being current and becomes history. Every
+   * other surface must read the rate off the event.
+   */
+  feeBps?: number
+}
+
+export type AccruePlatformFeeResult =
+  /** A fee was written for this assignment by this call. */
+  | { outcome: "accrued"; event: PlatformFeeEvent }
+  /** A fee already existed. Nothing was written. THE DOUBLE-BILLING DEFENCE. */
+  | { outcome: "already_accrued"; event: PlatformFeeEvent }
+  /** The load states no driver pay, so there is no base to charge a percentage of. */
+  | { outcome: "no_basis"; assignmentId: string; reason: string }
+  /** Nobody has agreed this haul was delivered, so nothing is owed yet. */
+  | { outcome: "not_completed"; assignmentId: string; reason: string }
+
+/**
+ * The delivered haul behind an assignment, as the two parties agreed it.
+ *
+ * Completion here means the HOST CONFIRMED the driver's delivered record, not
+ * that a status somewhere reads "completed". A unilateral status flip is one
+ * party's claim; a confirmed completion is both parties agreeing the load moved,
+ * which is the only thing that makes a fee defensible if the host later disputes
+ * it.
+ */
+function confirmedHaulForAssignment(
+  state: LogLoadsDatabaseState,
+  assignment: Assignment
+): TripV2 | undefined {
+  return state.tripsV2.find(
+    (trip) =>
+      trip.assignmentId === assignment.id &&
+      trip.completionStatus === "confirmed" &&
+      trip.status !== "cancelled"
+  )
+}
+
+/**
+ * Records the fee for one completed load. AT MOST ONE PER ASSIGNMENT, EVER.
+ *
+ * Idempotent by design rather than by luck: completion confirmation can be
+ * retried by a client that lost the response, and a compare-and-swap conflict
+ * replays this whole function against a fresh draft. Both paths land on the same
+ * deterministic id, find the existing fee, write nothing, and return it.
+ *
+ * The at-most-one check matches on the deterministic id OR on the assignment. The
+ * id alone would miss a fee that reached the ledger under some other id — a hand
+ * repair, an import, a future code path — and would then raise a second charge
+ * for a load that was already billed.
+ *
+ * `driverPayCents` and `feeBps` are FROZEN onto the event. The charge must stay
+ * explainable after the posting is edited, cancelled or archived, and a later rate
+ * change must re-rate nothing.
+ */
+export function accruePlatformFee(
+  state: LogLoadsDatabaseState,
+  input: AccruePlatformFeeInput,
+  at = nowIso()
+): AccruePlatformFeeResult {
+  const assignmentId = input.assignmentId
+
+  assertCondition(
+    typeof assignmentId === "string" && assignmentId.length > 0,
+    "assignmentId is required to accrue a platform fee"
+  )
+
+  // A missing assignment or a missing posting is a broken caller, not a state a
+  // host can reach, so it throws rather than returning a refusal somebody might
+  // log and move past.
+  const assignment = assertFound(
+    state.assignments.find((candidate) => candidate.id === assignmentId),
+    `Assignment ${assignmentId} was not found`
+  )
+  const load: LoadPosting = assertFound(
+    state.loadPostings.find((candidate) => candidate.id === assignment.loadPostingId),
+    `Load posting ${assignment.loadPostingId} was not found`
+  )
+
+  const eventId = platformFeeEventId(assignment.id)
+  const existing = state.platformFeeEvents.find(
+    (candidate) => candidate.id === eventId || candidate.assignmentId === assignment.id
+  )
+
+  // Deliberately BEFORE the completion and basis checks. A fee that was legitimately
+  // raised must survive a later edit that would no longer qualify the load — and
+  // re-checking first would let a retry after such an edit fall through to a refusal
+  // that reads like "nothing was ever charged".
+  if (existing) {
+    return { event: existing, outcome: "already_accrued" }
+  }
+
+  if (!ASSIGNMENT_STATUS_CAN_CARRY_A_COMPLETED_HAUL[assignment.status]) {
+    return {
+      assignmentId: assignment.id,
+      outcome: "not_completed",
+      reason: `This haul is ${assignment.status.replaceAll("_", " ")}; a fee is charged on completed loads only`
+    }
+  }
+
+  const trip = confirmedHaulForAssignment(state, assignment)
+
+  if (!trip) {
+    return {
+      assignmentId: assignment.id,
+      outcome: "not_completed",
+      reason: "Nobody has confirmed what this haul delivered, so there is nothing to charge for yet"
+    }
+  }
+
+  const driverPayCents = load.driverPayCents ?? null
+
+  if (driverPayCents === null) {
+    // Accruing zero here would put a real fee row on a load with no stated pay, and
+    // a percentage of nothing presented as a charge is a fabricated one. The refusal
+    // carries no event, so a caller cannot mistake it for a charge.
+    return {
+      assignmentId: assignment.id,
+      outcome: "no_basis",
+      reason: "This load states no driver pay, and a fee is a percentage of stated driver pay"
+    }
+  }
+
+  const feeBps = input.feeBps ?? PLATFORM_FEE_BPS
+  const actorUserId = input.actorUserId ?? null
+  // The moment the host agreed the load was delivered is the moment it became
+  // billable, and it is what decides which month's bill the fee lands on. Falling
+  // back to the write clock keeps a confirmed haul billable even if an older row
+  // never recorded the confirmation instant.
+  const occurredAt = trip.completionConfirmedAt ?? at
+
+  const event = platformFeeEventSchema.parse({
+    assignmentId: assignment.id,
+    createdAt: at,
+    driverPayCents,
+    feeBps,
+    feeCents: computePlatformFeeCents(driverPayCents, feeBps),
+    id: eventId,
+    invoiceId: null,
+    loadPostingId: load.id,
+    occurredAt,
+    // The HOST organization that posted the work. Derived from the posting, never
+    // taken from the caller: whoever asks for the accrual does not get to name who
+    // is charged, and it can never be the hauling side.
+    organizationId: load.companyId,
+    status: "accrued",
+    truckSlotId: assignment.truckSlotId,
+    updatedAt: at,
+    voidReason: null
+  })
+
+  state.platformFeeEvents.push(event)
+  insertBillingAuditEvent(state, {
+    action: "platform_fee_accrued",
+    actorUserId,
+    at,
+    entityId: event.id,
+    entityType: "platform_fee_event",
+    metadata: {
+      assignmentId: assignment.id,
+      driverPayCents: event.driverPayCents,
+      feeBps: event.feeBps,
+      feeCents: event.feeCents,
+      loadPostingId: load.id,
+      organizationId: event.organizationId,
+      tripId: trip.id
+    }
+  })
+
+  return { event, outcome: "accrued" }
+}
+
+// ── Void ──────────────────────────────────────────────────────────────────────
+
+export interface VoidPlatformFeeInput {
+  actorUserId?: string
+  organizationId?: string
+  assignmentId: string
+  reason: string
+}
+
+export type VoidPlatformFeeResult =
+  | { outcome: "voided"; event: PlatformFeeEvent }
+  | { outcome: "already_voided"; event: PlatformFeeEvent }
+  /** Nothing was ever accrued for this assignment — a reversal has nothing to undo. */
+  | { outcome: "no_fee"; assignmentId: string; reason: string }
+
+/**
+ * Withdraws a fee whose completion was reversed or disputed.
+ *
+ * A void, not a delete. The row stays as the evidence that a charge was raised and
+ * withdrawn, and `invoiceSubtotalCents` counts a voided fee as zero, so it can
+ * never reach a bill.
+ *
+ * An INVOICED fee is refused. The host has already been told they owe that amount;
+ * removing it from a bill that was issued would restate a bill after the fact.
+ * Reversing an issued charge is a credit note, which is a different record and a
+ * different Stripe object.
+ */
+export function voidPlatformFee(
+  state: LogLoadsDatabaseState,
+  input: VoidPlatformFeeInput,
+  at = nowIso()
+): VoidPlatformFeeResult {
+  const context = billingContext(state, input, "manage_billing")
+  const assignmentId = input.assignmentId
+  const reason = typeof input.reason === "string" ? input.reason.trim() : ""
+
+  assertCondition(
+    typeof assignmentId === "string" && assignmentId.length > 0,
+    "assignmentId is required to void a platform fee"
+  )
+  assertCondition(reason.length > 0, "Say why this fee is being withdrawn")
+  assertCondition(reason.length <= 300, "Keep the void reason under 300 characters")
+
+  const eventId = platformFeeEventId(assignmentId)
+  const event = state.platformFeeEvents.find(
+    (candidate) => candidate.id === eventId || candidate.assignmentId === assignmentId
+  )
+
+  if (!event) {
+    return {
+      assignmentId,
+      outcome: "no_fee",
+      reason: "No platform fee was ever accrued for this haul, so there is nothing to withdraw"
+    }
+  }
+
+  // Checked even though the fee was found by assignment: one host must never be
+  // able to withdraw another host's charge. An authorization failure, so it throws.
+  assertCondition(
+    event.organizationId === context.organizationId,
+    "This platform fee belongs to another organization"
+  )
+
+  if (event.status === "voided") {
+    // A reversal confirmation can be retried, and a compare-and-swap conflict
+    // replays this function. Neither may write a second audit event claiming the
+    // fee was withdrawn twice.
+    return { event, outcome: "already_voided" }
+  }
+
+  assertCondition(
+    event.status !== "invoiced",
+    `This fee is already on invoice ${event.invoiceId ?? "(unknown)"}; reverse it with a credit note, not a void`
+  )
+
+  // Re-parsed through the row contract so the storage invariants (a voided fee must
+  // say why) are enforced at write time and not only on the next read.
+  const voided = platformFeeEventSchema.parse({
+    ...event,
+    status: "voided",
+    updatedAt: at,
+    voidReason: reason
+  })
+
+  state.platformFeeEvents = state.platformFeeEvents.map((candidate) =>
+    candidate.id === event.id ? voided : candidate
+  )
+  insertBillingAuditEvent(state, {
+    action: "platform_fee_voided",
+    actorUserId: context.actorUserId,
+    at,
+    entityId: voided.id,
+    entityType: "platform_fee_event",
+    metadata: {
+      assignmentId: voided.assignmentId,
+      feeCents: voided.feeCents,
+      organizationId: voided.organizationId,
+      reason,
+      // What the fee was before it was withdrawn, so the withdrawal is explainable
+      // without reconstructing the row's history.
+      previousStatus: event.status
+    }
+  })
+
+  return { event: voided, outcome: "voided" }
+}
+
+// ── The monthly bill ──────────────────────────────────────────────────────────
+
+export interface OpenInvoiceForPeriodInput {
+  actorUserId?: string
+  organizationId?: string
+  periodStart: string
+  periodEnd: string
+}
+
+export type OpenInvoiceForPeriodResult =
+  | { outcome: "opened"; invoice: HostInvoice }
+  /** This month was already billed. Nothing was written. */
+  | { outcome: "already_open"; invoice: HostInvoice }
+  /** No fee accrued in the month, so no bill exists to send. */
+  | { outcome: "nothing_to_bill"; periodStart: string; periodEnd: string; reason: string }
+
+/**
+ * Closes one UTC calendar month for one host: collects every fee still `accrued`
+ * in the period, opens a bill for them, and flips them to `invoiced`.
+ *
+ * IDEMPOTENT PER (ORGANIZATION, MONTH). The id is derived from the host and the
+ * canonical month start, and an existing bill for either that id or that month is
+ * returned untouched. A monthly job that runs twice, or a compare-and-swap replay,
+ * therefore cannot bill a host twice for the same month.
+ *
+ * IN ARREARS. A period that has not ended yet is refused: it can still accrue, so
+ * billing it would charge a host for a month that is not finished.
+ *
+ * NO BILL WHEN NOTHING ACCRUED. There is no monthly host fee and no minimum, so a
+ * host who completed no loads must receive nothing at all — not a bill for zero.
+ *
+ * `status` is `open` with `issuedAt` set because the amount is fixed and owed the
+ * moment the month closes. `issuedAt` is when LogLoads closed the period, which is
+ * deliberately not a claim that Stripe has delivered anything; `stripeInvoiceId`
+ * stays null until the collection step records the object it created. Opening the
+ * LogLoads row first is what makes the amount auditable before any external call.
+ */
+export function openInvoiceForPeriod(
+  state: LogLoadsDatabaseState,
+  input: OpenInvoiceForPeriodInput,
+  at = nowIso()
+): OpenInvoiceForPeriodResult {
+  const context = billingContext(state, input, "manage_billing")
+  const period = canonicalPeriod(input.periodStart, input.periodEnd)
+
+  assertCondition(
+    Date.parse(period.periodEnd) <= Date.parse(at),
+    "This period is still accruing; the platform fee is billed monthly in arrears"
+  )
+
+  const invoiceId = hostInvoiceId(context.organizationId, period.periodStart)
+  const existing = state.hostInvoices.find(
+    (candidate) =>
+      candidate.id === invoiceId ||
+      (candidate.organizationId === context.organizationId &&
+        Date.parse(candidate.periodStart) === Date.parse(period.periodStart))
+  )
+
+  if (existing) {
+    return { invoice: existing, outcome: "already_open" }
+  }
+
+  const billable = feeEventsForOrganization(state, context.organizationId)
+    .filter((event) => event.status === "accrued" && withinPeriod(event.occurredAt, period))
+    // Sorted so a replay of this mutation produces a byte-identical bill rather
+    // than the same fees in whatever order the ledger happened to hold them.
+    .sort(
+      (left, right) =>
+        Date.parse(left.occurredAt) - Date.parse(right.occurredAt) || left.id.localeCompare(right.id)
+    )
+
+  if (billable.length === 0) {
+    return {
+      outcome: "nothing_to_bill",
+      periodEnd: period.periodEnd,
+      periodStart: period.periodStart,
+      reason: "No platform fee accrued in this period, and there is no monthly fee or minimum"
+    }
+  }
+
+  const invoice = hostInvoiceSchema.parse({
+    createdAt: at,
+    feeEventIds: billable.map((event) => event.id),
+    id: invoiceId,
+    issuedAt: at,
+    organizationId: context.organizationId,
+    paidAt: null,
+    periodEnd: period.periodEnd,
+    periodStart: period.periodStart,
+    status: "open",
+    stripeInvoiceId: null,
+    // The one implementation of the total, shared with every surface that quotes
+    // it. Voided fees contribute nothing, which is why they can never reach a bill.
+    subtotalCents: invoiceSubtotalCents(billable),
+    updatedAt: at,
+    voidedAt: null
+  })
+
+  const billedIds = new Set(billable.map((event) => event.id))
+
+  state.hostInvoices.push(invoice)
+  state.platformFeeEvents = state.platformFeeEvents.map((event) =>
+    billedIds.has(event.id)
+      ? platformFeeEventSchema.parse({
+          ...event,
+          invoiceId: invoice.id,
+          status: "invoiced",
+          updatedAt: at
+        })
+      : event
+  )
+  insertBillingAuditEvent(state, {
+    action: "host_invoice_opened",
+    actorUserId: context.actorUserId,
+    at,
+    entityId: invoice.id,
+    entityType: "host_invoice",
+    metadata: {
+      feeEventCount: billable.length,
+      organizationId: invoice.organizationId,
+      periodEnd: invoice.periodEnd,
+      periodStart: invoice.periodStart,
+      subtotalCents: invoice.subtotalCents
+    }
+  })
+
+  return { invoice, outcome: "opened" }
+}
+
+export interface InvoiceSettlementInput {
+  actorUserId?: string
+  organizationId?: string
+  invoiceId: string
+  /** What Stripe collected it as, for reconciliation. LogLoads holds no funds. */
+  stripeInvoiceId?: string | null
+  /** Why it was written off. Recorded on the audit event, which is where it belongs. */
+  reason?: string | null
+}
+
+export interface InvoiceSettlementResult {
+  changed: boolean
+  invoice: HostInvoice
+}
+
+function settleInvoice(
+  state: LogLoadsDatabaseState,
+  input: InvoiceSettlementInput,
+  at: string,
+  settlement: {
+    action: string
+    allowedFrom: Record<HostInvoiceStatus, boolean>
+    refusal: string
+    status: Extract<HostInvoiceStatus, "paid" | "uncollectible">
+  }
+): InvoiceSettlementResult {
+  const context = billingContext(state, input, "manage_billing")
+  const invoiceId = input.invoiceId
+
+  assertCondition(
+    typeof invoiceId === "string" && invoiceId.length > 0,
+    "invoiceId is required to settle a bill"
+  )
+
+  const invoice = assertFound(
+    state.hostInvoices.find((candidate) => candidate.id === invoiceId),
+    `Host invoice ${invoiceId} was not found`
+  )
+
+  assertCondition(
+    invoice.organizationId === context.organizationId,
+    "This bill belongs to another organization"
+  )
+
+  if (invoice.status === settlement.status) {
+    // Payment providers retry their notifications, and a compare-and-swap conflict
+    // replays this function. Neither may record a second settlement.
+    return { changed: false, invoice }
+  }
+
+  assertCondition(
+    settlement.allowedFrom[invoice.status],
+    `${settlement.refusal} (this bill is ${invoice.status})`
+  )
+
+  const settled = hostInvoiceSchema.parse({
+    ...invoice,
+    paidAt: settlement.status === "paid" ? at : invoice.paidAt,
+    status: settlement.status,
+    stripeInvoiceId: input.stripeInvoiceId ?? invoice.stripeInvoiceId ?? null,
+    updatedAt: at
+  })
+
+  state.hostInvoices = state.hostInvoices.map((candidate) =>
+    candidate.id === invoice.id ? settled : candidate
+  )
+  insertBillingAuditEvent(state, {
+    action: settlement.action,
+    actorUserId: context.actorUserId,
+    at,
+    entityId: settled.id,
+    entityType: "host_invoice",
+    metadata: {
+      organizationId: settled.organizationId,
+      periodStart: settled.periodStart,
+      previousStatus: invoice.status,
+      reason: input.reason ?? null,
+      stripeInvoiceId: settled.stripeInvoiceId ?? null,
+      subtotalCents: settled.subtotalCents
+    }
+  })
+
+  return { changed: true, invoice: settled }
+}
+
+/** The host's card was charged for this month's fees. Records only; moves nothing. */
+export function markInvoicePaid(
+  state: LogLoadsDatabaseState,
+  input: InvoiceSettlementInput,
+  at = nowIso()
+): InvoiceSettlementResult {
+  return settleInvoice(state, input, at, {
+    action: "host_invoice_paid",
+    allowedFrom: INVOICE_CAN_BE_PAID_FROM,
+    refusal: "Only an issued bill can be marked paid",
+    status: "paid"
+  })
+}
+
+/** The fees for this month could not be collected. The amount stays on the record. */
+export function markInvoiceUncollectible(
+  state: LogLoadsDatabaseState,
+  input: InvoiceSettlementInput,
+  at = nowIso()
+): InvoiceSettlementResult {
+  return settleInvoice(state, input, at, {
+    action: "host_invoice_uncollectible",
+    allowedFrom: INVOICE_CAN_BE_UNCOLLECTIBLE_FROM,
+    refusal: "Only an issued, unpaid bill can be written off",
+    status: "uncollectible"
+  })
+}
+
+// ── What the host reads ───────────────────────────────────────────────────────
+
+export interface HostFeeSummaryInput {
+  actorUserId?: string
+  organizationId?: string
+}
+
+export interface HostFeeSummary {
+  organizationId: string
+  /**
+   * The CURRENT rate, for quoting work that has not happened yet. It is not the
+   * rate of any fee below — each of those carries its own frozen rate — and it is
+   * named `current` so no surface can present it as one.
+   */
+  currentFeeBps: number
+  /** The month now accruing. */
+  currentPeriod: InvoicePeriod
+  /**
+   * Everything accrued and not yet on a bill, whatever month it happened in. A fee
+   * from a month that was never closed is still owed, so scoping this to the
+   * current period would under-report what the host owes.
+   */
+  accruedCents: number
+  accruedEventCount: number
+  /** The slice of `accruedCents` that occurred inside the current period. */
+  currentPeriodAccruedCents: number
+  currentPeriodEventCount: number
+  /** The most recent bill by period, or null if this host has never been billed. */
+  lastInvoice: HostInvoice | null
+}
+
+/**
+ * What a host owes and what they were last billed.
+ *
+ * Reading a host's own money requires ACTIVE MEMBERSHIP of that host, which is why
+ * this takes an actor rather than a bare organization id like the operating reads
+ * do: an organization id alone in a client-forwarded call is a way to read any
+ * host's revenue. `view_network` is the action every member role holds, so it is
+ * how "a member, any member" is expressed against the role matrix.
+ *
+ * Totals come from `invoiceSubtotalCents`, the same function that produces the
+ * bill. A summary that added the fees up its own way is a number that can disagree
+ * with the invoice the host receives.
+ */
+export function hostFeeSummary(
+  state: LogLoadsDatabaseState,
+  input: HostFeeSummaryInput,
+  at = nowIso()
+): HostFeeSummary {
+  const context = billingContext(state, input, "view_network")
+  const currentPeriod = invoicePeriodFor(at)
+  const accrued = feeEventsForOrganization(state, context.organizationId).filter(
+    (event) => event.status === "accrued"
+  )
+  const currentPeriodAccrued = accrued.filter((event) => withinPeriod(event.occurredAt, currentPeriod))
+  const lastInvoice =
+    state.hostInvoices
+      .filter((invoice) => invoice.organizationId === context.organizationId)
+      .sort((left, right) => Date.parse(right.periodStart) - Date.parse(left.periodStart))[0] ?? null
+
+  return {
+    accruedCents: invoiceSubtotalCents(accrued),
+    accruedEventCount: accrued.length,
+    currentFeeBps: PLATFORM_FEE_BPS,
+    currentPeriod,
+    currentPeriodAccruedCents: invoiceSubtotalCents(currentPeriodAccrued),
+    currentPeriodEventCount: currentPeriodAccrued.length,
+    lastInvoice,
+    organizationId: context.organizationId
+  }
+}

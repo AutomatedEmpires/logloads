@@ -147,6 +147,7 @@ function pushLoad(
       dailyTruckCountNeeded: 2,
       dispatcherContact: { email: null, name: "Dana Dispatch", phone: "555-0200" },
       dispatcherProfileId: FILLER.dispatcherProfile,
+      driverPayCents: 52_500,
       dropoffMillId: FILLER.mill,
       id: input.id,
       loadDate: "2026-07-22",

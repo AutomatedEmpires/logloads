@@ -10,6 +10,8 @@ import type {
   EquipmentCombination,
   FutureAvailability,
   HaulRoute,
+  HostBillingProfile,
+  HostInvoice,
   Landing,
   LoaderProfile,
   LoggingCompany,
@@ -23,6 +25,7 @@ import type {
   Organization,
   OrganizationInvitation,
   OrganizationMembership,
+  PlatformFeeEvent,
   PrivateNetworkRelationship,
   Rate,
   RichLandingDetails,
@@ -74,6 +77,15 @@ export interface LogLoadsDatabaseState {
   tripReviews: TripReview[]
   verificationRecords: VerificationRecord[]
   entitlements: Entitlement[]
+  /**
+   * Platform fee billing, in lifecycle order: whether the host can be charged,
+   * what each completed load accrued, and the monthly bill those accruals land on.
+   * Separate from `entitlements`, which is the Dispatch Pro software subscription —
+   * collapsing them would let a plan webhook mutate a per-load charge.
+   */
+  hostBillingProfiles: HostBillingProfile[]
+  platformFeeEvents: PlatformFeeEvent[]
+  hostInvoices: HostInvoice[]
   operationalNotices: OperationalNotice[]
   notifications: Notification[]
   supportRequests: SupportRequest[]

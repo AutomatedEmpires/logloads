@@ -10,6 +10,7 @@ import {
   equipmentCombinationSchema,
   futureAvailabilitySchema,
   haulRouteSchema,
+  hostBillingProfileSchema,
   landingSchema,
   loaderProfileSchema,
   loggingCompanySchema,
@@ -47,6 +48,7 @@ import {
   type EquipmentCombination,
   type FutureAvailability,
   type HaulRoute,
+  type HostBillingProfile,
   type Landing,
   type LoaderProfile,
   type LoggingCompany,
@@ -2813,6 +2815,49 @@ export const seedOperationalNotices: OperationalNotice[] = parseMany(operational
   }
 ])
 
+/**
+ * A card on file for both host organizations that post the seeded loads.
+ *
+ * Publishing requires an attached payment method, so without these the entire
+ * seeded bench — every e2e journey and service test that posts a load — would be
+ * blocked by the billing gate rather than by anything it was written to prove.
+ *
+ * The Stripe ids are obviously synthetic and belong to no Stripe account. They are
+ * references to objects Stripe would hold, not card data: the only card details
+ * stored anywhere here are a brand and four digits, which is all a host needs to
+ * recognise which card is on file.
+ */
+export const seedHostBillingProfiles: HostBillingProfile[] = parseMany(hostBillingProfileSchema, [
+  {
+    id: "34343434-3434-4434-8434-343434343431",
+    organizationId: "33333333-3333-4333-8333-333333333331",
+    stripeCustomerId: "cus_seed_north_pine",
+    defaultPaymentMethodId: "pm_seed_north_pine",
+    paymentMethodBrand: "visa",
+    paymentMethodLast4: "4242",
+    status: "attached",
+    attachedAt: timestamps.created,
+    lastFailureAt: null,
+    lastFailureReason: null,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "34343434-3434-4434-8434-343434343432",
+    organizationId: "33333333-3333-4333-8333-333333333332",
+    stripeCustomerId: "cus_seed_summit_ridge",
+    defaultPaymentMethodId: "pm_seed_summit_ridge",
+    paymentMethodBrand: "mastercard",
+    paymentMethodLast4: "4444",
+    status: "attached",
+    attachedAt: timestamps.created,
+    lastFailureAt: null,
+    lastFailureReason: null,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  }
+])
+
 export const seedDatabaseState: LogLoadsDatabaseState = {
   profiles: seedProfiles,
   companies: seedCompanies,
@@ -2847,6 +2892,17 @@ export const seedDatabaseState: LogLoadsDatabaseState = {
   tripReviews: seedTripReviews,
   verificationRecords: seedVerificationRecords,
   entitlements: seedEntitlements,
+  hostBillingProfiles: seedHostBillingProfiles,
+  // The fee ledger and the invoice book start EMPTY, deliberately.
+  //
+  // No host has ever been charged by LogLoads. Seeding fee events for the loads
+  // that this bench shows as completed would put revenue on a demo screen that
+  // nobody was billed for and no invoice was raised against — a fabricated
+  // financial record, which is exactly the class of claim this product refuses to
+  // make anywhere else. An empty ledger is the true one, and the accrual path is
+  // what fills it.
+  platformFeeEvents: [],
+  hostInvoices: [],
   operationalNotices: seedOperationalNotices,
   notifications: seedNotifications,
   supportRequests: [],

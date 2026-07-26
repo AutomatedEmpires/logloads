@@ -58,6 +58,7 @@ import {
   requiredCompletionEvidence
 } from "./haul-completion"
 import { createLoadPosting, parsePublishModes, provisionLoadCapacity } from "./loads"
+import { accruePlatformFee } from "./platform-fees"
 import {
   buildAssignmentRoutePack,
   findAssignmentRoutePack,
@@ -2172,13 +2173,49 @@ export function settleHaulCompletion(
         timestamp
       )
 
+  // THE FEE TRIGGER. Both parties have now agreed the load moved, which is the
+  // only event that makes a charge defensible if the host later contests it — a
+  // unilateral status flip is one party's claim.
+  //
+  // Deliberately inside this mutation, after confirmation has written
+  // completionStatus onto the draft: accruePlatformFee looks for a CONFIRMED trip,
+  // so ordering is load-bearing. Being in the same draft is what makes the fee and
+  // the confirmation atomic under the compare-and-swap — a fee that could be
+  // written by a second call is a fee that can be written twice.
+  //
+  // A refusal never blocks the settlement. Confirming a delivery is an operational
+  // act between a host and a driver; if LogLoads cannot bill for it — a legacy
+  // posting that states no driver pay, for instance — that is LogLoads' problem to
+  // resolve, not a reason to refuse two parties their record of the haul.
+  const fee = input.decision === "confirm"
+    ? accruePlatformFee(state, { assignmentId: assignment.id }, timestamp)
+    : null
+
   insertAuditEvent(
     state,
     context.actorUserId,
     "trip",
     trip.id,
     input.decision === "confirm" ? "haul_completion_confirmed" : "haul_completion_disputed",
-    { assignmentId: assignment.id, previousStatus: result.previousStatus, reason: input.reason ?? null }
+    {
+      assignmentId: assignment.id,
+      previousStatus: result.previousStatus,
+      reason: input.reason ?? null,
+      // What the platform charged, recorded against the same event the host and
+      // driver settled, so an invoice line can always be traced back to the
+      // moment both parties agreed rather than to a later batch job.
+      ...(fee
+        ? {
+            platformFeeCents: fee.outcome === "accrued" || fee.outcome === "already_accrued"
+              ? fee.event.feeCents
+              : null,
+            platformFeeEventId: fee.outcome === "accrued" || fee.outcome === "already_accrued"
+              ? fee.event.id
+              : null,
+            platformFeeOutcome: fee.outcome
+          }
+        : {})
+    }
   )
 
   const driver = state.driverProfiles.find((profile) => profile.id === assignment.driverProfileId)
