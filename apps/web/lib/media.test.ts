@@ -34,6 +34,11 @@ import type { SessionActor } from "./session"
 
 const configuredMediaEnvironment = {
   LOGLOADS_CLOUDINARY_TENANCY: "dedicated",
+  // The gate requires a separately declared expected cloud name that
+  // CLOUDINARY_CLOUD_NAME must equal exactly, so a complete configuration states
+  // the cloud twice. Omitting it here would make every case below fail closed for
+  // that reason instead of the reason it names.
+  LOGLOADS_CLOUDINARY_EXPECTED_CLOUD: "test-cloud",
   CLOUDINARY_CLOUD_NAME: "test-cloud",
   CLOUDINARY_API_KEY: "test-key",
   CLOUDINARY_API_SECRET: "test-secret"
@@ -209,7 +214,21 @@ describe("dedicated media tenancy gate", () => {
     ["ambient OAuth token", { CLOUDINARY_OAUTH_TOKEN: "ambient-token" }],
     ["ambient private CDN", { CLOUDINARY_PRIVATE_CDN: "true" }],
     ["ambient delivery host", { CLOUDINARY_SECURE_DISTRIBUTION: "media.example.test" }],
-    ["future ambient option", { CLOUDINARY_FUTURE_SDK_OPTION: "enabled" }]
+    ["future ambient option", { CLOUDINARY_FUTURE_SDK_OPTION: "enabled" }],
+    // Tenancy identity, checked rather than attested. These carry a valid marker
+    // and complete credentials — the only thing wrong is which account the values
+    // point at, which is exactly the failure that used to sail through and write
+    // a driver's licence into another product's Cloudinary account.
+    ["missing expected cloud name", { LOGLOADS_CLOUDINARY_EXPECTED_CLOUD: undefined }],
+    ["blank expected cloud name", { LOGLOADS_CLOUDINARY_EXPECTED_CLOUD: "  " }],
+    ["cloud name disagreeing with the expected one", { CLOUDINARY_CLOUD_NAME: "other-cloud" }],
+    [
+      "Explore & Earn's cloud declared as the expected one",
+      {
+        CLOUDINARY_CLOUD_NAME: "dwiwyt9vi",
+        LOGLOADS_CLOUDINARY_EXPECTED_CLOUD: "dwiwyt9vi"
+      }
+    ]
   ]
 
   it.each(invalidEnvironments)("fails closed before every provider adapter call when %s", async (_name, overrides) => {

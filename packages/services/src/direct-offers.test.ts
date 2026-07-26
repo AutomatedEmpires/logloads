@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 
+import { driverCredentialSchema } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 
 import { createLogLoadsServices } from "./index"
@@ -16,6 +17,8 @@ const SECOND_COMBINATION_ID = "18181818-1818-4818-8818-181818181812"
 const FIRST_SLOT_ID = "dddddddd-dddd-4ddd-8ddd-ddddddddddd4"
 const SECOND_SLOT_ID = "d4d4d4d4-d4d4-4d4d-8d4d-d4d4d4d4d4d4"
 const THIRD_SLOT_ID = "d5d5d5d5-d5d5-4d5d-8d5d-d5d5d5d5d5d5"
+/** The one seeded driver whose credential vault is complete and current. */
+const CLEARED_DRIVER_ID = "44444444-4444-4444-8444-444444444441"
 
 function directOfferServices() {
   const services = createLogLoadsServices(createInMemoryDatabase())
@@ -61,6 +64,33 @@ function makeSecondRigAvailable(services: ReturnType<typeof directOfferServices>
   combination.trailerTypes = ["pole_trailer"]
   truck.truckType = "log_truck"
   trailer.trailerType = "pole_trailer"
+
+  // The second rig's driver also needs a complete vault. No driver may accept any
+  // load without insurance, CDL, truck and trailer on file and current, and the
+  // seed deliberately clears only Hank — every other seeded driver is blocked so
+  // the bench never fabricates a safety claim. These tests target offer lifecycle
+  // integrity, not the credential rule, so the fixture clears this driver by
+  // copying the cleared driver's records rather than inventing new ones.
+  const secondDriverProfileId = combination.assignedDriverProfileId
+
+  if (!secondDriverProfileId) throw new Error("The second direct-offer test rig has no driver")
+
+  const clearedVault = services.state.driverCredentials.filter(
+    (candidate) => candidate.driverProfileId === CLEARED_DRIVER_ID
+  )
+
+  services.state.driverCredentials = [
+    ...services.state.driverCredentials.filter(
+      (candidate) => candidate.driverProfileId !== secondDriverProfileId
+    ),
+    ...clearedVault.map((candidate, index) => driverCredentialSchema.parse({
+      ...candidate,
+      driverProfileId: secondDriverProfileId,
+      id: `c9c9c9c9-c9c9-4c9c-8c9c-c9c9c9c9c90${index + 1}`,
+      supersededByCredentialId: null
+    }))
+  ]
+
   services.state.truckSlots.push({
     ...sourceSlot,
     capacity: 1,

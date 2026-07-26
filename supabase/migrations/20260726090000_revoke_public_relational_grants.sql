@@ -47,10 +47,19 @@ begin
     from pg_class c
     join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'public'
+      -- Ordinary and partitioned tables only. PostGIS also installs two VIEWS in
+      -- this schema, public.geography_columns and public.geometry_columns, which
+      -- carry the same anon/authenticated grants and are deliberately NOT covered:
+      -- they are catalog projections over pg_attribute holding no application data,
+      -- and a write against them is meaningless rather than dangerous. Verified
+      -- after applying this migration that `has_table_privilege` reports exactly
+      -- ONE remaining writable relation for anon — public.spatial_ref_sys, below.
       and c.relkind in ('r', 'p')
       -- Extension-owned relations cannot be altered by the migration role.
       -- 20260707050000 already documents public.spatial_ref_sys (PostGIS) as an
       -- accepted exception; it holds coordinate-reference definitions, no app data.
+      -- Confirmed empirically: it is the one table in this schema owned by
+      -- supabase_admin rather than postgres, so the revoke cannot reach it.
       and not exists (
         select 1
         from pg_depend d

@@ -10,6 +10,12 @@ import {
   type HostInvoiceStatus
 } from "./billing-model"
 import {
+  credentialKindSchema,
+  credentialReviewDecisionSchema,
+  credentialReviewerSchema,
+  credentialStatusSchema
+} from "./credentials"
+import {
   assignmentStatusSchema,
   availabilityStatusSchema,
   loadStatusSchema,
@@ -29,6 +35,20 @@ import { isValidTimeRange } from "./helpers/date-time"
 const uuidSchema = z.string().uuid()
 const timestampSchema = z.string().datetime()
 const optionalTimestampSchema = timestampSchema.optional().nullable()
+
+/**
+ * A nullable instant whose PARSED type cannot be `undefined`.
+ *
+ * `optionalTimestampSchema` parses to `string | null | undefined`, which forces
+ * every reader to handle three spellings of "not set". The credential gate takes
+ * `string | null`, so these fields default an absent key to null and give the
+ * pure module one thing to check instead of two.
+ */
+const nullableInstantSchema = timestampSchema.optional().nullable().default(null)
+
+/** Free text a driver or reviewer wrote, absent-as-null on the same terms. */
+const nullableTextSchema = (max: number) =>
+  z.string().trim().min(1).max(max).optional().nullable().default(null)
 
 export const coordinatesSchema = z.object({
   lat: z.number().min(-90).max(90),
@@ -617,6 +637,216 @@ export const hostBillingProfileSchema = z
     }
   )
 
+/**
+ * ── The driver credential vault ───────────────────────────────────────────────
+ *
+ * Two persisted facts: what a driver has on file, and every decision ever taken
+ * on it. The rules about what those records MEAN live in `credentials.ts`; what
+ * lives here is what a stored row must look like to be readable at all.
+ *
+ * The refinements below are the only integrity these collections get. The
+ * operating state is one JSONB document with no unique index, no foreign key and
+ * no CHECK constraint, so a row contract is the sole place an invariant about a
+ * safety record can be enforced at the storage boundary: a row that breaks one is
+ * withheld from runtime state and reported, rather than read as clearance to haul.
+ *
+ * NOTE ON THE IMAGES. A credential document is the driver's personal
+ * identification. Nothing in these rows is host-visible by default — the host
+ * receives only what `hostVisibleCredential` returns, which is a fixed four-field
+ * shape that has no expression for an image of a licence or a certificate.
+ */
+
+export const driverCredentialSchema = z
+  .object({
+    id: uuidSchema,
+    driverProfileId: uuidSchema,
+    kind: credentialKindSchema,
+    status: credentialStatusSchema,
+    /**
+     * The stored document, as the server read it back from the media provider
+     * after upload. null until bytes actually exist — a credential record can be
+     * created the moment a driver starts, and media in this product is
+     * deliberately fail-closed until LogLoads has a media account of its own.
+     *
+     * This is the field `credentialIsValidAt` requires: a record can name an
+     * issuer and a policy number and reference nothing at all.
+     */
+    documentMedia: mediaReferenceSchema.optional().nullable().default(null),
+    /** Who issued it — the insurer, the licensing state. As printed. */
+    issuer: nullableTextSchema(200),
+    /**
+     * The policy or licence number. SENSITIVE: it identifies the driver to the
+     * issuer, so it stays inside the vault and inside the review trail. It has no
+     * field in the host-visible shape and must never be added to one.
+     */
+    identifier: nullableTextSchema(120),
+    /**
+     * Instants, not calendar dates. A document prints a date; whoever records it
+     * resolves that date to the instant it takes effect or lapses, so this
+     * package never has to guess a time zone or a time of day — and the gate's
+     * "strictly after" comparison is exact rather than approximately a day.
+     */
+    issuedOn: nullableInstantSchema,
+    expiresOn: nullableInstantSchema,
+    submittedAt: timestampSchema,
+    reviewedAt: nullableInstantSchema,
+    /**
+     * What the driver is told, in plain language. Driver-facing by contract, so
+     * a reviewer cannot leave a note here that reads as internal shorthand and
+     * then be surprised the driver saw it.
+     */
+    reviewNotes: nullableTextSchema(1000),
+    /** What MORE the driver must supply. Required when more_info_required. */
+    requestedEvidence: z.array(z.string().trim().min(1).max(200)).default([]),
+    /**
+     * The renewal that replaced this record. A renewal is a NEW row: mutating an
+     * approved credential in place would erase the evidence of what was
+     * approved, when, and on what basis, which is the one thing a safety record
+     * must keep.
+     */
+    supersededByCredentialId: uuidSchema.optional().nullable().default(null),
+    createdAt: timestampSchema,
+    updatedAt: timestampSchema
+  })
+  // An approved credential MUST have a document. Enforced twice on purpose: the
+  // gate refuses to count one (see credentialIsValidAt) and storage refuses to
+  // hold one. The gate is what protects acceptance; this is what stops the row
+  // from existing to be misread by anything that forgot to ask the gate.
+  .refine((value) => value.status !== "approved" || Boolean(value.documentMedia), {
+    message: "An approved credential must have the document it approved",
+    path: ["documentMedia"]
+  })
+  // A decision is only a decision if it says when it was made. Without this,
+  // "why was I refused, and when" has no answer on the credential itself.
+  .refine((value) => value.status === "pending" || Boolean(value.reviewedAt), {
+    message: "A reviewed credential must record when it was reviewed",
+    path: ["reviewedAt"]
+  })
+  .refine((value) => value.status !== "pending" || !value.reviewedAt, {
+    message: "A credential nobody has reviewed cannot carry a review time",
+    path: ["reviewedAt"]
+  })
+  // "We need more from you" that does not say what is a dead end for the driver.
+  .refine(
+    (value) => value.status !== "more_info_required" || value.requestedEvidence.length > 0,
+    {
+      message: "A credential asking for more evidence must say what evidence",
+      path: ["requestedEvidence"]
+    }
+  )
+  // An approved credential with an outstanding request contradicts itself, and
+  // the contradiction resolves in the driver's favour on every screen that reads
+  // status while ignoring the list.
+  .refine((value) => value.status !== "approved" || value.requestedEvidence.length === 0, {
+    message: "An approved credential has nothing outstanding",
+    path: ["requestedEvidence"]
+  })
+  // Compared as instants: the same moment has several valid ISO spellings, and a
+  // string comparison would reject a legitimate row written by a different writer.
+  .refine(
+    (value) =>
+      !value.issuedOn ||
+      !value.expiresOn ||
+      Date.parse(value.expiresOn) > Date.parse(value.issuedOn),
+    {
+      message: "A credential cannot lapse before it was issued",
+      path: ["expiresOn"]
+    }
+  )
+  .refine((value) => value.supersededByCredentialId !== value.id, {
+    message: "A credential cannot supersede itself",
+    path: ["supersededByCredentialId"]
+  })
+
+/**
+ * What a reviewer read off the document.
+ *
+ * Strings as PRINTED, not normalized values. An extractor that had to emit an
+ * ISO instant for an expiry it could only half-read would invent one, and the
+ * invented date is exactly what a driver would later be refused over. The
+ * credential row carries the platform's normalized instants; this carries what
+ * was actually on the page.
+ *
+ * Every field is nullable because a partial read is the honest outcome for a dark
+ * photo, and `detectedKind` is here because submitting a CDL as an insurance
+ * certificate is a real failure the reviewer has to be able to name.
+ */
+export const credentialExtractionSchema = z
+  .object({
+    detectedKind: credentialKindSchema.optional().nullable().default(null),
+    holderName: nullableTextSchema(200),
+    issuer: nullableTextSchema(200),
+    identifier: nullableTextSchema(120),
+    issuedOn: nullableTextSchema(60),
+    expiresOn: nullableTextSchema(60),
+    unitNumber: nullableTextSchema(60),
+    plateNumber: nullableTextSchema(60)
+  })
+  .default({})
+
+/**
+ * One decision, kept forever.
+ *
+ * APPEND-ONLY. A changed decision is a NEW row, never an edit of this one. That
+ * is what makes "why was I refused in March" answerable in June, and it is
+ * enforced below by requiring `updatedAt` to be the same instant as `createdAt`:
+ * a row that was rewritten fails its own contract, is withheld from runtime state
+ * and is reported, instead of quietly presenting a rewritten history as the
+ * original.
+ */
+export const credentialReviewSchema = z
+  .object({
+    id: uuidSchema,
+    credentialId: uuidSchema,
+    /** Denormalized so a driver's own review history is readable without a join. */
+    driverProfileId: uuidSchema,
+    decision: credentialReviewDecisionSchema,
+    decidedBy: credentialReviewerSchema,
+    /** Which model decided. Required for an AI decision — see the refinement. */
+    model: nullableTextSchema(120),
+    /** The model's own confidence, 0–1. Never a threshold: the decision is the decision. */
+    confidence: z.number().min(0).max(1).optional().nullable().default(null),
+    /** Machine-readable reasons ("expiry_unreadable", "kind_mismatch"). */
+    findings: z.array(z.string().trim().min(1).max(300)).default([]),
+    /** The same reasons in plain language. This is what the driver reads. */
+    rationale: z.string().trim().min(1).max(2000),
+    requestedEvidence: z.array(z.string().trim().min(1).max(200)).default([]),
+    extracted: credentialExtractionSchema,
+    decidedAt: timestampSchema,
+    createdAt: timestampSchema,
+    updatedAt: timestampSchema
+  })
+  // An AI decision that cannot name the model that made it is not auditable, and
+  // "the platform refused you" with nothing behind it is the claim this product
+  // refuses to make anywhere else.
+  .refine((value) => value.decidedBy !== "ai" || Boolean(value.model), {
+    message: "An AI decision must name the model that made it",
+    path: ["model"]
+  })
+  // The converse matters just as much: a human decision carrying a model and a
+  // confidence would read on every surface as a machine verdict.
+  .refine((value) => value.decidedBy === "ai" || (!value.model && value.confidence === null), {
+    message: "Only an AI decision carries a model and a confidence",
+    path: ["decidedBy"]
+  })
+  .refine(
+    (value) => value.decision !== "more_info_required" || value.requestedEvidence.length > 0,
+    {
+      message: "A request for more evidence must say what evidence",
+      path: ["requestedEvidence"]
+    }
+  )
+  .refine((value) => value.decision !== "approved" || value.requestedEvidence.length === 0, {
+    message: "An approval leaves nothing outstanding",
+    path: ["requestedEvidence"]
+  })
+  // Instants, not strings: the same moment has several valid ISO spellings, so a
+  // string equality check here would reject honest rows and prove nothing.
+  .refine((value) => Date.parse(value.updatedAt) === Date.parse(value.createdAt), {
+    message: "A review is append-only; a changed decision is a new review",
+    path: ["updatedAt"]
+  })
+
 export type User = z.infer<typeof userSchema>
 export type DriverProfile = z.infer<typeof driverProfileSchema>
 export type MediaReference = z.infer<typeof mediaReferenceSchema>
@@ -637,6 +867,9 @@ export type Notification = z.infer<typeof notificationSchema>
 export type MessageThread = z.infer<typeof messageThreadSchema>
 export type MessageEvent = z.infer<typeof messageEventSchema>
 export type AuditEvent = z.infer<typeof auditEventSchema>
+export type DriverCredential = z.infer<typeof driverCredentialSchema>
+export type CredentialExtraction = z.infer<typeof credentialExtractionSchema>
+export type CredentialReview = z.infer<typeof credentialReviewSchema>
 export type PlatformFeeEvent = z.infer<typeof platformFeeEventSchema>
 export type HostInvoice = z.infer<typeof hostInvoiceSchema>
 export type HostBillingProfile = z.infer<typeof hostBillingProfileSchema>

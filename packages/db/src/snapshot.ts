@@ -6,9 +6,11 @@ import {
   assignmentSchema,
   auditEventSchema,
   availabilityWindowSchema,
+  credentialReviewSchema,
   destinationFacilitySchema,
   directOfferSchema,
   dispatcherProfileSchema,
+  driverCredentialSchema,
   driverProfileSchema,
   entitlementSchema,
   equipmentCombinationSchema,
@@ -87,9 +89,11 @@ const ROW_VALIDATORS: Record<LogLoadsTableName, RowValidator> = {
   auditEvents: auditEventSchema,
   availabilityWindows: availabilityWindowSchema,
   companies: loggingCompanySchema,
+  credentialReviews: credentialReviewSchema,
   destinationFacilities: destinationFacilitySchema,
   directOffers: directOfferSchema,
   dispatcherProfiles: dispatcherProfileSchema,
+  driverCredentials: driverCredentialSchema,
   driverProfiles: driverProfileSchema,
   entitlements: entitlementSchema,
   equipmentCombinations: equipmentCombinationSchema,
@@ -164,9 +168,22 @@ const ROW_REFERENCES: Partial<Record<LogLoadsTableName, readonly RowReference[]>
     { field: "driverProfileId", target: "driverProfiles" },
     { field: "truckProfileId", target: "truckProfiles" }
   ],
+  // A review is the answer to "why was I refused". If the credential it decided is
+  // gone the answer no longer attaches to anything, which is the one thing this
+  // trail exists to prevent.
+  credentialReviews: [
+    { field: "credentialId", target: "driverCredentials" },
+    { field: "driverProfileId", target: "driverProfiles" }
+  ],
   destinationFacilities: [{ field: "millId", target: "mills" }],
   directOffers: [{ field: "loadPostingId", target: "loadPostings" }],
   dispatcherProfiles: [{ field: "userId", target: "profiles" }],
+  // supersededByCredentialId points inside this same collection: a renewal chain
+  // whose earlier link is gone would present a superseded record as current.
+  driverCredentials: [
+    { field: "driverProfileId", target: "driverProfiles" },
+    { field: "supersededByCredentialId", target: "driverCredentials" }
+  ],
   driverProfiles: [{ field: "userId", target: "profiles" }],
   equipmentCombinations: [
     { field: "organizationId", target: "organizations" },
@@ -375,9 +392,9 @@ function publishReport(report: OperatingStateReport): void {
  * introduced the tripReviews collection. supportRequests is additive and
  * schema-v2-compatible (its SQL migration applies the same backfill).
  * tripInspections is additive and RUNTIME-ONLY — no SQL migration exists for it;
- * this guard is the only backfill. The three platform-fee billing collections are
- * additive and RUNTIME-ONLY on the same terms. Old and new deployments can overlap
- * during rollout and rollback.
+ * this guard is the only backfill. The three platform-fee billing collections and
+ * the two driver-credential collections are additive and RUNTIME-ONLY on the same
+ * terms. Old and new deployments can overlap during rollout and rollback.
  */
 function backfillStateSnapshot(
   value: Partial<LogLoadsDatabaseState>
@@ -416,6 +433,33 @@ function backfillStateSnapshot(
 
   if (candidate.hostInvoices === undefined) {
     candidate.hostInvoices = []
+  }
+
+  // The driver credential vault. Additive and RUNTIME-ONLY on the same terms: a
+  // row validator puts a collection into REQUIRED_TABLES, and the canonical
+  // document in production predates both of these, so without this guard the very
+  // first read after deploy would refuse the whole document and every request
+  // would fail.
+  //
+  // Empty is also the only honest default. An absent vault means nobody has
+  // submitted anything — never that a credential was approved. The consequence is
+  // deliberate and load-bearing: on the first read after deploy every existing
+  // driver holds nothing, and is therefore blocked from accepting a load until
+  // they submit and are approved. Backfilling approvals to keep the platform
+  // moving would fabricate a safety claim about real people's insurance.
+  //
+  // No FIELD-level normalization is needed for these two, unlike routePacks or
+  // tripsV2 below: rows are kept by identity rather than by parser output, so a
+  // stored row missing a field would keep missing it — but a brand-new collection
+  // has no older writer, so every row present was written by a build that already
+  // had every field. A field ADDED to either collection later will need an entry
+  // here for exactly that reason.
+  if (candidate.driverCredentials === undefined) {
+    candidate.driverCredentials = []
+  }
+
+  if (candidate.credentialReviews === undefined) {
+    candidate.credentialReviews = []
   }
 
   // Driver profiles predate the featured-rig flag; absent means not featured.

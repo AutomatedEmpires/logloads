@@ -25,8 +25,10 @@ import {
   truckSlotSchema,
   type Assignment,
   type AssignmentStatus,
+  type CredentialKind,
   type DeliveredQuantity,
   type DirectOffer,
+  type DriverCredential,
   type HaulException,
   type FutureAvailability,
   type LoadPosting,
@@ -48,6 +50,7 @@ import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { declineAssignment, requestAssignment } from "./assignments"
 import { upsertAvailabilityWindow } from "./availability"
+import { driverCredentialGate, hostCredentialSummary } from "./driver-credentials"
 import {
   applyHaulCompletionConfirmation,
   applyHaulCompletionDispute,
@@ -692,6 +695,155 @@ function findPostingDispatcher(state: LogLoadsDatabaseState, load: LoadPosting) 
   )
 }
 
+/**
+ * ── The credential gate on taking work ────────────────────────────────────────
+ *
+ * The founder made four records mandatory before a driver may accept ANY load —
+ * insurance, CDL, truck, trailer — and made the review decision BINDING, so
+ * `pending`, `denied` and `more_info_required` all block exactly as hard as an
+ * empty vault, and an expired record stops counting.
+ *
+ * `driverCredentialGate` is the sole authority on whether the vault is complete;
+ * nothing below re-decides validity. What lives here is the two things the
+ * operating network owes the parties: a refusal a driver can act on, and the
+ * summary the host keeps.
+ */
+
+/**
+ * Why one mandatory kind is not satisfied, in words a driver can act on.
+ *
+ * PRESENTATION ONLY. The gate has already decided this kind is not satisfied;
+ * this explains a refusal rather than making one, so it can neither widen nor
+ * narrow what counts as valid.
+ *
+ * EVERY applicable fact is reported, not the first one found. A driver whose
+ * certificate lapsed in January and whose renewal is still in review is told both
+ * — "expired 31 Jan; awaiting review" says the cover is gone AND that there is
+ * nothing further for them to send, and either half alone would send them to do
+ * the wrong thing.
+ */
+function credentialBlockReason(
+  held: readonly DriverCredential[],
+  kind: CredentialKind,
+  at: string
+): string {
+  const ofKind = held.filter((credential) => credential.kind === kind)
+
+  if (ofKind.length === 0) {
+    return "not submitted"
+  }
+
+  let lapsedIso: string | null = null
+  let lapsedAt = Number.NEGATIVE_INFINITY
+  let moreInfoRequested = false
+  let denied = false
+  let awaitingReview = false
+
+  for (const credential of ofKind) {
+    if (credential.status === "more_info_required") moreInfoRequested = true
+    if (credential.status === "denied") denied = true
+    if (credential.status === "pending") awaitingReview = true
+
+    // An approved record the gate still refuses is either missing its document or
+    // carries an expiry nothing can read. Neither is named: the row does not say
+    // which, and a message that guessed would send the driver to fix the wrong
+    // thing. They fall through to the closing return instead.
+    if (credential.status !== "approved" || !credential.documentMedia || !credential.expiresOn) {
+      continue
+    }
+
+    const expiresAt = Date.parse(credential.expiresOn)
+
+    if (Number.isNaN(expiresAt)) {
+      continue
+    }
+
+    // Compared as instants, never as strings: the same moment has several valid
+    // ISO spellings, so a lexicographic "latest" would pick the wrong record.
+    if (expiresAt > lapsedAt) {
+      lapsedAt = expiresAt
+      lapsedIso = credential.expiresOn
+    }
+  }
+
+  const reasons: string[] = []
+
+  // The furthest expiry among the driver's approved records of this kind. The
+  // gate refused the kind, so that instant has already passed — naming it tells
+  // the driver exactly which renewal they owe. Guarded against `at` anyway: a
+  // record still in date would mean the gate and this function disagree, and
+  // saying "expired" about a live certificate would be the worse of the two lies.
+  if (lapsedIso !== null && lapsedAt <= Date.parse(at)) {
+    reasons.push(`expired ${lapsedIso}`)
+  }
+
+  if (moreInfoRequested) reasons.push("more evidence requested")
+  if (denied) reasons.push("not approved")
+  if (awaitingReview) reasons.push("awaiting review")
+
+  // Reached when a record is on file that the gate refuses for a reason the row
+  // cannot state. Says exactly that rather than inventing a cause.
+  return reasons.length > 0 ? reasons.join("; ") : "on file but not currently valid"
+}
+
+/**
+ * Refuses a driver whose vault is not complete and current, naming every kind
+ * and why.
+ *
+ * A bare "not eligible" is useless to somebody sitting in a truck, so the
+ * message enumerates the kinds in schema order with a reason each. Written as an
+ * early return and an explicit throw rather than `assertCondition` so the reason
+ * strings are never built on the path where the driver is cleared.
+ *
+ * Kinds are named with the schema's own values (`insurance`, `cdl`, `truck`,
+ * `trailer`) rather than a hand-written label map, so a kind added to the
+ * contract appears here without anybody remembering to translate it.
+ */
+function assertDriverCredentialsAllowAcceptance(
+  state: LogLoadsDatabaseState,
+  driverProfileId: string,
+  at: string
+): void {
+  const gate = driverCredentialGate(state, driverProfileId, at)
+
+  if (gate.satisfied) {
+    return
+  }
+
+  const held = state.driverCredentials.filter(
+    (credential) => credential.driverProfileId === driverProfileId
+  )
+  const detail = gate.missing
+    .map((kind) => `${kind} (${credentialBlockReason(held, kind, at)})`)
+    .join(", ")
+
+  throw new Error(
+    `This driver cannot take a load until their credential vault is complete and current: ${detail}`
+  )
+}
+
+/**
+ * What travels to the host with the acceptance.
+ *
+ * `hostCredentialSummary` is the projection — status, expiry and the truck and
+ * trailer photos, built field by field through `hostVisibleCredential`, which has
+ * no expression for the CDL image, the insurance certificate, the policy or
+ * licence number or the review notes. It is reused rather than rebuilt here for
+ * the same reason the gate is: a second host-facing projection is a second place
+ * to leak from, and the two would drift the first time one was edited.
+ *
+ * `checkedAt` is added because the snapshot's whole value is being a record of
+ * what was true AT ACCEPTANCE. Without the instant, a later reader cannot tell
+ * whether an expiry printed here was in the future when the host agreed.
+ */
+function acceptanceCredentialSummary(
+  state: LogLoadsDatabaseState,
+  driverProfileId: string,
+  at: string
+) {
+  return { ...hostCredentialSummary(state, driverProfileId, at), checkedAt: at }
+}
+
 function requestCapacityWithPolicyInternal(
   state: LogLoadsDatabaseState,
   input: CapacityRequestInput,
@@ -791,6 +943,24 @@ function requestCapacityWithPolicyInternal(
     compatibility.eligibility !== "ineligible",
     `Equipment is not eligible for this load: ${compatibility.hardFailures[0] ?? "compatibility failed"}`
   )
+
+  // Deliberately last of the assertions and deliberately BEFORE requestAssignment.
+  //
+  // Last, because the equipment and haul-window messages above are the ones a
+  // dispatcher already reads for a request that fails several rules at once, and
+  // moving the vault message in front of them would change what existing callers
+  // are told about an unrelated failure.
+  //
+  // Before the write, because everything that consumes capacity happens below:
+  // requestAssignment reserves the slot and mints the row, and the capacity
+  // ledger and load status follow. A refusal here therefore reserves nothing,
+  // consumes nothing and creates nothing — which is the only way this holds under
+  // the single-document compare-and-swap, where a check that ran outside the
+  // mutation would be a check against a state somebody else has already replaced.
+  //
+  // Evaluated at `requestedAt` — the same clock the haul window was checked
+  // against, never a second `nowIso()` that could straddle an expiry.
+  assertDriverCredentialsAllowAcceptance(state, parsed.driverProfileId, requestedAt)
 
   const assignment = requestAssignment(state, {
     ...parsed,
@@ -901,6 +1071,25 @@ function finalizeCapacityAssignment(
     `Truck slot ${assignment.truckSlotId} was not found`
   )
   const timestamp = nowIso()
+  // Re-checked at acceptance, not only at request.
+  //
+  // Acceptance is the moment the founder's rule binds, and it is a different
+  // moment from the request: a vault that was complete when the driver asked can
+  // have lapsed by the time the host approves, and an expired credential must
+  // stop being valid rather than stay valid because it was valid once.
+  //
+  // It is also the only guard standing on `requestAssignment`, which is exported
+  // unguarded and can mint a `requested` row with no vault at all. Because every
+  // path to `accepted` passes through here, nothing can reach `accepted` without
+  // a complete, current vault — see the handoff note on that writer.
+  //
+  // Placed before the first mutation below, so a refusal leaves the assignment,
+  // the slot, the route pack, the trip and the audit trail untouched.
+  assertDriverCredentialsAllowAcceptance(state, assignment.driverProfileId, timestamp)
+  // What the host keeps. Captured here rather than looked up when the host opens
+  // the load, so the record is what was true AT ACCEPTANCE — a live lookup would
+  // quietly rewrite history every time a credential was renewed or lapsed.
+  const driverCredentials = acceptanceCredentialSummary(state, assignment.driverProfileId, timestamp)
   const offeredStatus = assignment.status === "requested"
     ? transitionAssignmentStatus("requested", "offered")
     : assignment.status
@@ -915,6 +1104,11 @@ function finalizeCapacityAssignment(
       acceptedAt: timestamp,
       baseRateCents: rate.baseRate.amountCents,
       currency: rate.baseRate.currency,
+      // Status, expiry and truck/trailer photos only. The CDL image, the
+      // insurance certificate, the policy and licence numbers and the review
+      // notes are not withheld by convention here — `hostVisibleCredential` has
+      // no field for any of them, so they cannot reach this snapshot at all.
+      driverCredentials,
       estimatedDistanceMiles: route.estimatedDistanceMiles,
       estimatedTonsPerLoad: load.estimatedTonsPerLoad ?? null,
       fuelSurchargeCents: rate.fuelSurchargeCents,

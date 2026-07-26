@@ -28,7 +28,8 @@
     "react-dom": "^19.2.7",
     "react-map-gl": "^7.1.9",
     "server-only": "^0.0.1",
-    "stripe": "^22.2.0"
+    "stripe": "^22.2.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",

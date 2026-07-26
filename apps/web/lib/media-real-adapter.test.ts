@@ -36,6 +36,12 @@ function stubDedicatedEnvironment() {
   }
 
   vi.stubEnv("LOGLOADS_CLOUDINARY_TENANCY", "dedicated")
+  // The gate now requires an independently declared expected cloud name that the
+  // configured one must equal, so a fully-configured dedicated tenant has to
+  // state it here too. Without this line the two ambient-isolation cases below
+  // would still pass — but for the wrong reason (no expected name) rather than
+  // for the ambient contamination they exist to prove.
+  vi.stubEnv("LOGLOADS_CLOUDINARY_EXPECTED_CLOUD", "dedicated-cloud")
   vi.stubEnv("CLOUDINARY_CLOUD_NAME", "dedicated-cloud")
   vi.stubEnv("CLOUDINARY_API_KEY", "dedicated-key")
   vi.stubEnv("CLOUDINARY_API_SECRET", "dedicated-secret")

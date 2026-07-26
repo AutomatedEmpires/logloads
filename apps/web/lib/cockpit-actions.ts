@@ -1,24 +1,30 @@
 "use server"
 
 import {
+  credentialKindSchema,
   rateTypeSchema,
   roadConditionSchema,
+  type CredentialKind,
+  type CredentialReviewDecision,
   type DeliveredQuantity,
+  type DriverCredential,
   type HaulException,
   type RoadCondition
 } from "@logloads/contracts"
 import { revalidatePath } from "next/cache"
 
 import { captureServerEvent } from "./analytics"
+import { reviewCredentialDocument } from "./credential-reviewer"
 import {
   mediaTarget,
   parseMediaKind,
   parseTripDocumentType,
+  signedDocumentUrl,
   tripDocumentTarget,
   verifiedMediaReference,
   type MediaKind
 } from "./media"
-import { listActiveLoadsUsingCombination } from "@logloads/services"
+import { credentialDocumentPublicIdPrefix, listActiveLoadsUsingCombination } from "@logloads/services"
 
 import { mutateState, serializeError, services } from "./services"
 import { getSessionActor, type SessionActor } from "./session"
@@ -403,6 +409,272 @@ export async function saveDriverMediaAction(input: {
 
     captureServerEvent("driver_media_saved", actor.profile.id, { kind })
     return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+// --- Driver credential vault ---------------------------------------------------
+
+/**
+ * The record kind, validated at the boundary against the schema itself rather than
+ * a hand-kept list. The kind decides which of the four mandatory records a document
+ * satisfies, and whether a host is ever sent its photo, so a caller must not be
+ * able to invent one.
+ */
+function parseCredentialKind(value: unknown): CredentialKind {
+  const parsed = credentialKindSchema.safeParse(value)
+
+  if (!parsed.success) {
+    throw new Error("Choose one of the four required records")
+  }
+
+  return parsed.data
+}
+
+const CALENDAR_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * The expiry a driver states, resolved from the date printed on the document to the
+ * instant it lapses.
+ *
+ * THE END OF THAT DAY, not its start. A licence printed "30 JUN 2027" is valid
+ * THROUGH the 30th; resolving it to midnight would expire the driver a day early and
+ * block a load they were entitled to take. The vault stores instants and the gate
+ * compares them strictly, so the resolution has to be made once, here, rather than
+ * left to whichever screen renders it.
+ *
+ * UTC because the stored instant is the same for everyone who reads the record, and
+ * a local-midnight resolution would make one date mean two different instants for a
+ * driver and their dispatcher.
+ */
+function parseStatedExpiry(value: string | null | undefined): string | null {
+  if (!value) {
+    return null
+  }
+
+  if (!CALENDAR_DATE.test(value)) {
+    throw new Error("Enter the expiry date as it is printed on the document")
+  }
+
+  const instant = `${value}T23:59:59.000Z`
+
+  if (Number.isNaN(Date.parse(instant))) {
+    throw new Error("That is not a real date")
+  }
+
+  return instant
+}
+
+/**
+ * Runs the binding review on one submitted document, then records the decision.
+ *
+ * WHY IT IS TWO COMMITS AND NOT ONE. Reading the document and asking the model are
+ * network calls, and the operating state is written inside a synchronous
+ * compare-and-swap. So the record is filed first, the decision lands second. Both
+ * halves are idempotent by construction — `submitCredential` collapses the same
+ * document onto the same id, and `applyCredentialReview` refuses a second row for
+ * the same decider and decision — so a retry or a replay cannot double-decide.
+ *
+ * NOTHING IS WRITTEN WHEN THE CHECK CANNOT RUN. `reviewCredentialDocument` returns
+ * `unavailable` with no decision field at all, and this returns `not_checked`: the
+ * credential stays pending, which blocks the driver, and no review row claims a
+ * verdict nobody reached. Inventing an approval on a provider timeout is the one
+ * failure this whole path exists to make impossible.
+ *
+ * THE IMAGE NEVER LEAVES THIS SERVER except to the model. The bytes are read here
+ * and passed as bytes, never as a URL: a signed delivery URL that leaks is a leaked
+ * licence.
+ */
+async function reviewSubmittedCredential(
+  actorUserId: string,
+  holderName: string,
+  credential: DriverCredential
+): Promise<CredentialReviewDecision | "not_checked"> {
+  if (!credential.documentMedia) {
+    return "not_checked"
+  }
+
+  const url = await signedDocumentUrl(credential.documentMedia)
+  const response = await fetch(url, { signal: AbortSignal.timeout(15_000) })
+
+  if (!response.ok) {
+    return "not_checked"
+  }
+
+  const bytes = Buffer.from(await response.arrayBuffer()).toString("base64")
+  const outcome = await reviewCredentialDocument({
+    claimedKind: credential.kind,
+    document: { base64Data: bytes, format: credential.documentMedia.format },
+    holderName,
+    statedExpiresOn: credential.expiresOn ?? null,
+    statedIdentifier: credential.identifier ?? null,
+    statedIssuer: credential.issuer ?? null
+  })
+
+  if (outcome.status === "unavailable") {
+    captureServerEvent("credential_review_unavailable", actorUserId, {
+      kind: credential.kind,
+      reason: outcome.reason
+    })
+
+    return "not_checked"
+  }
+
+  await commit(["/driver", "/fleet", "/host"], (draft) =>
+    draft.applyCredentialReview({
+      confidence: outcome.confidence,
+      credentialId: credential.id,
+      // No actorUserId: the service refuses to attribute a machine decision to a
+      // person, because the audit log would then say somebody read a document they
+      // never saw.
+      decidedBy: "ai",
+      decision: outcome.decision,
+      extracted: outcome.extracted,
+      findings: outcome.findings,
+      model: outcome.model,
+      rationale: outcome.rationale,
+      requestedEvidence: outcome.requestedEvidence
+    })
+  )
+
+  return outcome.decision
+}
+
+export interface CredentialActionResult extends ActionResult {
+  /**
+   * What the review decided, or `not_checked` when it could not run. Absent when
+   * the action failed before any document was read.
+   */
+  outcome?: CredentialReviewDecision | "not_checked"
+}
+
+/**
+ * Files one document in the driver's own vault and has it checked.
+ *
+ * THE DRIVER PROFILE COMES FROM THE SESSION, never from the client: a driver may
+ * only file their own records, and the service authorizes the write against the
+ * organization as well.
+ *
+ * The expiry and the issuer are the DRIVER's statement about their own document.
+ * The review reads the page and refuses when the two disagree, which is why they are
+ * collected rather than derived: an expiry the platform inferred and stored silently
+ * would be a date nobody agreed to, and the driver would later be refused over it.
+ * The licence or policy number is deliberately NOT collected here — the reviewer
+ * skips that cross-check when it is absent, and asking a driver to type an identity
+ * number into a phone puts it in more places for very little.
+ */
+export async function submitDriverCredentialAction(input: {
+  expiresOn?: string | null
+  issuer?: string | null
+  kind: string
+  publicId: string
+}): Promise<CredentialActionResult> {
+  try {
+    const actor = await requireActor()
+    const organizationId = actorOrganizationId(actor)
+    const kind = parseCredentialKind(input.kind)
+    const driverProfileId = actor.driverProfileId
+
+    if (!driverProfileId) {
+      throw new Error("Add a driver profile before sending your records")
+    }
+
+    // Checked here as well as in the service, against the SAME exported function, so
+    // a client naming an asset outside this driver's own namespace is refused before
+    // a provider round trip. Without the rule at all, any caller able to name a
+    // stored public id could file another driver's licence as their own.
+    const expectedPrefix = `${credentialDocumentPublicIdPrefix(driverProfileId, kind)}/uploads/`
+
+    if (!input.publicId.startsWith(expectedPrefix)) {
+      throw new Error("That document was not uploaded to your vault")
+    }
+
+    // Bytes first. The record is written only once the document is known to exist —
+    // the same order trip proof follows — because a row naming a document that was
+    // never stored is exactly what the gate refuses to count, and it would leave a
+    // driver reading "in review" about nothing.
+    const documentMedia = await verifiedMediaReference(input.publicId)
+    const { credential } = await commit(["/driver", "/fleet", "/host"], (draft) =>
+      draft.submitCredential({
+        actorUserId: actor.profile.id,
+        documentMedia,
+        driverProfileId,
+        expiresOn: parseStatedExpiry(input.expiresOn),
+        issuer: input.issuer?.trim() ? input.issuer.trim() : null,
+        kind,
+        organizationId
+      })
+    )
+
+    captureServerEvent("driver_credential_submitted", actor.profile.id, { kind })
+
+    // The record is filed either way. A review that cannot run leaves it pending,
+    // which blocks the driver — the safe direction — and they can ask for another
+    // look once the check is available again.
+    const outcome = await reviewSubmittedCredential(
+      actor.profile.id,
+      actor.profile.fullName,
+      credential
+    )
+
+    return { ...OK, outcome }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+/**
+ * Asks for another look at a record that was refused or sent back for more.
+ *
+ * The credential is named by id and nothing else. Whose it is comes from the service:
+ * `listDriverCredentials` refuses a vault that is not this actor's, so a crafted id
+ * cannot put another driver's licence back through the model — and cannot be used to
+ * find out whether one exists.
+ *
+ * A re-review is the SAME document read again, so the answer may well be the same.
+ * That is honest: `applyCredentialReview` writes no second row for a decision this
+ * decider already recorded, and the driver is told the answer stands rather than
+ * being shown invented progress.
+ */
+export async function requestCredentialReviewAction(input: {
+  credentialId: string
+}): Promise<CredentialActionResult> {
+  try {
+    const actor = await requireActor()
+    const driverProfileId = actor.driverProfileId
+
+    if (!driverProfileId) {
+      throw new Error("Add a driver profile before asking for another look")
+    }
+
+    const vault = services.listDriverCredentials(driverProfileId, {
+      actorUserId: actor.profile.id,
+      audience: "driver"
+    })
+
+    if (vault.audience === "host") {
+      throw new Error("A host cannot ask for a re-review of a driver's records")
+    }
+
+    const credential = vault.credentials.find((candidate) => candidate.id === input.credentialId)
+
+    if (!credential) {
+      throw new Error("That record is not in your vault")
+    }
+
+    const outcome = await reviewSubmittedCredential(
+      actor.profile.id,
+      actor.profile.fullName,
+      credential
+    )
+
+    captureServerEvent("credential_review_requested", actor.profile.id, {
+      kind: credential.kind,
+      outcome
+    })
+
+    return { ...OK, outcome }
   } catch (error) {
     return failure(error)
   }

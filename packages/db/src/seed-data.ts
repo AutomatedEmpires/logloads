@@ -2,9 +2,11 @@ import {
   assignmentSchema,
   auditEventSchema,
   availabilityWindowSchema,
+  credentialReviewSchema,
   destinationFacilitySchema,
   directOfferSchema,
   dispatcherProfileSchema,
+  driverCredentialSchema,
   driverProfileSchema,
   entitlementSchema,
   equipmentCombinationSchema,
@@ -40,9 +42,11 @@ import {
   type Assignment,
   type AuditEvent,
   type AvailabilityWindow,
+  type CredentialReview,
   type DestinationFacility,
   type DirectOffer,
   type DispatcherProfile,
+  type DriverCredential,
   type DriverProfile,
   type Entitlement,
   type EquipmentCombination,
@@ -330,6 +334,441 @@ export const seedDriverProfiles: DriverProfile[] = parseMany(driverProfileSchema
     notes: "Assigned to Summit Ridge high-grade work.",
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
+  }
+])
+
+/**
+ * ── The seeded credential vault ───────────────────────────────────────────────
+ *
+ * ONE driver is fully cleared, and only one. Hank (…441) is the driver every
+ * seeded e2e journey signs in as to request a haul, so his vault is complete and
+ * valid — without it those journeys would fail on a credential rule they were not
+ * written to test.
+ *
+ * EVERY OTHER SEEDED DRIVER IS BLOCKED, deliberately. A seeded approval is a
+ * claim that somebody's insurance and licence were submitted and checked; handing
+ * one to five synthetic drivers so the bench looks busy would be a fabricated
+ * safety claim, which is the exact class of lie this product refuses everywhere
+ * else. So the blocked paths are the ones that carry real coverage here:
+ *
+ *   Maya (…442)   — licence approved, insurance came back needing more evidence,
+ *                   no equipment photos at all. Blocked WITH a reason to act on.
+ *   Taylor (…445) — insurance approved but LAPSED in January, with the renewal
+ *                   still under review. Blocked by expiry, not by absence.
+ *   Cole (…443), Riley (…444) — nothing submitted. Blocked on an empty vault.
+ *
+ * Maya and Taylor already have completed hauls in this seed. That is not a
+ * contradiction: the vault is newer than that history, and a rule does not
+ * retroactively un-happen a load that was hauled before it existed.
+ *
+ * The 30-day expiry WARNING has no fixture here, because it cannot have one: the
+ * window is measured against the caller's clock, and a static seed would either go
+ * stale or need a moving date. It is proven in
+ * packages/contracts/src/credentials.test.ts against explicit instants instead.
+ */
+
+/**
+ * A synthetic stored-document reference for the seeded vault.
+ *
+ * It resolves to nothing. A media reference names a provider and a public id but
+ * no account, so this points at no media tenant at all — and LogLoads media is
+ * fail-closed until LogLoads has an account of its own, so no code path will try
+ * to fetch it. Same posture as the synthetic Stripe ids further down: an obviously
+ * fake reference to an object a provider would hold, never real bytes.
+ *
+ * It exists because `credentialIsValidAt` refuses an approved credential with no
+ * document. That rule is what stops a self-certified approval from counting, so
+ * the bench has to satisfy it the same way a real driver would.
+ */
+const syntheticCredentialDocument = (slug: string, uploadedAt: string) => ({
+  provider: "cloudinary" as const,
+  publicId: `logloads/driver-credentials/${slug}`,
+  version: 1,
+  format: "jpg" as const,
+  width: 1_240,
+  height: 1_754,
+  bytes: 486_000,
+  uploadedAt
+})
+
+const credentialClock = {
+  submitted: "2026-06-01T09:00:00.000Z",
+  reviewed: "2026-06-01T09:04:00.000Z",
+  lapsedSubmitted: "2026-01-05T09:00:00.000Z",
+  lapsedReviewed: "2026-01-05T09:03:00.000Z",
+  renewalSubmitted: "2026-06-02T15:20:00.000Z"
+}
+
+export const seedDriverCredentials: DriverCredential[] = parseMany(driverCredentialSchema, [
+  {
+    id: "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c101",
+    driverProfileId: "44444444-4444-4444-8444-444444444441",
+    kind: "insurance",
+    status: "approved",
+    documentMedia: syntheticCredentialDocument("np-101-liability", credentialClock.submitted),
+    issuer: "Cascade Mutual Insurance",
+    identifier: "CM-4471-002",
+    issuedOn: "2025-07-01T00:00:00.000Z",
+    // Comfortably past any clock this bench runs under. A fixture that lapses
+    // while nobody is looking would break every e2e journey with a failure that
+    // reads as a bug in the acceptance flow.
+    expiresOn: "2027-06-30T23:59:59.000Z",
+    submittedAt: credentialClock.submitted,
+    reviewedAt: credentialClock.reviewed,
+    reviewNotes: "Approved. Send us the new certificate before 30 June 2027 to stay eligible.",
+    requestedEvidence: [],
+    supersededByCredentialId: null,
+    createdAt: credentialClock.submitted,
+    updatedAt: credentialClock.reviewed
+  },
+  {
+    id: "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c102",
+    driverProfileId: "44444444-4444-4444-8444-444444444441",
+    kind: "cdl",
+    status: "approved",
+    documentMedia: syntheticCredentialDocument("hank-licence", credentialClock.submitted),
+    issuer: "Oregon DMV",
+    identifier: "CDL-A-9001",
+    issuedOn: "2023-03-14T00:00:00.000Z",
+    expiresOn: "2029-03-14T23:59:59.000Z",
+    submittedAt: credentialClock.submitted,
+    reviewedAt: credentialClock.reviewed,
+    reviewNotes: "Approved. The licence class and the expiry date both read clearly.",
+    requestedEvidence: [],
+    supersededByCredentialId: null,
+    createdAt: credentialClock.submitted,
+    updatedAt: credentialClock.reviewed
+  },
+  {
+    id: "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c103",
+    driverProfileId: "44444444-4444-4444-8444-444444444441",
+    kind: "truck",
+    status: "approved",
+    documentMedia: syntheticCredentialDocument("np-101-truck", credentialClock.submitted),
+    // A photograph has no issuer and no expiry. null here means exactly that,
+    // and the gate reads it as "cannot lapse" rather than as missing data.
+    issuer: null,
+    identifier: "NP-101",
+    issuedOn: null,
+    expiresOn: null,
+    submittedAt: credentialClock.submitted,
+    reviewedAt: credentialClock.reviewed,
+    reviewNotes: "Approved. Unit number NP-101 matches the truck on your profile.",
+    requestedEvidence: [],
+    supersededByCredentialId: null,
+    createdAt: credentialClock.submitted,
+    updatedAt: credentialClock.reviewed
+  },
+  {
+    id: "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c104",
+    driverProfileId: "44444444-4444-4444-8444-444444444441",
+    kind: "trailer",
+    status: "approved",
+    documentMedia: syntheticCredentialDocument("trl-101-trailer", credentialClock.submitted),
+    issuer: null,
+    identifier: "TRL-101",
+    issuedOn: null,
+    expiresOn: null,
+    submittedAt: credentialClock.submitted,
+    reviewedAt: credentialClock.reviewed,
+    reviewNotes: "Approved. The stakes and the unit number are both visible.",
+    requestedEvidence: [],
+    supersededByCredentialId: null,
+    createdAt: credentialClock.submitted,
+    updatedAt: credentialClock.reviewed
+  },
+  {
+    id: "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c105",
+    driverProfileId: "44444444-4444-4444-8444-444444444442",
+    kind: "cdl",
+    status: "approved",
+    documentMedia: syntheticCredentialDocument("maya-licence", credentialClock.submitted),
+    issuer: "Oregon DMV",
+    identifier: "CDL-A-9002",
+    issuedOn: "2022-11-30T00:00:00.000Z",
+    expiresOn: "2028-11-30T23:59:59.000Z",
+    submittedAt: credentialClock.submitted,
+    reviewedAt: credentialClock.reviewed,
+    reviewNotes: "Approved.",
+    requestedEvidence: [],
+    supersededByCredentialId: null,
+    createdAt: credentialClock.submitted,
+    updatedAt: credentialClock.reviewed
+  },
+  {
+    // The actionable refusal: something was submitted, it could not be read, and
+    // the driver is told exactly which page to photograph again. Nothing is
+    // extracted, because nothing was legible — inventing an issuer here would be
+    // the platform guessing at an insurer on a driver's behalf.
+    id: "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c106",
+    driverProfileId: "44444444-4444-4444-8444-444444444442",
+    kind: "insurance",
+    status: "more_info_required",
+    documentMedia: syntheticCredentialDocument("maya-liability-page-1", credentialClock.submitted),
+    issuer: null,
+    identifier: null,
+    issuedOn: null,
+    expiresOn: null,
+    submittedAt: credentialClock.submitted,
+    reviewedAt: credentialClock.reviewed,
+    reviewNotes:
+      "We can read your insurer's name but not the expiry date — the bottom of the page is cut off.",
+    requestedEvidence: [
+      "A photo of the page that shows the policy expiry date",
+      "The full page, with all four corners in frame"
+    ],
+    supersededByCredentialId: null,
+    createdAt: credentialClock.submitted,
+    updatedAt: credentialClock.reviewed
+  },
+  {
+    // Approved, and lapsed anyway. January 2026 is in the past for the June bench
+    // clock AND for any real clock this seed will ever be read under, so "an
+    // expired credential stops counting" is demonstrable rather than dependent on
+    // when somebody runs it.
+    id: "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c107",
+    driverProfileId: "44444444-4444-4444-8444-444444444445",
+    kind: "insurance",
+    status: "approved",
+    documentMedia: syntheticCredentialDocument("taylor-liability-2025", credentialClock.lapsedSubmitted),
+    issuer: "Cascade Mutual Insurance",
+    identifier: "CM-9920-117",
+    issuedOn: "2025-01-31T00:00:00.000Z",
+    expiresOn: "2026-01-31T23:59:59.000Z",
+    submittedAt: credentialClock.lapsedSubmitted,
+    reviewedAt: credentialClock.lapsedReviewed,
+    reviewNotes: "Approved. Send the new certificate before 31 January 2026 to stay eligible.",
+    requestedEvidence: [],
+    // A renewal REPLACES rather than rewrites: this row keeps saying what was
+    // approved in January, and the pointer says where the current record is.
+    supersededByCredentialId: "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c108",
+    createdAt: credentialClock.lapsedSubmitted,
+    // June, not January: `reviewedAt` is when the decision was made and never
+    // moves, while `updatedAt` is when this row last changed — which was the day
+    // the renewal arrived and the pointer above was written.
+    updatedAt: credentialClock.renewalSubmitted
+  },
+  {
+    // The renewal, awaiting review. Pending, so it carries no reviewedAt, no
+    // review row, and no normalized dates — nobody has read it yet, and a
+    // pre-filled expiry would be the platform assuming what the document says.
+    id: "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c108",
+    driverProfileId: "44444444-4444-4444-8444-444444444445",
+    kind: "insurance",
+    status: "pending",
+    documentMedia: syntheticCredentialDocument("taylor-liability-2026", credentialClock.renewalSubmitted),
+    issuer: null,
+    identifier: null,
+    issuedOn: null,
+    expiresOn: null,
+    submittedAt: credentialClock.renewalSubmitted,
+    reviewedAt: null,
+    reviewNotes: null,
+    requestedEvidence: [],
+    supersededByCredentialId: null,
+    createdAt: credentialClock.renewalSubmitted,
+    updatedAt: credentialClock.renewalSubmitted
+  }
+])
+
+/**
+ * The decision trail behind the vault above. One row per decision, append-only.
+ *
+ * `decidedBy: "ai"` with `model: "seed-synthetic-reviewer"` — deliberately not the
+ * name of a real model. No AI reviewer is wired yet, so naming one would claim an
+ * integration that does not exist; the row contract requires an AI decision to
+ * name its decider, and this is the honest thing to put there.
+ *
+ * `confidence` is null on every row for the same reason. A fabricated 0.97 would
+ * be a fabricated measurement, and it would be the number a driver was shown when
+ * they asked how sure the machine was.
+ *
+ * Taylor's pending renewal has no row here at all: nothing has been decided about
+ * it, and an empty trail is what "awaiting review" actually looks like.
+ */
+export const seedCredentialReviews: CredentialReview[] = parseMany(credentialReviewSchema, [
+  {
+    id: "c2c2c2c2-c2c2-4c2c-8c2c-c2c2c2c2c201",
+    credentialId: "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c101",
+    driverProfileId: "44444444-4444-4444-8444-444444444441",
+    decision: "approved",
+    decidedBy: "ai",
+    model: "seed-synthetic-reviewer",
+    confidence: null,
+    findings: ["kind_matches_document", "holder_name_matches_profile", "expiry_is_in_the_future"],
+    rationale:
+      "The certificate names Hank Hauler, is issued by Cascade Mutual Insurance and runs to 30 June 2027.",
+    requestedEvidence: [],
+    extracted: {
+      detectedKind: "insurance",
+      holderName: "Hank Hauler",
+      issuer: "Cascade Mutual Insurance",
+      identifier: "CM-4471-002",
+      // As PRINTED on the page, not normalized. The credential row holds the
+      // platform's instants; this holds what was on the document.
+      issuedOn: "07/01/2025",
+      expiresOn: "06/30/2027",
+      unitNumber: null,
+      plateNumber: null
+    },
+    decidedAt: credentialClock.reviewed,
+    createdAt: credentialClock.reviewed,
+    updatedAt: credentialClock.reviewed
+  },
+  {
+    id: "c2c2c2c2-c2c2-4c2c-8c2c-c2c2c2c2c202",
+    credentialId: "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c102",
+    driverProfileId: "44444444-4444-4444-8444-444444444441",
+    decision: "approved",
+    decidedBy: "ai",
+    model: "seed-synthetic-reviewer",
+    confidence: null,
+    findings: ["kind_matches_document", "holder_name_matches_profile", "expiry_is_in_the_future"],
+    rationale: "A Class A licence for Hank Hauler, valid to 14 March 2029.",
+    requestedEvidence: [],
+    extracted: {
+      detectedKind: "cdl",
+      holderName: "Hank Hauler",
+      issuer: "Oregon DMV",
+      identifier: "CDL-A-9001",
+      issuedOn: "03/14/2023",
+      expiresOn: "03/14/2029",
+      unitNumber: null,
+      plateNumber: null
+    },
+    decidedAt: credentialClock.reviewed,
+    createdAt: credentialClock.reviewed,
+    updatedAt: credentialClock.reviewed
+  },
+  {
+    id: "c2c2c2c2-c2c2-4c2c-8c2c-c2c2c2c2c203",
+    credentialId: "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c103",
+    driverProfileId: "44444444-4444-4444-8444-444444444441",
+    decision: "approved",
+    decidedBy: "ai",
+    model: "seed-synthetic-reviewer",
+    confidence: null,
+    findings: ["unit_number_matches_profile", "plate_is_legible"],
+    rationale: "The photo shows a log truck carrying unit number NP-101 and plate LOG101.",
+    requestedEvidence: [],
+    extracted: {
+      detectedKind: "truck",
+      holderName: null,
+      issuer: null,
+      identifier: null,
+      issuedOn: null,
+      expiresOn: null,
+      unitNumber: "NP-101",
+      plateNumber: "LOG101"
+    },
+    decidedAt: credentialClock.reviewed,
+    createdAt: credentialClock.reviewed,
+    updatedAt: credentialClock.reviewed
+  },
+  {
+    id: "c2c2c2c2-c2c2-4c2c-8c2c-c2c2c2c2c204",
+    credentialId: "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c104",
+    driverProfileId: "44444444-4444-4444-8444-444444444441",
+    decision: "approved",
+    decidedBy: "ai",
+    model: "seed-synthetic-reviewer",
+    confidence: null,
+    findings: ["unit_number_matches_profile"],
+    rationale: "The photo shows a pole trailer carrying unit number TRL-101.",
+    requestedEvidence: [],
+    extracted: {
+      detectedKind: "trailer",
+      holderName: null,
+      issuer: null,
+      identifier: null,
+      issuedOn: null,
+      expiresOn: null,
+      unitNumber: "TRL-101",
+      plateNumber: null
+    },
+    decidedAt: credentialClock.reviewed,
+    createdAt: credentialClock.reviewed,
+    updatedAt: credentialClock.reviewed
+  },
+  {
+    id: "c2c2c2c2-c2c2-4c2c-8c2c-c2c2c2c2c205",
+    credentialId: "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c105",
+    driverProfileId: "44444444-4444-4444-8444-444444444442",
+    decision: "approved",
+    decidedBy: "ai",
+    model: "seed-synthetic-reviewer",
+    confidence: null,
+    findings: ["kind_matches_document", "holder_name_matches_profile", "expiry_is_in_the_future"],
+    rationale: "A Class A licence for Maya Mills, valid to 30 November 2028.",
+    requestedEvidence: [],
+    extracted: {
+      detectedKind: "cdl",
+      holderName: "Maya Mills",
+      issuer: "Oregon DMV",
+      identifier: "CDL-A-9002",
+      issuedOn: "11/30/2022",
+      expiresOn: "11/30/2028",
+      unitNumber: null,
+      plateNumber: null
+    },
+    decidedAt: credentialClock.reviewed,
+    createdAt: credentialClock.reviewed,
+    updatedAt: credentialClock.reviewed
+  },
+  {
+    id: "c2c2c2c2-c2c2-4c2c-8c2c-c2c2c2c2c206",
+    credentialId: "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c106",
+    driverProfileId: "44444444-4444-4444-8444-444444444442",
+    decision: "more_info_required",
+    decidedBy: "ai",
+    model: "seed-synthetic-reviewer",
+    confidence: null,
+    findings: ["expiry_not_found", "page_cropped"],
+    rationale:
+      "The insurer's name is readable but the expiry date is not, so we cannot tell whether this policy is still in force.",
+    requestedEvidence: [
+      "A photo of the page that shows the policy expiry date",
+      "The full page, with all four corners in frame"
+    ],
+    extracted: {
+      detectedKind: "insurance",
+      holderName: null,
+      issuer: "Cascade Mutual Insurance",
+      identifier: null,
+      issuedOn: null,
+      expiresOn: null,
+      unitNumber: null,
+      plateNumber: null
+    },
+    decidedAt: credentialClock.reviewed,
+    createdAt: credentialClock.reviewed,
+    updatedAt: credentialClock.reviewed
+  },
+  {
+    id: "c2c2c2c2-c2c2-4c2c-8c2c-c2c2c2c2c207",
+    credentialId: "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c107",
+    driverProfileId: "44444444-4444-4444-8444-444444444445",
+    decision: "approved",
+    decidedBy: "ai",
+    model: "seed-synthetic-reviewer",
+    confidence: null,
+    findings: ["kind_matches_document", "holder_name_matches_profile", "expiry_is_in_the_future"],
+    rationale:
+      "The certificate names Taylor Timber and runs to 31 January 2026. Approved as of 5 January 2026.",
+    requestedEvidence: [],
+    extracted: {
+      detectedKind: "insurance",
+      holderName: "Taylor Timber",
+      issuer: "Cascade Mutual Insurance",
+      identifier: "CM-9920-117",
+      issuedOn: "01/31/2025",
+      expiresOn: "01/31/2026",
+      unitNumber: null,
+      plateNumber: null
+    },
+    decidedAt: credentialClock.lapsedReviewed,
+    createdAt: credentialClock.lapsedReviewed,
+    updatedAt: credentialClock.lapsedReviewed
   }
 ])
 
@@ -2866,6 +3305,8 @@ export const seedDatabaseState: LogLoadsDatabaseState = {
   organizationInvitations: seedOrganizationInvitations,
   privateNetworkRelationships: seedPrivateNetworkRelationships,
   driverProfiles: seedDriverProfiles,
+  driverCredentials: seedDriverCredentials,
+  credentialReviews: seedCredentialReviews,
   dispatcherProfiles: seedDispatcherProfiles,
   loaderProfiles: seedLoaderProfiles,
   truckProfiles: seedTruckProfiles,

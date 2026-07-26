@@ -21,6 +21,13 @@ import {
   updateEquipmentStatus
 } from "./equipment"
 import {
+  applyCredentialReview,
+  driverCredentialGate,
+  hostCredentialSummary,
+  listDriverCredentials,
+  submitCredential
+} from "./driver-credentials"
+import {
   getDriverMediaTarget,
   getFeaturedTruckPhotoReference,
   saveDriverMediaReference,
@@ -164,6 +171,28 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
       at?: Parameters<typeof hostFeeSummary>[2]
     ) => hostFeeSummary(state, input, at),
     findEntitlementByStripeSubscription: (stripeSubscriptionId: string) => findEntitlementByStripeSubscription(state, stripeSubscriptionId),
+    // The credential vault. `driverCredentialGate` is the one answer to "may this
+    // driver accept work", and it is also exported as a free function below —
+    // an acceptance guard has to run it INSIDE the compare-and-swap mutation that
+    // writes the acceptance, where it holds a draft state rather than this
+    // singleton, or the check is not a block at all.
+    submitCredential: (
+      input: Parameters<typeof submitCredential>[1],
+      at?: Parameters<typeof submitCredential>[2]
+    ) => submitCredential(state, input, at),
+    applyCredentialReview: (
+      input: Parameters<typeof applyCredentialReview>[1],
+      at?: Parameters<typeof applyCredentialReview>[2]
+    ) => applyCredentialReview(state, input, at),
+    driverCredentialGate: (driverProfileId: string, at?: string) =>
+      driverCredentialGate(state, driverProfileId, at),
+    hostCredentialSummary: (driverProfileId: string, at?: string) =>
+      hostCredentialSummary(state, driverProfileId, at),
+    listDriverCredentials: (
+      driverProfileId: string,
+      viewer: Parameters<typeof listDriverCredentials>[2],
+      at?: Parameters<typeof listDriverCredentials>[3]
+    ) => listDriverCredentials(state, driverProfileId, viewer, at),
     assignDriverToEquipment: (input: unknown) => assignDriverToEquipment(state, input),
     acceptInvitationAsNewAccount: (input: Parameters<typeof acceptInvitationAsNewAccount>[1]) =>
       acceptInvitationAsNewAccount(state, input),
@@ -309,6 +338,42 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
 export type LogLoadsServices = ReturnType<typeof createLogLoadsServices>
 
 export { getDriverMediaTarget, getTripDocumentTarget, tripDocumentPublicIdPrefix }
+/**
+ * The credential vault, as free functions as well as bound methods.
+ *
+ * `driverCredentialGate` has to be callable from INSIDE the compare-and-swap
+ * mutation that writes a load acceptance, where the caller holds a draft state
+ * rather than a services singleton — a check made outside that mutation is
+ * defeated by a replay. `hostCredentialSummary` is exported for the same reason:
+ * the summary the host receives is built in the mutation that records the
+ * acceptance, from the same draft the gate was evaluated against, so the two can
+ * never describe different vaults.
+ *
+ * `credentialDocumentPublicIdPrefix` is the namespace an upload target must sign
+ * against. `submitCredential` refuses a document stored anywhere else, so both
+ * sides have to derive the path from this one function.
+ */
+export {
+  applyCredentialReview,
+  credentialDocumentPublicIdPrefix,
+  credentialReviewId,
+  driverCredentialGate,
+  driverCredentialId,
+  hostCredentialSummary,
+  listDriverCredentials,
+  submitCredential
+} from "./driver-credentials"
+export type {
+  ApplyCredentialReviewInput,
+  ApplyCredentialReviewResult,
+  CredentialViewer,
+  DriverCredentialVaultView,
+  DriverCredentialView,
+  HostCredentialSummary,
+  HostCredentialView,
+  SubmitCredentialInput,
+  SubmitCredentialResult
+} from "./driver-credentials"
 export { listActiveLoadsUsingCombination } from "./equipment"
 export {
   SupportRequestAuthorizationError,

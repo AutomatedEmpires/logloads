@@ -2,9 +2,11 @@ import type {
   Assignment,
   AuditEvent,
   AvailabilityWindow,
+  CredentialReview,
   DestinationFacility,
   DirectOffer,
   DispatcherProfile,
+  DriverCredential,
   DriverProfile,
   Entitlement,
   EquipmentCombination,
@@ -51,6 +53,14 @@ export interface LogLoadsDatabaseState {
   organizationInvitations: OrganizationInvitation[]
   privateNetworkRelationships: PrivateNetworkRelationship[]
   driverProfiles: DriverProfile[]
+  /**
+   * The credential vault, and every decision ever taken on it. Two collections
+   * rather than a status field on the credential: the decision trail is
+   * append-only, so "why was I refused" survives a later approval instead of
+   * being overwritten by it.
+   */
+  driverCredentials: DriverCredential[]
+  credentialReviews: CredentialReview[]
   dispatcherProfiles: DispatcherProfile[]
   loaderProfiles: LoaderProfile[]
   truckProfiles: TruckProfile[]
