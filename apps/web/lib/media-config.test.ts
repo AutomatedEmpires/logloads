@@ -213,15 +213,19 @@ describe("the foreign-tenant deny-list", () => {
   })
 
   it("reports the foreign tenant, not the missing attestation, for the environment as it stands today", () => {
-    // apps/web/.env.local as of this commit: Explore & Earn's cloud name and live
-    // key/secret under a comment calling them "sandbox creds", with no tenancy
-    // marker and no expected name. Both are true, but only one of them is the
-    // thing an operator needs to hear, so the deny-list runs before the marker.
+    // The shape a misconfigured local environment has: a foreign cloud name with
+    // credentials beside it and no tenancy marker. Both faults are real, but only
+    // one of them is what an operator needs to hear, so the deny-list runs first.
+    //
+    // The credential values here are placeholders and must stay that way. A real
+    // key belongs in no test fixture: the deny-list refuses on the cloud name
+    // before credentials are inspected at all, so nothing about this test needs a
+    // genuine one.
     const message = expectRefused(
       {
         CLOUDINARY_CLOUD_NAME: EXPLORE_AND_EARN_CLOUD,
-        CLOUDINARY_API_KEY: "246973258312489",
-        CLOUDINARY_API_SECRET: "redacted-in-tests"
+        CLOUDINARY_API_KEY: "placeholder-not-a-real-key",
+        CLOUDINARY_API_SECRET: "placeholder-not-a-real-secret"
       },
       "foreign_tenant_denied"
     )
