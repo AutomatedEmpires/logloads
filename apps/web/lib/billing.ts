@@ -1009,6 +1009,10 @@ type HostInvoiceChargePlan =
       metadata: Record<string, string>
       organizationId: string
       paymentMethodId: string
+      paymentProfileLastFailureAt: string | null
+      paymentProfileLastFailureReason: string | null
+      paymentProfileStatus: HostBillingProfileStatus
+      paymentProfileUpdatedAt: string
       subtotalCents: number
     }
   | {
@@ -1018,7 +1022,87 @@ type HostInvoiceChargePlan =
       stripeInvoiceId: string
       subtotalCents: number
     }
+  | {
+      kind: "retry_payment"
+      organizationId: string
+      paymentMethodId: string
+      paymentProfileLastFailureAt: string | null
+      paymentProfileLastFailureReason: string | null
+      paymentProfileStatus: HostBillingProfileStatus
+      paymentProfileUpdatedAt: string
+      stripeInvoiceId: string
+      subtotalCents: number
+    }
   | { kind: "refused"; message: string }
+
+type PaymentProfilePlan = Extract<
+  HostInvoiceChargePlan,
+  { kind: "charge" | "retry_payment" }
+>
+
+function planHostPaymentProfile(
+  state: LogLoadsDatabaseState,
+  organizationId: string,
+  options: { allowFailed: boolean }
+):
+  | Pick<
+      PaymentProfilePlan,
+      | "paymentMethodId"
+      | "paymentProfileLastFailureAt"
+      | "paymentProfileLastFailureReason"
+      | "paymentProfileStatus"
+      | "paymentProfileUpdatedAt"
+    >
+  | { message: string } {
+  const profile = findHostBillingProfile(state, organizationId)
+
+  if (
+    !profile ||
+    (profile.status !== "attached" && !(options.allowFailed && profile.status === "failed"))
+  ) {
+    return {
+      message: "This host has no card on file, so the monthly platform fee cannot be charged"
+    }
+  }
+
+  if (!profile.stripeCustomerId || !profile.defaultPaymentMethodId) {
+    // Unreachable while the row contract holds; asserted rather than assumed
+    // because the alternative is calling Stripe with an undefined customer.
+    return { message: "This host's billing profile is incomplete" }
+  }
+
+  return {
+    paymentMethodId: profile.defaultPaymentMethodId,
+    paymentProfileLastFailureAt: profile.lastFailureAt ?? null,
+    paymentProfileLastFailureReason: profile.lastFailureReason ?? null,
+    paymentProfileStatus: profile.status,
+    paymentProfileUpdatedAt: profile.updatedAt
+  }
+}
+
+/**
+ * Whether the card state is still the exact state the collection plan read.
+ *
+ * A Stripe call sits between the plan read and the result mutation. A newer
+ * invoice can fail during that network gap; clearing its failure because an older
+ * invoice happened to succeed would reopen host publishing against a declined
+ * card. The full snapshot makes that race a no-op for shared card state while the
+ * individual invoice is still reconciled.
+ */
+function hostPaymentProfileStillMatchesPlan(
+  state: LogLoadsDatabaseState,
+  plan: PaymentProfilePlan
+): boolean {
+  const profile = findHostBillingProfile(state, plan.organizationId)
+
+  return (
+    profile?.defaultPaymentMethodId === plan.paymentMethodId &&
+    profile.status === plan.paymentProfileStatus &&
+    profile.updatedAt === plan.paymentProfileUpdatedAt &&
+    (profile.lastFailureAt ?? null) === plan.paymentProfileLastFailureAt &&
+    (profile.lastFailureReason ?? null) === plan.paymentProfileLastFailureReason
+  )
+}
 
 /**
  * Everything that must be true before Stripe is called, decided in one read.
@@ -1038,6 +1122,24 @@ export function planHostInvoiceCharge(
   }
 
   if (invoice.stripeInvoiceId) {
+    if (invoice.status === "open") {
+      const profile = planHostPaymentProfile(state, invoice.organizationId, {
+        allowFailed: true
+      })
+
+      if ("message" in profile) {
+        return { kind: "refused", message: profile.message }
+      }
+
+      return {
+        kind: "retry_payment",
+        organizationId: invoice.organizationId,
+        ...profile,
+        stripeInvoiceId: invoice.stripeInvoiceId,
+        subtotalCents: invoice.subtotalCents
+      }
+    }
+
     return {
       kind: "already_charged",
       organizationId: invoice.organizationId,
@@ -1089,17 +1191,15 @@ export function planHostInvoiceCharge(
   }
 
   const profile = findHostBillingProfile(state, invoice.organizationId)
+  const paymentProfile = planHostPaymentProfile(state, invoice.organizationId, {
+    allowFailed: false
+  })
 
-  if (!profile || profile.status !== "attached") {
-    return {
-      kind: "refused",
-      message: "This host has no card on file, so the monthly platform fee cannot be charged"
-    }
+  if ("message" in paymentProfile) {
+    return { kind: "refused", message: paymentProfile.message }
   }
 
-  if (!profile.stripeCustomerId || !profile.defaultPaymentMethodId) {
-    // Unreachable while the row contract holds; asserted rather than assumed
-    // because the alternative is calling Stripe with an undefined customer.
+  if (!profile?.stripeCustomerId) {
     return { kind: "refused", message: "This host's billing profile is incomplete" }
   }
 
@@ -1115,7 +1215,7 @@ export function planHostInvoiceCharge(
       periodStart: invoice.periodStart
     },
     organizationId: invoice.organizationId,
-    paymentMethodId: profile.defaultPaymentMethodId,
+    ...paymentProfile,
     subtotalCents
   }
 }
@@ -1147,21 +1247,55 @@ export async function chargeHostInvoice(input: {
   }
 
   if (plan.kind === "already_charged") {
-    if (plan.status === "paid") {
-      await input.state.mutate((draft) =>
-        recordHostPaymentSuccess(draft.state, {
-          at: now(),
-          organizationId: plan.organizationId
-        })
-      )
-    }
-
     return billingOk({
       alreadyCharged: true,
       invoiceId: input.invoiceId,
       status: plan.status,
       stripeInvoiceId: plan.stripeInvoiceId,
       subtotalCents: plan.subtotalCents
+    })
+  }
+
+  if (plan.kind === "retry_payment") {
+    const attemptedAt = now()
+    const paid = await input.port.payInvoice({
+      // A new attempt key is intentional here. Reusing the original declined
+      // request's key makes Stripe replay the decline forever, including after
+      // the host resolves the card issue. The already-issued invoice itself is
+      // the durable at-most-one charge boundary.
+      idempotencyKey: hostInvoiceIdempotencyKey(
+        input.invoiceId,
+        `pay-retry-${attemptedAt}`
+      ),
+      paymentMethodId: plan.paymentMethodId,
+      stripeInvoiceId: plan.stripeInvoiceId
+    })
+
+    return input.state.mutate((draft) => {
+      const current = findHostInvoice(draft.state, input.invoiceId)
+
+      if (!current) {
+        return billingRefused(`Host invoice ${input.invoiceId} was not found`)
+      }
+
+      const settled = paid.paid
+        ? markHostInvoicePaid(draft.state, { at: attemptedAt, invoiceId: input.invoiceId }).invoice
+        : current
+
+      if (paid.paid && hostPaymentProfileStillMatchesPlan(draft.state, plan)) {
+        recordHostPaymentSuccess(draft.state, {
+          at: attemptedAt,
+          organizationId: plan.organizationId
+        })
+      }
+
+      return billingOk({
+        alreadyCharged: true,
+        invoiceId: input.invoiceId,
+        status: settled.status,
+        stripeInvoiceId: plan.stripeInvoiceId,
+        subtotalCents: plan.subtotalCents
+      })
     })
   }
 
@@ -1220,7 +1354,7 @@ export async function chargeHostInvoice(input: {
       ? markHostInvoicePaid(draft.state, { at, invoiceId: input.invoiceId })
       : issued
 
-    if (paid.paid) {
+    if (paid.paid && hostPaymentProfileStillMatchesPlan(draft.state, plan)) {
       recordHostPaymentSuccess(draft.state, {
         at,
         organizationId: plan.organizationId

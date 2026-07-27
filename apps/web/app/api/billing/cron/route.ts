@@ -1,6 +1,9 @@
 import { timingSafeEqual } from "node:crypto"
 
-import { openAllClosedPeriodInvoices } from "@logloads/services"
+import {
+  openAllClosedPeriodInvoices,
+  reconcileMissingPlatformFees
+} from "@logloads/services"
 import { NextResponse } from "next/server"
 
 import {
@@ -55,9 +58,36 @@ export async function GET(request: Request) {
   // Materialize every closed month represented by accrued events, not only the
   // immediately preceding month. A scheduler outage can cross several boundaries,
   // and the collection pass below can discover invoices but not raw fee events.
-  const results = await state.mutate((draft) =>
-    openAllClosedPeriodInvoices(draft.state, at)
+  const run = await state.mutate((draft) => {
+    const reconciliation = reconcileMissingPlatformFees(draft.state, at)
+    const invoices = openAllClosedPeriodInvoices(draft.state, at)
+
+    return { invoices, reconciliation }
+  })
+  const results = run.invoices
+  const reconciliationErrors = run.reconciliation.filter(
+    (result) => result.outcome === "error"
   )
+  const reconciliationReview = run.reconciliation.filter(
+    (result) => result.outcome === "no_basis" || result.outcome === "not_completed"
+  )
+  const reconciliationSummary = {
+    accrued: run.reconciliation.filter((result) => result.outcome === "accrued").length,
+    errors: reconciliationErrors,
+    requiresReview: reconciliationReview
+  }
+
+  if (reconciliationErrors.length > 0) {
+    console.error("LogLoads billing cron could not reconcile one or more platform fees", {
+      failures: reconciliationErrors
+    })
+  }
+
+  if (reconciliationReview.length > 0) {
+    console.warn("LogLoads billing cron found received assignments requiring fee review", {
+      assignments: reconciliationReview
+    })
+  }
   // Read the complete open book after materializing every missed month.
   // Dark-launch months and scheduler outages can also leave older invoices open;
   // activation catches those up oldest-first.
@@ -66,10 +96,11 @@ export async function GET(request: Request) {
   if (!platformFeeCollectionEnabled()) {
     return NextResponse.json({
       collection: "disabled",
+      feeReconciliation: reconciliationSummary,
       invoicesOpened: results.filter((result) => result.outcome === "opened").length,
       invoicesReady: invoices.length,
       period
-    })
+    }, { status: reconciliationErrors.length > 0 ? 503 : 200 })
   }
 
   const billing = resolveStripeBilling()
@@ -142,9 +173,10 @@ export async function GET(request: Request) {
     {
       charges,
       collection: "enabled",
+      feeReconciliation: reconciliationSummary,
       invoicesOpened: results.filter((result) => result.outcome === "opened").length,
       period
     },
-    { status: failed.length > 0 ? 503 : 200 }
+    { status: failed.length > 0 || reconciliationErrors.length > 0 ? 503 : 200 }
   )
 }

@@ -439,6 +439,96 @@ export function accruePlatformFee(
   return { event, outcome: "accrued" }
 }
 
+export interface PlatformFeeReconciliationResult {
+  assignmentId: string
+  eventId: string | null
+  outcome: AccruePlatformFeeResult["outcome"] | "error"
+  reason: string | null
+}
+
+/**
+ * Repairs received hauls that are missing their deterministic fee event.
+ *
+ * Receipt and fee accrual intentionally share one operating mutation, but the
+ * receipt is a real host/driver fact and is preserved when the ledger write
+ * fails. That creates a narrow recovery obligation: every trusted billing run
+ * must revisit received assignments that still have no fee. The deterministic
+ * event id makes repeated scans safe, and one malformed assignment is reported
+ * without preventing other missing fees from being repaired.
+ */
+export function reconcileMissingPlatformFees(
+  state: LogLoadsDatabaseState,
+  at = nowIso()
+): PlatformFeeReconciliationResult[] {
+  const assignmentsWithFees = new Set(
+    state.platformFeeEvents.map((event) => event.assignmentId)
+  )
+  const missing = state.assignments
+    .filter(
+      (assignment) =>
+        Boolean(assignment.driverPaymentReceivedAt) &&
+        !assignmentsWithFees.has(assignment.id)
+    )
+    .sort(
+      (left, right) =>
+        (left.driverPaymentReceivedAt ?? "").localeCompare(
+          right.driverPaymentReceivedAt ?? ""
+        ) || left.id.localeCompare(right.id)
+    )
+
+  return missing.map((assignment) => {
+    try {
+      const result = accruePlatformFee(
+        state,
+        {
+          actorUserId: assignment.driverPaymentReceivedByUserId,
+          assignmentId: assignment.id
+        },
+        at
+      )
+
+      if (result.outcome === "accrued" || result.outcome === "already_accrued") {
+        return {
+          assignmentId: assignment.id,
+          eventId: result.event.id,
+          outcome: result.outcome,
+          reason: null
+        }
+      }
+
+      return {
+        assignmentId: assignment.id,
+        eventId: null,
+        outcome: result.outcome,
+        reason: result.reason
+      }
+    } catch (error) {
+      const reason = (
+        error instanceof Error ? error.message : "Unknown platform-fee reconciliation failure"
+      ).slice(0, 300)
+
+      insertBillingAuditEvent(state, {
+        action: "platform_fee_reconciliation_failed",
+        actorUserId: null,
+        at,
+        entityId: assignment.id,
+        entityType: "assignment",
+        metadata: {
+          driverPaymentReceivedAt: assignment.driverPaymentReceivedAt,
+          reason
+        }
+      })
+
+      return {
+        assignmentId: assignment.id,
+        eventId: null,
+        outcome: "error",
+        reason
+      }
+    }
+  })
+}
+
 // ── Void ──────────────────────────────────────────────────────────────────────
 
 export interface VoidPlatformFeeInput {

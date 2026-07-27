@@ -117,6 +117,7 @@ import {
   openAllClosedPeriodInvoices,
   openClosedPeriodInvoices,
   openInvoiceForPeriod,
+  reconcileMissingPlatformFees,
   voidPlatformFee
 } from "./platform-fees"
 import { getRouteById, listRoutes } from "./routes"
@@ -169,6 +170,9 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     openAllClosedPeriodInvoices: (
       at?: Parameters<typeof openAllClosedPeriodInvoices>[1]
     ) => openAllClosedPeriodInvoices(state, at),
+    reconcileMissingPlatformFees: (
+      at?: Parameters<typeof reconcileMissingPlatformFees>[1]
+    ) => reconcileMissingPlatformFees(state, at),
     markInvoicePaid: (
       input: Parameters<typeof markInvoicePaid>[1],
       at?: Parameters<typeof markInvoicePaid>[2]
@@ -412,6 +416,7 @@ export {
   openAllClosedPeriodInvoices,
   openClosedPeriodInvoices,
   openInvoiceForPeriod,
+  reconcileMissingPlatformFees,
   voidPlatformFee
 } from "./platform-fees"
 export type {
@@ -423,6 +428,7 @@ export type {
   InvoiceSettlementResult,
   OpenInvoiceForPeriodInput,
   OpenInvoiceForPeriodResult,
+  PlatformFeeReconciliationResult,
   VoidPlatformFeeInput,
   VoidPlatformFeeResult
 } from "./platform-fees"

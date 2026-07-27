@@ -301,7 +301,9 @@ interface FakeStripe {
  * That is the point: a create repeated with the same key must return the FIRST
  * invoice, so a test can prove a retry never raises a second bill.
  */
-function fakeStripe(options: { paid?: boolean; payError?: Error } = {}): FakeStripe {
+function fakeStripe(
+  options: { onPay?: () => void | Promise<void>; paid?: boolean; payError?: Error } = {}
+): FakeStripe {
   const calls: Array<{ input: Record<string, unknown>; name: string }> = []
   const byKey = new Map<string, StripeInvoiceFacts>()
   const mintedInvoiceIds: string[] = []
@@ -372,6 +374,7 @@ function fakeStripe(options: { paid?: boolean; payError?: Error } = {}): FakeStr
       },
       async payInvoice(input) {
         record("payInvoice", { ...input })
+        await options.onPay?.()
 
         if (options.payError) {
           throw options.payError
@@ -890,7 +893,7 @@ describe("planHostInvoiceCharge", () => {
     })
   })
 
-  it("refuses a bill that is already paid, and reports one already sent to Stripe", () => {
+  it("refuses an unbound paid bill, and retries an open bill already sent to Stripe", () => {
     const { organization, state } = billableHost()
     const fee = state.platformFeeEvents[0]!
 
@@ -903,7 +906,7 @@ describe("planHostInvoiceCharge", () => {
       hostInvoice({ fees: [fee], organizationId: organization.id, stripeInvoiceId: "in_1" })
     ]
     expect(planHostInvoiceCharge(state, INVOICE_ID)).toMatchObject({
-      kind: "already_charged",
+      kind: "retry_payment",
       stripeInvoiceId: "in_1"
     })
   })
@@ -1004,7 +1007,7 @@ describe("chargeHostInvoice", () => {
     expect(state.hostInvoices[0]?.stripeInvoiceId).toBe("in_1")
   })
 
-  it("calls Stripe not at all for a bill that already names a Stripe invoice", async () => {
+  it("calls Stripe not at all for a paid bill that already names a Stripe invoice", async () => {
     const { state } = billableHost()
     const stripe = fakeStripe()
 
@@ -1019,6 +1022,38 @@ describe("chargeHostInvoice", () => {
 
     expect(again.ok && again.value.alreadyCharged).toBe(true)
     expect(second.callNames()).toEqual([])
+  })
+
+  it("does not let replaying an older paid bill clear a newer payment failure", async () => {
+    const { organization, state } = billableHost()
+    const invoice = state.hostInvoices[0]!
+
+    state.hostInvoices[0] = {
+      ...invoice,
+      paidAt: PERIOD.periodEnd,
+      status: "paid",
+      stripeInvoiceId: "in_older"
+    }
+    recordHostPaymentFailure(state, {
+      at: "2026-08-02T12:00:00.000Z",
+      organizationId: organization.id,
+      reason: "The newer July invoice was declined."
+    })
+
+    const stripe = fakeStripe()
+    const replayed = await chargeHostInvoice({
+      invoiceId: INVOICE_ID,
+      port: stripe.port,
+      state: stateAccess(state)
+    })
+    const profile = findHostBillingProfile(state, organization.id)
+
+    expect(replayed.ok && replayed.value.status).toBe("paid")
+    expect(stripe.callNames()).toEqual([])
+    expect(profile).toMatchObject({
+      lastFailureReason: "The newer July invoice was declined.",
+      status: "failed"
+    })
   })
 
   it("lists every open backlog invoice oldest first for scheduler catch-up", () => {
@@ -1080,8 +1115,8 @@ describe("chargeHostInvoice", () => {
     })
   })
 
-  it("persists the Stripe invoice before a declined payment attempt rejects", async () => {
-    const { state } = billableHost()
+  it("persists the Stripe invoice before a decline and retries that same invoice", async () => {
+    const { organization, state } = billableHost()
     const stripe = fakeStripe({ payError: new Error("Your card was declined.") })
 
     await expect(
@@ -1098,16 +1133,66 @@ describe("chargeHostInvoice", () => {
       status: "open",
       stripeInvoiceId: "in_1"
     })
+    recordHostPaymentFailure(state, {
+      at: "2026-07-01T12:01:00.000Z",
+      organizationId: organization.id,
+      reason: "Your card was declined."
+    })
+    expect(findHostBillingProfile(state, organization.id)?.status).toBe("failed")
 
     const retry = fakeStripe()
     const reconciled = await chargeHostInvoice({
       invoiceId: INVOICE_ID,
+      now: () => "2026-07-02T12:00:00.000Z",
       port: retry.port,
       state: stateAccess(state)
     })
 
     expect(reconciled.ok && reconciled.value.alreadyCharged).toBe(true)
-    expect(retry.callNames()).toEqual([])
+    expect(reconciled.ok && reconciled.value.status).toBe("paid")
+    expect(retry.callNames()).toEqual(["payInvoice"])
+    expect(retry.inputFor("payInvoice")).toMatchObject({
+      idempotencyKey: expect.stringContaining("pay-retry-2026-07-02T12:00:00.000Z"),
+      stripeInvoiceId: "in_1"
+    })
+    expect(state.hostInvoices[0]).toMatchObject({
+      paidAt: "2026-07-02T12:00:00.000Z",
+      status: "paid",
+      stripeInvoiceId: "in_1"
+    })
+    expect(findHostBillingProfile(state, organization.id)).toMatchObject({
+      lastFailureAt: null,
+      lastFailureReason: null,
+      status: "attached"
+    })
+  })
+
+  it("keeps a newer failure authoritative when it lands during an older collection", async () => {
+    const { organization, state } = billableHost()
+    const stripe = fakeStripe({
+      onPay: () => {
+        recordHostPaymentFailure(state, {
+          at: "2026-08-02T12:00:00.000Z",
+          organizationId: organization.id,
+          reason: "A newer invoice failed during collection."
+        })
+      }
+    })
+
+    const charged = await chargeHostInvoice({
+      invoiceId: INVOICE_ID,
+      now: () => AT,
+      port: stripe.port,
+      state: stateAccess(state)
+    })
+    const profile = findHostBillingProfile(state, organization.id)
+
+    expect(charged.ok && charged.value.status).toBe("paid")
+    expect(state.hostInvoices[0]?.status).toBe("paid")
+    expect(profile).toMatchObject({
+      lastFailureReason: "A newer invoice failed during collection.",
+      status: "failed"
+    })
   })
 
   it("reports a refusal rather than charging when the bill cannot be billed", async () => {

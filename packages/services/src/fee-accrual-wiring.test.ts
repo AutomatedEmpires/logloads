@@ -4,12 +4,14 @@ import {
   computePlatformFeeCents,
   organizationMembershipSchema,
   organizationRoleCan,
+  platformFeeEventId,
   PLATFORM_FEE_BPS
 } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
 import { createLogLoadsServices } from "./index"
+import { reconcileMissingPlatformFees } from "./platform-fees"
 
 /**
  * A fee is earned only after the complete two-party chain:
@@ -173,6 +175,52 @@ describe("a driver-confirmed payment receipt raises the platform fee", () => {
     expect(fixture.services.state.platformFeeEvents[0]!.id).toBe(firstId)
   })
 
+  it("repairs a received assignment whose fee could not be written initially", () => {
+    const fixture = settleableHaul()
+    forceSettleableState(fixture, 52_500)
+    confirmDelivery(fixture)
+    markSent(fixture)
+    const held = fixture.services.state.assignments.find(
+      (candidate) => candidate.id === fixture.assignment.id
+    )!
+    held.termsSnapshot = { ...held.termsSnapshot, driverPayCents: null }
+
+    const receipt = confirmReceived(fixture)
+    const received = fixture.services.state.assignments.find(
+      (candidate) => candidate.id === fixture.assignment.id
+    )!
+
+    expect(receipt.platformFeeOutcome).toBe("no_basis")
+    expect(received.driverPaymentReceivedAt).not.toBeNull()
+    expect(fixture.services.state.platformFeeEvents).toHaveLength(0)
+
+    received.termsSnapshot = {
+      ...received.termsSnapshot,
+      currency: "USD",
+      driverPayCents: 52_500
+    }
+
+    const reconciled = reconcileMissingPlatformFees(
+      fixture.services.state,
+      "2026-07-01T06:00:00.000Z"
+    )
+
+    expect(reconciled).toEqual([
+      {
+        assignmentId: fixture.assignment.id,
+        eventId: platformFeeEventId(fixture.assignment.id),
+        outcome: "accrued",
+        reason: null
+      }
+    ])
+    expect(fixture.services.state.platformFeeEvents).toHaveLength(1)
+    expect(fixture.services.state.platformFeeEvents[0]).toMatchObject({
+      assignmentId: fixture.assignment.id,
+      occurredAt: received.driverPaymentReceivedAt
+    })
+    expect(reconcileMissingPlatformFees(fixture.services.state)).toEqual([])
+  })
+
   it("records every failed fee-accrual attempt, including an unchanged retry", () => {
     const fixture = settleableHaul()
     forceSettleableState(fixture, 52_500)
@@ -202,6 +250,13 @@ describe("a driver-confirmed payment receipt raises the platform fee", () => {
     const failures = fixture.services.state.auditEvents.filter(
       (event) => event.action === "platform_fee_accrual_failed"
     )
+    const reconciled = reconcileMissingPlatformFees(
+      fixture.services.state,
+      "2026-07-01T06:00:00.000Z"
+    )
+    const reconciliationFailures = fixture.services.state.auditEvents.filter(
+      (event) => event.action === "platform_fee_reconciliation_failed"
+    )
 
     expect(first.changed).toBe(true)
     expect(second.changed).toBe(false)
@@ -211,6 +266,16 @@ describe("a driver-confirmed payment receipt raises the platform fee", () => {
     expect(third.platformFeeOutcome).toBe("error")
     expect(failures).toHaveLength(2)
     expect(failures.every((event) => event.entityId === fixture.assignment.id)).toBe(true)
+    expect(reconciled).toEqual([
+      {
+        assignmentId: fixture.assignment.id,
+        eventId: null,
+        outcome: "error",
+        reason: expect.any(String)
+      }
+    ])
+    expect(reconciliationFailures).toHaveLength(1)
+    expect(reconciliationFailures[0]?.entityId).toBe(fixture.assignment.id)
     expect(fixture.services.state.platformFeeEvents).toHaveLength(0)
   })
 
