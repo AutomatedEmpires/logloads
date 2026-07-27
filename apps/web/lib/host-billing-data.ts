@@ -393,9 +393,9 @@ export const INVOICE_STATE_PRESENTATION: Record<HostInvoiceStatus, InvoiceStateP
     tone: "info"
   },
   open: {
-    detail: "Charged to the card on file. This shows as paid once the payment confirms.",
+    detail: "Issued and outstanding. This shows as paid only after payment confirms.",
     settled: false,
-    statusLabel: "Awaiting payment",
+    statusLabel: "Outstanding",
     tone: "warning"
   },
   paid: {

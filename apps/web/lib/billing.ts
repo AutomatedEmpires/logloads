@@ -1434,6 +1434,8 @@ export async function startHostCardSetup(input: {
 export interface HostCardOnFile {
   brand: string | null
   last4: string | null
+  /** Opaque Stripe reference used to confirm the exact replacement card. */
+  paymentMethodId: string | null
   status: HostBillingProfileStatus
   /** Set only while the status is `failed`, so a host can be told what to fix. */
   lastFailureReason: string | null
@@ -1449,6 +1451,7 @@ export function hostCardOnFile(
     brand: profile?.paymentMethodBrand ?? null,
     last4: profile?.paymentMethodLast4 ?? null,
     lastFailureReason: profile?.status === "failed" ? profile.lastFailureReason ?? null : null,
+    paymentMethodId: profile?.defaultPaymentMethodId ?? null,
     status: profile?.status ?? "none"
   }
 }

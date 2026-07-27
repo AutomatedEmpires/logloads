@@ -483,8 +483,12 @@ describe("billable status", () => {
   it("reports attached for a host with a card on file", () => {
     const state = seedState()
     const organization = organizationOfType(state, "landing_source")
+    const profile = findHostBillingProfile(state, organization.id)
 
     expect(hostBillingStatus(state, organization.id)).toBe("attached")
+    expect(hostCardOnFile(state, organization.id).paymentMethodId).toBe(
+      profile?.defaultPaymentMethodId
+    )
   })
 
   it("reports none for a host with no billing profile at all", () => {

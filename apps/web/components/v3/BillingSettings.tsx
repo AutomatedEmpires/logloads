@@ -7,6 +7,10 @@ import { useId, useMemo, useState, useTransition } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
 import { startBillingPortalAction, startCheckoutAction } from "@/lib/billing-actions"
+import {
+  cardConfirmsPaymentMethod,
+  confirmedPaymentMethodId
+} from "@/lib/billing-card-confirmation"
 import type {
   HostBillingView,
   HostFeeLineView,
@@ -95,12 +99,14 @@ async function readJson<T>(response: Response): Promise<T | null> {
   }
 }
 
-async function waitForAttachedCard(): Promise<boolean> {
+async function waitForAttachedCard(paymentMethodId: string): Promise<boolean> {
   for (let attempt = 0; attempt < 12; attempt += 1) {
     const response = await fetch("/api/billing/payment-method", { cache: "no-store" })
-    const result = await readJson<{ card?: { status?: CardStatus } }>(response)
+    const result = await readJson<{
+      card?: { paymentMethodId?: string | null; status?: CardStatus }
+    }>(response)
 
-    if (response.ok && result?.card?.status === "attached") {
+    if (response.ok && cardConfirmsPaymentMethod(result?.card, paymentMethodId)) {
       return true
     }
 
@@ -148,9 +154,21 @@ function CardSetupForm({ onAttached }: { onAttached: () => void }) {
           return
         }
 
+        const paymentMethodId = confirmedPaymentMethodId(
+          confirmed.setupIntent.payment_method
+        )
+
+        if (!paymentMethodId) {
+          setNotice(
+            "Stripe accepted the card, but did not return the card reference LogLoads needs to confirm it. Refresh before publishing."
+          )
+          setPending(false)
+          return
+        }
+
         setNotice("Card accepted. Confirming it with LogLoads…")
 
-        if (await waitForAttachedCard()) {
+        if (await waitForAttachedCard(paymentMethodId)) {
           onAttached()
           return
         }
@@ -220,7 +238,8 @@ function HostCardControl({ status }: { status: CardStatus }) {
             : "Add card"}
       </button>
       <p className="settings-meaning">
-        Card details go directly to Stripe. LogLoads stores only the card brand and last four digits.
+        Card details go directly to Stripe. LogLoads stores Stripe&apos;s opaque card reference,
+        brand, and last four digits — never the card number.
       </p>
       {notice ? <p className="plan-action__notice" role="status">{notice}</p> : null}
     </div>

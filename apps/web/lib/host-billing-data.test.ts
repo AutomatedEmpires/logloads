@@ -599,6 +599,11 @@ describe("bills already raised", () => {
     // Only a paid bill may claim money was collected.
     const settled = Object.entries(INVOICE_STATE_PRESENTATION).filter(([, entry]) => entry.settled)
     expect(settled.map(([status]) => status)).toEqual(["paid"])
+    expect(INVOICE_STATE_PRESENTATION.open).toMatchObject({
+      settled: false,
+      statusLabel: "Outstanding"
+    })
+    expect(INVOICE_STATE_PRESENTATION.open.detail).not.toMatch(/\bcharged\b/i)
   })
 })
 
