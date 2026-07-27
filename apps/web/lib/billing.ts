@@ -1186,6 +1186,18 @@ export async function chargeHostInvoice(input: {
     stripeInvoiceId: created.id
   })
 
+  // Persist the provider invoice BEFORE attempting collection. A normal card
+  // decline rejects `payInvoice`; if the binding lived after that call, the next
+  // cron run would see an unbound LogLoads bill and could mint a second Stripe
+  // invoice after the provider idempotency record expired.
+  await input.state.mutate((draft) =>
+    markHostInvoiceIssued(draft.state, {
+      at: now(),
+      invoiceId: input.invoiceId,
+      stripeInvoiceId: created.id
+    })
+  )
+
   const paid = await input.port.payInvoice({
     idempotencyKey: hostInvoiceIdempotencyKey(input.invoiceId, "pay"),
     paymentMethodId: plan.paymentMethodId,
@@ -1524,6 +1536,32 @@ function newerBillingEventApplied(
   })
 }
 
+/**
+ * Whether a newer success/failure event already decided the shared host payment
+ * state. Invoice webhooks are independent records, but they all mutate one
+ * `HostBillingProfile`; ordering them by invoice would therefore let a delayed
+ * old event overwrite a newer host-wide result.
+ */
+function newerHostPaymentEventApplied(
+  state: LogLoadsDatabaseState,
+  input: { organizationId: string; createdAt: number }
+): boolean {
+  return state.auditEvents.some((event) => {
+    const paymentState = event.metadata?.hostPaymentState
+
+    if (
+      event.metadata?.organizationId !== input.organizationId ||
+      (paymentState !== "failed" && paymentState !== "succeeded")
+    ) {
+      return false
+    }
+
+    const applied = event.metadata?.eventCreatedAt
+
+    return typeof applied === "number" && applied > input.createdAt
+  })
+}
+
 function recordBillingEvent(
   state: LogLoadsDatabaseState,
   input: {
@@ -1532,6 +1570,7 @@ function recordBillingEvent(
     entityId: string
     entityType: string
     event: StripeBillingEvent
+    metadata?: Record<string, unknown>
   }
 ): void {
   state.auditEvents.push(
@@ -1543,6 +1582,7 @@ function recordBillingEvent(
       entityType: input.entityType,
       id: crypto.randomUUID(),
       metadata: {
+        ...input.metadata,
         eventCreatedAt: input.event.createdAt,
         eventId: input.event.id,
         eventType: input.event.type,
@@ -1784,23 +1824,39 @@ async function handleInvoicePaymentSucceeded(
     }
 
     const paid = markHostInvoicePaid(draft.state, { at, invoiceId: resolved.invoice.id })
-    recordHostPaymentSuccess(draft.state, {
-      at,
+    const staleForProfile = newerHostPaymentEventApplied(draft.state, {
+      createdAt: event.createdAt,
       organizationId: resolved.invoice.organizationId
     })
+
+    if (!staleForProfile) {
+      recordHostPaymentSuccess(draft.state, {
+        at,
+        organizationId: resolved.invoice.organizationId
+      })
+    }
 
     recordBillingEvent(draft.state, {
       action: "host_invoice_paid",
       at,
       entityId: paid.invoice.id,
       entityType: "host_invoice",
-      event
+      event,
+      metadata: {
+        hostInvoiceId: paid.invoice.id,
+        hostPaymentState: "succeeded",
+        organizationId: resolved.invoice.organizationId
+      }
     })
 
     return eventResult(
       event,
       "applied",
-      paid.changed ? "Monthly bill marked paid" : "Monthly bill was already paid"
+      staleForProfile
+        ? "Monthly bill marked paid; a newer host payment result remains authoritative"
+        : paid.changed
+          ? "Monthly bill marked paid"
+          : "Monthly bill was already paid"
     )
   })
 }
@@ -1841,13 +1897,20 @@ async function handleInvoicePaymentFailed(
     // The bill stays open. A declined attempt is not an uncollectible bill —
     // Stripe keeps retrying, and writing it off here would hide a debt the host
     // still owes.
-    const failure = recordHostPaymentFailure(draft.state, {
-      at,
-      organizationId: resolved.invoice.organizationId,
-      reason: failureReasonFor(event, resolved.stripeInvoiceId)
-    })
+    if (resolved.stripeInvoiceId) {
+      // The synchronous pay call can reject before it returns. Binding from the
+      // webhook as well makes provider reconciliation authoritative even when
+      // the application process died before its own issue write committed.
+      markHostInvoiceIssued(draft.state, {
+        at,
+        invoiceId: resolved.invoice.id,
+        stripeInvoiceId: resolved.stripeInvoiceId
+      })
+    }
 
-    if (!failure.profile) {
+    const profile = findHostBillingProfile(draft.state, resolved.invoice.organizationId)
+
+    if (!profile) {
       return eventResult(
         event,
         "unresolved",
@@ -1855,15 +1918,39 @@ async function handleInvoicePaymentFailed(
       )
     }
 
+    const staleForProfile = newerHostPaymentEventApplied(draft.state, {
+      createdAt: event.createdAt,
+      organizationId: resolved.invoice.organizationId
+    })
+
+    if (!staleForProfile) {
+      recordHostPaymentFailure(draft.state, {
+        at,
+        organizationId: resolved.invoice.organizationId,
+        reason: failureReasonFor(event, resolved.stripeInvoiceId)
+      })
+    }
+
     recordBillingEvent(draft.state, {
       action: "host_payment_failed",
       at,
-      entityId: failure.profile.id,
+      entityId: profile.id,
       entityType: "host_billing_profile",
-      event
+      event,
+      metadata: {
+        hostInvoiceId: resolved.invoice.id,
+        hostPaymentState: "failed",
+        organizationId: resolved.invoice.organizationId
+      }
     })
 
-    return eventResult(event, "applied", "Payment failure recorded; publishing is blocked again")
+    return eventResult(
+      event,
+      "applied",
+      staleForProfile
+        ? "Older payment failure recorded without replacing the newer host payment state"
+        : "Payment failure recorded; publishing is blocked again"
+    )
   })
 }
 

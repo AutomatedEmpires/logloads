@@ -22,6 +22,7 @@ import {
   hostInvoiceId,
   markInvoicePaid,
   markInvoiceUncollectible,
+  openAllClosedPeriodInvoices,
   openClosedPeriodInvoices,
   openInvoiceForPeriod,
   voidPlatformFee
@@ -754,6 +755,53 @@ describe("host invoice", () => {
     expect(
       state.auditEvents.find((event) => event.action === "host_invoice_opened")?.actorUserId
     ).toBeNull()
+  })
+
+  it("materializes every missed closed month before collecting the open backlog", () => {
+    const state = freshState()
+
+    twoJuneHauls(state)
+
+    const june = state.platformFeeEvents[0]
+
+    if (!june) {
+      throw new Error("The fixture did not accrue a June fee")
+    }
+
+    state.platformFeeEvents.push({
+      ...june,
+      assignmentId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee81",
+      createdAt: MAY_CONFIRMED,
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa81",
+      invoiceId: null,
+      occurredAt: MAY_CONFIRMED,
+      status: "accrued",
+      updatedAt: MAY_CONFIRMED
+    })
+    state.platformFeeEvents.push({
+      ...june,
+      assignmentId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee82",
+      createdAt: JULY_CONFIRMED,
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa82",
+      invoiceId: null,
+      occurredAt: JULY_CONFIRMED,
+      status: "accrued",
+      updatedAt: JULY_CONFIRMED
+    })
+
+    const opened = openAllClosedPeriodInvoices(state, MID_JULY)
+
+    expect(opened.flatMap((result) => "invoice" in result ? [result.invoice.periodStart] : [])).toEqual([
+      "2026-05-01T00:00:00.000Z",
+      JUNE_PERIOD_START
+    ])
+    expect(state.hostInvoices.map((invoice) => invoice.periodStart)).toEqual([
+      "2026-05-01T00:00:00.000Z",
+      JUNE_PERIOD_START
+    ])
+    expect(
+      state.platformFeeEvents.find((event) => event.occurredAt === JULY_CONFIRMED)
+    ).toMatchObject({ invoiceId: null, status: "accrued" })
   })
 
   it("mints one bill however the month boundary is spelled", () => {

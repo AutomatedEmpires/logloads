@@ -731,6 +731,42 @@ export function openClosedPeriodInvoices(
   )
 }
 
+/**
+ * Materializes every closed UTC month that still contains accrued fees.
+ *
+ * A scheduler outage can cross several month boundaries. Closing only the month
+ * immediately before the current run strands older accrued rows forever because
+ * the collection pass can discover invoices, not raw fee events. Deriving the
+ * distinct periods from those rows makes catch-up bounded by real work, oldest
+ * first, and reuses the deterministic monthly opener for idempotency.
+ */
+export function openAllClosedPeriodInvoices(
+  state: LogLoadsDatabaseState,
+  at = nowIso()
+): OpenInvoiceForPeriodResult[] {
+  const cutoff = Date.parse(at)
+
+  assertCondition(Number.isFinite(cutoff), "The billing run time must be a parsable instant")
+
+  const periods = new Map<string, InvoicePeriod>()
+
+  for (const event of state.platformFeeEvents) {
+    if (event.status !== "accrued") {
+      continue
+    }
+
+    const period = invoicePeriodFor(event.occurredAt)
+
+    if (Date.parse(period.periodEnd) <= cutoff) {
+      periods.set(period.periodStart, period)
+    }
+  }
+
+  return Array.from(periods.values())
+    .sort((left, right) => left.periodStart.localeCompare(right.periodStart))
+    .flatMap((period) => openClosedPeriodInvoices(state, period, at))
+}
+
 export interface InvoiceSettlementInput {
   actorUserId?: string
   organizationId?: string

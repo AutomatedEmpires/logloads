@@ -301,7 +301,7 @@ interface FakeStripe {
  * That is the point: a create repeated with the same key must return the FIRST
  * invoice, so a test can prove a retry never raises a second bill.
  */
-function fakeStripe(options: { paid?: boolean } = {}): FakeStripe {
+function fakeStripe(options: { paid?: boolean; payError?: Error } = {}): FakeStripe {
   const calls: Array<{ input: Record<string, unknown>; name: string }> = []
   const byKey = new Map<string, StripeInvoiceFacts>()
   const mintedInvoiceIds: string[] = []
@@ -372,6 +372,10 @@ function fakeStripe(options: { paid?: boolean } = {}): FakeStripe {
       },
       async payInvoice(input) {
         record("payInvoice", { ...input })
+
+        if (options.payError) {
+          throw options.payError
+        }
 
         const paid = options.paid ?? true
 
@@ -1074,6 +1078,36 @@ describe("chargeHostInvoice", () => {
       status: "open",
       stripeInvoiceId: "in_1"
     })
+  })
+
+  it("persists the Stripe invoice before a declined payment attempt rejects", async () => {
+    const { state } = billableHost()
+    const stripe = fakeStripe({ payError: new Error("Your card was declined.") })
+
+    await expect(
+      chargeHostInvoice({
+        invoiceId: INVOICE_ID,
+        now: () => AT,
+        port: stripe.port,
+        state: stateAccess(state)
+      })
+    ).rejects.toThrow("Your card was declined.")
+
+    expect(state.hostInvoices[0]).toMatchObject({
+      paidAt: null,
+      status: "open",
+      stripeInvoiceId: "in_1"
+    })
+
+    const retry = fakeStripe()
+    const reconciled = await chargeHostInvoice({
+      invoiceId: INVOICE_ID,
+      port: retry.port,
+      state: stateAccess(state)
+    })
+
+    expect(reconciled.ok && reconciled.value.alreadyCharged).toBe(true)
+    expect(retry.callNames()).toEqual([])
   })
 
   it("reports a refusal rather than charging when the bill cannot be billed", async () => {

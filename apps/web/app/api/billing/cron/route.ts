@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto"
 
-import { openClosedPeriodInvoices } from "@logloads/services"
+import { openAllClosedPeriodInvoices } from "@logloads/services"
 import { NextResponse } from "next/server"
 
 import {
@@ -52,12 +52,15 @@ export async function GET(request: Request) {
   const at = now.toISOString()
   const period = previousUtcMonth(now)
   const state = operatingStateAccess()
+  // Materialize every closed month represented by accrued events, not only the
+  // immediately preceding month. A scheduler outage can cross several boundaries,
+  // and the collection pass below can discover invoices but not raw fee events.
   const results = await state.mutate((draft) =>
-    openClosedPeriodInvoices(draft.state, period, at)
+    openAllClosedPeriodInvoices(draft.state, at)
   )
-  // Read the complete open book after closing the latest month. Dark-launch
-  // months and scheduler outages can leave older invoices open; activation must
-  // catch those up instead of charging only the immediately preceding month.
+  // Read the complete open book after materializing every missed month.
+  // Dark-launch months and scheduler outages can also leave older invoices open;
+  // activation catches those up oldest-first.
   const invoices = await state.read(listOpenHostInvoices)
 
   if (!platformFeeCollectionEnabled()) {

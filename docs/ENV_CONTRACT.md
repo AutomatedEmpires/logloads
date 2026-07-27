@@ -18,6 +18,18 @@ key and all secret/key values remain server-only.
 `LOGLOADS_STATE_FILE` is a non-production convenience only. It is neither required
 nor authoritative on Vercel.
 
+## Required to accept real hauling work
+
+| Variable | Secret | Absent behavior |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | yes | every submitted driver credential stays pending, so no driver can accept any load |
+
+Credential review is a binding safety gate, not an optional assistant feature.
+`CREDENTIAL_REVIEW_MODEL` may override the pinned `claude-opus-5` default, but
+changing the model requires a controlled re-verification of structured output,
+document reading, latency, and refusal behavior. `/api/health` reports
+`integrations.credentialReview=false` while the provider key is absent.
+
 ## Controlled bootstrap
 
 `LOGLOADS_ALLOW_STATE_BOOTSTRAP=true` permits creation of the singleton canonical
@@ -30,6 +42,7 @@ fails closed rather than silently replacing missing production data with seed da
 | Group | Variables |
 |---|---|
 | Billing | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_DISPATCH` |
+| Credential review | `ANTHROPIC_API_KEY`; optional pinned override `CREDENTIAL_REVIEW_MODEL` |
 | Private media | `LOGLOADS_MEDIA_STORAGE=supabase`, `LOGLOADS_MEDIA_BUCKET`, `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` |
 | Email | `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_REPLY_TO`, `SUPPORT_EMAIL`, `LOGLOADS_CONTACT_EMAIL` |
 | Analytics | `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` |

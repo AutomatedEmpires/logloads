@@ -164,6 +164,11 @@ describe("schema validation", () => {
     }).success).toBe(false)
     expect(assignmentSchema.safeParse({
       ...assignment,
+      driverPaymentReceivedAt: null,
+      driverPaymentReceivedByUserId: receiver
+    }).success).toBe(false)
+    expect(assignmentSchema.safeParse({
+      ...assignment,
       driverPaymentReceivedAt: "2026-06-05T12:01:00.000Z",
       driverPaymentReceivedByUserId: assignment.driverPaymentSentByUserId
     }).success).toBe(false)

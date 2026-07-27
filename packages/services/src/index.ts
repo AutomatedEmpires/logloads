@@ -114,6 +114,7 @@ import {
   hostFeeSummary,
   markInvoicePaid,
   markInvoiceUncollectible,
+  openAllClosedPeriodInvoices,
   openClosedPeriodInvoices,
   openInvoiceForPeriod,
   voidPlatformFee
@@ -165,6 +166,9 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
       input: Parameters<typeof openClosedPeriodInvoices>[1],
       at?: Parameters<typeof openClosedPeriodInvoices>[2]
     ) => openClosedPeriodInvoices(state, input, at),
+    openAllClosedPeriodInvoices: (
+      at?: Parameters<typeof openAllClosedPeriodInvoices>[1]
+    ) => openAllClosedPeriodInvoices(state, at),
     markInvoicePaid: (
       input: Parameters<typeof markInvoicePaid>[1],
       at?: Parameters<typeof markInvoicePaid>[2]
@@ -405,6 +409,7 @@ export {
   hostInvoiceId,
   markInvoicePaid,
   markInvoiceUncollectible,
+  openAllClosedPeriodInvoices,
   openClosedPeriodInvoices,
   openInvoiceForPeriod,
   voidPlatformFee

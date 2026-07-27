@@ -54,6 +54,7 @@ const TRUCK_SLOT_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddd91"
 const ASSIGNMENT_ID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee91"
 const INVOICE_ID = "ffffffff-ffff-4fff-8fff-ffffffffff91"
 const MISSING_INVOICE_ID = "ffffffff-ffff-4fff-8fff-ffffffffff92"
+const SECOND_INVOICE_ID = "ffffffff-ffff-4fff-8fff-ffffffffff93"
 const PERIOD = invoicePeriodFor("2026-06-15T00:00:00.000Z")
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -116,6 +117,38 @@ function webhookState(): { fee: PlatformFeeEvent; host: Organization; state: Log
   state.hostInvoices = [openInvoice(host.id, fee)]
 
   return { fee, host, state }
+}
+
+/** Adds an older bill for the same host so cross-invoice event ordering is real. */
+function addSecondOpenInvoice(
+  state: LogLoadsDatabaseState,
+  host: Organization,
+  sourceFee: PlatformFeeEvent
+): HostInvoice {
+  const period = invoicePeriodFor("2026-05-15T00:00:00.000Z")
+  const fee: PlatformFeeEvent = {
+    ...sourceFee,
+    assignmentId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee93",
+    createdAt: period.periodStart,
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa93",
+    invoiceId: SECOND_INVOICE_ID,
+    occurredAt: period.periodStart,
+    updatedAt: period.periodStart
+  }
+  const invoice: HostInvoice = {
+    ...openInvoice(host.id, fee),
+    createdAt: period.periodEnd,
+    id: SECOND_INVOICE_ID,
+    issuedAt: period.periodEnd,
+    periodEnd: period.periodEnd,
+    periodStart: period.periodStart,
+    updatedAt: period.periodEnd
+  }
+
+  state.platformFeeEvents.push(fee)
+  state.hostInvoices.push(invoice)
+
+  return invoice
 }
 
 function stateAccess(state: LogLoadsDatabaseState): {
@@ -604,6 +637,41 @@ describe("invoice.payment_succeeded", () => {
     expect(hostBillingStatus(state, host.id)).toBe("attached")
   })
 
+  it("does not let an older success clear a newer failure for the same host", async () => {
+    const { fee, host, state } = webhookState()
+    const olderInvoice = addSecondOpenInvoice(state, host, fee)
+    const wired = stateAccess(state)
+    const stripe = webhookPort()
+
+    await handleStripeBillingEvent(
+      billingEvent(
+        "invoice.payment_failed",
+        {
+          id: "in_newer",
+          last_finalization_error: { message: "The current card was declined." },
+          metadata: { hostInvoiceId: INVOICE_ID }
+        },
+        { createdAt: 1_780_000_500, id: "evt_newer_failure" }
+      ),
+      { port: stripe.port, state: wired.access }
+    )
+
+    await handleStripeBillingEvent(
+      billingEvent(
+        "invoice.payment_succeeded",
+        { id: "in_older", metadata: { hostInvoiceId: olderInvoice.id } },
+        { createdAt: 1_780_000_100, id: "evt_older_success" }
+      ),
+      { port: stripe.port, state: wired.access }
+    )
+
+    expect(state.hostInvoices.find((invoice) => invoice.id === olderInvoice.id)?.status).toBe("paid")
+    expect(findHostBillingProfile(state, host.id)).toMatchObject({
+      lastFailureReason: "The current card was declined.",
+      status: "failed"
+    })
+  })
+
   it("answers 200 for a Dispatch Pro subscription invoice, which is not a platform-fee bill", async () => {
     const { state } = webhookState()
 
@@ -677,8 +745,50 @@ describe("invoice.payment_failed", () => {
       status: "failed"
     })
     // A declined attempt is not a written-off debt. Stripe keeps retrying.
-    expect(state.hostInvoices[0]?.status).toBe("open")
+    expect(state.hostInvoices[0]).toMatchObject({
+      status: "open",
+      stripeInvoiceId: "in_live"
+    })
     expect(hostBillingStatus(state, host.id)).not.toBe("attached")
+  })
+
+  it("does not let an older failure replace a newer success for the same host", async () => {
+    const { fee, host, state } = webhookState()
+    const olderInvoice = addSecondOpenInvoice(state, host, fee)
+    const wired = stateAccess(state)
+    const stripe = webhookPort()
+
+    await handleStripeBillingEvent(
+      billingEvent(
+        "invoice.payment_succeeded",
+        { id: "in_newer", metadata: { hostInvoiceId: INVOICE_ID } },
+        { createdAt: 1_780_000_500, id: "evt_newer_success" }
+      ),
+      { port: stripe.port, state: wired.access }
+    )
+
+    await handleStripeBillingEvent(
+      billingEvent(
+        "invoice.payment_failed",
+        {
+          id: "in_older",
+          last_finalization_error: { message: "An old attempt failed." },
+          metadata: { hostInvoiceId: olderInvoice.id }
+        },
+        { createdAt: 1_780_000_100, id: "evt_older_failure" }
+      ),
+      { port: stripe.port, state: wired.access }
+    )
+
+    expect(state.hostInvoices.find((invoice) => invoice.id === olderInvoice.id)).toMatchObject({
+      status: "open",
+      stripeInvoiceId: "in_older"
+    })
+    expect(findHostBillingProfile(state, host.id)).toMatchObject({
+      lastFailureAt: null,
+      lastFailureReason: null,
+      status: "attached"
+    })
   })
 
   it("records a reason naming the Stripe invoice when Stripe sent no message", async () => {
