@@ -1655,12 +1655,14 @@ export function billingEventAlreadyApplied(
  * Stripe redelivers, and redelivery does not preserve order. Without this, the
  * redelivery of "card attached" (created at 10:00) arriving after "card detached"
  * (created at 10:05) re-attaches a card the host removed — and re-opens
- * publishing on a card that is gone. Compared in Stripe's own seconds, taken from
- * the event rather than from our clock.
+ * publishing on a card that is gone. Ordered first by Stripe's own seconds, taken
+ * from the event rather than from our clock, then by the unique event id. Stripe
+ * timestamps have only second precision; the id tie-break makes equal-second
+ * delivery converge regardless of which webhook arrives first.
  */
 function newerBillingEventApplied(
   state: LogLoadsDatabaseState,
-  input: { entityId: string; createdAt: number }
+  input: { entityId: string; createdAt: number; eventId: string }
 ): boolean {
   return state.auditEvents.some((event) => {
     if (event.entityId !== input.entityId) {
@@ -1668,8 +1670,19 @@ function newerBillingEventApplied(
     }
 
     const applied = event.metadata?.eventCreatedAt
+    const appliedEventId = event.metadata?.eventId
 
-    return typeof applied === "number" && applied > input.createdAt
+    return (
+      typeof applied === "number" &&
+      (
+        applied > input.createdAt ||
+        (
+          applied === input.createdAt &&
+          typeof appliedEventId === "string" &&
+          appliedEventId.localeCompare(input.eventId) > 0
+        )
+      )
+    )
   })
 }
 
@@ -1677,11 +1690,13 @@ function newerBillingEventApplied(
  * Whether a newer success/failure event already decided the shared host payment
  * state. Invoice webhooks are independent records, but they all mutate one
  * `HostBillingProfile`; ordering them by invoice would therefore let a delayed
- * old event overwrite a newer host-wide result.
+ * old event overwrite a newer host-wide result. The same event-id tie-break used
+ * for card changes total-orders successes and failures created in one Stripe
+ * second.
  */
 function newerHostPaymentEventApplied(
   state: LogLoadsDatabaseState,
-  input: { organizationId: string; createdAt: number }
+  input: { organizationId: string; createdAt: number; eventId: string }
 ): boolean {
   return state.auditEvents.some((event) => {
     const paymentState = event.metadata?.hostPaymentState
@@ -1694,8 +1709,19 @@ function newerHostPaymentEventApplied(
     }
 
     const applied = event.metadata?.eventCreatedAt
+    const appliedEventId = event.metadata?.eventId
 
-    return typeof applied === "number" && applied > input.createdAt
+    return (
+      typeof applied === "number" &&
+      (
+        applied > input.createdAt ||
+        (
+          applied === input.createdAt &&
+          typeof appliedEventId === "string" &&
+          appliedEventId.localeCompare(input.eventId) > 0
+        )
+      )
+    )
   })
 }
 
@@ -1810,7 +1836,11 @@ async function handleSetupIntentSucceeded(
     return {
       organizationId,
       stale: profile
-        ? newerBillingEventApplied(state, { createdAt: event.createdAt, entityId: profile.id })
+        ? newerBillingEventApplied(state, {
+            createdAt: event.createdAt,
+            entityId: profile.id,
+            eventId: event.id
+          })
         : false
     }
   })
@@ -1838,7 +1868,11 @@ async function handleSetupIntentSucceeded(
 
     if (
       profile &&
-      newerBillingEventApplied(draft.state, { createdAt: event.createdAt, entityId: profile.id })
+      newerBillingEventApplied(draft.state, {
+        createdAt: event.createdAt,
+        entityId: profile.id,
+        eventId: event.id
+      })
     ) {
       return eventResult(event, "ignored", "A newer card change for this host was already applied")
     }
@@ -1963,6 +1997,7 @@ async function handleInvoicePaymentSucceeded(
     const paid = markHostInvoicePaid(draft.state, { at, invoiceId: resolved.invoice.id })
     const staleForProfile = newerHostPaymentEventApplied(draft.state, {
       createdAt: event.createdAt,
+      eventId: event.id,
       organizationId: resolved.invoice.organizationId
     })
 
@@ -2057,6 +2092,7 @@ async function handleInvoicePaymentFailed(
 
     const staleForProfile = newerHostPaymentEventApplied(draft.state, {
       createdAt: event.createdAt,
+      eventId: event.id,
       organizationId: resolved.invoice.organizationId
     })
 

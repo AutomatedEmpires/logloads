@@ -363,16 +363,52 @@ export async function getFleetOpportunityData(loadId: string): Promise<FleetOppo
   }
 
   const route = state.haulRoutes.find((candidate) => candidate.id === posting.routeId) ?? null
-  const activeTripDriverIds = new Set(
-    state.tripsV2.filter((trip) => ACTIVE_TRIP_STATUSES.has(trip.status)).map((trip) => trip.driverProfileId)
-  )
+  const targetSlotId = load.slots.claimableSlotId ?? load.slots.requestableSlotId
+  const targetSlot = targetSlotId
+    ? state.truckSlots.find((candidate) => candidate.id === targetSlotId) ?? null
+    : null
 
   const options: LoadDispatchOption[] = state.equipmentCombinations
     .filter((combination) => combination.organizationId === organizationId && combination.status === "available")
     .flatMap((combination) => {
       const driverProfileId = combination.assignedDriverProfileId
 
-      if (!driverProfileId || activeTripDriverIds.has(driverProfileId)) {
+      if (!driverProfileId) {
+        return []
+      }
+
+      // A booked trip is not a permanent lock on a driver or rig. Mirror the
+      // service-side invariant and exclude only assignments whose actual haul
+      // windows overlap this one.
+      const overlappingAssignment = targetSlot
+        ? state.assignments.some((assignment) => {
+            if (!ACTIVE_ASSIGNMENT_STATUSES.has(assignment.status)) {
+              return false
+            }
+
+            const sameEquipment =
+              assignment.driverProfileId === driverProfileId ||
+              assignment.truckProfileId === combination.truckProfileId ||
+              Boolean(
+                combination.trailerProfileId &&
+                assignment.trailerProfileId === combination.trailerProfileId
+              )
+
+            if (!sameEquipment) {
+              return false
+            }
+
+            const otherSlot = state.truckSlots.find((candidate) => candidate.id === assignment.truckSlotId)
+
+            return Boolean(
+              otherSlot &&
+              otherSlot.startAt < targetSlot.endAt &&
+              otherSlot.endAt > targetSlot.startAt
+            )
+          })
+        : false
+
+      if (overlappingAssignment) {
         return []
       }
 

@@ -3021,11 +3021,7 @@ function directOfferTermsAreCurrent(
   postingSources: ReturnType<typeof assertPostingSourcesAreUsable>
 ): boolean {
   return Object.entries(directOfferTermsSnapshot(load, postingSources)).every(
-    ([key, value]) =>
-      // Offers written before driver pay became a frozen term have no such key.
-      // They remain claimable during rollout; every newly sent offer carries it.
-      (key === "driverPayCents" && !(key in offer.termsSnapshot)) ||
-      offer.termsSnapshot[key] === value
+    ([key, value]) => offer.termsSnapshot[key] === value
   )
 }
 
@@ -3049,6 +3045,10 @@ function createDirectOfferMutation(
 
   assertCondition(load.companyId === context.organizationId, "Only the source organization can send a direct offer")
   assertCondition(!load.archivedAt && ["open", "scheduled"].includes(load.status), "Direct offers require open work")
+  assertCondition(
+    typeof load.driverPayCents === "number" && load.driverPayCents > 0,
+    "Direct offers require stated driver pay; update the load before sending an offer"
+  )
   assertCondition(target.id !== context.organizationId, "Direct offers must be sent to another organization")
   assertCondition(["carrier", "fleet"].includes(target.type), "Direct offers must be sent to a hauling organization")
   assertCondition(
@@ -3198,6 +3198,10 @@ function claimDirectOfferMutation(
   )
   assertCondition(load.companyId === offer.offeredByOrganizationId, "Direct offer source no longer owns this load")
   assertCondition(!load.archivedAt && ["open", "scheduled"].includes(load.status), "This load is no longer accepting trucks")
+  assertCondition(
+    typeof load.driverPayCents === "number" && load.driverPayCents > 0,
+    "This direct offer has no stated driver pay; ask the host to update the load and send a new offer"
+  )
   const postingSources = assertPostingSourcesAreUsable(state, load.companyId, {
     dispatcherProfileId: load.dispatcherProfileId,
     dropoffMillId: load.dropoffMillId,

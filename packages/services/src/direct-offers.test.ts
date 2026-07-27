@@ -32,11 +32,13 @@ function directOfferServices() {
   // tag or historical ledger. Start from an explicit multi-claim lifecycle
   // state while production seed tests preserve the real 3/2/1 campaign.
   load.accessRequirements = []
+  load.driverPayCents = 52_500
   load.equipmentRequirements = []
   capacity.committedTruckloads = 1
   capacity.completedTruckloads = 0
   capacity.remainingTruckloads = 3
   offer.offeredTruckloads = 2
+  offer.termsSnapshot.driverPayCents = 52_500
 
   return services
 }
@@ -282,7 +284,7 @@ describe("direct-offer lifecycle", () => {
       .toThrow(/future expiration/)
   })
 
-  it("rejects acceptance when the server-derived offer terms have changed", () => {
+  it("rejects acceptance when server-derived terms changed or driver pay is missing", () => {
     const services = directOfferServices()
     services.state.directOffers = []
     const offer = services.createDirectOffer({
@@ -304,6 +306,39 @@ describe("direct-offer lifecycle", () => {
       directOfferId: offer.id
     }, { at: AT })).toThrow(/terms changed/)
     expect(services.state).toEqual(beforeClaim)
+
+    const legacy = directOfferServices()
+    const legacyOffer = legacy.state.directOffers.find((candidate) => candidate.id === OFFER_ID)
+
+    if (!legacyOffer) throw new Error("Legacy direct-offer fixture is missing")
+    delete legacyOffer.termsSnapshot.driverPayCents
+    const beforeLegacyClaim = structuredClone(legacy.state)
+
+    expect(() => legacy.claimDirectOffer(claimInput(), { at: AT })).toThrow(/terms changed/)
+    expect(legacy.state).toEqual(beforeLegacyClaim)
+
+    const unstated = directOfferServices()
+    const unstatedLoad = unstated.state.loadPostings.find((candidate) => candidate.id === LOAD_ID)
+
+    if (!unstatedLoad) throw new Error("Unstated-pay direct-offer fixture is missing")
+    unstatedLoad.driverPayCents = null
+    const beforeUnstatedClaim = structuredClone(unstated.state)
+
+    expect(() => unstated.claimDirectOffer(claimInput(), { at: AT })).toThrow(/no stated driver pay/)
+    expect(unstated.state).toEqual(beforeUnstatedClaim)
+
+    unstated.state.directOffers = []
+    const beforeUnstatedCreation = structuredClone(unstated.state)
+
+    expect(() => unstated.createDirectOffer({
+      actorUserId: SOURCE_OWNER_ID,
+      expiresAt: "2026-06-06T20:00:00.000Z",
+      loadPostingId: LOAD_ID,
+      offeredToOrganizationId: TARGET_ORGANIZATION_ID,
+      offeredTruckloads: 1,
+      organizationId: SOURCE_ORGANIZATION_ID
+    }, { at: AT })).toThrow(/require stated driver pay/)
+    expect(unstated.state).toEqual(beforeUnstatedCreation)
   })
 
   it("records exact slot availability on confirmation and rejects partial overlaps atomically", () => {

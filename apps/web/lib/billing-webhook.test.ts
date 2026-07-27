@@ -512,7 +512,7 @@ describe("setup_intent.succeeded", () => {
       event: billingEvent(
         "payment_method.detached",
         { id: paymentMethodId },
-        { createdAt: 1_780_000_500, id: "evt_detach" }
+        { createdAt: 1_780_000_500, id: "evt_z_detach" }
       )
     })
     await POST(webhookRequest())
@@ -525,7 +525,7 @@ describe("setup_intent.succeeded", () => {
       event: billingEvent(
         "setup_intent.succeeded",
         { customer: customerId, id: "seti_1", payment_method: paymentMethodId },
-        { createdAt: 1_780_000_100, id: "evt_attach" }
+        { createdAt: 1_780_000_500, id: "evt_a_attach" }
       )
     })
 
@@ -651,7 +651,7 @@ describe("invoice.payment_succeeded", () => {
           last_finalization_error: { message: "The current card was declined." },
           metadata: { hostInvoiceId: INVOICE_ID }
         },
-        { createdAt: 1_780_000_500, id: "evt_newer_failure" }
+        { createdAt: 1_780_000_500, id: "evt_z_newer_failure" }
       ),
       { port: stripe.port, state: wired.access }
     )
@@ -660,7 +660,7 @@ describe("invoice.payment_succeeded", () => {
       billingEvent(
         "invoice.payment_succeeded",
         { id: "in_older", metadata: { hostInvoiceId: olderInvoice.id } },
-        { createdAt: 1_780_000_100, id: "evt_older_success" }
+        { createdAt: 1_780_000_500, id: "evt_a_older_success" }
       ),
       { port: stripe.port, state: wired.access }
     )
@@ -762,7 +762,7 @@ describe("invoice.payment_failed", () => {
       billingEvent(
         "invoice.payment_succeeded",
         { id: "in_newer", metadata: { hostInvoiceId: INVOICE_ID } },
-        { createdAt: 1_780_000_500, id: "evt_newer_success" }
+        { createdAt: 1_780_000_500, id: "evt_z_newer_success" }
       ),
       { port: stripe.port, state: wired.access }
     )
@@ -775,7 +775,7 @@ describe("invoice.payment_failed", () => {
           last_finalization_error: { message: "An old attempt failed." },
           metadata: { hostInvoiceId: olderInvoice.id }
         },
-        { createdAt: 1_780_000_100, id: "evt_older_failure" }
+        { createdAt: 1_780_000_500, id: "evt_a_older_failure" }
       ),
       { port: stripe.port, state: wired.access }
     )
