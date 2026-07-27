@@ -12,7 +12,7 @@ import { expect, test, type Page } from "@playwright/test"
 
 async function signIn(page: Page, email: string) {
   await page.goto("/sign-in")
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
   await page.fill('input[name="email"]', email)
   await page.click('button[type="submit"]')
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 30_000 })
@@ -39,7 +39,7 @@ test.describe.serial("workspace invitations", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "cole@summit.example")
     await page.goto("/host/settings")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     // Serial-group retries reuse the same database, so a previous attempt may
     // already have recorded the invitation (pending row) or carried it all the
@@ -66,7 +66,7 @@ test.describe.serial("workspace invitations", () => {
 
     await expect(async () => {
       await page.reload()
-      await page.waitForLoadState("networkidle")
+      await page.waitForLoadState("domcontentloaded")
       await expect(pendingRow).toBeVisible({ timeout: 2_000 })
     }).toPass({ timeout: 20_000 })
   })
@@ -110,7 +110,7 @@ test.describe.serial("workspace invitations", () => {
     // The credential-free bench previews onboarding for an invited address
     // via ?as= — production resolves the identity from Clerk instead.
     await page.goto("/onboarding?as=casey@summit.example")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     const joinCard = page.locator(".invite-panel__join")
 
@@ -132,7 +132,7 @@ test.describe.serial("workspace invitations", () => {
     } else {
       await signIn(page, "cole@summit.example")
       await page.goto("/host/settings")
-      await page.waitForLoadState("networkidle")
+      await page.waitForLoadState("domcontentloaded")
       await expect(page.locator(".team-list").getByText("Casey Crew")).toBeVisible()
     }
   })

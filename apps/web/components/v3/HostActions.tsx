@@ -407,12 +407,22 @@ export function DriverPaymentControl({
 }: {
   assignmentId: string
   driverName: string
-  expectedPayLabel: string
+  expectedPayLabel: string | null
   status: "not_sent" | "sent" | "received"
 }) {
   const [confirming, setConfirming] = useState(false)
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null)
   const [pending, startTransition] = useTransition()
+
+  if (!expectedPayLabel) {
+    return (
+      <p className="host-builder-note" role="status">
+        This legacy assignment has no frozen driver-pay amount and currency. Agree
+        the payment off-platform and ask support to repair the accepted terms
+        before recording a receipt.
+      </p>
+    )
+  }
 
   if (status === "received" || feedback?.ok) {
     return (

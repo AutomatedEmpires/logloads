@@ -96,7 +96,11 @@ function forceSettleableState(
   held.driverPaymentSentByUserId = null
   held.driverPaymentReceivedAt = null
   held.driverPaymentReceivedByUserId = null
-  held.termsSnapshot = { ...held.termsSnapshot, driverPayCents }
+  held.termsSnapshot = {
+    ...held.termsSnapshot,
+    currency: "USD",
+    driverPayCents
+  }
   posting.driverPayCents = driverPayCents
 
   return { held, live, posting }
@@ -167,6 +171,61 @@ describe("a driver-confirmed payment receipt raises the platform fee", () => {
     expect(second.platformFeeOutcome).toBe("already_accrued")
     expect(fixture.services.state.platformFeeEvents).toHaveLength(1)
     expect(fixture.services.state.platformFeeEvents[0]!.id).toBe(firstId)
+  })
+
+  it("records every failed fee-accrual attempt, including an unchanged retry", () => {
+    const fixture = settleableHaul()
+    forceSettleableState(fixture, 52_500)
+    confirmDelivery(fixture)
+    markSent(fixture)
+
+    const held = fixture.services.state.assignments.find(
+      (candidate) => candidate.id === fixture.assignment.id
+    )!
+    held.termsSnapshot = { ...held.termsSnapshot, driverPayCents: null }
+
+    const first = confirmReceived(fixture)
+    const received = fixture.services.state.assignments.find(
+      (candidate) => candidate.id === fixture.assignment.id
+    )!
+    received.termsSnapshot = {
+      ...received.termsSnapshot,
+      currency: "USD",
+      driverPayCents: 52_500
+    }
+    fixture.services.state.loadPostings.find(
+      (candidate) => candidate.id === fixture.load.id
+    )!.companyId = "not-a-uuid"
+
+    const second = confirmReceived(fixture)
+    const third = confirmReceived(fixture)
+    const failures = fixture.services.state.auditEvents.filter(
+      (event) => event.action === "platform_fee_accrual_failed"
+    )
+
+    expect(first.changed).toBe(true)
+    expect(second.changed).toBe(false)
+    expect(third.changed).toBe(false)
+    expect(first.platformFeeOutcome).toBe("no_basis")
+    expect(second.platformFeeOutcome).toBe("error")
+    expect(third.platformFeeOutcome).toBe("error")
+    expect(failures).toHaveLength(2)
+    expect(failures.every((event) => event.entityId === fixture.assignment.id)).toBe(true)
+    expect(fixture.services.state.platformFeeEvents).toHaveLength(0)
+  })
+
+  it("uses the frozen currency when telling the driver what the host sent", () => {
+    const fixture = settleableHaul()
+    const { held } = forceSettleableState(fixture, 52_500)
+    held.termsSnapshot = { ...held.termsSnapshot, currency: "CAD" }
+    confirmDelivery(fixture)
+    markSent(fixture)
+
+    const notice = fixture.services.state.notifications
+      .filter((notification) => notification.userId === fixture.driver.userId)
+      .at(-1)
+
+    expect(notice?.body).toContain("CA$525.00")
   })
 
   it("raises no fee when the host disputes the delivered record", () => {

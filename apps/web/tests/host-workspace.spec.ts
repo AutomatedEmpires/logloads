@@ -11,7 +11,7 @@ import { fillWhenReady, selectWhenReady } from "./builder-input"
 
 async function signIn(page: Page, email: string) {
   await page.goto("/sign-in")
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
   await page.fill('input[name="email"]', email)
   await page.click('button[type="submit"]')
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 30_000 })
@@ -49,7 +49,7 @@ test.describe.serial("host workspace setup", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "cole@summit.example")
     await page.goto("/host/landings")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     // The page used to say "contact LogLoads support to add your first landing".
     await expect(page.getByRole("heading", { name: "Add a landing" })).toBeVisible()
@@ -80,7 +80,7 @@ test.describe.serial("host workspace setup", () => {
     // The landing itself on the page is the durable proof, not a flash message.
     await expect(async () => {
       await page.reload()
-      await page.waitForLoadState("networkidle")
+      await page.waitForLoadState("domcontentloaded")
       await expect(page.getByRole("heading", { name: LANDING })).toBeVisible()
     }).toPass({ timeout: 30_000 })
   })
@@ -89,7 +89,7 @@ test.describe.serial("host workspace setup", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "cole@summit.example")
     await page.goto("/host/landings")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     const card = page.locator(".host-landing-card").filter({ hasText: LANDING }).first()
     await expect(card).toBeVisible({ timeout: 15_000 })
@@ -108,7 +108,7 @@ test.describe.serial("host workspace setup", () => {
 
     await expect(async () => {
       await page.reload()
-      await page.waitForLoadState("networkidle")
+      await page.waitForLoadState("domcontentloaded")
       const refreshed = page.locator(".host-landing-card").filter({ hasText: LANDING }).first()
       await expect(refreshed.getByText(LANE)).toBeVisible()
     }).toPass({ timeout: 30_000 })
@@ -118,7 +118,7 @@ test.describe.serial("host workspace setup", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "cole@summit.example")
     await page.goto("/host/landings")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     const card = page.locator(".host-landing-card").filter({ hasText: LANDING }).first()
     const briefing = card.locator("details").filter({ hasText: "Driver briefing" })
@@ -135,7 +135,7 @@ test.describe.serial("host workspace setup", () => {
 
     await expect(async () => {
       await page.reload()
-      await page.waitForLoadState("networkidle")
+      await page.waitForLoadState("domcontentloaded")
       const refreshed = page.locator(".host-landing-card").filter({ hasText: LANDING }).first()
       await expect(refreshed.locator("dd").filter({ hasText: "heel-boom loader" })).toBeVisible()
       await expect(refreshed.getByText(/Details verified/)).toBeVisible()
@@ -151,7 +151,7 @@ test.describe.serial("host workspace setup", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "cole@summit.example")
     await page.goto("/host/landings")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     const rates = page.locator(".workspace-section").filter({ hasText: "Rates you pay" })
     await expect(rates).toBeVisible()
@@ -165,7 +165,7 @@ test.describe.serial("host workspace setup", () => {
 
     await expect(async () => {
       await page.reload()
-      await page.waitForLoadState("networkidle")
+      await page.waitForLoadState("domcontentloaded")
       await expect(page.getByText(RATE_NOTE)).toBeVisible()
     }).toPass({ timeout: 30_000 })
   })
@@ -174,7 +174,7 @@ test.describe.serial("host workspace setup", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "cole@summit.example")
     await page.goto("/host/opportunities")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     await expect(page.getByText("Publish timber movement")).toBeVisible({ timeout: 15_000 })
     await fillWhenReady(page, "Work title", `Cedar haul ${STAMP}`)

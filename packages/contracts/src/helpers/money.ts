@@ -17,6 +17,32 @@ export function formatMoney(value: MoneyValue): string {
 }
 
 /**
+ * The off-platform driver payment frozen into an accepted assignment.
+ *
+ * Legacy assignments may carry neither field, and a half-recorded amount without
+ * its currency is not a monetary promise the product can honestly display or
+ * receipt. Callers therefore get the pair or null, never an invented fallback.
+ */
+export function readFrozenDriverPay(
+  termsSnapshot: Readonly<Record<string, unknown>>
+): MoneyValue | null {
+  const amountCents = termsSnapshot.driverPayCents
+  const currency = termsSnapshot.currency
+
+  if (
+    typeof amountCents !== "number" ||
+    !Number.isSafeInteger(amountCents) ||
+    amountCents <= 0 ||
+    typeof currency !== "string" ||
+    !/^[A-Za-z]{3}$/.test(currency)
+  ) {
+    return null
+  }
+
+  return { amountCents, currency: currency.toUpperCase() }
+}
+
+/**
  * What this load pays the driver, as one sentence.
  *
  * A host-stated `driverPayCents` is the authoritative answer and wins outright:

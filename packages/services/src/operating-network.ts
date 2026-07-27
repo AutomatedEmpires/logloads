@@ -15,6 +15,7 @@ import {
   notificationSchema,
   organizationRoleCan,
   PRE_TRIP_INSPECTION_CHECKLIST,
+  readFrozenDriverPay,
   transitionAssignmentStatus,
   transitionLoadPostingStatus,
   transitionTruckSlotStatus,
@@ -2442,13 +2443,12 @@ export function markDriverPaymentSent(
     return { assignment, changed: false }
   }
 
-  const frozenDriverPayCents = assignment.termsSnapshot.driverPayCents
+  const frozenDriverPay = readFrozenDriverPay(assignment.termsSnapshot)
 
-  assertCondition(
-    typeof frozenDriverPayCents === "number" && frozenDriverPayCents > 0,
-    "This assignment has no frozen driver pay to record"
-  )
-  const driverPayCents = Number(frozenDriverPayCents)
+  if (!frozenDriverPay) {
+    throw new Error("This assignment has no frozen driver pay and currency to record")
+  }
+  const driverPayCents = frozenDriverPay.amountCents
 
   const timestamp = nowIso()
   const updated = assignmentSchema.parse({
@@ -2470,7 +2470,7 @@ export function markDriverPaymentSent(
     state,
     driver.userId,
     "Driver pay marked sent",
-    `${load.title}: the host marked ${formatMoney({ amountCents: driverPayCents, currency: "USD" })} sent. Confirm only after it reaches you.`,
+    `${load.title}: the host marked ${formatMoney(frozenDriverPay)} sent. Confirm only after it reaches you.`,
     "assignment",
     assignment.id,
     "system_alert"
@@ -2529,6 +2529,7 @@ export function confirmDriverPaymentReceived(
   }
 
   let fee: AccruePlatformFeeResult | null = null
+  let feeFailure: string | null = null
 
   try {
     fee = accruePlatformFee(
@@ -2536,9 +2537,26 @@ export function confirmDriverPaymentReceived(
       { actorUserId: context.actorUserId, assignmentId: assignment.id },
       updated.driverPaymentReceivedAt ?? timestamp
     )
-  } catch {
+  } catch (error) {
     // Payment receipt is an operating fact between host and driver. A broken
     // billing ledger must be repaired separately and must never erase that fact.
+    feeFailure = (
+      error instanceof Error ? error.message : "Unknown platform-fee accrual failure"
+    ).slice(0, 300)
+  }
+
+  // A retry has changed=false. Keep this outside the receipt-notification block
+  // so a persistently unbillable completed load leaves a trace on every failed
+  // repair attempt instead of disappearing after the first receipt write.
+  if (feeFailure) {
+    insertAuditEvent(
+      state,
+      context.actorUserId,
+      "assignment",
+      assignment.id,
+      "platform_fee_accrual_failed",
+      { loadPostingId: load.id, reason: feeFailure }
+    )
   }
 
   if (changed) {

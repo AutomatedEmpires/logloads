@@ -5,6 +5,7 @@ import {
   formatMoney,
   formatRateLabel,
   organizationRoleCan,
+  readFrozenDriverPay,
   recommendLoad,
   reputationLabel,
   summarizeReviews,
@@ -343,7 +344,7 @@ export interface NetworkView {
       hasEvidence: boolean
     }
     driverPayment: {
-      expectedPayLabel: string
+      expectedPayLabel: string | null
       receivedAt: string | null
       sentAt: string | null
       status: "not_sent" | "sent" | "received"
@@ -1206,6 +1207,14 @@ export function buildNetworkView(
 
       return organizationDriverProfileIds.has(trip.driverProfileId)
     })
+    // Corrupt rows are withheld by the store, so one orphaned trip can survive
+    // while its assignment or load is quarantined. Omit that trip from the board
+    // instead of turning every participant's trips page into a 500.
+    .filter(
+      (trip) =>
+        state.loadPostings.some((item) => item.id === trip.loadPostingId) &&
+        state.assignments.some((item) => item.id === trip.assignmentId)
+    )
     .map((trip) => {
       const load = requireRecord(state.loadPostings.find((item) => item.id === trip.loadPostingId), `trip load ${trip.loadPostingId}`)
       const assignment = requireRecord(
@@ -1213,6 +1222,7 @@ export function buildNetworkView(
         `trip assignment ${trip.assignmentId}`
       )
       const driver = state.driverProfiles.find((profile) => profile.id === trip.driverProfileId)
+      const frozenDriverPay = readFrozenDriverPay(assignment.termsSnapshot)
       const driverUser = driver ? state.profiles.find((profile) => profile.id === driver.userId) : undefined
       const events = state.tripEvents
         .filter((event) => event.tripId === trip.id)
@@ -1312,13 +1322,7 @@ export function buildNetworkView(
         },
         documents,
         driverPayment: {
-          expectedPayLabel: formatMoney({
-            amountCents:
-              typeof assignment.termsSnapshot.driverPayCents === "number"
-                ? assignment.termsSnapshot.driverPayCents
-                : load.driverPayCents ?? 0,
-            currency: "USD"
-          }),
+          expectedPayLabel: frozenDriverPay ? formatMoney(frozenDriverPay) : null,
           receivedAt: assignment.driverPaymentReceivedAt ?? null,
           sentAt: assignment.driverPaymentSentAt ?? null,
           status: (

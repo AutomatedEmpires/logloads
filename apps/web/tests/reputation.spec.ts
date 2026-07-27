@@ -15,7 +15,7 @@ mkdirSync(SHOTS, { recursive: true })
 
 async function signIn(page: Page, email: string) {
   await page.goto("/sign-in")
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
   await page.fill('input[name="email"]', email)
   await page.click('button[type="submit"]')
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 30_000 })
@@ -34,7 +34,7 @@ test.describe.serial("reputation + reliability", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "maya@northpine.example")
     await page.goto("/driver/schedule")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     const form = page.locator(".review-form").first()
     await expect(form).toBeVisible({ timeout: 15_000 })
@@ -68,12 +68,12 @@ test.describe.serial("reputation + reliability", () => {
     await signIn(page, "hank@northpine.example")
 
     await page.goto("/driver/profile")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
     await expect(page.locator(".reputation-chip").first()).toBeVisible({ timeout: 15_000 })
     await page.screenshot({ path: `${SHOTS}/reputation-profile.png`, fullPage: true })
 
     await page.goto("/driver/loads")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
     await expect(page.locator(".reputation-chip").first()).toBeVisible({ timeout: 15_000 })
   })
 
@@ -81,7 +81,7 @@ test.describe.serial("reputation + reliability", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "admin@logloads.example")
     await page.goto("/admin/reliability")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     await expect(page.getByText("Network reliability")).toBeVisible()
     await expect(page.locator(".perf-row").first()).toBeVisible({ timeout: 15_000 })

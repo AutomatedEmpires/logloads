@@ -8,6 +8,7 @@ import {
   platformFeeEventId,
   platformFeeEventSchema,
   PLATFORM_FEE_BPS,
+  readFrozenDriverPay,
   type Assignment,
   type AssignmentStatus,
   type HostInvoice,
@@ -376,21 +377,21 @@ export function accruePlatformFee(
     }
   }
 
-  const frozenDriverPay = assignment.termsSnapshot.driverPayCents
-  const driverPayCents =
-    typeof frozenDriverPay === "number" ? frozenDriverPay : load.driverPayCents ?? null
+  const frozenDriverPay = readFrozenDriverPay(assignment.termsSnapshot)
 
-  if (driverPayCents === null) {
+  if (!frozenDriverPay) {
     // Accruing zero here would put a real fee row on a load with no stated pay, and
     // a percentage of nothing presented as a charge is a fabricated one. The refusal
     // carries no event, so a caller cannot mistake it for a charge.
     return {
       assignmentId: assignment.id,
       outcome: "no_basis",
-      reason: "This load states no driver pay, and a fee is a percentage of stated driver pay"
+      reason:
+        "This assignment has no frozen driver pay and currency, so a fee cannot be derived honestly"
     }
   }
 
+  const driverPayCents = frozenDriverPay.amountCents
   const feeBps = input.feeBps ?? PLATFORM_FEE_BPS
   const actorUserId = input.actorUserId ?? null
   // The receipt is the billable event: LogLoads does not earn its fee merely

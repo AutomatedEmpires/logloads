@@ -1041,12 +1041,22 @@ export function DriverPaymentReceiptControl({
   status
 }: {
   assignmentId: string
-  expectedPayLabel: string
+  expectedPayLabel: string | null
   status: NetworkView["trips"][number]["driverPayment"]["status"]
 }) {
   const [confirming, setConfirming] = useState(false)
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null)
   const [pending, startTransition] = useTransition()
+
+  if (!expectedPayLabel) {
+    return (
+      <p className="action-note" role="status">
+        This legacy assignment has no frozen driver-pay amount and currency in
+        LogLoads. Confirm the amount directly with the host; receipt recording is
+        unavailable until support repairs the accepted terms.
+      </p>
+    )
+  }
 
   if (status === "received" || feedback?.ok) {
     return (

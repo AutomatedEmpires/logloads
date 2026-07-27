@@ -772,6 +772,44 @@ export function recordHostPaymentFailure(
   }
 }
 
+/**
+ * A successful collection proves the retained card is usable again.
+ *
+ * `invoice.payment_failed` keeps the card id but blocks publishing by setting
+ * `failed`. Stripe may later retry that same card successfully without a new
+ * SetupIntent, so success must clear the stale failure state.
+ */
+export function recordHostPaymentSuccess(
+  state: LogLoadsDatabaseState,
+  input: { at?: string; organizationId: string }
+): { changed: boolean; profile: HostBillingProfile | null } {
+  const at = input.at ?? nowIso()
+  const existing = findHostBillingProfile(state, input.organizationId)
+
+  if (!existing?.defaultPaymentMethodId || !existing.stripeCustomerId) {
+    return { changed: false, profile: existing ?? null }
+  }
+
+  if (
+    existing.status === "attached" &&
+    !existing.lastFailureAt &&
+    !existing.lastFailureReason
+  ) {
+    return { changed: false, profile: existing }
+  }
+
+  return {
+    changed: true,
+    profile: writeHostBillingProfile(state, {
+      ...existing,
+      lastFailureAt: null,
+      lastFailureReason: null,
+      status: "attached",
+      updatedAt: at
+    })
+  }
+}
+
 export function findHostBillingProfileByCustomer(
   state: LogLoadsDatabaseState,
   stripeCustomerId: string
@@ -811,6 +849,17 @@ export function findHostInvoiceByStripeId(
   }
 
   return matches[0]
+}
+
+/** Every unsettled monthly bill, oldest first, including dark-launch backlog. */
+export function listOpenHostInvoices(state: LogLoadsDatabaseState): HostInvoice[] {
+  return state.hostInvoices
+    .filter((invoice) => invoice.status === "open")
+    .sort(
+      (left, right) =>
+        left.periodStart.localeCompare(right.periodStart) ||
+        left.id.localeCompare(right.id)
+    )
 }
 
 function writeHostInvoice(state: LogLoadsDatabaseState, candidate: HostInvoice): HostInvoice {
@@ -962,7 +1011,13 @@ type HostInvoiceChargePlan =
       paymentMethodId: string
       subtotalCents: number
     }
-  | { kind: "already_charged"; status: HostInvoiceStatus; stripeInvoiceId: string; subtotalCents: number }
+  | {
+      kind: "already_charged"
+      organizationId: string
+      status: HostInvoiceStatus
+      stripeInvoiceId: string
+      subtotalCents: number
+    }
   | { kind: "refused"; message: string }
 
 /**
@@ -985,6 +1040,7 @@ export function planHostInvoiceCharge(
   if (invoice.stripeInvoiceId) {
     return {
       kind: "already_charged",
+      organizationId: invoice.organizationId,
       status: invoice.status,
       stripeInvoiceId: invoice.stripeInvoiceId,
       subtotalCents: invoice.subtotalCents
@@ -1091,6 +1147,15 @@ export async function chargeHostInvoice(input: {
   }
 
   if (plan.kind === "already_charged") {
+    if (plan.status === "paid") {
+      await input.state.mutate((draft) =>
+        recordHostPaymentSuccess(draft.state, {
+          at: now(),
+          organizationId: plan.organizationId
+        })
+      )
+    }
+
     return billingOk({
       alreadyCharged: true,
       invoiceId: input.invoiceId,
@@ -1142,6 +1207,13 @@ export async function chargeHostInvoice(input: {
     const settled = paid.paid
       ? markHostInvoicePaid(draft.state, { at, invoiceId: input.invoiceId })
       : issued
+
+    if (paid.paid) {
+      recordHostPaymentSuccess(draft.state, {
+        at,
+        organizationId: plan.organizationId
+      })
+    }
 
     return billingOk({
       alreadyCharged: false,
@@ -1712,6 +1784,10 @@ async function handleInvoicePaymentSucceeded(
     }
 
     const paid = markHostInvoicePaid(draft.state, { at, invoiceId: resolved.invoice.id })
+    recordHostPaymentSuccess(draft.state, {
+      at,
+      organizationId: resolved.invoice.organizationId
+    })
 
     recordBillingEvent(draft.state, {
       action: "host_invoice_paid",

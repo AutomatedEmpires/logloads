@@ -61,6 +61,16 @@ test("catches a file whose rows were removed after it was written", () => {
   assert.ok(drift.includes("bytes"), "lost bytes must be drift")
 })
 
+test("catches a same-size state mutation with the cryptographic digest", () => {
+  const written = describeDocument(document({ loadPostings: [{ status: "open" }] }))
+  const nowHolds = describeDocument(document({ loadPostings: [{ status: "void" }] }))
+  const drift = summaryDrift(written, nowHolds)
+
+  assert.equal(written.bytes, nowHolds.bytes)
+  assert.equal(written.rows, nowHolds.rows)
+  assert.deepEqual(drift, ["sha256"])
+})
+
 test("catches a file whose cas version was altered", () => {
   const written = describeDocument(document({ profiles: [{ id: "a" }] }, 7))
   const nowHolds = describeDocument(document({ profiles: [{ id: "a" }] }, 8))

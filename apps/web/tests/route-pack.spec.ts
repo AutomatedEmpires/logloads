@@ -11,7 +11,7 @@ import { fillWhenReady, selectWhenReady } from "./builder-input"
 
 async function signIn(page: Page, email: string) {
   await page.goto("/sign-in")
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
   await page.fill('input[name="email"]', email)
   await page.click('button[type="submit"]')
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 30_000 })
@@ -26,7 +26,7 @@ test.describe.serial("route pack unlocks after acceptance", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "cole@summit.example")
     await page.goto("/host/opportunities")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     await expect(page.getByText("Publish timber movement")).toBeVisible()
     await fillWhenReady(page, "Work title", TITLE)
@@ -48,7 +48,7 @@ test.describe.serial("route pack unlocks after acceptance", () => {
     await page.setViewportSize({ width: 390, height: 844 })
     await signIn(page, "hank@northpine.example")
     await page.goto("/driver/loads")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     const card = page.locator(".load-card-v3").filter({ hasText: TITLE }).first()
     await expect(card).toBeVisible({ timeout: 15_000 })
@@ -65,7 +65,7 @@ test.describe.serial("route pack unlocks after acceptance", () => {
 
     // Still locked: a pending request is not an accepted haul.
     await page.reload()
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
     await expect(page.getByText("Route Pack unlocks after assignment.")).toBeVisible()
   })
 
@@ -73,7 +73,7 @@ test.describe.serial("route pack unlocks after acceptance", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "cole@summit.example")
     await page.goto("/host/command")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     const row = page.locator(".host-approval-row").filter({ hasText: TITLE }).first()
     await expect(row).toBeVisible({ timeout: 15_000 })
@@ -92,7 +92,7 @@ test.describe.serial("route pack unlocks after acceptance", () => {
 
     expect(detailUrl).toBeTruthy()
     await page.goto(detailUrl)
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     // The lie this slice exists to fix: for a runtime load this used to throw.
     await expect(page.getByText("Operational briefing for this move.")).toBeVisible({ timeout: 15_000 })

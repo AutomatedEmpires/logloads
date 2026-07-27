@@ -342,7 +342,7 @@ export const availabilityWindowSchema = z
     path: ["endAt"]
   })
 
-export const assignmentSchema = z.object({
+export const assignmentBaseSchema = z.object({
   id: uuidSchema,
   loadPostingId: uuidSchema,
   /**
@@ -374,6 +374,55 @@ export const assignmentSchema = z.object({
   termsSnapshot: z.record(z.unknown()).default({}),
   createdAt: timestampSchema,
   updatedAt: timestampSchema
+})
+
+export const assignmentSchema = assignmentBaseSchema.superRefine((row, context) => {
+  const requirePair = (
+    instant: "driverPaymentReceivedAt" | "driverPaymentSentAt",
+    actor: "driverPaymentReceivedByUserId" | "driverPaymentSentByUserId"
+  ) => {
+    if (Boolean(row[instant]) !== Boolean(row[actor])) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "A recorded payment side must carry both its time and actor",
+        path: [row[instant] ? actor : instant]
+      })
+    }
+  }
+
+  requirePair("driverPaymentSentAt", "driverPaymentSentByUserId")
+  requirePair("driverPaymentReceivedAt", "driverPaymentReceivedByUserId")
+
+  if (row.driverPaymentReceivedAt && !row.driverPaymentSentAt) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "A receipt cannot be recorded before the host records payment sent",
+      path: ["driverPaymentReceivedAt"]
+    })
+  }
+
+  if (
+    row.driverPaymentReceivedAt &&
+    row.driverPaymentSentAt &&
+    row.driverPaymentReceivedAt < row.driverPaymentSentAt
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Driver pay cannot be received before it was sent",
+      path: ["driverPaymentReceivedAt"]
+    })
+  }
+
+  if (
+    row.driverPaymentReceivedByUserId &&
+    row.driverPaymentSentByUserId === row.driverPaymentReceivedByUserId
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "One person cannot record both sides of a driver payment receipt",
+      path: ["driverPaymentReceivedByUserId"]
+    })
+  }
 })
 
 export const notificationSchema = z.object({

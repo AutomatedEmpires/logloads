@@ -15,8 +15,11 @@
  * restore. `nonArrayCollections` is reported rather than thrown on, because a
  * malformed document is exactly the thing you most need to be able to inspect.
  */
+import { createHash } from "node:crypto"
+
 export function describeDocument(document) {
   const state = document?.state ?? {}
+  const serialized = JSON.stringify(state)
   const collections = Object.keys(state).sort()
   const rows = collections.reduce(
     (total, name) => total + (Array.isArray(state[name]) ? state[name].length : 0),
@@ -24,11 +27,12 @@ export function describeDocument(document) {
   )
 
   return {
-    bytes: Buffer.byteLength(JSON.stringify(state), "utf8"),
+    bytes: Buffer.byteLength(serialized, "utf8"),
     collections: collections.length,
     nonArrayCollections: collections.filter((name) => !Array.isArray(state[name])),
     rows,
     schemaVersion: document?.schema_version ?? null,
+    sha256: createHash("sha256").update(serialized, "utf8").digest("hex"),
     version: document?.version ?? null
   }
 }
@@ -44,7 +48,7 @@ export function describeDocument(document) {
  * `schemaVersion` can legitimately be null, so it remains informational.
  */
 export function summaryDrift(recorded, recomputed) {
-  const drift = ["bytes", "collections", "rows", "version"].filter(
+  const drift = ["bytes", "collections", "rows", "sha256", "version"].filter(
     (field) => recorded?.[field] !== recomputed?.[field]
   )
   const recordedMalformed = JSON.stringify(recorded?.nonArrayCollections ?? [])

@@ -85,6 +85,7 @@ import {
   hostBillingStatus,
   hostCardOnFile,
   hostInvoiceIdempotencyKey,
+  listOpenHostInvoices,
   markHostInvoiceIssued,
   markHostInvoicePaid,
   platformFeeCollectionEnabled,
@@ -1014,6 +1015,28 @@ describe("chargeHostInvoice", () => {
 
     expect(again.ok && again.value.alreadyCharged).toBe(true)
     expect(second.callNames()).toEqual([])
+  })
+
+  it("lists every open backlog invoice oldest first for scheduler catch-up", () => {
+    const { invoice, state } = billableHost()
+    const older = {
+      ...invoice,
+      id: "ffffffff-ffff-4fff-8fff-ffffffffff81",
+      periodEnd: invoice.periodStart,
+      periodStart: "2026-05-01T00:00:00.000Z"
+    }
+    const paid = {
+      ...invoice,
+      id: "ffffffff-ffff-4fff-8fff-ffffffffff82",
+      paidAt: AT,
+      status: "paid" as const
+    }
+    state.hostInvoices = [invoice, paid, older]
+
+    expect(listOpenHostInvoices(state).map((candidate) => candidate.id)).toEqual([
+      older.id,
+      invoice.id
+    ])
   })
 
   it("survives a replayed mutation without charging or invoicing twice", async () => {

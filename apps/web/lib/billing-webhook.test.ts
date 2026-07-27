@@ -568,6 +568,42 @@ describe("invoice.payment_succeeded", () => {
     expect(state.hostInvoices[0]?.status).toBe("paid")
   })
 
+  it("clears a failed card state after Stripe successfully retries the bill", async () => {
+    const { host, state } = webhookState()
+    const wired = stateAccess(state)
+    const stripe = webhookPort()
+
+    await handleStripeBillingEvent(
+      billingEvent(
+        "invoice.payment_failed",
+        {
+          id: "in_live",
+          last_finalization_error: { message: "Your card was declined." },
+          metadata: { hostInvoiceId: INVOICE_ID }
+        },
+        { id: "evt_failed" }
+      ),
+      { port: stripe.port, state: wired.access }
+    )
+    expect(findHostBillingProfile(state, host.id)?.status).toBe("failed")
+
+    await handleStripeBillingEvent(
+      billingEvent(
+        "invoice.payment_succeeded",
+        { id: "in_live", metadata: { hostInvoiceId: INVOICE_ID } },
+        { id: "evt_recovered" }
+      ),
+      { port: stripe.port, state: wired.access }
+    )
+
+    expect(findHostBillingProfile(state, host.id)).toMatchObject({
+      lastFailureAt: null,
+      lastFailureReason: null,
+      status: "attached"
+    })
+    expect(hostBillingStatus(state, host.id)).toBe("attached")
+  })
+
   it("answers 200 for a Dispatch Pro subscription invoice, which is not a platform-fee bill", async () => {
     const { state } = webhookState()
 

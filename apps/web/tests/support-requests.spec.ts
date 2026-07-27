@@ -4,7 +4,7 @@ import { fillWhenReady, selectWhenReady } from "./builder-input"
 
 async function signIn(page: Page, email: string): Promise<void> {
   await page.goto("/sign-in")
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
   await page.fill('input[name="email"]', email)
   await page.click('button[type="submit"]')
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 30_000 })
@@ -119,7 +119,7 @@ test("driver feedback is triaged and resolved without losing retry state", async
   expect(editedPayloadSubmissionIds).toHaveLength(2)
   expect(editedPayloadSubmissionIds[1]).not.toBe(editedPayloadSubmissionIds[0])
   await reporter.page.reload()
-  await reporter.page.waitForLoadState("networkidle")
+  await reporter.page.waitForLoadState("domcontentloaded")
   const preEditCard = reporter.page.locator("article").filter({
     has: reporter.page.getByRole("heading", { name: preEditTitle })
   })
@@ -146,7 +146,7 @@ test("driver feedback is triaged and resolved without losing retry state", async
   await adminCard.getByRole("button", { name: "Start review" }).click()
   await expect(adminCard.getByText("Request marked in review.", { exact: true })).toBeVisible({ timeout: 15_000 })
   await reviewer.page.reload()
-  await reviewer.page.waitForLoadState("networkidle")
+  await reviewer.page.waitForLoadState("domcontentloaded")
   await selectWhenReady(reviewer.page, "Request status", "all")
   adminCard = reviewer.page.locator("article").filter({ has: reviewer.page.getByRole("heading", { name: title }) }).first()
   await expect(adminCard.getByText("In review", { exact: true })).toBeVisible({ timeout: 30_000 })

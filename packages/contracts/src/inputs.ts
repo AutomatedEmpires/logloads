@@ -2,7 +2,7 @@ import { z } from "zod"
 
 import { availabilityStatusSchema, loadStatusSchema, truckSlotStatusSchema } from "./enums"
 import {
-  assignmentSchema,
+  assignmentBaseSchema,
   loadPostingSchema,
   messageEventSchema,
   notificationSchema,
@@ -61,11 +61,15 @@ export const createTruckSlotInputSchema = z.object({
   notes: z.string().optional().nullable()
 })
 
-export const requestAssignmentInputSchema = assignmentSchema.omit({
+export const requestAssignmentInputSchema = assignmentBaseSchema.omit({
   assignedAt: true,
   cancelledAt: true,
   completedAt: true,
   createdAt: true,
+  driverPaymentReceivedAt: true,
+  driverPaymentReceivedByUserId: true,
+  driverPaymentSentAt: true,
+  driverPaymentSentByUserId: true,
   id: true,
   requestedAt: true,
   status: true,

@@ -8,6 +8,12 @@ const cloudinaryAdapter = vi.hoisted(() => ({
   resource: vi.fn(),
   url: vi.fn(() => "https://media.example.test/signed")
 }))
+const supabaseAdapter = vi.hoisted(() => ({
+  createSignedUploadUrl: vi.fn(),
+  download: vi.fn(),
+  getBucket: vi.fn(),
+  list: vi.fn()
+}))
 
 vi.mock("cloudinary", () => ({
   v2: {
@@ -16,6 +22,18 @@ vi.mock("cloudinary", () => ({
     url: cloudinaryAdapter.url,
     utils: { api_sign_request: cloudinaryAdapter.apiSignRequest }
   }
+}))
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: vi.fn(() => ({
+    storage: {
+      from: vi.fn(() => ({
+        createSignedUploadUrl: supabaseAdapter.createSignedUploadUrl,
+        download: supabaseAdapter.download,
+        list: supabaseAdapter.list
+      })),
+      getBucket: supabaseAdapter.getBucket
+    }
+  }))
 }))
 vi.mock("server-only", () => ({}))
 
@@ -73,6 +91,27 @@ function stubMediaEnvironment(overrides: MediaEnvironmentOverride = {}) {
   for (const [name, value] of Object.entries({ ...configuredMediaEnvironment, ...overrides })) {
     vi.stubEnv(name, value)
   }
+}
+
+function stubSupabaseEnvironment() {
+  vi.stubEnv("LOGLOADS_MEDIA_STORAGE", "supabase")
+  vi.stubEnv("LOGLOADS_MEDIA_BUCKET", "logloads-private-media")
+  vi.stubEnv("LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF", "logloads-test")
+  vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "publishable-test-key")
+  vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "service-role-test-key")
+  vi.stubEnv("SUPABASE_URL", "https://logloads-test.supabase.co")
+  supabaseAdapter.getBucket.mockResolvedValue({
+    data: {
+      allowed_mime_types: ["image/jpeg", "image/png", "image/webp"],
+      file_size_limit: 10_000_000,
+      public: false
+    },
+    error: null
+  })
+  supabaseAdapter.createSignedUploadUrl.mockResolvedValue({
+    data: { token: "single-object-token" },
+    error: null
+  })
 }
 
 afterEach(() => {
@@ -200,6 +239,48 @@ describe("signed upload", () => {
     const { parameters } = await signedUpload({ publicIdPrefix: "logloads/trip-documents/t1" })
 
     expect(parameters).not.toHaveProperty("max_file_size")
+  })
+
+  it("refuses to sign when the Supabase bucket does not enforce the app ceiling", async () => {
+    stubSupabaseEnvironment()
+    supabaseAdapter.getBucket.mockResolvedValue({
+      data: {
+        allowed_mime_types: ["image/jpeg", "image/png", "image/webp"],
+        file_size_limit: 10_485_760,
+        public: false
+      },
+      error: null
+    })
+
+    await expect(
+      signedUpload({ publicIdPrefix: "logloads/trip-documents/t1" })
+    ).rejects.toMatchObject({
+      message: "File uploads are not activated for this environment",
+      status: 503
+    })
+    expect(supabaseAdapter.createSignedUploadUrl).not.toHaveBeenCalled()
+  })
+})
+
+describe("Supabase read-back", () => {
+  it("rejects oversized metadata before downloading or buffering the object", async () => {
+    stubSupabaseEnvironment()
+    supabaseAdapter.list.mockResolvedValue({
+      data: [{
+        created_at: "2026-07-27T12:00:00.000Z",
+        metadata: { size: 10_000_001 },
+        name: "photo-1"
+      }],
+      error: null
+    })
+
+    await expect(
+      verifiedMediaReference("logloads/trip-documents/t1/uploads/photo-1")
+    ).rejects.toMatchObject({
+      message: "Photos must be 10 MB or smaller",
+      status: 422
+    })
+    expect(supabaseAdapter.download).not.toHaveBeenCalled()
   })
 })
 

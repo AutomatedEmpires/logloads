@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test"
 
 test("local founder launcher opens Cole in Host without exposing an invalid persona", async ({ page }, testInfo) => {
   await page.goto("/sign-in")
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
 
   await expect(page.getByRole("heading", { name: "Choose a working view." })).toBeVisible()
   await expect(page.getByRole("button", { name: "Continue as Hank Hauler, Driver" })).toBeVisible()

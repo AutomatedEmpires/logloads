@@ -108,7 +108,7 @@ async function backup(argv) {
   writeFileSync(
     file,
     JSON.stringify(
-      { capturedAt: new Date().toISOString(), row, summary, tool: "operating-state-backup/1" },
+      { capturedAt: new Date().toISOString(), row, summary, tool: "operating-state-backup/2" },
       null,
       2
     ),

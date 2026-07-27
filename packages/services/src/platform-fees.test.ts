@@ -136,6 +136,7 @@ function billableHaul(
   assignment.driverPaymentReceivedByUserId = DRIVER_USER
   assignment.termsSnapshot = {
     ...assignment.termsSnapshot,
+    currency: "USD",
     driverPayCents
   }
 

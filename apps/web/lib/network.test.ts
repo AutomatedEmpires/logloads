@@ -221,6 +221,113 @@ describe("driver network access", () => {
     )).toBe(true)
   })
 
+  it("omits an orphan trip instead of crashing every participant trip board", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const driverUser = services.state.profiles.find(
+      (profile) => profile.email === "hank@northpine.example"
+    )
+    const driver = services.state.driverProfiles.find(
+      (profile) => profile.userId === driverUser?.id
+    )
+    const orphan = services.state.tripsV2.find(
+      (trip) => trip.driverProfileId === driver?.id
+    )
+
+    if (!driverUser || !driver?.companyId || !orphan) {
+      throw new Error("the orphan-trip fixture is incomplete")
+    }
+
+    orphan.assignmentId = "99999999-9999-4999-8999-999999999999"
+
+    expect(() =>
+      buildNetworkView(
+        services.state,
+        { actorUserId: driverUser.id, kind: "actor", organizationId: driver.companyId },
+        new Date("2026-06-05T12:00:00.000Z")
+      )
+    ).not.toThrow()
+
+    const view = buildNetworkView(
+      services.state,
+      { actorUserId: driverUser.id, kind: "actor", organizationId: driver.companyId },
+      new Date("2026-06-05T12:00:00.000Z")
+    )
+
+    expect(view.trips.some((trip) => trip.id === orphan.id)).toBe(false)
+  })
+
+  it("does not invent an expected payment for a legacy assignment", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const driverUser = services.state.profiles.find(
+      (profile) => profile.email === "hank@northpine.example"
+    )
+    const driver = services.state.driverProfiles.find(
+      (profile) => profile.userId === driverUser?.id
+    )
+    const trip = services.state.tripsV2.find(
+      (candidate) => candidate.driverProfileId === driver?.id
+    )
+    const assignment = services.state.assignments.find(
+      (candidate) => candidate.id === trip?.assignmentId
+    )
+
+    if (!driverUser || !driver?.companyId || !trip || !assignment) {
+      throw new Error("the legacy-payment fixture is incomplete")
+    }
+
+    assignment.termsSnapshot = {
+      ...assignment.termsSnapshot,
+      currency: undefined,
+      driverPayCents: undefined
+    }
+
+    const view = buildNetworkView(
+      services.state,
+      { actorUserId: driverUser.id, kind: "actor", organizationId: driver.companyId },
+      new Date("2026-06-05T12:00:00.000Z")
+    )
+
+    expect(
+      view.trips.find((candidate) => candidate.id === trip.id)?.driverPayment.expectedPayLabel
+    ).toBeNull()
+  })
+
+  it("formats a frozen non-USD payment in its accepted currency", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const driverUser = services.state.profiles.find(
+      (profile) => profile.email === "hank@northpine.example"
+    )
+    const driver = services.state.driverProfiles.find(
+      (profile) => profile.userId === driverUser?.id
+    )
+    const trip = services.state.tripsV2.find(
+      (candidate) => candidate.driverProfileId === driver?.id
+    )
+    const assignment = services.state.assignments.find(
+      (candidate) => candidate.id === trip?.assignmentId
+    )
+
+    if (!driverUser || !driver?.companyId || !trip || !assignment) {
+      throw new Error("the frozen-payment fixture is incomplete")
+    }
+
+    assignment.termsSnapshot = {
+      ...assignment.termsSnapshot,
+      currency: "CAD",
+      driverPayCents: 52_500
+    }
+
+    const view = buildNetworkView(
+      services.state,
+      { actorUserId: driverUser.id, kind: "actor", organizationId: driver.companyId },
+      new Date("2026-06-05T12:00:00.000Z")
+    )
+
+    expect(
+      view.trips.find((candidate) => candidate.id === trip.id)?.driverPayment.expectedPayLabel
+    ).toContain("CA$525.00")
+  })
+
   it("keeps exact load access locked while a request is pending and unlocks it after approval", () => {
     const { load, request, services, sourceContext, viewer } = networkFixture()
     const details = services.state.richLandingDetails.find((item) => item.landingId === load.pickupLandingId)

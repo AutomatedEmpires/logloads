@@ -5,6 +5,7 @@ import { NextResponse } from "next/server"
 
 import {
   chargeHostInvoice,
+  listOpenHostInvoices,
   operatingStateAccess,
   platformFeeCollectionEnabled,
   resolveStripeBilling
@@ -54,11 +55,10 @@ export async function GET(request: Request) {
   const results = await state.mutate((draft) =>
     openClosedPeriodInvoices(draft.state, period, at)
   )
-  const invoices = results.flatMap((result) =>
-    result.outcome === "opened" || result.outcome === "already_open"
-      ? [result.invoice]
-      : []
-  )
+  // Read the complete open book after closing the latest month. Dark-launch
+  // months and scheduler outages can leave older invoices open; activation must
+  // catch those up instead of charging only the immediately preceding month.
+  const invoices = await state.read(listOpenHostInvoices)
 
   if (!platformFeeCollectionEnabled()) {
     return NextResponse.json({
@@ -77,7 +77,8 @@ export async function GET(request: Request) {
 
   const charges: Array<{
     invoiceId: string
-    outcome: "charged" | "failed"
+    outcome: "charged" | "failed" | "refused"
+    reason?: string
     status?: string
   }> = []
 
@@ -89,22 +90,48 @@ export async function GET(request: Request) {
         state
       })
 
+      charges.push(
+        result.ok
+          ? {
+              invoiceId: invoice.id,
+              outcome: "charged",
+              status: result.value.status
+            }
+          : {
+              invoiceId: invoice.id,
+              outcome: result.outcome === "unavailable" ? "failed" : "refused",
+              reason: result.message
+            }
+      )
+    } catch (error) {
       charges.push({
         invoiceId: invoice.id,
-        outcome: result.ok ? "charged" : "failed",
-        status: result.ok ? result.value.status : undefined
+        outcome: "failed",
+        reason: error instanceof Error ? error.message : "Unknown billing failure"
       })
-    } catch {
-      charges.push({ invoiceId: invoice.id, outcome: "failed" })
     }
   }
 
   const failed = charges.filter((charge) => charge.outcome === "failed")
+  const refused = charges.filter((charge) => charge.outcome === "refused")
 
   if (failed.length > 0) {
     console.error("LogLoads billing cron could not collect one or more invoices", {
-      failedInvoiceIds: failed.map((charge) => charge.invoiceId),
+      failures: failed.map((charge) => ({
+        invoiceId: charge.invoiceId,
+        reason: charge.reason
+      })),
       period
+    })
+  }
+
+  if (refused.length > 0) {
+    console.warn("LogLoads billing cron found invoices requiring operator action", {
+      period,
+      refusals: refused.map((charge) => ({
+        invoiceId: charge.invoiceId,
+        reason: charge.reason
+      }))
     })
   }
 
