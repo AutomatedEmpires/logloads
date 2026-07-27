@@ -335,7 +335,7 @@ describe("a driver-confirmed payment receipt raises the platform fee", () => {
     expect(receipt?.actorUserId).toBe(fixture.driver.userId)
   })
 
-  it("refuses anyone other than the assigned driver from confirming receipt", () => {
+  it("refuses anyone other than the assigned driver and any cancelled assignment", () => {
     const fixture = settleableHaul()
     forceSettleableState(fixture, 52_500)
     confirmDelivery(fixture)
@@ -349,5 +349,14 @@ describe("a driver-confirmed payment receipt raises the platform fee", () => {
       })
     ).toThrow(/assigned driver/i)
     expect(fixture.services.state.platformFeeEvents).toHaveLength(0)
+
+    const cancelled = fixture.services.state.assignments.find(
+      (candidate) => candidate.id === fixture.assignment.id
+    )!
+    cancelled.status = "cancelled"
+    const beforeCancelledReceipt = structuredClone(fixture.services.state)
+
+    expect(() => confirmReceived(fixture)).toThrow(/cancelled haul/i)
+    expect(fixture.services.state).toEqual(beforeCancelledReceipt)
   })
 })

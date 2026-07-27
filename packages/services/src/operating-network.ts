@@ -2078,6 +2078,10 @@ export function progressTripStatus(
       `Load posting ${trip.loadPostingId} was not found`
     )
     cancellationSide = assertCancellationAuthority(state, context, assignment, load).side
+    assertCondition(
+      trip.completionStatus !== "confirmed",
+      "This delivery is confirmed and cannot be cancelled"
+    )
   }
 
   // Validate the state-machine edge before applying step-specific
@@ -2505,6 +2509,7 @@ export function confirmDriverPaymentReceived(
 
   assertCondition(context.membership.role === "driver", "Only the assigned driver can confirm receipt of driver pay")
   assertCondition(driver.userId === context.actorUserId, "Drivers can only confirm payment on their own haul")
+  assertCondition(assignment.status !== "cancelled", "A cancelled haul cannot confirm driver payment receipt")
   assertCondition(Boolean(assignment.driverPaymentSentAt), "The host has not marked driver pay sent yet")
   assertCondition(
     assignment.driverPaymentSentByUserId !== context.actorUserId,

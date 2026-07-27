@@ -312,7 +312,7 @@ describe("assignment cancellation", () => {
     })).toThrow(/Only an active assignment/)
   })
 
-  it("cancelling a trip cancels the booking, restores capacity, and allows a re-request", () => {
+  it("cancels active bookings but refuses to cancel a confirmed delivery", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const { load, slot } = publishFreshLoad(services)
     const assignment = requestFreshLoad(services, load.id, slot.id)
@@ -374,6 +374,55 @@ describe("assignment cancellation", () => {
     const requestedAgain = requestFreshLoad(services, load.id, slot.id)
 
     expect(requestedAgain.status).toBe("requested")
+
+    const { trip: settledTrip } = services.approveCapacityRequest({
+      actorUserId: HOST_ACTOR,
+      assignmentId: requestedAgain.id,
+      organizationId: HOST_ORG
+    })
+    recordPassingPreTripInspection(services.state, {
+      actorUserId: HAULER_ACTOR,
+      organizationId: HAULER_ORG,
+      tripId: settledTrip.id
+    })
+    for (const nextStatus of [
+      "en_route_to_landing",
+      "checked_in",
+      "loading",
+      "loaded",
+      "en_route_to_destination",
+      "at_destination"
+    ] as const) {
+      services.progressTripStatus({
+        actorUserId: HAULER_ACTOR,
+        organizationId: HAULER_ORG,
+        tripId: settledTrip.id,
+        nextStatus,
+        source: "driver"
+      })
+    }
+    services.submitHaulCompletion({
+      actorUserId: HAULER_ACTOR,
+      deliveredQuantity: { ticketNumber: "SC-CONFIRMED", unit: "tons", value: 26.4 },
+      organizationId: HAULER_ORG,
+      tripId: settledTrip.id
+    })
+    services.settleHaulCompletion({
+      actorUserId: HOST_ACTOR,
+      decision: "confirm",
+      organizationId: HOST_ORG,
+      tripId: settledTrip.id
+    })
+    const beforeConfirmedCancellation = structuredClone(services.state)
+
+    expect(() => services.progressTripStatus({
+      actorUserId: HAULER_ACTOR,
+      organizationId: HAULER_ORG,
+      tripId: settledTrip.id,
+      nextStatus: "cancelled",
+      source: "driver"
+    })).toThrow(/confirmed and cannot be cancelled/i)
+    expect(services.state).toEqual(beforeConfirmedCancellation)
   })
 
   it("keeps an org-mate driver from cancelling a teammate's haul through the trip path", () => {

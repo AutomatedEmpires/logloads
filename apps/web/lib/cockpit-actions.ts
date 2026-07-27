@@ -14,6 +14,7 @@ import {
 import { revalidatePath } from "next/cache"
 
 import { captureServerEvent } from "./analytics"
+import { parseStatedCredentialExpiry } from "./credential-date"
 import { reviewCredentialDocument } from "./credential-reviewer"
 import { checkRateLimit } from "./rate-limit"
 import {
@@ -433,40 +434,6 @@ function parseCredentialKind(value: unknown): CredentialKind {
   return parsed.data
 }
 
-const CALENDAR_DATE = /^\d{4}-\d{2}-\d{2}$/
-
-/**
- * The expiry a driver states, resolved from the date printed on the document to the
- * instant it lapses.
- *
- * THE END OF THAT DAY, not its start. A licence printed "30 JUN 2027" is valid
- * THROUGH the 30th; resolving it to midnight would expire the driver a day early and
- * block a load they were entitled to take. The vault stores instants and the gate
- * compares them strictly, so the resolution has to be made once, here, rather than
- * left to whichever screen renders it.
- *
- * UTC because the stored instant is the same for everyone who reads the record, and
- * a local-midnight resolution would make one date mean two different instants for a
- * driver and their dispatcher.
- */
-function parseStatedExpiry(value: string | null | undefined): string | null {
-  if (!value) {
-    return null
-  }
-
-  if (!CALENDAR_DATE.test(value)) {
-    throw new Error("Enter the expiry date as it is printed on the document")
-  }
-
-  const instant = `${value}T23:59:59.000Z`
-
-  if (Number.isNaN(Date.parse(instant))) {
-    throw new Error("That is not a real date")
-  }
-
-  return instant
-}
-
 /**
  * Runs the binding review on one submitted document, then records the decision.
  *
@@ -601,7 +568,7 @@ export async function submitDriverCredentialAction(input: {
         actorUserId: actor.profile.id,
         documentMedia,
         driverProfileId,
-        expiresOn: parseStatedExpiry(input.expiresOn),
+        expiresOn: parseStatedCredentialExpiry(input.expiresOn),
         issuer: input.issuer?.trim() ? input.issuer.trim() : null,
         kind,
         organizationId
