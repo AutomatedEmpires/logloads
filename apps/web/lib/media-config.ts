@@ -34,9 +34,9 @@ import "server-only"
  *    catch by name. This is the one refusal that survives every other variable
  *    being confidently set.
  *
- * NO DEDICATED LOGLOADS CLOUDINARY ACCOUNT EXISTS YET. The correct behaviour of
- * this file today is therefore to refuse, and every refusal below carries a
- * reason a human can act on rather than a bare false.
+ * NO DEDICATED LOGLOADS CLOUDINARY ACCOUNT EXISTS. Cloudinary therefore stays
+ * fail-closed. Production media uses a private bucket in LogLoads' own Supabase
+ * project and must independently match the expected project reference below.
  *
  * WHY IT NEVER THROWS. `/api/health` and three driver pages call this on every
  * render. A throw would take those down over a media misconfiguration and remove
@@ -97,6 +97,13 @@ export interface DedicatedCloudinaryConfiguration {
   apiKey: string
   apiSecret: string
   cloudName: string
+}
+
+export interface DedicatedSupabaseMediaConfiguration {
+  anonKey: string
+  bucket: string
+  serviceRoleKey: string
+  url: string
 }
 
 /**
@@ -269,6 +276,56 @@ export function dedicatedCloudinaryConfiguration(
   return decision.active ? decision.configuration : null
 }
 
+export function dedicatedSupabaseMediaConfiguration(
+  environment: RuntimeEnvironment
+): DedicatedSupabaseMediaConfiguration | null {
+  if (environment.LOGLOADS_MEDIA_STORAGE?.trim().toLowerCase() !== "supabase") {
+    return null
+  }
+
+  const url = trimmedValue(environment.SUPABASE_URL)
+  const serviceRoleKey = trimmedValue(environment.SUPABASE_SERVICE_ROLE_KEY)
+  const anonKey =
+    trimmedValue(environment.NEXT_PUBLIC_SUPABASE_ANON_KEY) ??
+    trimmedValue(environment.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)
+  const bucket = trimmedValue(environment.LOGLOADS_MEDIA_BUCKET)
+  const expectedProjectRef = trimmedValue(environment.LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF)
+
+  if (!url || !serviceRoleKey || !anonKey || !bucket || !expectedProjectRef) {
+    return null
+  }
+
+  if (!/^[a-z0-9][a-z0-9_-]{2,62}$/.test(bucket)) {
+    return null
+  }
+
+  try {
+    const parsed = new URL(url)
+    const configuredProjectRef = parsed.hostname.split(".")[0]
+
+    if (
+      parsed.protocol !== "https:" ||
+      !parsed.hostname.endsWith(".supabase.co") ||
+      configuredProjectRef !== expectedProjectRef
+    ) {
+      return null
+    }
+  } catch {
+    return null
+  }
+
+  return {
+    anonKey,
+    bucket,
+    serviceRoleKey,
+    url: url.replace(/\/$/, "")
+  }
+}
+
 export function isDedicatedMediaConfigured(environment: RuntimeEnvironment): boolean {
+  if (environment.LOGLOADS_MEDIA_STORAGE?.trim().toLowerCase() === "supabase") {
+    return dedicatedSupabaseMediaConfiguration(environment) !== null
+  }
+
   return mediaConfigurationDecision(environment).active
 }

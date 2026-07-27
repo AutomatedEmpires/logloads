@@ -26,6 +26,16 @@ test("names a collection that is not an array instead of counting it", () => {
   assert.equal(summary.rows, 1)
 })
 
+test("measures serialized UTF-8 bytes rather than JavaScript code units", () => {
+  const row = document({ profiles: [{ name: "José 🚚" }] })
+
+  assert.equal(
+    describeDocument(row).bytes,
+    Buffer.byteLength(JSON.stringify(row.state), "utf8")
+  )
+  assert.ok(describeDocument(row).bytes > JSON.stringify(row.state).length)
+})
+
 test("survives a document with no state at all", () => {
   const summary = describeDocument({})
 
@@ -56,6 +66,12 @@ test("catches a file whose cas version was altered", () => {
   const nowHolds = describeDocument(document({ profiles: [{ id: "a" }] }, 8))
 
   assert.deepEqual(summaryDrift(written, nowHolds), ["version"])
+})
+
+test("refuses a malformed collection even when its recorded summary also names it", () => {
+  const malformed = describeDocument(document({ profiles: { id: "not-an-array" } }))
+
+  assert.deepEqual(summaryDrift(malformed, malformed), ["nonArrayCollections"])
 })
 
 test("does not treat a null schema version as drift", () => {

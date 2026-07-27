@@ -474,7 +474,10 @@ function invoiceView(
   const presentation = INVOICE_STATE_PRESENTATION[invoice.status]
   const events = invoice.feeEventIds
     .map((id) => eventsById.get(id))
-    .filter((event): event is PlatformFeeEvent => Boolean(event))
+    .filter(
+      (event): event is PlatformFeeEvent =>
+        Boolean(event) && event?.status !== "voided"
+    )
   const lines = [...events]
     .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt) || left.id.localeCompare(right.id))
     .map((event) => feeLineView(event, loadTitleById))

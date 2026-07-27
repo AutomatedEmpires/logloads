@@ -86,23 +86,11 @@ test.describe.serial("workspace invitations", () => {
     if (await pendingInvite.isVisible()) {
       await expect(pendingInvite.getByText(/Summit Ridge/)).toBeVisible()
 
-      // The accept is a fire-and-forget action from the menu; wait for its
-      // POST to complete (it carries the session-cookie switch) before
-      // reloading — an immediate reload would abort the request in flight.
-      const acceptRoundTrip = page.waitForResponse(
-        (response) => response.request().method() === "POST",
-        { timeout: 15_000 }
-      )
       await menu.getByRole("button", { name: "Accept" }).click()
-      await acceptRoundTrip
 
-      // Accepting moves the session to the joined workspace; the trigger now
-      // labels Summit and the switcher lists both outfits.
-      await expect(async () => {
-        await page.reload()
-        await page.waitForLoadState("networkidle")
-        await expect(accountTrigger(page)).toContainText("Summit Ridge", { timeout: 2_000 })
-      }).toPass({ timeout: 25_000 })
+      // The menu awaits the server action that persists membership and switches
+      // the signed session, then refreshes from that committed state.
+      await expect(accountTrigger(page)).toContainText("Summit Ridge", { timeout: 25_000 })
 
       await accountTrigger(page).click()
     }

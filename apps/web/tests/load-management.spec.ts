@@ -38,6 +38,7 @@ test.describe.serial("published-work lifecycle", () => {
     await page.getByRole("button", { name: "Next" }).click()
     await fillWhenReady(page, "Truckloads needed per day", "1")
     await page.getByRole("button", { name: "Next" }).click()
+    await fillWhenReady(page, "What this work pays a driver, per truckload", "525.00")
     await page.getByRole("button", { name: "Next" }).click()
 
     // Visibility step: hold the work as a team-only draft.

@@ -79,9 +79,10 @@ begin
     end if;
   end loop;
 
-  -- Loud, because a skipped table is still exposed.
+  -- Abort the migration, because a skipped table is still exposed and a warning
+  -- would let the migration ledger claim the security boundary was installed.
   if array_length(skipped, 1) is not null then
-    raise warning 'not owned by %; write grants left unchanged: %', current_user, skipped;
+    raise exception 'not owned by %; write grants left unchanged: %', current_user, skipped;
   end if;
 end;
 $$;
@@ -108,9 +109,11 @@ $$;
 do $$
 declare
   target regprocedure;
+  target_owner oid;
+  skipped text[] := '{}';
 begin
-  for target in
-    select p.oid::regprocedure
+  for target, target_owner in
+    select p.oid::regprocedure, p.proowner
     from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
@@ -125,8 +128,16 @@ begin
       )
     order by p.oid::regprocedure::text
   loop
-    execute format('revoke execute on function %s from anon, authenticated', target);
+    if pg_has_role(current_user, target_owner, 'usage') then
+      execute format('revoke execute on function %s from anon, authenticated', target);
+    else
+      skipped := skipped || target::text;
+    end if;
   end loop;
+
+  if array_length(skipped, 1) is not null then
+    raise exception 'not owned by %; execute grants left unchanged: %', current_user, skipped;
+  end if;
 end;
 $$;
 

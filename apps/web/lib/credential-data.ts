@@ -402,27 +402,8 @@ export interface DriverCredentialSlotView {
   tone: CredentialTone
 }
 
-/**
- * Where a credential document would be uploaded — and why it is null.
- *
- * TWO independent things must be true before a driver can store one, and this
- * constant is the second, so that fixing only the first cannot switch a control on:
- *
- * 1. LogLoads must have a media account of its own. `media-config` refuses today,
- *    because no dedicated LogLoads Cloudinary account exists and a driver's licence
- *    must never be written into another product's account.
- *
- * 2. A signed-upload route scoped to the credential vault must exist. It does not.
- *    `/api/media/signature` signs the driver's PROFILE namespace for the kinds
- *    profile, truck and trailer; it cannot carry a licence or a certificate, and
- *    aiming a vault upload at it would file identity documents in the
- *    profile-photo folder.
- *
- * Kept as a value rather than as a comment so the refusal is one the type system
- * carries: the surface degrades honestly instead of rendering a control that posts
- * nowhere. Set it in the same change that adds the route.
- */
-const CREDENTIAL_DOCUMENT_SIGNATURE_ENDPOINT: string | null = null
+/** The credential-only upload route; storage readiness is still checked separately. */
+const CREDENTIAL_DOCUMENT_SIGNATURE_ENDPOINT: string | null = "/api/credentials/signature"
 
 /**
  * What the driver is told when they cannot add a document.
@@ -433,10 +414,8 @@ const CREDENTIAL_DOCUMENT_SIGNATURE_ENDPOINT: string | null = null
  * fault, and that nothing is being expected of them meanwhile.
  */
 const INTAKE_UNAVAILABLE_NOTICE =
-  "You can't add documents here yet. LogLoads does not have document storage of its own switched " +
-  "on, so anything you sent would have nowhere safe to be kept — we would rather tell you that " +
-  "than take a photo of your licence and lose it. Nothing is being asked of you until this page " +
-  "can accept it."
+  "Document uploads are temporarily unavailable. Nothing has been accepted or lost — try again " +
+  "after LogLoads storage is restored."
 
 export interface CredentialIntakeView {
   /** True only when a document sent from this surface would actually be stored. */

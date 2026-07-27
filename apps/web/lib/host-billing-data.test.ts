@@ -524,6 +524,31 @@ describe("bills already raised", () => {
     expect(last?.reconciliationNote).toMatch(/\$20\.50/)
   })
 
+  it("keeps a withdrawn invoice row out of the billable lines and totals", () => {
+    const withdrawn = feeEvent({
+      assignmentId: "dddddddd-dddd-4ddd-8ddd-ddddddddde03",
+      driverPayCents: 41_000,
+      invoiceId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb01",
+      loadPostingId: LOAD_TWO,
+      occurredAt: "2026-06-19T15:00:00.000Z",
+      status: "voided",
+      voidReason: "Load was cancelled after the bill was raised"
+    })
+    const view = buildHostBillingView(
+      source({
+        hostInvoices: [invoice({ feeEventIds: [june.id, withdrawn.id], subtotalCents: 2_625 })],
+        platformFeeEvents: [june, withdrawn]
+      }),
+      HOST,
+      NOW
+    )
+
+    expect(view.lastInvoice?.lines.map((line) => line.platformFeeCents)).toEqual([2_625])
+    expect(view.lastInvoice?.totals.driverPayCents).toBe(52_500)
+    expect(view.lastInvoice?.totals.platformFeeCents).toBe(2_625)
+    expect(view.lastInvoice?.reconciliationNote).toBeNull()
+  })
+
   it("words the opposite direction differently: listed fees exceeding the amount billed", () => {
     // A fee listed on a bill that did not charge for it is a double-billing risk,
     // not a missing line, so it must not be reported as something to itemise.

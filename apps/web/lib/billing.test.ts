@@ -87,6 +87,7 @@ import {
   hostInvoiceIdempotencyKey,
   markHostInvoiceIssued,
   markHostInvoicePaid,
+  platformFeeCollectionEnabled,
   planHostInvoiceCharge,
   recordAttachedPaymentMethod,
   recordHostPaymentFailure,
@@ -109,6 +110,14 @@ const ASSIGNMENT_TWO = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee92"
 const INVOICE_ID = "ffffffff-ffff-4fff-8fff-ffffffffff91"
 const PERIOD = invoicePeriodFor("2026-06-15T00:00:00.000Z")
 const AT = "2026-07-01T12:00:00.000Z"
+
+describe("platform fee collection activation", () => {
+  it("stays dark unless the operator explicitly enables it", () => {
+    expect(platformFeeCollectionEnabled({})).toBe(false)
+    expect(platformFeeCollectionEnabled({ LOGLOADS_FEE_COLLECTION: "disabled" })).toBe(false)
+    expect(platformFeeCollectionEnabled({ LOGLOADS_FEE_COLLECTION: " enabled " })).toBe(true)
+  })
+})
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -426,6 +435,11 @@ describe("Stripe environment resolution", () => {
     expect(
       stripePublishableKey({ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_test" }).ok === true
     ).toBe(true)
+    expect(stripePublishableKey({ STRIPE_PUBLISHABLE_KEY: "pk_live" })).toEqual({
+      ok: true,
+      outcome: "ok",
+      value: "pk_live"
+    })
   })
 
   it("never names an environment variable in what the caller is told", () => {

@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server"
 
 import { ApiError, apiErrorResponse, requireAdminApiActor } from "@/lib/api-actor"
-import { chargeHostInvoice, operatingStateAccess, resolveStripeBilling } from "@/lib/billing"
+import {
+	chargeHostInvoice,
+	operatingStateAccess,
+	platformFeeCollectionEnabled,
+	resolveStripeBilling
+} from "@/lib/billing"
 
 /**
  * Collects one month's platform fee from a host.
@@ -21,6 +26,14 @@ export async function POST(_request: Request, context: { params: Promise<{ invoi
 		await requireAdminApiActor()
 
 		const { invoiceId } = await context.params
+
+		if (!platformFeeCollectionEnabled()) {
+			throw new ApiError(
+				"Platform-fee collection is not activated. The bill remains open and no Stripe call was made.",
+				409
+			)
+		}
+
 		const billing = resolveStripeBilling()
 
 		if (!billing.ok) {

@@ -15,6 +15,7 @@ import { revalidatePath } from "next/cache"
 
 import { captureServerEvent } from "./analytics"
 import { reviewCredentialDocument } from "./credential-reviewer"
+import { checkRateLimit } from "./rate-limit"
 import {
   mediaTarget,
   parseMediaKind,
@@ -663,6 +664,12 @@ export async function requestCredentialReviewAction(input: {
       throw new Error("That record is not in your vault")
     }
 
+    if (!["denied", "more_info_required"].includes(credential.status)) {
+      throw new Error("Only a record that needs correction or was refused can be reviewed again")
+    }
+
+    await checkRateLimit("credential-rereview", actor.profile.id, 3, 60 * 60_000)
+
     const outcome = await reviewSubmittedCredential(
       actor.profile.id,
       actor.profile.fullName,
@@ -1201,6 +1208,59 @@ export async function settleHaulCompletionAction(input: {
       actor.profile.id,
       { tripId: input.tripId }
     )
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function markDriverPaymentSentAction(input: {
+  assignmentId: string
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    const result = await commit(["/driver", "/fleet", "/host"], (draft) =>
+      draft.markDriverPaymentSent({
+        actorUserId: actor.profile.id,
+        assignmentId: input.assignmentId,
+        organizationId: actorOrganizationId(actor)
+      })
+    )
+
+    if (result.changed) {
+      captureServerEvent("driver_payment_sent", actor.profile.id, {
+        assignmentId: input.assignmentId
+      })
+    }
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function confirmDriverPaymentReceivedAction(input: {
+  assignmentId: string
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    const result = await commit(["/driver", "/fleet", "/host"], (draft) =>
+      draft.confirmDriverPaymentReceived({
+        actorUserId: actor.profile.id,
+        assignmentId: input.assignmentId,
+        organizationId: actorOrganizationId(actor)
+      })
+    )
+
+    if (result.changed) {
+      captureServerEvent("driver_payment_received", actor.profile.id, {
+        assignmentId: input.assignmentId,
+        platformFeeOutcome: result.platformFeeOutcome
+      })
+    }
 
     return OK
   } catch (error) {

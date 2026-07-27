@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useState, useTransition, type FormEvent } from "react"
 import { rateTypeSchema, roadConditionSchema } from "@logloads/contracts"
 import { Icon } from "@logloads/ui"
@@ -76,6 +77,7 @@ export function LandingForm({
   landingId?: string
   onDone?: () => void
 }) {
+  const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [pending, startTransition] = useTransition()
@@ -124,6 +126,7 @@ export function LandingForm({
       setSaved(true)
       if (!editing) form.reset()
       onDone?.()
+      router.refresh()
     })
   }
 
@@ -213,6 +216,7 @@ export function LandingDetailsForm({
   details: HostLandingDetailsDraft
   landingId: string
 }) {
+  const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [pending, startTransition] = useTransition()
@@ -251,6 +255,7 @@ export function LandingDetailsForm({
       }
 
       setSaved(true)
+      router.refresh()
     })
   }
 
@@ -326,6 +331,7 @@ export function LandingActiveToggle({
   isActive: boolean
   landingId: string
 }) {
+  const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
@@ -334,7 +340,12 @@ export function LandingActiveToggle({
     startTransition(async () => {
       const result = await setLandingActiveAction({ isActive: !isActive, landingId })
 
-      if (!result.ok) setError(result.error ?? "That could not be changed.")
+      if (!result.ok) {
+        setError(result.error ?? "That could not be changed.")
+        return
+      }
+
+      router.refresh()
     })
   }
 
@@ -350,7 +361,9 @@ export function LandingActiveToggle({
 
 /** Adds a lane from this landing to a destination. */
 export function HaulRouteForm({ landingId, mills }: { landingId: string; mills: HostMillOption[] }) {
+  const router = useRouter()
   const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
   const [pending, startTransition] = useTransition()
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -366,6 +379,7 @@ export function HaulRouteForm({ landingId, mills }: { landingId: string; mills: 
     }
 
     setError(null)
+    setSaved(false)
     startTransition(async () => {
       const result = await createHaulRouteAction({
         estimatedDistanceMiles: distance,
@@ -383,6 +397,8 @@ export function HaulRouteForm({ landingId, mills }: { landingId: string; mills: 
       }
 
       form.reset()
+      setSaved(true)
+      router.refresh()
     })
   }
 
@@ -430,6 +446,7 @@ export function HaulRouteForm({ landingId, mills }: { landingId: string; mills: 
           <Icon aria-hidden name="nav.map" size={16} />
           {pending ? "Adding…" : "Add lane"}
         </button>
+        {saved ? <span className="action-note">Lane added.</span> : null}
       </div>
       {error ? <p className="action-error" role="alert">{error}</p> : null}
     </form>
@@ -438,7 +455,9 @@ export function HaulRouteForm({ landingId, mills }: { landingId: string; mills: 
 
 /** Adds a rate the organization can publish work at. */
 export function RateForm() {
+  const router = useRouter()
   const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
   const [pending, startTransition] = useTransition()
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -454,6 +473,7 @@ export function RateForm() {
     }
 
     setError(null)
+    setSaved(false)
     startTransition(async () => {
       const result = await createRateAction({
         // Money is entered in dollars and stored in cents; rounding here keeps a
@@ -471,6 +491,8 @@ export function RateForm() {
       }
 
       form.reset()
+      setSaved(true)
+      router.refresh()
     })
   }
 
@@ -504,6 +526,7 @@ export function RateForm() {
         <button className="action-link action-link--secondary" disabled={pending} type="submit">
           {pending ? "Adding…" : "Add rate"}
         </button>
+        {saved ? <span className="action-note">Rate added.</span> : null}
       </div>
       {error ? <p className="action-error" role="alert">{error}</p> : null}
     </form>

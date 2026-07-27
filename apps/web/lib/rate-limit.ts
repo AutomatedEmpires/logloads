@@ -24,5 +24,10 @@ export async function checkRateLimit(
 }
 
 export async function requestClientKey(): Promise<string> {
-  return clientKeyFromHeaders(await headers(), { VERCEL: process.env.VERCEL })
+  return clientKeyFromHeaders(await headers(), {
+    LOGLOADS_RATE_LIMIT_HMAC_SECRET: process.env.LOGLOADS_RATE_LIMIT_HMAC_SECRET,
+    NODE_ENV: process.env.NODE_ENV,
+    VERCEL: process.env.VERCEL,
+    VERCEL_ENV: process.env.VERCEL_ENV
+  })
 }

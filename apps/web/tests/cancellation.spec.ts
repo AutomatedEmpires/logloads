@@ -42,6 +42,7 @@ test.describe.serial("request withdrawal", () => {
     await page.getByRole("button", { name: "Next", exact: true }).click()
 
     // Step 3 — Terms, Step 4 — Visibility: defaults.
+    await fillWhenReady(page, "What this work pays a driver, per truckload", "525.00")
     await page.getByRole("button", { name: "Next", exact: true }).click()
     await page.getByRole("radio", { name: /Publish now/ }).check()
     await page.getByRole("button", { name: "Next", exact: true }).click()

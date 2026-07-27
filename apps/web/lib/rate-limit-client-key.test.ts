@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest"
 
 import { clientKeyFromHeaders } from "./rate-limit-client-key"
 
+const TEST_ENV = {
+  LOGLOADS_RATE_LIMIT_HMAC_SECRET: "rate-limit-test-secret",
+  NODE_ENV: "test"
+}
+
+function environment(overrides: Record<string, string> = {}) {
+  return { ...TEST_ENV, ...overrides }
+}
+
 function requestHeaders(values: Record<string, string>): Headers {
   return new Headers(values)
 }
@@ -14,7 +23,10 @@ describe("clientKeyFromHeaders", () => {
       "x-vercel-forwarded-for": "198.51.100.7"
     })
 
-    expect(clientKeyFromHeaders(headers, { VERCEL: "1" })).toBe("198.51.100.7")
+    const key = clientKeyFromHeaders(headers, environment({ VERCEL: "1" }))
+
+    expect(key.startsWith("verified:")).toBe(true)
+    expect(key).not.toContain("198.51.100.7")
   })
 
   // These two tests previously asserted the constant keys "local" and "unknown".
@@ -29,7 +41,7 @@ describe("clientKeyFromHeaders", () => {
       "x-real-ip": "203.0.113.98",
       "x-vercel-forwarded-for": "198.51.100.7"
     })
-    const key = clientKeyFromHeaders(spoofed, {})
+    const key = clientKeyFromHeaders(spoofed, environment())
 
     // None of the addresses the caller supplied may become the bucket.
     expect(key).not.toBe("198.51.100.7")
@@ -39,9 +51,9 @@ describe("clientKeyFromHeaders", () => {
   })
 
   it("gives unvouched callers separate buckets instead of one shared constant", () => {
-    const first = clientKeyFromHeaders(requestHeaders({ "user-agent": "rig-one" }), {})
-    const second = clientKeyFromHeaders(requestHeaders({ "user-agent": "rig-two" }), {})
-    const third = clientKeyFromHeaders(new Headers(), {})
+    const first = clientKeyFromHeaders(requestHeaders({ "user-agent": "rig-one" }), environment())
+    const second = clientKeyFromHeaders(requestHeaders({ "user-agent": "rig-two" }), environment())
+    const third = clientKeyFromHeaders(new Headers(), environment())
 
     expect(new Set([first, second, third]).size).toBe(3)
     for (const key of [first, second, third]) {
@@ -53,11 +65,16 @@ describe("clientKeyFromHeaders", () => {
   it("is stable for one caller across requests, so a bucket actually accumulates", () => {
     const headers = () => requestHeaders({ "user-agent": "rig-one" })
 
-    expect(clientKeyFromHeaders(headers(), {})).toBe(clientKeyFromHeaders(headers(), {}))
+    expect(clientKeyFromHeaders(headers(), environment())).toBe(
+      clientKeyFromHeaders(headers(), environment())
+    )
   })
 
   it("keeps an unvouched caller out of any verified caller's bucket", () => {
-    const unvouched = clientKeyFromHeaders(requestHeaders({ "x-forwarded-for": "198.51.100.7" }), {})
+    const unvouched = clientKeyFromHeaders(
+      requestHeaders({ "x-forwarded-for": "198.51.100.7" }),
+      environment()
+    )
 
     // A bare IP is what a vouched caller's key looks like; a fingerprint must
     // never be able to collide with one.
@@ -68,9 +85,9 @@ describe("clientKeyFromHeaders", () => {
   it("falls back to a per-caller fingerprint when the trusted platform header is unusable", () => {
     const invalid = clientKeyFromHeaders(
       requestHeaders({ "x-forwarded-for": "203.0.113.99", "x-vercel-forwarded-for": "not-an-ip" }),
-      { VERCEL: "1" }
+      environment({ VERCEL: "1" })
     )
-    const absent = clientKeyFromHeaders(new Headers(), { VERCEL: "1" })
+    const absent = clientKeyFromHeaders(new Headers(), environment({ VERCEL: "1" }))
 
     expect(invalid).not.toBe("unknown")
     expect(absent).not.toBe("unknown")
@@ -82,6 +99,17 @@ describe("clientKeyFromHeaders", () => {
   it("accepts a trusted IPv6 client address", () => {
     const headers = requestHeaders({ "x-vercel-forwarded-for": "2001:db8::1" })
 
-    expect(clientKeyFromHeaders(headers, { VERCEL: "1" })).toBe("2001:db8::1")
+    const key = clientKeyFromHeaders(headers, environment({ VERCEL: "1" }))
+
+    expect(key.startsWith("verified:")).toBe(true)
+    expect(key).not.toContain("2001:db8::1")
+  })
+
+  it("fails closed when the pseudonymization secret is missing", () => {
+    expect(() =>
+      clientKeyFromHeaders(new Headers({ "x-vercel-forwarded-for": "198.51.100.7" }), {
+        VERCEL: "1"
+      })
+    ).toThrow(/HMAC_SECRET/)
   })
 })

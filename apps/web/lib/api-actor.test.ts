@@ -104,6 +104,12 @@ describe("apiErrorResponse", () => {
 // Colocated here rather than in rate-limit-client-key.test.ts, which a
 // concurrent change on this branch owns; move it there when they merge.
 describe("clientKeyFromHeaders", () => {
+  const environment = (overrides: Record<string, string> = {}) => ({
+    LOGLOADS_RATE_LIMIT_HMAC_SECRET: "api-actor-rate-limit-test-secret",
+    NODE_ENV: "test",
+    ...overrides
+  })
+
   it("uses Vercel's trusted client IP instead of spoofable forwarding headers", () => {
     const headers = new Headers({
       "x-forwarded-for": "203.0.113.99",
@@ -111,28 +117,43 @@ describe("clientKeyFromHeaders", () => {
       "x-vercel-forwarded-for": "198.51.100.7"
     })
 
-    expect(clientKeyFromHeaders(headers, { VERCEL: "1" })).toBe("198.51.100.7")
+    const key = clientKeyFromHeaders(headers, environment({ VERCEL: "1" }))
+
+    expect(key.startsWith("verified:")).toBe(true)
+    expect(key).not.toContain("198.51.100.7")
   })
 
   it("uses Fly's trusted client IP on the non-Vercel deployment target", () => {
     const headers = new Headers({ "fly-client-ip": "198.51.100.9", "x-forwarded-for": "203.0.113.99" })
 
-    expect(clientKeyFromHeaders(headers, {})).toBe("198.51.100.9")
+    const key = clientKeyFromHeaders(headers, environment())
+
+    expect(key.startsWith("verified:")).toBe(true)
+    expect(key).not.toContain("198.51.100.9")
   })
 
   it("never steers a Vercel request with a forged Fly header", () => {
     const headers = new Headers({ "fly-client-ip": "203.0.113.99", "x-vercel-forwarded-for": "198.51.100.7" })
 
-    expect(clientKeyFromHeaders(headers, { VERCEL: "1" })).toBe("198.51.100.7")
+    const key = clientKeyFromHeaders(headers, environment({ VERCEL: "1" }))
+
+    expect(key.startsWith("verified:")).toBe(true)
+    expect(key).not.toContain("203.0.113.99")
   })
 
   it("gives distinct callers distinct keys when no proxy vouches for them", () => {
     // The lockout this closes: every caller used to collapse onto one constant
     // key, so five requests against onboarding's 5/hour limit locked out every
     // user of the deployment for an hour.
-    const first = clientKeyFromHeaders(new Headers({ "x-forwarded-for": "203.0.113.10" }), {})
-    const second = clientKeyFromHeaders(new Headers({ "x-forwarded-for": "203.0.113.11" }), {})
-    const empty = clientKeyFromHeaders(new Headers(), {})
+    const first = clientKeyFromHeaders(
+      new Headers({ "x-forwarded-for": "203.0.113.10" }),
+      environment()
+    )
+    const second = clientKeyFromHeaders(
+      new Headers({ "x-forwarded-for": "203.0.113.11" }),
+      environment()
+    )
+    const empty = clientKeyFromHeaders(new Headers(), environment())
 
     expect(new Set([first, second, empty]).size).toBe(3)
 
@@ -143,7 +164,10 @@ describe("clientKeyFromHeaders", () => {
   })
 
   it("keeps an unvouched key out of every verified caller's window", () => {
-    const forged = clientKeyFromHeaders(new Headers({ "x-forwarded-for": "198.51.100.7" }), {})
+    const forged = clientKeyFromHeaders(
+      new Headers({ "x-forwarded-for": "198.51.100.7" }),
+      environment()
+    )
 
     expect(forged).not.toBe("198.51.100.7")
     expect(forged.startsWith("unverified:")).toBe(true)
@@ -151,14 +175,20 @@ describe("clientKeyFromHeaders", () => {
 
   it("is stable for the same caller across requests", () => {
     const request = () =>
-      clientKeyFromHeaders(new Headers({ "user-agent": "logloads-test/1.0", "x-forwarded-for": "203.0.113.10" }), {})
+      clientKeyFromHeaders(
+        new Headers({ "user-agent": "logloads-test/1.0", "x-forwarded-for": "203.0.113.10" }),
+        environment()
+      )
 
     expect(request()).toBe(request())
   })
 
   it("falls back to a fingerprint when the trusted platform header is missing or invalid", () => {
-    const invalid = clientKeyFromHeaders(new Headers({ "x-vercel-forwarded-for": "not-an-ip" }), { VERCEL: "1" })
-    const absent = clientKeyFromHeaders(new Headers(), { VERCEL: "1" })
+    const invalid = clientKeyFromHeaders(
+      new Headers({ "x-vercel-forwarded-for": "not-an-ip" }),
+      environment({ VERCEL: "1" })
+    )
+    const absent = clientKeyFromHeaders(new Headers(), environment({ VERCEL: "1" }))
 
     expect(invalid.startsWith("unverified:")).toBe(true)
     expect(absent.startsWith("unverified:")).toBe(true)
@@ -166,8 +196,12 @@ describe("clientKeyFromHeaders", () => {
   })
 
   it("accepts a trusted IPv6 client address", () => {
-    expect(clientKeyFromHeaders(new Headers({ "x-vercel-forwarded-for": "2001:db8::1" }), { VERCEL: "1" })).toBe(
-      "2001:db8::1"
+    const key = clientKeyFromHeaders(
+      new Headers({ "x-vercel-forwarded-for": "2001:db8::1" }),
+      environment({ VERCEL: "1" })
     )
+
+    expect(key.startsWith("verified:")).toBe(true)
+    expect(key).not.toContain("2001:db8::1")
   })
 })

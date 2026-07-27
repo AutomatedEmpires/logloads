@@ -33,6 +33,10 @@ async function requireBillingManager() {
 		throw new ApiError("Only an organization owner or billing manager can manage billing", 403)
 	}
 
+	if (!["landing_source", "destination"].includes(membership.organization.type)) {
+		throw new ApiError("Card billing is only available to host organizations", 403)
+	}
+
 	return { ...actor, organization: membership.organization }
 }
 

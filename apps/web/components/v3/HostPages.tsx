@@ -18,6 +18,7 @@ import {
   CapacityApprovalList,
   CloseWorkButton,
   DirectOfferPanel,
+  DriverPaymentControl,
   NoticeComposer,
   OpportunityBuilder,
   PublishDraftButton,
@@ -319,12 +320,20 @@ export function HostLiveBoard({ account, network }: HostPageProps) {
                           lives on the card rather than in a message that
                           disappears with it. */}
                       {trip.completion.status === "confirmed" ? (
-                        <span className="review-done">
-                          <Icon aria-hidden name="status.verified" size={14} />{" "}
-                          {trip.completion.deliveredQuantity
-                            ? `${trip.completion.deliveredQuantity.value} ${trip.completion.deliveredQuantity.unit} confirmed`
-                            : "Delivery confirmed"}
-                        </span>
+                        <>
+                          <span className="review-done">
+                            <Icon aria-hidden name="status.verified" size={14} />{" "}
+                            {trip.completion.deliveredQuantity
+                              ? `${trip.completion.deliveredQuantity.value} ${trip.completion.deliveredQuantity.unit} confirmed`
+                              : "Delivery confirmed"}
+                          </span>
+                          <DriverPaymentControl
+                            assignmentId={trip.assignmentId}
+                            driverName={trip.driverName}
+                            expectedPayLabel={trip.driverPayment.expectedPayLabel}
+                            status={trip.driverPayment.status}
+                          />
+                        </>
                       ) : null}
                       {/* The host is being asked to accept a figure. The proof
                           behind it belongs on the same card as the decision —

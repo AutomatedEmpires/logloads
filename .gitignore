@@ -26,3 +26,4 @@ apps/web/.artifacts/
 # document, including driver names, contact details and (once the credential
 # vault ships) licence and insurance data. A backup must never enter git.
 backups/
+.env*

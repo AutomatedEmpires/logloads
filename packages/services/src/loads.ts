@@ -358,7 +358,14 @@ export function updateLoadPosting(
   // money gate cannot depend on which entry point a caller reached for. This
   // path mints no capacity, so it is not how the product publishes — it is
   // closed here so it cannot become a way around the gate.
-  if (!LIVE_STATUSES.has(existing.status) && LIVE_STATUSES.has(updated.status)) {
+  const moneyChanged =
+    Object.prototype.hasOwnProperty.call(parsed, "driverPayCents") &&
+    parsed.driverPayCents !== existing.driverPayCents
+
+  if (
+    (!LIVE_STATUSES.has(existing.status) && LIVE_STATUSES.has(updated.status)) ||
+    (LIVE_STATUSES.has(existing.status) && moneyChanged)
+  ) {
     assertHostCanPublish(state, updated)
   }
 

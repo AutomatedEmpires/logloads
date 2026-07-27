@@ -77,6 +77,7 @@ import {
   cancelAssignmentWithPolicy,
   claimDirectOffer,
   closeLoadPosting,
+  confirmDriverPaymentReceived,
   createDirectOffer,
   createLoadPostingWithPolicy,
   createOperationalNotice,
@@ -97,6 +98,7 @@ import {
   listVisibleLoadsForOrganization,
   isLoadRequestableAt,
   latestTripInspection,
+  markDriverPaymentSent,
   progressTripStatus,
   publishFutureAvailability,
   recordPreTripInspection,
@@ -112,6 +114,7 @@ import {
   hostFeeSummary,
   markInvoicePaid,
   markInvoiceUncollectible,
+  openClosedPeriodInvoices,
   openInvoiceForPeriod,
   voidPlatformFee
 } from "./platform-fees"
@@ -158,6 +161,10 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
       input: Parameters<typeof openInvoiceForPeriod>[1],
       at?: Parameters<typeof openInvoiceForPeriod>[2]
     ) => openInvoiceForPeriod(state, input, at),
+    openClosedPeriodInvoices: (
+      input: Parameters<typeof openClosedPeriodInvoices>[1],
+      at?: Parameters<typeof openClosedPeriodInvoices>[2]
+    ) => openClosedPeriodInvoices(state, input, at),
     markInvoicePaid: (
       input: Parameters<typeof markInvoicePaid>[1],
       at?: Parameters<typeof markInvoicePaid>[2]
@@ -293,6 +300,10 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
       refreshRoutePackForAssignment(state, input),
     submitHaulCompletion: (input: Parameters<typeof submitHaulCompletion>[1]) => submitHaulCompletion(state, input),
     settleHaulCompletion: (input: Parameters<typeof settleHaulCompletion>[1]) => settleHaulCompletion(state, input),
+    markDriverPaymentSent: (input: Parameters<typeof markDriverPaymentSent>[1]) =>
+      markDriverPaymentSent(state, input),
+    confirmDriverPaymentReceived: (input: Parameters<typeof confirmDriverPaymentReceived>[1]) =>
+      confirmDriverPaymentReceived(state, input),
     listTripDocuments: (tripId: string) => listTripDocuments(state, tripId),
     requiredCompletionEvidence: (trip: Parameters<typeof requiredCompletionEvidence>[1]) =>
       requiredCompletionEvidence(state, trip),
@@ -394,6 +405,7 @@ export {
   hostInvoiceId,
   markInvoicePaid,
   markInvoiceUncollectible,
+  openClosedPeriodInvoices,
   openInvoiceForPeriod,
   voidPlatformFee
 } from "./platform-fees"

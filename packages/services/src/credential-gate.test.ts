@@ -455,7 +455,9 @@ describe("the credential summary sent to the host with an acceptance", () => {
   it("keeps the snapshot as it was at acceptance when the vault changes afterwards", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const accepted = acceptSeedLoad(services)
-    const before = acceptanceSummaryOf(accepted.assignment.termsSnapshot)
+    const before = structuredClone(
+      acceptanceSummaryOf(accepted.assignment.termsSnapshot)
+    )
 
     lapseKind(services, "insurance")
     services.state.driverCredentials = services.state.driverCredentials.filter(

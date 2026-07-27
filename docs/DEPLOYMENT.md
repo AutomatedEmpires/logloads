@@ -87,7 +87,8 @@ remains a preview/cutover gate.
 
 1. Back up the existing `operating_state` row:
    `node tools/operating-state-backup.mjs backup --out backups`, then
-   `… verify <file>` before you trust it. See [RECOVERY.md](./RECOVERY.md) for the
+   `node tools/operating-state-backup.mjs verify backups/<filename>.json` before
+   you trust it. See [RECOVERY.md](./RECOVERY.md) for the
    restore path, the rehearsal record, and why a backup file is production personal
    data. This step previously named "an approved secret-safe path" with no tool
    behind it, which meant it was not being done.

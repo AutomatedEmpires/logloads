@@ -11,6 +11,7 @@ import {
   addEquipmentAction,
   attachTripDocumentAction,
   cancelAssignmentAction,
+  confirmDriverPaymentReceivedAction,
   featureTruckPhotoAction,
   progressTripAction,
   recordPreTripInspectionAction,
@@ -23,6 +24,10 @@ import {
 } from "@/lib/cockpit-actions"
 import type { NetworkLoadView, NetworkView } from "@/lib/network"
 import { signOutAction } from "@/lib/session-actions"
+import {
+  uploadSignedFile,
+  type SignedUploadResponse
+} from "@/lib/signed-upload-client"
 
 type TripStatus = NetworkView["trips"][number]["status"]
 type CompletionStatus = NetworkView["trips"][number]["completion"]["status"]
@@ -657,13 +662,6 @@ export function DriverEconomicsForm({
   )
 }
 
-interface SignedUploadResponse {
-  apiKey: string
-  parameters: Record<string, string | number>
-  signature: string
-  uploadUrl: string
-}
-
 /**
  * Reads a JSON body without letting a non-JSON one become the error the user
  * reads. Gateways and crashed functions answer with HTML; the caller's own
@@ -727,22 +725,8 @@ export function MediaUpload({
           throw new Error(signature.error ?? "Photo uploads are not available yet.")
         }
 
-        const uploadBody = new FormData()
-        uploadBody.append("file", file)
-        uploadBody.append("api_key", signature.apiKey)
-        uploadBody.append("signature", signature.signature)
-        for (const [key, value] of Object.entries(signature.parameters)) {
-          uploadBody.append(key, String(value))
-        }
-
-        const cloudResponse = await fetch(signature.uploadUrl, { body: uploadBody, method: "POST" })
-        const cloudAsset = await cloudResponse.json() as { error?: { message?: string }; public_id?: string }
-
-        if (!cloudResponse.ok || !cloudAsset.public_id) {
-          throw new Error(cloudAsset.error?.message ?? "The photo could not be uploaded.")
-        }
-
-        const saved = await saveDriverMediaAction({ kind, publicId: cloudAsset.public_id })
+        const publicId = await uploadSignedFile(signature, file)
+        const saved = await saveDriverMediaAction({ kind, publicId })
 
         if (!saved.ok) {
           throw new Error(saved.error ?? "The uploaded photo could not be attached to your profile.")
@@ -786,7 +770,7 @@ const PROOF_TYPES: Array<[string, string]> = [
 ]
 
 /**
- * Attaches proof of the haul: the file goes to Cloudinary under a signature
+ * Attaches proof of the haul: the file goes to dedicated storage under a token
  * scoped to this trip, then the server reads the stored asset back and records
  * it. The evidence gate downstream trusts these records, so the record is only
  * written once the bytes are known to exist.
@@ -835,24 +819,10 @@ export function LogProofControl({ available, tripId }: { available: boolean; tri
           throw new Error(signature?.error ?? "Proof uploads are not available right now.")
         }
 
-        const uploadBody = new FormData()
-        uploadBody.append("file", file)
-        uploadBody.append("api_key", signature.apiKey)
-        uploadBody.append("signature", signature.signature)
-        for (const [key, value] of Object.entries(signature.parameters)) {
-          uploadBody.append(key, String(value))
-        }
-
-        const cloudResponse = await fetch(signature.uploadUrl, { body: uploadBody, method: "POST" })
-        const cloudAsset = await readJson<{ error?: { message?: string }; public_id?: string }>(cloudResponse)
-
-        if (!cloudResponse.ok || !cloudAsset?.public_id) {
-          throw new Error(cloudAsset?.error?.message ?? "The proof could not be uploaded.")
-        }
-
+        const publicId = await uploadSignedFile(signature, file)
         const result = await attachTripDocumentAction({
           filename: file.name,
-          publicId: cloudAsset.public_id,
+          publicId,
           tripId,
           type
         })
@@ -1062,6 +1032,86 @@ export function CompletionForm({
       {saved ? <p className="action-note">Delivery recorded. The host will confirm it.</p> : null}
       {error ? <p className="action-error" role="alert">{error}</p> : null}
     </form>
+  )
+}
+
+export function DriverPaymentReceiptControl({
+  assignmentId,
+  expectedPayLabel,
+  status
+}: {
+  assignmentId: string
+  expectedPayLabel: string
+  status: NetworkView["trips"][number]["driverPayment"]["status"]
+}) {
+  const [confirming, setConfirming] = useState(false)
+  const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null)
+  const [pending, startTransition] = useTransition()
+
+  if (status === "received" || feedback?.ok) {
+    return (
+      <p className="action-note" role="status">
+        <Icon aria-hidden name="status.verified" size={16} />{" "}
+        {feedback?.text ?? `You confirmed receipt of ${expectedPayLabel}.`}
+      </p>
+    )
+  }
+
+  if (status === "not_sent") {
+    return (
+      <p className="action-note">
+        Driver pay due: {expectedPayLabel}. The host has not marked it sent yet.
+      </p>
+    )
+  }
+
+  const receive = () => {
+    startTransition(async () => {
+      setFeedback(null)
+
+      try {
+        const result = await confirmDriverPaymentReceivedAction({ assignmentId })
+
+        setFeedback(
+          result.ok
+            ? { ok: true, text: `Receipt of ${expectedPayLabel} confirmed.` }
+            : { ok: false, text: result.error ?? "Payment receipt could not be confirmed." }
+        )
+      } catch {
+        setFeedback({
+          ok: false,
+          text: "Payment receipt could not be confirmed. Check your connection and try again."
+        })
+      }
+    })
+  }
+
+  return (
+    <div className="completion-form">
+      <p className="action-note">
+        The host marked {expectedPayLabel} sent. Confirm only after the full amount reaches you.
+        LogLoads does not hold or move these funds.
+      </p>
+      {confirming ? (
+        <div className="host-approval-actions" role="group" aria-label="Confirm driver pay received">
+          <button className="advance-button" disabled={pending} onClick={receive} type="button">
+            {pending ? "Confirming…" : `Yes, I received ${expectedPayLabel}`}
+          </button>
+          <button disabled={pending} onClick={() => setConfirming(false)} type="button">
+            Not yet
+          </button>
+        </div>
+      ) : (
+        <button className="advance-button" onClick={() => setConfirming(true)} type="button">
+          Confirm driver pay received
+        </button>
+      )}
+      {feedback && !feedback.ok ? (
+        <p className="action-error" role="alert">
+          {feedback.text}
+        </p>
+      ) : null}
+    </div>
   )
 }
 

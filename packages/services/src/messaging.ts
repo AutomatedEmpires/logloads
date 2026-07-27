@@ -236,6 +236,7 @@ const PUBLISHER_CONTACT_ROLES: ReadonlySet<OrganizationRole> = new Set(
 interface ThreadCreatorContext {
   driverProfileIds: Set<string>
   organizationIds: Set<string>
+  dispatchOrganizationIds: Set<string>
 }
 
 /** One person the creator may write to, and the single piece of work it is about. */
@@ -250,6 +251,16 @@ function threadCreatorContext(state: LogLoadsDatabaseState, creatorUserId: strin
     driverProfileIds: new Set(
       state.driverProfiles.filter((driver) => driver.userId === creatorUserId).map((driver) => driver.id)
     ),
+    dispatchOrganizationIds: new Set(
+      state.organizationMemberships
+        .filter(
+          (membership) =>
+            membership.userId === creatorUserId &&
+            membership.status === "active" &&
+            organizationRoleCan(membership.role, "assign_capacity")
+        )
+        .map((membership) => membership.organizationId)
+    ),
     organizationIds: new Set(
       state.organizationMemberships
         .filter((membership) => membership.userId === creatorUserId && membership.status === "active")
@@ -262,7 +273,7 @@ function threadCreatorContext(state: LogLoadsDatabaseState, creatorUserId: strin
 function fleetDriverProfileIds(state: LogLoadsDatabaseState, context: ThreadCreatorContext): Set<string> {
   const fleetDriverIds = new Set<string>()
 
-  for (const organizationId of context.organizationIds) {
+  for (const organizationId of context.dispatchOrganizationIds) {
     const memberUserIds = new Set(
       state.organizationMemberships
         .filter((membership) => membership.organizationId === organizationId && membership.status === "active")

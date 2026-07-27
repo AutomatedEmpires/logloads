@@ -280,11 +280,9 @@ export type AccruePlatformFeeResult =
 /**
  * The delivered haul behind an assignment, as the two parties agreed it.
  *
- * Completion here means the HOST CONFIRMED the driver's delivered record, not
- * that a status somewhere reads "completed". A unilateral status flip is one
- * party's claim; a confirmed completion is both parties agreeing the load moved,
- * which is the only thing that makes a fee defensible if the host later disputes
- * it.
+ * Completion here means the HOST CONFIRMED the driver's delivered record. Fee
+ * accrual also requires the assigned driver to confirm the frozen off-platform
+ * pay arrived; delivery alone never says the driver was paid.
  */
 function confirmedHaulForAssignment(
   state: LogLoadsDatabaseState,
@@ -370,7 +368,17 @@ export function accruePlatformFee(
     }
   }
 
-  const driverPayCents = load.driverPayCents ?? null
+  if (!assignment.driverPaymentReceivedAt) {
+    return {
+      assignmentId: assignment.id,
+      outcome: "not_completed",
+      reason: "The assigned driver has not confirmed receipt of the stated driver pay"
+    }
+  }
+
+  const frozenDriverPay = assignment.termsSnapshot.driverPayCents
+  const driverPayCents =
+    typeof frozenDriverPay === "number" ? frozenDriverPay : load.driverPayCents ?? null
 
   if (driverPayCents === null) {
     // Accruing zero here would put a real fee row on a load with no stated pay, and
@@ -385,11 +393,9 @@ export function accruePlatformFee(
 
   const feeBps = input.feeBps ?? PLATFORM_FEE_BPS
   const actorUserId = input.actorUserId ?? null
-  // The moment the host agreed the load was delivered is the moment it became
-  // billable, and it is what decides which month's bill the fee lands on. Falling
-  // back to the write clock keeps a confirmed haul billable even if an older row
-  // never recorded the confirmation instant.
-  const occurredAt = trip.completionConfirmedAt ?? at
+  // The receipt is the billable event: LogLoads does not earn its fee merely
+  // because a host confirmed delivery while the driver is still unpaid.
+  const occurredAt = assignment.driverPaymentReceivedAt
 
   const event = platformFeeEventSchema.parse({
     assignmentId: assignment.id,
@@ -555,6 +561,97 @@ export type OpenInvoiceForPeriodResult =
   /** No fee accrued in the month, so no bill exists to send. */
   | { outcome: "nothing_to_bill"; periodStart: string; periodEnd: string; reason: string }
 
+function openInvoiceForOrganizationPeriod(
+  state: LogLoadsDatabaseState,
+  input: {
+    actorUserId: string | null
+    organizationId: string
+    periodStart: string
+    periodEnd: string
+  },
+  at: string
+): OpenInvoiceForPeriodResult {
+  const period = canonicalPeriod(input.periodStart, input.periodEnd)
+
+  assertCondition(
+    Date.parse(period.periodEnd) <= Date.parse(at),
+    "This period is still accruing; the platform fee is billed monthly in arrears"
+  )
+
+  const invoiceId = hostInvoiceId(input.organizationId, period.periodStart)
+  const existing = state.hostInvoices.find(
+    (candidate) =>
+      candidate.id === invoiceId ||
+      (candidate.organizationId === input.organizationId &&
+        Date.parse(candidate.periodStart) === Date.parse(period.periodStart))
+  )
+
+  if (existing) {
+    return { invoice: existing, outcome: "already_open" }
+  }
+
+  const billable = feeEventsForOrganization(state, input.organizationId)
+    .filter((event) => event.status === "accrued" && withinPeriod(event.occurredAt, period))
+    .sort(
+      (left, right) =>
+        Date.parse(left.occurredAt) - Date.parse(right.occurredAt) || left.id.localeCompare(right.id)
+    )
+
+  if (billable.length === 0) {
+    return {
+      outcome: "nothing_to_bill",
+      periodEnd: period.periodEnd,
+      periodStart: period.periodStart,
+      reason: "No platform fee accrued in this period, and there is no monthly fee or minimum"
+    }
+  }
+
+  const invoice = hostInvoiceSchema.parse({
+    createdAt: at,
+    feeEventIds: billable.map((event) => event.id),
+    id: invoiceId,
+    issuedAt: at,
+    organizationId: input.organizationId,
+    paidAt: null,
+    periodEnd: period.periodEnd,
+    periodStart: period.periodStart,
+    status: "open",
+    stripeInvoiceId: null,
+    subtotalCents: invoiceSubtotalCents(billable),
+    updatedAt: at,
+    voidedAt: null
+  })
+  const billedIds = new Set(billable.map((event) => event.id))
+
+  state.hostInvoices.push(invoice)
+  state.platformFeeEvents = state.platformFeeEvents.map((event) =>
+    billedIds.has(event.id)
+      ? platformFeeEventSchema.parse({
+          ...event,
+          invoiceId: invoice.id,
+          status: "invoiced",
+          updatedAt: at
+        })
+      : event
+  )
+  insertBillingAuditEvent(state, {
+    action: "host_invoice_opened",
+    actorUserId: input.actorUserId,
+    at,
+    entityId: invoice.id,
+    entityType: "host_invoice",
+    metadata: {
+      feeEventCount: billable.length,
+      organizationId: invoice.organizationId,
+      periodEnd: invoice.periodEnd,
+      periodStart: invoice.periodStart,
+      subtotalCents: invoice.subtotalCents
+    }
+  })
+
+  return { invoice, outcome: "opened" }
+}
+
 /**
  * Closes one UTC calendar month for one host: collects every fee still `accrued`
  * in the period, opens a bill for them, and flips them to `invoiced`.
@@ -582,6 +679,24 @@ export function openInvoiceForPeriod(
   at = nowIso()
 ): OpenInvoiceForPeriodResult {
   const context = billingContext(state, input, "manage_billing")
+
+  return openInvoiceForOrganizationPeriod(
+    state,
+    {
+      actorUserId: context.actorUserId,
+      organizationId: context.organizationId,
+      periodEnd: input.periodEnd,
+      periodStart: input.periodStart
+    },
+    at
+  )
+}
+
+export function openClosedPeriodInvoices(
+  state: LogLoadsDatabaseState,
+  input: { periodEnd: string; periodStart: string },
+  at = nowIso()
+): OpenInvoiceForPeriodResult[] {
   const period = canonicalPeriod(input.periodStart, input.periodEnd)
 
   assertCondition(
@@ -589,83 +704,30 @@ export function openInvoiceForPeriod(
     "This period is still accruing; the platform fee is billed monthly in arrears"
   )
 
-  const invoiceId = hostInvoiceId(context.organizationId, period.periodStart)
-  const existing = state.hostInvoices.find(
-    (candidate) =>
-      candidate.id === invoiceId ||
-      (candidate.organizationId === context.organizationId &&
-        Date.parse(candidate.periodStart) === Date.parse(period.periodStart))
-  )
-
-  if (existing) {
-    return { invoice: existing, outcome: "already_open" }
-  }
-
-  const billable = feeEventsForOrganization(state, context.organizationId)
-    .filter((event) => event.status === "accrued" && withinPeriod(event.occurredAt, period))
-    // Sorted so a replay of this mutation produces a byte-identical bill rather
-    // than the same fees in whatever order the ledger happened to hold them.
-    .sort(
-      (left, right) =>
-        Date.parse(left.occurredAt) - Date.parse(right.occurredAt) || left.id.localeCompare(right.id)
+  const organizationIds = Array.from(
+    new Set(
+      state.platformFeeEvents
+        .filter(
+          (event) =>
+            event.status === "accrued" &&
+            withinPeriod(event.occurredAt, period)
+        )
+        .map((event) => event.organizationId)
     )
+  ).sort()
 
-  if (billable.length === 0) {
-    return {
-      outcome: "nothing_to_bill",
-      periodEnd: period.periodEnd,
-      periodStart: period.periodStart,
-      reason: "No platform fee accrued in this period, and there is no monthly fee or minimum"
-    }
-  }
-
-  const invoice = hostInvoiceSchema.parse({
-    createdAt: at,
-    feeEventIds: billable.map((event) => event.id),
-    id: invoiceId,
-    issuedAt: at,
-    organizationId: context.organizationId,
-    paidAt: null,
-    periodEnd: period.periodEnd,
-    periodStart: period.periodStart,
-    status: "open",
-    stripeInvoiceId: null,
-    // The one implementation of the total, shared with every surface that quotes
-    // it. Voided fees contribute nothing, which is why they can never reach a bill.
-    subtotalCents: invoiceSubtotalCents(billable),
-    updatedAt: at,
-    voidedAt: null
-  })
-
-  const billedIds = new Set(billable.map((event) => event.id))
-
-  state.hostInvoices.push(invoice)
-  state.platformFeeEvents = state.platformFeeEvents.map((event) =>
-    billedIds.has(event.id)
-      ? platformFeeEventSchema.parse({
-          ...event,
-          invoiceId: invoice.id,
-          status: "invoiced",
-          updatedAt: at
-        })
-      : event
+  return organizationIds.map((organizationId) =>
+    openInvoiceForOrganizationPeriod(
+      state,
+      {
+        actorUserId: null,
+        organizationId,
+        periodEnd: period.periodEnd,
+        periodStart: period.periodStart
+      },
+      at
+    )
   )
-  insertBillingAuditEvent(state, {
-    action: "host_invoice_opened",
-    actorUserId: context.actorUserId,
-    at,
-    entityId: invoice.id,
-    entityType: "host_invoice",
-    metadata: {
-      feeEventCount: billable.length,
-      organizationId: invoice.organizationId,
-      periodEnd: invoice.periodEnd,
-      periodStart: invoice.periodStart,
-      subtotalCents: invoice.subtotalCents
-    }
-  })
-
-  return { invoice, outcome: "opened" }
 }
 
 export interface InvoiceSettlementInput {

@@ -410,17 +410,14 @@ describe("what a refused driver is told", () => {
     expect(insurance.reviewLimitation).toContain("does not add a photo")
   })
 
-  it("keeps that caveat even with media configured, because intake is still refused", () => {
-    // Media being provisioned does not switch intake on (no vault upload route
-    // exists), so the caveat must survive the half-fix. It goes away when
-    // `intake.available` does, which is the condition it is actually about.
+  it("drops that caveat once private credential intake is available", () => {
     const asked = credential({
       kind: "insurance",
       requestedEvidence: ["A photo of the expiry date"],
       status: "more_info_required"
     })
 
-    expect(slot(vaultFor([asked], { mediaReady: true }), "insurance").reviewLimitation).not.toBeNull()
+    expect(slot(vaultFor([asked], { mediaReady: true }), "insurance").reviewLimitation).toBeNull()
   })
 
   it("admits when a refusal carried no reason instead of inventing one", () => {
@@ -485,29 +482,26 @@ describe("what a refused driver is told", () => {
   })
 })
 
-describe("document intake, while media is fail-closed", () => {
+describe("document intake", () => {
   it("refuses and explains, rather than showing a control that pretends", () => {
     const intake = credentialIntakeFor(false)
 
     expect(intake.available).toBe(false)
     expect(intake.signatureEndpoint).toBeNull()
     expect(intake.notice).not.toBeNull()
-    expect(intake.notice).toContain("can't add documents here yet")
+    expect(intake.notice).toContain("temporarily unavailable")
   })
 
-  it("stays refused even when media is configured, because a media account is not a route", () => {
-    // The negative control that matters: provisioning Cloudinary is NECESSARY and
-    // not sufficient. No credential upload route exists, and if this ever returns
-    // available on media alone, the vault will render a control that posts nowhere.
+  it("activates the real credential route once dedicated media is configured", () => {
     const intake = credentialIntakeFor(true)
 
-    expect(intake.available).toBe(false)
-    expect(intake.signatureEndpoint).toBeNull()
-    expect(intake.notice).not.toBeNull()
+    expect(intake.available).toBe(true)
+    expect(intake.signatureEndpoint).toBe("/api/credentials/signature")
+    expect(intake.notice).toBeNull()
   })
 
-  it("carries the same refusal into the vault a driver actually reads", () => {
-    expect(vaultFor(clearedVault(), { mediaReady: true }).intake.available).toBe(false)
+  it("carries readiness and refusal into the vault a driver actually reads", () => {
+    expect(vaultFor(clearedVault(), { mediaReady: true }).intake.available).toBe(true)
     expect(vaultFor(clearedVault()).intake.notice).not.toBeNull()
   })
 })

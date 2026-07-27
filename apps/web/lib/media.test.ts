@@ -168,9 +168,14 @@ describe("signed upload", () => {
     // The two checks must agree. A format the signature permits but
     // `verifiedMediaReference` refuses would be stored and only then rejected —
     // the exact waste moving the check to the edge exists to end.
-    const { parameters } = await signedUpload({ publicIdPrefix: "logloads/trip-documents/t1" })
+    const upload = await signedUpload({ publicIdPrefix: "logloads/trip-documents/t1" })
 
-    const formats = String(parameters.allowed_formats).split(",")
+    expect(upload.provider).toBe("cloudinary")
+    if (upload.provider !== "cloudinary") {
+      throw new Error("Expected the Cloudinary adapter")
+    }
+
+    const formats = String(upload.parameters.allowed_formats).split(",")
 
     expect(cloudinaryAdapter.config).toHaveBeenNthCalledWith(1, true)
     expect(cloudinaryAdapter.config).toHaveBeenNthCalledWith(2, {

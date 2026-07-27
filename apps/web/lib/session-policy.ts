@@ -14,10 +14,10 @@ export interface SessionActor {
 const FLEET_ROLES = new Set(["owner", "admin", "dispatcher", "fleet_manager"])
 const HOST_ROLES = new Set(["owner", "admin", "dispatcher", "landing_manager", "destination_manager", "billing"])
 
-function organizationCockpit(actor: SessionActor): "fleet" | "host" | null {
-  const orgType = actor.activeOrganization?.type
-  const role = actor.activeMembership?.role
-
+function organizationCockpitFor(
+  orgType: Organization["type"] | null | undefined,
+  role: OrganizationMembership["role"] | null | undefined
+): "fleet" | "host" | null {
   if (!orgType || !role) {
     return null
   }
@@ -31,6 +31,36 @@ function organizationCockpit(actor: SessionActor): "fleet" | "host" | null {
   }
 
   return null
+}
+
+function organizationCockpit(actor: SessionActor): "fleet" | "host" | null {
+  return organizationCockpitFor(actor.activeOrganization?.type, actor.activeMembership?.role)
+}
+
+/**
+ * Routes a just-created invited account without re-reading the request-cached
+ * pre-creation session. The next request still verifies the signed cookie and
+ * persisted membership before rendering the protected cockpit.
+ */
+export function homePathForMembership(
+  organizationType: Organization["type"],
+  role: OrganizationMembership["role"]
+): string {
+  const cockpit = organizationCockpitFor(organizationType, role)
+
+  if (cockpit === "fleet") {
+    return "/fleet/command"
+  }
+
+  if (cockpit === "host") {
+    return "/host/command"
+  }
+
+  if (role === "driver") {
+    return "/driver/map"
+  }
+
+  return "/"
 }
 
 export function homePathFor(actor: SessionActor): string {

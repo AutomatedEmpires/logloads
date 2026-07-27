@@ -75,6 +75,7 @@ test.describe.serial("host workspace setup", () => {
     await selectWhenReady(addForm, "Road condition", "muddy")
 
     await addForm.getByRole("button", { name: "Add landing" }).click()
+    await expect(addForm.getByText("Saved.")).toBeVisible({ timeout: 30_000 })
 
     // The landing itself on the page is the durable proof, not a flash message.
     await expect(async () => {
@@ -103,6 +104,7 @@ test.describe.serial("host workspace setup", () => {
     await card.getByLabel("Distance (miles)").fill("38.4")
     await card.getByLabel("Run time (minutes)").fill("68")
     await card.getByRole("button", { name: "Add lane" }).click()
+    await expect(card.getByText("Lane added.")).toBeVisible({ timeout: 30_000 })
 
     await expect(async () => {
       await page.reload()
@@ -159,6 +161,7 @@ test.describe.serial("host workspace setup", () => {
     await rates.getByLabel("Effective from").fill("2026-06-25")
     await rates.getByLabel("Note").fill(RATE_NOTE)
     await rates.getByRole("button", { name: "Add rate" }).click()
+    await expect(rates.getByText("Rate added.")).toBeVisible({ timeout: 30_000 })
 
     await expect(async () => {
       await page.reload()

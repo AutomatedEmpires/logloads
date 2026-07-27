@@ -2,7 +2,12 @@ import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
 import { DEMO_EMAIL_SIGN_IN_ALLOWLIST, DEMO_PERSONAS, isDemoSignInEmail } from "./demo-personas"
-import { canAccessCockpit, homePathFor, type SessionActor } from "./session-policy"
+import {
+  canAccessCockpit,
+  homePathFor,
+  homePathForMembership,
+  type SessionActor
+} from "./session-policy"
 
 const state = createInMemoryDatabase()
 
@@ -45,6 +50,14 @@ describe("membership-driven cockpit routing", () => {
     expect(homePathFor(actorFor("dispatch@northpine.example"))).toBe("/fleet/command")
     expect(homePathFor(actorFor("admin@logloads.example"))).toBe("/admin")
     expect(homePathFor(actorFor("emptyfleet@logloads.example"))).toBe("/fleet/command")
+  })
+
+  it("routes a newly accepted invitation from its persisted membership facts", () => {
+    expect(homePathForMembership("landing_source", "landing_manager")).toBe("/host/command")
+    expect(homePathForMembership("destination", "billing")).toBe("/host/command")
+    expect(homePathForMembership("fleet", "dispatcher")).toBe("/fleet/command")
+    expect(homePathForMembership("carrier", "driver")).toBe("/driver/map")
+    expect(homePathForMembership("fleet", "landing_manager")).toBe("/")
   })
 
   it("recovers an incompatible legacy landing-manager membership without a redirect loop", () => {

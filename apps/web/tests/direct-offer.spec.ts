@@ -17,11 +17,38 @@ test.describe("direct-offer commitment", () => {
   test("a fleet dispatcher accepts one truck on mobile and the host sees the exact partial count", async ({ page }) => {
     const stamp = Date.now()
     const loadTitle = `Direct offer saw-log block ${stamp}`
-    const rigLabel = `Offer rig ${stamp}`
-    const unitNumber = `OF-${String(stamp).slice(-5)}`
+    const rigLabel = "NP-101 with pole trailer"
+    const unitNumber = "NP-101"
     const loadDate = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
     await page.setViewportSize({ height: 900, width: 1440 })
+    // The seed opens with Hank on an active haul, and earlier full-suite
+    // journeys can book another. Close every current booking through the same
+    // two-step field control a real driver uses so his cleared rig is genuinely
+    // free for this independent direct-offer journey.
+    await signIn(page, "hank@northpine.example")
+    await page.goto("/driver/trips")
+    await page.waitForLoadState("networkidle")
+
+    for (let cancelled = 0; cancelled < 6; cancelled += 1) {
+      const cancelButtons = page.getByRole("button", { name: "Cancel haul" })
+      const before = await cancelButtons.count()
+
+      if (before === 0) {
+        break
+      }
+
+      await cancelButtons.first().click()
+      await page.getByRole("button", { name: "Yes, cancel the haul" }).first().click()
+      await expect.poll(
+        () => page.getByRole("button", { name: "Cancel haul" }).count(),
+        { timeout: 15_000 }
+      ).toBeLessThan(before)
+    }
+
+    await expect(page.getByRole("button", { name: "Cancel haul" })).toHaveCount(0)
+
+    await page.context().clearCookies()
     await signIn(page, "cole@summit.example")
     await page.goto("/host/opportunities")
     await page.waitForLoadState("networkidle")
@@ -33,6 +60,7 @@ test.describe("direct-offer commitment", () => {
     await page.getByLabel("Truckloads needed per day").fill("2")
     await page.getByLabel("Load date").fill(loadDate)
     await page.getByRole("button", { name: "Next" }).click()
+    await page.getByLabel("What this work pays a driver, per truckload").fill("525.00")
     await page.getByRole("button", { name: "Next" }).click()
     await page.getByRole("radio", { name: /Publish now/ }).check()
     await page.getByRole("button", { name: "Next" }).click()
@@ -55,35 +83,6 @@ test.describe("direct-offer commitment", () => {
     await page.context().clearCookies()
     await page.setViewportSize({ height: 915, width: 412 })
     await signIn(page, "dispatch@northpine.example")
-    await page.goto("/fleet/trucks")
-    await page.waitForLoadState("networkidle")
-    const equipmentForm = page.locator("form.fleet-form")
-    await equipmentForm.getByLabel("Combination label").fill(rigLabel)
-    await equipmentForm.getByLabel("Unit number").fill(unitNumber)
-    await equipmentForm.getByLabel("Truck type").selectOption("log_truck")
-    await equipmentForm.getByLabel("Trailer").selectOption("pole_trailer")
-    await equipmentForm.getByLabel("Max payload (tons)").fill("30")
-    await equipmentForm.getByRole("button", { name: "Add equipment" }).click()
-    await expect(equipmentForm.getByText("Equipment added")).toBeVisible({ timeout: 15_000 })
-    await page.reload()
-    await page.waitForLoadState("networkidle")
-    const addedRig = page.locator(".fleet-truck-card").filter({ hasText: rigLabel })
-    await expect(addedRig).toBeVisible()
-    const driverSelect = addedRig.getByLabel("Driver")
-    await Promise.all([
-      page.waitForResponse((response) =>
-        response.request().method() === "POST" &&
-        new URL(response.url()).pathname === "/fleet/trucks" &&
-        response.ok()
-      ),
-      driverSelect.selectOption({ label: "Maya Mills" })
-    ])
-    await page.reload()
-    await page.waitForLoadState("networkidle")
-    await expect(
-      page.locator(".fleet-truck-card").filter({ hasText: rigLabel }).getByLabel("Driver")
-    ).toHaveValue(/.+/)
-
     await page.goto("/fleet/opportunities")
     await page.waitForLoadState("networkidle")
 
@@ -108,7 +107,7 @@ test.describe("direct-offer commitment", () => {
     await expect(rig.getByText(/immediately creates the assignment/)).toBeVisible()
     await rig.getByRole("button", { name: "Confirm assignment" }).click()
     await expect(page.getByRole("heading", { name: "1 truckload still invited" })).toBeVisible({ timeout: 15_000 })
-    const commitment = page.locator("article").filter({ hasText: "Maya Mills" }).filter({ hasText: unitNumber })
+    const commitment = page.locator("article").filter({ hasText: "Hank Hauler" }).filter({ hasText: unitNumber })
     await expect(commitment).toContainText("accepted")
 
     await page.goto("/fleet/trips")

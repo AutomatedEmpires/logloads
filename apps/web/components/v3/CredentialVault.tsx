@@ -15,6 +15,11 @@ import type {
   HostCredentialLineView,
   HostDriverCredentialSummaryView
 } from "@/lib/credential-data"
+import {
+  fetchWithTimeout,
+  uploadSignedFile,
+  type SignedUploadResponse
+} from "@/lib/signed-upload-client"
 
 type CredentialActionOutcome = NonNullable<CredentialActionResult["outcome"]>
 
@@ -31,12 +36,11 @@ type CredentialActionOutcome = NonNullable<CredentialActionResult["outcome"]>
  * decided for itself whether a record counted would be a second safety rule living
  * in the least reviewable place in the codebase.
  *
- * WHY THE UPLOAD CONTROL IS OFTEN ABSENT. LogLoads cannot store a credential
- * document today: it has no media account of its own, and no upload route scoped to
- * the vault. The read model reports that as `intake.available === false` with a
- * notice, and this surface then shows the notice INSTEAD of a control. A file input
- * that discarded a driver's licence would be worse than no file input, and a
- * spinner that ended in "saved" would be worse still.
+ * WHY THE UPLOAD CONTROL CAN BE ABSENT. The read model reports storage readiness
+ * as `intake.available`; this surface shows its notice instead of a control when
+ * dedicated storage is not configured. A file input that discarded a driver's
+ * licence would be worse than no file input, and a spinner that ended in "saved"
+ * would be worse still.
  */
 
 const FILE_TYPES = ["image/jpeg", "image/png", "image/webp"]
@@ -70,13 +74,6 @@ function outcomeSentence(
   return context === "submitted"
     ? "Sent and checked. The decision and the reason for it are on the record above."
     : "Looked at again. The decision and the reason for it are on the record above."
-}
-
-interface SignedUploadResponse {
-  apiKey: string
-  parameters: Record<string, string | number>
-  signature: string
-  uploadUrl: string
 }
 
 /**
@@ -119,6 +116,7 @@ function CredentialDocumentUpload({
   const fieldId = useId()
   const expiryId = useId()
   const issuerId = useId()
+  const expiryRequired = kind === "cdl" || kind === "insurance"
 
   const upload = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -144,11 +142,16 @@ function CredentialDocumentUpload({
       return
     }
 
+    if (expiryRequired && !expiresOn) {
+      setError(`Enter the expiry date printed on your ${kindLabel.toLowerCase()}.`)
+      return
+    }
+
     setError(null)
     setSent(null)
     startTransition(async () => {
       try {
-        const signatureResponse = await fetch(signatureEndpoint, {
+        const signatureResponse = await fetchWithTimeout(signatureEndpoint, {
           body: JSON.stringify({ kind }),
           headers: { "Content-Type": "application/json" },
           method: "POST"
@@ -159,26 +162,12 @@ function CredentialDocumentUpload({
           throw new Error(signature?.error ?? "Document upload is not available right now.")
         }
 
-        const uploadBody = new FormData()
-        uploadBody.append("file", file)
-        uploadBody.append("api_key", signature.apiKey)
-        uploadBody.append("signature", signature.signature)
-        for (const [key, value] of Object.entries(signature.parameters)) {
-          uploadBody.append(key, String(value))
-        }
-
-        const providerResponse = await fetch(signature.uploadUrl, { body: uploadBody, method: "POST" })
-        const asset = await readJson<{ error?: { message?: string }; public_id?: string }>(providerResponse)
-
-        if (!providerResponse.ok || !asset?.public_id) {
-          throw new Error(asset?.error?.message ?? "The document could not be uploaded.")
-        }
-
+        const publicId = await uploadSignedFile(signature, file)
         const saved = await submitDriverCredentialAction({
           expiresOn: expiresOn || null,
           issuer: issuer || null,
           kind,
-          publicId: asset.public_id
+          publicId
         })
 
         if (!saved.ok) {
@@ -206,8 +195,10 @@ function CredentialDocumentUpload({
           refused over it later. Blank is a real answer — a photo of a truck prints
           nothing to enter. */}
       <label htmlFor={expiryId}>
-        Expiry date printed on it (leave blank only if it prints none)
-        <input id={expiryId} name="expiresOn" type="date" />
+        {expiryRequired
+          ? "Expiry date printed on it"
+          : "Expiry date printed on it (leave blank if it prints none)"}
+        <input id={expiryId} name="expiresOn" required={expiryRequired} type="date" />
       </label>
       <label htmlFor={issuerId}>
         Who issued it (optional)

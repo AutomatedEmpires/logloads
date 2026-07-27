@@ -16,6 +16,7 @@ import {
   AvailabilityQuickSet,
   CancelHaulControl,
   CompletionForm,
+  DriverPaymentReceiptControl,
   DriverEconomicsForm,
   EquipmentStatusToggle,
   FeatureTruckPhotoToggle,
@@ -475,6 +476,13 @@ function TripCard({ mediaReady, network, trip }: { mediaReady: boolean; network:
             </div>
           ) : null}
         </>
+      ) : null}
+      {trip.completion.status === "confirmed" && isOwnHaul ? (
+        <DriverPaymentReceiptControl
+          assignmentId={trip.assignmentId}
+          expectedPayLabel={trip.driverPayment.expectedPayLabel}
+          status={trip.driverPayment.status}
+        />
       ) : null}
       {trip.reviewable ? (
         trip.reviewable.alreadyReviewed ? (

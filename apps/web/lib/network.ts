@@ -2,6 +2,7 @@ import {
   evaluateLoadCompatibility,
   explainCompatibility,
   driverPayLabel,
+  formatMoney,
   formatRateLabel,
   organizationRoleCan,
   recommendLoad,
@@ -340,6 +341,12 @@ export interface NetworkView {
       confirmedAt: string | null
       requiredEvidence: string[]
       hasEvidence: boolean
+    }
+    driverPayment: {
+      expectedPayLabel: string
+      receivedAt: string | null
+      sentAt: string | null
+      status: "not_sent" | "sent" | "received"
     }
     reviewable: {
       direction: "host_rates_hauler" | "hauler_rates_host"
@@ -1201,6 +1208,10 @@ export function buildNetworkView(
     })
     .map((trip) => {
       const load = requireRecord(state.loadPostings.find((item) => item.id === trip.loadPostingId), `trip load ${trip.loadPostingId}`)
+      const assignment = requireRecord(
+        state.assignments.find((item) => item.id === trip.assignmentId),
+        `trip assignment ${trip.assignmentId}`
+      )
       const driver = state.driverProfiles.find((profile) => profile.id === trip.driverProfileId)
       const driverUser = driver ? state.profiles.find((profile) => profile.id === driver.userId) : undefined
       const events = state.tripEvents
@@ -1300,6 +1311,24 @@ export function buildNetworkView(
           submittedAt: trip.completionSubmittedAt ?? null
         },
         documents,
+        driverPayment: {
+          expectedPayLabel: formatMoney({
+            amountCents:
+              typeof assignment.termsSnapshot.driverPayCents === "number"
+                ? assignment.termsSnapshot.driverPayCents
+                : load.driverPayCents ?? 0,
+            currency: "USD"
+          }),
+          receivedAt: assignment.driverPaymentReceivedAt ?? null,
+          sentAt: assignment.driverPaymentSentAt ?? null,
+          status: (
+            assignment.driverPaymentReceivedAt
+              ? "received"
+              : assignment.driverPaymentSentAt
+                ? "sent"
+                : "not_sent"
+          ) as NetworkView["trips"][number]["driverPayment"]["status"]
+        },
         driverName: driverUser?.fullName ?? "Driver",
         driverProfileId: trip.driverProfileId,
         events,

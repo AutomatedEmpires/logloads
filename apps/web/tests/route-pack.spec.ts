@@ -35,6 +35,7 @@ test.describe.serial("route pack unlocks after acceptance", () => {
     await page.getByRole("button", { name: "Next" }).click()
     await fillWhenReady(page, "Truckloads needed per day", "1")
     await page.getByRole("button", { name: "Next" }).click()
+    await fillWhenReady(page, "What this work pays a driver, per truckload", "525.00")
     await page.getByRole("button", { name: "Next" }).click()
     await page.getByRole("radio", { name: /Publish now/ }).check()
     await page.getByRole("button", { name: "Next" }).click()

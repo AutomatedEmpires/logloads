@@ -32,6 +32,7 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { isDeepStrictEqual } from "node:util"
 
 const SNAPSHOT_ROW_ID = "primary"
 const REQUEST_TIMEOUT_MS = 30_000
@@ -180,10 +181,13 @@ async function restore(argv) {
   )
   console.log(`took a pre-restore snapshot: ${safety}`)
 
-  // Unconditional PATCH by id, deliberately not gated on `version`: a restore is
-  // an operator overriding whatever is there, not a participant in the
-  // application's compare-and-swap. The safety copy above is what makes that safe.
-  const response = await fetch(`${settings.url}/rest/v1/operating_state?id=eq.${SNAPSHOT_ROW_ID}`, {
+  // Restoring is an operator action, but it still participates in the same CAS
+  // contract as the application. The pre-restore read and safety snapshot define
+  // the exact version being replaced; if a live write lands after that read, zero
+  // rows are updated and the operator must start over from a fresh snapshot.
+  const response = await fetch(
+    `${settings.url}/rest/v1/operating_state?id=eq.${SNAPSHOT_ROW_ID}&version=eq.${current.version}`,
+    {
     body: JSON.stringify({
       schema_version: parsed.row.schema_version,
       state,
@@ -193,20 +197,36 @@ async function restore(argv) {
     headers: { ...headers(settings), "Content-Type": "application/json", Prefer: "return=representation" },
     method: "PATCH",
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-  })
+    }
+  )
 
   if (!response.ok) {
     fail(`restore failed with HTTP ${response.status} — the live document is unchanged`)
   }
 
-  const [written] = await response.json()
-  const after = describe(written)
+  const written = await response.json()
+
+  if (!Array.isArray(written) || written.length !== 1) {
+    fail(
+      "restore lost its compare-and-swap race — another live write changed the document. " +
+        "Nothing was overwritten; inspect the pre-restore snapshot and start again."
+    )
+  }
+
+  // Do not trust the PATCH response as the recovery proof. Read through the same
+  // path the application will use and compare the complete document.
+  const persisted = await readRow(settings)
+  const after = describe(persisted)
 
   console.log(`restored ${after.rows} rows across ${after.collections} collections`)
   console.log(`  live document is now cas version ${after.version}`)
 
-  if (after.rows !== describe(parsed.row).rows) {
-    fail("the restored row count does not match the file — investigate before serving traffic")
+  if (
+    after.version !== Number(current.version) + 1 ||
+    persisted.schema_version !== parsed.row.schema_version ||
+    !isDeepStrictEqual(persisted.state, state)
+  ) {
+    fail("the live read-back does not exactly match the restore file — investigate before serving traffic")
   }
 }
 

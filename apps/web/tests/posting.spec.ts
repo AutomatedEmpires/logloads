@@ -51,7 +51,8 @@ test.describe.serial("rich load posting", () => {
   await page.screenshot({ path: `${SHOTS}/posting-schedule.png`, fullPage: true })
   await page.getByRole("button", { name: "Next" }).click()
 
-  // Step 3 — Terms (rate pre-selected).
+  // Step 3 — Terms (rate pre-selected, driver pay is the fee basis).
+  await page.getByLabel("What this work pays a driver, per truckload").fill("525.00")
   await page.getByRole("button", { name: "Next" }).click()
   // Step 4 — Visibility requires an explicit publish choice.
   await page.getByRole("radio", { name: /Publish now/ }).check()

@@ -1,7 +1,9 @@
 "use client"
 
+import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js"
+import { loadStripe, type Stripe } from "@stripe/stripe-js"
 import Link from "next/link"
-import { useId, useState, useTransition } from "react"
+import { useId, useMemo, useState, useTransition } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
 import { startBillingPortalAction, startCheckoutAction } from "@/lib/billing-actions"
@@ -74,6 +76,153 @@ function PlanAction({ kind, label, product }: { kind: "checkout" | "portal"; lab
           <span>{notice}</span>
         </p>
       ) : null}
+    </div>
+  )
+}
+
+interface CardSetup {
+  clientSecret: string
+  publishableKey: string
+}
+
+type CardStatus = "attached" | "failed" | "none" | "pending"
+
+async function readJson<T>(response: Response): Promise<T | null> {
+  try {
+    return (await response.json()) as T
+  } catch {
+    return null
+  }
+}
+
+async function waitForAttachedCard(): Promise<boolean> {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const response = await fetch("/api/billing/payment-method", { cache: "no-store" })
+    const result = await readJson<{ card?: { status?: CardStatus } }>(response)
+
+    if (response.ok && result?.card?.status === "attached") {
+      return true
+    }
+
+    await new Promise((resolve) => window.setTimeout(resolve, 750))
+  }
+
+  return false
+}
+
+function CardSetupForm({ onAttached }: { onAttached: () => void }) {
+  const stripe = useStripe()
+  const elements = useElements()
+  const [pending, setPending] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  return (
+    <form
+      className="card-setup"
+      onSubmit={async (event) => {
+        event.preventDefault()
+
+        if (!stripe || !elements || pending) {
+          return
+        }
+
+        setPending(true)
+        setNotice(null)
+
+        const submitted = await elements.submit()
+
+        if (submitted.error) {
+          setNotice(submitted.error.message ?? "Check the card details and try again.")
+          setPending(false)
+          return
+        }
+
+        const confirmed = await stripe.confirmSetup({
+          elements,
+          redirect: "if_required"
+        })
+
+        if (confirmed.error) {
+          setNotice(confirmed.error.message ?? "Stripe could not attach this card.")
+          setPending(false)
+          return
+        }
+
+        setNotice("Card accepted. Confirming it with LogLoads…")
+
+        if (await waitForAttachedCard()) {
+          onAttached()
+          return
+        }
+
+        setNotice(
+          "Stripe accepted the card, but LogLoads is still waiting for confirmation. Refresh in a moment before publishing."
+        )
+        setPending(false)
+      }}
+    >
+      <PaymentElement options={{ layout: "tabs" }} />
+      <button className="advance-button" disabled={!stripe || !elements || pending} type="submit">
+        {pending ? "Attaching card…" : "Attach card"}
+      </button>
+      {notice ? <p className="plan-action__notice" role="status">{notice}</p> : null}
+    </form>
+  )
+}
+
+function HostCardControl({ status }: { status: CardStatus }) {
+  const [setup, setSetup] = useState<CardSetup | null>(null)
+  const [pending, setPending] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+  const stripe = useMemo<PromiseLike<Stripe | null> | null>(
+    () => setup ? loadStripe(setup.publishableKey) : null,
+    [setup]
+  )
+
+  if (setup && stripe) {
+    return (
+      <Elements options={{ clientSecret: setup.clientSecret }} stripe={stripe}>
+        <CardSetupForm onAttached={() => window.location.reload()} />
+      </Elements>
+    )
+  }
+
+  return (
+    <div className="plan-action">
+      <button
+        className="action-link"
+        disabled={pending}
+        onClick={async () => {
+          setPending(true)
+          setNotice(null)
+
+          try {
+            const response = await fetch("/api/billing/payment-method", { method: "POST" })
+            const result = await readJson<{ error?: string; setup?: CardSetup }>(response)
+
+            if (!response.ok || !result?.setup) {
+              throw new Error(result?.error ?? "Card setup is unavailable right now.")
+            }
+
+            setSetup(result.setup)
+          } catch (error) {
+            setNotice(error instanceof Error ? error.message : "Card setup is unavailable right now.")
+          } finally {
+            setPending(false)
+          }
+        }}
+        type="button"
+      >
+        {pending
+          ? "Opening secure card form…"
+          : status === "attached"
+            ? "Replace card"
+            : "Add card"}
+      </button>
+      <p className="settings-meaning">
+        Card details go directly to Stripe. LogLoads stores only the card brand and last four digits.
+      </p>
+      {notice ? <p className="plan-action__notice" role="status">{notice}</p> : null}
     </div>
   )
 }
@@ -285,17 +434,13 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
             <span>{paymentMethod.failureLine}</span>
           </p>
         ) : null}
-        {/* The instruction is text and not a button because no card-attach control
-            exists on this page yet. A button that opened nothing would be worse
-            than the sentence: the card is what unblocks publishing, so a host who
-            clicked and got nowhere would conclude the block is a bug. When the
-            setup flow lands, it belongs here, replacing this line. */}
         {paymentMethod.nextStep ? (
           <p className="fee-next-step">
             <Icon aria-hidden name="status.lock" size={16} />
             <strong>{paymentMethod.nextStep}</strong>
           </p>
         ) : null}
+        <HostCardControl status={paymentMethod.status} />
       </section>
 
       <section className="settings-panel" aria-label="Fees accrued this month">

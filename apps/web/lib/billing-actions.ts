@@ -21,8 +21,14 @@ function requireBillingManager(actor: NonNullable<Awaited<ReturnType<typeof getS
   }
 }
 
-function appOrigin(): string {
-  return process.env.NEXT_PUBLIC_APP_URL ?? "http://127.0.0.1:3002"
+function appOrigin(): string | null {
+  const configured = process.env.NEXT_PUBLIC_APP_URL?.trim()
+
+  if (configured) {
+    return configured.replace(/\/$/, "")
+  }
+
+  return process.env.NODE_ENV === "production" ? null : "http://127.0.0.1:3002"
 }
 
 /**
@@ -80,6 +86,16 @@ export async function startCheckoutAction(product: PlanProduct): Promise<Checkou
     }
 
     const origin = appOrigin()
+
+    if (!origin) {
+      return {
+        error:
+          "Billing cannot open because the production application URL is not configured. No Stripe session was created.",
+        ok: false,
+        url: null
+      }
+    }
+
     const session = await billing.value.createCheckoutSession({
       cancelUrl: `${origin}${eligibility.returnPath}?checkout=cancelled`,
       metadata: { organizationId: organization.id, product },
@@ -150,9 +166,20 @@ export async function startBillingPortalAction(product: PlanProduct): Promise<Ch
       }
     }
 
+    const origin = appOrigin()
+
+    if (!origin) {
+      return {
+        error:
+          "Billing cannot open because the production application URL is not configured. No Stripe session was created.",
+        ok: false,
+        url: null
+      }
+    }
+
     const session = await billing.value.createBillingPortalSession({
       customerId: stripeCustomerId,
-      returnUrl: `${appOrigin()}${plan.returnPath}`
+      returnUrl: `${origin}${plan.returnPath}`
     })
 
     return { error: null, ok: true, url: session.url }

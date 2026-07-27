@@ -56,7 +56,7 @@ export const coordinatesSchema = z.object({
 })
 
 export const mediaReferenceSchema = z.object({
-  provider: z.literal("cloudinary"),
+  provider: z.enum(["cloudinary", "supabase"]),
   publicId: z.string().min(1),
   version: z.number().int().positive(),
   format: z.enum(["jpg", "jpeg", "png", "webp"]),
@@ -360,6 +360,15 @@ export const assignmentSchema = z.object({
   assignedAt: optionalTimestampSchema,
   completedAt: optionalTimestampSchema,
   cancelledAt: optionalTimestampSchema,
+  /**
+   * Driver money remains off-platform. These fields record the two-party receipt:
+   * the host says the frozen amount was sent, then the assigned driver says it
+   * was received. No card, bank account, payout, or transfer identifier is stored.
+   */
+  driverPaymentSentAt: optionalTimestampSchema.default(null),
+  driverPaymentSentByUserId: uuidSchema.optional().nullable().default(null),
+  driverPaymentReceivedAt: optionalTimestampSchema.default(null),
+  driverPaymentReceivedByUserId: uuidSchema.optional().nullable().default(null),
   cancellationReason: z.string().optional().nullable(),
   dispatcherNotes: z.string().optional().nullable(),
   termsSnapshot: z.record(z.unknown()).default({}),

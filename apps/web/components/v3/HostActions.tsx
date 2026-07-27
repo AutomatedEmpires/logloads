@@ -2,6 +2,7 @@
 
 import { PLATFORM_FEE_BPS, FEE_BPS_SCALE, createMoney, formatMoney } from "@logloads/contracts"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useMemo, useState, useTransition } from "react"
 
 import {
@@ -11,6 +12,7 @@ import {
   createDirectOfferAction,
   createLoadPostingAction,
   createOperationalNoticeAction,
+  markDriverPaymentSentAction,
   publishDraftAction,
   refreshRoutePackAction,
   revokeDirectOfferAction,
@@ -107,8 +109,10 @@ export interface PendingCapacityRequest {
 }
 
 function ApprovalRow({ request }: { request: PendingCapacityRequest }) {
+  const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [confirming, setConfirming] = useState<"approve" | "decline" | null>(null)
+  const [decided, setDecided] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const decide = (approve: boolean) => {
@@ -124,10 +128,16 @@ function ApprovalRow({ request }: { request: PendingCapacityRequest }) {
         }
 
         setConfirming(null)
+        setDecided(true)
+        router.refresh()
       } catch {
         setError("That decision did not go through. Check your connection and try again.")
       }
     })
+  }
+
+  if (decided) {
+    return null
   }
 
   return (
@@ -380,6 +390,90 @@ export function SettleDeliveryControl({
           </>
         )}
       </div>}
+      {feedback && !feedback.ok ? (
+        <p className="host-form-feedback host-form-feedback--error" role="alert">
+          {feedback.text}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+export function DriverPaymentControl({
+  assignmentId,
+  driverName,
+  expectedPayLabel,
+  status
+}: {
+  assignmentId: string
+  driverName: string
+  expectedPayLabel: string
+  status: "not_sent" | "sent" | "received"
+}) {
+  const [confirming, setConfirming] = useState(false)
+  const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null)
+  const [pending, startTransition] = useTransition()
+
+  if (status === "received" || feedback?.ok) {
+    return (
+      <p className="host-form-feedback host-form-feedback--success" role="status">
+        {feedback?.text ?? `${driverName} confirmed receipt of ${expectedPayLabel}.`}
+      </p>
+    )
+  }
+
+  if (status === "sent") {
+    return (
+      <p className="host-builder-note" role="status">
+        You marked {expectedPayLabel} sent. Waiting for {driverName} to confirm it arrived.
+      </p>
+    )
+  }
+
+  const send = () => {
+    startTransition(async () => {
+      setFeedback(null)
+
+      try {
+        const result = await markDriverPaymentSentAction({ assignmentId })
+
+        setFeedback(
+          result.ok
+            ? {
+                ok: true,
+                text: `${expectedPayLabel} marked sent. ${driverName} was asked to confirm receipt.`
+              }
+            : { ok: false, text: result.error ?? "Driver payment could not be recorded." }
+        )
+      } catch {
+        setFeedback({
+          ok: false,
+          text: "Driver payment could not be recorded. Check your connection and try again."
+        })
+      }
+    })
+  }
+
+  return (
+    <div className="host-stack-form">
+      <p className="host-builder-note">
+        Driver pay stays between you and {driverName}. Mark it sent only after paying the frozen
+        amount of {expectedPayLabel}; LogLoads earns its fee after the driver confirms receipt.
+      </p>
+      {confirming ? (
+        <div className="host-approval-actions" role="group" aria-label="Confirm driver payment sent">
+          <button className="host-btn" disabled={pending} onClick={send} type="button">
+            {pending ? "Recording…" : `Yes, I sent ${expectedPayLabel}`}
+          </button>
+          <button className="host-btn host-btn--quiet" disabled={pending} onClick={() => setConfirming(false)} type="button">
+            Not yet
+          </button>
+        </div>
+      ) : (
+        <button className="host-btn" onClick={() => setConfirming(true)} type="button">
+          Mark driver paid
+        </button>
+      )}
       {feedback && !feedback.ok ? (
         <p className="host-form-feedback host-form-feedback--error" role="alert">
           {feedback.text}

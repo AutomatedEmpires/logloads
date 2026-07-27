@@ -10,6 +10,7 @@ import {
   canTransitionAssignmentStatusV2,
   canTransitionLoadPostingStatus,
   evaluateLoadCompatibility,
+  formatMoney,
   mediaReferenceSchema,
   notificationSchema,
   organizationRoleCan,
@@ -61,7 +62,7 @@ import {
   requiredCompletionEvidence
 } from "./haul-completion"
 import { createLoadPosting, parsePublishModes, provisionLoadCapacity } from "./loads"
-import { accruePlatformFee } from "./platform-fees"
+import { accruePlatformFee, type AccruePlatformFeeResult } from "./platform-fees"
 import {
   buildAssignmentRoutePack,
   findAssignmentRoutePack,
@@ -1109,6 +1110,7 @@ function finalizeCapacityAssignment(
       // notes are not withheld by convention here — `hostVisibleCredential` has
       // no field for any of them, so they cannot reach this snapshot at all.
       driverCredentials,
+      driverPayCents: load.driverPayCents ?? null,
       estimatedDistanceMiles: route.estimatedDistanceMiles,
       estimatedTonsPerLoad: load.estimatedTonsPerLoad ?? null,
       fuelSurchargeCents: rate.fuelSurchargeCents,
@@ -2367,24 +2369,6 @@ export function settleHaulCompletion(
         timestamp
       )
 
-  // THE FEE TRIGGER. Both parties have now agreed the load moved, which is the
-  // only event that makes a charge defensible if the host later contests it — a
-  // unilateral status flip is one party's claim.
-  //
-  // Deliberately inside this mutation, after confirmation has written
-  // completionStatus onto the draft: accruePlatformFee looks for a CONFIRMED trip,
-  // so ordering is load-bearing. Being in the same draft is what makes the fee and
-  // the confirmation atomic under the compare-and-swap — a fee that could be
-  // written by a second call is a fee that can be written twice.
-  //
-  // A refusal never blocks the settlement. Confirming a delivery is an operational
-  // act between a host and a driver; if LogLoads cannot bill for it — a legacy
-  // posting that states no driver pay, for instance — that is LogLoads' problem to
-  // resolve, not a reason to refuse two parties their record of the haul.
-  const fee = input.decision === "confirm"
-    ? accruePlatformFee(state, { assignmentId: assignment.id }, timestamp)
-    : null
-
   insertAuditEvent(
     state,
     context.actorUserId,
@@ -2394,21 +2378,7 @@ export function settleHaulCompletion(
     {
       assignmentId: assignment.id,
       previousStatus: result.previousStatus,
-      reason: input.reason ?? null,
-      // What the platform charged, recorded against the same event the host and
-      // driver settled, so an invoice line can always be traced back to the
-      // moment both parties agreed rather than to a later batch job.
-      ...(fee
-        ? {
-            platformFeeCents: fee.outcome === "accrued" || fee.outcome === "already_accrued"
-              ? fee.event.feeCents
-              : null,
-            platformFeeEventId: fee.outcome === "accrued" || fee.outcome === "already_accrued"
-              ? fee.event.id
-              : null,
-            platformFeeOutcome: fee.outcome
-          }
-        : {})
+      reason: input.reason ?? null
     }
   )
 
@@ -2428,6 +2398,175 @@ export function settleHaulCompletion(
   }
 
   return { trip: result.trip }
+}
+
+export interface DriverPaymentActionInput {
+  actorUserId?: string
+  assignmentId: string
+  organizationId?: string
+}
+
+export function markDriverPaymentSent(
+  state: LogLoadsDatabaseState,
+  input: DriverPaymentActionInput
+): { assignment: Assignment; changed: boolean } {
+  const context = getContextForInput(state, input)
+  assertOrganizationAction(context, "manage_billing")
+
+  const assignment = assertFound(
+    state.assignments.find((candidate) => candidate.id === input.assignmentId),
+    `Assignment ${input.assignmentId} was not found`
+  )
+  const load = assertFound(
+    state.loadPostings.find((candidate) => candidate.id === assignment.loadPostingId),
+    `Load posting ${assignment.loadPostingId} was not found`
+  )
+  const trip = assertFound(
+    state.tripsV2.find((candidate) => candidate.assignmentId === assignment.id),
+    `Trip for assignment ${assignment.id} was not found`
+  )
+  const driver = assertFound(
+    state.driverProfiles.find((candidate) => candidate.id === assignment.driverProfileId),
+    `Driver profile ${assignment.driverProfileId} was not found`
+  )
+
+  assertCondition(load.companyId === context.organizationId, "Only the posting organization can record driver payment")
+  assertCondition(trip.completionStatus === "confirmed", "Confirm the delivered record before recording driver payment")
+  assertCondition(assignment.status !== "cancelled", "A cancelled haul cannot be marked paid")
+  assertCondition(
+    context.actorUserId !== driver.userId,
+    "The assigned driver cannot record the host side of their own payment receipt"
+  )
+
+  if (assignment.driverPaymentSentAt) {
+    return { assignment, changed: false }
+  }
+
+  const frozenDriverPayCents = assignment.termsSnapshot.driverPayCents
+
+  assertCondition(
+    typeof frozenDriverPayCents === "number" && frozenDriverPayCents > 0,
+    "This assignment has no frozen driver pay to record"
+  )
+  const driverPayCents = Number(frozenDriverPayCents)
+
+  const timestamp = nowIso()
+  const updated = assignmentSchema.parse({
+    ...assignment,
+    driverPaymentSentAt: timestamp,
+    driverPaymentSentByUserId: context.actorUserId,
+    updatedAt: timestamp
+  })
+
+  state.assignments = state.assignments.map((candidate) =>
+    candidate.id === updated.id ? updated : candidate
+  )
+
+  insertAuditEvent(state, context.actorUserId, "assignment", assignment.id, "driver_payment_sent", {
+    driverPayCents,
+    loadPostingId: load.id
+  })
+  insertNotification(
+    state,
+    driver.userId,
+    "Driver pay marked sent",
+    `${load.title}: the host marked ${formatMoney({ amountCents: driverPayCents, currency: "USD" })} sent. Confirm only after it reaches you.`,
+    "assignment",
+    assignment.id,
+    "system_alert"
+  )
+
+  return { assignment: updated, changed: true }
+}
+
+export function confirmDriverPaymentReceived(
+  state: LogLoadsDatabaseState,
+  input: DriverPaymentActionInput
+): {
+  assignment: Assignment
+  changed: boolean
+  platformFeeOutcome: AccruePlatformFeeResult["outcome"] | "error"
+} {
+  const context = getContextForInput(state, input)
+  assertOrganizationAction(context, "progress_trip")
+
+  const assignment = assertFound(
+    state.assignments.find((candidate) => candidate.id === input.assignmentId),
+    `Assignment ${input.assignmentId} was not found`
+  )
+  const load = assertFound(
+    state.loadPostings.find((candidate) => candidate.id === assignment.loadPostingId),
+    `Load posting ${assignment.loadPostingId} was not found`
+  )
+  const driver = assertFound(
+    state.driverProfiles.find((candidate) => candidate.id === assignment.driverProfileId),
+    `Driver profile ${assignment.driverProfileId} was not found`
+  )
+
+  assertCondition(context.membership.role === "driver", "Only the assigned driver can confirm receipt of driver pay")
+  assertCondition(driver.userId === context.actorUserId, "Drivers can only confirm payment on their own haul")
+  assertCondition(Boolean(assignment.driverPaymentSentAt), "The host has not marked driver pay sent yet")
+  assertCondition(
+    assignment.driverPaymentSentByUserId !== context.actorUserId,
+    "One person cannot record both sides of a driver payment receipt"
+  )
+
+  const timestamp = nowIso()
+  let updated = assignment
+  let changed = false
+
+  if (!assignment.driverPaymentReceivedAt) {
+    updated = assignmentSchema.parse({
+      ...assignment,
+      driverPaymentReceivedAt: timestamp,
+      driverPaymentReceivedByUserId: context.actorUserId,
+      updatedAt: timestamp
+    })
+    state.assignments = state.assignments.map((candidate) =>
+      candidate.id === updated.id ? updated : candidate
+    )
+    changed = true
+  }
+
+  let fee: AccruePlatformFeeResult | null = null
+
+  try {
+    fee = accruePlatformFee(
+      state,
+      { actorUserId: context.actorUserId, assignmentId: assignment.id },
+      updated.driverPaymentReceivedAt ?? timestamp
+    )
+  } catch {
+    // Payment receipt is an operating fact between host and driver. A broken
+    // billing ledger must be repaired separately and must never erase that fact.
+  }
+
+  if (changed) {
+    insertAuditEvent(state, context.actorUserId, "assignment", assignment.id, "driver_payment_received", {
+      loadPostingId: load.id,
+      platformFeeEventId:
+        fee?.outcome === "accrued" || fee?.outcome === "already_accrued" ? fee.event.id : null,
+      platformFeeOutcome: fee?.outcome ?? "error"
+    })
+
+    if (assignment.driverPaymentSentByUserId) {
+      insertNotification(
+        state,
+        assignment.driverPaymentSentByUserId,
+        "Driver pay received",
+        `${load.title}: the assigned driver confirmed the stated pay arrived.`,
+        "assignment",
+        assignment.id,
+        "system_alert"
+      )
+    }
+  }
+
+  return {
+    assignment: updated,
+    changed,
+    platformFeeOutcome: fee?.outcome ?? "error"
+  }
 }
 
 export function getRoutePackForAssignment(
@@ -2848,6 +2987,7 @@ function directOfferTermsSnapshot(
     estimatedDistanceMiles: route.estimatedDistanceMiles,
     estimatedTonsPerLoad: load.estimatedTonsPerLoad ?? null,
     fuelSurchargeCents: rate.fuelSurchargeCents,
+    driverPayCents: load.driverPayCents ?? null,
     hostOrganizationId: load.companyId,
     loadPostingId: load.id,
     loadVersion: load.updatedAt,
@@ -2863,7 +3003,11 @@ function directOfferTermsAreCurrent(
   postingSources: ReturnType<typeof assertPostingSourcesAreUsable>
 ): boolean {
   return Object.entries(directOfferTermsSnapshot(load, postingSources)).every(
-    ([key, value]) => offer.termsSnapshot[key] === value
+    ([key, value]) =>
+      // Offers written before driver pay became a frozen term have no such key.
+      // They remain claimable during rollout; every newly sent offer carries it.
+      (key === "driverPayCents" && !(key in offer.termsSnapshot)) ||
+      offer.termsSnapshot[key] === value
   )
 }
 

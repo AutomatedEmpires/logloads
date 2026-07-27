@@ -96,7 +96,10 @@ test.describe.serial("operating loop", () => {
     await page.goto("/host/command")
     await page.waitForLoadState("networkidle")
 
-    const approvalRow = page.locator(".host-approval-row").first()
+    // The seed also carries an intentionally blocked request from Cole, whose
+    // incomplete credentials must continue to be refused. This journey created
+    // Hank's request, so address that row instead of assuming queue order.
+    const approvalRow = page.locator(".host-approval-row").filter({ hasText: "Hank Harlan" }).first()
     const hasApprove = await approvalRow.getByRole("button", { name: "Review approval" }).isVisible().catch(() => false)
 
     if (hasApprove) {

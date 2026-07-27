@@ -162,6 +162,11 @@ describe("real Cloudinary adapter isolation", () => {
 
     const upload = await signedUpload({ publicIdPrefix: "logloads/trip-documents/trip-1" })
 
+    expect(upload.provider).toBe("cloudinary")
+    if (upload.provider !== "cloudinary") {
+      throw new Error("Expected the Cloudinary adapter")
+    }
+
     expect(upload.uploadUrl).toBe("https://api.cloudinary.com/v1_1/dedicated-cloud/image/upload")
     expect(upload.parameters.allowed_formats).toBe("jpg,png,webp")
     expect(upload.parameters).not.toHaveProperty("max_file_size")

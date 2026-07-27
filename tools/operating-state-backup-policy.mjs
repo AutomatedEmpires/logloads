@@ -24,7 +24,7 @@ export function describeDocument(document) {
   )
 
   return {
-    bytes: JSON.stringify(state).length,
+    bytes: Buffer.byteLength(JSON.stringify(state), "utf8"),
     collections: collections.length,
     nonArrayCollections: collections.filter((name) => !Array.isArray(state[name])),
     rows,
@@ -38,11 +38,24 @@ export function describeDocument(document) {
  *
  * A backup carries its own summary, so recomputing it and comparing is how a
  * silently-corrupted or hand-edited file is caught. Only the fields that would
- * change if bytes were lost are compared — `nonArrayCollections` is an array and
- * `schemaVersion` can legitimately be null, so neither is a drift signal.
+ * change if bytes were lost are compared. A malformed collection is always drift:
+ * even when an empty array is replaced with an object of the same serialized byte
+ * length, restoring it would write a state document the application cannot read.
+ * `schemaVersion` can legitimately be null, so it remains informational.
  */
 export function summaryDrift(recorded, recomputed) {
-  return ["bytes", "collections", "rows", "version"].filter(
+  const drift = ["bytes", "collections", "rows", "version"].filter(
     (field) => recorded?.[field] !== recomputed?.[field]
   )
+  const recordedMalformed = JSON.stringify(recorded?.nonArrayCollections ?? [])
+  const recomputedMalformed = JSON.stringify(recomputed?.nonArrayCollections ?? [])
+
+  if (
+    recordedMalformed !== recomputedMalformed ||
+    (recomputed?.nonArrayCollections?.length ?? 0) > 0
+  ) {
+    drift.push("nonArrayCollections")
+  }
+
+  return drift
 }

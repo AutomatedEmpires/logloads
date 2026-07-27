@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto"
+import { createHmac } from "node:crypto"
 import { isIP } from "node:net"
 
 export interface ClientKeyHeaders {
@@ -6,7 +6,10 @@ export interface ClientKeyHeaders {
 }
 
 export interface ClientKeyEnvironment {
+  LOGLOADS_RATE_LIMIT_HMAC_SECRET?: string
+  NODE_ENV?: string
   VERCEL?: string
+  VERCEL_ENV?: string
 }
 
 /**
@@ -15,6 +18,7 @@ export interface ClientKeyEnvironment {
  * in a verified caller's window and drain it.
  */
 const UNVERIFIED_PREFIX = "unverified:"
+const VERIFIED_PREFIX = "verified:"
 
 /**
  * Client-controlled, but they vary per caller, which is what a window needs.
@@ -36,14 +40,30 @@ function trustedIp(value: string | null | undefined): string | null {
   return candidate && isIP(candidate) ? candidate : null
 }
 
-function fingerprint(headerStore: ClientKeyHeaders): string {
-  const digest = createHash("sha256")
+function pseudonymize(value: string, environment: ClientKeyEnvironment): string {
+  const secret = environment.LOGLOADS_RATE_LIMIT_HMAC_SECRET?.trim()
 
-  for (const header of FINGERPRINT_HEADERS) {
-    digest.update(`${header}=${headerStore.get(header) ?? ""}\n`)
+  if (!secret) {
+    throw new Error("LOGLOADS_RATE_LIMIT_HMAC_SECRET is required to protect rate-limit keys")
   }
 
-  return `${UNVERIFIED_PREFIX}${digest.digest("hex").slice(0, 32)}`
+  const deployment = environment.VERCEL_ENV ?? environment.NODE_ENV ?? "local"
+
+  return createHmac("sha256", secret)
+    .update(`${deployment}\n${value}`)
+    .digest("hex")
+    .slice(0, 32)
+}
+
+function fingerprint(
+  headerStore: ClientKeyHeaders,
+  environment: ClientKeyEnvironment
+): string {
+  const material = FINGERPRINT_HEADERS
+    .map((header) => `${header}=${headerStore.get(header) ?? ""}`)
+    .join("\n")
+
+  return `${UNVERIFIED_PREFIX}${pseudonymize(material, environment)}`
 }
 
 /**
@@ -69,8 +89,16 @@ export function clientKeyFromHeaders(
   environment: ClientKeyEnvironment
 ): string {
   if (environment.VERCEL === "1") {
-    return trustedIp(headerStore.get("x-vercel-forwarded-for")) ?? fingerprint(headerStore)
+    const ip = trustedIp(headerStore.get("x-vercel-forwarded-for"))
+
+    return ip
+      ? `${VERIFIED_PREFIX}${pseudonymize(`ip:${ip}`, environment)}`
+      : fingerprint(headerStore, environment)
   }
 
-  return trustedIp(headerStore.get("fly-client-ip")) ?? fingerprint(headerStore)
+  const ip = trustedIp(headerStore.get("fly-client-ip"))
+
+  return ip
+    ? `${VERIFIED_PREFIX}${pseudonymize(`ip:${ip}`, environment)}`
+    : fingerprint(headerStore, environment)
 }

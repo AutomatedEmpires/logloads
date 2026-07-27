@@ -6,6 +6,7 @@ import {
   DEDICATED_CLOUDINARY_TENANCY,
   DENIED_CLOUDINARY_CLOUD_NAMES,
   dedicatedCloudinaryConfiguration,
+  dedicatedSupabaseMediaConfiguration,
   isDedicatedMediaConfigured,
   mediaConfigurationDecision,
   type MediaConfigurationRefusalReason
@@ -28,6 +29,15 @@ const activeEnvironment: Record<string, string | undefined> = {
   CLOUDINARY_CLOUD_NAME: LOGLOADS_CLOUD,
   CLOUDINARY_API_KEY: "test-key",
   CLOUDINARY_API_SECRET: "test-secret"
+}
+
+const activeSupabaseEnvironment: Record<string, string | undefined> = {
+  LOGLOADS_MEDIA_STORAGE: "supabase",
+  LOGLOADS_MEDIA_BUCKET: "logloads-private-media",
+  LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF: "fdzohbiiyzgvjzfsjyxo",
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: "test-anon-key",
+  SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+  SUPABASE_URL: "https://fdzohbiiyzgvjzfsjyxo.supabase.co"
 }
 
 /**
@@ -122,6 +132,70 @@ describe("dedicated Cloudinary configuration", () => {
       expect(isDedicatedMediaConfigured(environment)).toBe(true)
     }
   )
+})
+
+describe("dedicated Supabase media configuration", () => {
+  it("activates only when the explicit provider marker and independent project ref agree", () => {
+    expect(dedicatedSupabaseMediaConfiguration(activeSupabaseEnvironment)).toEqual({
+      anonKey: "test-anon-key",
+      bucket: "logloads-private-media",
+      serviceRoleKey: "test-service-role",
+      url: "https://fdzohbiiyzgvjzfsjyxo.supabase.co"
+    })
+    expect(isDedicatedMediaConfigured(activeSupabaseEnvironment)).toBe(true)
+  })
+
+  it.each([
+    "LOGLOADS_MEDIA_STORAGE",
+    "LOGLOADS_MEDIA_BUCKET",
+    "LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "SUPABASE_URL"
+  ] as const)("refuses when %s is absent", (name) => {
+    expect(
+      dedicatedSupabaseMediaConfiguration({
+        ...activeSupabaseEnvironment,
+        [name]: undefined
+      })
+    ).toBeNull()
+  })
+
+  it.each([
+    "https://another-project.supabase.co",
+    "http://fdzohbiiyzgvjzfsjyxo.supabase.co",
+    "https://fdzohbiiyzgvjzfsjyxo.example.com",
+    "not-a-url"
+  ])("refuses a URL outside the expected HTTPS Supabase project (%s)", (url) => {
+    expect(
+      dedicatedSupabaseMediaConfiguration({
+        ...activeSupabaseEnvironment,
+        SUPABASE_URL: url
+      })
+    ).toBeNull()
+  })
+
+  it.each(["x", "../media", "media/photos", "with spaces", "_starts-wrong"])(
+    "refuses an unsafe bucket name (%s)",
+    (bucket) => {
+      expect(
+        dedicatedSupabaseMediaConfiguration({
+          ...activeSupabaseEnvironment,
+          LOGLOADS_MEDIA_BUCKET: bucket
+        })
+      ).toBeNull()
+    }
+  )
+
+  it("accepts the publishable-key alias", () => {
+    expect(
+      dedicatedSupabaseMediaConfiguration({
+        ...activeSupabaseEnvironment,
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: undefined,
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "test-publishable-key"
+      })?.anonKey
+    ).toBe("test-publishable-key")
+  })
 })
 
 describe("the expected cloud name", () => {

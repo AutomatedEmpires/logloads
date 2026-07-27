@@ -164,13 +164,17 @@ function file(
   },
   at = SUBMITTED
 ) {
+  const expiresOn = input.expiresOn === undefined && ["insurance", "cdl"].includes(input.kind)
+    ? instantAfter(365)
+    : input.expiresOn ?? null
+
   return submitCredential(
     state,
     {
       actorUserId: input.actorUserId,
       documentMedia: input.documentMedia ?? credentialDocument(input.driverProfileId, input.kind),
       driverProfileId: input.driverProfileId,
-      expiresOn: input.expiresOn ?? null,
+      expiresOn,
       identifier: input.identifier ?? null,
       kind: input.kind,
       organizationId: input.organizationId
@@ -220,7 +224,12 @@ function clearDriver(
     fileAndApprove(state, {
       actorUserId: input.actorUserId,
       driverProfileId: input.driverProfileId,
-      expiresOn: kind === "insurance" ? input.insuranceExpiresOn ?? null : null,
+      expiresOn:
+        kind === "insurance"
+          ? input.insuranceExpiresOn ?? instantAfter(365)
+          : kind === "cdl"
+            ? instantAfter(365)
+            : null,
       kind,
       organizationId: input.organizationId
     })
@@ -329,6 +338,7 @@ describe("submitCredential", () => {
         actorUserId: RILEY_USER,
         documentMedia: credentialDocument(RILEY_DRIVER, "cdl"),
         driverProfileId: RILEY_DRIVER,
+        expiresOn: instantAfter(365),
         kind: "cdl",
         organizationId: MAYA_ORG,
         reviewedAt: REVIEWED,

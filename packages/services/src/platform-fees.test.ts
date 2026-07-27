@@ -22,6 +22,7 @@ import {
   hostInvoiceId,
   markInvoicePaid,
   markInvoiceUncollectible,
+  openClosedPeriodInvoices,
   openInvoiceForPeriod,
   voidPlatformFee
 } from "./platform-fees"
@@ -129,6 +130,14 @@ function billableHaul(
   load.driverPayCents = driverPayCents
   assignment.status = "completed"
   assignment.completedAt = confirmedAt
+  assignment.driverPaymentSentAt = confirmedAt
+  assignment.driverPaymentSentByUserId = HOST_STAFF_USER
+  assignment.driverPaymentReceivedAt = confirmedAt
+  assignment.driverPaymentReceivedByUserId = DRIVER_USER
+  assignment.termsSnapshot = {
+    ...assignment.termsSnapshot,
+    driverPayCents
+  }
 
   const existing = state.tripsV2.find((trip) => trip.assignmentId === assignment.id)
   const confirmed = tripSchemaV2.parse({
@@ -726,6 +735,24 @@ describe("host invoice", () => {
     if (first.outcome !== "opened" || second.outcome !== "already_open") return
     expect(second.invoice.id).toBe(first.invoice.id)
     expect(second.invoice.subtotalCents).toBe(first.invoice.subtotalCents)
+  })
+
+  it("lets the trusted monthly scheduler open the closed period without impersonating a host", () => {
+    const state = freshState()
+    const period = { periodEnd: JUNE_PERIOD_END, periodStart: JUNE_PERIOD_START }
+
+    twoJuneHauls(state)
+
+    const first = openClosedPeriodInvoices(state, period, BILLING_RUN)
+    const second = openClosedPeriodInvoices(state, period, MID_JULY)
+
+    expect(first).toHaveLength(1)
+    expect(first[0]?.outcome).toBe("opened")
+    expect(second).toHaveLength(0)
+    expect(state.hostInvoices).toHaveLength(1)
+    expect(
+      state.auditEvents.find((event) => event.action === "host_invoice_opened")?.actorUserId
+    ).toBeNull()
   })
 
   it("mints one bill however the month boundary is spelled", () => {

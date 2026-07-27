@@ -421,7 +421,11 @@ export function resolveStripeWebhook(
  * saying card setup is not activated.
  */
 export function stripePublishableKey(env: BillingEnvironment = process.env): BillingResult<string> {
-  const key = env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+  // The key is public by definition, but it does not need to be compiled into
+  // every browser bundle. Prefer the explicit browser name and accept the
+  // existing server runtime name because this authenticated route returns it
+  // only when a billing manager starts a SetupIntent.
+  const key = env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? env.STRIPE_PUBLISHABLE_KEY
 
   if (!key) {
     return billingUnavailable("stripe_publishable_key_missing")
@@ -921,6 +925,12 @@ export interface HostInvoiceCharge {
   status: HostInvoiceStatus
   stripeInvoiceId: string
   subtotalCents: number
+}
+
+export function platformFeeCollectionEnabled(
+  environment: Readonly<Record<string, string | undefined>> = process.env
+): boolean {
+  return environment.LOGLOADS_FEE_COLLECTION?.trim().toLowerCase() === "enabled"
 }
 
 /**
@@ -1685,6 +1695,10 @@ async function handleInvoicePaymentSucceeded(
             "This Stripe invoice names a LogLoads bill that is not in the book"
           )
         : eventResult(event, "ignored", "Not a LogLoads platform-fee invoice")
+    }
+
+    if (resolved.invoice.status === "void") {
+      return eventResult(event, "ignored", "The LogLoads platform-fee invoice was voided")
     }
 
     if (resolved.stripeInvoiceId) {

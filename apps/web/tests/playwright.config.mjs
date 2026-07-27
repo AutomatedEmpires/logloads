@@ -20,6 +20,7 @@ export default defineConfig({
     env: {
       LOGLOADS_DEMO_MODE: "true",
       LOGLOADS_ENABLE_DEV_LOGIN: "true",
+      LOGLOADS_RATE_LIMIT_HMAC_SECRET: "logloads-e2e-rate-limit-hmac-secret",
       LOGLOADS_RATE_LIMIT_TEST_MODE: "true",
       LOGLOADS_SESSION_SECRET: "logloads-e2e-session-secret",
       NEXT_PUBLIC_APP_URL: "http://127.0.0.1:3002"

@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useRef, useState, useTransition, type ReactNode } from "react"
 import { Badge, Icon, type IconKey } from "@logloads/ui"
 
@@ -567,9 +567,41 @@ function NotificationBell({ notifications, role, unreadCount }: {
 }
 
 function AccountMenu({ account, pathname }: { account: ShellAccount; pathname: string }) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
+  const [invitationError, setInvitationError] = useState<string | null>(null)
+  const [respondingInvitation, setRespondingInvitation] = useState<string | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+
+  const respondToInvitation = async (invitationId: string, accept: boolean) => {
+    setInvitationError(null)
+    setRespondingInvitation(`${accept ? "accept" : "decline"}:${invitationId}`)
+
+    const result = accept
+      ? await acceptInvitationAction(invitationId)
+      : await declineInvitationAction(invitationId)
+
+    setRespondingInvitation(null)
+
+    if (!result.ok) {
+      setInvitationError(result.error ?? "The invitation response did not go through. Try again.")
+      return
+    }
+
+    setOpen(false)
+
+    if (accept) {
+      // The action response carries the active-workspace cookie. A hard
+      // navigation guarantees the next render starts after the browser commits
+      // that cookie; a same-tree refresh can race it and briefly reopen the old
+      // workspace under a newly accepted membership.
+      window.location.assign("/workspace")
+      return
+    }
+
+    router.refresh()
+  }
 
   useEffect(() => {
     if (!open) return
@@ -641,25 +673,26 @@ function AccountMenu({ account, pathname }: { account: ShellAccount; pathname: s
                     <em> as {invitation.roleLabel}</em>
                   </p>
                   <button
-                    onClick={() => {
-                      setOpen(false)
-                      void acceptInvitationAction(invitation.id)
-                    }}
+                    disabled={respondingInvitation !== null}
+                    onClick={() => void respondToInvitation(invitation.id, true)}
                     type="button"
                   >
-                    Accept
+                    {respondingInvitation === `accept:${invitation.id}` ? "Accepting…" : "Accept"}
                   </button>
                   <button
-                    onClick={() => {
-                      setOpen(false)
-                      void declineInvitationAction(invitation.id)
-                    }}
+                    disabled={respondingInvitation !== null}
+                    onClick={() => void respondToInvitation(invitation.id, false)}
                     type="button"
                   >
-                    Decline
+                    {respondingInvitation === `decline:${invitation.id}` ? "Declining…" : "Decline"}
                   </button>
                 </div>
               ))}
+              {invitationError ? (
+                <p className="action-error" role="alert">
+                  {invitationError}
+                </p>
+              ) : null}
             </div>
           ) : null}
           <Link

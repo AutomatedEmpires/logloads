@@ -81,6 +81,7 @@ const DRIVER_CREDENTIAL_NAMESPACE = "8b1f0c46-2a7d-4e59-9c31-5f6a2d8e41b7"
 
 /** The namespace every review id is derived under. FROZEN FOREVER, same reason. */
 const CREDENTIAL_REVIEW_NAMESPACE = "4e2a9d17-63c5-4b08-8f7e-1c9b3a5d20e6"
+const EXPIRING_CREDENTIAL_KINDS: ReadonlySet<CredentialKind> = new Set(["insurance", "cdl"])
 
 /**
  * The media namespace a credential document must be stored under.
@@ -212,7 +213,7 @@ const applyCredentialReviewInputSchema = z.object({
   findings: z.array(z.string().trim().min(1).max(300)).default([]),
   model: z.string().trim().min(1).max(120).optional().nullable(),
   /** The same reasons in plain language. This is what the driver reads. */
-  rationale: z.string().trim().min(1).max(2000),
+  rationale: z.string().trim().min(1).max(1000),
   requestedEvidence: z.array(z.string().trim().min(1).max(200)).default([])
 })
 
@@ -531,6 +532,11 @@ export function submitCredential(
   const driver = findDriver(state, input.driverProfileId)
 
   assertMaySubmitFor(state, driver, input)
+
+  assertCondition(
+    !EXPIRING_CREDENTIAL_KINDS.has(input.kind) || Boolean(input.expiresOn),
+    `${input.kind === "cdl" ? "CDL" : "Insurance"} documents require the expiry date printed on the document`
+  )
 
   const expectedPrefix = `${credentialDocumentPublicIdPrefix(driver.id, input.kind)}/uploads/`
 
