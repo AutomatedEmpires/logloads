@@ -66,16 +66,14 @@ import { assertCondition, assertFound, createUuid, nowIso } from "./utils"
 /**
  * The namespace every host invoice id is derived under. FROZEN FOREVER.
  *
- * Changing it re-mints the id of every bill ever opened, which would make the
- * at-most-one check in `openInvoiceForPeriod` fail to recognise months that were
- * already billed and raise a second bill for each of them. Distinct from the fee
+ * Changing it re-mints the id of every bill ever opened. Distinct from the fee
  * event namespace so a fee and a bill can never collide on one id.
  */
 const HOST_INVOICE_NAMESPACE = "2d9f6c1a-4b83-4f0e-9a71-6e5c8d3b47f2"
 
 /**
- * The id of one host's bill for one calendar month. Same host, same month, same
- * id, forever.
+ * The id of one host's primary bill for one calendar month. Same host, same
+ * month, same primary id, forever.
  *
  * `periodStart` must already be the CANONICAL start `invoicePeriodFor` emits.
  * The same month boundary has several valid ISO spellings, and deriving from the
@@ -86,6 +84,27 @@ export function hostInvoiceId(organizationId: string, canonicalPeriodStart: stri
   return deterministicUuidV5(
     HOST_INVOICE_NAMESPACE,
     `${organizationId.toLowerCase()}:${canonicalPeriodStart}`
+  )
+}
+
+/**
+ * The id of a recovery bill for fees repaired after that month's earlier bill
+ * was already opened.
+ *
+ * A bound or paid provider invoice is immutable. Mutating its local subtotal
+ * would make LogLoads disagree with Stripe, so a late fee gets a deterministic
+ * supplemental bill instead. The sequence is derived from the already-committed
+ * bills in the same compare-and-swap mutation, making concurrent replays converge
+ * on one id rather than minting duplicates.
+ */
+function supplementalHostInvoiceId(
+  organizationId: string,
+  canonicalPeriodStart: string,
+  sequence: number
+): string {
+  return deterministicUuidV5(
+    HOST_INVOICE_NAMESPACE,
+    `${organizationId.toLowerCase()}:${canonicalPeriodStart}:supplemental:${sequence}`
   )
 }
 
@@ -647,7 +666,7 @@ export interface OpenInvoiceForPeriodInput {
 
 export type OpenInvoiceForPeriodResult =
   | { outcome: "opened"; invoice: HostInvoice }
-  /** This month was already billed. Nothing was written. */
+  /** Every currently accrued fee for this month was already billed. */
   | { outcome: "already_open"; invoice: HostInvoice }
   /** No fee accrued in the month, so no bill exists to send. */
   | { outcome: "nothing_to_bill"; periodStart: string; periodEnd: string; reason: string }
@@ -669,26 +688,37 @@ function openInvoiceForOrganizationPeriod(
     "This period is still accruing; the platform fee is billed monthly in arrears"
   )
 
-  const invoiceId = hostInvoiceId(input.organizationId, period.periodStart)
-  const existing = state.hostInvoices.find(
-    (candidate) =>
-      candidate.id === invoiceId ||
-      (candidate.organizationId === input.organizationId &&
-        Date.parse(candidate.periodStart) === Date.parse(period.periodStart))
-  )
-
-  if (existing) {
-    return { invoice: existing, outcome: "already_open" }
-  }
-
   const billable = feeEventsForOrganization(state, input.organizationId)
     .filter((event) => event.status === "accrued" && withinPeriod(event.occurredAt, period))
     .sort(
       (left, right) =>
         Date.parse(left.occurredAt) - Date.parse(right.occurredAt) || left.id.localeCompare(right.id)
     )
+  const primaryInvoiceId = hostInvoiceId(input.organizationId, period.periodStart)
+  const primaryIdMatch = state.hostInvoices.find(
+    (candidate) => candidate.id === primaryInvoiceId
+  )
+  const existing = state.hostInvoices
+    .filter(
+      (candidate) =>
+        candidate.organizationId === input.organizationId &&
+        Date.parse(candidate.periodStart) === Date.parse(period.periodStart)
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.id.localeCompare(right.id)
+    )
+
+  assertCondition(
+    !primaryIdMatch || existing.some((candidate) => candidate.id === primaryInvoiceId),
+    `Primary host invoice ${primaryInvoiceId} is already attached to another organization or period`
+  )
 
   if (billable.length === 0) {
+    if (existing[0]) {
+      return { invoice: existing[0], outcome: "already_open" }
+    }
+
     return {
       outcome: "nothing_to_bill",
       periodEnd: period.periodEnd,
@@ -697,6 +727,30 @@ function openInvoiceForOrganizationPeriod(
     }
   }
 
+  // Never mutate a previously opened bill. Collection reads an invoice, performs
+  // provider I/O, then binds the Stripe id; changing its amount during that gap
+  // could charge the old subtotal while storing the new one. A supplemental bill
+  // keeps both provider amounts immutable and independently reconcilable.
+  let invoiceId = primaryInvoiceId
+
+  if (existing.length > 0) {
+    let sequence = 2
+
+    invoiceId = supplementalHostInvoiceId(
+      input.organizationId,
+      period.periodStart,
+      sequence
+    )
+
+    while (state.hostInvoices.some((candidate) => candidate.id === invoiceId)) {
+      sequence += 1
+      invoiceId = supplementalHostInvoiceId(
+        input.organizationId,
+        period.periodStart,
+        sequence
+      )
+    }
+  }
   const invoice = hostInvoiceSchema.parse({
     createdAt: at,
     feeEventIds: billable.map((event) => event.id),
@@ -736,6 +790,7 @@ function openInvoiceForOrganizationPeriod(
       organizationId: invoice.organizationId,
       periodEnd: invoice.periodEnd,
       periodStart: invoice.periodStart,
+      supplemental: existing.length > 0,
       subtotalCents: invoice.subtotalCents
     }
   })
@@ -747,10 +802,12 @@ function openInvoiceForOrganizationPeriod(
  * Closes one UTC calendar month for one host: collects every fee still `accrued`
  * in the period, opens a bill for them, and flips them to `invoiced`.
  *
- * IDEMPOTENT PER (ORGANIZATION, MONTH). The id is derived from the host and the
- * canonical month start, and an existing bill for either that id or that month is
- * returned untouched. A monthly job that runs twice, or a compare-and-swap replay,
- * therefore cannot bill a host twice for the same month.
+ * IDEMPOTENT PER FEE. The primary id is derived from the host and canonical month
+ * start. A normal repeated run finds no accrued fees and returns that existing
+ * bill untouched. If recovery adds a fee after an earlier bill opened, the fee
+ * moves to a deterministic supplemental bill rather than mutating a provider
+ * amount that may already be finalized. A compare-and-swap replay sees the fee as
+ * `invoiced` and therefore cannot bill it twice.
  *
  * IN ARREARS. A period that has not ended yet is refused: it can still accrue, so
  * billing it would charge a host for a month that is not finished.

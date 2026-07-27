@@ -804,6 +804,78 @@ describe("host invoice", () => {
     ).toMatchObject({ invoiceId: null, status: "accrued" })
   })
 
+  it("opens one deterministic supplemental bill for a fee repaired after monthly close", () => {
+    const state = freshState()
+    const { second } = twoJuneHauls(state)
+    const lateFee = state.platformFeeEvents.find(
+      (event) => event.assignmentId === second.assignmentId
+    )
+
+    if (!lateFee) {
+      throw new Error("The fixture did not accrue the fee that will be repaired late")
+    }
+
+    // The first close cannot see the missing fee. Binding its resulting bill to a
+    // provider invoice proves recovery does not rewrite an amount Stripe may
+    // already have finalized.
+    state.platformFeeEvents = state.platformFeeEvents.filter(
+      (event) => event.id !== lateFee.id
+    )
+    const first = openClosedPeriodInvoices(
+      state,
+      { periodEnd: JUNE_PERIOD_END, periodStart: JUNE_PERIOD_START },
+      BILLING_RUN
+    )
+
+    expect(first).toHaveLength(1)
+    expect(first[0]?.outcome).toBe("opened")
+    const primary = state.hostInvoices[0]
+
+    if (!primary) {
+      throw new Error("The first monthly close did not open its primary bill")
+    }
+
+    state.hostInvoices[0] = {
+      ...primary,
+      stripeInvoiceId: "in_primary_already_finalized"
+    }
+    state.platformFeeEvents.push(lateFee)
+
+    const recovered = openAllClosedPeriodInvoices(state, MID_JULY)
+    const supplemental = state.hostInvoices.find(
+      (invoice) => invoice.id !== primary.id
+    )
+
+    expect(recovered).toHaveLength(1)
+    expect(recovered[0]?.outcome).toBe("opened")
+    expect(state.hostInvoices).toHaveLength(2)
+    expect(state.hostInvoices.find((invoice) => invoice.id === primary.id)).toMatchObject({
+      feeEventIds: primary.feeEventIds,
+      stripeInvoiceId: "in_primary_already_finalized",
+      subtotalCents: primary.subtotalCents
+    })
+    expect(supplemental).toMatchObject({
+      feeEventIds: [lateFee.id],
+      organizationId: HOST_ORG,
+      periodEnd: JUNE_PERIOD_END,
+      periodStart: JUNE_PERIOD_START,
+      status: "open",
+      stripeInvoiceId: null,
+      subtotalCents: lateFee.feeCents
+    })
+    expect(
+      state.platformFeeEvents.find((event) => event.id === lateFee.id)
+    ).toMatchObject({
+      invoiceId: supplemental?.id,
+      status: "invoiced"
+    })
+
+    const repeated = openAllClosedPeriodInvoices(state, MID_JULY)
+
+    expect(repeated).toEqual([])
+    expect(state.hostInvoices).toHaveLength(2)
+  })
+
   it("mints one bill however the month boundary is spelled", () => {
     // Both spellings name the same instant. Deriving the id from the caller's text
     // rather than the canonical month start would bill this host twice for June.
