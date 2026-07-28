@@ -125,7 +125,7 @@ describe("schema validation", () => {
     expect(truckProfileSchema.safeParse({ ...truck, fuelEconomyMpg: 15.1 }).success).toBe(false)
   })
 
-  it("stores driver-payment receipt sides only as an ordered, distinct-person pair", () => {
+  it("stores driver-payment receipt sides as an ordered, distinct-person pair with an atomic actual amount", () => {
     const assignment = {
       assignedAt: baseTimestamp,
       cancelledAt: null,
@@ -177,5 +177,29 @@ describe("schema validation", () => {
       driverPaymentReceivedAt: "2026-06-05T12:01:00.000Z",
       driverPaymentReceivedByUserId: receiver
     }).success).toBe(true)
+    expect(assignmentSchema.safeParse({
+      ...assignment,
+      driverPaymentReceivedAmountCents: 50_000,
+      driverPaymentReceivedAt: "2026-06-05T12:01:00.000Z",
+      driverPaymentReceivedByUserId: receiver,
+      driverPaymentReceivedCurrency: null
+    }).success).toBe(false)
+    expect(assignmentSchema.safeParse({
+      ...assignment,
+      driverPaymentReceivedAmountCents: null,
+      driverPaymentReceivedAt: "2026-06-05T12:01:00.000Z",
+      driverPaymentReceivedByUserId: receiver,
+      driverPaymentReceivedCurrency: "USD"
+    }).success).toBe(false)
+    expect(assignmentSchema.safeParse({
+      ...assignment,
+      driverPaymentReceivedAmountCents: 50_000,
+      driverPaymentReceivedAt: "2026-06-05T12:01:00.000Z",
+      driverPaymentReceivedByUserId: receiver,
+      driverPaymentReceivedCurrency: "usd"
+    })).toMatchObject({
+      success: true,
+      data: { driverPaymentReceivedCurrency: "USD" }
+    })
   })
 })

@@ -133,12 +133,20 @@ function billableHaul(
   assignment.completedAt = confirmedAt
   assignment.driverPaymentSentAt = confirmedAt
   assignment.driverPaymentSentByUserId = HOST_STAFF_USER
+  assignment.driverPaymentReceivedAmountCents = driverPayCents
   assignment.driverPaymentReceivedAt = confirmedAt
   assignment.driverPaymentReceivedByUserId = DRIVER_USER
+  assignment.driverPaymentReceivedCurrency = driverPayCents === null ? null : "USD"
   assignment.termsSnapshot = {
     ...assignment.termsSnapshot,
     currency: "USD",
-    driverPayCents
+    driverPayCents,
+    hostFee: {
+      collectionState: "disabled_pending_legal_and_payment_approval",
+      feeCents: null,
+      proposedRateBps: PLATFORM_FEE_BPS,
+      rateBps: PLATFORM_FEE_BPS
+    }
   }
 
   const existing = state.tripsV2.find((trip) => trip.assignmentId === assignment.id)
@@ -404,15 +412,59 @@ describe("platform fee accrual", () => {
   it("freezes the rate, so a later rate change re-rates nothing", () => {
     const state = freshState()
     const haul = oneBillableHaul(state, 52_500)
+    const assignment = state.assignments.find((candidate) => candidate.id === haul.assignmentId)!
 
-    accruePlatformFee(state, { assignmentId: haul.assignmentId, feeBps: 500 })
+    assignment.termsSnapshot = {
+      ...assignment.termsSnapshot,
+      hostFee: {
+        collectionState: "disabled_pending_legal_and_payment_approval",
+        feeCents: null,
+        proposedRateBps: 300,
+        rateBps: 300
+      }
+    }
+
+    accruePlatformFee(state, { assignmentId: haul.assignmentId })
 
     const retry = accruePlatformFee(state, { assignmentId: haul.assignmentId, feeBps: 900 })
 
     expect(retry.outcome).toBe("already_accrued")
     if (retry.outcome !== "already_accrued") return
-    expect(retry.event.feeBps).toBe(500)
-    expect(retry.event.feeCents).toBe(2_625)
+    expect(retry.event.feeBps).toBe(300)
+    expect(retry.event.feeCents).toBe(1_575)
+  })
+
+  it("refuses to accrue without an accepted fee rate or to override it at call time", () => {
+    const missingState = freshState()
+    const missingHaul = oneBillableHaul(missingState, 52_500)
+    const missingAssignment = missingState.assignments.find(
+      (candidate) => candidate.id === missingHaul.assignmentId
+    )!
+    missingAssignment.termsSnapshot = {
+      ...missingAssignment.termsSnapshot,
+      hostFee: {
+        collectionState: "disabled_pending_legal_and_payment_approval",
+        feeCents: null,
+        proposedRateBps: PLATFORM_FEE_BPS
+      }
+    }
+
+    expect(
+      accruePlatformFee(missingState, { assignmentId: missingHaul.assignmentId })
+    ).toMatchObject({
+      outcome: "no_basis",
+      reason: expect.stringMatching(/authoritative platform-fee rate/i)
+    })
+
+    const overrideState = freshState()
+    const overrideHaul = oneBillableHaul(overrideState, 52_500)
+
+    expect(() =>
+      accruePlatformFee(overrideState, {
+        assignmentId: overrideHaul.assignmentId,
+        feeBps: PLATFORM_FEE_BPS + 100
+      })
+    ).toThrow(/does not match the accepted/i)
   })
 
   it("reports the charge that exists even after the load loses its stated pay", () => {

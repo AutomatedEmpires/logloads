@@ -228,6 +228,7 @@ function webhookPort(options: WebhookPortOptions = {}): {
       createInvoiceItem: unused("createInvoiceItem"),
       createSetupIntent: unused("createSetupIntent"),
       finalizeInvoice: unused("finalizeInvoice"),
+      listHostInvoices: unused("listHostInvoices"),
       payInvoice: unused("payInvoice"),
       async retrievePaymentMethod(paymentMethodId) {
         calls.push("retrievePaymentMethod")

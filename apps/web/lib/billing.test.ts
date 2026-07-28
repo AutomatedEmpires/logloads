@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
     invoiceCreate: vi.fn(),
     invoiceFinalize: vi.fn(),
     invoiceItemCreate: vi.fn(),
+    invoiceList: vi.fn(),
     invoicePay: vi.fn(),
     paymentMethodRetrieve: vi.fn(),
     setupIntentCreate: vi.fn(),
@@ -51,6 +52,7 @@ vi.mock("stripe", () => ({
     invoices = {
       create: mocks.stripe.invoiceCreate,
       finalizeInvoice: mocks.stripe.invoiceFinalize,
+      list: mocks.stripe.invoiceList,
       pay: mocks.stripe.invoicePay
     }
     paymentMethods = { retrieve: mocks.stripe.paymentMethodRetrieve }
@@ -289,6 +291,7 @@ function stateAccess(
 
 interface FakeStripe {
   callNames(): string[]
+  expireIdempotency(): void
   inputFor(name: string): Record<string, unknown> | undefined
   inputsFor(name: string): Array<Record<string, unknown>>
   mintedInvoiceIds: string[]
@@ -306,6 +309,18 @@ function fakeStripe(
 ): FakeStripe {
   const calls: Array<{ input: Record<string, unknown>; name: string }> = []
   const byKey = new Map<string, StripeInvoiceFacts>()
+  const providerInvoices = new Map<
+    string,
+    {
+      currency: string
+      customerId: string
+      hostInvoiceId: string
+      id: string
+      paid: boolean
+      status: string | null
+      totalCents: number
+    }
+  >()
   const mintedInvoiceIds: string[] = []
   const record = (name: string, input: Record<string, unknown>): void => {
     calls.push({ input, name })
@@ -313,6 +328,7 @@ function fakeStripe(
 
   return {
     callNames: () => calls.map((call) => call.name),
+    expireIdempotency: () => byKey.clear(),
     inputFor: (name) => calls.find((call) => call.name === name)?.input,
     inputsFor: (name) => calls.filter((call) => call.name === name).map((call) => call.input),
     mintedInvoiceIds,
@@ -354,11 +370,23 @@ function fakeStripe(
 
         mintedInvoiceIds.push(facts.id)
         byKey.set(input.idempotencyKey, facts)
+        providerInvoices.set(facts.id, {
+          currency: "USD",
+          customerId: input.customerId,
+          hostInvoiceId: input.metadata.hostInvoiceId ?? "",
+          ...facts,
+          totalCents: 0
+        })
 
         return facts
       },
       async createInvoiceItem(input) {
         record("createInvoiceItem", { ...input })
+        const invoice = providerInvoices.get(input.stripeInvoiceId)
+
+        if (invoice) {
+          invoice.totalCents += input.amountCents
+        }
 
         return { id: "ii_1" }
       },
@@ -369,8 +397,31 @@ function fakeStripe(
       },
       async finalizeInvoice(input) {
         record("finalizeInvoice", { ...input })
+        const invoice = providerInvoices.get(input.stripeInvoiceId)
+
+        if (invoice) {
+          invoice.status = "open"
+        }
 
         return { id: input.stripeInvoiceId, paid: false, status: "open" }
+      },
+      async listHostInvoices(input) {
+        record("listHostInvoices", { ...input })
+
+        return [...providerInvoices.values()]
+          .filter(
+            (invoice) =>
+              invoice.customerId === input.customerId &&
+              invoice.hostInvoiceId === input.hostInvoiceId
+          )
+          .map((invoice) => ({
+            currency: invoice.currency,
+            customerId: invoice.customerId,
+            id: invoice.id,
+            paid: invoice.paid,
+            status: invoice.status,
+            totalCents: invoice.totalCents
+          }))
       },
       async payInvoice(input) {
         record("payInvoice", { ...input })
@@ -381,6 +432,12 @@ function fakeStripe(
         }
 
         const paid = options.paid ?? true
+        const invoice = providerInvoices.get(input.stripeInvoiceId)
+
+        if (invoice) {
+          invoice.paid = paid
+          invoice.status = paid ? "paid" : "open"
+        }
 
         return { id: input.stripeInvoiceId, paid, status: paid ? "paid" : "open" }
       },
@@ -945,6 +1002,7 @@ describe("chargeHostInvoice", () => {
       subtotalCents: 2_625
     })
     expect(stripe.callNames()).toEqual([
+      "listHostInvoices",
       "createInvoice",
       "createInvoiceItem",
       "finalizeInvoice",
@@ -988,7 +1046,7 @@ describe("chargeHostInvoice", () => {
     )
   })
 
-  it("never raises a second Stripe invoice when our own write was lost", async () => {
+  it("reconciles Stripe metadata before creating when our write and provider idempotency expired", async () => {
     const { state } = billableHost()
     const stripe = fakeStripe()
     const beforeCharge = structuredClone(state.hostInvoices[0]!)
@@ -996,8 +1054,10 @@ describe("chargeHostInvoice", () => {
     await chargeHostInvoice({ invoiceId: INVOICE_ID, port: stripe.port, state: stateAccess(state) })
 
     // The charge landed at Stripe and the state write did not. This is the case a
-    // random idempotency key turns into a second charge.
+    // provider lookup must recover even after Stripe no longer remembers the
+    // original create idempotency key.
     state.hostInvoices[0] = beforeCharge
+    stripe.expireIdempotency()
 
     const retried = await chargeHostInvoice({
       invoiceId: INVOICE_ID,
@@ -1007,7 +1067,8 @@ describe("chargeHostInvoice", () => {
 
     expect(retried.ok && retried.value.stripeInvoiceId).toBe("in_1")
     expect(stripe.mintedInvoiceIds).toEqual(["in_1"])
-    expect(stripe.inputsFor("createInvoice")).toHaveLength(2)
+    expect(stripe.inputsFor("createInvoice")).toHaveLength(1)
+    expect(stripe.inputsFor("listHostInvoices")).toHaveLength(2)
     expect(state.hostInvoices[0]?.stripeInvoiceId).toBe("in_1")
   })
 
@@ -1296,6 +1357,46 @@ describe("the real Stripe adapter", () => {
       }),
       { idempotencyKey: "logloads-host-invoice-create-1" }
     )
+  })
+
+  it("lists the customer's provider invoices to recover a lost canonical binding", async () => {
+    const billing = resolveStripeBilling({ STRIPE_SECRET_KEY: "sk_test" })
+
+    if (!billing.ok) {
+      throw new Error("a secret key must produce a port")
+    }
+
+    mocks.stripe.invoiceList.mockReturnValue([
+      {
+        amount_due: 2_625,
+        currency: "usd",
+        customer: "cus_live",
+        id: "in_recovered",
+        metadata: { hostInvoiceId: INVOICE_ID },
+        status: "open",
+        total: 2_625
+      }
+    ])
+
+    await expect(
+      billing.value.listHostInvoices({
+        customerId: "cus_live",
+        hostInvoiceId: INVOICE_ID
+      })
+    ).resolves.toEqual([
+      {
+        currency: "USD",
+        customerId: "cus_live",
+        id: "in_recovered",
+        paid: false,
+        status: "open",
+        totalCents: 2_625
+      }
+    ])
+    expect(mocks.stripe.invoiceList).toHaveBeenCalledWith({
+      customer: "cus_live",
+      limit: 100
+    })
   })
 
   it("charges the stored card off-session and makes it the customer default", async () => {

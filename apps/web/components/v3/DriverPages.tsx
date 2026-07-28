@@ -480,7 +480,11 @@ function TripCard({ mediaReady, network, trip }: { mediaReady: boolean; network:
       {trip.completion.status === "confirmed" && isOwnHaul ? (
         <DriverPaymentReceiptControl
           assignmentId={trip.assignmentId}
+          expectedPayAmountCents={trip.driverPayment.expectedPayAmountCents}
+          expectedPayCurrency={trip.driverPayment.expectedPayCurrency}
           expectedPayLabel={trip.driverPayment.expectedPayLabel}
+          matchesExpected={trip.driverPayment.matchesExpected}
+          receivedPayLabel={trip.driverPayment.receivedPayLabel}
           status={trip.driverPayment.status}
         />
       ) : null}

@@ -369,6 +369,23 @@ export const assignmentBaseSchema = z.object({
   driverPaymentSentByUserId: uuidSchema.optional().nullable().default(null),
   driverPaymentReceivedAt: optionalTimestampSchema.default(null),
   driverPaymentReceivedByUserId: uuidSchema.optional().nullable().default(null),
+  /**
+   * What the driver says actually arrived. This is deliberately separate from
+   * the host-stated amount frozen in termsSnapshot: a short payment must remain
+   * visible rather than being rewritten into agreement by the receipt click.
+   *
+   * Nullable for assignments whose receipt predates amount-aware confirmation.
+   * New write paths always persist both fields together.
+   */
+  driverPaymentReceivedAmountCents: z.number().int().nonnegative().optional().nullable().default(null),
+  driverPaymentReceivedCurrency: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z]{3}$/, "Driver payment currency must be a three-letter code")
+    .transform((currency) => currency.toUpperCase())
+    .optional()
+    .nullable()
+    .default(null),
   cancellationReason: z.string().optional().nullable(),
   dispatcherNotes: z.string().optional().nullable(),
   termsSnapshot: z.record(z.unknown()).default({}),
@@ -392,6 +409,32 @@ export const assignmentSchema = assignmentBaseSchema.superRefine((row, context) 
 
   requirePair("driverPaymentSentAt", "driverPaymentSentByUserId")
   requirePair("driverPaymentReceivedAt", "driverPaymentReceivedByUserId")
+
+  if (
+    Boolean(row.driverPaymentReceivedAmountCents !== null) !==
+    Boolean(row.driverPaymentReceivedCurrency)
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "A received payment amount must carry its currency",
+      path: [
+        row.driverPaymentReceivedAmountCents !== null
+          ? "driverPaymentReceivedCurrency"
+          : "driverPaymentReceivedAmountCents"
+      ]
+    })
+  }
+
+  if (
+    (row.driverPaymentReceivedAmountCents !== null || row.driverPaymentReceivedCurrency) &&
+    !row.driverPaymentReceivedAt
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "A received payment amount requires a recorded receipt",
+      path: ["driverPaymentReceivedAt"]
+    })
+  }
 
   if (row.driverPaymentReceivedAt && !row.driverPaymentSentAt) {
     context.addIssue({

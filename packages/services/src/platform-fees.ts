@@ -2,6 +2,7 @@ import {
   auditEventSchema,
   computePlatformFeeCents,
   deterministicUuidV5,
+  FEE_BPS_SCALE,
   hostInvoiceSchema,
   invoicePeriodFor,
   invoiceSubtotalCents,
@@ -279,10 +280,8 @@ export interface AccruePlatformFeeInput {
    */
   actorUserId?: string | null
   /**
-   * The rate to FREEZE onto this fee. Defaults to the currently published rate,
-   * because accrual is the one moment where "the current rate" is the correct
-   * rate — it is where the rate stops being current and becomes history. Every
-   * other surface must read the rate off the event.
+   * A caller may assert the rate it expects, but never override the rate the host
+   * accepted. The accepted assignment snapshot is the sole billing authority.
    */
   feeBps?: number
 }
@@ -314,6 +313,25 @@ function confirmedHaulForAssignment(
       trip.completionStatus === "confirmed" &&
       trip.status !== "cancelled"
   )
+}
+
+function frozenPlatformFeeBps(termsSnapshot: Record<string, unknown>): number | null {
+  const hostFee = termsSnapshot.hostFee
+
+  if (!hostFee || typeof hostFee !== "object" || Array.isArray(hostFee)) {
+    return null
+  }
+
+  const rateBps = (hostFee as Record<string, unknown>).rateBps
+
+  return (
+    typeof rateBps === "number" &&
+    Number.isSafeInteger(rateBps) &&
+    rateBps >= 0 &&
+    rateBps <= FEE_BPS_SCALE
+  )
+    ? rateBps
+    : null
 }
 
 /**
@@ -396,6 +414,18 @@ export function accruePlatformFee(
     }
   }
 
+  if (
+    assignment.driverPaymentReceivedAmountCents === null ||
+    !assignment.driverPaymentReceivedCurrency
+  ) {
+    return {
+      assignmentId: assignment.id,
+      outcome: "no_basis",
+      reason:
+        "This legacy receipt does not record the amount and currency the driver actually received"
+    }
+  }
+
   const frozenDriverPay = readFrozenDriverPay(assignment.termsSnapshot)
 
   if (!frozenDriverPay) {
@@ -411,7 +441,21 @@ export function accruePlatformFee(
   }
 
   const driverPayCents = frozenDriverPay.amountCents
-  const feeBps = input.feeBps ?? PLATFORM_FEE_BPS
+  const feeBps = frozenPlatformFeeBps(assignment.termsSnapshot)
+
+  if (feeBps === null) {
+    return {
+      assignmentId: assignment.id,
+      outcome: "no_basis",
+      reason:
+        "This assignment has no authoritative platform-fee rate frozen at host acceptance"
+    }
+  }
+
+  assertCondition(
+    input.feeBps === undefined || input.feeBps === feeBps,
+    `The requested fee rate ${String(input.feeBps)} bps does not match the accepted ${feeBps} bps`
+  )
   const actorUserId = input.actorUserId ?? null
   // The receipt is the billable event: LogLoads does not earn its fee merely
   // because a host confirmed delivery while the driver is still unpaid.
@@ -451,6 +495,11 @@ export function accruePlatformFee(
       feeCents: event.feeCents,
       loadPostingId: load.id,
       organizationId: event.organizationId,
+      receivedAmountCents: assignment.driverPaymentReceivedAmountCents,
+      receivedCurrency: assignment.driverPaymentReceivedCurrency,
+      receivedMatchesStated:
+        assignment.driverPaymentReceivedAmountCents === frozenDriverPay.amountCents &&
+        assignment.driverPaymentReceivedCurrency === frozenDriverPay.currency,
       tripId: trip.id
     }
   })

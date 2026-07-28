@@ -9,9 +9,11 @@ import {
   canTransitionAssignmentStatus,
   canTransitionAssignmentStatusV2,
   canTransitionLoadPostingStatus,
+  PLATFORM_FEE_BPS,
   evaluateLoadCompatibility,
   formatMoney,
   mediaReferenceSchema,
+  moneySchema,
   notificationSchema,
   organizationRoleCan,
   PRE_TRIP_INSPECTION_CHECKLIST,
@@ -964,10 +966,19 @@ function requestCapacityWithPolicyInternal(
   // against, never a second `nowIso()` that could straddle an expiry.
   assertDriverCredentialsAllowAcceptance(state, parsed.driverProfileId, requestedAt)
 
+  const requestedTerms = directOfferTermsSnapshot(load, postingSources)
+  assertCondition(
+    Boolean(readFrozenDriverPay(requestedTerms)),
+    "This load has no stated driver pay; ask the host to update it before requesting"
+  )
+
   const assignment = requestAssignment(state, {
     ...parsed,
     directOfferId: options.directOfferId ?? null,
-    termsSnapshot: {}
+    // What the driver requested, captured before the host can edit the posting.
+    // Approval below compares this snapshot with the then-current terms and
+    // refuses drift instead of silently binding the driver to a new pay amount.
+    termsSnapshot: requestedTerms
   })
 
   if (capacity) {
@@ -1068,6 +1079,18 @@ function finalizeCapacityAssignment(
     "The requested equipment combination was not found"
   )
   const { rate, route } = postingSources
+  if (options.source === "host_approval") {
+    const requestedPay = readFrozenDriverPay(assignment.termsSnapshot)
+
+    assertCondition(
+      Boolean(
+        requestedPay &&
+          requestedPay.amountCents === load.driverPayCents &&
+          requestedPay.currency === postingSources.rate.baseRate.currency.toUpperCase()
+      ),
+      "Driver pay changed after the driver requested this load; the driver must request again"
+    )
+  }
   const slot = assertFound(
     state.truckSlots.find((candidate) => candidate.id === assignment.truckSlotId),
     `Truck slot ${assignment.truckSlotId} was not found`
@@ -1119,7 +1142,10 @@ function finalizeCapacityAssignment(
       hostFee: {
         collectionState: "disabled_pending_legal_and_payment_approval",
         feeCents: null,
-        proposedRateBps: 500
+        // Authoritative accepted-work rate. Accrual must read this exact value;
+        // the global rate is only for commitments made after a future change.
+        rateBps: PLATFORM_FEE_BPS,
+        proposedRateBps: PLATFORM_FEE_BPS
       },
       hostOrganizationId: load.companyId,
       loadPostingId: load.id,
@@ -2411,6 +2437,11 @@ export interface DriverPaymentActionInput {
   organizationId?: string
 }
 
+export interface ConfirmDriverPaymentReceivedInput extends DriverPaymentActionInput {
+  amountCents: number
+  currency: string
+}
+
 export function markDriverPaymentSent(
   state: LogLoadsDatabaseState,
   input: DriverPaymentActionInput
@@ -2485,11 +2516,13 @@ export function markDriverPaymentSent(
 
 export function confirmDriverPaymentReceived(
   state: LogLoadsDatabaseState,
-  input: DriverPaymentActionInput
+  input: ConfirmDriverPaymentReceivedInput
 ): {
   assignment: Assignment
   changed: boolean
+  matchesExpected: boolean
   platformFeeOutcome: AccruePlatformFeeResult["outcome"] | "error"
+  receivedPay: { amountCents: number; currency: string }
 } {
   const context = getContextForInput(state, input)
   assertOrganizationAction(context, "progress_trip")
@@ -2515,6 +2548,22 @@ export function confirmDriverPaymentReceived(
     assignment.driverPaymentSentByUserId !== context.actorUserId,
     "One person cannot record both sides of a driver payment receipt"
   )
+  assertCondition(
+    typeof input.currency === "string" && /^[A-Za-z]{3}$/.test(input.currency.trim()),
+    "Driver payment currency must be a three-letter code"
+  )
+  const receivedPay = moneySchema.parse({
+    amountCents: input.amountCents,
+    currency: input.currency.trim().toUpperCase()
+  })
+
+  if (assignment.driverPaymentReceivedAt) {
+    assertCondition(
+      assignment.driverPaymentReceivedAmountCents === receivedPay.amountCents &&
+        assignment.driverPaymentReceivedCurrency === receivedPay.currency,
+      "Driver payment receipt was already recorded with a different amount or currency"
+    )
+  }
 
   const timestamp = nowIso()
   let updated = assignment
@@ -2523,8 +2572,10 @@ export function confirmDriverPaymentReceived(
   if (!assignment.driverPaymentReceivedAt) {
     updated = assignmentSchema.parse({
       ...assignment,
+      driverPaymentReceivedAmountCents: receivedPay.amountCents,
       driverPaymentReceivedAt: timestamp,
       driverPaymentReceivedByUserId: context.actorUserId,
+      driverPaymentReceivedCurrency: receivedPay.currency,
       updatedAt: timestamp
     })
     state.assignments = state.assignments.map((candidate) =>
@@ -2532,6 +2583,13 @@ export function confirmDriverPaymentReceived(
     )
     changed = true
   }
+
+  const frozenDriverPay = readFrozenDriverPay(updated.termsSnapshot)
+  const matchesExpected = Boolean(
+    frozenDriverPay &&
+      frozenDriverPay.amountCents === receivedPay.amountCents &&
+      frozenDriverPay.currency === receivedPay.currency
+  )
 
   let fee: AccruePlatformFeeResult | null = null
   let feeFailure: string | null = null
@@ -2566,7 +2624,10 @@ export function confirmDriverPaymentReceived(
 
   if (changed) {
     insertAuditEvent(state, context.actorUserId, "assignment", assignment.id, "driver_payment_received", {
+      amountCents: receivedPay.amountCents,
+      currency: receivedPay.currency,
       loadPostingId: load.id,
+      matchesExpected,
       platformFeeEventId:
         fee?.outcome === "accrued" || fee?.outcome === "already_accrued" ? fee.event.id : null,
       platformFeeOutcome: fee?.outcome ?? "error"
@@ -2577,7 +2638,9 @@ export function confirmDriverPaymentReceived(
         state,
         assignment.driverPaymentSentByUserId,
         "Driver pay received",
-        `${load.title}: the assigned driver confirmed the stated pay arrived.`,
+        matchesExpected
+          ? `${load.title}: the assigned driver confirmed the stated pay arrived.`
+          : `${load.title}: the driver recorded ${formatMoney(receivedPay)} received, which differs from the accepted amount.`,
         "assignment",
         assignment.id,
         "system_alert"
@@ -2588,7 +2651,9 @@ export function confirmDriverPaymentReceived(
   return {
     assignment: updated,
     changed,
-    platformFeeOutcome: fee?.outcome ?? "error"
+    matchesExpected,
+    platformFeeOutcome: fee?.outcome ?? "error",
+    receivedPay
   }
 }
 
@@ -3025,8 +3090,16 @@ function directOfferTermsAreCurrent(
   load: LoadPosting,
   postingSources: ReturnType<typeof assertPostingSourcesAreUsable>
 ): boolean {
+  return loadTermsSnapshotIsCurrent(offer.termsSnapshot, load, postingSources)
+}
+
+function loadTermsSnapshotIsCurrent(
+  snapshot: Record<string, unknown>,
+  load: LoadPosting,
+  postingSources: ReturnType<typeof assertPostingSourcesAreUsable>
+): boolean {
   return Object.entries(directOfferTermsSnapshot(load, postingSources)).every(
-    ([key, value]) => offer.termsSnapshot[key] === value
+    ([key, value]) => snapshot[key] === value
   )
 }
 

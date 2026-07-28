@@ -403,11 +403,15 @@ export function DriverPaymentControl({
   assignmentId,
   driverName,
   expectedPayLabel,
+  matchesExpected,
+  receivedPayLabel,
   status
 }: {
   assignmentId: string
   driverName: string
   expectedPayLabel: string | null
+  matchesExpected: boolean | null
+  receivedPayLabel: string | null
   status: "not_sent" | "sent" | "received"
 }) {
   const [confirming, setConfirming] = useState(false)
@@ -425,9 +429,20 @@ export function DriverPaymentControl({
   }
 
   if (status === "received" || feedback?.ok) {
+    if (!feedback?.ok && matchesExpected === false) {
+      return (
+        <p className="host-form-feedback host-form-feedback--error" role="alert">
+          {driverName} recorded {receivedPayLabel ?? "a different amount"} received, not the accepted {expectedPayLabel}. The discrepancy remains on this haul until you resolve it directly.
+        </p>
+      )
+    }
+
     return (
       <p className="host-form-feedback host-form-feedback--success" role="status">
-        {feedback?.text ?? `${driverName} confirmed receipt of ${expectedPayLabel}.`}
+        {feedback?.text ??
+          (receivedPayLabel
+            ? `${driverName} recorded receipt of ${receivedPayLabel}.`
+            : `${driverName} confirmed receipt of ${expectedPayLabel}; the legacy receipt did not preserve the actual amount.`)}
       </p>
     )
   }

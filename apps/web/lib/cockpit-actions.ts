@@ -2,6 +2,7 @@
 
 import {
   credentialKindSchema,
+  formatMoney,
   rateTypeSchema,
   roadConditionSchema,
   type CredentialKind,
@@ -15,6 +16,7 @@ import { revalidatePath } from "next/cache"
 
 import { captureServerEvent } from "./analytics"
 import { parseStatedCredentialExpiry } from "./credential-date"
+import { parseDriverPayCents } from "./driver-pay-input"
 import { reviewCredentialDocument } from "./credential-reviewer"
 import { checkRateLimit } from "./rate-limit"
 import {
@@ -1209,29 +1211,59 @@ export async function markDriverPaymentSentAction(input: {
 }
 
 export async function confirmDriverPaymentReceivedAction(input: {
+  amount: string
   assignmentId: string
-}): Promise<ActionResult> {
+  currency: string
+}): Promise<
+  ActionResult & {
+    matchesExpected: boolean | null
+    receivedPayLabel: string | null
+  }
+> {
   try {
     const actor = await requireActor()
+    const amountCents = parseDriverPayCents(input.amount)
+
+    if (amountCents === null) {
+      throw new Error("Enter the amount that actually reached you, in dollars and cents")
+    }
+
+    const currency = input.currency.trim().toUpperCase()
+
+    if (!/^[A-Z]{3}$/.test(currency)) {
+      throw new Error("Enter a three-letter payment currency such as USD")
+    }
 
     const result = await commit(["/driver", "/fleet", "/host"], (draft) =>
       draft.confirmDriverPaymentReceived({
         actorUserId: actor.profile.id,
+        amountCents,
         assignmentId: input.assignmentId,
+        currency,
         organizationId: actorOrganizationId(actor)
       })
     )
 
     if (result.changed) {
       captureServerEvent("driver_payment_received", actor.profile.id, {
+        amountCents,
         assignmentId: input.assignmentId,
+        currency,
         platformFeeOutcome: result.platformFeeOutcome
       })
     }
 
-    return OK
+    return {
+      ...OK,
+      matchesExpected: result.matchesExpected,
+      receivedPayLabel: formatMoney(result.receivedPay)
+    }
   } catch (error) {
-    return failure(error)
+    return {
+      ...failure(error),
+      matchesExpected: null,
+      receivedPayLabel: null
+    }
   }
 }
 

@@ -132,6 +132,12 @@ export interface StripeInvoiceFacts {
   paid: boolean
 }
 
+export interface StripeProviderInvoiceFacts extends StripeInvoiceFacts {
+  currency: string
+  customerId: string | null
+  totalCents: number
+}
+
 export interface StripeSubscriptionFacts {
   id: string
   status: string
@@ -202,6 +208,16 @@ export interface StripeBillingPort {
     idempotencyKey: string
     stripeInvoiceId: string
   }): Promise<StripeInvoiceFacts>
+  /**
+   * Provider-side recovery for the crash window after Stripe finalized an
+   * invoice but before LogLoads persisted its id. This must inspect Stripe's
+   * customer invoice collection, not rely on the create idempotency record still
+   * existing.
+   */
+  listHostInvoices(input: {
+    customerId: string
+    hostInvoiceId: string
+  }): Promise<StripeProviderInvoiceFacts[]>
   payInvoice(input: {
     idempotencyKey: string
     paymentMethodId: string
@@ -226,6 +242,23 @@ function subscriptionPeriodEnd(subscription: Stripe.Subscription): string | null
 
 function invoiceFacts(invoice: Stripe.Invoice): StripeInvoiceFacts {
   return { id: invoice.id, paid: invoice.status === "paid", status: invoice.status ?? null }
+}
+
+function providerInvoiceFacts(invoice: Stripe.Invoice): StripeProviderInvoiceFacts {
+  const customer = invoice.customer
+  const customerId =
+    typeof customer === "string"
+      ? customer
+      : customer && typeof customer === "object" && "id" in customer
+        ? customer.id
+        : null
+
+  return {
+    ...invoiceFacts(invoice),
+    currency: invoice.currency.toUpperCase(),
+    customerId,
+    totalCents: invoice.total
+  }
 }
 
 function buildStripePort(secretKey: string, webhookSecret: string | null): StripeBillingPort {
@@ -338,6 +371,23 @@ function buildStripePort(secretKey: string, webhookSecret: string | null): Strip
       )
 
       return invoiceFacts(invoice)
+    },
+    async listHostInvoices(input) {
+      const matches: StripeProviderInvoiceFacts[] = []
+
+      // Stripe's list endpoint is used instead of metadata search because list
+      // observes the customer's canonical invoice collection immediately; search
+      // indexing can lag precisely during the retry window this protects.
+      for await (const invoice of stripe.invoices.list({
+        customer: input.customerId,
+        limit: 100
+      })) {
+        if (invoice.metadata?.hostInvoiceId === input.hostInvoiceId) {
+          matches.push(providerInvoiceFacts(invoice))
+        }
+      }
+
+      return matches
     },
     async payInvoice(input) {
       const invoice = await stripe.invoices.pay(
@@ -1294,6 +1344,117 @@ export async function chargeHostInvoice(input: {
         invoiceId: input.invoiceId,
         status: settled.status,
         stripeInvoiceId: plan.stripeInvoiceId,
+        subtotalCents: plan.subtotalCents
+      })
+    })
+  }
+
+  const providerInvoices = await input.port.listHostInvoices({
+    customerId: plan.customerId,
+    hostInvoiceId: input.invoiceId
+  })
+
+  if (providerInvoices.length > 1) {
+    return billingRefused(
+      `Stripe has ${providerInvoices.length} invoices for LogLoads bill ${input.invoiceId}; collection is paused for reconciliation`
+    )
+  }
+
+  const recovered = providerInvoices[0]
+
+  if (recovered) {
+    if (
+      recovered.customerId !== plan.customerId ||
+      recovered.currency !== CHARGE_CURRENCY.toUpperCase() ||
+      recovered.totalCents !== plan.subtotalCents
+    ) {
+      return billingRefused(
+        `Stripe invoice ${recovered.id} does not match this LogLoads bill's customer, currency, and total`
+      )
+    }
+
+    if (recovered.status === "draft") {
+      return billingRefused(
+        `Stripe invoice ${recovered.id} exists but is still draft; collection is paused for reconciliation`
+      )
+    }
+
+    if (recovered.status !== "open" && !recovered.paid) {
+      return billingRefused(
+        `Stripe invoice ${recovered.id} is ${recovered.status ?? "in an unknown state"} and cannot be collected automatically`
+      )
+    }
+
+    const recoveredAt = now()
+
+    await input.state.mutate((draft) => {
+      const issued = markHostInvoiceIssued(draft.state, {
+        at: recoveredAt,
+        invoiceId: input.invoiceId,
+        stripeInvoiceId: recovered.id
+      })
+
+      if (recovered.paid) {
+        markHostInvoicePaid(draft.state, {
+          at: recoveredAt,
+          invoiceId: issued.invoice.id
+        })
+
+        if (hostPaymentProfileStillMatchesPlan(draft.state, plan)) {
+          recordHostPaymentSuccess(draft.state, {
+            at: recoveredAt,
+            organizationId: plan.organizationId
+          })
+        }
+      }
+    })
+
+    if (recovered.paid) {
+      return billingOk({
+        alreadyCharged: true,
+        invoiceId: input.invoiceId,
+        status: "paid",
+        stripeInvoiceId: recovered.id,
+        subtotalCents: plan.subtotalCents
+      })
+    }
+
+    const paid = await input.port.payInvoice({
+      idempotencyKey: hostInvoiceIdempotencyKey(
+        input.invoiceId,
+        `pay-recovered-${recoveredAt}`
+      ),
+      paymentMethodId: plan.paymentMethodId,
+      stripeInvoiceId: recovered.id
+    })
+    const settledAt = now()
+
+    return input.state.mutate((draft) => {
+      const current = findHostInvoice(draft.state, input.invoiceId)
+
+      if (!current) {
+        return billingRefused(`Host invoice ${input.invoiceId} was not found`)
+      }
+
+      const settled = paid.paid
+        ? markHostInvoicePaid(draft.state, {
+            at: settledAt,
+            invoiceId: input.invoiceId
+          }).invoice
+        : current
+
+      if (paid.paid && hostPaymentProfileStillMatchesPlan(draft.state, plan)) {
+        recordHostPaymentSuccess(draft.state, {
+          at: settledAt,
+          organizationId: plan.organizationId
+        })
+      }
+
+      return billingOk({
+        alreadyCharged: true,
+        invoiceId: input.invoiceId,
+        status: settled.status,
+        stripeInvoiceId: recovered.id,
         subtotalCents: plan.subtotalCents
       })
     })

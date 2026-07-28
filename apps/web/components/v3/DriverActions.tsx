@@ -1037,15 +1037,31 @@ export function CompletionForm({
 
 export function DriverPaymentReceiptControl({
   assignmentId,
+  expectedPayAmountCents,
+  expectedPayCurrency,
   expectedPayLabel,
+  matchesExpected,
+  receivedPayLabel,
   status
 }: {
   assignmentId: string
+  expectedPayAmountCents: number | null
+  expectedPayCurrency: string | null
   expectedPayLabel: string | null
+  matchesExpected: boolean | null
+  receivedPayLabel: string | null
   status: NetworkView["trips"][number]["driverPayment"]["status"]
 }) {
   const [confirming, setConfirming] = useState(false)
-  const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null)
+  const [feedback, setFeedback] = useState<{
+    matchesExpected: boolean | null
+    ok: boolean
+    text: string
+  } | null>(null)
+  const [receivedAmount, setReceivedAmount] = useState(
+    expectedPayAmountCents === null ? "" : (expectedPayAmountCents / 100).toFixed(2)
+  )
+  const [receivedCurrency, setReceivedCurrency] = useState(expectedPayCurrency ?? "USD")
   const [pending, startTransition] = useTransition()
 
   if (!expectedPayLabel) {
@@ -1059,11 +1075,23 @@ export function DriverPaymentReceiptControl({
   }
 
   if (status === "received" || feedback?.ok) {
+    const effectiveMatchesExpected = feedback?.ok ? feedback.matchesExpected : matchesExpected
+    const recorded = feedback?.text ??
+      (receivedPayLabel
+        ? `You recorded ${receivedPayLabel} received.`
+        : `You confirmed receipt of ${expectedPayLabel}; this legacy receipt did not preserve the actual amount.`)
+
     return (
-      <p className="action-note" role="status">
-        <Icon aria-hidden name="status.verified" size={16} />{" "}
-        {feedback?.text ?? `You confirmed receipt of ${expectedPayLabel}.`}
-      </p>
+      <>
+        <p className="action-note" role="status">
+          <Icon aria-hidden name="status.verified" size={16} /> {recorded}
+        </p>
+        {effectiveMatchesExpected === false ? (
+          <p className="action-error" role="alert">
+            This differs from the accepted driver pay of {expectedPayLabel}. The discrepancy is preserved for you and the host to resolve.
+          </p>
+        ) : null}
+      </>
     )
   }
 
@@ -1080,15 +1108,28 @@ export function DriverPaymentReceiptControl({
       setFeedback(null)
 
       try {
-        const result = await confirmDriverPaymentReceivedAction({ assignmentId })
+        const result = await confirmDriverPaymentReceivedAction({
+          amount: receivedAmount,
+          assignmentId,
+          currency: receivedCurrency
+        })
 
         setFeedback(
           result.ok
-            ? { ok: true, text: `Receipt of ${expectedPayLabel} confirmed.` }
-            : { ok: false, text: result.error ?? "Payment receipt could not be confirmed." }
+            ? {
+                matchesExpected: result.matchesExpected,
+                ok: true,
+                text: `You recorded ${result.receivedPayLabel ?? `${receivedCurrency.toUpperCase()} ${receivedAmount}`} received.`
+              }
+            : {
+                matchesExpected: null,
+                ok: false,
+                text: result.error ?? "Payment receipt could not be confirmed."
+              }
         )
       } catch {
         setFeedback({
+          matchesExpected: null,
           ok: false,
           text: "Payment receipt could not be confirmed. Check your connection and try again."
         })
@@ -1103,13 +1144,37 @@ export function DriverPaymentReceiptControl({
         LogLoads does not hold or move these funds.
       </p>
       {confirming ? (
-        <div className="host-approval-actions" role="group" aria-label="Confirm driver pay received">
-          <button className="advance-button" disabled={pending} onClick={receive} type="button">
-            {pending ? "Confirming…" : `Yes, I received ${expectedPayLabel}`}
-          </button>
-          <button disabled={pending} onClick={() => setConfirming(false)} type="button">
-            Not yet
-          </button>
+        <div className="completion-form" role="group" aria-label="Confirm driver pay received">
+          <label>
+            Amount actually received
+            <input
+              disabled={pending}
+              inputMode="decimal"
+              onChange={(event) => setReceivedAmount(event.target.value)}
+              placeholder="525.00"
+              type="text"
+              value={receivedAmount}
+            />
+          </label>
+          <label>
+            Currency
+            <input
+              autoCapitalize="characters"
+              disabled={pending}
+              maxLength={3}
+              onChange={(event) => setReceivedCurrency(event.target.value.toUpperCase())}
+              type="text"
+              value={receivedCurrency}
+            />
+          </label>
+          <div className="host-approval-actions">
+            <button className="advance-button" disabled={pending} onClick={receive} type="button">
+              {pending ? "Confirming…" : "Record amount received"}
+            </button>
+            <button disabled={pending} onClick={() => setConfirming(false)} type="button">
+              Not yet
+            </button>
+          </div>
         </div>
       ) : (
         <button className="advance-button" onClick={() => setConfirming(true)} type="button">

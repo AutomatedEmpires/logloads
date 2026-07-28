@@ -331,6 +331,8 @@ export function HostLiveBoard({ account, network }: HostPageProps) {
                             assignmentId={trip.assignmentId}
                             driverName={trip.driverName}
                             expectedPayLabel={trip.driverPayment.expectedPayLabel}
+                            matchesExpected={trip.driverPayment.matchesExpected}
+                            receivedPayLabel={trip.driverPayment.receivedPayLabel}
                             status={trip.driverPayment.status}
                           />
                         </>

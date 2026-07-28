@@ -97,11 +97,19 @@ function forceSettleableState(
   held.driverPaymentSentAt = null
   held.driverPaymentSentByUserId = null
   held.driverPaymentReceivedAt = null
+  held.driverPaymentReceivedAmountCents = null
   held.driverPaymentReceivedByUserId = null
+  held.driverPaymentReceivedCurrency = null
   held.termsSnapshot = {
     ...held.termsSnapshot,
     currency: "USD",
-    driverPayCents
+    driverPayCents,
+    hostFee: {
+      collectionState: "disabled_pending_legal_and_payment_approval",
+      feeCents: null,
+      proposedRateBps: PLATFORM_FEE_BPS,
+      rateBps: PLATFORM_FEE_BPS
+    }
   }
   posting.driverPayCents = driverPayCents
 
@@ -128,7 +136,9 @@ function markSent(fixture: ReturnType<typeof settleableHaul>) {
 function confirmReceived(fixture: ReturnType<typeof settleableHaul>) {
   return fixture.services.confirmDriverPaymentReceived({
     actorUserId: fixture.driver.userId,
+    amountCents: 52_500,
     assignmentId: fixture.assignment.id,
+    currency: "USD",
     organizationId: fixture.driverMembership.organizationId
   })
 }
@@ -332,7 +342,50 @@ describe("a driver-confirmed payment receipt raises the platform fee", () => {
 
     expect(metadata?.platformFeeOutcome).toBe("accrued")
     expect(metadata?.platformFeeEventId).toBe(fixture.services.state.platformFeeEvents[0]!.id)
+    expect(metadata).toMatchObject({
+      amountCents: 52_500,
+      currency: "USD",
+      matchesExpected: true
+    })
     expect(receipt?.actorUserId).toBe(fixture.driver.userId)
+  })
+
+  it("preserves a short payment as a detectable receipt without changing the host-stated fee base", () => {
+    const fixture = settleableHaul()
+    forceSettleableState(fixture, 52_500)
+    confirmDelivery(fixture)
+    markSent(fixture)
+
+    const receipt = fixture.services.confirmDriverPaymentReceived({
+      actorUserId: fixture.driver.userId,
+      amountCents: 50_000,
+      assignmentId: fixture.assignment.id,
+      currency: "usd",
+      organizationId: fixture.driverMembership.organizationId
+    })
+    const paymentAudit = fixture.services.state.auditEvents
+      .filter((event) => event.action === "driver_payment_received")
+      .at(-1)
+
+    expect(receipt.assignment).toMatchObject({
+      driverPaymentReceivedAmountCents: 50_000,
+      driverPaymentReceivedCurrency: "USD"
+    })
+    expect(fixture.services.state.platformFeeEvents[0]).toMatchObject({
+      driverPayCents: 52_500,
+      feeBps: PLATFORM_FEE_BPS,
+      feeCents: 2_625
+    })
+    expect(paymentAudit?.metadata).toMatchObject({
+      amountCents: 50_000,
+      currency: "USD",
+      matchesExpected: false
+    })
+    expect(
+      fixture.services.state.notifications
+        .filter((notification) => notification.userId === fixture.hostBilling.userId)
+        .at(-1)?.body
+    ).toMatch(/differs from the accepted amount/i)
   })
 
   it("refuses anyone other than the assigned driver and any cancelled assignment", () => {
@@ -344,7 +397,9 @@ describe("a driver-confirmed payment receipt raises the platform fee", () => {
     expect(() =>
       fixture.services.confirmDriverPaymentReceived({
         actorUserId: fixture.hostBilling.userId,
+        amountCents: 52_500,
         assignmentId: fixture.assignment.id,
+        currency: "USD",
         organizationId: fixture.load.companyId
       })
     ).toThrow(/assigned driver/i)

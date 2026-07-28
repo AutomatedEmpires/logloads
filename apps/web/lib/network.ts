@@ -344,7 +344,11 @@ export interface NetworkView {
       hasEvidence: boolean
     }
     driverPayment: {
+      expectedPayAmountCents: number | null
+      expectedPayCurrency: string | null
       expectedPayLabel: string | null
+      matchesExpected: boolean | null
+      receivedPayLabel: string | null
       receivedAt: string | null
       sentAt: string | null
       status: "not_sent" | "sent" | "received"
@@ -1306,6 +1310,14 @@ export function buildNetworkView(
           document.tripId === trip.id &&
           ["scale_ticket", "load_slip", "delivery_record", "photo"].includes(document.type)
       )
+      const receivedPay =
+        assignment.driverPaymentReceivedAmountCents !== null &&
+        assignment.driverPaymentReceivedCurrency
+          ? {
+              amountCents: assignment.driverPaymentReceivedAmountCents,
+              currency: assignment.driverPaymentReceivedCurrency
+            }
+          : null
 
       return {
         assignmentId: trip.assignmentId,
@@ -1322,7 +1334,15 @@ export function buildNetworkView(
         },
         documents,
         driverPayment: {
+          expectedPayAmountCents: frozenDriverPay?.amountCents ?? null,
+          expectedPayCurrency: frozenDriverPay?.currency ?? null,
           expectedPayLabel: frozenDriverPay ? formatMoney(frozenDriverPay) : null,
+          matchesExpected:
+            frozenDriverPay && receivedPay
+              ? frozenDriverPay.amountCents === receivedPay.amountCents &&
+                frozenDriverPay.currency === receivedPay.currency
+              : null,
+          receivedPayLabel: receivedPay ? formatMoney(receivedPay) : null,
           receivedAt: assignment.driverPaymentReceivedAt ?? null,
           sentAt: assignment.driverPaymentSentAt ?? null,
           status: (
