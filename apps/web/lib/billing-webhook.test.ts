@@ -119,6 +119,33 @@ function webhookState(): { fee: PlatformFeeEvent; host: Organization; state: Log
   return { fee, host, state }
 }
 
+/** Provider facts that must agree before metadata can heal a lost binding. */
+function stripeInvoiceObject(
+  state: LogLoadsDatabaseState,
+  hostInvoiceId = INVOICE_ID,
+  stripeInvoiceId = "in_live"
+): Record<string, unknown> {
+  const invoice = state.hostInvoices.find((candidate) => candidate.id === hostInvoiceId)
+
+  if (!invoice) {
+    throw new Error(`fixture invoice ${hostInvoiceId} was not found`)
+  }
+
+  const profile = findHostBillingProfile(state, invoice.organizationId)
+
+  if (!profile?.stripeCustomerId) {
+    throw new Error(`fixture host ${invoice.organizationId} has no Stripe customer`)
+  }
+
+  return {
+    currency: "usd",
+    customer: profile.stripeCustomerId,
+    id: stripeInvoiceId,
+    metadata: { hostInvoiceId },
+    total: invoice.subtotalCents
+  }
+}
+
 /** Adds an older bill for the same host so cross-invoice event ordering is real. */
 function addSecondOpenInvoice(
   state: LogLoadsDatabaseState,
@@ -576,10 +603,7 @@ describe("invoice.payment_succeeded", () => {
     const { fee, state } = webhookState()
 
     harness(state, {
-      event: billingEvent("invoice.payment_succeeded", {
-        id: "in_live",
-        metadata: { hostInvoiceId: INVOICE_ID }
-      })
+      event: billingEvent("invoice.payment_succeeded", stripeInvoiceObject(state))
     })
 
     const response = await POST(webhookRequest())
@@ -611,9 +635,8 @@ describe("invoice.payment_succeeded", () => {
       billingEvent(
         "invoice.payment_failed",
         {
-          id: "in_live",
+          ...stripeInvoiceObject(state),
           last_finalization_error: { message: "Your card was declined." },
-          metadata: { hostInvoiceId: INVOICE_ID }
         },
         { id: "evt_failed" }
       ),
@@ -624,7 +647,7 @@ describe("invoice.payment_succeeded", () => {
     await handleStripeBillingEvent(
       billingEvent(
         "invoice.payment_succeeded",
-        { id: "in_live", metadata: { hostInvoiceId: INVOICE_ID } },
+        stripeInvoiceObject(state),
         { id: "evt_recovered" }
       ),
       { port: stripe.port, state: wired.access }
@@ -648,9 +671,8 @@ describe("invoice.payment_succeeded", () => {
       billingEvent(
         "invoice.payment_failed",
         {
-          id: "in_newer",
+          ...stripeInvoiceObject(state, INVOICE_ID, "in_newer"),
           last_finalization_error: { message: "The current card was declined." },
-          metadata: { hostInvoiceId: INVOICE_ID }
         },
         { createdAt: 1_780_000_500, id: "evt_z_newer_failure" }
       ),
@@ -660,7 +682,7 @@ describe("invoice.payment_succeeded", () => {
     await handleStripeBillingEvent(
       billingEvent(
         "invoice.payment_succeeded",
-        { id: "in_older", metadata: { hostInvoiceId: olderInvoice.id } },
+        stripeInvoiceObject(state, olderInvoice.id, "in_older"),
         { createdAt: 1_780_000_500, id: "evt_a_older_success" }
       ),
       { port: stripe.port, state: wired.access }
@@ -695,7 +717,7 @@ describe("invoice.payment_succeeded", () => {
 
     harness(state, {
       event: billingEvent("invoice.payment_succeeded", {
-        id: "in_live",
+        ...stripeInvoiceObject(state),
         metadata: { hostInvoiceId: MISSING_INVOICE_ID }
       })
     })
@@ -706,10 +728,7 @@ describe("invoice.payment_succeeded", () => {
 
   it("is a no-op on redelivery and keeps the first payment time", async () => {
     const { state } = webhookState()
-    const event = billingEvent("invoice.payment_succeeded", {
-      id: "in_live",
-      metadata: { hostInvoiceId: INVOICE_ID }
-    })
+    const event = billingEvent("invoice.payment_succeeded", stripeInvoiceObject(state))
 
     harness(state, { event })
     await POST(webhookRequest())
@@ -723,6 +742,31 @@ describe("invoice.payment_succeeded", () => {
     await expect(redelivered.json()).resolves.toEqual({ handled: "duplicate", received: true })
     expect(state.hostInvoices[0]?.paidAt).toBe(paidAt)
   })
+
+  it.each([
+    ["customer", { customer: "cus_not_the_billed_host" }],
+    ["currency", { currency: "cad" }],
+    ["total", { total: 1 }]
+  ] as const)(
+    "refuses to heal an unbound bill when the provider %s does not match",
+    async (_fact, mismatch) => {
+      const { state } = webhookState()
+
+      harness(state, {
+        event: billingEvent("invoice.payment_succeeded", {
+          ...stripeInvoiceObject(state),
+          ...mismatch
+        })
+      })
+
+      expect((await POST(webhookRequest())).status).toBe(500)
+      expect(state.hostInvoices[0]).toMatchObject({
+        paidAt: null,
+        status: "open",
+        stripeInvoiceId: null
+      })
+    }
+  )
 })
 
 describe("invoice.payment_failed", () => {
@@ -731,9 +775,8 @@ describe("invoice.payment_failed", () => {
 
     harness(state, {
       event: billingEvent("invoice.payment_failed", {
-        id: "in_live",
+        ...stripeInvoiceObject(state),
         last_finalization_error: { message: "Your card was declined." },
-        metadata: { hostInvoiceId: INVOICE_ID }
       })
     })
 
@@ -753,6 +796,29 @@ describe("invoice.payment_failed", () => {
     expect(hostBillingStatus(state, host.id)).not.toBe("attached")
   })
 
+  it("refuses a failed attempt whose provider facts do not match the unbound bill", async () => {
+    const { host, state } = webhookState()
+
+    harness(state, {
+      event: billingEvent("invoice.payment_failed", {
+        ...stripeInvoiceObject(state),
+        customer: "cus_not_the_billed_host",
+        last_finalization_error: { message: "Another customer's card was declined." }
+      })
+    })
+
+    expect((await POST(webhookRequest())).status).toBe(500)
+    expect(state.hostInvoices[0]).toMatchObject({
+      status: "open",
+      stripeInvoiceId: null
+    })
+    expect(findHostBillingProfile(state, host.id)).toMatchObject({
+      lastFailureAt: null,
+      lastFailureReason: null,
+      status: "attached"
+    })
+  })
+
   it("does not let an older failure replace a newer success for the same host", async () => {
     const { fee, host, state } = webhookState()
     const olderInvoice = addSecondOpenInvoice(state, host, fee)
@@ -762,7 +828,7 @@ describe("invoice.payment_failed", () => {
     await handleStripeBillingEvent(
       billingEvent(
         "invoice.payment_succeeded",
-        { id: "in_newer", metadata: { hostInvoiceId: INVOICE_ID } },
+        stripeInvoiceObject(state, INVOICE_ID, "in_newer"),
         { createdAt: 1_780_000_500, id: "evt_z_newer_success" }
       ),
       { port: stripe.port, state: wired.access }
@@ -772,9 +838,8 @@ describe("invoice.payment_failed", () => {
       billingEvent(
         "invoice.payment_failed",
         {
-          id: "in_older",
+          ...stripeInvoiceObject(state, olderInvoice.id, "in_older"),
           last_finalization_error: { message: "An old attempt failed." },
-          metadata: { hostInvoiceId: olderInvoice.id }
         },
         { createdAt: 1_780_000_500, id: "evt_a_older_failure" }
       ),
@@ -796,10 +861,7 @@ describe("invoice.payment_failed", () => {
     const { host, state } = webhookState()
 
     harness(state, {
-      event: billingEvent("invoice.payment_failed", {
-        id: "in_live",
-        metadata: { hostInvoiceId: INVOICE_ID }
-      })
+      event: billingEvent("invoice.payment_failed", stripeInvoiceObject(state))
     })
     await POST(webhookRequest())
 

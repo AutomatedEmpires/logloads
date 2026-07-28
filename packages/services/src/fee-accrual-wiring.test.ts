@@ -105,8 +105,9 @@ function forceSettleableState(
     currency: "USD",
     driverPayCents,
     hostFee: {
-      collectionState: "disabled_pending_legal_and_payment_approval",
+      collectionState: "accrues_monthly_in_arrears",
       feeCents: null,
+      providerCollectionState: "feature_gated",
       proposedRateBps: PLATFORM_FEE_BPS,
       rateBps: PLATFORM_FEE_BPS
     }

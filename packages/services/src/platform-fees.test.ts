@@ -142,8 +142,9 @@ function billableHaul(
     currency: "USD",
     driverPayCents,
     hostFee: {
-      collectionState: "disabled_pending_legal_and_payment_approval",
+      collectionState: "accrues_monthly_in_arrears",
       feeCents: null,
+      providerCollectionState: "feature_gated",
       proposedRateBps: PLATFORM_FEE_BPS,
       rateBps: PLATFORM_FEE_BPS
     }
@@ -417,8 +418,9 @@ describe("platform fee accrual", () => {
     assignment.termsSnapshot = {
       ...assignment.termsSnapshot,
       hostFee: {
-        collectionState: "disabled_pending_legal_and_payment_approval",
+        collectionState: "accrues_monthly_in_arrears",
         feeCents: null,
+        providerCollectionState: "feature_gated",
         proposedRateBps: 300,
         rateBps: 300
       }
@@ -443,8 +445,9 @@ describe("platform fee accrual", () => {
     missingAssignment.termsSnapshot = {
       ...missingAssignment.termsSnapshot,
       hostFee: {
-        collectionState: "disabled_pending_legal_and_payment_approval",
+        collectionState: "accrues_monthly_in_arrears",
         feeCents: null,
+        providerCollectionState: "feature_gated",
         proposedRateBps: PLATFORM_FEE_BPS
       }
     }
@@ -453,7 +456,29 @@ describe("platform fee accrual", () => {
       accruePlatformFee(missingState, { assignmentId: missingHaul.assignmentId })
     ).toMatchObject({
       outcome: "no_basis",
-      reason: expect.stringMatching(/authoritative platform-fee rate/i)
+      reason: expect.stringMatching(/active authoritative platform-fee terms/i)
+    })
+
+    const disabledState = freshState()
+    const disabledHaul = oneBillableHaul(disabledState, 52_500)
+    const disabledAssignment = disabledState.assignments.find(
+      (candidate) => candidate.id === disabledHaul.assignmentId
+    )!
+    disabledAssignment.termsSnapshot = {
+      ...disabledAssignment.termsSnapshot,
+      hostFee: {
+        collectionState: "disabled_pending_legal_and_payment_approval",
+        feeCents: null,
+        proposedRateBps: PLATFORM_FEE_BPS,
+        rateBps: PLATFORM_FEE_BPS
+      }
+    }
+
+    expect(
+      accruePlatformFee(disabledState, { assignmentId: disabledHaul.assignmentId })
+    ).toMatchObject({
+      outcome: "no_basis",
+      reason: expect.stringMatching(/active authoritative platform-fee terms/i)
     })
 
     const overrideState = freshState()

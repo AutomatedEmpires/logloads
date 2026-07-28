@@ -877,7 +877,8 @@ describe("planHostInvoiceCharge", () => {
     expect(plan.customerId).toBe(profile?.stripeCustomerId)
     expect(plan.paymentMethodId).toBe(profile?.defaultPaymentMethodId)
     expect(plan.description).toContain("June 2026")
-    expect(plan.description).toContain("5%")
+    expect(plan.description).toContain("completed loads only")
+    expect(plan.description).not.toMatch(/\b\d+(?:\.\d+)?%/)
     expect(plan.metadata.hostInvoiceId).toBe(INVOICE_ID)
   })
 

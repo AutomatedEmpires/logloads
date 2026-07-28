@@ -322,7 +322,14 @@ function frozenPlatformFeeBps(termsSnapshot: Record<string, unknown>): number | 
     return null
   }
 
-  const rateBps = (hostFee as Record<string, unknown>).rateBps
+  const acceptedHostFee = hostFee as Record<string, unknown>
+  const rateBps = acceptedHostFee.rateBps
+
+  // Legacy assignments explicitly said fee collection was disabled. A frozen
+  // number inside disabled terms is not authority to accrue a debt.
+  if (acceptedHostFee.collectionState !== "accrues_monthly_in_arrears") {
+    return null
+  }
 
   return (
     typeof rateBps === "number" &&
@@ -448,7 +455,7 @@ export function accruePlatformFee(
       assignmentId: assignment.id,
       outcome: "no_basis",
       reason:
-        "This assignment has no authoritative platform-fee rate frozen at host acceptance"
+        "This assignment has no active authoritative platform-fee terms frozen at host acceptance"
     }
   }
 

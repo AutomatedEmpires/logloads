@@ -1140,8 +1140,11 @@ function finalizeCapacityAssignment(
       fuelSurchargeCents: rate.fuelSurchargeCents,
       haulerOrganizationId: equipmentCombination?.organizationId ?? null,
       hostFee: {
-        collectionState: "disabled_pending_legal_and_payment_approval",
+        // The commercial obligation becomes active with accepted work. Actual
+        // provider cash collection remains a separate, founder-controlled gate.
+        collectionState: "accrues_monthly_in_arrears",
         feeCents: null,
+        providerCollectionState: "feature_gated",
         // Authoritative accepted-work rate. Accrual must read this exact value;
         // the global rate is only for commitments made after a future change.
         rateBps: PLATFORM_FEE_BPS,

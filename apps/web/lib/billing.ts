@@ -1257,7 +1257,10 @@ export function planHostInvoiceCharge(
 
   return {
     customerId: profile.stripeCustomerId,
-    description: `LogLoads platform fee — ${period} (5% of stated driver pay, completed loads only)`,
+    // One invoice can contain work accepted under different frozen rates. The
+    // amount and ledger rows are authoritative; provider copy must not claim
+    // that every line was earned at today's headline rate.
+    description: `LogLoads platform fee — ${period} (completed loads only)`,
     kind: "charge",
     metadata: {
       hostInvoiceId: invoice.id,
@@ -2124,6 +2127,54 @@ function resolveHostInvoiceForEvent(
   }
 }
 
+/**
+ * Validates the provider facts before metadata is allowed to heal a lost local
+ * invoice binding.
+ *
+ * A valid Stripe signature proves who sent the event, not that arbitrary
+ * metadata names the right LogLoads bill. The same immutable facts checked by
+ * polling reconciliation must match here: billed customer, currency and total.
+ * Once the binding already exists, the stored Stripe id is the authority and
+ * `markHostInvoiceIssued` enforces that it can never be replaced.
+ */
+function unboundHostInvoiceEventProblem(
+  state: LogLoadsDatabaseState,
+  invoice: HostInvoice,
+  event: StripeBillingEvent
+): string | null {
+  if (invoice.stripeInvoiceId) {
+    return null
+  }
+
+  const stripeInvoiceId = readString(event.object, "id")
+  const profile = findHostBillingProfile(state, invoice.organizationId)
+  const customerId = readReferenceId(event.object, "customer")
+  const currency = readString(event.object, "currency")
+  const total = event.object.total
+
+  if (!stripeInvoiceId) {
+    return "An unbound platform-fee invoice event named no Stripe invoice id"
+  }
+
+  if (!profile?.stripeCustomerId) {
+    return "An unbound platform-fee invoice event named a host with no Stripe customer"
+  }
+
+  if (customerId !== profile.stripeCustomerId) {
+    return "The Stripe invoice customer does not match the LogLoads bill"
+  }
+
+  if (currency?.toUpperCase() !== "USD") {
+    return "The Stripe invoice currency does not match the USD LogLoads bill"
+  }
+
+  if (!Number.isSafeInteger(total) || total !== invoice.subtotalCents) {
+    return "The Stripe invoice total does not match the LogLoads bill"
+  }
+
+  return null
+}
+
 async function handleInvoicePaymentSucceeded(
   event: StripeBillingEvent,
   deps: BillingEventDeps
@@ -2143,6 +2194,12 @@ async function handleInvoicePaymentSucceeded(
 
     if (resolved.invoice.status === "void") {
       return eventResult(event, "ignored", "The LogLoads platform-fee invoice was voided")
+    }
+
+    const unboundProblem = unboundHostInvoiceEventProblem(draft.state, resolved.invoice, event)
+
+    if (unboundProblem) {
+      return eventResult(event, "unresolved", unboundProblem)
     }
 
     if (resolved.stripeInvoiceId) {
@@ -2225,6 +2282,12 @@ async function handleInvoicePaymentFailed(
             "This Stripe invoice names a LogLoads bill that is not in the book"
           )
         : eventResult(event, "ignored", "Not a LogLoads platform-fee invoice")
+    }
+
+    const unboundProblem = unboundHostInvoiceEventProblem(draft.state, resolved.invoice, event)
+
+    if (unboundProblem) {
+      return eventResult(event, "unresolved", unboundProblem)
     }
 
     // The bill stays open. A declined attempt is not an uncollectible bill —
