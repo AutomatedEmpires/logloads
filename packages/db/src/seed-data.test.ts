@@ -35,6 +35,7 @@ describe("founder demo operating states", () => {
   it("reconciles the canonical campaign ledger to its real assignment and slot history", () => {
     const state = createInMemoryDatabase()
     const loadId = "cccccccc-cccc-4ccc-8ccc-ccccccccccc3"
+    const load = state.loadPostings.find((candidate) => candidate.id === loadId)
     const assignments = state.assignments.filter((assignment) =>
       assignment.loadPostingId === loadId && !["cancelled", "declined"].includes(assignment.status)
     )
@@ -53,7 +54,12 @@ describe("founder demo operating states", () => {
       totalTruckloads: 4
     })
     expect(openSlotCapacity).toBe(1)
-    expect(offer).toMatchObject({ offeredTruckloads: 1, status: "sent" })
+    expect(offer).toMatchObject({
+      offeredTruckloads: 1,
+      status: "sent",
+      termsSnapshot: { driverPayCents: load?.driverPayCents }
+    })
+    expect(load?.driverPayCents).toBeGreaterThan(0)
   })
 
   it("carries one posting that is genuinely a series, reconciled to the slots that make it one", () => {
@@ -135,7 +141,12 @@ describe("founder demo operating states", () => {
       throw new Error("The partial direct-offer seed is incomplete")
     }
 
-    expect(partial).toMatchObject({ offeredTruckloads: 2, status: "sent" })
+    expect(partial).toMatchObject({
+      offeredTruckloads: 2,
+      status: "sent",
+      termsSnapshot: { driverPayCents: load.driverPayCents }
+    })
+    expect(load.driverPayCents).toBeGreaterThan(0)
     expect(partialClaims).toHaveLength(1)
     expect(partial.respondedAt).toBe(claim.assignedAt)
     expect(partial.updatedAt).toBe(claim.assignedAt)

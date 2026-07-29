@@ -21,6 +21,7 @@ describe("logloads services", () => {
       dispatcherProfileId: "55555555-5555-4555-8555-555555555551",
       loaderProfileId: "55555555-5555-4555-8555-555555555552",
       pickupLandingId: "66666666-6666-4666-8666-666666666661",
+      driverPayCents: 52_500,
       dropoffMillId: "99999999-9999-4999-8999-999999999991",
       routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
       rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
@@ -63,6 +64,7 @@ describe("logloads services", () => {
         dispatcherProfileId: "55555555-5555-4555-8555-555555555551",
         loaderProfileId: null,
         pickupLandingId: "66666666-6666-4666-8666-666666666661",
+        driverPayCents: 52_500,
         dropoffMillId: "99999999-9999-4999-8999-999999999991",
         routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
         rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
@@ -458,8 +460,10 @@ describe("logloads services", () => {
     expect(result.assignment.status).toBe("accepted")
     expect(result.assignment.termsSnapshot).toMatchObject({
       hostFee: {
-        collectionState: "disabled_pending_legal_and_payment_approval",
+        collectionState: "accrues_monthly_in_arrears",
         feeCents: null,
+        providerCollectionState: "feature_gated",
+        rateBps: 500,
         proposedRateBps: 500
       },
       paymentMode: "off_platform"
@@ -473,6 +477,53 @@ describe("logloads services", () => {
     expect(services.state.notifications.find((notification) =>
       notification.relatedEntityId === assignment.id && notification.userId === "22222222-2222-4222-8222-222222222221"
     )?.type).toBe("assignment_confirmed")
+  })
+
+  it("freezes requested pay and refuses approval after the host changes it", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const assignment = requestJune(services, {
+      actorUserId: "22222222-2222-4222-8222-222222222221",
+      organizationId: "33333333-3333-4333-8333-333333333331",
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+      truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd4",
+      driverProfileId: "44444444-4444-4444-8444-444444444441",
+      truckProfileId: "77777777-7777-4777-8777-777777777771",
+      trailerProfileId: "88888888-8888-4888-8888-888888888881"
+    })
+    const load = services.state.loadPostings.find(
+      (candidate) => candidate.id === assignment.loadPostingId
+    )!
+    const requestedPay = assignment.termsSnapshot.driverPayCents
+    const beforeApproval = structuredClone(services.state)
+
+    expect(requestedPay).toBe(load.driverPayCents)
+    expect(assignment.termsSnapshot.currency).toBe("USD")
+
+    load.driverPayCents = (load.driverPayCents ?? 0) + 10_000
+    load.updatedAt = "2026-06-05T13:00:00.000Z"
+
+    expect(() =>
+      services.approveCapacityRequest({
+        actorUserId: "22222222-2222-4222-8222-222222222224",
+        organizationId: "33333333-3333-4333-8333-333333333332",
+        assignmentId: assignment.id
+      })
+    ).toThrow(/driver must request again/i)
+
+    expect(
+      services.state.assignments.find((candidate) => candidate.id === assignment.id)
+    ).toMatchObject({
+      status: "requested",
+      termsSnapshot: { driverPayCents: requestedPay }
+    })
+    expect(
+      services.state.tripsV2.some((candidate) => candidate.assignmentId === assignment.id)
+    ).toBe(false)
+    expect(
+      services.state.truckSlots.find((candidate) => candidate.id === assignment.truckSlotId)
+    ).toEqual(
+      beforeApproval.truckSlots.find((candidate) => candidate.id === assignment.truckSlotId)
+    )
   })
 
   it("does not consume an assignment or slot when approval validation fails", () => {

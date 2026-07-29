@@ -38,10 +38,10 @@ const PLAN_DEFINITIONS: Record<PlanProduct, PlanDefinition> = {
     summary: "One operating account for the trucks and drivers you dispatch."
   },
   landing_operations: {
-    defaultFeatures: ["Load publishing", "Live landing board", "Preferred carrier tools"],
+    defaultFeatures: ["Load publishing", "Live landing board", "Preferred carrier tools", "Drivers always free"],
     name: "Host",
-    priceLine: "Free launch pilot",
-    summary: "Post without a monthly fee. The proposed 5% host fee is not active."
+    priceLine: "5% of driver pay",
+    summary: "No monthly fee and no charge to post. You are billed 5% of what you pay the driver, on completed loads only."
   }
 }
 
@@ -201,8 +201,14 @@ function toPlanView(entitlement: Entitlement): PlanView {
     ? {
         actionKind: null,
         actionLabel: null,
-        statusDetail: "No host fee or freight settlement is active. Any future 5% model requires a separate approved release.",
-        statusLine: "Launch pilot — included",
+        // No monthly fee and no charge to post; the 5% applies only once a driver
+        // has completed the haul. It is added to what the host owes, never taken
+        // out of the driver's pay — the driver receives exactly the figure the
+        // host stated. LogLoads bills the host for its own fee and nothing else:
+        // driver payment moves host to driver directly and does not pass through
+        // this platform.
+        statusDetail: "5% of the driver pay you state, charged only on completed loads and added on top — never deducted from the driver. Billed monthly to the card on file.",
+        statusLine: "No monthly fee — 5% of driver pay on completed loads",
         statusTone: "success"
       } satisfies PlanStatusView
     : planStatusView(entitlement.status, entitlement.currentPeriodEndsAt)

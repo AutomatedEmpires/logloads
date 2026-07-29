@@ -8,7 +8,7 @@ import { expect, test, type Page } from "@playwright/test"
 
 async function signIn(page: Page, email: string) {
   await page.goto("/sign-in")
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
   await page.fill('input[name="email"]', email)
   await page.click('button[type="submit"]')
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 30_000 })
@@ -18,7 +18,7 @@ test.describe.serial("operating loop", () => {
   test("driver requests capacity on a load that fits", async ({ page }) => {
     await signIn(page, "hank@northpine.example")
     await page.goto("/driver/loads")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     const cards = page.locator("a.load-card-v3")
     const cardCount = await cards.count()
@@ -27,7 +27,7 @@ test.describe.serial("operating loop", () => {
 
     for (let index = 0; index < Math.min(cardCount, 5) && !requested; index += 1) {
       await page.goto("/driver/loads")
-      await page.waitForLoadState("networkidle")
+      await page.waitForLoadState("domcontentloaded")
 
       // Click can land in the hydration gap where the router is not attached
       // yet; retry until the URL actually changes to the load detail route.
@@ -36,7 +36,7 @@ test.describe.serial("operating loop", () => {
         await page.waitForURL(/\/driver\/loads\/[^/?]+/, { timeout: 3_000 })
       }).toPass({ timeout: 20_000 })
 
-      await page.waitForLoadState("networkidle")
+      await page.waitForLoadState("domcontentloaded")
 
       // A prior project run may already hold this load in any assignment state
       // (Requested, Assigned to you, At the landing, ...).
@@ -84,7 +84,7 @@ test.describe.serial("operating loop", () => {
       // the only compatible seeded haul. Committed work correctly disappears
       // from Available Loads and moves to Schedule, so verify it there.
       await page.goto("/driver/schedule")
-      await page.waitForLoadState("networkidle")
+      await page.waitForLoadState("domcontentloaded")
       requested = await page.locator(".schedule-request-card, .trip-card").first().isVisible().catch(() => false)
     }
 
@@ -94,9 +94,12 @@ test.describe.serial("operating loop", () => {
   test("host sees the capacity request and approves it", async ({ page }) => {
     await signIn(page, "cole@summit.example")
     await page.goto("/host/command")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
-    const approvalRow = page.locator(".host-approval-row").first()
+    // The seed also carries an intentionally blocked request from Cole, whose
+    // incomplete credentials must continue to be refused. This journey created
+    // Hank's request, so address that row instead of assuming queue order.
+    const approvalRow = page.locator(".host-approval-row").filter({ hasText: "Hank Harlan" }).first()
     const hasApprove = await approvalRow.getByRole("button", { name: "Review approval" }).isVisible().catch(() => false)
 
     if (hasApprove) {
@@ -136,7 +139,7 @@ test.describe.serial("operating loop", () => {
   test("driver progresses the active trip one step", async ({ page }) => {
     await signIn(page, "hank@northpine.example")
     await page.goto("/driver/schedule")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     const advance = page.locator("button.advance-button").first()
 
@@ -162,20 +165,26 @@ test.describe.serial("operating loop", () => {
 
     await signIn(page, "hank@northpine.example")
     await page.goto("/driver/messages")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
+    const inboxCount = page.locator(".messages-list-pane__header strong")
+    await expect(inboxCount).toBeVisible()
+    const conversationCount = Number.parseInt((await inboxCount.innerText()).split(" ")[0] ?? "0", 10)
     const existingThread = page.locator(".thread-item").first()
 
-    if (await existingThread.isVisible().catch(() => false)) {
+    if (conversationCount > 0) {
+      await expect(existingThread).toBeVisible()
       const href = await existingThread.getAttribute("href")
 
       expect(href, "an existing conversation should expose a navigable thread URL").toBeTruthy()
       await page.goto(href!)
-      await page.waitForLoadState("networkidle")
+      await page.waitForLoadState("domcontentloaded")
       await expect(page.locator('textarea[aria-label="Message"]')).toBeVisible({ timeout: 15_000 })
     } else {
       await page.getByRole("button", { name: "New message" }).click()
-      await page.locator(".messages-new__people button").first().click()
+      const recipient = page.locator(".messages-new__people button").first()
+      await expect(recipient).toBeVisible({ timeout: 15_000 })
+      await recipient.click()
       await page.locator(".messages-new__form textarea").fill(uniqueMessage)
       await page.locator('.messages-new__form button[type="submit"]').click()
       await page.waitForURL(/thread=/, { timeout: 15_000 })

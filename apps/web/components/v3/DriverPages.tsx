@@ -6,6 +6,7 @@ import { Badge, Icon } from "@logloads/ui"
 import type { DriverAvailabilitySummary } from "@/lib/driver-data"
 import type { NetworkLoadView, NetworkView } from "@/lib/network"
 import type { VerificationRecordView } from "@/lib/verification-data"
+import { payHeadline, presentPay } from "@/lib/pay-display"
 import { formatHuman, pluralize, tripStatusLabel } from "@/lib/v3-shared"
 import { LocalTime, RelationshipGrid } from "./Common"
 import { ReputationChip, TripReviewForm } from "./Reputation"
@@ -15,6 +16,7 @@ import {
   AvailabilityQuickSet,
   CancelHaulControl,
   CompletionForm,
+  DriverPaymentReceiptControl,
   DriverEconomicsForm,
   EquipmentStatusToggle,
   FeatureTruckPhotoToggle,
@@ -475,6 +477,17 @@ function TripCard({ mediaReady, network, trip }: { mediaReady: boolean; network:
           ) : null}
         </>
       ) : null}
+      {trip.completion.status === "confirmed" && isOwnHaul ? (
+        <DriverPaymentReceiptControl
+          assignmentId={trip.assignmentId}
+          expectedPayAmountCents={trip.driverPayment.expectedPayAmountCents}
+          expectedPayCurrency={trip.driverPayment.expectedPayCurrency}
+          expectedPayLabel={trip.driverPayment.expectedPayLabel}
+          matchesExpected={trip.driverPayment.matchesExpected}
+          receivedPayLabel={trip.driverPayment.receivedPayLabel}
+          status={trip.driverPayment.status}
+        />
+      ) : null}
       {trip.reviewable ? (
         trip.reviewable.alreadyReviewed ? (
           <p className="review-done">
@@ -501,7 +514,7 @@ function RequestedHaulCard({ load }: { load: NetworkLoadView }) {
       <header>
         <div>
           <span className="card-kicker">{load.landing.city} to {load.destination.name}</span>
-          <strong>{load.economics.grossLabel ? `${load.economics.grossLabel} est. gross` : load.payLabel}</strong>
+          <strong>{payHeadline(load)}</strong>
         </div>
         <Badge tone={isOffer ? "info" : "warning"}>{isOffer ? "Offered to you" : "Host deciding"}</Badge>
       </header>
@@ -528,7 +541,7 @@ function DecisionHaulCard({ load }: { load: NetworkLoadView }) {
       <header>
         <div>
           <span className="card-kicker">{load.landing.city} to {load.destination.name}</span>
-          <strong>{load.economics.grossLabel ? `${load.economics.grossLabel} est. gross` : load.payLabel}</strong>
+          <strong>{payHeadline(load)}</strong>
         </div>
         <Badge tone="info">Not selected</Badge>
       </header>
@@ -944,8 +957,8 @@ export function DriverLoadDetail({ account, loadId, network }: DriverPageProps &
               <p className="eyebrow">{load.landing.city} to {load.destination.name} · {load.sourceName}</p>
               <h1>{load.title}</h1>
               <div className="load-decision-lead">
-                <strong>{load.economics.grossLabel ? `${load.economics.grossLabel} est. gross` : load.payLabel}</strong>
-                {load.economics.grossLabel ? <span>Base {load.payLabel} · {load.fuelSurchargeLabel}</span> : null}
+                <strong>{payHeadline(load)}</strong>
+                {presentPay(load).estimateNote ? <span>{presentPay(load).estimateNote}</span> : null}
                 <span>{load.scheduleLabel}</span>
                 <span>{load.route.distanceMiles.toFixed(0)} miles</span>
                 <span>{load.capacity.remaining} of {load.capacity.total} hauls open</span>

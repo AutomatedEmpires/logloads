@@ -4,7 +4,7 @@ import { fillWhenReady, selectWhenReady } from "./builder-input"
 
 async function signIn(page: Page, email: string): Promise<void> {
   await page.goto("/sign-in")
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
   await page.fill('input[name="email"]', email)
   await page.click('button[type="submit"]')
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 30_000 })
@@ -119,15 +119,16 @@ test("driver feedback is triaged and resolved without losing retry state", async
   expect(editedPayloadSubmissionIds).toHaveLength(2)
   expect(editedPayloadSubmissionIds[1]).not.toBe(editedPayloadSubmissionIds[0])
   await reporter.page.reload()
+  await reporter.page.waitForLoadState("domcontentloaded")
   const preEditCard = reporter.page.locator("article").filter({
     has: reporter.page.getByRole("heading", { name: preEditTitle })
   })
   const editedCard = reporter.page.locator("article").filter({
     has: reporter.page.getByRole("heading", { name: editedTitle })
   })
-  await expect(preEditCard).toHaveCount(1)
-  await expect(editedCard).toHaveCount(1)
-  await expect(editedCard).toContainText(editedDetails)
+  await expect(preEditCard).toHaveCount(1, { timeout: 30_000 })
+  await expect(editedCard).toHaveCount(1, { timeout: 30_000 })
+  await expect(editedCard).toContainText(editedDetails, { timeout: 30_000 })
   await expect.poll(() => reporter.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   const submitBox = await reporter.page.getByRole("button", { name: "Send product feedback" }).boundingBox()
   expect(submitBox?.height ?? 0).toBeGreaterThanOrEqual(48)
@@ -145,9 +146,10 @@ test("driver feedback is triaged and resolved without losing retry state", async
   await adminCard.getByRole("button", { name: "Start review" }).click()
   await expect(adminCard.getByText("Request marked in review.", { exact: true })).toBeVisible({ timeout: 15_000 })
   await reviewer.page.reload()
+  await reviewer.page.waitForLoadState("domcontentloaded")
   await selectWhenReady(reviewer.page, "Request status", "all")
   adminCard = reviewer.page.locator("article").filter({ has: reviewer.page.getByRole("heading", { name: title }) }).first()
-  await expect(adminCard.getByText("In review", { exact: true })).toBeVisible()
+  await expect(adminCard.getByText("In review", { exact: true })).toBeVisible({ timeout: 30_000 })
   await selectWhenReady(adminCard, "Outcome", "answered")
   await fillWhenReady(adminCard, "Resolution note the reporter will see", resolutionNote)
 

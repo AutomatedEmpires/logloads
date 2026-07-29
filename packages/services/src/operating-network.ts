@@ -9,11 +9,15 @@ import {
   canTransitionAssignmentStatus,
   canTransitionAssignmentStatusV2,
   canTransitionLoadPostingStatus,
+  PLATFORM_FEE_BPS,
   evaluateLoadCompatibility,
+  formatMoney,
   mediaReferenceSchema,
+  moneySchema,
   notificationSchema,
   organizationRoleCan,
   PRE_TRIP_INSPECTION_CHECKLIST,
+  readFrozenDriverPay,
   transitionAssignmentStatus,
   transitionLoadPostingStatus,
   transitionTruckSlotStatus,
@@ -25,8 +29,10 @@ import {
   truckSlotSchema,
   type Assignment,
   type AssignmentStatus,
+  type CredentialKind,
   type DeliveredQuantity,
   type DirectOffer,
+  type DriverCredential,
   type HaulException,
   type FutureAvailability,
   type LoadPosting,
@@ -48,6 +54,7 @@ import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { declineAssignment, requestAssignment } from "./assignments"
 import { upsertAvailabilityWindow } from "./availability"
+import { driverCredentialGate, hostCredentialSummary } from "./driver-credentials"
 import {
   applyHaulCompletionConfirmation,
   applyHaulCompletionDispute,
@@ -58,6 +65,7 @@ import {
   requiredCompletionEvidence
 } from "./haul-completion"
 import { createLoadPosting, parsePublishModes, provisionLoadCapacity } from "./loads"
+import { accruePlatformFee, type AccruePlatformFeeResult } from "./platform-fees"
 import {
   buildAssignmentRoutePack,
   findAssignmentRoutePack,
@@ -691,6 +699,155 @@ function findPostingDispatcher(state: LogLoadsDatabaseState, load: LoadPosting) 
   )
 }
 
+/**
+ * ── The credential gate on taking work ────────────────────────────────────────
+ *
+ * The founder made four records mandatory before a driver may accept ANY load —
+ * insurance, CDL, truck, trailer — and made the review decision BINDING, so
+ * `pending`, `denied` and `more_info_required` all block exactly as hard as an
+ * empty vault, and an expired record stops counting.
+ *
+ * `driverCredentialGate` is the sole authority on whether the vault is complete;
+ * nothing below re-decides validity. What lives here is the two things the
+ * operating network owes the parties: a refusal a driver can act on, and the
+ * summary the host keeps.
+ */
+
+/**
+ * Why one mandatory kind is not satisfied, in words a driver can act on.
+ *
+ * PRESENTATION ONLY. The gate has already decided this kind is not satisfied;
+ * this explains a refusal rather than making one, so it can neither widen nor
+ * narrow what counts as valid.
+ *
+ * EVERY applicable fact is reported, not the first one found. A driver whose
+ * certificate lapsed in January and whose renewal is still in review is told both
+ * — "expired 31 Jan; awaiting review" says the cover is gone AND that there is
+ * nothing further for them to send, and either half alone would send them to do
+ * the wrong thing.
+ */
+function credentialBlockReason(
+  held: readonly DriverCredential[],
+  kind: CredentialKind,
+  at: string
+): string {
+  const ofKind = held.filter((credential) => credential.kind === kind)
+
+  if (ofKind.length === 0) {
+    return "not submitted"
+  }
+
+  let lapsedIso: string | null = null
+  let lapsedAt = Number.NEGATIVE_INFINITY
+  let moreInfoRequested = false
+  let denied = false
+  let awaitingReview = false
+
+  for (const credential of ofKind) {
+    if (credential.status === "more_info_required") moreInfoRequested = true
+    if (credential.status === "denied") denied = true
+    if (credential.status === "pending") awaitingReview = true
+
+    // An approved record the gate still refuses is either missing its document or
+    // carries an expiry nothing can read. Neither is named: the row does not say
+    // which, and a message that guessed would send the driver to fix the wrong
+    // thing. They fall through to the closing return instead.
+    if (credential.status !== "approved" || !credential.documentMedia || !credential.expiresOn) {
+      continue
+    }
+
+    const expiresAt = Date.parse(credential.expiresOn)
+
+    if (Number.isNaN(expiresAt)) {
+      continue
+    }
+
+    // Compared as instants, never as strings: the same moment has several valid
+    // ISO spellings, so a lexicographic "latest" would pick the wrong record.
+    if (expiresAt > lapsedAt) {
+      lapsedAt = expiresAt
+      lapsedIso = credential.expiresOn
+    }
+  }
+
+  const reasons: string[] = []
+
+  // The furthest expiry among the driver's approved records of this kind. The
+  // gate refused the kind, so that instant has already passed — naming it tells
+  // the driver exactly which renewal they owe. Guarded against `at` anyway: a
+  // record still in date would mean the gate and this function disagree, and
+  // saying "expired" about a live certificate would be the worse of the two lies.
+  if (lapsedIso !== null && lapsedAt <= Date.parse(at)) {
+    reasons.push(`expired ${lapsedIso}`)
+  }
+
+  if (moreInfoRequested) reasons.push("more evidence requested")
+  if (denied) reasons.push("not approved")
+  if (awaitingReview) reasons.push("awaiting review")
+
+  // Reached when a record is on file that the gate refuses for a reason the row
+  // cannot state. Says exactly that rather than inventing a cause.
+  return reasons.length > 0 ? reasons.join("; ") : "on file but not currently valid"
+}
+
+/**
+ * Refuses a driver whose vault is not complete and current, naming every kind
+ * and why.
+ *
+ * A bare "not eligible" is useless to somebody sitting in a truck, so the
+ * message enumerates the kinds in schema order with a reason each. Written as an
+ * early return and an explicit throw rather than `assertCondition` so the reason
+ * strings are never built on the path where the driver is cleared.
+ *
+ * Kinds are named with the schema's own values (`insurance`, `cdl`, `truck`,
+ * `trailer`) rather than a hand-written label map, so a kind added to the
+ * contract appears here without anybody remembering to translate it.
+ */
+function assertDriverCredentialsAllowAcceptance(
+  state: LogLoadsDatabaseState,
+  driverProfileId: string,
+  at: string
+): void {
+  const gate = driverCredentialGate(state, driverProfileId, at)
+
+  if (gate.satisfied) {
+    return
+  }
+
+  const held = state.driverCredentials.filter(
+    (credential) => credential.driverProfileId === driverProfileId
+  )
+  const detail = gate.missing
+    .map((kind) => `${kind} (${credentialBlockReason(held, kind, at)})`)
+    .join(", ")
+
+  throw new Error(
+    `This driver cannot take a load until their credential vault is complete and current: ${detail}`
+  )
+}
+
+/**
+ * What travels to the host with the acceptance.
+ *
+ * `hostCredentialSummary` is the projection — status, expiry and the truck and
+ * trailer photos, built field by field through `hostVisibleCredential`, which has
+ * no expression for the CDL image, the insurance certificate, the policy or
+ * licence number or the review notes. It is reused rather than rebuilt here for
+ * the same reason the gate is: a second host-facing projection is a second place
+ * to leak from, and the two would drift the first time one was edited.
+ *
+ * `checkedAt` is added because the snapshot's whole value is being a record of
+ * what was true AT ACCEPTANCE. Without the instant, a later reader cannot tell
+ * whether an expiry printed here was in the future when the host agreed.
+ */
+function acceptanceCredentialSummary(
+  state: LogLoadsDatabaseState,
+  driverProfileId: string,
+  at: string
+) {
+  return { ...hostCredentialSummary(state, driverProfileId, at), checkedAt: at }
+}
+
 function requestCapacityWithPolicyInternal(
   state: LogLoadsDatabaseState,
   input: CapacityRequestInput,
@@ -791,10 +948,37 @@ function requestCapacityWithPolicyInternal(
     `Equipment is not eligible for this load: ${compatibility.hardFailures[0] ?? "compatibility failed"}`
   )
 
+  // Deliberately last of the assertions and deliberately BEFORE requestAssignment.
+  //
+  // Last, because the equipment and haul-window messages above are the ones a
+  // dispatcher already reads for a request that fails several rules at once, and
+  // moving the vault message in front of them would change what existing callers
+  // are told about an unrelated failure.
+  //
+  // Before the write, because everything that consumes capacity happens below:
+  // requestAssignment reserves the slot and mints the row, and the capacity
+  // ledger and load status follow. A refusal here therefore reserves nothing,
+  // consumes nothing and creates nothing — which is the only way this holds under
+  // the single-document compare-and-swap, where a check that ran outside the
+  // mutation would be a check against a state somebody else has already replaced.
+  //
+  // Evaluated at `requestedAt` — the same clock the haul window was checked
+  // against, never a second `nowIso()` that could straddle an expiry.
+  assertDriverCredentialsAllowAcceptance(state, parsed.driverProfileId, requestedAt)
+
+  const requestedTerms = directOfferTermsSnapshot(load, postingSources)
+  assertCondition(
+    Boolean(readFrozenDriverPay(requestedTerms)),
+    "This load has no stated driver pay; ask the host to update it before requesting"
+  )
+
   const assignment = requestAssignment(state, {
     ...parsed,
     directOfferId: options.directOfferId ?? null,
-    termsSnapshot: {}
+    // What the driver requested, captured before the host can edit the posting.
+    // Approval below compares this snapshot with the then-current terms and
+    // refuses drift instead of silently binding the driver to a new pay amount.
+    termsSnapshot: requestedTerms
   })
 
   if (capacity) {
@@ -895,11 +1079,42 @@ function finalizeCapacityAssignment(
     "The requested equipment combination was not found"
   )
   const { rate, route } = postingSources
+  if (options.source === "host_approval") {
+    const requestedPay = readFrozenDriverPay(assignment.termsSnapshot)
+
+    assertCondition(
+      Boolean(
+        requestedPay &&
+          requestedPay.amountCents === load.driverPayCents &&
+          requestedPay.currency === postingSources.rate.baseRate.currency.toUpperCase()
+      ),
+      "Driver pay changed after the driver requested this load; the driver must request again"
+    )
+  }
   const slot = assertFound(
     state.truckSlots.find((candidate) => candidate.id === assignment.truckSlotId),
     `Truck slot ${assignment.truckSlotId} was not found`
   )
   const timestamp = nowIso()
+  // Re-checked at acceptance, not only at request.
+  //
+  // Acceptance is the moment the founder's rule binds, and it is a different
+  // moment from the request: a vault that was complete when the driver asked can
+  // have lapsed by the time the host approves, and an expired credential must
+  // stop being valid rather than stay valid because it was valid once.
+  //
+  // It is also the only guard standing on `requestAssignment`, which is exported
+  // unguarded and can mint a `requested` row with no vault at all. Because every
+  // path to `accepted` passes through here, nothing can reach `accepted` without
+  // a complete, current vault — see the handoff note on that writer.
+  //
+  // Placed before the first mutation below, so a refusal leaves the assignment,
+  // the slot, the route pack, the trip and the audit trail untouched.
+  assertDriverCredentialsAllowAcceptance(state, assignment.driverProfileId, timestamp)
+  // What the host keeps. Captured here rather than looked up when the host opens
+  // the load, so the record is what was true AT ACCEPTANCE — a live lookup would
+  // quietly rewrite history every time a credential was renewed or lapsed.
+  const driverCredentials = acceptanceCredentialSummary(state, assignment.driverProfileId, timestamp)
   const offeredStatus = assignment.status === "requested"
     ? transitionAssignmentStatus("requested", "offered")
     : assignment.status
@@ -914,14 +1129,26 @@ function finalizeCapacityAssignment(
       acceptedAt: timestamp,
       baseRateCents: rate.baseRate.amountCents,
       currency: rate.baseRate.currency,
+      // Status, expiry and truck/trailer photos only. The CDL image, the
+      // insurance certificate, the policy and licence numbers and the review
+      // notes are not withheld by convention here — `hostVisibleCredential` has
+      // no field for any of them, so they cannot reach this snapshot at all.
+      driverCredentials,
+      driverPayCents: load.driverPayCents ?? null,
       estimatedDistanceMiles: route.estimatedDistanceMiles,
       estimatedTonsPerLoad: load.estimatedTonsPerLoad ?? null,
       fuelSurchargeCents: rate.fuelSurchargeCents,
       haulerOrganizationId: equipmentCombination?.organizationId ?? null,
       hostFee: {
-        collectionState: "disabled_pending_legal_and_payment_approval",
+        // The commercial obligation becomes active with accepted work. Actual
+        // provider cash collection remains a separate, founder-controlled gate.
+        collectionState: "accrues_monthly_in_arrears",
         feeCents: null,
-        proposedRateBps: 500
+        providerCollectionState: "feature_gated",
+        // Authoritative accepted-work rate. Accrual must read this exact value;
+        // the global rate is only for commitments made after a future change.
+        rateBps: PLATFORM_FEE_BPS,
+        proposedRateBps: PLATFORM_FEE_BPS
       },
       hostOrganizationId: load.companyId,
       loadPostingId: load.id,
@@ -1880,6 +2107,10 @@ export function progressTripStatus(
       `Load posting ${trip.loadPostingId} was not found`
     )
     cancellationSide = assertCancellationAuthority(state, context, assignment, load).side
+    assertCondition(
+      trip.completionStatus !== "confirmed",
+      "This delivery is confirmed and cannot be cancelled"
+    )
   }
 
   // Validate the state-machine edge before applying step-specific
@@ -2178,7 +2409,11 @@ export function settleHaulCompletion(
     "trip",
     trip.id,
     input.decision === "confirm" ? "haul_completion_confirmed" : "haul_completion_disputed",
-    { assignmentId: assignment.id, previousStatus: result.previousStatus, reason: input.reason ?? null }
+    {
+      assignmentId: assignment.id,
+      previousStatus: result.previousStatus,
+      reason: input.reason ?? null
+    }
   )
 
   const driver = state.driverProfiles.find((profile) => profile.id === assignment.driverProfileId)
@@ -2197,6 +2432,232 @@ export function settleHaulCompletion(
   }
 
   return { trip: result.trip }
+}
+
+export interface DriverPaymentActionInput {
+  actorUserId?: string
+  assignmentId: string
+  organizationId?: string
+}
+
+export interface ConfirmDriverPaymentReceivedInput extends DriverPaymentActionInput {
+  amountCents: number
+  currency: string
+}
+
+export function markDriverPaymentSent(
+  state: LogLoadsDatabaseState,
+  input: DriverPaymentActionInput
+): { assignment: Assignment; changed: boolean } {
+  const context = getContextForInput(state, input)
+  assertOrganizationAction(context, "manage_billing")
+
+  const assignment = assertFound(
+    state.assignments.find((candidate) => candidate.id === input.assignmentId),
+    `Assignment ${input.assignmentId} was not found`
+  )
+  const load = assertFound(
+    state.loadPostings.find((candidate) => candidate.id === assignment.loadPostingId),
+    `Load posting ${assignment.loadPostingId} was not found`
+  )
+  const trip = assertFound(
+    state.tripsV2.find((candidate) => candidate.assignmentId === assignment.id),
+    `Trip for assignment ${assignment.id} was not found`
+  )
+  const driver = assertFound(
+    state.driverProfiles.find((candidate) => candidate.id === assignment.driverProfileId),
+    `Driver profile ${assignment.driverProfileId} was not found`
+  )
+
+  assertCondition(load.companyId === context.organizationId, "Only the posting organization can record driver payment")
+  assertCondition(trip.completionStatus === "confirmed", "Confirm the delivered record before recording driver payment")
+  assertCondition(assignment.status !== "cancelled", "A cancelled haul cannot be marked paid")
+  assertCondition(
+    context.actorUserId !== driver.userId,
+    "The assigned driver cannot record the host side of their own payment receipt"
+  )
+
+  if (assignment.driverPaymentSentAt) {
+    return { assignment, changed: false }
+  }
+
+  const frozenDriverPay = readFrozenDriverPay(assignment.termsSnapshot)
+
+  if (!frozenDriverPay) {
+    throw new Error("This assignment has no frozen driver pay and currency to record")
+  }
+  const driverPayCents = frozenDriverPay.amountCents
+
+  const timestamp = nowIso()
+  const updated = assignmentSchema.parse({
+    ...assignment,
+    driverPaymentSentAt: timestamp,
+    driverPaymentSentByUserId: context.actorUserId,
+    updatedAt: timestamp
+  })
+
+  state.assignments = state.assignments.map((candidate) =>
+    candidate.id === updated.id ? updated : candidate
+  )
+
+  insertAuditEvent(state, context.actorUserId, "assignment", assignment.id, "driver_payment_sent", {
+    driverPayCents,
+    loadPostingId: load.id
+  })
+  insertNotification(
+    state,
+    driver.userId,
+    "Driver pay marked sent",
+    `${load.title}: the host marked ${formatMoney(frozenDriverPay)} sent. Confirm only after it reaches you.`,
+    "assignment",
+    assignment.id,
+    "system_alert"
+  )
+
+  return { assignment: updated, changed: true }
+}
+
+export function confirmDriverPaymentReceived(
+  state: LogLoadsDatabaseState,
+  input: ConfirmDriverPaymentReceivedInput
+): {
+  assignment: Assignment
+  changed: boolean
+  matchesExpected: boolean
+  platformFeeOutcome: AccruePlatformFeeResult["outcome"] | "error"
+  receivedPay: { amountCents: number; currency: string }
+} {
+  const context = getContextForInput(state, input)
+  assertOrganizationAction(context, "progress_trip")
+
+  const assignment = assertFound(
+    state.assignments.find((candidate) => candidate.id === input.assignmentId),
+    `Assignment ${input.assignmentId} was not found`
+  )
+  const load = assertFound(
+    state.loadPostings.find((candidate) => candidate.id === assignment.loadPostingId),
+    `Load posting ${assignment.loadPostingId} was not found`
+  )
+  const driver = assertFound(
+    state.driverProfiles.find((candidate) => candidate.id === assignment.driverProfileId),
+    `Driver profile ${assignment.driverProfileId} was not found`
+  )
+
+  assertCondition(context.membership.role === "driver", "Only the assigned driver can confirm receipt of driver pay")
+  assertCondition(driver.userId === context.actorUserId, "Drivers can only confirm payment on their own haul")
+  assertCondition(assignment.status !== "cancelled", "A cancelled haul cannot confirm driver payment receipt")
+  assertCondition(Boolean(assignment.driverPaymentSentAt), "The host has not marked driver pay sent yet")
+  assertCondition(
+    assignment.driverPaymentSentByUserId !== context.actorUserId,
+    "One person cannot record both sides of a driver payment receipt"
+  )
+  assertCondition(
+    typeof input.currency === "string" && /^[A-Za-z]{3}$/.test(input.currency.trim()),
+    "Driver payment currency must be a three-letter code"
+  )
+  const receivedPay = moneySchema.parse({
+    amountCents: input.amountCents,
+    currency: input.currency.trim().toUpperCase()
+  })
+
+  if (assignment.driverPaymentReceivedAt) {
+    assertCondition(
+      assignment.driverPaymentReceivedAmountCents === receivedPay.amountCents &&
+        assignment.driverPaymentReceivedCurrency === receivedPay.currency,
+      "Driver payment receipt was already recorded with a different amount or currency"
+    )
+  }
+
+  const timestamp = nowIso()
+  let updated = assignment
+  let changed = false
+
+  if (!assignment.driverPaymentReceivedAt) {
+    updated = assignmentSchema.parse({
+      ...assignment,
+      driverPaymentReceivedAmountCents: receivedPay.amountCents,
+      driverPaymentReceivedAt: timestamp,
+      driverPaymentReceivedByUserId: context.actorUserId,
+      driverPaymentReceivedCurrency: receivedPay.currency,
+      updatedAt: timestamp
+    })
+    state.assignments = state.assignments.map((candidate) =>
+      candidate.id === updated.id ? updated : candidate
+    )
+    changed = true
+  }
+
+  const frozenDriverPay = readFrozenDriverPay(updated.termsSnapshot)
+  const matchesExpected = Boolean(
+    frozenDriverPay &&
+      frozenDriverPay.amountCents === receivedPay.amountCents &&
+      frozenDriverPay.currency === receivedPay.currency
+  )
+
+  let fee: AccruePlatformFeeResult | null = null
+  let feeFailure: string | null = null
+
+  try {
+    fee = accruePlatformFee(
+      state,
+      { actorUserId: context.actorUserId, assignmentId: assignment.id },
+      updated.driverPaymentReceivedAt ?? timestamp
+    )
+  } catch (error) {
+    // Payment receipt is an operating fact between host and driver. A broken
+    // billing ledger must be repaired separately and must never erase that fact.
+    feeFailure = (
+      error instanceof Error ? error.message : "Unknown platform-fee accrual failure"
+    ).slice(0, 300)
+  }
+
+  // A retry has changed=false. Keep this outside the receipt-notification block
+  // so a persistently unbillable completed load leaves a trace on every failed
+  // repair attempt instead of disappearing after the first receipt write.
+  if (feeFailure) {
+    insertAuditEvent(
+      state,
+      context.actorUserId,
+      "assignment",
+      assignment.id,
+      "platform_fee_accrual_failed",
+      { loadPostingId: load.id, reason: feeFailure }
+    )
+  }
+
+  if (changed) {
+    insertAuditEvent(state, context.actorUserId, "assignment", assignment.id, "driver_payment_received", {
+      amountCents: receivedPay.amountCents,
+      currency: receivedPay.currency,
+      loadPostingId: load.id,
+      matchesExpected,
+      platformFeeEventId:
+        fee?.outcome === "accrued" || fee?.outcome === "already_accrued" ? fee.event.id : null,
+      platformFeeOutcome: fee?.outcome ?? "error"
+    })
+
+    if (assignment.driverPaymentSentByUserId) {
+      insertNotification(
+        state,
+        assignment.driverPaymentSentByUserId,
+        "Driver pay received",
+        matchesExpected
+          ? `${load.title}: the assigned driver confirmed the stated pay arrived.`
+          : `${load.title}: the driver recorded ${formatMoney(receivedPay)} received, which differs from the accepted amount.`,
+        "assignment",
+        assignment.id,
+        "system_alert"
+      )
+    }
+  }
+
+  return {
+    assignment: updated,
+    changed,
+    matchesExpected,
+    platformFeeOutcome: fee?.outcome ?? "error",
+    receivedPay
+  }
 }
 
 export function getRoutePackForAssignment(
@@ -2617,6 +3078,7 @@ function directOfferTermsSnapshot(
     estimatedDistanceMiles: route.estimatedDistanceMiles,
     estimatedTonsPerLoad: load.estimatedTonsPerLoad ?? null,
     fuelSurchargeCents: rate.fuelSurchargeCents,
+    driverPayCents: load.driverPayCents ?? null,
     hostOrganizationId: load.companyId,
     loadPostingId: load.id,
     loadVersion: load.updatedAt,
@@ -2631,8 +3093,16 @@ function directOfferTermsAreCurrent(
   load: LoadPosting,
   postingSources: ReturnType<typeof assertPostingSourcesAreUsable>
 ): boolean {
+  return loadTermsSnapshotIsCurrent(offer.termsSnapshot, load, postingSources)
+}
+
+function loadTermsSnapshotIsCurrent(
+  snapshot: Record<string, unknown>,
+  load: LoadPosting,
+  postingSources: ReturnType<typeof assertPostingSourcesAreUsable>
+): boolean {
   return Object.entries(directOfferTermsSnapshot(load, postingSources)).every(
-    ([key, value]) => offer.termsSnapshot[key] === value
+    ([key, value]) => snapshot[key] === value
   )
 }
 
@@ -2656,6 +3126,10 @@ function createDirectOfferMutation(
 
   assertCondition(load.companyId === context.organizationId, "Only the source organization can send a direct offer")
   assertCondition(!load.archivedAt && ["open", "scheduled"].includes(load.status), "Direct offers require open work")
+  assertCondition(
+    typeof load.driverPayCents === "number" && load.driverPayCents > 0,
+    "Direct offers require stated driver pay; update the load before sending an offer"
+  )
   assertCondition(target.id !== context.organizationId, "Direct offers must be sent to another organization")
   assertCondition(["carrier", "fleet"].includes(target.type), "Direct offers must be sent to a hauling organization")
   assertCondition(
@@ -2805,6 +3279,10 @@ function claimDirectOfferMutation(
   )
   assertCondition(load.companyId === offer.offeredByOrganizationId, "Direct offer source no longer owns this load")
   assertCondition(!load.archivedAt && ["open", "scheduled"].includes(load.status), "This load is no longer accepting trucks")
+  assertCondition(
+    typeof load.driverPayCents === "number" && load.driverPayCents > 0,
+    "This direct offer has no stated driver pay; ask the host to update the load and send a new offer"
+  )
   const postingSources = assertPostingSourcesAreUsable(state, load.companyId, {
     dispatcherProfileId: load.dispatcherProfileId,
     dropoffMillId: load.dropoffMillId,

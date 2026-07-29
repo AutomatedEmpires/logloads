@@ -11,7 +11,7 @@ import { fillWhenReady, selectWhenReady } from "./builder-input"
 
 async function signIn(page: Page, email: string) {
   await page.goto("/sign-in")
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
   await page.fill('input[name="email"]', email)
   await page.click('button[type="submit"]')
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 30_000 })
@@ -28,7 +28,7 @@ test.describe.serial("published-work lifecycle", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "cole@summit.example")
     await page.goto("/host/opportunities")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     await expect(page.getByText("Publish timber movement")).toBeVisible()
 
@@ -38,6 +38,7 @@ test.describe.serial("published-work lifecycle", () => {
     await page.getByRole("button", { name: "Next" }).click()
     await fillWhenReady(page, "Truckloads needed per day", "1")
     await page.getByRole("button", { name: "Next" }).click()
+    await fillWhenReady(page, "What this work pays a driver, per truckload", "525.00")
     await page.getByRole("button", { name: "Next" }).click()
 
     // Visibility step: hold the work as a team-only draft.
@@ -49,7 +50,7 @@ test.describe.serial("published-work lifecycle", () => {
     // Reload so the published-work list is a fresh server render — the
     // in-place refresh after the action can race this assertion.
     await page.reload()
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     // The draft row offers Publish now; publishing flips it live.
     const row = page.locator(".host-load-row").filter({ hasText: TITLE }).first()
@@ -68,7 +69,7 @@ test.describe.serial("published-work lifecycle", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "hank@northpine.example")
     await page.goto("/driver/loads")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     const card = page.locator(".load-card-v3").filter({ hasText: TITLE }).first()
     await expect(card).toBeVisible({ timeout: 15_000 })
@@ -82,7 +83,7 @@ test.describe.serial("published-work lifecycle", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "cole@summit.example")
     await page.goto("/host/opportunities")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     const row = page.locator(".host-load-row").filter({ hasText: TITLE }).first()
     await expect(row).toBeVisible({ timeout: 15_000 })
@@ -102,7 +103,7 @@ test.describe.serial("published-work lifecycle", () => {
 
     expect(detailUrl).toBeTruthy()
     await page.goto(detailUrl)
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
     await expect(page.getByRole("button", { name: "Request haul" })).toHaveCount(0)
   })
 })

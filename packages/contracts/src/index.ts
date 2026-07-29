@@ -1,4 +1,6 @@
 export * from "./assistant"
+export * from "./billing-model"
+export * from "./credentials"
 export * from "./enums"
 export * from "./geo"
 export * from "./helpers/date-time"

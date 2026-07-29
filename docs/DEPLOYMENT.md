@@ -85,7 +85,13 @@ remains a preview/cutover gate.
 
 ## Preview and cutover gates
 
-1. Back up the existing `operating_state` row through an approved secret-safe path.
+1. Back up the existing `operating_state` row:
+   `node tools/operating-state-backup.mjs backup --out backups`, then
+   `node tools/operating-state-backup.mjs verify backups/<filename>.json` before
+   you trust it. See [RECOVERY.md](./RECOVERY.md) for the
+   restore path, the rehearsal record, and why a backup file is production personal
+   data. This step previously named "an approved secret-safe path" with no tool
+   behind it, which meant it was not being done.
 2. Validate all migrations from empty local Supabase and upgrade a copy of the
    current row; verify `tripReviews`, `schema_version=2`, and the existing payload.
 3. Deploy an exact commit SHA to Vercel Preview with an isolated preview database

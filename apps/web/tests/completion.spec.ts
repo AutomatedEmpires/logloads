@@ -13,7 +13,7 @@ import { fillWhenReady, selectWhenReady } from "./builder-input"
 
 async function signIn(page: Page, email: string) {
   await page.goto("/sign-in")
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
   await page.fill('input[name="email"]', email)
   await page.click('button[type="submit"]')
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 30_000 })
@@ -28,7 +28,7 @@ async function signIn(page: Page, email: string) {
  */
 async function advance(page: Page, label: string, nextLabel: string) {
   await page.goto("/driver/schedule")
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
 
   const card = () => page.locator(".trip-card").filter({ hasText: TITLE }).first()
   await expect(card()).toBeVisible({ timeout: 15_000 })
@@ -43,7 +43,7 @@ async function advance(page: Page, label: string, nextLabel: string) {
   // The action commits through a server action. Wait for that response before
   // reloading so a slow mobile connection cannot cancel the in-flight write.
   await page.reload()
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
   await expect(card().getByRole("button", { name: nextLabel })).toBeVisible({ timeout: 15_000 })
 }
 
@@ -55,7 +55,7 @@ async function advance(page: Page, label: string, nextLabel: string) {
  */
 async function passPreTripAndRoll(page: Page) {
   await page.goto("/driver/schedule")
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
 
   const card = () => page.locator(".trip-card").filter({ hasText: TITLE }).first()
   await expect(card()).toBeVisible({ timeout: 15_000 })
@@ -77,7 +77,7 @@ async function passPreTripAndRoll(page: Page) {
 
   await expect(async () => {
     await page.reload()
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
     await expect(card().getByRole("button", { name: "Arrived at landing" })).toBeVisible({ timeout: 2_000 })
   }).toPass({ timeout: 25_000 })
 }
@@ -102,7 +102,7 @@ test.describe.serial("delivered record", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "cole@summit.example")
     await page.goto("/host/opportunities")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     await fillWhenReady(page, "Work title", TITLE)
     await page.getByRole("button", { name: "Next" }).click()
@@ -110,6 +110,7 @@ test.describe.serial("delivered record", () => {
     await page.getByRole("button", { name: "Next" }).click()
     await fillWhenReady(page, "Truckloads needed per day", "1")
     await page.getByRole("button", { name: "Next" }).click()
+    await fillWhenReady(page, "What this work pays a driver, per truckload", "525.00")
     await page.getByRole("button", { name: "Next" }).click()
     await page.getByRole("radio", { name: /Publish now/ }).check()
     await page.getByRole("button", { name: "Next" }).click()
@@ -121,7 +122,7 @@ test.describe.serial("delivered record", () => {
     await page.setViewportSize({ width: 390, height: 844 })
     await signIn(page, "hank@northpine.example")
     await page.goto("/driver/loads")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     const card = page.locator(".load-card-v3").filter({ hasText: TITLE }).first()
     await expect(card).toBeVisible({ timeout: 15_000 })
@@ -135,7 +136,7 @@ test.describe.serial("delivered record", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "cole@summit.example")
     await page.goto("/host/command")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     const row = page.locator(".host-approval-row").filter({ hasText: TITLE }).first()
     await expect(row).toBeVisible({ timeout: 15_000 })
@@ -186,7 +187,7 @@ test.describe.serial("delivered record", () => {
     await committed
     await expect(async () => {
       await page.reload()
-      await page.waitForLoadState("networkidle")
+      await page.waitForLoadState("domcontentloaded")
       await expect(
         page.locator(".trip-card").filter({ hasText: TITLE }).first().locator("header .ui-badge").getByText("Delivered", { exact: true })
       ).toBeVisible({ timeout: 2_000 })
@@ -197,7 +198,7 @@ test.describe.serial("delivered record", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "cole@summit.example")
     await page.goto("/host/live-board")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     const card = page.locator(".live-card").filter({ hasText: TITLE }).first()
     await expect(card).toBeVisible({ timeout: 15_000 })
@@ -211,7 +212,7 @@ test.describe.serial("delivered record", () => {
     // is the durable proof — assert that rather than a transient message.
     await expect(async () => {
       await page.reload()
-      await page.waitForLoadState("networkidle")
+      await page.waitForLoadState("domcontentloaded")
       await expect(
         page.locator(".live-card").filter({ hasText: TITLE }).first().getByText(/0 tons confirmed/)
       ).toBeVisible({ timeout: 2_000 })

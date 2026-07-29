@@ -234,12 +234,12 @@ export const pricingPlans: PricingPlan[] = [
   },
   {
     name: "Host",
-    price: "Free launch pilot",
+    price: "5% of driver pay",
     audience: "Landings and timber organizations",
-    summary: "Post loads and coordinate trucks without a monthly fee during launch.",
-    features: ["No charge to post", "Qualified driver requests", "Live landing schedule", "Clear booking decisions"],
+    summary: "Post loads and coordinate trucks with no monthly fee or charge to post.",
+    features: ["No monthly fee, no charge to post", "Insurance, CDL and equipment checked before a driver can accept", "Live landing schedule", "Clear booking decisions"],
     cta: { href: "/sign-up?path=host", label: "Post a load" },
-    note: "We will give advance notice before launch-pilot pricing changes."
+    note: "The fee applies only to completed loads, and never comes out of driver pay. We will give 60 days notice before any rate change, and never apply one retroactively."
   },
   {
     name: "Enterprise",

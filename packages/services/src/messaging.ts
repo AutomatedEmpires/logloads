@@ -1,14 +1,23 @@
 import { randomUUID } from "node:crypto"
 
 import {
+  ORGANIZATION_ROLES,
+  assignmentStatusSchema,
   messageEventSchema,
   messageThreadSchema,
   notificationSchema,
+  organizationRoleCan,
+  stateMachines,
+  type Assignment,
+  type LoadPosting,
   type MessageEvent,
-  type MessageThread
+  type MessageThread,
+  type OrganizationRole
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 import { z } from "zod"
+
+import { isLoadVisibleToOrganization } from "./operating-network"
 
 export interface ThreadView {
   id: string
@@ -201,6 +210,228 @@ export function markThreadRead(state: LogLoadsDatabaseState, input: { threadId: 
   return marked
 }
 
+/**
+ * An assignment coordinates live work for as long as its status can still move.
+ * Read off the assignment state machine rather than listed here so that adding a
+ * status, or making an existing one terminal, cannot leave this gate open on
+ * work that is over.
+ */
+const ACTIVE_ASSIGNMENT_STATUSES: ReadonlySet<Assignment["status"]> = new Set(
+  assignmentStatusSchema.options.filter((status) => stateMachines.assignmentTransitions[status].length > 0)
+)
+
+/**
+ * A hauler reaches the publishing side through whoever is trusted to post that
+ * work or run the sites it moves between. Resolved through the permission matrix
+ * so granting a role a new capability cannot quietly widen who a stranger is
+ * allowed to write to, and so `billing`, `viewer`, and other back-office roles
+ * are never exposed as an inbox.
+ */
+const PUBLISHER_CONTACT_ACTIONS = ["publish_load", "manage_landing", "manage_destination"] as const
+
+const PUBLISHER_CONTACT_ROLES: ReadonlySet<OrganizationRole> = new Set(
+  ORGANIZATION_ROLES.filter((role) => PUBLISHER_CONTACT_ACTIONS.some((action) => organizationRoleCan(role, action)))
+)
+
+interface ThreadCreatorContext {
+  driverProfileIds: Set<string>
+  organizationIds: Set<string>
+  dispatchOrganizationIds: Set<string>
+}
+
+/** One person the creator may write to, and the single piece of work it is about. */
+interface ReachableContact {
+  userId: string
+  loadPostingId: string
+  assignmentId: string
+}
+
+function threadCreatorContext(state: LogLoadsDatabaseState, creatorUserId: string): ThreadCreatorContext {
+  return {
+    driverProfileIds: new Set(
+      state.driverProfiles.filter((driver) => driver.userId === creatorUserId).map((driver) => driver.id)
+    ),
+    dispatchOrganizationIds: new Set(
+      state.organizationMemberships
+        .filter(
+          (membership) =>
+            membership.userId === creatorUserId &&
+            membership.status === "active" &&
+            organizationRoleCan(membership.role, "assign_capacity")
+        )
+        .map((membership) => membership.organizationId)
+    ),
+    organizationIds: new Set(
+      state.organizationMemberships
+        .filter((membership) => membership.userId === creatorUserId && membership.status === "active")
+        .map((membership) => membership.organizationId)
+    )
+  }
+}
+
+/** Driver profiles an organization dispatches: its own, its rigs', and its members'. */
+function fleetDriverProfileIds(state: LogLoadsDatabaseState, context: ThreadCreatorContext): Set<string> {
+  const fleetDriverIds = new Set<string>()
+
+  for (const organizationId of context.dispatchOrganizationIds) {
+    const memberUserIds = new Set(
+      state.organizationMemberships
+        .filter((membership) => membership.organizationId === organizationId && membership.status === "active")
+        .map((membership) => membership.userId)
+    )
+    const combinationDriverIds = new Set(
+      state.equipmentCombinations
+        .filter((combination) => combination.organizationId === organizationId)
+        .map((combination) => combination.assignedDriverProfileId)
+        .filter((value): value is string => Boolean(value))
+    )
+
+    for (const driver of state.driverProfiles) {
+      if (
+        driver.companyId === organizationId ||
+        combinationDriverIds.has(driver.id) ||
+        memberUserIds.has(driver.userId)
+      ) {
+        fleetDriverIds.add(driver.id)
+      }
+    }
+  }
+
+  return fleetDriverIds
+}
+
+/**
+ * Who the creator may open a conversation with, and about which work.
+ *
+ * This is the authorization rule for a new thread, and it is derived here from
+ * live assignment records instead of trusted from the request: haulers reach the
+ * organization that published their assigned load, publishers and fleet dispatch
+ * reach the drivers committed to their loads. The messages page derives the same
+ * set to draw its people list, but a list is a convenience — without this
+ * server-side derivation any signed-in user could name any user id and land text
+ * in that person's notification bell.
+ */
+function reachableContacts(state: LogLoadsDatabaseState, creatorUserId: string): ReachableContact[] {
+  const context = threadCreatorContext(state, creatorUserId)
+  const fleetDriverIds = fleetDriverProfileIds(state, context)
+  const contacts: ReachableContact[] = []
+
+  function pushContact(userId: string, loadPostingId: string, assignmentId: string): void {
+    if (userId === creatorUserId || !state.profiles.some((profile) => profile.id === userId && profile.isActive)) {
+      return
+    }
+
+    contacts.push({ assignmentId, loadPostingId, userId })
+  }
+
+  function pushPublisherContacts(load: LoadPosting, assignmentId: string): void {
+    for (const membership of state.organizationMemberships) {
+      if (
+        membership.organizationId === load.companyId &&
+        membership.status === "active" &&
+        PUBLISHER_CONTACT_ROLES.has(membership.role)
+      ) {
+        pushContact(membership.userId, load.id, assignmentId)
+      }
+    }
+  }
+
+  for (const assignment of state.assignments) {
+    if (!ACTIVE_ASSIGNMENT_STATUSES.has(assignment.status)) {
+      continue
+    }
+
+    const load = state.loadPostings.find((candidate) => candidate.id === assignment.loadPostingId)
+
+    if (!load) {
+      continue
+    }
+
+    const haulsIt = context.driverProfileIds.has(assignment.driverProfileId)
+    const dispatchesIt = fleetDriverIds.has(assignment.driverProfileId)
+    const publishesIt = context.organizationIds.has(load.companyId)
+
+    if (haulsIt || dispatchesIt) {
+      pushPublisherContacts(load, assignment.id)
+    }
+
+    if (dispatchesIt || publishesIt) {
+      const driver = state.driverProfiles.find((candidate) => candidate.id === assignment.driverProfileId)
+
+      if (driver) {
+        pushContact(driver.userId, load.id, assignment.id)
+      }
+    }
+  }
+
+  return contacts
+}
+
+/**
+ * Refuses a thread whose participants or work context the creator has no claim
+ * to. The context check is not decoration: `threadContextLabel` renders the
+ * load's title straight back to the creator, so an unchecked `loadPostingId`
+ * reads out the title of any load in the estate, including private ones.
+ */
+function assertThreadContextPermitted(
+  state: LogLoadsDatabaseState,
+  input: { assignmentId?: string | null; creatorUserId: string; loadPostingId?: string | null },
+  participantUserIds: string[]
+): void {
+  const contacts = reachableContacts(state, input.creatorUserId)
+
+  for (const participantUserId of participantUserIds) {
+    if (participantUserId === input.creatorUserId) {
+      continue
+    }
+
+    if (!contacts.some((contact) => contact.userId === participantUserId)) {
+      throw new Error("You can only start a conversation with people you share active work with")
+    }
+
+    if (input.assignmentId && !contacts.some(
+      (contact) => contact.userId === participantUserId && contact.assignmentId === input.assignmentId
+    )) {
+      throw new Error("That assignment is not shared work between you and this person")
+    }
+  }
+
+  if (!input.loadPostingId) {
+    return
+  }
+
+  const load = state.loadPostings.find((candidate) => candidate.id === input.loadPostingId)
+
+  if (!load) {
+    throw new Error("Load not found")
+  }
+
+  if (input.assignmentId) {
+    const assignment = state.assignments.find((candidate) => candidate.id === input.assignmentId)
+
+    // The assignment already cleared the participant check above, so its own load
+    // is work the creator is party to. Coherence is what is left to prove: a label
+    // naming one load while the thread points at another assignment's load would
+    // misdescribe the work to everyone in the conversation.
+    if (!assignment || assignment.loadPostingId !== load.id) {
+      throw new Error("That load does not belong to that assignment")
+    }
+
+    return
+  }
+
+  const context = threadCreatorContext(state, input.creatorUserId)
+  const readable =
+    contacts.some((contact) => contact.loadPostingId === load.id) ||
+    Array.from(context.organizationIds).some((organizationId) =>
+      isLoadVisibleToOrganization(state, load, organizationId)
+    )
+
+  if (!readable) {
+    throw new Error("Load not found")
+  }
+}
+
 export function createThread(state: LogLoadsDatabaseState, rawInput: unknown): MessageThread {
   const input = createThreadInputSchema.parse(rawInput)
   const participantUserIds = Array.from(new Set([input.creatorUserId, ...input.participantUserIds]))
@@ -208,6 +439,10 @@ export function createThread(state: LogLoadsDatabaseState, rawInput: unknown): M
   if (participantUserIds.length < 2) {
     throw new Error("A conversation needs at least two participants")
   }
+
+  // Before any write: a refused thread must leave no thread, no message, and no
+  // notification behind.
+  assertThreadContextPermitted(state, input, participantUserIds)
 
   const existing = state.messageThreads.find((thread) =>
     !thread.archivedAt &&

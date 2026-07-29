@@ -2,8 +2,10 @@ import {
   evaluateLoadCompatibility,
   explainCompatibility,
   driverPayLabel,
+  formatMoney,
   formatRateLabel,
   organizationRoleCan,
+  readFrozenDriverPay,
   recommendLoad,
   reputationLabel,
   summarizeReviews,
@@ -340,6 +342,16 @@ export interface NetworkView {
       confirmedAt: string | null
       requiredEvidence: string[]
       hasEvidence: boolean
+    }
+    driverPayment: {
+      expectedPayAmountCents: number | null
+      expectedPayCurrency: string | null
+      expectedPayLabel: string | null
+      matchesExpected: boolean | null
+      receivedPayLabel: string | null
+      receivedAt: string | null
+      sentAt: string | null
+      status: "not_sent" | "sent" | "received"
     }
     reviewable: {
       direction: "host_rates_hauler" | "hauler_rates_host"
@@ -1199,9 +1211,22 @@ export function buildNetworkView(
 
       return organizationDriverProfileIds.has(trip.driverProfileId)
     })
+    // Corrupt rows are withheld by the store, so one orphaned trip can survive
+    // while its assignment or load is quarantined. Omit that trip from the board
+    // instead of turning every participant's trips page into a 500.
+    .filter(
+      (trip) =>
+        state.loadPostings.some((item) => item.id === trip.loadPostingId) &&
+        state.assignments.some((item) => item.id === trip.assignmentId)
+    )
     .map((trip) => {
       const load = requireRecord(state.loadPostings.find((item) => item.id === trip.loadPostingId), `trip load ${trip.loadPostingId}`)
+      const assignment = requireRecord(
+        state.assignments.find((item) => item.id === trip.assignmentId),
+        `trip assignment ${trip.assignmentId}`
+      )
       const driver = state.driverProfiles.find((profile) => profile.id === trip.driverProfileId)
+      const frozenDriverPay = readFrozenDriverPay(assignment.termsSnapshot)
       const driverUser = driver ? state.profiles.find((profile) => profile.id === driver.userId) : undefined
       const events = state.tripEvents
         .filter((event) => event.tripId === trip.id)
@@ -1285,6 +1310,14 @@ export function buildNetworkView(
           document.tripId === trip.id &&
           ["scale_ticket", "load_slip", "delivery_record", "photo"].includes(document.type)
       )
+      const receivedPay =
+        assignment.driverPaymentReceivedAmountCents !== null &&
+        assignment.driverPaymentReceivedCurrency
+          ? {
+              amountCents: assignment.driverPaymentReceivedAmountCents,
+              currency: assignment.driverPaymentReceivedCurrency
+            }
+          : null
 
       return {
         assignmentId: trip.assignmentId,
@@ -1300,6 +1333,26 @@ export function buildNetworkView(
           submittedAt: trip.completionSubmittedAt ?? null
         },
         documents,
+        driverPayment: {
+          expectedPayAmountCents: frozenDriverPay?.amountCents ?? null,
+          expectedPayCurrency: frozenDriverPay?.currency ?? null,
+          expectedPayLabel: frozenDriverPay ? formatMoney(frozenDriverPay) : null,
+          matchesExpected:
+            frozenDriverPay && receivedPay
+              ? frozenDriverPay.amountCents === receivedPay.amountCents &&
+                frozenDriverPay.currency === receivedPay.currency
+              : null,
+          receivedPayLabel: receivedPay ? formatMoney(receivedPay) : null,
+          receivedAt: assignment.driverPaymentReceivedAt ?? null,
+          sentAt: assignment.driverPaymentSentAt ?? null,
+          status: (
+            assignment.driverPaymentReceivedAt
+              ? "received"
+              : assignment.driverPaymentSentAt
+                ? "sent"
+                : "not_sent"
+          ) as NetworkView["trips"][number]["driverPayment"]["status"]
+        },
         driverName: driverUser?.fullName ?? "Driver",
         driverProfileId: trip.driverProfileId,
         events,

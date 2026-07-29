@@ -1,5 +1,6 @@
 "use client"
 
+import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { Badge, Button } from "@logloads/ui"
 
@@ -77,6 +78,7 @@ export function ClaimDirectOfferButton({
   equipmentCombinationId: string
   truckSlotId: string | null
 }) {
+  const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -107,6 +109,11 @@ export function ClaimDirectOfferButton({
 
               if (result.ok) {
                 setClaimed(true)
+                // The local success state keeps the field action responsive,
+                // while the refreshed server projection updates offer capacity,
+                // assignments, and every sibling control from the committed
+                // canonical snapshot.
+                router.refresh()
               } else {
                 setError(result.error ?? "The truck could not be assigned.")
               }

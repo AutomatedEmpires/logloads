@@ -13,7 +13,7 @@ mkdirSync(SHOTS, { recursive: true })
 
 async function signIn(page: Page, email: string) {
   await page.goto("/sign-in")
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
   await page.fill('input[name="email"]', email)
   await page.click('button[type="submit"]')
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 30_000 })
@@ -24,7 +24,7 @@ test.describe.serial("rich load posting", () => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await signIn(page, "cole@summit.example")
   await page.goto("/host/opportunities")
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
 
   // The builder is ready (not the "Publishing is not ready" gate).
   await expect(page.getByText("Publish timber movement")).toBeVisible()
@@ -51,7 +51,8 @@ test.describe.serial("rich load posting", () => {
   await page.screenshot({ path: `${SHOTS}/posting-schedule.png`, fullPage: true })
   await page.getByRole("button", { name: "Next" }).click()
 
-  // Step 3 — Terms (rate pre-selected).
+  // Step 3 — Terms (rate pre-selected, driver pay is the fee basis).
+  await page.getByLabel("What this work pays a driver, per truckload").fill("525.00")
   await page.getByRole("button", { name: "Next" }).click()
   // Step 4 — Visibility requires an explicit publish choice.
   await page.getByRole("radio", { name: /Publish now/ }).check()
@@ -69,7 +70,7 @@ test.describe.serial("rich load posting", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "hank@northpine.example")
     await page.goto("/driver/loads")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     const card = page.locator(".load-card-v3").filter({ hasText: "Ridge saw-log recurring block" }).first()
     await expect(card).toBeVisible({ timeout: 15_000 })

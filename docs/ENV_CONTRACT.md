@@ -8,7 +8,7 @@ key and all secret/key values remain server-only.
 
 | Variable | Secret | Absent behavior |
 |---|---|---|
-| `NEXT_PUBLIC_APP_URL` | no | absolute URLs and Stripe return URLs use a local fallback |
+| `NEXT_PUBLIC_APP_URL` | no | production Stripe checkout/portal creation fails closed |
 | `LOGLOADS_SESSION_SECRET` | yes | session signing fails closed |
 | `SUPABASE_URL` | no | canonical-state reads fail closed |
 | `SUPABASE_SERVICE_ROLE_KEY` | yes | canonical-state reads fail closed |
@@ -17,6 +17,18 @@ key and all secret/key values remain server-only.
 
 `LOGLOADS_STATE_FILE` is a non-production convenience only. It is neither required
 nor authoritative on Vercel.
+
+## Required to accept real hauling work
+
+| Variable | Secret | Absent behavior |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | yes | every submitted driver credential stays pending, so no driver can accept any load |
+
+Credential review is a binding safety gate, not an optional assistant feature.
+`CREDENTIAL_REVIEW_MODEL` may override the pinned `claude-opus-5` default, but
+changing the model requires a controlled re-verification of structured output,
+document reading, latency, and refusal behavior. `/api/health` reports
+`integrations.credentialReview=false` while the provider key is absent.
 
 ## Controlled bootstrap
 
@@ -30,70 +42,47 @@ fails closed rather than silently replacing missing production data with seed da
 | Group | Variables |
 |---|---|
 | Billing | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_DISPATCH` |
-| Private media | `LOGLOADS_CLOUDINARY_TENANCY=dedicated`, `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` — see activation sequence below |
+| Credential review | `ANTHROPIC_API_KEY`; optional pinned override `CREDENTIAL_REVIEW_MODEL` |
+| Private media | `LOGLOADS_MEDIA_STORAGE=supabase`, `LOGLOADS_MEDIA_BUCKET`, `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` |
 | Email | `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_REPLY_TO`, `SUPPORT_EMAIL`, `LOGLOADS_CONTACT_EMAIL` |
 | Analytics | `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` |
 | Errors | `SENTRY_DSN` |
 | Maps | `NEXT_PUBLIC_MAPBOX_TOKEN` (keyless MapLibre fallback when absent) |
 
-**Private media activates only with the exact non-secret tenancy marker and all
-three trimmed, nonblank credentials. Every other nonblank `CLOUDINARY_*`
-variable is forbidden and makes the configuration inactive, including SDK URL,
-account, proxy, OAuth, private-CDN, secure-distribution, and future ambient
-options.** Without that complete isolated configuration,
-`/api/health` keeps its overall status tied to the operating engine but reports
-`integrations.media=false`; upload signing, provider verification, photo
-delivery, and trip-document delivery all return the same retryable unavailable
-response before the Cloudinary SDK is loaded or a provider adapter is called.
-After the gate passes, the pinned SDK singleton is fully reset before only the
-three allowlisted values are applied. Trip documents are delivery proof,
-so a haul whose Route Pack requires one cannot reach `completed` while media is
-inactive. Treat dedicated media as required wherever hauling is live.
+Private media is active only when `LOGLOADS_MEDIA_STORAGE` is exactly `supabase`;
+the configured Supabase URL is HTTPS on `*.supabase.co`; its project reference
+exactly matches `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF`; the server-only service
+role and browser publishable key are present; and the bucket name is valid. The
+production bucket is private, limited to 10 MiB, and accepts JPEG, PNG, and WebP.
 
-(Records written before uploads were wired still satisfy the completion gate,
-which asks only for a document of an evidence type — but they carry no file and
-are never offered for download. That residue is bounded to hauls already in
-flight; no new record can be medialess.)
+The browser receives a short-lived token for one object, uploads directly to that
+private bucket, and then the server reads the object back and validates its image
+type and dimensions before committing the credential, equipment photo, or trip
+document. Authenticated delivery uses short-lived signed URLs. If any part of the
+configuration is missing or mismatched, `/api/health` reports
+`integrations.media=false` and every media path fails closed with a retryable
+unavailable response.
 
-### Production-only Cloudinary activation
+Trip documents are delivery proof, so a Route Pack that requires one cannot
+reach `completed` while media is unavailable. Before production cutover, verify
+the exact deployment SHA, `integrations.media=true`, and a synthetic signed
+upload → server read-back → authenticated delivery round trip.
 
-1. An accountable operator provisions or confirms a Cloudinary tenant owned for
-   LogLoads alone and verifies its ownership boundary outside the application.
-2. The operator replaces all three `CLOUDINARY_*` values in the LogLoads Doppler
-   project and Vercel **Production** environment while leaving
-   `LOGLOADS_CLOUDINARY_TENANCY` unset, and removes every other `CLOUDINARY_*`
-   variable rather than retaining an SDK URL, proxy, token, or delivery-host
-   override. Deploying in that state is safe:
-   `integrations.media` stays false and media remains fail-closed.
-3. On the exact intended production deployment, the operator rechecks that all
-   three values resolve to the dedicated tenant, then sets the marker to exactly
-   `dedicated` in Vercel Production and redeploys. Do not copy it into Preview or
-   Development as a convenience.
-4. Verify the deployed SHA, `integrations.media=true`, and an approved synthetic
-   signed-upload → provider-read-back → authenticated-delivery round trip in the
-   dedicated LogLoads namespace. If any evidence is uncertain, remove the marker
-   and redeploy to return every media path to the 503 gate.
-
-The marker is an **operator attestation, not cryptographic tenancy proof**. The
-runtime can prove only that the exact marker and three nonblank values are
-present; it cannot infer who owns the provider account or distinguish dedicated
-credentials from confidently miswired ones. `integrations.media=true` therefore
-means operator-attested dedicated activation, not independent provider-ownership
-verification. Record the accountable operator and dated provider evidence at
-activation without recording identifiers or secret values in the repository.
+The previous Cloudinary adapter remains only as dormant compatibility code. It is
+not an activation path for LogLoads: every `CLOUDINARY_*` and
+`LOGLOADS_CLOUDINARY_*` variable must remain unset in LogLoads environments.
+Known foreign Cloudinary tenants are still denied in code as a second boundary.
 
 ## Must not be set in production
 
 - `LOGLOADS_ENABLE_DEV_LOGIN` — credential-free development sign-in.
-- Any `CLOUDINARY_*` variable except `CLOUDINARY_CLOUD_NAME`,
-  `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` — ambient SDK configuration
-  disables media even when the dedicated-tenancy marker is present.
+- Any `CLOUDINARY_*` or `LOGLOADS_CLOUDINARY_*` variable — Cloudinary is not a
+  LogLoads production provider.
 - `SUPABASE_ANON_KEY` as an operating-state credential — `operating_state` is
   explicitly service-role only.
 
-`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `DATABASE_URL`, `SUPABASE_ANON_KEY`, and
-`SUPABASE_PROJECT_REF` remain tooling/integration placeholders; runtime canonical
-state does not read them.
+`DATABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_PROJECT_REF` remain
+tooling/integration placeholders; runtime canonical state does not read them.
 
 `LOGLOADS_EMAIL_FROM` and `LOGLOADS_EMAIL_REPLY_TO` remain supported compatibility
 fallbacks. Production uses the scoped `RESEND_FROM` and `RESEND_REPLY_TO` names.

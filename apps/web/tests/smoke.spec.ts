@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test"
 
 async function signIn(page: Page, email: string) {
   await page.goto("/sign-in")
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
   await page.fill('input[name="email"]', email)
   await page.click('button[type="submit"]')
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 30_000 })
@@ -62,7 +62,7 @@ test("platform admin reaches the admin console", async ({ page }) => {
 
 test("onboarding provisions a working driver account", async ({ page }) => {
   await page.goto("/onboarding")
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
   await page.click("text=I haul timber")
   await expect(page.getByRole("radio", { name: /Owner-operator/ })).toBeChecked()
   await page.getByRole("button", { name: "Choose a different role" }).click()

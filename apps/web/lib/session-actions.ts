@@ -19,6 +19,7 @@ import {
   isDevSessionEnabled,
   isFounderDemoMode
 } from "./session"
+import { homePathForMembership } from "./session-policy"
 import { safeInternalPath } from "./safe-redirect"
 
 const COOKIE_OPTIONS = {
@@ -136,7 +137,9 @@ export async function switchOrganizationAction(organizationId: string): Promise<
  * switcher shows both. The service owns every rule (invited email match,
  * expiry, duplicates); a refused accept simply leaves the invitation visible.
  */
-export async function acceptInvitationAction(invitationId: string): Promise<void> {
+export async function acceptInvitationAction(
+  invitationId: string
+): Promise<{ error?: string; ok: boolean }> {
   const actor = await getSessionActor()
 
   if (!actor) {
@@ -160,15 +163,19 @@ export async function acceptInvitationAction(invitationId: string): Promise<void
       COOKIE_OPTIONS
     )
   } catch (error) {
-    // The pending item only disappears on success; a refused accept stays
-    // visible and retryable rather than vanishing with no explanation.
-    console.error("invitation accept refused", serializeError(error))
+    const serialized = serializeError(error)
+
+    console.error("invitation accept refused", serialized)
+    return { error: serialized.error, ok: false }
   }
 
   revalidatePath("/", "layout")
+  return { ok: true }
 }
 
-export async function declineInvitationAction(invitationId: string): Promise<void> {
+export async function declineInvitationAction(
+  invitationId: string
+): Promise<{ error?: string; ok: boolean }> {
   const actor = await getSessionActor()
 
   if (!actor) {
@@ -182,11 +189,14 @@ export async function declineInvitationAction(invitationId: string): Promise<voi
     )
     captureServerEvent("invitation_declined", actor.profile.id, { invitationId })
   } catch (error) {
-    // Same stance as accept: failure leaves the item in place.
-    console.error("invitation decline refused", serializeError(error))
+    const serialized = serializeError(error)
+
+    console.error("invitation decline refused", serialized)
+    return { error: serialized.error, ok: false }
   }
 
   revalidatePath("/", "layout")
+  return { ok: true }
 }
 
 export interface OnboardingFormState {
@@ -256,9 +266,10 @@ export async function completeOnboardingAction(
 
   if (invitationId) {
     let joined: { organizationId: string; userId: string }
+    let joinedHome = "/workspace"
 
     try {
-      joined = await mutateState((draft) =>
+      const accepted = await mutateState((draft) =>
         draft.acceptInvitationAsNewAccount({
           clerkUserId,
           email,
@@ -267,19 +278,26 @@ export async function completeOnboardingAction(
           phone
         })
       )
+      joined = accepted
 
       captureServerEvent("invitation_accepted", joined.userId, { invitationId, newAccount: true })
 
       const cookieStore = await cookies()
 
       cookieStore.set(SESSION_COOKIE, createSessionCookieValue(joined.userId, joined.organizationId), COOKIE_OPTIONS)
+
+      const organization = services.state.organizations.find(
+        (candidate) => candidate.id === joined.organizationId
+      )
+
+      if (organization) {
+        joinedHome = homePathForMembership(organization.type, accepted.invitation.invitedRole)
+      }
     } catch (error) {
       return { error: serializeError(error).error }
     }
 
-    const joinedActor = await getSessionActor()
-
-    redirect(safeInternalPath(next, joinedActor ? homePathFor(joinedActor) : "/workspace"))
+    redirect(safeInternalPath(next, joinedHome))
   }
 
   try {

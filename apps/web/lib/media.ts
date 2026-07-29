@@ -1,7 +1,9 @@
 import "server-only"
 
+import { createClient } from "@supabase/supabase-js"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 import { tripDocumentSchema, type MediaReference, type TripDocument } from "@logloads/contracts"
+import { imageSize } from "image-size"
 import {
   getDriverMediaTarget,
   getTripDocumentTarget,
@@ -11,7 +13,10 @@ import {
 } from "@logloads/services"
 
 import { ApiError } from "./api-actor"
-import { dedicatedCloudinaryConfiguration } from "./media-config"
+import {
+  dedicatedCloudinaryConfiguration,
+  dedicatedSupabaseMediaConfiguration
+} from "./media-config"
 import type { SessionActor } from "./session"
 
 export const MEDIA_KINDS = ["profile", "truck", "trailer"] as const
@@ -20,15 +25,27 @@ export type MediaKind = (typeof MEDIA_KINDS)[number]
 export type MediaTarget = DriverMediaTarget
 
 const MEDIA_UNAVAILABLE_MESSAGE = "File uploads are not activated for this environment"
+const MAX_MEDIA_BYTES = 10_000_000
+const MEDIA_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const
 
 function environment() {
+  if (process.env.LOGLOADS_MEDIA_STORAGE?.trim().toLowerCase() === "supabase") {
+    const config = dedicatedSupabaseMediaConfiguration(process.env)
+
+    if (!config) {
+      throw new ApiError(MEDIA_UNAVAILABLE_MESSAGE, 503)
+    }
+
+    return { config, provider: "supabase" as const }
+  }
+
   const config = dedicatedCloudinaryConfiguration(process.env)
 
   if (!config) {
     throw new ApiError(MEDIA_UNAVAILABLE_MESSAGE, 503)
   }
 
-  return config
+  return { config, provider: "cloudinary" as const }
 }
 
 /**
@@ -40,7 +57,12 @@ function environment() {
  * ambient tenant, proxy, OAuth token, private CDN, or delivery host.
  */
 async function provider() {
-  const config = environment()
+  const selected = environment()
+
+  if (selected.provider !== "cloudinary") {
+    throw new ApiError(MEDIA_UNAVAILABLE_MESSAGE, 503)
+  }
+  const config = selected.config
 
   try {
     const { v2: cloudinary } = await import("cloudinary")
@@ -57,6 +79,20 @@ async function provider() {
   } catch {
     throw new ApiError(MEDIA_UNAVAILABLE_MESSAGE, 503)
   }
+}
+
+function supabaseStorage() {
+  const selected = environment()
+
+  if (selected.provider !== "supabase") {
+    throw new ApiError(MEDIA_UNAVAILABLE_MESSAGE, 503)
+  }
+
+  const client = createClient(selected.config.url, selected.config.serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false }
+  })
+
+  return { client, config: selected.config }
 }
 
 export function parseMediaKind(value: unknown): MediaKind {
@@ -154,6 +190,42 @@ export function tripDocumentTarget(
  * rechecked on read-back before writing a record.
  */
 export async function signedUpload(target: { publicIdPrefix: string }) {
+  if (process.env.LOGLOADS_MEDIA_STORAGE?.trim().toLowerCase() === "supabase") {
+    const { client, config } = supabaseStorage()
+    const bucket = await client.storage.getBucket(config.bucket)
+    const allowedMimeTypes = [...(bucket.data?.allowed_mime_types ?? [])].sort()
+
+    if (
+      bucket.error ||
+      !bucket.data ||
+      bucket.data.public ||
+      !bucket.data.file_size_limit ||
+      bucket.data.file_size_limit > MAX_MEDIA_BYTES ||
+      JSON.stringify(allowedMimeTypes) !== JSON.stringify([...MEDIA_MIME_TYPES].sort())
+    ) {
+      throw new ApiError(MEDIA_UNAVAILABLE_MESSAGE, 503)
+    }
+
+    const publicId = `${target.publicIdPrefix}/uploads/${crypto.randomUUID()}`
+    const { data, error } = await client.storage
+      .from(config.bucket)
+      .createSignedUploadUrl(publicId, { upsert: false })
+
+    if (error || !data?.token) {
+      throw new ApiError(MEDIA_UNAVAILABLE_MESSAGE, 503)
+    }
+
+    return {
+      anonKey: config.anonKey,
+      bucket: config.bucket,
+      path: publicId,
+      provider: "supabase" as const,
+      publicId,
+      supabaseUrl: config.url,
+      token: data.token
+    }
+  }
+
   const { cloudinary, config } = await provider()
   const timestamp = Math.floor(Date.now() / 1000)
   const publicId = `${target.publicIdPrefix}/uploads/${crypto.randomUUID()}`
@@ -169,6 +241,8 @@ export async function signedUpload(target: { publicIdPrefix: string }) {
     apiKey: config.apiKey,
     cloudName: config.cloudName,
     parameters,
+    provider: "cloudinary" as const,
+    publicId,
     signature: cloudinary.utils.api_sign_request(parameters, config.apiSecret),
     uploadUrl: `https://api.cloudinary.com/v1_1/${config.cloudName}/image/upload`
   }
@@ -187,6 +261,73 @@ function assetCreatedAt(createdAt: unknown): string {
 }
 
 export async function verifiedMediaReference(publicId: string): Promise<MediaReference> {
+  if (process.env.LOGLOADS_MEDIA_STORAGE?.trim().toLowerCase() === "supabase") {
+    const { client, config } = supabaseStorage()
+    const parts = publicId.split("/")
+    const filename = parts.pop() ?? ""
+    const directory = parts.join("/")
+    const listed = await client.storage
+      .from(config.bucket)
+      .list(directory, { limit: 10, search: filename })
+    const stored = listed.data?.find((candidate) => candidate.name === filename)
+    const storedBytes = Number(stored?.metadata?.size)
+
+    if (listed.error || !stored || !Number.isFinite(storedBytes)) {
+      throw new ApiError("The uploaded photo could not be read back", 422)
+    }
+
+    if (storedBytes <= 0 || storedBytes > MAX_MEDIA_BYTES) {
+      throw new ApiError("Photos must be 10 MB or smaller", 422)
+    }
+
+    const { data, error } = await client.storage.from(config.bucket).download(publicId)
+
+    if (error || !data) {
+      throw new ApiError("The uploaded photo could not be read back", 422)
+    }
+
+    const bytes = new Uint8Array(await data.arrayBuffer())
+
+    if (bytes.byteLength === 0 || bytes.byteLength > MAX_MEDIA_BYTES) {
+      throw new ApiError("Photos must be 10 MB or smaller", 422)
+    }
+
+    if (bytes.byteLength !== storedBytes) {
+      throw new ApiError("The uploaded photo could not be verified completely", 422)
+    }
+
+    let dimensions: ReturnType<typeof imageSize>
+
+    try {
+      dimensions = imageSize(bytes)
+    } catch {
+      throw new ApiError("Use a JPG, PNG, or WebP photo", 422)
+    }
+
+    const format = String(dimensions.type ?? "").toLowerCase()
+
+    if (
+      !["jpg", "jpeg", "png", "webp"].includes(format) ||
+      !dimensions.width ||
+      !dimensions.height
+    ) {
+      throw new ApiError("Use a JPG, PNG, or WebP photo", 422)
+    }
+
+    const uploadedAt = assetCreatedAt(stored?.created_at)
+
+    return {
+      bytes: bytes.byteLength,
+      format: format as MediaReference["format"],
+      height: dimensions.height,
+      provider: "supabase",
+      publicId,
+      uploadedAt,
+      version: Math.max(1, Math.floor(Date.parse(uploadedAt) / 1000)),
+      width: dimensions.width
+    }
+  }
+
   const { cloudinary } = await provider()
   const asset = await cloudinary.api.resource(publicId, { resource_type: "image", type: "authenticated" })
   const format = String(asset.format ?? "").toLowerCase()
@@ -215,6 +356,19 @@ export async function verifiedMediaReference(publicId: string): Promise<MediaRef
 }
 
 export async function signedDeliveryUrl(photo: MediaReference): Promise<string> {
+  if (photo.provider === "supabase") {
+    const { client, config } = supabaseStorage()
+    const { data, error } = await client.storage
+      .from(config.bucket)
+      .createSignedUrl(photo.publicId, 300)
+
+    if (error || !data?.signedUrl) {
+      throw new ApiError(MEDIA_UNAVAILABLE_MESSAGE, 503)
+    }
+
+    return data.signedUrl
+  }
+
   const { cloudinary } = await provider()
 
   return cloudinary.url(photo.publicId, {
@@ -238,6 +392,19 @@ export async function signedDeliveryUrl(photo: MediaReference): Promise<string> 
  * small. A derivative that dropped a digit would still look like a document.
  */
 export async function signedDocumentUrl(media: MediaReference): Promise<string> {
+  if (media.provider === "supabase") {
+    const { client, config } = supabaseStorage()
+    const { data, error } = await client.storage
+      .from(config.bucket)
+      .createSignedUrl(media.publicId, 300)
+
+    if (error || !data?.signedUrl) {
+      throw new ApiError(MEDIA_UNAVAILABLE_MESSAGE, 503)
+    }
+
+    return data.signedUrl
+  }
+
   const { cloudinary } = await provider()
 
   return cloudinary.url(media.publicId, {

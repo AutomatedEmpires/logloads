@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
 import type { NetworkLoadView } from "@/lib/network"
+import { payHeadline, presentPay } from "@/lib/pay-display"
 import { fitLabel, fitTone, formatDateTime, formatHuman, humanizeTag, loadProductLabel, publicLoadHref, shortLane, visibilityLabel } from "@/lib/v3-shared"
 import { ReputationChip } from "./Reputation"
 import { EmptyState, SectionHeader } from "./Shells"
@@ -25,20 +26,19 @@ export function LoadCard({ href, load, publicMode = false }: { href?: string; lo
     : load.viewerAssignment?.status === "accepted"
       ? { label: "You're booked", tone: "success" as const }
       : { label: fitLabel(load), tone: fitTone(load) }
+  const cardPay = presentPay(load)
   const content = (
     <>
       <span className="load-card-v3__head">
         <span className="card-kicker">{loadProductLabel(load)}</span>
         <Badge tone={status.tone}>{status.label}</Badge>
       </span>
-      <strong className="load-card-v3__pay">
-        {load.economics.grossLabel ? `${load.economics.grossLabel} est. gross` : load.payLabel}
-      </strong>
-      {load.economics.grossLabel ? (
-        <span className="load-card-v3__rate-terms">Base {load.payLabel} · {load.fuelSurchargeLabel}</span>
+      <strong className="load-card-v3__pay">{cardPay.headline}</strong>
+      {cardPay.estimateNote ? (
+        <span className="load-card-v3__rate-terms">{cardPay.estimateNote}</span>
       ) : null}
-      {load.economics.afterFuelLabel ? (
-        <span className="load-card-v3__economics">Est. after fuel {load.economics.afterFuelLabel}</span>
+      {cardPay.afterFuel ? (
+        <span className="load-card-v3__economics">Est. after fuel {cardPay.afterFuel}</span>
       ) : null}
       <span className="load-card-v3__title">{load.title}</span>
       <span className="lane-line">
@@ -187,7 +187,7 @@ export function LoadDiscovery({ loads, publicMode = false }: { loads: NetworkLoa
               >
                 <span className="card-kicker">{loadProductLabel(load)}</span>
                 <strong>{shortLane(load)}</strong>
-                <span className="load-meta">{load.scheduleLabel} · {load.economics.grossLabel ? `${load.economics.grossLabel} est. gross` : load.payLabel}</span>
+                <span className="load-meta">{load.scheduleLabel} · {payHeadline(load)}</span>
                 <Badge tone={publicMode ? (load.capacity.remaining > 0 ? "success" : "info") : fitTone(load)}>
                   {publicMode ? (load.capacity.remaining > 0 ? `${load.capacity.remaining} open` : "Filled") : fitLabel(load)}
                 </Badge>
@@ -259,19 +259,24 @@ export function DecisionPanel({ load, publicMode = false }: { load: NetworkLoadV
 
 export function EconomicsPanel({ load }: { load: NetworkLoadView }) {
   const estimate = load.economics
+  const panelPay = presentPay(load)
   const deadhead = estimate.deadheadMiles === null
     ? "Not included — add a home location to calculate it"
-    : `${estimate.deadheadMiles.toFixed(0)} miles from home base`
+    : `${estimate.deadheadMiles.toFixed(0)} road miles from home base`
 
   return (
     <section className="economics-panel" aria-label="Estimated haul economics">
       <div>
         <p className="eyebrow">Your estimate</p>
         <h2>{estimate.afterFuelLabel ? `${estimate.afterFuelLabel} after estimated fuel` : "Fuel estimate"}</h2>
-        <p>This is gross after diesel, not profit. Maintenance, insurance, labor, taxes, and return miles are not deducted.</p>
+        <p>This is what the load pays you, less estimated diesel — not profit. Maintenance, insurance, labor, taxes, and return miles are not deducted.</p>
+        {panelPay.estimateNote ? <p className="economics-panel__basis">{panelPay.estimateNote}</p> : null}
       </div>
       <dl>
-        <div><dt>Estimated gross</dt><dd>{estimate.grossLabel ?? load.payLabel}</dd></div>
+        <div>
+          <dt>{estimate.payBasis === "host_stated" ? "This load pays you" : "Estimated gross"}</dt>
+          <dd>{panelPay.headline}</dd>
+        </div>
         <div><dt>Trip miles</dt><dd>{estimate.tripMiles.toFixed(0)}</dd></div>
         <div><dt>Deadhead</dt><dd>{deadhead}</dd></div>
         <div><dt>Fuel</dt><dd>{estimate.gallons.toFixed(1)} gal · {estimate.fuelCostLabel}</dd></div>
@@ -573,6 +578,8 @@ export function RoutePackPreview({ load, locked = false }: { load: NetworkLoadVi
 }
 
 export function OperationSections({ load, publicMode = false }: { load: NetworkLoadView; publicMode?: boolean }) {
+  const detailPay = presentPay(load)
+
   return (
     <section className="operation-sections">
       <article>
@@ -582,7 +589,7 @@ export function OperationSections({ load, publicMode = false }: { load: NetworkL
           <div><dt>Window</dt><dd>{load.scheduleLabel}</dd></div>
           <div>
             <dt>Pay</dt>
-            <dd>{load.economics.grossLabel ? `${load.economics.grossLabel} est. gross · base ${load.payLabel} · ${load.fuelSurchargeLabel}` : load.payLabel}</dd>
+            <dd>{detailPay.estimateNote ? `${detailPay.headline} · ${detailPay.estimateNote}` : detailPay.headline}</dd>
           </div>
           <div><dt>Capacity</dt><dd>{load.capacity.remaining} remaining</dd></div>
         </dl>

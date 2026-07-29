@@ -36,6 +36,12 @@ function stubDedicatedEnvironment() {
   }
 
   vi.stubEnv("LOGLOADS_CLOUDINARY_TENANCY", "dedicated")
+  // The gate now requires an independently declared expected cloud name that the
+  // configured one must equal, so a fully-configured dedicated tenant has to
+  // state it here too. Without this line the two ambient-isolation cases below
+  // would still pass — but for the wrong reason (no expected name) rather than
+  // for the ambient contamination they exist to prove.
+  vi.stubEnv("LOGLOADS_CLOUDINARY_EXPECTED_CLOUD", "dedicated-cloud")
   vi.stubEnv("CLOUDINARY_CLOUD_NAME", "dedicated-cloud")
   vi.stubEnv("CLOUDINARY_API_KEY", "dedicated-key")
   vi.stubEnv("CLOUDINARY_API_SECRET", "dedicated-secret")
@@ -155,6 +161,11 @@ describe("real Cloudinary adapter isolation", () => {
     })
 
     const upload = await signedUpload({ publicIdPrefix: "logloads/trip-documents/trip-1" })
+
+    expect(upload.provider).toBe("cloudinary")
+    if (upload.provider !== "cloudinary") {
+      throw new Error("Expected the Cloudinary adapter")
+    }
 
     expect(upload.uploadUrl).toBe("https://api.cloudinary.com/v1_1/dedicated-cloud/image/upload")
     expect(upload.parameters.allowed_formats).toBe("jpg,png,webp")

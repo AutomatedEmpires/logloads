@@ -19,7 +19,7 @@ const EVIDENCE = "Oregon Class A CDL available for review; valid through 2028."
 
 async function signIn(page: Page, email: string) {
   await page.goto("/sign-in")
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
   await page.fill('input[name="email"]', email)
   await page.click('button[type="submit"]')
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 30_000 })
@@ -30,7 +30,7 @@ test.describe.serial("verification + assistant", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "hank@northpine.example")
     await page.goto("/driver/profile")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     await expect(page.getByText("Get verified")).toBeVisible()
     await page.locator(".verify-form select[name=verificationType]").selectOption("identity")
@@ -43,7 +43,7 @@ test.describe.serial("verification + assistant", () => {
 
     await expect(async () => {
       await page.reload()
-      await page.waitForLoadState("networkidle")
+      await page.waitForLoadState("domcontentloaded")
       await expect(page.locator(".verify-record").filter({ hasText: "Identity" }).first()).toBeVisible({ timeout: 2_000 })
       await expect(page.locator(".verify-record").filter({ hasText: "In review" }).first()).toBeVisible({ timeout: 2_000 })
     }).toPass({ timeout: 30_000 })
@@ -53,7 +53,7 @@ test.describe.serial("verification + assistant", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "admin@logloads.example")
     await page.goto("/admin/verification")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     await expect(page.getByText(EVIDENCE).first()).toBeVisible({ timeout: 15_000 })
   })
@@ -62,7 +62,7 @@ test.describe.serial("verification + assistant", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "hank@northpine.example")
     await page.goto("/driver/assistant")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     await expect(page.locator(".assistant-chip").first()).toBeVisible()
     await page.getByRole("button", { name: "What should I haul next?" }).click()

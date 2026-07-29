@@ -1,13 +1,16 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { createInMemoryDatabase } from "./store"
 import {
+  auditStateSnapshot,
   initializeRemoteOperatingState,
   loadRemoteOperatingState,
   mutateRemoteOperatingState,
   OPERATING_STATE_SCHEMA_VERSION,
+  setOperatingStateDefectReporter,
   updateRemoteOperatingState,
   upgradeStateSnapshot,
+  type OperatingStateReport,
   type RemoteSnapshotConfig
 } from "./snapshot"
 import type { LogLoadsDatabaseState } from "./types"
@@ -93,8 +96,29 @@ class FakeOperatingStateApi {
   }
 }
 
+/** Rows are only ever anonymous JSON here, so corruption is applied through this. */
+function rowsOf(state: LogLoadsDatabaseState, table: string): Record<string, unknown>[] {
+  return (state as unknown as Record<string, Record<string, unknown>[]>)[table]!
+}
+
+function fieldsOf(row: unknown): Record<string, unknown> {
+  return row as Record<string, unknown>
+}
+
+let reports: OperatingStateReport[] = []
+
+beforeEach(() => {
+  // Installing a reporter also clears the once-per-signature filter, so every
+  // test observes its own findings instead of inheriting an earlier test's.
+  reports = []
+  setOperatingStateDefectReporter((report) => {
+    reports.push(report)
+  })
+})
+
 afterEach(() => {
   vi.unstubAllGlobals()
+  setOperatingStateDefectReporter(null)
 })
 
 describe("canonical operating state", () => {
@@ -313,12 +337,18 @@ describe("canonical operating state", () => {
     expect(snapshot?.state.loadPostings.length).toBeGreaterThan(0)
   })
 
-  it("still fails closed when a required table is missing, whatever the version claims", async () => {
+  // Strengthened from asserting only the generic message. REQUIRED_TABLES is the
+  // collection list of LogLoadsDatabaseState, so this is exactly what a deploy
+  // that adds a collection without a backfill looks like from production: every
+  // request fails and the database reports nothing. The name of the collection is
+  // the whole diagnosis, so the error has to carry it.
+  it("names the missing collection when a required table is absent, whatever the version claims", async () => {
     // The version is not the gate; the tables are. A document that happens to
     // carry a plausible version number must never become runtime state.
     const incomplete = createInMemoryDatabase() as Partial<LogLoadsDatabaseState>
 
     delete incomplete.truckSlots
+    delete incomplete.opportunityCapacities
 
     vi.stubGlobal(
       "fetch",
@@ -335,7 +365,23 @@ describe("canonical operating state", () => {
     )
 
     await expect(loadRemoteOperatingState(config)).rejects.toThrow(
-      "Canonical operating state is invalid"
+      "Canonical operating state is invalid: collections missing or not an array: opportunityCapacities, truckSlots"
+    )
+    expect(reports.at(-1)?.missingCollections).toEqual(["opportunityCapacities", "truckSlots"])
+  })
+
+  it("names a collection that is present but is not an array", async () => {
+    const malformed = createInMemoryDatabase() as unknown as Record<string, unknown>
+
+    malformed.assignments = { "0": { id: "not-a-list" } }
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json([{ id: "primary", schema_version: 2, state: malformed, version: 1 }]))
+    )
+
+    await expect(loadRemoteOperatingState(config)).rejects.toThrow(
+      "Canonical operating state is invalid: collections missing or not an array: assignments"
     )
   })
 
@@ -434,5 +480,388 @@ describe("canonical operating state", () => {
     expect(right.version).toBe(0)
     expect(api.snapshot()?.version).toBe(0)
     expect(api.snapshot()?.state.profiles).toHaveLength(seed.profiles.length)
+  })
+})
+
+describe("stored row validation", () => {
+  // The negative control for every test below: the document the platform
+  // actually ships must produce nothing. A failure here means the validator map
+  // or the declared reference list is wrong, not that the seed is corrupt.
+  it("finds nothing wrong with the shipped document", () => {
+    const audit = auditStateSnapshot(createInMemoryDatabase())
+
+    expect(audit.defects).toEqual([])
+    expect(audit.missingCollections).toEqual([])
+    expect(audit.withheldRows).toEqual({})
+    expect(reports).toEqual([])
+    // The state object is handed back, not rebuilt, when nothing was withheld.
+    expect(audit.state?.truckSlots.length).toBeGreaterThan(0)
+  })
+
+  it("withholds a slot that claims more reservations than it has capacity", () => {
+    const stored = createInMemoryDatabase()
+    const slots = rowsOf(stored, "truckSlots")
+    const corruptId = slots[0]!.id as string
+    const storedSlotCount = slots.length
+
+    slots[0]!.capacity = 1
+    slots[0]!.reservedCount = 999
+
+    const audit = auditStateSnapshot(stored)
+
+    expect(audit.state?.truckSlots.map((slot) => slot.id)).not.toContain(corruptId)
+    expect(audit.state?.truckSlots).toHaveLength(storedSlotCount - 1)
+    expect(audit.withheldRows.truckSlots).toHaveLength(1)
+    expect(audit.defects).toMatchObject([
+      { collection: "truckSlots", kind: "invalid_row", rowId: corruptId, rowIndex: 0, withheld: true }
+    ])
+    expect(audit.defects[0]?.detail).toContain("Reserved count cannot exceed slot capacity")
+  })
+
+  it("withholds a capacity row that commits more truckloads than it holds", () => {
+    const stored = createInMemoryDatabase()
+    const capacities = rowsOf(stored, "opportunityCapacities")
+    const corruptId = capacities[0]!.id as string
+
+    capacities[0]!.committedTruckloads = 99999
+
+    const audit = auditStateSnapshot(stored)
+
+    expect(audit.state?.opportunityCapacities.map((row) => row.id)).not.toContain(corruptId)
+    expect(audit.defects).toMatchObject([
+      { collection: "opportunityCapacities", kind: "invalid_row", rowId: corruptId, withheld: true }
+    ])
+  })
+
+  it("withholds a row that is not an object at all", () => {
+    const stored = createInMemoryDatabase()
+    const profiles = rowsOf(stored, "profiles")
+    const storedProfileCount = profiles.length
+    const replacedUserId = profiles[1]!.id as string
+
+    profiles[1] = "not-an-object" as unknown as Record<string, unknown>
+
+    const audit = auditStateSnapshot(stored)
+
+    expect(audit.state?.profiles).toHaveLength(storedProfileCount - 1)
+    expect(audit.state?.profiles).not.toContain("not-an-object")
+    expect(audit.withheldRows.profiles).toEqual(["not-an-object"])
+    expect(audit.defects[0]).toMatchObject({
+      collection: "profiles",
+      detail: "<row>: Expected object, received string",
+      kind: "invalid_row",
+      rowId: null,
+      rowIndex: 1,
+      withheld: true
+    })
+    // A row that is not an object carries no id, so the user really is absent
+    // from the document and everything pointing at them really is dangling. That
+    // is a report, not a second withholding.
+    expect(audit.defects.slice(1).map((defect) => defect.kind)).toEqual([
+      "missing_reference",
+      "missing_reference"
+    ])
+    for (const defect of audit.defects.slice(1)) {
+      expect(defect.detail).toBe(`userId ${replacedUserId} is not a stored profiles id`)
+      expect(defect.withheld).toBe(false)
+    }
+  })
+
+  it("withholds the second row that claims an id another row already claims", () => {
+    const stored = createInMemoryDatabase()
+    const assignments = rowsOf(stored, "assignments")
+    const original = assignments[0]!
+    const shadow = { ...structuredClone(original), dispatcherNotes: "shadow row" }
+
+    assignments.push(shadow)
+
+    const audit = auditStateSnapshot(stored)
+    const survivors = audit.state?.assignments.filter((row) => row.id === original.id) ?? []
+
+    // The first row wins, which is what every `find` in the application already
+    // resolves; the shadow row is what inflates list scans and slot counts.
+    expect(survivors).toHaveLength(1)
+    expect(survivors[0]?.dispatcherNotes).not.toBe("shadow row")
+    expect(audit.withheldRows.assignments).toEqual([shadow])
+    expect(audit.defects).toMatchObject([
+      {
+        collection: "assignments",
+        kind: "duplicate_id",
+        rowId: original.id,
+        rowIndex: assignments.length - 1,
+        withheld: true
+      }
+    ])
+  })
+
+  it("reports a dangling driver reference and leaves the row readable", () => {
+    const stored = createInMemoryDatabase()
+    const assignments = rowsOf(stored, "assignments")
+    const orphanedId = assignments[0]!.id as string
+
+    assignments[0]!.driverProfileId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+
+    const audit = auditStateSnapshot(stored)
+
+    expect(audit.defects).toMatchObject([
+      {
+        collection: "assignments",
+        kind: "missing_reference",
+        rowId: orphanedId,
+        rowIndex: 0,
+        withheld: false
+      }
+    ])
+    expect(audit.defects[0]?.detail).toBe(
+      "driverProfileId dddddddd-dddd-4ddd-8ddd-dddddddddddd is not a stored driverProfiles id"
+    )
+    // Deliberate: withholding the assignment would delete a booking from the
+    // operator's view while the driver stays missing anyway.
+    expect(audit.state?.assignments.map((row) => row.id)).toContain(orphanedId)
+    expect(audit.withheldRows).toEqual({})
+  })
+
+  it("does not cascade: withholding a driver row keeps the assignments that point at it", () => {
+    const stored = createInMemoryDatabase()
+    const drivers = rowsOf(stored, "driverProfiles")
+    const driverId = drivers[0]!.id as string
+    const referring = rowsOf(stored, "assignments").filter(
+      (assignment) => assignment.driverProfileId === driverId
+    )
+
+    expect(referring.length).toBeGreaterThan(0)
+    drivers[0]!.yearsExperience = -4
+
+    const audit = auditStateSnapshot(stored)
+
+    expect(audit.withheldRows.driverProfiles).toHaveLength(1)
+    expect(audit.state?.assignments.map((row) => row.id)).toEqual(
+      expect.arrayContaining(referring.map((assignment) => assignment.id as string))
+    )
+    // References resolve against every id in the stored document, withheld
+    // included, so one bad parent cannot empty the collections beneath it.
+    expect(audit.defects.filter((defect) => defect.kind === "missing_reference")).toEqual([])
+  })
+
+  it("reports every finding once, with the collection, row and consequence", () => {
+    const stored = createInMemoryDatabase()
+
+    rowsOf(stored, "truckSlots")[0]!.reservedCount = -1
+
+    expect(upgradeStateSnapshot(stored)).not.toBeNull()
+    expect(upgradeStateSnapshot(structuredClone(stored))).not.toBeNull()
+
+    // Read once per request against one document: an unfiltered reporter would
+    // repeat this line until it was worthless.
+    expect(reports).toHaveLength(1)
+    expect(reports[0]?.defects).toMatchObject([
+      { collection: "truckSlots", kind: "invalid_row", withheld: true }
+    ])
+  })
+
+  it("reports a missing collection instead of returning null in silence", () => {
+    const incomplete = createInMemoryDatabase() as Partial<LogLoadsDatabaseState>
+
+    delete incomplete.tripEvents
+
+    expect(upgradeStateSnapshot(incomplete)).toBeNull()
+    expect(reports).toMatchObject([{ missingCollections: ["tripEvents"] }])
+  })
+})
+
+describe("forward compatibility of stored rows", () => {
+  it("keeps a field this build has never heard of on a row it validates", () => {
+    const forward = createInMemoryDatabase()
+
+    fieldsOf(forward.loadPostings[1]).settlementTermsVersion = 3
+
+    const upgraded = upgradeStateSnapshot(forward)
+
+    expect(fieldsOf(upgraded?.loadPostings[1]).settlementTermsVersion).toBe(3)
+    expect(reports).toEqual([])
+  })
+
+  // The load-bearing case for the previous test: a collection that lost a row is
+  // the only one rebuilt, so it is the only place where handing back parser
+  // output instead of the stored row would show. Rows are kept by identity —
+  // parsed output would strip every field this build has not declared, and the
+  // next compare-and-swap would persist the stripped document. That is the
+  // rollout data loss PR #69 fixed for whole collections, one field at a time.
+  it("keeps unknown fields on the surviving rows of a collection that lost one", () => {
+    const forward = createInMemoryDatabase()
+    const postings = rowsOf(forward, "loadPostings")
+
+    expect(postings.length).toBeGreaterThan(1)
+    postings[0]!.dailyTruckCountNeeded = 0
+    postings[1]!.settlementTermsVersion = 3
+
+    const audit = auditStateSnapshot(forward)
+
+    expect(audit.withheldRows.loadPostings).toHaveLength(1)
+    expect(fieldsOf(audit.state?.loadPostings[0]).settlementTermsVersion).toBe(3)
+  })
+
+  it("keeps a collection this build has never heard of", () => {
+    const forward = createInMemoryDatabase() as unknown as Record<string, unknown>
+
+    forward.settlementBatches = [{ id: "9f1d4c2a-0000-4000-8000-000000000001" }]
+
+    const upgraded = upgradeStateSnapshot(forward as Partial<LogLoadsDatabaseState>)
+
+    expect((upgraded as unknown as Record<string, unknown>).settlementBatches).toHaveLength(1)
+  })
+
+  it("keeps a row a strict contract rejects only for carrying unknown keys", () => {
+    const stored = createInMemoryDatabase()
+    const supportRequest = {
+      appCommitSha: null,
+      closedAt: null,
+      closedByUserId: null,
+      contentFingerprint: "a".repeat(64),
+      createdAt: "2026-07-20T10:00:00.000Z",
+      details: "The slot picker refused a window that is open.",
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+      impact: "blocked",
+      kind: "problem",
+      organizationId: null,
+      pagePath: "/host/loads",
+      reporterUserId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
+      resolutionCode: null,
+      resolutionNote: null,
+      status: "open",
+      submissionIds: ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3"],
+      title: "Slot picker refuses an open window",
+      triagedAt: null,
+      triagedByUserId: null,
+      updatedAt: "2026-07-20T10:00:00.000Z"
+    }
+
+    rowsOf(stored, "supportRequests").push({ ...supportRequest })
+    expect(auditStateSnapshot(structuredClone(stored)).defects).toEqual([])
+
+    rowsOf(stored, "supportRequests")[0]!.escalationTier = "gold"
+
+    const audit = auditStateSnapshot(stored)
+
+    // supportRequestSchema is .strict(), so a newer deployment's field reads as a
+    // rejection here. Withholding the row would hide a live ticket that the newer
+    // instance is still writing, so the finding is reported and the row stays.
+    expect(audit.defects).toMatchObject([
+      { collection: "supportRequests", kind: "unknown_fields", withheld: false }
+    ])
+    expect(audit.withheldRows).toEqual({})
+    expect(fieldsOf(audit.state?.supportRequests[0]).escalationTier).toBe("gold")
+  })
+})
+
+describe("withheld rows and the compare-and-swap write", () => {
+  function storedStateWithCorruptSlot(): { corruptId: string; state: LogLoadsDatabaseState } {
+    const stored = createInMemoryDatabase()
+    const slots = rowsOf(stored, "truckSlots")
+
+    slots[0]!.capacity = 1
+    slots[0]!.reservedCount = 999
+
+    return { corruptId: slots[0]!.id as string, state: stored }
+  }
+
+  it("hides a withheld row from the mutation it would otherwise corrupt", async () => {
+    const { corruptId, state } = storedStateWithCorruptSlot()
+    const api = new FakeOperatingStateApi(state, 4)
+
+    vi.stubGlobal("fetch", vi.fn(api.fetch))
+
+    const initial = await loadRemoteOperatingState(config)
+
+    expect(initial).not.toBeNull()
+    if (!initial) {
+      return
+    }
+
+    expect(initial.state.truckSlots.map((slot) => slot.id)).not.toContain(corruptId)
+    expect(initial.withheldRows.truckSlots).toHaveLength(1)
+    expect(initial.defects).toMatchObject([{ collection: "truckSlots", kind: "invalid_row" }])
+
+    let seenByMutation: string[] = []
+
+    await mutateRemoteOperatingState(config, initial, (draft) => {
+      seenByMutation = draft.truckSlots.map((slot) => slot.id)
+      draft.profiles[0]!.fullName = "Dispatch operator"
+    })
+
+    expect(seenByMutation).not.toContain(corruptId)
+  })
+
+  it("leaves a withheld row in the stored document after a mutation commits", async () => {
+    const { corruptId, state } = storedStateWithCorruptSlot()
+    const storedSlotCount = state.truckSlots.length
+    const api = new FakeOperatingStateApi(state, 4)
+
+    vi.stubGlobal("fetch", vi.fn(api.fetch))
+
+    const initial = await loadRemoteOperatingState(config)
+
+    expect(initial).not.toBeNull()
+    if (!initial) {
+      return
+    }
+
+    await mutateRemoteOperatingState(config, initial, (draft) => {
+      draft.profiles[0]!.fullName = "Dispatch operator"
+    })
+
+    const persisted = api.snapshot()
+
+    // State is read whole and written whole, so a row merely dropped at read time
+    // would be deleted from Postgres by this write. The row must survive it.
+    expect(persisted?.state.truckSlots).toHaveLength(storedSlotCount)
+    expect(rowsOf(persisted!.state, "truckSlots").find((slot) => slot.id === corruptId)).toMatchObject({
+      capacity: 1,
+      reservedCount: 999
+    })
+    expect(persisted?.state.profiles[0]!.fullName).toBe("Dispatch operator")
+  })
+
+  it("does not multiply withheld rows across repeated commits", async () => {
+    const { corruptId, state } = storedStateWithCorruptSlot()
+    const api = new FakeOperatingStateApi(state, 4)
+
+    vi.stubGlobal("fetch", vi.fn(api.fetch))
+
+    for (let round = 0; round < 3; round += 1) {
+      const snapshot = await loadRemoteOperatingState(config)
+
+      expect(snapshot).not.toBeNull()
+      if (!snapshot) {
+        return
+      }
+
+      await mutateRemoteOperatingState(config, snapshot, (draft) => {
+        draft.profiles[0]!.fullName = `Operator ${round}`
+      })
+    }
+
+    const persisted = rowsOf(api.snapshot()!.state, "truckSlots")
+
+    expect(persisted.filter((slot) => slot.id === corruptId)).toHaveLength(1)
+  })
+
+  it("refuses to treat an update response it cannot validate as a commit", async () => {
+    const stored = createInMemoryDatabase()
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        const broken = createInMemoryDatabase() as Partial<LogLoadsDatabaseState>
+
+        delete broken.messageEvents
+
+        return Response.json([{ id: "primary", schema_version: 2, state: broken, version: 5 }])
+      })
+    )
+
+    await expect(updateRemoteOperatingState(config, stored, 4)).rejects.toThrow(
+      "Canonical operating state update returned invalid data: collections missing or not an array: messageEvents"
+    )
   })
 })

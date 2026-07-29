@@ -1,4 +1,5 @@
 import { evaluateLoadCompatibility, type EquipmentCombination } from "@logloads/contracts"
+import { driverCredentialGate } from "@logloads/services"
 
 import type { NetworkLoadView, NetworkView } from "./network"
 import { services } from "./services"
@@ -362,16 +363,52 @@ export async function getFleetOpportunityData(loadId: string): Promise<FleetOppo
   }
 
   const route = state.haulRoutes.find((candidate) => candidate.id === posting.routeId) ?? null
-  const activeTripDriverIds = new Set(
-    state.tripsV2.filter((trip) => ACTIVE_TRIP_STATUSES.has(trip.status)).map((trip) => trip.driverProfileId)
-  )
+  const targetSlotId = load.slots.claimableSlotId ?? load.slots.requestableSlotId
+  const targetSlot = targetSlotId
+    ? state.truckSlots.find((candidate) => candidate.id === targetSlotId) ?? null
+    : null
 
   const options: LoadDispatchOption[] = state.equipmentCombinations
     .filter((combination) => combination.organizationId === organizationId && combination.status === "available")
     .flatMap((combination) => {
       const driverProfileId = combination.assignedDriverProfileId
 
-      if (!driverProfileId || activeTripDriverIds.has(driverProfileId)) {
+      if (!driverProfileId) {
+        return []
+      }
+
+      // A booked trip is not a permanent lock on a driver or rig. Mirror the
+      // service-side invariant and exclude only assignments whose actual haul
+      // windows overlap this one.
+      const overlappingAssignment = targetSlot
+        ? state.assignments.some((assignment) => {
+            if (!ACTIVE_ASSIGNMENT_STATUSES.has(assignment.status)) {
+              return false
+            }
+
+            const sameEquipment =
+              assignment.driverProfileId === driverProfileId ||
+              assignment.truckProfileId === combination.truckProfileId ||
+              Boolean(
+                combination.trailerProfileId &&
+                assignment.trailerProfileId === combination.trailerProfileId
+              )
+
+            if (!sameEquipment) {
+              return false
+            }
+
+            const otherSlot = state.truckSlots.find((candidate) => candidate.id === assignment.truckSlotId)
+
+            return Boolean(
+              otherSlot &&
+              otherSlot.startAt < targetSlot.endAt &&
+              otherSlot.endAt > targetSlot.startAt
+            )
+          })
+        : false
+
+      if (overlappingAssignment) {
         return []
       }
 
@@ -396,19 +433,24 @@ export async function getFleetOpportunityData(loadId: string): Promise<FleetOppo
         : null
       const availabilityWindows = state.availabilityWindows.filter((window) => window.driverProfileId === driverProfileId)
       const result = evaluateLoadCompatibility({ availabilityWindows, load: posting, route, trailer, truck })
+      const credentialGate = driverCredentialGate(state, driverProfileId)
+      const credentialsReady = credentialGate.satisfied
+      const compatible = result.eligibility !== "ineligible"
 
       return [{
         combinationId: combination.id,
         driverName: user?.fullName ?? "Driver",
         driverProfileId,
-        eligible: result.eligibility !== "ineligible",
-        fit: eligibilityFitLabel(result.eligibility),
+        eligible: compatible && credentialsReady,
+        fit: credentialsReady ? eligibilityFitLabel(result.eligibility) : "Credentials needed",
         label: combination.label,
         payload: `${combination.maxPayloadTons} tons`,
         rank: eligibilityRank(result.eligibility),
-        reasons: result.eligibility === "ineligible"
-          ? result.hardFailures.slice(0, 2)
-          : [...result.cautions, ...result.positiveSignals].slice(0, 2)
+        reasons: !credentialsReady
+          ? [`Credential vault incomplete: ${credentialGate.missing.join(", ")}`]
+          : result.eligibility === "ineligible"
+            ? result.hardFailures.slice(0, 2)
+            : [...result.cautions, ...result.positiveSignals].slice(0, 2)
       }]
     })
     .sort((left, right) => Number(right.eligible) - Number(left.eligible) || left.rank - right.rank)

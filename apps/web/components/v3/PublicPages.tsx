@@ -7,7 +7,8 @@ import { Badge } from "@logloads/ui"
 
 import { submitContactInquiryAction, type ContactFormState } from "@/lib/contact-actions"
 import type { NetworkLoadView } from "@/lib/network"
-import { legalPages, loadProductLabel, pricingPlans, slugify, type LegalPageContent, type PublicStoryPage, visibilityLabel } from "@/lib/v3-shared"
+import { payHeadline, presentPay } from "@/lib/pay-display"
+import { legalPages, loadProductLabel, pricingPlans, publicLoadHref, slugify, type LegalPageContent, type PublicStoryPage, visibilityLabel } from "@/lib/v3-shared"
 import { DevSignInForm, OnboardingFlow, type PendingInvitationOffer } from "./AuthForms"
 import type { DemoPersona } from "@/lib/demo-personas"
 import { DecisionPanel, EconomicsPanel, LoadCard, LoadDiscovery, OperationSections, RoutePackPreview, WeatherWidget } from "./LoadMap"
@@ -24,6 +25,7 @@ const driverFlow: Array<{ step: string; question: string; body: string }> = [
 export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
   const openLoads = loads.filter((load) => load.discovery.available && load.discovery.reason === "available")
   const featuredLoad = openLoads[0] ?? null
+  const heroPay = featuredLoad ? presentPay(featuredLoad) : null
 
   return (
     <PublicShell>
@@ -49,12 +51,12 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
                 <Link className="hero-tertiary" href="/for-fleets">Run fleet dispatch <span aria-hidden>→</span></Link>
               </div>
             </div>
-            {featuredLoad ? (
+            {featuredLoad && heroPay ? (
               <div className="hero-load-preview" aria-label="Available load preview">
                 <div className="hero-load-preview__head"><span>Available near {featuredLoad.landing.city}</span><Badge tone="success">Open</Badge></div>
-                <strong>{featuredLoad.economics.grossLabel ? `${featuredLoad.economics.grossLabel} est. gross` : featuredLoad.payLabel}</strong>
-                {featuredLoad.economics.grossLabel ? (
-                  <span className="hero-load-preview__rate-terms">Base {featuredLoad.payLabel} · {featuredLoad.fuelSurchargeLabel}</span>
+                <strong>{heroPay.headline}</strong>
+                {heroPay.estimateNote ? (
+                  <span className="hero-load-preview__rate-terms">{heroPay.estimateNote}</span>
                 ) : null}
                 <h2>{featuredLoad.title}</h2>
                 <p>{featuredLoad.landing.city} to {featuredLoad.destination.name}</p>
@@ -62,10 +64,10 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
                   <div><dt>When</dt><dd>{featuredLoad.scheduleLabel}</dd></div>
                   <div><dt>Trip</dt><dd>{featuredLoad.route.distanceMiles.toFixed(0)} miles</dd></div>
                   <div><dt>Est. fuel</dt><dd>{featuredLoad.economics.fuelCostLabel}</dd></div>
-                  <div><dt>After fuel</dt><dd>{featuredLoad.economics.afterFuelLabel ?? "See rate"}</dd></div>
+                  <div><dt>After fuel</dt><dd>{heroPay.afterFuel ?? "See rate"}</dd></div>
                   <div><dt>Available</dt><dd>{featuredLoad.capacity.remaining} of {featuredLoad.capacity.total}</dd></div>
                 </dl>
-                <Link className="action-link" href={`/loads/${featuredLoad.id}`}>View load details</Link>
+                <Link className="action-link" href={publicLoadHref(featuredLoad)}>View load details</Link>
                 <div aria-hidden="true" className="hero-load-preview__nav"><span>Map</span><span className="is-active">Loads</span><span>Schedule</span><span>Profile</span></div>
               </div>
             ) : (
@@ -105,7 +107,7 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
           <div className="feature-grid">
             <article><span>Driver accounts</span><h3>Drivers &amp; owner-operators</h3><p>See available work, know whether it fits, request it, and follow the schedule from a phone.</p><Link className="text-link" href="/sign-up?path=driver">Create a driver profile</Link></article>
             <article><span>$499/month</span><h3>Dispatchers</h3><p>Keep trucks, drivers, requests, schedules, and exceptions in one operating view.</p><Link className="text-link" href="/sign-up?path=fleet">Set up dispatch</Link></article>
-            <article><span>Free launch pilot</span><h3>Hosts</h3><p>Post the work, see qualified requests, choose the truck, and know what is arriving.</p><Link className="text-link" href="/sign-up?path=host">Post a load</Link></article>
+            <article><span>5% of driver pay</span><h3>Hosts</h3><p>Post the work, see qualified requests, choose the truck, and know what is arriving.</p><Link className="text-link" href="/sign-up?path=host">Post a load</Link></article>
           </div>
         </section>
         <section className="loads-preview">
@@ -113,7 +115,7 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
           {openLoads.length > 0 ? (
             <div className="load-card-grid">
               {openLoads.slice(0, 3).map((load) => (
-                <LoadCard href={`/loads/${load.id}`} key={load.id} load={load} publicMode />
+                <LoadCard href={publicLoadHref(load)} key={load.id} load={load} publicMode />
               ))}
             </div>
           ) : (
@@ -167,7 +169,7 @@ export function PublicLoadDetail({ load }: { load: NetworkLoadView }) {
           <p className="eyebrow">{visibilityLabel(load)}</p>
           <h1>{load.title}</h1>
           <p className="lead">{loadProductLabel(load)} from {load.landing.city}, {load.landing.state} to {load.destination.name}.</p>
-          <div className="fact-row"><span>{load.scheduleLabel}</span><span>{load.economics.grossLabel ? `${load.economics.grossLabel} est. gross` : load.payLabel}</span><span>{load.capacity.remaining} of {load.capacity.total} loads open</span></div>
+          <div className="fact-row"><span>{load.scheduleLabel}</span><span>{payHeadline(load)}</span><span>{load.capacity.remaining} of {load.capacity.total} loads open</span></div>
           <EconomicsPanel load={load} />
           <WeatherWidget loadId={load.id} />
           <DecisionPanel load={load} publicMode />
@@ -223,7 +225,7 @@ export function PricingPage() {
   return (
     <PublicShell>
       <main className="page-main pricing-page">
-        <PageIntro eyebrow="Simple pricing" title="Drivers are free forever." body="Hosts are free during the launch pilot. Dispatch teams pay one monthly price for the operating tools their trucks run on." />
+        <PageIntro eyebrow="Simple pricing" title="Drivers are free forever." body="Hosts pay 5% of what they pay the driver, on completed loads only. Dispatch teams pay one monthly price for the operating tools their trucks run on." />
         <div className="pricing-grid">
           {pricingPlans.map((plan) => (
             <article className={plan.name === "Driver" ? "pricing-card pricing-card--free" : "pricing-card"} key={plan.name}>
@@ -239,7 +241,7 @@ export function PricingPage() {
         </div>
         <section className="legal-note">
           <h2>No surprise charges.</h2>
-          <p>The price you see is the price you pay. Driver accounts stay free, and hosts receive advance notice before launch-pilot pricing changes.</p>
+          <p>Driver accounts stay free forever, and the host fee is never deducted from driver pay — the driver is paid what the host stated. Hosts receive 60 days notice before any rate change, and no change is ever applied retroactively.</p>
         </section>
       </main>
     </PublicShell>

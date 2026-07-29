@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest"
 
-import { driverProfileSchema, loadPostingSchema, truckProfileSchema, truckSlotSchema } from "./schemas"
+import {
+  assignmentSchema,
+  driverProfileSchema,
+  loadPostingSchema,
+  truckProfileSchema,
+  truckSlotSchema
+} from "./schemas"
 
 const baseTimestamp = "2026-06-05T12:00:00.000Z"
 
@@ -117,5 +123,83 @@ describe("schema validation", () => {
     expect(truckProfileSchema.safeParse({ ...truck, fuelEconomyMpg: 15 }).success).toBe(true)
     expect(truckProfileSchema.safeParse({ ...truck, fuelEconomyMpg: 2.9 }).success).toBe(false)
     expect(truckProfileSchema.safeParse({ ...truck, fuelEconomyMpg: 15.1 }).success).toBe(false)
+  })
+
+  it("stores driver-payment receipt sides as an ordered, distinct-person pair with an atomic actual amount", () => {
+    const assignment = {
+      assignedAt: baseTimestamp,
+      cancelledAt: null,
+      cancellationReason: null,
+      completedAt: null,
+      createdAt: baseTimestamp,
+      directOfferId: null,
+      dispatcherNotes: null,
+      driverPaymentReceivedAt: null,
+      driverPaymentReceivedByUserId: null,
+      driverPaymentSentAt: baseTimestamp,
+      driverPaymentSentByUserId: "22222222-2222-4222-8222-222222222222",
+      driverProfileId: "33333333-3333-4333-8333-333333333333",
+      id: "11111111-1111-4111-8111-111111111111",
+      loadPostingId: "44444444-4444-4444-8444-444444444444",
+      requestedAt: baseTimestamp,
+      status: "accepted",
+      termsSnapshot: {},
+      trailerProfileId: null,
+      truckProfileId: "55555555-5555-4555-8555-555555555555",
+      truckSlotId: "66666666-6666-4666-8666-666666666666",
+      updatedAt: baseTimestamp
+    }
+    const receiver = "77777777-7777-4777-8777-777777777777"
+
+    expect(assignmentSchema.safeParse(assignment).success).toBe(true)
+    expect(assignmentSchema.safeParse({
+      ...assignment,
+      driverPaymentReceivedAt: "2026-06-05T11:59:00.000Z",
+      driverPaymentReceivedByUserId: receiver
+    }).success).toBe(false)
+    expect(assignmentSchema.safeParse({
+      ...assignment,
+      driverPaymentReceivedAt: "2026-06-05T12:01:00.000Z",
+      driverPaymentReceivedByUserId: null
+    }).success).toBe(false)
+    expect(assignmentSchema.safeParse({
+      ...assignment,
+      driverPaymentReceivedAt: null,
+      driverPaymentReceivedByUserId: receiver
+    }).success).toBe(false)
+    expect(assignmentSchema.safeParse({
+      ...assignment,
+      driverPaymentReceivedAt: "2026-06-05T12:01:00.000Z",
+      driverPaymentReceivedByUserId: assignment.driverPaymentSentByUserId
+    }).success).toBe(false)
+    expect(assignmentSchema.safeParse({
+      ...assignment,
+      driverPaymentReceivedAt: "2026-06-05T12:01:00.000Z",
+      driverPaymentReceivedByUserId: receiver
+    }).success).toBe(true)
+    expect(assignmentSchema.safeParse({
+      ...assignment,
+      driverPaymentReceivedAmountCents: 50_000,
+      driverPaymentReceivedAt: "2026-06-05T12:01:00.000Z",
+      driverPaymentReceivedByUserId: receiver,
+      driverPaymentReceivedCurrency: null
+    }).success).toBe(false)
+    expect(assignmentSchema.safeParse({
+      ...assignment,
+      driverPaymentReceivedAmountCents: null,
+      driverPaymentReceivedAt: "2026-06-05T12:01:00.000Z",
+      driverPaymentReceivedByUserId: receiver,
+      driverPaymentReceivedCurrency: "USD"
+    }).success).toBe(false)
+    expect(assignmentSchema.safeParse({
+      ...assignment,
+      driverPaymentReceivedAmountCents: 50_000,
+      driverPaymentReceivedAt: "2026-06-05T12:01:00.000Z",
+      driverPaymentReceivedByUserId: receiver,
+      driverPaymentReceivedCurrency: "usd"
+    })).toMatchObject({
+      success: true,
+      data: { driverPaymentReceivedCurrency: "USD" }
+    })
   })
 })

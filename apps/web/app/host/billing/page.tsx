@@ -1,4 +1,5 @@
 import { BillingPage, type CheckoutNotice } from "@/components/v3"
+import { getHostBillingView } from "@/lib/host-billing-data"
 import { getBillingView } from "@/lib/plans"
 import { getCockpitContext, shellAccountFor } from "@/lib/v3"
 
@@ -24,6 +25,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ c
       account={shellAccountFor(context)}
       billing={getBillingView(context.network)}
       checkoutNotice={checkoutNotice(checkout)}
+      hostBilling={getHostBillingView(context.network.activeOrganization.id)}
       role="host"
     />
   )

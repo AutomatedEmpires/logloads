@@ -2,14 +2,18 @@ import type {
   Assignment,
   AuditEvent,
   AvailabilityWindow,
+  CredentialReview,
   DestinationFacility,
   DirectOffer,
   DispatcherProfile,
+  DriverCredential,
   DriverProfile,
   Entitlement,
   EquipmentCombination,
   FutureAvailability,
   HaulRoute,
+  HostBillingProfile,
+  HostInvoice,
   Landing,
   LoaderProfile,
   LoggingCompany,
@@ -23,6 +27,7 @@ import type {
   Organization,
   OrganizationInvitation,
   OrganizationMembership,
+  PlatformFeeEvent,
   PrivateNetworkRelationship,
   Rate,
   RichLandingDetails,
@@ -48,6 +53,14 @@ export interface LogLoadsDatabaseState {
   organizationInvitations: OrganizationInvitation[]
   privateNetworkRelationships: PrivateNetworkRelationship[]
   driverProfiles: DriverProfile[]
+  /**
+   * The credential vault, and every decision ever taken on it. Two collections
+   * rather than a status field on the credential: the decision trail is
+   * append-only, so "why was I refused" survives a later approval instead of
+   * being overwritten by it.
+   */
+  driverCredentials: DriverCredential[]
+  credentialReviews: CredentialReview[]
   dispatcherProfiles: DispatcherProfile[]
   loaderProfiles: LoaderProfile[]
   truckProfiles: TruckProfile[]
@@ -74,6 +87,15 @@ export interface LogLoadsDatabaseState {
   tripReviews: TripReview[]
   verificationRecords: VerificationRecord[]
   entitlements: Entitlement[]
+  /**
+   * Platform fee billing, in lifecycle order: whether the host can be charged,
+   * what each completed load accrued, and the monthly bill those accruals land on.
+   * Separate from `entitlements`, which is the Dispatch Pro software subscription —
+   * collapsing them would let a plan webhook mutate a per-load charge.
+   */
+  hostBillingProfiles: HostBillingProfile[]
+  platformFeeEvents: PlatformFeeEvent[]
+  hostInvoices: HostInvoice[]
   operationalNotices: OperationalNotice[]
   notifications: Notification[]
   supportRequests: SupportRequest[]

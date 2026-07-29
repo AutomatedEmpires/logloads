@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { driverPayLabel } from "./money"
+import { driverPayLabel, readFrozenDriverPay } from "./money"
 
 const perTon = { baseRate: { amountCents: 6200, currency: "USD" }, rateType: "per_ton" as const }
 
@@ -44,5 +44,20 @@ describe("driverPayLabel", () => {
     const cad = { baseRate: { amountCents: 6200, currency: "CAD" }, rateType: "per_load" as const }
 
     expect(driverPayLabel(50_000, cad)).toContain("500")
+  })
+})
+
+describe("readFrozenDriverPay", () => {
+  it("returns the accepted amount and currency as one indivisible pair", () => {
+    expect(readFrozenDriverPay({ currency: "cad", driverPayCents: 52_500 })).toEqual({
+      amountCents: 52_500,
+      currency: "CAD"
+    })
+  })
+
+  it("does not invent missing legacy terms", () => {
+    expect(readFrozenDriverPay({ currency: "USD" })).toBeNull()
+    expect(readFrozenDriverPay({ driverPayCents: 52_500 })).toBeNull()
+    expect(readFrozenDriverPay({ currency: "USD", driverPayCents: 0 })).toBeNull()
   })
 })

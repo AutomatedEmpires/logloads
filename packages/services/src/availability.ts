@@ -17,6 +17,13 @@ export function listDriverAvailability(
     : state.availabilityWindows
 }
 
+/**
+ * An id names a row; it does not prove the caller owns it. Availability is what
+ * makes a driver eligible for a haul, so replacing a window that belongs to
+ * someone else takes a rival driver off the work they had posted for. The write
+ * therefore has to agree with the driver the caller is acting as, which every
+ * caller derives from the session rather than from the request body.
+ */
 export function upsertAvailabilityWindow(
   state: LogLoadsDatabaseState,
   input: unknown
@@ -24,9 +31,16 @@ export function upsertAvailabilityWindow(
   const parsed = upsertAvailabilityWindowInputSchema.parse(input)
   const existingId = parsed.id ?? createUuid()
   const timestamp = nowIso()
+  const existing = parsed.id
+    ? state.availabilityWindows.find((window) => window.id === parsed.id)
+    : undefined
 
-  if (parsed.id && !state.availabilityWindows.some((window) => window.id === parsed.id)) {
+  if (parsed.id && !existing) {
     throw new Error(`Availability window ${parsed.id} was not found`)
+  }
+
+  if (existing && existing.driverProfileId !== parsed.driverProfileId) {
+    throw new Error("You cannot replace another driver's availability window")
   }
 
   const overlapping = state.availabilityWindows.find((window) => {
@@ -47,16 +61,14 @@ export function upsertAvailabilityWindow(
 
   const entity = availabilityWindowSchema.parse({
     ...parsed,
-    createdAt: parsed.id
-      ? state.availabilityWindows.find((window) => window.id === parsed.id)?.createdAt
-      : timestamp,
+    createdAt: existing?.createdAt ?? timestamp,
     id: existingId,
     updatedAt: timestamp
   })
 
-  if (parsed.id) {
+  if (existing) {
     state.availabilityWindows = state.availabilityWindows.map((window) =>
-      window.id === parsed.id ? entity : window
+      window.id === existing.id ? entity : window
     )
   } else {
     state.availabilityWindows.push(entity)

@@ -15,7 +15,7 @@ mkdirSync(SHOTS, { recursive: true })
 
 async function signIn(page: Page, email: string) {
   await page.goto("/sign-in")
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
   await page.fill('input[name="email"]', email)
   await page.click('button[type="submit"]')
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 30_000 })
@@ -34,7 +34,7 @@ test.describe.serial("directed driver surfaces", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "hank@northpine.example")
     await page.goto("/driver/loads")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     await expect(page.getByRole("region", { name: "Your load board summary" })).toBeVisible()
 
@@ -56,13 +56,13 @@ test.describe.serial("directed driver surfaces", () => {
 
     await page.setViewportSize({ width: 390, height: 844 })
     await page.reload()
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
     await page.screenshot({ path: `${SHOTS}/driver-loads-mobile.png`, fullPage: true })
 
     // The directed Schedule surface for a driver mid-haul.
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto("/driver/schedule")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
     await page.screenshot({ path: `${SHOTS}/driver-schedule-desktop.png`, fullPage: true })
   })
 
@@ -70,7 +70,7 @@ test.describe.serial("directed driver surfaces", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "hank@northpine.example")
     await page.goto("/driver/map")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     const trigger = page.locator(".notif-bell__trigger")
     await expect(trigger).toBeVisible()

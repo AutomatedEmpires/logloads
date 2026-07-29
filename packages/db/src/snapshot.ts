@@ -2,14 +2,286 @@ import { existsSync, readFileSync } from "node:fs"
 import { mkdir, rename, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 
-import { seedDatabaseState } from "./seed-data"
-import type { LogLoadsDatabaseState } from "./types"
+import {
+  assignmentSchema,
+  auditEventSchema,
+  availabilityWindowSchema,
+  credentialReviewSchema,
+  destinationFacilitySchema,
+  directOfferSchema,
+  dispatcherProfileSchema,
+  driverCredentialSchema,
+  driverProfileSchema,
+  entitlementSchema,
+  equipmentCombinationSchema,
+  futureAvailabilitySchema,
+  haulRouteSchema,
+  hostBillingProfileSchema,
+  hostInvoiceSchema,
+  landingSchema,
+  loadPostingSchema,
+  loaderProfileSchema,
+  loggingCompanySchema,
+  messageEventSchema,
+  messageThreadSchema,
+  millSchema,
+  notificationSchema,
+  operationalNoticeSchema,
+  opportunityCapacitySchema,
+  organizationInvitationSchema,
+  organizationMembershipSchema,
+  organizationSchema,
+  platformFeeEventSchema,
+  privateNetworkRelationshipSchema,
+  rateSchema,
+  richLandingDetailsSchema,
+  routePackSchema,
+  supportRequestSchema,
+  trailerProfileSchema,
+  tripDocumentSchema,
+  tripEventSchema,
+  tripInspectionSchema,
+  tripReviewSchema,
+  tripSchemaV2,
+  truckProfileSchema,
+  truckSlotSchema,
+  userSchema,
+  verificationRecordSchema
+} from "@logloads/contracts"
 
-const REQUIRED_TABLES = Object.keys(seedDatabaseState) as Array<keyof LogLoadsDatabaseState>
+import type { LogLoadsDatabaseState, LogLoadsTableName } from "./types"
+
 const SNAPSHOT_ROW_ID = "primary"
 const REMOTE_READ_ATTEMPTS = 2
+const REPORTED_SIGNATURE_LIMIT = 500
 
 export const OPERATING_STATE_SCHEMA_VERSION = 2
+
+/**
+ * The verdict this module needs from a contract schema, described structurally.
+ * packages/db depends on @logloads/contracts, not on zod, and reaching through a
+ * transitive dependency for a type would break the moment contracts changes how
+ * it validates. Every zod schema satisfies this shape.
+ */
+interface RowIssue {
+  readonly code: string
+  readonly message: string
+  readonly path: ReadonlyArray<string | number>
+}
+
+type RowVerdict =
+  | { readonly success: true }
+  | { readonly success: false; readonly error: { readonly issues: ReadonlyArray<RowIssue> } }
+
+interface RowValidator {
+  safeParse(value: unknown): RowVerdict
+}
+
+/**
+ * The contract every stored row of a collection must satisfy before it may
+ * become runtime state. Typed as an exhaustive record so a collection added to
+ * LogLoadsDatabaseState cannot compile until somebody says how its rows are
+ * validated — the store has no other gate, because the whole document arrives
+ * as one service-role JSONB read.
+ */
+const ROW_VALIDATORS: Record<LogLoadsTableName, RowValidator> = {
+  assignments: assignmentSchema,
+  auditEvents: auditEventSchema,
+  availabilityWindows: availabilityWindowSchema,
+  companies: loggingCompanySchema,
+  credentialReviews: credentialReviewSchema,
+  destinationFacilities: destinationFacilitySchema,
+  directOffers: directOfferSchema,
+  dispatcherProfiles: dispatcherProfileSchema,
+  driverCredentials: driverCredentialSchema,
+  driverProfiles: driverProfileSchema,
+  entitlements: entitlementSchema,
+  equipmentCombinations: equipmentCombinationSchema,
+  futureAvailability: futureAvailabilitySchema,
+  haulRoutes: haulRouteSchema,
+  hostBillingProfiles: hostBillingProfileSchema,
+  hostInvoices: hostInvoiceSchema,
+  landings: landingSchema,
+  loadPostings: loadPostingSchema,
+  loaderProfiles: loaderProfileSchema,
+  messageEvents: messageEventSchema,
+  messageThreads: messageThreadSchema,
+  mills: millSchema,
+  notifications: notificationSchema,
+  operationalNotices: operationalNoticeSchema,
+  opportunityCapacities: opportunityCapacitySchema,
+  organizationInvitations: organizationInvitationSchema,
+  organizationMemberships: organizationMembershipSchema,
+  organizations: organizationSchema,
+  platformFeeEvents: platformFeeEventSchema,
+  privateNetworkRelationships: privateNetworkRelationshipSchema,
+  profiles: userSchema,
+  rates: rateSchema,
+  richLandingDetails: richLandingDetailsSchema,
+  routePacks: routePackSchema,
+  supportRequests: supportRequestSchema,
+  trailerProfiles: trailerProfileSchema,
+  tripDocuments: tripDocumentSchema,
+  tripEvents: tripEventSchema,
+  tripInspections: tripInspectionSchema,
+  tripReviews: tripReviewSchema,
+  tripsV2: tripSchemaV2,
+  truckProfiles: truckProfileSchema,
+  truckSlots: truckSlotSchema,
+  verificationRecords: verificationRecordSchema
+}
+
+/**
+ * Derived from the validator map rather than from the seed literal, so the
+ * required set is the type's own collection list and cannot drift from what is
+ * actually validated.
+ */
+const REQUIRED_TABLES = Object.keys(ROW_VALIDATORS) as LogLoadsTableName[]
+
+interface RowReference {
+  field: string
+  target: LogLoadsTableName
+}
+
+/**
+ * Stored references whose target has to exist for the referring row to mean
+ * anything operationally.
+ *
+ * Deliberately NOT the complete foreign-key set — every reference in the
+ * contracts is typed as a bare uuid, so this list is declared by hand and can
+ * only ever be partial. That is survivable precisely because a broken reference
+ * is reported and never withheld: a missing entry costs coverage, a wrong entry
+ * costs log noise, and neither can take the document down or hide a row.
+ * `polymorphic` and ambiguous ids (relatedEntityId, subjectId, companyId, which
+ * spans the retired companies table and organizations) are left out rather than
+ * guessed at.
+ */
+const ROW_REFERENCES: Partial<Record<LogLoadsTableName, readonly RowReference[]>> = {
+  assignments: [
+    { field: "driverProfileId", target: "driverProfiles" },
+    { field: "loadPostingId", target: "loadPostings" },
+    { field: "trailerProfileId", target: "trailerProfiles" },
+    { field: "truckProfileId", target: "truckProfiles" },
+    { field: "truckSlotId", target: "truckSlots" }
+  ],
+  availabilityWindows: [
+    { field: "driverProfileId", target: "driverProfiles" },
+    { field: "truckProfileId", target: "truckProfiles" }
+  ],
+  // A review is the answer to "why was I refused". If the credential it decided is
+  // gone the answer no longer attaches to anything, which is the one thing this
+  // trail exists to prevent.
+  credentialReviews: [
+    { field: "credentialId", target: "driverCredentials" },
+    { field: "driverProfileId", target: "driverProfiles" }
+  ],
+  destinationFacilities: [{ field: "millId", target: "mills" }],
+  directOffers: [{ field: "loadPostingId", target: "loadPostings" }],
+  dispatcherProfiles: [{ field: "userId", target: "profiles" }],
+  // supersededByCredentialId points inside this same collection: a renewal chain
+  // whose earlier link is gone would present a superseded record as current.
+  driverCredentials: [
+    { field: "driverProfileId", target: "driverProfiles" },
+    { field: "supersededByCredentialId", target: "driverCredentials" }
+  ],
+  driverProfiles: [{ field: "userId", target: "profiles" }],
+  equipmentCombinations: [
+    { field: "organizationId", target: "organizations" },
+    { field: "truckProfileId", target: "truckProfiles" }
+  ],
+  hostBillingProfiles: [{ field: "organizationId", target: "organizations" }],
+  hostInvoices: [{ field: "organizationId", target: "organizations" }],
+  loadPostings: [
+    { field: "dispatcherProfileId", target: "dispatcherProfiles" },
+    { field: "dropoffMillId", target: "mills" },
+    { field: "pickupLandingId", target: "landings" },
+    { field: "rateId", target: "rates" },
+    { field: "routeId", target: "haulRoutes" }
+  ],
+  loaderProfiles: [{ field: "userId", target: "profiles" }],
+  messageEvents: [{ field: "threadId", target: "messageThreads" }],
+  opportunityCapacities: [{ field: "loadPostingId", target: "loadPostings" }],
+  organizationMemberships: [
+    { field: "organizationId", target: "organizations" },
+    { field: "userId", target: "profiles" }
+  ],
+  // A fee is a claim about one specific completed load. If anything it names is
+  // missing, the charge can no longer be explained to the host it was billed to,
+  // which is the one thing a fee ledger must always be able to do. invoiceId is
+  // nullable and simply skipped while it is null. `feeEventIds` on an invoice is an
+  // array, which is outside what this checker reads.
+  platformFeeEvents: [
+    { field: "assignmentId", target: "assignments" },
+    { field: "invoiceId", target: "hostInvoices" },
+    { field: "loadPostingId", target: "loadPostings" },
+    { field: "organizationId", target: "organizations" },
+    { field: "truckSlotId", target: "truckSlots" }
+  ],
+  richLandingDetails: [{ field: "landingId", target: "landings" }],
+  routePacks: [
+    { field: "assignmentId", target: "assignments" },
+    { field: "haulRouteId", target: "haulRoutes" },
+    { field: "landingId", target: "landings" },
+    { field: "loadPostingId", target: "loadPostings" }
+  ],
+  tripDocuments: [{ field: "tripId", target: "tripsV2" }],
+  tripEvents: [{ field: "tripId", target: "tripsV2" }],
+  tripInspections: [
+    { field: "assignmentId", target: "assignments" },
+    { field: "driverProfileId", target: "driverProfiles" },
+    { field: "loadPostingId", target: "loadPostings" },
+    { field: "tripId", target: "tripsV2" }
+  ],
+  tripReviews: [
+    { field: "assignmentId", target: "assignments" },
+    { field: "loadPostingId", target: "loadPostings" },
+    { field: "tripId", target: "tripsV2" }
+  ],
+  tripsV2: [
+    { field: "assignmentId", target: "assignments" },
+    { field: "driverProfileId", target: "driverProfiles" },
+    { field: "loadPostingId", target: "loadPostings" },
+    { field: "routePackId", target: "routePacks" }
+  ],
+  truckSlots: [
+    { field: "landingId", target: "landings" },
+    { field: "loadPostingId", target: "loadPostings" }
+  ]
+}
+
+export type OperatingStateDefectKind =
+  | "duplicate_id"
+  | "invalid_row"
+  | "missing_reference"
+  | "unknown_fields"
+
+export interface OperatingStateDefect {
+  collection: LogLoadsTableName
+  detail: string
+  kind: OperatingStateDefectKind
+  rowId: string | null
+  /** Index in the STORED collection, so an operator can find the row in the JSONB. */
+  rowIndex: number
+  /** True when the row was held back from runtime state, false when it was kept. */
+  withheld: boolean
+}
+
+/** Rows held back from runtime state, per collection, in stored order. */
+export type WithheldOperatingStateRows = Partial<Record<LogLoadsTableName, unknown[]>>
+
+export interface OperatingStateReport {
+  defects: readonly OperatingStateDefect[]
+  /** Collections absent or not arrays. Non-empty means the document is refused. */
+  missingCollections: readonly LogLoadsTableName[]
+}
+
+export interface OperatingStateAudit extends OperatingStateReport {
+  defects: OperatingStateDefect[]
+  missingCollections: LogLoadsTableName[]
+  /** null only when a required collection is missing; the document is refused. */
+  state: LogLoadsDatabaseState | null
+  withheldRows: WithheldOperatingStateRows
+}
 
 export interface RemoteSnapshotConfig {
   url: string
@@ -17,9 +289,13 @@ export interface RemoteSnapshotConfig {
 }
 
 export interface RemoteOperatingStateSnapshot {
+  /** What the read found wrong with the stored document, for health surfaces. */
+  defects: OperatingStateDefect[]
   schemaVersion: number
   state: LogLoadsDatabaseState
   version: number
+  /** Rows kept out of `state`; carried so a write-back cannot erase them. */
+  withheldRows: WithheldOperatingStateRows
 }
 
 export interface RemoteMutationResult<T> {
@@ -42,23 +318,93 @@ export class OperatingStateConflictError extends Error {
   }
 }
 
+export type OperatingStateDefectReporter = (report: OperatingStateReport) => void
+
+function writeReportToConsole(report: OperatingStateReport): void {
+  if (report.missingCollections.length > 0) {
+    console.error(
+      `[operating-state] document refused; collections missing or not an array: ${report.missingCollections.join(", ")}`
+    )
+  }
+
+  for (const defect of report.defects) {
+    console.error(
+      `[operating-state] ${defect.kind} ${defect.collection}[${defect.rowIndex}]` +
+        `${defect.rowId ? ` id=${defect.rowId}` : ""} ` +
+        `${defect.withheld ? "withheld from runtime state" : "kept in runtime state"}: ${defect.detail}`
+    )
+  }
+}
+
+const reportedSignatures = new Set<string>()
+let reportDefects: OperatingStateDefectReporter = writeReportToConsole
+
 /**
- * Upgrade an older snapshot without discarding data. Schema v2 introduced the
- * tripReviews collection. supportRequests is additive and schema-v2-compatible
- * (its SQL migration applies the same backfill). tripInspections is additive
- * and RUNTIME-ONLY — no SQL migration exists for it; this guard is the only
- * backfill. Old and new deployments can overlap during rollout and rollback.
- * Every other collection remains required so a corrupt or unrelated JSON
- * document can never become runtime state.
+ * Route findings somewhere an operator will see them. The default writes to the
+ * server log because that is the only sink this package can assume exists;
+ * anything better (Sentry, a health endpoint) replaces it here.
  */
-export function upgradeStateSnapshot(
+export function setOperatingStateDefectReporter(
+  reporter: OperatingStateDefectReporter | null
+): void {
+  reportDefects = reporter ?? writeReportToConsole
+  reportedSignatures.clear()
+}
+
+function reportSignature(report: OperatingStateReport): string {
+  return [
+    report.missingCollections.join(","),
+    ...report.defects.map(
+      (defect) =>
+        `${defect.kind}/${defect.collection}/${defect.rowId ?? defect.rowIndex}/${defect.detail}`
+    )
+  ].join("|")
+}
+
+/**
+ * Emit each distinct finding once per process. The canonical document is re-read
+ * on every request, so reporting unconditionally would repeat the same lines
+ * thousands of times an hour and bury the finding it was meant to surface.
+ * Nothing is lost by the filter: every read still returns the full current set
+ * on `snapshot.defects`.
+ */
+function publishReport(report: OperatingStateReport): void {
+  if (report.defects.length === 0 && report.missingCollections.length === 0) {
+    return
+  }
+
+  const signature = reportSignature(report)
+
+  if (reportedSignatures.has(signature)) {
+    return
+  }
+
+  if (reportedSignatures.size >= REPORTED_SIGNATURE_LIMIT) {
+    reportedSignatures.clear()
+  }
+
+  reportedSignatures.add(signature)
+  reportDefects(report)
+}
+
+/**
+ * Additive normalization for snapshots written before a field existed. Schema v2
+ * introduced the tripReviews collection. supportRequests is additive and
+ * schema-v2-compatible (its SQL migration applies the same backfill).
+ * tripInspections is additive and RUNTIME-ONLY — no SQL migration exists for it;
+ * this guard is the only backfill. The three platform-fee billing collections and
+ * the two driver-credential collections are additive and RUNTIME-ONLY on the same
+ * terms. Old and new deployments can overlap during rollout and rollback.
+ */
+function backfillStateSnapshot(
   value: Partial<LogLoadsDatabaseState>
-): LogLoadsDatabaseState | null {
+): Partial<LogLoadsDatabaseState> {
   const candidate: Partial<LogLoadsDatabaseState> = { ...value }
 
-  // This must happen before REQUIRED_TABLES validation. The SQL migration applies
-  // the same additive backfill, while this runtime guard keeps code-first deploys
-  // and local snapshots safe without advancing the persisted schema version.
+  // This must happen before the required-collection check. The SQL migration
+  // applies the same additive backfill, while this runtime guard keeps code-first
+  // deploys and local snapshots safe without advancing the persisted schema
+  // version.
   if (candidate.supportRequests === undefined) {
     candidate.supportRequests = []
   }
@@ -69,6 +415,51 @@ export function upgradeStateSnapshot(
 
   if (candidate.tripInspections === undefined) {
     candidate.tripInspections = []
+  }
+
+  // Platform fee billing. These three are in REQUIRED_TABLES the moment they have a
+  // row validator, and the canonical document in production predates them, so
+  // without this guard the very first read after deploy would refuse the whole
+  // document and every request would fail. Empty is also the only honest default:
+  // no host has been charged anything, so an absent ledger means nothing accrued,
+  // never that a bill was lost.
+  if (candidate.hostBillingProfiles === undefined) {
+    candidate.hostBillingProfiles = []
+  }
+
+  if (candidate.platformFeeEvents === undefined) {
+    candidate.platformFeeEvents = []
+  }
+
+  if (candidate.hostInvoices === undefined) {
+    candidate.hostInvoices = []
+  }
+
+  // The driver credential vault. Additive and RUNTIME-ONLY on the same terms: a
+  // row validator puts a collection into REQUIRED_TABLES, and the canonical
+  // document in production predates both of these, so without this guard the very
+  // first read after deploy would refuse the whole document and every request
+  // would fail.
+  //
+  // Empty is also the only honest default. An absent vault means nobody has
+  // submitted anything — never that a credential was approved. The consequence is
+  // deliberate and load-bearing: on the first read after deploy every existing
+  // driver holds nothing, and is therefore blocked from accepting a load until
+  // they submit and are approved. Backfilling approvals to keep the platform
+  // moving would fabricate a safety claim about real people's insurance.
+  //
+  // No FIELD-level normalization is needed for these two, unlike routePacks or
+  // tripsV2 below: rows are kept by identity rather than by parser output, so a
+  // stored row missing a field would keep missing it — but a brand-new collection
+  // has no older writer, so every row present was written by a build that already
+  // had every field. A field ADDED to either collection later will need an entry
+  // here for exactly that reason.
+  if (candidate.driverCredentials === undefined) {
+    candidate.driverCredentials = []
+  }
+
+  if (candidate.credentialReviews === undefined) {
+    candidate.credentialReviews = []
   }
 
   // Driver profiles predate the featured-rig flag; absent means not featured.
@@ -136,11 +527,217 @@ export function upgradeStateSnapshot(
     }))
   }
 
-  if (!REQUIRED_TABLES.every((table) => Array.isArray(candidate[table]))) {
+  return candidate
+}
+
+function rowIdOf(row: unknown): string | null {
+  if (!row || typeof row !== "object") {
     return null
   }
 
-  return candidate as LogLoadsDatabaseState
+  const id = (row as { id?: unknown }).id
+
+  return typeof id === "string" && id.length > 0 ? id : null
+}
+
+function summarizeIssues(issues: ReadonlyArray<RowIssue>): string {
+  return issues
+    .slice(0, 3)
+    .map((issue) => `${issue.path.length > 0 ? issue.path.join(".") : "<row>"}: ${issue.message}`)
+    .join("; ")
+}
+
+/**
+ * Decide, row by row, what the stored document is allowed to contribute to
+ * runtime state.
+ *
+ * FAILURE MODE, and why this one. A row that fails its contract is withheld from
+ * runtime state and carried on `withheldRows`; the document as a whole still
+ * loads. Refusing the whole document instead would be safe for data but there is
+ * exactly one document, so a single malformed row would return every request on
+ * every instance to an error page with no partial service to fall back on.
+ *
+ * The usual objection to quarantining — that it silently loses data — is fatal
+ * in THIS store, because state is read whole and written whole: a row dropped at
+ * read time would be erased from Postgres by the next compare-and-swap, which is
+ * destruction, not degradation. So withheld rows are carried through to the write
+ * path and put back into the document that is persisted (see
+ * `restoreWithheldRows`). The row never becomes runtime state and never leaves
+ * the database. It is loud rather than silent: every finding goes to the reporter
+ * once, and the full set rides on every snapshot for a health surface to read.
+ *
+ * A broken reference is reported but NOT withheld. Dropping a row because
+ * something it points at is missing does not restore consistency — it moves the
+ * hole, deleting a booking or a trip from the operator's view while the missing
+ * target stays missing — and, because the reference list is declared by hand, a
+ * mistake in it could otherwise withhold healthy rows. References are checked
+ * against every id present in the stored document, including withheld rows, so
+ * one bad row can never cascade into withholding the collections that point at
+ * it.
+ */
+export function auditStateSnapshot(value: Partial<LogLoadsDatabaseState>): OperatingStateAudit {
+  const candidate = backfillStateSnapshot(value)
+  const missingCollections = REQUIRED_TABLES.filter((table) => !Array.isArray(candidate[table]))
+
+  if (missingCollections.length > 0) {
+    return { defects: [], missingCollections, state: null, withheldRows: {} }
+  }
+
+  const defects: OperatingStateDefect[] = []
+  const withheldRows: WithheldOperatingStateRows = {}
+  const storedIds = new Map<LogLoadsTableName, Set<string>>()
+  const keptRows = new Map<LogLoadsTableName, { indexes: number[]; rows: unknown[] }>()
+  const mutable = candidate as unknown as Record<string, unknown[]>
+
+  for (const table of REQUIRED_TABLES) {
+    // Array-ness was established by the missing-collection check above.
+    const stored = mutable[table] as unknown[]
+    const validator = ROW_VALIDATORS[table]
+    const ids = new Set<string>()
+    const kept: unknown[] = []
+    const keptIndexes: number[] = []
+    const withheld: unknown[] = []
+
+    for (let index = 0; index < stored.length; index += 1) {
+      const row = stored[index]
+      const rowId = rowIdOf(row)
+
+      if (rowId !== null && ids.has(rowId)) {
+        // Two rows claiming one id is unrepresentable: every reader resolves the
+        // first and list scans double-count the second, so the shadow row is
+        // already invisible to `find` while inflating every total.
+        defects.push({
+          collection: table,
+          detail: `a row with id ${rowId} appears earlier in this collection`,
+          kind: "duplicate_id",
+          rowId,
+          rowIndex: index,
+          withheld: true
+        })
+        withheld.push(row)
+        continue
+      }
+
+      if (rowId !== null) {
+        ids.add(rowId)
+      }
+
+      const verdict = validator.safeParse(row)
+
+      if (verdict.success) {
+        // The stored row, not the parser's output. Zod output would drop every
+        // field this build has not declared, and the next compare-and-swap would
+        // persist the stripped document — the rollout data loss PR #69 fixed for
+        // whole collections, one field at a time.
+        kept.push(row)
+        keptIndexes.push(index)
+        continue
+      }
+
+      // An unrecognized key is what a NEWER deployment's field looks like from
+      // here, not corruption, and only the strict contracts even report it.
+      // Withholding a row over one would make a rollout hide live records that
+      // the newer instance is still writing.
+      if (
+        verdict.error.issues.length > 0 &&
+        verdict.error.issues.every((issue) => issue.code === "unrecognized_keys")
+      ) {
+        defects.push({
+          collection: table,
+          detail: summarizeIssues(verdict.error.issues),
+          kind: "unknown_fields",
+          rowId,
+          rowIndex: index,
+          withheld: false
+        })
+        kept.push(row)
+        keptIndexes.push(index)
+        continue
+      }
+
+      defects.push({
+        collection: table,
+        detail: summarizeIssues(verdict.error.issues),
+        kind: "invalid_row",
+        rowId,
+        rowIndex: index,
+        withheld: true
+      })
+      withheld.push(row)
+    }
+
+    storedIds.set(table, ids)
+    keptRows.set(table, { indexes: keptIndexes, rows: kept })
+
+    // Only a collection that actually lost a row is replaced, so a healthy
+    // document is handed back holding the very arrays it arrived with.
+    if (withheld.length > 0) {
+      withheldRows[table] = withheld
+      mutable[table] = kept
+    }
+  }
+
+  for (const table of REQUIRED_TABLES) {
+    const references = ROW_REFERENCES[table]
+
+    if (!references) {
+      continue
+    }
+
+    const survivors = keptRows.get(table)
+
+    if (!survivors) {
+      continue
+    }
+
+    for (let position = 0; position < survivors.rows.length; position += 1) {
+      const row = survivors.rows[position]
+
+      if (!row || typeof row !== "object") {
+        continue
+      }
+
+      for (const reference of references) {
+        const target = (row as Record<string, unknown>)[reference.field]
+
+        if (typeof target !== "string" || storedIds.get(reference.target)?.has(target)) {
+          continue
+        }
+
+        defects.push({
+          collection: table,
+          detail: `${reference.field} ${target} is not a stored ${reference.target} id`,
+          kind: "missing_reference",
+          rowId: rowIdOf(row),
+          rowIndex: survivors.indexes[position] ?? position,
+          withheld: false
+        })
+      }
+    }
+  }
+
+  return { defects, missingCollections: [], state: candidate as LogLoadsDatabaseState, withheldRows }
+}
+
+/**
+ * Normalize and validate a stored document for runtime use. Returns null when a
+ * required collection is missing or is not an array — the one condition that
+ * refuses the whole document.
+ *
+ * A returned state carries only rows their contract accepted, plus rows a strict
+ * contract rejected solely for holding keys this build does not declare. It does
+ * NOT carry the withheld rows, so a caller that persists what it gets back will
+ * erase them: any write path must go through `auditStateSnapshot` and hand
+ * `withheldRows` to `updateRemoteOperatingState`.
+ */
+export function upgradeStateSnapshot(
+  value: Partial<LogLoadsDatabaseState>
+): LogLoadsDatabaseState | null {
+  const audit = auditStateSnapshot(value)
+
+  publishReport(audit)
+
+  return audit.state
 }
 
 export function loadStateSnapshot(filePath: string): LogLoadsDatabaseState | null {
@@ -199,9 +796,13 @@ async function responseRows(response: Response): Promise<unknown[]> {
   }
 }
 
-function parseRemoteRow(value: unknown): RemoteOperatingStateSnapshot | null {
+type RemoteRowOutcome =
+  | { ok: true; snapshot: RemoteOperatingStateSnapshot }
+  | { ok: false; reason: string }
+
+function parseRemoteRow(value: unknown): RemoteRowOutcome {
   if (!value || typeof value !== "object") {
-    return null
+    return { ok: false, reason: "no operating_state row was returned" }
   }
 
   const row = value as {
@@ -209,13 +810,11 @@ function parseRemoteRow(value: unknown): RemoteOperatingStateSnapshot | null {
     state?: Partial<LogLoadsDatabaseState>
     version?: unknown
   }
-  const state = row.state ? upgradeStateSnapshot(row.state) : null
   const schemaVersion = row.schema_version === undefined ? 1 : Number(row.schema_version)
   const version = row.version === undefined ? 0 : Number(row.version)
 
   // A snapshot written by a NEWER deployment is accepted, provided every
-  // required table validates. `upgradeStateSnapshot` returning non-null is that
-  // proof, so the version number adds nothing to it.
+  // required collection is present. The version number adds nothing to that.
   //
   // Why: `main` auto-deploys, so old and new instances serve traffic at the same
   // time during every rollout. Refusing a higher schema version made the newer
@@ -223,29 +822,88 @@ function parseRemoteRow(value: unknown): RemoteOperatingStateSnapshot | null {
   // fleet returning "operating state is invalid" until the rollout finished.
   //
   // What survives an older instance writing back, precisely: the STATE document
-  // does, including collections this build has never heard of, because
-  // `upgradeStateSnapshot` spreads the row it was given and the CAS writes that
-  // whole draft back. The `schema_version` LABEL does not —
-  // `updateRemoteOperatingState` always stamps it with this build's own
-  // constant, so during a rollout the row's version can go 3 → 2 → 3 while the
-  // data itself is never lost. That is safe only because every backfill keys on
-  // whether a field is present, never on the version number; nothing may be
-  // built on this label being monotonic.
+  // does, including collections this build has never heard of, because the
+  // backfill spreads the row it was given, rows are kept by identity rather than
+  // reparsed, and the CAS writes that whole draft back. The `schema_version`
+  // LABEL does not — `updateRemoteOperatingState` always stamps it with this
+  // build's own constant, so during a rollout the row's version can go 3 → 2 → 3
+  // while the data itself is never lost. That is safe only because every backfill
+  // keys on whether a field is present, never on the version number; nothing may
+  // be built on this label being monotonic.
   //
   // A version BELOW 1 is still refused: that is a malformed row, not a future
   // one. This does not authorise a version bump — nothing in this program bumps
   // it — it makes one survivable when it eventually happens.
-  if (
-    !state ||
-    !Number.isSafeInteger(schemaVersion) ||
-    schemaVersion < 1 ||
-    !Number.isSafeInteger(version) ||
-    version < 0
-  ) {
-    return null
+  if (!Number.isSafeInteger(schemaVersion) || schemaVersion < 1) {
+    return { ok: false, reason: `schema_version ${String(row.schema_version)} is not a stored version` }
   }
 
-  return { schemaVersion, state, version }
+  if (!Number.isSafeInteger(version) || version < 0) {
+    return { ok: false, reason: `version ${String(row.version)} is not a stored version` }
+  }
+
+  if (!row.state || typeof row.state !== "object") {
+    return { ok: false, reason: "the row carries no state document" }
+  }
+
+  const audit = auditStateSnapshot(row.state)
+
+  publishReport(audit)
+
+  if (!audit.state) {
+    // Named, not counted: REQUIRED_TABLES is the type's collection list, so this
+    // is what a deploy that adds a collection without a backfill looks like from
+    // production, and the collection name is the whole diagnosis.
+    return {
+      ok: false,
+      reason: `collections missing or not an array: ${audit.missingCollections.join(", ")}`
+    }
+  }
+
+  return {
+    ok: true,
+    snapshot: {
+      defects: audit.defects,
+      schemaVersion,
+      state: audit.state,
+      version,
+      withheldRows: audit.withheldRows
+    }
+  }
+}
+
+/**
+ * Put withheld rows back into the document being persisted. They are appended,
+ * always, and never merged by id: the application cannot see these rows, so
+ * treating a write that does not mention one as permission to delete it would
+ * make every ordinary mutation a destructive operation. Repairing a withheld row
+ * is a database task, and the row stays there until somebody does it.
+ *
+ * A healthy document has none of these, so this is a no-op on every normal write.
+ */
+function restoreWithheldRows(
+  state: LogLoadsDatabaseState,
+  withheldRows: WithheldOperatingStateRows
+): LogLoadsDatabaseState {
+  const entries = Object.entries(withheldRows) as Array<[LogLoadsTableName, unknown[]]>
+
+  if (entries.length === 0) {
+    return state
+  }
+
+  const merged = { ...state } as unknown as Record<string, unknown>
+
+  for (const [table, rows] of entries) {
+    if (rows.length === 0) {
+      continue
+    }
+
+    const current = merged[table]
+
+    merged[table] = Array.isArray(current) ? [...current, ...rows] : [...rows]
+  }
+
+  return merged as unknown as LogLoadsDatabaseState
 }
 
 export async function loadRemoteOperatingState(
@@ -292,13 +950,15 @@ export async function loadRemoteOperatingState(
       return null
     }
 
-    const snapshot = parseRemoteRow(rows[0])
+    const outcome = parseRemoteRow(rows[0])
 
-    if (!snapshot) {
-      throw new OperatingStateUnavailableError("Canonical operating state is invalid")
+    if (!outcome.ok) {
+      throw new OperatingStateUnavailableError(
+        `Canonical operating state is invalid: ${outcome.reason}`
+      )
     }
 
-    return snapshot
+    return outcome.snapshot
   }
 
   throw new OperatingStateUnavailableError("Canonical operating state could not be reached")
@@ -351,8 +1011,8 @@ export async function initializeRemoteOperatingState(
 
   const inserted = parseRemoteRow((await responseRows(response))[0])
 
-  if (inserted) {
-    return inserted
+  if (inserted.ok) {
+    return inserted.snapshot
   }
 
   const raced = await loadRemoteOperatingState(config, timeoutMs)
@@ -372,7 +1032,8 @@ export async function updateRemoteOperatingState(
   config: RemoteSnapshotConfig,
   state: LogLoadsDatabaseState,
   expectedVersion: number,
-  timeoutMs = 8000
+  timeoutMs = 8000,
+  withheldRows: WithheldOperatingStateRows = {}
 ): Promise<RemoteOperatingStateSnapshot | null> {
   let response: Response
 
@@ -382,7 +1043,7 @@ export async function updateRemoteOperatingState(
       {
         body: JSON.stringify({
           schema_version: OPERATING_STATE_SCHEMA_VERSION,
-          state,
+          state: restoreWithheldRows(state, withheldRows),
           updated_at: new Date().toISOString(),
           version: expectedVersion + 1
         }),
@@ -413,13 +1074,15 @@ export async function updateRemoteOperatingState(
     return null
   }
 
-  const snapshot = parseRemoteRow(rows[0])
+  const outcome = parseRemoteRow(rows[0])
 
-  if (!snapshot) {
-    throw new OperatingStateUnavailableError("Canonical operating state update returned invalid data")
+  if (!outcome.ok) {
+    throw new OperatingStateUnavailableError(
+      `Canonical operating state update returned invalid data: ${outcome.reason}`
+    )
   }
 
-  return snapshot
+  return outcome.snapshot
 }
 
 /**
@@ -440,7 +1103,15 @@ export async function mutateRemoteOperatingState<T>(
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const draft = structuredClone(current.state)
     const value = mutate(draft, attempt)
-    const committed = await updateRemoteOperatingState(config, draft, current.version, timeoutMs)
+    // The withheld rows travel with the snapshot the draft came from, so the
+    // document that lands in Postgres still contains them.
+    const committed = await updateRemoteOperatingState(
+      config,
+      draft,
+      current.version,
+      timeoutMs,
+      current.withheldRows
+    )
 
     if (committed) {
       return { attempts: attempt, snapshot: committed, value }

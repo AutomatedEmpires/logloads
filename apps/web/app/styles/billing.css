@@ -204,6 +204,124 @@
 .plan-summary-list strong { display: block; }
 .plan-summary-list li > div > span { color: var(--muted); font-weight: 700; font-size: 0.92rem; }
 
+/* Host platform fee ---------------------------------------------------------- */
+
+.billing-banner--blocked { border-color: rgba(159, 51, 43, 0.4); background: var(--red-bg); color: #6d211b; }
+.billing-banner--blocked span { font-weight: 700; line-height: 1.45; }
+.billing-banner--blocked strong { font-weight: 900; }
+
+.fee-headline { margin: 0 0 14px; color: var(--ink); font-size: 1.02rem; font-weight: 800; line-height: 1.45; }
+.fee-example-lead { margin: 0 0 10px; color: var(--muted); font-weight: 800; line-height: 1.4; }
+
+/* The three numbers side by side, so the fee is never read as a deduction from
+   driver pay. One column on a phone keeps each figure with its own label. */
+.fee-figures {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 16px;
+}
+.fee-figures > div {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bone);
+  padding: 12px 14px;
+}
+.fee-figures__total { border-color: var(--line-strong); background: var(--green-bg); }
+.fee-figures dt { color: var(--muted); font-size: 0.78rem; font-weight: 900; letter-spacing: 0.05em; text-transform: uppercase; }
+.fee-figures dd { margin: 6px 0 0; color: var(--ink); font-size: 1.35rem; font-weight: 900; }
+.fee-figures span { display: block; margin-top: 4px; color: var(--ink-soft); font-size: 0.86rem; font-weight: 700; line-height: 1.35; }
+
+.fee-points { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.fee-points li { display: flex; align-items: flex-start; gap: 8px; color: var(--ink-soft); line-height: 1.45; }
+.fee-points li svg { flex-shrink: 0; margin-top: 3px; color: var(--green); }
+
+.pay-state { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.pay-state__card { color: var(--ink); font-weight: 800; text-transform: capitalize; }
+
+.fee-alert,
+.fee-next-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 0 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+.fee-alert { border-color: rgba(159, 51, 43, 0.35); background: var(--red-bg); color: #6d211b; }
+.fee-next-step { background: var(--bone); color: var(--ink); }
+.fee-alert svg,
+.fee-next-step svg { flex-shrink: 0; margin-top: 3px; }
+
+/* A money table scrolls inside its own box rather than reflowing: on a phone, a
+   fee row that wraps loses which figure belongs to which column, and this is the
+   itemisation a host reconciles a bill against. The wrapper is focusable so the
+   scroll is reachable without a pointer. */
+.money-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+}
+.money-table { width: 100%; min-width: 640px; border-collapse: collapse; }
+.money-table th {
+  border-bottom: 1px solid var(--line-strong);
+  padding: 12px 14px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-align: left;
+  text-transform: uppercase;
+}
+.money-table td { border-bottom: 1px solid var(--line); padding: 12px 14px; color: var(--ink); font-weight: 800; }
+.money-table tbody th { border-bottom: 1px solid var(--line); color: var(--ink); font-size: 0.98rem; letter-spacing: 0; text-transform: none; }
+.money-table tbody tr:last-child th,
+.money-table tbody tr:last-child td { border-bottom: 0; }
+.money-table__rate { display: block; margin-top: 2px; color: var(--muted); font-size: 0.78rem; font-weight: 700; }
+.money-table tfoot th,
+.money-table tfoot td {
+  border-top: 2px solid var(--line-strong);
+  border-bottom: 0;
+  background: var(--bone);
+  color: var(--ink);
+  font-size: 0.98rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Tapped one-handed in the field like every other control, so the summary
+   clears the 44px floor. */
+.fee-disclosure { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 6px; }
+.fee-disclosure summary {
+  display: flex;
+  min-height: var(--control-min);
+  align-items: center;
+  cursor: pointer;
+  color: var(--pine);
+  font-weight: 800;
+  line-height: 1.4;
+}
+.fee-disclosure > *:not(summary) { margin-top: 10px; }
+
+.fee-voided { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.fee-voided li { border-left: 3px solid var(--line-strong); padding: 2px 0 2px 10px; }
+.fee-voided strong { display: block; color: var(--ink); }
+.fee-voided span { color: var(--muted); font-weight: 700; font-size: 0.9rem; line-height: 1.4; }
+
+.invoice-list { display: flex; flex-direction: column; gap: 14px; }
+.invoice-row { border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); padding: 14px 16px; }
+.invoice-row__head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 16px; }
+.invoice-row__head strong { display: block; font-size: 1.05rem; }
+.invoice-row__head span { color: var(--muted); font-weight: 700; font-size: 0.9rem; }
+.invoice-row__amount { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.invoice-row__amount strong { font-size: 1.15rem; }
+.invoice-row__detail { margin: 10px 0 0; color: var(--ink-soft); line-height: 1.5; }
+
 @media (max-width: 1100px) {
   .plan-cards { grid-template-columns: minmax(0, 1fr); }
 }
@@ -219,4 +337,6 @@
   .settings-panel { padding: 16px; }
   .identity-grid { grid-template-columns: minmax(0, 1fr); }
   .settings-panel .section-heading { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .fee-figures { grid-template-columns: minmax(0, 1fr); }
+  .fee-figures dd { font-size: 1.2rem; }
 }

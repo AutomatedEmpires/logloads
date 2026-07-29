@@ -21,3 +21,9 @@ supabase/.branches/
 # Playwright output + local proof screenshots
 test-results/
 apps/web/.artifacts/
+
+# Operating-state backups. Every file is a full copy of the production
+# document, including driver names, contact details and (once the credential
+# vault ships) licence and insurance data. A backup must never enter git.
+backups/
+.env*

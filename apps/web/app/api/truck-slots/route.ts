@@ -1,15 +1,26 @@
 import { NextRequest, NextResponse } from "next/server"
 
+// The services facade binds listTruckSlotsForDate with a date alone, which reads
+// at the public scope. This endpoint has to answer at the caller's own scope, so
+// it calls the service function directly instead of through that binding.
+import { listTruckSlotsForDate } from "@logloads/services/src/truck-slots"
+
 import { apiErrorResponse, requireApiActor } from "@/lib/api-actor"
-import { mutateState, services } from "@/lib/services"
+import { mutateState, readState } from "@/lib/services"
 
 export async function GET(request: NextRequest) {
 	try {
-		await requireApiActor()
+		// A slot names a load posting, so the answer is scoped to the loads this
+		// organization may see. Filtering by date alone returned every
+		// organization's loading windows, capacity and notes to any signed-in user.
+		const { organizationId } = await requireApiActor()
 
 		const date = request.nextUrl.searchParams.get("date") ?? new Date().toISOString().slice(0, 10)
+		const slots = await readState((current) =>
+			listTruckSlotsForDate(current.state, date, organizationId)
+		)
 
-		return NextResponse.json({ slots: services.listTruckSlotsForDate(date) })
+		return NextResponse.json({ slots })
 	} catch (error) {
 		return apiErrorResponse(error)
 	}

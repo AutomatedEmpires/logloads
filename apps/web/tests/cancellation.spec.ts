@@ -11,7 +11,7 @@ import { fillWhenReady, selectWhenReady } from "./builder-input"
 
 async function signIn(page: Page, email: string) {
   await page.goto("/sign-in")
-  await page.waitForLoadState("networkidle")
+  await page.waitForLoadState("domcontentloaded")
   await page.fill('input[name="email"]', email)
   await page.click('button[type="submit"]')
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 30_000 })
@@ -25,7 +25,7 @@ test.describe.serial("request withdrawal", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "cole@summit.example")
     await page.goto("/host/opportunities")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     await expect(page.getByText("Publish timber movement")).toBeVisible()
 
@@ -42,6 +42,7 @@ test.describe.serial("request withdrawal", () => {
     await page.getByRole("button", { name: "Next", exact: true }).click()
 
     // Step 3 — Terms, Step 4 — Visibility: defaults.
+    await fillWhenReady(page, "What this work pays a driver, per truckload", "525.00")
     await page.getByRole("button", { name: "Next", exact: true }).click()
     await page.getByRole("radio", { name: /Publish now/ }).check()
     await page.getByRole("button", { name: "Next", exact: true }).click()
@@ -54,7 +55,7 @@ test.describe.serial("request withdrawal", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "hank@northpine.example")
     await page.goto("/driver/loads")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     const card = page.locator(".load-card-v3").filter({ hasText: TITLE }).first()
     await expect(card).toBeVisible({ timeout: 15_000 })
@@ -68,7 +69,7 @@ test.describe.serial("request withdrawal", () => {
     // The single truckload is committed: the request panel on a fresh view of
     // the same load reports the capacity as taken for everyone else.
     await page.goto("/driver/schedule")
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
 
     const requestCard = page.locator(".schedule-request-card").filter({ hasText: TITLE }).first()
     await expect(requestCard).toBeVisible({ timeout: 15_000 })
@@ -90,14 +91,14 @@ test.describe.serial("request withdrawal", () => {
     const detailVerificationUrl = new URL(detailUrl)
     detailVerificationUrl.searchParams.set("verify", String(Date.now()))
     await page.goto(detailVerificationUrl.toString())
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
     await expect(page.getByRole("button", { name: "Request haul" })).toBeVisible({ timeout: 15_000 })
 
     // Returning to Schedule must no longer classify the cancelled assignment
     // as pending. Navigating away first avoids racing the confirmation state's
     // deliberate background refresh on a slow field connection.
     await page.goto(`/driver/schedule?verify=${Date.now()}`)
-    await page.waitForLoadState("networkidle")
+    await page.waitForLoadState("domcontentloaded")
     await expect(page.locator(".schedule-request-card").filter({ hasText: TITLE })).toHaveCount(0, { timeout: 15_000 })
   })
 })
