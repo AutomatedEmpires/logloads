@@ -3,9 +3,18 @@
   "private": true,
   "packageManager": "pnpm@10.12.4",
   "engines": {
-    "node": "24.16.0"
+    "node": "24.x"
   },
   "pnpm": {
+    "ignoredBuiltDependencies": [
+      "core-js"
+    ],
+    "onlyBuiltDependencies": [
+      "@sentry/cli",
+      "esbuild",
+      "sharp",
+      "unrs-resolver"
+    ],
     "overrides": {
       "esbuild": "0.28.1",
       "postcss": "8.5.18",
