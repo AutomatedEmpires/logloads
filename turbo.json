@@ -4,6 +4,10 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@logloads/web#build": {
+      "dependsOn": ["^build"],
       "env": [
         "CRON_SECRET",
         "LOGLOADS_CONTACT_EMAIL",

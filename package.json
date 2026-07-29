@@ -6,15 +6,6 @@
     "node": "24.x"
   },
   "pnpm": {
-    "ignoredBuiltDependencies": [
-      "core-js"
-    ],
-    "onlyBuiltDependencies": [
-      "@sentry/cli",
-      "esbuild",
-      "sharp",
-      "unrs-resolver"
-    ],
     "overrides": {
       "esbuild": "0.28.1",
       "postcss": "8.5.18",

@@ -9,7 +9,7 @@ const [contract, turbo] = await Promise.all([
 ])
 
 test("hosted billing build declares every operational environment input", () => {
-  const declared = new Set(turbo.tasks?.build?.env ?? [])
+  const declared = new Set(turbo.tasks?.["@logloads/web#build"]?.env ?? [])
   const hostedBuildServices = new Set(["billing", "resend", "stripe"])
   const expected = contract.variables
     .filter(
@@ -28,7 +28,7 @@ test("hosted billing build declares every operational environment input", () => 
 })
 
 test("hosted build environment names are explicit and unique", () => {
-  const declared = turbo.tasks?.build?.env ?? []
+  const declared = turbo.tasks?.["@logloads/web#build"]?.env ?? []
 
   assert.ok(declared.length > 0)
   assert.equal(new Set(declared).size, declared.length)
