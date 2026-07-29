@@ -1,9 +1,8 @@
 import type { MetadataRoute } from "next"
 
+import { resolvePublicAppUrl } from "@/lib/app-url"
 import { getPublicLoads } from "@/lib/v3"
 import { publicLoadHref } from "@/lib/v3-shared"
-
-const BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3002"
 
 const staticRoutes: Array<{ path: string; priority: number; changeFrequency: "hourly" | "daily" | "weekly" | "monthly" }> = [
   { changeFrequency: "hourly", path: "/", priority: 1 },
@@ -24,19 +23,20 @@ const staticRoutes: Array<{ path: string; priority: number; changeFrequency: "ho
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date()
+  const baseUrl = resolvePublicAppUrl()
 
   const pages: MetadataRoute.Sitemap = staticRoutes.map((route) => ({
     changeFrequency: route.changeFrequency,
     lastModified: now,
     priority: route.priority,
-    url: `${BASE_URL}${route.path}`
+    url: `${baseUrl}${route.path}`
   }))
 
   const loadPages: MetadataRoute.Sitemap = (await getPublicLoads()).map((load) => ({
     changeFrequency: "hourly",
     lastModified: now,
     priority: 0.6,
-    url: `${BASE_URL}${publicLoadHref(load)}`
+    url: `${baseUrl}${publicLoadHref(load)}`
   }))
 
   return [...pages, ...loadPages]
