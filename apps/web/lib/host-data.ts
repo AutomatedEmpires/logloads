@@ -6,7 +6,9 @@ import {
   loadTypeSchema,
   organizationRoleCan,
   type BillingModel,
-  type OrganizationRole
+  type OrganizationBillingAccount,
+  type OrganizationRole,
+  type SubscriptionPlanCode
 } from "@logloads/contracts"
 
 import { services } from "./services"
@@ -55,7 +57,9 @@ export interface RequirementOption {
 
 export interface HostPublishingOptions {
   dispatcher: HostDispatcherOption | null
+  billingActivationState: OrganizationBillingAccount["activationState"] | null
   billingModel: BillingModel | null
+  subscriptionPlanCode: SubscriptionPlanCode | null
   landings: HostLandingOption[]
   loadTypes: string[]
   rates: HostRateOption[]
@@ -76,6 +80,15 @@ export function getHostPublishingOptions(organizationId: string): HostPublishing
   const billingAccounts = state.organizationBillingAccounts.filter(
     (account) => account.organizationId === organizationId
   )
+  const billingAccount = billingAccounts.length === 1 ? billingAccounts[0]! : null
+  const subscription = billingAccount?.subscriptionId
+    ? state.organizationSubscriptions.find(
+        (candidate) =>
+          candidate.id === billingAccount.subscriptionId &&
+          candidate.organizationId === organizationId &&
+          candidate.billingModel === billingAccount.billingModel
+      ) ?? null
+    : null
 
   // A dispatch coordinate is required on every posting and is an
   // organization-owned source. Never advertise another outfit's profile as a
@@ -111,8 +124,8 @@ export function getHostPublishingOptions(organizationId: string): HostPublishing
 
   return {
     accessVocabulary: sortedOptions(accessValues),
-    billingModel:
-      billingAccounts.length === 1 ? billingAccounts[0]!.billingModel : null,
+    billingActivationState: billingAccount?.activationState ?? null,
+    billingModel: billingAccount?.billingModel ?? null,
     dispatcher: dispatcherProfile
       ? {
           email: dispatcherProfile.contact.email ?? null,
@@ -140,6 +153,7 @@ export function getHostPublishingOptions(organizationId: string): HostPublishing
             ? `${formatRateLabel(rate.baseRate, rate.rateType)} + ${formatMoney({ amountCents: rate.fuelSurchargeCents, currency: rate.baseRate.currency })} fuel`
             : formatRateLabel(rate.baseRate, rate.rateType)
       })),
+    subscriptionPlanCode: subscription?.planCode ?? null,
     routes: state.haulRoutes
       .filter((route) => route.companyId === organizationId)
       .map((route) => {

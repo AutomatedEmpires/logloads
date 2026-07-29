@@ -4,7 +4,7 @@
 
 .host-btn {
   display: inline-flex;
-  min-height: 40px;
+  min-height: var(--control-min);
   align-items: center;
   justify-content: center;
   gap: 8px;
@@ -45,6 +45,135 @@
 }
 
 /* Command --------------------------------------------------------------- */
+
+.host-readiness {
+  display: grid;
+  gap: 20px;
+  margin: 18px 24px 0;
+  border: 1px solid rgba(46, 118, 81, 0.28);
+  border-radius: var(--radius-md);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(152, 211, 170, 0.24), transparent 34%),
+    var(--paper);
+  padding: clamp(18px, 3vw, 28px);
+  box-shadow: var(--shadow-2);
+}
+.host-readiness__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);
+  align-items: end;
+  gap: 24px;
+}
+.host-readiness__head h2 {
+  max-width: 720px;
+  margin: 0;
+  font-size: clamp(1.8rem, 4vw, 3rem);
+  line-height: 1;
+}
+.host-readiness__head p:not(.eyebrow) {
+  max-width: 760px;
+  margin: 10px 0 0;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+.host-readiness__progress {
+  display: grid;
+  gap: 6px;
+  border-radius: var(--radius);
+  background: var(--green-bg);
+  padding: 14px;
+}
+.host-readiness__progress strong { color: var(--pine); }
+.host-readiness__progress > span {
+  color: var(--ink-soft);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+.host-readiness__meter {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(23, 61, 43, 0.14);
+}
+.host-readiness__meter span {
+  display: block;
+  width: var(--fill);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--pine);
+}
+.host-readiness__steps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.host-readiness__steps li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-content: start;
+  gap: 8px 10px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.7);
+  padding: 12px;
+}
+.host-readiness__steps li.is-complete {
+  border-color: rgba(46, 118, 81, 0.34);
+  background: var(--green-bg);
+}
+.host-readiness__steps li.is-next {
+  border-color: rgba(172, 104, 29, 0.48);
+  box-shadow: inset 0 0 0 1px rgba(172, 104, 29, 0.14);
+}
+.host-readiness__marker {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--bone-2);
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+.host-readiness__steps li.is-complete .host-readiness__marker {
+  background: var(--pine);
+  color: #fff;
+}
+.host-readiness__steps li.is-next .host-readiness__marker {
+  background: var(--amber-bg);
+  color: #754314;
+}
+.host-readiness__steps li > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.host-readiness__steps li > div > strong { line-height: 1.2; }
+.host-readiness__steps li > div > span {
+  color: var(--ink-soft);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+.host-readiness__steps .ui-badge {
+  grid-column: 2;
+  justify-self: start;
+}
+.host-readiness__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+.host-readiness__actions > span {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
 
 .host-approvals {
   display: grid;
@@ -151,6 +280,7 @@
 }
 .host-choice > label {
   display: flex;
+  min-height: var(--control-min);
   align-items: flex-start;
   gap: 10px;
   border: 1px solid var(--line);
@@ -269,7 +399,7 @@
   border-radius: var(--radius);
   background: var(--paper);
   padding: 16px;
-  margin-bottom: 18px;
+  margin: 18px 24px 0;
 }
 .workspace-section__head { margin-bottom: 12px; }
 .workspace-section__head h2 { margin: 0 0 4px; font-size: 1.05rem; }
@@ -293,7 +423,7 @@
 .workspace-form input,
 .workspace-form select,
 .workspace-form textarea {
-  min-height: 40px;
+  min-height: var(--control-field);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: #fff;
@@ -428,7 +558,7 @@
 .host-stack-form input,
 .host-stack-form select,
 .host-stack-form textarea {
-  min-height: 40px;
+  min-height: var(--control-field);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: #fff;
@@ -444,6 +574,13 @@
 .host-stack-form .host-btn {
   justify-self: start;
 }
+
+.host-builder .builder-form input,
+.host-builder .builder-form select,
+.host-builder .builder-form textarea {
+  min-height: var(--control-field);
+}
+.host-builder .req-chip { min-height: var(--control-min); }
 
 /* Schedule ------------------------------------------------------------------------ */
 
@@ -502,6 +639,13 @@
 /* Responsive ------------------------------------------------------------------------ */
 
 @media (max-width: 1100px) {
+  .host-readiness__head {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+  .host-readiness__steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .host-carrier-tools {
     grid-template-columns: 1fr;
   }
@@ -515,8 +659,57 @@
   .host-carrier-tools,
   .host-fill-list,
   .host-schedule-group,
-  .host-board-empty {
+  .host-board-empty,
+  .host-readiness,
+  .workspace-section {
     margin: 12px 12px 0;
+  }
+  .host-readiness {
+    gap: 12px;
+    padding: 14px;
+  }
+  .host-readiness__head {
+    gap: 12px;
+  }
+  .host-readiness__head h2 {
+    font-size: clamp(2rem, 10.5vw, 2.55rem);
+  }
+  .host-readiness__head p:not(.eyebrow) {
+    margin-top: 8px;
+    line-height: 1.4;
+  }
+  .host-readiness__progress {
+    gap: 4px;
+    padding: 11px 12px;
+  }
+  .host-readiness__steps {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .host-readiness__steps li {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    padding: 10px 12px;
+  }
+  .host-readiness__steps li > div > span {
+    display: none;
+  }
+  .host-readiness__steps li.is-next > div > span,
+  .host-readiness__steps li.is-complete > div > span,
+  .host-readiness__steps li.is-assisted > div > span {
+    display: block;
+  }
+  .host-readiness__steps .ui-badge {
+    grid-column: 3;
+    grid-row: 1;
+    align-self: center;
+  }
+  .host-readiness__actions {
+    display: grid;
+    gap: 7px;
+  }
+  .host-readiness__actions .action-link {
+    width: 100%;
   }
   .host-landing-grid {
     grid-template-columns: 1fr;
@@ -541,4 +734,9 @@
   .host-landing-card dd {
     max-width: 100%;
   }
+}
+
+.workspace-section,
+.host-landing-grid {
+  scroll-margin-top: 88px;
 }

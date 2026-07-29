@@ -4,7 +4,8 @@ import {
   FEE_BPS_SCALE,
   PLATFORM_FEE_BPS,
   createMoney,
-  formatMoney
+  formatMoney,
+  type OpportunityVisibilityMode
 } from "@logloads/contracts"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -29,6 +30,7 @@ import {
   payOutlookForTruckloads
 } from "@/lib/driver-pay-input"
 import type { HostPublishingOptions, RequirementOption } from "@/lib/host-data"
+import { hostLiveVisibilityModes } from "@/lib/host-publishing-options"
 import { formatDateTime, formatHuman, humanizeTag } from "@/lib/v3-shared"
 import { EmptyState } from "./Shells"
 
@@ -42,7 +44,7 @@ const WEEKDAYS: Array<[number, string]> = [
   [6, "Sat"],
   [0, "Sun"]
 ]
-const VISIBILITY_MODES: Array<[string, string, string]> = [
+const VISIBILITY_MODES: Array<[OpportunityVisibilityMode, string, string]> = [
   ["open_network", "Open network", "Any hauling organization can see and request this work."],
   ["private_network", "Private — partners only", "Only your trusted partner organizations see it."],
   ["verified_network", "Verified carriers", "Limited to carriers building a verified track record."]
@@ -570,8 +572,20 @@ export function RefreshRoutePackButton({ assignmentId, driverName }: { assignmen
  * publish. Reach is chosen here because a draft carries none — the builder's
  * earlier reach selection applies only to work published live.
  */
-export function PublishDraftButton({ loadPostingId }: { loadPostingId: string }) {
-  const [visibilityMode, setVisibilityMode] = useState("open_network")
+export function PublishDraftButton({
+  loadPostingId,
+  options
+}: {
+  loadPostingId: string
+  options: HostPublishingOptions
+}) {
+  const liveVisibilityModes = hostLiveVisibilityModes(options)
+  const [visibilityMode, setVisibilityMode] = useState(
+    liveVisibilityModes[0] ?? "open_network"
+  )
+  const selectedVisibilityMode = liveVisibilityModes.includes(visibilityMode)
+    ? visibilityMode
+    : liveVisibilityModes[0]
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null)
   const [pending, startTransition] = useTransition()
 
@@ -583,11 +597,22 @@ export function PublishDraftButton({ loadPostingId }: { loadPostingId: string })
     )
   }
 
+  if (liveVisibilityModes.length === 0) {
+    return (
+      <p className="host-builder-note">
+        This draft stays inside your workspace until assisted activation is complete.
+      </p>
+    )
+  }
+
   const publish = () => {
     startTransition(async () => {
       setFeedback(null)
 
-      const result = await publishDraftAction({ loadPostingId, visibilityMode })
+      const result = await publishDraftAction({
+        loadPostingId,
+        visibilityMode: selectedVisibilityMode
+      })
 
       setFeedback(
         result.ok
@@ -601,8 +626,15 @@ export function PublishDraftButton({ loadPostingId }: { loadPostingId: string })
     <div className="host-stack-form">
       <label>
         Who can see this work
-        <select onChange={(event) => setVisibilityMode(event.target.value)} value={visibilityMode}>
-          {VISIBILITY_MODES.map(([value, label]) => (
+        <select
+          onChange={(event) =>
+            setVisibilityMode(event.target.value as OpportunityVisibilityMode)
+          }
+          value={selectedVisibilityMode}
+        >
+          {VISIBILITY_MODES.filter(([value]) =>
+            liveVisibilityModes.includes(value)
+          ).map(([value, label]) => (
             <option key={value} value={value}>
               {label}
             </option>
@@ -610,7 +642,11 @@ export function PublishDraftButton({ loadPostingId }: { loadPostingId: string })
         </select>
       </label>
       <button className="host-btn" disabled={pending} onClick={publish} type="button">
-        {pending ? "Publishing…" : "Publish now"}
+        {pending
+          ? "Publishing…"
+          : selectedVisibilityMode === "private_network"
+            ? "Publish to partners"
+            : "Publish now"}
       </button>
       {feedback && !feedback.ok ? (
         <p className="host-form-feedback host-form-feedback--error" role="alert">
@@ -709,6 +745,8 @@ function defaultLoadDate(): string {
 }
 
 export function OpportunityBuilder({ options }: { options: HostPublishingOptions }) {
+  const liveVisibilityModes = hostLiveVisibilityModes(options)
+  const canPublishLive = liveVisibilityModes.length > 0
   const [step, setStep] = useState(0)
   const [title, setTitle] = useState("")
   const [loadType, setLoadType] = useState(options.loadTypes[0] ?? "saw_logs")
@@ -731,7 +769,17 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
   // the typed string so a half-entered "52." is never silently read as $52.
   const [driverPay, setDriverPay] = useState("")
   const [visibility, setVisibility] = useState<BuilderVisibility>("draft")
-  const [visibilityMode, setVisibilityMode] = useState<string>("open_network")
+  const [visibilityMode, setVisibilityMode] = useState<string>(
+    liveVisibilityModes[0] ?? "open_network"
+  )
+  const selectedVisibilityMode = liveVisibilityModes.includes(
+    visibilityMode as OpportunityVisibilityMode
+  )
+    ? visibilityMode
+    : liveVisibilityModes[0] ?? "open_network"
+  const selectedVisibility: BuilderVisibility = canPublishLive
+    ? visibility
+    : "draft"
   const [error, setError] = useState<string | null>(null)
   const [published, setPublished] = useState<{ title: string; visibility: BuilderVisibility } | null>(null)
   const [pending, startTransition] = useTransition()
@@ -789,8 +837,8 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
             : `Your workspace still needs ${missingSetup.join(", ")} on file before work can be published.`}
         </p>
         {options.dispatcher ? (
-          <Link className="action-link" href="/host/landings">
-            Set these up
+          <Link className="action-link" href="/host/landings?welcome=1">
+            Finish workspace setup
           </Link>
         ) : null}
       </article>
@@ -871,14 +919,14 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
         roadCondition,
         routeId: route.id,
         scheduleType: scheduleKind,
-        status: visibility === "open" ? "open" : "draft",
+        status: selectedVisibility === "open" ? "open" : "draft",
         title: title.trim(),
-        visibilityMode,
+        visibilityMode: selectedVisibilityMode,
         weatherNotes: weather.trim() || null
       })
 
       if (result.ok) {
-        setPublished({ title: title.trim(), visibility })
+        setPublished({ title: title.trim(), visibility: selectedVisibility })
         setStep(0)
         setTitle("")
         setTons("")
@@ -896,7 +944,7 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
         setDays(new Set([1, 3, 5]))
         setUntil("")
         setVisibility("draft")
-        setVisibilityMode("open_network")
+        setVisibilityMode(liveVisibilityModes[0] ?? "open_network")
       } else {
         setError(result.error ?? "Publishing failed. Check the details and try again.")
       }
@@ -1232,40 +1280,55 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
 
       {step === 4 ? (
         <div className="host-step host-visibility-step">
-          <span className="req-label">Who can see this work</span>
+          {canPublishLive ? (
+            <>
+              <span className="req-label">Who can see this work</span>
+              <div className="host-choice">
+                {VISIBILITY_MODES.filter(([value]) =>
+                  liveVisibilityModes.includes(value)
+                ).map(([value, label, description]) => (
+                  <label key={value}>
+                    <input
+                      checked={selectedVisibilityMode === value}
+                      name="host-reach"
+                      onChange={() => setVisibilityMode(value)}
+                      type="radio"
+                    />
+                    <span>
+                      <strong>{label}</strong>
+                      <span>{description}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="host-builder-note">
+              Live publication becomes available after assisted activation. You can
+              finish this operating record and save it as a draft now.
+            </p>
+          )}
+          <span className="req-label">
+            {canPublishLive ? "Publish now, or hold as a draft" : "Save this movement as a draft"}
+          </span>
           <div className="host-choice">
-            {VISIBILITY_MODES.map(([value, label, description]) => (
-              <label key={value}>
+            {canPublishLive ? (
+              <label>
                 <input
-                  checked={visibilityMode === value}
-                  name="host-reach"
-                  onChange={() => setVisibilityMode(value)}
+                  checked={selectedVisibility === "open"}
+                  name="host-visibility"
+                  onChange={() => setVisibility("open")}
                   type="radio"
                 />
                 <span>
-                  <strong>{label}</strong>
-                  <span>{description}</span>
+                  <strong>Publish now</strong>
+                  <span>Goes live for the reach you chose. Exact landing access still unlocks only after you approve an assignment.</span>
                 </span>
               </label>
-            ))}
-          </div>
-          <span className="req-label">Publish now, or hold as a draft</span>
-          <div className="host-choice">
+            ) : null}
             <label>
               <input
-                checked={visibility === "open"}
-                name="host-visibility"
-                onChange={() => setVisibility("open")}
-                type="radio"
-              />
-              <span>
-                <strong>Publish now</strong>
-                <span>Goes live for the reach you chose. Exact landing access still unlocks only after you approve an assignment.</span>
-              </span>
-            </label>
-            <label>
-              <input
-                checked={visibility === "draft"}
+                checked={selectedVisibility === "draft"}
                 name="host-visibility"
                 onChange={() => setVisibility("draft")}
                 type="radio"
@@ -1357,8 +1420,8 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
           <div>
             <dt>Visibility</dt>
             <dd>
-              {visibility === "open"
-                ? VISIBILITY_MODES.find(([value]) => value === visibilityMode)?.[1] ?? "Open network"
+              {selectedVisibility === "open"
+                ? VISIBILITY_MODES.find(([value]) => value === selectedVisibilityMode)?.[1] ?? "Open network"
                 : "Draft — team only"}
             </dd>
           </div>
@@ -1402,7 +1465,13 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
             onClick={publish}
             type="button"
           >
-            {pending ? "Publishing…" : visibility === "open" ? "Publish to the network" : "Save draft"}
+            {pending
+              ? "Publishing…"
+              : selectedVisibility === "open"
+                ? selectedVisibilityMode === "private_network"
+                  ? "Publish to partners"
+                  : "Publish to the network"
+                : "Save draft"}
           </button>
         )}
       </div>

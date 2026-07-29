@@ -51,6 +51,231 @@ function activeLoads(loads: NetworkLoadView[]): NetworkLoadView[] {
   return loads.filter((load) => !["archived", "cancelled", "completed"].includes(load.status))
 }
 
+interface HostReadinessFacts {
+  activeLandingCount: number
+  activeRouteCount: number
+  hasDraft: boolean
+  hasLanding: boolean
+  hasRate: boolean
+  hasRoute: boolean
+  preparedWorkCount: number
+  rateCount: number
+  readyCount: number
+}
+
+function getHostReadinessFacts(
+  network: NetworkView,
+  options: HostPublishingOptions,
+  setup: HostWorkspaceSetup
+): HostReadinessFacts {
+  const activeLandingIds = new Set(options.landings.map((landing) => landing.id))
+  const activeRouteCount = options.routes.filter((route) =>
+    activeLandingIds.has(route.landingId)
+  ).length
+  const preparedWorkCount = ownLoads(network).length
+  const hasLanding = setup.activeLandingCount > 0 && activeLandingIds.size > 0
+  const hasRoute = activeRouteCount > 0
+  const hasRate = setup.rates.length > 0
+  const hasDraft = preparedWorkCount > 0
+
+  return {
+    activeLandingCount: setup.activeLandingCount,
+    activeRouteCount,
+    hasDraft,
+    hasLanding,
+    hasRate,
+    hasRoute,
+    preparedWorkCount,
+    rateCount: setup.rates.length,
+    readyCount: [hasLanding, hasRoute, hasRate, hasDraft].filter(Boolean).length
+  }
+}
+
+function hostActivationIsComplete(
+  activationState: HostPublishingOptions["billingActivationState"]
+): boolean {
+  return activationState === "active" || activationState === "legacy"
+}
+
+function HostReadiness({
+  activationState,
+  billingModel,
+  canManageLandings,
+  canPublish,
+  facts,
+  title
+}: {
+  activationState: HostPublishingOptions["billingActivationState"]
+  billingModel: HostPublishingOptions["billingModel"]
+  canManageLandings: boolean
+  canPublish: boolean
+  facts: HostReadinessFacts
+  title: string
+}) {
+  const activationComplete = hostActivationIsComplete(activationState)
+  const operatingSteps = [
+    {
+      complete: facts.hasLanding,
+      detail: facts.hasLanding
+        ? `${facts.activeLandingCount} active landing${facts.activeLandingCount === 1 ? "" : "s"} ready for operating details.`
+        : "Add the operating site where trucks load.",
+      title: "Add a landing"
+    },
+    {
+      complete: facts.hasRoute,
+      detail: facts.hasRoute
+        ? `${facts.activeRouteCount} lane${facts.activeRouteCount === 1 ? "" : "s"} connect active landings to destinations.`
+        : "Connect that landing to the mill or destination.",
+      title: "Add a lane"
+    },
+    {
+      complete: facts.hasRate,
+      detail: facts.hasRate
+        ? `${facts.rateCount} pay rate${facts.rateCount === 1 ? "" : "s"} available for a posting.`
+        : "Record the standing rate used for your operating record.",
+      title: "Add a pay rate"
+    },
+    {
+      complete: facts.hasDraft,
+      detail: facts.hasDraft
+        ? `${facts.preparedWorkCount} movement record${facts.preparedWorkCount === 1 ? "" : "s"} prepared.`
+        : "Save the first movement as a draft without putting it live.",
+      title: "Prepare a draft"
+    }
+  ]
+  const nextIndex = operatingSteps.findIndex((step) => !step.complete)
+  const setupActions = [
+    {
+      allowed: canManageLandings,
+      href: "/host/landings?welcome=1#add-landing",
+      label: "Add first landing"
+    },
+    {
+      allowed: canPublish,
+      href: "/host/landings?welcome=1#landings",
+      label: "Add first lane"
+    },
+    {
+      allowed: canPublish,
+      href: "/host/landings?welcome=1#pay-rate",
+      label: "Add pay rate"
+    },
+    {
+      allowed: canPublish,
+      href: "/host/opportunities",
+      label: "Prepare first draft"
+    }
+  ]
+  const requiredSetupAction =
+    nextIndex >= 0 ? setupActions[nextIndex] ?? null : null
+  const nextAction = requiredSetupAction
+    ? requiredSetupAction.allowed
+      ? {
+          href: requiredSetupAction.href,
+          label: requiredSetupAction.label,
+          note: "No subscription starts and no card is charged during setup."
+        }
+      : {
+          href: "/host/workspace",
+          label: "Review workspace access",
+          note: "An owner, admin, or authorized operations manager must complete the next setup step."
+        }
+    : activationComplete
+      ? {
+          href: "/host/command",
+          label: "Open command center",
+          note: "Activation is recorded for this workspace."
+        }
+      : {
+          href: "/contact",
+          label: "Plan assisted activation",
+          note: "LogLoads confirms the operating lane and commercial activation with you."
+        }
+  const activationDetail =
+    activationState === "active"
+      ? "LogLoads has recorded active operating and commercial approval for this workspace."
+      : activationState === "legacy"
+        ? "This workspace operates under its recorded grandfathered agreement."
+        : activationState === "suspended"
+          ? "Activation is suspended. Contact LogLoads to resolve the operating hold before publication resumes."
+          : billingModel
+            ? "A commercial lane is recorded. LogLoads still confirms the agreement and activation with you before live Network publication."
+            : "LogLoads confirms the operating lane and activation with you. Workspace setup does not enroll or charge you."
+  const steps = [
+    ...operatingSteps,
+    {
+      complete: activationComplete,
+      detail: activationDetail,
+      title: "Assisted activation"
+    }
+  ]
+
+  return (
+    <section aria-labelledby="host-readiness-title" className="host-readiness">
+      <header className="host-readiness__head">
+        <div>
+          <p className="eyebrow">First movement launchpad</p>
+          <h2 id="host-readiness-title">{title}</h2>
+          <p>
+            Build the operating record now. Live Network publication stays off
+            until LogLoads completes assisted activation with you.
+          </p>
+        </div>
+        <div className="host-readiness__progress">
+          <strong>{facts.readyCount} of 4 operating steps ready</strong>
+          <span>Assisted activation is a separate final step.</span>
+          <div
+            aria-hidden
+            className="host-readiness__meter"
+            style={{ "--fill": `${facts.readyCount * 25}%` } as CSSProperties}
+          >
+            <span />
+          </div>
+        </div>
+      </header>
+      <div className="host-readiness__actions">
+        <Link className="action-link" href={nextAction.href}>{nextAction.label}</Link>
+        <span>{nextAction.note}</span>
+      </div>
+      <ol className="host-readiness__steps">
+        {steps.map((step, index) => {
+          const isAssisted = index === steps.length - 1
+          const isNext =
+            index === nextIndex ||
+            (isAssisted && nextIndex === -1 && !activationComplete)
+          const status = isAssisted
+            ? step.complete
+              ? "Ready"
+              : "Assisted"
+            : step.complete
+              ? "Ready"
+              : isNext
+                ? "Next"
+                : "Waiting"
+
+          return (
+            <li
+              className={`${step.complete ? "is-complete" : ""}${isNext ? " is-next" : ""}${isAssisted ? " is-assisted" : ""}`}
+              key={step.title}
+            >
+              <span aria-hidden className="host-readiness__marker">
+                {step.complete ? <Icon name="status.verified" size={18} /> : index + 1}
+              </span>
+              <div>
+                <strong>{step.title}</strong>
+                <span>{step.detail}</span>
+              </div>
+              <Badge tone={step.complete ? "success" : isNext ? "warning" : isAssisted ? "info" : "neutral"}>
+                {status}
+              </Badge>
+            </li>
+          )
+        })}
+      </ol>
+    </section>
+  )
+}
+
 function pendingRequests(loads: NetworkLoadView[]): PendingCapacityRequest[] {
   return loads.flatMap((load) =>
     load.assignments
@@ -83,8 +308,27 @@ function roadTone(condition: string): "success" | "warning" | "critical" {
 
 // --- Command -------------------------------------------------------------------
 
-export function HostCommand({ account, network }: HostPageProps) {
+export function HostCommand({
+  account,
+  canManageLandings,
+  canPublish,
+  network,
+  options,
+  setup
+}: HostPageProps & {
+  canManageLandings: boolean
+  canPublish: boolean
+  options: HostPublishingOptions
+  setup: HostWorkspaceSetup
+}) {
   const own = ownLoads(network)
+  const readiness = getHostReadinessFacts(network, options, setup)
+  const activationComplete = hostActivationIsComplete(
+    options.billingActivationState
+  )
+  const showReadiness =
+    own.length === 0 ||
+    (!activationComplete && options.billingActivationState !== "suspended")
   const active = activeLoads(own)
   const planned = active.reduce((sum, load) => sum + load.capacity.total, 0)
   const committed = active.reduce((sum, load) => sum + load.capacity.committed, 0)
@@ -97,11 +341,27 @@ export function HostCommand({ account, network }: HostPageProps) {
 
   return (
     <AppShell account={account} kicker="Landing operations" role="host" title="Command">
+      {showReadiness ? (
+        <HostReadiness
+          activationState={options.billingActivationState}
+          billingModel={options.billingModel}
+          canManageLandings={canManageLandings}
+          canPublish={canPublish}
+          facts={readiness}
+          title={
+            readiness.readyCount === 4
+              ? "Plan assisted activation"
+              : "Finish workspace setup"
+          }
+        />
+      ) : null}
       <section className="host-need">
         <p className="eyebrow">Capacity position</p>
         <h2>
           {planned === 0
-            ? "No truckloads scheduled"
+            ? showReadiness
+              ? "No published capacity yet"
+              : "No truckloads scheduled"
             : remaining === 0
               ? "All planned truckloads are covered"
               : `${remaining} truckload${remaining === 1 ? "" : "s"} still open`}
@@ -138,8 +398,12 @@ export function HostCommand({ account, network }: HostPageProps) {
             <EmptyState
               actionHref="/host/opportunities"
               actionLabel="Publish work"
-              body="Every planned truckload is committed. Publish the next block when it is ready to move."
-              title="No open gaps."
+              body={
+                planned === 0
+                  ? "Drafts and closed work do not create live capacity. Open Work when the next block is ready to prepare."
+                  : "Every planned truckload is committed. Publish the next block when it is ready to move."
+              }
+              title={planned === 0 ? "No published capacity yet." : "No open gaps."}
             />
           ) : (
             <>
@@ -222,7 +486,9 @@ export function HostOpportunities({
                         {waiting} request{waiting === 1 ? "" : "s"} waiting
                       </Link>
                     ) : null}
-                    {canPublish && load.status === "draft" ? <PublishDraftButton loadPostingId={load.id} /> : null}
+                    {canPublish && load.status === "draft" ? (
+                      <PublishDraftButton loadPostingId={load.id} options={options} />
+                    ) : null}
                     {canPublish && ["open", "scheduled", "filled"].includes(load.status) ? (
                       <CloseWorkButton loadPostingId={load.id} waitingRequests={waiting} />
                     ) : null}
@@ -402,19 +668,39 @@ export function HostLandings({
   canPublish,
   landings,
   network,
-  setup
+  options,
+  setup,
+  welcome = false
 }: HostPageProps & {
   canManageLandings: boolean
   canPublish: boolean
   landings: HostLandingRecord[]
+  options: HostPublishingOptions
   setup: HostWorkspaceSetup
+  welcome?: boolean
 }) {
   const atLimit = setup.landingLimit !== null && setup.activeLandingCount >= setup.landingLimit
+  const readiness = getHostReadinessFacts(network, options, setup)
+  const activationComplete = hostActivationIsComplete(
+    options.billingActivationState
+  )
+  const showReadiness =
+    welcome || readiness.readyCount < 4 || !activationComplete
 
   return (
     <AppShell account={account} kicker="Access control" role="host" title="Landings">
+      {showReadiness ? (
+        <HostReadiness
+          activationState={options.billingActivationState}
+          billingModel={options.billingModel}
+          canManageLandings={canManageLandings}
+          canPublish={canPublish}
+          facts={readiness}
+          title="Prepare your first timber movement"
+        />
+      ) : null}
       {canManageLandings ? (
-        <section className="workspace-section">
+        <section className="workspace-section" id="add-landing">
           <header className="workspace-section__head">
             <h2>Add a landing</h2>
             {/* No live plan and a full plan are different problems and read
@@ -442,7 +728,7 @@ export function HostLandings({
       ) : null}
 
       {canPublish ? (
-        <section className="workspace-section">
+        <section className="workspace-section" id="pay-rate">
           <header className="workspace-section__head">
             <h2>Rates you pay</h2>
             <p>Every posting carries one. Add the rates you haul at, then pick one when you publish.</p>
@@ -463,7 +749,7 @@ export function HostLandings({
         </section>
       ) : null}
 
-      <section className="host-landing-grid">
+      <section className="host-landing-grid" id="landings">
         {landings.length === 0 ? (
           <EmptyState
             body={

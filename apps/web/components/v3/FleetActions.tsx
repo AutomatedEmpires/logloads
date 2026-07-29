@@ -72,10 +72,12 @@ export function RequestForTruckButton({
 export function ClaimDirectOfferButton({
   directOfferId,
   equipmentCombinationId,
+  onClaimed,
   truckSlotId
 }: {
   directOfferId: string
   equipmentCombinationId: string
+  onClaimed: () => void
   truckSlotId: string | null
 }) {
   const router = useRouter()
@@ -108,6 +110,7 @@ export function ClaimDirectOfferButton({
               const result = await claimDirectOfferAction({ directOfferId, equipmentCombinationId, truckSlotId })
 
               if (result.ok) {
+                onClaimed()
                 setClaimed(true)
                 // The local success state keeps the field action responsive,
                 // while the refreshed server projection updates offer capacity,
