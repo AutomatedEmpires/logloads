@@ -4,9 +4,9 @@ packages:
 
 ignoredBuiltDependencies:
   - core-js
+  - sharp
 
 onlyBuiltDependencies:
   - "@sentry/cli"
   - esbuild
-  - sharp
   - unrs-resolver

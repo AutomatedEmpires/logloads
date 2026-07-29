@@ -9,7 +9,6 @@ const [contract, turbo] = await Promise.all([
 ])
 
 test("hosted billing build declares every operational environment input", () => {
-  const declared = new Set(turbo.tasks?.["@logloads/web#build"]?.env ?? [])
   const hostedBuildServices = new Set(["billing", "resend", "stripe"])
   const expected = contract.variables
     .filter(
@@ -18,19 +17,24 @@ test("hosted billing build declares every operational environment input", () => 
         ["CRON_SECRET", "NEXT_PUBLIC_APP_URL", "VERCEL_URL"].includes(variable.name)
     )
     .map((variable) => variable.name)
-  const missing = expected.filter((name) => !declared.has(name))
+  for (const taskName of ["build", "@logloads/web#build"]) {
+    const declared = new Set(turbo.tasks?.[taskName]?.env ?? [])
+    const missing = expected.filter((name) => !declared.has(name))
 
-  assert.deepEqual(
-    missing,
-    [],
-    `turbo.json build.env is missing hosted billing inputs: ${missing.join(", ")}`
-  )
+    assert.deepEqual(
+      missing,
+      [],
+      `turbo.json ${taskName}.env is missing hosted billing inputs: ${missing.join(", ")}`
+    )
+  }
 })
 
 test("hosted build environment names are explicit and unique", () => {
-  const declared = turbo.tasks?.["@logloads/web#build"]?.env ?? []
+  for (const taskName of ["build", "@logloads/web#build"]) {
+    const declared = turbo.tasks?.[taskName]?.env ?? []
 
-  assert.ok(declared.length > 0)
-  assert.equal(new Set(declared).size, declared.length)
-  assert.ok(declared.every((name) => /^[A-Z][A-Z0-9_]*$/.test(name)))
+    assert.ok(declared.length > 0)
+    assert.equal(new Set(declared).size, declared.length)
+    assert.ok(declared.every((name) => /^[A-Z][A-Z0-9_]*$/.test(name)))
+  }
 })
