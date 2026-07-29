@@ -3,8 +3,9 @@ import { readFile } from "node:fs/promises"
 import test from "node:test"
 
 const root = new URL("../", import.meta.url)
-const [contract, turbo] = await Promise.all([
+const [contract, rootPackage, turbo] = await Promise.all([
   readFile(new URL("ops/production-env-contract.json", root), "utf8").then(JSON.parse),
+  readFile(new URL("package.json", root), "utf8").then(JSON.parse),
   readFile(new URL("turbo.json", root), "utf8").then(JSON.parse)
 ])
 
@@ -37,4 +38,13 @@ test("hosted build environment names are explicit and unique", () => {
     assert.equal(new Set(declared).size, declared.length)
     assert.ok(declared.every((name) => /^[A-Z][A-Z0-9_]*$/.test(name)))
   }
+})
+
+test("root package manifest explicitly classifies dependency lifecycles", () => {
+  assert.deepEqual(rootPackage.pnpm?.ignoredBuiltDependencies, ["core-js", "sharp"])
+  assert.deepEqual(rootPackage.pnpm?.onlyBuiltDependencies, [
+    "@sentry/cli",
+    "esbuild",
+    "unrs-resolver"
+  ])
 })
