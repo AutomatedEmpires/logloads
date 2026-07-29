@@ -21,9 +21,9 @@
     "@logloads/services": "workspace:*",
     "@logloads/ui": "workspace:*",
     "@sentry/nextjs": "^10.63.0",
-    "@supabase/supabase-js": "^2.110.9",
     "@stripe/react-stripe-js": "^6.8.0",
     "@stripe/stripe-js": "^9.12.0",
+    "@supabase/supabase-js": "^2.110.9",
     "cloudinary": "2.10.0",
     "image-size": "^2.0.2",
     "mapbox-gl": "^3.25.0",
@@ -34,6 +34,7 @@
     "react-dom": "^19.2.7",
     "react-map-gl": "^7.1.9",
     "server-only": "^0.0.1",
+    "sharp": "0.35.3",
     "stripe": "22.3.0",
     "zod": "^3.25.76"
   },
