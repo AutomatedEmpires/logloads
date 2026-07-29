@@ -1971,7 +1971,7 @@ export function usageInvoiceCompositionProblem(
   return null
 }
 
-export function baseInvoiceActivationCompositionProblem(
+export function baseInvoicePaymentCompositionProblem(
   invoice: CommercialInvoiceFacts,
   input: {
     amountDueCents: number

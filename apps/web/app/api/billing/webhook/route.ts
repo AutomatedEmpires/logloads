@@ -25,7 +25,7 @@ import {
 	type SubscriptionBillingEventHooks
 } from "@/lib/billing"
 import {
-	baseInvoiceActivationCompositionProblem,
+	baseInvoicePaymentCompositionProblem,
 	expectedStripeLivemode,
 	PILOT_TERM_DAYS,
 	resolveSubscriptionStripe,
@@ -1076,9 +1076,7 @@ function createSubscriptionEventHooks(input: {
 
 			const firstPaidActivation =
 				outcome === "succeeded" && !canonical.operationalActivatedAt
-			const exactCommercialTransition =
-				outcome === "succeeded" &&
-				(firstPaidActivation || provider.match.pending)
+			const exactPaidBaseInvoice = outcome === "succeeded"
 			let pilotSchedule: Awaited<
 				ReturnType<SubscriptionStripePort["ensureFinitePilotSchedule"]>
 			> | null = null
@@ -1101,14 +1099,14 @@ function createSubscriptionEventHooks(input: {
 				}
 			}
 
-			if (exactCommercialTransition) {
+			if (exactPaidBaseInvoice) {
 				const subscriptionPort = input.subscriptionPort
 
 				if (!subscriptionPort) {
 					return result(
 						event,
 						"unresolved",
-						"Stripe subscription billing is unavailable for a paid commercial transition"
+						"Stripe subscription billing is unavailable for a successful base payment"
 					)
 				}
 
@@ -1126,7 +1124,7 @@ function createSubscriptionEventHooks(input: {
 						invoiceFacts.value.providerInvoiceId
 					)
 				const compositionProblem =
-					baseInvoiceActivationCompositionProblem(providerInvoice, {
+					baseInvoicePaymentCompositionProblem(providerInvoice, {
 						amountDueCents: invoiceFacts.value.amountDueCents,
 						amountPaidCents: invoiceFacts.value.amountPaidCents,
 						amountRemainingCents:

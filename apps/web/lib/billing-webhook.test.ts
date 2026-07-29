@@ -20,7 +20,8 @@ import {
   authorizePilotConversionSubscription,
   configureOrganizationSubscription,
   createLogLoadsServices,
-  planSubscriptionBillingRun
+  planSubscriptionBillingRun,
+  scheduleOrganizationSubscriptionPlanChange
 } from "@logloads/services"
 import { NextRequest } from "next/server"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -610,6 +611,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.unstubAllEnvs()
   vi.stubEnv("STRIPE_PRICE_NETWORK_25", "price_network_25")
+  vi.stubEnv("STRIPE_PRICE_NETWORK_50", "price_network_50")
   vi.stubEnv("STRIPE_PRICE_NETWORK_PILOT", "price_pilot")
   vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_logloads")
   vi.stubEnv("LOGLOADS_STRIPE_EXPECTED_LIVEMODE", "test")
@@ -1614,6 +1616,216 @@ describe("Network subscription provider events", () => {
         )
       ).toBe(false)
     }
+  })
+
+  it("still verifies the transition invoice after an earlier subscription update clears the pending plan", async () => {
+    const fixture = networkSubscriptionFixture()
+    const actorUserId = fixture.state.organizationMemberships.find(
+      (membership) =>
+        membership.organizationId === fixture.host.id &&
+        membership.status === "active" &&
+        membership.role === "owner"
+    )?.userId
+    const operatingLandingId = fixture.state.landings.find(
+      (landing) =>
+        landing.companyId === fixture.host.id &&
+        landing.isActive
+    )?.id
+
+    if (!actorUserId || !operatingLandingId) {
+      throw new Error("The transition fixture is missing its billing actor or market")
+    }
+
+    const operating =
+      activateAuthorizedOrganizationSubscriptionFromProvider(
+        fixture.state,
+        {
+          currentPeriodEnd: "2026-09-01T00:00:00.000Z",
+          currentPeriodStart: "2026-08-01T00:00:00.000Z",
+          providerInvoiceId: "in_network25initial",
+          stripeCustomerId: fixture.customerId,
+          stripeSubscriptionId: fixture.stripeSubscriptionId,
+          subscriptionId: fixture.subscription.id
+        },
+        "2026-08-01T00:00:01.000Z"
+      ).subscription
+    const transitionAt = operating.commitmentEnd
+
+    if (!transitionAt) {
+      throw new Error("The active Network agreement has no renewal boundary")
+    }
+
+    scheduleOrganizationSubscriptionPlanChange(
+      fixture.state,
+      {
+        actorUserId,
+        effectiveAt: transitionAt,
+        nextOperatingMarketIds: [operatingLandingId],
+        nextPlanCode: "network_50",
+        subscriptionId: operating.id
+      },
+      "2026-08-02T00:00:00.000Z"
+    )
+    const nextPeriodEnd = new Date(
+      Date.parse(transitionAt) + 31 * 24 * 60 * 60 * 1000
+    ).toISOString()
+    const transitionFacts: Partial<StripeSubscriptionFacts> = {
+      billingCycleAnchor: transitionAt,
+      cancelAtPeriodEnd: false,
+      currentPeriodEndsAt: nextPeriodEnd,
+      currentPeriodStartsAt: transitionAt,
+      id: fixture.stripeSubscriptionId,
+      livemode: false,
+      metadata: {
+        billingModel: "subscription_v1",
+        internal_billing_test: "false",
+        organizationId: fixture.host.id,
+        organizationSubscriptionId: operating.id,
+        planCode: "network_50"
+      },
+      priceId: "price_network_50",
+      status: "active",
+      stripeCustomerId: fixture.customerId
+    }
+
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(transitionAt))
+    harness(fixture.state, {
+      event: billingEvent(
+        "customer.subscription.updated",
+        { id: fixture.stripeSubscriptionId },
+        {
+          createdAt: Date.parse(transitionAt) / 1000,
+          id: "evt_network50_subscription_updated"
+        }
+      ),
+      subscriptionFacts: transitionFacts
+    })
+    expect((await POST(webhookRequest())).status).toBe(200)
+    expect(
+      fixture.state.organizationSubscriptions.find(
+        (subscription) => subscription.id === operating.id
+      )
+    ).toMatchObject({
+      pendingPlanCode: null,
+      planCode: "network_50"
+    })
+
+    const invoiceId = "in_network50_discounted"
+    const discountedInvoice = subscriptionBaseProviderInvoice({
+      amountDueCents: 500_000,
+      baseAmountCents: 550_000,
+      customerId: fixture.customerId,
+      invoiceId,
+      priceId: "price_network_50",
+      subscriptionId: fixture.stripeSubscriptionId
+    })
+    mocks.retrieveSubscriptionInvoice.mockResolvedValue({
+      ...discountedInvoice,
+      lineItems: discountedInvoice.lineItems.map((line) => ({
+        ...line,
+        discountAmountCents: 50_000
+      }))
+    })
+    const eventId = "evt_network50_discounted_paid"
+    harness(fixture.state, {
+      event: billingEvent(
+        "invoice.payment_succeeded",
+        {
+          amount_due: 500_000,
+          amount_remaining: 0,
+          attempt_count: 1,
+          currency: "usd",
+          customer: fixture.customerId,
+          id: invoiceId,
+          metadata: {
+            organizationSubscriptionId: operating.id
+          },
+          parent: {
+            subscription_details: {
+              subscription: fixture.stripeSubscriptionId
+            }
+          },
+          status: "paid",
+          total: 500_000
+        },
+        {
+          createdAt: Date.parse(transitionAt) / 1000 + 1,
+          id: eventId
+        }
+      ),
+      subscriptionFacts: transitionFacts
+    })
+
+    expect((await POST(webhookRequest())).status).toBe(500)
+    expect(
+      fixture.state.subscriptionBaseInvoices.some(
+        (invoice) => invoice.providerInvoiceId === invoiceId
+      )
+    ).toBe(false)
+    expect(
+      fixture.state.auditEvents.some(
+        (event) => event.metadata?.eventId === eventId
+      )
+    ).toBe(false)
+    expect(mocks.verifyAcceptedPrice).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        plan: expect.objectContaining({ code: "network_50" }),
+        priceId: "price_network_50",
+        role: "base"
+      })
+    )
+
+    const exactInvoiceId = "in_network50exact"
+    mocks.retrieveSubscriptionInvoice.mockResolvedValue(
+      subscriptionBaseProviderInvoice({
+        baseAmountCents: 550_000,
+        customerId: fixture.customerId,
+        invoiceId: exactInvoiceId,
+        priceId: "price_network_50",
+        subscriptionId: fixture.stripeSubscriptionId
+      })
+    )
+    harness(fixture.state, {
+      event: billingEvent(
+        "invoice.payment_succeeded",
+        {
+          amount_due: 550_000,
+          amount_remaining: 0,
+          attempt_count: 1,
+          currency: "usd",
+          customer: fixture.customerId,
+          id: exactInvoiceId,
+          metadata: {
+            organizationSubscriptionId: operating.id
+          },
+          parent: {
+            subscription_details: {
+              subscription: fixture.stripeSubscriptionId
+            }
+          },
+          status: "paid",
+          total: 550_000
+        },
+        {
+          createdAt: Date.parse(transitionAt) / 1000 + 2,
+          id: "evt_network50_exact_paid"
+        }
+      ),
+      subscriptionFacts: transitionFacts
+    })
+
+    expect((await POST(webhookRequest())).status).toBe(200)
+    expect(
+      fixture.state.subscriptionBaseInvoices.find(
+        (invoice) => invoice.providerInvoiceId === exactInvoiceId
+      )
+    ).toMatchObject({
+      amountDueCents: 550_000,
+      planCode: "network_50",
+      status: "paid"
+    })
   })
 
   it("persists the exact partial base balance and retry path instead of inferring from plan price", async () => {
