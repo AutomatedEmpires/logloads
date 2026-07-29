@@ -39,9 +39,9 @@ const PLAN_DEFINITIONS: Record<PlanProduct, PlanDefinition> = {
   },
   landing_operations: {
     defaultFeatures: ["Load publishing", "Live landing board", "Preferred carrier tools", "Drivers always free"],
-    name: "Host",
-    priceLine: "5% of driver pay",
-    summary: "No monthly fee and no charge to post. You are billed 5% of what you pay the driver, on completed loads only."
+    name: "Legacy host terms",
+    priceLine: "Legacy 5%",
+    summary: "Preserved only for organizations deliberately left on a grandfathered percentage agreement. New organizations use an accepted LogLoads plan."
   }
 }
 
@@ -201,15 +201,12 @@ function toPlanView(entitlement: Entitlement): PlanView {
     ? {
         actionKind: null,
         actionLabel: null,
-        // No monthly fee and no charge to post; the 5% applies only once a driver
-        // has completed the haul. It is added to what the host owes, never taken
-        // out of the driver's pay — the driver receives exactly the figure the
-        // host stated. LogLoads bills the host for its own fee and nothing else:
-        // driver payment moves host to driver directly and does not pass through
-        // this platform.
-        statusDetail: "5% of the driver pay you state, charged only on completed loads and added on top — never deducted from the driver. Billed monthly to the card on file.",
-        statusLine: "No monthly fee — 5% of driver pay on completed loads",
-        statusTone: "success"
+        // This entitlement predates subscription_v1. It remains visible so a host
+        // can explain historical assignments and bills, but it is never presented
+        // as the commercial model for new activity.
+        statusDetail: "This organization remains on an explicit grandfathered percentage agreement until an audited cutover. No new organization can enter this lane, and driver compensation remains direct.",
+        statusLine: "Legacy percentage terms — no new enrollment",
+        statusTone: "neutral"
       } satisfies PlanStatusView
     : planStatusView(entitlement.status, entitlement.currentPeriodEndsAt)
   const features = entitlement.features.length > 0
@@ -301,6 +298,15 @@ export function getBillingView(network: NetworkView): BillingView {
   const organizationId = network.activeOrganization.id
   const state = services.state
   const entitlements = services.listEntitlements(organizationId)
+  const billingAccount = state.organizationBillingAccounts.find(
+    (account) => account.organizationId === organizationId
+  )
+  const visibleEntitlements =
+    billingAccount && billingAccount.billingModel !== "legacy_percentage"
+      ? entitlements.filter(
+          (entitlement) => entitlement.product !== "landing_operations"
+        )
+      : entitlements
 
   const activeTrucks = state.equipmentCombinations.filter(
     (combination) => combination.organizationId === organizationId && combination.status !== "inactive"
@@ -326,8 +332,13 @@ export function getBillingView(network: NetworkView): BillingView {
   }
 
   return {
-    billingReady: Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_PRICE_DISPATCH),
-    plans: entitlements.map(toPlanView),
+    billingReady: Boolean(
+      process.env.LOGLOADS_SUBSCRIPTION_COLLECTION === "enabled" &&
+        process.env.LOGLOADS_STRIPE_EXPECTED_ACCOUNT_ID?.trim() &&
+        process.env.STRIPE_SECRET_KEY?.trim() &&
+        process.env.STRIPE_PRICE_DISPATCH?.trim()
+    ),
+    plans: visibleEntitlements.map(toPlanView),
     usage
   }
 }

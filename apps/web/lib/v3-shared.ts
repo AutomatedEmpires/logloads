@@ -206,6 +206,9 @@ export interface PricingPlan {
   price: string
   audience: string
   summary: string
+  included?: string
+  overage?: string
+  commitment?: string
   features: string[]
   cta: {
     href: string
@@ -227,27 +230,61 @@ export const pricingPlans: PricingPlan[] = [
     name: "Dispatch Pro",
     price: "$499/mo",
     audience: "Fleets and dispatch teams",
-    summary: "One operating account for the trucks and drivers you dispatch.",
+    summary: "Private-fleet software for the trucks, drivers, and partner capacity your organization already coordinates.",
+    included: "No LogLoads Network units",
+    overage: "No Network usage billing",
+    commitment: "Monthly software subscription",
     features: ["Free driver seats", "Truck and driver planning", "Dispatch board and schedule", "Private partner work"],
     cta: { href: "/sign-up?path=fleet", label: "Set up dispatch" },
-    note: "One clear monthly price. Billing is confirmed before paid access begins."
+    note: "Dispatch Pro does not include Network-sourced capacity."
   },
   {
-    name: "Host",
-    price: "5% of driver pay",
-    audience: "Landings and timber organizations",
-    summary: "Post loads and coordinate trucks with no monthly fee or charge to post.",
-    features: ["No monthly fee, no charge to post", "Insurance, CDL and equipment checked before a driver can accept", "Live landing schedule", "Clear booking decisions"],
-    cta: { href: "/sign-up?path=host", label: "Post a load" },
-    note: "The fee applies only to completed loads, and never comes out of driver pay. We will give 60 days notice before any rate change, and never apply one retroactively."
+    name: "Network 25",
+    price: "$3,000/mo",
+    audience: "Hosts building a repeat Network lane",
+    summary: "Network access, qualified-capacity workflow, field execution, and core Dispatch Pro coordination in one plan.",
+    included: "25 completed Network loads/month",
+    overage: "$125 per additional completion",
+    commitment: "12 months, billed monthly · $36,000 base commitment",
+    features: ["No charge to post", "Automatic overage without stopping work", "Private-fleet work is not metered", "Usage and invoice breakdown"],
+    cta: { href: "/contact?plan=network-25", label: "Talk through Network 25" },
+    note: "$120 effective included rate at full allowance utilization. Sales-assisted enrollment."
   },
   {
-    name: "Enterprise",
+    name: "Network 50",
+    price: "$5,500/mo",
+    audience: "Established multi-lane Network operations",
+    summary: "A larger monthly allowance with the same completed-movement definition and uninterrupted overage path.",
+    included: "50 completed Network loads/month",
+    overage: "$110 per additional completion",
+    commitment: "12 months, billed monthly · $66,000 base commitment",
+    features: ["Core Dispatch Pro workflow included", "70%, 90%, and 100% usage alerts", "Plan-change scheduling", "Provider-reconciled invoices"],
+    cta: { href: "/contact?plan=network-50", label: "Talk through Network 50" },
+    note: "$110 effective included rate at full allowance utilization. Sales-assisted enrollment."
+  },
+  {
+    name: "Network 100",
+    price: "$10,000/mo",
+    audience: "High-volume Network operations",
+    summary: "Production-scale completed-load allowance with contract-defined operating locations and support.",
+    included: "100 completed Network loads/month",
+    overage: "$90 per additional completion",
+    commitment: "12 months, billed monthly · $120,000 base commitment",
+    features: ["Core Dispatch Pro workflow included", "Audited adjustments and reversals", "Supplemental late-usage invoices", "Custom operating review"],
+    cta: { href: "/contact?plan=network-100", label: "Talk through Network 100" },
+    note: "$100 effective included rate at full allowance utilization. Sales-assisted enrollment."
+  },
+  {
+    name: "Enterprise custom",
     price: "Custom",
-    audience: "Multi-region timber operations",
-    summary: "For operations that span regions, mills, and many carriers.",
-    features: ["Private regions", "Integration planning", "Verification workflows", "Dedicated support"],
-    cta: { href: "/contact", label: "Talk to us" }
+    audience: "250+ completed Network loads or contract-specific operations",
+    summary: "Negotiated allowance, overage, locations, integrations, and service obligations—never an unlimited-load promise.",
+    included: "Contract-defined completed Network loads",
+    overage: "Negotiated volume rate",
+    commitment: "Negotiated annual commitment",
+    features: ["Defined operating locations", "Contract-dependent integrations", "Custom allowance and rate snapshot", "Named activation and support obligations"],
+    cta: { href: "/contact?plan=enterprise", label: "Design an Enterprise agreement" },
+    note: "Every custom term is frozen into the accepted agreement and billing-period snapshot."
   }
 ]
 
@@ -343,9 +380,11 @@ export const legalPages: Record<string, LegalPageContent> = {
     slug: "terms",
     title: "Terms of Service",
     intro: "These Terms of Service govern your use of LogLoads. By creating an account or using the service, you agree to them.",
-    effectiveDate: "July 6, 2026",
+    effectiveDate: "July 28, 2026",
     sections: [
-      { title: "What LogLoads is", body: "LogLoads provides software for discovering, coordinating, and recording timber hauling work. LogLoads is not a freight broker and not a motor carrier. It does not arrange transportation for compensation, carry freight, or collect or disburse freight payment through the product.", points: ["Participants remain responsible for their own regulatory compliance", "Assignments record the coordination terms both sides accepted", "Payment for hauling is settled directly between the parties, outside LogLoads"] },
+      { title: "What LogLoads is", body: "LogLoads provides software for discovering, coordinating, and recording timber hauling work. Dispatch Pro covers established private capacity. LogLoads Network is activated only under a separate accepted commercial agreement and the operating posture stated in that agreement. LogLoads does not carry freight or receive, escrow, deduct from, or distribute transportation compensation.", points: ["Participants remain responsible for their own regulatory compliance", "Assignments record the coordination terms both sides accepted", "The legally identified carrier, owner-operator, or private-fleet payee is paid directly by the host"] },
+      { title: "Network subscriptions and completed usage", body: "A Network subscription bills its fixed base in advance regardless of utilization. One completed physical movement fulfilled through LogLoads Network counts as one usage unit; private-fleet work, drafts, postings, searches, unaccepted offers, cancellation before execution, and duplicate completion do not. Additional completed units are billed at the frozen overage rate after the applicable allowance window closes.", points: ["The accepted agreement states the minimum commitment and total base commitment", "The Pilot pools thirty units across an exact 90-day operating window", "Larger plans reset their allowance on the Stripe subscription anniversary with no advertised rollover", "Reaching an allowance does not interrupt accepted or in-progress work"] },
+      { title: "Enrollment, renewal, and plan changes", body: "Network enrollment is sales-assisted. Before collection, an authorized organization representative must accept the exact plan snapshot, commitment dates, renewal behavior, completed-unit definition, automatic overage, dispute process, and payment method. A plan change applies only at its scheduled boundary and never retroactively reprices a closed period.", points: ["The public pricing page does not itself enroll an organization", "Downgrades and non-renewal follow the accepted commitment", "Billing disputes use audited adjustments rather than deleting historical usage"] },
       { title: "Your responsibilities", body: "You are responsible for the accuracy of what you publish and for operating safely and lawfully: weight compliance, cargo securement, insurance, permits, operating authority, and road use.", points: ["Do not publish capacity or work that does not exist", "Do not misuse access instructions released to you", "Keep your equipment, insurance, and account details current"] },
       { title: "No guarantees", body: "LogLoads does not guarantee the quality or conduct of any carrier or host, the legality or condition of any route, the accuracy of posted weights, destination acceptance, or that you will be paid for work arranged through coordination on the platform.", points: ["Use your professional judgment on every haul", "Verify field conditions before committing equipment", "Raise problems early through messages, notices, or reports"] },
       { title: "Independent businesses and limits on liability", body: "Every participant is an independent business. Nothing on LogLoads creates an employment, agency, joint-venture, or partnership relationship between you and LogLoads or between you and another participant. Disputes about hauls, payment, damage, or delay are between the participants; we can provide the assignment record but we are not a party to the haul. To the fullest extent the law allows, LogLoads' total liability for any claim related to the service is limited to the subscription fees you paid us in the twelve months before the claim, and we are not liable for indirect, incidental, or consequential losses, including lost loads, lost revenue, equipment damage, or downtime.", points: ["Participants contract with each other, not with LogLoads", "Assignment records are available to both sides of a dispute", "Liability is capped at twelve months of subscription fees"] },

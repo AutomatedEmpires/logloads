@@ -15,6 +15,7 @@ import type {
   AdminReportsData,
   AdminVerificationItem
 } from "@/lib/admin-data"
+import { AdminBillingActions } from "./AdminBillingActions"
 import { toneForNotice } from "./Common"
 import { AdminReportDecision, OrganizationDecision, ResolveNoticeButton, VerificationDecision } from "./AdminActions"
 import { AppShell, EmptyState, Metric, SectionHeader, type ShellAccount } from "./Shells"
@@ -524,29 +525,682 @@ export function AdminActivityPage({ account, history }: { account: ShellAccount;
   )
 }
 
-// --- Billing exceptions -----------------------------------------------------------------
+// --- Subscription and legacy billing operations -------------------------------------------
+
+function subscriptionStatusTone(
+  status: AdminBillingSnapshot["subscriptions"][number]["status"]
+): "success" | "warning" | "critical" | "info" {
+  if (status === "active") {
+    return "success"
+  }
+
+  if (status === "past_due" || status === "cancelled" || status === "expired") {
+    return "critical"
+  }
+
+  if (status === "pending" || status === "incomplete" || status === "non_renewing") {
+    return "warning"
+  }
+
+  return "info"
+}
+
+function paymentStateTone(
+  state: AdminBillingSnapshot["subscriptions"][number]["paymentState"]
+): "success" | "warning" | "critical" | "info" {
+  if (state === "current") {
+    return "success"
+  }
+
+  if (state === "failed" || state === "past_due" || state === "uncollectible") {
+    return "critical"
+  }
+
+  if (state === "requires_payment_method") {
+    return "warning"
+  }
+
+  return "info"
+}
+
+function billingRecordTone(
+  status: string
+): "success" | "warning" | "critical" | "info" | "neutral" {
+  if (status === "active" || status === "paid" || status === "reconciled") {
+    return "success"
+  }
+
+  if (
+    status === "failed" ||
+    status === "past_due" ||
+    status === "uncollectible"
+  ) {
+    return "critical"
+  }
+
+  if (
+    status === "configured_dark" ||
+    status === "incomplete" ||
+    status === "invoicing" ||
+    status === "non_renewing" ||
+    status === "open" ||
+    status === "reversed" ||
+    status === "suspended"
+  ) {
+    return "warning"
+  }
+
+  if (status === "recorded" || status === "invoiced") {
+    return "info"
+  }
+
+  return "neutral"
+}
+
+function shortReference(value: string): string {
+  return value.slice(-8)
+}
+
+export function AdminSubscriptionRecord({
+  subscription
+}: {
+  subscription: AdminBillingSnapshot["subscriptions"][number]
+}) {
+  return (
+    <article className="admin-row">
+      <div className="admin-row__main">
+        <div className="admin-row__head">
+          <strong>{subscription.organizationName}</strong>
+          <Badge tone={subscriptionStatusTone(subscription.status)}>{subscription.statusLabel}</Badge>
+          <Badge tone="info">{subscription.planLabel}</Badge>
+          {subscription.salesAssisted ? <Badge tone="neutral">Sales-assisted</Badge> : null}
+        </div>
+        <p className="admin-row__meta">
+          {subscription.billingModelLabel} · {subscription.baseMonthlyLabel} ·{" "}
+          {subscription.providerReferenceLabel}
+        </p>
+        {subscription.usage ? (
+          subscription.usage.usedUnits === null ? (
+            <p className="admin-row__body">
+              {subscription.usage.includedUnits} completed Network loads included.{" "}
+              {subscription.usage.periodLabel}.
+              {subscription.usage.overageRateLabel
+                ? ` Overage is ${subscription.usage.overageRateLabel}.`
+                : ""}
+            </p>
+          ) : (
+            <p className="admin-row__body">
+              Allowance: {subscription.usage.usedUnits} used of {subscription.usage.includedUnits} ·{" "}
+              {subscription.usage.remainingUnits} remaining · {subscription.usage.overageUnits} overage ·{" "}
+              {subscription.usage.overageAmountLabel} stored overage
+            </p>
+          )
+        ) : (
+          <p className="admin-row__body">
+            No canonical Network allowance is recorded. Private-fleet work is never counted as
+            Network usage.
+          </p>
+        )}
+        {subscription.usage && subscription.usage.usedUnits !== null ? (
+          <p className="admin-row__meta">
+            Usage period: {subscription.usage.periodLabel} · {subscription.usage.stateLabel}
+            {subscription.usage.overageRateLabel ? ` · ${subscription.usage.overageRateLabel}` : ""}
+          </p>
+        ) : null}
+        <p className="admin-row__meta">
+          <Badge tone={paymentStateTone(subscription.paymentState)}>
+            Payment: {subscription.paymentStateLabel}
+          </Badge>{" "}
+          · {subscription.graceLabel} · Next billing boundary: {subscription.nextBillingLabel}
+        </p>
+        <p className="admin-row__meta">
+          {subscription.renewalLabel} · Commitment: {subscription.commitmentLabel}
+        </p>
+        <p className="admin-row__body">
+          Frozen plan v{subscription.planSnapshot.definitionVersion}:{" "}
+          {subscription.planSnapshot.allowanceLabel} ·{" "}
+          {subscription.planSnapshot.overageRateLabel} ·{" "}
+          {subscription.planSnapshot.commitmentTermsLabel}
+        </p>
+        <p className="admin-row__meta">
+          {subscription.planSnapshot.dispatchCapabilitiesLabel} · Definition effective{" "}
+          {subscription.planSnapshot.definitionEffectiveLabel} ·{" "}
+          {subscription.planSnapshot.catalogReferenceLabel}
+        </p>
+        <p className="admin-row__meta">
+          Terms {subscription.planSnapshot.acceptedTermsVersion} accepted{" "}
+          {subscription.planSnapshot.acceptedAtLabel}
+        </p>
+        {subscription.enterpriseAgreement ? (
+          <>
+            <p className="admin-row__body">
+              Defined integrations:{" "}
+              {subscription.enterpriseAgreement.definedIntegrations.length > 0
+                ? subscription.enterpriseAgreement.definedIntegrations.join(" · ")
+                : "None accepted"}
+            </p>
+            <p className="admin-row__meta">
+              Service and support obligations:{" "}
+              {subscription.enterpriseAgreement.serviceSupportObligations}
+            </p>
+          </>
+        ) : null}
+        {subscription.pendingEnterpriseAgreement ? (
+          <>
+            <p className="admin-row__body">
+              Scheduled Enterprise agreement:{" "}
+              {subscription.pendingEnterpriseAgreement.commitmentMonths}-month
+              commitment · Defined integrations:{" "}
+              {subscription.pendingEnterpriseAgreement.definedIntegrations.length > 0
+                ? subscription.pendingEnterpriseAgreement.definedIntegrations.join(" · ")
+                : "None accepted"}
+            </p>
+            <p className="admin-row__meta">
+              Scheduled service and support obligations:{" "}
+              {subscription.pendingEnterpriseAgreement.serviceSupportObligations}
+            </p>
+          </>
+        ) : null}
+        <span className="admin-row__when">Scheduled plan: {subscription.pendingPlanLabel}</span>
+      </div>
+    </article>
+  )
+}
 
 export function AdminBillingPage({ account, billing }: { account: ShellAccount; billing: AdminBillingSnapshot }) {
   return (
     <AppShell account={account} kicker={KICKER} role="admin" title="Billing">
       <section className="app-section">
-        <SectionHeader eyebrow="Plans" title="Plan status across the platform" />
+        <SectionHeader eyebrow="Subscription v1" title="Commercial position" />
         <div className="command-grid admin-plan-mix">
-          {billing.planMix.map((entry) => (
-            <Metric key={entry.label} label={entry.label} value={entry.count} />
-          ))}
+          <Metric label="Active subscriptions" value={billing.metrics.activeSubscriptionCount} />
+          <Metric label="Active MRR" value={billing.metrics.activeMrrLabel} />
+          <Metric label="Active ARR" value={billing.metrics.activeArrLabel} />
+          <Metric label="Billing failures" value={billing.metrics.billingFailureCount} />
+          <Metric
+            label="Pilot conversions"
+            value={billing.pilotConversions.convertedCount}
+          />
+          <Metric
+            label="Pilot conversion rate"
+            value={billing.pilotConversions.rateLabel}
+          />
         </div>
+        <p className="admin-panel__intro">
+          MRR and ARR use frozen monthly amounts on active or non-renewing commercial subscriptions.
+          Pending, past-due, comped, cancelled, expired, and internal billing-test records are excluded.
+          {billing.unquantifiedMrrCount > 0
+            ? ` ${billing.unquantifiedMrrCount} active or non-renewing custom ${
+                billing.unquantifiedMrrCount === 1 ? "agreement has" : "agreements have"
+              } no recorded monthly amount and ${
+                billing.unquantifiedMrrCount === 1 ? "is" : "are"
+              } also excluded.`
+            : ""}
+        </p>
+        {billing.internalTestCount > 0 ? (
+          <p className="admin-panel__intro">
+            {billing.internalTestCount} internal billing-test{" "}
+            {billing.internalTestCount === 1 ? "record is" : "records are"} excluded from plan mix and
+            commercial metrics.
+          </p>
+        ) : null}
+        <p className="admin-panel__intro">
+          Pilot conversion is{" "}
+          {billing.pilotConversions.convertedCount} of{" "}
+          {billing.pilotConversions.cohortCount} canonical commercial Pilot{" "}
+          {billing.pilotConversions.cohortCount === 1
+            ? "agreement"
+            : "agreements"}
+          . It counts an applied conversion recorded by the subscription service;
+          a merely scheduled plan change is not a conversion.
+        </p>
       </section>
+
       <section className="app-section admin-panel">
-        <SectionHeader eyebrow={`${billing.exceptions.length} to follow up`} title="Exceptions" />
-        {billing.exceptions.length === 0 ? (
+        <SectionHeader
+          action={
+            <Link
+              className="action-link action-link--secondary"
+              href="/api/admin/billing/export"
+              prefetch={false}
+            >
+              Export canonical CSV
+            </Link>
+          }
+          eyebrow="Canonical state"
+          title="Subscription operations"
+        />
+        <div className="command-grid admin-plan-mix">
+          <Metric
+            label="Modeled recognized base revenue"
+            value={billing.operations.paidBaseRevenueLabel}
+          />
+          <Metric
+            label="Provider-paid overage revenue"
+            value={billing.operations.paidOverageRevenueLabel}
+          />
+          <Metric
+            label="Modeled total subscription revenue"
+            value={billing.operations.totalSubscriptionRevenueLabel}
+          />
+          <Metric
+            label="Revenue per completed Network load"
+            value={billing.operations.revenuePerCompletedNetworkLoadLabel}
+          />
+          <Metric
+            label="Completed Network units"
+            value={billing.operations.completedNetworkUnitCount}
+          />
+          <Metric
+            label="Allowance utilization"
+            value={billing.operations.allowanceUtilizationLabel}
+          />
+          <Metric
+            label="Overage frequency"
+            value={billing.operations.overageFrequencyLabel}
+          />
+          <Metric
+            label="Billing failure rate"
+            value={billing.operations.billingFailureRateLabel}
+          />
+          <Metric
+            label="Committed private movements"
+            value={billing.operations.privateMovementCount}
+          />
+          <Metric
+            label="Committed Network movements"
+            value={billing.operations.networkMovementCount}
+          />
+        </div>
+        <p className="admin-panel__intro">
+          Modeled recognized base revenue sums the stored amount due on USD base invoices marked
+          paid. Modeled total subscription revenue adds provider-confirmed cash paid on overage
+          invoices plus exact provider settlement deltas for later adjustments. This is an
+          operating model, not GAAP
+          revenue, MRR, cash balance, or live Stripe reconciliation; taxes are not separately
+          modeled, and adjustments that have not been frozen onto a paid invoice are not netted into
+          it. Revenue per completed Network load divides that total by{" "}
+          {billing.operations.completedNetworkUnitCount} non-reversed canonical commercial Network{" "}
+          {billing.operations.completedNetworkUnitCount === 1 ? "unit" : "units"}. Usage and
+          revenue use all stored commercial history, with no cohort or calendar-window
+          normalization. Usage and allowance ratios cover all stored commercial periods. Movement
+          counts deduplicate frozen assignment classifications by physical movement. Internal
+          billing tests and legacy fees are excluded throughout.
+        </p>
+      </section>
+
+      <AdminBillingActions
+        periodSummaryOptions={billing.periodSummaries.map((summary) => ({
+          id: summary.id,
+          label: `${summary.organizationName} · ${summary.planLabel} · ${summary.periodLabel}`
+        }))}
+        subscriptionOptions={billing.subscriptions.map((subscription) => ({
+          id: subscription.id,
+          label: `${subscription.organizationName} · ${subscription.planLabel}`
+        }))}
+        usageOptions={billing.usageLedger.map((usage) => ({
+          id: usage.id,
+          label: `${usage.organizationName} · ${usage.planLabel} · ${usage.completedLabel}`
+        }))}
+      />
+
+      <section className="app-section admin-panel">
+        <SectionHeader
+          eyebrow={`${billing.reconciliationWarnings.length} local ${
+            billing.reconciliationWarnings.length === 1 ? "warning" : "warnings"
+          }`}
+          title="Reconciliation and provider evidence"
+        />
+        <p className="admin-panel__intro">
+          These checks compare canonical records and the provider references stored on them. They do
+          not call Stripe and do not claim that local state matches live provider state.
+        </p>
+        {billing.reconciliationWarnings.length === 0 ? (
           <EmptyState
-            body="Organizations with a past-due or cancelled plan appear here so someone can follow up before access lapses."
-            title="No billing exceptions."
+            body="All inspected local account, subscription, usage, summary, adjustment, invoice, and provider-reference links are internally complete. Live provider state was not checked."
+            title="No local reconciliation warnings."
           />
         ) : (
           <div className="admin-rows">
-            {billing.exceptions.map((exception) => (
+            {billing.reconciliationWarnings.map((warning) => (
+              <article className="admin-row" key={warning.id}>
+                <div className="admin-row__main">
+                  <div className="admin-row__head">
+                    <strong>{warning.title}</strong>
+                    <Badge
+                      tone={
+                        warning.severity === "critical"
+                          ? "critical"
+                          : "warning"
+                      }
+                    >
+                      {warning.severity}
+                    </Badge>
+                  </div>
+                  <p className="admin-row__meta">{warning.organizationName}</p>
+                  <p className="admin-row__body">{warning.detail}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="app-section admin-panel">
+        <SectionHeader
+          eyebrow={`${billing.attention.length} to follow up`}
+          title="Billing failures and dunning"
+        />
+        {billing.attention.length === 0 ? (
+          <EmptyState
+            body="A locally recorded failed payment, past-due subscription, missing payment method, or dunning grace state will appear here. Provider health is not inferred."
+            title="No subscription billing failures recorded."
+          />
+        ) : (
+          <div className="admin-rows">
+            {billing.attention.map((subscription) => (
+              <AdminSubscriptionRecord key={subscription.id} subscription={subscription} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="app-section admin-panel">
+        <SectionHeader
+          eyebrow={`${billing.commercialSubscriptionCount} commercial ${
+            billing.commercialSubscriptionCount === 1 ? "subscription" : "subscriptions"
+          }`}
+          title="Plan mix"
+        />
+        {billing.planMix.length === 0 ? (
+          <EmptyState
+            body="The plan catalog does not prove enrollment. Plan mix begins only when an organization has an accepted canonical subscription record."
+            title="No commercial subscriptions recorded."
+          />
+        ) : (
+          <div className="admin-rows">
+            {billing.planMix.map((entry) => (
+              <article className="admin-row" key={entry.code}>
+                <div className="admin-row__main">
+                  <div className="admin-row__head">
+                    <strong>{entry.label}</strong>
+                    <Badge tone="info">{entry.visibilityLabel}</Badge>
+                    {entry.salesAssisted ? <Badge tone="neutral">Sales-assisted</Badge> : null}
+                  </div>
+                  <p className="admin-row__meta">
+                    {entry.totalCount} total · {entry.activeCount} active
+                  </p>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="app-section admin-panel">
+        <SectionHeader
+          eyebrow={`${billing.accounts.length} ${
+            billing.accounts.length === 1 ? "account" : "accounts"
+          }`}
+          title="Organization billing authority"
+        />
+        {billing.accounts.length === 0 ? (
+          <EmptyState
+            body="Billing accounts establish which commercial model is authoritative for newly accepted work. No account is inferred from the plan catalog."
+            title="No organization billing accounts recorded."
+          />
+        ) : (
+          <div className="admin-rows">
+            {billing.accounts.map((billingAccount) => (
+              <article className="admin-row" key={billingAccount.id}>
+                <div className="admin-row__main">
+                  <div className="admin-row__head">
+                    <strong>{billingAccount.organizationName}</strong>
+                    <Badge
+                      tone={billingRecordTone(
+                        billingAccount.activationState
+                      )}
+                    >
+                      {billingAccount.activationStateLabel}
+                    </Badge>
+                  </div>
+                  <p className="admin-row__body">
+                    {billingAccount.billingModelLabel} ·{" "}
+                    {billingAccount.subscriptionLabel}
+                  </p>
+                  <span className="admin-row__when">
+                    Effective {billingAccount.effectiveLabel}
+                  </span>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="app-section admin-panel">
+        <SectionHeader eyebrow="Canonical records" title="Organization subscriptions" />
+        {billing.subscriptions.length === 0 ? (
+          <EmptyState
+            body="No organization has an accepted subscription-v1 agreement. Configured plan definitions and provider products are not shown as customers."
+            title="No subscriptions to review."
+          />
+        ) : (
+          <div className="admin-rows">
+            {billing.subscriptions.map((subscription) => (
+              <AdminSubscriptionRecord key={subscription.id} subscription={subscription} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="app-section admin-panel">
+        <SectionHeader
+          eyebrow={`${billing.usageLedger.length} ${
+            billing.usageLedger.length === 1 ? "event" : "events"
+          }`}
+          title="Completed Network usage ledger"
+        />
+        {billing.usageLedger.length === 0 ? (
+          <EmptyState
+            body="A completed, host-confirmed Network movement creates one canonical usage row. Private-fleet movements and internal billing tests never appear here."
+            title="No commercial Network usage recorded."
+          />
+        ) : (
+          <div className="admin-rows">
+            {billing.usageLedger.map((usage) => (
+              <article className="admin-row" key={usage.id}>
+                <div className="admin-row__main">
+                  <div className="admin-row__head">
+                    <strong>{usage.organizationName}</strong>
+                    <Badge tone={billingRecordTone(usage.status)}>
+                      {usage.statusLabel}
+                    </Badge>
+                    <Badge tone="info">{usage.planLabel}</Badge>
+                  </div>
+                  <p className="admin-row__body">{usage.summaryLabel}</p>
+                  <p className="admin-row__meta">
+                    {usage.invoiceLabel} · {usage.reversalLabel}
+                  </p>
+                  <span className="admin-row__when">
+                    Completed {usage.completedLabel} · Movement{" "}
+                    {shortReference(usage.loadMovementId)} · Assignment{" "}
+                    {shortReference(usage.assignmentId)} · Load{" "}
+                    {shortReference(usage.loadPostingId)}
+                  </span>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="app-section admin-panel">
+        <SectionHeader
+          eyebrow={`${billing.periodSummaries.length} ${
+            billing.periodSummaries.length === 1 ? "period" : "periods"
+          }`}
+          title="Allowance period summaries"
+        />
+        {billing.periodSummaries.length === 0 ? (
+          <EmptyState
+            body="Stored allowance periods show the frozen plan, included units, actual usage, overage arithmetic, invoice references, and audited adjustments."
+            title="No commercial allowance periods recorded."
+          />
+        ) : (
+          <div className="admin-rows">
+            {billing.periodSummaries.map((summary) => (
+              <article className="admin-row" key={summary.id}>
+                <div className="admin-row__main">
+                  <div className="admin-row__head">
+                    <strong>{summary.organizationName}</strong>
+                    <Badge tone={billingRecordTone(summary.status)}>
+                      {summary.statusLabel}
+                    </Badge>
+                    <Badge tone="info">{summary.planLabel}</Badge>
+                  </div>
+                  <p className="admin-row__body">
+                    {summary.calculationLabel} · {summary.overageAmountLabel} at{" "}
+                    {summary.overageRateLabel}
+                  </p>
+                  <p className="admin-row__meta">
+                    {summary.usageEventCount} usage{" "}
+                    {summary.usageEventCount === 1 ? "reference" : "references"} ·{" "}
+                    {summary.invoiceCount} invoice{" "}
+                    {summary.invoiceCount === 1 ? "reference" : "references"}
+                  </p>
+                  <p className="admin-row__meta">
+                    {summary.adjustmentCount} audited{" "}
+                    {summary.adjustmentCount === 1 ? "adjustment" : "adjustments"} · Unit delta{" "}
+                    {summary.adjustmentUnitLabel} · Amount delta{" "}
+                    {summary.adjustmentAmountLabel}
+                  </p>
+                  <span className="admin-row__when">{summary.periodLabel}</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="app-section admin-panel">
+        <SectionHeader
+          eyebrow={`${billing.invoices.length} ${
+            billing.invoices.length === 1 ? "invoice" : "invoices"
+          }`}
+          title="Network overage invoices"
+        />
+        {billing.invoices.length === 0 ? (
+          <EmptyState
+            body="Only canonical commercial overage invoice rows appear here. A provider reference is reported as stored evidence, never as proof of live provider state."
+            title="No commercial overage invoices recorded."
+          />
+        ) : (
+          <div className="admin-rows">
+            {billing.invoices.map((invoice) => (
+              <article className="admin-row" key={invoice.id}>
+                <div className="admin-row__main">
+                  <div className="admin-row__head">
+                    <strong>
+                      {invoice.organizationName} · Overage invoice{" "}
+                      {invoice.sequence}
+                    </strong>
+                    <Badge tone={billingRecordTone(invoice.status)}>
+                      {invoice.statusLabel}
+                    </Badge>
+                    <Badge tone="info">{invoice.planLabel}</Badge>
+                  </div>
+                  <p className="admin-row__body">
+                    {invoice.calculationLabel} · {invoice.usageEventCount} usage{" "}
+                    {invoice.usageEventCount === 1 ? "reference" : "references"}
+                  </p>
+                  <p className="admin-row__meta">
+                    {invoice.providerReferenceLabel} · Issued{" "}
+                    {invoice.issuedLabel} · Paid {invoice.paidLabel}
+                  </p>
+                  <p className="admin-row__meta">
+                    {invoice.providerSettlementLabel}
+                  </p>
+                  <span className="admin-row__when">{invoice.periodLabel}</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="app-section admin-panel">
+        <SectionHeader
+          eyebrow={`${billing.adjustments.length} ${
+            billing.adjustments.length === 1 ? "adjustment" : "adjustments"
+          }`}
+          title="Adjustments and reversals"
+        />
+        {billing.adjustments.length === 0 ? (
+          <EmptyState
+            body="Usage reversals, service credits, and manual debits remain append-only here with their actor, reason, unit effect, money effect, and local links."
+            title="No commercial billing adjustments recorded."
+          />
+        ) : (
+          <div className="admin-rows">
+            {billing.adjustments.map((adjustment) => (
+              <article className="admin-row" key={adjustment.id}>
+                <div className="admin-row__main">
+                  <div className="admin-row__head">
+                    <strong>{adjustment.organizationName}</strong>
+                    <Badge tone="warning">{adjustment.typeLabel}</Badge>
+                  </div>
+                  <p className="admin-row__body">{adjustment.reason}</p>
+                  <p className="admin-row__meta">
+                    Unit delta {adjustment.unitDeltaLabel} · Amount delta{" "}
+                    {adjustment.amountDeltaLabel} · {adjustment.usageLabel}
+                  </p>
+                  <p className="admin-row__meta">
+                    {adjustment.summaryLabel} · {adjustment.invoiceLabel}
+                  </p>
+                  <p className="admin-row__meta">
+                    {adjustment.providerSettlementLabel} ·{" "}
+                    {adjustment.providerReferenceLabel} · Revenue delta{" "}
+                    {adjustment.providerRevenueDeltaLabel}
+                  </p>
+                  <span className="admin-row__when">
+                    {adjustment.actorLabel} · {adjustment.createdLabel}
+                  </span>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="app-section admin-panel">
+        <SectionHeader eyebrow="Isolated history" title="Legacy percentage billing" />
+        <p className="admin-panel__intro">
+          These records are historical percentage-model obligations. They are never counted as
+          subscription MRR, ARR, plan enrollment, or completed-load usage.
+        </p>
+        <div className="command-grid admin-plan-mix">
+          <Metric label="Legacy organizations" value={billing.legacy.organizationCount} />
+          <Metric label="Frozen assignments" value={billing.legacy.assignmentCount} />
+          <Metric label="Non-void fee events" value={billing.legacy.feeEventCount} />
+          <Metric label="Accrued, not invoiced" value={billing.legacy.accruedFeeLabel} />
+          <Metric label="Historical invoices" value={billing.legacy.historicalInvoiceCount} />
+          <Metric label="Outstanding invoices" value={billing.legacy.outstandingInvoiceLabel} />
+          <Metric label="Previous entitlements" value={billing.legacy.entitlementCount} />
+        </div>
+
+        <SectionHeader
+          eyebrow={`${billing.legacy.entitlementExceptions.length} to follow up`}
+          title="Previous entitlement exceptions"
+        />
+        {billing.legacy.entitlementExceptions.length === 0 ? (
+          <EmptyState
+            body="Past-due or cancelled records from the previous entitlement system remain visible here without being treated as subscription-v1 revenue."
+            title="No previous entitlement exceptions."
+          />
+        ) : (
+          <div className="admin-rows">
+            {billing.legacy.entitlementExceptions.map((exception) => (
               <article className="admin-row" key={exception.id}>
                 <div className="admin-row__main">
                   <div className="admin-row__head">
@@ -556,7 +1210,7 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
                     </Badge>
                   </div>
                   <p className="admin-row__meta">
-                    {exception.planLabel} plan · Current period ends {exception.periodEndsLabel}
+                    {exception.planLabel} · Period ends {exception.periodEndsLabel}
                   </p>
                 </div>
               </article>

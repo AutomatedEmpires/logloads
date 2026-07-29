@@ -3,6 +3,7 @@ import { Archivo, Inter } from "next/font/google"
 import type { ReactNode } from "react"
 
 import { AnalyticsProvider } from "@/components/analytics/AnalyticsProvider"
+import { resolvePublicAppUrl } from "@/lib/app-url"
 import { enabledFlag } from "@/lib/demo-mode"
 
 import "./globals.css"
@@ -38,7 +39,7 @@ export const metadata = {
 	},
 	description: "Landings post timber that needs to move. Log truckers find work that fits their rig. Every haul keeps its schedule, access, and proof in one place.",
 	applicationName: "LogLoads",
-	metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3002"),
+	metadataBase: new URL(resolvePublicAppUrl()),
 	openGraph: {
 		siteName: "LogLoads",
 		title: "LogLoads — Timber hauling, connected from landing to mill",

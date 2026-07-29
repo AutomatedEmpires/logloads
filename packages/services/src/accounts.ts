@@ -7,6 +7,8 @@ import {
   entitlementSchema,
   equipmentCombinationSchema,
   loggingCompanySchema,
+  organizationBillingAccountId,
+  organizationBillingAccountSchema,
   organizationMembershipSchema,
   organizationSchema,
   trailerProfileSchema,
@@ -249,6 +251,22 @@ export function createAccount(state: LogLoadsDatabaseState, rawInput: unknown): 
         userId
       })
     )
+
+    // A host account is an operating identity, not acceptance of commercial
+    // terms. Explicit `unenrolled` prevents both dangerous defaults: silently
+    // reviving the legacy 5% model and silently granting a paid subscription.
+    state.organizationBillingAccounts.push(
+      organizationBillingAccountSchema.parse({
+        activationState: "unenrolled",
+        billingModel: null,
+        createdAt: now,
+        effectiveAt: now,
+        id: organizationBillingAccountId(organizationId),
+        organizationId,
+        subscriptionId: null,
+        updatedAt: now
+      })
+    )
   }
 
   let driverProfileId: string | null = null
@@ -356,28 +374,33 @@ export function createAccount(state: LogLoadsDatabaseState, rawInput: unknown): 
     )
   }
 
-  const entitlementProduct = input.path === "driver"
-    ? "driver_core"
-    : input.path === "fleet"
-      ? "fleet_operations"
-      : "landing_operations"
+  // Driver Core remains the free driver product and fleet onboarding retains its
+  // existing trial. A new HOST receives no landing_operations entitlement:
+  // Dispatch Pro capabilities start only after an explicit accepted agreement.
+  if (input.path !== "host") {
+    const entitlementProduct =
+      input.path === "driver" ? "driver_core" : "fleet_operations"
 
-  state.entitlements.push(
-    entitlementSchema.parse({
-      activeLandingLimit: input.path === "host" ? 1 : null,
-      activeTruckLimit: input.path === "host" ? null : input.path === "fleet" ? 5 : 1,
-      createdAt: now,
-      currentPeriodEndsAt: input.path === "fleet" ? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString() : null,
-      features: [],
-      id: randomUUID(),
-      organizationId,
-      product: entitlementProduct,
-      status: input.path === "fleet" ? "trialing" : "active",
-      stripeCustomerId: null,
-      stripeSubscriptionId: null,
-      updatedAt: now
-    })
-  )
+    state.entitlements.push(
+      entitlementSchema.parse({
+        activeLandingLimit: null,
+        activeTruckLimit: input.path === "fleet" ? 5 : 1,
+        createdAt: now,
+        currentPeriodEndsAt:
+          input.path === "fleet"
+            ? new Date(nowDate.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString()
+            : null,
+        features: [],
+        id: randomUUID(),
+        organizationId,
+        product: entitlementProduct,
+        status: input.path === "fleet" ? "trialing" : "active",
+        stripeCustomerId: null,
+        stripeSubscriptionId: null,
+        updatedAt: now
+      })
+    )
+  }
 
   state.auditEvents.push({
     action: "account_created",

@@ -125,6 +125,9 @@ function source(overrides: Partial<HostBillingSource> = {}): HostBillingSource {
       { id: LOAD_ONE, title: "Doug fir sawlogs — Ridge 4" },
       { id: LOAD_TWO, title: "Pulpwood — Beaver Creek" }
     ],
+    organizationBillingAccounts: [
+      { billingModel: "legacy_percentage", organizationId: HOST }
+    ],
     platformFeeEvents: [],
     ...overrides
   }
@@ -432,6 +435,24 @@ describe("the card on file, and what its state costs the host", () => {
     expect(view.paymentMethod.nextStep).toBeNull()
     expect(view.paymentMethod.cardLine).toBe("visa ending 4242")
     expect(view.paymentMethod.failureLine).toBeNull()
+  })
+
+  it("does not turn a missing card into a universal subscription publishing block", () => {
+    const view = buildHostBillingView(
+      source({
+        hostBillingProfiles: [],
+        organizationBillingAccounts: [
+          { billingModel: "subscription_v1", organizationId: HOST }
+        ]
+      }),
+      HOST,
+      NOW
+    )
+
+    expect(view.paymentMethod.status).toBe("none")
+    expect(view.paymentMethod.blocksPublishing).toBe(false)
+    expect(view.paymentMethod.consequence).toMatch(/creating a workspace or draft does not require one/i)
+    expect(view.paymentMethod.consequence).toMatch(/before an accepted paid subscription can activate/i)
   })
 
   it("covers every card state the schema allows, and exactly one of them publishes", () => {

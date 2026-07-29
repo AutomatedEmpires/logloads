@@ -24,7 +24,15 @@ This contract binds human and automated contributors. Read it before changing th
 
 Primary daily users are drivers, fleet coordinators, and landing/host operators. The primary buyers are fleet and host organizations paying for coordination, visibility, and operational control—not transportation arranged by LogLoads. The product destination is one mobile-first network with distinct Driver, Fleet, Host, and Admin cockpits around the loop **Plan → Publish → Match → Commit → Coordinate → Haul → Confirm → Repeat**.
 
-LogLoads is software and partner lead generation. It is **not** a freight broker, motor carrier, payment processor, employer, or dispatch-for-hire service. It must not arrange transportation for compensation, take custody of hauling funds, promise carrier availability, or imply that a prospect is a contracted or verified network member.
+Dispatch Pro is software for an organization's established private capacity.
+LogLoads Network is a separately versioned, subscription-funded coordination
+product whose legal operating posture is an explicit activation gate. Do not
+claim that pricing decides whether LogLoads is a broker, carrier, bona fide
+agent, dispatch service, employer, or technology provider. Until a dated
+counsel-approved authority or commodity-and-route posture is recorded, Network
+commercial enrollment stays dark. LogLoads never takes custody of hauling funds,
+promises carrier availability, or presents a prospect as a contracted or
+verified Network member.
 
 The repository is a pnpm/Turborepo monorepo. Domain contracts belong in `packages/contracts`, canonical persistence in `packages/db`, business transitions in `packages/services`, shared UI and semantic Phosphor icons in `packages/ui`, and product surfaces in `apps/web`. UI and route handlers do not bypass those boundaries.
 
@@ -109,19 +117,25 @@ Never print, commit, paste into PRs, or expose secrets/private provider URLs. Ke
 
 ### Legal and money
 
-Partner prospecting is allowed; compensated transportation arrangement is not. Do not claim LogLoads is the shipper, broker, carrier, dispatcher, employer, insurer, payment custodian, or guarantor. Those disclaimers are not boilerplate — the revenue model below only works while every one of them stays true.
+Partner prospecting and dark/test-mode Network implementation are allowed.
+Compensated transportation arrangement is not activated by repository code. Do
+not claim LogLoads is the shipper, broker, carrier, dispatcher, employer,
+insurer, payment custodian, or guarantor. A dated counsel-approved operating
+posture is required before real Network enrollment.
 
-**Operating model — founder-decided 2026-07-24. Supersedes the earlier "free launch pilot / fee not active / model unresolved" posture.**
+**Operating model — founder-decided 2026-07-28. Supersedes the 2026-07-24/27 percentage-pricing decision for new activity.**
 
 - **Load value is the flat driver pay the host states.** The driver sees exactly that number. It replaces the rate card as the figure any driver-facing surface shows. The rate entities remain a company price-card, not per-load driver pay.
-- **The platform fee is a flat 5% of driver pay per completed load, billed to the host on top. There is NO monthly minimum.** The ~$49/month floor considered on 2026-07-24 was put to the founder again on 2026-07-27 and **explicitly dropped**: hosts pay 5% of completed loads and nothing else — no monthly fee, no charge to post. Do not reintroduce a minimum; a reviewer has already cited the superseded wording here to argue for adding one. It is never deducted from driver pay. Deliberately not tiered: the load-series/slot model makes load *count* a host-controlled field, so any count-based tier is gameable by construction, and graduated tiers re-rate every other load in a period when one disputed load is reversed. Rate changes take 60 days notice and are never retroactive.
-- **There is no free host tier.** Hosts are charged from day one. Any surface still advertising a free host launch pilot is now false; that copy must be corrected in the same PR that first charges a host, so the claim and the code path land together.
+- **New Network activity uses subscription plus completed physical movement usage.** Posting is not billed. A movement counts only when a `logloads_network` assignment reaches the authoritative completed and confirmed state. Private-fleet work never consumes Network allowance. Every Network plan may exceed its allowance without interrupting accepted or in-progress work.
+- **The version-1 catalog is exact.** Dispatch Pro is $499/month with no Network units. Network Pilot is $1,500/month for an invitation-only, exact 90-day paid engagement with 30 completed Network movements pooled across the engagement and $150 overage. Network 25 is $3,000/month with 25 included and $125 overage. Network 50 is $5,500/month with 50 included and $110 overage. Network 100 is $10,000/month with 100 included and $90 overage. Enterprise is custom, sales-assisted, and never unlimited. Network subscriptions include the core Dispatch Pro workflow; Dispatch Pro remains the standalone private-fleet lane.
+- **The prior 5% system is `legacy_percentage`, not deleted.** An organization deliberately left on its explicit grandfathered agreement may continue freezing legacy commitments, but no new organization may enter that lane. An assignment already committed under frozen percentage terms completes under those terms. Its fee event, invoice, receipt, pay basis, and accepted terms are preserved. New subscription assignments never create a percentage fee. One physical movement may produce a legacy fee or a subscription usage event, never both.
+- **Base bills in advance; overage bills in arrears.** Pilot begins at operational activation and pools its allowance across one 90-day window. Larger Network plans use Stripe-anniversary monthly allowance windows and 12-month commitments invoiced monthly. Plan and rate snapshots never retroactively reprice a closed period.
 - **Strictly non-custodial, permanently.** LogLoads never holds, commingles, or moves driver funds — no wallet, no escrow, no balances. Driver pay is a direct host-to-driver obligation settled off-platform. Phase 0 records payment preference and status only: the host marks payment sent, and **only the driver** may mark it received.
 - **`transfer_data` and `application_fee_amount` are permanently banned on any driver payment path** and are guardrail-enforced. Destination charges and separate charges-and-transfers route money through the platform balance, which makes LogLoads a custodian; a nonzero `application_fee_amount` silently deducts the platform cut from driver pay, so at the decided 5% a $500 load quietly pays $475. Stripe's own tutorials default to both patterns, which is exactly why this is a machine check and not a design note.
-- **Brokerage stays out of scope.** It would require FMCSA broker authority plus $75,000 in financial security (a BMC-84 surety bond or a BMC-85 trust fund), make LogLoads a contracting party liable for carrier vetting and cargo claims, and contradict the published Terms and both product footers. Revisit only as a deliberate, counsel-gated program — never as a pricing change.
-- **The fee base is host-authored.** Driver confirmation of the amount actually received is part of billable completion, and posted-versus-confirmed divergence must stay detectable.
+- **Pricing is not a regulatory workaround.** Real Network enrollment requires a dated counsel-approved authority or commodity-and-route posture. Until then, build and test the full system in synthetic/test mode and keep collection and enrollment dark.
+- **Driver compensation remains operational evidence, not the subscription revenue basis.** Host-stated pay and driver receipt confirmation stay visible and auditable; new Network usage pricing never derives LogLoads revenue from that amount.
 
-Live Stripe configuration exists for the $499/month Dispatch Pro software subscription; host fee billing is designed but not yet active. An agent must not create a real customer, subscription, charge, refund, or payout without explicit founder authorization. Drivers are free forever.
+Live Stripe configuration exists for the $499/month Dispatch Pro software subscription. Subscription-v1 products, prices, enrollment, and collection are not live merely because code or provider manifests exist. `LOGLOADS_SUBSCRIPTION_COLLECTION` defaults to `disabled`; no agent may create a real customer, subscription, charge, refund, or payout without explicit scoped authorization. Drivers are free forever.
 
 ### Email and auth
 
@@ -177,7 +191,12 @@ A change is done only when it:
 
 Refreshed 2026-07-15 UTC: `logloads.com` is publicly deployed from `main`. Production health reports Clerk auth, Supabase canonical state, Dispatch Pro billing, Resend email, Cloudinary media, PostHog analytics, and Sentry error tracking configured. Dispatch Pro is $499/month, drivers are free forever, and freight payments do not move through LogLoads.
 
-**Decided ≠ live.** The section 7 operating model (flat 5% host fee on completed loads, no free host tier, non-custodial payment records) is **decided and authoritative for new work, but not yet implemented or charging**. Production today still runs with no host fee and still advertises a free host launch pilot on the pricing surface. That copy is now false and is scheduled to be corrected in the same PR that first charges a host — claim and code path land together. Until that PR ships, treat section 7 as the build target and this section as the live state.
+**Decided and implemented does not mean activated.** Section 7's
+subscription-v1 model is the build target for new commercial activity. Production
+must continue treating all un-migrated assignments as legacy and must not enroll
+or charge a Network organization while the collection gate is disabled. Public
+copy may explain the planned, sales-assisted tiers, but it must not imply that a
+Pilot organization is active before one has been deliberately enrolled.
 
 The last verified production pass reported eight automated smoke checks passing, no failures, a signed Stripe webhook probe accepted, and no fresh runtime error or 5xx clusters. Remaining operational proof includes the authenticated request → approval → trip → message loop and forced cold-start recovery. Business blockers remain adoption, field validation, a credible partner pipeline, and the legal/entity/payment model for any host percentage or freight-money concept. Refresh GitHub, production health, provider-safe evidence, and dated decisions before relying on this snapshot.
 

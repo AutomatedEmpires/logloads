@@ -26,8 +26,9 @@ import { assertOrganizationAction, getActiveOrganizationContext } from "./operat
 import { assertCondition, assertFound, createUuid, nowIso } from "./utils"
 
 /**
- * The platform fee ledger: what a completed load accrued, what a host owes, and
- * the monthly bill it lands on.
+ * The permanent LEGACY_PERCENTAGE ledger: what a legacy completed load accrued,
+ * what a host owes, and the monthly bill it lands on. Subscription-v1 never
+ * writes these rows; its movement usage and overage invoices live separately.
  *
  * WHAT IS BEING CHARGED. A host posts a load and states what it pays the driver.
  * LogLoads charges the HOST a percentage of that stated pay, ON TOP of it, once
@@ -342,6 +343,24 @@ function frozenPlatformFeeBps(termsSnapshot: Record<string, unknown>): number | 
 }
 
 /**
+ * New work is legacy only when acceptance froze that explicit model. The
+ * snapshot fallback preserves pre-cutover assignments which carried active
+ * percentage terms before `billingModel` existed; it must never classify a new,
+ * unenrolled assignment as legacy.
+ */
+export function assignmentUsesLegacyPercentageBilling(assignment: Assignment): boolean {
+  if (assignment.billingModel === "legacy_percentage") {
+    return true
+  }
+
+  if (assignment.billingModel !== null) {
+    return false
+  }
+
+  return frozenPlatformFeeBps(assignment.termsSnapshot) !== null
+}
+
+/**
  * Records the fee for one completed load. AT MOST ONE PER ASSIGNMENT, EVER.
  *
  * Idempotent by design rather than by luck: completion confirmation can be
@@ -393,6 +412,38 @@ export function accruePlatformFee(
   // that reads like "nothing was ever charged".
   if (existing) {
     return { event: existing, outcome: "already_accrued" }
+  }
+
+  if (!assignmentUsesLegacyPercentageBilling(assignment)) {
+    return {
+      assignmentId: assignment.id,
+      outcome: "no_basis",
+      reason:
+        "This assignment is not frozen to the legacy_percentage model; subscription usage cannot enter the legacy fee ledger"
+    }
+  }
+
+  const movementId = assignment.loadMovementId ?? assignment.id
+  const movementAssignmentIds = new Set(
+    state.assignments
+      .filter((candidate) => (candidate.loadMovementId ?? candidate.id) === movementId)
+      .map((candidate) => candidate.id)
+  )
+  const subscriptionUsage = state.networkUsageEvents.find(
+    (usage) =>
+      usage.status !== "reversed" &&
+      (
+        usage.loadMovementId === movementId ||
+        movementAssignmentIds.has(usage.assignmentId)
+      )
+  )
+
+  if (subscriptionUsage) {
+    return {
+      assignmentId: assignment.id,
+      outcome: "no_basis",
+      reason: `Physical movement ${movementId} already has Network usage ${subscriptionUsage.id}`
+    }
   }
 
   if (!ASSIGNMENT_STATUS_CAN_CARRY_A_COMPLETED_HAUL[assignment.status]) {
@@ -542,6 +593,7 @@ export function reconcileMissingPlatformFees(
     .filter(
       (assignment) =>
         Boolean(assignment.driverPaymentReceivedAt) &&
+        assignmentUsesLegacyPercentageBilling(assignment) &&
         !assignmentsWithFees.has(assignment.id)
     )
     .sort(

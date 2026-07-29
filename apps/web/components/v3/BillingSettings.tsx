@@ -18,6 +18,11 @@ import type {
   HostInvoiceView
 } from "@/lib/host-billing-data"
 import type { BillingView, PlanProduct, SettingsView } from "@/lib/plans"
+import type {
+  HostSubscriptionBillingView,
+  PilotConversionPlanCode,
+  PilotConversionView
+} from "@/lib/subscription-billing-data"
 import type { VerificationRecordView } from "@/lib/verification-data"
 import { AppShell, EmptyState, SectionHeader, type ShellAccount } from "./Shells"
 import { InviteMemberForm, RevokeInvitationButton } from "./TeamActions"
@@ -389,6 +394,496 @@ function InvoiceCard({ invoice }: { invoice: HostInvoiceView }) {
   )
 }
 
+function OrganizationSubscriptionSections({
+  subscription
+}: {
+  subscription: HostSubscriptionBillingView
+}) {
+  return (
+    <>
+      <section className="settings-panel" aria-label={subscription.sectionLabel}>
+        <SectionHeader
+          eyebrow={subscription.sectionLabel}
+          title={subscription.planName}
+        />
+        <div className="pay-state">
+          <Badge tone={subscription.statusTone}>{subscription.statusLabel}</Badge>
+          <Badge tone={subscription.activationTone}>{subscription.activationLabel}</Badge>
+        </div>
+        <p className="settings-meaning">{subscription.statusDetail}</p>
+        <p className="settings-meaning">{subscription.activationDetail}</p>
+        <dl className="identity-grid">
+          <div>
+            <dt>Base</dt>
+            <dd>{subscription.basePriceLabel}</dd>
+          </div>
+          <div>
+            <dt>Network allowance</dt>
+            <dd>{subscription.networkAllowanceLabel}</dd>
+          </div>
+          <div>
+            <dt>Overage</dt>
+            <dd>{subscription.overageRateLabel}</dd>
+          </div>
+          <div>
+            <dt>Core operations</dt>
+            <dd>
+              {subscription.includesDispatchProCapabilities
+                ? "Dispatch Pro capabilities included"
+                : "Defined by the accepted plan"}
+            </dd>
+          </div>
+          <div>
+            <dt>Provider collection</dt>
+            <dd>{subscription.collectionLabel}</dd>
+          </div>
+          {subscription.commitmentLabel ? (
+            <div>
+              <dt>Commitment</dt>
+              <dd>{subscription.commitmentLabel}</dd>
+            </div>
+          ) : null}
+          {subscription.renewalLabel ? (
+            <div>
+              <dt>Renewal</dt>
+              <dd>{subscription.renewalLabel}</dd>
+            </div>
+          ) : null}
+          {subscription.pendingPlanLabel ? (
+            <div>
+              <dt>Scheduled plan</dt>
+              <dd>{subscription.pendingPlanLabel}</dd>
+            </div>
+          ) : null}
+          {subscription.paymentLabel ? (
+            <div>
+              <dt>Subscription payment</dt>
+              <dd>
+                <Badge tone={subscription.paymentTone ?? "neutral"}>
+                  {subscription.paymentLabel}
+                </Badge>
+              </dd>
+            </div>
+          ) : null}
+          <div>
+            <dt>Outstanding balance</dt>
+            <dd>
+              {subscription.outstandingAmountLabel} across{" "}
+              {subscription.outstandingInvoiceCount} invoice
+              {subscription.outstandingInvoiceCount === 1 ? "" : "s"}
+            </dd>
+          </div>
+        </dl>
+        {subscription.paymentDetail ? (
+          <p className="settings-meaning">{subscription.paymentDetail}</p>
+        ) : null}
+        {subscription.latestBaseInvoice ? (
+          <p className="settings-meaning">
+            Latest base invoice: {subscription.latestBaseInvoice.amountDueLabel} ·{" "}
+            {subscription.latestBaseInvoice.statusLabel} ·{" "}
+            {subscription.latestBaseInvoice.amountRemainingLabel} remaining
+            {subscription.latestBaseInvoice.dueOnLabel
+              ? ` · due ${subscription.latestBaseInvoice.dueOnLabel}`
+              : ""}
+            {subscription.latestBaseInvoice.hostedInvoiceUrl ? (
+              <>
+                {" · "}
+                <a
+                  href={subscription.latestBaseInvoice.hostedInvoiceUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  View invoice
+                </a>
+              </>
+            ) : null}
+          </p>
+        ) : null}
+        {subscription.integrityNotices.map((notice) => (
+          <p className="fee-alert" key={notice} role="alert">
+            <Icon aria-hidden name="status.warning" size={16} />
+            <span>{notice}</span>
+          </p>
+        ))}
+        {subscription.subscriptionId &&
+        (subscription.canStartCheckout || subscription.canOpenPortal) ? (
+          subscription.canOpenPortal ? (
+            <SubscriptionBillingAction
+              kind="portal"
+              subscriptionId={subscription.subscriptionId}
+            />
+          ) : subscription.planCode === "dispatch_pro" ? (
+            <SubscriptionBillingAction kind="dispatch_acceptance" />
+          ) : (
+            <SubscriptionBillingAction
+              kind="checkout"
+              subscriptionId={subscription.subscriptionId}
+            />
+          )
+        ) : null}
+      </section>
+
+      {subscription.pilotConversion ? (
+        <PilotConversionPanel conversion={subscription.pilotConversion} />
+      ) : null}
+
+      {subscription.allowance ? (
+        <section className="usage-panel" aria-label="Completed Network usage">
+          <SectionHeader
+            eyebrow="Completed Network usage"
+            title={subscription.allowance.periodLabel}
+          />
+          <article className="usage-row">
+            <div className="usage-row__top">
+              <strong>
+                {subscription.allowance.usedUnits} of{" "}
+                {subscription.allowance.includedUnits} included
+              </strong>
+              <span
+                className={`usage-row__detail usage-row__detail--${
+                  subscription.allowance.overageUnits > 0
+                    ? "critical"
+                    : subscription.allowance.percent >= 90
+                      ? "warning"
+                      : "success"
+                }`}
+              >
+                {subscription.allowance.detail}
+              </span>
+            </div>
+            <div
+              aria-label={`Completed Network movements: ${subscription.allowance.detail}`}
+              className="usage-meter"
+              role="img"
+            >
+              <span
+                className={`usage-meter__fill usage-meter__fill--${
+                  subscription.allowance.overageUnits > 0
+                    ? "critical"
+                    : subscription.allowance.percent >= 90
+                      ? "warning"
+                      : "success"
+                }`}
+                style={{ width: `${subscription.allowance.percent}%` }}
+              />
+            </div>
+          </article>
+          <dl className="identity-grid">
+            <div>
+              <dt>Included remaining</dt>
+              <dd>{subscription.allowance.remainingUnits}</dd>
+            </div>
+            <div>
+              <dt>Current overage</dt>
+              <dd>
+                {subscription.allowance.overageUnits} units ·{" "}
+                {subscription.allowance.overageAmountLabel}
+              </dd>
+            </div>
+            <div>
+              <dt>Pace projection</dt>
+              <dd>
+                {subscription.allowance.forecastUnits} completions ·{" "}
+                {subscription.allowance.forecastOverageUnits} projected overage
+              </dd>
+            </div>
+            <div>
+              <dt>Window closes</dt>
+              <dd>{subscription.allowance.closesOnLabel}</dd>
+            </div>
+          </dl>
+          {subscription.recommendation ? (
+            <p className="settings-meaning">{subscription.recommendation}</p>
+          ) : (
+            <p className="settings-meaning">
+              A tier recommendation appears after completed usage establishes a pace.
+            </p>
+          )}
+          {subscription.latestOverageInvoice ? (
+            <p className="settings-meaning">
+              Latest usage invoice: {subscription.latestOverageInvoice.amountLabel} for{" "}
+              {subscription.latestOverageInvoice.quantity} units ·{" "}
+              {subscription.latestOverageInvoice.statusLabel}
+              {subscription.latestOverageInvoice.issuedOnLabel
+                ? ` · issued ${subscription.latestOverageInvoice.issuedOnLabel}`
+                : ""}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+    </>
+  )
+}
+
+function PilotConversionPanel({
+  conversion
+}: {
+  conversion: PilotConversionView
+}) {
+  const [selectedPlanCode, setSelectedPlanCode] =
+    useState<PilotConversionPlanCode>(
+      conversion.options[0]?.planCode ?? "network_25"
+    )
+  const [termsAccepted, setTermsAccepted] = useState(false)
+  const [pending, setPending] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+  const selectedOption = conversion.options.find(
+    (option) => option.planCode === selectedPlanCode
+  )
+
+  if (conversion.target) {
+    return (
+      <section
+        aria-label="Pilot conversion"
+        className="settings-panel"
+      >
+        <SectionHeader
+          eyebrow="Pilot conversion"
+          title={`Complete ${conversion.target.planName}`}
+        />
+        <p className="settings-meaning">
+          Your fixed target agreement is recorded. Complete provider payment
+          before {conversion.graceEndsOnLabel}; the new 12-month commitment
+          begins only from its first verified paid provider period.
+        </p>
+        <p className="settings-meaning">
+          Status: {conversion.target.statusLabel}
+        </p>
+        {conversion.target.canOpenPortal ? (
+          <SubscriptionBillingAction
+            kind="portal"
+            subscriptionId={conversion.target.subscriptionId}
+          />
+        ) : conversion.target.canStartCheckout ? (
+          <SubscriptionBillingAction
+            kind="checkout"
+            subscriptionId={conversion.target.subscriptionId}
+          />
+        ) : (
+          <p className="fee-alert" role="status">
+            This conversion cannot open payment right now. Contact LogLoads
+            before the conversion window closes.
+          </p>
+        )}
+      </section>
+    )
+  }
+
+  return (
+    <section
+      aria-label="Pilot conversion"
+      className="settings-panel"
+    >
+      <SectionHeader
+        eyebrow="Pilot conversion"
+        title="Choose the Network plan that follows your Pilot"
+      />
+      <p className="settings-meaning">
+        Your pooled Pilot allowance has ended. Convert by{" "}
+        {conversion.graceEndsOnLabel}. Each option includes Dispatch Pro
+        capabilities and starts a new 12-month minimum commitment only when
+        Stripe confirms the first paid period.
+      </p>
+      <div className="plan-cards">
+        {conversion.options.map((option) => (
+          <label className="plan-card" key={option.planCode}>
+            <span>
+              <input
+                checked={selectedPlanCode === option.planCode}
+                name="pilot-conversion-plan"
+                onChange={() => setSelectedPlanCode(option.planCode)}
+                type="radio"
+                value={option.planCode}
+              />{" "}
+              <strong>{option.name}</strong>
+            </span>
+            <span>{option.basePriceLabel}</span>
+            <span>{option.allowanceLabel}</span>
+            <span>{option.overageLabel}</span>
+            <span>{option.commitmentLabel}</span>
+          </label>
+        ))}
+      </div>
+      <label className="settings-meaning">
+        <input
+          checked={termsAccepted}
+          onChange={(event) => setTermsAccepted(event.target.checked)}
+          type="checkbox"
+        />{" "}
+        I accept the current <Link href="/terms">Network terms</Link>, the
+        selected monthly base and overage amounts, and the 12-month minimum
+        commitment.
+      </label>
+      <div className="plan-action">
+        <button
+          className="action-link"
+          disabled={pending || !termsAccepted || !selectedOption}
+          onClick={async () => {
+            if (!selectedOption) {
+              setNotice(
+                "Select a current Network conversion quote before continuing."
+              )
+              return
+            }
+
+            setPending(true)
+            setNotice(null)
+
+            try {
+              const response = await fetch(
+                "/api/billing/subscription-checkout",
+                {
+                  body: JSON.stringify({
+                    acceptNetworkTerms: true,
+                    convertPilotSubscriptionId:
+                      conversion.sourceSubscriptionId,
+                    quoteFingerprint:
+                      selectedOption.quoteFingerprint,
+                    targetPlanCode: selectedPlanCode
+                  }),
+                  headers: { "Content-Type": "application/json" },
+                  method: "POST"
+                }
+              )
+              const result = await readJson<{
+                error?: string
+                url?: string
+              }>(response)
+
+              if (!response.ok || !result?.url) {
+                throw new Error(
+                  result?.error ??
+                    "Pilot conversion billing is unavailable right now."
+                )
+              }
+
+              window.location.assign(result.url)
+            } catch (error) {
+              setNotice(
+                error instanceof Error
+                  ? error.message
+                  : "Pilot conversion billing is unavailable right now."
+              )
+            } finally {
+              setPending(false)
+            }
+          }}
+          type="button"
+        >
+          {pending
+            ? "Opening secure billing…"
+            : "Accept terms & continue to payment"}
+        </button>
+        <p className="settings-meaning">
+          No new plan activates from this click alone. LogLoads records the
+          accepted target, opens the exact pre-created Stripe Price, and waits
+          for signed payment confirmation.
+        </p>
+        {notice ? (
+          <p className="fee-alert" role="alert">
+            {notice}
+          </p>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+function SubscriptionBillingAction({
+  kind,
+  subscriptionId
+}:
+  | {
+      kind: "checkout" | "portal"
+      subscriptionId: string
+    }
+  | {
+      kind: "dispatch_acceptance"
+      subscriptionId?: never
+    }) {
+  const [pending, setPending] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+  const endpoint =
+    kind === "portal"
+      ? "/api/billing/subscription-portal"
+      : "/api/billing/subscription-checkout"
+  const requestBody =
+    kind === "dispatch_acceptance"
+      ? { acceptDispatchProTerms: true }
+      : { organizationSubscriptionId: subscriptionId }
+
+  return (
+    <div className="plan-action">
+      <button
+        className="action-link"
+        disabled={pending}
+        onClick={async () => {
+          setPending(true)
+          setNotice(null)
+
+          try {
+            const response = await fetch(endpoint, {
+              body: JSON.stringify(requestBody),
+              headers: { "Content-Type": "application/json" },
+              method: "POST"
+            })
+            const result = await readJson<{ error?: string; url?: string }>(
+              response
+            )
+
+            if (!response.ok || !result?.url) {
+              throw new Error(
+                result?.error ??
+                  "Subscription billing is unavailable right now."
+              )
+            }
+
+            window.location.assign(result.url)
+          } catch (error) {
+            setNotice(
+              error instanceof Error
+                ? error.message
+                : "Subscription billing is unavailable right now."
+            )
+          } finally {
+            setPending(false)
+          }
+        }}
+        type="button"
+      >
+        {pending
+          ? "Opening secure billing…"
+          : kind === "portal"
+            ? "Manage payment details"
+            : kind === "dispatch_acceptance"
+              ? "Accept terms & continue to payment"
+              : "Complete approved enrollment"}
+      </button>
+      <p className="settings-meaning">
+        {kind === "portal"
+          ? "Payment details and provider invoice history open in the controlled Stripe billing portal. Plan changes and non-renewal remain sales-assisted under the accepted commitment."
+          : kind === "dispatch_acceptance"
+            ? (
+                <>
+                  Continuing records this organization&apos;s acceptance of the current{" "}
+                  <Link href="/terms">Dispatch Pro terms</Link> at $499 per month,
+                  authorizes paid enrollment, and opens secure Stripe Checkout.
+                  Dispatch Pro covers established private capacity and includes no
+                  LogLoads Network units.
+                </>
+              )
+            : "This opens the exact plan already accepted for this organization. The browser cannot choose or alter a tier."}
+      </p>
+      {notice ? (
+        <p className="plan-action__notice" role="alert">
+          <Icon aria-hidden name="status.warning" size={16} />
+          <span>{notice}</span>
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
 /**
  * Everything a host has to be able to answer about their own money without
  * contacting anybody. Rendered from the read model only — no arithmetic happens
@@ -396,49 +891,66 @@ function InvoiceCard({ invoice }: { invoice: HostInvoiceView }) {
  */
 function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
   const { currentPeriod, fee, invoices, paymentMethod } = hostBilling
+  const hasLegacyActivity =
+    currentPeriod.lines.length > 0 ||
+    currentPeriod.voidedLines.length > 0 ||
+    invoices.length > 0
 
   return (
     <>
-      <section className="settings-panel" aria-label="What LogLoads charges you">
-        <SectionHeader eyebrow="What you pay" title={`${fee.rateLabel} of driver pay, on completed loads`} />
-        <p className="fee-headline">{fee.headline}</p>
-        {/* Named as an example in visible text, not only in the label: three
-            money figures with no lead-in read as this host's own money. */}
-        <p className="fee-example-lead">
-          For example, one truckload where you state the driver is paid {fee.example.driverPayLabel}:
-        </p>
-        <dl aria-label={`Example: a ${fee.example.driverPayLabel} truckload`} className="fee-figures">
-          <div>
-            <dt>You state the driver is paid</dt>
-            <dd>
-              {fee.example.driverPayLabel}
-              <span>The driver receives exactly this</span>
-            </dd>
-          </div>
-          <div>
-            <dt>LogLoads fee, on top</dt>
-            <dd>
-              + {fee.example.platformFeeLabel}
-              <span>{fee.rateLabel} of the pay you stated</span>
-            </dd>
-          </div>
-          <div className="fee-figures__total">
-            <dt>Your total cost</dt>
-            <dd>
-              {fee.example.hostTotalLabel}
-              <span>Once the truckload completes</span>
-            </dd>
-          </div>
-        </dl>
-        <ul className="fee-points">
-          {fee.points.map((point) => (
-            <li key={point}>
-              <Icon aria-hidden name="status.assigned" size={16} />
-              <span>{point}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
+      {hasLegacyActivity ? (
+        <section className="settings-panel" aria-label="Legacy percentage pricing record">
+          <SectionHeader
+            eyebrow="Legacy pricing"
+            title={`${fee.rateLabel} of driver pay on previously committed loads`}
+          />
+          <p className="fee-alert" role="note">
+            <Icon aria-hidden name="ops.notice" size={16} />
+            <span>
+              These frozen percentage terms are preserved only for legacy
+              assignments. New Network activity uses your subscription allowance
+              and completed-movement overage rate.
+            </span>
+          </p>
+          <p className="fee-headline">{fee.headline}</p>
+          {/* Named as an example in visible text, not only in the label: three
+              money figures with no lead-in read as this host's own money. */}
+          <p className="fee-example-lead">
+            For example, one truckload where you state the driver is paid {fee.example.driverPayLabel}:
+          </p>
+          <dl aria-label={`Example: a ${fee.example.driverPayLabel} truckload`} className="fee-figures">
+            <div>
+              <dt>You state the driver is paid</dt>
+              <dd>
+                {fee.example.driverPayLabel}
+                <span>The driver receives exactly this</span>
+              </dd>
+            </div>
+            <div>
+              <dt>LogLoads fee, on top</dt>
+              <dd>
+                + {fee.example.platformFeeLabel}
+                <span>{fee.rateLabel} of the pay you stated</span>
+              </dd>
+            </div>
+            <div className="fee-figures__total">
+              <dt>Your total cost</dt>
+              <dd>
+                {fee.example.hostTotalLabel}
+                <span>Once the truckload completes</span>
+              </dd>
+            </div>
+          </dl>
+          <ul className="fee-points">
+            {fee.points.map((point) => (
+              <li key={point}>
+                <Icon aria-hidden name="status.assigned" size={16} />
+                <span>{point}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <section className="settings-panel" aria-label="Payment method">
         <SectionHeader eyebrow="Payment method" title="The card LogLoads bills" />
@@ -462,95 +974,116 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
         <HostCardControl status={paymentMethod.status} />
       </section>
 
-      <section className="settings-panel" aria-label="Fees accrued this month">
-        <SectionHeader
-          eyebrow="This month"
-          title={
-            currentPeriod.lines.length === 0
-              ? `${currentPeriod.periodLabel} — nothing accrued yet`
-              : `${currentPeriod.periodLabel} — ${currentPeriod.totals.platformFeeLabel} in LogLoads fees`
-          }
-        />
-        {currentPeriod.lines.length === 0 ? (
-          <p className="settings-meaning">
-            Nothing has accrued in {currentPeriod.periodLabel}. A LogLoads fee appears here the first time
-            a truckload completes — posting work costs nothing, and a load that is never hauled is never
-            billed.
-          </p>
-        ) : (
-          <>
-            <FeeFigures label={`${currentPeriod.periodLabel} totals`} totals={currentPeriod.totals} />
-            <FeeTable
-              caption={`Completed truckloads that accrued a LogLoads fee in ${currentPeriod.periodLabel}`}
-              lines={currentPeriod.lines}
-              totals={currentPeriod.totals}
+      {hasLegacyActivity ? (
+        <>
+          <section className="settings-panel" aria-label="Legacy fees accrued this month">
+            <SectionHeader
+              eyebrow="This month"
+              title={
+                currentPeriod.lines.length === 0
+                  ? `${currentPeriod.periodLabel} — nothing accrued yet`
+                  : `${currentPeriod.periodLabel} — ${currentPeriod.totals.platformFeeLabel} in LogLoads fees`
+              }
             />
-            <p className="settings-meaning">
-              Nothing is charged until {currentPeriod.periodLabel} closes on {currentPeriod.closesOnLabel}.
-              LogLoads then bills the card on file for its own fee only. Driver pay is not part of that
-              charge — you pay your drivers directly.
-            </p>
-          </>
-        )}
-        {currentPeriod.voidedLines.length > 0 ? (
-          <details className="fee-disclosure">
-            <summary>
-              Fees withdrawn this month ({currentPeriod.voidedLines.length}) — you are charged nothing for
-              these
-            </summary>
-            <ul className="fee-voided">
-              {currentPeriod.voidedLines.map((line) => (
-                <li key={line.id}>
-                  <strong>{line.loadTitle}</strong>
-                  <span>
-                    {line.completedOnLabel} · {line.platformFeeLabel} withdrawn
-                    {line.voidReason ? ` · ${line.voidReason}` : ""}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </details>
-        ) : null}
-      </section>
+            {currentPeriod.lines.length === 0 ? (
+              <p className="settings-meaning">
+                Nothing has accrued in {currentPeriod.periodLabel}. A LogLoads fee appears here the first time
+                a truckload completes — posting work costs nothing, and a load that is never hauled is never
+                billed.
+              </p>
+            ) : (
+              <>
+                <FeeFigures label={`${currentPeriod.periodLabel} totals`} totals={currentPeriod.totals} />
+                <FeeTable
+                  caption={`Completed truckloads that accrued a LogLoads fee in ${currentPeriod.periodLabel}`}
+                  lines={currentPeriod.lines}
+                  totals={currentPeriod.totals}
+                />
+                <p className="settings-meaning">
+                  Nothing is charged until {currentPeriod.periodLabel} closes on {currentPeriod.closesOnLabel}.
+                  LogLoads then bills the card on file for its own fee only. Driver pay is not part of that
+                  charge — you pay your drivers directly.
+                </p>
+              </>
+            )}
+            {currentPeriod.voidedLines.length > 0 ? (
+              <details className="fee-disclosure">
+                <summary>
+                  Fees withdrawn this month ({currentPeriod.voidedLines.length}) — you are charged nothing for
+                  these
+                </summary>
+                <ul className="fee-voided">
+                  {currentPeriod.voidedLines.map((line) => (
+                    <li key={line.id}>
+                      <strong>{line.loadTitle}</strong>
+                      <span>
+                        {line.completedOnLabel} · {line.platformFeeLabel} withdrawn
+                        {line.voidReason ? ` · ${line.voidReason}` : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+          </section>
 
-      <section className="settings-panel" aria-label="Bills">
-        <SectionHeader eyebrow="Bills" title="What you have been charged" />
-        {invoices.length === 0 ? (
-          <p className="settings-meaning">
-            No bill has been raised yet. Your first one covers {currentPeriod.periodLabel} and is charged
-            after it closes on {currentPeriod.closesOnLabel}.
-          </p>
-        ) : (
-          <div className="invoice-list">
-            {invoices.map((invoice) => (
-              <InvoiceCard invoice={invoice} key={invoice.id} />
-            ))}
-          </div>
-        )}
-      </section>
+          <section className="settings-panel" aria-label="Legacy bills">
+            <SectionHeader eyebrow="Legacy bills" title="Historical percentage charges" />
+            {invoices.length === 0 ? (
+              <p className="settings-meaning">
+                No bill has been raised yet. Your first one covers {currentPeriod.periodLabel} and is charged
+                after it closes on {currentPeriod.closesOnLabel}.
+              </p>
+            ) : (
+              <div className="invoice-list">
+                {invoices.map((invoice) => (
+                  <InvoiceCard invoice={invoice} key={invoice.id} />
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      ) : null}
     </>
   )
 }
 
 /**
- * `hostBilling` is required for a host and absent for a fleet, checked by the
- * compiler rather than by remembering: a host billing page that forgot to pass it
- * would render a host their fee ledger as though nothing had ever accrued, which
- * is the one thing a billing page must never say by accident.
+ * The legacy host ledger remains host-only. The canonical organization
+ * subscription view is required in both operating cockpits because Dispatch Pro
+ * and Network plans share one commercial ledger while exposing different usage.
+ * The discriminated props keep a fleet from ever receiving the host's historical
+ * percentage statement.
  */
 export type BillingPageProps = {
   account: ShellAccount
   billing: BillingView
   checkoutNotice?: CheckoutNotice | null
-} & ({ role: "fleet"; hostBilling?: never } | { role: "host"; hostBilling: HostBillingView })
+} & (
+  | {
+      role: "fleet"
+      hostBilling?: never
+      hostSubscriptionBilling: HostSubscriptionBillingView | null
+    }
+  | {
+      role: "host"
+      hostBilling: HostBillingView
+      hostSubscriptionBilling: HostSubscriptionBillingView | null
+    }
+)
 
 export function BillingPage({
   account,
   billing,
   checkoutNotice,
   hostBilling,
+  hostSubscriptionBilling,
   role
 }: BillingPageProps) {
+  const hasCanonicalSubscription = Boolean(
+    hostSubscriptionBilling?.subscriptionId
+  )
+  const capabilityPlans = hasCanonicalSubscription ? [] : billing.plans
   const addUsageHref = role === "fleet" ? "/fleet/trucks" : "/host/landings"
   const addUsageLabel = role === "fleet" ? "Go to trucks" : "Go to landings"
   const addUsageBody = role === "fleet"
@@ -579,48 +1112,64 @@ export function BillingPage({
           </p>
         ) : null}
 
-        {billing.plans.length === 0 ? (
+        {capabilityPlans.length === 0 && !hostSubscriptionBilling ? (
           <EmptyState
             actionHref="/pricing"
             actionLabel="Compare plans"
-            body={role === "fleet" ? "Dispatch Pro is $499 per month. Drivers on the account stay free." : "Hosts pay 5% of driver pay on completed loads. No monthly fee, and nothing is deducted from the driver."}
+            body={role === "fleet" ? "Dispatch Pro is $499 per month. Drivers on the account stay free." : "Network enrollment is sales-assisted. There is no posting fee; completed Network movements use the accepted plan allowance and overage rate."}
             title="No plan on this workspace yet"
           />
         ) : (
           <>
-            <section className="plan-cards" aria-label="Current plan">
-              {billing.plans.map((plan) => (
-                <article className="plan-card" key={plan.id}>
-                  <header className="plan-card__head">
-                    <div>
-                      <p className="eyebrow">Current plan</p>
-                      <h2>{plan.name}</h2>
-                      <p className="plan-card__summary">{plan.summary}</p>
+            {capabilityPlans.length > 0 ? (
+              <section className="plan-cards" aria-label="Current plan">
+                {capabilityPlans.map((plan) => (
+                  <article className="plan-card" key={plan.id}>
+                    <header className="plan-card__head">
+                      <div>
+                        <p className="eyebrow">Current plan</p>
+                        <h2>{plan.name}</h2>
+                        <p className="plan-card__summary">{plan.summary}</p>
+                      </div>
+                      <strong className="plan-card__price">{plan.priceLine}</strong>
+                    </header>
+                    <div className="plan-card__status">
+                      <Badge tone={plan.statusTone}>{plan.statusLine}</Badge>
+                      {plan.statusDetail ? <p>{plan.statusDetail}</p> : null}
                     </div>
-                    <strong className="plan-card__price">{plan.priceLine}</strong>
-                  </header>
-                  <div className="plan-card__status">
-                    <Badge tone={plan.statusTone}>{plan.statusLine}</Badge>
-                    {plan.statusDetail ? <p>{plan.statusDetail}</p> : null}
-                  </div>
-                  <div className="plan-card__body">
-                    <h3>What your plan includes</h3>
-                    <ul>
-                      {plan.features.map((feature) => (
-                        <li key={feature}>
-                          <Icon aria-hidden name="status.assigned" size={16} />
-                          <span>{feature}</span>
-                        </li>
-                      ))}
-                    </ul>
-                    {plan.limitLines.length > 0 ? <p className="plan-card__limits">{plan.limitLines.join(" · ")}</p> : null}
-                  </div>
-                  {plan.actionLabel && plan.actionKind ? <PlanAction kind={plan.actionKind} label={plan.actionLabel} product={plan.product} /> : null}
-                </article>
-              ))}
-            </section>
+                    <div className="plan-card__body">
+                      <h3>What your plan includes</h3>
+                      <ul>
+                        {plan.features.map((feature) => (
+                          <li key={feature}>
+                            <Icon aria-hidden name="status.assigned" size={16} />
+                            <span>{feature}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      {plan.limitLines.length > 0 ? <p className="plan-card__limits">{plan.limitLines.join(" · ")}</p> : null}
+                    </div>
+                    {role === "fleet" &&
+                    plan.product === "fleet_operations" &&
+                    plan.actionKind === "checkout" ? (
+                      billing.billingReady ? (
+                        <SubscriptionBillingAction kind="dispatch_acceptance" />
+                      ) : null
+                    ) : plan.actionLabel && plan.actionKind ? (
+                      <PlanAction
+                        kind={plan.actionKind}
+                        label={plan.actionLabel}
+                        product={plan.product}
+                      />
+                    ) : null}
+                  </article>
+                ))}
+              </section>
+            ) : null}
 
-            {role === "fleet" && !billing.billingReady ? (
+            {role === "fleet" &&
+            !hasCanonicalSubscription &&
+            !billing.billingReady ? (
               <p className="billing-pending" role="note">
                 <Icon aria-hidden name="status.lock" size={16} />
                 <span>Dispatch Pro checkout is temporarily unavailable. Current trial access stays active.</span>
@@ -655,6 +1204,11 @@ export function BillingPage({
         {/* Outside the plan branch on purpose: what a host owes LogLoads does not
             depend on carrying a plan record, so a workspace with no entitlement
             row must still be able to see its own fees and its own bills. */}
+        {hostSubscriptionBilling ? (
+          <OrganizationSubscriptionSections
+            subscription={hostSubscriptionBilling}
+          />
+        ) : null}
         {hostBilling ? <HostMoneySections hostBilling={hostBilling} /> : null}
       </div>
     </AppShell>
@@ -777,7 +1331,7 @@ export function SettingsPage({
             <EmptyState
               actionHref="/pricing"
               actionLabel="Compare plans"
-              body={role === "fleet" ? "Dispatch Pro is $499 per month. Drivers on the account stay free." : "Hosts pay 5% of driver pay on completed loads. No monthly fee, and nothing is deducted from the driver."}
+              body={role === "fleet" ? "Dispatch Pro is $499 per month. Drivers on the account stay free." : "Network enrollment is sales-assisted. There is no posting fee; completed Network movements use the accepted plan allowance and overage rate."}
               title="No plan on this workspace yet"
             />
           ) : (

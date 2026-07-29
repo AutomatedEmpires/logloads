@@ -5,7 +5,8 @@ import { legalPages } from "@/lib/v3"
 
 export const metadata: Metadata = {
   title: "Terms of Service",
-  description: "The terms that govern LogLoads: coordination software for timber hauling, with no freight brokering and no freight payment handling."
+  description:
+    "The terms governing LogLoads private-capacity software, sales-assisted Network access, and non-custodial transportation compensation."
 }
 
 export default function Page() {

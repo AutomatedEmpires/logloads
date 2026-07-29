@@ -3,13 +3,24 @@
   "private": true,
   "packageManager": "pnpm@10.12.4",
   "engines": {
-    "node": "24.16.0"
+    "node": "24.x"
   },
   "pnpm": {
+    "ignoredBuiltDependencies": [
+      "core-js",
+      "sharp"
+    ],
+    "onlyBuiltDependencies": [
+      "@sentry/cli",
+      "esbuild",
+      "unrs-resolver"
+    ],
     "overrides": {
       "esbuild": "0.28.1",
-      "postcss": "8.5.15",
-      "brace-expansion@>=3.0.0": "5.0.7"
+      "postcss": "8.5.18",
+      "brace-expansion@>=3.0.0": "5.0.8",
+      "dompurify": "3.4.12",
+      "sharp": "0.35.3"
     }
   },
   "scripts": {

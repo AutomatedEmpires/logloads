@@ -107,7 +107,7 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
           <div className="feature-grid">
             <article><span>Driver accounts</span><h3>Drivers &amp; owner-operators</h3><p>See available work, know whether it fits, request it, and follow the schedule from a phone.</p><Link className="text-link" href="/sign-up?path=driver">Create a driver profile</Link></article>
             <article><span>$499/month</span><h3>Dispatchers</h3><p>Keep trucks, drivers, requests, schedules, and exceptions in one operating view.</p><Link className="text-link" href="/sign-up?path=fleet">Set up dispatch</Link></article>
-            <article><span>5% of driver pay</span><h3>Hosts</h3><p>Post the work, see qualified requests, choose the truck, and know what is arriving.</p><Link className="text-link" href="/sign-up?path=host">Post a load</Link></article>
+            <article><span>Network subscription</span><h3>Hosts</h3><p>Post without a listing fee, coordinate qualified capacity, and meter only completed Network movements.</p><Link className="text-link" href="/pricing">Compare Network plans</Link></article>
           </div>
         </section>
         <section className="loads-preview">
@@ -225,7 +225,11 @@ export function PricingPage() {
   return (
     <PublicShell>
       <main className="page-main pricing-page">
-        <PageIntro eyebrow="Simple pricing" title="Drivers are free forever." body="Hosts pay 5% of what they pay the driver, on completed loads only. Dispatch teams pay one monthly price for the operating tools their trucks run on." />
+        <PageIntro
+          eyebrow="Completed-load pricing"
+          title="Drivers stay free. Hosts pay for an operating Network."
+          body="There is no posting fee. Network plans include a defined number of completed Network-coordinated physical load movements, with automatic flat overage after the allowance. Driver or carrier compensation remains separate and is paid directly by the host."
+        />
         <div className="pricing-grid">
           {pricingPlans.map((plan) => (
             <article className={plan.name === "Driver" ? "pricing-card pricing-card--free" : "pricing-card"} key={plan.name}>
@@ -233,6 +237,13 @@ export function PricingPage() {
               <h2>{plan.name}</h2>
               <strong className="pricing-card__price">{plan.price}</strong>
               <p className="pricing-card__summary">{plan.summary}</p>
+              {plan.included || plan.overage || plan.commitment ? (
+                <dl className="pricing-card__facts">
+                  {plan.included ? <div><dt>Included</dt><dd>{plan.included}</dd></div> : null}
+                  {plan.overage ? <div><dt>Additional usage</dt><dd>{plan.overage}</dd></div> : null}
+                  {plan.commitment ? <div><dt>Commitment</dt><dd>{plan.commitment}</dd></div> : null}
+                </dl>
+              ) : null}
               <ul>{plan.features.map((feature) => <li key={feature}>{feature}</li>)}</ul>
               <Link className={plan.name === "Driver" ? "action-link" : "action-link action-link--secondary"} href={plan.cta.href}>{plan.cta.label}</Link>
               {plan.note ? <p className="pricing-card__note">{plan.note}</p> : null}
@@ -240,8 +251,36 @@ export function PricingPage() {
           ))}
         </div>
         <section className="legal-note">
-          <h2>No surprise charges.</h2>
-          <p>Driver accounts stay free forever, and the host fee is never deducted from driver pay — the driver is paid what the host stated. Hosts receive 60 days notice before any rate change, and no change is ever applied retroactively.</p>
+          <h2>The paid Pilot is invitation-only.</h2>
+          <p>
+            A selected design partner pays $1,500 per month for an exact 90-day
+            operating engagement—a $4,500 minimum base commitment. Thirty
+            completed Network movements are pooled across the engagement;
+            additional completed movements are $150 each. Once the operating
+            market is ready, the first verified paid billing period starts the
+            Pilot; onboarding alone does not. The Pilot is not available through
+            public self-service checkout.
+          </p>
+        </section>
+        <section className="legal-note">
+          <h2>How overage works.</h2>
+          <p>
+            Network 25 at 30 completed movements is $3,000 + 5 × $125 = $3,625.
+            Network 50 at 60 is $5,500 + 10 × $110 = $6,600. Network 100 at 110
+            is $10,000 + 10 × $90 = $10,900. Reaching an allowance never stops
+            accepted or in-progress work; it starts the published overage rate.
+          </p>
+        </section>
+        <section className="legal-note">
+          <h2>What counts—and what does not.</h2>
+          <p>
+            One completed physical movement fulfilled through LogLoads Network
+            counts once. Drafts, postings, searches, requests, unaccepted offers,
+            cancellation before execution, duplicate completion, and
+            private-fleet work do not count. Actual transportation compensation
+            is separate, remains payable directly by the host, and is never
+            reduced by a LogLoads charge.
+          </p>
         </section>
       </main>
     </PublicShell>
@@ -256,7 +295,13 @@ export function LegalPage({ content }: { content: LegalPageContent }) {
         <p className="legal-effective">Effective {content.effectiveDate}</p>
         <aside className="legal-boundary-summary">
           <strong>Product boundary</strong>
-          <p>LogLoads is coordination software. It does not broker freight, operate as a motor carrier, or move freight payment.</p>
+          <p>
+            Dispatch Pro coordinates established private capacity. Network
+            enrollment requires a separate accepted commercial agreement and
+            recorded legal operating posture. LogLoads does not carry freight or
+            receive, escrow, deduct from, or distribute transportation
+            compensation.
+          </p>
         </aside>
         <nav aria-label="On this page" className="legal-toc">
           <strong>On this page</strong>
@@ -320,7 +365,7 @@ export function OnboardingPage({
   const title = mode === "fleet"
     ? "Set up fleet operations."
     : mode === "host"
-      ? "Publish timber with control."
+      ? "Set up your timber operation."
       : mode === "driver"
         ? "See work that fits your equipment."
         : "How will you use LogLoads?"
@@ -328,7 +373,15 @@ export function OnboardingPage({
   return (
     <PublicShell>
       <main className="page-main onboarding-page">
-        <PageIntro eyebrow="Get started" title={title} body="Three short steps. Then LogLoads opens the right first screen for your work." />
+        <PageIntro
+          eyebrow="Get started"
+          title={title}
+          body={
+            mode === "host"
+              ? "Three short steps create your operating workspace. Network subscriptions and the paid Pilot are sales-assisted; creating an account does not enroll or charge you."
+              : "Three short steps. Then LogLoads opens the right first screen for your work."
+          }
+        />
         <OnboardingFlow identityKnown={identityKnown} initialPath={mode} invitations={invitations} next={next} />
       </main>
     </PublicShell>
@@ -381,7 +434,11 @@ export function ContactPage() {
   return (
     <PublicShell>
       <main className="page-main contact-page">
-        <PageIntro eyebrow="Contact" title="Talk with LogLoads." body="Plans, private carrier networks, verification, integrations, or a season of timber to move — send a note and include the context we need to follow up." />
+        <PageIntro
+          eyebrow="Contact"
+          title="Talk with LogLoads."
+          body="Network Pilot, Network subscription plans, private-capacity operations, verification, integrations, or a season of timber to move—send the context we need to plan the right operating lane."
+        />
         <div className="contact-layout">
           <ContactForm />
           <aside className="contact-aside">
@@ -390,8 +447,12 @@ export function ContactPage() {
               <p>Your operating region, roughly how many trucks or landings you run, and what you are trying to get done. It helps us give a useful first answer.</p>
             </section>
             <section>
-              <h2>Enterprise operations</h2>
-              <p>Multi-region timber operations get a direct conversation about private regions, verification workflows, and integration planning.</p>
+              <h2>Sales-assisted Network plans</h2>
+              <p>
+                Network enrollment is not public self-service. We confirm
+                operating volume, locations, legal posture, commitment, and the
+                exact accepted pricing snapshot before activation.
+              </p>
             </section>
           </aside>
         </div>

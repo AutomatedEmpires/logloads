@@ -23,7 +23,34 @@
 - `POST /api/media/signature` — authenticated; returns a signed, immutable, organization-scoped Cloudinary upload target
 - `GET /api/media/asset` — authenticated; proxies the viewer-authorized private image with an upstream timeout
 - `GET /api/weather?loadId=...` — rate-limited; returns cached destination weather for a visible load
-- `POST /api/billing/webhook` — Stripe-signed subscription lifecycle events only; freight money is out of scope
+- `GET|POST /api/billing/payment-method` — organization-scoped card status and
+  SetupIntent creation for the preserved legacy host lane; requires
+  `manage_billing` and never moves driver or carrier compensation
+- `POST /api/billing/subscription-checkout` — opens Checkout only for a
+  canonical agreement, its frozen plan, and an organization type eligible for
+  that plan. Network agreements accept only their administrator-authorized
+  subscription UUID. Public Dispatch Pro accepts only
+  `{ "acceptDispatchProTerms": true }`; the server derives the organization,
+  acceptor, immutable terms version, and $499 Price. The browser cannot submit
+  an organization, terms version, plan, trial, or Price.
+- `POST /api/billing/subscription-portal` — opens the restricted payment-method
+  and invoice-history portal for the actor's own provider-bound subscription;
+  self-service plan changes and cancellation are disabled
+- `POST /api/billing/webhook` — raw-body, Stripe-signed legacy and
+  subscription lifecycle reconciliation; provider facts never create an
+  unapproved commercial agreement and freight compensation remains out of scope
+- `GET /api/billing/cron` — bearer-authenticated legacy reconciliation,
+  subscription-period closing, overage collection, provider schedules,
+  adjustment settlement, and billing-notification delivery
+- `POST /api/billing/internal-smoke` — platform-admin-only, separately gated,
+  user-and-organization-allowlisted one-dollar charge/refund proof; internal
+  fixtures never grant ordinary access or enter commercial metrics
+- `POST /api/admin/billing/actions` — platform-admin-only configuration,
+  activation authorization, scheduled changes/non-renewal, audited usage
+  reversal and adjustment, and reconciliation controls
+- `GET /api/admin/billing/export` — platform-admin-only canonical
+  subscription, usage, base-invoice, overage-invoice, adjustment, and preserved
+  legacy breakdown
 
 ## Contract rules
 - Route handlers call `packages/services` only.
@@ -34,6 +61,19 @@
 - Driver economics and media writes are service-owned, verify active organization membership and driver ownership, and resolve the active equipment combination server-side.
 - Media uploads are immutable (`overwrite=false`); only verified JPG/PNG/WebP assets of 10 MB or less under the current target prefix can be attached.
 - Assignment approval performs all fallible commercial-terms and trip validation before consuming the assignment or confirming the slot.
+- New paid enrollment is fail-closed behind
+  `LOGLOADS_SUBSCRIPTION_COLLECTION=enabled`, an exact expected Stripe account
+  assertion, pre-created accepted Prices, and canonical activation
+  authorization. Dispatch Pro authorization is the active organization billing
+  manager's explicit terms acceptance; Network authorization remains an
+  administrator control. The Network Pilot additionally requires exactly one
+  active organization-owned landing and a finite provider schedule.
+- One completed physical Network movement can create one deterministic usage
+  event; private capacity, posting, cancellation before execution, duplicate
+  completion, and preserved legacy obligations cannot enter that ledger.
+- Historical usage and invoices are append-only. Corrections use audited
+  reversal/adjustment records and provider credit notes or supplemental
+  invoices rather than rewriting settled facts.
 
 ## Current limitations
 - Backed by the transitional versioned `operating_state` document in Supabase. Normalizing service operations onto relational tables remains a later scale milestone.

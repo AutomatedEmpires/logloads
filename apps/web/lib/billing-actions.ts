@@ -2,10 +2,14 @@
 
 import { organizationRoleCan } from "@logloads/contracts"
 
-import { checkoutEligibility, checkoutPlanFor, resolveStripeBilling } from "./billing"
+import { checkoutPlanFor, resolveStripeBilling } from "./billing"
 import type { PlanProduct } from "./plans"
 import { readState, serializeError } from "./services"
 import { getSessionActor } from "./session"
+import {
+  resolveSubscriptionStripe,
+  verifyExpectedStripeAccount
+} from "./subscription-stripe"
 
 export interface CheckoutResult {
   ok: boolean
@@ -31,18 +35,27 @@ function appOrigin(): string | null {
   return process.env.NODE_ENV === "production" ? null : "http://127.0.0.1:3002"
 }
 
+async function assertLogLoadsStripeAccount(): Promise<void> {
+  const stripe = resolveSubscriptionStripe(process.env)
+
+  if (!stripe.ok) {
+    throw new Error("Stripe subscription billing is not configured")
+  }
+
+  try {
+    await verifyExpectedStripeAccount(stripe.port, process.env)
+  } catch {
+    throw new Error("Stripe billing account verification failed")
+  }
+}
+
 /**
- * Starts a real Stripe subscription checkout for the viewer's organization.
+ * Preserved server-action boundary for old UI clients.
  *
- * Subscriptions only — no driver pay moves through LogLoads.
- *
- * WHAT `manage_billing` DOES NOT ANSWER. Every organization owner holds it, on
- * every organization type, so it says only "this person may spend this
- * workspace's money". Whether the workspace can BUY this product is a separate
- * question, and it is answered by `checkoutEligibility` before Stripe is called:
- * the product must belong to this organization type, and the plan record the
- * webhook will grant against must already exist. Without the second check a host
- * could be charged $499/mo for a plan the webhook then failed to apply.
+ * New Dispatch Pro obligations must begin from a canonical, accepted
+ * OrganizationSubscription and the guarded subscription-checkout route. The
+ * entitlement-only Checkout this action once opened is intentionally retired;
+ * legacy webhooks and portal access remain for subscriptions already created.
  */
 export async function startCheckoutAction(product: PlanProduct): Promise<CheckoutResult> {
   try {
@@ -60,55 +73,18 @@ export async function startCheckoutAction(product: PlanProduct): Promise<Checkou
 
     requireBillingManager(actor)
 
-    const eligibility = await readState((current) =>
-      checkoutEligibility(current.state.entitlements, { organization, product })
-    )
+    const plan = checkoutPlanFor(product)
 
-    if (!eligibility.allowed) {
-      return { error: eligibility.message, ok: false, url: null }
+    return {
+      error:
+        plan.kind === "subscription" && product === "fleet_operations"
+          ? "Dispatch Pro enrollment now starts from an accepted agreement in Fleet billing. This legacy Checkout path cannot create a new paid obligation."
+          : plan.kind === "not_purchasable"
+            ? plan.message
+            : "This subscription must start from an accepted canonical agreement.",
+      ok: false,
+      url: null
     }
-
-    const billing = resolveStripeBilling()
-
-    if (!billing.ok) {
-      return { error: billing.message, ok: false, url: null }
-    }
-
-    const configuredPriceId = process.env[eligibility.priceEnv]
-
-    if (!configuredPriceId) {
-      return {
-        error:
-          "Dispatch Pro billing is not activated yet. A verified $499 monthly Stripe Price must be configured before Checkout can open.",
-        ok: false,
-        url: null
-      }
-    }
-
-    const origin = appOrigin()
-
-    if (!origin) {
-      return {
-        error:
-          "Billing cannot open because the production application URL is not configured. No Stripe session was created.",
-        ok: false,
-        url: null
-      }
-    }
-
-    const session = await billing.value.createCheckoutSession({
-      cancelUrl: `${origin}${eligibility.returnPath}?checkout=cancelled`,
-      metadata: { organizationId: organization.id, product },
-      organizationId: organization.id,
-      priceId: configuredPriceId,
-      successUrl: `${origin}${eligibility.returnPath}?checkout=success`
-    })
-
-    if (!session.url) {
-      throw new Error("Checkout could not be started. Try again.")
-    }
-
-    return { error: null, ok: true, url: session.url }
   } catch (error) {
     return { error: serializeError(error).error, ok: false, url: null }
   }
@@ -149,6 +125,8 @@ export async function startBillingPortalAction(product: PlanProduct): Promise<Ch
     if (!billing.ok) {
       return { error: billing.message, ok: false, url: null }
     }
+
+    await assertLogLoadsStripeAccount()
 
     const stripeCustomerId = await readState(
       (current) =>

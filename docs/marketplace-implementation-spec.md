@@ -1,5 +1,11 @@
 # LogLoads — marketplace realignment: implementation spec
 
+> **Legacy percentage model.** This document preserves the implementation and
+> audit contract for assignments committed under `legacy_percentage`. It is not
+> the commercial model for new activity after the founder's 2026-07-28
+> subscription-v1 decision. Do not delete it or use it to enroll a new
+> organization. See `docs/SUBSCRIPTION_BILLING_V1.md`.
+
 Generated 2026-07-24 by a 9-agent pass: four architecture sections designed in parallel, each attacked by an independent adversarial reviewer, then assembled.
 
 Designed against the locked decisions: timber-specific; load value = flat host-stated driver pay; flat 5% platform fee billed to the host on top of driver pay on completed loads only, plus a monthly minimum; strictly non-custodial; no free host tier; no brokerage.

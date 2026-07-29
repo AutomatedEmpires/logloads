@@ -176,7 +176,13 @@ describe("founder demo operating states", () => {
     const state = createInMemoryDatabase()
 
     for (const [table, rows] of Object.entries(state)) {
-      const ids = (rows as Array<{ id: string }>).map((row) => row.id)
+      const ids = (
+        rows as Array<{ id?: string; code?: string; version?: number }>
+      ).map((row) =>
+        table === "billingPlanDefinitions"
+          ? `${row.code}:${row.version}`
+          : row.id
+      )
 
       expect(new Set(ids).size, table).toBe(ids.length)
     }

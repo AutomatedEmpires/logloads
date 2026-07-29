@@ -65,7 +65,16 @@ import {
   requiredCompletionEvidence
 } from "./haul-completion"
 import { createLoadPosting, parsePublishModes, provisionLoadCapacity } from "./loads"
-import { accruePlatformFee, type AccruePlatformFeeResult } from "./platform-fees"
+import {
+  accruePlatformFee,
+  assignmentUsesLegacyPercentageBilling,
+  type AccruePlatformFeeResult
+} from "./platform-fees"
+import {
+  recordCompletedNetworkUsage,
+  resolveAssignmentBillingCommitment,
+  type RecordCompletedNetworkUsageResult
+} from "./subscription-billing"
 import {
   buildAssignmentRoutePack,
   findAssignmentRoutePack,
@@ -1115,6 +1124,16 @@ function finalizeCapacityAssignment(
   // the load, so the record is what was true AT ACCEPTANCE — a live lookup would
   // quietly rewrite history every time a credential was renewed or lapsed.
   const driverCredentials = acceptanceCredentialSummary(state, assignment.driverProfileId, timestamp)
+  const billingCommitment = resolveAssignmentBillingCommitment(
+    state,
+    {
+      acceptanceSource: options.source,
+      assignmentId: assignment.id,
+      haulerOrganizationId: equipmentCombination.organizationId,
+      hostOrganizationId: load.companyId
+    },
+    timestamp
+  )
   const offeredStatus = assignment.status === "requested"
     ? transitionAssignmentStatus("requested", "offered")
     : assignment.status
@@ -1122,6 +1141,11 @@ function finalizeCapacityAssignment(
   const acceptedAssignment = assignmentSchema.parse({
     ...assignment,
     assignedAt: timestamp,
+    billingCommittedAt: billingCommitment.committedAt,
+    billingModel: billingCommitment.billingModel,
+    billingPlanCodeAtCommitment: billingCommitment.planCode,
+    billingSubscriptionIdAtCommitment: billingCommitment.subscriptionId,
+    capacitySource: billingCommitment.capacitySource,
     directOfferId: options.directOfferId ?? assignment.directOfferId ?? null,
     status: acceptedStatus,
     termsSnapshot: {
@@ -1139,21 +1163,39 @@ function finalizeCapacityAssignment(
       estimatedTonsPerLoad: load.estimatedTonsPerLoad ?? null,
       fuelSurchargeCents: rate.fuelSurchargeCents,
       haulerOrganizationId: equipmentCombination?.organizationId ?? null,
-      hostFee: {
-        // The commercial obligation becomes active with accepted work. Actual
-        // provider cash collection remains a separate, founder-controlled gate.
-        collectionState: "accrues_monthly_in_arrears",
-        feeCents: null,
-        providerCollectionState: "feature_gated",
-        // Authoritative accepted-work rate. Accrual must read this exact value;
-        // the global rate is only for commitments made after a future change.
-        rateBps: PLATFORM_FEE_BPS,
-        proposedRateBps: PLATFORM_FEE_BPS
-      },
+      hostFee:
+        billingCommitment.billingModel === "legacy_percentage"
+          ? {
+              // Legacy-only obligation. Subscription-v1 never reads or accrues
+              // this percentage ledger.
+              collectionState: "accrues_monthly_in_arrears",
+              feeCents: null,
+              providerCollectionState: "feature_gated",
+              rateBps: PLATFORM_FEE_BPS,
+              proposedRateBps: PLATFORM_FEE_BPS
+            }
+          : {
+              collectionState: "not_applicable_subscription_v1",
+              legacyOnly: true,
+              rateBps: null
+            },
       hostOrganizationId: load.companyId,
       loadPostingId: load.id,
       loadVersion: load.updatedAt,
       paymentMode: "off_platform",
+      subscriptionBilling: {
+        baseMonthlyPriceCents:
+          billingCommitment.baseMonthlyPriceSnapshotCents,
+        billingModel: billingCommitment.billingModel,
+        capacitySource: billingCommitment.capacitySource,
+        includedAllowance: billingCommitment.includedAllowanceSnapshot,
+        includesDispatchProCapabilities:
+          billingCommitment.includesDispatchProCapabilitiesSnapshot,
+        overageRateCents: billingCommitment.overageRateSnapshotCents,
+        planCode: billingCommitment.planCode,
+        planVersion: billingCommitment.planSnapshot?.version ?? null,
+        subscriptionId: billingCommitment.subscriptionId
+      },
       rateBasis: rate.rateType,
       rateId: rate.id
     },
@@ -2071,7 +2113,12 @@ export function recordPreTripInspection(
 export function progressTripStatus(
   state: LogLoadsDatabaseState,
   input: ProgressTripStatusInput
-): { changed: boolean; trip: TripV2; event: TripEvent | null } {
+): {
+  changed: boolean
+  trip: TripV2
+  event: TripEvent | null
+  usage: RecordCompletedNetworkUsageResult | null
+} {
   const context = getContextForInput(state, input)
   assertOrganizationAction(context, "progress_trip")
 
@@ -2095,7 +2142,11 @@ export function progressTripStatus(
   // authorization and participation have been proven, an exact completed
   // retry is a no-op: never double-count capacity or duplicate history.
   if (trip.status === "completed" && input.nextStatus === "completed") {
-    return { changed: false, event: null, trip }
+    const usage = recordCompletedNetworkUsage(
+      state,
+      { actorUserId: context.actorUserId, assignmentId: assignment.id }
+    )
+    return { changed: false, event: null, trip, usage }
   }
 
   // Cancelling a trip cancels the booking, so it demands the same authority
@@ -2219,7 +2270,16 @@ export function progressTripStatus(
     nextStatus
   })
 
-  return { changed: true, event, trip: updatedTrip }
+  const usage =
+    nextStatus === "completed"
+      ? recordCompletedNetworkUsage(
+          state,
+          { actorUserId: context.actorUserId, assignmentId: assignment.id },
+          timestamp
+        )
+      : null
+
+  return { changed: true, event, trip: updatedTrip, usage }
 }
 
 /**
@@ -2363,7 +2423,7 @@ export interface SettleCompletionInput {
 export function settleHaulCompletion(
   state: LogLoadsDatabaseState,
   input: SettleCompletionInput & { decision: "confirm" | "dispute" }
-): { trip: TripV2 } {
+): { trip: TripV2; usage: RecordCompletedNetworkUsageResult | null } {
   const context = getContextForInput(state, input)
   assertOrganizationAction(context, "assign_capacity")
 
@@ -2431,7 +2491,16 @@ export function settleHaulCompletion(
     )
   }
 
-  return { trip: result.trip }
+  const usage =
+    input.decision === "confirm"
+      ? recordCompletedNetworkUsage(
+          state,
+          { actorUserId: context.actorUserId, assignmentId: assignment.id },
+          timestamp
+        )
+      : null
+
+  return { trip: result.trip, usage }
 }
 
 export interface DriverPaymentActionInput {
@@ -2524,7 +2593,7 @@ export function confirmDriverPaymentReceived(
   assignment: Assignment
   changed: boolean
   matchesExpected: boolean
-  platformFeeOutcome: AccruePlatformFeeResult["outcome"] | "error"
+  platformFeeOutcome: AccruePlatformFeeResult["outcome"] | "error" | "not_applicable"
   receivedPay: { amountCents: number; currency: string }
 } {
   const context = getContextForInput(state, input)
@@ -2597,19 +2666,25 @@ export function confirmDriverPaymentReceived(
   let fee: AccruePlatformFeeResult | null = null
   let feeFailure: string | null = null
 
-  try {
-    fee = accruePlatformFee(
-      state,
-      { actorUserId: context.actorUserId, assignmentId: assignment.id },
-      updated.driverPaymentReceivedAt ?? timestamp
-    )
-  } catch (error) {
-    // Payment receipt is an operating fact between host and driver. A broken
-    // billing ledger must be repaired separately and must never erase that fact.
-    feeFailure = (
-      error instanceof Error ? error.message : "Unknown platform-fee accrual failure"
-    ).slice(0, 300)
+  if (assignmentUsesLegacyPercentageBilling(updated)) {
+    try {
+      fee = accruePlatformFee(
+        state,
+        { actorUserId: context.actorUserId, assignmentId: assignment.id },
+        updated.driverPaymentReceivedAt ?? timestamp
+      )
+    } catch (error) {
+      // Payment receipt is an operating fact between host and driver. A broken
+      // legacy ledger must be repaired separately and must never erase that fact.
+      feeFailure = (
+        error instanceof Error ? error.message : "Unknown platform-fee accrual failure"
+      ).slice(0, 300)
+    }
   }
+  const platformFeeOutcome =
+    assignmentUsesLegacyPercentageBilling(updated)
+      ? fee?.outcome ?? "error"
+      : "not_applicable"
 
   // A retry has changed=false. Keep this outside the receipt-notification block
   // so a persistently unbillable completed load leaves a trace on every failed
@@ -2633,7 +2708,7 @@ export function confirmDriverPaymentReceived(
       matchesExpected,
       platformFeeEventId:
         fee?.outcome === "accrued" || fee?.outcome === "already_accrued" ? fee.event.id : null,
-      platformFeeOutcome: fee?.outcome ?? "error"
+      platformFeeOutcome
     })
 
     if (assignment.driverPaymentSentByUserId) {
@@ -2655,7 +2730,7 @@ export function confirmDriverPaymentReceived(
     assignment: updated,
     changed,
     matchesExpected,
-    platformFeeOutcome: fee?.outcome ?? "error",
+    platformFeeOutcome,
     receivedPay
   }
 }

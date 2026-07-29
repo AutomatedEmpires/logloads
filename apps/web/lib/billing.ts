@@ -22,16 +22,24 @@ import type { LogLoadsServices } from "@logloads/services"
 import Stripe from "stripe"
 
 import type { PlanProduct } from "./plans"
+import {
+  classifyStripeBillingObject,
+  stripePublishableModeProblem,
+  stripeRuntimeModeProblem,
+  STRIPE_API_VERSION,
+  subscriptionStatusDecision,
+  type StripeBillingObjectClassification
+} from "./subscription-stripe"
 
 /**
  * Everything LogLoads does with Stripe, and nothing else.
  *
- * WHAT IS CHARGED HERE. Two unrelated things. Dispatch Pro is a $499/mo software
- * subscription for fleets. The platform fee is 5% of the driver pay a host states,
- * charged to the HOST, on top, on completed loads only, and billed monthly in
- * arrears. They are kept apart deliberately: a subscription webhook must never be
- * able to reach a per-load charge, so they share this file only for the Stripe
- * plumbing and touch different rows.
+ * WHAT IS CHARGED HERE. New customers use the frozen subscription catalog:
+ * Dispatch Pro is $499/mo, while Network agreements combine an accepted base
+ * price with completed-Network usage above the included allowance. There is no
+ * posting fee. The historical percentage ledger below is LEGACY ONLY: it remains
+ * readable and collectible solely for obligations accepted under those original
+ * terms. The models share Stripe plumbing but use different rows and markers.
  *
  * WHAT IS NEVER CHARGED HERE. Driver pay. LogLoads is non-custodial: driver money
  * moves host → driver directly and off-platform, and nothing in this file holds,
@@ -54,6 +62,7 @@ import type { PlanProduct } from "./plans"
 // ── Result shapes ─────────────────────────────────────────────────────────────
 
 export type BillingUnavailableReason =
+  | "stripe_mode_invalid"
   | "stripe_secret_missing"
   | "stripe_publishable_key_missing"
   | "stripe_webhook_secret_missing"
@@ -90,6 +99,8 @@ export type BillingResult<T> = BillingOk<T> | BillingRefused | BillingUnavailabl
  * host which environment variable is unset tells them nothing they can act on.
  */
 const UNAVAILABLE_MESSAGES: Record<BillingUnavailableReason, string> = {
+  stripe_mode_invalid:
+    "Billing provider mode verification failed. Nothing has been charged.",
   stripe_publishable_key_missing:
     "Card setup is not activated for this environment yet. Nothing has been charged.",
   stripe_secret_missing: "Billing is not activated for this environment. Nothing has been charged.",
@@ -127,20 +138,34 @@ export interface StripePaymentMethodFacts {
 }
 
 export interface StripeInvoiceFacts {
+  amountDueCents: number
+  amountPaidCents: number
+  amountRemainingCents: number
+  endingBalanceCents: number
   id: string
   status: string | null
   paid: boolean
+  startingBalanceCents: number
+  totalCents: number
 }
 
 export interface StripeProviderInvoiceFacts extends StripeInvoiceFacts {
   currency: string
   customerId: string | null
-  totalCents: number
 }
 
 export interface StripeSubscriptionFacts {
+  billingCycleAnchor?: string
+  cancelAtPeriodEnd?: boolean
+  currentPeriodStartsAt?: string | null
   id: string
+  livemode?: boolean
+  metadata?: Record<string, string>
+  priceId?: string | null
+  scheduleId?: string | null
   status: string
+  stripeCustomerId?: string | null
+  testClockId?: string | null
   currentPeriodEndsAt: string | null
 }
 
@@ -164,6 +189,7 @@ export interface StripeBillingEvent {
   id: string
   type: string
   createdAt: number
+  livemode: boolean
   object: Record<string, unknown>
   /** Stripe's `previous_attributes`: what the object looked like before. */
   previousAttributes: Record<string, unknown> | null
@@ -172,14 +198,18 @@ export interface StripeBillingEvent {
 export interface StripeBillingPort {
   constructWebhookEvent(payload: string, signature: string): StripeBillingEvent
   createBillingPortalSession(input: {
+    configurationId?: string
     customerId: string
     returnUrl: string
   }): Promise<StripePortalSessionFacts>
   createCheckoutSession(input: {
     cancelUrl: string
+    customerId?: string
+    idempotencyKey?: string
     metadata: Record<string, string>
     organizationId: string
     priceId: string
+    subscriptionMetadata?: Record<string, string>
     successUrl: string
   }): Promise<StripeCheckoutSessionFacts>
   createCustomer(input: {
@@ -223,6 +253,7 @@ export interface StripeBillingPort {
     paymentMethodId: string
     stripeInvoiceId: string
   }): Promise<StripeInvoiceFacts>
+  retrieveCustomerBalance(customerId: string): Promise<number>
   retrievePaymentMethod(paymentMethodId: string): Promise<StripePaymentMethodFacts>
   retrieveSubscription(subscriptionId: string): Promise<StripeSubscriptionFacts>
   setDefaultPaymentMethod(input: { customerId: string; paymentMethodId: string }): Promise<void>
@@ -240,8 +271,34 @@ function subscriptionPeriodEnd(subscription: Stripe.Subscription): string | null
   return periodEnd > 0 ? new Date(periodEnd * 1000).toISOString() : null
 }
 
+function subscriptionPeriodStart(subscription: Stripe.Subscription): string | null {
+  const periodStarts = subscription.items.data.map((item) => item.current_period_start)
+
+  if (periodStarts.length === 0 || new Set(periodStarts).size !== 1) {
+    return null
+  }
+
+  return new Date(periodStarts[0]! * 1000).toISOString()
+}
+
+function stripeObjectId(
+  value: string | { id: string } | null | undefined
+): string | null {
+  return typeof value === "string" ? value : value?.id ?? null
+}
+
 function invoiceFacts(invoice: Stripe.Invoice): StripeInvoiceFacts {
-  return { id: invoice.id, paid: invoice.status === "paid", status: invoice.status ?? null }
+  return {
+    amountDueCents: invoice.amount_due,
+    amountPaidCents: invoice.amount_paid,
+    amountRemainingCents: invoice.amount_remaining,
+    endingBalanceCents: invoice.ending_balance ?? 0,
+    id: invoice.id,
+    paid: invoice.status === "paid",
+    startingBalanceCents: invoice.starting_balance,
+    status: invoice.status ?? null,
+    totalCents: invoice.total
+  }
 }
 
 function providerInvoiceFacts(invoice: Stripe.Invoice): StripeProviderInvoiceFacts {
@@ -262,7 +319,7 @@ function providerInvoiceFacts(invoice: Stripe.Invoice): StripeProviderInvoiceFac
 }
 
 function buildStripePort(secretKey: string, webhookSecret: string | null): StripeBillingPort {
-  const stripe = new Stripe(secretKey)
+  const stripe = new Stripe(secretKey, { apiVersion: STRIPE_API_VERSION })
 
   return {
     constructWebhookEvent(payload, signature) {
@@ -278,6 +335,7 @@ function buildStripePort(secretKey: string, webhookSecret: string | null): Strip
       return {
         createdAt: event.created,
         id: event.id,
+        livemode: event.livemode,
         object: event.data.object as unknown as Record<string, unknown>,
         previousAttributes:
           (event.data.previous_attributes as Record<string, unknown> | undefined) ?? null,
@@ -286,6 +344,7 @@ function buildStripePort(secretKey: string, webhookSecret: string | null): Strip
     },
     async createBillingPortalSession(input) {
       const session = await stripe.billingPortal.sessions.create({
+        configuration: input.configurationId,
         customer: input.customerId,
         return_url: input.returnUrl
       })
@@ -293,14 +352,23 @@ function buildStripePort(secretKey: string, webhookSecret: string | null): Strip
       return { url: session.url }
     },
     async createCheckoutSession(input) {
-      const session = await stripe.checkout.sessions.create({
+      const params: Stripe.Checkout.SessionCreateParams = {
         cancel_url: input.cancelUrl,
         client_reference_id: input.organizationId,
+        customer: input.customerId,
         line_items: [{ price: input.priceId, quantity: 1 }],
         metadata: input.metadata,
         mode: "subscription",
+        subscription_data: {
+          metadata: input.subscriptionMetadata ?? input.metadata
+        },
         success_url: input.successUrl
-      })
+      }
+      const session = input.idempotencyKey
+        ? await stripe.checkout.sessions.create(params, {
+            idempotencyKey: input.idempotencyKey
+          })
+        : await stripe.checkout.sessions.create(params)
 
       return { id: session.id, url: session.url }
     },
@@ -398,6 +466,15 @@ function buildStripePort(secretKey: string, webhookSecret: string | null): Strip
 
       return invoiceFacts(invoice)
     },
+    async retrieveCustomerBalance(customerId) {
+      const customer = await stripe.customers.retrieve(customerId)
+
+      if (customer.deleted) {
+        throw new Error(`Stripe customer ${customerId} is deleted`)
+      }
+
+      return customer.balance
+    },
     async retrievePaymentMethod(paymentMethodId) {
       const method = await stripe.paymentMethods.retrieve(paymentMethodId)
 
@@ -409,11 +486,22 @@ function buildStripePort(secretKey: string, webhookSecret: string | null): Strip
     },
     async retrieveSubscription(subscriptionId) {
       const subscription = await stripe.subscriptions.retrieve(subscriptionId)
+      const onlyItem =
+        subscription.items.data.length === 1 ? subscription.items.data[0] : undefined
 
       return {
+        billingCycleAnchor: new Date(subscription.billing_cycle_anchor * 1000).toISOString(),
+        cancelAtPeriodEnd: subscription.cancel_at_period_end,
         currentPeriodEndsAt: subscriptionPeriodEnd(subscription),
+        currentPeriodStartsAt: subscriptionPeriodStart(subscription),
         id: subscription.id,
-        status: subscription.status
+        livemode: subscription.livemode,
+        metadata: { ...subscription.metadata },
+        priceId: onlyItem?.price.id ?? null,
+        scheduleId: stripeObjectId(subscription.schedule),
+        status: subscription.status,
+        stripeCustomerId: stripeObjectId(subscription.customer),
+        testClockId: stripeObjectId(subscription.test_clock)
       }
     },
     async setDefaultPaymentMethod(input) {
@@ -438,6 +526,10 @@ export function resolveStripeBilling(
     return billingUnavailable("stripe_secret_missing")
   }
 
+  if (stripeRuntimeModeProblem(env)) {
+    return billingUnavailable("stripe_mode_invalid")
+  }
+
   return billingOk(buildStripePort(secretKey, env.STRIPE_WEBHOOK_SECRET ?? null))
 }
 
@@ -453,6 +545,10 @@ export function resolveStripeWebhook(
 ): BillingResult<StripeBillingPort> {
   if (!env.STRIPE_SECRET_KEY) {
     return billingUnavailable("stripe_secret_missing")
+  }
+
+  if (stripeRuntimeModeProblem(env)) {
+    return billingUnavailable("stripe_mode_invalid")
   }
 
   if (!env.STRIPE_WEBHOOK_SECRET) {
@@ -479,6 +575,10 @@ export function stripePublishableKey(env: BillingEnvironment = process.env): Bil
 
   if (!key) {
     return billingUnavailable("stripe_publishable_key_missing")
+  }
+
+  if (stripePublishableModeProblem(key, env)) {
+    return billingUnavailable("stripe_mode_invalid")
   }
 
   return billingOk(key)
@@ -1074,6 +1174,7 @@ type HostInvoiceChargePlan =
     }
   | {
       kind: "retry_payment"
+      customerId: string
       organizationId: string
       paymentMethodId: string
       paymentProfileLastFailureAt: string | null
@@ -1097,6 +1198,7 @@ function planHostPaymentProfile(
 ):
   | Pick<
       PaymentProfilePlan,
+      | "customerId"
       | "paymentMethodId"
       | "paymentProfileLastFailureAt"
       | "paymentProfileLastFailureReason"
@@ -1122,6 +1224,7 @@ function planHostPaymentProfile(
   }
 
   return {
+    customerId: profile.stripeCustomerId,
     paymentMethodId: profile.defaultPaymentMethodId,
     paymentProfileLastFailureAt: profile.lastFailureAt ?? null,
     paymentProfileLastFailureReason: profile.lastFailureReason ?? null,
@@ -1256,7 +1359,6 @@ export function planHostInvoiceCharge(
   const period = billingPeriodLabel(invoice.periodStart)
 
   return {
-    customerId: profile.stripeCustomerId,
     // One invoice can contain work accepted under different frozen rates. The
     // amount and ledger rows are authoritative; provider copy must not claim
     // that every line was earned at today's headline rate.
@@ -1271,6 +1373,50 @@ export function planHostInvoiceCharge(
     ...paymentProfile,
     subtotalCents
   }
+}
+
+function legacyInvoiceSettlementProblem(
+  invoice: StripeInvoiceFacts,
+  expectedTotalCents: number
+): string | null {
+  if (
+    !Number.isSafeInteger(invoice.totalCents) ||
+    invoice.totalCents !== expectedTotalCents ||
+    invoice.amountDueCents !== expectedTotalCents ||
+    !Number.isSafeInteger(invoice.amountPaidCents) ||
+    invoice.amountPaidCents < 0 ||
+    !Number.isSafeInteger(invoice.amountRemainingCents) ||
+    invoice.amountRemainingCents < 0 ||
+    invoice.amountPaidCents + invoice.amountRemainingCents !==
+      invoice.amountDueCents ||
+    invoice.startingBalanceCents !== 0 ||
+    invoice.endingBalanceCents !== 0
+  ) {
+    return "Stripe invoice amount or customer-balance facts do not match the frozen legacy bill"
+  }
+
+  if (
+    invoice.paid &&
+    (
+      invoice.amountPaidCents !== expectedTotalCents ||
+      invoice.amountRemainingCents !== 0
+    )
+  ) {
+    return "Stripe marked the legacy bill paid without collecting its exact frozen total"
+  }
+
+  return null
+}
+
+async function legacyCustomerBalanceProblem(
+  port: Pick<StripeBillingPort, "retrieveCustomerBalance">,
+  customerId: string
+): Promise<string | null> {
+  const balanceCents = await port.retrieveCustomerBalance(customerId)
+
+  return Number.isSafeInteger(balanceCents) && balanceCents === 0
+    ? null
+    : "Stripe customer balance must be exactly zero before legacy collection"
 }
 
 /**
@@ -1310,6 +1456,15 @@ export async function chargeHostInvoice(input: {
   }
 
   if (plan.kind === "retry_payment") {
+    const balanceProblem = await legacyCustomerBalanceProblem(
+      input.port,
+      plan.customerId
+    )
+
+    if (balanceProblem) {
+      return billingRefused(balanceProblem)
+    }
+
     const attemptedAt = now()
     const paid = await input.port.payInvoice({
       // A new attempt key is intentional here. Reusing the original declined
@@ -1323,6 +1478,14 @@ export async function chargeHostInvoice(input: {
       paymentMethodId: plan.paymentMethodId,
       stripeInvoiceId: plan.stripeInvoiceId
     })
+    const settlementProblem = legacyInvoiceSettlementProblem(
+      paid,
+      plan.subtotalCents
+    )
+
+    if (settlementProblem) {
+      return billingRefused(settlementProblem)
+    }
 
     return input.state.mutate((draft) => {
       const current = findHostInvoice(draft.state, input.invoiceId)
@@ -1369,7 +1532,10 @@ export async function chargeHostInvoice(input: {
     if (
       recovered.customerId !== plan.customerId ||
       recovered.currency !== CHARGE_CURRENCY.toUpperCase() ||
-      recovered.totalCents !== plan.subtotalCents
+      legacyInvoiceSettlementProblem(
+        recovered,
+        plan.subtotalCents
+      )
     ) {
       return billingRefused(
         `Stripe invoice ${recovered.id} does not match this LogLoads bill's customer, currency, and total`
@@ -1422,6 +1588,15 @@ export async function chargeHostInvoice(input: {
       })
     }
 
+    const balanceProblem = await legacyCustomerBalanceProblem(
+      input.port,
+      plan.customerId
+    )
+
+    if (balanceProblem) {
+      return billingRefused(balanceProblem)
+    }
+
     const paid = await input.port.payInvoice({
       idempotencyKey: hostInvoiceIdempotencyKey(
         input.invoiceId,
@@ -1430,6 +1605,14 @@ export async function chargeHostInvoice(input: {
       paymentMethodId: plan.paymentMethodId,
       stripeInvoiceId: recovered.id
     })
+    const settlementProblem = legacyInvoiceSettlementProblem(
+      paid,
+      plan.subtotalCents
+    )
+
+    if (settlementProblem) {
+      return billingRefused(settlementProblem)
+    }
     const settledAt = now()
 
     return input.state.mutate((draft) => {
@@ -1463,6 +1646,15 @@ export async function chargeHostInvoice(input: {
     })
   }
 
+  const balanceProblem = await legacyCustomerBalanceProblem(
+    input.port,
+    plan.customerId
+  )
+
+  if (balanceProblem) {
+    return billingRefused(balanceProblem)
+  }
+
   const amount = formatMoney(createMoney(plan.subtotalCents))
   const created = await input.port.createInvoice({
     customerId: plan.customerId,
@@ -1479,10 +1671,18 @@ export async function chargeHostInvoice(input: {
     stripeInvoiceId: created.id
   })
 
-  await input.port.finalizeInvoice({
+  const finalized = await input.port.finalizeInvoice({
     idempotencyKey: hostInvoiceIdempotencyKey(input.invoiceId, "finalize"),
     stripeInvoiceId: created.id
   })
+  const finalizationProblem = legacyInvoiceSettlementProblem(
+    finalized,
+    plan.subtotalCents
+  )
+
+  if (finalizationProblem) {
+    return billingRefused(finalizationProblem)
+  }
 
   // Persist the provider invoice BEFORE attempting collection. A normal card
   // decline rejects `payInvoice`; if the binding lived after that call, the next
@@ -1496,11 +1696,26 @@ export async function chargeHostInvoice(input: {
     })
   )
 
+  const prePaymentBalanceProblem =
+    await legacyCustomerBalanceProblem(input.port, plan.customerId)
+
+  if (prePaymentBalanceProblem) {
+    return billingRefused(prePaymentBalanceProblem)
+  }
+
   const paid = await input.port.payInvoice({
     idempotencyKey: hostInvoiceIdempotencyKey(input.invoiceId, "pay"),
     paymentMethodId: plan.paymentMethodId,
     stripeInvoiceId: created.id
   })
+  const settlementProblem = legacyInvoiceSettlementProblem(
+    paid,
+    plan.subtotalCents
+  )
+
+  if (settlementProblem) {
+    return billingRefused(settlementProblem)
+  }
 
   const at = now()
 
@@ -1661,7 +1876,7 @@ const CHECKOUT_PLANS: Record<PlanProduct, CheckoutPlan> = {
   landing_operations: {
     kind: "not_purchasable",
     message:
-      "There is no host subscription to buy. LogLoads charges 5% of the driver pay you state, on completed loads only, billed monthly to the card on file — and never takes it out of the driver's pay."
+      "Network plans are enrolled with our team. There is no posting fee: billing follows the accepted plan base plus completed LogLoads Network usage above its included allowance. Existing legacy obligations remain under their original accepted terms."
   }
 }
 
@@ -1742,10 +1957,36 @@ export interface BillingEventResult {
   status: BillingEventStatus
 }
 
+export interface SubscriptionBillingEventHooks {
+  checkoutCompleted(input: {
+    event: StripeBillingEvent
+    subscription: StripeSubscriptionFacts
+  }): Promise<BillingEventResult>
+  invoicePayment(input: {
+    classification: Exclude<
+      StripeBillingObjectClassification,
+      { kind: "none" | "legacy" | "conflict" }
+    >
+    event: StripeBillingEvent
+    outcome: "failed" | "succeeded"
+    subscription: StripeSubscriptionFacts | null
+  }): Promise<BillingEventResult>
+  internalRefund?(input: {
+    classification: Extract<StripeBillingObjectClassification, { kind: "internal_smoke" }>
+    event: StripeBillingEvent
+  }): Promise<BillingEventResult>
+  subscriptionChanged(input: {
+    decision: NonNullable<ReturnType<typeof subscriptionStatusDecision>>
+    event: StripeBillingEvent
+    subscription: StripeSubscriptionFacts
+  }): Promise<BillingEventResult>
+}
+
 export interface BillingEventDeps {
   now?: () => string
   port: StripeBillingPort
   state: BillingStateAccess
+  subscriptionEvents?: SubscriptionBillingEventHooks
 }
 
 function eventResult(
@@ -1889,7 +2130,7 @@ function newerHostPaymentEventApplied(
   })
 }
 
-function recordBillingEvent(
+export function recordBillingEvent(
   state: LogLoadsDatabaseState,
   input: {
     action: string
@@ -1923,31 +2164,14 @@ function recordBillingEvent(
  * The plan status a subscription in a given Stripe state maps to.
  *
  * A deletion is a cancellation regardless of what the object says, because the
- * event is the fact. Anything not explicitly failing, cancelled or trialing is
- * active: Stripe adds statuses, and an unmapped one must not silently downgrade a
- * paying fleet.
+ * event is the fact. Unknown or newly introduced provider states return null:
+ * they must remain retryable instead of silently granting paid access.
  */
 export function entitlementStatusForSubscription(
   eventType: string,
   subscriptionStatus: string
-): "trialing" | "active" | "past_due" | "cancelled" {
-  if (eventType === "customer.subscription.deleted") {
-    return "cancelled"
-  }
-
-  if (subscriptionStatus === "past_due" || subscriptionStatus === "unpaid") {
-    return "past_due"
-  }
-
-  if (subscriptionStatus === "canceled") {
-    return "cancelled"
-  }
-
-  if (subscriptionStatus === "trialing") {
-    return "trialing"
-  }
-
-  return "active"
+): "trialing" | "active" | "past_due" | "cancelled" | null {
+  return subscriptionStatusDecision(subscriptionStatus, eventType)?.entitlementStatus ?? null
 }
 
 /**
@@ -1956,7 +2180,7 @@ export function entitlementStatusForSubscription(
  * Every handler goes through here so no handler can forget it, and so the check
  * and the write cannot be separated by a compare-and-swap replay.
  */
-async function applyBillingEvent(
+export async function applyBillingEvent(
   deps: BillingEventDeps,
   event: StripeBillingEvent,
   apply: (draft: BillingDraft, at: string) => BillingEventResult
@@ -2175,10 +2399,130 @@ function unboundHostInvoiceEventProblem(
   return null
 }
 
+function legacyInvoiceEventSettlementProblem(
+  invoice: HostInvoice,
+  event: StripeBillingEvent,
+  outcome: "failed" | "succeeded"
+): string | null {
+  const integer = (key: string): number | null => {
+    const value = event.object[key]
+
+    return Number.isSafeInteger(value) ? (value as number) : null
+  }
+  const totalCents = integer("total")
+  const amountDueCents = integer("amount_due")
+  const amountPaidCents = integer("amount_paid")
+  const amountRemainingCents = integer("amount_remaining")
+  const startingBalanceCents = integer("starting_balance")
+  const endingBalanceCents = integer("ending_balance")
+  const status = readString(event.object, "status")
+
+  if (
+    totalCents !== invoice.subtotalCents ||
+    amountDueCents !== invoice.subtotalCents ||
+    amountPaidCents === null ||
+    amountPaidCents < 0 ||
+    amountRemainingCents === null ||
+    amountRemainingCents < 0 ||
+    amountPaidCents + amountRemainingCents !== amountDueCents ||
+    startingBalanceCents !== 0 ||
+    endingBalanceCents !== 0
+  ) {
+    return "Stripe legacy invoice amount or customer-balance facts do not match the frozen bill"
+  }
+
+  if (
+    outcome === "succeeded" &&
+    (
+      status !== "paid" ||
+      amountPaidCents !== invoice.subtotalCents ||
+      amountRemainingCents !== 0
+    )
+  ) {
+    return "Stripe reported legacy payment success without exact card collection"
+  }
+
+  if (outcome === "failed" && status === "paid") {
+    return "Stripe reported legacy payment failure for a paid invoice"
+  }
+
+  return null
+}
+
+async function handleNonLegacyInvoicePayment(
+  event: StripeBillingEvent,
+  deps: BillingEventDeps,
+  outcome: "failed" | "succeeded"
+): Promise<BillingEventResult | null> {
+  const classification = classifyStripeBillingObject(event.object)
+
+  if (classification.kind === "conflict") {
+    return eventResult(
+      event,
+      "unresolved",
+      `Stripe invoice carries conflicting billing markers: ${classification.markers.join(", ")}`
+    )
+  }
+
+  if (classification.kind === "none" || classification.kind === "legacy") {
+    return null
+  }
+
+  if (deps.subscriptionEvents) {
+    const subscription =
+      classification.kind === "subscription_base" && classification.stripeSubscriptionId
+        ? await deps.port.retrieveSubscription(classification.stripeSubscriptionId)
+        : null
+    const isNetworkBase =
+      classification.kind !== "subscription_base" ||
+      Boolean(classification.organizationSubscriptionId) ||
+      subscription?.metadata?.billingModel === "subscription_v1" ||
+      Boolean(subscription?.metadata?.organizationSubscriptionId)
+
+    if (!isNetworkBase) {
+      return eventResult(
+        event,
+        "ignored",
+        "Dispatch Pro base invoice is handled by subscription state"
+      )
+    }
+
+    return deps.subscriptionEvents.invoicePayment({
+      classification,
+      event,
+      outcome,
+      subscription
+    })
+  }
+
+  // A plain subscription reference is the existing Dispatch Pro invoice shape;
+  // its entitlement lifecycle is driven by subscription events. New Network and
+  // internal-test invoices carry an explicit canonical marker and may never be
+  // acknowledged before their ledger handler is available.
+  if (
+    classification.kind === "subscription_base" &&
+    !classification.organizationSubscriptionId
+  ) {
+    return eventResult(event, "ignored", "Dispatch Pro base invoice is handled by subscription state")
+  }
+
+  return eventResult(
+    event,
+    "unresolved",
+    "Subscription invoice handling is unavailable; Stripe should retry this event"
+  )
+}
+
 async function handleInvoicePaymentSucceeded(
   event: StripeBillingEvent,
   deps: BillingEventDeps
 ): Promise<BillingEventResult> {
+  const subscriptionResult = await handleNonLegacyInvoicePayment(event, deps, "succeeded")
+
+  if (subscriptionResult) {
+    return subscriptionResult
+  }
+
   return applyBillingEvent(deps, event, (draft, at) => {
     const resolved = resolveHostInvoiceForEvent(draft.state, event)
 
@@ -2200,6 +2544,15 @@ async function handleInvoicePaymentSucceeded(
 
     if (unboundProblem) {
       return eventResult(event, "unresolved", unboundProblem)
+    }
+    const settlementProblem = legacyInvoiceEventSettlementProblem(
+      resolved.invoice,
+      event,
+      "succeeded"
+    )
+
+    if (settlementProblem) {
+      return eventResult(event, "unresolved", settlementProblem)
     }
 
     if (resolved.stripeInvoiceId) {
@@ -2271,6 +2624,12 @@ async function handleInvoicePaymentFailed(
   event: StripeBillingEvent,
   deps: BillingEventDeps
 ): Promise<BillingEventResult> {
+  const subscriptionResult = await handleNonLegacyInvoicePayment(event, deps, "failed")
+
+  if (subscriptionResult) {
+    return subscriptionResult
+  }
+
   return applyBillingEvent(deps, event, (draft, at) => {
     const resolved = resolveHostInvoiceForEvent(draft.state, event)
 
@@ -2288,6 +2647,15 @@ async function handleInvoicePaymentFailed(
 
     if (unboundProblem) {
       return eventResult(event, "unresolved", unboundProblem)
+    }
+    const settlementProblem = legacyInvoiceEventSettlementProblem(
+      resolved.invoice,
+      event,
+      "failed"
+    )
+
+    if (settlementProblem) {
+      return eventResult(event, "unresolved", settlementProblem)
     }
 
     // The bill stays open. A declined attempt is not an uncollectible bill —
@@ -2351,12 +2719,78 @@ async function handleInvoicePaymentFailed(
   })
 }
 
+async function handleInternalRefund(
+  event: StripeBillingEvent,
+  deps: BillingEventDeps
+): Promise<BillingEventResult> {
+  const classification = classifyStripeBillingObject(event.object)
+
+  if (classification.kind === "conflict") {
+    return eventResult(
+      event,
+      "unresolved",
+      `Stripe refund carries conflicting billing markers: ${classification.markers.join(", ")}`
+    )
+  }
+
+  if (classification.kind !== "internal_smoke") {
+    return eventResult(event, "ignored", "Not a LogLoads internal billing verification refund")
+  }
+
+  if (!deps.subscriptionEvents?.internalRefund) {
+    return eventResult(
+      event,
+      "unresolved",
+      "Internal billing verification refund handling is unavailable"
+    )
+  }
+
+  return deps.subscriptionEvents.internalRefund({ classification, event })
+}
+
 async function handleCheckoutSessionCompleted(
   event: StripeBillingEvent,
   deps: BillingEventDeps
 ): Promise<BillingEventResult> {
   const organizationId = readMetadataValue(event.object, "organizationId")
   const product = readMetadataValue(event.object, "product")
+  const organizationSubscriptionId = readMetadataValue(
+    event.object,
+    "organizationSubscriptionId"
+  )
+  const billingModel = readMetadataValue(event.object, "billingModel")
+
+  if (organizationSubscriptionId || billingModel === "subscription_v1") {
+    const subscriptionId = readReferenceId(event.object, "subscription")
+
+    if (!subscriptionId) {
+      return eventResult(
+        event,
+        "unresolved",
+        "A Network checkout named no Stripe subscription"
+      )
+    }
+
+    const subscription = await deps.port.retrieveSubscription(subscriptionId)
+
+    if (!subscriptionStatusDecision(subscription.status)) {
+      return eventResult(
+        event,
+        "unresolved",
+        `Stripe returned unknown subscription status ${subscription.status}`
+      )
+    }
+
+    if (!deps.subscriptionEvents) {
+      return eventResult(
+        event,
+        "unresolved",
+        "Network subscription checkout handling is unavailable"
+      )
+    }
+
+    return deps.subscriptionEvents.checkoutCompleted({ event, subscription })
+  }
 
   if (product !== "fleet_operations") {
     return eventResult(event, "ignored", "Not a Dispatch Pro checkout")
@@ -2412,6 +2846,32 @@ async function handleSubscriptionChanged(
     return eventResult(event, "unresolved", "A subscription event had no subscription id")
   }
 
+  const subscription = await deps.port.retrieveSubscription(subscriptionId)
+  const decision = subscriptionStatusDecision(subscription.status, event.type)
+  const isNetworkSubscription =
+    subscription.metadata?.billingModel === "subscription_v1" ||
+    Boolean(subscription.metadata?.organizationSubscriptionId)
+
+  if (!decision) {
+    return eventResult(
+      event,
+      "unresolved",
+      `Stripe returned unknown subscription status ${subscription.status}`
+    )
+  }
+
+  if (isNetworkSubscription) {
+    if (!deps.subscriptionEvents) {
+      return eventResult(
+        event,
+        "unresolved",
+        `Network subscription ${subscriptionId} has no lifecycle handler`
+      )
+    }
+
+    return deps.subscriptionEvents.subscriptionChanged({ decision, event, subscription })
+  }
+
   const known = await deps.state.read((state) =>
     state.entitlements.some((candidate) => candidate.stripeSubscriptionId === subscriptionId)
   )
@@ -2427,8 +2887,6 @@ async function handleSubscriptionChanged(
     )
   }
 
-  const subscription = await deps.port.retrieveSubscription(subscriptionId)
-
   return applyBillingEvent(deps, event, (draft) => {
     const entitlement = draft.findEntitlementByStripeSubscription(subscriptionId)
 
@@ -2440,12 +2898,22 @@ async function handleSubscriptionChanged(
       )
     }
 
+    const entitlementStatus = entitlementStatusForSubscription(event.type, subscription.status)
+
+    if (!entitlementStatus) {
+      return eventResult(
+        event,
+        "unresolved",
+        `Stripe returned unknown subscription status ${subscription.status}`
+      )
+    }
+
     draft.applyBillingUpdate({
       currentPeriodEndsAt: subscription.currentPeriodEndsAt,
       eventId: event.id,
       organizationId: entitlement.organizationId,
       product: entitlement.product,
-      status: entitlementStatusForSubscription(event.type, subscription.status),
+      status: entitlementStatus,
       stripeSubscriptionId: subscriptionId
     })
 
@@ -2463,6 +2931,7 @@ const BILLING_EVENT_HANDLERS: Record<
   string,
   (event: StripeBillingEvent, deps: BillingEventDeps) => Promise<BillingEventResult>
 > = {
+  "charge.refunded": handleInternalRefund,
   "checkout.session.completed": handleCheckoutSessionCompleted,
   "customer.subscription.created": handleSubscriptionChanged,
   "customer.subscription.deleted": handleSubscriptionChanged,
@@ -2470,6 +2939,7 @@ const BILLING_EVENT_HANDLERS: Record<
   "invoice.payment_failed": handleInvoicePaymentFailed,
   "invoice.payment_succeeded": handleInvoicePaymentSucceeded,
   "payment_method.detached": handlePaymentMethodDetached,
+  "refund.updated": handleInternalRefund,
   "setup_intent.succeeded": handleSetupIntentSucceeded
 }
 

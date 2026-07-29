@@ -10,6 +10,10 @@ import {
 	stripePublishableKey
 } from "@/lib/billing"
 import { readState } from "@/lib/services"
+import {
+	resolveSubscriptionStripe,
+	verifyExpectedStripeAccount
+} from "@/lib/subscription-stripe"
 
 /**
  * The host's card on file, and the flow that attaches one.
@@ -19,8 +23,10 @@ import { readState } from "@/lib/services"
  * LogLoads only ever learns an id, a brand and four digits. There is deliberately
  * no field on this route that could carry a card number.
  *
- * The card is what the monthly platform fee is charged to, in arrears, on
- * completed loads only. It never moves driver pay.
+ * The card can fund LogLoads subscription base charges and completed-Network
+ * usage invoices, plus preserved legacy percentage invoices for assignments
+ * already bound to that model. It never receives, deducts or moves carrier or
+ * driver transportation compensation.
  */
 
 async function requireBillingManager() {
@@ -65,6 +71,21 @@ export async function POST() {
 			throw new ApiError(billing.message, 503, { "Retry-After": "5" })
 		}
 
+		const subscriptionStripe = resolveSubscriptionStripe(process.env)
+
+		if (!subscriptionStripe.ok) {
+			throw new ApiError("Stripe billing is not configured", 503, {
+				"Retry-After": "5"
+			})
+		}
+
+		try {
+			await verifyExpectedStripeAccount(subscriptionStripe.port, process.env)
+		} catch {
+			throw new ApiError("Stripe billing account verification failed", 503, {
+				"Retry-After": "5"
+			})
+		}
 		const publishableKey = stripePublishableKey()
 
 		if (!publishableKey.ok) {

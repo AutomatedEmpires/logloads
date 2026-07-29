@@ -879,7 +879,7 @@ describe("host onboarding", () => {
     expect(dispatcher?.contact.phone).toBe("555-9100")
   })
 
-  it("takes a brand-new host from sign-up to published work on records it made itself", () => {
+  it("lets a new host prepare owned records but blocks live work until explicit plan activation", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
 
     // This is the whole point of the slice, so it is asserted rather than
@@ -967,24 +967,33 @@ describe("host onboarding", () => {
       weatherNotes: null
     }
 
-    // REWRITTEN when the platform fee became real. This spec used to end at
-    // "rate, then publish", which is no longer true and must not keep passing as
-    // though it were: the fee is charged to the host's card, so an organization
-    // with no card on file cannot put work on the network. Attaching one is now
-    // part of onboarding, and it is asserted here rather than assumed.
-    expect(() => services.createLoadPostingWithPolicy(posting)).toThrow(/no payment card on file/)
+    // Workspace setup is free, but no legacy fee or paid plan is invented for a
+    // new host. A card reference alone cannot silently enroll it either.
+    expect(() => services.createLoadPostingWithPolicy(posting)).toThrow(
+      /operating plan is not active yet/
+    )
     expect(services.state.loadPostings.some((load) => load.title === posting.title)).toBe(false)
 
     attachCard(services, organizationId)
 
-    const load = services.createLoadPostingWithPolicy(posting)
-
-    expect(load.status).toBe("open")
-    expect(load.pickupLandingId).toBe(landing.id)
-    expect(load.driverPayCents).toBe(52_500)
-
-    // And the work is real capacity a driver can request, not an orphan record.
-    expect(services.state.truckSlots.some((slot) => slot.loadPostingId === load.id)).toBe(true)
+    expect(() => services.createLoadPostingWithPolicy(posting)).toThrow(
+      /operating plan is not active yet/
+    )
+    expect(
+      services.state.organizationBillingAccounts.find(
+        (account) => account.organizationId === organizationId
+      )
+    ).toMatchObject({
+      activationState: "unenrolled",
+      billingModel: null,
+      subscriptionId: null
+    })
+    expect(services.state.truckSlots.some(
+      (slot) =>
+        services.state.loadPostings.some(
+          (load) => load.id === slot.loadPostingId && load.title === posting.title
+        )
+    )).toBe(false)
   })
 
   it("does not invent a dispatch contact for a driver", () => {

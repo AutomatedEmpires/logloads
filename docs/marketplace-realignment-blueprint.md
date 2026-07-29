@@ -1,5 +1,11 @@
 # LogLoads — marketplace realignment blueprint
 
+> **Historical percentage-model research.** The founder's 2026-07-28
+> `subscription_v1` decision supersedes every percentage-pricing recommendation
+> in this document for new work. Preserve this evidence for
+> `legacy_percentage` assignments only. Current authority:
+> `docs/SUBSCRIPTION_BILLING_V1.md`, then `AGENTS.md`.
+
 Generated 2026-07-24 by a 7-agent research + audit pass (payment rails, pricing economics, four codebase audits, synthesis).
 Operating model: host-stated flat driver pay; platform fee charged ON TOP to the host on completed loads only; strictly non-custodial; no free host tier.
 
@@ -12,7 +18,9 @@ Operating model: host-stated flat driver pay; platform fee charged ON TOP to the
 > 3. **Phase 0 payment records must never store payout credentials.** Where this document mentions "ACH details", Zelle handles, or check-by-mail addresses, the stored contract is **method + status + optional non-sensitive instructions only** — never account or routing numbers, credentials, or TINs. A record-only MVP must not quietly become a store of financial PII.
 > 4. **Uniqueness cannot be enforced in SQL.** Where this document recommends a database constraint against duplicate fee events: the live runtime is a single JSON snapshot row and the SQL mirror is not the execution path. Idempotency and at-most-one-per-slot must be enforced in the zod/service/CAS mutation path; SQL constraints are defence in depth only.
 >
-> **Authority order:** `AGENTS.md` section 7 (decisions) → `docs/marketplace-implementation-spec.md` (design) → this document (evidence).
+> **Historical authority order:** `docs/marketplace-implementation-spec.md`
+> (legacy design) → this document (legacy evidence). For new work, use
+> `docs/SUBSCRIPTION_BILLING_V1.md`.
 >
 > What remains valuable here and is *not* superseded: the payment-rail research, the pricing economics reasoning, and the four codebase audits — complete, and the reason the decisions came out as they did.
 

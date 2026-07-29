@@ -1,8 +1,10 @@
 import type { MetadataRoute } from "next"
 
-const BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3002"
+import { resolvePublicAppUrl } from "@/lib/app-url"
 
 export default function robots(): MetadataRoute.Robots {
+  const baseUrl = resolvePublicAppUrl()
+
   return {
     rules: [
       {
@@ -21,6 +23,6 @@ export default function robots(): MetadataRoute.Robots {
         userAgent: "*"
       }
     ],
-    sitemap: `${BASE_URL}/sitemap.xml`
+    sitemap: `${baseUrl}/sitemap.xml`
   }
 }

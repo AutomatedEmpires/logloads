@@ -536,7 +536,7 @@ a { color: inherit; text-decoration: none; }
   padding: 12px;
   box-shadow: var(--shadow-3);
 }
-.mobile-tools__head { display: flex; align-items: start; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); padding: 2px 2px 12px; }
+.mobile-tools__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); padding: 2px 2px 12px; }
 .mobile-tools__head div { display: grid; gap: 2px; }
 .mobile-tools__head span { color: var(--muted); font-size: 0.75rem; font-weight: 900; text-transform: uppercase; }
 .mobile-tools__head button { min-height: var(--control-min); border: 0; background: transparent; color: var(--pine); font-weight: 900; }
