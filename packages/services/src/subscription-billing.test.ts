@@ -2903,6 +2903,221 @@ describe("provider ledgers, invoice composition, and billing email", () => {
     expect(state).toEqual(beforeRetry)
   })
 
+  it("credits the exact invoice displaced by an included usage reversal and bills its replacement once", () => {
+    const state = freshState()
+    const subscription = paidAndOperating(state)
+    const initialSummary = ensureBillingPeriodSummary(
+      state,
+      { subscriptionId: subscription.id, usageAt: PERIOD_START },
+      PERIOD_START
+    )
+    const movementIds = [
+      "92929292-9292-4292-8292-929292929101",
+      "92929292-9292-4292-8292-929292929102",
+      "92929292-9292-4292-8292-929292929103"
+    ]
+    const usageEventIds = movementIds.map((movementId) =>
+      networkUsageEventId(movementId)
+    )
+    const usageEvents = movementIds.map((movementId, index) =>
+      networkUsageEventSchema.parse({
+        assignmentId: `92929292-9292-4292-8292-92929292920${index + 1}`,
+        auditMetadata: {},
+        billingModel: initialSummary.billingModel,
+        billingPeriodSummaryId: initialSummary.id,
+        capacitySource: "logloads_network",
+        completionAt: `2026-08-20T15:0${index}:00.000Z`,
+        createdAt: `2026-08-20T15:0${index}:01.000Z`,
+        id: usageEventIds[index],
+        invoiceId: null,
+        internalBillingTest: initialSummary.internalBillingTest,
+        loadMovementId: movementId,
+        loadPostingId: "92929292-9292-4292-8292-929292929301",
+        organizationId: initialSummary.organizationId,
+        planCode: initialSummary.planCode,
+        reversalAdjustmentId: null,
+        status: "recorded",
+        unitCount: 1,
+        updatedAt: `2026-08-20T15:0${index}:01.000Z`
+      })
+    )
+    const firstAllocation = billingPeriodSummarySchema.parse({
+      ...initialSummary,
+      includedUnits: 1,
+      overageAmountCents: initialSummary.overageUnitPriceCents,
+      overageUnits: 1,
+      planSnapshot: {
+        ...initialSummary.planSnapshot,
+        includedNetworkLoadUnits: 1
+      },
+      usageEventIds: usageEventIds.slice(0, 2),
+      usedUnits: 2
+    })
+    state.billingPeriodSummaries = state.billingPeriodSummaries.map(
+      (candidate) =>
+        candidate.id === firstAllocation.id ? firstAllocation : candidate
+    )
+    state.networkUsageEvents.push(...usageEvents.slice(0, 2))
+
+    const firstOpened = openNetworkOverageInvoice(
+      state,
+      { billingPeriodSummaryId: firstAllocation.id },
+      PERIOD_END
+    )
+    if (!("invoice" in firstOpened)) {
+      throw new Error("Expected the displaced usage invoice")
+    }
+    expect(firstOpened.invoice.usageEventIds).toEqual([usageEventIds[1]])
+
+    state.networkUsageEvents.push(usageEvents[2]!)
+    const invoicingSummary = state.billingPeriodSummaries.find(
+      (candidate) => candidate.id === firstAllocation.id
+    )
+    if (!invoicingSummary) throw new Error("Expected the invoicing summary")
+    const replacementAllocation = billingPeriodSummarySchema.parse({
+      ...invoicingSummary,
+      overageAmountCents: 2 * initialSummary.overageUnitPriceCents,
+      overageUnits: 2,
+      updatedAt: "2026-09-03T16:00:30.000Z",
+      usageEventIds,
+      usedUnits: 3
+    })
+    state.billingPeriodSummaries = state.billingPeriodSummaries.map(
+      (candidate) =>
+        candidate.id === replacementAllocation.id
+          ? replacementAllocation
+          : candidate
+    )
+
+    const reversed = reverseNetworkUsage(
+      state,
+      {
+        actorUserId: ADMIN,
+        reason: "The first included movement was duplicated",
+        usageEventId: usageEventIds[0]!
+      },
+      "2026-09-03T16:01:00.000Z"
+    )
+    expect(reversed.summary).toMatchObject({
+      overageAmountCents: initialSummary.overageUnitPriceCents,
+      overageUnits: 1,
+      usedUnits: 2
+    })
+    expect(reversed.adjustment).toMatchObject({
+      amountDeltaCents: -initialSummary.overageUnitPriceCents,
+      invoiceId: firstOpened.invoice.id,
+      settlementIntent: "credit_note",
+      usageEventId: usageEventIds[0]
+    })
+
+    const beforeRetry = structuredClone(state)
+    const retry = reverseNetworkUsage(
+      state,
+      {
+        actorUserId: ADMIN,
+        reason: "The first included movement was duplicated",
+        usageEventId: usageEventIds[0]!
+      },
+      "2026-09-03T16:02:00.000Z"
+    )
+    expect(retry).toMatchObject({
+      adjustment: reversed.adjustment,
+      outcome: "already_reversed"
+    })
+    expect(state).toEqual(beforeRetry)
+
+    const replacementOpened = openNetworkOverageInvoice(
+      state,
+      { billingPeriodSummaryId: firstAllocation.id },
+      "2026-09-03T16:03:00.000Z"
+    )
+    if (!("invoice" in replacementOpened)) {
+      throw new Error("Expected a replacement overage invoice")
+    }
+    expect(replacementOpened.invoice).toMatchObject({
+      amountDueCents: initialSummary.overageUnitPriceCents,
+      sequence: 2,
+      usageEventIds: [usageEventIds[2]]
+    })
+    expect(
+      firstOpened.invoice.amountDueCents +
+        replacementOpened.invoice.amountDueCents +
+        reversed.adjustment.amountDeltaCents
+    ).toBe(initialSummary.overageUnitPriceCents)
+  })
+
+  it("keeps an uninvoiced displaced usage reversal in the recomputed ledger", () => {
+    const state = freshState()
+    const subscription = paidAndOperating(state)
+    const initialSummary = ensureBillingPeriodSummary(
+      state,
+      { subscriptionId: subscription.id, usageAt: PERIOD_START },
+      PERIOD_START
+    )
+    const movementIds = [
+      "93939393-9393-4393-8393-939393939101",
+      "93939393-9393-4393-8393-939393939102"
+    ]
+    const usageEventIds = movementIds.map((movementId) =>
+      networkUsageEventId(movementId)
+    )
+    const usageEvents = movementIds.map((movementId, index) =>
+      networkUsageEventSchema.parse({
+        assignmentId: `93939393-9393-4393-8393-93939393920${index + 1}`,
+        auditMetadata: {},
+        billingModel: initialSummary.billingModel,
+        billingPeriodSummaryId: initialSummary.id,
+        capacitySource: "logloads_network",
+        completionAt: `2026-08-20T15:0${index}:00.000Z`,
+        createdAt: `2026-08-20T15:0${index}:01.000Z`,
+        id: usageEventIds[index],
+        invoiceId: null,
+        internalBillingTest: initialSummary.internalBillingTest,
+        loadMovementId: movementId,
+        loadPostingId: "93939393-9393-4393-8393-939393939301",
+        organizationId: initialSummary.organizationId,
+        planCode: initialSummary.planCode,
+        reversalAdjustmentId: null,
+        status: "recorded",
+        unitCount: 1,
+        updatedAt: `2026-08-20T15:0${index}:01.000Z`
+      })
+    )
+    const allocated = billingPeriodSummarySchema.parse({
+      ...initialSummary,
+      includedUnits: 1,
+      overageAmountCents: initialSummary.overageUnitPriceCents,
+      overageUnits: 1,
+      planSnapshot: {
+        ...initialSummary.planSnapshot,
+        includedNetworkLoadUnits: 1
+      },
+      usageEventIds,
+      usedUnits: 2
+    })
+    state.billingPeriodSummaries = state.billingPeriodSummaries.map(
+      (candidate) => candidate.id === allocated.id ? allocated : candidate
+    )
+    state.networkUsageEvents.push(...usageEvents)
+
+    const reversed = reverseNetworkUsage(
+      state,
+      {
+        actorUserId: ADMIN,
+        reason: "The included movement was never completed",
+        usageEventId: usageEventIds[0]!
+      },
+      "2026-08-20T16:00:00.000Z"
+    )
+
+    expect(reversed.adjustment).toMatchObject({
+      amountDeltaCents: -initialSummary.overageUnitPriceCents,
+      invoiceId: null,
+      settlementIntent: "usage_recomputed"
+    })
+    expect(state.networkOverageInvoices).toHaveLength(0)
+  })
+
   it("scopes adjustment idempotency to one actor action and preserves its frozen invoice target", () => {
     const state = freshState()
     const subscription = paidAndOperating(state)

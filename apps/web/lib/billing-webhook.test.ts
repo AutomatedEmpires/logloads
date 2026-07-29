@@ -81,7 +81,10 @@ import {
   type StripeBillingPort,
   type StripeSubscriptionFacts
 } from "./billing"
-import { internalSmokeRunId } from "./subscription-stripe"
+import {
+  internalSmokeRunId,
+  type CommercialInvoiceFacts
+} from "./subscription-stripe"
 
 const LOAD_POSTING_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccc91"
 const TRUCK_SLOT_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddd91"
@@ -529,6 +532,52 @@ function billingEvent(
     object: { ...invoiceDefaults, ...object },
     previousAttributes: null,
     type
+  }
+}
+
+function subscriptionBaseProviderInvoice(input: {
+  amountDueCents?: number
+  baseAmountCents: number
+  customerId: string
+  invoiceId: string
+  priceId: string
+  subscriptionId: string
+}): CommercialInvoiceFacts {
+  const amountDueCents = input.amountDueCents ?? input.baseAmountCents
+
+  return {
+    amountDueCents,
+    amountPaidCents: amountDueCents,
+    amountRemainingCents: 0,
+    attemptCount: 1,
+    currency: "USD",
+    customerId: input.customerId,
+    dueAt: null,
+    endingBalanceCents: 0,
+    hostedInvoiceUrl: `https://invoice.stripe.test/${input.invoiceId}`,
+    id: input.invoiceId,
+    lineItems: [
+      {
+        amountCents: input.baseAmountCents,
+        discountAmountCents: 0,
+        id: `il_${input.invoiceId.slice(3)}`,
+        metadata: {},
+        pretaxCreditAmountCents: 0,
+        priceId: input.priceId,
+        providerReference: null,
+        proration: false,
+        quantity: 1,
+        subscriptionId: input.subscriptionId,
+        subtotalCents: input.baseAmountCents
+      }
+    ],
+    livemode: false,
+    metadata: {},
+    nextPaymentAttemptAt: null,
+    paid: true,
+    startingBalanceCents: 0,
+    status: "paid",
+    totalCents: amountDueCents
   }
 }
 
@@ -1365,6 +1414,15 @@ describe("Network subscription provider events", () => {
     vi.stubEnv("LOGLOADS_SUBSCRIPTION_COLLECTION", "disabled")
     vi.stubEnv("LOGLOADS_SUBSCRIPTION_ALLOWED_ORGANIZATION_IDS", "")
     vi.stubEnv("LOGLOADS_DISPATCH_SELF_SERVE", "disabled")
+    mocks.retrieveSubscriptionInvoice.mockResolvedValue(
+      subscriptionBaseProviderInvoice({
+        baseAmountCents: 300_000,
+        customerId: fixture.customerId,
+        invoiceId: "in_networkbase",
+        priceId: "price_network_25",
+        subscriptionId: fixture.stripeSubscriptionId
+      })
+    )
 
     harness(fixture.state, {
       event: billingEvent(
@@ -1412,6 +1470,150 @@ describe("Network subscription provider events", () => {
     ])
     expect(fixture.state.hostInvoices).toEqual(legacyInvoicesBefore)
     expect(fixture.state.networkUsageEvents).toEqual(usageBefore)
+  })
+
+  it("refuses discounted, prorated, and offset base invoices before activation", async () => {
+    const variants = [
+      {
+        amountDueCents: 240_000,
+        id: "discounted",
+        mutate(invoice: CommercialInvoiceFacts): CommercialInvoiceFacts {
+          return {
+            ...invoice,
+            lineItems: invoice.lineItems.map((line) => ({
+              ...line,
+              discountAmountCents: 60_000
+            }))
+          }
+        }
+      },
+      {
+        amountDueCents: 300_000,
+        id: "prorated",
+        mutate(invoice: CommercialInvoiceFacts): CommercialInvoiceFacts {
+          return {
+            ...invoice,
+            lineItems: invoice.lineItems.map((line) => ({
+              ...line,
+              proration: true
+            }))
+          }
+        }
+      },
+      {
+        amountDueCents: 300_000,
+        id: "offset",
+        mutate(invoice: CommercialInvoiceFacts): CommercialInvoiceFacts {
+          const [baseLine] = invoice.lineItems
+          if (!baseLine) throw new Error("Expected the base invoice line")
+
+          return {
+            ...invoice,
+            lineItems: [
+              baseLine,
+              {
+                amountCents: 10_000,
+                discountAmountCents: 0,
+                id: "il_offset_debit",
+                metadata: {},
+                pretaxCreditAmountCents: 0,
+                priceId: null,
+                providerReference: "ii_offset_debit",
+                proration: false,
+                quantity: 1,
+                subscriptionId: null,
+                subtotalCents: 10_000
+              },
+              {
+                amountCents: -10_000,
+                discountAmountCents: 0,
+                id: "il_offset_credit",
+                metadata: {},
+                pretaxCreditAmountCents: 0,
+                priceId: null,
+                providerReference: "ii_offset_credit",
+                proration: false,
+                quantity: 1,
+                subscriptionId: null,
+                subtotalCents: -10_000
+              }
+            ]
+          }
+        }
+      }
+    ] as const
+
+    for (const variant of variants) {
+      const fixture = networkSubscriptionFixture()
+
+      harness(fixture.state, {
+        event: billingEvent(
+          "customer.subscription.created",
+          { id: fixture.stripeSubscriptionId },
+          { id: `evt_bind_${variant.id}` }
+        ),
+        subscriptionFacts: fixture.facts
+      })
+      expect((await POST(webhookRequest())).status).toBe(200)
+
+      const invoiceId = `in_network_${variant.id}`
+      const providerInvoice = subscriptionBaseProviderInvoice({
+        amountDueCents: variant.amountDueCents,
+        baseAmountCents: 300_000,
+        customerId: fixture.customerId,
+        invoiceId,
+        priceId: "price_network_25",
+        subscriptionId: fixture.stripeSubscriptionId
+      })
+      mocks.retrieveSubscriptionInvoice.mockResolvedValue(
+        variant.mutate(providerInvoice)
+      )
+      const eventId = `evt_network_${variant.id}_paid`
+
+      harness(fixture.state, {
+        event: billingEvent(
+          "invoice.payment_succeeded",
+          {
+            amount_due: variant.amountDueCents,
+            amount_remaining: 0,
+            attempt_count: 1,
+            currency: "usd",
+            customer: fixture.customerId,
+            id: invoiceId,
+            metadata: {
+              organizationSubscriptionId: fixture.subscription.id
+            },
+            parent: {
+              subscription_details: {
+                subscription: fixture.stripeSubscriptionId
+              }
+            },
+            status: "paid",
+            total: variant.amountDueCents
+          },
+          { id: eventId }
+        ),
+        subscriptionFacts: fixture.facts
+      })
+
+      const response = await POST(webhookRequest())
+      const subscription = fixture.state.organizationSubscriptions.find(
+        (candidate) => candidate.id === fixture.subscription.id
+      )
+
+      expect(response.status).toBe(500)
+      expect(subscription).toMatchObject({
+        operationalActivatedAt: null,
+        paymentState: "none",
+        status: "pending"
+      })
+      expect(fixture.state.subscriptionBaseInvoices).toHaveLength(0)
+      expect(
+        fixture.state.auditEvents.some(
+          (event) => event.metadata?.eventId === eventId
+        )
+      ).toBe(false)
+    }
   })
 
   it("persists the exact partial base balance and retry path instead of inferring from plan price", async () => {
@@ -1539,6 +1741,7 @@ describe("Network subscription provider events", () => {
       port: {
         ensureFinitePilotSchedule,
         retrieveAccountId: vi.fn().mockResolvedValue("acct_logloads"),
+        retrieveInvoice: mocks.retrieveSubscriptionInvoice,
         retrievePrice: vi.fn()
       }
     })
@@ -1561,6 +1764,15 @@ describe("Network subscription provider events", () => {
       status: "active",
       stripeCustomerId: customerId
     }
+    mocks.retrieveSubscriptionInvoice.mockResolvedValue(
+      subscriptionBaseProviderInvoice({
+        baseAmountCents: 150_000,
+        customerId,
+        invoiceId: "in_pilotfirst",
+        priceId: "price_pilot",
+        subscriptionId: stripeSubscriptionId
+      })
+    )
 
     harness(state, {
       event: billingEvent(
@@ -1772,6 +1984,15 @@ describe("Network subscription provider events", () => {
       status: "active",
       stripeCustomerId: fixture.customerId
     }
+    mocks.retrieveSubscriptionInvoice.mockResolvedValue(
+      subscriptionBaseProviderInvoice({
+        baseAmountCents: 300_000,
+        customerId: fixture.customerId,
+        invoiceId: "in_networkafterpilot",
+        priceId: "price_network_25",
+        subscriptionId: targetStripeSubscriptionId
+      })
+    )
 
     vi.useFakeTimers()
     vi.setSystemTime(new Date("2026-11-09T00:00:01.000Z"))

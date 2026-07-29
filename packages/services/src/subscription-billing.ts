@@ -2707,12 +2707,24 @@ export function reverseNetworkUsage(
     ),
     `Billing period summary ${event.billingPeriodSummaryId} was not found`
   )
-  const frozenInvoice = event.invoiceId
+  const activeUsageBefore = activeUsageForSummary(state, summaryBefore.id)
+  const overageBefore = activeUsageBefore.slice(summaryBefore.includedUnits)
+  const overageAfterIds = new Set(
+    activeUsageBefore
+      .filter((candidate) => candidate.id !== event.id)
+      .slice(summaryBefore.includedUnits)
+      .map((candidate) => candidate.id)
+  )
+  const displacedOverageEvent = overageBefore.find(
+    (candidate) => !overageAfterIds.has(candidate.id)
+  )
+  const settlementInvoiceId = displacedOverageEvent?.invoiceId ?? null
+  const frozenInvoice = settlementInvoiceId
     ? assertFound(
         state.networkOverageInvoices.find(
-          (candidate) => candidate.id === event.invoiceId
+          (candidate) => candidate.id === settlementInvoiceId
         ),
-        `Network overage invoice ${event.invoiceId} was not found`
+        `Network overage invoice ${settlementInvoiceId} was not found`
       )
     : null
   if (frozenInvoice) {
@@ -2773,7 +2785,7 @@ export function reverseNetworkUsage(
     billingPeriodSummaryId: summary.id,
     createdAt: at,
     id: adjustmentId,
-    invoiceId: event.invoiceId,
+    invoiceId: settlementInvoiceId,
     minimumChargeWriteoffCents,
     organizationId: event.organizationId,
     providerReference: null,
@@ -2794,7 +2806,7 @@ export function reverseNetworkUsage(
     metadata: {
       adjustmentId: adjustment.id,
       amountDeltaCents: adjustment.amountDeltaCents,
-      invoiceId: event.invoiceId,
+      invoiceId: settlementInvoiceId,
       minimumChargeWriteoffCents:
         adjustment.minimumChargeWriteoffCents,
       reason

@@ -25,6 +25,7 @@ import {
 	type SubscriptionBillingEventHooks
 } from "@/lib/billing"
 import {
+	baseInvoiceActivationCompositionProblem,
 	expectedStripeLivemode,
 	PILOT_TERM_DAYS,
 	resolveSubscriptionStripe,
@@ -1075,6 +1076,9 @@ function createSubscriptionEventHooks(input: {
 
 			const firstPaidActivation =
 				outcome === "succeeded" && !canonical.operationalActivatedAt
+			const exactCommercialTransition =
+				outcome === "succeeded" &&
+				(firstPaidActivation || provider.match.pending)
 			let pilotSchedule: Awaited<
 				ReturnType<SubscriptionStripePort["ensureFinitePilotSchedule"]>
 			> | null = null
@@ -1095,26 +1099,56 @@ function createSubscriptionEventHooks(input: {
 						"A first paid activation cannot skip directly to a pending future plan"
 					)
 				}
+			}
 
-				if (!input.subscriptionPort) {
+			if (exactCommercialTransition) {
+				const subscriptionPort = input.subscriptionPort
+
+				if (!subscriptionPort) {
 					return result(
 						event,
 						"unresolved",
-						"Stripe subscription billing is unavailable for paid activation"
+						"Stripe subscription billing is unavailable for a paid commercial transition"
 					)
 				}
 
-				await verifyAcceptedPrice(input.subscriptionPort, {
+				await verifyAcceptedPrice(subscriptionPort, {
 					livemode:
 						expectedStripeLivemode(process.env),
 					organizationId: canonical.organizationId,
-					plan: canonical.planSnapshot,
+					plan: provider.match.planSnapshot,
 					priceId: facts.priceId!,
 					role: "base",
 					subscriptionId: canonical.id
 				})
+				const providerInvoice =
+					await subscriptionPort.retrieveInvoice(
+						invoiceFacts.value.providerInvoiceId
+					)
+				const compositionProblem =
+					baseInvoiceActivationCompositionProblem(providerInvoice, {
+						amountDueCents: invoiceFacts.value.amountDueCents,
+						amountPaidCents: invoiceFacts.value.amountPaidCents,
+						amountRemainingCents:
+							invoiceFacts.value.amountRemainingCents,
+						customerId: facts.stripeCustomerId!,
+						expectedBaseCents:
+							provider.match.planSnapshot.baseMonthlyPriceCents,
+						expectedLivemode:
+							expectedStripeLivemode(process.env),
+						invoiceId: invoiceFacts.value.providerInvoiceId,
+						priceId: facts.priceId!,
+						stripeSubscriptionId: facts.id
+					})
 
-				if (canonical.planCode === "network_pilot") {
+				if (compositionProblem) {
+					return result(event, "unresolved", compositionProblem)
+				}
+
+				if (
+					firstPaidActivation &&
+					canonical.planCode === "network_pilot"
+				) {
 					const commitmentStart = facts.currentPeriodStartsAt!
 					const commitmentEnd = new Date(
 						Date.parse(commitmentStart) +
@@ -1122,7 +1156,7 @@ function createSubscriptionEventHooks(input: {
 					).toISOString()
 
 					pilotSchedule =
-						await input.subscriptionPort.ensureFinitePilotSchedule({
+						await subscriptionPort.ensureFinitePilotSchedule({
 							commitmentEnd,
 							commitmentStart,
 							idempotencyKey: `logloads:subscription:${canonical.id}:pilot-term`,

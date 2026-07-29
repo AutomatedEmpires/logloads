@@ -65,11 +65,16 @@ function invoice(
     lineItems: [
       {
         amountCents: 25_000,
+        discountAmountCents: 0,
         id: "il_overage",
         metadata: {},
         priceId: "price_overage",
+        pretaxCreditAmountCents: 0,
         providerReference: "ii_overage",
-        quantity: 2
+        proration: false,
+        quantity: 2,
+        subscriptionId: null,
+        subtotalCents: 25_000
       }
     ],
     livemode: false,
@@ -132,11 +137,19 @@ function fakePort(
             input.priceId === "price_smoke"
               ? 100
               : input.quantity * 12_500,
+          discountAmountCents: 0,
           id: `il_${current.lineItems.length + 1}`,
           metadata: input.metadata,
           priceId: input.priceId,
+          pretaxCreditAmountCents: 0,
           providerReference: `ii_${current.lineItems.length + 1}`,
-          quantity: input.quantity
+          proration: false,
+          quantity: input.quantity,
+          subscriptionId: null,
+          subtotalCents:
+            input.priceId === "price_smoke"
+              ? 100
+              : input.quantity * 12_500
         }
       ]
       const signedTotalCents = lineItems.reduce(
@@ -170,11 +183,16 @@ function fakePort(
         ...current.lineItems,
         {
           amountCents: input.amountCents,
+          discountAmountCents: 0,
           id: `il_${current.lineItems.length + 1}`,
           metadata: input.metadata,
           priceId: null,
+          pretaxCreditAmountCents: 0,
           providerReference: `ii_${current.lineItems.length + 1}`,
-          quantity: 1
+          proration: false,
+          quantity: 1,
+          subscriptionId: null,
+          subtotalCents: input.amountCents
         }
       ]
       const signedTotalCents = lineItems.reduce(
@@ -1038,11 +1056,16 @@ describe("overage provider reconciliation", () => {
       lineItems: [
         {
           amountCents: 10_000,
+          discountAmountCents: 0,
           id: "il_overage",
           metadata: {},
           priceId: "price_overage",
+          pretaxCreditAmountCents: 0,
           providerReference: "ii_overage",
-          quantity: 1
+          proration: false,
+          quantity: 1,
+          subscriptionId: null,
+          subtotalCents: 10_000
         }
       ],
       metadata: { networkOverageInvoiceId: "overage_after_credit" },
@@ -1369,11 +1392,16 @@ describe("owner-only nominal smoke", () => {
           lineItems: [
             {
               amountCents: 100,
+              discountAmountCents: 0,
               id: "il_smoke",
               metadata: {},
               priceId: "price_smoke",
+              pretaxCreditAmountCents: 0,
               providerReference: "ii_smoke",
-              quantity: 1
+              proration: false,
+              quantity: 1,
+              subscriptionId: null,
+              subtotalCents: 100
             }
           ],
           metadata: {

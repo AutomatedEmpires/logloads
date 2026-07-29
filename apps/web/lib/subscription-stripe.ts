@@ -713,11 +713,16 @@ export interface CommercialInvoiceFacts {
   id: string
   lineItems: Array<{
     amountCents: number
+    discountAmountCents: number
     id: string
     metadata: Record<string, string>
     priceId: string | null
+    pretaxCreditAmountCents: number
     providerReference: string | null
+    proration: boolean | null
     quantity: number | null
+    subscriptionId: string | null
+    subtotalCents: number
   }>
   livemode: boolean
   metadata: Record<string, string>
@@ -967,14 +972,34 @@ function commercialInvoiceFacts(
     id: invoice.id,
     lineItems: lines.map((line) => ({
       amountCents: line.amount,
+      discountAmountCents:
+        line.discount_amounts?.reduce(
+          (total, discount) => total + discount.amount,
+          0
+        ) ?? 0,
       id: line.id,
       metadata: { ...line.metadata },
       priceId: stripeReferenceId(line.pricing?.price_details?.price),
+      pretaxCreditAmountCents:
+        line.pretax_credit_amounts?.reduce(
+          (total, credit) => total + credit.amount,
+          0
+        ) ?? 0,
       providerReference:
         line.parent?.invoice_item_details?.invoice_item ??
         line.parent?.subscription_item_details?.invoice_item ??
         null,
-      quantity: line.quantity
+      proration:
+        line.parent?.invoice_item_details?.proration ??
+        line.parent?.subscription_item_details?.proration ??
+        null,
+      quantity: line.quantity,
+      subscriptionId:
+        stripeReferenceId(line.subscription) ??
+        line.parent?.invoice_item_details?.subscription ??
+        line.parent?.subscription_item_details?.subscription ??
+        null,
+      subtotalCents: line.subtotal
     })),
     livemode: invoice.livemode,
     metadata: { ...(invoice.metadata ?? {}) },
@@ -1941,6 +1966,76 @@ export function usageInvoiceCompositionProblem(
     )
   ) {
     return "Stripe invoice settlement facts or customer balance do not reconcile to its frozen total"
+  }
+
+  return null
+}
+
+export function baseInvoiceActivationCompositionProblem(
+  invoice: CommercialInvoiceFacts,
+  input: {
+    amountDueCents: number
+    amountPaidCents: number
+    amountRemainingCents: number
+    customerId: string
+    expectedBaseCents: number | null
+    expectedLivemode: boolean
+    invoiceId: string
+    priceId: string
+    stripeSubscriptionId: string
+  }
+): string | null {
+  if (
+    !Number.isSafeInteger(input.expectedBaseCents) ||
+    input.expectedBaseCents === null ||
+    input.expectedBaseCents <= 0
+  ) {
+    return "The accepted subscription has no valid frozen base amount"
+  }
+
+  if (
+    invoice.id !== input.invoiceId ||
+    invoice.customerId !== input.customerId ||
+    invoice.currency !== "USD" ||
+    invoice.livemode !== input.expectedLivemode
+  ) {
+    return "Stripe base invoice identity does not match the accepted subscription"
+  }
+
+  if (
+    !invoice.paid ||
+    invoice.status !== "paid" ||
+    invoice.amountDueCents !== input.amountDueCents ||
+    invoice.amountPaidCents !== input.amountPaidCents ||
+    invoice.amountRemainingCents !== input.amountRemainingCents ||
+    invoice.amountRemainingCents !== 0 ||
+    invoice.startingBalanceCents !== 0 ||
+    invoice.endingBalanceCents !== 0 ||
+    invoice.totalCents !== invoice.amountDueCents ||
+    invoice.amountPaidCents !== invoice.amountDueCents ||
+    invoice.totalCents < input.expectedBaseCents
+  ) {
+    return "Stripe base invoice balance does not prove the frozen subscription charge"
+  }
+
+  if (invoice.lineItems.length !== 1) {
+    return "Stripe base invoice must contain exactly one accepted subscription line"
+  }
+
+  const [line] = invoice.lineItems
+
+  if (
+    !line ||
+    line.priceId !== input.priceId ||
+    line.quantity !== 1 ||
+    line.subscriptionId !== input.stripeSubscriptionId ||
+    line.proration !== false ||
+    line.subtotalCents !== input.expectedBaseCents ||
+    line.amountCents !== input.expectedBaseCents ||
+    line.discountAmountCents !== 0 ||
+    line.pretaxCreditAmountCents !== 0
+  ) {
+    return "Stripe base invoice line does not match the frozen subscription terms"
   }
 
   return null
