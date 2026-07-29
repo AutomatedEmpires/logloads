@@ -210,7 +210,9 @@ const ROW_REFERENCES: Partial<Record<LogLoadsTableName, readonly RowReference[]>
   // whose earlier link is gone would present a superseded record as current.
   driverCredentials: [
     { field: "driverProfileId", target: "driverProfiles" },
-    { field: "supersededByCredentialId", target: "driverCredentials" }
+    { field: "supersededByCredentialId", target: "driverCredentials" },
+    { field: "trailerProfileId", target: "trailerProfiles" },
+    { field: "truckProfileId", target: "truckProfiles" }
   ],
   driverProfiles: [{ field: "userId", target: "profiles" }],
   equipmentCombinations: [
@@ -545,6 +547,17 @@ function backfillStateSnapshot(
 
   if (candidate.credentialReviews === undefined) {
     candidate.credentialReviews = []
+  }
+
+  // Equipment evidence predating exact-rig binding stays readable but unbound.
+  // The acceptance gate counts only an exact profile match, so null is a safe
+  // historical value and never silently clears a different truck or trailer.
+  if (Array.isArray(candidate.driverCredentials)) {
+    candidate.driverCredentials = candidate.driverCredentials.map((credential) => ({
+      ...credential,
+      trailerProfileId: credential.trailerProfileId ?? null,
+      truckProfileId: credential.truckProfileId ?? null
+    }))
   }
 
   // Driver profiles predate the featured-rig flag; absent means not featured.

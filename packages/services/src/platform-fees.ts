@@ -73,6 +73,9 @@ import { assertCondition, assertFound, createUuid, nowIso } from "./utils"
  */
 const HOST_INVOICE_NAMESPACE = "2d9f6c1a-4b83-4f0e-9a71-6e5c8d3b47f2"
 
+/** Stripe legacy invoices are denominated only in USD; no FX conversion occurs. */
+export const LEGACY_PLATFORM_FEE_CURRENCY = "USD"
+
 /**
  * The id of one host's primary bill for one calendar month. Same host, same
  * month, same primary id, forever.
@@ -495,6 +498,15 @@ export function accruePlatformFee(
       outcome: "no_basis",
       reason:
         "This assignment has no frozen driver pay and currency, so a fee cannot be derived honestly"
+    }
+  }
+
+  if (frozenDriverPay.currency.toUpperCase() !== LEGACY_PLATFORM_FEE_CURRENCY) {
+    return {
+      assignmentId: assignment.id,
+      outcome: "no_basis",
+      reason:
+        "Legacy percentage fees can accrue only for USD work; this assignment remains unbilled"
     }
   }
 

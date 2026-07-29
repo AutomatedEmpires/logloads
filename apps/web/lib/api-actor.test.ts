@@ -1,5 +1,6 @@
 import { createLoadPostingInputSchema } from "@logloads/contracts"
 import { OperatingStateConflictError, OperatingStateUnavailableError } from "@logloads/db"
+import { DomainRefusalError } from "@logloads/services"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("server-only", () => ({}))
@@ -19,23 +20,28 @@ async function answer(error: unknown) {
 describe("apiErrorResponse", () => {
   beforeEach(() => {
     vi.spyOn(console, "error").mockImplementation(() => {})
+    vi.spyOn(console, "info").mockImplementation(() => {})
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  it("answers a missing record and a hidden record identically", async () => {
+  it("answers typed missing and hidden-record refusals with the same sanitized 409", async () => {
     // The oracle this closes: POST /api/assignments/request returned the service
     // message verbatim, so a caller could tell "no such load" from "that load
     // belongs to someone else" and enumerate another tenant's postings.
-    const missing = await answer(new Error(`Load posting ${LOAD_ID} was not found`))
+    const missing = await answer(
+      new DomainRefusalError(`Load posting ${LOAD_ID} was not found`)
+    )
     const hidden = await answer(
-      new Error(`Load posting ${LOAD_ID} is not visible to organization ${ORGANIZATION_ID}`)
+      new DomainRefusalError(
+        `Load posting ${LOAD_ID} is not visible to organization ${ORGANIZATION_ID}`
+      )
     )
 
     expect(missing).toEqual(hidden)
-    expect(missing.status).toBe(500)
+    expect(missing.status).toBe(409)
 
     for (const leak of [LOAD_ID, ORGANIZATION_ID, "not found", "not visible"]) {
       expect(missing.body.error).not.toContain(leak)
@@ -47,6 +53,15 @@ describe("apiErrorResponse", () => {
 
     await answer(error)
 
+    expect(console.error).toHaveBeenCalledWith("logloads: api request failed", error)
+  })
+
+  it("keeps an unknown application error as a sanitized 500", async () => {
+    const error = new Error(`Unexpected invariant for ${LOAD_ID}`)
+    const response = await answer(error)
+
+    expect(response.status).toBe(500)
+    expect(response.body.error).not.toContain(LOAD_ID)
     expect(console.error).toHaveBeenCalledWith("logloads: api request failed", error)
   })
 

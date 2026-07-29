@@ -71,10 +71,16 @@ const MAYA_CDL_DOCUMENT_PUBLIC_ID = "logloads/driver-credentials/maya-licence"
 const MAYA_CDL_IDENTIFIER = "CDL-A-9002"
 /** Maya's refused insurance. Its request for more evidence is not host business. */
 const MAYA_REFUSED_INSURANCE = "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c106"
+const MAYA_TRUCK_A = "77777777-7777-4777-8777-777777777772"
+const MAYA_TRUCK_B = "77777777-7777-4777-8777-777777777775"
+const HANK_TRUCK = "77777777-7777-4777-8777-777777777771"
+const HANK_TRAILER = "88888888-8888-4888-8888-888888888881"
 
 const PLATFORM_ADMIN_USER = "11111111-1111-4111-8111-111111111111"
 /** An active member of Maya's outfit who holds manage_drivers. */
 const DISPATCHER_USER = "22222222-2222-4222-8222-222222222224"
+const MAYA_EXTERNAL_HOST_ASSIGNMENT = "ffffffff-ffff-4fff-8fff-ffffffffaaa1"
+const TAYLOR_HOST_ASSIGNMENT = "ffffffff-ffff-4fff-8fff-fffffffffff5"
 
 const SUBMITTED = "2026-07-01T09:00:00.000Z"
 const REVIEWED = "2026-07-01T09:05:00.000Z"
@@ -136,6 +142,7 @@ function addMember(state: State, organizationId: string, role: OrganizationRole)
 function credentialDocument(
   driverProfileId: string,
   kind: CredentialKind,
+  equipmentProfileId?: string | null,
   overrides: Partial<MediaReference> = {}
 ): MediaReference {
   return {
@@ -143,7 +150,9 @@ function credentialDocument(
     format: "jpg",
     height: 1_754,
     provider: "cloudinary",
-    publicId: `${credentialDocumentPublicIdPrefix(driverProfileId, kind)}/uploads/${randomUUID()}`,
+    publicId:
+      `${credentialDocumentPublicIdPrefix(driverProfileId, kind, equipmentProfileId)}` +
+      `/uploads/${randomUUID()}`,
     uploadedAt: SUBMITTED,
     version: 1_700_000_000,
     width: 1_240,
@@ -161,23 +170,61 @@ function file(
     identifier?: string | null
     kind: CredentialKind
     organizationId: string
+    trailerProfileId?: string | null
+    truckProfileId?: string | null
   },
   at = SUBMITTED
 ) {
   const expiresOn = input.expiresOn === undefined && ["insurance", "cdl"].includes(input.kind)
     ? instantAfter(365)
     : input.expiresOn ?? null
+  let combination = state.equipmentCombinations.find(
+    (candidate) =>
+      candidate.assignedDriverProfileId === input.driverProfileId &&
+      candidate.organizationId === input.organizationId
+  )
+
+  if ((input.kind === "truck" || input.kind === "trailer") && !combination) {
+    const source = state.equipmentCombinations.find(
+      (candidate) => candidate.organizationId === input.organizationId
+    )
+
+    if (!source) {
+      throw new Error(`No equipment fixture exists for organization ${input.organizationId}`)
+    }
+
+    combination = {
+      ...structuredClone(source),
+      assignedDriverProfileId: input.driverProfileId,
+      id: randomUUID(),
+      label: `${source.label} test assignment`
+    }
+    state.equipmentCombinations.push(combination)
+  }
+
+  const truckProfileId =
+    input.kind === "truck" ? input.truckProfileId ?? combination?.truckProfileId ?? null : null
+  const trailerProfileId =
+    input.kind === "trailer"
+      ? input.trailerProfileId ?? combination?.trailerProfileId ?? null
+      : null
+  const equipmentProfileId =
+    input.kind === "truck" ? truckProfileId : input.kind === "trailer" ? trailerProfileId : null
 
   return submitCredential(
     state,
     {
       actorUserId: input.actorUserId,
-      documentMedia: input.documentMedia ?? credentialDocument(input.driverProfileId, input.kind),
+      documentMedia:
+        input.documentMedia ??
+        credentialDocument(input.driverProfileId, input.kind, equipmentProfileId),
       driverProfileId: input.driverProfileId,
       expiresOn,
       identifier: input.identifier ?? null,
       kind: input.kind,
-      organizationId: input.organizationId
+      organizationId: input.organizationId,
+      trailerProfileId,
+      truckProfileId
     },
     at
   )
@@ -234,6 +281,32 @@ function clearDriver(
       organizationId: input.organizationId
     })
   }
+}
+
+function selectionForDriver(state: State, driverProfileId: string) {
+  const combination = state.equipmentCombinations.find(
+    (candidate) =>
+      candidate.assignedDriverProfileId === driverProfileId &&
+      candidate.status !== "inactive"
+  )
+
+  if (!combination) {
+    throw new Error(`No active equipment selection exists for driver ${driverProfileId}`)
+  }
+
+  return {
+    trailerProfileId: combination.trailerProfileId ?? null,
+    truckProfileId: combination.truckProfileId
+  }
+}
+
+function gateForDriver(state: State, driverProfileId: string, at = AT) {
+  return driverCredentialGate(
+    state,
+    driverProfileId,
+    at,
+    selectionForDriver(state, driverProfileId)
+  )
 }
 
 function vaultView(
@@ -367,7 +440,7 @@ describe("submitCredential", () => {
       })
     }
 
-    const gate = driverCredentialGate(state, RILEY_DRIVER, AT)
+    const gate = gateForDriver(state, RILEY_DRIVER)
 
     expect(gate.satisfied).toBe(false)
     expect(gate.missing).toEqual([...MANDATORY_CREDENTIAL_KINDS])
@@ -411,7 +484,7 @@ describe("submitCredential", () => {
     expect(() =>
       file(state, {
         actorUserId: RILEY_USER,
-        documentMedia: credentialDocument(RILEY_DRIVER, "cdl", {
+        documentMedia: credentialDocument(RILEY_DRIVER, "cdl", null, {
           publicId: `${credentialDocumentPublicIdPrefix(RILEY_DRIVER, "cdl")}-elsewhere/uploads/x`
         }),
         driverProfileId: RILEY_DRIVER,
@@ -419,6 +492,99 @@ describe("submitCredential", () => {
         organizationId: MAYA_ORG
       })
     ).toThrow(/must be stored under/)
+  })
+
+  it("requires equipment evidence to name its exact assigned profile", () => {
+    const state = freshState()
+
+    expect(() =>
+      submitCredential(
+        state,
+        {
+          actorUserId: MAYA_USER,
+          documentMedia: credentialDocument(MAYA_DRIVER, "truck"),
+          driverProfileId: MAYA_DRIVER,
+          kind: "truck",
+          organizationId: MAYA_ORG
+        },
+        SUBMITTED
+      )
+    ).toThrow(/must name exactly one truck profile/)
+  })
+
+  it("refuses an equipment profile that is not assigned to this driver", () => {
+    const state = freshState()
+    const unassignedTruck = randomUUID()
+
+    expect(() =>
+      file(state, {
+        actorUserId: MAYA_USER,
+        documentMedia: credentialDocument(MAYA_DRIVER, "truck", unassignedTruck),
+        driverProfileId: MAYA_DRIVER,
+        kind: "truck",
+        organizationId: MAYA_ORG,
+        truckProfileId: unassignedTruck
+      })
+    ).toThrow(/currently assigned/)
+  })
+
+  it("refuses equipment bytes signed for a different assigned unit", () => {
+    const state = freshState()
+
+    expect(() =>
+      file(state, {
+        actorUserId: MAYA_USER,
+        documentMedia: credentialDocument(MAYA_DRIVER, "truck", MAYA_TRUCK_A),
+        driverProfileId: MAYA_DRIVER,
+        kind: "truck",
+        organizationId: MAYA_ORG,
+        truckProfileId: MAYA_TRUCK_B
+      })
+    ).toThrow(/must be stored under/)
+  })
+
+  it("binds review to the canonical selected unit number, never a caller assertion", () => {
+    const state = freshState()
+    const selectedTruck = state.truckProfiles.find(
+      (candidate) => candidate.id === MAYA_TRUCK_A
+    )
+
+    expect(selectedTruck).toBeDefined()
+
+    const result = file(state, {
+      actorUserId: MAYA_USER,
+      driverProfileId: MAYA_DRIVER,
+      identifier: "CALLER-SPOOFED-UNIT",
+      kind: "truck",
+      organizationId: MAYA_ORG,
+      truckProfileId: MAYA_TRUCK_A
+    })
+
+    expect(result.credential.identifier).toBe(selectedTruck?.unitNumber)
+    expect(result.credential.identifier).not.toBe("CALLER-SPOOFED-UNIT")
+  })
+
+  it("refuses equipment evidence when two assigned trucks share a normalized unit number", () => {
+    const state = freshState()
+    const truckA = state.truckProfiles.find((candidate) => candidate.id === MAYA_TRUCK_A)
+    const truckB = state.truckProfiles.find((candidate) => candidate.id === MAYA_TRUCK_B)
+
+    if (!truckA || !truckB) {
+      throw new Error("Maya two-rig fixture missing")
+    }
+    truckB.unitNumber = ` ${truckA.unitNumber.toLowerCase().replace("-", " ")} `
+    const before = structuredClone(state.driverCredentials)
+
+    expect(() =>
+      file(state, {
+        actorUserId: MAYA_USER,
+        driverProfileId: MAYA_DRIVER,
+        kind: "truck",
+        organizationId: MAYA_ORG,
+        truckProfileId: MAYA_TRUCK_B
+      })
+    ).toThrow(/truck unit number is not unique/)
+    expect(state.driverCredentials).toEqual(before)
   })
 
   it("lets a driver file their own licence even though the driver role cannot manage drivers", () => {
@@ -557,7 +723,7 @@ describe("renewal", () => {
     // covering the driver while its replacement is under review.
     const state = freshState()
 
-    expect(driverCredentialGate(state, HANK_DRIVER, AT).satisfied).toBe(true)
+    expect(gateForDriver(state, HANK_DRIVER).satisfied).toBe(true)
 
     file(state, {
       actorUserId: HANK_USER,
@@ -566,7 +732,7 @@ describe("renewal", () => {
       organizationId: MAYA_ORG
     })
 
-    expect(driverCredentialGate(state, HANK_DRIVER, AT).satisfied).toBe(true)
+    expect(gateForDriver(state, HANK_DRIVER).satisfied).toBe(true)
   })
 
   it("supersedes every outstanding record of the kind, not just the newest", () => {
@@ -657,6 +823,31 @@ describe("renewal", () => {
       insuranceBefore
     )
   })
+
+  it("does not supersede rig A when filing the same kind for rig B", () => {
+    const state = freshState()
+    const rigA = file(state, {
+      actorUserId: MAYA_USER,
+      driverProfileId: MAYA_DRIVER,
+      kind: "truck",
+      organizationId: MAYA_ORG,
+      truckProfileId: MAYA_TRUCK_A
+    })
+    const rigB = file(state, {
+      actorUserId: MAYA_USER,
+      driverProfileId: MAYA_DRIVER,
+      kind: "truck",
+      organizationId: MAYA_ORG,
+      truckProfileId: MAYA_TRUCK_B
+    })
+
+    expect(rigB.superseded).toEqual([])
+    expect(
+      state.driverCredentials.find((candidate) => candidate.id === rigA.credential.id)
+        ?.supersededByCredentialId
+    ).toBeNull()
+    expect(rigB.credential.truckProfileId).toBe(MAYA_TRUCK_B)
+  })
 })
 
 describe("submitting the same document twice", () => {
@@ -726,7 +917,6 @@ describe("submitting the same document twice", () => {
 
     expect(replay.outcome).toBe("already_submitted")
     expect(replay.credential.status).toBe("denied")
-    expect(driverCredentialGate(state, RILEY_DRIVER, AT).satisfied).toBe(false)
   })
 })
 
@@ -1329,7 +1519,7 @@ describe("driverCredentialGate", () => {
       organizationId: MAYA_ORG
     })
 
-    const gate = driverCredentialGate(state, RILEY_DRIVER, AT)
+    const gate = gateForDriver(state, RILEY_DRIVER)
 
     expect(gate.satisfied).toBe(true)
     expect(gate.missing).toEqual([])
@@ -1348,10 +1538,38 @@ describe("driverCredentialGate", () => {
       })
     }
 
-    const gate = driverCredentialGate(state, RILEY_DRIVER, AT)
+    const gate = gateForDriver(state, RILEY_DRIVER)
 
     expect(gate.satisfied).toBe(false)
     expect(gate.missing).toEqual(["trailer"])
+  })
+
+  it("never lets historical unbound equipment evidence clear a selected rig", () => {
+    const state = freshState()
+
+    state.driverCredentials = state.driverCredentials.map((credential) => {
+      if (credential.driverProfileId !== HANK_DRIVER) {
+        return credential
+      }
+
+      if (credential.kind === "truck") {
+        return driverCredentialSchema.parse({ ...credential, truckProfileId: null })
+      }
+
+      if (credential.kind === "trailer") {
+        return driverCredentialSchema.parse({ ...credential, trailerProfileId: null })
+      }
+
+      return credential
+    })
+
+    const gate = driverCredentialGate(state, HANK_DRIVER, AT, {
+      trailerProfileId: HANK_TRAILER,
+      truckProfileId: HANK_TRUCK
+    })
+
+    expect(gate.satisfied).toBe(false)
+    expect(gate.missing).toEqual(["truck", "trailer"])
   })
 
   it("stops clearing a driver the instant a credential lapses, with nothing written in between", () => {
@@ -1367,8 +1585,8 @@ describe("driverCredentialGate", () => {
     })
 
     const rowsAfterClearing = structuredClone(state.driverCredentials)
-    const before = driverCredentialGate(state, RILEY_DRIVER, instantAfter(5))
-    const after = driverCredentialGate(state, RILEY_DRIVER, instantAfter(20))
+    const before = gateForDriver(state, RILEY_DRIVER, instantAfter(5))
+    const after = gateForDriver(state, RILEY_DRIVER, instantAfter(20))
 
     expect(before.satisfied).toBe(true)
     expect(before.expiring).toEqual([{ expiresOn: instantAfter(10), kind: "insurance" }])
@@ -1383,7 +1601,7 @@ describe("driverCredentialGate", () => {
     // Taylor, straight from the seed: approved and lapsed, replacement under
     // review. Neither record counts, and the reasons are different.
     const state = freshState()
-    const gate = driverCredentialGate(state, TAYLOR_DRIVER, AT)
+    const gate = gateForDriver(state, TAYLOR_DRIVER)
 
     expect(gate.satisfied).toBe(false)
     expect(gate.missing).toEqual([...MANDATORY_CREDENTIAL_KINDS])
@@ -1391,7 +1609,7 @@ describe("driverCredentialGate", () => {
 
   it("reports what a partly filed driver is missing in schema order", () => {
     const state = freshState()
-    const gate = driverCredentialGate(state, MAYA_DRIVER, AT)
+    const gate = gateForDriver(state, MAYA_DRIVER)
 
     expect(gate.satisfied).toBe(false)
     expect(gate.missing).toEqual(["insurance", "truck", "trailer"])
@@ -1407,7 +1625,7 @@ describe("driverCredentialGate", () => {
       organizationId: MAYA_ORG
     })
 
-    const gate = driverCredentialGate(state, RILEY_DRIVER, AT)
+    const gate = gateForDriver(state, RILEY_DRIVER)
 
     expect(gate.satisfied).toBe(true)
     expect(gate.expiring.map((entry) => entry.kind)).toEqual(["insurance"])
@@ -1416,7 +1634,96 @@ describe("driverCredentialGate", () => {
   it("throws for a driver profile that does not exist", () => {
     const state = freshState()
 
-    expect(() => driverCredentialGate(state, randomUUID(), AT)).toThrow(/was not found/)
+    expect(() =>
+      driverCredentialGate(state, randomUUID(), AT, {
+        trailerProfileId: null,
+        truckProfileId: randomUUID()
+      })
+    ).toThrow(/was not found/)
+  })
+
+  it("fails closed when runtime callers omit or malform the exact equipment selection", () => {
+    const state = freshState()
+
+    expect(() =>
+      driverCredentialGate(state, HANK_DRIVER, AT, undefined as never)
+    ).toThrow(/exact truck and trailer combination/)
+    expect(() =>
+      hostCredentialSummary(state, HANK_DRIVER, AT, {
+        trailerProfileId: undefined,
+        truckProfileId: HANK_TRUCK
+      } as never)
+    ).toThrow(/exact truck and trailer combination/)
+  })
+
+  it("rejects a schema-valid truck and trailer pair that is not one assigned rig", () => {
+    const state = freshState()
+    const rigA = state.equipmentCombinations.find(
+      (candidate) =>
+        candidate.assignedDriverProfileId === MAYA_DRIVER &&
+        candidate.truckProfileId === MAYA_TRUCK_A
+    )
+    const rigB = state.equipmentCombinations.find(
+      (candidate) =>
+        candidate.assignedDriverProfileId === MAYA_DRIVER &&
+        candidate.truckProfileId === MAYA_TRUCK_B
+    )
+
+    if (!rigA?.trailerProfileId || !rigB?.trailerProfileId) {
+      throw new Error("Maya two-rig trailer fixtures missing")
+    }
+
+    const fabricatedSelection = {
+      trailerProfileId: rigB.trailerProfileId,
+      truckProfileId: rigA.truckProfileId
+    }
+    expect(
+      state.equipmentCombinations.some(
+        (candidate) =>
+          candidate.assignedDriverProfileId === MAYA_DRIVER &&
+          candidate.truckProfileId === fabricatedSelection.truckProfileId &&
+          (candidate.trailerProfileId ?? null) === fabricatedSelection.trailerProfileId
+      )
+    ).toBe(false)
+
+    expect(() =>
+      driverCredentialGate(state, MAYA_DRIVER, AT, fabricatedSelection)
+    ).toThrow(/active equipment combination assigned to this driver/)
+    expect(() =>
+      hostCredentialSummary(state, MAYA_DRIVER, AT, fabricatedSelection)
+    ).toThrow(/active equipment combination assigned to this driver/)
+  })
+
+  it("fails the gate when two assigned rigs share a normalized unit number", () => {
+    const state = freshState()
+    const truckA = state.truckProfiles.find((candidate) => candidate.id === MAYA_TRUCK_A)
+    const truckB = state.truckProfiles.find((candidate) => candidate.id === MAYA_TRUCK_B)
+    const rigA = state.equipmentCombinations.find(
+      (candidate) =>
+        candidate.assignedDriverProfileId === MAYA_DRIVER &&
+        candidate.truckProfileId === MAYA_TRUCK_A
+    )
+
+    if (!truckA || !truckB || !rigA) {
+      throw new Error("Maya two-rig fixture missing")
+    }
+    truckB.unitNumber = truckA.unitNumber.toLowerCase()
+    const view = vaultView(state, MAYA_DRIVER, {
+      actorUserId: MAYA_USER,
+      audience: "driver"
+    })
+
+    expect(
+      view.equipmentSelections.find((selection) => selection.combinationId === rigA.id)
+        ?.equipmentUnitNumbersUnique
+    ).toBe(false)
+
+    expect(() =>
+      driverCredentialGate(state, MAYA_DRIVER, AT, {
+        trailerProfileId: rigA.trailerProfileId ?? null,
+        truckProfileId: MAYA_TRUCK_A
+      })
+    ).toThrow(/truck unit number is not unique/)
   })
 })
 
@@ -1437,13 +1744,14 @@ describe("the host boundary", () => {
       })
     }
 
-    expect(driverCredentialGate(state, MAYA_DRIVER, AT).satisfied).toBe(true)
+    expect(gateForDriver(state, MAYA_DRIVER).satisfied).toBe(true)
 
     return state
   }
 
   const hostViewer: CredentialViewer = {
     actorUserId: DISPATCHER_USER,
+    assignmentId: MAYA_EXTERNAL_HOST_ASSIGNMENT,
     audience: "host",
     organizationId: EXTERNAL_HOST_ORG
   }
@@ -1508,6 +1816,7 @@ describe("the host boundary", () => {
     const state = freshState()
     const view = hostView(state, TAYLOR_DRIVER, {
       actorUserId: DISPATCHER_USER,
+      assignmentId: TAYLOR_HOST_ASSIGNMENT,
       audience: "host",
       organizationId: TAYLOR_ORG
     })
@@ -1537,6 +1846,7 @@ describe("the host boundary", () => {
     expect(() =>
       listDriverCredentials(state, MAYA_DRIVER, {
         actorUserId,
+        assignmentId: MAYA_EXTERNAL_HOST_ASSIGNMENT,
         audience: "host",
         organizationId: UNRELATED_ORG
       })
@@ -1549,6 +1859,7 @@ describe("the host boundary", () => {
     expect(() =>
       listDriverCredentials(state, MAYA_DRIVER, {
         actorUserId: randomUUID(),
+        assignmentId: MAYA_EXTERNAL_HOST_ASSIGNMENT,
         audience: "host",
         organizationId: EXTERNAL_HOST_ORG
       })
@@ -1561,7 +1872,14 @@ describe("the host boundary", () => {
     const { audience, ...projection } = view
 
     expect(audience).toBe("host")
-    expect(hostCredentialSummary(state, MAYA_DRIVER, AT)).toEqual(projection)
+    expect(
+      hostCredentialSummary(
+        state,
+        MAYA_DRIVER,
+        AT,
+        selectionForDriver(state, MAYA_DRIVER)
+      )
+    ).toEqual(projection)
   })
 })
 
@@ -1575,7 +1893,7 @@ describe("listDriverCredentials", () => {
 
     expect(cdl?.documentMedia?.publicId).toBe(MAYA_CDL_DOCUMENT_PUBLIC_ID)
     expect(cdl?.identifier).toBe(MAYA_CDL_IDENTIFIER)
-    expect(view.gate.missing).toEqual(["insurance", "truck", "trailer"])
+    expect(view.equipmentSelections).not.toHaveLength(0)
   })
 
   it("shows a driver why they were refused", () => {

@@ -564,6 +564,7 @@ export interface CredentialActionResult extends ActionResult {
  * number into a phone puts it in more places for very little.
  */
 export async function submitDriverCredentialAction(input: {
+  equipmentProfileId?: string | null
   expiresOn?: string | null
   issuer?: string | null
   kind: string
@@ -579,11 +580,36 @@ export async function submitDriverCredentialAction(input: {
       throw new Error("Add a driver profile before sending your records")
     }
 
+    const equipmentKind = kind === "truck" || kind === "trailer"
+    const equipmentProfileId = input.equipmentProfileId?.trim() || null
+    const vault = services.listDriverCredentials(driverProfileId, {
+      actorUserId: actor.profile.id,
+      audience: "driver"
+    })
+
+    if (vault.audience === "host") {
+      throw new Error("A host cannot upload to a driver's vault")
+    }
+
+    if (
+      equipmentKind &&
+      !vault.equipmentOptions.some(
+        (option) => option.kind === kind && option.profileId === equipmentProfileId
+      )
+    ) {
+      throw new Error(`Choose a ${kind} currently assigned to you`)
+    }
+
+    if (!equipmentKind && equipmentProfileId !== null) {
+      throw new Error("This credential cannot be attached to equipment")
+    }
+
     // Checked here as well as in the service, against the SAME exported function, so
     // a client naming an asset outside this driver's own namespace is refused before
     // a provider round trip. Without the rule at all, any caller able to name a
     // stored public id could file another driver's licence as their own.
-    const expectedPrefix = `${credentialDocumentPublicIdPrefix(driverProfileId, kind)}/uploads/`
+    const expectedPrefix =
+      `${credentialDocumentPublicIdPrefix(driverProfileId, kind, equipmentProfileId)}/uploads/`
 
     if (!input.publicId.startsWith(expectedPrefix)) {
       throw new Error("That document was not uploaded to your vault")
@@ -602,11 +628,16 @@ export async function submitDriverCredentialAction(input: {
         expiresOn: parseStatedCredentialExpiry(input.expiresOn),
         issuer: input.issuer?.trim() ? input.issuer.trim() : null,
         kind,
-        organizationId
+        organizationId,
+        trailerProfileId: kind === "trailer" ? equipmentProfileId : null,
+        truckProfileId: kind === "truck" ? equipmentProfileId : null
       })
     )
 
-    captureServerEvent("driver_credential_submitted", actor.profile.id, { kind })
+    captureServerEvent("driver_credential_submitted", actor.profile.id, {
+      equipmentProfileId,
+      kind
+    })
 
     // The record is filed either way. A review that cannot run leaves it pending,
     // which blocks the driver — the safe direction — and they can ask for another

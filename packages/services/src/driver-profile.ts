@@ -10,7 +10,7 @@ import {
 import type { LogLoadsDatabaseState } from "@logloads/db"
 import { z } from "zod"
 
-import { assertFound, createUuid, nowIso } from "./utils"
+import { assertFound, createUuid, DomainRefusalError, nowIso } from "./utils"
 
 const driverContextSchema = z.object({
   actorUserId: z.string().uuid(),
@@ -50,7 +50,7 @@ function requireOwnedDriver(
   )
 
   if (!membership) {
-    throw new Error("You are not an active member of this organization")
+    throw new DomainRefusalError("You are not an active member of this organization")
   }
 
   const driver = assertFound(
@@ -59,7 +59,7 @@ function requireOwnedDriver(
   )
 
   if (driver.userId !== context.actorUserId) {
-    throw new Error("You can only update your own driver profile")
+    throw new DomainRefusalError("You can only update your own driver profile")
   }
 
   return driver
@@ -112,7 +112,7 @@ export function getDriverMediaTarget(
   }
 
   if (!combination.trailerProfileId) {
-    throw new Error("Add a primary trailer before uploading its photo")
+    throw new DomainRefusalError("Add a primary trailer before uploading its photo")
   }
 
   const trailer = assertFound(
@@ -204,7 +204,7 @@ export function setFeaturedTruckPhoto(state: LogLoadsDatabaseState, rawInput: un
   const driver = requireOwnedDriver(state, input)
 
   if (input.featured && !resolveOwnTruckPhoto(state, driver)) {
-    throw new Error("Upload a truck photo before featuring it")
+    throw new DomainRefusalError("Upload a truck photo before featuring it")
   }
 
   const timestamp = nowIso()
@@ -250,7 +250,7 @@ export function getFeaturedTruckPhotoReference(state: LogLoadsDatabaseState, raw
   )
 
   if (!membership || !organizationRoleCan(membership.role, "view_network")) {
-    throw new Error("You are not authorized to view this photo")
+    throw new DomainRefusalError("You are not authorized to view this photo")
   }
 
   const driver = assertFound(
@@ -259,7 +259,7 @@ export function getFeaturedTruckPhotoReference(state: LogLoadsDatabaseState, raw
   )
 
   if (!driver.featureTruckPhoto) {
-    throw new Error("This driver has not featured a truck photo")
+    throw new DomainRefusalError("This driver has not featured a truck photo")
   }
 
   const sameOrganization = driver.companyId === input.viewerOrganizationId
@@ -274,13 +274,13 @@ export function getFeaturedTruckPhotoReference(state: LogLoadsDatabaseState, raw
   })
 
   if (!sameOrganization && !hostOfDriverWork) {
-    throw new Error("This driver is not visible to your organization")
+    throw new DomainRefusalError("This driver is not visible to your organization")
   }
 
   const photo = resolveOwnTruckPhoto(state, driver)
 
   if (!photo) {
-    throw new Error("This driver has no truck photo to show")
+    throw new DomainRefusalError("This driver has no truck photo to show")
   }
 
   return photo
@@ -292,7 +292,7 @@ export function saveDriverMediaReference(state: LogLoadsDatabaseState, rawInput:
   const expectedPrefix = `${target.publicIdPrefix}/uploads/`
 
   if (!input.photo.publicId.startsWith(expectedPrefix)) {
-    throw new Error("The uploaded photo does not belong to this profile")
+    throw new DomainRefusalError("The uploaded photo does not belong to this profile")
   }
 
   if (input.kind === "profile") {

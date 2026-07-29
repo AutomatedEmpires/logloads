@@ -1,6 +1,7 @@
 "use client"
 
 import Image from "next/image"
+import Link from "next/link"
 import { useId, useState, useTransition, type FormEvent } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
@@ -100,11 +101,13 @@ async function readJson<T>(response: Response): Promise<T | null> {
  * cannot outlive the route it depends on.
  */
 function CredentialDocumentUpload({
+  equipmentOptions,
   kind,
   kindLabel,
   replacing,
   signatureEndpoint
 }: {
+  equipmentOptions: DriverCredentialSlotView["equipmentOptions"]
   kind: DriverCredentialSlotView["kind"]
   kindLabel: string
   replacing: boolean
@@ -114,9 +117,12 @@ function CredentialDocumentUpload({
   const [sent, setSent] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   const fieldId = useId()
+  const equipmentId = useId()
   const expiryId = useId()
   const issuerId = useId()
   const expiryRequired = kind === "cdl" || kind === "insurance"
+  const equipmentKind = kind === "truck" || kind === "trailer"
+  const equipmentAvailable = !equipmentKind || equipmentOptions.length > 0
 
   const upload = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -124,6 +130,9 @@ function CredentialDocumentUpload({
     const form = event.currentTarget
     const data = new FormData(form)
     const file = data.get("document")
+    const equipmentProfileId = equipmentKind
+      ? String(data.get("equipmentProfileId") ?? "").trim()
+      : null
     const expiresOn = String(data.get("expiresOn") ?? "").trim()
     const issuer = String(data.get("issuer") ?? "").trim()
 
@@ -147,12 +156,17 @@ function CredentialDocumentUpload({
       return
     }
 
+    if (equipmentKind && !equipmentProfileId) {
+      setError(`Choose the ${kind} shown in this photo.`)
+      return
+    }
+
     setError(null)
     setSent(null)
     startTransition(async () => {
       try {
         const signatureResponse = await fetchWithTimeout(signatureEndpoint, {
-          body: JSON.stringify({ kind }),
+          body: JSON.stringify({ equipmentProfileId, kind }),
           headers: { "Content-Type": "application/json" },
           method: "POST"
         })
@@ -164,6 +178,7 @@ function CredentialDocumentUpload({
 
         const publicId = await uploadSignedFile(signature, file)
         const saved = await submitDriverCredentialAction({
+          equipmentProfileId,
           expiresOn: expiresOn || null,
           issuer: issuer || null,
           kind,
@@ -184,8 +199,35 @@ function CredentialDocumentUpload({
 
   return (
     <form className="media-upload-card" onSubmit={upload}>
+      {equipmentKind ? (
+        <label htmlFor={equipmentId}>
+          {kind === "truck" ? "Truck shown in this photo" : "Trailer shown in this photo"}
+          <select
+            defaultValue=""
+            disabled={!equipmentAvailable}
+            id={equipmentId}
+            name="equipmentProfileId"
+            required
+          >
+            <option disabled value="">
+              {equipmentAvailable
+                ? `Choose your ${kind}`
+                : `No assigned ${kind} available`}
+            </option>
+            {equipmentOptions.map((option) => (
+              <option key={option.profileId} value={option.profileId}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       <label htmlFor={fieldId}>
-        {replacing ? `Replace your ${kindLabel.toLowerCase()}` : `Add your ${kindLabel.toLowerCase()}`}
+        {equipmentKind
+          ? `Add a photo of this ${kind}`
+          : replacing
+            ? `Replace your ${kindLabel.toLowerCase()}`
+            : `Add your ${kindLabel.toLowerCase()}`}
         <input accept={FILE_TYPES.join(",")} id={fieldId} name="document" required type="file" />
       </label>
       {/* The driver states the expiry, and the check refuses the document when the two
@@ -211,12 +253,27 @@ function CredentialDocumentUpload({
           type="text"
         />
       </label>
-      <button className="advance-button" disabled={pending} type="submit">
+      <button
+        className="advance-button"
+        disabled={pending || !equipmentAvailable}
+        type="submit"
+      >
         <Icon aria-hidden name="action.upload" size={18} />
-        {pending ? "Sending…" : replacing ? "Send a replacement" : "Send for review"}
+        {pending
+          ? "Sending…"
+          : equipmentKind
+            ? `Send ${kind} photo for review`
+            : replacing
+              ? "Send a replacement"
+              : "Send for review"}
       </button>
       {/* No licence or policy number is asked for anywhere on this screen. */}
       <p>JPG, PNG, or WebP · 10 MB max · kept in your vault, not on your public profile.</p>
+      {equipmentKind && !equipmentAvailable ? (
+        <p className="action-note action-note--muted" role="note">
+          Add and assign this equipment to your driver profile before filing its photo.
+        </p>
+      ) : null}
       {error ? (
         <p className="action-error" role="alert">
           {error}
@@ -300,13 +357,23 @@ function CredentialSlot({
   signatureEndpoint: string | null
   slot: DriverCredentialSlotView
 }) {
+  const equipmentKind = slot.kind === "truck" || slot.kind === "trailer"
+
   return (
     <li className="verify-record">
       <div className="verify-record__head">
         <strong>{slot.kindLabel}</strong>
-        <Badge tone={slot.tone}>{slot.stateLabel}</Badge>
+        {equipmentKind ? (
+          <Badge tone="neutral">Filed per unit</Badge>
+        ) : (
+          <Badge tone={slot.tone}>{slot.stateLabel}</Badge>
+        )}
       </div>
-      <p className="verify-record__evidence">{slot.detail}</p>
+      <p className="verify-record__evidence">
+        {equipmentKind
+          ? "Choose the exact assigned unit shown in the photo. Readiness is reported per rig above."
+          : slot.detail}
+      </p>
 
       {slot.requestedEvidence.length > 0 ? (
         <div className="req-block">
@@ -320,18 +387,26 @@ function CredentialSlot({
       ) : null}
 
       <div className="fact-row">
-        {slot.expiresOnLabel ? <span>Expires {slot.expiresOnLabel}</span> : null}
-        {slot.submittedOnLabel ? <span>Sent {slot.submittedOnLabel}</span> : null}
+        {!equipmentKind && slot.expiresOnLabel ? <span>Expires {slot.expiresOnLabel}</span> : null}
+        {!equipmentKind && slot.submittedOnLabel ? <span>Sent {slot.submittedOnLabel}</span> : null}
         {/* Said on every record, both ways round. A driver should never have to
             wonder which of their documents a host is looking at. */}
         <span>{slot.hostSeesPhoto ? "Hosts see this photo" : "Never sent to a host"}</span>
       </div>
 
-      {intakeAvailable && signatureEndpoint !== null ? (
+      {intakeAvailable &&
+      signatureEndpoint !== null &&
+      equipmentKind &&
+      slot.equipmentOptions.length === 0 ? (
+        <Link className="advance-button" href="/driver/equipment">
+          Add or assign {slot.kind} equipment
+        </Link>
+      ) : intakeAvailable && signatureEndpoint !== null ? (
         <CredentialDocumentUpload
+          equipmentOptions={slot.equipmentOptions}
           kind={slot.kind}
           kindLabel={slot.kindLabel}
-          replacing={slot.submittedOnLabel !== null}
+          replacing={!equipmentKind && slot.submittedOnLabel !== null}
           signatureEndpoint={signatureEndpoint}
         />
       ) : null}
@@ -349,7 +424,11 @@ export function CredentialVault({ vault }: { vault: CredentialVaultView }) {
   const noticeId = useId()
 
   return (
-    <section aria-describedby={noticeId} className="verify-panel">
+    <section
+      aria-describedby={noticeId}
+      aria-label="Driver credential vault"
+      className="verify-panel"
+    >
       {vault.satisfied ? (
         // The sentence is the read model's, not this component's. A screen that wrote
         // its own version of "you're covered" is a second claim about a safety record.
@@ -385,6 +464,39 @@ export function CredentialVault({ vault }: { vault: CredentialVaultView }) {
           {vault.noActionAvailableNotice}
         </p>
       ) : null}
+
+      {vault.equipmentNotice ? (
+        <p className="action-note action-note--muted" role="note">
+          {vault.equipmentNotice}
+        </p>
+      ) : null}
+
+      <div className="verify-form">
+        <h3>Assigned rig readiness</h3>
+        {vault.equipmentReadiness.length > 0 ? (
+          <ul className="verify-records">
+            {vault.equipmentReadiness.map((rig) => (
+              <li className="verify-record" key={rig.combinationId}>
+                <div className="verify-record__head">
+                  <strong>{rig.label}</strong>
+                  <Badge tone={rig.satisfied ? "success" : "critical"}>
+                    {rig.satisfied ? "Cleared" : "Blocked"}
+                  </Badge>
+                </div>
+                <p className="verify-record__evidence">
+                  {rig.satisfied
+                    ? "Insurance, CDL, and the exact truck and trailer photos are approved and current."
+                    : `Still needed for this rig: ${rig.missingLabels.join(", ")}.`}
+                </p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="action-note action-note--muted" role="note">
+            No assigned equipment combinations are available yet.
+          </p>
+        )}
+      </div>
 
       <ul className="verify-records">
         {vault.slots.map((slot) => (

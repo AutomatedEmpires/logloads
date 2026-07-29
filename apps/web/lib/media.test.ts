@@ -1,5 +1,6 @@
 import { mediaReferenceSchema, type MediaReference } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
+import { DomainRefusalError } from "@logloads/services"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const cloudinaryAdapter = vi.hoisted(() => ({
@@ -164,7 +165,9 @@ describe("driver media authorization", () => {
     )
 
     expect(otherOrganization).toBeDefined()
-    expect(() => mediaTarget(state, actor, otherOrganization!.id, "profile")).toThrow(ApiError)
+    expect(() => mediaTarget(state, actor, otherOrganization!.id, "profile")).toThrow(
+      DomainRefusalError
+    )
   })
 })
 
@@ -359,15 +362,14 @@ describe("trip document authorization", () => {
     expect(target.tripId).toBe(trip!.id)
   })
 
-  it("answers 404 for a trip that does not exist", () => {
+  it("preserves a typed refusal for a trip that does not exist", () => {
     const { actor, organization, state } = fixture()
 
     try {
       tripDocumentTarget(state, actor, organization.id, "11111111-2222-4333-8444-555555555555", "read")
       throw new Error("expected a refusal")
     } catch (error) {
-      expect(error).toBeInstanceOf(ApiError)
-      expect((error as ApiError).status).toBe(404)
+      expect(error).toBeInstanceOf(DomainRefusalError)
     }
   })
 })

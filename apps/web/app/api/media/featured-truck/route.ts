@@ -1,3 +1,4 @@
+import { DomainRefusalError } from "@logloads/services"
 import { NextRequest, NextResponse } from "next/server"
 
 import { ApiError, apiErrorResponse, requireApiActor } from "@/lib/api-actor"
@@ -27,7 +28,11 @@ export async function GET(request: NextRequest) {
         viewerUserId: actorUserId
       })
     } catch (error) {
-      throw new ApiError(error instanceof Error ? error.message : "Photo not found", 404)
+      if (error instanceof DomainRefusalError) {
+        throw error
+      }
+
+      throw new Error("The featured truck photo could not be resolved", { cause: error })
     }
 
     // Signing is configuration, not provider I/O. Keep it outside the

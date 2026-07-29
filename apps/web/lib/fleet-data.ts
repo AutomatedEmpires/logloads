@@ -433,7 +433,10 @@ export async function getFleetOpportunityData(loadId: string): Promise<FleetOppo
         : null
       const availabilityWindows = state.availabilityWindows.filter((window) => window.driverProfileId === driverProfileId)
       const result = evaluateLoadCompatibility({ availabilityWindows, load: posting, route, trailer, truck })
-      const credentialGate = driverCredentialGate(state, driverProfileId)
+      const credentialGate = driverCredentialGate(state, driverProfileId, undefined, {
+        trailerProfileId: combination.trailerProfileId ?? null,
+        truckProfileId: combination.truckProfileId
+      })
       const credentialsReady = credentialGate.satisfied
       const compatible = result.eligibility !== "ineligible"
 

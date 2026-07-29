@@ -5,6 +5,7 @@ import type { LogLoadsDatabaseState } from "@logloads/db"
 import { tripDocumentSchema, type MediaReference, type TripDocument } from "@logloads/contracts"
 import { imageSize } from "image-size"
 import {
+  DomainRefusalError,
   getDriverMediaTarget,
   getTripDocumentTarget,
   type DriverMediaTarget,
@@ -150,17 +151,18 @@ export function mediaTarget(
       organizationId
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : "The photo target could not be resolved"
-    const status = message.includes("member") || message.includes("own driver") ? 403 : 409
+    if (error instanceof DomainRefusalError) {
+      throw error
+    }
 
-    throw new ApiError(message, status)
+    throw new Error("The photo target could not be resolved", { cause: error })
   }
 }
 
 /**
  * Resolves the trip's document namespace, or refuses. Authorization is the
  * service's rule (participation in the trip, plus the action the access level
- * names) — this only maps the refusal onto an HTTP status.
+ * names). Typed refusals pass through to the one sanitized HTTP mapper.
  */
 export function tripDocumentTarget(
   state: LogLoadsDatabaseState,
@@ -172,10 +174,11 @@ export function tripDocumentTarget(
   try {
     return getTripDocumentTarget(state, { actorUserId: actor.profile.id, organizationId, tripId }, access)
   } catch (error) {
-    const message = error instanceof Error ? error.message : "The trip could not be resolved"
-    const status = message.includes("not a participant") || message.includes("cannot") ? 403 : 404
+    if (error instanceof DomainRefusalError) {
+      throw error
+    }
 
-    throw new ApiError(message, status)
+    throw new Error("The trip could not be resolved", { cause: error })
   }
 }
 

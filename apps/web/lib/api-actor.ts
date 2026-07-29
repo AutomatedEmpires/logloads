@@ -1,6 +1,7 @@
 import "server-only"
 
 import { OperatingStateConflictError, OperatingStateUnavailableError } from "@logloads/db"
+import { DomainRefusalError } from "@logloads/services"
 import { NextResponse } from "next/server"
 
 import { RateLimitError, RateLimitUnavailableError, checkRateLimit } from "./rate-limit"
@@ -135,6 +136,8 @@ const GENERIC_FAILURE_MESSAGE = "We could not complete that request."
 const MALFORMED_BODY_MESSAGE = "The request body must be valid JSON."
 const INVALID_FIELDS_MESSAGE = "The request had missing or invalid fields."
 const BUSY_STATE_MESSAGE = "The service is busy. Try again shortly."
+const DOMAIN_REFUSAL_MESSAGE =
+  "This request conflicts with current records or policy. Refresh and correct the request before retrying."
 
 // A lost compare-and-swap clears in milliseconds; an unreachable or
 // unconfigured backend needs longer before a retry can succeed.
@@ -162,6 +165,12 @@ export function apiErrorResponse(error: unknown): NextResponse {
       { error: BUSY_STATE_MESSAGE },
       { headers: { "Retry-After": String(UNAVAILABLE_RETRY_AFTER_SECONDS) }, status: 503 }
     )
+  }
+
+  if (error instanceof DomainRefusalError) {
+    console.info("logloads: domain request refused", error)
+
+    return NextResponse.json({ error: DOMAIN_REFUSAL_MESSAGE }, { status: 409 })
   }
 
   if (error instanceof Error && error.name === "ZodError") {

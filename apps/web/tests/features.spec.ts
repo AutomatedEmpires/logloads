@@ -32,7 +32,9 @@ test.describe.serial("verification + assistant", () => {
     await page.goto("/driver/profile")
     await page.waitForLoadState("domcontentloaded")
 
-    await expect(page.getByText("Get verified")).toBeVisible()
+    await expect(
+      page.getByRole("heading", { name: "Get your profile verified" })
+    ).toBeVisible()
     await page.locator(".verify-form select[name=verificationType]").selectOption("identity")
     await page.locator(".verify-form textarea[name=evidenceSummary]").fill(EVIDENCE)
     await page.locator(".verify-form button[type=submit]").click()

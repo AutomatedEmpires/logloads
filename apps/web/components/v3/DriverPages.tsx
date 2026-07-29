@@ -4,11 +4,13 @@ import Link from "next/link"
 import { Badge, Icon } from "@logloads/ui"
 
 import type { DriverAvailabilitySummary } from "@/lib/driver-data"
+import type { CredentialVaultView } from "@/lib/credential-data"
 import type { NetworkLoadView, NetworkView } from "@/lib/network"
 import type { VerificationRecordView } from "@/lib/verification-data"
 import { payHeadline, presentPay } from "@/lib/pay-display"
 import { formatHuman, pluralize, tripStatusLabel } from "@/lib/v3-shared"
 import { LocalTime, RelationshipGrid } from "./Common"
+import { CredentialVault } from "./CredentialVault"
 import { ReputationChip, TripReviewForm } from "./Reputation"
 import { VerificationSubmit, type VerificationTypeOption } from "./VerificationSubmit"
 import {
@@ -822,10 +824,16 @@ const DRIVER_VERIFICATION_OPTIONS: VerificationTypeOption[] = [
 export function DriverProfile({
   account,
   availability,
+  credentialVault,
   mediaReady,
   network,
   verifications
-}: DriverPageProps & { availability: DriverAvailabilitySummary; mediaReady: boolean; verifications: VerificationRecordView[] }) {
+}: DriverPageProps & {
+  availability: DriverAvailabilitySummary
+  credentialVault: CredentialVaultView | null
+  mediaReady: boolean
+  verifications: VerificationRecordView[]
+}) {
   const verification = verificationBadge(network.activeOrganization.verificationStatus)
 
   return (
@@ -900,7 +908,17 @@ export function DriverProfile({
         />
       </section>
       <section className="app-section">
-        <SectionHeader eyebrow="Trust" title="Get verified" />
+        <SectionHeader eyebrow="Work credentials" title="Keep every record current" />
+        {credentialVault ? (
+          <CredentialVault vault={credentialVault} />
+        ) : (
+          <p className="action-note action-note--muted" role="note">
+            Add your driver profile before filing work credentials.
+          </p>
+        )}
+      </section>
+      <section className="app-section">
+        <SectionHeader eyebrow="Account identity" title="Get your profile verified" />
         <VerificationSubmit options={DRIVER_VERIFICATION_OPTIONS} records={verifications} subjectType="person" />
       </section>
       <section className="app-section">

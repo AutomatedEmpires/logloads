@@ -44,6 +44,12 @@ import {
 
 const DRIVER = "44444444-4444-4444-8444-444444444441"
 const OTHER_DRIVER = "44444444-4444-4444-8444-444444444442"
+const TRUCK_PROFILE = "77777777-7777-4777-8777-777777777771"
+const TRAILER_PROFILE = "88888888-8888-4888-8888-888888888881"
+const COMBINATION = "18181818-1818-4818-8818-181818181811"
+const SECOND_TRUCK_PROFILE = "77777777-7777-4777-8777-777777777772"
+const SECOND_TRAILER_PROFILE = "88888888-8888-4888-8888-888888888882"
+const SECOND_COMBINATION = "18181818-1818-4818-8818-181818181812"
 
 /** Mid-month and mid-day, so no boundary lands on the instant under test. */
 const NOW = "2026-07-15T12:00:00.000Z"
@@ -90,6 +96,8 @@ interface CredentialFixture {
   reviewNotes?: string | null
   status: CredentialStatus
   submittedAt?: string
+  trailerProfileId?: string | null
+  truckProfileId?: string | null
 }
 
 function credential(fixture: CredentialFixture): DriverCredential {
@@ -113,6 +121,18 @@ function credential(fixture: CredentialFixture): DriverCredential {
     status: fixture.status,
     submittedAt,
     supersededByCredentialId: null,
+    trailerProfileId:
+      fixture.trailerProfileId === undefined
+        ? fixture.kind === "trailer"
+          ? TRAILER_PROFILE
+          : null
+        : fixture.trailerProfileId,
+    truckProfileId:
+      fixture.truckProfileId === undefined
+        ? fixture.kind === "truck"
+          ? TRUCK_PROFILE
+          : null
+        : fixture.truckProfileId,
     updatedAt: decided ? REVIEWED : submittedAt
   })
 }
@@ -131,12 +151,32 @@ function clearedVault(driverProfileId = DRIVER): DriverCredential[] {
 
 function vaultFor(
   credentials: readonly DriverCredential[],
-  options: Partial<CredentialViewOptions> = {}
+  options: Partial<CredentialViewOptions> = {},
+  equipmentSelections = [
+    {
+      combinationId: COMBINATION,
+      equipmentUnitNumbersUnique: true,
+      label: "Hank primary rig",
+      trailerProfileId: TRAILER_PROFILE,
+      truckProfileId: TRUCK_PROFILE
+    }
+  ]
 ): CredentialVaultView {
-  return buildDriverCredentialVaultView({ driverCredentials: credentials }, DRIVER, {
-    ...OPTIONS,
-    ...options
-  })
+  return buildDriverCredentialVaultView(
+    {
+      driverCredentials: credentials,
+      equipmentOptions: [
+        { kind: "truck", label: "Hank truck", profileId: TRUCK_PROFILE },
+        { kind: "trailer", label: "Hank trailer", profileId: TRAILER_PROFILE }
+      ],
+      equipmentSelections
+    },
+    DRIVER,
+    {
+      ...OPTIONS,
+      ...options
+    }
+  )
 }
 
 /**
@@ -158,7 +198,10 @@ function summaryFor(
   state.driverCredentials = [...credentials]
 
   return buildHostDriverCredentialSummary(
-    hostCredentialSummary(state, DRIVER, options.at ?? NOW),
+    hostCredentialSummary(state, DRIVER, options.at ?? NOW, {
+      trailerProfileId: TRAILER_PROFILE,
+      truckProfileId: TRUCK_PROFILE
+    }),
     { mediaReady: options.mediaReady ?? false }
   )
 }
@@ -192,7 +235,7 @@ describe("the gate-satisfied vault", () => {
     expect(vault.noActionAvailableNotice).toBeNull()
     expect(vault.outstanding).toEqual([])
     expect(vault.satisfiedCount).toBe(MANDATORY_CREDENTIAL_KINDS.length)
-    expect(vault.headline).toContain("cleared to accept loads")
+    expect(vault.headline).toContain("assigned rig is cleared")
     expect(vault.slots.every((entry) => entry.blocksWork)).toBe(false)
   })
 
@@ -201,6 +244,92 @@ describe("the gate-satisfied vault", () => {
 
     expect(vault.slots.map((entry) => entry.kind)).toEqual([...MANDATORY_CREDENTIAL_KINDS])
     expect(vault.requiredCount).toBe(MANDATORY_CREDENTIAL_KINDS.length)
+  })
+
+  it("offers equipment targets only on their matching upload slots", () => {
+    const vault = vaultFor(clearedVault())
+
+    expect(slot(vault, "cdl").equipmentOptions).toEqual([])
+    expect(slot(vault, "insurance").equipmentOptions).toEqual([])
+    expect(slot(vault, "truck").equipmentOptions).toEqual([
+      { kind: "truck", label: "Hank truck", profileId: TRUCK_PROFILE }
+    ])
+    expect(slot(vault, "trailer").equipmentOptions).toEqual([
+      { kind: "trailer", label: "Hank trailer", profileId: TRAILER_PROFILE }
+    ])
+    expect(vault.equipmentNotice).toContain("exact unit")
+  })
+
+  it("does not combine truck A with trailer B into a cleared rig", () => {
+    const credentials = [
+      ...clearedVault().filter((entry) => entry.kind === "cdl" || entry.kind === "insurance"),
+      credential({ kind: "truck", status: "approved", truckProfileId: TRUCK_PROFILE }),
+      credential({
+        kind: "trailer",
+        status: "approved",
+        trailerProfileId: SECOND_TRAILER_PROFILE
+      })
+    ]
+    const vault = vaultFor(credentials, {}, [
+      {
+        combinationId: COMBINATION,
+        equipmentUnitNumbersUnique: true,
+        label: "Rig A",
+        trailerProfileId: TRAILER_PROFILE,
+        truckProfileId: TRUCK_PROFILE
+      },
+      {
+        combinationId: SECOND_COMBINATION,
+        equipmentUnitNumbersUnique: true,
+        label: "Rig B",
+        trailerProfileId: SECOND_TRAILER_PROFILE,
+        truckProfileId: SECOND_TRUCK_PROFILE
+      }
+    ])
+
+    expect(vault.satisfied).toBe(false)
+    expect(vault.equipmentReadiness).toEqual([
+      expect.objectContaining({ label: "Rig A", missingLabels: ["Trailer photo"], satisfied: false }),
+      expect.objectContaining({ label: "Rig B", missingLabels: ["Truck photo"], satisfied: false })
+    ])
+    expect(vault.headline).toBe("You can't accept loads yet.")
+  })
+
+  it("never claims a rig is cleared when legacy unit numbers are ambiguous", () => {
+    const vault = vaultFor(clearedVault(), {}, [
+      {
+        combinationId: COMBINATION,
+        equipmentUnitNumbersUnique: false,
+        label: "Duplicate-label rig",
+        trailerProfileId: TRAILER_PROFILE,
+        truckProfileId: TRUCK_PROFILE
+      }
+    ])
+
+    expect(vault.satisfied).toBe(false)
+    expect(vault.headline).toBe("You can't accept loads yet.")
+    expect(vault.equipmentReadiness[0]).toMatchObject({
+      missingLabels: ["unique truck and trailer unit numbers"],
+      satisfied: false
+    })
+    expect(vault.blockedNotice).toContain("unique truck and trailer unit numbers")
+  })
+
+  it("never counts legacy unbound equipment evidence for an assigned rig", () => {
+    const credentials = clearedVault().map((entry) =>
+      entry.kind === "truck"
+        ? { ...entry, truckProfileId: null }
+        : entry.kind === "trailer"
+          ? { ...entry, trailerProfileId: null }
+          : entry
+    )
+    const vault = vaultFor(credentials)
+
+    expect(vault.satisfied).toBe(false)
+    expect(vault.equipmentReadiness[0]?.missingLabels).toEqual([
+      "Truck photo",
+      "Trailer photo"
+    ])
   })
 })
 

@@ -6,7 +6,7 @@ import {
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
-import { createUuid, nowIso } from "./utils"
+import { createUuid, DomainRefusalError, nowIso } from "./utils"
 
 export function listDriverAvailability(
   state: LogLoadsDatabaseState,
@@ -36,11 +36,11 @@ export function upsertAvailabilityWindow(
     : undefined
 
   if (parsed.id && !existing) {
-    throw new Error(`Availability window ${parsed.id} was not found`)
+    throw new DomainRefusalError(`Availability window ${parsed.id} was not found`)
   }
 
   if (existing && existing.driverProfileId !== parsed.driverProfileId) {
-    throw new Error("You cannot replace another driver's availability window")
+    throw new DomainRefusalError("You cannot replace another driver's availability window")
   }
 
   const overlapping = state.availabilityWindows.find((window) => {
@@ -56,7 +56,7 @@ export function upsertAvailabilityWindow(
   })
 
   if (overlapping) {
-    throw new Error(`Availability window overlaps existing window ${overlapping.id}`)
+    throw new DomainRefusalError(`Availability window overlaps existing window ${overlapping.id}`)
   }
 
   const entity = availabilityWindowSchema.parse({

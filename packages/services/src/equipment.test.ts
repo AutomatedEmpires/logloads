@@ -106,6 +106,38 @@ describe("equipment mutation authorization", () => {
     expect(audit).toMatchObject({ action: "equipment_added", actorUserId: DISPATCHER_USER_ID })
   })
 
+  it("rejects normalized duplicate unit numbers and malformed legacy duplicates without partial writes", () => {
+    const services = createLogLoadsServices()
+    const beforeConflict = structuredClone(services.state)
+
+    expect(() =>
+      services.addEquipmentCombination(addInput({
+        label: "Visually duplicated unit",
+        unitNumber: " np 101 "
+      }))
+    ).toThrow(/truck unit number is already in use/)
+    expect(services.state).toEqual(beforeConflict)
+
+    const existingTruck = services.state.truckProfiles.find(
+      (candidate) =>
+        candidate.companyId === NORTH_PINE_ORG_ID &&
+        candidate.unitNumber === "NP-202"
+    )
+    if (!existingTruck) {
+      throw new Error("Second North Pine truck fixture missing")
+    }
+    existingTruck.unitNumber = "NP 101"
+    const beforeMalformedState = structuredClone(services.state)
+
+    expect(() =>
+      services.addEquipmentCombination(addInput({
+        label: "Otherwise valid new unit",
+        unitNumber: "NP-404"
+      }))
+    ).toThrow(/duplicate truck unit numbers/)
+    expect(services.state).toEqual(beforeMalformedState)
+  })
+
   it("allows a driver to add equipment only when it is assigned to their own active same-org profile", () => {
     const services = createLogLoadsServices()
 

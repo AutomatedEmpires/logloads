@@ -315,6 +315,35 @@ describe("platform fee accrual", () => {
     expect(accrualAuditEvents(state)).toEqual([])
   })
 
+  it("never turns non-USD legacy driver pay into a USD platform fee", () => {
+    const state = freshState()
+    const haul = oneBillableHaul(state, 52_500)
+    const assignment = state.assignments.find(
+      (candidate) => candidate.id === haul.assignmentId
+    )
+
+    if (!assignment) throw new Error("the billable assignment is missing")
+
+    assignment.driverPaymentReceivedCurrency = "CAD"
+    assignment.termsSnapshot = {
+      ...assignment.termsSnapshot,
+      currency: "CAD"
+    }
+
+    const result = accruePlatformFee(state, {
+      actorUserId: HOST_STAFF_USER,
+      assignmentId: haul.assignmentId
+    })
+
+    expect(result).toMatchObject({
+      assignmentId: haul.assignmentId,
+      outcome: "no_basis",
+      reason: expect.stringMatching(/USD/)
+    })
+    expect(state.platformFeeEvents).toEqual([])
+    expect(accrualAuditEvents(state)).toEqual([])
+  })
+
   it("refuses to accrue for a haul nobody has confirmed delivered", () => {
     const state = freshState()
     const assignment = hostAssignments(state)[0]

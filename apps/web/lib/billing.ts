@@ -8,6 +8,7 @@ import {
   hostBillingProfileSchema,
   hostInvoiceSchema,
   invoiceSubtotalCents,
+  readFrozenDriverPay,
   type Entitlement,
   type HostBillingProfile,
   type HostBillingProfileStatus,
@@ -1257,6 +1258,41 @@ function hostPaymentProfileStillMatchesPlan(
   )
 }
 
+function legacyInvoiceCurrencyProblem(
+  state: LogLoadsDatabaseState,
+  invoice: HostInvoice
+): string | null {
+  for (const feeEventId of invoice.feeEventIds) {
+    const fee = state.platformFeeEvents.find(
+      (candidate) => candidate.id === feeEventId
+    )
+
+    if (!fee || fee.organizationId !== invoice.organizationId) {
+      return "This legacy bill cannot prove the source of every fee, so it cannot be charged"
+    }
+
+    if (fee.status === "voided") {
+      continue
+    }
+
+    const assignment = state.assignments.find(
+      (candidate) => candidate.id === fee.assignmentId
+    )
+    const frozenDriverPay = assignment
+      ? readFrozenDriverPay(assignment.termsSnapshot)
+      : null
+
+    if (
+      !frozenDriverPay ||
+      frozenDriverPay.currency !== CHARGE_CURRENCY.toUpperCase()
+    ) {
+      return "Legacy platform fees can be charged only when every accepted load proves USD-denominated driver pay"
+    }
+  }
+
+  return null
+}
+
 /**
  * Everything that must be true before Stripe is called, decided in one read.
  *
@@ -1276,6 +1312,12 @@ export function planHostInvoiceCharge(
 
   if (invoice.stripeInvoiceId) {
     if (invoice.status === "open") {
+      const currencyProblem = legacyInvoiceCurrencyProblem(state, invoice)
+
+      if (currencyProblem) {
+        return { kind: "refused", message: currencyProblem }
+      }
+
       const profile = planHostPaymentProfile(state, invoice.organizationId, {
         allowFailed: true
       })
@@ -1326,6 +1368,12 @@ export function planHostInvoiceCharge(
     }
 
     fees.push(fee)
+  }
+
+  const currencyProblem = legacyInvoiceCurrencyProblem(state, invoice)
+
+  if (currencyProblem) {
+    return { kind: "refused", message: currencyProblem }
   }
 
   // The stored subtotal is what the host was shown. If it disagrees with the fees

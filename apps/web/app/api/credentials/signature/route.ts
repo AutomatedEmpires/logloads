@@ -1,6 +1,7 @@
 import { credentialKindSchema } from "@logloads/contracts"
 import { credentialDocumentPublicIdPrefix } from "@logloads/services"
 import { NextRequest, NextResponse } from "next/server"
+import { z } from "zod"
 
 import {
   ApiError,
@@ -31,14 +32,49 @@ export async function POST(request: NextRequest) {
     }
 
     await enforceApiRateLimit("credential-upload-signature", actorUserId, 10, 60_000)
-    services.listDriverCredentials(actor.driverProfileId, {
+    const vault = services.listDriverCredentials(actor.driverProfileId, {
       actorUserId,
       audience: "driver"
     })
 
+    if (vault.audience === "host") {
+      throw new ApiError("A host cannot upload to a driver's vault", 403)
+    }
+
+    const equipmentKind = kind.data === "truck" || kind.data === "trailer"
+    const equipmentProfileId = equipmentKind
+      ? z.string().uuid().safeParse(payload.equipmentProfileId)
+      : null
+
+    if (equipmentKind && !equipmentProfileId?.success) {
+      throw new ApiError(`Choose the ${kind.data} shown in the photo`, 422)
+    }
+
+    if (!equipmentKind && payload.equipmentProfileId !== undefined && payload.equipmentProfileId !== null) {
+      throw new ApiError("This credential cannot be attached to equipment", 422)
+    }
+
+    const selectedEquipmentProfileId = equipmentProfileId?.success
+      ? equipmentProfileId.data
+      : null
+
+    if (
+      equipmentKind &&
+      !vault.equipmentOptions.some(
+        (option) =>
+          option.kind === kind.data && option.profileId === selectedEquipmentProfileId
+      )
+    ) {
+      throw new ApiError(`Choose a ${kind.data} currently assigned to you`, 409)
+    }
+
     return NextResponse.json(
       await signedUpload({
-        publicIdPrefix: credentialDocumentPublicIdPrefix(actor.driverProfileId, kind.data)
+        publicIdPrefix: credentialDocumentPublicIdPrefix(
+          actor.driverProfileId,
+          kind.data,
+          selectedEquipmentProfileId
+        )
       })
     )
   } catch (error) {

@@ -349,10 +349,16 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
       input: Parameters<typeof applyCredentialReview>[1],
       at?: Parameters<typeof applyCredentialReview>[2]
     ) => applyCredentialReview(state, input, at),
-    driverCredentialGate: (driverProfileId: string, at?: string) =>
-      driverCredentialGate(state, driverProfileId, at),
-    hostCredentialSummary: (driverProfileId: string, at?: string) =>
-      hostCredentialSummary(state, driverProfileId, at),
+    driverCredentialGate: (
+      driverProfileId: string,
+      at: Parameters<typeof driverCredentialGate>[2],
+      equipment: Parameters<typeof driverCredentialGate>[3]
+    ) => driverCredentialGate(state, driverProfileId, at, equipment),
+    hostCredentialSummary: (
+      driverProfileId: string,
+      at: Parameters<typeof hostCredentialSummary>[2],
+      equipment: Parameters<typeof hostCredentialSummary>[3]
+    ) => hostCredentialSummary(state, driverProfileId, at, equipment),
     listDriverCredentials: (
       driverProfileId: string,
       viewer: Parameters<typeof listDriverCredentials>[2],
@@ -534,6 +540,9 @@ export {
 export type {
   ApplyCredentialReviewInput,
   ApplyCredentialReviewResult,
+  CredentialEquipmentOption,
+  CredentialEquipmentSelection,
+  CredentialEquipmentSelectionOption,
   CredentialViewer,
   DriverCredentialVaultView,
   DriverCredentialView,
@@ -550,6 +559,7 @@ export {
 } from "./support-requests"
 export { loadPostingHasOwnedCoherentSources, routePackIsSafeToRead } from "./route-packs"
 export { directOfferClaimCount, directOfferIsClaimable, effectiveDirectOfferStatus } from "./operating-network"
+export { DomainRefusalError } from "./utils"
 /**
  * Exported as free functions as well as bound methods: the accrual has to be
  * callable from INSIDE the compare-and-swap mutation that settles a completion,
@@ -560,6 +570,7 @@ export {
   accruePlatformFee,
   hostFeeSummary,
   hostInvoiceId,
+  LEGACY_PLATFORM_FEE_CURRENCY,
   markInvoicePaid,
   markInvoiceUncollectible,
   openAllClosedPeriodInvoices,

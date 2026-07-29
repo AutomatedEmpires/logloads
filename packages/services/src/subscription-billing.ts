@@ -17,6 +17,7 @@ import {
   organizationSubscriptionId,
   organizationSubscriptionSchema,
   organizationRoleCan,
+  readFrozenDriverPay,
   subscriptionBaseInvoiceId,
   subscriptionBaseInvoiceSchema,
   subscriptionPlanDefinitionSchema,
@@ -1108,6 +1109,10 @@ export function resolveAssignmentBillingCommitment(
     assertCondition(
       account.billingModel === "legacy_percentage",
       `Organization ${input.hostOrganizationId} has an invalid legacy billing account`
+    )
+    assertCondition(
+      readFrozenDriverPay(assignment.termsSnapshot)?.currency === "USD",
+      "Legacy percentage billing can accept only USD-denominated work; choose an eligible subscription agreement for other currencies"
     )
 
     return {

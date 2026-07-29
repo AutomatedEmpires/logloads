@@ -18,8 +18,11 @@ const mocks = vi.hoisted(() => {
     }
   }
 
+  class DomainRefusalError extends Error {}
+
   return {
     ApiError,
+    DomainRefusalError,
     acceptDispatchProSubscription: vi.fn(),
     activateOrganizationSubscription: vi.fn(),
     authorizePilotConversionSubscription: vi.fn(),
@@ -50,10 +53,17 @@ vi.mock("@/lib/api-actor", () => ({
     const status =
       error instanceof mocks.ApiError
         ? error.status
+        : error instanceof mocks.DomainRefusalError
+          ? 409
         : error instanceof Error && error.name === "ZodError"
           ? 422
           : 500
-    const message = error instanceof Error ? error.message : "Unexpected error"
+    const message =
+      error instanceof mocks.DomainRefusalError
+        ? "This request conflicts with current records or policy. Refresh and correct the request before retrying."
+        : error instanceof Error
+          ? error.message
+          : "Unexpected error"
 
     return Response.json({ error: message }, { status })
   },
@@ -68,7 +78,8 @@ vi.mock("@logloads/services", () => ({
   acceptDispatchProSubscription: mocks.acceptDispatchProSubscription,
   activateOrganizationSubscription: mocks.activateOrganizationSubscription,
   authorizePilotConversionSubscription:
-    mocks.authorizePilotConversionSubscription
+    mocks.authorizePilotConversionSubscription,
+  DomainRefusalError: mocks.DomainRefusalError
 }))
 vi.mock("@/lib/billing", () => ({
   findHostBillingProfile: mocks.findHostBillingProfile,
@@ -432,6 +443,40 @@ describe("Network subscription checkout route", () => {
     expect(
       mocks.authorizePilotConversionSubscription
     ).not.toHaveBeenCalled()
+    expect(mocks.resolveSubscriptionStripe).not.toHaveBeenCalled()
+  })
+
+  it("sanitizes a typed Pilot conversion refusal instead of exposing subscription ids", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-10-27T00:00:00.000Z"))
+    const state = {
+      billingPlanDefinitions: [...SUBSCRIPTION_PLAN_CATALOG],
+      hostBillingProfiles: [],
+      organizationSubscriptions: [pilotConversionSource()]
+    }
+    mocks.operatingStateAccess.mockReturnValue(stateAccess(state))
+    mocks.authorizePilotConversionSubscription.mockImplementation(() => {
+      throw new mocks.DomainRefusalError(
+        `Subscription ${SUBSCRIPTION_ID} cannot convert into ${CONVERSION_SUBSCRIPTION_ID}`
+      )
+    })
+
+    const response = await startCheckout(
+      request({
+        acceptNetworkTerms: true,
+        convertPilotSubscriptionId: SUBSCRIPTION_ID,
+        quoteFingerprint: NETWORK_25_QUOTE_FINGERPRINT,
+        targetPlanCode: "network_25"
+      })
+    )
+    const body = (await response.json()) as { error: string }
+
+    expect(response.status).toBe(409)
+    expect(body.error).toBe(
+      "This request conflicts with current records or policy. Refresh and correct the request before retrying."
+    )
+    expect(body.error).not.toContain(SUBSCRIPTION_ID)
+    expect(body.error).not.toContain(CONVERSION_SUBSCRIPTION_ID)
     expect(mocks.resolveSubscriptionStripe).not.toHaveBeenCalled()
   })
 

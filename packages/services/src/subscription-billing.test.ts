@@ -473,6 +473,43 @@ describe("subscription activation and commercial scope", () => {
     })
   })
 
+  it("rejects non-USD legacy acceptance without blocking subscription work", () => {
+    const state = freshState()
+    const assignmentId = "69696969-6969-4969-8969-696969696962"
+    addBlankAssignment(state, assignmentId)
+    const assignment = state.assignments.find(
+      (candidate) => candidate.id === assignmentId
+    )
+
+    if (!assignment) throw new Error("Blank assignment missing")
+
+    assignment.termsSnapshot = {
+      ...assignment.termsSnapshot,
+      currency: "CAD",
+      driverPayCents: 52_500
+    }
+    const input = {
+      acceptanceSource: "host_approval" as const,
+      assignmentId,
+      haulerOrganizationId: UNRELATED_HAULER,
+      hostOrganizationId: HOST
+    }
+
+    expect(() =>
+      resolveAssignmentBillingCommitment(state, input, AUTHORIZED_AT)
+    ).toThrow(/USD-denominated/)
+
+    paidAndOperating(state)
+
+    expect(
+      resolveAssignmentBillingCommitment(
+        state,
+        input,
+        "2026-08-04T16:00:00.000Z"
+      ).billingModel
+    ).toBe("subscription_v1")
+  })
+
   it("keeps Dispatch Pro fleet-scoped and projects only fleet capabilities", () => {
     const state = freshState()
 
