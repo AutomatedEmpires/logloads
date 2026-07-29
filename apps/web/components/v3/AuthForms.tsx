@@ -338,9 +338,17 @@ export function OnboardingFlow({
       ) : (
         <fieldset data-onboarding-step="2" hidden={step !== 2}>
           <legend tabIndex={-1}>Your operation is ready</legend>
-          <p className="fieldset-note">Next, LogLoads will take you to your operation so you can post the work, set the schedule, and choose who can see it.</p>
+          <p className="fieldset-note">
+            Next, LogLoads will open your operating workspace. Creating it does
+            not start a subscription or charge a card; paid Network enrollment
+            and operational activation are sales-assisted.
+          </p>
           <div className="onboarding-ready">
-            <strong>{path === "host" ? "Start by posting the timber that needs to move." : "Start by setting up your operation."}</strong>
+            <strong>
+              {path === "host"
+                ? "Start with your landing, routes, and operating requirements."
+                : "Start by setting up your operation."}
+            </strong>
             <span>Only the information needed for the next decision appears on each screen.</span>
           </div>
         </fieldset>

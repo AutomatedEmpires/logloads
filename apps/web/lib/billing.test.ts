@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   getSessionActor: vi.fn(),
   readState: vi.fn(),
   stripe: {
+    accountRetrieve: vi.fn(),
     billingPortalSessionCreate: vi.fn(),
     checkoutSessionCreate: vi.fn(),
     customerCreate: vi.fn(),
@@ -45,6 +46,7 @@ vi.mock("server-only", () => ({}))
  */
 vi.mock("stripe", () => ({
   default: class FakeStripe {
+    accounts = { retrieveCurrent: mocks.stripe.accountRetrieve }
     billingPortal = { sessions: { create: mocks.stripe.billingPortalSessionCreate } }
     checkout = { sessions: { create: mocks.stripe.checkoutSessionCreate } }
     customers = { create: mocks.stripe.customerCreate, update: mocks.stripe.customerUpdate }
@@ -305,18 +307,28 @@ interface FakeStripe {
  * invoice, so a test can prove a retry never raises a second bill.
  */
 function fakeStripe(
-  options: { onPay?: () => void | Promise<void>; paid?: boolean; payError?: Error } = {}
+  options: {
+    customerBalanceCents?: number
+    onPay?: () => void | Promise<void>
+    paid?: boolean
+    payError?: Error
+  } = {}
 ): FakeStripe {
   const calls: Array<{ input: Record<string, unknown>; name: string }> = []
   const byKey = new Map<string, StripeInvoiceFacts>()
   const providerInvoices = new Map<
     string,
     {
+      amountDueCents: number
+      amountPaidCents: number
+      amountRemainingCents: number
       currency: string
       customerId: string
+      endingBalanceCents: number
       hostInvoiceId: string
       id: string
       paid: boolean
+      startingBalanceCents: number
       status: string | null
       totalCents: number
     }
@@ -363,8 +375,14 @@ function fakeStripe(
         }
 
         const facts: StripeInvoiceFacts = {
+          amountDueCents: 0,
+          amountPaidCents: 0,
+          amountRemainingCents: 0,
+          endingBalanceCents: 0,
           id: `in_${mintedInvoiceIds.length + 1}`,
           paid: false,
+          startingBalanceCents: 0,
+          totalCents: 0,
           status: "draft"
         }
 
@@ -374,8 +392,7 @@ function fakeStripe(
           currency: "USD",
           customerId: input.customerId,
           hostInvoiceId: input.metadata.hostInvoiceId ?? "",
-          ...facts,
-          totalCents: 0
+          ...facts
         })
 
         return facts
@@ -386,6 +403,8 @@ function fakeStripe(
 
         if (invoice) {
           invoice.totalCents += input.amountCents
+          invoice.amountDueCents = invoice.totalCents
+          invoice.amountRemainingCents = invoice.totalCents
         }
 
         return { id: "ii_1" }
@@ -401,9 +420,11 @@ function fakeStripe(
 
         if (invoice) {
           invoice.status = "open"
+
+          return { ...invoice }
         }
 
-        return { id: input.stripeInvoiceId, paid: false, status: "open" }
+        throw new Error("provider invoice missing")
       },
       async listHostInvoices(input) {
         record("listHostInvoices", { ...input })
@@ -415,10 +436,15 @@ function fakeStripe(
               invoice.hostInvoiceId === input.hostInvoiceId
           )
           .map((invoice) => ({
+            amountDueCents: invoice.amountDueCents,
+            amountPaidCents: invoice.amountPaidCents,
+            amountRemainingCents: invoice.amountRemainingCents,
             currency: invoice.currency,
             customerId: invoice.customerId,
+            endingBalanceCents: invoice.endingBalanceCents,
             id: invoice.id,
             paid: invoice.paid,
+            startingBalanceCents: invoice.startingBalanceCents,
             status: invoice.status,
             totalCents: invoice.totalCents
           }))
@@ -437,9 +463,28 @@ function fakeStripe(
         if (invoice) {
           invoice.paid = paid
           invoice.status = paid ? "paid" : "open"
+          invoice.amountPaidCents = paid ? invoice.amountDueCents : 0
+          invoice.amountRemainingCents = paid ? 0 : invoice.amountDueCents
+
+          return { ...invoice }
         }
 
-        return { id: input.stripeInvoiceId, paid, status: paid ? "paid" : "open" }
+        return {
+          amountDueCents: 2_625,
+          amountPaidCents: paid ? 2_625 : 0,
+          amountRemainingCents: paid ? 0 : 2_625,
+          endingBalanceCents: 0,
+          id: input.stripeInvoiceId,
+          paid,
+          startingBalanceCents: 0,
+          status: paid ? "paid" : "open",
+          totalCents: 2_625
+        }
+      },
+      async retrieveCustomerBalance(customerId) {
+        record("retrieveCustomerBalance", { customerId })
+
+        return options.customerBalanceCents ?? 0
       },
       async retrievePaymentMethod(paymentMethodId) {
         record("retrievePaymentMethod", { paymentMethodId })
@@ -481,26 +526,44 @@ describe("Stripe environment resolution", () => {
   })
 
   it("builds a port when the secret key is present", () => {
-    expect(resolveStripeBilling({ STRIPE_SECRET_KEY: "sk_test" }).ok).toBe(true)
+    expect(
+      resolveStripeBilling({
+        LOGLOADS_STRIPE_EXPECTED_LIVEMODE: "test",
+        STRIPE_SECRET_KEY: "sk_test"
+      }).ok
+    ).toBe(true)
   })
 
   it("refuses the webhook without a signing secret, even with a secret key", () => {
-    const webhook = resolveStripeWebhook({ STRIPE_SECRET_KEY: "sk_test" })
+    const webhook = resolveStripeWebhook({
+      LOGLOADS_STRIPE_EXPECTED_LIVEMODE: "test",
+      STRIPE_SECRET_KEY: "sk_test"
+    })
 
     expect(webhook.ok === false && webhook.outcome === "unavailable" && webhook.reason).toBe(
       "stripe_webhook_secret_missing"
     )
     expect(
-      resolveStripeWebhook({ STRIPE_SECRET_KEY: "sk_test", STRIPE_WEBHOOK_SECRET: "whsec" }).ok
+      resolveStripeWebhook({
+        LOGLOADS_STRIPE_EXPECTED_LIVEMODE: "test",
+        STRIPE_SECRET_KEY: "sk_test",
+        STRIPE_WEBHOOK_SECRET: "whsec"
+      }).ok
     ).toBe(true)
   })
 
   it("refuses card setup without a publishable key, because the browser needs one", () => {
     expect(stripePublishableKey({}).ok).toBe(false)
     expect(
-      stripePublishableKey({ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_test" }).ok === true
+      stripePublishableKey({
+        LOGLOADS_STRIPE_EXPECTED_LIVEMODE: "test",
+        NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_test"
+      }).ok === true
     ).toBe(true)
-    expect(stripePublishableKey({ STRIPE_PUBLISHABLE_KEY: "pk_live" })).toEqual({
+    expect(stripePublishableKey({
+      LOGLOADS_STRIPE_EXPECTED_LIVEMODE: "live",
+      STRIPE_PUBLISHABLE_KEY: "pk_live"
+    })).toEqual({
       ok: true,
       outcome: "ok",
       value: "pk_live"
@@ -509,6 +572,7 @@ describe("Stripe environment resolution", () => {
 
   it("never names an environment variable in what the caller is told", () => {
     const reasons: BillingUnavailableReason[] = [
+      "stripe_mode_invalid",
       "stripe_secret_missing",
       "stripe_publishable_key_missing",
       "stripe_webhook_secret_missing"
@@ -516,7 +580,14 @@ describe("Stripe environment resolution", () => {
     const messages = [
       resolveStripeBilling({}),
       stripePublishableKey({}),
-      resolveStripeWebhook({ STRIPE_SECRET_KEY: "sk_test" })
+      resolveStripeWebhook({
+        LOGLOADS_STRIPE_EXPECTED_LIVEMODE: "test",
+        STRIPE_SECRET_KEY: "sk_test"
+      }),
+      resolveStripeBilling({
+        LOGLOADS_STRIPE_EXPECTED_LIVEMODE: "live",
+        STRIPE_SECRET_KEY: "sk_test"
+      })
     ].map((result) => (result.ok ? "" : result.message))
 
     expect(messages).toHaveLength(reasons.length)
@@ -1004,9 +1075,11 @@ describe("chargeHostInvoice", () => {
     })
     expect(stripe.callNames()).toEqual([
       "listHostInvoices",
+      "retrieveCustomerBalance",
       "createInvoice",
       "createInvoiceItem",
       "finalizeInvoice",
+      "retrieveCustomerBalance",
       "payInvoice"
     ])
     expect(stripe.inputFor("createInvoiceItem")).toMatchObject({
@@ -1022,6 +1095,39 @@ describe("chargeHostInvoice", () => {
     // rows that explain the amount.
     expect(state.platformFeeEvents[0]).toEqual(fee)
   })
+
+  it.each([-100, 100])(
+    "refuses a customer balance of %i cents before creating a legacy invoice",
+    async (customerBalanceCents) => {
+      const { state } = billableHost()
+      const stripe = fakeStripe({ customerBalanceCents })
+
+      const result = await chargeHostInvoice({
+          invoiceId: INVOICE_ID,
+          now: () => AT,
+          port: stripe.port,
+          state: stateAccess(state)
+        })
+
+      expect(result).toMatchObject({
+        message: expect.stringMatching(
+          /customer balance must be exactly zero/
+        ),
+        ok: false,
+        outcome: "refused"
+      })
+
+      expect(stripe.callNames()).toEqual([
+        "listHostInvoices",
+        "retrieveCustomerBalance"
+      ])
+      expect(stripe.mintedInvoiceIds).toEqual([])
+      expect(state.hostInvoices[0]).toMatchObject({
+        status: "open",
+        stripeInvoiceId: null
+      })
+    }
+  )
 
   it("derives every idempotency key from the bill's id", async () => {
     const { state } = billableHost()
@@ -1216,7 +1322,7 @@ describe("chargeHostInvoice", () => {
 
     expect(reconciled.ok && reconciled.value.alreadyCharged).toBe(true)
     expect(reconciled.ok && reconciled.value.status).toBe("paid")
-    expect(retry.callNames()).toEqual(["payInvoice"])
+    expect(retry.callNames()).toEqual(["retrieveCustomerBalance", "payInvoice"])
     expect(retry.inputFor("payInvoice")).toMatchObject({
       idempotencyKey: expect.stringContaining("pay-retry-2026-07-02T12:00:00.000Z"),
       stripeInvoiceId: "in_1"
@@ -1333,7 +1439,10 @@ describe("startHostCardSetup", () => {
 
 describe("the real Stripe adapter", () => {
   it("excludes stray pending items, does not auto-advance, and passes the idempotency key", async () => {
-    const billing = resolveStripeBilling({ STRIPE_SECRET_KEY: "sk_test" })
+    const billing = resolveStripeBilling({
+      LOGLOADS_STRIPE_EXPECTED_LIVEMODE: "test",
+      STRIPE_SECRET_KEY: "sk_test"
+    })
 
     if (!billing.ok) {
       throw new Error("a secret key must produce a port")
@@ -1361,7 +1470,10 @@ describe("the real Stripe adapter", () => {
   })
 
   it("lists the customer's provider invoices to recover a lost canonical binding", async () => {
-    const billing = resolveStripeBilling({ STRIPE_SECRET_KEY: "sk_test" })
+    const billing = resolveStripeBilling({
+      LOGLOADS_STRIPE_EXPECTED_LIVEMODE: "test",
+      STRIPE_SECRET_KEY: "sk_test"
+    })
 
     if (!billing.ok) {
       throw new Error("a secret key must produce a port")
@@ -1370,10 +1482,15 @@ describe("the real Stripe adapter", () => {
     mocks.stripe.invoiceList.mockReturnValue([
       {
         amount_due: 2_625,
+        amount_paid: 0,
+        amount_remaining: 2_625,
         currency: "usd",
         customer: "cus_live",
+        ending_balance: 0,
         id: "in_recovered",
         metadata: { hostInvoiceId: INVOICE_ID },
+        paid: false,
+        starting_balance: 0,
         status: "open",
         total: 2_625
       }
@@ -1386,10 +1503,15 @@ describe("the real Stripe adapter", () => {
       })
     ).resolves.toEqual([
       {
+        amountDueCents: 2_625,
+        amountPaidCents: 0,
+        amountRemainingCents: 2_625,
         currency: "USD",
         customerId: "cus_live",
+        endingBalanceCents: 0,
         id: "in_recovered",
         paid: false,
+        startingBalanceCents: 0,
         status: "open",
         totalCents: 2_625
       }
@@ -1401,7 +1523,10 @@ describe("the real Stripe adapter", () => {
   })
 
   it("charges the stored card off-session and makes it the customer default", async () => {
-    const billing = resolveStripeBilling({ STRIPE_SECRET_KEY: "sk_test" })
+    const billing = resolveStripeBilling({
+      LOGLOADS_STRIPE_EXPECTED_LIVEMODE: "test",
+      STRIPE_SECRET_KEY: "sk_test"
+    })
 
     if (!billing.ok) {
       throw new Error("a secret key must produce a port")
@@ -1434,7 +1559,10 @@ describe("the real Stripe adapter", () => {
   })
 
   it("asks Stripe for a card-only setup intent stored for off-session use", async () => {
-    const billing = resolveStripeBilling({ STRIPE_SECRET_KEY: "sk_test" })
+    const billing = resolveStripeBilling({
+      LOGLOADS_STRIPE_EXPECTED_LIVEMODE: "test",
+      STRIPE_SECRET_KEY: "sk_test"
+    })
 
     if (!billing.ok) {
       throw new Error("a secret key must produce a port")
@@ -1454,7 +1582,10 @@ describe("the real Stripe adapter", () => {
   })
 
   it("refuses a setup intent with no client secret rather than returning a broken flow", async () => {
-    const billing = resolveStripeBilling({ STRIPE_SECRET_KEY: "sk_test" })
+    const billing = resolveStripeBilling({
+      LOGLOADS_STRIPE_EXPECTED_LIVEMODE: "test",
+      STRIPE_SECRET_KEY: "sk_test"
+    })
 
     if (!billing.ok) {
       throw new Error("a secret key must produce a port")
@@ -1535,7 +1666,7 @@ describe("checkoutEligibility", () => {
     ).toBe(true)
   })
 
-  it("has a decided answer for every product, and none of them claims the host fee is off", () => {
+  it("has a decided answer for every product and routes hosts to Network enrollment", () => {
     const state = seedState()
     const host = organizationOfType(state, "landing_source")
     const products = ["driver_core", "enterprise", "fleet_operations", "landing_operations"] as const
@@ -1549,9 +1680,9 @@ describe("checkoutEligibility", () => {
     const hostPlan = checkoutPlanFor("landing_operations")
 
     expect(hostPlan.kind).toBe("not_purchasable")
-    expect(hostPlan.kind === "not_purchasable" && hostPlan.message).toContain("5%")
-    expect(hostPlan.kind === "not_purchasable" && hostPlan.message).toContain("completed loads")
-    expect(hostPlan.kind === "not_purchasable" && hostPlan.message).not.toContain("pilot")
+    expect(hostPlan.kind === "not_purchasable" && hostPlan.message).toContain("Network plans")
+    expect(hostPlan.kind === "not_purchasable" && hostPlan.message).toContain("no posting fee")
+    expect(hostPlan.kind === "not_purchasable" && hostPlan.message).not.toContain("5%")
     expect(
       checkoutEligibility(state.entitlements, { organization: host, product: "landing_operations" })
         .allowed
@@ -1577,7 +1708,9 @@ function actorFor(organization: Organization, role = "owner") {
 describe("startCheckoutAction", () => {
   beforeEach(() => {
     vi.stubEnv("STRIPE_SECRET_KEY", "sk_test")
+    vi.stubEnv("LOGLOADS_STRIPE_EXPECTED_ACCOUNT_ID", "acct_logloads")
     vi.stubEnv("STRIPE_PRICE_DISPATCH", "price_dispatch")
+    mocks.stripe.accountRetrieve.mockResolvedValue({ id: "acct_logloads" })
     mocks.stripe.checkoutSessionCreate.mockResolvedValue({
       id: "cs_test",
       url: "https://checkout.stripe.test/session"
@@ -1609,7 +1742,7 @@ describe("startCheckoutAction", () => {
     expect(mocks.stripe.checkoutSessionCreate).not.toHaveBeenCalled()
   })
 
-  it("does not open checkout for a fleet organization with no plan record", async () => {
+  it("directs fleet enrollment to a canonical accepted agreement", async () => {
     const state = seedState()
     const fleet = fleetWithoutEntitlement(state)
 
@@ -1621,11 +1754,12 @@ describe("startCheckoutAction", () => {
     const result = await startCheckoutAction("fleet_operations")
 
     expect(result.ok).toBe(false)
-    expect(result.error).toContain("no plan record")
+    expect(result.error).toContain("accepted agreement")
+    expect(mocks.readState).not.toHaveBeenCalled()
     expect(mocks.stripe.checkoutSessionCreate).not.toHaveBeenCalled()
   })
 
-  it("opens checkout for an eligible fleet organization", async () => {
+  it("does not let even a legacy eligible entitlement create a new paid obligation", async () => {
     const state = seedState()
     const entitlement = state.entitlements.find(
       (candidate) => candidate.product === "fleet_operations"
@@ -1645,15 +1779,48 @@ describe("startCheckoutAction", () => {
 
     const result = await startCheckoutAction("fleet_operations")
 
-    expect(result).toEqual({ error: null, ok: true, url: "https://checkout.stripe.test/session" })
-    expect(mocks.stripe.checkoutSessionCreate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        client_reference_id: fleet.id,
-        line_items: [{ price: "price_dispatch", quantity: 1 }],
-        metadata: { organizationId: fleet.id, product: "fleet_operations" },
-        mode: "subscription"
-      })
+    expect(result).toEqual({
+      error:
+        "Dispatch Pro enrollment now starts from an accepted agreement in Fleet billing. This legacy Checkout path cannot create a new paid obligation.",
+      ok: false,
+      url: null
+    })
+    expect(mocks.readState).not.toHaveBeenCalled()
+    expect(mocks.stripe.accountRetrieve).not.toHaveBeenCalled()
+    expect(mocks.stripe.checkoutSessionCreate).not.toHaveBeenCalled()
+  })
+
+  it("does not reach Stripe account discovery through retired legacy Checkout", async () => {
+    const state = seedState()
+    const entitlement = state.entitlements.find(
+      (candidate) => candidate.product === "fleet_operations"
     )
+    const fleet = state.organizations.find(
+      (candidate) => candidate.id === entitlement?.organizationId
+    )
+
+    if (!fleet) {
+      throw new Error(
+        "The seed no longer contains a fleet organization with a Dispatch Pro record"
+      )
+    }
+
+    mocks.getSessionActor.mockResolvedValue(actorFor(fleet))
+    mocks.readState.mockImplementation(
+      async (
+        read: (current: { state: LogLoadsDatabaseState }) => unknown
+      ) => read({ state })
+    )
+    mocks.stripe.accountRetrieve.mockResolvedValue({ id: "acct_other" })
+
+    const result = await startCheckoutAction("fleet_operations")
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain("legacy Checkout path")
+    expect(mocks.stripe.accountRetrieve).not.toHaveBeenCalled()
+    expect(mocks.stripe.checkoutSessionCreate).not.toHaveBeenCalled()
+    expect(JSON.stringify(result)).not.toContain("acct_other")
+    expect(JSON.stringify(result)).not.toContain("acct_logloads")
   })
 
   it("refuses a role that cannot manage billing before it reads any plan", async () => {
@@ -1669,7 +1836,7 @@ describe("startCheckoutAction", () => {
     expect(mocks.stripe.checkoutSessionCreate).not.toHaveBeenCalled()
   })
 
-  it("reports the honest pending state when Stripe is not configured", async () => {
+  it("keeps the canonical-agreement direction when Stripe is not configured", async () => {
     const state = seedState()
     const entitlement = state.entitlements.find(
       (candidate) => candidate.product === "fleet_operations"
@@ -1691,13 +1858,20 @@ describe("startCheckoutAction", () => {
     const result = await startCheckoutAction("fleet_operations")
 
     expect(result.ok).toBe(false)
-    expect(result.error).toContain("Nothing has been charged")
+    expect(result.error).toContain("accepted agreement")
+    expect(mocks.stripe.accountRetrieve).not.toHaveBeenCalled()
     expect(mocks.stripe.checkoutSessionCreate).not.toHaveBeenCalled()
   })
 })
 
 describe("startBillingPortalAction", () => {
-  it("tells a host there is no subscription to manage, without mentioning a pilot", async () => {
+  beforeEach(() => {
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_test")
+    vi.stubEnv("LOGLOADS_STRIPE_EXPECTED_ACCOUNT_ID", "acct_logloads")
+    mocks.stripe.accountRetrieve.mockResolvedValue({ id: "acct_logloads" })
+  })
+
+  it("routes a host to sales-assisted Network enrollment without reviving the legacy fee", async () => {
     const state = seedState()
     const host = organizationOfType(state, "landing_source")
 
@@ -1706,8 +1880,45 @@ describe("startBillingPortalAction", () => {
     const result = await startBillingPortalAction("landing_operations")
 
     expect(result.ok).toBe(false)
-    expect(result.error).toContain("5%")
-    expect(result.error).not.toContain("pilot")
+    expect(result.error).toContain("Network plans")
+    expect(result.error).toContain("no posting fee")
+    expect(result.error).not.toContain("5%")
     expect(mocks.stripe.billingPortalSessionCreate).not.toHaveBeenCalled()
+  })
+
+  it("fails closed before the legacy portal when Stripe account isolation fails", async () => {
+    const state = seedState()
+    const entitlement = state.entitlements.find(
+      (candidate) => candidate.product === "fleet_operations"
+    )
+    const fleet = state.organizations.find(
+      (candidate) => candidate.id === entitlement?.organizationId
+    )
+
+    if (!fleet || !entitlement) {
+      throw new Error(
+        "The seed no longer contains a fleet organization with a Dispatch Pro record"
+      )
+    }
+
+    entitlement.stripeCustomerId = "cus_dispatch"
+    mocks.getSessionActor.mockResolvedValue(actorFor(fleet))
+    mocks.readState.mockImplementation(
+      async (
+        read: (current: { state: LogLoadsDatabaseState }) => unknown
+      ) => read({ state })
+    )
+    mocks.stripe.accountRetrieve.mockResolvedValue({ id: "acct_other" })
+
+    const result = await startBillingPortalAction("fleet_operations")
+
+    expect(result).toEqual({
+      error: "Stripe billing account verification failed",
+      ok: false,
+      url: null
+    })
+    expect(mocks.stripe.billingPortalSessionCreate).not.toHaveBeenCalled()
+    expect(JSON.stringify(result)).not.toContain("acct_other")
+    expect(JSON.stringify(result)).not.toContain("acct_logloads")
   })
 })

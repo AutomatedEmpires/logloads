@@ -76,9 +76,10 @@ export const hostInvoiceStatusSchema = z.enum([
 ])
 
 /**
- * Whether this host has a card on file. `attached` is the single fact that gates
- * publishing — a host who cannot be billed must not be able to post work that
- * accrues a fee.
+ * Whether a legacy_percentage host has a card on file. `attached` gates new
+ * legacy work whose frozen terms will accrue the percentage fee. Subscription
+ * publishing is free and uses its own agreement/payment state; a missing legacy
+ * card must never become a universal publishing block.
  */
 export const hostBillingProfileStatusSchema = z.enum(["none", "attached", "failed"])
 
@@ -447,7 +448,9 @@ export function deterministicUuidV5(namespaceUuid: string, name: string): string
 }
 
 /**
- * The id of the fee accrued for one assignment. Same assignment, same id, forever.
+ * The id of the legacy_percentage fee accrued for one assignment. Same
+ * assignment, same id, forever. Subscription-v1 usage has a separate
+ * movement-derived id and must never call this helper.
  *
  * THIS IS THE DOUBLE-BILLING DEFENCE. The operating state is a single JSONB
  * document: there is no unique index, no foreign key and no CHECK constraint

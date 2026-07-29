@@ -1,5 +1,6 @@
 import {
   assignmentSchema,
+  deterministicUuidV5,
   requestAssignmentInputSchema,
   transitionAssignmentStatus,
   type Assignment
@@ -8,8 +9,75 @@ import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { listDriverAvailability } from "./availability"
 import { getLoadById } from "./loads"
-import { confirmTruckSlot, getTruckSlotById, releaseTruckSlotReservation, reserveTruckSlot } from "./truck-slots"
+import { getTruckSlotById, releaseTruckSlotReservation, reserveTruckSlot } from "./truck-slots"
 import { assertCondition, assertFound, createUuid, nowIso } from "./utils"
+
+const TRUCK_SLOT_MOVEMENT_NAMESPACE = "bff3cff1-680d-43d5-9f3c-afd50c06ad7e"
+
+function movementIdForAssignmentRequest(
+  state: LogLoadsDatabaseState,
+  truckSlotId: string
+): string {
+  const slotAssignments = state.assignments.filter(
+    (assignment) => assignment.truckSlotId === truckSlotId
+  )
+  const activeMovementIds = new Set(
+    slotAssignments
+      .filter((assignment) =>
+        !["cancelled", "declined"].includes(assignment.status)
+      )
+      .map((assignment) => assignment.loadMovementId)
+      .filter((movementId): movementId is string => Boolean(movementId))
+  )
+  const settledMovementIds = new Set([
+    ...state.networkUsageEvents.map((event) => event.loadMovementId),
+    ...state.platformFeeEvents
+      .filter((event) => event.status !== "voided")
+      .flatMap((event) =>
+        slotAssignments
+          .filter((assignment) => assignment.id === event.assignmentId)
+          .map((assignment) => assignment.loadMovementId)
+          .filter((movementId): movementId is string => Boolean(movementId))
+      )
+  ])
+  const reusable = [...slotAssignments]
+    .filter(
+      (assignment) =>
+        ["cancelled", "declined"].includes(assignment.status) &&
+        Boolean(assignment.loadMovementId) &&
+        !activeMovementIds.has(assignment.loadMovementId as string) &&
+        !settledMovementIds.has(assignment.loadMovementId as string)
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(right.updatedAt) - Date.parse(left.updatedAt) ||
+        right.id.localeCompare(left.id)
+    )[0]?.loadMovementId
+
+  if (reusable) return reusable
+  if (slotAssignments.length === 0) return truckSlotId
+
+  const existingMovementIds = new Set(
+    slotAssignments
+      .map((assignment) => assignment.loadMovementId)
+      .filter((movementId): movementId is string => Boolean(movementId))
+  )
+  let ordinal = existingMovementIds.size + 1
+  let candidate = deterministicUuidV5(
+    TRUCK_SLOT_MOVEMENT_NAMESPACE,
+    `${truckSlotId}:${ordinal}`
+  )
+
+  while (existingMovementIds.has(candidate)) {
+    ordinal += 1
+    candidate = deterministicUuidV5(
+      TRUCK_SLOT_MOVEMENT_NAMESPACE,
+      `${truckSlotId}:${ordinal}`
+    )
+  }
+
+  return candidate
+}
 
 export function requestAssignment(state: LogLoadsDatabaseState, input: unknown): Assignment {
   const parsed = requestAssignmentInputSchema.parse(input)
@@ -32,13 +100,24 @@ export function requestAssignment(state: LogLoadsDatabaseState, input: unknown):
   reserveTruckSlot(state, slot.id)
 
   const timestamp = nowIso()
+  const assignmentId = createUuid()
   const entity = assignmentSchema.parse({
     ...parsed,
     assignedAt: null,
+    billingCommittedAt: null,
+    billingModel: null,
+    billingPlanCodeAtCommitment: null,
+    billingSubscriptionIdAtCommitment: null,
     cancelledAt: null,
+    capacitySource: null,
     completedAt: null,
     createdAt: timestamp,
-    id: createUuid(),
+    id: assignmentId,
+    // The reservation identity survives a cancelled/released assignment. The
+    // first capacity position uses the slot id itself; multi-capacity slots get
+    // deterministic additional identities, and a replacement reclaims the
+    // released identity instead of minting a second billable truck movement.
+    loadMovementId: movementIdForAssignmentRequest(state, slot.id),
     requestedAt: timestamp,
     status: "requested",
     updatedAt: timestamp
@@ -47,38 +126,6 @@ export function requestAssignment(state: LogLoadsDatabaseState, input: unknown):
   state.assignments.push(entity)
 
   return entity
-}
-
-export function assignDriverToSlot(state: LogLoadsDatabaseState, assignmentId: string): Assignment {
-  const assignment = assertFound(
-    state.assignments.find((current) => current.id === assignmentId),
-    `Assignment ${assignmentId} was not found`
-  )
-
-  assertCondition(
-    ["requested", "offered"].includes(assignment.status),
-    "Only a requested or offered assignment can be approved"
-  )
-
-  const offered = assignment.status === "requested"
-    ? transitionAssignmentStatus("requested", "offered")
-    : assignment.status
-  const accepted = offered === "offered" ? transitionAssignmentStatus("offered", "accepted") : offered
-
-  confirmTruckSlot(state, assignment.truckSlotId)
-
-  const updated = assignmentSchema.parse({
-    ...assignment,
-    assignedAt: nowIso(),
-    status: accepted,
-    updatedAt: nowIso()
-  })
-
-  state.assignments = state.assignments.map((current) =>
-    current.id === assignmentId ? updated : current
-  )
-
-  return updated
 }
 
 export function declineAssignment(

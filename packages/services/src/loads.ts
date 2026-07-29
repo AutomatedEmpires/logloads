@@ -116,8 +116,8 @@ function scheduleDates(entity: LoadPosting, fallbackDate: string): string[] {
 const FEE_PERCENT_LABEL = `${(PLATFORM_FEE_BPS / FEE_BPS_SCALE) * 100}%`
 
 /**
- * Whether a host in each billing state may publish work, and what to tell them
- * when they may not. `null` means publishing is allowed.
+ * Whether a legacy_percentage host in each billing state may publish work, and
+ * what to tell them when they may not. `null` means publishing is allowed.
  *
  * An exhaustive record rather than a `status !== "attached"` check: adding a
  * state to `hostBillingProfileStatusSchema` will not compile until somebody
@@ -140,19 +140,19 @@ const BILLING_STATE_PUBLISH_REFUSAL: Record<HostBillingProfileStatus, string | n
 }
 
 /**
- * The two things that have to be true before work reaches the network, checked
- * together at the moment it does.
+ * The operating promise and, only for legacy_percentage, collection readiness
+ * that have to be true before work reaches the network.
  *
  * WHY IN THE SERVICE. Both a server action and `POST /api/loads` publish work,
  * and a field marked required in the builder guards neither: a bare REST body
  * would otherwise mint work that can never be billed. This is the only
  * chokepoint both callers pass through.
  *
- * WHY THESE TWO FACTS TOGETHER. They are one requirement seen from both ends — a
- * percentage of a figure nobody stated is not a charge, and a charge nobody can
- * be billed for is not revenue. Work published missing either is work LogLoads
- * must run for free, and it leaves accrual to choose between skipping the fee
- * and inventing a base, which is a bill for a number the host never agreed to.
+ * Driver pay remains required in every model because it is the driver's accepted
+ * operating promise. A card is required only when this posting would freeze the
+ * permanent legacy percentage obligation. Subscription posting itself costs
+ * nothing; delinquency is enforced later on NEW Network commitments, where the
+ * capacity source is known, without stopping private-fleet work.
  *
  * WHY A DRAFT IS EXEMPT. A draft is not on the network and accrues nothing.
  * A draft becomes work through `provisionLoadCapacity`, which calls this, so a
@@ -162,11 +162,81 @@ const BILLING_STATE_PUBLISH_REFUSAL: Record<HostBillingProfileStatus, string | n
  * one JSONB document written under a compare-and-swap, so a check made outside
  * the mutation callback is a check a retry walks straight past.
  */
-export function assertHostCanPublish(state: LogLoadsDatabaseState, load: LoadPosting): void {
+export function assertHostCanPublish(
+  state: LogLoadsDatabaseState,
+  load: LoadPosting,
+  at = nowIso(),
+  visibilityMode?: OpportunityVisibilityMode
+): void {
+  const billingAccounts = state.organizationBillingAccounts.filter(
+    (account) =>
+      account.organizationId === load.companyId &&
+      Date.parse(account.effectiveAt) <= Date.parse(at)
+  )
+
+  if (billingAccounts.length > 1) {
+    throw new Error(
+      `This organization has ${billingAccounts.length} billing accounts, so LogLoads cannot determine which commercial model applies. Publishing is blocked until that conflict is repaired.`
+    )
+  }
+  const billingAccount = billingAccounts[0]
+  const usesLegacyPercentage =
+    billingAccount?.activationState === "legacy" &&
+    billingAccount.billingModel === "legacy_percentage"
+
+  assertCondition(
+    Boolean(billingAccount),
+    "This organization is not enrolled in a LogLoads operating plan. Choose a plan with LogLoads before publishing; posting itself has not been charged."
+  )
+
+  const effectiveVisibility =
+    visibilityMode ??
+    state.opportunityCapacities.find(
+      (capacity) => capacity.loadPostingId === load.id
+    )?.visibilityMode
+  if (!usesLegacyPercentage && billingAccount?.subscriptionId) {
+    const subscriptions = state.organizationSubscriptions.filter(
+      (subscription) => subscription.id === billingAccount.subscriptionId
+    )
+
+    assertCondition(
+      subscriptions.length === 1 &&
+        subscriptions[0]?.organizationId === load.companyId &&
+        subscriptions[0]?.billingModel === billingAccount.billingModel,
+      `This organization's subscription billing account is cross-wired or incomplete, so publication is blocked.`
+    )
+    if (subscriptions[0]?.planCode === "dispatch_pro") {
+      assertCondition(
+        effectiveVisibility === "private_network" ||
+          effectiveVisibility === "direct_offer",
+        "Dispatch Pro publishes only to private-network partners or direct offers. Choose a Network plan before publishing public or LogLoads Network work."
+      )
+    }
+  }
+  if (billingAccount?.activationState === "suspended") {
+    assertCondition(
+      effectiveVisibility === "private_network" ||
+        effectiveVisibility === "direct_offer",
+      "New public or LogLoads Network publication is paused for this organization. Private-network and direct-offer capacity remain available."
+    )
+  }
+  assertCondition(
+    usesLegacyPercentage ||
+      billingAccount?.activationState === "active" ||
+      billingAccount?.activationState === "suspended",
+    "This organization's operating plan is not active yet. Finish plan activation before publishing; posting itself has not been charged."
+  )
+
   assertCondition(
     typeof load.driverPayCents === "number" && load.driverPayCents > 0,
-    `State what this work pays a driver per truckload before publishing it. That figure is what a driver is promised, and it is the base LogLoads charges its ${FEE_PERCENT_LABEL} on — on top of driver pay, never out of it.`
+    usesLegacyPercentage
+      ? `State what this work pays a driver per truckload before publishing it. That figure is what a driver is promised, and it is the base LogLoads charges its legacy ${FEE_PERCENT_LABEL} on — on top of driver pay, never out of it.`
+      : "State what this work pays a driver per truckload before publishing it. Posting itself is free, but the driver's accepted operating promise must be explicit."
   )
+
+  if (!usesLegacyPercentage) {
+    return
+  }
 
   const profiles = state.hostBillingProfiles.filter((entry) => entry.organizationId === load.companyId)
 
@@ -231,15 +301,14 @@ export function provisionLoadCapacity(
   allocationMode: string,
   timestamp = nowIso()
 ): void {
-  // Publishing is what makes work billable, so the gate lives here: this
-  // function mints the capacity for a load created live AND for a draft opened
-  // later, and there is no third route onto the network.
-  assertHostCanPublish(state, entity)
-
   const { allocationMode: parsedAllocation, visibilityMode: parsedVisibility } = parsePublishModes(
     visibilityMode,
     allocationMode
   )
+  // Publishing is what makes work billable, so the gate lives here: this
+  // function mints the capacity for a load created live AND for a draft opened
+  // later, and there is no third route onto the network.
+  assertHostCanPublish(state, entity, timestamp, parsedVisibility)
   const dates = scheduleDates(entity, timestamp.slice(0, 10))
 
   if (dates.length === 0) {
@@ -324,7 +393,12 @@ export function createLoadPosting(
   // that call is what covers the draft-opened-later path, and the repeat costs a
   // lookup.
   if (modes) {
-    assertHostCanPublish(state, entity)
+    assertHostCanPublish(
+      state,
+      entity,
+      timestamp,
+      modes.visibilityMode
+    )
   }
 
   state.loadPostings.push(entity)
@@ -366,7 +440,14 @@ export function updateLoadPosting(
     (!LIVE_STATUSES.has(existing.status) && LIVE_STATUSES.has(updated.status)) ||
     (LIVE_STATUSES.has(existing.status) && moneyChanged)
   ) {
-    assertHostCanPublish(state, updated)
+    assertHostCanPublish(
+      state,
+      updated,
+      updated.updatedAt,
+      state.opportunityCapacities.find(
+        (capacity) => capacity.loadPostingId === updated.id
+      )?.visibilityMode
+    )
   }
 
   state.loadPostings = state.loadPostings.map((load) => (load.id === updated.id ? updated : load))

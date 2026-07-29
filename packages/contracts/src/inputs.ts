@@ -5,7 +5,7 @@ import {
   assignmentBaseSchema,
   loadPostingSchema,
   messageEventSchema,
-  notificationSchema,
+  notificationBaseSchema,
 } from "./schemas"
 
 const optionalIdSchema = z.string().uuid().optional()
@@ -63,7 +63,12 @@ export const createTruckSlotInputSchema = z.object({
 
 export const requestAssignmentInputSchema = assignmentBaseSchema.omit({
   assignedAt: true,
+  billingCommittedAt: true,
+  billingModel: true,
+  billingPlanCodeAtCommitment: true,
+  billingSubscriptionIdAtCommitment: true,
   cancelledAt: true,
+  capacitySource: true,
   completedAt: true,
   createdAt: true,
   driverPaymentReceivedAmountCents: true,
@@ -73,13 +78,22 @@ export const requestAssignmentInputSchema = assignmentBaseSchema.omit({
   driverPaymentSentAt: true,
   driverPaymentSentByUserId: true,
   id: true,
+  loadMovementId: true,
   requestedAt: true,
   status: true,
   updatedAt: true
 })
 
-export const createNotificationInputSchema = notificationSchema.omit({
+export const createNotificationInputSchema = notificationBaseSchema.omit({
   createdAt: true,
+  emailAttemptCount: true,
+  emailClaimToken: true,
+  emailClaimedAt: true,
+  emailDeliveredAt: true,
+  emailDeliveryState: true,
+  emailLastAttemptAt: true,
+  emailLastFailure: true,
+  emailProviderMessageId: true,
   id: true,
   readAt: true,
   updatedAt: true

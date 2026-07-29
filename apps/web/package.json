@@ -8,6 +8,8 @@
     "build": "next build",
     "start": "next start -H 127.0.0.1 -p 3002",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx --max-warnings=0",
+    "stripe:catalog": "node ../../tools/provision-stripe-catalog.mjs",
+    "stripe:verify-subscriptions": "node ../../tools/verify-stripe-subscriptions.mjs",
     "test": "vitest run lib",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test --config tests/playwright.config.mjs"
@@ -32,7 +34,7 @@
     "react-dom": "^19.2.7",
     "react-map-gl": "^7.1.9",
     "server-only": "^0.0.1",
-    "stripe": "^22.2.0",
+    "stripe": "22.3.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {

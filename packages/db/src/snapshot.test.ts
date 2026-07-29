@@ -243,6 +243,42 @@ describe("canonical operating state", () => {
     expect(snapshot?.state.profiles).toHaveLength(originalProfiles)
   })
 
+  it("backfills exact provider-settlement defaults on legacy billing adjustments", () => {
+    const legacy = createInMemoryDatabase()
+
+    legacy.billingAdjustments = [
+      {
+        actorUserId: legacy.profiles[0]!.id,
+        amountDeltaCents: -1_000,
+        billingPeriodSummaryId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        createdAt: "2026-07-28T16:00:00.000Z",
+        id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        invoiceId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        organizationId: legacy.organizations[0]!.id,
+        providerReference: "cn_legacy001",
+        reason: "Legacy service credit",
+        settlementIntent: "credit_note",
+        type: "service_credit",
+        unitDelta: 0,
+        usageEventId: null
+      }
+    ] as unknown as LogLoadsDatabaseState["billingAdjustments"]
+
+    const upgraded = upgradeStateSnapshot(legacy)
+
+    expect(upgraded?.billingAdjustments[0]).toMatchObject({
+      providerReference: "cn_legacy001",
+      providerRevenueDeltaCents: 0,
+      providerSettlementAmountCents: null,
+      providerSettlementAttemptCount: 0,
+      providerSettlementFailure: null,
+      providerSettlementLastAttemptAt: null,
+      providerSettlementRemainingCents: null,
+      providerSettlementSettledAt: null,
+      providerSettlementState: "not_started"
+    })
+  })
+
   it("normalizes route packs stored before assignment snapshots existed", () => {
     const legacy = createInMemoryDatabase() as Partial<LogLoadsDatabaseState>
 

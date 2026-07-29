@@ -149,6 +149,19 @@ export function activeLandingLimitFor(
   const plans = livePlansFor(state, organizationId)
 
   if (plans.length === 0) {
+    const billingAccount = state.organizationBillingAccounts.find(
+      (account) => account.organizationId === organizationId
+    )
+
+    // A brand-new, explicitly unenrolled host may prepare one real landing so
+    // sales-assisted activation does not require support staff to recreate its
+    // operating data. This is workspace setup only: it grants no entitlement,
+    // and the publication gate still blocks every live load until an operating
+    // plan is explicitly configured and activated.
+    if (billingAccount?.activationState === "unenrolled") {
+      return 1
+    }
+
     return 0
   }
 

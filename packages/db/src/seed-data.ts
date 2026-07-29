@@ -23,6 +23,8 @@ import {
   notificationSchema,
   operationalNoticeSchema,
   opportunityCapacitySchema,
+  organizationBillingAccountId,
+  organizationBillingAccountSchema,
   organizationInvitationSchema,
   organizationMembershipSchema,
   organizationSchema,
@@ -39,6 +41,7 @@ import {
   truckSlotSchema,
   userSchema,
   verificationRecordSchema,
+  SUBSCRIPTION_PLAN_CATALOG,
   type Assignment,
   type AuditEvent,
   type AvailabilityWindow,
@@ -64,6 +67,7 @@ import {
   type OperationalNotice,
   type OpportunityCapacity,
   type Organization,
+  type OrganizationBillingAccount,
   type OrganizationInvitation,
   type OrganizationMembership,
   type PrivateNetworkRelationship,
@@ -3301,6 +3305,45 @@ export const seedHostBillingProfiles: HostBillingProfile[] = parseMany(hostBilli
   }
 ])
 
+/**
+ * Existing synthetic hosts remain explicitly legacy. A catalog rollout must not
+ * silently enroll even a fixture organization into a paid Network commitment;
+ * focused subscription tests create an accepted agreement deliberately.
+ */
+export const seedOrganizationBillingAccounts: OrganizationBillingAccount[] = parseMany(
+  organizationBillingAccountSchema,
+  ["33333333-3333-4333-8333-333333333331", "33333333-3333-4333-8333-333333333332"].map(
+    (organizationId) => ({
+      activationState: "legacy",
+      billingModel: "legacy_percentage",
+      createdAt: timestamps.created,
+      effectiveAt: timestamps.created,
+      id: organizationBillingAccountId(organizationId),
+      organizationId,
+      subscriptionId: null,
+      updatedAt: timestamps.updated
+    })
+  )
+)
+
+function freezeSeedAssignmentBilling(assignment: Assignment): Assignment {
+  const load = seedLoadPostings.find((candidate) => candidate.id === assignment.loadPostingId)
+  const driver = seedDriverProfiles.find((candidate) => candidate.id === assignment.driverProfileId)
+  const committed = Boolean(assignment.assignedAt)
+
+  return assignmentSchema.parse({
+    ...assignment,
+    billingCommittedAt: committed ? assignment.assignedAt : null,
+    billingModel: committed ? "legacy_percentage" : null,
+    billingPlanCodeAtCommitment: null,
+    billingSubscriptionIdAtCommitment: null,
+    capacitySource: committed && load && driver
+      ? (load.companyId === driver.companyId ? "private_fleet" : "logloads_network")
+      : null,
+    loadMovementId: assignment.id
+  })
+}
+
 export const seedDatabaseState: LogLoadsDatabaseState = {
   profiles: seedProfiles,
   companies: seedCompanies,
@@ -3328,7 +3371,7 @@ export const seedDatabaseState: LogLoadsDatabaseState = {
   truckSlots: [...seedTruckSlots, ...seedCrossOrgTruckSlots],
   availabilityWindows: seedAvailabilityWindows,
   futureAvailability: seedFutureAvailability,
-  assignments: [...seedAssignments, ...seedCrossOrgAssignments],
+  assignments: [...seedAssignments, ...seedCrossOrgAssignments].map(freezeSeedAssignmentBilling),
   directOffers: seedDirectOffers,
   tripsV2: [...seedTripsV2, ...seedCrossOrgTrips],
   tripEvents: seedTripEvents,
@@ -3348,6 +3391,14 @@ export const seedDatabaseState: LogLoadsDatabaseState = {
   // what fills it.
   platformFeeEvents: [],
   hostInvoices: [],
+  billingPlanDefinitions: SUBSCRIPTION_PLAN_CATALOG.map((plan) => structuredClone(plan)),
+  organizationBillingAccounts: seedOrganizationBillingAccounts,
+  organizationSubscriptions: [],
+  networkUsageEvents: [],
+  billingPeriodSummaries: [],
+  billingAdjustments: [],
+  networkOverageInvoices: [],
+  subscriptionBaseInvoices: [],
   operationalNotices: seedOperationalNotices,
   notifications: seedNotifications,
   supportRequests: [],

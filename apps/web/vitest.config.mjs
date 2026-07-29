@@ -7,5 +7,10 @@ export default defineConfig({
     alias: {
       "@": fileURLToPath(new URL(".", import.meta.url))
     }
+  },
+  test: {
+    env: {
+      LOGLOADS_STRIPE_EXPECTED_LIVEMODE: "test"
+    }
   }
 })

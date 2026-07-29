@@ -2,6 +2,8 @@ import type {
   Assignment,
   AuditEvent,
   AvailabilityWindow,
+  BillingAdjustment,
+  BillingPeriodSummary,
   CredentialReview,
   DestinationFacility,
   DirectOffer,
@@ -22,17 +24,23 @@ import type {
   MessageThread,
   Mill,
   Notification,
+  NetworkOverageInvoice,
+  NetworkUsageEvent,
   OperationalNotice,
   OpportunityCapacity,
   Organization,
+  OrganizationBillingAccount,
   OrganizationInvitation,
   OrganizationMembership,
+  OrganizationSubscription,
   PlatformFeeEvent,
   PrivateNetworkRelationship,
   Rate,
   RichLandingDetails,
   RoutePack,
   SupportRequest,
+  SubscriptionBaseInvoice,
+  SubscriptionPlanDefinition,
   TrailerProfile,
   TripDocument,
   TripInspection,
@@ -96,6 +104,21 @@ export interface LogLoadsDatabaseState {
   hostBillingProfiles: HostBillingProfile[]
   platformFeeEvents: PlatformFeeEvent[]
   hostInvoices: HostInvoice[]
+  /**
+   * Subscription-v1 authority. Plan definitions are versioned commercial
+   * facts; accounts choose an effective model; subscriptions and period
+   * summaries freeze the provider relationship and rates; append-only usage and
+   * adjustments explain every overage invoice.
+   */
+  billingPlanDefinitions: SubscriptionPlanDefinition[]
+  organizationBillingAccounts: OrganizationBillingAccount[]
+  organizationSubscriptions: OrganizationSubscription[]
+  networkUsageEvents: NetworkUsageEvent[]
+  billingPeriodSummaries: BillingPeriodSummary[]
+  billingAdjustments: BillingAdjustment[]
+  networkOverageInvoices: NetworkOverageInvoice[]
+  /** Exact provider-confirmed recurring subscription invoice/dunning facts. */
+  subscriptionBaseInvoices: SubscriptionBaseInvoice[]
   operationalNotices: OperationalNotice[]
   notifications: Notification[]
   supportRequests: SupportRequest[]

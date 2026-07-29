@@ -31,6 +31,11 @@ import {
   verificationStatusSchema
 } from "./enums"
 import { isValidTimeRange } from "./helpers/date-time"
+import {
+  billingModelSchema,
+  capacitySourceSchema,
+  subscriptionPlanCodeSchema
+} from "./subscription-billing"
 
 const uuidSchema = z.string().uuid()
 const timestampSchema = z.string().datetime()
@@ -346,6 +351,12 @@ export const assignmentBaseSchema = z.object({
   id: uuidSchema,
   loadPostingId: uuidSchema,
   /**
+   * Identity of the physical movement, independent of which driver assignment
+   * ultimately completes it. A replacement assignment carries this id forward
+   * so one truckload can never become two usage units.
+   */
+  loadMovementId: uuidSchema.optional().nullable().default(null),
+  /**
    * The invitation that authorized this assignment, when capacity was claimed
    * through a direct offer. This is a typed relationship rather than a value
    * hidden in termsSnapshot so retries, limits, and audits can be enforced.
@@ -358,6 +369,16 @@ export const assignmentBaseSchema = z.object({
   status: assignmentStatusSchema,
   requestedAt: timestampSchema,
   assignedAt: optionalTimestampSchema,
+  /**
+   * Commercial classification is empty before commitment and frozen together
+   * at acceptance. Historical rows without these fields remain readable and are
+   * normalized by the operating-state backfill.
+   */
+  billingModel: billingModelSchema.optional().nullable().default(null),
+  capacitySource: capacitySourceSchema.optional().nullable().default(null),
+  billingCommittedAt: optionalTimestampSchema.default(null),
+  billingPlanCodeAtCommitment: subscriptionPlanCodeSchema.optional().nullable().default(null),
+  billingSubscriptionIdAtCommitment: uuidSchema.optional().nullable().default(null),
   completedAt: optionalTimestampSchema,
   cancelledAt: optionalTimestampSchema,
   /**
@@ -394,6 +415,53 @@ export const assignmentBaseSchema = z.object({
 })
 
 export const assignmentSchema = assignmentBaseSchema.superRefine((row, context) => {
+  const billingFields = [
+    row.billingModel,
+    row.capacitySource,
+    row.billingCommittedAt
+  ]
+  const hasBillingCommitment = billingFields.some(Boolean)
+
+  if (hasBillingCommitment && billingFields.some((value) => !value)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Committed billing model, capacity source, and timestamp must be frozen together",
+      path: ["billingModel"]
+    })
+  }
+
+  if (hasBillingCommitment && !row.loadMovementId) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "A committed assignment must identify its physical movement",
+      path: ["loadMovementId"]
+    })
+  }
+
+  if (
+    row.billingPlanCodeAtCommitment &&
+    row.billingModel !== "subscription_v1" &&
+    row.billingModel !== "enterprise_custom" &&
+    row.billingModel !== "dispatch_pro"
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Only a subscription assignment carries a plan code",
+      path: ["billingPlanCodeAtCommitment"]
+    })
+  }
+
+  if (
+    Boolean(row.billingPlanCodeAtCommitment) !==
+    Boolean(row.billingSubscriptionIdAtCommitment)
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "A frozen subscription plan must name the subscription that supplied it",
+      path: ["billingSubscriptionIdAtCommitment"]
+    })
+  }
+
   const requirePair = (
     instant: "driverPaymentReceivedAt" | "driverPaymentSentAt",
     actor: "driverPaymentReceivedByUserId" | "driverPaymentSentByUserId"
@@ -468,18 +536,73 @@ export const assignmentSchema = assignmentBaseSchema.superRefine((row, context) 
   }
 })
 
-export const notificationSchema = z.object({
-  id: uuidSchema,
-  userId: uuidSchema,
-  type: notificationTypeSchema,
-  title: z.string().min(1),
-  body: z.string().min(1),
-  relatedEntityType: z.string().optional().nullable(),
-  relatedEntityId: uuidSchema.optional().nullable(),
-  readAt: optionalTimestampSchema,
-  createdAt: timestampSchema,
-  updatedAt: timestampSchema
-})
+export const notificationBaseSchema = z.object({
+    id: uuidSchema,
+    userId: uuidSchema,
+    type: notificationTypeSchema,
+    title: z.string().min(1),
+    body: z.string().min(1),
+    relatedEntityType: z.string().optional().nullable(),
+    relatedEntityId: uuidSchema.optional().nullable(),
+    readAt: optionalTimestampSchema,
+    /**
+     * Provider-neutral email outbox state. Ordinary in-app notifications stay
+     * `none`; billing notifications are explicitly queued as `pending`.
+     */
+    emailDeliveryState: z
+      .enum(["none", "pending", "claimed", "delivered", "failed"])
+      .default("none"),
+    emailAttemptCount: z.number().int().nonnegative().default(0),
+    emailClaimToken: z.string().trim().min(1).max(200).nullable().default(null),
+    emailClaimedAt: optionalTimestampSchema,
+    emailLastAttemptAt: optionalTimestampSchema,
+    emailDeliveredAt: optionalTimestampSchema,
+    emailLastFailure: z.string().trim().min(1).max(500).nullable().default(null),
+    emailProviderMessageId: z.string().trim().min(1).max(200).nullable().default(null),
+    createdAt: timestampSchema,
+    updatedAt: timestampSchema
+  })
+
+export const notificationSchema = notificationBaseSchema.superRefine((notification, context) => {
+    const claimed =
+      notification.emailDeliveryState === "claimed" ||
+      notification.emailDeliveryState === "delivered"
+    if (
+      claimed !==
+      Boolean(notification.emailClaimToken && notification.emailClaimedAt)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Claimed email delivery requires its immutable claim token and time",
+        path: ["emailClaimToken"]
+      })
+    }
+    if (
+      (notification.emailDeliveryState === "delivered") !==
+      Boolean(notification.emailDeliveredAt)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Delivered email state requires its delivery timestamp",
+        path: ["emailDeliveredAt"]
+      })
+    }
+    if (
+      notification.emailDeliveryState === "none" &&
+      (
+        notification.emailAttemptCount !== 0 ||
+        notification.emailLastAttemptAt ||
+        notification.emailLastFailure ||
+        notification.emailProviderMessageId
+      )
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "An in-app-only notification cannot carry email delivery history",
+        path: ["emailDeliveryState"]
+      })
+    }
+  })
 
 export const messageThreadSchema = z.object({
   id: uuidSchema,

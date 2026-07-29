@@ -2,6 +2,49 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-07-28 — Subscription v1 replaces percentage pricing for new work
+
+- **Newly enrolled commercial activity uses subscription plus completed Network usage.**
+  The 5%-of-driver-pay model is retained only as `legacy_percentage` for
+  organizations deliberately left on the grandfathered agreement and for
+  assignments already committed under those frozen terms. No new organization
+  may enter that lane. Historical fee events, invoices, receipts, and accepted
+  terms are never rewritten.
+- **The billable unit is one completed physical Network movement.** Posting,
+  matching, requesting, private-fleet work, cancellation before execution, and
+  duplicate completion do not create usage. The assignment freezes its billing
+  model, capacity source, physical movement identity, and plan at commitment.
+  One movement may produce a legacy fee or a subscription usage event, never
+  both.
+- **The plan catalog is versioned.** Dispatch Pro remains $499/month with no
+  Network capacity. Network Pilot is an invitation-only $1,500/month, exact
+  90-day paid engagement with 30 completed Network movements pooled across the
+  engagement and $150 overage. Network 25 is $3,000/month with 25 included and
+  $125 overage; Network 50 is $5,500/month with 50 included and $110 overage;
+  Network 100 is $10,000/month with 100 included and $90 overage. Enterprise is
+  custom, sales-assisted, and never unlimited.
+- **Network includes the core Dispatch Pro workflow.** Dispatch Pro remains the
+  standalone private-fleet software lane; a Network customer does not buy a
+  second subscription to coordinate its own capacity alongside Network work.
+- **Pilot starts at operational activation.** Its base bills monthly in advance,
+  its 30-unit allowance is pooled across one exact 90-day window, and any
+  overage is billed in arrears after that window closes. Larger Network plans
+  use monthly Stripe-anniversary allowance windows and 12-month commitments
+  invoiced monthly. Allowance exhaustion never interrupts active operations.
+- **Canonical state remains authority.** Stripe collects recurring bases and
+  explicit overage or supplemental invoices; the local immutable ledger defines
+  entitlement, usage, price snapshots, periods, and adjustments. Provider
+  records are reconciled to it with deterministic identities.
+- **Enrollment remains dark.** Every tier is implemented for real operations,
+  but Pilot is the first intended launch lane. Network collection defaults off
+  behind `LOGLOADS_SUBSCRIPTION_COLLECTION=disabled`. No organization is
+  silently migrated, larger tiers remain sales-assisted, and no live charge is
+  authorized by this repository decision.
+- **The regulatory question remains explicit.** Subscription pricing is not a
+  broker-classification workaround. Real Network activation requires a recorded
+  counsel-approved authority or commodity-and-route posture and accepted
+  commercial terms. See `docs/SUBSCRIPTION_BILLING_V1.md`.
+
 ## 2026-07-25 — Scheduling integrity, decided: what a slot means, and what silence from a driver means
 Foundation for the conflict guard. Pure code, nothing wired, no gating, no migration — but the two product questions underneath it are settled here, because every later PR in the sequence inherits them.
 

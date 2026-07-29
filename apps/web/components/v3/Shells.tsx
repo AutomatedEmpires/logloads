@@ -310,7 +310,11 @@ function PublicFooter() {
         ))}
       </div>
       <div className="public-footer__legal">
-        <p>LogLoads is coordination software. It does not broker freight and does not move freight payment.</p>
+        <p>
+          Dispatch Pro coordinates established private capacity. Network access
+          requires a separate agreement and recorded operating posture. LogLoads
+          does not carry freight or move transportation compensation.
+        </p>
         <p>&copy; 2026 LogLoads</p>
       </div>
     </footer>

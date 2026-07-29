@@ -92,7 +92,7 @@ describe("logloads services", () => {
     ).toThrow()
   })
 
-  it("moves an assignment from request to accepted", () => {
+  it("mints an uncommitted request with a stable physical-movement identity", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const assignment = services.requestAssignment({
       loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
@@ -104,10 +104,33 @@ describe("logloads services", () => {
       dispatcherNotes: "Slot confirmed pending radio check."
     })
 
-    const accepted = services.assignDriverToSlot(assignment.id)
-
     expect(assignment.status).toBe("requested")
-    expect(accepted.status).toBe("accepted")
+    expect(assignment.loadMovementId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    )
+    expect(assignment.loadMovementId).not.toBe(assignment.id)
+    expect(assignment.billingModel).toBeNull()
+    expect(assignment.billingCommittedAt).toBeNull()
+  })
+
+  it("reuses a released truck-slot movement identity for a replacement assignment", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const request = {
+      cancellationReason: null,
+      dispatcherNotes: "Replacement identity check.",
+      driverProfileId: "44444444-4444-4444-8444-444444444441",
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+      trailerProfileId: "88888888-8888-4888-8888-888888888881",
+      truckProfileId: "77777777-7777-4777-8777-777777777771",
+      truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd2"
+    }
+    const first = services.requestAssignment(request)
+
+    services.cancelAssignment(first.id, "Driver became unavailable")
+    const replacement = services.requestAssignment(request)
+
+    expect(replacement.id).not.toBe(first.id)
+    expect(replacement.loadMovementId).toBe(first.loadMovementId)
   })
 
   it("enforces truck slot capacity", () => {
@@ -195,7 +218,7 @@ describe("logloads services", () => {
     expect(services.state.availabilityWindows.some((window) => window.driverProfileId === account.driverProfileId)).toBe(false)
   })
 
-  it("starts a new host in the free launch pilot without a billing deadline", () => {
+  it("starts a new host explicitly unenrolled with no silent legacy or paid entitlement", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const account = services.createAccount({
       accountType: "landing_operator",
@@ -212,9 +235,16 @@ describe("logloads services", () => {
     const entitlement = services.state.entitlements.find((candidate) =>
       candidate.organizationId === organizationId && candidate.product === "landing_operations"
     )
+    const billingAccount = services.state.organizationBillingAccounts.find(
+      (candidate) => candidate.organizationId === organizationId
+    )
 
-    expect(entitlement?.status).toBe("active")
-    expect(entitlement?.currentPeriodEndsAt).toBeNull()
+    expect(entitlement).toBeUndefined()
+    expect(billingAccount).toMatchObject({
+      activationState: "unenrolled",
+      billingModel: null,
+      subscriptionId: null
+    })
   })
 
   it("rejects an availability update for an unknown id", () => {

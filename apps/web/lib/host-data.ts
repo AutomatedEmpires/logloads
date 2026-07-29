@@ -5,6 +5,7 @@ import {
   formatRateLabel,
   loadTypeSchema,
   organizationRoleCan,
+  type BillingModel,
   type OrganizationRole
 } from "@logloads/contracts"
 
@@ -54,6 +55,7 @@ export interface RequirementOption {
 
 export interface HostPublishingOptions {
   dispatcher: HostDispatcherOption | null
+  billingModel: BillingModel | null
   landings: HostLandingOption[]
   loadTypes: string[]
   rates: HostRateOption[]
@@ -71,6 +73,9 @@ function sortedOptions(values: Set<string>): RequirementOption[] {
 
 export function getHostPublishingOptions(organizationId: string): HostPublishingOptions {
   const state = services.state
+  const billingAccounts = state.organizationBillingAccounts.filter(
+    (account) => account.organizationId === organizationId
+  )
 
   // A dispatch coordinate is required on every posting and is an
   // organization-owned source. Never advertise another outfit's profile as a
@@ -106,6 +111,8 @@ export function getHostPublishingOptions(organizationId: string): HostPublishing
 
   return {
     accessVocabulary: sortedOptions(accessValues),
+    billingModel:
+      billingAccounts.length === 1 ? billingAccounts[0]!.billingModel : null,
     dispatcher: dispatcherProfile
       ? {
           email: dispatcherProfile.contact.email ?? null,

@@ -21,18 +21,21 @@ import type { BadgeProps } from "@logloads/ui"
 import { services } from "./services"
 
 /**
- * Everything a host needs to answer four questions about their own money without
- * contacting anybody:
+ * Legacy percentage-billing read model. New subscription and completed-usage
+ * facts live in `subscription-billing-data.ts`; this module remains permanent
+ * so a host can reconcile assignments committed under `legacy_percentage`.
+ *
+ * It answers four questions about those historical obligations:
  *
  *   1. Is a card attached, and does its state stop me publishing?
  *   2. What has accrued this month, and from which loads?
  *   3. What was I last billed, was it paid, and what did it cover?
  *   4. What exactly am I charged, and is any of it taken out of driver pay?
  *
- * WHAT LOGLOADS CHARGES. A host states what a load pays a driver. LogLoads
- * charges the HOST a percentage of that stated pay, ON TOP of it, and only once a
- * truckload has completed. There is no monthly fee, no charge to post, and
- * drivers pay nothing ever.
+ * LEGACY CHARGE. A host stated what a load paid a driver. LogLoads charged the
+ * host a frozen percentage on top after the legacy completion/receipt facts
+ * existed. No new organization can enroll in this model; an explicitly
+ * grandfathered legacy account remains governed by it until migration.
  *
  * WHAT LOGLOADS DOES NOT DO. It never holds, escrows, routes or pays out driver
  * money. Driver pay moves host → driver directly, off-platform. Nothing in this
@@ -43,8 +46,8 @@ import { services } from "./services"
  * WHY THE ARITHMETIC IS NOT HERE. Every figure is produced by
  * `hostChargeBreakdown` from the pay and rate FROZEN on each fee event, so this
  * read model cannot disagree with the accrual that wrote the ledger or with the
- * bill that charges it. A surface that did its own percentage would eventually
- * quote a host one number and charge another.
+ * legacy bill that charges it. A surface that did its own percentage would
+ * eventually quote a host one number and charge another.
  */
 
 /**
@@ -224,7 +227,8 @@ interface PaymentStatePresentation {
 }
 
 /**
- * What each card state means for the host, exhaustively.
+ * What each card state means while frozen legacy obligations still require
+ * percentage collection, exhaustively.
  *
  * A `Record` over the schema's own status union, not an if-chain with a fallback:
  * adding a state to `hostBillingProfileStatusSchema` will not compile until
@@ -235,7 +239,8 @@ interface PaymentStatePresentation {
 export const PAYMENT_STATE_PRESENTATION: Record<HostBillingProfileStatus, PaymentStatePresentation> = {
   attached: {
     blocksPublishing: false,
-    consequence: `You can publish work. This card is charged once a month for the LogLoads fee only — ${CURRENT_RATE_LABEL} of the driver pay you stated, on truckloads that completed.`,
+    consequence:
+      "You can publish work governed by frozen legacy terms. This card is charged only for preserved percentage invoices—never for driver or carrier compensation.",
     nextStep: null,
     statusLabel: "Card on file",
     tone: "success"
@@ -250,10 +255,41 @@ export const PAYMENT_STATE_PRESENTATION: Record<HostBillingProfileStatus, Paymen
   },
   none: {
     blocksPublishing: true,
-    consequence: `You cannot publish work until a card is on file. Posting still costs nothing and there is no monthly fee — the card is what lets LogLoads bill its ${CURRENT_RATE_LABEL} after a truckload completes.`,
+    consequence:
+      "You cannot publish additional legacy-governed work until a card is on file. The historical model has no monthly fee and posting itself is not billed; the card supports only preserved completed-load obligations.",
     nextStep: "Attach a card to this workspace's billing profile, then publish.",
     statusLabel: "No card on file",
     tone: "critical"
+  }
+}
+
+export const SUBSCRIPTION_CARD_PRESENTATION: Record<
+  HostBillingProfileStatus,
+  PaymentStatePresentation
+> = {
+  attached: {
+    blocksPublishing: false,
+    consequence:
+      "This card is available for an explicitly accepted subscription or usage invoice. Driver and carrier compensation never passes through it.",
+    nextStep: null,
+    statusLabel: "Card on file",
+    tone: "success"
+  },
+  failed: {
+    blocksPublishing: false,
+    consequence:
+      "The last card charge failed. Existing, accepted, and private-fleet work remains available; replace the card before paid enrollment or after the subscription dunning notice asks you to.",
+    nextStep: "Replace the card before the next permitted collection attempt.",
+    statusLabel: "Card declined",
+    tone: "critical"
+  },
+  none: {
+    blocksPublishing: false,
+    consequence:
+      "No card is attached. Creating a workspace or draft does not require one; a verified payment method is required before an accepted paid subscription can activate.",
+    nextStep: "Attach a card only when you are ready to complete approved enrollment.",
+    statusLabel: "No card on file",
+    tone: "warning"
   }
 }
 
@@ -286,12 +322,17 @@ function cardLineFor(profile: HostBillingProfile | undefined): string | null {
   return brand ? `${brand} ending ${profile.paymentMethodLast4}` : `Card ending ${profile.paymentMethodLast4}`
 }
 
-function paymentMethodView(profile: HostBillingProfile | undefined): HostPaymentMethodView {
+function paymentMethodView(
+  profile: HostBillingProfile | undefined,
+  legacyCollectionRequired: boolean
+): HostPaymentMethodView {
   // No profile row IS a host with no card. This collection starts empty for every
   // organization, so an absent row has to read as "none" rather than as "nothing
   // to check here" — the same direction `assertHostCanPublish` fails in.
   const status = profile?.status ?? "none"
-  const presentation = PAYMENT_STATE_PRESENTATION[status]
+  const presentation = legacyCollectionRequired
+    ? PAYMENT_STATE_PRESENTATION[status]
+    : SUBSCRIPTION_CARD_PRESENTATION[status]
 
   return {
     blocksPublishing: presentation.blocksPublishing,
@@ -338,13 +379,13 @@ function feeExplainerView(): HostFeeExplainerView {
       hostTotalLabel: money(example.hostTotalCents),
       platformFeeLabel: money(example.platformFeeCents)
     },
-    headline: `${CURRENT_RATE_LABEL} of the driver pay you state, charged to you on top, on completed truckloads only.`,
+    headline: `Legacy ${CURRENT_RATE_LABEL} of frozen driver pay, charged on top after a completed assignment satisfies its historical billing terms.`,
     points: [
-      "No monthly fee, and no charge to post. A load that never gets hauled is never billed.",
+      "There is no monthly fee in this grandfathered lane. No new organization can enroll in the percentage model, and an explicitly grandfathered account keeps it only until migration.",
       `Nothing is deducted from driver pay. The driver is paid exactly what you stated; the ${CURRENT_RATE_LABEL} is added to what you owe LogLoads.`,
       "You pay your driver directly. Driver money never passes through LogLoads, which holds no funds and settles no freight.",
       "Drivers pay nothing to use LogLoads, ever.",
-      "Fees accrue as truckloads complete and are charged to the card on file once a month, after the month they were earned in."
+      "A legacy fee can accrue only when an explicit grandfathered account freezes those terms at assignment."
     ],
     rateLabel: CURRENT_RATE_LABEL
   }
@@ -525,6 +566,10 @@ export interface HostBillingSource {
   platformFeeEvents: readonly PlatformFeeEvent[]
   hostInvoices: readonly HostInvoice[]
   loadPostings: readonly Pick<LoadPosting, "id" | "title">[]
+  organizationBillingAccounts?: readonly {
+    billingModel: string | null
+    organizationId: string
+  }[]
 }
 
 export function buildHostBillingView(
@@ -538,6 +583,12 @@ export function buildHostBillingView(
   const ownEvents = source.platformFeeEvents.filter((event) => event.organizationId === organizationId)
   const ownInvoices = source.hostInvoices.filter((invoice) => invoice.organizationId === organizationId)
   const profile = source.hostBillingProfiles.find((entry) => entry.organizationId === organizationId)
+  const billingAccount = source.organizationBillingAccounts?.find(
+    (account) => account.organizationId === organizationId
+  )
+  const legacyCollectionRequired =
+    billingAccount?.billingModel === "legacy_percentage" ||
+    (!billingAccount && (ownEvents.length > 0 || ownInvoices.length > 0))
 
   const loadTitleById = new Map(source.loadPostings.map((posting) => [posting.id, posting.title]))
   const eventsById = new Map(ownEvents.map((event) => [event.id, event]))
@@ -581,7 +632,7 @@ export function buildHostBillingView(
     hasBillingHistory: ownEvents.length > 0 || ownInvoices.length > 0,
     invoices,
     lastInvoice: invoices[0] ?? null,
-    paymentMethod: paymentMethodView(profile)
+    paymentMethod: paymentMethodView(profile, legacyCollectionRequired)
   }
 }
 
