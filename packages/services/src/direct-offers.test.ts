@@ -89,7 +89,11 @@ function makeSecondRigAvailable(services: ReturnType<typeof directOfferServices>
       ...candidate,
       driverProfileId: secondDriverProfileId,
       id: `c9c9c9c9-c9c9-4c9c-8c9c-c9c9c9c9c90${index + 1}`,
-      supersededByCredentialId: null
+      supersededByCredentialId: null,
+      trailerProfileId:
+        candidate.kind === "trailer" ? combination.trailerProfileId : null,
+      truckProfileId:
+        candidate.kind === "truck" ? combination.truckProfileId : null
     }))
   ]
 

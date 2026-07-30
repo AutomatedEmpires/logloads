@@ -84,7 +84,13 @@ import {
   routePackIsSafeToRead
 } from "./route-packs"
 import { releaseTruckSlotReservation } from "./truck-slots"
-import { assertCondition, assertFound, createUuid, nowIso } from "./utils"
+import {
+  assertCondition,
+  assertFound,
+  createUuid,
+  DomainRefusalError,
+  nowIso
+} from "./utils"
 
 export const DEFAULT_ACTOR_USER_ID = "22222222-2222-4222-8222-222222222221"
 export const DEFAULT_ORGANIZATION_ID = "33333333-3333-4333-8333-333333333331"
@@ -815,22 +821,31 @@ function credentialBlockReason(
 function assertDriverCredentialsAllowAcceptance(
   state: LogLoadsDatabaseState,
   driverProfileId: string,
-  at: string
+  at: string,
+  equipment: { trailerProfileId: string | null; truckProfileId: string }
 ): void {
-  const gate = driverCredentialGate(state, driverProfileId, at)
+  const gate = driverCredentialGate(state, driverProfileId, at, equipment)
 
   if (gate.satisfied) {
     return
   }
 
   const held = state.driverCredentials.filter(
-    (credential) => credential.driverProfileId === driverProfileId
+    (credential) =>
+      credential.driverProfileId === driverProfileId &&
+      (
+        credential.kind === "truck"
+          ? credential.truckProfileId === equipment.truckProfileId
+          : credential.kind === "trailer"
+            ? credential.trailerProfileId === equipment.trailerProfileId
+            : true
+      )
   )
   const detail = gate.missing
     .map((kind) => `${kind} (${credentialBlockReason(held, kind, at)})`)
     .join(", ")
 
-  throw new Error(
+  throw new DomainRefusalError(
     `This driver cannot take a load until their credential vault is complete and current: ${detail}`
   )
 }
@@ -852,9 +867,10 @@ function assertDriverCredentialsAllowAcceptance(
 function acceptanceCredentialSummary(
   state: LogLoadsDatabaseState,
   driverProfileId: string,
-  at: string
+  at: string,
+  equipment: { trailerProfileId: string | null; truckProfileId: string }
 ) {
-  return { ...hostCredentialSummary(state, driverProfileId, at), checkedAt: at }
+  return { ...hostCredentialSummary(state, driverProfileId, at, equipment), checkedAt: at }
 }
 
 function requestCapacityWithPolicyInternal(
@@ -973,7 +989,10 @@ function requestCapacityWithPolicyInternal(
   //
   // Evaluated at `requestedAt` — the same clock the haul window was checked
   // against, never a second `nowIso()` that could straddle an expiry.
-  assertDriverCredentialsAllowAcceptance(state, parsed.driverProfileId, requestedAt)
+  assertDriverCredentialsAllowAcceptance(state, parsed.driverProfileId, requestedAt, {
+    trailerProfileId: parsed.trailerProfileId ?? null,
+    truckProfileId: parsed.truckProfileId
+  })
 
   const requestedTerms = directOfferTermsSnapshot(load, postingSources)
   assertCondition(
@@ -1119,11 +1138,25 @@ function finalizeCapacityAssignment(
   //
   // Placed before the first mutation below, so a refusal leaves the assignment,
   // the slot, the route pack, the trip and the audit trail untouched.
-  assertDriverCredentialsAllowAcceptance(state, assignment.driverProfileId, timestamp)
+  const selectedEquipment = {
+    trailerProfileId: assignment.trailerProfileId ?? null,
+    truckProfileId: assignment.truckProfileId
+  }
+  assertDriverCredentialsAllowAcceptance(
+    state,
+    assignment.driverProfileId,
+    timestamp,
+    selectedEquipment
+  )
   // What the host keeps. Captured here rather than looked up when the host opens
   // the load, so the record is what was true AT ACCEPTANCE — a live lookup would
   // quietly rewrite history every time a credential was renewed or lapsed.
-  const driverCredentials = acceptanceCredentialSummary(state, assignment.driverProfileId, timestamp)
+  const driverCredentials = acceptanceCredentialSummary(
+    state,
+    assignment.driverProfileId,
+    timestamp,
+    selectedEquipment
+  )
   const billingCommitment = resolveAssignmentBillingCommitment(
     state,
     {
@@ -1997,10 +2030,10 @@ export function recordPreTripInspection(
   const context = getContextForInput(state, input)
   assertOrganizationAction(context, "progress_trip")
 
-  const trip = assertFound(
-    state.tripsV2.find((current) => current.id === input.tripId),
-    `Trip ${input.tripId} was not found`
-  )
+  const trip = state.tripsV2.find((current) => current.id === input.tripId)
+  if (!trip) {
+    throw new DomainRefusalError(`Trip ${input.tripId} was not found`)
+  }
   const assignment = assertFound(
     state.assignments.find((current) => current.id === trip.assignmentId),
     `Assignment ${trip.assignmentId} was not found`
@@ -2945,10 +2978,10 @@ export function getTripDocumentTarget(
   const context = getContextForInput(state, input)
   assertOrganizationAction(context, TRIP_DOCUMENT_ACTIONS[access])
 
-  const trip = assertFound(
-    state.tripsV2.find((current) => current.id === input.tripId),
-    `Trip ${input.tripId} was not found`
-  )
+  const trip = state.tripsV2.find((current) => current.id === input.tripId)
+  if (!trip) {
+    throw new DomainRefusalError(`Trip ${input.tripId} was not found`)
+  }
   const assignment = assertFound(
     state.assignments.find((current) => current.id === trip.assignmentId),
     `Assignment ${trip.assignmentId} was not found`

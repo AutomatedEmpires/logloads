@@ -8,7 +8,8 @@ import type { LogLoadsDatabaseState } from "@logloads/db"
 import {
   acceptDispatchProSubscription,
   activateOrganizationSubscription,
-  authorizePilotConversionSubscription
+  authorizePilotConversionSubscription,
+  DomainRefusalError
 } from "@logloads/services"
 import { NextResponse } from "next/server"
 import { z } from "zod"
@@ -374,8 +375,9 @@ export async function POST(request: Request) {
                 targetDefinition
               ) !== input.quoteFingerprint
             ) {
-              throw new Error(
-                "The selected Pilot conversion quote is stale; review the current terms before continuing"
+              throw new ApiError(
+                "The selected Pilot conversion quote is stale; review the current terms before continuing",
+                409
               )
             }
 
@@ -400,12 +402,13 @@ export async function POST(request: Request) {
             conversionGraceEndsAt =
               authorized.sourceSubscription.conversionGraceEndsAt
           } catch (error) {
-            throw new ApiError(
-              error instanceof Error
-                ? error.message
-                : "This Pilot cannot start conversion Checkout",
-              409
-            )
+            if (error instanceof ApiError || error instanceof DomainRefusalError) {
+              throw error
+            }
+
+            throw new Error("Pilot conversion authorization failed", {
+              cause: error
+            })
           }
         }
 

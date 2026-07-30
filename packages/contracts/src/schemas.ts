@@ -887,6 +887,13 @@ export const driverCredentialSchema = z
     kind: credentialKindSchema,
     status: credentialStatusSchema,
     /**
+     * Equipment evidence is bound to the exact profile photographed. Historical
+     * unbound rows remain readable through null, but acceptance never counts
+     * them for a selected truck or trailer.
+     */
+    truckProfileId: uuidSchema.optional().nullable().default(null),
+    trailerProfileId: uuidSchema.optional().nullable().default(null),
+    /**
      * The stored document, as the server read it back from the media provider
      * after upload. null until bytes actually exist — a credential record can be
      * created the moment a driver starts, and media in this product is
@@ -964,6 +971,14 @@ export const driverCredentialSchema = z
   .refine((value) => value.status !== "approved" || value.requestedEvidence.length === 0, {
     message: "An approved credential has nothing outstanding",
     path: ["requestedEvidence"]
+  })
+  .refine((value) => value.kind === "truck" || value.truckProfileId === null, {
+    message: "Only a truck credential may name a truck profile",
+    path: ["truckProfileId"]
+  })
+  .refine((value) => value.kind === "trailer" || value.trailerProfileId === null, {
+    message: "Only a trailer credential may name a trailer profile",
+    path: ["trailerProfileId"]
   })
   // Compared as instants: the same moment has several valid ISO spellings, and a
   // string comparison would reject a legitimate row written by a different writer.

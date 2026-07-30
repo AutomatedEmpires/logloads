@@ -2,6 +2,7 @@ import {
   billingAdjustmentSchema,
   billingPeriodSummaryId,
   billingPeriodSummarySchema,
+  LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
   networkOverageInvoiceId,
   networkOverageInvoiceSchema,
   networkUsageEventId,
@@ -43,6 +44,7 @@ import {
 } from "./subscription-billing"
 import { provisionLoadCapacity } from "./loads"
 import { createLogLoadsServices } from "./index"
+import { DomainRefusalError } from "./utils"
 
 const ADMIN = "11111111-1111-4111-8111-111111111111"
 const DRIVER = "22222222-2222-4222-8222-222222222221"
@@ -471,6 +473,89 @@ describe("subscription activation and commercial scope", () => {
       planCode: "network_25",
       subscriptionId: configuredSubscription.id
     })
+  })
+
+  it("rejects non-USD legacy acceptance without blocking subscription work", () => {
+    const state = freshState()
+    const assignmentId = "69696969-6969-4969-8969-696969696962"
+    addBlankAssignment(state, assignmentId)
+    const assignment = state.assignments.find(
+      (candidate) => candidate.id === assignmentId
+    )
+
+    if (!assignment) throw new Error("Blank assignment missing")
+
+    assignment.termsSnapshot = {
+      ...assignment.termsSnapshot,
+      currency: "CAD",
+      driverPayCents: 52_500
+    }
+    const input = {
+      acceptanceSource: "host_approval" as const,
+      assignmentId,
+      haulerOrganizationId: UNRELATED_HAULER,
+      hostOrganizationId: HOST
+    }
+
+    expect(() =>
+      resolveAssignmentBillingCommitment(state, input, AUTHORIZED_AT)
+    ).toThrow(DomainRefusalError)
+    expect(() =>
+      resolveAssignmentBillingCommitment(state, input, AUTHORIZED_AT)
+    ).toThrow(
+      new RegExp(
+        `${LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY}-denominated`
+      )
+    )
+
+    paidAndOperating(state)
+
+    expect(
+      resolveAssignmentBillingCommitment(
+        state,
+        input,
+        "2026-08-04T16:00:00.000Z"
+      ).billingModel
+    ).toBe("subscription_v1")
+  })
+
+  it("keeps a missing legacy frozen-pay snapshot as an invariant failure", () => {
+    const state = freshState()
+    const assignmentId = "69696969-6969-4969-8969-696969696963"
+    addBlankAssignment(state, assignmentId)
+    const assignment = state.assignments.find(
+      (candidate) => candidate.id === assignmentId
+    )
+
+    if (!assignment) throw new Error("Blank assignment missing")
+
+    assignment.termsSnapshot = {
+      ...assignment.termsSnapshot,
+      currency: LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
+    }
+    delete assignment.termsSnapshot.driverPayCents
+    const before = structuredClone(state)
+    let refusal: unknown
+
+    try {
+      resolveAssignmentBillingCommitment(
+        state,
+        {
+          acceptanceSource: "host_approval",
+          assignmentId,
+          haulerOrganizationId: UNRELATED_HAULER,
+          hostOrganizationId: HOST
+        },
+        AUTHORIZED_AT
+      )
+    } catch (error) {
+      refusal = error
+    }
+
+    expect(refusal).toBeInstanceOf(Error)
+    expect(refusal).not.toBeInstanceOf(DomainRefusalError)
+    expect((refusal as Error).message).toMatch(/frozen driver pay/)
+    expect(state).toEqual(before)
   })
 
   it("keeps Dispatch Pro fleet-scoped and projects only fleet capabilities", () => {
@@ -2467,8 +2552,160 @@ describe("dunning and Pilot conversion boundaries", () => {
         },
         graceEndsAt
       )
+    ).toThrow(DomainRefusalError)
+    expect(() =>
+      authorizePilotConversionSubscription(
+        state,
+        {
+          acceptedAt: graceEndsAt,
+          acceptedByUserId: OWNER,
+          acceptedTermsVersion: "subscription-v1-2026-07-28",
+          actorUserId: ADMIN,
+          operatingMarketIds: [HOST_LANDING],
+          sourceSubscriptionId: pilot.id,
+          targetPlanCode: "network_25"
+        },
+        graceEndsAt
+      )
     ).toThrow(/Pilot conversion is available only through/)
     expect(state).toEqual(before)
+  })
+
+  it("types caller-correctable Pilot conversion scope and entitlement conflicts", () => {
+    const scopeState = freshState()
+    const scopePilot = paidAndOperating(
+      scopeState,
+      "network_pilot"
+    )
+    const scopeAcceptedAt = new Date(
+      Date.parse(scopePilot.commitmentEnd as string) +
+        24 * 60 * 60 * 1000
+    ).toISOString()
+
+    expect(() =>
+      authorizePilotConversionSubscription(
+        scopeState,
+        {
+          acceptedAt: scopeAcceptedAt,
+          acceptedByUserId: OWNER,
+          acceptedTermsVersion: "subscription-v1-2026-07-28",
+          actorUserId: ADMIN,
+          operatingMarketIds: [],
+          sourceSubscriptionId: scopePilot.id,
+          targetPlanCode: "network_25"
+        },
+        scopeAcceptedAt
+      )
+    ).toThrow(DomainRefusalError)
+    expect(() =>
+      authorizePilotConversionSubscription(
+        scopeState,
+        {
+          acceptedAt: scopeAcceptedAt,
+          acceptedByUserId: OWNER,
+          acceptedTermsVersion: "subscription-v1-2026-07-28",
+          actorUserId: ADMIN,
+          operatingMarketIds: [],
+          sourceSubscriptionId: scopePilot.id,
+          targetPlanCode: "network_25"
+        },
+        scopeAcceptedAt
+      )
+    ).toThrow(/accepted operating location/)
+
+    const entitlementState = freshState()
+    const entitlementPilot = paidAndOperating(
+      entitlementState,
+      "network_pilot"
+    )
+    const entitlementAcceptedAt = new Date(
+      Date.parse(entitlementPilot.commitmentEnd as string) +
+        24 * 60 * 60 * 1000
+    ).toISOString()
+    const entitlementTemplate = entitlementState.entitlements[0]
+
+    if (!entitlementTemplate) {
+      throw new Error("Seed entitlement missing")
+    }
+
+    entitlementState.entitlements.push({
+      ...structuredClone(entitlementTemplate),
+      id: "28282828-2828-4828-8828-282828282898",
+      organizationId: HOST,
+      product: "landing_operations",
+      status: "active",
+      stripeCustomerId: "cus_legacyhost001",
+      stripeSubscriptionId: "sub_legacyhost001"
+    })
+
+    expect(() =>
+      authorizePilotConversionSubscription(
+        entitlementState,
+        {
+          acceptedAt: entitlementAcceptedAt,
+          acceptedByUserId: OWNER,
+          acceptedTermsVersion: "subscription-v1-2026-07-28",
+          actorUserId: ADMIN,
+          operatingMarketIds: [HOST_LANDING],
+          sourceSubscriptionId: entitlementPilot.id,
+          targetPlanCode: "network_25"
+        },
+        entitlementAcceptedAt
+      )
+    ).toThrow(DomainRefusalError)
+    expect(() =>
+      authorizePilotConversionSubscription(
+        entitlementState,
+        {
+          acceptedAt: entitlementAcceptedAt,
+          acceptedByUserId: OWNER,
+          acceptedTermsVersion: "subscription-v1-2026-07-28",
+          actorUserId: ADMIN,
+          operatingMarketIds: [HOST_LANDING],
+          sourceSubscriptionId: entitlementPilot.id,
+          targetPlanCode: "network_25"
+        },
+        entitlementAcceptedAt
+      )
+    ).toThrow(/independently billed Dispatch Pro entitlement/)
+  })
+
+  it("keeps malformed Pilot conversion account state as an invariant failure", () => {
+    const state = freshState()
+    const pilot = paidAndOperating(state, "network_pilot")
+    const acceptedAt = new Date(
+      Date.parse(pilot.commitmentEnd as string) +
+        24 * 60 * 60 * 1000
+    ).toISOString()
+    state.organizationBillingAccounts =
+      state.organizationBillingAccounts.filter(
+        (candidate) => candidate.organizationId !== HOST
+      )
+    let refusal: unknown
+
+    try {
+      authorizePilotConversionSubscription(
+        state,
+        {
+          acceptedAt,
+          acceptedByUserId: OWNER,
+          acceptedTermsVersion: "subscription-v1-2026-07-28",
+          actorUserId: ADMIN,
+          operatingMarketIds: [HOST_LANDING],
+          sourceSubscriptionId: pilot.id,
+          targetPlanCode: "network_25"
+        },
+        acceptedAt
+      )
+    } catch (error) {
+      refusal = error
+    }
+
+    expect(refusal).toBeInstanceOf(Error)
+    expect(refusal).not.toBeInstanceOf(DomainRefusalError)
+    expect((refusal as Error).message).toMatch(
+      /exactly one organization billing account/
+    )
   })
 
   it("authorizes every paid Pilot target and freezes negotiated Enterprise terms", () => {

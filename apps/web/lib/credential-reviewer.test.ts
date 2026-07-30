@@ -43,7 +43,7 @@ const truckRequest: CredentialReviewRequest = {
   document: { base64Data: "aGVsbG8=", format: "png" },
   holderName: "Dale Rousseau",
   statedExpiresOn: null,
-  statedIdentifier: null,
+  statedIdentifier: "NP-101",
   statedIssuer: null
 }
 
@@ -387,7 +387,7 @@ describe("credential reviewer: decisions", () => {
           documentKind: null,
           expiresOn: null,
           holderNameMatchesClaim: null,
-          identifierMatchesClaim: null,
+          identifierMatchesClaim: true,
           issuer: null,
           legible: false,
           rationale: "The photo is too dark to read.",
@@ -662,7 +662,7 @@ describe("credential reviewer: the model can only be overruled toward refusal", 
           documentKind: "truck",
           expiresOn: null,
           holderNameMatchesClaim: null,
-          identifierMatchesClaim: null,
+          identifierMatchesClaim: true,
           issuer: null,
           rationale: "The truck and its unit number are clearly visible."
         })
@@ -673,6 +673,56 @@ describe("credential reviewer: the model can only be overruled toward refusal", 
       decision: "approved",
       status: "reviewed"
     })
+  })
+
+  it("denies a truck photo whose readable unit number belongs to another rig", async () => {
+    const fetcher = respondingFetcher(
+      providerResponse(
+        cleanReading({
+          documentKind: "truck",
+          expiresOn: null,
+          holderNameMatchesClaim: null,
+          identifierMatchesClaim: false,
+          issuer: null,
+          rationale: "The visible unit number does not match."
+        })
+      )
+    )
+
+    const outcome = await review(truckRequest, fetcher)
+
+    expect(outcome).toMatchObject({ decision: "denied", overrodeModelDecision: true })
+    if (outcome.status === "reviewed") {
+      expect(outcome.findings).toContain("equipment_identifier_mismatch")
+    }
+  })
+
+  it("asks for a clearer equipment photo when the unit number is unreadable", async () => {
+    const fetcher = respondingFetcher(
+      providerResponse(
+        cleanReading({
+          documentKind: "truck",
+          expiresOn: null,
+          holderNameMatchesClaim: null,
+          identifierMatchesClaim: null,
+          issuer: null,
+          rationale: "The unit number cannot be read."
+        })
+      )
+    )
+
+    const outcome = await review(truckRequest, fetcher)
+
+    expect(outcome).toMatchObject({
+      decision: "more_info_required",
+      overrodeModelDecision: true
+    })
+    if (outcome.status === "reviewed") {
+      expect(outcome.findings).toContain("equipment_identifier_unreadable")
+      expect(outcome.requestedEvidence).toContain(
+        "A photo that clearly shows the selected equipment's unit number."
+      )
+    }
   })
 
   it("asks for more when a licence shows no readable expiry", async () => {

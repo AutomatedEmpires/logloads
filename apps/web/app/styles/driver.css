@@ -522,6 +522,7 @@
 .media-upload-card form { display: grid; gap: 10px; }
 .media-upload-card label { display: grid; font-size: .9rem; font-weight: 800; gap: 7px; }
 .media-upload-card input[type="file"] { border: 1px solid var(--line); border-radius: var(--radius); font: inherit; padding: 10px; width: 100%; }
+.media-upload-card select { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); color: var(--ink); font: inherit; min-height: 44px; padding: 10px 36px 10px 12px; width: 100%; }
 .media-upload-card > p { color: var(--ink-soft); font-size: .78rem; margin: 0; }
 
 .status-toggle-block { display: grid; gap: 6px; }

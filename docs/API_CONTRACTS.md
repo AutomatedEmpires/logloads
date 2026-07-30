@@ -56,7 +56,7 @@
 - Route handlers call `packages/services` only.
 - Actor identity always resolves from the session (`apps/web/lib/api-actor.ts`); client payloads can select only among the actor's own organization memberships. Client-supplied actor IDs are rejected by design and banned by guardrails.
 - Validation happens in shared schemas and service-layer functions.
-- Errors: `401` unauthenticated, `403` membership/permission, `422` invalid fields, `400` business-rule rejection, `429` shared rate limit exceeded, and `503` production safety check unavailable. Bodies are JSON `{ error }`; rate-limit `429`/`503` responses include integer-seconds `Retry-After`.
+- Errors: `401` unauthenticated, `403` membership/permission, `422` invalid fields, `409` sanitized business-rule conflict, `429` shared rate limit exceeded, and `503` production safety check unavailable. Bodies are JSON `{ error }`; rate-limit `429`/`503` responses include integer-seconds `Retry-After`. Domain-conflict bodies never include record identifiers or the service's internal refusal detail.
 - Successful mutations resolve only after `mutateState` commits a conditional Supabase update. A stale version reloads and replays the deterministic service operation; it never overwrites the newer row.
 - Driver economics and media writes are service-owned, verify active organization membership and driver ownership, and resolve the active equipment combination server-side.
 - Media uploads are immutable (`overwrite=false`); only verified JPG/PNG/WebP assets of 10 MB or less under the current target prefix can be attached.

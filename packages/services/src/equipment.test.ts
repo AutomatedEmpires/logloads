@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { createLogLoadsServices } from "."
+import { createLogLoadsServices, DomainRefusalError } from "."
 
 const NORTH_PINE_ORG_ID = "33333333-3333-4333-8333-333333333331"
 const SUMMIT_ORG_ID = "33333333-3333-4333-8333-333333333332"
@@ -104,6 +104,62 @@ describe("equipment mutation authorization", () => {
     expect(truck?.ownerUserId).toBe(DISPATCHER_USER_ID)
     expect(trailer?.ownerUserId).toBe(DISPATCHER_USER_ID)
     expect(audit).toMatchObject({ action: "equipment_added", actorUserId: DISPATCHER_USER_ID })
+  })
+
+  it("rejects normalized duplicate unit numbers and malformed legacy duplicates without partial writes", () => {
+    const services = createLogLoadsServices()
+    const beforeConflict = structuredClone(services.state)
+
+    const duplicateRequest = () =>
+      services.addEquipmentCombination(addInput({
+        label: "Visually duplicated unit",
+        unitNumber: " np 101 "
+      }))
+
+    expect(duplicateRequest).toThrow(DomainRefusalError)
+    expect(duplicateRequest).toThrow(/truck unit number is already in use/)
+    expect(services.state).toEqual(beforeConflict)
+
+    const existingTruck = services.state.truckProfiles.find(
+      (candidate) =>
+        candidate.companyId === NORTH_PINE_ORG_ID &&
+        candidate.unitNumber === "NP-202"
+    )
+    if (!existingTruck) {
+      throw new Error("Second North Pine truck fixture missing")
+    }
+    existingTruck.unitNumber = "NP 101"
+    const beforeMalformedState = structuredClone(services.state)
+
+    let malformedStateError: unknown
+
+    try {
+      services.addEquipmentCombination(addInput({
+        label: "Otherwise valid new unit",
+        unitNumber: "NP-404"
+      }))
+    } catch (error) {
+      malformedStateError = error
+    }
+
+    expect(malformedStateError).toBeInstanceOf(Error)
+    expect(malformedStateError).not.toBeInstanceOf(DomainRefusalError)
+    expect((malformedStateError as Error).message).toMatch(/duplicate truck unit numbers/)
+    expect(services.state).toEqual(beforeMalformedState)
+  })
+
+  it("treats a new unit number without letters or digits as a domain refusal", () => {
+    const services = createLogLoadsServices()
+    const before = structuredClone(services.state)
+    const invalidRequest = () =>
+      services.addEquipmentCombination(addInput({
+        label: "Invalid unit",
+        unitNumber: "---"
+      }))
+
+    expect(invalidRequest).toThrow(DomainRefusalError)
+    expect(invalidRequest).toThrow(/must contain a letter or number/)
+    expect(services.state).toEqual(before)
   })
 
   it("allows a driver to add equipment only when it is assigned to their own active same-org profile", () => {
