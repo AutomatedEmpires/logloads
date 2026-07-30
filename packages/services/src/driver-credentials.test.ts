@@ -23,6 +23,7 @@ import {
   credentialReviewId,
   driverCredentialGate,
   driverCredentialId,
+  getCredentialUploadTarget,
   hostCredentialSummary,
   listDriverCredentials,
   submitCredential,
@@ -30,6 +31,7 @@ import {
   type DriverCredentialVaultView,
   type HostCredentialView
 } from "./driver-credentials"
+import { DomainRefusalError } from "./utils"
 
 /**
  * The seeded cast this file works with. Every fact asserted about them is checked
@@ -385,6 +387,79 @@ describe("the seeded facts these tests rely on", () => {
 
 // ── Submission ────────────────────────────────────────────────────────────────
 
+describe("getCredentialUploadTarget", () => {
+  it("derives an independent driver's exact active rig namespace from its combination", () => {
+    const state = freshState()
+    const independentDriver = state.driverProfiles.find(
+      (candidate) => candidate.id === RILEY_DRIVER
+    )
+    const sourceCombination = state.equipmentCombinations.find(
+      (candidate) =>
+        candidate.organizationId === MAYA_ORG &&
+        candidate.truckProfileId === HANK_TRUCK
+    )
+
+    if (!independentDriver || !sourceCombination) {
+      throw new Error("Independent-driver upload target fixtures missing")
+    }
+
+    independentDriver.companyId = null
+    state.equipmentCombinations.push({
+      ...structuredClone(sourceCombination),
+      assignedDriverProfileId: RILEY_DRIVER,
+      id: randomUUID(),
+      label: "Riley independent rig"
+    })
+
+    expect(
+      getCredentialUploadTarget(state, {
+        actorUserId: RILEY_USER,
+        driverProfileId: RILEY_DRIVER,
+        equipmentProfileId: HANK_TRUCK,
+        kind: "truck",
+        organizationId: MAYA_ORG
+      })
+    ).toEqual({
+      equipmentProfileId: HANK_TRUCK,
+      kind: "truck",
+      organizationId: MAYA_ORG,
+      publicIdPrefix: credentialDocumentPublicIdPrefix(
+        RILEY_DRIVER,
+        "truck",
+        HANK_TRUCK
+      )
+    })
+  })
+
+  it("refuses upload signing for anyone other than the driver who owns the vault", () => {
+    const state = freshState()
+
+    expect(() =>
+      getCredentialUploadTarget(state, {
+        actorUserId: MAYA_USER,
+        driverProfileId: RILEY_DRIVER,
+        equipmentProfileId: null,
+        kind: "cdl",
+        organizationId: MAYA_ORG
+      })
+    ).toThrow(DomainRefusalError)
+  })
+
+  it("classifies an unassigned equipment target as a caller-correctable refusal", () => {
+    const state = freshState()
+
+    expect(() =>
+      getCredentialUploadTarget(state, {
+        actorUserId: RILEY_USER,
+        driverProfileId: RILEY_DRIVER,
+        equipmentProfileId: randomUUID(),
+        kind: "truck",
+        organizationId: MAYA_ORG
+      })
+    ).toThrow(DomainRefusalError)
+  })
+})
+
 describe("submitCredential", () => {
   it("files every submission as pending, never as approved", () => {
     const state = freshState()
@@ -562,6 +637,40 @@ describe("submitCredential", () => {
 
     expect(result.credential.identifier).toBe(selectedTruck?.unitNumber)
     expect(result.credential.identifier).not.toBe("CALLER-SPOOFED-UNIT")
+  })
+
+  it("lets an independent driver file evidence for their exact active assigned rig", () => {
+    const state = freshState()
+    const independentDriver = state.driverProfiles.find(
+      (candidate) => candidate.id === RILEY_DRIVER
+    )
+
+    if (!independentDriver) {
+      throw new Error("Riley driver fixture missing")
+    }
+
+    independentDriver.companyId = null
+
+    const result = file(state, {
+      actorUserId: RILEY_USER,
+      driverProfileId: RILEY_DRIVER,
+      kind: "truck",
+      organizationId: MAYA_ORG
+    })
+    const assignedCombination = state.equipmentCombinations.find(
+      (candidate) =>
+        candidate.assignedDriverProfileId === RILEY_DRIVER &&
+        candidate.organizationId === MAYA_ORG &&
+        candidate.truckProfileId === result.credential.truckProfileId
+    )
+
+    expect(result.outcome).toBe("submitted")
+    expect(assignedCombination).toBeDefined()
+    expect(result.credential.identifier).toBe(
+      state.truckProfiles.find(
+        (candidate) => candidate.id === assignedCombination?.truckProfileId
+      )?.unitNumber
+    )
   })
 
   it("refuses equipment evidence when two assigned trucks share a normalized unit number", () => {
@@ -1916,6 +2025,73 @@ describe("listDriverCredentials", () => {
     const view = vaultView(state, MAYA_DRIVER, { actorUserId: MAYA_USER, audience: "driver" })
 
     expect(view.credentials.length).toBeGreaterThan(0)
+  })
+
+  it("shows an independent driver only the active organization's equipment choices", () => {
+    const state = freshState()
+    const independentDriver = state.driverProfiles.find(
+      (candidate) => candidate.id === RILEY_DRIVER
+    )
+    const firstOrganizationCombination = state.equipmentCombinations.find(
+      (candidate) => candidate.organizationId === MAYA_ORG
+    )
+    const secondOrganizationCombination = state.equipmentCombinations.find(
+      (candidate) => candidate.organizationId === EXTERNAL_HOST_ORG
+    )
+
+    if (
+      !independentDriver ||
+      !firstOrganizationCombination ||
+      !secondOrganizationCombination
+    ) {
+      throw new Error("Independent multi-organization equipment fixtures missing")
+    }
+
+    independentDriver.companyId = null
+    state.organizationMemberships.push(
+      organizationMembershipSchema.parse({
+        createdAt: SUBMITTED,
+        id: randomUUID(),
+        organizationId: EXTERNAL_HOST_ORG,
+        role: "driver",
+        status: "active",
+        updatedAt: SUBMITTED,
+        userId: RILEY_USER
+      })
+    )
+    const firstOrganizationRig = {
+      ...structuredClone(firstOrganizationCombination),
+      assignedDriverProfileId: RILEY_DRIVER,
+      id: randomUUID(),
+      label: "Riley first organization rig"
+    }
+    const secondOrganizationRig = {
+      ...structuredClone(secondOrganizationCombination),
+      assignedDriverProfileId: RILEY_DRIVER,
+      id: randomUUID(),
+      label: "Riley second organization rig"
+    }
+    state.equipmentCombinations.push(
+      firstOrganizationRig,
+      secondOrganizationRig
+    )
+
+    const view = vaultView(state, RILEY_DRIVER, {
+      actorUserId: RILEY_USER,
+      audience: "driver",
+      organizationId: MAYA_ORG
+    })
+
+    expect(view.equipmentSelections.map((selection) => selection.combinationId))
+      .toEqual([firstOrganizationRig.id])
+    const expectedProfileIds = [
+      firstOrganizationRig.truckProfileId,
+      firstOrganizationRig.trailerProfileId
+    ].filter((profileId): profileId is string => Boolean(profileId)).sort()
+
+    expect(
+      view.equipmentOptions.map((option) => option.profileId).sort()
+    ).toEqual(expectedProfileIds)
   })
 
   it("refuses a driver reading another driver's vault", () => {

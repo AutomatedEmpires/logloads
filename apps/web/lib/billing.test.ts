@@ -1,6 +1,7 @@
 import {
   computePlatformFeeCents,
   invoicePeriodFor,
+  LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
   platformFeeEventId,
   PLATFORM_FEE_BPS,
   type HostInvoice,
@@ -230,7 +231,7 @@ function hostInvoice(input: {
 function addLegacyAssignment(
   state: LogLoadsDatabaseState,
   assignmentId: string,
-  currency = "USD"
+  currency = LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
 ): void {
   const template = state.assignments[0]
 
@@ -412,7 +413,7 @@ function fakeStripe(
         mintedInvoiceIds.push(facts.id)
         byKey.set(input.idempotencyKey, facts)
         providerInvoices.set(facts.id, {
-          currency: "USD",
+          currency: LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
           customerId: input.customerId,
           hostInvoiceId: input.metadata.hostInvoiceId ?? "",
           ...facts
@@ -1082,7 +1083,9 @@ describe("planHostInvoiceCharge", () => {
 
     expect(planHostInvoiceCharge(state, INVOICE_ID)).toMatchObject({
       kind: "refused",
-      message: expect.stringMatching(/USD-denominated/)
+      message: expect.stringContaining(
+        `${LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY}-denominated`
+      )
     })
 
     state.hostInvoices[0] = {
@@ -1092,7 +1095,9 @@ describe("planHostInvoiceCharge", () => {
 
     expect(planHostInvoiceCharge(state, INVOICE_ID)).toMatchObject({
       kind: "refused",
-      message: expect.stringMatching(/USD-denominated/)
+      message: expect.stringContaining(
+        `${LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY}-denominated`
+      )
     })
   })
 
@@ -1540,7 +1545,8 @@ describe("the real Stripe adapter", () => {
       expect.objectContaining({
         auto_advance: false,
         collection_method: "charge_automatically",
-        currency: "usd",
+        currency:
+          LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY.toLowerCase(),
         customer: "cus_live",
         pending_invoice_items_behavior: "exclude"
       }),
@@ -1585,7 +1591,7 @@ describe("the real Stripe adapter", () => {
         amountDueCents: 2_625,
         amountPaidCents: 0,
         amountRemainingCents: 2_625,
-        currency: "USD",
+        currency: LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
         customerId: "cus_live",
         endingBalanceCents: 0,
         id: "in_recovered",

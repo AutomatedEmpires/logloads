@@ -168,7 +168,7 @@ export function apiErrorResponse(error: unknown): NextResponse {
   }
 
   if (error instanceof DomainRefusalError) {
-    console.info("logloads: domain request refused", error)
+    console.info("logloads: domain request refused")
 
     return NextResponse.json({ error: DOMAIN_REFUSAL_MESSAGE }, { status: 409 })
   }

@@ -46,6 +46,16 @@ describe("apiErrorResponse", () => {
     for (const leak of [LOAD_ID, ORGANIZATION_ID, "not found", "not visible"]) {
       expect(missing.body.error).not.toContain(leak)
     }
+
+    expect(console.info).toHaveBeenCalledTimes(2)
+    expect(console.info).toHaveBeenNthCalledWith(1, "logloads: domain request refused")
+    expect(console.info).toHaveBeenNthCalledWith(2, "logloads: domain request refused")
+
+    const serializedLogs = JSON.stringify(vi.mocked(console.info).mock.calls)
+
+    for (const leak of [LOAD_ID, ORGANIZATION_ID, "not found", "not visible"]) {
+      expect(serializedLogs).not.toContain(leak)
+    }
   })
 
   it("keeps the detail it withholds from the client in the server log", async () => {

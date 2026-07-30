@@ -1,5 +1,4 @@
 import { credentialKindSchema } from "@logloads/contracts"
-import { credentialDocumentPublicIdPrefix } from "@logloads/services"
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 
@@ -19,7 +18,7 @@ import { services } from "@/lib/services"
  */
 export async function POST(request: NextRequest) {
   try {
-    const { actor, actorUserId } = await requireApiActor()
+    const { actor, actorUserId, organizationId } = await requireApiActor()
     const payload = parseJsonObject(await request.json())
     const kind = credentialKindSchema.safeParse(payload.kind)
 
@@ -32,15 +31,6 @@ export async function POST(request: NextRequest) {
     }
 
     await enforceApiRateLimit("credential-upload-signature", actorUserId, 10, 60_000)
-    const vault = services.listDriverCredentials(actor.driverProfileId, {
-      actorUserId,
-      audience: "driver"
-    })
-
-    if (vault.audience === "host") {
-      throw new ApiError("A host cannot upload to a driver's vault", 403)
-    }
-
     const equipmentKind = kind.data === "truck" || kind.data === "trailer"
     const equipmentProfileId = equipmentKind
       ? z.string().uuid().safeParse(payload.equipmentProfileId)
@@ -58,23 +48,17 @@ export async function POST(request: NextRequest) {
       ? equipmentProfileId.data
       : null
 
-    if (
-      equipmentKind &&
-      !vault.equipmentOptions.some(
-        (option) =>
-          option.kind === kind.data && option.profileId === selectedEquipmentProfileId
-      )
-    ) {
-      throw new ApiError(`Choose a ${kind.data} currently assigned to you`, 409)
-    }
+    const target = services.getCredentialUploadTarget({
+      actorUserId,
+      driverProfileId: actor.driverProfileId,
+      equipmentProfileId: selectedEquipmentProfileId,
+      kind: kind.data,
+      organizationId
+    })
 
     return NextResponse.json(
       await signedUpload({
-        publicIdPrefix: credentialDocumentPublicIdPrefix(
-          actor.driverProfileId,
-          kind.data,
-          selectedEquipmentProfileId
-        )
+        publicIdPrefix: target.publicIdPrefix
       })
     )
   } catch (error) {

@@ -10,7 +10,13 @@ import {
 import type { LogLoadsDatabaseState } from "@logloads/db"
 import { z } from "zod"
 
-import { assertFound, createUuid, DomainRefusalError, nowIso } from "./utils"
+import {
+  assertDomainFound,
+  assertFound,
+  createUuid,
+  DomainRefusalError,
+  nowIso
+} from "./utils"
 
 const driverContextSchema = z.object({
   actorUserId: z.string().uuid(),
@@ -232,6 +238,16 @@ const featuredTruckPhotoViewerSchema = z.object({
   viewerUserId: z.string().uuid()
 })
 
+function parseFeaturedTruckPhotoViewer(rawInput: unknown): z.infer<typeof featuredTruckPhotoViewerSchema> {
+  const parsed = featuredTruckPhotoViewerSchema.safeParse(rawInput)
+
+  if (!parsed.success) {
+    throw new DomainRefusalError("The featured truck photo request is invalid")
+  }
+
+  return parsed.data
+}
+
 /**
  * The one read that shows a driver's rig to someone else. Authorization lives
  * here, not in the route: the viewer holds view_network through an active
@@ -242,7 +258,7 @@ const featuredTruckPhotoViewerSchema = z.object({
  * truck never shows under the wrong driver.
  */
 export function getFeaturedTruckPhotoReference(state: LogLoadsDatabaseState, rawInput: unknown): MediaReference {
-  const input = featuredTruckPhotoViewerSchema.parse(rawInput)
+  const input = parseFeaturedTruckPhotoViewer(rawInput)
   const membership = state.organizationMemberships.find((candidate) =>
     candidate.organizationId === input.viewerOrganizationId &&
     candidate.status === "active" &&
@@ -253,7 +269,7 @@ export function getFeaturedTruckPhotoReference(state: LogLoadsDatabaseState, raw
     throw new DomainRefusalError("You are not authorized to view this photo")
   }
 
-  const driver = assertFound(
+  const driver = assertDomainFound(
     state.driverProfiles.find((candidate) => candidate.id === input.driverProfileId),
     "Driver profile not found"
   )

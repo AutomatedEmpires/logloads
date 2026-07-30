@@ -29,8 +29,8 @@ have to rediscover any of this.
 ## External API refusal boundary
 
 - Service-layer business preconditions throw `DomainRefusalError`. The shared
-  HTTP mapper returns one constant `409` body and records the detailed reason
-  only in server logs.
+  HTTP mapper returns one constant `409` body and records only a fixed,
+  identifier-free refusal event in server logs.
 - Assignment, availability, load, truck-slot, route-pack, driver-media, and trip-
   document paths preserve that typed boundary. Media adapters do not rewrap
   domain errors with record-specific messages.

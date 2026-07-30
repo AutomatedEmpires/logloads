@@ -9,6 +9,7 @@ import {
   hostInvoiceStatusSchema,
   invoicePeriodFor,
   invoiceSubtotalCents,
+  LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
   platformFeeEventId,
   platformFeeEventStatusSchema,
   PLATFORM_FEE_BPS,
@@ -32,6 +33,10 @@ describe("the platform fee rate", () => {
   it("is the founder-decided flat 5%", () => {
     expect(PLATFORM_FEE_BPS).toBe(500)
     expect(PLATFORM_FEE_BPS / FEE_BPS_SCALE).toBe(0.05)
+  })
+
+  it("publishes one canonical eligible currency for legacy percentage work", () => {
+    expect(LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY).toBe("USD")
   })
 })
 

@@ -4,6 +4,7 @@ import {
   assignmentSchema,
   computePlatformFeeCents,
   invoiceSubtotalCents,
+  LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
   organizationMembershipSchema,
   organizationRoleCan,
   platformFeeEventId,
@@ -136,10 +137,13 @@ function billableHaul(
   assignment.driverPaymentReceivedAmountCents = driverPayCents
   assignment.driverPaymentReceivedAt = confirmedAt
   assignment.driverPaymentReceivedByUserId = DRIVER_USER
-  assignment.driverPaymentReceivedCurrency = driverPayCents === null ? null : "USD"
+  assignment.driverPaymentReceivedCurrency =
+    driverPayCents === null
+      ? null
+      : LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
   assignment.termsSnapshot = {
     ...assignment.termsSnapshot,
-    currency: "USD",
+    currency: LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
     driverPayCents,
     hostFee: {
       collectionState: "accrues_monthly_in_arrears",
@@ -338,7 +342,9 @@ describe("platform fee accrual", () => {
     expect(result).toMatchObject({
       assignmentId: haul.assignmentId,
       outcome: "no_basis",
-      reason: expect.stringMatching(/USD/)
+      reason: expect.stringContaining(
+        LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
+      )
     })
     expect(state.platformFeeEvents).toEqual([])
     expect(accrualAuditEvents(state)).toEqual([])

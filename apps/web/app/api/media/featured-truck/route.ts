@@ -16,10 +16,6 @@ export async function GET(request: NextRequest) {
     const { actorUserId, organizationId } = await requireApiActor()
     const driverProfileId = request.nextUrl.searchParams.get("driverProfileId")
 
-    if (!driverProfileId) {
-      throw new ApiError("driverProfileId is required", 400)
-    }
-
     let photo
     try {
       photo = services.getFeaturedTruckPhotoReference({

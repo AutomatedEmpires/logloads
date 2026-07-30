@@ -13,11 +13,12 @@ import {
   type CredentialStatus,
   type DriverCredential
 } from "@logloads/contracts"
-import type {
-  CredentialEquipmentOption,
-  CredentialEquipmentSelectionOption,
-  CredentialViewer,
-  HostCredentialSummary
+import {
+  credentialGateForEquipmentSelection,
+  type CredentialEquipmentOption,
+  type CredentialEquipmentSelectionOption,
+  type CredentialViewer,
+  type HostCredentialSummary
 } from "@logloads/services"
 import type { BadgeProps } from "@logloads/ui"
 
@@ -695,25 +696,12 @@ export function buildDriverCredentialVaultView(
       }
     }
 
-    const selectedCredentials = source.driverCredentials.filter((credential) => {
-      if (credential.driverProfileId !== driverProfileId) {
-        return false
-      }
-
-      if (credential.kind === "truck") {
-        return credential.truckProfileId === selection.truckProfileId
-      }
-
-      if (credential.kind === "trailer") {
-        return (
-          selection.trailerProfileId !== null &&
-          credential.trailerProfileId === selection.trailerProfileId
-        )
-      }
-
-      return true
-    })
-    const gate = credentialGateFor(selectedCredentials, options.at)
+    const gate = credentialGateForEquipmentSelection(
+      source.driverCredentials,
+      driverProfileId,
+      selection,
+      options.at
+    )
 
     return {
       combinationId: selection.combinationId,

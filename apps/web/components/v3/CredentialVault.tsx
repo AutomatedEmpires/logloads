@@ -122,7 +122,6 @@ function CredentialDocumentUpload({
   const issuerId = useId()
   const expiryRequired = kind === "cdl" || kind === "insurance"
   const equipmentKind = kind === "truck" || kind === "trailer"
-  const equipmentAvailable = !equipmentKind || equipmentOptions.length > 0
 
   const upload = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -204,15 +203,12 @@ function CredentialDocumentUpload({
           {kind === "truck" ? "Truck shown in this photo" : "Trailer shown in this photo"}
           <select
             defaultValue=""
-            disabled={!equipmentAvailable}
             id={equipmentId}
             name="equipmentProfileId"
             required
           >
             <option disabled value="">
-              {equipmentAvailable
-                ? `Choose your ${kind}`
-                : `No assigned ${kind} available`}
+              Choose your {kind}
             </option>
             {equipmentOptions.map((option) => (
               <option key={option.profileId} value={option.profileId}>
@@ -255,7 +251,7 @@ function CredentialDocumentUpload({
       </label>
       <button
         className="advance-button"
-        disabled={pending || !equipmentAvailable}
+        disabled={pending}
         type="submit"
       >
         <Icon aria-hidden name="action.upload" size={18} />
@@ -269,11 +265,6 @@ function CredentialDocumentUpload({
       </button>
       {/* No licence or policy number is asked for anywhere on this screen. */}
       <p>JPG, PNG, or WebP · 10 MB max · kept in your vault, not on your public profile.</p>
-      {equipmentKind && !equipmentAvailable ? (
-        <p className="action-note action-note--muted" role="note">
-          Add and assign this equipment to your driver profile before filing its photo.
-        </p>
-      ) : null}
       {error ? (
         <p className="action-error" role="alert">
           {error}

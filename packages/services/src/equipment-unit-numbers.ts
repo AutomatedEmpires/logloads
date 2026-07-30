@@ -1,6 +1,6 @@
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
-import { assertCondition, assertFound } from "./utils"
+import { assertCondition, assertDomainCondition, assertFound } from "./utils"
 
 export type EquipmentProfileKind = "trailer" | "truck"
 
@@ -97,12 +97,18 @@ export function assertEquipmentUnitNumberAvailable(
 ): void {
   assertOrganizationEquipmentUnitNumbersUnique(state, organizationId)
 
-  const normalized = assertUsableUnitNumber(kind, unitNumber)
+  const normalized = normalizeEquipmentUnitNumber(unitNumber)
+
+  assertDomainCondition(
+    normalized.length > 0,
+    `${kind === "truck" ? "Truck" : "Trailer"} unit numbers must contain a letter or number`
+  )
+
   const conflict = organizationEquipmentProfiles(state, organizationId, kind).some(
     (profile) => normalizeEquipmentUnitNumber(profile.unitNumber) === normalized
   )
 
-  assertCondition(
+  assertDomainCondition(
     !conflict,
     `That ${kind} unit number is already in use in this organization`
   )

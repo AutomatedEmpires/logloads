@@ -10,8 +10,9 @@ const mocks = vi.hoisted(() => ({
       super(message)
     }
   },
+  DomainRefusalError: class DomainRefusalError extends Error {},
   enforceApiRateLimit: vi.fn(),
-  listDriverCredentials: vi.fn(),
+  getCredentialUploadTarget: vi.fn(),
   requireApiActor: vi.fn(),
   signedUpload: vi.fn()
 }))
@@ -22,6 +23,14 @@ vi.mock("@/lib/api-actor", () => ({
   apiErrorResponse: (error: unknown) =>
     error instanceof mocks.ApiError
       ? NextResponse.json({ error: error.message }, { status: error.status })
+      : error instanceof mocks.DomainRefusalError
+        ? NextResponse.json(
+            {
+              error:
+                "This request conflicts with current records or policy. Refresh and correct the request before retrying."
+            },
+            { status: 409 }
+          )
       : NextResponse.json({ error: "Unexpected error" }, { status: 500 }),
   enforceApiRateLimit: mocks.enforceApiRateLimit,
   requireApiActor: mocks.requireApiActor
@@ -38,7 +47,7 @@ vi.mock("@/lib/media", () => ({
 }))
 vi.mock("@/lib/services", () => ({
   services: {
-    listDriverCredentials: mocks.listDriverCredentials
+    getCredentialUploadTarget: mocks.getCredentialUploadTarget
   }
 }))
 
@@ -46,6 +55,7 @@ import { POST } from "../app/api/credentials/signature/route"
 
 const ACTOR = "11111111-1111-4111-8111-111111111111"
 const DRIVER = "44444444-4444-4444-8444-444444444441"
+const ORGANIZATION = "33333333-3333-4333-8333-333333333331"
 const TRUCK = "77777777-7777-4777-8777-777777777771"
 const OTHER_TRUCK = "77777777-7777-4777-8777-777777777772"
 
@@ -62,19 +72,26 @@ describe("credential upload signature route", () => {
     vi.resetAllMocks()
     mocks.requireApiActor.mockResolvedValue({
       actor: { driverProfileId: DRIVER },
-      actorUserId: ACTOR
+      actorUserId: ACTOR,
+      organizationId: ORGANIZATION
     })
-    mocks.listDriverCredentials.mockReturnValue({
-      audience: "driver",
-      credentials: [],
-      driverProfileId: DRIVER,
-      equipmentOptions: [
-        { kind: "truck", label: "NP-101", profileId: TRUCK }
-      ],
-      equipmentSelections: [],
-      gate: { expiring: [], missing: [], satisfied: true },
-      reviews: []
-    })
+    mocks.getCredentialUploadTarget.mockImplementation(
+      (input: { equipmentProfileId: string | null; kind: string }) => {
+        if (input.equipmentProfileId === OTHER_TRUCK) {
+          throw new mocks.DomainRefusalError(
+            `Choose a ${input.kind} currently assigned to you`
+          )
+        }
+
+        return {
+          ...input,
+          organizationId: ORGANIZATION,
+          publicIdPrefix:
+            `logloads/driver-credentials/${DRIVER}/${input.kind}` +
+            (input.equipmentProfileId ? `/${input.equipmentProfileId}` : "")
+        }
+      }
+    )
     mocks.signedUpload.mockResolvedValue({ signature: "signed" })
   })
 
@@ -90,6 +107,7 @@ describe("credential upload signature route", () => {
     )
 
     expect(response.status).toBe(422)
+    expect(mocks.getCredentialUploadTarget).not.toHaveBeenCalled()
     expect(mocks.signedUpload).not.toHaveBeenCalled()
   })
 
@@ -102,6 +120,17 @@ describe("credential upload signature route", () => {
     )
 
     expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({
+      error:
+        "This request conflicts with current records or policy. Refresh and correct the request before retrying."
+    })
+    expect(mocks.getCredentialUploadTarget).toHaveBeenCalledWith({
+      actorUserId: ACTOR,
+      driverProfileId: DRIVER,
+      equipmentProfileId: OTHER_TRUCK,
+      kind: "truck",
+      organizationId: ORGANIZATION
+    })
     expect(mocks.signedUpload).not.toHaveBeenCalled()
   })
 
@@ -114,6 +143,13 @@ describe("credential upload signature route", () => {
     )
 
     expect(response.status).toBe(200)
+    expect(mocks.getCredentialUploadTarget).toHaveBeenCalledWith({
+      actorUserId: ACTOR,
+      driverProfileId: DRIVER,
+      equipmentProfileId: TRUCK,
+      kind: "truck",
+      organizationId: ORGANIZATION
+    })
     expect(mocks.signedUpload).toHaveBeenCalledWith({
       publicIdPrefix: `logloads/driver-credentials/${DRIVER}/truck/${TRUCK}`
     })
@@ -135,6 +171,13 @@ describe("credential upload signature route", () => {
     const response = await POST(request({ kind: "cdl" }))
 
     expect(response.status).toBe(200)
+    expect(mocks.getCredentialUploadTarget).toHaveBeenCalledWith({
+      actorUserId: ACTOR,
+      driverProfileId: DRIVER,
+      equipmentProfileId: null,
+      kind: "cdl",
+      organizationId: ORGANIZATION
+    })
     expect(mocks.signedUpload).toHaveBeenCalledWith({
       publicIdPrefix: `logloads/driver-credentials/${DRIVER}/cdl`
     })

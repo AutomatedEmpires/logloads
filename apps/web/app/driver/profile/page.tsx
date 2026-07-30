@@ -18,7 +18,8 @@ export default async function Page() {
         context.actor.driverProfileId
           ? getDriverCredentialVaultView(context.actor.driverProfileId, {
               actorUserId: context.actor.profile.id,
-              audience: "driver"
+              audience: "driver",
+              organizationId: context.network.activeOrganization.id
             })
           : null
       }

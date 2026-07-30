@@ -28,7 +28,7 @@ import {
   verifiedMediaReference,
   type MediaKind
 } from "./media"
-import { credentialDocumentPublicIdPrefix, listActiveLoadsUsingCombination } from "@logloads/services"
+import { listActiveLoadsUsingCombination } from "@logloads/services"
 
 import { mutateState, serializeError, services } from "./services"
 import { getSessionActor, type SessionActor } from "./session"
@@ -580,36 +580,18 @@ export async function submitDriverCredentialAction(input: {
       throw new Error("Add a driver profile before sending your records")
     }
 
-    const equipmentKind = kind === "truck" || kind === "trailer"
     const equipmentProfileId = input.equipmentProfileId?.trim() || null
-    const vault = services.listDriverCredentials(driverProfileId, {
+    const target = services.getCredentialUploadTarget({
       actorUserId: actor.profile.id,
-      audience: "driver"
+      driverProfileId,
+      equipmentProfileId,
+      kind,
+      organizationId
     })
 
-    if (vault.audience === "host") {
-      throw new Error("A host cannot upload to a driver's vault")
-    }
-
-    if (
-      equipmentKind &&
-      !vault.equipmentOptions.some(
-        (option) => option.kind === kind && option.profileId === equipmentProfileId
-      )
-    ) {
-      throw new Error(`Choose a ${kind} currently assigned to you`)
-    }
-
-    if (!equipmentKind && equipmentProfileId !== null) {
-      throw new Error("This credential cannot be attached to equipment")
-    }
-
-    // Checked here as well as in the service, against the SAME exported function, so
-    // a client naming an asset outside this driver's own namespace is refused before
-    // a provider round trip. Without the rule at all, any caller able to name a
-    // stored public id could file another driver's licence as their own.
-    const expectedPrefix =
-      `${credentialDocumentPublicIdPrefix(driverProfileId, kind, equipmentProfileId)}/uploads/`
+    // Checked before the provider round trip against the same authorized target
+    // resolver the upload-signature route and write-time service use.
+    const expectedPrefix = `${target.publicIdPrefix}/uploads/`
 
     if (!input.publicId.startsWith(expectedPrefix)) {
       throw new Error("That document was not uploaded to your vault")

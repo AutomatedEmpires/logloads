@@ -8,6 +8,7 @@ import {
   hostBillingProfileSchema,
   hostInvoiceSchema,
   invoiceSubtotalCents,
+  LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
   readFrozenDriverPay,
   type Entitlement,
   type HostBillingProfile,
@@ -260,8 +261,9 @@ export interface StripeBillingPort {
   setDefaultPaymentMethod(input: { customerId: string; paymentMethodId: string }): Promise<void>
 }
 
-/** The currency of every LogLoads charge. Stripe wants it lower-cased. */
-const CHARGE_CURRENCY = "usd"
+/** Stripe expects lower-case ISO codes for the canonical legacy currency. */
+const CHARGE_CURRENCY =
+  LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY.toLowerCase()
 
 function subscriptionPeriodEnd(subscription: Stripe.Subscription): string | null {
   const periodEnd = subscription.items.data.reduce(
@@ -1284,9 +1286,10 @@ function legacyInvoiceCurrencyProblem(
 
     if (
       !frozenDriverPay ||
-      frozenDriverPay.currency !== CHARGE_CURRENCY.toUpperCase()
+      frozenDriverPay.currency !==
+        LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
     ) {
-      return "Legacy platform fees can be charged only when every accepted load proves USD-denominated driver pay"
+      return `Legacy platform fees can be charged only when every accepted load proves ${LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY}-denominated driver pay`
     }
   }
 
@@ -1579,7 +1582,8 @@ export async function chargeHostInvoice(input: {
   if (recovered) {
     if (
       recovered.customerId !== plan.customerId ||
-      recovered.currency !== CHARGE_CURRENCY.toUpperCase() ||
+      recovered.currency !==
+        LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY ||
       legacyInvoiceSettlementProblem(
         recovered,
         plan.subtotalCents
@@ -2436,8 +2440,11 @@ function unboundHostInvoiceEventProblem(
     return "The Stripe invoice customer does not match the LogLoads bill"
   }
 
-  if (currency?.toUpperCase() !== "USD") {
-    return "The Stripe invoice currency does not match the USD LogLoads bill"
+  if (
+    currency?.toUpperCase() !==
+    LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
+  ) {
+    return `The Stripe invoice currency does not match the ${LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY} LogLoads bill`
   }
 
   if (!Number.isSafeInteger(total) || total !== invoice.subtotalCents) {

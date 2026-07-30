@@ -59,11 +59,13 @@ vi.mock("@/lib/api-actor", () => ({
           ? 422
           : 500
     const message =
-      error instanceof mocks.DomainRefusalError
+      error instanceof mocks.ApiError
+        ? error.message
+        : error instanceof mocks.DomainRefusalError
         ? "This request conflicts with current records or policy. Refresh and correct the request before retrying."
-        : error instanceof Error
-          ? error.message
-          : "Unexpected error"
+        : error instanceof Error && error.name === "ZodError"
+          ? "Invalid request fields"
+          : "We could not complete that request."
 
     return Response.json({ error: message }, { status })
   },
@@ -446,7 +448,7 @@ describe("Network subscription checkout route", () => {
     expect(mocks.resolveSubscriptionStripe).not.toHaveBeenCalled()
   })
 
-  it("sanitizes a typed Pilot conversion refusal instead of exposing subscription ids", async () => {
+  it("returns a sanitized 409 for a caller-correctable Pilot conversion refusal", async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date("2026-10-27T00:00:00.000Z"))
     const state = {
@@ -477,6 +479,37 @@ describe("Network subscription checkout route", () => {
     )
     expect(body.error).not.toContain(SUBSCRIPTION_ID)
     expect(body.error).not.toContain(CONVERSION_SUBSCRIPTION_ID)
+    expect(mocks.resolveSubscriptionStripe).not.toHaveBeenCalled()
+  })
+
+  it("keeps an unexpected Pilot conversion invariant failure on the 500 path", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-10-27T00:00:00.000Z"))
+    const state = {
+      billingPlanDefinitions: [...SUBSCRIPTION_PLAN_CATALOG],
+      hostBillingProfiles: [],
+      organizationSubscriptions: [pilotConversionSource()]
+    }
+    mocks.operatingStateAccess.mockReturnValue(stateAccess(state))
+    mocks.authorizePilotConversionSubscription.mockImplementation(() => {
+      throw new Error(
+        `Subscription ${SUBSCRIPTION_ID} has conflicting canonical billing accounts`
+      )
+    })
+
+    const response = await startCheckout(
+      request({
+        acceptNetworkTerms: true,
+        convertPilotSubscriptionId: SUBSCRIPTION_ID,
+        quoteFingerprint: NETWORK_25_QUOTE_FINGERPRINT,
+        targetPlanCode: "network_25"
+      })
+    )
+    const body = (await response.json()) as { error: string }
+
+    expect(response.status).toBe(500)
+    expect(body.error).toBe("We could not complete that request.")
+    expect(body.error).not.toContain(SUBSCRIPTION_ID)
     expect(mocks.resolveSubscriptionStripe).not.toHaveBeenCalled()
   })
 

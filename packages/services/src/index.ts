@@ -23,6 +23,7 @@ import {
 import {
   applyCredentialReview,
   driverCredentialGate,
+  getCredentialUploadTarget,
   hostCredentialSummary,
   listDriverCredentials,
   submitCredential
@@ -345,6 +346,9 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
       input: Parameters<typeof submitCredential>[1],
       at?: Parameters<typeof submitCredential>[2]
     ) => submitCredential(state, input, at),
+    getCredentialUploadTarget: (
+      input: Parameters<typeof getCredentialUploadTarget>[1]
+    ) => getCredentialUploadTarget(state, input),
     applyCredentialReview: (
       input: Parameters<typeof applyCredentialReview>[1],
       at?: Parameters<typeof applyCredentialReview>[2]
@@ -524,15 +528,18 @@ export { getDriverMediaTarget, getTripDocumentTarget, tripDocumentPublicIdPrefix
  * never describe different vaults.
  *
  * `credentialDocumentPublicIdPrefix` is the namespace an upload target must sign
- * against. `submitCredential` refuses a document stored anywhere else, so both
- * sides have to derive the path from this one function.
+ * against. `getCredentialUploadTarget` authorizes that signature and
+ * `submitCredential` re-runs the same internal resolver before accepting the
+ * document, so signing and filing cannot disagree about equipment binding.
  */
 export {
   applyCredentialReview,
   credentialDocumentPublicIdPrefix,
+  credentialGateForEquipmentSelection,
   credentialReviewId,
   driverCredentialGate,
   driverCredentialId,
+  getCredentialUploadTarget,
   hostCredentialSummary,
   listDriverCredentials,
   submitCredential
@@ -543,6 +550,8 @@ export type {
   CredentialEquipmentOption,
   CredentialEquipmentSelection,
   CredentialEquipmentSelectionOption,
+  CredentialUploadTarget,
+  CredentialUploadTargetInput,
   CredentialViewer,
   DriverCredentialVaultView,
   DriverCredentialView,
@@ -662,5 +671,6 @@ export type {
   UpdateLandingInput,
   UpsertLandingDetailsInput
 } from "./host-workspace"
+export { equipmentProfileUnitNumberIsUnambiguous } from "./equipment-unit-numbers"
 export type { DriverMediaKind, DriverMediaTarget } from "./driver-profile"
 export type { TripDocumentAccess, TripDocumentTarget } from "./operating-network"
