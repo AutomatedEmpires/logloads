@@ -16,7 +16,13 @@ import {
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
-import { assertCondition, assertFound, createUuid, nowIso } from "./utils"
+import {
+  assertCondition,
+  assertFound,
+  createUuid,
+  DomainRefusalError,
+  nowIso
+} from "./utils"
 
 export function listOpenLoads(state: LogLoadsDatabaseState): LoadPosting[] {
   return state.loadPostings.filter((load) => load.status === "open")
@@ -258,7 +264,7 @@ export function assertHostCanPublish(
   const refusal = BILLING_STATE_PUBLISH_REFUSAL[profiles[0]?.status ?? "none"]
 
   if (refusal !== null) {
-    throw new Error(refusal)
+    throw new DomainRefusalError(refusal)
   }
 }
 
@@ -279,11 +285,11 @@ export function parsePublishModes(visibilityMode: string, allocationMode: string
   const allocation = allocationModeSchema.safeParse(allocationMode)
 
   if (!visibility.success) {
-    throw new Error(`Unknown visibility mode: ${visibilityMode}`)
+    throw new DomainRefusalError(`Unknown visibility mode: ${visibilityMode}`)
   }
 
   if (!allocation.success) {
-    throw new Error(`Unknown allocation mode: ${allocationMode}`)
+    throw new DomainRefusalError(`Unknown allocation mode: ${allocationMode}`)
   }
 
   return { allocationMode: allocation.data, visibilityMode: visibility.data }

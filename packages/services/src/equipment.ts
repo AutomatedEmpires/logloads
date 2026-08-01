@@ -20,6 +20,7 @@ import {
 import type { LogLoadsDatabaseState } from "@logloads/db"
 import { z } from "zod"
 
+import { assertEquipmentUnitNumberAvailable } from "./equipment-unit-numbers"
 import { applyEquipmentDownConsequence } from "./operating-network"
 
 const ACTIVE_ASSIGNMENT_STATUSES: ReadonlySet<AssignmentStatus> = new Set([
@@ -53,7 +54,7 @@ export const addEquipmentInputSchema = z.object({
   truckMake: z.string().min(1).max(40).optional().nullable(),
   truckModel: z.string().min(1).max(40).optional().nullable(),
   truckType: truckTypeSchema,
-  unitNumber: z.string().min(1).max(24)
+  unitNumber: z.string().trim().min(1).max(24)
 })
 
 export const updateEquipmentStatusInputSchema = z.object({
@@ -177,6 +178,21 @@ export function addEquipmentCombination(state: LogLoadsDatabaseState, rawInput: 
     if (assignedDriver) {
       requireOrganizationAction(membership, "manage_drivers")
     }
+  }
+
+  assertEquipmentUnitNumberAvailable(
+    state,
+    input.organizationId,
+    "truck",
+    input.unitNumber
+  )
+  if (input.trailerType) {
+    assertEquipmentUnitNumberAvailable(
+      state,
+      input.organizationId,
+      "trailer",
+      `${input.unitNumber}-T`
+    )
   }
 
   const now = new Date().toISOString()

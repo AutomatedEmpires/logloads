@@ -12,7 +12,7 @@ import {
   getActiveOrganizationContext,
   isLoadVisibleToOrganization
 } from "./operating-network"
-import { assertFound, createUuid, nowIso } from "./utils"
+import { assertFound, createUuid, DomainRefusalError, nowIso } from "./utils"
 
 /**
  * Reading without naming an organization is a public read. Every clause of
@@ -85,7 +85,7 @@ export function createTruckSlot(
   )
 
   if (posting.companyId !== context.organizationId) {
-    throw new Error("You cannot add slots to another organization's load posting")
+    throw new DomainRefusalError("You cannot add slots to another organization's load posting")
   }
 
   // Belonging to the organization is not permission to act for it. A slot is
@@ -114,11 +114,11 @@ export function reserveTruckSlot(state: LogLoadsDatabaseState, slotId: string): 
   const slot = assertFound(getTruckSlotById(state, slotId), `Truck slot ${slotId} was not found`)
 
   if (!["open", "requested", "reserved"].includes(slot.status)) {
-    throw new Error(`Truck slot ${slotId} cannot be reserved while ${slot.status}`)
+    throw new DomainRefusalError(`Truck slot ${slotId} cannot be reserved while ${slot.status}`)
   }
 
   if (slot.reservedCount >= slot.capacity) {
-    throw new Error(`Truck slot ${slotId} is already at capacity`)
+    throw new DomainRefusalError(`Truck slot ${slotId} is already at capacity`)
   }
 
   const nextStatus = slot.status === "open" ? transitionTruckSlotStatus("open", "requested") : slot.status

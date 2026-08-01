@@ -33,6 +33,15 @@ import { z } from "zod"
 // ── The rate ──────────────────────────────────────────────────────────────────
 
 /**
+ * The only currency grandfathered `legacy_percentage` work may accept, accrue,
+ * or collect. LogLoads performs no FX conversion on those obligations.
+ *
+ * This policy belongs beside the legacy fee contract so every boundary shares
+ * one decision instead of independently assuming that Stripe charges are USD.
+ */
+export const LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY = "USD"
+
+/**
  * Basis points per whole. 500 bps = 5%, 10_000 bps = 100%.
  *
  * Exported so the schema bound, the arithmetic guard and any future rate share one

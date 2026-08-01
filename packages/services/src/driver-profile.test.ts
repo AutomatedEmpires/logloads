@@ -2,6 +2,7 @@ import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
 import { createLogLoadsServices } from "./index"
+import { DomainRefusalError } from "./utils"
 
 const DRIVER_USER = "22222222-2222-4222-8222-222222222221"
 const DRIVER_PROFILE = "44444444-4444-4444-8444-444444444441"
@@ -95,6 +96,22 @@ function uploadTruckPhoto(services: ReturnType<typeof createLogLoadsServices>) {
 }
 
 describe("featured truck photo", () => {
+  it.each([
+    ["missing", undefined],
+    ["malformed", "not-a-uuid"],
+    ["nonexistent", "44444444-4444-4444-8444-444444444499"]
+  ])("types a %s target as a caller-visible domain refusal", (_label, driverProfileId) => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    expect(() =>
+      services.getFeaturedTruckPhotoReference({
+        driverProfileId,
+        viewerOrganizationId: FLEET_ORG,
+        viewerUserId: OTHER_DRIVER_USER
+      })
+    ).toThrow(DomainRefusalError)
+  })
+
   it("refuses to feature a rig that has no photo, then features it once one exists", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const input = {

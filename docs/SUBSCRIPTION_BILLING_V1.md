@@ -70,6 +70,13 @@ continue committing work under that agreement until an audited cutover is
 scheduled. No onboarding, default, backfill, or ordinary administrator control
 may enroll a new organization in `legacy_percentage`.
 
+Legacy percentage commitments and Stripe invoices are USD-only. Acceptance
+refuses non-USD legacy work, historical accrual writes no fee without a USD
+frozen-pay basis, and collection revalidates every non-void fee source before
+both first charge and retry. Subscription-v1 assignments may continue recording
+off-platform driver pay in its stated currency because that amount is not the
+subscription revenue basis.
+
 An assignment freezes, at commitment:
 
 - `billingModel`

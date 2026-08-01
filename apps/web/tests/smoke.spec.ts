@@ -37,6 +37,13 @@ test("driver signs in and reaches the map", async ({ page }) => {
   await page.goto("/driver/profile")
   await expect(page.getByText("Photo uploads are currently unavailable.").first()).toBeVisible()
   await expect(page.locator('input[type="file"][name="photo"]')).toHaveCount(0)
+  await expect(page.getByRole("heading", { name: "Keep every record current" })).toBeVisible()
+  const credentialVault = page.getByRole("region", { name: "Driver credential vault" })
+  await expect(credentialVault).toBeVisible()
+  await expect(credentialVault.getByText("NP-101 with pole trailer")).toBeVisible()
+  await expect(credentialVault.getByText("Cleared", { exact: true })).toBeVisible()
+  await expect(credentialVault.getByText(/Document uploads are temporarily unavailable/)).toBeVisible()
+  await expect(credentialVault.locator('input[type="file"][name="document"]')).toHaveCount(0)
 })
 
 test("driver cannot open the admin console", async ({ page }) => {

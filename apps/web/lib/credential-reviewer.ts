@@ -133,12 +133,12 @@ export interface CredentialDocumentImage {
 }
 
 /**
- * What the driver claims, and the document they claim it about.
+ * What LogLoads expects, and the document the driver filed against it.
  *
  * `holderName` is the name LogLoads holds for the driver — without it, "does the
- * name match" has nothing to match against. `statedIdentifier` is SENSITIVE and
- * travels one way: it is used to ask the model a yes/no question and never
- * appears in the result.
+ * name match" has nothing to match against. `statedIdentifier` is sensitive for
+ * identity records and canonical for equipment records. It travels one way:
+ * the model answers only yes/no and the value never appears in the result.
  */
 export interface CredentialReviewRequest {
   claimedKind: CredentialKind
@@ -160,6 +160,8 @@ export interface CredentialReviewOptions {
 // ── What each kind of document is expected to show ────────────────────────────
 
 interface CredentialDocumentExpectations {
+  /** Whether a canonical equipment unit number must be readable and match. */
+  requiresIdentifierMatch: boolean
   /** Whether the driver's own name should be printed on it. */
   namesHolder: boolean
   /** Whether it states an expiry that can lapse. */
@@ -180,10 +182,10 @@ interface CredentialDocumentExpectations {
  * as "does not lapse", so this record and that gate agree.
  */
 const CREDENTIAL_DOCUMENT_EXPECTATIONS: Record<CredentialKind, CredentialDocumentExpectations> = {
-  cdl: { namesHolder: true, statesExpiry: true },
-  insurance: { namesHolder: false, statesExpiry: true },
-  trailer: { namesHolder: false, statesExpiry: false },
-  truck: { namesHolder: false, statesExpiry: false }
+  cdl: { namesHolder: true, requiresIdentifierMatch: false, statesExpiry: true },
+  insurance: { namesHolder: false, requiresIdentifierMatch: false, statesExpiry: true },
+  trailer: { namesHolder: false, requiresIdentifierMatch: true, statesExpiry: false },
+  truck: { namesHolder: false, requiresIdentifierMatch: true, statesExpiry: false }
 }
 
 // ── The model's answer, as a contract ─────────────────────────────────────────
@@ -307,7 +309,7 @@ function buildCredentialReviewOutputSchema(): Record<string, unknown> {
     identifierMatchesClaim: {
       ...nullableBoolean,
       description:
-        "Whether the number the driver stated appears on the document. null if no number is legible. Never restate the number itself."
+        "Whether the identifier LogLoads supplied appears on the document or equipment. null if no number is legible. Never restate the number itself."
     },
     issuer: {
       ...nullableString,
@@ -347,8 +349,9 @@ export const CREDENTIAL_REVIEW_OUTPUT_SCHEMA = buildCredentialReviewOutputSchema
 const CREDENTIAL_REVIEW_SYSTEM_PROMPT = [
   "You are reading one document a truck driver submitted to LogLoads so a host can see the driver holds the paperwork and equipment a load requires.",
   "Report only what the image actually shows. Never infer, complete, or guess a value that is not legible — say it is not legible instead.",
-  "You are not certifying that anyone is legally entitled to operate. You are reporting whether this document is the kind claimed, whether it is legible, what it says, and whether it agrees with what the driver stated.",
-  "Decide approved only when the document is legible, is the kind claimed, agrees with the driver's statements, and has not expired.",
+  "You are not certifying that anyone is legally entitled to operate. You are reporting whether this document is the kind claimed, whether it is legible, what it says, and whether it agrees with the facts LogLoads supplied.",
+  "For a truck or trailer photo, the unit number must be legible and must match the exact equipment identifier LogLoads supplied. A different unit is denied; an unreadable unit needs a clearer photo.",
+  "Decide approved only when the document is legible, is the kind claimed, agrees with the supplied facts, and has not expired.",
   "Decide more_info_required when a clearer photo or a further document would settle the question, and list exactly what to supply.",
   "Decide denied when the document is the wrong kind, belongs to someone else, or has already expired.",
   "The rationale is read by the driver. Keep it to one or two plain sentences and say what to do next. Never restate a licence number, a policy number, or any other identifier anywhere in your answer.",
@@ -360,7 +363,7 @@ function claimedFactsPrompt(request: CredentialReviewRequest, todayIso: string):
     `Document kind the driver filed this under: ${request.claimedKind}.`,
     `Name LogLoads holds for this driver: ${request.holderName}.`,
     `Issuer the driver stated: ${request.statedIssuer ?? "(none stated)"}.`,
-    `Number the driver stated: ${request.statedIdentifier ?? "(none stated)"}.`,
+    `Identifier LogLoads expects on this record: ${request.statedIdentifier ?? "(none supplied)"}.`,
     `Expiry the driver stated: ${request.statedExpiresOn ?? "(none stated)"}.`,
     `Today's date: ${todayIso}.`,
     "Read the attached image and answer with the required JSON object."
@@ -436,6 +439,8 @@ function unavailable(
  */
 export type CredentialCeilingReason =
   | "document_illegible"
+  | "equipment_identifier_mismatch"
+  | "equipment_identifier_unreadable"
   | "expiry_disagrees_with_driver"
   | "expiry_lapsed"
   | "expiry_unreadable"
@@ -470,6 +475,16 @@ const CEILING_REASON_POLICIES: Record<CredentialCeilingReason, CeilingReasonPoli
     ceiling: "more_info_required",
     evidence: "A sharper, well-lit photo — this one cannot be read.",
     sentence: "The photo could not be read."
+  },
+  equipment_identifier_mismatch: {
+    ceiling: "denied",
+    evidence: null,
+    sentence: "The unit number in this photo does not match the equipment you selected."
+  },
+  equipment_identifier_unreadable: {
+    ceiling: "more_info_required",
+    evidence: "A photo that clearly shows the selected equipment's unit number.",
+    sentence: "The selected equipment's unit number could not be confirmed in this photo."
   },
   expiry_disagrees_with_driver: {
     ceiling: "more_info_required",
@@ -598,11 +613,17 @@ export function credentialReviewCeiling(
     }
   }
 
-  // Only checked when the driver actually stated a number. An unreadable number
-  // is not withheld against them: the facts that decide whether a load can be
-  // hauled are the kind and the expiry, and many certificates print the number
-  // in a form nobody types by hand.
-  if (request.statedIdentifier !== null && reading.identifierMatchesClaim === false) {
+  // Equipment photos are useful only when the photographed unit can be tied to
+  // the exact canonical profile the driver selected. A missing/unreadable unit
+  // number asks for a clearer photo; an explicit mismatch is the wrong unit and
+  // is denied. Identity-document numbers keep their older optional behavior.
+  if (expectations.requiresIdentifierMatch) {
+    if (request.statedIdentifier === null || reading.identifierMatchesClaim === null) {
+      reasons.push("equipment_identifier_unreadable")
+    } else if (!reading.identifierMatchesClaim) {
+      reasons.push("equipment_identifier_mismatch")
+    }
+  } else if (request.statedIdentifier !== null && reading.identifierMatchesClaim === false) {
     reasons.push("identifier_mismatch")
   }
 

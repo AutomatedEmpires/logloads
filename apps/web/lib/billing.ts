@@ -8,6 +8,8 @@ import {
   hostBillingProfileSchema,
   hostInvoiceSchema,
   invoiceSubtotalCents,
+  LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
+  readFrozenDriverPay,
   type Entitlement,
   type HostBillingProfile,
   type HostBillingProfileStatus,
@@ -259,8 +261,9 @@ export interface StripeBillingPort {
   setDefaultPaymentMethod(input: { customerId: string; paymentMethodId: string }): Promise<void>
 }
 
-/** The currency of every LogLoads charge. Stripe wants it lower-cased. */
-const CHARGE_CURRENCY = "usd"
+/** Stripe expects lower-case ISO codes for the canonical legacy currency. */
+const CHARGE_CURRENCY =
+  LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY.toLowerCase()
 
 function subscriptionPeriodEnd(subscription: Stripe.Subscription): string | null {
   const periodEnd = subscription.items.data.reduce(
@@ -1257,6 +1260,42 @@ function hostPaymentProfileStillMatchesPlan(
   )
 }
 
+function legacyInvoiceCurrencyProblem(
+  state: LogLoadsDatabaseState,
+  invoice: HostInvoice
+): string | null {
+  for (const feeEventId of invoice.feeEventIds) {
+    const fee = state.platformFeeEvents.find(
+      (candidate) => candidate.id === feeEventId
+    )
+
+    if (!fee || fee.organizationId !== invoice.organizationId) {
+      return "This legacy bill cannot prove the source of every fee, so it cannot be charged"
+    }
+
+    if (fee.status === "voided") {
+      continue
+    }
+
+    const assignment = state.assignments.find(
+      (candidate) => candidate.id === fee.assignmentId
+    )
+    const frozenDriverPay = assignment
+      ? readFrozenDriverPay(assignment.termsSnapshot)
+      : null
+
+    if (
+      !frozenDriverPay ||
+      frozenDriverPay.currency !==
+        LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
+    ) {
+      return `Legacy platform fees can be charged only when every accepted load proves ${LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY}-denominated driver pay`
+    }
+  }
+
+  return null
+}
+
 /**
  * Everything that must be true before Stripe is called, decided in one read.
  *
@@ -1276,6 +1315,12 @@ export function planHostInvoiceCharge(
 
   if (invoice.stripeInvoiceId) {
     if (invoice.status === "open") {
+      const currencyProblem = legacyInvoiceCurrencyProblem(state, invoice)
+
+      if (currencyProblem) {
+        return { kind: "refused", message: currencyProblem }
+      }
+
       const profile = planHostPaymentProfile(state, invoice.organizationId, {
         allowFailed: true
       })
@@ -1326,6 +1371,12 @@ export function planHostInvoiceCharge(
     }
 
     fees.push(fee)
+  }
+
+  const currencyProblem = legacyInvoiceCurrencyProblem(state, invoice)
+
+  if (currencyProblem) {
+    return { kind: "refused", message: currencyProblem }
   }
 
   // The stored subtotal is what the host was shown. If it disagrees with the fees
@@ -1531,7 +1582,8 @@ export async function chargeHostInvoice(input: {
   if (recovered) {
     if (
       recovered.customerId !== plan.customerId ||
-      recovered.currency !== CHARGE_CURRENCY.toUpperCase() ||
+      recovered.currency !==
+        LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY ||
       legacyInvoiceSettlementProblem(
         recovered,
         plan.subtotalCents
@@ -2388,8 +2440,11 @@ function unboundHostInvoiceEventProblem(
     return "The Stripe invoice customer does not match the LogLoads bill"
   }
 
-  if (currency?.toUpperCase() !== "USD") {
-    return "The Stripe invoice currency does not match the USD LogLoads bill"
+  if (
+    currency?.toUpperCase() !==
+    LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
+  ) {
+    return `The Stripe invoice currency does not match the ${LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY} LogLoads bill`
   }
 
   if (!Number.isSafeInteger(total) || total !== invoice.subtotalCents) {

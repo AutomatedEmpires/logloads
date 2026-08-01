@@ -13,7 +13,13 @@ import {
   type CredentialStatus,
   type DriverCredential
 } from "@logloads/contracts"
-import type { CredentialViewer, HostCredentialSummary } from "@logloads/services"
+import {
+  credentialGateForEquipmentSelection,
+  type CredentialEquipmentOption,
+  type CredentialEquipmentSelectionOption,
+  type CredentialViewer,
+  type HostCredentialSummary
+} from "@logloads/services"
 import type { BadgeProps } from "@logloads/ui"
 
 import { isDedicatedMediaConfigured } from "./media-config"
@@ -382,6 +388,8 @@ export interface DriverCredentialSlotView {
   expiringSoon: boolean
   /** Whether a booking host receives this photo. Derived, never asserted in copy. */
   hostSeesPhoto: boolean
+  /** Exact assigned equipment this kind of photo can be filed against. */
+  equipmentOptions: readonly CredentialEquipmentOption[]
   kind: CredentialKind
   kindLabel: string
   /** The day cover was lost, when a lapsed record is why this kind is not held. */
@@ -456,6 +464,10 @@ export interface CredentialVaultView {
   /** Warning about a record that is valid now and lapsing inside the window. */
   expiryNotice: string | null
   headline: string
+  /** Acceptance truth for each exact assigned truck/trailer combination. */
+  equipmentReadiness: CredentialEquipmentReadinessView[]
+  /** Explains that equipment evidence clears only the photographed unit. */
+  equipmentNotice: string | null
   /** What a booking host does and does not receive. Derived from the contract. */
   hostDisclosure: string
   intake: CredentialIntakeView
@@ -471,6 +483,13 @@ export interface CredentialVaultView {
   satisfied: boolean
   satisfiedCount: number
   slots: DriverCredentialSlotView[]
+}
+
+export interface CredentialEquipmentReadinessView {
+  combinationId: string
+  label: string
+  missingLabels: string[]
+  satisfied: boolean
 }
 
 function slotDetail(reading: CredentialKindReading, presentation: KindPresentation): string {
@@ -538,7 +557,10 @@ function slotDetail(reading: CredentialKindReading, presentation: KindPresentati
 
 function slotFor(
   reading: CredentialKindReading,
-  options: { intakeAvailable: boolean }
+  options: {
+    equipmentOptions: readonly CredentialEquipmentOption[]
+    intakeAvailable: boolean
+  }
 ): DriverCredentialSlotView {
   const presentation = KIND_PRESENTATION[reading.kind]
   const statePresentation = SLOT_STATE_PRESENTATION[reading.state]
@@ -560,6 +582,9 @@ function slotFor(
     expiresOnLabel: reading.expiresOn === null ? null : formatDay(reading.expiresOn),
     expiringSoon: reading.state === "expiring_soon",
     hostSeesPhoto: HOST_VISIBLE_CREDENTIAL_PHOTO_KINDS.includes(reading.kind),
+    equipmentOptions: options.equipmentOptions.filter(
+      (candidate) => candidate.kind === reading.kind
+    ),
     kind: reading.kind,
     kindLabel: presentation.label,
     lapsedOnLabel: lapsedExpiry === null ? null : formatDay(lapsedExpiry),
@@ -618,6 +643,8 @@ function hostDisclosureSentence(): string {
  */
 export interface DriverCredentialSource {
   driverCredentials: readonly DriverCredential[]
+  equipmentOptions: readonly CredentialEquipmentOption[]
+  equipmentSelections: readonly CredentialEquipmentSelectionOption[]
 }
 
 export interface CredentialViewOptions {
@@ -651,19 +678,54 @@ export function buildDriverCredentialVaultView(
 ): CredentialVaultView {
   const readings = readingsFor(source, driverProfileId, options.at)
   const intake = credentialIntakeFor(options.mediaReady)
-  const slots = readings.map((reading) => slotFor(reading, { intakeAvailable: intake.available }))
+  const equipmentOptions = source.equipmentOptions
+  const slots = readings.map((reading) =>
+    slotFor(reading, {
+      equipmentOptions,
+      intakeAvailable: intake.available
+    })
+  )
   const blocking = slots.filter((slot) => slot.blocksWork)
-  const satisfied = blocking.length === 0
+  const equipmentReadiness = source.equipmentSelections.map((selection) => {
+    if (!selection.equipmentUnitNumbersUnique) {
+      return {
+        combinationId: selection.combinationId,
+        label: selection.label,
+        missingLabels: ["unique truck and trailer unit numbers"],
+        satisfied: false
+      }
+    }
+
+    const gate = credentialGateForEquipmentSelection(
+      source.driverCredentials,
+      driverProfileId,
+      selection,
+      options.at
+    )
+
+    return {
+      combinationId: selection.combinationId,
+      label: selection.label,
+      missingLabels: gate.missing.map((kind) => KIND_PRESENTATION[kind].label),
+      satisfied: gate.satisfied
+    }
+  })
+  const satisfied = equipmentReadiness.some((selection) => selection.satisfied)
   const requiredCount = MANDATORY_CREDENTIAL_KINDS.length
   const expiring = slots.filter((slot) => slot.expiringSoon)
 
   const blockedNotice = satisfied
     ? null
-    : `You cannot accept loads yet. All ${requiredCount} records have to be on file, approved and in ` +
-      `date first, and ${blocking.length === 1 ? "one is" : `${blocking.length} are`} outstanding: ` +
-      `${listSentence(blocking.map((slot) => `${slot.kindLabel} (${slot.stateLabel.toLowerCase()})`))}. ` +
-      "Until every one of them is approved, LogLoads will not let you take a load, even one your " +
-      "truck is a perfect fit for."
+    : equipmentReadiness.length === 0
+      ? "You cannot accept loads yet. Add and assign a truck and trailer first, then file the " +
+        "equipment photos against those exact units."
+      : "You cannot accept loads yet. No assigned rig has every required record approved and " +
+        `current. ${equipmentReadiness
+          .map(
+            (rig) =>
+              `${rig.label} still needs ${listSentence(rig.missingLabels)}`
+          )
+          .join("; ")}. Review the exact-rig rows below; a photo of one truck or trailer never clears another.`
 
   const expiryNotice =
     expiring.length === 0
@@ -685,8 +747,15 @@ export function buildDriverCredentialVaultView(
 
   return {
     blockedNotice,
+    equipmentReadiness,
+    equipmentNotice:
+      "Truck and trailer photos clear only the exact unit named with the upload. LogLoads checks " +
+      "the truck and trailer selected for every load; a photo of one rig never clears another. " +
+      "Duplicate unit numbers must be corrected before either rig can clear.",
     expiryNotice,
-    headline: satisfied ? "You're cleared to accept loads." : "You can't accept loads yet.",
+    headline: satisfied
+      ? "At least one assigned rig is cleared to request loads."
+      : "You can't accept loads yet.",
     hostDisclosure: hostDisclosureSentence(),
     intake,
     noActionAvailableNotice,
@@ -922,10 +991,18 @@ export function getDriverCredentialVaultView(
     throw new Error("A host audience cannot read a driver's vault")
   }
 
-  return buildDriverCredentialVaultView({ driverCredentials: view.credentials }, driverProfileId, {
-    at,
-    mediaReady: isDedicatedMediaConfigured(process.env)
-  })
+  return buildDriverCredentialVaultView(
+    {
+      driverCredentials: view.credentials,
+      equipmentOptions: view.equipmentOptions,
+      equipmentSelections: view.equipmentSelections
+    },
+    driverProfileId,
+    {
+      at,
+      mediaReady: isDedicatedMediaConfigured(process.env)
+    }
+  )
 }
 
 /**

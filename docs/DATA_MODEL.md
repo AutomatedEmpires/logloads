@@ -44,7 +44,10 @@
 - Assignment cancellation metadata
 - One-off, recurring, and campaign scheduling
 - Driver home coordinates, operating radius, and preferred fuel price assumptions
-- Truck fuel economy plus private Cloudinary references for driver, truck, and trailer photos
+- Truck fuel economy plus private media references for driver, truck, and trailer photos
+- Driver credential evidence bound to the exact `truckProfileId` or
+  `trailerProfileId` photographed. Historical unbound equipment evidence remains
+  readable but never clears an assignment gate.
 - Immutable assignment commercial-terms snapshots captured at host approval
 - Stripe event identifiers on billing audit metadata for replay-safe subscription updates
 

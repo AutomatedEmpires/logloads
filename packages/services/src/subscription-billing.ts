@@ -7,6 +7,7 @@ import {
   deterministicUuidV5,
   entitlementSchema,
   enterpriseAgreementTermsSchema,
+  LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
   networkOverageInvoiceId,
   networkOverageInvoiceSchema,
   networkUsageEventId,
@@ -17,6 +18,7 @@ import {
   organizationSubscriptionId,
   organizationSubscriptionSchema,
   organizationRoleCan,
+  readFrozenDriverPay,
   subscriptionBaseInvoiceId,
   subscriptionBaseInvoiceSchema,
   subscriptionPlanDefinitionSchema,
@@ -38,7 +40,13 @@ import {
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
-import { assertCondition, assertFound, createUuid, nowIso } from "./utils"
+import {
+  assertCondition,
+  assertDomainCondition,
+  assertFound,
+  createUuid,
+  nowIso
+} from "./utils"
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const MINIMUM_PROVIDER_RECEIVABLE_CENTS = 50
@@ -154,21 +162,22 @@ function assertOperatingScopeForPlan(
   state: LogLoadsDatabaseState,
   organizationId: string,
   plan: SubscriptionPlanDefinition,
-  marketIds: readonly string[]
+  marketIds: readonly string[],
+  assertPolicyCondition: typeof assertCondition = assertCondition
 ): void {
   const needsScope =
     plan.allowancePeriod !== "none" ||
     plan.billingModel === "enterprise_custom"
 
-  assertCondition(
+  assertPolicyCondition(
     !needsScope || marketIds.length > 0,
     `${plan.displayName} requires at least one accepted operating location`
   )
-  assertCondition(
+  assertPolicyCondition(
     plan.code !== "network_pilot" || marketIds.length === 1,
     "The Network Pilot is limited to exactly one accepted operating location"
   )
-  assertCondition(
+  assertPolicyCondition(
     marketIds.length <= 25 &&
       marketIds.every((marketId) => marketId.length <= 120),
     "Operating-location scope must contain at most 25 landing identifiers under 120 characters"
@@ -178,10 +187,14 @@ function assertOperatingScopeForPlan(
     const matches = state.landings.filter((landing) => landing.id === landingId)
 
     assertCondition(
+      matches.length <= 1,
+      `Operating location ${landingId} is duplicated in canonical state`
+    )
+    assertPolicyCondition(
       matches.length === 1,
       `Operating location ${landingId} must identify exactly one canonical landing`
     )
-    assertCondition(
+    assertPolicyCondition(
       matches[0]?.companyId === organizationId && matches[0].isActive,
       `Operating location ${landingId} must be an active landing owned by organization ${organizationId}`
     )
@@ -602,7 +615,8 @@ export function markBillingNotificationEmailFailed(
 function assertOrganizationBillingActor(
   state: LogLoadsDatabaseState,
   organizationId: string,
-  actorUserId: string
+  actorUserId: string,
+  assertPolicyCondition: typeof assertCondition = assertCondition
 ): void {
   const membership = state.organizationMemberships.find(
     (candidate) =>
@@ -617,7 +631,7 @@ function assertOrganizationBillingActor(
       candidate.isActive
   )
 
-  assertCondition(
+  assertPolicyCondition(
     Boolean(
       platformAdmin ||
         (membership && organizationRoleCan(membership.role, "manage_billing"))
@@ -629,7 +643,8 @@ function assertOrganizationBillingActor(
 function assertOrganizationTermsAcceptor(
   state: LogLoadsDatabaseState,
   organizationId: string,
-  acceptedByUserId: string
+  acceptedByUserId: string,
+  assertPolicyCondition: typeof assertCondition = assertCondition
 ): void {
   const membership = state.organizationMemberships.find(
     (candidate) =>
@@ -638,7 +653,7 @@ function assertOrganizationTermsAcceptor(
       candidate.status === "active"
   )
 
-  assertCondition(
+  assertPolicyCondition(
     Boolean(membership && organizationRoleCan(membership.role, "manage_billing")),
     "Accepted customer terms must name an active billing manager for that organization"
   )
@@ -653,7 +668,8 @@ function instantIsWithin(instant: string, start: string, end: string): boolean {
 function activePlanDefinition(
   state: LogLoadsDatabaseState,
   code: SubscriptionPlanCode,
-  at: string
+  at: string,
+  missingIsDomainRefusal = false
 ): SubscriptionPlanDefinition {
   const matching = state.billingPlanDefinitions
     .filter(
@@ -668,7 +684,13 @@ function activePlanDefinition(
         Date.parse(right.effectiveAt) - Date.parse(left.effectiveAt)
     )
 
-  return assertFound(matching[0], `No active ${code} plan definition exists at ${at}`)
+  const message = `No active ${code} plan definition exists at ${at}`
+
+  if (missingIsDomainRefusal) {
+    assertDomainCondition(Boolean(matching[0]), message)
+  }
+
+  return assertFound(matching[0], message)
 }
 
 const DISPATCH_CAPABILITY_ENTITLEMENT_PRODUCTS: ReadonlySet<
@@ -678,7 +700,8 @@ const DISPATCH_CAPABILITY_ENTITLEMENT_PRODUCTS: ReadonlySet<
 function assertOrganizationCanUsePlan(
   state: LogLoadsDatabaseState,
   organizationId: string,
-  planCode: SubscriptionPlanCode
+  planCode: SubscriptionPlanCode,
+  assertPolicyCondition: typeof assertCondition = assertCondition
 ): void {
   const organization = assertFound(
     state.organizations.find((candidate) => candidate.id === organizationId),
@@ -692,7 +715,7 @@ function assertOrganizationCanUsePlan(
         : organization.type === "landing_source" ||
           organization.type === "destination"
 
-  assertCondition(
+  assertPolicyCondition(
     eligible,
     planCode === "dispatch_pro"
       ? "Dispatch Pro is available only to carrier and fleet organizations"
@@ -1108,6 +1131,15 @@ export function resolveAssignmentBillingCommitment(
     assertCondition(
       account.billingModel === "legacy_percentage",
       `Organization ${input.hostOrganizationId} has an invalid legacy billing account`
+    )
+    const frozenDriverPay = assertFound(
+      readFrozenDriverPay(assignment.termsSnapshot) ?? undefined,
+      "Legacy percentage billing requires frozen driver pay and currency at acceptance"
+    )
+    assertDomainCondition(
+      frozenDriverPay.currency ===
+        LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
+      `Legacy percentage billing can accept only ${LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY}-denominated work; choose an eligible subscription agreement for other currencies`
     )
 
     return {
@@ -1685,42 +1717,44 @@ export function authorizePilotConversionSubscription(
       Date.parse(commitmentEnd) +
         PILOT_CONVERSION_GRACE_DAYS * DAY_MS
     ).toISOString()
-  assertCondition(
+  assertDomainCondition(
     source.planCode === "network_pilot" &&
       Boolean(source.operationalActivatedAt) &&
       !source.operationalExpiredAt &&
       source.status !== "cancelled",
     "Only an operating finite Pilot may authorize a fresh conversion subscription"
   )
-  assertCondition(
+  assertDomainCondition(
     account.activationState === "active",
     "Pilot conversion requires an active billing account"
   )
-  assertCondition(
+  assertDomainCondition(
     Date.parse(at) >= Date.parse(commitmentEnd) &&
       Date.parse(at) < Date.parse(graceEndsAt),
     `Pilot conversion is available only through ${graceEndsAt}`
   )
-  assertCondition(
+  assertDomainCondition(
     Number.isFinite(Date.parse(input.acceptedAt)) &&
       Date.parse(input.acceptedAt) >= Date.parse(commitmentEnd) &&
       Date.parse(input.acceptedAt) < Date.parse(graceEndsAt) &&
       Date.parse(input.acceptedAt) <= Date.parse(at),
     "Target-plan acceptance must occur inside the active Pilot conversion window"
   )
-  assertCondition(
+  assertDomainCondition(
     PILOT_CONVERSION_TARGET_PLAN_CODES.has(input.targetPlanCode),
     "Pilot may convert only to Network 25, Network 50, Network 100, or Enterprise 250+"
   )
   const targetDefinition = activePlanDefinition(
     state,
     input.targetPlanCode,
-    input.acceptedAt
+    input.acceptedAt,
+    true
   )
   assertOrganizationCanUsePlan(
     state,
     source.organizationId,
-    input.targetPlanCode
+    input.targetPlanCode,
+    assertDomainCondition
   )
   assertCondition(
     !targetDefinition.pilot && !targetDefinition.internalBillingTest,
@@ -1732,7 +1766,7 @@ export function authorizePilotConversionSubscription(
   )
   const acceptedQuoteFingerprint =
     subscriptionPlanQuoteFingerprint(frozenPlan)
-  assertCondition(
+  assertDomainCondition(
     input.acceptedQuoteFingerprint === undefined ||
       input.acceptedQuoteFingerprint ===
         acceptedQuoteFingerprint,
@@ -1746,9 +1780,10 @@ export function authorizePilotConversionSubscription(
     state,
     source.organizationId,
     frozenPlan,
-    operatingMarketIds
+    operatingMarketIds,
+    assertDomainCondition
   )
-  assertCondition(
+  assertDomainCondition(
     !frozenPlan.includesDispatchProCapabilities ||
       overlappingPaidDispatchEntitlements(
         state,
@@ -1759,15 +1794,17 @@ export function authorizePilotConversionSubscription(
   assertOrganizationTermsAcceptor(
     state,
     source.organizationId,
-    input.acceptedByUserId
+    input.acceptedByUserId,
+    assertDomainCondition
   )
   assertOrganizationBillingActor(
     state,
     source.organizationId,
-    input.actorUserId
+    input.actorUserId,
+    assertDomainCondition
   )
   const acceptedTermsVersion = input.acceptedTermsVersion.trim()
-  assertCondition(
+  assertDomainCondition(
     acceptedTermsVersion.length > 0,
     "An accepted conversion agreement must name its terms version"
   )
@@ -1776,13 +1813,13 @@ export function authorizePilotConversionSubscription(
   const overageMilestoneIntervalUnits =
     input.overageMilestoneIntervalUnits ??
     source.overageMilestoneIntervalUnitsSnapshot
-  assertCondition(
+  assertDomainCondition(
     Number.isSafeInteger(paymentGraceDays) &&
       paymentGraceDays >= 0 &&
       paymentGraceDays <= 30,
     "Payment grace must be a whole number from 0 through 30 days"
   )
-  assertCondition(
+  assertDomainCondition(
     Number.isSafeInteger(overageMilestoneIntervalUnits) &&
       overageMilestoneIntervalUnits > 0 &&
       overageMilestoneIntervalUnits <= 1_000,
@@ -1806,7 +1843,7 @@ export function authorizePilotConversionSubscription(
       (candidate) => candidate.id === targetId
     )
   if (existing) {
-    assertCondition(
+    assertDomainCondition(
       existing.id === targetId &&
         existing.convertedFromSubscriptionId === source.id &&
         existing.convertedFromPlanCode === "network_pilot" &&

@@ -24,7 +24,16 @@ import {
 import type { LogLoadsDatabaseState } from "@logloads/db"
 import { z } from "zod"
 
-import { assertCondition, assertFound, createUuid, nowIso } from "./utils"
+import {
+  assertEquipmentProfileUnitNumberUnambiguous,
+  equipmentProfileUnitNumberIsUnambiguous
+} from "./equipment-unit-numbers"
+import {
+  assertDomainCondition as assertCondition,
+  assertDomainFound as assertFound,
+  createUuid,
+  nowIso
+} from "./utils"
 
 /**
  * ── The driver credential vault ───────────────────────────────────────────────
@@ -99,9 +108,12 @@ const EXPIRING_CREDENTIAL_KINDS: ReadonlySet<CredentialKind> = new Set(["insuran
  */
 export function credentialDocumentPublicIdPrefix(
   driverProfileId: string,
-  kind: CredentialKind
+  kind: CredentialKind,
+  equipmentProfileId?: string | null
 ): string {
-  return `logloads/driver-credentials/${driverProfileId}/${kind}`
+  const equipmentSegment = equipmentProfileId ? `/${equipmentProfileId}` : ""
+
+  return `logloads/driver-credentials/${driverProfileId}/${kind}${equipmentSegment}`
 }
 
 /**
@@ -147,36 +159,67 @@ export function credentialReviewId(credentialId: string, attempt: number): strin
 
 // ── Inputs ────────────────────────────────────────────────────────────────────
 
-const submitCredentialInputSchema = z.object({
-  actorUserId: z.string().uuid(),
-  driverProfileId: z.string().uuid(),
-  /**
-   * Required. Submitting is the act of handing a document over to be read: a
-   * record with nothing attached is one no reviewer can decide, and it would
-   * occupy the driver's outstanding slot for that kind forever while the gate
-   * refuses to count it. The row contract permits a null document because rows
-   * arrive from places other than this service and `credentialIsValidAt` has to
-   * fail closed on them — it is not a state this service creates.
-   */
-  documentMedia: mediaReferenceSchema,
-  /**
-   * Instants the DRIVER states, resolved from the dates printed on the document.
-   * The reviewer checks the document against them; it never rewrites them (see
-   * `applyCredentialReview`).
-   */
-  expiresOn: z.string().datetime().optional().nullable(),
-  identifier: z.string().trim().min(1).max(120).optional().nullable(),
-  issuedOn: z.string().datetime().optional().nullable(),
-  issuer: z.string().trim().min(1).max(200).optional().nullable(),
-  // Derived from the schema, never a hand-copied list of kinds.
-  kind: credentialKindSchema,
-  /**
-   * Required, and never defaulted. A web boundary forwards client JSON straight
-   * into this input; a defaulted organization on a safety record would let a
-   * member of one outfit file documents against a driver on another's roster.
-   */
-  organizationId: z.string().uuid()
-})
+const submitCredentialInputSchema = z
+  .object({
+    actorUserId: z.string().uuid(),
+    driverProfileId: z.string().uuid(),
+    /**
+     * Required. Submitting is the act of handing a document over to be read: a
+     * record with nothing attached is one no reviewer can decide, and it would
+     * occupy the driver's outstanding slot for that kind forever while the gate
+     * refuses to count it. The row contract permits a null document because rows
+     * arrive from places other than this service and `credentialIsValidAt` has to
+     * fail closed on them — it is not a state this service creates.
+     */
+    documentMedia: mediaReferenceSchema,
+    /**
+     * Instants the DRIVER states, resolved from the dates printed on the document.
+     * The reviewer checks the document against them; it never rewrites them (see
+     * `applyCredentialReview`).
+     */
+    expiresOn: z.string().datetime().optional().nullable(),
+    identifier: z.string().trim().min(1).max(120).optional().nullable(),
+    issuedOn: z.string().datetime().optional().nullable(),
+    issuer: z.string().trim().min(1).max(200).optional().nullable(),
+    // Derived from the schema, never a hand-copied list of kinds.
+    kind: credentialKindSchema,
+    /** Exact equipment photographed. Required only for equipment evidence. */
+    trailerProfileId: z.string().uuid().optional().nullable(),
+    truckProfileId: z.string().uuid().optional().nullable(),
+    /**
+     * Required, and never defaulted. A web boundary forwards client JSON straight
+     * into this input; a defaulted organization on a safety record would let a
+     * member of one outfit file documents against a driver on another's roster.
+     */
+    organizationId: z.string().uuid()
+  })
+  .superRefine((input, context) => {
+    const truckBound = Boolean(input.truckProfileId)
+    const trailerBound = Boolean(input.trailerProfileId)
+
+    if (input.kind === "truck" && (!truckBound || trailerBound)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "A truck photo must name exactly one truck profile",
+        path: ["truckProfileId"]
+      })
+    } else if (input.kind === "trailer" && (!trailerBound || truckBound)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "A trailer photo must name exactly one trailer profile",
+        path: ["trailerProfileId"]
+      })
+    } else if (
+      (input.kind === "cdl" || input.kind === "insurance") &&
+      (truckBound || trailerBound)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Identity and insurance records cannot be attached to equipment",
+        path: ["kind"]
+      })
+    }
+  })
 
 export type SubmitCredentialInput = z.input<typeof submitCredentialInputSchema>
 
@@ -191,6 +234,47 @@ export interface SubmitCredentialResult {
   outcome: "already_submitted" | "submitted"
   /** The records this submission replaced. Empty when nothing was outstanding. */
   superseded: DriverCredential[]
+}
+
+const credentialUploadTargetInputSchema = z
+  .object({
+    actorUserId: z.string().uuid(),
+    driverProfileId: z.string().uuid(),
+    equipmentProfileId: z.string().uuid().optional().nullable(),
+    kind: credentialKindSchema,
+    organizationId: z.string().uuid()
+  })
+  .strict()
+  .superRefine((input, context) => {
+    const equipmentBound = Boolean(input.equipmentProfileId)
+
+    if ((input.kind === "truck" || input.kind === "trailer") && !equipmentBound) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `A ${input.kind} photo must name exactly one ${input.kind} profile`,
+        path: ["equipmentProfileId"]
+      })
+    } else if (
+      (input.kind === "cdl" || input.kind === "insurance") &&
+      equipmentBound
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Identity and insurance records cannot be attached to equipment",
+        path: ["equipmentProfileId"]
+      })
+    }
+  })
+
+export type CredentialUploadTargetInput = z.input<
+  typeof credentialUploadTargetInputSchema
+>
+
+export interface CredentialUploadTarget {
+  equipmentProfileId: string | null
+  kind: CredentialKind
+  organizationId: string
+  publicIdPrefix: string
 }
 
 const applyCredentialReviewInputSchema = z.object({
@@ -241,22 +325,35 @@ export interface ApplyCredentialReviewResult {
  */
 export type CredentialViewer =
   /** The driver, reading their own vault. Everything, including the images. */
-  | { actorUserId: string; audience: "driver" }
+  | {
+      actorUserId: string
+      audience: "driver"
+      /** Limits equipment upload choices to the organization active in the session. */
+      organizationId?: string
+    }
   /**
    * The outfit that dispatches this driver, through a member holding
    * manage_drivers. They submit these documents on the driver's behalf, so they
    * see what they filed.
    */
   | { actorUserId: string; audience: "fleet"; organizationId: string }
-  /** A host this driver hauls for. Status, expiry, equipment photos. Nothing else. */
-  | { actorUserId: string; audience: "host"; organizationId: string }
+  /** A host this driver hauls for. Status, expiry, selected-rig photos. Nothing else. */
+  | {
+      actorUserId: string
+      assignmentId: string
+      audience: "host"
+      organizationId: string
+    }
 
 export interface DriverCredentialVaultView {
   audience: "driver" | "fleet"
   /** Every record ever filed for this driver, newest submission first. */
   credentials: DriverCredential[]
   driverProfileId: string
-  gate: CredentialGate
+  /** Exact truck/trailer profiles this driver may file equipment evidence for. */
+  equipmentOptions: CredentialEquipmentOption[]
+  /** Exact assigned combinations the profile UI reports readiness against. */
+  equipmentSelections: CredentialEquipmentSelectionOption[]
   /** The whole decision trail, newest decision first. Why they were refused. */
   reviews: CredentialReview[]
 }
@@ -284,6 +381,30 @@ export interface HostCredentialView extends HostCredentialSummary {
 
 export type DriverCredentialView = DriverCredentialVaultView | HostCredentialView
 
+export interface CredentialEquipmentOption {
+  kind: "trailer" | "truck"
+  label: string
+  profileId: string
+}
+
+export interface CredentialEquipmentSelection {
+  trailerProfileId: string | null
+  truckProfileId: string
+}
+
+export interface CredentialEquipmentSelectionOption extends CredentialEquipmentSelection {
+  combinationId: string
+  equipmentUnitNumbersUnique: boolean
+  label: string
+}
+
+const credentialEquipmentSelectionSchema = z
+  .object({
+    trailerProfileId: z.string().uuid().nullable(),
+    truckProfileId: z.string().uuid()
+  })
+  .strict()
+
 // ── Local helpers ─────────────────────────────────────────────────────────────
 
 function findDriver(state: LogLoadsDatabaseState, driverProfileId: string): DriverProfile {
@@ -291,6 +412,292 @@ function findDriver(state: LogLoadsDatabaseState, driverProfileId: string): Driv
     state.driverProfiles.find((candidate) => candidate.id === driverProfileId),
     `Driver profile ${driverProfileId} was not found`
   )
+}
+
+function equipmentOptionsForDriver(
+  state: LogLoadsDatabaseState,
+  driverProfileId: string,
+  organizationId?: string
+): CredentialEquipmentOption[] {
+  const options = new Map<string, CredentialEquipmentOption>()
+  const driver = findDriver(state, driverProfileId)
+  const combinations = state.equipmentCombinations.filter(
+    (combination) =>
+      combination.assignedDriverProfileId === driverProfileId &&
+      (!driver.companyId || combination.organizationId === driver.companyId) &&
+      (organizationId === undefined || combination.organizationId === organizationId) &&
+      combination.status !== "inactive"
+  )
+
+  for (const combination of combinations) {
+    const truck = state.truckProfiles.find(
+      (candidate) => candidate.id === combination.truckProfileId && !candidate.archivedAt
+    )
+
+    if (truck) {
+      options.set(`truck:${truck.id}`, {
+        kind: "truck",
+        label: `${combination.label} · truck ${truck.unitNumber}`,
+        profileId: truck.id
+      })
+    }
+
+    if (combination.trailerProfileId) {
+      const trailer = state.trailerProfiles.find(
+        (candidate) => candidate.id === combination.trailerProfileId
+      )
+
+      if (trailer) {
+        options.set(`trailer:${trailer.id}`, {
+          kind: "trailer",
+          label: `${combination.label} · trailer ${trailer.unitNumber}`,
+          profileId: trailer.id
+        })
+      }
+    }
+  }
+
+  return [...options.values()].sort(
+    (left, right) => left.kind.localeCompare(right.kind) || left.label.localeCompare(right.label)
+  )
+}
+
+function equipmentSelectionsForDriver(
+  state: LogLoadsDatabaseState,
+  driverProfileId: string,
+  organizationId?: string
+): CredentialEquipmentSelectionOption[] {
+  const driver = findDriver(state, driverProfileId)
+
+  return state.equipmentCombinations
+    .filter(
+      (combination) =>
+        combination.assignedDriverProfileId === driverProfileId &&
+        (!driver.companyId || combination.organizationId === driver.companyId) &&
+        (organizationId === undefined || combination.organizationId === organizationId) &&
+        combination.status !== "inactive"
+    )
+    .map((combination) => {
+      const trailerProfileId = combination.trailerProfileId ?? null
+
+      return {
+        combinationId: combination.id,
+        equipmentUnitNumbersUnique:
+          equipmentProfileUnitNumberIsUnambiguous(
+            state,
+            combination.organizationId,
+            "truck",
+            combination.truckProfileId
+          ) &&
+          (
+            trailerProfileId === null ||
+            equipmentProfileUnitNumberIsUnambiguous(
+              state,
+              combination.organizationId,
+              "trailer",
+              trailerProfileId
+            )
+          ),
+        label: combination.label,
+        trailerProfileId,
+        truckProfileId: combination.truckProfileId
+      }
+    })
+    .sort(
+      (left, right) =>
+        left.label.localeCompare(right.label) ||
+        left.combinationId.localeCompare(right.combinationId)
+    )
+}
+
+function equipmentProfileIdForCredential(
+  credential: Pick<DriverCredential, "kind" | "trailerProfileId" | "truckProfileId">
+): string | null {
+  if (credential.kind === "truck") {
+    return credential.truckProfileId ?? null
+  }
+
+  if (credential.kind === "trailer") {
+    return credential.trailerProfileId ?? null
+  }
+
+  return null
+}
+
+function credentialsForSelection(
+  credentials: readonly DriverCredential[],
+  selection: CredentialEquipmentSelection
+): DriverCredential[] {
+  return credentials.filter((credential) => {
+    if (credential.kind === "truck") {
+      return credential.truckProfileId === selection.truckProfileId
+    }
+
+    if (credential.kind === "trailer") {
+      return (
+        selection.trailerProfileId !== null &&
+        credential.trailerProfileId === selection.trailerProfileId
+      )
+    }
+
+    return true
+  })
+}
+
+/**
+ * Project the credential gate for one concrete rig selection.
+ *
+ * The web vault receives credential rows and service-produced equipment
+ * selections separately. Keeping the row-to-rig binding here prevents that
+ * presentation layer from growing a second definition of which truck and
+ * trailer evidence belongs to a selection.
+ */
+export function credentialGateForEquipmentSelection(
+  credentials: readonly DriverCredential[],
+  driverProfileId: string | null,
+  selection: CredentialEquipmentSelection,
+  at: string
+): CredentialGate {
+  const driverCredentials =
+    driverProfileId === null
+      ? []
+      : credentials.filter(
+          (credential) => credential.driverProfileId === driverProfileId
+        )
+
+  return credentialGateFor(credentialsForSelection(driverCredentials, selection), at)
+}
+
+function requireCredentialEquipmentSelection(
+  state: LogLoadsDatabaseState,
+  driver: DriverProfile,
+  rawSelection: unknown
+): CredentialEquipmentSelection {
+  const result = credentialEquipmentSelectionSchema.safeParse(rawSelection)
+  const selection = assertFound(
+    result.data,
+    "Choose an exact truck and trailer combination before checking credentials"
+  )
+  const combination = assertFound(
+    state.equipmentCombinations.find(
+      (candidate) =>
+        candidate.assignedDriverProfileId === driver.id &&
+        candidate.status !== "inactive" &&
+        candidate.truckProfileId === selection.truckProfileId &&
+        (candidate.trailerProfileId ?? null) === selection.trailerProfileId &&
+        (!driver.companyId || candidate.organizationId === driver.companyId)
+    ),
+    "Choose an active equipment combination assigned to this driver before checking credentials"
+  )
+  const organizationId = combination.organizationId
+
+  assertEquipmentProfileUnitNumberUnambiguous(
+    state,
+    organizationId,
+    "truck",
+    selection.truckProfileId
+  )
+  if (selection.trailerProfileId) {
+    assertEquipmentProfileUnitNumberUnambiguous(
+      state,
+      organizationId,
+      "trailer",
+      selection.trailerProfileId
+    )
+  }
+
+  return selection
+}
+
+interface ResolvedCredentialUploadTarget extends CredentialUploadTarget {
+  unitNumber: string | null
+}
+
+/**
+ * Resolve the one storage target that both upload signing and filing accept.
+ *
+ * The organization constraint is part of the equipment lookup rather than a
+ * caller-supplied label on the result. That matters for independent drivers:
+ * their profile has no company, so the active assigned combination is the
+ * canonical source of the equipment organization.
+ */
+function resolveCredentialUploadTarget(
+  state: LogLoadsDatabaseState,
+  driver: DriverProfile,
+  input: {
+    equipmentProfileId: string | null
+    kind: CredentialKind
+    organizationId: string
+  }
+): ResolvedCredentialUploadTarget {
+  if (input.kind !== "truck" && input.kind !== "trailer") {
+    assertCondition(
+      input.equipmentProfileId === null,
+      "Identity and insurance records cannot be attached to equipment"
+    )
+
+    return {
+      equipmentProfileId: null,
+      kind: input.kind,
+      organizationId: input.organizationId,
+      publicIdPrefix: credentialDocumentPublicIdPrefix(driver.id, input.kind),
+      unitNumber: null
+    }
+  }
+
+  const equipmentProfileId = assertFound(
+    input.equipmentProfileId ?? undefined,
+    `Choose a ${input.kind} currently assigned to this driver before filing its photo`
+  )
+  const combination = state.equipmentCombinations.find(
+    (candidate) =>
+      candidate.assignedDriverProfileId === driver.id &&
+      candidate.organizationId === input.organizationId &&
+      candidate.status !== "inactive" &&
+      (!driver.companyId || candidate.organizationId === driver.companyId) &&
+      (input.kind === "truck"
+        ? candidate.truckProfileId === equipmentProfileId
+        : candidate.trailerProfileId === equipmentProfileId)
+  )
+
+  assertCondition(
+    Boolean(combination),
+    `Choose a ${input.kind} currently assigned to this driver before filing its photo`
+  )
+
+  const profile =
+    input.kind === "truck"
+      ? state.truckProfiles.find(
+          (candidate) => candidate.id === equipmentProfileId && !candidate.archivedAt
+        )
+      : state.trailerProfiles.find((candidate) => candidate.id === equipmentProfileId)
+  const selectedProfile = assertFound(
+    profile,
+    `Choose a ${input.kind} currently assigned to this driver before filing its photo`
+  )
+  const organizationId = assertFound(
+    combination?.organizationId,
+    "The selected equipment organization could not be established"
+  )
+
+  assertEquipmentProfileUnitNumberUnambiguous(
+    state,
+    organizationId,
+    input.kind,
+    selectedProfile.id
+  )
+
+  return {
+    equipmentProfileId: selectedProfile.id,
+    kind: input.kind,
+    organizationId,
+    publicIdPrefix: credentialDocumentPublicIdPrefix(
+      driver.id,
+      input.kind,
+      selectedProfile.id
+    ),
+    unitNumber: selectedProfile.unitNumber
+  }
 }
 
 function activeMembership(
@@ -307,6 +714,41 @@ function activeMembership(
     ),
     `User ${actorUserId} is not an active member of organization ${organizationId}`
   )
+}
+
+/**
+ * Authorize and resolve the private upload namespace for one driver credential.
+ *
+ * Signing is intentionally self-service only. Fleet managers may file a document
+ * they already control through `submitCredential`, but they cannot ask the media
+ * provider for a signature into another person's private vault. The later filing
+ * re-runs the same target resolver inside the state mutation.
+ */
+export function getCredentialUploadTarget(
+  state: LogLoadsDatabaseState,
+  rawInput: CredentialUploadTargetInput
+): CredentialUploadTarget {
+  const input = credentialUploadTargetInputSchema.parse(rawInput)
+  const driver = findDriver(state, input.driverProfileId)
+
+  activeMembership(state, input.actorUserId, input.organizationId)
+  assertCondition(
+    driver.userId === input.actorUserId,
+    "Only the driver who owns this profile may upload to its credential vault"
+  )
+
+  const target = resolveCredentialUploadTarget(state, driver, {
+    equipmentProfileId: input.equipmentProfileId ?? null,
+    kind: input.kind,
+    organizationId: input.organizationId
+  })
+
+  return {
+    equipmentProfileId: target.equipmentProfileId,
+    kind: target.kind,
+    organizationId: target.organizationId,
+    publicIdPrefix: target.publicIdPrefix
+  }
 }
 
 /**
@@ -420,8 +862,8 @@ function assertMaySubmitFor(
 function assertHostMayRead(
   state: LogLoadsDatabaseState,
   driver: DriverProfile,
-  input: { actorUserId: string; organizationId: string }
-): void {
+  input: { actorUserId: string; assignmentId: string; organizationId: string }
+) {
   const membership = activeMembership(state, input.actorUserId, input.organizationId)
 
   assertCondition(
@@ -429,20 +871,24 @@ function assertHostMayRead(
     `${membership.role} cannot view the network`
   )
 
-  const hostsWorkForDriver = state.assignments.some((assignment) => {
-    if (assignment.driverProfileId !== driver.id) {
-      return false
-    }
-
-    const load = state.loadPostings.find((candidate) => candidate.id === assignment.loadPostingId)
-
-    return load?.companyId === input.organizationId
-  })
-
-  assertCondition(
-    hostsWorkForDriver,
+  const assignment = state.assignments.find(
+    (candidate) =>
+      candidate.id === input.assignmentId && candidate.driverProfileId === driver.id
+  )
+  const authorizedAssignment = assertFound(
+    assignment,
     "This driver is not hauling for your organization, so their credential summary is not yours to read"
   )
+  const load = state.loadPostings.find(
+    (candidate) => candidate.id === authorizedAssignment.loadPostingId
+  )
+
+  assertCondition(
+    load?.companyId === input.organizationId,
+    "This driver is not hauling for your organization, so their credential summary is not yours to read"
+  )
+
+  return authorizedAssignment
 }
 
 /**
@@ -532,13 +978,25 @@ export function submitCredential(
   const driver = findDriver(state, input.driverProfileId)
 
   assertMaySubmitFor(state, driver, input)
+  const requestedEquipmentProfileId =
+    input.kind === "truck"
+      ? input.truckProfileId ?? null
+      : input.kind === "trailer"
+        ? input.trailerProfileId ?? null
+        : null
+  const uploadTarget = resolveCredentialUploadTarget(state, driver, {
+    equipmentProfileId: requestedEquipmentProfileId,
+    kind: input.kind,
+    organizationId: input.organizationId
+  })
+  const equipmentProfileId = uploadTarget.equipmentProfileId
 
   assertCondition(
     !EXPIRING_CREDENTIAL_KINDS.has(input.kind) || Boolean(input.expiresOn),
     `${input.kind === "cdl" ? "CDL" : "Insurance"} documents require the expiry date printed on the document`
   )
 
-  const expectedPrefix = `${credentialDocumentPublicIdPrefix(driver.id, input.kind)}/uploads/`
+  const expectedPrefix = `${uploadTarget.publicIdPrefix}/uploads/`
 
   assertCondition(
     input.documentMedia.publicId.startsWith(expectedPrefix),
@@ -560,7 +1018,10 @@ export function submitCredential(
     driverProfileId: driver.id,
     expiresOn: input.expiresOn ?? null,
     id: credentialId,
-    identifier: input.identifier ?? null,
+    // Equipment identity is canonical state, never a caller assertion. The
+    // reviewer receives this unit number only as a yes/no matching target and
+    // never returns or stores a value read from the image.
+    identifier: uploadTarget.unitNumber ?? input.identifier ?? null,
     issuedOn: input.issuedOn ?? null,
     issuer: input.issuer ?? null,
     kind: input.kind,
@@ -572,6 +1033,8 @@ export function submitCredential(
     status: "pending",
     submittedAt: at,
     supersededByCredentialId: null,
+    trailerProfileId: input.trailerProfileId ?? null,
+    truckProfileId: input.truckProfileId ?? null,
     updatedAt: at
   })
 
@@ -579,6 +1042,7 @@ export function submitCredential(
     (candidate) =>
       candidate.driverProfileId === driver.id &&
       candidate.kind === input.kind &&
+      equipmentProfileIdForCredential(candidate) === equipmentProfileId &&
       candidate.supersededByCredentialId === null
   )
   const superseded = outstanding.map((candidate) =>
@@ -608,6 +1072,7 @@ export function submitCredential(
     entityType: "driver_credential",
     metadata: {
       driverProfileId: driver.id,
+      equipmentProfileId,
       kind: credential.kind,
       // Whether the driver stated an expiry, never the identifiers on the page.
       statesExpiry: credential.expiresOn !== null,
@@ -786,11 +1251,14 @@ export function applyCredentialReview(
 export function driverCredentialGate(
   state: LogLoadsDatabaseState,
   driverProfileId: string,
-  at = nowIso()
+  at: string | undefined,
+  equipment: CredentialEquipmentSelection
 ): CredentialGate {
   const driver = findDriver(state, driverProfileId)
+  const selection = requireCredentialEquipmentSelection(state, driver, equipment)
+  const credentials = credentialsForSelection(credentialsForDriver(state, driver.id), selection)
 
-  return credentialGateFor(credentialsForDriver(state, driver.id), at)
+  return credentialGateFor(credentials, at ?? nowIso())
 }
 
 // ── What the host receives ────────────────────────────────────────────────────
@@ -824,11 +1292,14 @@ export function driverCredentialGate(
 export function hostCredentialSummary(
   state: LogLoadsDatabaseState,
   driverProfileId: string,
-  at = nowIso()
+  at: string | undefined,
+  equipment: CredentialEquipmentSelection
 ): HostCredentialSummary {
   const driver = findDriver(state, driverProfileId)
-  const credentials = credentialsForDriver(state, driver.id)
-  const gate = credentialGateFor(credentials, at)
+  const selection = requireCredentialEquipmentSelection(state, driver, equipment)
+  const credentials = credentialsForSelection(credentialsForDriver(state, driver.id), selection)
+  const evaluatedAt = at ?? nowIso()
+  const gate = credentialGateFor(credentials, evaluatedAt)
   const clearing: HostVisibleCredential<MediaReference>[] = []
 
   for (const kind of credentialKindSchema.options) {
@@ -843,7 +1314,7 @@ export function hostCredentialSummary(
     let bestExpiresAt = Number.NEGATIVE_INFINITY
 
     for (const candidate of credentials) {
-      if (candidate.kind !== kind || !credentialIsValidAt(candidate, at)) {
+      if (candidate.kind !== kind || !credentialIsValidAt(candidate, evaluatedAt)) {
         continue
       }
 
@@ -894,9 +1365,15 @@ export function listDriverCredentials(
   const driver = findDriver(state, driverProfileId)
 
   if (viewer.audience === "host") {
-    assertHostMayRead(state, driver, viewer)
+    const assignment = assertHostMayRead(state, driver, viewer)
 
-    return { audience: "host", ...hostCredentialSummary(state, driver.id, at) }
+    return {
+      audience: "host",
+      ...hostCredentialSummary(state, driver.id, at, {
+        trailerProfileId: assignment.trailerProfileId ?? null,
+        truckProfileId: assignment.truckProfileId
+      })
+    }
   }
 
   if (viewer.audience === "driver") {
@@ -924,7 +1401,16 @@ export function listDriverCredentials(
     audience: viewer.audience,
     credentials,
     driverProfileId: driver.id,
-    gate: credentialGateFor(credentials, at),
+    equipmentOptions: equipmentOptionsForDriver(
+      state,
+      driver.id,
+      viewer.organizationId
+    ),
+    equipmentSelections: equipmentSelectionsForDriver(
+      state,
+      driver.id,
+      viewer.organizationId
+    ),
     reviews: state.credentialReviews
       .filter((review) => credentialIds.has(review.credentialId))
       .sort(

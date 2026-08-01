@@ -1,6 +1,6 @@
 import { credentialKindSchema } from "@logloads/contracts"
-import { credentialDocumentPublicIdPrefix } from "@logloads/services"
 import { NextRequest, NextResponse } from "next/server"
+import { z } from "zod"
 
 import {
   ApiError,
@@ -18,7 +18,7 @@ import { services } from "@/lib/services"
  */
 export async function POST(request: NextRequest) {
   try {
-    const { actor, actorUserId } = await requireApiActor()
+    const { actor, actorUserId, organizationId } = await requireApiActor()
     const payload = parseJsonObject(await request.json())
     const kind = credentialKindSchema.safeParse(payload.kind)
 
@@ -31,14 +31,34 @@ export async function POST(request: NextRequest) {
     }
 
     await enforceApiRateLimit("credential-upload-signature", actorUserId, 10, 60_000)
-    services.listDriverCredentials(actor.driverProfileId, {
+    const equipmentKind = kind.data === "truck" || kind.data === "trailer"
+    const equipmentProfileId = equipmentKind
+      ? z.string().uuid().safeParse(payload.equipmentProfileId)
+      : null
+
+    if (equipmentKind && !equipmentProfileId?.success) {
+      throw new ApiError(`Choose the ${kind.data} shown in the photo`, 422)
+    }
+
+    if (!equipmentKind && payload.equipmentProfileId !== undefined && payload.equipmentProfileId !== null) {
+      throw new ApiError("This credential cannot be attached to equipment", 422)
+    }
+
+    const selectedEquipmentProfileId = equipmentProfileId?.success
+      ? equipmentProfileId.data
+      : null
+
+    const target = services.getCredentialUploadTarget({
       actorUserId,
-      audience: "driver"
+      driverProfileId: actor.driverProfileId,
+      equipmentProfileId: selectedEquipmentProfileId,
+      kind: kind.data,
+      organizationId
     })
 
     return NextResponse.json(
       await signedUpload({
-        publicIdPrefix: credentialDocumentPublicIdPrefix(actor.driverProfileId, kind.data)
+        publicIdPrefix: target.publicIdPrefix
       })
     )
   } catch (error) {

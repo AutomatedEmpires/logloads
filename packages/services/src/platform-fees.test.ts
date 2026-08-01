@@ -4,6 +4,7 @@ import {
   assignmentSchema,
   computePlatformFeeCents,
   invoiceSubtotalCents,
+  LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
   organizationMembershipSchema,
   organizationRoleCan,
   platformFeeEventId,
@@ -136,10 +137,13 @@ function billableHaul(
   assignment.driverPaymentReceivedAmountCents = driverPayCents
   assignment.driverPaymentReceivedAt = confirmedAt
   assignment.driverPaymentReceivedByUserId = DRIVER_USER
-  assignment.driverPaymentReceivedCurrency = driverPayCents === null ? null : "USD"
+  assignment.driverPaymentReceivedCurrency =
+    driverPayCents === null
+      ? null
+      : LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
   assignment.termsSnapshot = {
     ...assignment.termsSnapshot,
-    currency: "USD",
+    currency: LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
     driverPayCents,
     hostFee: {
       collectionState: "accrues_monthly_in_arrears",
@@ -311,6 +315,37 @@ describe("platform fee accrual", () => {
     // A refusal carries no event at all, so no caller can read it as a charge — and
     // nothing reached the ledger to be billed later.
     expect("event" in result).toBe(false)
+    expect(state.platformFeeEvents).toEqual([])
+    expect(accrualAuditEvents(state)).toEqual([])
+  })
+
+  it("never turns non-USD legacy driver pay into a USD platform fee", () => {
+    const state = freshState()
+    const haul = oneBillableHaul(state, 52_500)
+    const assignment = state.assignments.find(
+      (candidate) => candidate.id === haul.assignmentId
+    )
+
+    if (!assignment) throw new Error("the billable assignment is missing")
+
+    assignment.driverPaymentReceivedCurrency = "CAD"
+    assignment.termsSnapshot = {
+      ...assignment.termsSnapshot,
+      currency: "CAD"
+    }
+
+    const result = accruePlatformFee(state, {
+      actorUserId: HOST_STAFF_USER,
+      assignmentId: haul.assignmentId
+    })
+
+    expect(result).toMatchObject({
+      assignmentId: haul.assignmentId,
+      outcome: "no_basis",
+      reason: expect.stringContaining(
+        LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
+      )
+    })
     expect(state.platformFeeEvents).toEqual([])
     expect(accrualAuditEvents(state)).toEqual([])
   })

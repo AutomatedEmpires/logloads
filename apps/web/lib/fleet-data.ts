@@ -1,5 +1,9 @@
 import { evaluateLoadCompatibility, type EquipmentCombination } from "@logloads/contracts"
-import { driverCredentialGate } from "@logloads/services"
+import {
+  DomainRefusalError,
+  driverCredentialGate,
+  equipmentProfileUnitNumberIsUnambiguous
+} from "@logloads/services"
 
 import type { NetworkLoadView, NetworkView } from "./network"
 import { services } from "./services"
@@ -17,6 +21,7 @@ const ACTIVE_TRIP_STATUSES = new Set([
   "at_destination",
   "unloading"
 ])
+const RIG_VERIFICATION_REFUSAL_REASON = "This rig cannot be verified."
 
 export interface DriverOption {
   id: string
@@ -432,26 +437,78 @@ export async function getFleetOpportunityData(loadId: string): Promise<FleetOppo
         ? state.trailerProfiles.find((candidate) => candidate.id === combination.trailerProfileId) ?? null
         : null
       const availabilityWindows = state.availabilityWindows.filter((window) => window.driverProfileId === driverProfileId)
-      const result = evaluateLoadCompatibility({ availabilityWindows, load: posting, route, trailer, truck })
-      const credentialGate = driverCredentialGate(state, driverProfileId)
-      const credentialsReady = credentialGate.satisfied
-      const compatible = result.eligibility !== "ineligible"
+      const equipmentUnitNumbersUnique =
+        equipmentProfileUnitNumberIsUnambiguous(
+          state,
+          combination.organizationId,
+          "truck",
+          combination.truckProfileId
+        ) &&
+        (
+          !combination.trailerProfileId ||
+          equipmentProfileUnitNumberIsUnambiguous(
+            state,
+            combination.organizationId,
+            "trailer",
+            combination.trailerProfileId
+          )
+        )
 
-      return [{
-        combinationId: combination.id,
-        driverName: user?.fullName ?? "Driver",
-        driverProfileId,
-        eligible: compatible && credentialsReady,
-        fit: credentialsReady ? eligibilityFitLabel(result.eligibility) : "Credentials needed",
-        label: combination.label,
-        payload: `${combination.maxPayloadTons} tons`,
-        rank: eligibilityRank(result.eligibility),
-        reasons: !credentialsReady
-          ? [`Credential vault incomplete: ${credentialGate.missing.join(", ")}`]
-          : result.eligibility === "ineligible"
-            ? result.hardFailures.slice(0, 2)
-            : [...result.cautions, ...result.positiveSignals].slice(0, 2)
-      }]
+      if (!equipmentUnitNumbersUnique) {
+        return [{
+          combinationId: combination.id,
+          driverName: user?.fullName ?? "Driver",
+          driverProfileId,
+          eligible: false,
+          fit: "Unable to verify",
+          label: combination.label,
+          payload: `${combination.maxPayloadTons} tons`,
+          rank: 3,
+          reasons: [RIG_VERIFICATION_REFUSAL_REASON]
+        }]
+      }
+
+      try {
+        const result = evaluateLoadCompatibility({ availabilityWindows, load: posting, route, trailer, truck })
+        const credentialGate = driverCredentialGate(state, driverProfileId, undefined, {
+          trailerProfileId: combination.trailerProfileId ?? null,
+          truckProfileId: combination.truckProfileId
+        })
+        const credentialsReady = credentialGate.satisfied
+        const compatible = result.eligibility !== "ineligible"
+
+        return [{
+          combinationId: combination.id,
+          driverName: user?.fullName ?? "Driver",
+          driverProfileId,
+          eligible: compatible && credentialsReady,
+          fit: credentialsReady ? eligibilityFitLabel(result.eligibility) : "Credentials needed",
+          label: combination.label,
+          payload: `${combination.maxPayloadTons} tons`,
+          rank: eligibilityRank(result.eligibility),
+          reasons: !credentialsReady
+            ? [`Credential vault incomplete: ${credentialGate.missing.join(", ")}`]
+            : result.eligibility === "ineligible"
+              ? result.hardFailures.slice(0, 2)
+              : [...result.cautions, ...result.positiveSignals].slice(0, 2)
+        }]
+      } catch (error) {
+        if (!(error instanceof DomainRefusalError)) {
+          throw error
+        }
+
+        return [{
+          combinationId: combination.id,
+          driverName: user?.fullName ?? "Driver",
+          driverProfileId,
+          eligible: false,
+          fit: "Unable to verify",
+          label: combination.label,
+          payload: `${combination.maxPayloadTons} tons`,
+          rank: 3,
+          reasons: [RIG_VERIFICATION_REFUSAL_REASON]
+        }]
+      }
     })
     .sort((left, right) => Number(right.eligible) - Number(left.eligible) || left.rank - right.rank)
     .map((option) => {

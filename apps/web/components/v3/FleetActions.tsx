@@ -115,7 +115,11 @@ export function ClaimDirectOfferButton({
                 // The local success state keeps the field action responsive,
                 // while the refreshed server projection updates offer capacity,
                 // assignments, and every sibling control from the committed
-                // canonical snapshot.
+                // canonical snapshot. A refresh issued inside this transition
+                // can be folded into the action response — the reason an
+                // earlier fix reached for a full reload — so the convergence
+                // panel carries a bounded retry for exactly that path without
+                // losing the operator's success state.
                 router.refresh()
               } else {
                 setError(result.error ?? "The truck could not be assigned.")

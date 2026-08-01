@@ -1,6 +1,7 @@
 import {
   computePlatformFeeCents,
   invoicePeriodFor,
+  LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
   platformFeeEventId,
   PLATFORM_FEE_BPS,
   type HostInvoice,
@@ -227,6 +228,28 @@ function hostInvoice(input: {
   }
 }
 
+function addLegacyAssignment(
+  state: LogLoadsDatabaseState,
+  assignmentId: string,
+  currency = LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
+): void {
+  const template = state.assignments[0]
+
+  if (!template) {
+    throw new Error("The seed no longer contains an assignment template")
+  }
+
+  state.assignments.push({
+    ...structuredClone(template),
+    id: assignmentId,
+    termsSnapshot: {
+      ...template.termsSnapshot,
+      currency,
+      driverPayCents: 52_500
+    }
+  })
+}
+
 /** A host with one accrued fee and a card on file, ready to be billed. */
 function billableHost(): {
   fee: PlatformFeeEvent
@@ -243,6 +266,7 @@ function billableHost(): {
   })
   const invoice = hostInvoice({ fees: [fee], organizationId: organization.id })
 
+  addLegacyAssignment(state, ASSIGNMENT_ONE)
   state.platformFeeEvents = [fee]
   state.hostInvoices = [invoice]
 
@@ -389,7 +413,7 @@ function fakeStripe(
         mintedInvoiceIds.push(facts.id)
         byKey.set(input.idempotencyKey, facts)
         providerInvoices.set(facts.id, {
-          currency: "USD",
+          currency: LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
           customerId: input.customerId,
           hostInvoiceId: input.metadata.hostInvoiceId ?? "",
           ...facts
@@ -1044,6 +1068,39 @@ describe("planHostInvoiceCharge", () => {
     })
   })
 
+  it("refuses non-USD legacy fees before first charge and payment retry", () => {
+    const { state } = billableHost()
+    const assignment = state.assignments.find(
+      (candidate) => candidate.id === ASSIGNMENT_ONE
+    )
+
+    if (!assignment) throw new Error("Legacy assignment missing")
+
+    assignment.termsSnapshot = {
+      ...assignment.termsSnapshot,
+      currency: "CAD"
+    }
+
+    expect(planHostInvoiceCharge(state, INVOICE_ID)).toMatchObject({
+      kind: "refused",
+      message: expect.stringContaining(
+        `${LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY}-denominated`
+      )
+    })
+
+    state.hostInvoices[0] = {
+      ...state.hostInvoices[0]!,
+      stripeInvoiceId: "in_1"
+    }
+
+    expect(planHostInvoiceCharge(state, INVOICE_ID)).toMatchObject({
+      kind: "refused",
+      message: expect.stringContaining(
+        `${LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY}-denominated`
+      )
+    })
+  })
+
   it("refuses a bill that does not exist", () => {
     const { state } = billableHost()
 
@@ -1056,6 +1113,33 @@ describe("planHostInvoiceCharge", () => {
 // ── Charging, once ────────────────────────────────────────────────────────────
 
 describe("chargeHostInvoice", () => {
+  it("makes no Stripe call for a non-USD legacy bill", async () => {
+    const { state } = billableHost()
+    const assignment = state.assignments.find(
+      (candidate) => candidate.id === ASSIGNMENT_ONE
+    )
+
+    if (!assignment) throw new Error("Legacy assignment missing")
+
+    assignment.termsSnapshot = {
+      ...assignment.termsSnapshot,
+      currency: "CAD"
+    }
+    const stripe = fakeStripe()
+    const result = await chargeHostInvoice({
+      invoiceId: INVOICE_ID,
+      now: () => AT,
+      port: stripe.port,
+      state: stateAccess(state)
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      outcome: "refused"
+    })
+    expect(stripe.callNames()).toEqual([])
+  })
+
   it("raises one ad-hoc invoice item, finalizes, pays, and records the outcome", async () => {
     const { fee, state } = billableHost()
     const stripe = fakeStripe()
@@ -1461,7 +1545,8 @@ describe("the real Stripe adapter", () => {
       expect.objectContaining({
         auto_advance: false,
         collection_method: "charge_automatically",
-        currency: "usd",
+        currency:
+          LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY.toLowerCase(),
         customer: "cus_live",
         pending_invoice_items_behavior: "exclude"
       }),
@@ -1506,7 +1591,7 @@ describe("the real Stripe adapter", () => {
         amountDueCents: 2_625,
         amountPaidCents: 0,
         amountRemainingCents: 2_625,
-        currency: "USD",
+        currency: LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
         customerId: "cus_live",
         endingBalanceCents: 0,
         id: "in_recovered",

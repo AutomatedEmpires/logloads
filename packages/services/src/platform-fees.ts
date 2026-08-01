@@ -6,6 +6,7 @@ import {
   hostInvoiceSchema,
   invoicePeriodFor,
   invoiceSubtotalCents,
+  LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
   platformFeeEventId,
   platformFeeEventSchema,
   PLATFORM_FEE_BPS,
@@ -72,6 +73,13 @@ import { assertCondition, assertFound, createUuid, nowIso } from "./utils"
  * event namespace so a fee and a bill can never collide on one id.
  */
 const HOST_INVOICE_NAMESPACE = "2d9f6c1a-4b83-4f0e-9a71-6e5c8d3b47f2"
+
+/**
+ * @deprecated Import `LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY` from contracts.
+ * Retained for the existing services package export while callers migrate.
+ */
+export const LEGACY_PLATFORM_FEE_CURRENCY =
+  LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
 
 /**
  * The id of one host's primary bill for one calendar month. Same host, same
@@ -495,6 +503,18 @@ export function accruePlatformFee(
       outcome: "no_basis",
       reason:
         "This assignment has no frozen driver pay and currency, so a fee cannot be derived honestly"
+    }
+  }
+
+  if (
+    frozenDriverPay.currency !==
+    LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
+  ) {
+    return {
+      assignmentId: assignment.id,
+      outcome: "no_basis",
+      reason:
+        `Legacy percentage fees can accrue only for ${LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY} work; this assignment remains unbilled`
     }
   }
 

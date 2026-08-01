@@ -35,6 +35,9 @@ const HOST_ACTOR = "22222222-2222-4222-8222-222222222224"
 const DRIVER_PROFILE = "44444444-4444-4444-8444-444444444441"
 const TRUCK_PROFILE = "77777777-7777-4777-8777-777777777771"
 const TRAILER_PROFILE = "88888888-8888-4888-8888-888888888881"
+const SECOND_TRUCK_PROFILE = "77777777-7777-4777-8777-777777777775"
+const SECOND_TRAILER_PROFILE = "88888888-8888-4888-8888-888888888885"
+const SECOND_COMBINATION = "18181818-1818-4818-8818-181818181815"
 const SEED_LOAD = "cccccccc-cccc-4ccc-8ccc-ccccccccccc3"
 const SEED_SLOT = "dddddddd-dddd-4ddd-8ddd-ddddddddddd4"
 const SEED_WINDOW = "2026-06-05T12:00:00.000Z"
@@ -84,6 +87,71 @@ function claimSeedDirectOffer(services: LogLoadsServices) {
     organizationId: HAULER_ORG,
     truckSlotId: SEED_SLOT
   }, { at: SEED_WINDOW })
+}
+
+function assignSecondRigToDriver(services: LogLoadsServices): void {
+  const combination = services.state.equipmentCombinations.find(
+    (candidate) => candidate.id === SECOND_COMBINATION
+  )
+
+  if (!combination) {
+    throw new Error("The second-rig fixture is missing")
+  }
+
+  combination.assignedDriverProfileId = DRIVER_PROFILE
+  combination.status = "available"
+}
+
+function addSecondRigEvidence(services: LogLoadsServices): {
+  trailerPublicId: string
+  truckPublicId: string
+} {
+  const source = vaultOf(services).filter(
+    (credential) => credential.kind === "truck" || credential.kind === "trailer"
+  )
+  const publicIds = {
+    trailerPublicId: "logloads/driver-credentials/hank/trailer-rig-b",
+    truckPublicId: "logloads/driver-credentials/hank/truck-rig-b"
+  }
+
+  services.state.driverCredentials.push(
+    ...source.map((credential, index) =>
+      driverCredentialSchema.parse({
+        ...credential,
+        documentMedia: credential.documentMedia
+          ? {
+              ...credential.documentMedia,
+              publicId:
+                credential.kind === "truck"
+                  ? publicIds.truckPublicId
+                  : publicIds.trailerPublicId
+            }
+          : null,
+        id: `c8c8c8c8-c8c8-4c8c-8c8c-c8c8c8c8c80${index + 1}`,
+        trailerProfileId:
+          credential.kind === "trailer" ? SECOND_TRAILER_PROFILE : null,
+        truckProfileId:
+          credential.kind === "truck" ? SECOND_TRUCK_PROFILE : null
+      })
+    )
+  )
+
+  return publicIds
+}
+
+function requestSecondRig(services: LogLoadsServices) {
+  return services.requestCapacityWithPolicy(
+    {
+      actorUserId: HAULER_ACTOR,
+      driverProfileId: DRIVER_PROFILE,
+      loadPostingId: SEED_LOAD,
+      organizationId: HAULER_ORG,
+      trailerProfileId: SECOND_TRAILER_PROFILE,
+      truckProfileId: SECOND_TRUCK_PROFILE,
+      truckSlotId: SEED_SLOT
+    },
+    { at: SEED_WINDOW }
+  )
 }
 
 /**
@@ -170,6 +238,8 @@ function addPendingRenewal(services: LogLoadsServices, kind: CredentialKind): vo
     id: "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c901",
     driverProfileId: DRIVER_PROFILE,
     kind,
+    trailerProfileId: kind === "trailer" ? TRAILER_PROFILE : null,
+    truckProfileId: kind === "truck" ? TRUCK_PROFILE : null,
     status: "pending",
     documentMedia: {
       bytes: 486_000,
@@ -299,6 +369,18 @@ describe("the credential gate on requesting capacity", () => {
     expect(assignment.driverProfileId).toBe(DRIVER_PROFILE)
   })
 
+  it("never lets rig A evidence clear the same driver in rig B", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    assignSecondRigToDriver(services)
+    const before = structuredClone(writeFootprint(services))
+
+    const message = refusalMessage(() => requestSecondRig(services))
+
+    expect(message).toContain("truck (not submitted)")
+    expect(message).toContain("trailer (not submitted)")
+    expect(writeFootprint(services)).toEqual(before)
+  })
+
   it("consumes no capacity, reserves no slot and creates no assignment when it refuses", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     emptyTheVault(services)
@@ -365,6 +447,29 @@ describe("the credential gate on the direct-offer claim path", () => {
     expect(claimed.assignment.status).toBe("accepted")
     expect(acceptanceSummaryOf(claimed.assignment.termsSnapshot).credentials.map((entry) => entry.kind))
       .toEqual([...MANDATORY_CREDENTIAL_KINDS])
+  })
+
+  it("never lets rig A evidence clear a direct-offer claim made with rig B", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    assignSecondRigToDriver(services)
+    const before = structuredClone(writeFootprint(services))
+
+    const message = refusalMessage(() =>
+      services.claimDirectOffer(
+        {
+          actorUserId: HOST_ACTOR,
+          directOfferId: DIRECT_OFFER,
+          equipmentCombinationId: SECOND_COMBINATION,
+          organizationId: HAULER_ORG,
+          truckSlotId: SEED_SLOT
+        },
+        { at: SEED_WINDOW }
+      )
+    )
+
+    expect(message).toContain("truck (not submitted)")
+    expect(message).toContain("trailer (not submitted)")
+    expect(writeFootprint(services)).toEqual(before)
   })
 })
 
@@ -440,6 +545,30 @@ describe("the credential summary sent to the host with an acceptance", () => {
     expect(serialized).toContain(trailerDocument)
   })
 
+  it("snapshots only the exact rig accepted by the host", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    assignSecondRigToDriver(services)
+    const rigA = {
+      trailer: documentPublicId(services, "trailer"),
+      truck: documentPublicId(services, "truck")
+    }
+    const rigB = addSecondRigEvidence(services)
+    const requested = requestSecondRig(services)
+    const accepted = services.approveCapacityRequest({
+      actorUserId: HOST_ACTOR,
+      assignmentId: requested.id,
+      organizationId: HOST_ORG
+    })
+    const serialized = JSON.stringify(
+      acceptanceSummaryOf(accepted.assignment.termsSnapshot)
+    )
+
+    expect(serialized).toContain(rigB.truckPublicId)
+    expect(serialized).toContain(rigB.trailerPublicId)
+    expect(serialized).not.toContain(rigA.truck)
+    expect(serialized).not.toContain(rigA.trailer)
+  })
+
   it("states what LogLoads actually did, in the contract's own words", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
 
@@ -495,6 +624,37 @@ describe("the credential gate at the moment of acceptance", () => {
     expect(message).toContain(`insurance (expired ${LAPSED_AT})`)
     // Nothing reached accepted, and no trip, route pack or slot reservation was
     // minted on the way to being refused.
+    expect({
+      assignments: services.state.assignments.map((candidate) => candidate.status),
+      routePacks: services.state.routePacks.length,
+      trips: services.state.tripsV2.length
+    }).toEqual(before)
+  })
+
+  it("rechecks the requested rig when its evidence disappears while rig A remains valid", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    assignSecondRigToDriver(services)
+    addSecondRigEvidence(services)
+    const requested = requestSecondRig(services)
+
+    services.state.driverCredentials = services.state.driverCredentials.filter(
+      (credential) => credential.trailerProfileId !== SECOND_TRAILER_PROFILE
+    )
+    const before = {
+      assignments: services.state.assignments.map((candidate) => candidate.status),
+      routePacks: services.state.routePacks.length,
+      trips: services.state.tripsV2.length
+    }
+
+    const message = refusalMessage(() =>
+      services.approveCapacityRequest({
+        actorUserId: HOST_ACTOR,
+        assignmentId: requested.id,
+        organizationId: HOST_ORG
+      })
+    )
+
+    expect(message).toContain("trailer (not submitted)")
     expect({
       assignments: services.state.assignments.map((candidate) => candidate.status),
       routePacks: services.state.routePacks.length,
