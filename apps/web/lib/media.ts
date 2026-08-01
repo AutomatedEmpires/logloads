@@ -36,10 +36,32 @@ function environment() {
   return config
 }
 
+const STORAGE_NETWORK_TIMEOUT_MS = 45_000
+
+/**
+ * The service-role storage client rides the same network ceiling as the
+ * browser's signed-upload client: a stalled provider response must fail the
+ * verification request rather than hold it open indefinitely.
+ */
+function fetchWithStorageTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit = {}
+): Promise<Response> {
+  const timeoutSignal = AbortSignal.timeout(STORAGE_NETWORK_TIMEOUT_MS)
+
+  return fetch(input, {
+    ...init,
+    signal: init.signal
+      ? AbortSignal.any([init.signal, timeoutSignal])
+      : timeoutSignal
+  })
+}
+
 function supabaseStorage() {
   const config = environment()
   const client = createClient(config.url, config.serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false }
+    auth: { autoRefreshToken: false, persistSession: false },
+    global: { fetch: fetchWithStorageTimeout }
   })
 
   return { client, config }

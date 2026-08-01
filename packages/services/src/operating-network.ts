@@ -3060,6 +3060,13 @@ export function attachTripDocument(state: LogLoadsDatabaseState, input: AttachTr
     return existing
   }
 
+  // Legacy provider literals stay parseable so older stored snapshots remain
+  // readable, but a NEW document must ride the active provider only.
+  assertCondition(
+    media.provider === "supabase",
+    "Trip documents must use LogLoads' Supabase media storage"
+  )
+
   const document = tripDocumentSchema.parse({
     // Deliberately not caller-supplied. The asset's own facts live on `media`;
     // an open metadata bag on the input would be a way back in for exactly the

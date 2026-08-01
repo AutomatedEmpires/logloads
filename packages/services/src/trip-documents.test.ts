@@ -156,6 +156,27 @@ describe("attaching trip documents", () => {
     expect(services.listTripDocuments(second.id)).toHaveLength(0)
   })
 
+  it("refuses to file a new document on a retired provider", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { trip } = bookHaul(services)
+    // Legacy 'cloudinary' stays parseable so old snapshots remain readable —
+    // that read compatibility must not become a write path for new records.
+    const media = { ...stubTripDocumentMedia(trip.id), provider: "cloudinary" as const }
+
+    expect(() =>
+      services.attachTripDocument({
+        actorUserId: HAULER_DRIVER_ACTOR,
+        filename: "scale-ticket.jpg",
+        media,
+        organizationId: HAULER_ORG,
+        tripId: trip.id,
+        type: "scale_ticket"
+      })
+    ).toThrow(/Supabase media storage/)
+
+    expect(services.listTripDocuments(trip.id)).toHaveLength(0)
+  })
+
   it("prevents a driver from signing or attaching proof to a coworker's haul", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const { trip } = bookHaul(services)

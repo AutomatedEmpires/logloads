@@ -41,7 +41,7 @@ const checks = [
   },
   {
     message: "Supabase Storage is the only active private-media provider. Cloudinary runtime imports, environment switches, provider branches, and dependencies are retired.",
-    pattern: /(?:(?:process\.env|environment)\.(?:LOGLOADS_CLOUDINARY|CLOUDINARY)_[A-Z0-9_]+\b|from\s+["']cloudinary["']|import\(\s*["']cloudinary["']\s*\)|["']cloudinary["']\s*:|\bprovider\s*(?:===|!==|:)\s*["']cloudinary["'])/g,
+    pattern: /(?:(?:process\.env|environment)\.(?:LOGLOADS_CLOUDINARY|CLOUDINARY)_[A-Z0-9_]+\b|(?:process\.env|environment)\[\s*["'](?:LOGLOADS_CLOUDINARY|CLOUDINARY)_[A-Z0-9_]+["']\s*\]|from\s+["']cloudinary["']|import\(\s*["']cloudinary["']\s*\)|require\(\s*["']cloudinary["']\s*\)|["']cloudinary["']\s*:|\bprovider\s*(?:===|!==|:)\s*["']cloudinary["'])/g,
     include: (file) => {
       const runtimeSource = file.startsWith("apps/") || file.startsWith("packages/")
       const testSource =
