@@ -151,7 +151,7 @@ test("the paid Pilot is invitation-only and is not a public plan card", async ({
   await expect(pilot).toContainText("exact 90-day operating engagement")
   await expect(pilot).toContainText("$4,500 minimum base commitment")
   await expect(pilot).toContainText(
-    "Thirty completed Network movements are pooled across the engagement"
+    "30 completed Network movements are pooled across the engagement"
   )
   await expect(pilot).toContainText(
     "additional completed movements are $150 each"
