@@ -317,7 +317,7 @@ export async function cancelAssignmentAction(input: {
 }
 
 /**
- * Attaches proof the browser has already uploaded to Cloudinary.
+ * Attaches proof the browser has already uploaded to private Supabase Storage.
  *
  * Order matters. Authorize against the trip first, so an unauthorized caller
  * never reaches the provider; check the public id against the namespace that

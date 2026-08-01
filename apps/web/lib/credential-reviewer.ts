@@ -48,7 +48,7 @@ import { z } from "zod"
  * ⚠️ OPERATIONAL CONSEQUENCE OF FAILING CLOSED: with `ANTHROPIC_API_KEY` unset,
  * every review returns `model_not_configured`, every credential stays `pending`,
  * and therefore NO driver on the platform can accept ANY load. The key is a
- * hauling launch gate, exactly like `CLOUDINARY_*`. It is not a soft dependency.
+ * hauling launch gate, exactly like the private-storage gate. It is not a soft dependency.
  */
 
 // ── Provider wiring ───────────────────────────────────────────────────────────

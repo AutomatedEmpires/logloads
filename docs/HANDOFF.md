@@ -1,5 +1,12 @@
 # LogLoads — Engineering Handoff
 
+> **Historical snapshot, not current provider or launch truth.** This handoff is
+> preserved for its 2026-07-17 engineering evidence. Cloudinary-specific branch,
+> environment, and launch notes below were superseded when LogLoads moved
+> private media to Supabase Storage. Use `AGENTS.md`,
+> `docs/ENV_CONTRACT.md`, and the newest `docs/DECISIONS.md` entry for current
+> authority.
+
 **As of 2026-07-17. Canonical `main` = `c58d432`.**
 Written for the next agent (Codex or otherwise) picking up the LogLoads product build.
 
@@ -335,4 +342,3 @@ or an empty state that blamed a support desk that does not exist.
 The corollary is uncomfortable and worth inheriting: **the tests were green every single
 time before each of those slices.** Green CI told us nothing about whether the product was
 honest. Independent review did.
-

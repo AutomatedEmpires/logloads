@@ -48,7 +48,7 @@ fails closed rather than silently replacing missing production data with seed da
 | Internal billing verification | `STRIPE_PRICE_INTERNAL_BILLING_TEST`, `LOGLOADS_INTERNAL_BILLING_SMOKE`, `LOGLOADS_INTERNAL_BILLING_SMOKE_ALLOWED_USER_IDS`, `LOGLOADS_INTERNAL_BILLING_SMOKE_ALLOWED_ORGANIZATION_IDS` |
 | Collection switches | `LOGLOADS_FEE_COLLECTION` for preserved legacy invoices; `LOGLOADS_SUBSCRIPTION_COLLECTION` plus `LOGLOADS_SUBSCRIPTION_ALLOWED_ORGANIZATION_IDS` for new subscription money; independent `LOGLOADS_DISPATCH_SELF_SERVE` for Dispatch Pro self-serve |
 | Credential review | `ANTHROPIC_API_KEY`; optional pinned override `CREDENTIAL_REVIEW_MODEL` |
-| Private media | `LOGLOADS_MEDIA_STORAGE=supabase`, `LOGLOADS_MEDIA_BUCKET`, `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` |
+| Private media | `LOGLOADS_MEDIA_STORAGE=supabase`, `LOGLOADS_MEDIA_BUCKET`, `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF`, and preferred `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (or supported compatibility alias `NEXT_PUBLIC_SUPABASE_ANON_KEY`; the preferred name wins if both exist) |
 | Email | `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_REPLY_TO`, `SUPPORT_EMAIL`, `LOGLOADS_CONTACT_EMAIL` |
 | Analytics | `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` |
 | Errors | `SENTRY_DSN` |
@@ -116,14 +116,23 @@ customer ids, or webhook material.
 Private media is active only when `LOGLOADS_MEDIA_STORAGE` is exactly `supabase`;
 the configured Supabase URL is HTTPS on `*.supabase.co`; its project reference
 exactly matches `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF`; the server-only service
-role and browser publishable key are present; and the bucket name is valid. The
-production bucket is private, limited to 10 MiB, and accepts JPEG, PNG, and WebP.
+role and either the preferred browser publishable key or its compatibility alias
+are present; and the bucket name is valid. The production bucket is private,
+limited to 10,000,000 bytes, and accepts JPEG, PNG, and WebP.
 
-The browser receives a short-lived token for one object, uploads directly to that
-private bucket, and then the server reads the object back and validates its image
-type and dimensions before committing the credential, equipment photo, or trip
-document. Authenticated delivery uses short-lived signed URLs. If any part of the
-configuration is missing or mismatched, `/api/health` reports
+The preferred browser credential name is
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; `NEXT_PUBLIC_SUPABASE_ANON_KEY` remains
+a compatibility alias and does not need to be configured alongside it. If both
+exist, the publishable-key value is authoritative. The service-role key remains
+server-only. Whichever browser key is used must belong to the same project named
+by `SUPABASE_URL`.
+
+The browser receives a short-lived token for one generated object path, uploads
+directly to that private bucket with upsert disabled, and then the server reads
+the object back and validates its byte count, image type, and dimensions before
+committing the credential, equipment photo, or trip document. Authenticated
+delivery uses five-minute signed URLs after application authorization. If any
+part of the configuration is missing or mismatched, `/api/health` reports
 `integrations.media=false` and every media path fails closed with a retryable
 unavailable response.
 
@@ -132,10 +141,14 @@ reach `completed` while media is unavailable. Before production cutover, verify
 the exact deployment SHA, `integrations.media=true`, and a synthetic signed
 upload → server read-back → authenticated delivery round trip.
 
-The previous Cloudinary adapter remains only as dormant compatibility code. It is
-not an activation path for LogLoads: every `CLOUDINARY_*` and
+Cloudinary has no active adapter, dependency, environment contract, or fallback
+in LogLoads. Historical `provider: "cloudinary"` media references and
+`storageProvider: "cloudinary"` trip-document metadata remain parseable only so
+retained snapshots do not become structurally unreadable. Their filename, type,
+and workflow metadata remains readable, but current upload, verification, and
+delivery paths neither create nor activate those provider values; a forced
+legacy-object delivery fails unavailable. Every `CLOUDINARY_*` and
 `LOGLOADS_CLOUDINARY_*` variable must remain unset in LogLoads environments.
-Known foreign Cloudinary tenants are still denied in code as a second boundary.
 
 ## Must not be set in production
 

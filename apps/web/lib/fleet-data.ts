@@ -6,6 +6,7 @@ import {
 } from "@logloads/services"
 
 import type { NetworkLoadView, NetworkView } from "./network"
+import { isViewableMediaReference } from "./media-reference"
 import { services } from "./services"
 import { getCockpitContext, shellAccountFor, type ShellAccount } from "./v3"
 import { formatDateTime, formatHuman, shortLane, tripStatusLabel } from "./v3-shared"
@@ -276,7 +277,13 @@ export async function getFleetCockpitData(): Promise<FleetCockpitData> {
             (candidate) => candidate.assignedDriverProfileId === driver.id && candidate.status !== "inactive"
           )
 
-          return active && state.truckProfiles.find((truck) => truck.id === active.truckProfileId)?.photo
+          return isViewableMediaReference(
+            active
+              ? state.truckProfiles.find(
+                  (truck) => truck.id === active.truckProfileId
+                )?.photo
+              : null
+          )
         })()
       ),
       homeBase: driver.homeBase,

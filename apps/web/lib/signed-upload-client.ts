@@ -2,24 +2,15 @@
 
 import { createClient } from "@supabase/supabase-js"
 
-export type SignedUploadResponse =
-  | {
-      apiKey: string
-      parameters: Record<string, string | number>
-      provider: "cloudinary"
-      publicId: string
-      signature: string
-      uploadUrl: string
-    }
-  | {
-      anonKey: string
-      bucket: string
-      path: string
-      provider: "supabase"
-      publicId: string
-      supabaseUrl: string
-      token: string
-    }
+export interface SignedUploadResponse {
+  anonKey: string
+  bucket: string
+  path: string
+  provider: "supabase"
+  publicId: string
+  supabaseUrl: string
+  token: string
+}
 
 const NETWORK_TIMEOUT_MS = 45_000
 
@@ -36,7 +27,7 @@ export async function fetchWithTimeout(
   const controller = new AbortController()
   let timedOut = false
   const abortFromCaller = () => controller.abort()
-  const timeout = window.setTimeout(() => {
+  const timeout = globalThis.setTimeout(() => {
     timedOut = true
     controller.abort()
   }, timeoutMs)
@@ -56,16 +47,8 @@ export async function fetchWithTimeout(
 
     throw error
   } finally {
-    window.clearTimeout(timeout)
+    globalThis.clearTimeout(timeout)
     init.signal?.removeEventListener("abort", abortFromCaller)
-  }
-}
-
-async function readJson<T>(response: Response): Promise<T | null> {
-  try {
-    return (await response.json()) as T
-  } catch {
-    return null
   }
 }
 
@@ -78,44 +61,19 @@ export async function uploadSignedFile(
   signature: SignedUploadResponse,
   file: File
 ): Promise<string> {
-  if (signature.provider === "supabase") {
-    const client = createClient(signature.supabaseUrl, signature.anonKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-      global: { fetch: fetchWithTimeout }
-    })
-    const { error } = await client.storage
-      .from(signature.bucket)
-      .uploadToSignedUrl(signature.path, signature.token, file, {
-        contentType: file.type
-      })
-
-    if (error) {
-      throw new Error(error.message || "The file could not be uploaded.")
-    }
-
-    return signature.publicId
-  }
-
-  const uploadBody = new FormData()
-  uploadBody.append("file", file)
-  uploadBody.append("api_key", signature.apiKey)
-  uploadBody.append("signature", signature.signature)
-
-  for (const [key, value] of Object.entries(signature.parameters)) {
-    uploadBody.append(key, String(value))
-  }
-
-  const providerResponse = await fetchWithTimeout(signature.uploadUrl, {
-    body: uploadBody,
-    method: "POST"
+  const client = createClient(signature.supabaseUrl, signature.anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+    global: { fetch: fetchWithTimeout }
   })
-  const asset = await readJson<{ error?: { message?: string }; public_id?: string }>(
-    providerResponse
-  )
+  const { error } = await client.storage
+    .from(signature.bucket)
+    .uploadToSignedUrl(signature.path, signature.token, file, {
+      contentType: file.type
+    })
 
-  if (!providerResponse.ok || !asset?.public_id) {
-    throw new Error(asset?.error?.message ?? "The file could not be uploaded.")
+  if (error) {
+    throw new Error(error.message || "The file could not be uploaded.")
   }
 
-  return asset.public_id
+  return signature.publicId
 }
