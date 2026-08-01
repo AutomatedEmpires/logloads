@@ -1175,6 +1175,11 @@ dd { margin: 0; font-weight: 900; text-align: right; }
   .radio-card:has(input:checked),
   .plan-card--selectable:has(input:checked) { outline: 2px solid Highlight; }
   .brand-mark { border: 2px solid CanvasText; }
+  .action-link:hover,
+  .action-link:active { transform: none; box-shadow: none; }
+  .ui-button:disabled,
+  button.action-link:disabled,
+  .action-link[aria-disabled="true"] { opacity: 1; color: GrayText; border-color: GrayText; }
 }
 
 .action-link:hover { transform: translateY(-1px); box-shadow: var(--shadow-2); }

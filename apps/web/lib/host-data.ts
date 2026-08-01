@@ -77,8 +77,14 @@ function sortedOptions(values: Set<string>): RequirementOption[] {
 
 export function getHostPublishingOptions(organizationId: string): HostPublishingOptions {
   const state = services.state
+  // Mirrors `assertHostCanPublish`: only accounts already effective decide the
+  // commercial model, so a queued future-dated account cannot make the current
+  // state read as ambiguous here while the service still publishes.
+  const now = Date.now()
   const billingAccounts = state.organizationBillingAccounts.filter(
-    (account) => account.organizationId === organizationId
+    (account) =>
+      account.organizationId === organizationId &&
+      Date.parse(account.effectiveAt) <= now
   )
   const billingAccount = billingAccounts.length === 1 ? billingAccounts[0]! : null
   const subscription = billingAccount?.subscriptionId

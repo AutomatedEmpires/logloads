@@ -217,13 +217,18 @@ function HostReadiness({
           <p className="eyebrow">First movement launchpad</p>
           <h2 id="host-readiness-title">{title}</h2>
           <p>
-            Build the operating record now. Live Network publication stays off
-            until LogLoads completes assisted activation with you.
+            {activationComplete
+              ? "Activation is recorded for this workspace. Finish the operating record to put your first movement live."
+              : "Build the operating record now. Live Network publication stays off until LogLoads completes assisted activation with you."}
           </p>
         </div>
         <div className="host-readiness__progress">
           <strong>{facts.readyCount} of 4 operating steps ready</strong>
-          <span>Assisted activation is a separate final step.</span>
+          <span>
+            {activationComplete
+              ? "Assisted activation is complete for this workspace."
+              : "Assisted activation is a separate final step."}
+          </span>
           <div
             aria-hidden
             className="host-readiness__meter"
