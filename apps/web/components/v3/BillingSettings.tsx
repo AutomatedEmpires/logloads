@@ -25,7 +25,7 @@ import type {
 } from "@/lib/subscription-billing-data"
 import type { VerificationRecordView } from "@/lib/verification-data"
 import { AppShell, EmptyState, SectionHeader, type ShellAccount } from "./Shells"
-import { InviteMemberForm, RevokeInvitationButton } from "./TeamActions"
+import { InviteMemberForm, MemberControls, RevokeInvitationButton } from "./TeamActions"
 import { VerificationSubmit, type VerificationTypeOption } from "./VerificationSubmit"
 
 type CockpitRole = "fleet" | "host"
@@ -1220,6 +1220,7 @@ export function SettingsPage({
   canManageMembers,
   inviteRoleOptions,
   role,
+  selfUserId,
   settings,
   verifications
 }: {
@@ -1227,6 +1228,7 @@ export function SettingsPage({
   canManageMembers: boolean
   inviteRoleOptions: Array<{ label: string; value: string }>
   role: CockpitRole
+  selfUserId: string
   settings: SettingsView
   verifications: VerificationRecordView[]
 }) {
@@ -1275,7 +1277,16 @@ export function SettingsPage({
                     <strong>{member.name}</strong>
                     <span>{member.roleLabel}</span>
                   </div>
-                  <Badge tone={member.statusTone}>{member.statusLabel}</Badge>
+                  <div className="team-list__side">
+                    <Badge tone={member.statusTone}>{member.statusLabel}</Badge>
+                    {canManageMembers ? (
+                      <MemberControls
+                        member={member}
+                        roleOptions={inviteRoleOptions}
+                        selfUserId={selfUserId}
+                      />
+                    ) : null}
+                  </div>
                 </li>
               ))}
             </ul>

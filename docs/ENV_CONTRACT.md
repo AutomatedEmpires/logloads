@@ -14,6 +14,7 @@ key and all secret/key values remain server-only.
 | `SUPABASE_SERVICE_ROLE_KEY` | yes | canonical-state reads fail closed |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | no | real public auth is unavailable |
 | `CLERK_SECRET_KEY` | yes | server session verification is unavailable |
+| `LOGLOADS_PLATFORM_ADMIN_CLERK_IDS` | no | no platform admin exists under real Clerk identity |
 
 `LOGLOADS_STATE_FILE` is a non-production convenience only. It is neither required
 nor authoritative on Vercel.

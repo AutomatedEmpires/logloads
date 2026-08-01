@@ -415,8 +415,11 @@ export interface OrganizationIdentityView {
 
 export interface TeamMemberView {
   id: string
+  userId: string
   name: string
+  role: string
   roleLabel: string
+  status: string
   statusLabel: string
   statusTone: PlanTone
 }
@@ -474,9 +477,12 @@ export function getSettingsView(network: NetworkView): SettingsView {
       return {
         id: membership.id,
         name: profile?.fullName ?? "Pending member",
+        role: membership.role,
         roleLabel: MEMBER_ROLE_LABELS[membership.role] ?? planFeatureName(membership.role),
+        status: membership.status,
         statusLabel: status.label,
-        statusTone: status.tone
+        statusTone: status.tone,
+        userId: membership.userId
       }
     })
     .sort((left, right) => left.name.localeCompare(right.name))

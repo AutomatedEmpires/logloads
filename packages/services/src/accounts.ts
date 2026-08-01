@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 
 import {
+  auditEventSchema,
   availabilityWindowSchema,
   dispatcherProfileSchema,
   driverProfileSchema,
@@ -419,6 +420,95 @@ export function createAccount(state: LogLoadsDatabaseState, rawInput: unknown): 
   }
 
   return context
+}
+
+const bindPlatformAdminInputSchema = z.object({
+  clerkUserId: z.string().trim().min(1),
+  email: z.string().email().optional().nullable(),
+  fullName: z.string().trim().min(1).max(120).optional().nullable()
+})
+
+/**
+ * Binds an allowlisted Clerk identity to platform-admin authority. The
+ * allowlist itself is enforced at session build from the environment, so
+ * removing an id there revokes admin without data surgery — this function only
+ * makes the grant side real and auditable. Idempotent by construction:
+ * - a profile already carrying this Clerk id is promoted to admin if needed;
+ * - otherwise the seed admin profile is claimed while it is still unbound to
+ *   any real Clerk user (which also makes everything addressed to it — like
+ *   contact inquiries — reach a real person);
+ * - otherwise a fresh admin profile is provisioned.
+ */
+export function bindPlatformAdmin(state: LogLoadsDatabaseState, rawInput: unknown): User {
+  const input = bindPlatformAdminInputSchema.parse(rawInput)
+  const now = new Date().toISOString()
+
+  const audit = (profile: User, via: string): void => {
+    state.auditEvents.push(auditEventSchema.parse({
+      action: "platform_admin_granted",
+      actorUserId: profile.id,
+      createdAt: now,
+      entityId: profile.id,
+      entityType: "user",
+      id: randomUUID(),
+      metadata: { clerkUserId: input.clerkUserId, via }
+    }))
+  }
+
+  const existing = state.profiles.find((candidate) => candidate.clerkUserId === input.clerkUserId)
+
+  if (existing) {
+    if (existing.role === "admin" && existing.isActive) {
+      return existing
+    }
+
+    existing.role = "admin"
+    existing.isActive = true
+    existing.updatedAt = now
+    audit(existing, "existing_profile_promoted")
+
+    return existing
+  }
+
+  const seedAdmin = state.profiles.find(
+    (candidate) => candidate.role === "admin" && candidate.clerkUserId === "clerk-admin-1"
+  )
+
+  if (seedAdmin) {
+    seedAdmin.clerkUserId = input.clerkUserId
+
+    if (input.fullName) {
+      seedAdmin.fullName = input.fullName
+    }
+
+    if (input.email) {
+      seedAdmin.email = input.email
+    }
+
+    seedAdmin.updatedAt = now
+    audit(seedAdmin, "seed_admin_claimed")
+
+    return seedAdmin
+  }
+
+  const profile = userSchema.parse({
+    clerkUserId: input.clerkUserId,
+    companyId: null,
+    createdAt: now,
+    email: input.email ?? null,
+    fullName: input.fullName ?? "Platform administrator",
+    id: randomUUID(),
+    isActive: true,
+    phone: "000-000-0000",
+    role: "admin",
+    updatedAt: now,
+    verificationStatus: "verified"
+  })
+
+  state.profiles.push(profile)
+  audit(profile, "admin_profile_provisioned")
+
+  return profile
 }
 
 export function linkProfileToClerkUser(state: LogLoadsDatabaseState, userId: string, clerkUserId: string): User {

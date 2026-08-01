@@ -383,17 +383,40 @@ export function acceptInvitationForExistingUser(
   }
 
   const timestamp = nowIso()
-  const membership = organizationMembershipSchema.parse({
-    createdAt: timestamp,
-    id: randomUUID(),
-    organizationId: invitation.organizationId,
-    role: invitation.invitedRole,
-    status: "active",
-    updatedAt: timestamp,
-    userId: actor.id
-  })
+  // A previously removed or suspended member re-joining reactivates their
+  // original row — (organization, user) stays unique, so nothing that looks a
+  // membership up by that pair can land on a stale terminal row.
+  const priorMembership = state.organizationMemberships.find(
+    (candidate) =>
+      candidate.organizationId === invitation.organizationId &&
+      candidate.userId === actor.id
+  )
+  const membership = organizationMembershipSchema.parse(
+    priorMembership
+      ? {
+          ...priorMembership,
+          role: invitation.invitedRole,
+          status: "active",
+          updatedAt: timestamp
+        }
+      : {
+          createdAt: timestamp,
+          id: randomUUID(),
+          organizationId: invitation.organizationId,
+          role: invitation.invitedRole,
+          status: "active",
+          updatedAt: timestamp,
+          userId: actor.id
+        }
+  )
 
-  state.organizationMemberships.push(membership)
+  if (priorMembership) {
+    state.organizationMemberships = state.organizationMemberships.map((candidate) =>
+      candidate.id === membership.id ? membership : candidate
+    )
+  } else {
+    state.organizationMemberships.push(membership)
+  }
 
   if (invitation.invitedRole === "driver") {
     ensureDriverProfile(state, actor.id, organization, timestamp)

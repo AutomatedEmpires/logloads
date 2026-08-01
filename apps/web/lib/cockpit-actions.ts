@@ -818,6 +818,90 @@ export async function revokeOrganizationInvitationAction(input: { invitationId: 
   }
 }
 
+export async function changeMemberRoleAction(input: {
+  memberUserId: string
+  role: string
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    await commit(["/fleet", "/host"], (draft) =>
+      draft.changeOrganizationMemberRole({
+        actorUserId: actor.profile.id,
+        memberUserId: input.memberUserId,
+        organizationId: actorOrganizationId(actor),
+        role: input.role
+      })
+    )
+
+    captureServerEvent("member_role_changed", actor.profile.id, { role: input.role })
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function suspendMemberAction(input: { memberUserId: string }): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    await commit(["/fleet", "/host"], (draft) =>
+      draft.suspendOrganizationMember({
+        actorUserId: actor.profile.id,
+        memberUserId: input.memberUserId,
+        organizationId: actorOrganizationId(actor)
+      })
+    )
+
+    captureServerEvent("member_suspended", actor.profile.id, {})
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function reactivateMemberAction(input: { memberUserId: string }): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    await commit(["/fleet", "/host"], (draft) =>
+      draft.reactivateOrganizationMember({
+        actorUserId: actor.profile.id,
+        memberUserId: input.memberUserId,
+        organizationId: actorOrganizationId(actor)
+      })
+    )
+
+    captureServerEvent("member_reactivated", actor.profile.id, {})
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function removeMemberAction(input: { memberUserId: string }): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    await commit(["/fleet", "/host"], (draft) =>
+      draft.removeOrganizationMember({
+        actorUserId: actor.profile.id,
+        memberUserId: input.memberUserId,
+        organizationId: actorOrganizationId(actor)
+      })
+    )
+
+    captureServerEvent("member_removed", actor.profile.id, {})
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
 export async function featureTruckPhotoAction(input: { featured: boolean }): Promise<ActionResult> {
   try {
     const actor = await requireActor()

@@ -1,6 +1,7 @@
 import { type LogLoadsDatabaseState } from "@logloads/db"
 
 import {
+  bindPlatformAdmin,
   createAccount,
   findProfileByClerkId,
   findProfileByEmail,
@@ -63,6 +64,12 @@ import {
   listPendingInvitationsForOrganization,
   revokeOrganizationInvitation
 } from "./invitations"
+import {
+  changeOrganizationMemberRole,
+  reactivateOrganizationMember,
+  removeOrganizationMember,
+  suspendOrganizationMember
+} from "./team"
 import { createLoadPosting, getLoadById, listOpenLoads, updateLoadPosting } from "./loads"
 import {
   createNotification,
@@ -383,6 +390,14 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
       listPendingInvitationsForOrganization(state, organizationId),
     revokeOrganizationInvitation: (input: Parameters<typeof revokeOrganizationInvitation>[1]) =>
       revokeOrganizationInvitation(state, input),
+    changeOrganizationMemberRole: (input: Parameters<typeof changeOrganizationMemberRole>[1]) =>
+      changeOrganizationMemberRole(state, input),
+    suspendOrganizationMember: (input: Parameters<typeof suspendOrganizationMember>[1]) =>
+      suspendOrganizationMember(state, input),
+    reactivateOrganizationMember: (input: Parameters<typeof reactivateOrganizationMember>[1]) =>
+      reactivateOrganizationMember(state, input),
+    removeOrganizationMember: (input: Parameters<typeof removeOrganizationMember>[1]) =>
+      removeOrganizationMember(state, input),
     createThread: (input: unknown) => createThread(state, input),
     createSupportRequest: (
       input: Parameters<typeof createSupportRequest>[1],
@@ -393,6 +408,7 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     getAccountContext: (userId: string) => getAccountContext(state, userId),
     getDriverMediaTarget: (input: Parameters<typeof getDriverMediaTarget>[1]) => getDriverMediaTarget(state, input),
     linkProfileToClerkUser: (userId: string, clerkUserId: string) => linkProfileToClerkUser(state, userId, clerkUserId),
+    bindPlatformAdmin: (input: Parameters<typeof bindPlatformAdmin>[1]) => bindPlatformAdmin(state, input),
     listThreadMessages: (threadId: string, viewerUserId: string) => listThreadMessages(state, threadId, viewerUserId),
     listSupportRequestsForAdmin: (reviewerUserId: string) => listSupportRequestsForAdmin(state, reviewerUserId),
     listSupportRequestsForReporter: (reporterUserId: string) => listSupportRequestsForReporter(state, reporterUserId),

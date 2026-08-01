@@ -9,7 +9,8 @@ import { redirect } from "next/navigation"
 import { cache } from "react"
 
 import { decideDevSession } from "./demo-mode"
-import { refreshState, services } from "./services"
+import { isPlatformAdminAllowed, platformAdminClerkAllowlist } from "./platform-admin"
+import { mutateState, refreshState, services } from "./services"
 import {
   canAccessCockpit,
   homePathFor,
@@ -132,7 +133,24 @@ async function resolveClerkProfile(): Promise<User | null> {
     return null
   }
 
-  return services.findProfileByClerkId(clerkUserId) ?? null
+  const existing = services.findProfileByClerkId(clerkUserId) ?? null
+
+  // An allowlisted Clerk identity is bound to platform-admin authority on
+  // first contact. The bind is idempotent, so repeating it on a re-render is
+  // harmless, and the audited grant lives in the service, not here.
+  if (platformAdminClerkAllowlist().has(clerkUserId) && existing?.role !== "admin") {
+    const identity = await getClerkIdentity()
+
+    return await mutateState((draft) =>
+      draft.bindPlatformAdmin({
+        clerkUserId,
+        email: identity?.email || null,
+        fullName: identity?.fullName || null
+      })
+    )
+  }
+
+  return existing
 }
 
 function buildSessionActor(profile: User, requestedOrganizationId: string | null): SessionActor {
@@ -146,7 +164,7 @@ function buildSessionActor(profile: User, requestedOrganizationId: string | null
     activeMembership: active?.membership ?? null,
     activeOrganization: active?.organization ?? null,
     driverProfileId: account?.driverProfileId ?? null,
-    isPlatformAdmin: profile.role === "admin",
+    isPlatformAdmin: isPlatformAdminAllowed(profile, isClerkConfigured()),
     memberships,
     profile
   }

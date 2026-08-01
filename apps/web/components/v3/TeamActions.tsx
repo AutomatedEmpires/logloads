@@ -3,8 +3,12 @@
 import { useState, useTransition, type FormEvent } from "react"
 
 import {
+  changeMemberRoleAction,
   createOrganizationInvitationAction,
-  revokeOrganizationInvitationAction
+  reactivateMemberAction,
+  removeMemberAction,
+  revokeOrganizationInvitationAction,
+  suspendMemberAction
 } from "@/lib/cockpit-actions"
 
 /**
@@ -76,6 +80,121 @@ export function InviteMemberForm({
       {saved ? <span className="action-note" role="status">{saved}</span> : null}
       {error ? <p className="action-error" role="alert">{error}</p> : null}
     </form>
+  )
+}
+
+/**
+ * Per-member management controls for the Settings Team panel. Every rule is
+ * enforced in the service (permission, last-owner protection, self-management
+ * refusals); this surface only keeps the obviously-refused actions out of
+ * reach — your own row carries no controls, because leaving a workspace is a
+ * different feature from managing its members.
+ */
+export function MemberControls({
+  member,
+  roleOptions,
+  selfUserId
+}: {
+  member: { userId: string; role: string; status: string }
+  roleOptions: Array<{ label: string; value: string }>
+  selfUserId: string
+}) {
+  const [error, setError] = useState<string | null>(null)
+  const [confirmingRemove, setConfirmingRemove] = useState(false)
+  const [pending, startTransition] = useTransition()
+
+  if (member.userId === selfUserId) {
+    return <span className="action-note">Your membership</span>
+  }
+
+  const run = (action: () => Promise<{ ok: boolean; error: string | null }>) => {
+    setError(null)
+    startTransition(async () => {
+      const result = await action()
+
+      if (!result.ok) {
+        setError(result.error ?? "That change could not be made. Try again.")
+      }
+
+      setConfirmingRemove(false)
+    })
+  }
+
+  return (
+    <div className="member-controls">
+      <div className="member-controls__row">
+        <label className="member-controls__role">
+          <select
+            aria-label="Change role"
+            defaultValue={member.role}
+            disabled={pending}
+            onChange={(event) => {
+              const role = event.target.value
+
+              if (role !== member.role) {
+                run(() => changeMemberRoleAction({ memberUserId: member.userId, role }))
+              }
+            }}
+          >
+            {roleOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        {member.status === "active" ? (
+          <button
+            className="action-link action-link--secondary"
+            disabled={pending}
+            onClick={() => run(() => suspendMemberAction({ memberUserId: member.userId }))}
+            type="button"
+          >
+            Suspend
+          </button>
+        ) : null}
+        {member.status === "suspended" ? (
+          <button
+            className="action-link action-link--secondary"
+            disabled={pending}
+            onClick={() => run(() => reactivateMemberAction({ memberUserId: member.userId }))}
+            type="button"
+          >
+            Restore access
+          </button>
+        ) : null}
+        {confirmingRemove ? (
+          <>
+            <button
+              className="action-link action-link--secondary"
+              disabled={pending}
+              onClick={() => run(() => removeMemberAction({ memberUserId: member.userId }))}
+              type="button"
+            >
+              Confirm removal
+            </button>
+            <button
+              className="cancel-haul__keep"
+              disabled={pending}
+              onClick={() => setConfirmingRemove(false)}
+              type="button"
+            >
+              Keep member
+            </button>
+          </>
+        ) : (
+          <button
+            className="cancel-haul__keep"
+            disabled={pending}
+            onClick={() => setConfirmingRemove(true)}
+            type="button"
+          >
+            Remove
+          </button>
+        )}
+      </div>
+      {error ? <p className="action-error" role="alert">{error}</p> : null}
+    </div>
   )
 }
 

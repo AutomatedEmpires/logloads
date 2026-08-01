@@ -4,8 +4,6 @@ import { deliverEmail } from "./notify"
 import { checkRateLimit, requestClientKey } from "./rate-limit"
 import { mutateState, serializeError } from "./services"
 
-/** Platform admin seed user; contact inquiries land in their notifications. */
-const PLATFORM_ADMIN_USER_ID = "11111111-1111-4111-8111-111111111111"
 const CONTACT_INBOX = process.env.LOGLOADS_CONTACT_EMAIL ?? "support@logloads.com"
 
 export interface ContactFormState {
@@ -44,15 +42,23 @@ export async function submitContactInquiryAction(
   ].filter((line): line is string => line !== null)
 
   try {
-    await mutateState((draft) =>
-      draft.createNotification({
-        body: bodyLines.join("\n"),
-        relatedEntityType: "contact_inquiry",
-        title: `Contact inquiry from ${name}`,
-        type: "system_alert",
-        userId: PLATFORM_ADMIN_USER_ID
-      })
-    )
+    await mutateState((draft) => {
+      // Every active platform admin gets the in-app record — resolved from
+      // state, so a real bound admin receives it, not only the seed profile.
+      const admins = draft.state.profiles.filter(
+        (profile) => profile.role === "admin" && profile.isActive
+      )
+
+      for (const admin of admins) {
+        draft.createNotification({
+          body: bodyLines.join("\n"),
+          relatedEntityType: "contact_inquiry",
+          title: `Contact inquiry from ${name}`,
+          type: "system_alert",
+          userId: admin.id
+        })
+      }
+    })
   } catch {
     return { error: "We could not send your message just now. Try again in a moment.", ok: false }
   }
