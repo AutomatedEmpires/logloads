@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
@@ -776,6 +777,19 @@ export function FleetOpportunityDetail({
     claimConvergence.serverRemainingTruckloads ===
       serverDirectOffer.remainingTruckloads
   )
+
+  // A claim whose canonical refresh never lands must not pin this panel
+  // forever: after a bounded wait the operator gets an explicit retry.
+  const router = useRouter()
+  const [claimConvergenceStalled, setClaimConvergenceStalled] = useState(false)
+  useEffect(() => {
+    if (!claimConvergenceActive) {
+      setClaimConvergenceStalled(false)
+      return
+    }
+    const timer = setTimeout(() => setClaimConvergenceStalled(true), 12_000)
+    return () => clearTimeout(timer)
+  }, [claimConvergenceActive])
   const displayedRemainingTruckloads = serverDirectOffer
     ? optimisticOffer?.directOfferId === serverDirectOffer.id &&
       optimisticOffer.serverRemainingTruckloads ===
@@ -915,6 +929,15 @@ export function FleetOpportunityDetail({
                             ? "The assignment and field Route Pack are ready."
                             : "Waiting for the next canonical haul window before another truck can be assigned."}
                         </p>
+                        {claimConvergenceStalled ? (
+                          <button
+                            className="action-link action-link--secondary"
+                            onClick={() => router.refresh()}
+                            type="button"
+                          >
+                            Refresh offer status
+                          </button>
+                        ) : null}
                       </div>
                     ) : directOffer ? (
                       <ClaimDirectOfferButton

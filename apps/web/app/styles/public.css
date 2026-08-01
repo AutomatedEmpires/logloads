@@ -755,6 +755,7 @@
   width: 100%;
   border-color: rgba(255, 255, 255, 0.74);
   background: #fff;
+  color: var(--pine);
 }
 
 .pricing-explainers {

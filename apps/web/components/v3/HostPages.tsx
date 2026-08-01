@@ -176,7 +176,7 @@ function HostReadiness({
           note: "No subscription starts and no card is charged during setup."
         }
       : {
-          href: "/host/workspace",
+          href: "/host/settings",
           label: "Review workspace access",
           note: "An owner, admin, or authorized operations manager must complete the next setup step."
         }

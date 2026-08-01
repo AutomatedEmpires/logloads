@@ -8,6 +8,8 @@ import { Badge, Icon } from "@logloads/ui"
 import { submitContactInquiryAction, type ContactFormState } from "@/lib/contact-actions"
 import type { NetworkLoadView } from "@/lib/network"
 import { payHeadline, presentPay } from "@/lib/pay-display"
+import { subscriptionPlanDefinition } from "@logloads/contracts"
+
 import { legalPages, loadProductLabel, pricingPlans, publicLoadHref, slugify, type LegalPageContent, type PublicStoryPage, visibilityLabel } from "@/lib/v3-shared"
 import { DevSignInForm, OnboardingFlow, type PendingInvitationOffer } from "./AuthForms"
 import type { DemoPersona } from "@/lib/demo-personas"
@@ -349,6 +351,26 @@ export function PricingPage() {
     throw new Error("The fixed public pricing catalog is incomplete.")
   }
 
+  // Pilot commercial terms render from the canonical plan definition so this
+  // page cannot drift from what billing actually enforces.
+  const pilotPlan = subscriptionPlanDefinition("network_pilot")
+  if (
+    pilotPlan.baseMonthlyPriceCents === null ||
+    pilotPlan.includedNetworkLoadUnits === null ||
+    pilotPlan.overageUnitPriceCents === null ||
+    pilotPlan.allowanceWindowDays === null ||
+    pilotPlan.commitmentMonths === null
+  ) {
+    throw new Error("The Pilot plan definition is incomplete.")
+  }
+  const usd = (cents: number) =>
+    `$${(cents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+  const pilotMonthly = usd(pilotPlan.baseMonthlyPriceCents)
+  const pilotMinimum = usd(
+    pilotPlan.baseMonthlyPriceCents * pilotPlan.commitmentMonths
+  )
+  const pilotOverage = usd(pilotPlan.overageUnitPriceCents)
+
   return (
     <PublicShell>
       <main className="page-main pricing-page">
@@ -378,20 +400,22 @@ export function PricingPage() {
             <Badge tone="warning">Invitation only</Badge>
             <h2 id="pilot-title">The paid Pilot is invitation-only.</h2>
             <p>
-              A selected design partner pays $1,500 per month for an exact 90-day
-              operating engagement—a $4,500 minimum base commitment. Thirty
-              completed Network movements are pooled across the engagement;
-              additional completed movements are $150 each. Once the operating
-              market is ready, the first verified paid billing period starts the
-              Pilot; onboarding alone does not. The Pilot is not available through
-              public self-service checkout.
+              The Pilot is {pilotMonthly} per month for one selected design
+              partner—an exact {pilotPlan.allowanceWindowDays}-day operating
+              engagement with a {pilotMinimum} minimum base commitment.{" "}
+              {pilotPlan.includedNetworkLoadUnits} completed Network movements
+              are pooled across the engagement; additional completed movements
+              are {pilotOverage} each. Once the operating market is ready, the
+              first verified paid billing period starts the Pilot; onboarding
+              alone does not. The Pilot is not available through public
+              self-service checkout.
             </p>
           </div>
           <dl className="pricing-pilot__facts">
-            <div><dt>Monthly base</dt><dd>$1,500</dd></div>
-            <div><dt>Engagement</dt><dd>Exact 90 days</dd></div>
-            <div><dt>Pooled allowance</dt><dd>30 completed movements</dd></div>
-            <div><dt>Additional usage</dt><dd>$150 per completion</dd></div>
+            <div><dt>Monthly base</dt><dd>{pilotMonthly}</dd></div>
+            <div><dt>Engagement</dt><dd>Exact {pilotPlan.allowanceWindowDays} days</dd></div>
+            <div><dt>Pooled allowance</dt><dd>{pilotPlan.includedNetworkLoadUnits} completed movements</dd></div>
+            <div><dt>Additional usage</dt><dd>{pilotOverage} per completion</dd></div>
           </dl>
           <Link className="action-link action-link--secondary" href="/contact?plan=network-pilot">
             Ask about the Pilot

@@ -377,6 +377,7 @@
 }
 .subscription-overview > .fee-alert { margin-inline: 28px; }
 .subscription-overview > .plan-action { padding: 20px 28px 28px; }
+.subscription-overview > *:last-child:not(.plan-action):not(.subscription-overview__header) { margin-bottom: 28px; }
 
 .usage-panel--network {
   background:
@@ -680,6 +681,7 @@
   }
   .subscription-overview > .fee-alert { margin-inline: 16px; }
   .subscription-overview > .plan-action { padding: 16px; }
+  .subscription-overview > *:last-child:not(.plan-action):not(.subscription-overview__header) { margin-bottom: 16px; }
   .subscription-allowance { padding: 16px; }
   .usage-panel--network .subscription-overview__note,
   .usage-panel--network .subscription-invoice-preview { margin-inline: 0; }
