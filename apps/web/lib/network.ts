@@ -33,6 +33,7 @@ import {
 } from "@logloads/services"
 
 import { estimateLoadEconomics, type LoadEconomicsEstimate } from "./economics"
+import { isViewableMediaReference } from "./media-reference"
 
 export type OrgReputationView = {
   label: string
@@ -1238,10 +1239,8 @@ export function buildNetworkView(
           source: event.source,
           type: event.type.replaceAll("_", " ")
         }))
-      // `viewable` tracks stored bytes, not `storageProvider`: records written
-      // before uploads were wired name a provider and a key for a file that was
-      // never uploaded. Offering those a download would hand the driver a broken
-      // link on the one screen that has to be trustworthy.
+      // A document is viewable only when current Supabase-backed bytes exist.
+      // Historical provider names and keys remain metadata, never broken links.
       const documents = state.tripDocuments
         .filter((document) => document.tripId === trip.id)
         .map((document) => ({
@@ -1249,7 +1248,7 @@ export function buildNetworkView(
           id: document.id,
           processingStatus: document.processingStatus,
           type: document.type.replaceAll("_", " "),
-          viewable: Boolean(document.media)
+          viewable: isViewableMediaReference(document.media)
         }))
 
       // The live pre-trip record, if one exists. Superseded records are kept
@@ -1489,7 +1488,9 @@ export function buildNetworkView(
       ? {
           id: currentDriverProfile.id,
           featureTruckPhoto: currentDriverProfile.featureTruckPhoto ?? false,
-          hasProfilePhoto: Boolean(currentDriverProfile.profilePhoto),
+          hasProfilePhoto: isViewableMediaReference(
+            currentDriverProfile.profilePhoto
+          ),
           name: currentUser.fullName,
           preferredFuelPriceCentsPerGallon: currentDriverProfile.preferredFuelPriceCentsPerGallon ?? null,
           trailerId: currentTrailer?.id ?? null,
@@ -1500,8 +1501,8 @@ export function buildNetworkView(
       ? {
           combinationId: currentCombination.id,
           fuelEconomyMpg: currentTruck.fuelEconomyMpg ?? null,
-          hasTrailerPhoto: Boolean(currentTrailer?.photo),
-          hasTruckPhoto: Boolean(currentTruck.photo),
+          hasTrailerPhoto: isViewableMediaReference(currentTrailer?.photo),
+          hasTruckPhoto: isViewableMediaReference(currentTruck.photo),
           label: currentCombination.label,
           trailerId: currentTrailer?.id ?? null,
           truckId: currentTruck.id

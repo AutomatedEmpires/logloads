@@ -419,7 +419,7 @@ export const tripDocumentSchema = z.object({
   id: uuidSchema,
   tripId: uuidSchema,
   type: z.enum(["scale_ticket", "load_slip", "delivery_record", "photo", "other"]),
-  storageProvider: z.enum(["cloudinary", "external"]),
+  storageProvider: z.enum(["cloudinary", "supabase", "external"]),
   storageKey: z.string().min(1),
   filename: z.string().min(1),
   contentType: z.string().min(1),

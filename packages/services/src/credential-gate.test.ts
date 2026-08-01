@@ -245,7 +245,7 @@ function addPendingRenewal(services: LogLoadsServices, kind: CredentialKind): vo
       bytes: 486_000,
       format: "jpg",
       height: 1_754,
-      provider: "cloudinary",
+      provider: "supabase",
       publicId: "logloads/driver-credentials/gate-test-renewal",
       uploadedAt: "2026-06-02T15:20:00.000Z",
       version: 1,

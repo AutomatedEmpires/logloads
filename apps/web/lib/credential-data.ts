@@ -417,7 +417,7 @@ const CREDENTIAL_DOCUMENT_SIGNATURE_ENDPOINT: string | null = "/api/credentials/
  * What the driver is told when they cannot add a document.
  *
  * Deliberately NOT the operator-facing refusal from `media-config`: that message
- * names Cloudinary accounts, which is infrastructure detail a driver in a truck can
+ * names storage providers, which is infrastructure detail a driver in a truck can
  * do nothing with. What a driver needs is that it is off, that it is not their
  * fault, and that nothing is being expected of them meanwhile.
  */

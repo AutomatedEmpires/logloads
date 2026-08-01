@@ -1022,7 +1022,7 @@ export const cancellationReasonCodeSchema = z.enum([
 
 `unsafe_conditions` is driver-side **and excused**: a driver refusing an icy grade is the behaviour the platform wants. `roadCondition` already exists on landings and routes — a landing whose `roadCondition` is `icy`/`snow`/`muddy` at cancel time is stamped into `incident.detail` as corroboration, never as a requirement.
 
-Free-text `cancellationReason` (`schemas.ts:320`) is retained and still required for `requiresNote` codes. Evidence attachment reuses the existing Cloudinary trip-document path; `requiresEvidence` is `false` for every code at MVP but the field exists.
+Free-text `cancellationReason` (`schemas.ts:320`) is retained and still required for `requiresNote` codes. Evidence attachment reuses the existing private Supabase Storage trip-document path; `requiresEvidence` is `false` for every code at MVP but the field exists.
 
 **Excused ≠ invisible.** An excused cancellation still increments `excusedCancellations`, so a driver with a breakdown every Friday is legible. A counter, not a penalty.
 

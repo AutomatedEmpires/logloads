@@ -15,7 +15,7 @@ Hosts publish timber movement with capacity, schedule, and visibility control (p
 
 - Runtime: Node 24.16.0 · pnpm 10.12.4 · Turborepo monorepo
 - Auth: Clerk (dev sessions until keys are provisioned — see `docs/ENVIRONMENT.md`) · DB: Supabase Postgres (+ PostGIS; versioned `operating_state` is the transitional canonical store) · Maps: Mapbox (keyless MapLibre fallback)
-- Secrets: Doppler · Hosting: Vercel · Media: Cloudinary · Observability: PostHog + Sentry · Email: Resend
+- Secrets: Doppler · Hosting: Vercel · Media: private Supabase Storage · Observability: PostHog + Sentry · Email: Resend
 - Icons: Phosphor through `@logloads/ui` semantic icon registry (`<Icon name="domain.action" />`)
 
 ## Getting started

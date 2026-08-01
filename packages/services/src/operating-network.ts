@@ -3073,7 +3073,7 @@ export function attachTripDocument(state: LogLoadsDatabaseState, input: AttachTr
     // stored and readable now — not queued for someone to confirm later.
     processingStatus: "ready",
     storageKey: media.publicId,
-    storageProvider: "cloudinary",
+    storageProvider: media.provider,
     tripId: target.tripId,
     type: input.type,
     uploadedAt: media.uploadedAt,

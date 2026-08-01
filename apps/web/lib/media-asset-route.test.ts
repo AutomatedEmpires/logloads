@@ -41,7 +41,7 @@ vi.mock("@/lib/services", () => ({ services: { state: {} } }))
 import { GET } from "../app/api/media/asset/route"
 
 const storedMedia: MediaReference = {
-  provider: "cloudinary",
+  provider: "supabase",
   publicId: "logloads/test/profile/uploads/photo-1",
   version: 1,
   format: "jpg",
@@ -55,10 +55,6 @@ describe("driver media asset route", () => {
   const fetchMock = vi.fn()
 
   beforeEach(() => {
-    vi.stubEnv("LOGLOADS_CLOUDINARY_TENANCY", undefined)
-    vi.stubEnv("CLOUDINARY_CLOUD_NAME", "dedicated-cloud")
-    vi.stubEnv("CLOUDINARY_API_KEY", "dedicated-key")
-    vi.stubEnv("CLOUDINARY_API_SECRET", "dedicated-secret")
     vi.stubGlobal("fetch", fetchMock)
 
     routeMocks.requireApiActor.mockResolvedValue({
@@ -76,7 +72,7 @@ describe("driver media asset route", () => {
     vi.unstubAllEnvs()
   })
 
-  it("preserves the dedicated-tenancy 503 and never starts provider delivery", async () => {
+  it("preserves a storage-configuration 503 and never starts provider delivery", async () => {
     const response = await GET(new NextRequest("https://logloads.example.test/api/media/asset?kind=profile"))
 
     expect(response.status).toBe(503)

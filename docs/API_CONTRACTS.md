@@ -20,7 +20,9 @@
 - `GET /api/route-packs/:assignmentId` — authenticated; assignment-gated
 - `POST /api/trips/:tripId/events` — authenticated
 - `POST /api/trips/:tripId/documents` — authenticated
-- `POST /api/media/signature` — authenticated; returns a signed, immutable, organization-scoped Cloudinary upload target
+- `POST /api/media/signature` — authenticated; returns a short-lived,
+  single-object Supabase Storage upload token for an immutable,
+  organization-scoped target in the private media bucket
 - `GET /api/media/asset` — authenticated; proxies the viewer-authorized private image with an upstream timeout
 - `GET /api/weather?loadId=...` — rate-limited; returns cached destination weather for a visible load
 - `GET|POST /api/billing/payment-method` — organization-scoped card status and
@@ -59,7 +61,10 @@
 - Errors: `401` unauthenticated, `403` membership/permission, `422` invalid fields, `409` sanitized business-rule conflict, `429` shared rate limit exceeded, and `503` production safety check unavailable. Bodies are JSON `{ error }`; rate-limit `429`/`503` responses include integer-seconds `Retry-After`. Domain-conflict bodies never include record identifiers or the service's internal refusal detail.
 - Successful mutations resolve only after `mutateState` commits a conditional Supabase update. A stale version reloads and replays the deterministic service operation; it never overwrites the newer row.
 - Driver economics and media writes are service-owned, verify active organization membership and driver ownership, and resolve the active equipment combination server-side.
-- Media uploads are immutable (`overwrite=false`); only verified JPG/PNG/WebP assets of 10 MB or less under the current target prefix can be attached.
+- Supabase Storage is the only active media provider. Upload tokens authorize
+  one generated object path with upsert disabled. The server reads the stored
+  object back before attachment; only verified JPG/PNG/WebP images of
+  10,000,000 bytes or less under the current target prefix can be committed.
 - Assignment approval performs all fallible commercial-terms and trip validation before consuming the assignment or confirming the slot.
 - New paid enrollment is fail-closed behind
   `LOGLOADS_SUBSCRIPTION_COLLECTION=enabled`, an exact expected Stripe account

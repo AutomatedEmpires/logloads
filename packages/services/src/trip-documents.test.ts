@@ -126,7 +126,7 @@ describe("attaching trip documents", () => {
     })
 
     expect(document.media).toEqual(media)
-    expect(document.storageProvider).toBe("cloudinary")
+    expect(document.storageProvider).toBe("supabase")
     // The key is the asset's own id — it cannot name a file that was not stored.
     expect(document.storageKey).toBe(media.publicId)
     expect(document.contentType).toBe("image/jpeg")

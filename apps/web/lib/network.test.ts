@@ -48,11 +48,23 @@ function networkFixture() {
 }
 
 describe("trip document deliverability", () => {
-  it("offers no download for a record that names a file nobody stored", () => {
+  function projectDocument(provider: "cloudinary" | "supabase") {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const legacy = services.state.tripDocuments[0]
 
     if (!legacy) throw new Error("the fixture has no pre-existing trip document")
+
+    legacy.media = {
+      bytes: 2_048,
+      format: "jpg",
+      height: 900,
+      provider,
+      publicId: legacy.storageKey,
+      uploadedAt: "2026-06-05T11:00:00.000Z",
+      version: 1,
+      width: 1_200
+    }
+    legacy.storageProvider = provider
 
     const trip = services.state.tripsV2.find((candidate) => candidate.id === legacy.tripId)
     const driver = services.state.driverProfiles.find((candidate) => candidate.id === trip?.driverProfileId)
@@ -68,15 +80,24 @@ describe("trip document deliverability", () => {
       .find((candidate) => candidate.id === trip.id)
       ?.documents.find((candidate) => candidate.id === legacy.id)
 
+    return { document, stored: legacy }
+  }
+
+  it("keeps legacy Cloudinary bytes as metadata without a broken download", () => {
+    const { document, stored } = projectDocument("cloudinary")
+
+    expect(stored.media?.provider).toBe("cloudinary")
+    expect(stored.storageKey.length).toBeGreaterThan(0)
     expect(document).toBeDefined()
-    // This record claims `storageProvider: "cloudinary"` and carries a storage
-    // key, but no file was ever uploaded — so keying the download on either of
-    // those would render a link that 404s on the one screen that has to be
-    // trustworthy. Stored bytes are the only honest signal.
-    expect(legacy.storageProvider).toBe("cloudinary")
-    expect(legacy.storageKey.length).toBeGreaterThan(0)
-    expect(legacy.media ?? null).toBeNull()
     expect(document?.viewable).toBe(false)
+  })
+
+  it("offers a download only for current Supabase-backed bytes", () => {
+    const { document, stored } = projectDocument("supabase")
+
+    expect(stored.media?.provider).toBe("supabase")
+    expect(stored.storageProvider).toBe("supabase")
+    expect(document?.viewable).toBe(true)
   })
 })
 

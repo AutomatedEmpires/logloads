@@ -151,7 +151,7 @@ function credentialDocument(
     bytes: 412_000,
     format: "jpg",
     height: 1_754,
-    provider: "cloudinary",
+    provider: "supabase",
     publicId:
       `${credentialDocumentPublicIdPrefix(driverProfileId, kind, equipmentProfileId)}` +
       `/uploads/${randomUUID()}`,
