@@ -63,7 +63,9 @@ export function InviteMemberForm({
         </label>
         <label>
           Role
-          <select defaultValue={roleOptions[0]?.value} name="invitedRole" required>
+          {/* Wrapped-label names on a select include every option's text; the
+              aria-label gives assistive tech the clean name the label shows. */}
+          <select aria-label="Role" defaultValue={roleOptions[0]?.value} name="invitedRole" required>
             {roleOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
