@@ -306,7 +306,7 @@ describe("who may decide", () => {
 // ── The stored rows ───────────────────────────────────────────────────────────
 
 const STORED_DOCUMENT = {
-  provider: "cloudinary" as const,
+  provider: "supabase" as const,
   publicId: "logloads/driver-credentials/test/uploads/one",
   version: 1,
   format: "jpg" as const,
@@ -314,6 +314,12 @@ const STORED_DOCUMENT = {
   height: 1_754,
   bytes: 100_000,
   uploadedAt: "2026-06-01T09:00:00.000Z"
+}
+
+const LEGACY_CLOUDINARY_DOCUMENT = {
+  ...STORED_DOCUMENT,
+  provider: "cloudinary" as const,
+  publicId: "logloads/legacy/driver-credentials/test/uploads/one"
 }
 
 function storedCredential(overrides: Record<string, unknown> = {}) {
@@ -361,6 +367,15 @@ function storedReview(overrides: Record<string, unknown> = {}) {
 describe("the stored credential row", () => {
   it("accepts a complete approved credential", () => {
     expect(driverCredentialSchema.safeParse(storedCredential()).success).toBe(true)
+  })
+
+  it("keeps a legacy Cloudinary document readable as stored metadata", () => {
+    const parsed = driverCredentialSchema.parse(
+      storedCredential({ documentMedia: LEGACY_CLOUDINARY_DOCUMENT })
+    )
+
+    expect(parsed.documentMedia?.provider).toBe("cloudinary")
+    expect(parsed.documentMedia?.publicId).toBe(LEGACY_CLOUDINARY_DOCUMENT.publicId)
   })
 
   it("reads an absent nullable field as null rather than undefined", () => {

@@ -8,7 +8,7 @@
   end with `ae finish logloads`. Work counts as done ONLY when pushed and remote-SHA-verified.
 - **Deploys:** merging `main` auto-deploys production via Vercel.
 - **Validate before merge:** `pnpm typecheck && pnpm guardrails` (CI must be green; squash merges).
-- **Providers (fixed — never swap or cross-wire):** db=supabase, auth=clerk.
+- **Providers (fixed — never swap or cross-wire):** db=supabase, private-media=supabase-storage, auth=clerk.
 - **LOCKED:** Follow the in-repo operating contract (merged PR #23)
 - Full policy: `github.com/AutomatedEmpires/ae-control` → `POLICY.md`. Briefing: `ae info logloads`.
 
@@ -103,13 +103,17 @@ Work in roughly this order unless a current issue or incident proves otherwise:
 
 ### Providers and deployment
 
-The intended spine is Doppler, Vercel, Supabase/Postgres/PostGIS, Clerk, Mapbox with the documented MapLibre fallback, Cloudinary, PostHog, Sentry, Resend, and Stripe for LogLoads software subscriptions only. Shared rate limiting uses Supabase-backed windows. Do not introduce substitutes casually.
+The intended spine is Doppler, Vercel, Supabase/Postgres/PostGIS plus private Supabase Storage, Clerk, Mapbox with the documented MapLibre fallback, PostHog, Sentry, Resend, and Stripe for LogLoads software subscriptions only. Shared rate limiting uses Supabase-backed windows. Supabase Storage is the sole active private-media provider; Cloudinary is retired runtime history, not a fallback. Do not introduce substitutes casually.
 
 Never print, commit, paste into PRs, or expose secrets/private provider URLs. Keep server credentials server-only. A preview must use isolated data or an isolated project/row and must not mutation-test production. A deployed artifact, provider status label, or green health endpoint is evidence only for what it actually proves.
 
 ### Data and access
 
 - Supabase is canonical; the local JSON snapshot is development-only.
+- Private credential, equipment, and trip-proof media stays in the private
+  LogLoads Supabase Storage bucket. Upload permission is object-scoped and
+  short-lived; application authorization remains mandatory before either upload
+  signing or authenticated delivery.
 - Resolve actor identity from the server session. Never trust client-supplied actor IDs, roles, organization IDs, or assignment claims.
 - Preserve service-layer authorization, RLS, versioned writes, conflict replay, and the no-runtime-delete posture.
 - Use synthetic fixtures by default. Access production data only when an explicitly scoped, least-privilege task requires it; redact personal, commercial, and operational details from logs and artifacts.
@@ -189,7 +193,7 @@ A change is done only when it:
 
 ## 11. Current production posture and blockers
 
-Refreshed 2026-07-15 UTC: `logloads.com` is publicly deployed from `main`. Production health reports Clerk auth, Supabase canonical state, Dispatch Pro billing, Resend email, Cloudinary media, PostHog analytics, and Sentry error tracking configured. Dispatch Pro is $499/month, drivers are free forever, and freight payments do not move through LogLoads.
+Refreshed 2026-07-29 UTC: `logloads.com` is publicly deployed from `main`. Production health reports Clerk auth, Supabase canonical state, Dispatch Pro billing, Resend email, Supabase Storage media, PostHog analytics, and Sentry error tracking configured. The production media bucket is private and restricted to JPG, PNG, and WebP objects no larger than 10,000,000 bytes. Dispatch Pro is $499/month, drivers are free forever, and freight payments do not move through LogLoads.
 
 **Decided and implemented does not mean activated.** Section 7's
 subscription-v1 model is the build target for new commercial activity. Production

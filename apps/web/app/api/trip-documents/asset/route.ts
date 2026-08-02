@@ -40,9 +40,9 @@ export async function GET(request: NextRequest) {
 
     // Signed outside the fetch-specific try/catch (still inside the route's
     // outer try, whose apiErrorResponse turns the gate's refusal into the 503):
-    // building the URL needs Cloudinary configuration, and its absence is a
-    // configuration fact. Catching it alongside the fetch would report an
-    // unconfigured environment as a provider blip.
+    // building the URL needs the private Supabase media configuration, and its
+    // absence is a configuration fact. Catching it alongside the fetch would
+    // report an unconfigured environment as a provider blip.
     const url = await signedDocumentUrl(document.media)
     let response: Response
 

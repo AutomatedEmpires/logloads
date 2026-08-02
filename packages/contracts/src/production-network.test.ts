@@ -4,6 +4,7 @@ import {
   opportunityCapacitySchema,
   routePackSchema,
   transitionTripStatus,
+  tripDocumentSchema,
   tripSchemaV2
 } from "./production-network"
 
@@ -77,6 +78,53 @@ describe("production operating network contracts", () => {
   it("enforces trip lifecycle ordering", () => {
     expect(transitionTripStatus("assigned", "en_route_to_landing")).toBe("en_route_to_landing")
     expect(() => transitionTripStatus("assigned", "completed")).toThrow(/Invalid trip transition/)
+  })
+
+  it("stores new Supabase trip documents and still parses legacy provider metadata", () => {
+    const baseDocument = {
+      auditMetadata: {},
+      contentType: "image/jpeg",
+      filename: "scale-ticket.jpg",
+      id: "12121212-1212-4212-8212-121212121212",
+      processingStatus: "ready",
+      storageKey: "logloads/trip-documents/trip-1/uploads/photo-1",
+      tripId: "77777777-7777-4777-8777-777777777777",
+      type: "scale_ticket",
+      uploadedAt: timestamp,
+      uploadedByUserId: "22222222-2222-4222-8222-222222222222"
+    } as const
+    const media = {
+      bytes: 248_137,
+      format: "jpg",
+      height: 1_600,
+      provider: "supabase",
+      publicId: baseDocument.storageKey,
+      uploadedAt: timestamp,
+      version: 1_700_000_000,
+      width: 1_200
+    } as const
+
+    expect(
+      tripDocumentSchema.parse({
+        ...baseDocument,
+        media,
+        storageProvider: "supabase"
+      }).storageProvider
+    ).toBe("supabase")
+    expect(
+      tripDocumentSchema.parse({
+        ...baseDocument,
+        media: null,
+        storageProvider: "cloudinary"
+      }).storageProvider
+    ).toBe("cloudinary")
+    expect(
+      tripDocumentSchema.parse({
+        ...baseDocument,
+        media: null,
+        storageProvider: "external"
+      }).storageProvider
+    ).toBe("external")
   })
 
   it("validates purpose-limited trip location state", () => {

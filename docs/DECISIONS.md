@@ -2,6 +2,50 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-07-29 — Supabase Storage is the sole private-media provider
+
+- **There is no provider choice at runtime.** New credential documents,
+  equipment photos, profile photos, and trip proof use the private bucket in
+  LogLoads' Supabase project. The Cloudinary SDK, activation variables, upload
+  branch, verification branch, and delivery branch are retired rather than
+  retained as a fallback.
+- **Historical data remains readable without reviving the provider.** The
+  `cloudinary` media-reference and trip-document storage-provider literals
+  remain accepted only when parsing an older stored snapshot. Filename, type,
+  and workflow metadata stays readable, but no current service operation writes
+  those literals and a forced legacy-object download is unavailable. The active
+  media transport cannot upload, verify, or deliver through Cloudinary.
+  Historical decision entries below remain an accurate record of the
+  protections and provider evidence that existed when they were written; they
+  are not present-tense activation instructions.
+- **The bucket is private by contract.** `LOGLOADS_MEDIA_STORAGE` must equal
+  `supabase`; the project reference parsed from the HTTPS `SUPABASE_URL` must
+  equal `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF`; and
+  `logloads-private-media` is restricted to JPEG, PNG, and WebP objects no
+  larger than 10,000,000 bytes. The service-role key never reaches the browser.
+  The preferred browser key name is `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`;
+  `NEXT_PUBLIC_SUPABASE_ANON_KEY` remains a compatibility alias, not a second
+  required credential. The preferred name is authoritative if both exist, and
+  the selected browser key must belong to the configured Supabase project.
+- **Authorization and storage permission stay separate.** A service rule first
+  resolves the actor's exact organization, driver, equipment, or trip target.
+  The server then issues a short-lived token for one generated object path, with
+  upsert disabled. After direct upload, the server downloads the object and
+  validates its stored byte count, downloaded byte count, image format, and
+  dimensions before committing a media reference. Authorized delivery uses a
+  five-minute signed URL; the bucket never becomes public.
+- **Trip-document provenance follows the verified media reference.** New
+  document records store the provider reported by the server-verified media
+  reference instead of stamping an obsolete provider name.
+- Production inventory was reconciled on 2026-07-29: the expected LogLoads
+  project and private bucket were present, the bucket configuration matched the
+  10,000,000-byte JPEG/PNG/WebP contract, no Cloudinary environment names were
+  present in Vercel Production, and the bucket contained no existing objects.
+  This repository correction did not create, move, or delete provider assets;
+  rotate credentials; mutate production data; deploy; activate billing; or
+  move money. A synthetic authenticated upload, server read-back, and delivery
+  round trip on the exact deployment remains the behavioral activation proof.
+
 ## 2026-07-28 — Subscription v1 replaces percentage pricing for new work
 
 - **Newly enrolled commercial activity uses subscription plus completed Network usage.**

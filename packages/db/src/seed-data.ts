@@ -375,17 +375,16 @@ export const seedDriverProfiles: DriverProfile[] = parseMany(driverProfileSchema
  * A synthetic stored-document reference for the seeded vault.
  *
  * It resolves to nothing. A media reference names a provider and a public id but
- * no account, so this points at no media tenant at all — and LogLoads media is
- * fail-closed until LogLoads has an account of its own, so no code path will try
- * to fetch it. Same posture as the synthetic Stripe ids further down: an obviously
- * fake reference to an object a provider would hold, never real bytes.
+ * no project, so this points at no media object at all. Same posture as the
+ * synthetic Stripe ids further down: an obviously fake reference to an object a
+ * provider would hold, never real bytes.
  *
  * It exists because `credentialIsValidAt` refuses an approved credential with no
  * document. That rule is what stops a self-certified approval from counting, so
  * the bench has to satisfy it the same way a real driver would.
  */
 const syntheticCredentialDocument = (slug: string, uploadedAt: string) => ({
-  provider: "cloudinary" as const,
+  provider: "supabase" as const,
   publicId: `logloads/driver-credentials/${slug}`,
   version: 1,
   format: "jpg" as const,
@@ -2742,6 +2741,8 @@ export const seedTripEvents: TripEvent[] = parseMany(tripEventSchema, [
 ])
 
 export const seedTripDocuments: TripDocument[] = parseMany(tripDocumentSchema, [
+  // These provider labels predate stored `media` references. They remain as
+  // explicit legacy metadata fixtures: neither row claims downloadable bytes.
   {
     id: "26262626-2626-4626-8626-262626262611",
     tripId: "24242424-2424-4424-8424-242424242412",

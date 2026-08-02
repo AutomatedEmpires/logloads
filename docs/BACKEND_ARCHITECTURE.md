@@ -10,7 +10,12 @@
 - `apps/web/lib/rate-limit-*`: provider-neutral abuse controls. Production calls the service-role-only Supabase `consume_rate_limit` RPC, whose atomic upsert shares one fixed window across Vercel instances; development uses process memory.
 - `apps/web/lib/cockpit-actions.ts`: server actions used by cockpit UIs; every mutation resolves the session actor, commits through `mutateState`, and revalidates only after the canonical write succeeds.
 - `apps/web/app/api/*`: thin authenticated route handlers delegating to the service layer.
-- `apps/web/lib/media.ts`: Cloudinary transport only. Upload signatures use immutable organization/driver-scoped public IDs with overwrite disabled; the service layer authorizes and persists the verified reference after provider validation.
+- `apps/web/lib/media.ts`: Supabase Storage transport only. The service layer
+  authorizes an immutable organization/driver-scoped object path before the
+  server issues a one-object upload token. The browser uploads directly to the
+  private bucket with upsert disabled; the server then downloads and validates
+  the object before persisting its reference. Authorized reads use five-minute
+  signed URLs and never make the bucket public.
 
 ## Transitional constraint
 - Supabase is canonical, but the service layer still operates on one typed JSON document rather than normalized SQL rows. `operating_state.version` prevents lost updates across serverless instances. This is safe for current scale, not the final high-throughput data model.

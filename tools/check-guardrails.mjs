@@ -40,6 +40,31 @@ const checks = [
     pattern: /from\s+["'](?:lucide-react|@heroicons\/[^"']+|react-icons(?:\/[^"']+)?|@fortawesome\/[^"']+|@mui\/icons-material(?:\/[^"']+)?)["']/g
   },
   {
+    message: "Supabase Storage is the only active private-media provider. Cloudinary runtime imports, environment switches, provider branches, and dependencies are retired.",
+    pattern: /(?:(?:process\.env|environment)\.(?:LOGLOADS_CLOUDINARY|CLOUDINARY)_[A-Z0-9_]+\b|(?:process\.env|environment)\[\s*["'](?:LOGLOADS_CLOUDINARY|CLOUDINARY)_[A-Z0-9_]+["']\s*\]|from\s+["']cloudinary["']|import\(\s*["']cloudinary["']\s*\)|require\(\s*["']cloudinary["']\s*\)|["']cloudinary["']\s*:|\bprovider\s*(?:===|!==|:)\s*["']cloudinary["'])/g,
+    include: (file) => {
+      const runtimeSource = file.startsWith("apps/") || file.startsWith("packages/")
+      const testSource =
+        file.includes("/__tests__/") ||
+        /(?:^|\/)(?:fixtures|test-helpers)\.[cm]?[jt]sx?$/.test(file) ||
+        /\.(?:spec|test)\.[cm]?[jt]sx?$/.test(file)
+
+      return (
+        (runtimeSource && !testSource) ||
+        file === "package.json" ||
+        file === ".env.example" ||
+        file === "ops/production-env-contract.json"
+      )
+    }
+  },
+  {
+    message: "Cloudinary environment variables are retired from current deployment manifests.",
+    pattern: /\b(?:LOGLOADS_CLOUDINARY|CLOUDINARY)_[A-Z0-9_]+\b/g,
+    include: (file) =>
+      file === ".env.example" ||
+      file === "ops/production-env-contract.json"
+  },
+  {
     message: "Feature code must not hand-roll inline SVG icons.",
     pattern: /<svg[\s>]/g,
     include: (file) => file.startsWith("apps/web/") || file.startsWith("packages/ui/")

@@ -77,7 +77,7 @@ function document(slug: string) {
     bytes: 486_000,
     format: "jpg" as const,
     height: 1_754,
-    provider: "cloudinary" as const,
+    provider: "supabase" as const,
     publicId: `logloads/driver-credentials/${slug}`,
     uploadedAt: SUBMITTED,
     version: 1,
