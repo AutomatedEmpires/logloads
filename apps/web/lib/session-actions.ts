@@ -337,6 +337,13 @@ export async function completeOnboardingAction(
 
   const actor = await getSessionActor()
 
-  const fallback = path === "driver" ? "/driver/loads?welcome=1" : actor ? homePathFor(actor) : "/workspace"
+  const fallback =
+    path === "driver"
+      ? "/driver/loads?welcome=1"
+      : path === "host"
+        ? "/host/landings?welcome=1"
+        : actor
+          ? homePathFor(actor)
+          : "/workspace"
   redirect(safeInternalPath(next, fallback))
 }

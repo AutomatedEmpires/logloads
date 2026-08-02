@@ -401,103 +401,139 @@ function OrganizationSubscriptionSections({
 }) {
   return (
     <>
-      <section className="settings-panel" aria-label={subscription.sectionLabel}>
-        <SectionHeader
-          eyebrow={subscription.sectionLabel}
-          title={subscription.planName}
-        />
-        <div className="pay-state">
-          <Badge tone={subscription.statusTone}>{subscription.statusLabel}</Badge>
-          <Badge tone={subscription.activationTone}>{subscription.activationLabel}</Badge>
+      <section
+        aria-label={subscription.sectionLabel}
+        className="settings-panel subscription-overview"
+      >
+        <header className="subscription-overview__header">
+          <div>
+            <p className="eyebrow">{subscription.sectionLabel}</p>
+            <h2>{subscription.planName}</h2>
+            <div className="pay-state">
+              <Badge tone={subscription.statusTone}>
+                {subscription.statusLabel}
+              </Badge>
+              <Badge tone={subscription.activationTone}>
+                {subscription.activationLabel}
+              </Badge>
+            </div>
+          </div>
+          <div className="subscription-overview__price">
+            <span>Base subscription</span>
+            <strong>{subscription.basePriceLabel}</strong>
+            <small>{subscription.networkAllowanceLabel}</small>
+          </div>
+        </header>
+
+        <p className="subscription-overview__summary">
+          {subscription.statusDetail}
+        </p>
+        <div
+          className={`subscription-overview__activation subscription-overview__activation--${subscription.activationTone}`}
+        >
+          <Icon
+            aria-hidden
+            name={
+              subscription.activationTone === "success"
+                ? "status.assigned"
+                : "status.lock"
+            }
+            size={20}
+          />
+          <div>
+            <strong>{subscription.activationLabel}</strong>
+            <p>{subscription.activationDetail}</p>
+          </div>
         </div>
-        <p className="settings-meaning">{subscription.statusDetail}</p>
-        <p className="settings-meaning">{subscription.activationDetail}</p>
-        <dl className="identity-grid">
-          <div>
-            <dt>Base</dt>
-            <dd>{subscription.basePriceLabel}</dd>
-          </div>
-          <div>
-            <dt>Network allowance</dt>
-            <dd>{subscription.networkAllowanceLabel}</dd>
-          </div>
-          <div>
-            <dt>Overage</dt>
-            <dd>{subscription.overageRateLabel}</dd>
-          </div>
-          <div>
-            <dt>Core operations</dt>
-            <dd>
-              {subscription.includesDispatchProCapabilities
-                ? "Dispatch Pro capabilities included"
-                : "Defined by the accepted plan"}
-            </dd>
-          </div>
-          <div>
-            <dt>Provider collection</dt>
-            <dd>{subscription.collectionLabel}</dd>
-          </div>
-          {subscription.commitmentLabel ? (
+
+        <div className="subscription-overview__body">
+          <dl className="subscription-overview__facts">
             <div>
-              <dt>Commitment</dt>
-              <dd>{subscription.commitmentLabel}</dd>
+              <dt>Overage</dt>
+              <dd>{subscription.overageRateLabel}</dd>
             </div>
-          ) : null}
-          {subscription.renewalLabel ? (
             <div>
-              <dt>Renewal</dt>
-              <dd>{subscription.renewalLabel}</dd>
-            </div>
-          ) : null}
-          {subscription.pendingPlanLabel ? (
-            <div>
-              <dt>Scheduled plan</dt>
-              <dd>{subscription.pendingPlanLabel}</dd>
-            </div>
-          ) : null}
-          {subscription.paymentLabel ? (
-            <div>
-              <dt>Subscription payment</dt>
+              <dt>Core operations</dt>
               <dd>
-                <Badge tone={subscription.paymentTone ?? "neutral"}>
-                  {subscription.paymentLabel}
-                </Badge>
+                {subscription.includesDispatchProCapabilities
+                  ? "Dispatch Pro capabilities included"
+                  : "Defined by the accepted plan"}
               </dd>
             </div>
-          ) : null}
-          <div>
-            <dt>Outstanding balance</dt>
-            <dd>
-              {subscription.outstandingAmountLabel} across{" "}
-              {subscription.outstandingInvoiceCount} invoice
+            <div>
+              <dt>Provider collection</dt>
+              <dd>{subscription.collectionLabel}</dd>
+            </div>
+            {subscription.commitmentLabel ? (
+              <div>
+                <dt>Commitment</dt>
+                <dd>{subscription.commitmentLabel}</dd>
+              </div>
+            ) : null}
+            {subscription.renewalLabel ? (
+              <div>
+                <dt>Renewal</dt>
+                <dd>{subscription.renewalLabel}</dd>
+              </div>
+            ) : null}
+            {subscription.pendingPlanLabel ? (
+              <div>
+                <dt>Scheduled plan</dt>
+                <dd>{subscription.pendingPlanLabel}</dd>
+              </div>
+            ) : null}
+            {subscription.paymentLabel ? (
+              <div>
+                <dt>Subscription payment</dt>
+                <dd>
+                  <Badge tone={subscription.paymentTone ?? "neutral"}>
+                    {subscription.paymentLabel}
+                  </Badge>
+                </dd>
+              </div>
+            ) : null}
+          </dl>
+
+          <aside className="subscription-overview__balance">
+            <span>Outstanding balance</span>
+            <strong>{subscription.outstandingAmountLabel}</strong>
+            <small>
+              Across {subscription.outstandingInvoiceCount} invoice
               {subscription.outstandingInvoiceCount === 1 ? "" : "s"}
-            </dd>
-          </div>
-        </dl>
+            </small>
+          </aside>
+        </div>
+
         {subscription.paymentDetail ? (
-          <p className="settings-meaning">{subscription.paymentDetail}</p>
+          <p className="subscription-overview__note">
+            <Icon aria-hidden name="load.pay" size={18} />
+            <span>{subscription.paymentDetail}</span>
+          </p>
         ) : null}
         {subscription.latestBaseInvoice ? (
-          <p className="settings-meaning">
-            Latest base invoice: {subscription.latestBaseInvoice.amountDueLabel} ·{" "}
-            {subscription.latestBaseInvoice.statusLabel} ·{" "}
-            {subscription.latestBaseInvoice.amountRemainingLabel} remaining
-            {subscription.latestBaseInvoice.dueOnLabel
-              ? ` · due ${subscription.latestBaseInvoice.dueOnLabel}`
-              : ""}
+          <article className="subscription-invoice-preview">
+            <div>
+              <span>Latest base invoice</span>
+              <strong>{subscription.latestBaseInvoice.amountDueLabel}</strong>
+            </div>
+            <p>
+              {subscription.latestBaseInvoice.statusLabel} ·{" "}
+              {subscription.latestBaseInvoice.amountRemainingLabel} remaining
+              {subscription.latestBaseInvoice.dueOnLabel
+                ? ` · due ${subscription.latestBaseInvoice.dueOnLabel}`
+                : ""}
+            </p>
             {subscription.latestBaseInvoice.hostedInvoiceUrl ? (
-              <>
-                {" · "}
-                <a
-                  href={subscription.latestBaseInvoice.hostedInvoiceUrl}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  View invoice
-                </a>
-              </>
+              <a
+                className="text-link"
+                href={subscription.latestBaseInvoice.hostedInvoiceUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                View invoice
+              </a>
             ) : null}
-          </p>
+          </article>
         ) : null}
         {subscription.integrityNotices.map((notice) => (
           <p className="fee-alert" key={notice} role="alert">
@@ -528,17 +564,23 @@ function OrganizationSubscriptionSections({
       ) : null}
 
       {subscription.allowance ? (
-        <section className="usage-panel" aria-label="Completed Network usage">
+        <section
+          aria-label="Completed Network usage"
+          className="usage-panel usage-panel--network"
+        >
           <SectionHeader
             eyebrow="Completed Network usage"
             title={subscription.allowance.periodLabel}
           />
-          <article className="usage-row">
-            <div className="usage-row__top">
-              <strong>
-                {subscription.allowance.usedUnits} of{" "}
-                {subscription.allowance.includedUnits} included
-              </strong>
+          <article className="subscription-allowance">
+            <div className="subscription-allowance__headline">
+              <div>
+                <span>Completed this period</span>
+                <strong>
+                  {subscription.allowance.usedUnits}
+                  <small> / {subscription.allowance.includedUnits}</small>
+                </strong>
+              </div>
               <span
                 className={`usage-row__detail usage-row__detail--${
                   subscription.allowance.overageUnits > 0
@@ -568,7 +610,7 @@ function OrganizationSubscriptionSections({
               />
             </div>
           </article>
-          <dl className="identity-grid">
+          <dl className="subscription-usage-grid">
             <div>
               <dt>Included remaining</dt>
               <dd>{subscription.allowance.remainingUnits}</dd>
@@ -593,21 +635,35 @@ function OrganizationSubscriptionSections({
             </div>
           </dl>
           {subscription.recommendation ? (
-            <p className="settings-meaning">{subscription.recommendation}</p>
+            <p className="subscription-overview__note">
+              <Icon aria-hidden name="ops.queue" size={18} />
+              <span>{subscription.recommendation}</span>
+            </p>
           ) : (
-            <p className="settings-meaning">
-              A tier recommendation appears after completed usage establishes a pace.
+            <p className="subscription-overview__note">
+              <Icon aria-hidden name="ops.queue" size={18} />
+              <span>
+                A tier recommendation appears after completed usage establishes
+                a pace.
+              </span>
             </p>
           )}
           {subscription.latestOverageInvoice ? (
-            <p className="settings-meaning">
-              Latest usage invoice: {subscription.latestOverageInvoice.amountLabel} for{" "}
-              {subscription.latestOverageInvoice.quantity} units ·{" "}
-              {subscription.latestOverageInvoice.statusLabel}
-              {subscription.latestOverageInvoice.issuedOnLabel
-                ? ` · issued ${subscription.latestOverageInvoice.issuedOnLabel}`
-                : ""}
-            </p>
+            <article className="subscription-invoice-preview">
+              <div>
+                <span>Latest usage invoice</span>
+                <strong>
+                  {subscription.latestOverageInvoice.amountLabel}
+                </strong>
+              </div>
+              <p>
+                {subscription.latestOverageInvoice.quantity} units ·{" "}
+                {subscription.latestOverageInvoice.statusLabel}
+                {subscription.latestOverageInvoice.issuedOnLabel
+                  ? ` · issued ${subscription.latestOverageInvoice.issuedOnLabel}`
+                  : ""}
+              </p>
+            </article>
           ) : null}
         </section>
       ) : null}
@@ -686,7 +742,7 @@ function PilotConversionPanel({
       </p>
       <div className="plan-cards">
         {conversion.options.map((option) => (
-          <label className="plan-card" key={option.planCode}>
+          <label className="plan-card plan-card--selectable" key={option.planCode}>
             <span>
               <input
                 checked={selectedPlanCode === option.planCode}
@@ -1089,6 +1145,9 @@ export function BillingPage({
   const addUsageBody = role === "fleet"
     ? "Add your first truck and this section shows where you stand against your plan limits."
     : "Add your first landing and this section shows where you stand against your plan limits."
+  const workspaceUsageBody = role === "fleet"
+    ? "This tracks trucks configured in your workspace. It is separate from completed Network movement usage."
+    : "This tracks landings configured in your workspace. It is separate from completed Network movement usage."
 
   return (
     <AppShell account={account} kicker="Plan features" role={role} title="Billing">
@@ -1112,103 +1171,156 @@ export function BillingPage({
           </p>
         ) : null}
 
-        {capabilityPlans.length === 0 && !hostSubscriptionBilling ? (
-          <EmptyState
-            actionHref="/pricing"
-            actionLabel="Compare plans"
-            body={role === "fleet" ? "Dispatch Pro is $499 per month. Drivers on the account stay free." : "Network enrollment is sales-assisted. There is no posting fee; completed Network movements use the accepted plan allowance and overage rate."}
-            title="No plan on this workspace yet"
-          />
-        ) : (
-          <>
-            {capabilityPlans.length > 0 ? (
-              <section className="plan-cards" aria-label="Current plan">
-                {capabilityPlans.map((plan) => (
-                  <article className="plan-card" key={plan.id}>
-                    <header className="plan-card__head">
-                      <div>
-                        <p className="eyebrow">Current plan</p>
-                        <h2>{plan.name}</h2>
-                        <p className="plan-card__summary">{plan.summary}</p>
-                      </div>
-                      <strong className="plan-card__price">{plan.priceLine}</strong>
-                    </header>
-                    <div className="plan-card__status">
-                      <Badge tone={plan.statusTone}>{plan.statusLine}</Badge>
-                      {plan.statusDetail ? <p>{plan.statusDetail}</p> : null}
-                    </div>
-                    <div className="plan-card__body">
-                      <h3>What your plan includes</h3>
-                      <ul>
-                        {plan.features.map((feature) => (
-                          <li key={feature}>
-                            <Icon aria-hidden name="status.assigned" size={16} />
-                            <span>{feature}</span>
-                          </li>
-                        ))}
-                      </ul>
-                      {plan.limitLines.length > 0 ? <p className="plan-card__limits">{plan.limitLines.join(" · ")}</p> : null}
-                    </div>
-                    {role === "fleet" &&
-                    plan.product === "fleet_operations" &&
-                    plan.actionKind === "checkout" ? (
-                      billing.billingReady ? (
-                        <SubscriptionBillingAction kind="dispatch_acceptance" />
-                      ) : null
-                    ) : plan.actionLabel && plan.actionKind ? (
-                      <PlanAction
-                        kind={plan.actionKind}
-                        label={plan.actionLabel}
-                        product={plan.product}
-                      />
-                    ) : null}
-                  </article>
-                ))}
-              </section>
-            ) : null}
-
-            {role === "fleet" &&
-            !hasCanonicalSubscription &&
-            !billing.billingReady ? (
-              <p className="billing-pending" role="note">
-                <Icon aria-hidden name="status.lock" size={16} />
-                <span>Dispatch Pro checkout is temporarily unavailable. Current trial access stays active.</span>
-              </p>
-            ) : null}
-
-            <section className="usage-panel" aria-label="Plan usage">
-              <SectionHeader eyebrow="Usage" title="Where you stand against plan limits" />
-              {billing.usage.length === 0 ? (
-                <EmptyState actionHref={addUsageHref} actionLabel={addUsageLabel} body={addUsageBody} title="Nothing to measure yet" />
-              ) : (
-                <div className="usage-list">
-                  {billing.usage.map((row) => (
-                    <article className="usage-row" key={row.id}>
-                      <div className="usage-row__top">
-                        <strong>{row.label}</strong>
-                        <span className={`usage-row__detail usage-row__detail--${row.tone}`}>{row.detail}</span>
-                      </div>
-                      {row.percent !== null ? (
-                        <div aria-label={`${row.label}: ${row.detail}`} className="usage-meter" role="img">
-                          <span className={`usage-meter__fill usage-meter__fill--${row.tone}`} style={{ width: `${row.percent}%` }} />
-                        </div>
-                      ) : null}
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
-          </>
-        )}
-
-        {/* Outside the plan branch on purpose: what a host owes LogLoads does not
-            depend on carrying a plan record, so a workspace with no entitlement
-            row must still be able to see its own fees and its own bills. */}
-        {hostSubscriptionBilling ? (
+        {hasCanonicalSubscription && hostSubscriptionBilling ? (
           <OrganizationSubscriptionSections
             subscription={hostSubscriptionBilling}
           />
         ) : null}
+
+        {!hasCanonicalSubscription ? (
+          capabilityPlans.length === 0 ? (
+            hostSubscriptionBilling ? null : (
+              <EmptyState
+                actionHref="/pricing"
+                actionLabel="Compare plans"
+                body={role === "fleet" ? "Dispatch Pro is $499 per month. Drivers on the account stay free." : "Network enrollment is sales-assisted. There is no posting fee; completed Network movements use the accepted plan allowance and overage rate."}
+                title="No plan on this workspace yet"
+              />
+            )
+          ) : (
+            <section
+              aria-label="Current plan"
+              className="plan-cards"
+              id="billing-plan"
+            >
+              {capabilityPlans.map((plan) => (
+                <article className="plan-card plan-card--current" key={plan.id}>
+                  <header className="plan-card__head">
+                    <div>
+                      <p className="eyebrow">Current plan</p>
+                      <h2>{plan.name}</h2>
+                      <p className="plan-card__summary">{plan.summary}</p>
+                    </div>
+                    <strong className="plan-card__price">
+                      {plan.priceLine}
+                    </strong>
+                  </header>
+                  <div className="plan-card__status">
+                    <Badge tone={plan.statusTone}>{plan.statusLine}</Badge>
+                    {plan.statusDetail ? <p>{plan.statusDetail}</p> : null}
+                  </div>
+                  <div className="plan-card__body">
+                    <h3>What your plan includes</h3>
+                    <ul>
+                      {plan.features.map((feature) => (
+                        <li key={feature}>
+                          <Icon
+                            aria-hidden
+                            name="status.assigned"
+                            size={16}
+                          />
+                          <span>{feature}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    {plan.limitLines.length > 0 ? (
+                      <p className="plan-card__limits">
+                        {plan.limitLines.join(" · ")}
+                      </p>
+                    ) : null}
+                  </div>
+                  {role === "fleet" &&
+                  plan.product === "fleet_operations" &&
+                  plan.actionKind === "checkout" ? (
+                    billing.billingReady ? (
+                      <SubscriptionBillingAction kind="dispatch_acceptance" />
+                    ) : null
+                  ) : plan.actionLabel && plan.actionKind ? (
+                    <PlanAction
+                      kind={plan.actionKind}
+                      label={plan.actionLabel}
+                      product={plan.product}
+                    />
+                  ) : null}
+                </article>
+              ))}
+            </section>
+          )
+        ) : null}
+
+        {!hasCanonicalSubscription && hostSubscriptionBilling ? (
+          <OrganizationSubscriptionSections
+            subscription={hostSubscriptionBilling}
+          />
+        ) : null}
+
+        {role === "fleet" &&
+        !hasCanonicalSubscription &&
+        capabilityPlans.length > 0 &&
+        !billing.billingReady ? (
+          <p className="billing-pending" role="note">
+            <Icon aria-hidden name="status.lock" size={16} />
+            <span>
+              Dispatch Pro checkout is temporarily unavailable. Current trial
+              access stays active.
+            </span>
+          </p>
+        ) : null}
+
+        {hostSubscriptionBilling || capabilityPlans.length > 0 ? (
+          <section
+            aria-label="Workspace capacity"
+            className="usage-panel usage-panel--workspace"
+            id="billing-workspace-usage"
+          >
+            <SectionHeader
+              eyebrow="Operational setup"
+              title="Workspace capacity"
+            />
+            {hasCanonicalSubscription ? (
+              <p className="usage-panel__intro">{workspaceUsageBody}</p>
+            ) : null}
+            {billing.usage.length === 0 ? (
+              <EmptyState
+                actionHref={addUsageHref}
+                actionLabel={addUsageLabel}
+                body={addUsageBody}
+                title="Nothing to measure yet"
+              />
+            ) : (
+              <div className="usage-list">
+                {billing.usage.map((row) => (
+                  <article className="usage-row" key={row.id}>
+                    <div className="usage-row__top">
+                      <strong>{row.label}</strong>
+                      <span
+                        className={`usage-row__detail usage-row__detail--${row.tone}`}
+                      >
+                        {row.detail}
+                      </span>
+                    </div>
+                    {row.percent !== null ? (
+                      <div
+                        aria-label={`${row.label}: ${row.detail}`}
+                        className="usage-meter"
+                        role="img"
+                      >
+                        <span
+                          className={`usage-meter__fill usage-meter__fill--${row.tone}`}
+                          style={{ width: `${row.percent}%` }}
+                        />
+                      </div>
+                    ) : null}
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : null}
+
+        {/* What a host owes LogLoads does not depend on carrying a plan record,
+            so a workspace without an entitlement still sees its own preserved
+            fees and bills. */}
         {hostBilling ? <HostMoneySections hostBilling={hostBilling} /> : null}
       </div>
     </AppShell>

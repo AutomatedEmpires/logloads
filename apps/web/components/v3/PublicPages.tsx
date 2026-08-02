@@ -3,11 +3,13 @@
 import Image from "next/image"
 import Link from "next/link"
 import { useActionState, type ReactNode } from "react"
-import { Badge } from "@logloads/ui"
+import { Badge, Icon } from "@logloads/ui"
 
 import { submitContactInquiryAction, type ContactFormState } from "@/lib/contact-actions"
 import type { NetworkLoadView } from "@/lib/network"
 import { payHeadline, presentPay } from "@/lib/pay-display"
+import { subscriptionPlanDefinition } from "@logloads/contracts"
+
 import { legalPages, loadProductLabel, pricingPlans, publicLoadHref, slugify, type LegalPageContent, type PublicStoryPage, visibilityLabel } from "@/lib/v3-shared"
 import { DevSignInForm, OnboardingFlow, type PendingInvitationOffer } from "./AuthForms"
 import type { DemoPersona } from "@/lib/demo-personas"
@@ -196,32 +198,179 @@ export function PublicLoadDetail({ load }: { load: NetworkLoadView }) {
 
 export function StoryPage({ page }: { page: PublicStoryPage }) {
   const isProcess = page.slug === "how-it-works"
+  const storyIcons = ["ops.document", "map.network", "status.verified"] as const
 
   return (
     <PublicShell>
       <main className={`page-main story-page story-page--${page.slug}`}>
-        <PageIntro eyebrow={page.eyebrow} title={page.title} body={page.intro} />
+        <section className="story-hero">
+          <div className="story-hero__copy">
+            <PageIntro
+              body={page.intro}
+              eyebrow={page.eyebrow}
+              title={page.title}
+            />
+            <Link className="action-link story-hero__action" href={page.cta.href}>
+              {page.cta.label}
+            </Link>
+          </div>
+          <aside
+            aria-label={`${page.eyebrow} at a glance`}
+            className="story-hero__brief"
+          >
+            <p className="eyebrow">At a glance</p>
+            <ul>
+              {page.sections.map((section, index) => (
+                <li key={section.title}>
+                  <Icon
+                    aria-hidden
+                    name={storyIcons[index] ?? "ops.document"}
+                    size={21}
+                  />
+                  <span>
+                    <strong>{section.title}</strong>
+                    <small>{section.points[0]}</small>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </aside>
+        </section>
         {isProcess ? (
           <ol className="story-grid story-grid--timeline">
             {page.sections.map((section, index) => (
-              <li key={section.title}><article><span aria-hidden>{index + 1}</span><h2>{section.title}</h2><p>{section.body}</p><ul>{section.points.map((point) => <li key={point}>{point}</li>)}</ul></article></li>
+              <li key={section.title}>
+                <article className="story-card">
+                  <span aria-hidden className="story-card__index">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <h2>{section.title}</h2>
+                  <p>{section.body}</p>
+                  <ul>
+                    {section.points.map((point) => (
+                      <li key={point}>{point}</li>
+                    ))}
+                  </ul>
+                </article>
+              </li>
             ))}
           </ol>
         ) : (
           <div className="story-grid">
-            {page.sections.map((section) => (
-              <article key={section.title}><h2>{section.title}</h2><p>{section.body}</p><ul>{section.points.map((point) => <li key={point}>{point}</li>)}</ul></article>
+            {page.sections.map((section, index) => (
+              <article className="story-card" key={section.title}>
+                <span aria-hidden className="story-card__index">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <h2>{section.title}</h2>
+                <p>{section.body}</p>
+                <ul>
+                  {section.points.map((point) => (
+                    <li key={point}>{point}</li>
+                  ))}
+                </ul>
+              </article>
             ))}
           </div>
         )}
-        <Link className="action-link" href={page.cta.href}>{page.cta.label}</Link>
+        <div className="story-page__action">
+          <span>Ready for the next operational step?</span>
+          <Link className="action-link" href={page.cta.href}>
+            {page.cta.label}
+          </Link>
+        </div>
         {page.attribution ? <p className="story-attribution">{page.attribution}</p> : null}
       </main>
     </PublicShell>
   )
 }
 
+type PricingPlan = (typeof pricingPlans)[number]
+
+function PricingCard({
+  plan,
+  variant
+}: {
+  plan: PricingPlan
+  variant: "dispatch" | "driver" | "enterprise" | "network"
+}) {
+  const badge = variant === "driver"
+    ? <Badge tone="success">Always free</Badge>
+    : plan.name === "Network 25"
+      ? <Badge tone="info">Starting Network tier</Badge>
+      : null
+
+  return (
+    <article
+      className={`pricing-card pricing-card--${variant}${variant === "driver" ? " pricing-card--free" : ""}`}
+    >
+      <div className="pricing-card__topline">
+        <p className="pricing-card__audience">{plan.audience}</p>
+        {badge}
+      </div>
+      <h3>{plan.name}</h3>
+      <strong className="pricing-card__price">{plan.price}</strong>
+      <p className="pricing-card__summary">{plan.summary}</p>
+      {plan.included || plan.overage || plan.commitment ? (
+        <dl className="pricing-card__facts">
+          {plan.included ? <div><dt>Included</dt><dd>{plan.included}</dd></div> : null}
+          {plan.overage ? <div><dt>Additional usage</dt><dd>{plan.overage}</dd></div> : null}
+          {plan.commitment ? <div><dt>Commitment</dt><dd>{plan.commitment}</dd></div> : null}
+        </dl>
+      ) : null}
+      <ul className="pricing-card__features">
+        {plan.features.map((feature) => (
+          <li key={feature}>
+            <Icon aria-hidden name="status.assigned" size={17} />
+            <span>{feature}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="pricing-card__footer">
+        <Link
+          className={variant === "driver" ? "action-link" : "action-link action-link--secondary"}
+          href={plan.cta.href}
+        >
+          {plan.cta.label}
+        </Link>
+        {plan.note ? <p className="pricing-card__note">{plan.note}</p> : null}
+      </div>
+    </article>
+  )
+}
+
 export function PricingPage() {
+  const driverPlan = pricingPlans.find((plan) => plan.name === "Driver")
+  const dispatchPlan = pricingPlans.find((plan) => plan.name === "Dispatch Pro")
+  const networkPlans = pricingPlans.filter((plan) =>
+    ["Network 25", "Network 50", "Network 100"].includes(plan.name)
+  )
+  const enterprisePlan = pricingPlans.find((plan) => plan.name === "Enterprise custom")
+
+  if (!driverPlan || !dispatchPlan || networkPlans.length !== 3 || !enterprisePlan) {
+    throw new Error("The fixed public pricing catalog is incomplete.")
+  }
+
+  // Pilot commercial terms render from the canonical plan definition so this
+  // page cannot drift from what billing actually enforces.
+  const pilotPlan = subscriptionPlanDefinition("network_pilot")
+  if (
+    pilotPlan.baseMonthlyPriceCents === null ||
+    pilotPlan.includedNetworkLoadUnits === null ||
+    pilotPlan.overageUnitPriceCents === null ||
+    pilotPlan.allowanceWindowDays === null ||
+    pilotPlan.commitmentMonths === null
+  ) {
+    throw new Error("The Pilot plan definition is incomplete.")
+  }
+  const usd = (cents: number) =>
+    `$${(cents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+  const pilotMonthly = usd(pilotPlan.baseMonthlyPriceCents)
+  const pilotMinimum = usd(
+    pilotPlan.baseMonthlyPriceCents * pilotPlan.commitmentMonths
+  )
+  const pilotOverage = usd(pilotPlan.overageUnitPriceCents)
+
   return (
     <PublicShell>
       <main className="page-main pricing-page">
@@ -230,57 +379,99 @@ export function PricingPage() {
           title="Drivers stay free. Hosts pay for an operating Network."
           body="There is no posting fee. Network plans include a defined number of completed Network-coordinated physical load movements, with automatic flat overage after the allowance. Driver or carrier compensation remains separate and is paid directly by the host."
         />
-        <div className="pricing-grid">
-          {pricingPlans.map((plan) => (
-            <article className={plan.name === "Driver" ? "pricing-card pricing-card--free" : "pricing-card"} key={plan.name}>
-              <span>{plan.audience}</span>
-              <h2>{plan.name}</h2>
-              <strong className="pricing-card__price">{plan.price}</strong>
-              <p className="pricing-card__summary">{plan.summary}</p>
-              {plan.included || plan.overage || plan.commitment ? (
-                <dl className="pricing-card__facts">
-                  {plan.included ? <div><dt>Included</dt><dd>{plan.included}</dd></div> : null}
-                  {plan.overage ? <div><dt>Additional usage</dt><dd>{plan.overage}</dd></div> : null}
-                  {plan.commitment ? <div><dt>Commitment</dt><dd>{plan.commitment}</dd></div> : null}
-                </dl>
-              ) : null}
-              <ul>{plan.features.map((feature) => <li key={feature}>{feature}</li>)}</ul>
-              <Link className={plan.name === "Driver" ? "action-link" : "action-link action-link--secondary"} href={plan.cta.href}>{plan.cta.label}</Link>
-              {plan.note ? <p className="pricing-card__note">{plan.note}</p> : null}
-            </article>
-          ))}
-        </div>
-        <section className="legal-note">
-          <h2>The paid Pilot is invitation-only.</h2>
-          <p>
-            A selected design partner pays $1,500 per month for an exact 90-day
-            operating engagement—a $4,500 minimum base commitment. Thirty
-            completed Network movements are pooled across the engagement;
-            additional completed movements are $150 each. Once the operating
-            market is ready, the first verified paid billing period starts the
-            Pilot; onboarding alone does not. The Pilot is not available through
-            public self-service checkout.
-          </p>
+
+        <section aria-labelledby="pricing-start-title" className="pricing-lane pricing-lane--baseline">
+          <div className="pricing-lane__intro">
+            <p className="eyebrow">Start with the operating lane</p>
+            <h2 id="pricing-start-title">Free for drivers. Private dispatch for established capacity.</h2>
+            <p>Drivers use LogLoads without a subscription. Fleets that already coordinate their own trucks and partners can run that work in Dispatch Pro.</p>
+          </div>
+          <div className="pricing-grid pricing-grid--baseline">
+            <PricingCard plan={driverPlan} variant="driver" />
+            <PricingCard plan={dispatchPlan} variant="dispatch" />
+          </div>
         </section>
-        <section className="legal-note">
-          <h2>How overage works.</h2>
-          <p>
-            Network 25 at 30 completed movements is $3,000 + 5 × $125 = $3,625.
-            Network 50 at 60 is $5,500 + 10 × $110 = $6,600. Network 100 at 110
-            is $10,000 + 10 × $90 = $10,900. Reaching an allowance never stops
-            accepted or in-progress work; it starts the published overage rate.
-          </p>
+
+        <section aria-labelledby="pilot-title" className="legal-note pricing-pilot">
+          <div className="pricing-pilot__icon">
+            <Icon aria-hidden name="map.network" size={28} />
+          </div>
+          <div className="pricing-pilot__copy">
+            <Badge tone="warning">Invitation only</Badge>
+            <h2 id="pilot-title">The paid Pilot is invitation-only.</h2>
+            <p>
+              The Pilot is {pilotMonthly} per month for one selected design
+              partner—an exact {pilotPlan.allowanceWindowDays}-day operating
+              engagement with a {pilotMinimum} minimum base commitment.{" "}
+              {pilotPlan.includedNetworkLoadUnits} completed Network movements
+              are pooled across the engagement; additional completed movements
+              are {pilotOverage} each. Once the operating market is ready, the
+              first verified paid billing period starts the Pilot; onboarding
+              alone does not. The Pilot is not available through public
+              self-service checkout.
+            </p>
+          </div>
+          <dl className="pricing-pilot__facts">
+            <div><dt>Monthly base</dt><dd>{pilotMonthly}</dd></div>
+            <div><dt>Engagement</dt><dd>Exact {pilotPlan.allowanceWindowDays} days</dd></div>
+            <div><dt>Pooled allowance</dt><dd>{pilotPlan.includedNetworkLoadUnits} completed movements</dd></div>
+            <div><dt>Additional usage</dt><dd>{pilotOverage} per completion</dd></div>
+          </dl>
+          <Link className="action-link action-link--secondary" href="/contact?plan=network-pilot">
+            Ask about the Pilot
+          </Link>
         </section>
-        <section className="legal-note">
-          <h2>What counts—and what does not.</h2>
-          <p>
-            One completed physical movement fulfilled through LogLoads Network
-            counts once. Drafts, postings, searches, requests, unaccepted offers,
-            cancellation before execution, duplicate completion, and
-            private-fleet work do not count. Actual transportation compensation
-            is separate, remains payable directly by the host, and is never
-            reduced by a LogLoads charge.
-          </p>
+
+        <section aria-labelledby="network-plans-title" className="pricing-lane pricing-lane--network">
+          <div className="pricing-lane__intro">
+            <p className="eyebrow">LogLoads Network</p>
+            <h2 id="network-plans-title">Choose the completed-movement allowance that fits the operation.</h2>
+            <p>Every Network plan includes the core Dispatch Pro workflow. Accepted and in-progress work continues when the allowance is reached; completed overage is billed at the published flat rate.</p>
+          </div>
+          <div className="pricing-grid pricing-grid--network">
+            {networkPlans.map((plan) => (
+              <PricingCard key={plan.name} plan={plan} variant="network" />
+            ))}
+          </div>
+        </section>
+
+        <section aria-labelledby="enterprise-title" className="pricing-lane pricing-lane--enterprise">
+          <div className="pricing-lane__intro">
+            <p className="eyebrow">Contract-specific operations</p>
+            <h2 id="enterprise-title">Define the operating agreement—never an unlimited-load promise.</h2>
+          </div>
+          <div className="pricing-grid pricing-grid--enterprise">
+            <PricingCard plan={enterprisePlan} variant="enterprise" />
+          </div>
+        </section>
+
+        <section aria-label="How Network billing works" className="pricing-explainers">
+          <article className="pricing-explainer">
+            <div className="pricing-explainer__heading">
+              <Icon aria-hidden name="load.pay" size={24} />
+              <h2>How overage works.</h2>
+            </div>
+            <p>
+              Network 25 at 30 completed movements is $3,000 + 5 × $125 = $3,625.
+              Network 50 at 60 is $5,500 + 10 × $110 = $6,600. Network 100 at 110
+              is $10,000 + 10 × $90 = $10,900. Reaching an allowance never stops
+              accepted or in-progress work; it starts the published overage rate.
+            </p>
+          </article>
+          <article className="pricing-explainer">
+            <div className="pricing-explainer__heading">
+              <Icon aria-hidden name="ops.audit" size={24} />
+              <h2>What counts—and what does not.</h2>
+            </div>
+            <p>
+              One completed physical movement fulfilled through LogLoads Network
+              counts once. Drafts, postings, searches, requests, unaccepted offers,
+              cancellation before execution, duplicate completion, and
+              private-fleet work do not count. Actual transportation compensation
+              is separate, remains payable directly by the host, and is never
+              reduced by a LogLoads charge.
+            </p>
+          </article>
         </section>
       </main>
     </PublicShell>
