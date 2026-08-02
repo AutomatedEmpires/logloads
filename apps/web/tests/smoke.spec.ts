@@ -91,6 +91,61 @@ test("onboarding provisions a working driver account", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Loads" })).toBeVisible()
 })
 
+test("host onboarding opens a mobile first-movement launchpad", async ({ page }, testInfo) => {
+  test.skip(
+    testInfo.project.name === "desktop-chrome",
+    "this path sets and verifies the exact 390px host onboarding viewport"
+  )
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto("/onboarding/host")
+  await page.waitForLoadState("domcontentloaded")
+
+  await expect(page.getByRole("radio", { name: /Logging contractor/ })).toBeChecked()
+  await page.getByLabel("Full name").fill("Mobile Pilot Host")
+  await page.getByLabel("Email").fill(`host-${Date.now()}@smoke.example`)
+  await page.getByLabel("Phone").fill("555-0168")
+  await page.getByRole("button", { name: "Continue" }).click()
+
+  await page.getByLabel("Company or operation name").fill("Mobile Pilot Timber")
+  await page.getByLabel("Operating region").fill("Test Valley")
+  await page.getByRole("button", { name: "Continue" }).click()
+
+  await expect(
+    page.getByRole("group", { name: "Your workspace is ready to create" })
+  ).toBeVisible()
+  await page.getByRole("button", { name: "Create workspace and continue" }).click()
+  await page.waitForURL(/\/host\/landings\?welcome=1/, { timeout: 30_000 })
+
+  await expect(page.getByRole("heading", { name: "Landings", exact: true })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Prepare your first timber movement" })).toBeVisible()
+  const readiness = page.locator(".host-readiness")
+  await expect(readiness.getByText("Add a landing", { exact: true })).toBeVisible()
+  await expect(readiness.getByText("Add a lane", { exact: true })).toBeVisible()
+  await expect(readiness.getByText("Add a pay rate", { exact: true })).toBeVisible()
+  await expect(readiness.getByText("Prepare a draft", { exact: true })).toBeVisible()
+  await expect(readiness.getByText("Assisted activation", { exact: true })).toBeVisible()
+  await expect(readiness.getByText(/does not enroll or charge you/i)).toBeVisible()
+
+  const primaryAction = readiness.getByRole("link", { name: "Add first landing" })
+  const actionBox = await primaryAction.boundingBox()
+  expect(actionBox?.height ?? 0).toBeGreaterThanOrEqual(44)
+  expect(actionBox?.y ?? Number.POSITIVE_INFINITY).toBeLessThan(844)
+  const viewportWidth = await page.evaluate(() => document.documentElement.clientWidth)
+  const contentWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+  expect(contentWidth).toBeLessThanOrEqual(viewportWidth + 1)
+
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("host-first-movement-mobile.png")
+  })
+
+  await page.goto("/host/command")
+  await expect(page.getByRole("heading", { name: "Finish workspace setup" })).toBeVisible()
+  await expect(page.getByText("No truckloads scheduled")).toHaveCount(0)
+  await expect(page.getByText("Every planned truckload is committed")).toHaveCount(0)
+})
+
 test("driver mobile navigation follows the directed flow", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await signIn(page, "hank@northpine.example")

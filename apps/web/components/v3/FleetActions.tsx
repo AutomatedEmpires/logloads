@@ -1,5 +1,6 @@
 "use client"
 
+import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { Badge, Button } from "@logloads/ui"
 
@@ -71,15 +72,28 @@ export function RequestForTruckButton({
 export function ClaimDirectOfferButton({
   directOfferId,
   equipmentCombinationId,
+  onClaimed,
   truckSlotId
 }: {
   directOfferId: string
   equipmentCombinationId: string
+  onClaimed: () => void
   truckSlotId: string | null
 }) {
+  const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [claimed, setClaimed] = useState(false)
+
+  if (claimed) {
+    return (
+      <div className="fleet-action" role="status">
+        <Badge tone="success">Truck confirmed</Badge>
+        <p className="fleet-action__hint">The assignment and field Route Pack are ready.</p>
+      </div>
+    )
+  }
 
   if (confirming) {
     return (
@@ -96,12 +110,17 @@ export function ClaimDirectOfferButton({
               const result = await claimDirectOfferAction({ directOfferId, equipmentCombinationId, truckSlotId })
 
               if (result.ok) {
-                // A router refresh issued inside this server-action transition
-                // can be folded into the action response and leave the enclosing
-                // Server Component projection stale. A real navigation forces
-                // the next request to reload canonical state before it shows the
-                // new offer count, assignment, and next eligible rig.
-                window.location.reload()
+                onClaimed()
+                setClaimed(true)
+                // The local success state keeps the field action responsive,
+                // while the refreshed server projection updates offer capacity,
+                // assignments, and every sibling control from the committed
+                // canonical snapshot. A refresh issued inside this transition
+                // can be folded into the action response — the reason an
+                // earlier fix reached for a full reload — so the convergence
+                // panel carries a bounded retry for exactly that path without
+                // losing the operator's success state.
+                router.refresh()
               } else {
                 setError(result.error ?? "The truck could not be assigned.")
               }

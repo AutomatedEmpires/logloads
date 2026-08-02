@@ -151,7 +151,7 @@ test("the paid Pilot is invitation-only and is not a public plan card", async ({
   await expect(pilot).toContainText("exact 90-day operating engagement")
   await expect(pilot).toContainText("$4,500 minimum base commitment")
   await expect(pilot).toContainText(
-    "Thirty completed Network movements are pooled across the engagement"
+    "30 completed Network movements are pooled across the engagement"
   )
   await expect(pilot).toContainText(
     "additional completed movements are $150 each"
@@ -213,6 +213,68 @@ test("a grandfathered host sees legacy terms without a new subscription Checkout
   ).toHaveCount(0)
 
   await expectHealthyPage(page, clientErrors)
+})
+
+test("tablet billing and public story layouts keep their hierarchy without overlap", async ({
+  page
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name === "mobile-chrome",
+    "this path verifies the exact 768px app-shell and public-page layouts"
+  )
+
+  await page.setViewportSize({ height: 1024, width: 768 })
+  await signIn(page, "cole@summit.example")
+  await page.goto("/host/billing")
+  await page.waitForLoadState("domcontentloaded")
+
+  const enrollment = page.locator(".subscription-overview")
+  await expect(
+    page.getByRole("heading", { exact: true, name: "Billing" })
+  ).toBeVisible()
+  await expect(enrollment).toBeVisible()
+  const facts = enrollment.locator(".subscription-overview__facts")
+  const balance = enrollment.locator(".subscription-overview__balance")
+  const factsBox = await facts.boundingBox()
+  const balanceBox = await balance.boundingBox()
+
+  expect(factsBox).not.toBeNull()
+  expect(balanceBox).not.toBeNull()
+  expect(balanceBox!.y).toBeGreaterThanOrEqual(
+    factsBox!.y + factsBox!.height - 1
+  )
+  const billingViewportWidth = await page.evaluate(
+    () => document.documentElement.clientWidth
+  )
+  const billingContentWidth = await page.evaluate(
+    () => document.documentElement.scrollWidth
+  )
+  expect(billingContentWidth).toBeLessThanOrEqual(billingViewportWidth + 1)
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("host-billing-tablet.png")
+  })
+
+  await page.goto("/for-landings")
+  await page.waitForLoadState("domcontentloaded")
+  const storyAction = page
+    .locator(".story-hero")
+    .getByRole("link", { name: "Publish your first load" })
+  const storyActionBox = await storyAction.boundingBox()
+  expect(storyActionBox).not.toBeNull()
+  expect(storyActionBox!.y + storyActionBox!.height).toBeLessThanOrEqual(1024)
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath("for-landings-tablet.png")
+  })
+
+  await page.goto("/how-it-works")
+  const timelineItems = page.locator(".story-grid--timeline > li")
+  const firstItemBox = await timelineItems.nth(0).boundingBox()
+  const lastItemBox = await timelineItems.nth(2).boundingBox()
+  expect(firstItemBox).not.toBeNull()
+  expect(lastItemBox).not.toBeNull()
+  expect(lastItemBox!.width).toBeGreaterThan(firstItemBox!.width * 1.5)
 })
 
 test("admin billing exposes every configurable tier without overstating revenue or enrollment", async ({

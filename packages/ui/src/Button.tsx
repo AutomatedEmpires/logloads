@@ -8,12 +8,22 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "primary" | "secondary" | "ghost"
 }
 
-export function Button({ children, icon, type = "button", variant = "primary", ...rest }: ButtonProps) {
+export function Button({
+  children,
+  className,
+  icon,
+  type = "button",
+  variant = "primary",
+  ...rest
+}: ButtonProps) {
   return (
-    <button className={`ui-button ui-button--${variant}`} type={type} {...rest}>
+    <button
+      {...rest}
+      className={`ui-button ui-button--${variant}${className ? ` ${className}` : ""}`}
+      type={type}
+    >
       {icon ? <Icon aria-hidden name={icon} size={20} /> : null}
       <span>{children}</span>
     </button>
   )
 }
-

@@ -337,19 +337,24 @@ export function OnboardingFlow({
         </fieldset>
       ) : (
         <fieldset data-onboarding-step="2" hidden={step !== 2}>
-          <legend tabIndex={-1}>Your operation is ready</legend>
+          <legend tabIndex={-1}>Your workspace is ready to create</legend>
           <p className="fieldset-note">
-            Next, LogLoads will open your operating workspace. Creating it does
-            not start a subscription or charge a card; paid Network enrollment
-            and operational activation are sales-assisted.
+            Next, set up the operating records your first timber movement needs.
+            Creating the workspace does not start a subscription or charge a
+            card; paid Network enrollment and operational activation are
+            sales-assisted.
           </p>
           <div className="onboarding-ready">
             <strong>
               {path === "host"
-                ? "Start with your landing, routes, and operating requirements."
+                ? "Start with one landing, its first lane, and the rate you pay."
                 : "Start by setting up your operation."}
             </strong>
-            <span>Only the information needed for the next decision appears on each screen.</span>
+            <span>
+              {path === "host"
+                ? "You can prepare the workspace and a draft before LogLoads completes assisted activation with you."
+                : "Only the information needed for the next decision appears on each screen."}
+            </span>
           </div>
         </fieldset>
       )}
@@ -365,7 +370,13 @@ export function OnboardingFlow({
           <button className="action-link" onClick={advanceStep} type="button">Continue</button>
         ) : (
           <button className="action-link" disabled={pending} type="submit">
-            {pending ? "Setting up..." : path === "driver" ? "Show me matching loads" : "Open my workspace"}
+            {pending
+              ? "Setting up..."
+              : path === "driver"
+                ? "Show me matching loads"
+                : path === "host"
+                  ? "Create workspace and continue"
+                  : "Open my workspace"}
           </button>
         )}
         {step > 0 ? (

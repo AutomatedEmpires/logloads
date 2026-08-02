@@ -1,7 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { Fragment, useMemo, useState, type ReactNode } from "react"
+import { useRouter } from "next/navigation"
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
 import type { NetworkLoadView, NetworkView } from "@/lib/network"
@@ -728,7 +729,7 @@ export function FleetOpportunityDetail({
   network,
   options
 }: FleetShellProps & { load: NetworkLoadView | null; options: LoadDispatchOption[] }) {
-  const directOffer = load
+  const serverDirectOffer = load
     ? network.directOffers.find((offer) =>
         offer.direction === "received" &&
         offer.loadPostingId === load.id &&
@@ -736,6 +737,96 @@ export function FleetOpportunityDetail({
         offer.remainingTruckloads > 0
       ) ?? null
     : null
+  const [optimisticOffer, setOptimisticOffer] = useState<{
+    directOfferId: string
+    remainingTruckloads: number
+    serverRemainingTruckloads: number
+  } | null>(null)
+  const [claimConvergence, setClaimConvergence] = useState<{
+    directOfferId: string
+    equipmentCombinationId: string
+    serverRemainingTruckloads: number
+  } | null>(null)
+
+  useEffect(() => {
+    setOptimisticOffer((current) =>
+      current &&
+      (
+        current.directOfferId !== serverDirectOffer?.id ||
+        current.serverRemainingTruckloads !==
+          serverDirectOffer.remainingTruckloads
+      )
+        ? null
+        : current
+    )
+    setClaimConvergence((current) =>
+      current &&
+      (
+        current.directOfferId !== serverDirectOffer?.id ||
+        current.serverRemainingTruckloads !==
+          serverDirectOffer.remainingTruckloads
+      )
+        ? null
+        : current
+    )
+  }, [serverDirectOffer?.id, serverDirectOffer?.remainingTruckloads])
+
+  const claimConvergenceActive = Boolean(
+    claimConvergence &&
+    claimConvergence.directOfferId === serverDirectOffer?.id &&
+    claimConvergence.serverRemainingTruckloads ===
+      serverDirectOffer.remainingTruckloads
+  )
+
+  // A claim whose canonical refresh never lands must not pin this panel
+  // forever: after a bounded wait the operator gets an explicit retry.
+  const router = useRouter()
+  const [claimConvergenceStalled, setClaimConvergenceStalled] = useState(false)
+  useEffect(() => {
+    if (!claimConvergenceActive) {
+      setClaimConvergenceStalled(false)
+      return
+    }
+    const timer = setTimeout(() => setClaimConvergenceStalled(true), 12_000)
+    return () => clearTimeout(timer)
+  }, [claimConvergenceActive])
+  const displayedRemainingTruckloads = serverDirectOffer
+    ? optimisticOffer?.directOfferId === serverDirectOffer.id &&
+      optimisticOffer.serverRemainingTruckloads ===
+        serverDirectOffer.remainingTruckloads
+      ? optimisticOffer.remainingTruckloads
+      : serverDirectOffer.remainingTruckloads
+    : 0
+  const directOffer =
+    serverDirectOffer && displayedRemainingTruckloads > 0
+      ? {
+          ...serverDirectOffer,
+          remainingTruckloads: displayedRemainingTruckloads
+        }
+      : null
+  const recordDirectOfferClaim = (equipmentCombinationId: string) => {
+    if (!serverDirectOffer) {
+      return
+    }
+
+    setClaimConvergence({
+      directOfferId: serverDirectOffer.id,
+      equipmentCombinationId,
+      serverRemainingTruckloads: serverDirectOffer.remainingTruckloads
+    })
+    setOptimisticOffer((current) => ({
+      directOfferId: serverDirectOffer.id,
+      remainingTruckloads: Math.max(
+        0,
+        current?.directOfferId === serverDirectOffer.id &&
+          current.serverRemainingTruckloads ===
+            serverDirectOffer.remainingTruckloads
+          ? current.remainingTruckloads - 1
+          : serverDirectOffer.remainingTruckloads - 1
+      ),
+      serverRemainingTruckloads: serverDirectOffer.remainingTruckloads
+    }))
+  }
 
   return (
     <AppShell account={account} contentOwnsHeading role="fleet" title="Load detail" kicker="Dispatch decision" orgName={network.activeOrganization.name}>
@@ -808,7 +899,7 @@ export function FleetOpportunityDetail({
           </div>
 
           <aside className="fleet-detail__aside">
-            <h2>{directOffer ? "Accept with a truck" : "Send a truck"}</h2>
+            <h2>{directOffer || claimConvergenceActive ? "Accept with a truck" : "Send a truck"}</h2>
             {options.length === 0 ? (
               <EmptyState
                 title="No truck can take this right now."
@@ -826,10 +917,33 @@ export function FleetOpportunityDetail({
                   <span>{option.driverName} · {option.payload}</span>
                   {option.reasons.map((reason) => <p key={reason}>{reason}</p>)}
                   {option.eligible ? (
-                    directOffer ? (
+                    claimConvergenceActive ? (
+                      <div className="fleet-action" role="status">
+                        <Badge tone={claimConvergence?.equipmentCombinationId === option.combinationId ? "success" : "neutral"}>
+                          {claimConvergence?.equipmentCombinationId === option.combinationId
+                            ? "Truck confirmed"
+                            : "Refreshing offer"}
+                        </Badge>
+                        <p className="fleet-action__hint">
+                          {claimConvergence?.equipmentCombinationId === option.combinationId
+                            ? "The assignment and field Route Pack are ready."
+                            : "Waiting for the next canonical haul window before another truck can be assigned."}
+                        </p>
+                        {claimConvergenceStalled ? (
+                          <button
+                            className="action-link action-link--secondary"
+                            onClick={() => router.refresh()}
+                            type="button"
+                          >
+                            Refresh offer status
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : directOffer ? (
                       <ClaimDirectOfferButton
                         directOfferId={directOffer.id}
                         equipmentCombinationId={option.combinationId}
+                        onClaimed={() => recordDirectOfferClaim(option.combinationId)}
                         truckSlotId={load.slots.claimableSlotId}
                       />
                     ) : (
