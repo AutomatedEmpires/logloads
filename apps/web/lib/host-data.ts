@@ -267,7 +267,10 @@ export function getHostWorkspaceSetup(organizationId: string): HostWorkspaceSetu
   return {
     activeLandingCount: services.countActiveLandings(organizationId),
     landingLimit: services.activeLandingLimitFor(organizationId),
+    // Shared platform destinations plus this organization's own submissions;
+    // another outfit's submitted mill is not offered as a lane endpoint.
     mills: state.mills
+      .filter((mill) => !mill.companyId || mill.companyId === organizationId)
       .map((mill) => ({ id: mill.id, label: `${mill.name} — ${mill.city}, ${mill.state}` }))
       .sort((left, right) => left.label.localeCompare(right.label)),
     rates: state.rates

@@ -1069,6 +1069,47 @@ export async function setLandingActiveAction(input: {
   }
 }
 
+export async function createMillAction(input: {
+  name: string
+  addressLine1: string
+  city: string
+  state: string
+  postalCode: string
+  latitude: number
+  longitude: number
+  contactName: string
+  contactPhone: string
+  contactEmail?: string | null
+  accessNotes?: string | null
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+    const mill = await commit(HOST_SETUP_PATHS, (draft) =>
+      draft.createMill({
+        accessNotes: input.accessNotes ?? null,
+        actorUserId: actor.profile.id,
+        addressLine1: input.addressLine1,
+        city: input.city,
+        contact: {
+          email: input.contactEmail || null,
+          name: input.contactName,
+          phone: input.contactPhone
+        },
+        coordinates: { lat: input.latitude, lng: input.longitude },
+        name: input.name,
+        organizationId: actorOrganizationId(actor),
+        postalCode: input.postalCode,
+        state: input.state
+      })
+    )
+
+    captureServerEvent("mill_created", actor.profile.id, { millId: mill.id })
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
 export async function createHaulRouteAction(input: {
   landingId: string
   millId: string

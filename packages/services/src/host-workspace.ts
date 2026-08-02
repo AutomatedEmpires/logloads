@@ -4,6 +4,7 @@ import {
   coordinatesSchema,
   haulRouteSchema,
   landingSchema,
+  millSchema,
   moneySchema,
   rateSchema,
   rateTypeSchema,
@@ -12,6 +13,7 @@ import {
   type Entitlement,
   type HaulRoute,
   type Landing,
+  type Mill,
   type RichLandingDetails,
   type Rate
 } from "@logloads/contracts"
@@ -431,16 +433,103 @@ export function setLandingActive(
   return updated
 }
 
+/**
+ * A destination is usable in a lane when it is a shared platform record or a
+ * record this organization submitted itself. Foreign records refuse as
+ * not-found, so the refusal cannot be used to enumerate other outfits' mills.
+ */
+export function millUsableByOrganization(mill: Mill, organizationId: string): boolean {
+  return mill.companyId === null || mill.companyId === undefined || mill.companyId === organizationId
+}
+
+const millInputSchema = actorContextSchema.extend({
+  name: z.string().trim().min(1, "Name the mill or destination so a lane can end there"),
+  addressLine1: z.string().trim().min(1),
+  city: z.string().trim().min(1),
+  state: z.string().trim().min(2),
+  postalCode: z.string().trim().min(3),
+  coordinates: coordinatesSchema,
+  contact: contactSchema,
+  accessNotes: z.string().trim().max(500).optional().nullable()
+})
+
+/**
+ * The mill or destination a host hauls to, submitted in-product. Before this,
+ * mills were seed-only platform records, so a real host outside the two demo
+ * mills could never finish a lane — while the UI promised "tell us which mill
+ * you haul to and we will add it" with nothing behind it. A submitted record
+ * belongs to the submitting organization: it is immediately usable in that
+ * organization's lanes and invisible to other organizations' lane builders,
+ * while staying readable by reference wherever a published load names it.
+ */
+export function createMill(state: LogLoadsDatabaseState, rawInput: unknown): Mill {
+  const input = millInputSchema.parse(rawInput)
+  const context = getActiveOrganizationContext(state, input.actorUserId, input.organizationId)
+  assertOrganizationAction(context, "publish_load")
+
+  const normalized = `${input.name.toLowerCase()} ${input.city.toLowerCase()}`
+
+  assertCondition(
+    !state.mills.some(
+      (candidate) =>
+        millUsableByOrganization(candidate, input.organizationId) &&
+        `${candidate.name.toLowerCase()} ${candidate.city.toLowerCase()}` === normalized
+    ),
+    "That destination is already on file for this workspace"
+  )
+
+  const timestamp = nowIso()
+  const mill = millSchema.parse({
+    accessNotes: input.accessNotes ?? null,
+    addressLine1: input.addressLine1,
+    city: input.city,
+    companyId: input.organizationId,
+    contact: input.contact,
+    coordinates: input.coordinates,
+    createdAt: timestamp,
+    id: createUuid(),
+    isActive: true,
+    // Internal identifier only; hosts are never asked to know a "mill code".
+    millCode: `HOST-${input.name.replace(/[^A-Za-z0-9]/g, "").slice(0, 10).toUpperCase() || "DEST"}`,
+    name: input.name,
+    postalCode: input.postalCode,
+    roadCondition: null,
+    slotWindowMinutes: null,
+    state: input.state,
+    updatedAt: timestamp,
+    weatherNotes: null
+  })
+
+  state.mills.push(mill)
+  state.auditEvents.push(auditEventSchema.parse({
+    action: "mill_created",
+    actorUserId: input.actorUserId,
+    createdAt: timestamp,
+    entityId: mill.id,
+    entityType: "mill",
+    id: createUuid(),
+    metadata: { name: mill.name, organizationId: input.organizationId }
+  }))
+
+  return mill
+}
+
 export function createHaulRoute(state: LogLoadsDatabaseState, rawInput: CreateHaulRouteInput): HaulRoute {
   const input = haulRouteInputSchema.parse(rawInput)
   const context = getActiveOrganizationContext(state, input.actorUserId, input.organizationId)
   assertOrganizationAction(context, "publish_load")
 
   // The lane must start somewhere this organization actually controls; the
-  // destination is platform-managed and shared, so it need only exist.
+  // destination must be a shared platform record or this organization's own
+  // submission — a foreign record refuses exactly like a missing one.
   requireOwnLanding(state, input.landingId, input.organizationId)
-  assertFound(
+  const destination = assertFound(
     state.mills.find((candidate) => candidate.id === input.millId),
+    "That destination was not found"
+  )
+
+  assertCondition(
+    millUsableByOrganization(destination, input.organizationId),
     "That destination was not found"
   )
 

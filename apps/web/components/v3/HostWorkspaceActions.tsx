@@ -9,6 +9,7 @@ import { Icon } from "@logloads/ui"
 import {
   createHaulRouteAction,
   createLandingAction,
+  createMillAction,
   createRateAction,
   setLandingActiveAction,
   updateLandingAction,
@@ -360,6 +361,117 @@ export function LandingActiveToggle({
 }
 
 /** Adds a lane from this landing to a destination. */
+/**
+ * The mill or destination this organization hauls to. Submissions are
+ * organization-owned: immediately usable in this workspace's lanes, never
+ * offered to other outfits' lane builders.
+ */
+export function MillForm({ onDone }: { onDone?: () => void }) {
+  const router = useRouter()
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  const [pending, startTransition] = useTransition()
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = event.currentTarget
+    const data = new FormData(form)
+    const latitude = numberOrNull(data.get("lat"))
+    const longitude = numberOrNull(data.get("lng"))
+
+    if (latitude === null || longitude === null) {
+      setError("Give the destination map coordinates.")
+      return
+    }
+
+    setError(null)
+    setSaved(false)
+    startTransition(async () => {
+      const result = await createMillAction({
+        accessNotes: String(data.get("accessNotes") ?? "").trim() || null,
+        addressLine1: String(data.get("addressLine1") ?? "").trim(),
+        city: String(data.get("city") ?? "").trim(),
+        contactEmail: String(data.get("contactEmail") ?? "").trim() || null,
+        contactName: String(data.get("contactName") ?? "").trim(),
+        contactPhone: String(data.get("contactPhone") ?? "").trim(),
+        latitude,
+        longitude,
+        name: String(data.get("name") ?? "").trim(),
+        postalCode: String(data.get("postalCode") ?? "").trim(),
+        state: String(data.get("state") ?? "").trim()
+      })
+
+      if (!result.ok) {
+        setError(result.error ?? "The destination could not be saved.")
+        return
+      }
+
+      setSaved(true)
+      form.reset()
+      onDone?.()
+      router.refresh()
+    })
+  }
+
+  return (
+    <form className="workspace-form" onSubmit={submit}>
+      <div className="workspace-form__grid">
+        <label>
+          Destination name
+          <input name="name" placeholder="Cascade Mill" required type="text" />
+        </label>
+        <label>
+          Street address
+          <input name="addressLine1" required type="text" />
+        </label>
+        <label>
+          City
+          <input name="city" required type="text" />
+        </label>
+        <label>
+          State
+          <input maxLength={2} name="state" required size={2} type="text" />
+        </label>
+        <label>
+          Postal code
+          <input name="postalCode" required type="text" />
+        </label>
+        <label>
+          Map latitude
+          <input name="lat" placeholder="44.05" required step="any" type="number" />
+        </label>
+        <label>
+          Map longitude
+          <input name="lng" placeholder="-121.31" required step="any" type="number" />
+        </label>
+        <label>
+          Scale house or site contact
+          <input name="contactName" required type="text" />
+        </label>
+        <label>
+          Contact phone
+          <input name="contactPhone" required type="tel" />
+        </label>
+        <label>
+          Contact email
+          <input name="contactEmail" type="email" />
+        </label>
+      </div>
+      <label className="workspace-form__wide">
+        Check-in notes
+        <textarea name="accessNotes" placeholder="Check in at gate 2; scale is on the left." rows={2} />
+      </label>
+      <div className="workspace-form__actions">
+        <button className="action-link" disabled={pending} type="submit">
+          {pending ? "Saving…" : "Add destination"}
+        </button>
+        {saved ? <span className="action-note">Saved. It is available in your lanes now.</span> : null}
+      </div>
+      {error ? <p className="action-error" role="alert">{error}</p> : null}
+    </form>
+  )
+}
+
 export function HaulRouteForm({ landingId, mills }: { landingId: string; mills: HostMillOption[] }) {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
@@ -404,10 +516,14 @@ export function HaulRouteForm({ landingId, mills }: { landingId: string; mills: 
 
   if (mills.length === 0) {
     return (
-      <p className="workspace-hint">
-        No destinations are on file yet, so a lane has nowhere to end. Destinations are platform records — tell us
-        which mill you haul to and we will add it.
-      </p>
+      <div>
+        <p className="workspace-hint">
+          No destinations are on file yet, so a lane has nowhere to end. Add the
+          mill or destination you haul to — it is usable in your lanes the
+          moment it saves.
+        </p>
+        <MillForm />
+      </div>
     )
   }
 
@@ -450,6 +566,21 @@ export function HaulRouteForm({ landingId, mills }: { landingId: string; mills: 
       </div>
       {error ? <p className="action-error" role="alert">{error}</p> : null}
     </form>
+  )
+}
+
+/** The lane builder plus the escape hatch for an unlisted destination. */
+export function LaneBuilder({ landingId, mills }: { landingId: string; mills: HostMillOption[] }) {
+  return (
+    <div>
+      <HaulRouteForm landingId={landingId} mills={mills} />
+      {mills.length > 0 ? (
+        <details className="workspace-details">
+          <summary>Haul somewhere not listed? Add a destination</summary>
+          <MillForm />
+        </details>
+      ) : null}
+    </div>
   )
 }
 
