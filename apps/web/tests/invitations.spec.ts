@@ -57,7 +57,7 @@ test.describe.serial("workspace invitations", () => {
 
     if (!(await pendingRow.isVisible())) {
       await page.getByLabel("Email address").fill("maya@northpine.example")
-      await page.getByLabel("Role").selectOption({ label: "Dispatcher" })
+      await page.getByLabel("Role", { exact: true }).selectOption({ label: "Dispatcher" })
       await page.getByRole("button", { name: "Invite to workspace" }).click()
 
       await expect(page.getByText(/Invitation recorded/)).toBeVisible({ timeout: 15_000 })
