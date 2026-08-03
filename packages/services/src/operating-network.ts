@@ -2143,6 +2143,42 @@ export function recordPreTripInspection(
   return { event, inspection }
 }
 
+function accrueFeeAfterPhysicalCompletion(
+  state: LogLoadsDatabaseState,
+  assignment: Assignment,
+  actorUserId: string,
+  at: string
+): void {
+  if (!assignmentUsesPercentageBilling(assignment)) {
+    return
+  }
+
+  try {
+    accruePlatformFee(
+      state,
+      { actorUserId, assignmentId: assignment.id },
+      at
+    )
+  } catch (error) {
+    const reason = (
+      error instanceof Error
+        ? error.message
+        : "Unknown platform-fee accrual failure"
+    ).slice(0, 300)
+    insertAuditEvent(
+      state,
+      actorUserId,
+      "assignment",
+      assignment.id,
+      "platform_fee_accrual_failed",
+      {
+        loadPostingId: assignment.loadPostingId,
+        reason
+      }
+    )
+  }
+}
+
 export function progressTripStatus(
   state: LogLoadsDatabaseState,
   input: ProgressTripStatusInput
@@ -2175,9 +2211,17 @@ export function progressTripStatus(
   // authorization and participation have been proven, an exact completed
   // retry is a no-op: never double-count capacity or duplicate history.
   if (trip.status === "completed" && input.nextStatus === "completed") {
+    const timestamp = nowIso()
     const usage = recordCompletedNetworkUsage(
       state,
-      { actorUserId: context.actorUserId, assignmentId: assignment.id }
+      { actorUserId: context.actorUserId, assignmentId: assignment.id },
+      timestamp
+    )
+    accrueFeeAfterPhysicalCompletion(
+      state,
+      assignment,
+      context.actorUserId,
+      timestamp
     )
     return { changed: false, event: null, trip, usage }
   }
@@ -2311,6 +2355,15 @@ export function progressTripStatus(
           timestamp
         )
       : null
+
+  if (nextStatus === "completed") {
+    accrueFeeAfterPhysicalCompletion(
+      state,
+      assignment,
+      context.actorUserId,
+      timestamp
+    )
+  }
 
   return { changed: true, event, trip: updatedTrip, usage }
 }

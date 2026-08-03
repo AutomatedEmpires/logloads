@@ -96,7 +96,8 @@ remains a preview/cutover gate.
    current row; verify `tripReviews`, `schema_version=2`, and the existing payload.
 3. Deploy an exact commit SHA to Vercel Preview with an isolated preview database
    or isolated preview row/project. Never mutation-test against the production row.
-4. Run `pnpm validate`, Playwright, and `tools/production-smoke.mjs` against preview.
+4. Run `pnpm validate`, Playwright, and the smoke with an explicit money-state
+   assertions: `SMOKE_BASE=<preview-url> SMOKE_EXPECT_FEE_COLLECTION=disabled SMOKE_EXPECT_PERCENTAGE_ENROLLMENT=disabled node tools/production-smoke.mjs`.
 5. Prove two concurrent writers preserve independent changes and a forced cold
    start loads Supabase before serving health or product data.
 6. Confirm Doppler → Vercel production variables and exact deployment provenance.

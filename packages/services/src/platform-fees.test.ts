@@ -577,6 +577,43 @@ describe("platform fee accrual", () => {
     expect(state.platformFeeEvents).toEqual([])
   })
 
+  it.each(["at_destination", "unloading"] as const)(
+    "refuses a confirmed delivery record while the physical trip is still %s",
+    (status) => {
+      const state = freshState()
+      const haul = oneBillableHaul(state)
+
+      state.tripsV2 = state.tripsV2.map((trip) =>
+        trip.id === haul.tripId ? { ...trip, status } : trip
+      )
+
+      expect(
+        accruePlatformFee(state, { assignmentId: haul.assignmentId }).outcome
+      ).toBe("not_completed")
+      expect(state.platformFeeEvents).toEqual([])
+    }
+  )
+
+  it("dates percentage accrual when both physical completion and host confirmation are true", () => {
+    const state = freshState()
+    const haul = oneBillableHaul(state)
+    const trip = state.tripsV2.find((candidate) => candidate.id === haul.tripId)!
+    const assignment = state.assignments.find(
+      (candidate) => candidate.id === haul.assignmentId
+    )!
+
+    assignment.billingModel = "percentage_v1"
+    trip.completionConfirmedAt = "2026-07-01T12:00:00.000Z"
+    trip.completedAt = "2026-07-01T12:05:00.000Z"
+
+    const result = accruePlatformFee(state, { assignmentId: haul.assignmentId })
+
+    expect(result).toMatchObject({
+      outcome: "accrued",
+      event: { occurredAt: "2026-07-01T12:05:00.000Z" }
+    })
+  })
+
   it("bills a confirmed haul whose assignment row still reads hauled", () => {
     // The positive control for the previous two: the assignment status lags the
     // trip, and refusing "hauled" would silently skip the fee on a delivery both

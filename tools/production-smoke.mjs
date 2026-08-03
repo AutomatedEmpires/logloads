@@ -1,6 +1,6 @@
 // LogLoads production smoke — post-deploy proof against a live URL.
 //
-//   SMOKE_BASE=https://logloads.com node tools/production-smoke.mjs
+//   SMOKE_BASE=https://logloads.com SMOKE_EXPECT_FEE_COLLECTION=disabled SMOKE_EXPECT_PERCENTAGE_ENROLLMENT=disabled node tools/production-smoke.mjs
 //
 // Adaptive: in dev-session mode it drives the full operating loop; in Clerk mode
 // (real production auth) the interactive loop is skipped with a clear MANUAL note,
@@ -73,6 +73,30 @@ try {
     process.env.SMOKE_EXPECT_FEE_COLLECTION?.trim().toLowerCase() ?? "missing"
   const collectionExpectationValid =
     expectedFeeCollection === "enabled" || expectedFeeCollection === "disabled"
+  const expectedEnrollment =
+    process.env.SMOKE_EXPECT_PERCENTAGE_ENROLLMENT?.trim().toLowerCase() ?? "missing"
+  const enrollmentExpectationValid =
+    expectedEnrollment === "enabled" || expectedEnrollment === "disabled"
+  const expectedEnrollmentCount = Number.parseInt(
+    process.env.SMOKE_EXPECT_PERCENTAGE_ALLOWED_ORGANIZATION_COUNT ?? "",
+    10
+  )
+  const expectedEnrollmentScope =
+    process.env.SMOKE_EXPECT_PERCENTAGE_ALLOWED_ORGANIZATION_SCOPE_SHA256
+      ?.trim()
+      .toLowerCase() ?? ""
+  const enrollmentScopeMatches = expectedEnrollment === "disabled"
+    ? percentageBilling.enrollment === "disabled" &&
+      percentageBilling.allowedOrganizationCount === 0 &&
+      percentageBilling.allowedOrganizationScopeSha256 === null &&
+      percentageBilling.invalidEnrollmentEntryCount === 0
+    : percentageBilling.enrollment === "enabled" &&
+      Number.isSafeInteger(expectedEnrollmentCount) &&
+      expectedEnrollmentCount > 0 &&
+      percentageBilling.allowedOrganizationCount === expectedEnrollmentCount &&
+      /^[0-9a-f]{64}$/.test(expectedEnrollmentScope) &&
+      percentageBilling.allowedOrganizationScopeSha256 === expectedEnrollmentScope &&
+      percentageBilling.invalidEnrollmentEntryCount === 0
   const billingReady =
     collectionExpectationValid &&
     (
@@ -95,6 +119,18 @@ try {
       "FAIL",
       "fee collection expectation",
       "set SMOKE_EXPECT_FEE_COLLECTION=enabled or disabled explicitly"
+    )
+  }
+  record(
+    enrollmentExpectationValid && enrollmentScopeMatches ? "PASS" : "FAIL",
+    "percentage enrollment scope",
+    `state=${String(percentageBilling.enrollment)} expected=${expectedEnrollment} organizations=${String(percentageBilling.allowedOrganizationCount)}`
+  )
+  if (!enrollmentExpectationValid) {
+    record(
+      "FAIL",
+      "percentage enrollment expectation",
+      "set SMOKE_EXPECT_PERCENTAGE_ENROLLMENT=enabled or disabled explicitly"
     )
   }
   record(integrations.email ? "PASS" : "SKIP", "email wired", integrations.email ? "Resend key present" : "no Resend key")

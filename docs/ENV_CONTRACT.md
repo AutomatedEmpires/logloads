@@ -46,7 +46,8 @@ fails closed rather than silently replacing missing production data with seed da
 | Historical Network recurring catalog | `STRIPE_PRICE_NETWORK_PILOT`, `STRIPE_PRICE_NETWORK_25`, `STRIPE_PRICE_NETWORK_50`, `STRIPE_PRICE_NETWORK_100` |
 | Historical Network overage catalog | `STRIPE_PRICE_NETWORK_PILOT_OVERAGE`, `STRIPE_PRICE_NETWORK_25_OVERAGE`, `STRIPE_PRICE_NETWORK_50_OVERAGE`, `STRIPE_PRICE_NETWORK_100_OVERAGE` |
 | Internal billing verification | `STRIPE_PRICE_INTERNAL_BILLING_TEST`, `LOGLOADS_INTERNAL_BILLING_SMOKE`, `LOGLOADS_INTERNAL_BILLING_SMOKE_ALLOWED_USER_IDS`, `LOGLOADS_INTERNAL_BILLING_SMOKE_ALLOWED_ORGANIZATION_IDS` |
-| Collection switches | `LOGLOADS_FEE_COLLECTION` is the sole current commercial gate for `percentage_v1` and preserved legacy fee invoices; `LOGLOADS_SUBSCRIPTION_COLLECTION`, `LOGLOADS_SUBSCRIPTION_ALLOWED_ORGANIZATION_IDS`, and `LOGLOADS_DISPATCH_SELF_SERVE` are disabled historical controls only |
+| Current percentage enrollment | `LOGLOADS_PERCENTAGE_ENROLLMENT` plus the exact `LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS`; both default dark and neither authorizes collection |
+| Collection switches | `LOGLOADS_FEE_COLLECTION` is the sole current provider-charge gate for `percentage_v1` and preserved legacy fee invoices; `LOGLOADS_SUBSCRIPTION_COLLECTION`, `LOGLOADS_SUBSCRIPTION_ALLOWED_ORGANIZATION_IDS`, and `LOGLOADS_DISPATCH_SELF_SERVE` are disabled historical controls only |
 | Credential review | `ANTHROPIC_API_KEY`; optional pinned override `CREDENTIAL_REVIEW_MODEL` |
 | Private media | `LOGLOADS_MEDIA_STORAGE=supabase`, `LOGLOADS_MEDIA_BUCKET`, `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF`, and preferred `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (or supported compatibility alias `NEXT_PUBLIC_SUPABASE_ANON_KEY`; the preferred name wins if both exist) |
 | Email | `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_REPLY_TO`, `SUPPORT_EMAIL`, `LOGLOADS_CONTACT_EMAIL` |
@@ -62,6 +63,14 @@ is absent, invalid, or disabled, the app may maintain canonical percentage fee,
 invoice, and reconciliation records, but it must create no provider charge.
 Provider credentials, webhooks, deployed code, accepted terms, or historical
 catalog objects do not turn the switch on.
+
+New host agreement acceptance has a separate, fail-closed boundary. It requires
+`LOGLOADS_PERCENTAGE_ENROLLMENT=enabled` and the authenticated host's exact
+organization id in `LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS`. The wildcard
+`*` is not recognized. Keep the gate disabled and the allowlist blank until a
+dated counsel-approved operating posture and exact pilot authorization exist.
+Enrollment does not enable provider collection, and the collection switch does
+not enroll an organization.
 
 `LOGLOADS_SUBSCRIPTION_COLLECTION` and `LOGLOADS_DISPATCH_SELF_SERVE` are
 historical safety gates and must remain `disabled` for new activity.

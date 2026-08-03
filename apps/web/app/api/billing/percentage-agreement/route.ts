@@ -11,6 +11,7 @@ import {
   enforceApiRateLimit,
   requireApiActor
 } from "@/lib/api-actor"
+import { percentageEnrollmentAllowed } from "@/lib/percentage-enrollment"
 import { mutateState } from "@/lib/services"
 
 const acceptanceRequestSchema = z
@@ -117,6 +118,13 @@ export async function POST(request: Request) {
     ) {
       throw new ApiError(
         "The host percentage agreement is only available to host organizations",
+        403
+      )
+    }
+
+    if (!percentageEnrollmentAllowed(actor.organizationId)) {
+      throw new ApiError(
+        "Host billing activation is not yet enabled for this organization",
         403
       )
     }

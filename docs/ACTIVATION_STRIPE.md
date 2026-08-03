@@ -11,7 +11,7 @@ do not authorize real enrollment or collection.
 
 ## Current `percentage_v1` hard gates
 
-Real platform-fee collection requires all of:
+Real percentage-v1 enrollment and platform-fee collection require all of:
 
 1. the intended LogLoads-owned Stripe account and public business identity;
 2. accepted terms stating that the host owes LogLoads 5% of host-stated driver
@@ -22,11 +22,18 @@ Real platform-fee collection requires all of:
 5. exact fee arithmetic, completion idempotency, monthly invoice, webhook,
    retry, credit/void, reconciliation, and rollback proof in test mode;
 6. exact-SHA protected-preview evidence and independent review;
-7. founder authorization for the exact live canary and controlled charge/refund;
-8. explicit activation of the sole current collection switch,
+7. explicit activation of `LOGLOADS_PERCENTAGE_ENROLLMENT` plus the exact
+   organization id in `LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS` for the
+   counsel-cleared pilot only;
+8. founder authorization for the exact live canary and controlled charge/refund;
+9. explicit activation of the sole current collection switch,
    `LOGLOADS_FEE_COLLECTION`.
 
-`LOGLOADS_FEE_COLLECTION` defaults to `disabled`. The subscription-era switches
+Both current gates default to `disabled`, and the percentage organization
+allowlist defaults blank. Enrollment permits only the exact allowlisted host to
+accept the current agreement; it does not authorize a Stripe charge. Collection
+permits provider collection only for an already valid obligation; it does not
+enroll a host. The subscription-era switches
 `LOGLOADS_SUBSCRIPTION_COLLECTION` and `LOGLOADS_DISPATCH_SELF_SERVE` must remain
 `disabled`; they may reconcile a previously accepted provider obligation but
 must not create a new subscription customer, Checkout, plan, usage event, or
@@ -142,11 +149,14 @@ The exact names and scopes live in `.env.example` and
   to agree;
 - `LOGLOADS_STRIPE_EXPECTED_ACCOUNT_ID`, verified against Stripe's account
   endpoint without printing either account id;
-- Dispatch Pro and each Network recurring Price id;
-- each Network overage Price id;
+- `LOGLOADS_PERCENTAGE_ENROLLMENT=disabled` and a blank
+  `LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS` until an exact counsel-cleared
+  pilot activation;
+- the historical Dispatch Pro and Network Price ids only when a preserved
+  accepted obligation actually requires reconciliation;
 - hidden internal-test Price id;
-- collection switch, exact organization canary allowlist, and independent
-  Dispatch Pro self-serve gate;
+- the separate current collection switch and historical Dispatch Pro safety
+  gate;
 - the restricted portal configuration (payment method and invoice history
   enabled; self-service cancellation and plan switching disabled);
 - internal-smoke switch plus separate owner and target-organization allowlists.
@@ -160,6 +170,15 @@ Keep `LOGLOADS_SUBSCRIPTION_COLLECTION=disabled`, keep
 `LOGLOADS_DISPATCH_SELF_SERVE=disabled`, and leave the historical subscription
 organization allowlist empty for new activity.
 
+Every hosted smoke must explicitly assert both collection and enrollment. A
+dark release uses `SMOKE_EXPECT_FEE_COLLECTION=disabled` and
+`SMOKE_EXPECT_PERCENTAGE_ENROLLMENT=disabled`, which also requires an empty,
+valid enrollment scope. An enabled pilot smoke additionally supplies the exact
+expected organization count and SHA-256 scope fingerprint through
+`SMOKE_EXPECT_PERCENTAGE_ALLOWED_ORGANIZATION_COUNT` and
+`SMOKE_EXPECT_PERCENTAGE_ALLOWED_ORGANIZATION_SCOPE_SHA256`; health exposes the
+fingerprint and count, never organization ids.
+
 Never print or pipe environment values to stdout. Verify names, scopes, age, and
 presence using provider metadata only.
 
@@ -172,8 +191,10 @@ this order:
 
 1. the expected test-mode Stripe account, then a SetupIntent and default payment
    method bound only to the intended host;
-2. acceptance of the exact current percentage agreement by an authorized host
-   billing actor, with the frozen 500-basis-point USD monthly-in-arrears terms;
+2. test-only activation of `LOGLOADS_PERCENTAGE_ENROLLMENT` for the exact
+   isolated organization, then acceptance of the current percentage agreement
+   by an authorized host billing actor, with the frozen 500-basis-point USD
+   monthly-in-arrears terms;
 3. a published load and accepted assignment carrying the exact host-stated
    driver pay, while the driver's direct-pay obligation remains unchanged;
 4. a billable delivery followed by host confirmation, producing exactly one

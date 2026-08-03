@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 
 import { isDedicatedMediaConfigured } from "@/lib/media-config"
 import { platformFeeCollectionEnabled } from "@/lib/billing"
+import { percentageEnrollmentStatus } from "@/lib/percentage-enrollment"
 import { refreshState, services } from "@/lib/services"
 import { isClerkConfigured } from "@/lib/session"
 import {
@@ -54,6 +55,7 @@ export async function GET() {
     providerModeAligned &&
     expectedProviderModeValid
   const percentageCollectionEnabled = platformFeeCollectionEnabled(process.env)
+  const percentageEnrollment = percentageEnrollmentStatus(process.env)
   const percentageBillingReadiness = percentageBillingInfrastructureReady
     ? percentageCollectionEnabled
       ? "collection_configured"
@@ -70,11 +72,16 @@ export async function GET() {
       canonicalState: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
       billing: percentageBillingReadiness,
       billingPercentageV1: {
+        allowedOrganizationCount:
+          percentageEnrollment.allowedOrganizationCount,
+        allowedOrganizationScopeSha256:
+          percentageEnrollment.allowedOrganizationScopeSha256,
         cardSetupConfigured:
           stripeSecretConfigured && stripePublishableConfigured,
         collection: percentageCollectionEnabled
           ? "enabled"
           : "disabled",
+        enrollment: percentageEnrollment.enrollment,
         expectedProviderMode:
           expectedStripeMode === "live" || expectedStripeMode === "test"
             ? expectedStripeMode
@@ -84,6 +91,8 @@ export async function GET() {
         providerVerification: "not_probed",
         readiness: percentageBillingReadiness,
         stripeSecretConfigured,
+        invalidEnrollmentEntryCount:
+          percentageEnrollment.invalidEntryCount,
         webhookConfigured: stripeWebhookConfigured
       },
       billingSubscriptionHistory: {

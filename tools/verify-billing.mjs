@@ -222,15 +222,25 @@ for (const fee of fees) {
     (trip) =>
       trip.assignmentId === fee.assignmentId &&
       trip.completionStatus === "confirmed" &&
-      trip.status !== "cancelled" &&
+      trip.status === "completed" &&
       trip.deliveredQuantity?.value > 0 &&
       !noDeliveryExceptions.has(trip.haulException?.type)
   )
   if (confirmedTrips.length !== 1) {
     defects.push(`fee ${fee.id} does not resolve to exactly one confirmed physical delivery`)
   } else if (billingModel === "percentage_v1") {
-    if (fee.occurredAt !== confirmedTrips[0].completionConfirmedAt) {
-      defects.push(`percentage fee ${fee.id} is not timestamped at host confirmation`)
+    const trip = confirmedTrips[0]
+    const completionTime = Date.parse(trip.completedAt ?? "")
+    const confirmationTime = Date.parse(trip.completionConfirmedAt ?? "")
+    const expectedTriggerAt =
+      Number.isFinite(completionTime) && Number.isFinite(confirmationTime)
+        ? completionTime >= confirmationTime
+          ? trip.completedAt
+          : trip.completionConfirmedAt
+        : null
+
+    if (!expectedTriggerAt || fee.occurredAt !== expectedTriggerAt) {
+      defects.push(`percentage fee ${fee.id} is not timestamped when physical completion and host confirmation are both true`)
     }
   } else if (
     !assignment?.driverPaymentReceivedAt ||

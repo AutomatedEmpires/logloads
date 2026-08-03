@@ -321,8 +321,29 @@ function confirmedHaulForAssignment(
     (trip) =>
       trip.assignmentId === assignment.id &&
       trip.completionStatus === "confirmed" &&
-      trip.status !== "cancelled"
+      trip.status === "completed"
   )
+}
+
+/** The percentage obligation exists only once both independent facts exist. */
+function percentageFeeTriggerAt(trip: TripV2): string | null {
+  if (!trip.completionConfirmedAt || !trip.completedAt) {
+    return null
+  }
+
+  const confirmationTime = Date.parse(trip.completionConfirmedAt)
+  const physicalCompletionTime = Date.parse(trip.completedAt)
+
+  if (
+    !Number.isFinite(confirmationTime) ||
+    !Number.isFinite(physicalCompletionTime)
+  ) {
+    return null
+  }
+
+  return physicalCompletionTime >= confirmationTime
+    ? trip.completedAt
+    : trip.completionConfirmedAt
 }
 
 function frozenPlatformFeeBps(termsSnapshot: Record<string, unknown>): number | null {
@@ -541,6 +562,19 @@ export function accruePlatformFee(
     }
   }
 
+  const percentageTriggerAt = percentageV1
+    ? percentageFeeTriggerAt(trip)
+    : null
+
+  if (percentageV1 && !percentageTriggerAt) {
+    return {
+      assignmentId: assignment.id,
+      outcome: "no_basis",
+      reason:
+        "The confirmed haul has no trustworthy physical-completion and host-confirmation timestamps; review it before billing"
+    }
+  }
+
   const frozenDriverPay = readFrozenDriverPay(assignment.termsSnapshot)
 
   if (!frozenDriverPay) {
@@ -584,11 +618,12 @@ export function accruePlatformFee(
     `The requested fee rate ${String(input.feeBps)} bps does not match the accepted ${feeBps} bps`
   )
   const actorUserId = input.actorUserId ?? null
-  // Percentage-v1 earns on host-confirmed physical delivery. Historical legacy
-  // agreements retain their accepted receipt trigger exactly; deploying the new
-  // model must never retroactively create debts for earlier unpaid movements.
+  // Percentage-v1 earns only when physical completion and host confirmation are
+  // both true, so the later timestamp is authoritative regardless of event order.
+  // Historical legacy agreements retain their accepted receipt trigger exactly;
+  // deploying the new model must never create debts for earlier unpaid movements.
   const occurredAt = percentageV1
-    ? trip.completionConfirmedAt
+    ? percentageTriggerAt as string
     : assignment.driverPaymentReceivedAt as string
 
   const event = platformFeeEventSchema.parse({

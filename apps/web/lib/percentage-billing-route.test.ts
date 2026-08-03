@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { PERCENTAGE_V1_TERMS_VERSION } from "@logloads/contracts"
 
 vi.mock("server-only", () => ({}))
@@ -99,6 +99,11 @@ function rawRequest(body: string) {
 describe("percentage billing agreement route", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubEnv("LOGLOADS_PERCENTAGE_ENROLLMENT", "enabled")
+    vi.stubEnv(
+      "LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS",
+      ORGANIZATION_ID
+    )
     mocks.requireApiActor.mockResolvedValue(actor())
     mocks.acceptPercentageBillingAgreement.mockReturnValue({
       account: {
@@ -110,6 +115,10 @@ describe("percentage billing agreement route", () => {
       },
       changed: true
     })
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
   })
 
   it("binds the authenticated host to the server-owned agreement", async () => {
@@ -146,6 +155,30 @@ describe("percentage billing agreement route", () => {
     const response = await POST(request({ acceptPercentageTerms: true }))
 
     expect(response.status).toBe(403)
+    expect(mocks.acceptPercentageBillingAgreement).not.toHaveBeenCalled()
+  })
+
+  it("keeps commercial enrollment dark until the exact host is activated", async () => {
+    vi.stubEnv("LOGLOADS_PERCENTAGE_ENROLLMENT", "disabled")
+
+    const disabled = await POST(
+      request({ acceptPercentageTerms: true })
+    )
+
+    expect(disabled.status).toBe(403)
+    expect(mocks.acceptPercentageBillingAgreement).not.toHaveBeenCalled()
+
+    vi.stubEnv("LOGLOADS_PERCENTAGE_ENROLLMENT", "enabled")
+    vi.stubEnv(
+      "LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS",
+      "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+    )
+
+    const unlisted = await POST(
+      request({ acceptPercentageTerms: true })
+    )
+
+    expect(unlisted.status).toBe(403)
     expect(mocks.acceptPercentageBillingAgreement).not.toHaveBeenCalled()
   })
 

@@ -24,7 +24,9 @@ legacy model. The 2026-07-28 `subscription_v1` catalog and Dispatch Pro
 self-serve paths are historical/read-only: preserve and reconcile any previously
 accepted obligation, but create no new subscription enrollment. The sole current
 commercial collection gate is `LOGLOADS_FEE_COLLECTION`, which defaults to
-`disabled`; the historical subscription and self-serve gates remain disabled.
+`disabled`. New host agreement acceptance is independently dark behind
+`LOGLOADS_PERCENTAGE_ENROLLMENT` and an exact organization allowlist; the
+historical subscription and self-serve gates remain disabled.
 See [`docs/DECISIONS.md`](./docs/DECISIONS.md) for authority and
 [`docs/SUBSCRIPTION_BILLING_V1.md`](./docs/SUBSCRIPTION_BILLING_V1.md) for the
 preserved historical subscription contract.

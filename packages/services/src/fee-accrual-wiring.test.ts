@@ -90,6 +90,7 @@ function forceSettleableState(
   live.completionStatus = "submitted"
   live.completionSubmittedByUserId = driver.userId
   live.completionConfirmedAt = null
+  live.completedAt = "2026-06-20T14:55:00.000Z"
   live.deliveredQuantity = {
     ticketNumber: "E2E-FEE-DELIVERY",
     unit: "tons",
@@ -98,6 +99,7 @@ function forceSettleableState(
   live.haulException = null
   live.status = "completed"
   held.status = "completed"
+  held.completedAt = live.completedAt
   held.billingModel = "percentage_v1"
   held.driverPaymentSentAt = null
   held.driverPaymentSentByUserId = null
@@ -172,6 +174,61 @@ describe("host completion confirmation raises the platform fee", () => {
     expect(events[0]!.driverPayCents).toBe(52_500)
     expect(events[0]!.feeCents).toBe(computePlatformFeeCents(52_500, PLATFORM_FEE_BPS))
     expect(events[0]!.feeCents).toBe(2_625)
+  })
+
+  it("waits for physical completion when the host confirms at the destination", () => {
+    const fixture = settleableHaul()
+    const { held, live } = forceSettleableState(fixture, 52_500)
+    live.completedAt = null
+    live.status = "unloading"
+    held.completedAt = null
+    held.status = "hauled"
+
+    for (const pack of fixture.services.state.routePacks) {
+      if (
+        pack.snapshot &&
+        (
+          pack.assignmentId === fixture.assignment.id ||
+          (!pack.assignmentId && pack.loadPostingId === fixture.load.id)
+        )
+      ) {
+        pack.snapshot.completionEvidence = []
+      }
+    }
+
+    const confirmation = confirmDelivery(fixture)
+
+    expect(confirmation.platformFeeOutcome).toBe("not_completed")
+    expect(fixture.services.state.platformFeeEvents).toHaveLength(0)
+
+    const completion = fixture.services.progressTripStatus({
+      actorUserId: fixture.driver.userId,
+      nextStatus: "completed",
+      organizationId: fixture.driverMembership.organizationId,
+      source: "driver",
+      tripId: fixture.trip.id
+    })
+
+    expect(completion.trip.status).toBe("completed")
+    expect(fixture.services.state.platformFeeEvents).toHaveLength(1)
+    expect(fixture.services.state.platformFeeEvents[0]).toMatchObject({
+      assignmentId: fixture.assignment.id,
+      feeCents: 2_625,
+      occurredAt: completion.trip.completedAt
+    })
+    expect(fixture.services.state.platformFeeEvents[0]!.occurredAt)
+      .not.toBe(confirmation.trip.completionConfirmedAt)
+
+    expect(
+      fixture.services.progressTripStatus({
+        actorUserId: fixture.driver.userId,
+        nextStatus: "completed",
+        organizationId: fixture.driverMembership.organizationId,
+        source: "driver",
+        tripId: fixture.trip.id
+      }).changed
+    ).toBe(false)
+    expect(fixture.services.state.platformFeeEvents).toHaveLength(1)
   })
 
   it.each([
