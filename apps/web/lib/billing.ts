@@ -36,12 +36,11 @@ import {
 /**
  * Everything LogLoads does with Stripe, and nothing else.
  *
- * WHAT IS CHARGED HERE. New customers use the frozen subscription catalog:
- * Dispatch Pro is $499/mo, while Network agreements combine an accepted base
- * price with completed-Network usage above the included allowance. There is no
- * posting fee. The historical percentage ledger below is LEGACY ONLY: it remains
- * readable and collectible solely for obligations accepted under those original
- * terms. The models share Stripe plumbing but use different rows and markers.
+ * WHAT IS CHARGED HERE. Current hosts owe the frozen percentage-v1 fee on top of
+ * stated driver pay for completed physical deliveries. Historical percentage
+ * obligations and retired subscription records remain explainable through the
+ * same provider boundary, but no path here may create a new subscription. The
+ * models keep distinct rows and markers so one movement cannot enter both.
  *
  * WHAT IS NEVER CHARGED HERE. Driver pay. LogLoads is non-custodial: driver money
  * moves host → driver directly and off-platform, and nothing in this file holds,
@@ -1296,6 +1295,100 @@ function legacyInvoiceCurrencyProblem(
   return null
 }
 
+function hostInvoiceLedgerProblem(
+  state: LogLoadsDatabaseState,
+  invoice: HostInvoice
+): string | null {
+  if (new Set(invoice.feeEventIds).size !== invoice.feeEventIds.length) {
+    return "This bill repeats a platform fee and is blocked from collection"
+  }
+
+  const fees: PlatformFeeEvent[] = []
+  for (const feeEventId of invoice.feeEventIds) {
+    const matches = state.platformFeeEvents.filter(
+      (candidate) => candidate.id === feeEventId
+    )
+    if (matches.length !== 1) {
+      return `This bill cannot resolve fee ${feeEventId} exactly once in the ledger`
+    }
+
+    const fee = matches[0]!
+    if (fee.organizationId !== invoice.organizationId) {
+      return `Fee ${feeEventId} belongs to another organization and cannot be billed here`
+    }
+    if (fee.status === "voided") {
+      return "There is nothing to collect from a bill containing a voided fee"
+    }
+    if (fee.status !== "invoiced" || fee.invoiceId !== invoice.id) {
+      return `Fee ${feeEventId} is not reciprocally linked to this open bill`
+    }
+
+    const otherClaim = state.hostInvoices.find(
+      (candidate) =>
+        candidate.id !== invoice.id &&
+        candidate.status !== "void" &&
+        candidate.feeEventIds.includes(fee.id)
+    )
+    if (otherClaim) {
+      return `Fee ${feeEventId} is also claimed by host invoice ${otherClaim.id}`
+    }
+
+    const assignments = state.assignments.filter(
+      (assignment) => assignment.id === fee.assignmentId
+    )
+    const loads = state.loadPostings.filter(
+      (load) => load.id === fee.loadPostingId
+    )
+    if (assignments.length !== 1 || loads.length !== 1) {
+      return `Fee ${feeEventId} does not resolve to exactly one assignment and load`
+    }
+    const assignment = assignments[0]!
+    const load = loads[0]!
+    const billingModelMatches =
+      assignment.billingModel === fee.billingModel ||
+      (fee.billingModel === "legacy_percentage" && assignment.billingModel === null)
+    const frozenPay = readFrozenDriverPay(assignment.termsSnapshot)
+    const hostFee = assignment.termsSnapshot.hostFee
+    const frozenFeeBps =
+      hostFee && typeof hostFee === "object" && !Array.isArray(hostFee)
+        ? (hostFee as Record<string, unknown>).rateBps
+        : null
+    if (
+      assignment.loadPostingId !== load.id ||
+      load.companyId !== fee.organizationId ||
+      (assignment.loadMovementId ?? assignment.id) !== fee.loadMovementId ||
+      assignment.truckSlotId !== fee.truckSlotId ||
+      !billingModelMatches
+    ) {
+      return `Fee ${feeEventId} is cross-wired to its host, load, movement, slot, or billing model`
+    }
+    if (
+      !frozenPay ||
+      frozenPay.currency !== LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
+    ) {
+      return `Fee ${feeEventId} cannot prove accepted ${LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY}-denominated driver pay`
+    }
+    if (
+      frozenPay.amountCents !== fee.driverPayCents ||
+      frozenFeeBps !== fee.feeBps
+    ) {
+      return `Fee ${feeEventId} disagrees with the driver pay or rate frozen at acceptance`
+    }
+
+    fees.push(fee)
+  }
+
+  const subtotalCents = invoiceSubtotalCents(fees)
+  if (subtotalCents !== invoice.subtotalCents) {
+    return `This bill totals ${invoice.subtotalCents} cents but its fees total ${subtotalCents} cents`
+  }
+  if (subtotalCents <= 0) {
+    return "There is nothing to collect on this bill"
+  }
+
+  return null
+}
+
 /**
  * Everything that must be true before Stripe is called, decided in one read.
  *
@@ -1315,6 +1408,12 @@ export function planHostInvoiceCharge(
 
   if (invoice.stripeInvoiceId) {
     if (invoice.status === "open") {
+      const ledgerProblem = hostInvoiceLedgerProblem(state, invoice)
+
+      if (ledgerProblem) {
+        return { kind: "refused", message: ledgerProblem }
+      }
+
       const currencyProblem = legacyInvoiceCurrencyProblem(state, invoice)
 
       if (currencyProblem) {
@@ -1349,6 +1448,12 @@ export function planHostInvoiceCharge(
 
   if (invoice.status !== "draft" && invoice.status !== "open") {
     return { kind: "refused", message: `This bill is ${invoice.status} and cannot be charged` }
+  }
+
+  const ledgerProblem = hostInvoiceLedgerProblem(state, invoice)
+
+  if (ledgerProblem) {
+    return { kind: "refused", message: ledgerProblem }
   }
 
   const fees: PlatformFeeEvent[] = []

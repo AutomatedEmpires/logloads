@@ -920,6 +920,31 @@ describe("completion evidence gate", () => {
 
     expect(closed.trip.status).toBe("completed")
   })
+
+  it.each([
+    "rejected_at_scale",
+    "access_blocked",
+    "equipment_failure",
+    "weather_hold"
+  ] as const)("rejects positive delivery paired with the no-delivery exception %s", (exceptionType) => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { trip } = bookHaul(services)
+
+    haulToDestination(services, trip.id)
+
+    expect(() =>
+      services.submitHaulCompletion({
+        actorUserId: HAULER_DRIVER_ACTOR,
+        deliveredQuantity: { unit: "tons", value: 26.4 },
+        exception: {
+          note: "This exception says no physical delivery occurred.",
+          type: exceptionType
+        },
+        organizationId: HAULER_ORG,
+        tripId: trip.id
+      })
+    ).toThrow(/positive delivery contradicts.*no delivery occurred/i)
+  })
 })
 
 describe("durable haul history", () => {

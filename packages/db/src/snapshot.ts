@@ -615,6 +615,42 @@ function backfillStateSnapshot(
     })
   }
 
+  // Agreement snapshots were added after billing accounts already existed.
+  // Null preserves every unenrolled, legacy, and subscription account exactly;
+  // percentage_v1 is never inferred or silently activated by a read.
+  if (Array.isArray(candidate.organizationBillingAccounts)) {
+    candidate.organizationBillingAccounts =
+      candidate.organizationBillingAccounts.map((account) => ({
+        ...account,
+        percentageTermsSnapshot: account.percentageTermsSnapshot ?? null
+      }))
+  }
+
+  // Historical fee rows were keyed by assignment. Preserve their ids and
+  // classification while making physical-movement ownership explicit. New
+  // percentage_v1 writes use a movement-derived id; this backfill never remints
+  // an existing financial record.
+  if (Array.isArray(candidate.platformFeeEvents)) {
+    candidate.platformFeeEvents = candidate.platformFeeEvents.map((event) => {
+      const assignment = candidate.assignments?.find(
+        (row) => row.id === event.assignmentId
+      )
+
+      return {
+        ...event,
+        billingModel:
+          event.billingModel ??
+          (assignment?.billingModel === "percentage_v1"
+            ? "percentage_v1"
+            : "legacy_percentage"),
+        loadMovementId:
+          event.loadMovementId ??
+          assignment?.loadMovementId ??
+          event.assignmentId
+      }
+    })
+  }
+
   if (billingAccountsWereMissing) {
     const explicitLegacyOrganizationIds = new Set<string>()
 
@@ -666,6 +702,7 @@ function backfillStateSnapshot(
         effectiveAt,
         id: organizationBillingAccountId(organizationId),
         organizationId,
+        percentageTermsSnapshot: null,
         subscriptionId: null,
         updatedAt: effectiveAt
       })
@@ -1082,6 +1119,7 @@ export function auditStateSnapshot(value: Partial<LogLoadsDatabaseState>): Opera
   const runtime = candidate as LogLoadsDatabaseState
   const assignmentsById = new Map(runtime.assignments.map((assignment) => [assignment.id, assignment]))
   const activeUsageByMovement = new Map<string, { id: string; index: number }>()
+  const activeFeeByMovement = new Map<string, { id: string; index: number }>()
 
   runtime.networkUsageEvents.forEach((event, index) => {
     if (event.status === "reversed") {
@@ -1127,13 +1165,45 @@ export function auditStateSnapshot(value: Partial<LogLoadsDatabaseState>): Opera
     }
   })
 
-  runtime.platformFeeEvents.forEach((event) => {
+  runtime.platformFeeEvents.forEach((event, index) => {
     if (event.status === "voided") {
       return
     }
 
+    const movementId = event.loadMovementId
+    const priorFee = activeFeeByMovement.get(movementId)
+
+    if (priorFee) {
+      defects.push({
+        collection: "platformFeeEvents",
+        detail: `physical movement ${movementId} is already claimed by fee event ${priorFee.id}`,
+        kind: "billing_conflict",
+        rowId: event.id,
+        rowIndex: index,
+        withheld: false
+      })
+    } else {
+      activeFeeByMovement.set(movementId, { id: event.id, index })
+    }
+
     const assignment = assignmentsById.get(event.assignmentId)
-    const movementId = assignment?.loadMovementId ?? event.assignmentId
+    if (
+      assignment &&
+      ((assignment.loadMovementId ?? assignment.id) !== movementId ||
+        (assignment.billingModel !== event.billingModel &&
+          !(event.billingModel === "legacy_percentage" &&
+            assignment.billingModel === null)))
+    ) {
+      defects.push({
+        collection: "platformFeeEvents",
+        detail: `fee event classification disagrees with committed assignment ${assignment.id}`,
+        kind: "billing_conflict",
+        rowId: event.id,
+        rowIndex: index,
+        withheld: false
+      })
+    }
+
     const usage = activeUsageByMovement.get(movementId)
 
     if (usage) {

@@ -4,7 +4,7 @@ import { ContactPage } from "@/components/v3"
 
 export const metadata: Metadata = {
   title: "Contact",
-  description: "Questions about plans, private carrier networks, verification, or moving a season of timber? Send LogLoads a note with the context needed to follow up."
+  description: "Questions about host onboarding, the 5% completed-load fee, driver access, verification, or moving a season of timber? Send LogLoads the context needed to follow up."
 }
 
 export default function Page() {

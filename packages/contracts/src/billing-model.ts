@@ -275,6 +275,13 @@ const uuidSchema = z.string().uuid()
  */
 const PLATFORM_FEE_EVENT_NAMESPACE = "8f8c4b3e-6a1d-4a2f-9b57-2c0d5e7a1b64"
 
+/**
+ * Namespace for percentage_v1 fee events, keyed by physical movement rather
+ * than assignment. Frozen forever: changing it would make a completed movement
+ * look unbilled and permit a second fee.
+ */
+const PERCENTAGE_V1_FEE_EVENT_NAMESPACE = "f0b0d70d-9530-4d29-b66d-0b227d1f08e8"
+
 function rotateLeft(value: number, bits: number): number {
   return ((value << bits) | (value >>> (32 - bits))) >>> 0
 }
@@ -484,4 +491,21 @@ export function platformFeeEventId(assignmentId: string): string {
   }
 
   return deterministicUuidV5(PLATFORM_FEE_EVENT_NAMESPACE, assignmentId.toLowerCase())
+}
+
+/**
+ * The one percentage_v1 fee id for a physical movement. Replacement
+ * assignments intentionally derive the same id.
+ */
+export function percentageFeeEventId(loadMovementId: string): string {
+  if (!uuidSchema.safeParse(loadMovementId).success) {
+    throw new Error(
+      `percentageFeeEventId needs a movement uuid, received ${JSON.stringify(loadMovementId)}`
+    )
+  }
+
+  return deterministicUuidV5(
+    PERCENTAGE_V1_FEE_EVENT_NAMESPACE,
+    loadMovementId.toLowerCase()
+  )
 }

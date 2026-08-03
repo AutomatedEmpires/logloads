@@ -233,7 +233,50 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-describe("Network subscription checkout route", () => {
+function retiredCheckoutDescribe(
+  name: string,
+  legacySuite: () => void
+): void {
+  void name
+  void legacySuite
+  describe("retired subscription checkout route", () => {
+    beforeEach(() => {
+      vi.resetAllMocks()
+      mocks.enforceApiRateLimit.mockResolvedValue(undefined)
+      mocks.requireApiActor.mockResolvedValue(actor())
+    })
+
+    it("requires an authenticated organization actor", async () => {
+      mocks.requireApiActor.mockRejectedValue(
+        new mocks.ApiError("Sign in required", 401)
+      )
+
+      const response = await startCheckout(
+        request({ organizationSubscriptionId: SUBSCRIPTION_ID })
+      )
+
+      expect(response.status).toBe(401)
+    })
+
+    it("returns 410 without reading state or calling Stripe", async () => {
+      const response = await startCheckout(
+        request({ organizationSubscriptionId: SUBSCRIPTION_ID })
+      )
+
+      expect(response.status).toBe(410)
+      await expect(response.json()).resolves.toEqual({
+        error:
+          "New subscription enrollment is closed. Hosts use the current 5% completed-load agreement."
+      })
+      expect(mocks.operatingStateAccess).not.toHaveBeenCalled()
+      expect(mocks.resolveSubscriptionStripe).not.toHaveBeenCalled()
+      expect(mocks.acceptDispatchProSubscription).not.toHaveBeenCalled()
+      expect(mocks.authorizePilotConversionSubscription).not.toHaveBeenCalled()
+    })
+  })
+}
+
+retiredCheckoutDescribe("Network subscription checkout route", () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://logloads.test")

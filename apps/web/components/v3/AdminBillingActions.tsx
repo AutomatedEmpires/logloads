@@ -688,6 +688,20 @@ export function AdminBillingActions({
     <>
       <section className="app-section admin-panel">
         <SectionHeader
+          eyebrow="Historical subscriptions"
+          title="New subscription writes are closed"
+        />
+        <p className="admin-panel__intro">
+          Subscription configuration, activation, conversion, plan-change,
+          non-renewal, usage, and overage controls are no longer available. Existing
+          provider-bound records remain visible for audit and signed webhook
+          reconciliation. Current hosts activate the 5% completed-load agreement
+          from their own Billing page.
+        </p>
+      </section>
+
+      <section className="app-section admin-panel" hidden>
+        <SectionHeader
           eyebrow="Audited writes"
           title="Admin billing controls"
         />

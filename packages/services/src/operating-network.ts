@@ -9,7 +9,6 @@ import {
   canTransitionAssignmentStatus,
   canTransitionAssignmentStatusV2,
   canTransitionLoadPostingStatus,
-  PLATFORM_FEE_BPS,
   evaluateLoadCompatibility,
   formatMoney,
   mediaReferenceSchema,
@@ -67,7 +66,7 @@ import {
 import { createLoadPosting, parsePublishModes, provisionLoadCapacity } from "./loads"
 import {
   accruePlatformFee,
-  assignmentUsesLegacyPercentageBilling,
+  assignmentUsesPercentageBilling,
   type AccruePlatformFeeResult
 } from "./platform-fees"
 import {
@@ -1197,15 +1196,16 @@ function finalizeCapacityAssignment(
       fuelSurchargeCents: rate.fuelSurchargeCents,
       haulerOrganizationId: equipmentCombination?.organizationId ?? null,
       hostFee:
-        billingCommitment.billingModel === "legacy_percentage"
+        billingCommitment.billingModel === "legacy_percentage" ||
+        billingCommitment.billingModel === "percentage_v1"
           ? {
-              // Legacy-only obligation. Subscription-v1 never reads or accrues
-              // this percentage ledger.
+              billingModel: billingCommitment.billingModel,
               collectionState: "accrues_monthly_in_arrears",
+              currency: billingCommitment.platformFeeCurrency,
               feeCents: null,
               providerCollectionState: "feature_gated",
-              rateBps: PLATFORM_FEE_BPS,
-              proposedRateBps: PLATFORM_FEE_BPS
+              rateBps: billingCommitment.platformFeeBps,
+              proposedRateBps: billingCommitment.platformFeeBps
             }
           : {
               collectionState: "not_applicable_subscription_v1",
@@ -2456,7 +2456,15 @@ export interface SettleCompletionInput {
 export function settleHaulCompletion(
   state: LogLoadsDatabaseState,
   input: SettleCompletionInput & { decision: "confirm" | "dispute" }
-): { trip: TripV2; usage: RecordCompletedNetworkUsageResult | null } {
+): {
+  platformFee: AccruePlatformFeeResult | null
+  platformFeeOutcome:
+    | AccruePlatformFeeResult["outcome"]
+    | "error"
+    | "not_applicable"
+  trip: TripV2
+  usage: RecordCompletedNetworkUsageResult | null
+} {
   const context = getContextForInput(state, input)
   assertOrganizationAction(context, "assign_capacity")
 
@@ -2496,6 +2504,47 @@ export function settleHaulCompletion(
         timestamp
       )
 
+  let platformFee: AccruePlatformFeeResult | null = null
+  let platformFeeFailure: string | null = null
+
+  if (
+    input.decision === "confirm" &&
+    assignmentUsesPercentageBilling(assignment)
+  ) {
+    try {
+      platformFee = accruePlatformFee(
+        state,
+        {
+          actorUserId: context.actorUserId,
+          assignmentId: assignment.id
+        },
+        timestamp
+      )
+    } catch (error) {
+      // Completion is the two-party operating record and must survive a broken
+      // billing ledger. Reconciliation retries the deterministic movement fee.
+      platformFeeFailure = (
+        error instanceof Error
+          ? error.message
+          : "Unknown platform-fee accrual failure"
+      ).slice(0, 300)
+      insertAuditEvent(
+        state,
+        context.actorUserId,
+        "assignment",
+        assignment.id,
+        "platform_fee_accrual_failed",
+        {
+          loadPostingId: load.id,
+          reason: platformFeeFailure
+        }
+      )
+    }
+  }
+  const platformFeeOutcome = platformFeeFailure
+    ? "error"
+    : platformFee?.outcome ?? "not_applicable"
+
   insertAuditEvent(
     state,
     context.actorUserId,
@@ -2504,6 +2553,17 @@ export function settleHaulCompletion(
     input.decision === "confirm" ? "haul_completion_confirmed" : "haul_completion_disputed",
     {
       assignmentId: assignment.id,
+      platformFeeCents:
+        platformFee?.outcome === "accrued" ||
+        platformFee?.outcome === "already_accrued"
+          ? platformFee.event.feeCents
+          : null,
+      platformFeeEventId:
+        platformFee?.outcome === "accrued" ||
+        platformFee?.outcome === "already_accrued"
+          ? platformFee.event.id
+          : null,
+      platformFeeOutcome,
       previousStatus: result.previousStatus,
       reason: input.reason ?? null
     }
@@ -2533,7 +2593,7 @@ export function settleHaulCompletion(
         )
       : null
 
-  return { trip: result.trip, usage }
+  return { platformFee, platformFeeOutcome, trip: result.trip, usage }
 }
 
 export interface DriverPaymentActionInput {
@@ -2696,42 +2756,10 @@ export function confirmDriverPaymentReceived(
       frozenDriverPay.currency === receivedPay.currency
   )
 
-  let fee: AccruePlatformFeeResult | null = null
-  let feeFailure: string | null = null
-
-  if (assignmentUsesLegacyPercentageBilling(updated)) {
-    try {
-      fee = accruePlatformFee(
-        state,
-        { actorUserId: context.actorUserId, assignmentId: assignment.id },
-        updated.driverPaymentReceivedAt ?? timestamp
-      )
-    } catch (error) {
-      // Payment receipt is an operating fact between host and driver. A broken
-      // legacy ledger must be repaired separately and must never erase that fact.
-      feeFailure = (
-        error instanceof Error ? error.message : "Unknown platform-fee accrual failure"
-      ).slice(0, 300)
-    }
-  }
-  const platformFeeOutcome =
-    assignmentUsesLegacyPercentageBilling(updated)
-      ? fee?.outcome ?? "error"
-      : "not_applicable"
-
-  // A retry has changed=false. Keep this outside the receipt-notification block
-  // so a persistently unbillable completed load leaves a trace on every failed
-  // repair attempt instead of disappearing after the first receipt write.
-  if (feeFailure) {
-    insertAuditEvent(
-      state,
-      context.actorUserId,
-      "assignment",
-      assignment.id,
-      "platform_fee_accrual_failed",
-      { loadPostingId: load.id, reason: feeFailure }
-    )
-  }
+  // Driver receipt is independent evidence. Percentage revenue was already
+  // frozen when the host confirmed the completed movement; this action neither
+  // creates nor reprices a fee.
+  const platformFeeOutcome = "not_applicable" as const
 
   if (changed) {
     insertAuditEvent(state, context.actorUserId, "assignment", assignment.id, "driver_payment_received", {
@@ -2739,8 +2767,7 @@ export function confirmDriverPaymentReceived(
       currency: receivedPay.currency,
       loadPostingId: load.id,
       matchesExpected,
-      platformFeeEventId:
-        fee?.outcome === "accrued" || fee?.outcome === "already_accrued" ? fee.event.id : null,
+      platformFeeEventId: null,
       platformFeeOutcome
     })
 

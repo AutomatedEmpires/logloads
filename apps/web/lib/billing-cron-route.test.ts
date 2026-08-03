@@ -781,6 +781,7 @@ describe("billing cron fee reconciliation", () => {
       ],
       organizationSubscriptions: [
         {
+          billingModel: "subscription_v1",
           id: "subscription-debit",
           internalBillingTest: false,
           organizationId: adjustment.organizationId,

@@ -49,7 +49,9 @@
   `trailerProfileId` photographed. Historical unbound equipment evidence remains
   readable but never clears an assignment gate.
 - Immutable assignment commercial-terms snapshots captured at host approval
-- Stripe event identifiers on billing audit metadata for replay-safe subscription updates
+- Stripe event identifiers on billing audit metadata for replay-safe current
+  platform-fee collection, frozen legacy-fee obligations, and historical
+  subscription reconciliation
 
 ## Current storage shape
 - SQL migrations in `supabase/migrations/`

@@ -39,6 +39,22 @@ export function exceptionWaivesEvidence(exception: HaulException | null | undefi
   return Boolean(exception) && EXCEPTIONS_WITHOUT_EVIDENCE.includes(exception!.type)
 }
 
+/**
+ * Whether the completion record proves that a physical delivery occurred.
+ *
+ * A host may confirm a zero-delivery exception so the operating history closes
+ * honestly, but that confirmation is not a completed load for billing. Keep this
+ * predicate shared with fee accrual so an evidence waiver can never become a
+ * back door to charging for work that delivered nothing.
+ */
+export function haulHasBillableDelivery(trip: TripV2): boolean {
+  return Boolean(
+    trip.deliveredQuantity &&
+      trip.deliveredQuantity.value > 0 &&
+      !exceptionWaivesEvidence(trip.haulException)
+  )
+}
+
 export function listTripDocuments(state: LogLoadsDatabaseState, tripId: string): TripDocument[] {
   return state.tripDocuments
     .filter((document) => document.tripId === tripId)
@@ -145,6 +161,12 @@ export function applyHaulCompletionSubmission(
   assertCondition(
     !quantity || quantity.value > 0 || Boolean(exception),
     "A zero delivery needs an exception explaining it"
+  )
+  assertCondition(
+    !quantity ||
+      quantity.value === 0 ||
+      !exceptionWaivesEvidence(exception),
+    "A positive delivery contradicts an exception that says no delivery occurred"
   )
 
   // The device can retry after the host has already acted on the first

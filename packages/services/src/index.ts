@@ -15,6 +15,7 @@ import {
 } from "./admin"
 import { cancelAssignment, requestAssignment } from "./assignments"
 import { applyBillingUpdate, findEntitlementByStripeSubscription } from "./billing"
+import { acceptPercentageBillingAgreement } from "./percentage-billing"
 import {
   addEquipmentCombination,
   assignDriverToEquipment,
@@ -383,6 +384,10 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
       listPendingInvitationsForOrganization(state, organizationId),
     revokeOrganizationInvitation: (input: Parameters<typeof revokeOrganizationInvitation>[1]) =>
       revokeOrganizationInvitation(state, input),
+    acceptPercentageBillingAgreement: (
+      input: Parameters<typeof acceptPercentageBillingAgreement>[1],
+      at?: Parameters<typeof acceptPercentageBillingAgreement>[2]
+    ) => acceptPercentageBillingAgreement(state, input, at),
     createThread: (input: unknown) => createThread(state, input),
     createSupportRequest: (
       input: Parameters<typeof createSupportRequest>[1],
@@ -516,6 +521,11 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
 export type LogLoadsServices = ReturnType<typeof createLogLoadsServices>
 
 export { getDriverMediaTarget, getTripDocumentTarget, tripDocumentPublicIdPrefix }
+export { acceptPercentageBillingAgreement } from "./percentage-billing"
+export type {
+  AcceptPercentageBillingAgreementInput,
+  AcceptPercentageBillingAgreementResult
+} from "./percentage-billing"
 /**
  * The credential vault, as free functions as well as bound methods.
  *
@@ -577,6 +587,7 @@ export { DomainRefusalError } from "./utils"
  */
 export {
   accruePlatformFee,
+  assignmentUsesPercentageBilling,
   hostFeeSummary,
   hostInvoiceId,
   LEGACY_PLATFORM_FEE_CURRENCY,

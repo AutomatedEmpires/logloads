@@ -1,6 +1,11 @@
 import { z } from "zod"
 
-import { deterministicUuidV5, hostInvoiceStatusSchema } from "./billing-model"
+import {
+  deterministicUuidV5,
+  hostInvoiceStatusSchema,
+  LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
+  PLATFORM_FEE_BPS
+} from "./billing-model"
 
 const uuidSchema = z.string().uuid()
 const timestampSchema = z.string().datetime()
@@ -13,10 +18,38 @@ const optionalTimestampSchema = timestampSchema.optional().nullable().default(nu
  */
 export const billingModelSchema = z.enum([
   "legacy_percentage",
+  "percentage_v1",
   "subscription_v1",
   "dispatch_pro",
   "enterprise_custom"
 ])
+
+/**
+ * New commercial acceptances use percentage_v1 from this instant forward.
+ * Earlier subscription records remain readable and provider-reconcilable, but
+ * this boundary prevents a delayed client from creating a new subscription
+ * agreement after the commercial model changed.
+ */
+export const PERCENTAGE_V1_CUTOVER_AT = "2026-08-01T00:00:00.000Z"
+
+/** Durable copy/version identity for the current self-serve percentage terms. */
+export const PERCENTAGE_V1_TERMS_VERSION = "percentage-v1-2026-08-03"
+
+/** The exact host agreement frozen before percentage-priced work may publish. */
+export const percentageAgreementTermsSchema = z
+  .object({
+    acceptedAt: timestampSchema,
+    acceptedByUserId: uuidSchema,
+    acceptedTermsVersion: z.string().trim().min(1).max(120),
+    billingCadence: z.literal("monthly_in_arrears"),
+    currency: z.literal(LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY),
+    feeBps: z.literal(PLATFORM_FEE_BPS)
+  })
+  .strict()
+
+export type PercentageAgreementTerms = z.infer<
+  typeof percentageAgreementTermsSchema
+>
 
 /**
  * Capacity provenance frozen when an assignment is accepted. `private_fleet`
@@ -393,18 +426,24 @@ export const organizationBillingAccountSchema = z
     activationState: z.enum([
       "unenrolled",
       "legacy",
+      "percentage_active",
       "configured_dark",
       "active",
       "suspended"
     ]),
     subscriptionId: uuidSchema.nullable(),
+    /** Present only for the current percentage_v1 agreement. */
+    percentageTermsSnapshot:
+      percentageAgreementTermsSchema.nullable().default(null),
     createdAt: timestampSchema,
     updatedAt: timestampSchema
   })
   .superRefine((account, context) => {
     if (
       account.activationState === "unenrolled" &&
-      (account.billingModel !== null || account.subscriptionId !== null)
+      (account.billingModel !== null ||
+        account.subscriptionId !== null ||
+        account.percentageTermsSnapshot !== null)
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -415,7 +454,9 @@ export const organizationBillingAccountSchema = z
 
     if (
       account.activationState === "legacy" &&
-      (account.billingModel !== "legacy_percentage" || account.subscriptionId !== null)
+      (account.billingModel !== "legacy_percentage" ||
+        account.subscriptionId !== null ||
+        account.percentageTermsSnapshot !== null)
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -425,10 +466,25 @@ export const organizationBillingAccountSchema = z
     }
 
     if (
+      account.activationState === "percentage_active" &&
+      (account.billingModel !== "percentage_v1" ||
+        account.subscriptionId !== null ||
+        account.percentageTermsSnapshot === null)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "An active percentage account must freeze its accepted percentage_v1 terms",
+        path: ["percentageTermsSnapshot"]
+      })
+    }
+
+    if (
       ["configured_dark", "active", "suspended"].includes(account.activationState) &&
       (account.billingModel === null ||
         account.billingModel === "legacy_percentage" ||
-        account.subscriptionId === null)
+        account.billingModel === "percentage_v1" ||
+        account.subscriptionId === null ||
+        account.percentageTermsSnapshot !== null)
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,

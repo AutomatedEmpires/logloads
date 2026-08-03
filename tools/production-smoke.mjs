@@ -68,7 +68,35 @@ try {
   }
 
   // 10-11. Billing / email / analytics / errors wiring
-  record(integrations.billing ? "PASS" : "SKIP", "billing wired", integrations.billing ? "Stripe key present" : "no Stripe key")
+  const percentageBilling = integrations.billingPercentageV1 ?? {}
+  const expectedFeeCollection =
+    process.env.SMOKE_EXPECT_FEE_COLLECTION?.trim().toLowerCase() ?? "missing"
+  const collectionExpectationValid =
+    expectedFeeCollection === "enabled" || expectedFeeCollection === "disabled"
+  const billingReady =
+    collectionExpectationValid &&
+    (
+      integrations.billing === "dark_configured" ||
+      integrations.billing === "collection_configured"
+    ) &&
+    percentageBilling.stripeSecretConfigured === true &&
+    percentageBilling.cardSetupConfigured === true &&
+    percentageBilling.providerAccountAssertionConfigured === true &&
+    percentageBilling.providerModeAligned === true &&
+    percentageBilling.webhookConfigured === true &&
+    percentageBilling.collection === expectedFeeCollection
+  record(
+    billingReady ? "PASS" : "FAIL",
+    "percentage billing configuration",
+    `state=${String(integrations.billing)} collection=${String(percentageBilling.collection)} expected=${expectedFeeCollection}`
+  )
+  if (!collectionExpectationValid) {
+    record(
+      "FAIL",
+      "fee collection expectation",
+      "set SMOKE_EXPECT_FEE_COLLECTION=enabled or disabled explicitly"
+    )
+  }
   record(integrations.email ? "PASS" : "SKIP", "email wired", integrations.email ? "Resend key present" : "no Resend key")
   record(integrations.analytics ? "PASS" : "SKIP", "analytics wired", integrations.analytics ? "PostHog key present" : "no PostHog key")
   record(integrations.errorTracking ? "PASS" : "SKIP", "error tracking wired", integrations.errorTracking ? "Sentry DSN present" : "no Sentry DSN")

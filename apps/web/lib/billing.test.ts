@@ -170,13 +170,17 @@ function feeEvent(input: {
   assignmentId: string
   driverPayCents: number
   invoiceId?: string | null
+  loadMovementId?: string
+  loadPostingId?: string
   organizationId: string
   status?: PlatformFeeEventStatus
+  truckSlotId?: string
 }): PlatformFeeEvent {
   const status = input.status ?? "invoiced"
 
   return {
     assignmentId: input.assignmentId,
+    billingModel: "legacy_percentage",
     createdAt: PERIOD.periodStart,
     driverPayCents: input.driverPayCents,
     feeBps: PLATFORM_FEE_BPS,
@@ -185,11 +189,12 @@ function feeEvent(input: {
     // The contract refuses an invoice id on an accrued fee: a fee not yet on a bill
     // must not name one.
     invoiceId: status === "accrued" ? null : input.invoiceId ?? INVOICE_ID,
-    loadPostingId: LOAD_POSTING_ID,
+    loadPostingId: input.loadPostingId ?? LOAD_POSTING_ID,
+    loadMovementId: input.loadMovementId ?? input.assignmentId,
     occurredAt: PERIOD.periodStart,
     organizationId: input.organizationId,
     status,
-    truckSlotId: TRUCK_SLOT_ID,
+    truckSlotId: input.truckSlotId ?? TRUCK_SLOT_ID,
     updatedAt: PERIOD.periodStart,
     voidReason: status === "voided" ? "Load cancelled after completion was recorded" : null
   }
@@ -231,23 +236,42 @@ function hostInvoice(input: {
 function addLegacyAssignment(
   state: LogLoadsDatabaseState,
   assignmentId: string,
+  organizationId: string,
   currency = LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
-): void {
-  const template = state.assignments[0]
+): LogLoadsDatabaseState["assignments"][number] {
+  const hostLoadIds = new Set(
+    state.loadPostings
+      .filter((load) => load.companyId === organizationId)
+      .map((load) => load.id)
+  )
+  const template = state.assignments.find(
+    (assignment) => hostLoadIds.has(assignment.loadPostingId)
+  )
 
   if (!template) {
     throw new Error("The seed no longer contains an assignment template")
   }
 
-  state.assignments.push({
+  const assignment = {
     ...structuredClone(template),
+    billingModel: "legacy_percentage" as const,
     id: assignmentId,
+    loadMovementId: assignmentId,
     termsSnapshot: {
       ...template.termsSnapshot,
       currency,
-      driverPayCents: 52_500
+      driverPayCents: 52_500,
+      hostFee: {
+        collectionState: "accrues_monthly_in_arrears",
+        feeCents: null,
+        providerCollectionState: "feature_gated",
+        proposedRateBps: PLATFORM_FEE_BPS,
+        rateBps: PLATFORM_FEE_BPS
+      }
     }
-  })
+  }
+  state.assignments.push(assignment)
+  return assignment
 }
 
 /** A host with one accrued fee and a card on file, ready to be billed. */
@@ -259,14 +283,21 @@ function billableHost(): {
 } {
   const state = seedState()
   const organization = organizationOfType(state, "landing_source")
+  const assignment = addLegacyAssignment(
+    state,
+    ASSIGNMENT_ONE,
+    organization.id
+  )
   const fee = feeEvent({
     assignmentId: ASSIGNMENT_ONE,
     driverPayCents: 52_500,
-    organizationId: organization.id
+    loadMovementId: assignment.loadMovementId ?? assignment.id,
+    loadPostingId: assignment.loadPostingId,
+    organizationId: organization.id,
+    truckSlotId: assignment.truckSlotId
   })
   const invoice = hostInvoice({ fees: [fee], organizationId: organization.id })
 
-  addLegacyAssignment(state, ASSIGNMENT_ONE)
   state.platformFeeEvents = [fee]
   state.hostInvoices = [invoice]
 
@@ -1101,6 +1132,41 @@ describe("planHostInvoiceCharge", () => {
     })
   })
 
+  it("refuses a fee that is not reciprocally linked before first charge and retry", () => {
+    const { state } = billableHost()
+    state.platformFeeEvents[0] = {
+      ...state.platformFeeEvents[0]!,
+      invoiceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2"
+    }
+
+    expect(planHostInvoiceCharge(state, INVOICE_ID)).toMatchObject({
+      kind: "refused",
+      message: expect.stringContaining("not reciprocally linked")
+    })
+
+    state.hostInvoices[0] = {
+      ...state.hostInvoices[0]!,
+      stripeInvoiceId: "in_existing"
+    }
+    expect(planHostInvoiceCharge(state, INVOICE_ID)).toMatchObject({
+      kind: "refused",
+      message: expect.stringContaining("not reciprocally linked")
+    })
+  })
+
+  it("refuses one fee claimed by two non-void host invoices", () => {
+    const { state } = billableHost()
+    state.hostInvoices.push({
+      ...state.hostInvoices[0]!,
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3"
+    })
+
+    expect(planHostInvoiceCharge(state, INVOICE_ID)).toMatchObject({
+      kind: "refused",
+      message: expect.stringContaining("also claimed")
+    })
+  })
+
   it("refuses a bill that does not exist", () => {
     const { state } = billableHost()
 
@@ -1113,6 +1179,63 @@ describe("planHostInvoiceCharge", () => {
 // ── Charging, once ────────────────────────────────────────────────────────────
 
 describe("chargeHostInvoice", () => {
+  it("makes no provider call for a duplicated invoice claim or broken reciprocal link", async () => {
+    for (const defect of ["duplicate_invoice", "broken_link"] as const) {
+      const { state } = billableHost()
+      if (defect === "duplicate_invoice") {
+        state.hostInvoices.push({
+          ...state.hostInvoices[0]!,
+          id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3"
+        })
+      } else {
+        state.platformFeeEvents[0] = {
+          ...state.platformFeeEvents[0]!,
+          invoiceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2"
+        }
+      }
+      const stripe = fakeStripe()
+
+      const result = await chargeHostInvoice({
+        invoiceId: INVOICE_ID,
+        now: () => AT,
+        port: stripe.port,
+        state: stateAccess(state)
+      })
+
+      expect(result).toMatchObject({ ok: false, outcome: "refused" })
+      expect(stripe.callNames()).toEqual([])
+    }
+  })
+
+  it("makes no provider call when a stored fee disagrees with frozen pay or rate", async () => {
+    for (const defect of ["pay", "rate"] as const) {
+      const { state } = billableHost()
+      const assignment = state.assignments.find(
+        (candidate) => candidate.id === ASSIGNMENT_ONE
+      )!
+      assignment.termsSnapshot = defect === "pay"
+        ? { ...assignment.termsSnapshot, driverPayCents: 50_000 }
+        : {
+            ...assignment.termsSnapshot,
+            hostFee: {
+              ...(assignment.termsSnapshot.hostFee as Record<string, unknown>),
+              rateBps: PLATFORM_FEE_BPS + 100
+            }
+          }
+      const stripe = fakeStripe()
+
+      const result = await chargeHostInvoice({
+        invoiceId: INVOICE_ID,
+        now: () => AT,
+        port: stripe.port,
+        state: stateAccess(state)
+      })
+
+      expect(result).toMatchObject({ ok: false, outcome: "refused" })
+      expect(stripe.callNames()).toEqual([])
+    }
+  })
+
   it("makes no Stripe call for a non-USD legacy bill", async () => {
     const { state } = billableHost()
     const assignment = state.assignments.find(

@@ -23,10 +23,9 @@ import {
  * LogLoads only ever learns an id, a brand and four digits. There is deliberately
  * no field on this route that could carry a card number.
  *
- * The card can fund LogLoads subscription base charges and completed-Network
- * usage invoices, plus preserved legacy percentage invoices for assignments
- * already bound to that model. It never receives, deducts or moves carrier or
- * driver transportation compensation.
+ * The card funds LogLoads platform-fee invoices under the current percentage
+ * agreement and preserved historical obligations. It never receives, deducts,
+ * or moves carrier or driver transportation compensation.
  */
 
 async function requireBillingManager() {

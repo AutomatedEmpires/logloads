@@ -285,12 +285,14 @@ function legacyFeeEvent(): PlatformFeeEvent {
 
   return platformFeeEventSchema.parse({
     assignmentId,
+    billingModel: "legacy_percentage",
     createdAt: PERIOD_START,
     driverPayCents,
     feeBps: PLATFORM_FEE_BPS,
     feeCents: computePlatformFeeCents(driverPayCents, PLATFORM_FEE_BPS),
     id: platformFeeEventId(assignmentId),
     invoiceId: null,
+    loadMovementId: assignmentId,
     loadPostingId: "60000000-0000-4000-8000-000000000002",
     occurredAt: PERIOD_START,
     organizationId: ORGANIZATION_ID,

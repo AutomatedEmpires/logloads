@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { isDedicatedMediaConfigured } from "@/lib/media-config"
+import { platformFeeCollectionEnabled } from "@/lib/billing"
 import { refreshState, services } from "@/lib/services"
 import { isClerkConfigured } from "@/lib/session"
 import {
@@ -33,17 +34,31 @@ export async function GET() {
   const stripeCatalog = stripeCatalogReadiness(process.env)
   const expectedStripeMode =
     process.env.LOGLOADS_STRIPE_EXPECTED_LIVEMODE?.trim().toLowerCase()
-  const allowedOrganizations = (
-    process.env.LOGLOADS_SUBSCRIPTION_ALLOWED_ORGANIZATION_IDS ?? ""
+  const stripeSecretConfigured = Boolean(process.env.STRIPE_SECRET_KEY)
+  const stripePublishableConfigured = Boolean(
+    process.env.STRIPE_PUBLISHABLE_KEY ||
+      process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
   )
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean)
-  const enrollmentScope = allowedOrganizations.includes("*")
-    ? "general_availability"
-    : allowedOrganizations.length > 0
-      ? "canary"
-      : "disabled"
+  const stripeWebhookConfigured = Boolean(process.env.STRIPE_WEBHOOK_SECRET)
+  const providerAccountAssertionConfigured = Boolean(
+    process.env.LOGLOADS_STRIPE_EXPECTED_ACCOUNT_ID
+  )
+  const providerModeAligned = stripeRuntimeModeProblem(process.env) === null
+  const expectedProviderModeValid =
+    expectedStripeMode === "live" || expectedStripeMode === "test"
+  const percentageBillingInfrastructureReady =
+    stripeSecretConfigured &&
+    stripePublishableConfigured &&
+    stripeWebhookConfigured &&
+    providerAccountAssertionConfigured &&
+    providerModeAligned &&
+    expectedProviderModeValid
+  const percentageCollectionEnabled = platformFeeCollectionEnabled(process.env)
+  const percentageBillingReadiness = percentageBillingInfrastructureReady
+    ? percentageCollectionEnabled
+      ? "collection_configured"
+      : "dark_configured"
+    : "misconfigured"
   const body = {
     app: "logloads",
     status: engineOk ? "ok" : "degraded",
@@ -53,18 +68,31 @@ export async function GET() {
     integrations: {
       auth: isClerkConfigured() ? "clerk" : "dev-session",
       canonicalState: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
-      billing: Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_PRICE_DISPATCH),
-      billingSubscriptionV1: {
+      billing: percentageBillingReadiness,
+      billingPercentageV1: {
+        cardSetupConfigured:
+          stripeSecretConfigured && stripePublishableConfigured,
+        collection: percentageCollectionEnabled
+          ? "enabled"
+          : "disabled",
+        expectedProviderMode:
+          expectedStripeMode === "live" || expectedStripeMode === "test"
+            ? expectedStripeMode
+            : "invalid",
+        providerAccountAssertionConfigured,
+        providerModeAligned,
+        providerVerification: "not_probed",
+        readiness: percentageBillingReadiness,
+        stripeSecretConfigured,
+        webhookConfigured: stripeWebhookConfigured
+      },
+      billingSubscriptionHistory: {
         catalogConfigured: stripeCatalog.configured,
         collection: subscriptionCollectionEnabled(process.env) ? "enabled" : "disabled",
         dispatchSelfServe: dispatchSelfServeEnabled(process.env)
           ? "enabled"
           : "disabled",
-        enrollmentScope,
-        expectedProviderMode:
-          expectedStripeMode === "live" || expectedStripeMode === "test"
-            ? expectedStripeMode
-            : "invalid",
+        enrollment: "closed",
         invalidPriceIds: stripeCatalog.invalid.length,
         missingPrices: stripeCatalog.missing.length,
         ownerSmoke: internalBillingSmokeEnabled(process.env) ? "enabled" : "disabled",
@@ -74,11 +102,9 @@ export async function GET() {
         portalConfigured: Boolean(
           process.env.STRIPE_PORTAL_CONFIGURATION_NETWORK
         ),
-        providerAccountAssertionConfigured: Boolean(
-          process.env.LOGLOADS_STRIPE_EXPECTED_ACCOUNT_ID
-        ),
-        providerModeAligned: stripeRuntimeModeProblem(process.env) === null,
-        webhookConfigured: Boolean(process.env.STRIPE_WEBHOOK_SECRET)
+        providerAccountAssertionConfigured,
+        providerModeAligned,
+        webhookConfigured: stripeWebhookConfigured
       },
       credentialReview: Boolean(process.env.ANTHROPIC_API_KEY),
       email: Boolean(process.env.RESEND_API_KEY),

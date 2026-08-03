@@ -5,7 +5,7 @@ import { PricingPage } from "@/components/v3"
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "Drivers are free. Dispatch Pro is $499/month, and LogLoads Network plans combine a monthly commitment with completed Network-load usage."
+    "Drivers stay free. Hosts pay LogLoads 5% of stated driver pay for each completed load, added on top—with no posting fee, subscription, monthly minimum, tier, allowance, or overage."
 }
 
 export default function Page() {

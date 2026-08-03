@@ -1,10 +1,12 @@
 # LogLoads — marketplace realignment blueprint
 
-> **Historical percentage-model research.** The founder's 2026-07-28
-> `subscription_v1` decision supersedes every percentage-pricing recommendation
-> in this document for new work. Preserve this evidence for
-> `legacy_percentage` assignments only. Current authority:
-> `docs/SUBSCRIPTION_BILLING_V1.md`, then `AGENTS.md`.
+> **Historical percentage-model research.** Preserve this as evidence for
+> `legacy_percentage`; do not treat its 3% examples or monthly-minimum proposals
+> as current terms. The intervening 2026-07-28 `subscription_v1` decision is also
+> historical/read-only. The founder's newest 2026-08-01 decision governs new
+> activity as `percentage_v1`: 5% of host-stated driver pay on top, billable on
+> completed movements, with no monthly minimum or posting fee. Current authority
+> is the newest entry in `docs/DECISIONS.md`, then `AGENTS.md`.
 
 Generated 2026-07-24 by a 7-agent research + audit pass (payment rails, pricing economics, four codebase audits, synthesis).
 Operating model: host-stated flat driver pay; platform fee charged ON TOP to the host on completed loads only; strictly non-custodial; no free host tier.
@@ -13,14 +15,16 @@ Operating model: host-stated flat driver pay; platform fee charged ON TOP to the
 >
 > **This document is research input, not the current plan.** It was produced *before* the founder decided the rate, and four things in it are now superseded:
 >
-> 1. **The rate is 5%, not 3%.** Every "3%", "3.00%", and the `$500 → $485` deduction example below predates the decision. At the decided 5% that example is **$500 → $475**. The authoritative rate lives in `AGENTS.md` section 7.
+> 1. **The current rate is 5%, not 3%, and it is charged on top.** Every "3%", "3.00%", and `$500 → $485` deduction example below predates the decision and also describes a forbidden deduction from driver pay. Under `percentage_v1`, $500 of driver pay remains $500 to the driver and creates a separate $25 host obligation. The authoritative terms live in the newest `docs/DECISIONS.md` entry and `AGENTS.md` section 7.
 > 2. **The implementation sequence here is incomplete.** The synthesis agent exceeded its output limit and its narrative begins partway through, at Step 3. Do not follow this sequence — the complete, adversarially-reviewed spec is **`docs/marketplace-implementation-spec.md`**.
 > 3. **Phase 0 payment records must never store payout credentials.** Where this document mentions "ACH details", Zelle handles, or check-by-mail addresses, the stored contract is **method + status + optional non-sensitive instructions only** — never account or routing numbers, credentials, or TINs. A record-only MVP must not quietly become a store of financial PII.
 > 4. **Uniqueness cannot be enforced in SQL.** Where this document recommends a database constraint against duplicate fee events: the live runtime is a single JSON snapshot row and the SQL mirror is not the execution path. Idempotency and at-most-one-per-slot must be enforced in the zod/service/CAS mutation path; SQL constraints are defence in depth only.
 >
 > **Historical authority order:** `docs/marketplace-implementation-spec.md`
-> (legacy design) → this document (legacy evidence). For new work, use
-> `docs/SUBSCRIPTION_BILLING_V1.md`.
+> (legacy design) → this document (legacy evidence) →
+> `docs/SUBSCRIPTION_BILLING_V1.md` (intervening historical subscription
+> contract). For new work, use the newest `docs/DECISIONS.md` entry and
+> `AGENTS.md`.
 >
 > What remains valuable here and is *not* superseded: the payment-rail research, the pricing economics reasoning, and the four codebase audits — complete, and the reason the decisions came out as they did.
 

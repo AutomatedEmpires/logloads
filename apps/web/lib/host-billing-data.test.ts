@@ -63,6 +63,7 @@ function feeEvent(fixture: FeeFixture): PlatformFeeEvent {
 
   return platformFeeEventSchema.parse({
     assignmentId: fixture.assignmentId,
+    billingModel: "legacy_percentage",
     createdAt: occurredAt,
     driverPayCents: fixture.driverPayCents,
     feeBps,
@@ -71,6 +72,7 @@ function feeEvent(fixture: FeeFixture): PlatformFeeEvent {
     feeCents: computePlatformFeeCents(fixture.driverPayCents, feeBps),
     id: platformFeeEventId(fixture.assignmentId),
     invoiceId: fixture.invoiceId ?? null,
+    loadMovementId: fixture.assignmentId,
     loadPostingId: fixture.loadPostingId ?? LOAD_ONE,
     occurredAt,
     organizationId: fixture.organizationId ?? HOST,
@@ -691,6 +693,96 @@ describe("what exactly the host is charged", () => {
     expect(feeRateLabel(250)).toBe("2.5%")
     expect(feeRateLabel(525)).toBe("5.25%")
     expect(feeRateLabel(10_000)).toBe("100%")
+  })
+})
+
+describe("percentage agreement state", () => {
+  it("presents an accepted percentage_v1 agreement as active and immutable", () => {
+    const view = buildHostBillingView(
+      source({
+        organizationBillingAccounts: [
+          {
+            activationState: "percentage_active",
+            billingModel: "percentage_v1",
+            organizationId: HOST,
+            percentageTermsSnapshot: {
+              acceptedAt: "2026-08-03T00:00:00.000Z",
+              acceptedTermsVersion: "percentage-v1-2026-08-03"
+            }
+          }
+        ]
+      }),
+      HOST,
+      NOW
+    )
+
+    expect(view.percentageAgreement).toEqual({
+      acceptedOnLabel: "Aug 3, 2026",
+      canAccept: false,
+      state: "active",
+      termsVersion: "percentage-v1-2026-08-03"
+    })
+  })
+
+  it("offers current terms to a legacy account without rewriting its history", () => {
+    const view = buildHostBillingView(source(), HOST, NOW)
+
+    expect(view.percentageAgreement).toEqual({
+      acceptedOnLabel: null,
+      canAccept: true,
+      state: "legacy",
+      termsVersion: null
+    })
+  })
+
+  it("does not self-convert a historical subscription record", () => {
+    const view = buildHostBillingView(
+      source({
+        organizationBillingAccounts: [
+          {
+            activationState: "subscription_active",
+            billingModel: "subscription_v1",
+            organizationId: HOST
+          }
+        ]
+      }),
+      HOST,
+      NOW
+    )
+
+    expect(view.percentageAgreement).toMatchObject({
+      canAccept: false,
+      state: "historical_subscription"
+    })
+  })
+
+  it("offers percentage_v1 acceptance once the linked subscription is terminal", () => {
+    const view = buildHostBillingView(
+      source({
+        organizationBillingAccounts: [
+          {
+            activationState: "active",
+            billingModel: "subscription_v1",
+            organizationId: HOST,
+            subscriptionId: "20202020-2020-4020-8020-202020202020"
+          }
+        ],
+        organizationSubscriptions: [
+          {
+            id: "20202020-2020-4020-8020-202020202020",
+            organizationId: HOST,
+            status: "cancelled"
+          }
+        ]
+      }),
+      HOST,
+      NOW
+    )
+
+    expect(view.percentageAgreement).toMatchObject({
+      canAccept: true,
+      state: "historical_subscription"
+    })
   })
 })
 

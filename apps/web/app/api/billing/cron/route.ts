@@ -338,7 +338,8 @@ export async function GET(request: Request) {
         if (
           subscription.internalBillingTest ||
           !subscription.stripeSubscriptionId ||
-          subscription.billingModel === "legacy_percentage"
+          subscription.billingModel === "legacy_percentage" ||
+          subscription.billingModel === "percentage_v1"
         ) {
           return false
         }
@@ -385,15 +386,20 @@ export async function GET(request: Request) {
           : null
         const isExistingCredit =
           adjustment.settlementIntent === "credit_note"
+        const subscriptionBillingModel =
+          subscription?.billingModel === "legacy_percentage" ||
+          subscription?.billingModel === "percentage_v1"
+            ? null
+            : subscription?.billingModel ?? null
         const isAllowedSupplementalDebit =
           adjustment.settlementIntent === "supplemental_debit" &&
           networkCollection &&
           Boolean(
             subscription &&
-              subscription.billingModel !== "legacy_percentage" &&
+              subscriptionBillingModel &&
               subscriptionNewMoneyAllowed(
                 subscription.organizationId,
-                subscription.billingModel,
+                subscriptionBillingModel,
                 process.env
               )
           )

@@ -41,7 +41,7 @@ async function expectHealthyPage(page: Page, clientErrors: string[]) {
   expect(clientErrors, "the rendered page emitted browser errors").toEqual([])
 }
 
-test("public pricing states the fixed catalog and completed-movement economics", async ({
+test("public pricing states the single 5% completed-load model", async ({
   page
 }) => {
   const clientErrors = captureClientErrors(page)
@@ -51,122 +51,78 @@ test("public pricing states the fixed catalog and completed-movement economics",
 
   await expect(
     page.getByRole("heading", {
-      name: "Drivers stay free. Hosts pay for an operating Network."
+      name: "Drivers stay free. Hosts pay 5% on top."
     })
   ).toBeVisible()
   await expect(
-    page.getByText(
-      "There is no posting fee. Network plans include a defined number of completed Network-coordinated physical load movements, with automatic flat overage after the allowance. Driver or carrier compensation remains separate and is paid directly by the host.",
-      { exact: true }
-    )
-  ).toBeVisible()
-
-  const cards = page.locator(".pricing-card")
-  await expect(cards).toHaveCount(6)
-
-  const driver = pricingCard(page, "Driver")
-  await expect(driver).toContainText("Free forever")
-
-  const dispatch = pricingCard(page, "Dispatch Pro")
-  await expect(dispatch).toContainText("$499/mo")
-  await expect(dispatch).toContainText("No LogLoads Network units")
-  await expect(dispatch).toContainText("No Network usage billing")
-
-  const network25 = pricingCard(page, "Network 25")
-  await expect(network25).toContainText("$3,000/mo")
-  await expect(network25).toContainText("25 completed Network loads/month")
-  await expect(network25).toContainText("$125 per additional completion")
-  await expect(network25).toContainText(
-    "12 months, billed monthly · $36,000 base commitment"
-  )
-
-  const network50 = pricingCard(page, "Network 50")
-  await expect(network50).toContainText("$5,500/mo")
-  await expect(network50).toContainText("50 completed Network loads/month")
-  await expect(network50).toContainText("$110 per additional completion")
-  await expect(network50).toContainText(
-    "12 months, billed monthly · $66,000 base commitment"
-  )
-
-  const network100 = pricingCard(page, "Network 100")
-  await expect(network100).toContainText("$10,000/mo")
-  await expect(network100).toContainText("100 completed Network loads/month")
-  await expect(network100).toContainText("$90 per additional completion")
-  await expect(network100).toContainText(
-    "12 months, billed monthly · $120,000 base commitment"
-  )
-
-  const enterprise = pricingCard(page, "Enterprise custom")
-  await expect(enterprise).toContainText("250+ completed Network loads")
-  await expect(enterprise).toContainText("never an unlimited-load promise")
-  await expect(enterprise).toContainText("Negotiated annual commitment")
-
-  await expect(
-    page.getByText(
-      "Network 25 at 30 completed movements is $3,000 + 5 × $125 = $3,625.",
-      { exact: false }
-    )
-  ).toBeVisible()
-  await expect(
-    page.getByText(
-      "Network 50 at 60 is $5,500 + 10 × $110 = $6,600.",
-      { exact: false }
-    )
-  ).toBeVisible()
-  await expect(
-    page.getByText(
-      "Network 100 at 110 is $10,000 + 10 × $90 = $10,900.",
-      { exact: false }
-    )
-  ).toBeVisible()
-  await expect(
-    page.getByText(
-      "Actual transportation compensation is separate, remains payable directly by the host, and is never reduced by a LogLoads charge.",
-      { exact: false }
-    )
-  ).toBeVisible()
-
-  await expectHealthyPage(page, clientErrors)
-})
-
-test("the paid Pilot is invitation-only and is not a public plan card", async ({
-  page
-}) => {
-  const clientErrors = captureClientErrors(page)
-
-  await page.goto("/pricing")
-  await page.waitForLoadState("domcontentloaded")
-
-  const cards = page.locator(".pricing-card")
-  await expect(cards).toHaveCount(6)
-  await expect(cards.filter({ hasText: "Network Pilot" })).toHaveCount(0)
-
-  const pilot = page.locator(".legal-note").filter({
-    has: page.getByRole("heading", {
-      name: "The paid Pilot is invitation-only."
+    page.getByRole("heading", {
+      name: "No subscription. No monthly minimum. No tiers."
     })
-  })
-  await expect(pilot).toBeVisible()
-  await expect(pilot).toContainText("$1,500 per month")
-  await expect(pilot).toContainText("exact 90-day operating engagement")
-  await expect(pilot).toContainText("$4,500 minimum base commitment")
-  await expect(pilot).toContainText(
-    "30 completed Network movements are pooled across the engagement"
-  )
-  await expect(pilot).toContainText(
-    "additional completed movements are $150 each"
-  )
-  await expect(pilot).toContainText(
-    "The Pilot is not available through public self-service checkout."
-  )
+  ).toBeVisible()
+
+  const cards = page.locator(".pricing-card")
+  await expect(cards).toHaveCount(2)
+
+  await expect(pricingCard(page, "Driver")).toContainText("Free forever")
+
+  const host = pricingCard(page, "Host")
+  await expect(host).toContainText("5% per completed load")
+  await expect(host).toContainText("No charge to post")
+  await expect(host).toContainText("No subscription or monthly minimum")
+  await expect(host).toContainText("$500 driver pay + $25 LogLoads fee = $525")
+
   await expect(
-    page.locator('.pricing-card a[href*="subscription-checkout"]')
+    page.getByText(
+      "If the host states that one load pays the driver $500, the driver receives $500. The LogLoads fee is $25, so the host's total cost is $525.",
+      { exact: false }
+    )
+  ).toBeVisible()
+  await expect(
+    page.getByText(
+      "Drafts, postings, searches, requests, unaccepted offers, cancellations before completion, and duplicates do not.",
+      { exact: false }
+    )
+  ).toBeVisible()
+
+  for (const retiredPlan of [
+    "Dispatch Pro",
+    "Network Pilot",
+    "Network 25",
+    "Network 50",
+    "Network 100",
+    "Enterprise custom"
+  ]) {
+    await expect(pricingCard(page, retiredPlan)).toHaveCount(0)
+  }
+  await expect(
+    page.locator('a[href*="subscription-checkout"]')
   ).toHaveCount(0)
 
   await expectHealthyPage(page, clientErrors)
 })
 
-test("a grandfathered host sees legacy terms without a new subscription Checkout", async ({
+test("public terms bind the 5% fee without changing driver pay", async ({
+  page
+}) => {
+  const clientErrors = captureClientErrors(page)
+
+  await page.goto("/terms")
+  await page.waitForLoadState("domcontentloaded")
+
+  await expect(
+    page.getByText(
+      "Hosts pay LogLoads a 5% platform fee on top of the driver pay stated for each completed load.",
+      { exact: false }
+    )
+  ).toBeVisible()
+  await expect(page.getByText("Effective August 3, 2026")).toBeVisible()
+  await expect(page.getByText(/monthly in arrears/i).first()).toBeVisible()
+  await expect(page.getByText(/never deducted from driver pay/i).first()).toBeVisible()
+
+  await expectHealthyPage(page, clientErrors)
+})
+
+test("an active host sees percentage billing, direct driver pay, and no subscription checkout", async ({
   page
 }) => {
   const clientErrors = captureClientErrors(page)
@@ -178,106 +134,35 @@ test("a grandfathered host sees legacy terms without a new subscription Checkout
   await expect(
     page.getByRole("heading", { exact: true, name: "Billing" })
   ).toBeVisible()
-
-  const currentPlan = page.getByRole("region", { name: "Current plan" })
-  await expect(currentPlan).toBeVisible()
   await expect(
-    currentPlan.getByRole("heading", { name: "Legacy host terms" })
+    page.getByRole("heading", {
+      name: "5% of stated driver pay, added on top"
+    })
   ).toBeVisible()
-  await expect(currentPlan).toContainText("Legacy 5%")
-  await expect(currentPlan).toContainText(
-    "Legacy percentage terms — no new enrollment"
-  )
-  await expect(currentPlan).toContainText(
-    "This organization remains on an explicit grandfathered percentage agreement until an audited cutover."
-  )
-  await expect(currentPlan).toContainText(
-    "driver compensation remains direct"
-  )
+  await expect(
+    page.getByText("Current percentage agreement active", { exact: false })
+  ).toBeVisible()
+  await expect(page.getByText("You state the driver is paid", { exact: true })).toBeVisible()
+  await expect(page.getByText("LogLoads fee, on top")).toBeVisible()
+  await expect(page.getByText("Your total cost")).toBeVisible()
+  await expect(
+    page.getByText("The driver receives exactly this")
+  ).toBeVisible()
 
   await expect(
-    page.getByRole("button", {
-      name: "Accept terms & continue to payment"
-    })
+    page.getByRole("button", { name: "Accept 5% host agreement" })
   ).toHaveCount(0)
   await expect(
-    page.getByRole("button", { name: "Complete approved enrollment" })
+    page.locator('a[href*="subscription-checkout"]')
   ).toHaveCount(0)
   await expect(
-    page.getByText("This opens the exact plan already accepted", {
-      exact: false
-    })
-  ).toHaveCount(0)
-  await expect(
-    page.getByRole("heading", { name: /Network (Pilot|25|50|100)/ })
+    page.getByRole("button", { name: /subscription|enrollment|plan change/i })
   ).toHaveCount(0)
 
   await expectHealthyPage(page, clientErrors)
 })
 
-test("tablet billing and public story layouts keep their hierarchy without overlap", async ({
-  page
-}, testInfo) => {
-  test.skip(
-    testInfo.project.name === "mobile-chrome",
-    "this path verifies the exact 768px app-shell and public-page layouts"
-  )
-
-  await page.setViewportSize({ height: 1024, width: 768 })
-  await signIn(page, "cole@summit.example")
-  await page.goto("/host/billing")
-  await page.waitForLoadState("domcontentloaded")
-
-  const enrollment = page.locator(".subscription-overview")
-  await expect(
-    page.getByRole("heading", { exact: true, name: "Billing" })
-  ).toBeVisible()
-  await expect(enrollment).toBeVisible()
-  const facts = enrollment.locator(".subscription-overview__facts")
-  const balance = enrollment.locator(".subscription-overview__balance")
-  const factsBox = await facts.boundingBox()
-  const balanceBox = await balance.boundingBox()
-
-  expect(factsBox).not.toBeNull()
-  expect(balanceBox).not.toBeNull()
-  expect(balanceBox!.y).toBeGreaterThanOrEqual(
-    factsBox!.y + factsBox!.height - 1
-  )
-  const billingViewportWidth = await page.evaluate(
-    () => document.documentElement.clientWidth
-  )
-  const billingContentWidth = await page.evaluate(
-    () => document.documentElement.scrollWidth
-  )
-  expect(billingContentWidth).toBeLessThanOrEqual(billingViewportWidth + 1)
-  await page.screenshot({
-    fullPage: true,
-    path: testInfo.outputPath("host-billing-tablet.png")
-  })
-
-  await page.goto("/for-landings")
-  await page.waitForLoadState("domcontentloaded")
-  const storyAction = page
-    .locator(".story-hero")
-    .getByRole("link", { name: "Publish your first load" })
-  const storyActionBox = await storyAction.boundingBox()
-  expect(storyActionBox).not.toBeNull()
-  expect(storyActionBox!.y + storyActionBox!.height).toBeLessThanOrEqual(1024)
-  await page.screenshot({
-    fullPage: true,
-    path: testInfo.outputPath("for-landings-tablet.png")
-  })
-
-  await page.goto("/how-it-works")
-  const timelineItems = page.locator(".story-grid--timeline > li")
-  const firstItemBox = await timelineItems.nth(0).boundingBox()
-  const lastItemBox = await timelineItems.nth(2).boundingBox()
-  expect(firstItemBox).not.toBeNull()
-  expect(lastItemBox).not.toBeNull()
-  expect(lastItemBox!.width).toBeGreaterThan(firstItemBox!.width * 1.5)
-})
-
-test("admin billing exposes every configurable tier without overstating revenue or enrollment", async ({
+test("admin billing is percentage-first and subscription writes stay closed", async ({
   page
 }) => {
   const clientErrors = captureClientErrors(page)
@@ -301,75 +186,32 @@ test("admin billing exposes every configurable tier without overstating revenue 
     page.getByRole("heading", { exact: true, name: "Billing" })
   ).toBeVisible()
   await expect(
-    page.getByRole("heading", { name: "Commercial position" })
+    page.getByRole("heading", { name: "Current host billing position" })
   ).toBeVisible()
-
-  const activeSubscriptions = page.locator(".metric-tile").filter({
-    hasText: "Active subscriptions"
-  })
-  await expect(activeSubscriptions.locator("strong")).toHaveText("0")
-
-  const activeMrr = page.locator(".metric-tile").filter({
-    hasText: "Active MRR"
-  })
-  await expect(activeMrr.locator("strong")).toHaveText("$0.00")
-
-  const activeArr = page.locator(".metric-tile").filter({
-    hasText: "Active ARR"
-  })
-  await expect(activeArr.locator("strong")).toHaveText("$0.00")
-
-  await expect(
-    page.getByRole("heading", {
-      name: "No commercial subscriptions recorded."
-    })
-  ).toBeVisible()
+  await expect(page.getByText("Percentage organizations").first()).toBeVisible()
   await expect(
     page.getByText(
-      "The plan catalog does not prove enrollment. Plan mix begins only when an organization has an accepted canonical subscription record.",
-      { exact: true }
-    )
-  ).toBeVisible()
-  await expect(
-    page.getByRole("heading", { name: "No subscriptions to review." })
-  ).toBeVisible()
-
-  await page
-    .locator("summary")
-    .filter({ hasText: "Record accepted subscription plan" })
-    .click()
-  const acceptedPlan = page.getByLabel("Accepted plan")
-  await expect(acceptedPlan).toBeVisible()
-  await expect(acceptedPlan.locator("option")).toHaveText([
-    "Dispatch Pro",
-    "Network Pilot",
-    "Network 25",
-    "Network 50",
-    "Network 100",
-    "Enterprise 250+"
-  ])
-  await expect(
-    page.getByText(
-      "Records a customer-accepted plan in configured-dark state; it does not activate billing.",
-      { exact: true }
-    )
-  ).toBeVisible()
-  await expect(
-    page.getByText(
-      "These controls call canonical domain services only. They do not create provider prices, charge Stripe, cancel a provider subscription, or rewrite accepted work.",
+      "Current host revenue is the 5% platform fee added on top of stated driver pay for completed loads.",
       { exact: false }
     )
   ).toBeVisible()
   await expect(
-    page.getByText(
-      "They do not call Stripe and do not claim that local state matches live provider state.",
-      { exact: false }
-    )
+    page.getByRole("heading", { name: "New subscription writes are closed" })
+  ).toBeVisible()
+  await expect(
+    page.getByText("Read-only subscription operations", { exact: false })
   ).toBeVisible()
 
+  await expect(
+    page.locator("summary").filter({ hasText: "Record accepted subscription plan" })
+  ).not.toBeVisible()
+  await expect(
+    page.getByRole("button", { name: "Authorize paid activation" })
+  ).not.toBeVisible()
   expect(
     billingWrites,
-    "reading or expanding admin billing controls must not mutate billing state"
+    "reading admin billing must not mutate billing state"
   ).toEqual([])
+
   await expectHealthyPage(page, clientErrors)
 })

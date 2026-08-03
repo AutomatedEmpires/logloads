@@ -24,7 +24,11 @@
 
 ## What is placeholder
 - External notification delivery (Resend) is not wired; notifications are in-app records.
-- Stripe checkout activates only when Stripe keys are configured; until then billing surfaces show honest "activation pending" states.
+- Current Stripe platform-fee collection activates only when the dedicated
+  account is verified and `LOGLOADS_FEE_COLLECTION=enabled`; until then billing
+  surfaces must show honest "activation pending" states. Subscription Checkout
+  and Dispatch self-serve are historical surfaces only, and their activation
+  gates remain disabled for new activity.
 
 ## What is intentionally not built yet
 - Freight brokerage, carrier operations, dispatch-for-hire, and managed freight-money movement — outside the current coordination-software scope.

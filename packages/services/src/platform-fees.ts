@@ -7,6 +7,7 @@ import {
   invoicePeriodFor,
   invoiceSubtotalCents,
   LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
+  percentageFeeEventId,
   platformFeeEventId,
   platformFeeEventSchema,
   PLATFORM_FEE_BPS,
@@ -23,13 +24,14 @@ import {
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
+import { haulHasBillableDelivery } from "./haul-completion"
 import { assertOrganizationAction, getActiveOrganizationContext } from "./operating-network"
 import { assertCondition, assertFound, createUuid, nowIso } from "./utils"
 
 /**
- * The permanent LEGACY_PERCENTAGE ledger: what a legacy completed load accrued,
- * what a host owes, and the monthly bill it lands on. Subscription-v1 never
- * writes these rows; its movement usage and overage invoices live separately.
+ * The permanent percentage ledger: what legacy and percentage_v1 completed
+ * movements accrued, what a host owes, and the monthly bill each fee lands on.
+ * Subscription-v1 never writes these rows; its movement usage lives separately.
  *
  * WHAT IS BEING CHARGED. A host posts a load and states what it pays the driver.
  * LogLoads charges the HOST a percentage of that stated pay, ON TOP of it, once
@@ -308,9 +310,8 @@ export type AccruePlatformFeeResult =
 /**
  * The delivered haul behind an assignment, as the two parties agreed it.
  *
- * Completion here means the HOST CONFIRMED the driver's delivered record. Fee
- * accrual also requires the assigned driver to confirm the frozen off-platform
- * pay arrived; delivery alone never says the driver was paid.
+ * Completion here means the HOST CONFIRMED the driver's delivered record.
+ * Driver-payment receipt remains independent evidence and is not a fee gate.
  */
 function confirmedHaulForAssignment(
   state: LogLoadsDatabaseState,
@@ -368,6 +369,12 @@ export function assignmentUsesLegacyPercentageBilling(assignment: Assignment): b
   return frozenPlatformFeeBps(assignment.termsSnapshot) !== null
 }
 
+/** Current percentage_v1 plus frozen historical percentage obligations. */
+export function assignmentUsesPercentageBilling(assignment: Assignment): boolean {
+  return assignment.billingModel === "percentage_v1" ||
+    assignmentUsesLegacyPercentageBilling(assignment)
+}
+
 /**
  * Records the fee for one completed load. AT MOST ONE PER ASSIGNMENT, EVER.
  *
@@ -409,9 +416,20 @@ export function accruePlatformFee(
     `Load posting ${assignment.loadPostingId} was not found`
   )
 
-  const eventId = platformFeeEventId(assignment.id)
+  const movementId = assignment.loadMovementId ?? assignment.id
+  const eventId = assignment.billingModel === "percentage_v1"
+    ? percentageFeeEventId(movementId)
+    : platformFeeEventId(assignment.id)
+  const movementAssignmentIds = new Set(
+    state.assignments
+      .filter((candidate) => (candidate.loadMovementId ?? candidate.id) === movementId)
+      .map((candidate) => candidate.id)
+  )
   const existing = state.platformFeeEvents.find(
-    (candidate) => candidate.id === eventId || candidate.assignmentId === assignment.id
+    (candidate) =>
+      candidate.id === eventId ||
+      candidate.loadMovementId === movementId ||
+      movementAssignmentIds.has(candidate.assignmentId)
   )
 
   // Deliberately BEFORE the completion and basis checks. A fee that was legitimately
@@ -419,24 +437,29 @@ export function accruePlatformFee(
   // re-checking first would let a retry after such an edit fall through to a refusal
   // that reads like "nothing was ever charged".
   if (existing) {
+    const expectedBillingModel = assignment.billingModel === "percentage_v1"
+      ? "percentage_v1"
+      : "legacy_percentage"
+    assertCondition(
+      existing.organizationId === load.companyId &&
+        existing.loadPostingId === load.id &&
+        existing.loadMovementId === movementId &&
+        movementAssignmentIds.has(existing.assignmentId) &&
+        existing.billingModel === expectedBillingModel,
+      `Platform fee ${existing.id} is cross-wired to another host, load, movement, or billing model`
+    )
     return { event: existing, outcome: "already_accrued" }
   }
 
-  if (!assignmentUsesLegacyPercentageBilling(assignment)) {
+  if (!assignmentUsesPercentageBilling(assignment)) {
     return {
       assignmentId: assignment.id,
       outcome: "no_basis",
       reason:
-        "This assignment is not frozen to the legacy_percentage model; subscription usage cannot enter the legacy fee ledger"
+        "This assignment is not frozen to percentage billing; subscription usage cannot enter the percentage-fee ledger"
     }
   }
 
-  const movementId = assignment.loadMovementId ?? assignment.id
-  const movementAssignmentIds = new Set(
-    state.assignments
-      .filter((candidate) => (candidate.loadMovementId ?? candidate.id) === movementId)
-      .map((candidate) => candidate.id)
-  )
   const subscriptionUsage = state.networkUsageEvents.find(
     (usage) =>
       usage.status !== "reversed" &&
@@ -472,23 +495,49 @@ export function accruePlatformFee(
     }
   }
 
-  if (!assignment.driverPaymentReceivedAt) {
+  if (!haulHasBillableDelivery(trip)) {
     return {
       assignmentId: assignment.id,
       outcome: "not_completed",
-      reason: "The assigned driver has not confirmed receipt of the stated driver pay"
+      reason:
+        "The confirmed completion records no physical delivery, so no platform fee is owed"
+    }
+  }
+
+  const percentageV1 = assignment.billingModel === "percentage_v1"
+  if (!percentageV1 && !assignment.driverPaymentReceivedAt) {
+    return {
+      assignmentId: assignment.id,
+      outcome: "not_completed",
+      reason:
+        "This legacy agreement earns its fee only after the assigned driver confirms receipt of the stated pay"
     }
   }
 
   if (
-    assignment.driverPaymentReceivedAmountCents === null ||
-    !assignment.driverPaymentReceivedCurrency
+    !percentageV1 &&
+    (
+      assignment.driverPaymentReceivedAmountCents === null ||
+      !assignment.driverPaymentReceivedCurrency
+    )
   ) {
     return {
       assignmentId: assignment.id,
       outcome: "no_basis",
       reason:
         "This legacy receipt does not record the amount and currency the driver actually received"
+    }
+  }
+
+  if (
+    !trip.completionConfirmedAt ||
+    !Number.isFinite(Date.parse(trip.completionConfirmedAt))
+  ) {
+    return {
+      assignmentId: assignment.id,
+      outcome: "no_basis",
+      reason:
+        "The confirmed haul has no trustworthy completion timestamp; review it before billing"
     }
   }
 
@@ -514,7 +563,7 @@ export function accruePlatformFee(
       assignmentId: assignment.id,
       outcome: "no_basis",
       reason:
-        `Legacy percentage fees can accrue only for ${LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY} work; this assignment remains unbilled`
+        `Percentage fees can accrue only for ${LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY} work; this assignment remains unbilled`
     }
   }
 
@@ -535,12 +584,19 @@ export function accruePlatformFee(
     `The requested fee rate ${String(input.feeBps)} bps does not match the accepted ${feeBps} bps`
   )
   const actorUserId = input.actorUserId ?? null
-  // The receipt is the billable event: LogLoads does not earn its fee merely
-  // because a host confirmed delivery while the driver is still unpaid.
-  const occurredAt = assignment.driverPaymentReceivedAt
+  // Percentage-v1 earns on host-confirmed physical delivery. Historical legacy
+  // agreements retain their accepted receipt trigger exactly; deploying the new
+  // model must never retroactively create debts for earlier unpaid movements.
+  const occurredAt = percentageV1
+    ? trip.completionConfirmedAt
+    : assignment.driverPaymentReceivedAt as string
 
   const event = platformFeeEventSchema.parse({
     assignmentId: assignment.id,
+    billingModel:
+      assignment.billingModel === "percentage_v1"
+        ? "percentage_v1"
+        : "legacy_percentage",
     createdAt: at,
     driverPayCents,
     feeBps,
@@ -548,6 +604,7 @@ export function accruePlatformFee(
     id: eventId,
     invoiceId: null,
     loadPostingId: load.id,
+    loadMovementId: movementId,
     occurredAt,
     // The HOST organization that posted the work. Derived from the posting, never
     // taken from the caller: whoever asks for the accrual does not get to name who
@@ -573,11 +630,16 @@ export function accruePlatformFee(
       feeCents: event.feeCents,
       loadPostingId: load.id,
       organizationId: event.organizationId,
-      receivedAmountCents: assignment.driverPaymentReceivedAmountCents,
-      receivedCurrency: assignment.driverPaymentReceivedCurrency,
-      receivedMatchesStated:
-        assignment.driverPaymentReceivedAmountCents === frozenDriverPay.amountCents &&
-        assignment.driverPaymentReceivedCurrency === frozenDriverPay.currency,
+      loadMovementId: movementId,
+      billingTrigger: percentageV1
+        ? "host_completion"
+        : "driver_payment_receipt",
+      receivedAmountCents: percentageV1
+        ? null
+        : assignment.driverPaymentReceivedAmountCents,
+      receivedCurrency: percentageV1
+        ? null
+        : assignment.driverPaymentReceivedCurrency,
       tripId: trip.id
     }
   })
@@ -593,34 +655,42 @@ export interface PlatformFeeReconciliationResult {
 }
 
 /**
- * Repairs received hauls that are missing their deterministic fee event.
- *
- * Receipt and fee accrual intentionally share one operating mutation, but the
- * receipt is a real host/driver fact and is preserved when the ledger write
- * fails. That creates a narrow recovery obligation: every trusted billing run
- * must revisit received assignments that still have no fee. The deterministic
- * event id makes repeated scans safe, and one malformed assignment is reported
- * without preventing other missing fees from being repaired.
+ * Repairs movements that are missing their deterministic fee. Percentage-v1
+ * revisits host-confirmed physical deliveries; legacy revisits only movements
+ * whose driver confirmed receipt under the historical agreement. Movement
+ * identity makes the scan replay-safe, and one malformed row cannot block the
+ * rest.
  */
 export function reconcileMissingPlatformFees(
   state: LogLoadsDatabaseState,
   at = nowIso()
 ): PlatformFeeReconciliationResult[] {
-  const assignmentsWithFees = new Set(
-    state.platformFeeEvents.map((event) => event.assignmentId)
+  const movementsWithFees = new Set(
+    state.platformFeeEvents.map((event) => event.loadMovementId)
   )
   const missing = state.assignments
     .filter(
-      (assignment) =>
-        Boolean(assignment.driverPaymentReceivedAt) &&
-        assignmentUsesLegacyPercentageBilling(assignment) &&
-        !assignmentsWithFees.has(assignment.id)
+      (assignment) => {
+        const movementId = assignment.loadMovementId ?? assignment.id
+        const confirmedTrip = confirmedHaulForAssignment(state, assignment)
+        const triggerSatisfied = assignment.billingModel === "percentage_v1"
+          ? Boolean(confirmedTrip && haulHasBillableDelivery(confirmedTrip))
+          : Boolean(
+              assignment.driverPaymentReceivedAt &&
+              confirmedTrip &&
+              haulHasBillableDelivery(confirmedTrip)
+            )
+        return assignmentUsesPercentageBilling(assignment) &&
+          triggerSatisfied &&
+          !movementsWithFees.has(movementId)
+      }
     )
     .sort(
       (left, right) =>
-        (left.driverPaymentReceivedAt ?? "").localeCompare(
-          right.driverPaymentReceivedAt ?? ""
-        ) || left.id.localeCompare(right.id)
+        (confirmedHaulForAssignment(state, left)?.completionConfirmedAt ?? "")
+          .localeCompare(
+            confirmedHaulForAssignment(state, right)?.completionConfirmedAt ?? ""
+          ) || left.id.localeCompare(right.id)
     )
 
   return missing.map((assignment) => {
@@ -628,7 +698,9 @@ export function reconcileMissingPlatformFees(
       const result = accruePlatformFee(
         state,
         {
-          actorUserId: assignment.driverPaymentReceivedByUserId,
+          actorUserId: assignment.billingModel === "percentage_v1"
+            ? null
+            : assignment.driverPaymentReceivedByUserId,
           assignmentId: assignment.id
         },
         at
@@ -661,7 +733,8 @@ export function reconcileMissingPlatformFees(
         entityId: assignment.id,
         entityType: "assignment",
         metadata: {
-          driverPaymentReceivedAt: assignment.driverPaymentReceivedAt,
+          completionConfirmedAt:
+            confirmedHaulForAssignment(state, assignment)?.completionConfirmedAt ?? null,
           reason
         }
       })
@@ -799,6 +872,72 @@ export type OpenInvoiceForPeriodResult =
   /** No fee accrued in the month, so no bill exists to send. */
   | { outcome: "nothing_to_bill"; periodStart: string; periodEnd: string; reason: string }
 
+/**
+ * Refuse to materialize money from a ledger whose movement identity is
+ * ambiguous. Snapshot audit keeps conflicting rows visible for repair, so the
+ * billing boundary itself must fail closed before any subtotal reaches Stripe.
+ */
+export function assertPlatformFeeLedgerCanInvoice(
+  state: LogLoadsDatabaseState,
+  organizationId: string
+): void {
+  const activeFees = state.platformFeeEvents.filter(
+    (event) => event.status !== "voided"
+  )
+  const organizationFees = activeFees.filter(
+    (event) => event.organizationId === organizationId
+  )
+
+  for (const fee of organizationFees) {
+    const feeClaims = activeFees.filter(
+      (candidate) => candidate.loadMovementId === fee.loadMovementId
+    )
+    assertCondition(
+      feeClaims.length === 1,
+      `Physical movement ${fee.loadMovementId} has ${feeClaims.length} active platform-fee claims; invoice opening is blocked for review`
+    )
+
+    const usageClaims = state.networkUsageEvents.filter(
+      (usage) =>
+        usage.status !== "reversed" &&
+        usage.loadMovementId === fee.loadMovementId
+    )
+    assertCondition(
+      usageClaims.length === 0,
+      `Physical movement ${fee.loadMovementId} has both a platform fee and Network usage; invoice opening is blocked for review`
+    )
+
+    const assignments = state.assignments.filter(
+      (assignment) => assignment.id === fee.assignmentId
+    )
+    const loads = state.loadPostings.filter(
+      (load) => load.id === fee.loadPostingId
+    )
+    assertCondition(
+      assignments.length === 1 && loads.length === 1,
+      `Platform fee ${fee.id} does not resolve to exactly one assignment and load; invoice opening is blocked for review`
+    )
+    const assignment = assignments[0]!
+    const load = loads[0]!
+    const billingModelMatches =
+      assignment.billingModel === fee.billingModel ||
+      (fee.billingModel === "legacy_percentage" && assignment.billingModel === null)
+    const frozenPay = readFrozenDriverPay(assignment.termsSnapshot)
+    const frozenFeeBps = frozenPlatformFeeBps(assignment.termsSnapshot)
+    assertCondition(
+      assignment.loadPostingId === load.id &&
+        load.companyId === fee.organizationId &&
+        (assignment.loadMovementId ?? assignment.id) === fee.loadMovementId &&
+        assignment.truckSlotId === fee.truckSlotId &&
+        billingModelMatches &&
+        frozenPay?.currency === LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY &&
+        frozenPay.amountCents === fee.driverPayCents &&
+        frozenFeeBps === fee.feeBps,
+      `Platform fee ${fee.id} is cross-wired to its host, load, movement, slot, billing model, or frozen terms; invoice opening is blocked for review`
+    )
+  }
+}
+
 function openInvoiceForOrganizationPeriod(
   state: LogLoadsDatabaseState,
   input: {
@@ -815,6 +954,8 @@ function openInvoiceForOrganizationPeriod(
     Date.parse(period.periodEnd) <= Date.parse(at),
     "This period is still accruing; the platform fee is billed monthly in arrears"
   )
+
+  assertPlatformFeeLedgerCanInvoice(state, input.organizationId)
 
   const billable = feeEventsForOrganization(state, input.organizationId)
     .filter((event) => event.status === "accrued" && withinPeriod(event.occurredAt, period))

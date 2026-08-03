@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest"
 
 import { createLoadPosting, provisionLoadCapacity, updateLoadPosting } from "./loads"
 
-const HOST_ORG = "33333333-3333-4333-8333-333333333331"
+const HOST_ORG = "33333333-3333-4333-8333-333333333332"
 
 /**
  * The rate a host is quoted, derived the way the refusals derive it, so the
@@ -20,12 +20,12 @@ const FEE_PERCENT = `${(PLATFORM_FEE_BPS / FEE_BPS_SCALE) * 100}%`
 
 const BASE_LOAD = {
   companyId: HOST_ORG,
-  dispatcherProfileId: "55555555-5555-4555-8555-555555555551",
-  loaderProfileId: "55555555-5555-4555-8555-555555555552",
-  pickupLandingId: "66666666-6666-4666-8666-666666666661",
+  dispatcherProfileId: "55555555-5555-4555-8555-555555555553",
+  loaderProfileId: null,
+  pickupLandingId: "66666666-6666-4666-8666-666666666662",
   dropoffMillId: "99999999-9999-4999-8999-999999999991",
-  routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
-  rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+  routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
+  rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
   title: "Published load capacity test",
   loadType: "saw_logs",
   scheduleType: "one_off",
@@ -42,8 +42,8 @@ const BASE_LOAD = {
   accessRequirements: [],
   roadCondition: "good",
   weatherNotes: null,
-  dispatcherContact: { name: "Dana Dispatch", phone: "555-2001", email: "dispatch@northpine.example" },
-  loaderContact: { name: "Lee Loader", phone: "555-2002", email: "loader@northpine.example" }
+  dispatcherContact: { name: "Cole Cedar", phone: "555-3001", email: "dispatch@summit.example" },
+  loaderContact: null
 } as const
 
 /** The host's card, gone. What every organization looks like before it attaches one. */

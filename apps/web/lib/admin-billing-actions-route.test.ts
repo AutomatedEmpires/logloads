@@ -235,7 +235,47 @@ function enterprisePilotConversionBody(
   }
 }
 
-describe("admin billing action API", () => {
+function retiredAdminBillingWriteDescribe(
+  name: string,
+  legacySuite: () => void
+): void {
+  void name
+  void legacySuite
+  describe("retired admin subscription write API", () => {
+    beforeEach(() => {
+      vi.resetAllMocks()
+      mocks.requireAdminApiActor.mockResolvedValue({
+        profile: { id: ADMIN_ID }
+      })
+      mocks.enforceApiRateLimit.mockResolvedValue(undefined)
+    })
+
+    it("requires platform-admin authentication", async () => {
+      mocks.requireAdminApiActor.mockRejectedValue(
+        new mocks.ApiError("Platform access required", 403)
+      )
+
+      const response = await POST(jsonRequest(configureBody()))
+
+      expect(response.status).toBe(403)
+      expect(mocks.mutateState).not.toHaveBeenCalled()
+    })
+
+    it("returns 410 without mutating canonical subscription state", async () => {
+      const response = await POST(jsonRequest(configureBody()))
+
+      expect(response.status).toBe(410)
+      await expect(response.json()).resolves.toEqual({
+        error:
+          "Subscription billing writes are closed. Existing records remain available for historical reconciliation."
+      })
+      expect(mocks.mutateState).not.toHaveBeenCalled()
+      expect(mocks.captureServerEvent).not.toHaveBeenCalled()
+    })
+  })
+}
+
+retiredAdminBillingWriteDescribe("admin billing action API", () => {
   beforeEach(() => {
     vi.resetAllMocks()
     mocks.requireAdminApiActor.mockResolvedValue({

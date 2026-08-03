@@ -8,7 +8,6 @@ import { Badge, Icon } from "@logloads/ui"
 import { submitContactInquiryAction, type ContactFormState } from "@/lib/contact-actions"
 import type { NetworkLoadView } from "@/lib/network"
 import { payHeadline, presentPay } from "@/lib/pay-display"
-import { subscriptionPlanDefinition } from "@logloads/contracts"
 
 import { legalPages, loadProductLabel, pricingPlans, publicLoadHref, slugify, type LegalPageContent, type PublicStoryPage, visibilityLabel } from "@/lib/v3-shared"
 import { DevSignInForm, OnboardingFlow, type PendingInvitationOffer } from "./AuthForms"
@@ -108,8 +107,8 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
           <SectionHeader eyebrow="One network" title="The right screen for each job" />
           <div className="feature-grid">
             <article><span>Driver accounts</span><h3>Drivers &amp; owner-operators</h3><p>See available work, know whether it fits, request it, and follow the schedule from a phone.</p><Link className="text-link" href="/sign-up?path=driver">Create a driver profile</Link></article>
-            <article><span>$499/month</span><h3>Dispatchers</h3><p>Keep trucks, drivers, requests, schedules, and exceptions in one operating view.</p><Link className="text-link" href="/sign-up?path=fleet">Set up dispatch</Link></article>
-            <article><span>Network subscription</span><h3>Hosts</h3><p>Post without a listing fee, coordinate qualified capacity, and meter only completed Network movements.</p><Link className="text-link" href="/pricing">Compare Network plans</Link></article>
+            <article><span>Free for drivers</span><h3>Dispatchers &amp; fleets</h3><p>Keep trucks, drivers, requests, schedules, and exceptions in one operating view without reducing driver pay.</p><Link className="text-link" href="/sign-up?path=fleet">Set up dispatch</Link></article>
+            <article><span>5% per completed load</span><h3>Hosts</h3><p>Post without a listing fee, coordinate qualified capacity, and pay the LogLoads fee on top of the driver pay you state.</p><Link className="text-link" href="/pricing">See the exact math</Link></article>
           </div>
         </section>
         <section className="loads-preview">
@@ -292,13 +291,11 @@ function PricingCard({
   variant
 }: {
   plan: PricingPlan
-  variant: "dispatch" | "driver" | "enterprise" | "network"
+  variant: "driver" | "host"
 }) {
   const badge = variant === "driver"
     ? <Badge tone="success">Always free</Badge>
-    : plan.name === "Network 25"
-      ? <Badge tone="info">Starting Network tier</Badge>
-      : null
+    : <Badge tone="info">One host rate</Badge>
 
   return (
     <article
@@ -341,121 +338,43 @@ function PricingCard({
 
 export function PricingPage() {
   const driverPlan = pricingPlans.find((plan) => plan.name === "Driver")
-  const dispatchPlan = pricingPlans.find((plan) => plan.name === "Dispatch Pro")
-  const networkPlans = pricingPlans.filter((plan) =>
-    ["Network 25", "Network 50", "Network 100"].includes(plan.name)
-  )
-  const enterprisePlan = pricingPlans.find((plan) => plan.name === "Enterprise custom")
+  const hostPlan = pricingPlans.find((plan) => plan.name === "Host")
 
-  if (!driverPlan || !dispatchPlan || networkPlans.length !== 3 || !enterprisePlan) {
+  if (!driverPlan || !hostPlan || pricingPlans.length !== 2) {
     throw new Error("The fixed public pricing catalog is incomplete.")
   }
-
-  // Pilot commercial terms render from the canonical plan definition so this
-  // page cannot drift from what billing actually enforces.
-  const pilotPlan = subscriptionPlanDefinition("network_pilot")
-  if (
-    pilotPlan.baseMonthlyPriceCents === null ||
-    pilotPlan.includedNetworkLoadUnits === null ||
-    pilotPlan.overageUnitPriceCents === null ||
-    pilotPlan.allowanceWindowDays === null ||
-    pilotPlan.commitmentMonths === null
-  ) {
-    throw new Error("The Pilot plan definition is incomplete.")
-  }
-  const usd = (cents: number) =>
-    `$${(cents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}`
-  const pilotMonthly = usd(pilotPlan.baseMonthlyPriceCents)
-  const pilotMinimum = usd(
-    pilotPlan.baseMonthlyPriceCents * pilotPlan.commitmentMonths
-  )
-  const pilotOverage = usd(pilotPlan.overageUnitPriceCents)
 
   return (
     <PublicShell>
       <main className="page-main pricing-page">
         <PageIntro
-          eyebrow="Completed-load pricing"
-          title="Drivers stay free. Hosts pay for an operating Network."
-          body="There is no posting fee. Network plans include a defined number of completed Network-coordinated physical load movements, with automatic flat overage after the allowance. Driver or carrier compensation remains separate and is paid directly by the host."
+          eyebrow="Simple completed-load pricing"
+          title="Drivers stay free. Hosts pay 5% on top."
+          body="The host states what one load pays the driver and remains obligated to pay that amount in full, directly to the driver. When the load completes, LogLoads adds a platform fee equal to 5% of that stated pay to the host's cost."
         />
 
         <section aria-labelledby="pricing-start-title" className="pricing-lane pricing-lane--baseline">
           <div className="pricing-lane__intro">
-            <p className="eyebrow">Start with the operating lane</p>
-            <h2 id="pricing-start-title">Free for drivers. Private dispatch for established capacity.</h2>
-            <p>Drivers use LogLoads without a subscription. Fleets that already coordinate their own trucks and partners can run that work in Dispatch Pro.</p>
+            <p className="eyebrow">One commercial model</p>
+            <h2 id="pricing-start-title">No subscription. No monthly minimum. No tiers.</h2>
+            <p>Posting, searching, requesting, and coordinating do not create a fee. A host fee is earned only when a load completes.</p>
           </div>
           <div className="pricing-grid pricing-grid--baseline">
             <PricingCard plan={driverPlan} variant="driver" />
-            <PricingCard plan={dispatchPlan} variant="dispatch" />
+            <PricingCard plan={hostPlan} variant="host" />
           </div>
         </section>
 
-        <section aria-labelledby="pilot-title" className="legal-note pricing-pilot">
-          <div className="pricing-pilot__icon">
-            <Icon aria-hidden name="map.network" size={28} />
-          </div>
-          <div className="pricing-pilot__copy">
-            <Badge tone="warning">Invitation only</Badge>
-            <h2 id="pilot-title">The paid Pilot is invitation-only.</h2>
-            <p>
-              The Pilot is {pilotMonthly} per month for one selected design
-              partner—an exact {pilotPlan.allowanceWindowDays}-day operating
-              engagement with a {pilotMinimum} minimum base commitment.{" "}
-              {pilotPlan.includedNetworkLoadUnits} completed Network movements
-              are pooled across the engagement; additional completed movements
-              are {pilotOverage} each. Once the operating market is ready, the
-              first verified paid billing period starts the Pilot; onboarding
-              alone does not. The Pilot is not available through public
-              self-service checkout.
-            </p>
-          </div>
-          <dl className="pricing-pilot__facts">
-            <div><dt>Monthly base</dt><dd>{pilotMonthly}</dd></div>
-            <div><dt>Engagement</dt><dd>Exact {pilotPlan.allowanceWindowDays} days</dd></div>
-            <div><dt>Pooled allowance</dt><dd>{pilotPlan.includedNetworkLoadUnits} completed movements</dd></div>
-            <div><dt>Additional usage</dt><dd>{pilotOverage} per completion</dd></div>
-          </dl>
-          <Link className="action-link action-link--secondary" href="/contact?plan=network-pilot">
-            Ask about the Pilot
-          </Link>
-        </section>
-
-        <section aria-labelledby="network-plans-title" className="pricing-lane pricing-lane--network">
-          <div className="pricing-lane__intro">
-            <p className="eyebrow">LogLoads Network</p>
-            <h2 id="network-plans-title">Choose the completed-movement allowance that fits the operation.</h2>
-            <p>Every Network plan includes the core Dispatch Pro workflow. Accepted and in-progress work continues when the allowance is reached; completed overage is billed at the published flat rate.</p>
-          </div>
-          <div className="pricing-grid pricing-grid--network">
-            {networkPlans.map((plan) => (
-              <PricingCard key={plan.name} plan={plan} variant="network" />
-            ))}
-          </div>
-        </section>
-
-        <section aria-labelledby="enterprise-title" className="pricing-lane pricing-lane--enterprise">
-          <div className="pricing-lane__intro">
-            <p className="eyebrow">Contract-specific operations</p>
-            <h2 id="enterprise-title">Define the operating agreement—never an unlimited-load promise.</h2>
-          </div>
-          <div className="pricing-grid pricing-grid--enterprise">
-            <PricingCard plan={enterprisePlan} variant="enterprise" />
-          </div>
-        </section>
-
-        <section aria-label="How Network billing works" className="pricing-explainers">
+        <section aria-label="How host billing works" className="pricing-explainers">
           <article className="pricing-explainer">
             <div className="pricing-explainer__heading">
               <Icon aria-hidden name="load.pay" size={24} />
-              <h2>How overage works.</h2>
+              <h2>The exact math.</h2>
             </div>
             <p>
-              Network 25 at 30 completed movements is $3,000 + 5 × $125 = $3,625.
-              Network 50 at 60 is $5,500 + 10 × $110 = $6,600. Network 100 at 110
-              is $10,000 + 10 × $90 = $10,900. Reaching an allowance never stops
-              accepted or in-progress work; it starts the published overage rate.
+              If the host states that one load pays the driver $500, the driver
+              receives $500. The LogLoads fee is $25, so the host&apos;s total cost is
+              $525. Nothing comes out of the driver&apos;s pay.
             </p>
           </article>
           <article className="pricing-explainer">
@@ -464,12 +383,10 @@ export function PricingPage() {
               <h2>What counts—and what does not.</h2>
             </div>
             <p>
-              One completed physical movement fulfilled through LogLoads Network
-              counts once. Drafts, postings, searches, requests, unaccepted offers,
-              cancellation before execution, duplicate completion, and
-              private-fleet work do not count. Actual transportation compensation
-              is separate, remains payable directly by the host, and is never
-              reduced by a LogLoads charge.
+              One completed physical load creates one percentage fee. Drafts,
+              postings, searches, requests, unaccepted offers, cancellations before
+              completion, and duplicates do not. Driver compensation remains payable
+              directly by the host and is never reduced by a LogLoads charge.
             </p>
           </article>
         </section>
@@ -487,11 +404,10 @@ export function LegalPage({ content }: { content: LegalPageContent }) {
         <aside className="legal-boundary-summary">
           <strong>Product boundary</strong>
           <p>
-            Dispatch Pro coordinates established private capacity. Network
-            enrollment requires a separate accepted commercial agreement and
-            recorded legal operating posture. LogLoads does not carry freight or
-            receive, escrow, deduct from, or distribute transportation
-            compensation.
+            LogLoads coordinates timber hauling work. Hosts pay LogLoads a 5%
+            platform fee on top of the driver pay stated for each completed load.
+            LogLoads does not carry freight or receive, escrow, deduct from, or
+            distribute transportation compensation.
           </p>
         </aside>
         <nav aria-label="On this page" className="legal-toc">
@@ -569,7 +485,7 @@ export function OnboardingPage({
           title={title}
           body={
             mode === "host"
-              ? "Three short steps create your operating workspace. Network subscriptions and the paid Pilot are sales-assisted; creating an account does not enroll or charge you."
+              ? "Three short steps create your operating workspace. Creating an account does not charge you. Before publishing live work, an authorized host accepts the 5% completed-load agreement and attaches a card from Billing."
               : "Three short steps. Then LogLoads opens the right first screen for your work."
           }
         />
@@ -628,7 +544,7 @@ export function ContactPage() {
         <PageIntro
           eyebrow="Contact"
           title="Talk with LogLoads."
-          body="Network Pilot, Network subscription plans, private-capacity operations, verification, integrations, or a season of timber to move—send the context we need to plan the right operating lane."
+          body="Questions about host onboarding, the 5% completed-load fee, driver access, verification, integrations, or a season of timber to move? Send the context we need to help."
         />
         <div className="contact-layout">
           <ContactForm />
@@ -638,11 +554,11 @@ export function ContactPage() {
               <p>Your operating region, roughly how many trucks or landings you run, and what you are trying to get done. It helps us give a useful first answer.</p>
             </section>
             <section>
-              <h2>Sales-assisted Network plans</h2>
+              <h2>Simple host pricing</h2>
               <p>
-                Network enrollment is not public self-service. We confirm
-                operating volume, locations, legal posture, commitment, and the
-                exact accepted pricing snapshot before activation.
+                There is no posting fee, subscription, monthly minimum, tier,
+                allowance, or overage. Hosts pay LogLoads 5% of the stated driver
+                pay for each completed load, added on top.
               </p>
             </section>
           </aside>

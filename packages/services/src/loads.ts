@@ -1,5 +1,6 @@
 import {
   FEE_BPS_SCALE,
+  PERCENTAGE_V1_CUTOVER_AT,
   PLATFORM_FEE_BPS,
   allocationModeSchema,
   createLoadPostingInputSchema,
@@ -189,10 +190,21 @@ export function assertHostCanPublish(
   const usesLegacyPercentage =
     billingAccount?.activationState === "legacy" &&
     billingAccount.billingModel === "legacy_percentage"
+  const usesCurrentPercentage =
+    billingAccount?.activationState === "percentage_active" &&
+    billingAccount.billingModel === "percentage_v1" &&
+    billingAccount.percentageTermsSnapshot !== null
+  const usesPercentage = usesLegacyPercentage || usesCurrentPercentage
 
   assertCondition(
     Boolean(billingAccount),
-    "This organization is not enrolled in a LogLoads operating plan. Choose a plan with LogLoads before publishing; posting itself has not been charged."
+    "This organization has not accepted the LogLoads fee agreement. Accept it in Billing, then publish; posting itself is free."
+  )
+
+  assertCondition(
+    Date.parse(at) < Date.parse(PERCENTAGE_V1_CUTOVER_AT) ||
+      usesCurrentPercentage,
+    "This organization must accept the current LogLoads fee agreement before publishing new work. Historical subscription records remain available, but subscriptions no longer authorize new activity."
   )
 
   const effectiveVisibility =
@@ -200,7 +212,7 @@ export function assertHostCanPublish(
     state.opportunityCapacities.find(
       (capacity) => capacity.loadPostingId === load.id
     )?.visibilityMode
-  if (!usesLegacyPercentage && billingAccount?.subscriptionId) {
+  if (!usesPercentage && billingAccount?.subscriptionId) {
     const subscriptions = state.organizationSubscriptions.filter(
       (subscription) => subscription.id === billingAccount.subscriptionId
     )
@@ -227,20 +239,20 @@ export function assertHostCanPublish(
     )
   }
   assertCondition(
-    usesLegacyPercentage ||
+    usesPercentage ||
       billingAccount?.activationState === "active" ||
       billingAccount?.activationState === "suspended",
-    "This organization's operating plan is not active yet. Finish plan activation before publishing; posting itself has not been charged."
+    "This organization has not accepted the LogLoads fee agreement yet. Accept it in Billing, then publish; posting itself is free."
   )
 
   assertCondition(
     typeof load.driverPayCents === "number" && load.driverPayCents > 0,
-    usesLegacyPercentage
-      ? `State what this work pays a driver per truckload before publishing it. That figure is what a driver is promised, and it is the base LogLoads charges its legacy ${FEE_PERCENT_LABEL} on — on top of driver pay, never out of it.`
+    usesPercentage
+      ? `State what this work pays a driver per truckload before publishing it. That figure is what a driver is promised, and it is the base LogLoads charges ${FEE_PERCENT_LABEL} on — on top of driver pay, never out of it.`
       : "State what this work pays a driver per truckload before publishing it. Posting itself is free, but the driver's accepted operating promise must be explicit."
   )
 
-  if (!usesLegacyPercentage) {
+  if (!usesPercentage) {
     return
   }
 

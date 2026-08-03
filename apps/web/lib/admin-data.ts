@@ -2089,14 +2089,18 @@ export function buildAdminBillingSnapshot(
           .reduce((total, event) => total + event.feeCents, 0)
       ),
       assignmentCount: source.assignments.filter(
-        (assignment) => assignment.billingModel === "legacy_percentage"
+        (assignment) =>
+          assignment.billingModel === "legacy_percentage" ||
+          assignment.billingModel === "percentage_v1"
       ).length,
       entitlementCount: source.entitlements.length,
       entitlementExceptions,
       feeEventCount: legacyFeeEvents.length,
       historicalInvoiceCount: source.hostInvoices.length,
       organizationCount: source.organizationBillingAccounts.filter(
-        (account) => account.billingModel === "legacy_percentage"
+        (account) =>
+          account.billingModel === "legacy_percentage" ||
+          account.billingModel === "percentage_v1"
       ).length,
       outstandingInvoiceLabel: adminMoney(
         legacyOutstandingInvoices.reduce((total, invoice) => total + invoice.subtotalCents, 0)
