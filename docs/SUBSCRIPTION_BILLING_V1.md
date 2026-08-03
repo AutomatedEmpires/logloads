@@ -1,12 +1,22 @@
 # LogLoads subscription billing v1
 
-Status: founder-decided 2026-07-28; implementation may ship dark, but real
-Network enrollment and collection remain separately gated.
+Status: **historical/read-only as of 2026-08-01.** This document preserves the
+contract needed to interpret and reconcile obligations accepted while the
+2026-07-28 decision governed. It does not authorize a new subscription,
+Dispatch Pro enrollment, plan change, usage event, overage, customer, or charge.
 
-## Commercial model
+The current model is `percentage_v1`: the host owes LogLoads a separate fee
+equal to 5% of host-stated driver pay after the physical load completes, with no
+monthly minimum and no posting fee. `LOGLOADS_FEE_COLLECTION` is the sole current
+commercial collection gate. `LOGLOADS_SUBSCRIPTION_COLLECTION` and
+`LOGLOADS_DISPATCH_SELF_SERVE` must remain disabled historical safety gates.
+See the 2026-08-01 entry in [`DECISIONS.md`](./DECISIONS.md).
 
-New Network work uses an accepted base subscription plus completed Network-load
-usage. Fixed Network tiers bill monthly; the finite Pilot uses three exact
+## Historical commercial model
+
+Under this historical model, new Network work used an accepted base subscription
+plus completed Network-load usage. Fixed Network tiers billed monthly; the
+finite Pilot used three exact
 30-day installments. A billable unit is one completed physical load movement fulfilled through
 LogLoads Network under one qualifying assignment. Posting, matching, requesting,
 private-fleet work, cancellation before execution, and duplicate completion do
@@ -29,7 +39,7 @@ escrow, deduct from, or distribute that compensation.
 Network subscriptions include the core private-fleet coordination capabilities
 of Dispatch Pro. Dispatch Pro remains separately available to organizations that
 coordinate only their established capacity and includes no Network allowance.
-New Dispatch Pro enrollment uses the same accepted
+Historical Dispatch Pro enrollment used the same accepted
 `OrganizationSubscription` lifecycle as every other tier. Carrier and fleet
 Checkout may let Stripe create the customer and the signed webhook binds that
 returned customer; Network, Pilot, and Enterprise Checkout remain limited to
@@ -106,7 +116,7 @@ The percentage implementation remains intentionally reachable for frozen
 | Canonical persistence and historical backfill | `packages/db/src/snapshot.ts`, `packages/db/src/seed-data.ts` | Missing pre-v1 billing classifications are backfilled only for already accepted historical assignments; no organization is backfilled into a paid subscription |
 | Legacy host statement and collection | `apps/web/lib/host-billing-data.ts`, `apps/web/lib/billing.ts`, `apps/web/app/api/billing/invoices`, `apps/web/app/api/billing/cron`, `apps/web/app/api/billing/webhook` | Legacy rows are labeled as historical/grandfathered; subscription base and usage invoices have separate canonical identities and metadata classifiers |
 | Commitment disclosure | `apps/web/components/v3/HostActions.tsx` | Percentage copy appears only when the organization and assignment are explicitly legacy; new Network work shows the accepted subscription unit rules |
-| Provider controls | `LOGLOADS_HOST_COLLECTION`, legacy invoice metadata, and the existing signed webhook path | The independent `LOGLOADS_SUBSCRIPTION_COLLECTION` switch defaults off and cannot activate or retire legacy collection |
+| Provider controls | `LOGLOADS_FEE_COLLECTION`, legacy invoice metadata, and the existing signed webhook path | `LOGLOADS_SUBSCRIPTION_COLLECTION` remains disabled and exists only as a historical safety gate; it cannot activate or retire percentage collection |
 | Historical design evidence | `docs/HANDOFF-2026-07-27.md`, `docs/marketplace-implementation-spec.md`, `docs/marketplace-realignment-blueprint.md` | Each document is marked historical; this document and the newest decision-log entry govern new work |
 
 ## State migration and controlled cutover
@@ -140,9 +150,10 @@ charge.
 
 ## Usage and periods
 
-Network usage is recorded only after the operational completion and confirmation
-facts required by the product both exist. The usage writer is idempotently
-attempted from either completion order and repaired by reconciliation.
+Historical Network usage was recorded only after the operational completion and
+confirmation facts required by the product both existed. The usage writer was
+idempotently attempted from either completion order and repaired by
+reconciliation.
 Driver-payment receipt remains operational evidence but is not a subscription
 revenue trigger.
 
@@ -182,27 +193,28 @@ activity may be restricted after the configured grace process.
 
 ## Stripe boundary
 
-Stripe collects recurring base charges and explicit overage or supplemental
-invoices. The canonical LogLoads ledger remains authoritative for entitlement,
-usage, and invoice composition. Provider metadata and deterministic idempotency
-keys reconcile Stripe to that ledger.
+For accepted historical obligations, Stripe collected recurring base charges
+and explicit overage or supplemental invoices. The canonical LogLoads ledger
+remains authoritative for entitlement, usage, and invoice composition. Provider
+metadata and deterministic idempotency keys reconcile Stripe to that ledger.
 
-Products and Prices are provisioned by an idempotent operator tool, never during
-an ordinary customer request. Required collection is guarded by:
+Products and Prices were provisioned by an idempotent operator tool, never during
+an ordinary customer request. Historical subscription collection was guarded by:
 
 `LOGLOADS_SUBSCRIPTION_COLLECTION=disabled`
 
-The default is disabled. Provider configuration, test-mode proof, and repository
-deployment do not activate real collection.
+The default remains disabled. It may now reconcile only a previously accepted
+historical obligation; provider configuration, test-mode proof, repository
+deployment, or the presence of this code never authorize new subscription
+collection.
 
-New subscription money also requires the exact organization UUID in
-`LOGLOADS_SUBSCRIPTION_ALLOWED_ORGANIZATION_IDS`. Empty denies all; `*` is the
-explicit general-availability sentinel and is not valid for the Pilot-first
-launch. Dispatch Pro self-serve additionally requires
-`LOGLOADS_DISPATCH_SELF_SERVE=enabled`, so enabling one Pilot cannot
-accidentally open the carrier/fleet lane. These are creation controls:
-already-authorized provider obligations continue signed webhook
-reconciliation if the rollout gates are later closed.
+Under the superseded contract, new subscription money also required the exact
+organization UUID in `LOGLOADS_SUBSCRIPTION_ALLOWED_ORGANIZATION_IDS`, and
+Dispatch Pro self-serve required its independent gate. Under the current
+decision the allowlist remains empty, the former `*` general-availability
+sentinel is invalid, and both historical gates remain disabled. Already accepted
+provider obligations continue signed webhook reconciliation while those gates
+are closed.
 
 The owner-only nominal smoke path uses a hidden $1 price or invoice, an explicit
 user allowlist, a separate controlled target-organization allowlist, a one-use
@@ -231,10 +243,12 @@ Provider results are marked delivered or failed only by the active claim token,
 and disabled or degraded delivery remains visible in the cron response without
 inventing success.
 
-## Activation gates
+## Historical activation evidence — do not activate
 
-Code, synthetic data, Stripe test mode, and protected previews may proceed.
-Real Network enrollment remains dark until all of the following are recorded:
+These gates are retained so a prior accepted obligation can be audited and
+reconciled. They are not a path to new enrollment under the current decision.
+Historical Network enrollment remains dark; the following list records the
+evidence the superseded model required:
 
 1. founder approval for the exact Pilot organization and explicit activation
    authorization; first paid provider period establishes the operational start;
@@ -245,5 +259,7 @@ Real Network enrollment remains dark until all of the following are recorded:
    accessibility, and rollback evidence;
 6. explicit change of the collection kill switch.
 
-This pricing model is not represented as a regulatory workaround and does not
-promise that every load will be filled.
+This historical pricing model is not represented as a regulatory workaround and
+does not promise that every load will be filled. Do not enable
+`LOGLOADS_SUBSCRIPTION_COLLECTION` or `LOGLOADS_DISPATCH_SELF_SERVE` for new
+activity.

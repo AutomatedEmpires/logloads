@@ -124,8 +124,9 @@ test("host onboarding opens a mobile first-movement launchpad", async ({ page },
   await expect(readiness.getByText("Add a lane", { exact: true })).toBeVisible()
   await expect(readiness.getByText("Add a pay rate", { exact: true })).toBeVisible()
   await expect(readiness.getByText("Prepare a draft", { exact: true })).toBeVisible()
-  await expect(readiness.getByText("Assisted activation", { exact: true })).toBeVisible()
-  await expect(readiness.getByText(/does not enroll or charge you/i)).toBeVisible()
+  await expect(readiness.getByText("Host billing activation", { exact: true })).toBeVisible()
+  await expect(readiness.getByText(/accept the current 5% agreement and attach a card/i)).toBeVisible()
+  await expect(readiness.getByText(/workspace setup itself does not charge you/i)).toBeVisible()
 
   const primaryAction = readiness.getByRole("link", { name: "Add first landing" })
   const actionBox = await primaryAction.boundingBox()

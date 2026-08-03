@@ -258,6 +258,15 @@ const adminBillingActionSchema = z.union([
     .strict()
 ])
 
+const RETIRED_SUBSCRIPTION_WRITE_ACTIONS = new Set<
+  z.infer<typeof adminBillingActionSchema>["action"]
+>([
+  "activate_subscription",
+  "authorize_pilot_enterprise_conversion",
+  "configure_subscription",
+  "schedule_plan_change"
+])
+
 async function readBoundedJsonObject(
   request: Request
 ): Promise<Record<string, unknown>> {
@@ -572,6 +581,13 @@ export async function POST(request: Request) {
     const input = adminBillingActionSchema.parse(
       await readBoundedJsonObject(request)
     )
+
+    if (RETIRED_SUBSCRIPTION_WRITE_ACTIONS.has(input.action)) {
+      throw new ApiError(
+        "Subscription billing writes are closed. Existing records remain available for historical reconciliation.",
+        410
+      )
+    }
 
     if (input.action === "reconcile_missing_usage") {
       await enforceApiRateLimit(

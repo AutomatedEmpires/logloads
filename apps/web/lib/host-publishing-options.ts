@@ -16,8 +16,12 @@ export function hostLiveVisibilityModes(
     "billingActivationState" | "subscriptionPlanCode"
   >
 ): OpportunityVisibilityMode[] {
-  if (options.billingActivationState === "legacy") {
+  if (options.billingActivationState === "percentage_active") {
     return ["open_network", "private_network", "verified_network"]
+  }
+
+  if (options.billingActivationState === "legacy") {
+    return []
   }
 
   if (

@@ -664,7 +664,14 @@ export const platformFeeEventSchema = z
     organizationId: uuidSchema,
     loadPostingId: uuidSchema,
     assignmentId: uuidSchema,
+    /** Physical truck movement; replacement assignments share this identity. */
+    loadMovementId: uuidSchema,
     truckSlotId: uuidSchema,
+    /** Frozen commercial classification; subscription rows never enter this ledger. */
+    billingModel: billingModelSchema.extract([
+      "legacy_percentage",
+      "percentage_v1"
+    ]),
     /**
      * The host-stated driver pay, FROZEN at accrual. Copied rather than referenced
      * so the charge can still be explained years later after the posting has been

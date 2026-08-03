@@ -50,7 +50,7 @@ const VISIBILITY_MODES: Array<[OpportunityVisibilityMode, string, string]> = [
   ["verified_network", "Verified carriers", "Limited to carriers building a verified track record."]
 ]
 
-const LEGACY_FEE_PERCENT_LABEL = `${
+const PERCENTAGE_FEE_PERCENT_LABEL = `${
   (PLATFORM_FEE_BPS / FEE_BPS_SCALE) * 100
 }%`
 
@@ -798,26 +798,15 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
   // One parse, used for display and for the payload, so the host cannot be shown
   // one compensation figure and have another one published.
   const driverPayCents = parseDriverPayCents(driverPay)
-  const legacyPayQuote =
-    options.billingModel === "legacy_percentage"
-      ? driverPayQuote(driverPay)
-      : null
-  const legacyPerDayOutlook =
-    legacyPayQuote &&
+  const percentagePayQuote = driverPayQuote(driverPay)
+  const percentagePerDayOutlook =
+    percentagePayQuote &&
     Number.isInteger(truckloadCount) &&
     truckloadCount > 0
       ? payOutlookForTruckloads(
-          legacyPayQuote.driverPayCents,
+          percentagePayQuote.driverPayCents,
           truckloadCount
         )
-      : null
-  const driverPayPerDayCandidate =
-    driverPayCents !== null && Number.isInteger(truckloadCount) && truckloadCount > 0
-      ? driverPayCents * truckloadCount
-      : null
-  const driverPayPerDayCents =
-    driverPayPerDayCandidate !== null && Number.isSafeInteger(driverPayPerDayCandidate)
-      ? driverPayPerDayCandidate
       : null
 
   const missingSetup = [
@@ -871,8 +860,7 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
     Boolean(landing && route),
     Number.isInteger(truckloadCount) && truckloadCount > 0 && scheduleReady,
     // Stated driver pay is required to leave Terms: it is what the driver is
-    // promised and remains operational evidence even though subscription_v1
-    // never uses it as the LogLoads revenue basis.
+    // promised and the frozen basis for the host's 5% platform fee.
     Boolean(rate) && driverPayCents !== null,
     true,
     true
@@ -900,7 +888,7 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
         },
         dispatcherProfileId: dispatcher.id,
         // Per truckload. One assignment is one physical movement hauled by one
-        // driver. Compensation remains direct; Network usage is classified and
+        // driver. Compensation remains direct; the host's percentage terms are
         // frozen separately when an assignment is committed.
         driverPayCents,
         dropoffMillId: route.millId,
@@ -1193,51 +1181,31 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
             </p>
           </div>
 
-          {legacyPayQuote ? (
+          {percentagePayQuote ? (
             <div
               className="host-route-fact host-field--full"
-              aria-label="Legacy price for one completed truckload"
+              aria-label="Host price for one completed truckload"
             >
               <span>
-                Grandfathered legacy pricing: driver or carrier compensation{" "}
-                {money(legacyPayQuote.driverPayCents)} per truckload
+                Driver or carrier compensation{" "}
+                {money(percentagePayQuote.driverPayCents)} per truckload
               </span>
               <span>
-                LogLoads legacy fee {LEGACY_FEE_PERCENT_LABEL}, added on top:{" "}
-                {money(legacyPayQuote.platformFeeCents)}
+                LogLoads fee {PERCENTAGE_FEE_PERCENT_LABEL}, added on top:{" "}
+                {money(percentagePayQuote.platformFeeCents)}
               </span>
               <span>
                 <strong>
                   Your total for a completed truckload:{" "}
-                  {money(legacyPayQuote.hostTotalCents)}
+                  {money(percentagePayQuote.hostTotalCents)}
                 </strong>
               </span>
-              {legacyPerDayOutlook && legacyPerDayOutlook.truckloads > 1 ? (
+              {percentagePerDayOutlook && percentagePerDayOutlook.truckloads > 1 ? (
                 <span>
-                  If all {legacyPerDayOutlook.truckloads} truckloads run in one
-                  day: {money(legacyPerDayOutlook.driverPayCents)} direct
-                  compensation + {money(legacyPerDayOutlook.platformFeeCents)}{" "}
-                  legacy fee = {money(legacyPerDayOutlook.hostTotalCents)}
-                </span>
-              ) : null}
-            </div>
-          ) : driverPayCents !== null ? (
-            <div className="host-route-fact host-field--full" aria-label="What one truckload costs you">
-              <span>Driver or carrier compensation: {money(driverPayCents)} per truckload</span>
-              <span>
-                Posting this work does not create a LogLoads usage charge.
-              </span>
-              <span>
-                <strong>
-                  One completed Network-sourced physical movement counts as one
-                  unit under the plan frozen at assignment.
-                </strong>
-              </span>
-              {driverPayPerDayCents !== null && truckloadCount > 1 ? (
-                <span>
-                  If all {truckloadCount} truckloads run in one loading day, you
-                  pay {money(driverPayPerDayCents)} in transportation
-                  compensation directly.
+                  If all {percentagePerDayOutlook.truckloads} truckloads run in one
+                  day: {money(percentagePerDayOutlook.driverPayCents)} direct
+                  compensation + {money(percentagePerDayOutlook.platformFeeCents)}{" "}
+                  LogLoads fee = {money(percentagePerDayOutlook.hostTotalCents)}
                 </span>
               ) : null}
             </div>
@@ -1248,9 +1216,15 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
           )}
 
           <p className="host-builder-note">
-            {options.billingModel === "legacy_percentage"
-              ? `This workspace is explicitly grandfathered on legacy ${LEGACY_FEE_PERCENT_LABEL} pricing. The fee is billed to you on top after receipt is confirmed and is never deducted from transportation compensation. Move to an accepted LogLoads subscription before using Network capacity.`
-              : "Transportation compensation is separate from LogLoads billing and is never reduced by a LogLoads charge. Private-fleet assignments do not consume Network allowance. Network overage applies only after completed Network usage exceeds the accepted allowance."}
+            {options.billingModel === "subscription_v1" ||
+            options.billingModel === "dispatch_pro" ||
+            options.billingModel === "enterprise_custom"
+              ? "This workspace has a historical subscription record. New subscription work is closed; reconcile that record from Billing before publishing new work under the current percentage agreement."
+              : options.billingModel === "legacy_percentage"
+                ? "Existing legacy assignments keep their frozen fee terms. New live work requires approved activation of the current percentage agreement; check Billing for this workspace's status."
+                : options.billingActivationState === "percentage_active"
+                  ? `There is no charge to post, subscription, monthly minimum, tier, allowance, or overage. After a load completes, LogLoads bills you ${PERCENTAGE_FEE_PERCENT_LABEL} of the driver pay you stated, added on top and never deducted from transportation compensation.`
+                  : `Pilot activation is invitation-based. Once this workspace is approved, accepts the current agreement, and attaches a card, each completed load carries a separate ${PERCENTAGE_FEE_PERCENT_LABEL} LogLoads fee on top of stated driver pay.`}
           </p>
 
           <span className="req-label">Rate card for this lane</span>
@@ -1273,7 +1247,7 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
           <p className="host-builder-note">
             Your standing price list, kept on the posting for your own records and for the lanes and
             older work that still reference it. The driver pay above is what a driver is shown and
-            remains separate from LogLoads subscription pricing.
+            remains the basis for the LogLoads host fee shown above.
           </p>
         </div>
       ) : null}
@@ -1396,17 +1370,19 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
           <div>
             <dt>LogLoads billing</dt>
             <dd>
-              {legacyPayQuote
-                ? `${money(legacyPayQuote.platformFeeCents)} legacy fee per completed truckload (${LEGACY_FEE_PERCENT_LABEL} of stated compensation, added on top)`
-                : "No charge to post. A completed Network movement uses one unit under the plan frozen when the assignment is committed."}
+              {percentagePayQuote
+                ? `${money(percentagePayQuote.platformFeeCents)} fee per completed truckload (${PERCENTAGE_FEE_PERCENT_LABEL} of stated compensation, added on top)`
+                : "Enter driver pay to calculate the fee. There is no charge to post."}
             </dd>
           </div>
           <div>
             <dt>Capacity source</dt>
             <dd>
-              {options.billingModel === "legacy_percentage"
-                ? "This grandfathered workspace uses its legacy percentage model until an accepted subscription is activated."
-                : "Network-sourced assignments are metered at completion. Established private-fleet assignments are not."}
+              {options.billingModel === "percentage_v1"
+                ? "The current percentage agreement is active for new work."
+                : options.billingModel === "legacy_percentage"
+                  ? "Existing legacy assignments keep their frozen terms; accept the current percentage agreement from Billing for new work."
+                  : "Accept the current percentage agreement and attach a card from Billing before publishing live work."}
             </dd>
           </div>
           <div>

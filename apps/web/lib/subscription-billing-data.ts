@@ -692,17 +692,30 @@ export function buildHostSubscriptionBillingView(
         ) ?? null
 
   if (
-    linkedSubscription &&
-    linkedSubscription.organizationId === organizationId &&
+    linkedSubscription?.organizationId === organizationId &&
     subscriptionIsInternal(linkedSubscription)
   ) {
     return null
   }
 
-  const subscription =
-    linkedSubscription?.organizationId === organizationId
+  const linkedCommercialSubscription =
+    linkedSubscription?.organizationId === organizationId &&
+    !subscriptionIsInternal(linkedSubscription)
       ? linkedSubscription
       : null
+  // A terminal subscription remains an immutable provider/audit record after
+  // the billing account migrates to percentage_v1 and drops its live pointer.
+  // Locate that history by tenant instead of making account.subscriptionId the
+  // only way a host can still see invoices and portal details they may need.
+  const historicalCommercialSubscription = latestByUpdatedAt(
+    source.organizationSubscriptions.filter(
+      (candidate) =>
+        candidate.organizationId === organizationId &&
+        !subscriptionIsInternal(candidate)
+    )
+  )
+  const subscription =
+    linkedCommercialSubscription ?? historicalCommercialSubscription
 
   if (!subscription) {
     return configuredWithoutSubscription(

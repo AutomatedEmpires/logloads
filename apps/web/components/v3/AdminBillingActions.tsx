@@ -66,6 +66,14 @@ const ACTION_LABELS: Record<AdminBillingActionName, string> = {
   schedule_plan_change: "Schedule end-of-commitment plan change"
 }
 
+const RETIRED_NEW_SUBSCRIPTION_ACTIONS: ReadonlySet<AdminBillingActionName> =
+  new Set([
+    "activate_subscription",
+    "authorize_pilot_enterprise_conversion",
+    "configure_subscription",
+    "schedule_plan_change"
+  ])
+
 function formString(data: FormData, name: string): string {
   const value = data.get(name)
 
@@ -507,6 +515,10 @@ function BillingActionForm({
   onSubmit: (action: AdminBillingActionName, event: FormEvent<HTMLFormElement>) => void
   tone?: "danger" | "primary"
 }) {
+  if (RETIRED_NEW_SUBSCRIPTION_ACTIONS.has(action)) {
+    return null
+  }
+
   const confirmationId = `billing-confirm-${action}`
 
   return (
@@ -688,13 +700,28 @@ export function AdminBillingActions({
     <>
       <section className="app-section admin-panel">
         <SectionHeader
-          eyebrow="Audited writes"
-          title="Admin billing controls"
+          eyebrow="Historical subscriptions"
+          title="New subscription writes are closed"
         />
         <p className="admin-panel__intro">
-          These controls call canonical domain services only. They do not create provider prices,
-          charge Stripe, cancel a provider subscription, or rewrite accepted work. Use the CSV
-          export when you need a full canonical identifier.
+          Subscription configuration, activation, conversion, and plan-change
+          controls are closed. Existing provider-bound records remain available
+          for non-renewal, adjustment, reversal, entitlement retirement, usage
+          reconciliation, audit, and signed webhook processing. Current hosts
+          activate the 5% completed-load agreement from their own Billing page.
+        </p>
+      </section>
+
+      <section className="app-section admin-panel">
+        <SectionHeader
+          eyebrow="Historical reconciliation"
+          title="Preserved obligation controls"
+        />
+        <p className="admin-panel__intro">
+          These controls reconcile or terminate obligations already accepted; they
+          cannot create a new subscription or expand a plan. They do not charge
+          Stripe immediately or rewrite accepted work. Use the CSV export when you
+          need a full canonical identifier.
         </p>
         <BillingOptionList id="admin-billing-subscriptions" options={subscriptionOptions} />
         <BillingOptionList id="admin-billing-summaries" options={periodSummaryOptions} />

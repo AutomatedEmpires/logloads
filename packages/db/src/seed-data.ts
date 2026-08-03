@@ -41,7 +41,9 @@ import {
   truckSlotSchema,
   userSchema,
   verificationRecordSchema,
+  PERCENTAGE_V1_TERMS_VERSION,
   SUBSCRIPTION_PLAN_CATALOG,
+  PLATFORM_FEE_BPS,
   type Assignment,
   type AuditEvent,
   type AvailabilityWindow,
@@ -3309,24 +3311,44 @@ export const seedHostBillingProfiles: HostBillingProfile[] = parseMany(hostBilli
 ])
 
 /**
- * Existing synthetic hosts remain explicitly legacy. A catalog rollout must not
- * silently enroll even a fixture organization into a paid Network commitment;
- * focused subscription tests create an accepted agreement deliberately.
+ * The landing-source demo host carries an agreement accepted by its actual owner
+ * so new demo activity exercises production behavior. The fleet organization
+ * stays explicit legacy history because it has no billing-authorized member.
+ * Already-assigned rows remain frozen legacy below in either case.
  */
 export const seedOrganizationBillingAccounts: OrganizationBillingAccount[] = parseMany(
   organizationBillingAccountSchema,
-  ["33333333-3333-4333-8333-333333333331", "33333333-3333-4333-8333-333333333332"].map(
-    (organizationId) => ({
+  [
+    {
       activationState: "legacy",
       billingModel: "legacy_percentage",
       createdAt: timestamps.created,
       effectiveAt: timestamps.created,
-      id: organizationBillingAccountId(organizationId),
-      organizationId,
+      id: organizationBillingAccountId("33333333-3333-4333-8333-333333333331"),
+      organizationId: "33333333-3333-4333-8333-333333333331",
+      percentageTermsSnapshot: null,
       subscriptionId: null,
       updatedAt: timestamps.updated
-    })
-  )
+    },
+    {
+      activationState: "percentage_active",
+      billingModel: "percentage_v1",
+      createdAt: timestamps.created,
+      effectiveAt: "2026-08-03T00:00:00.000Z",
+      id: organizationBillingAccountId("33333333-3333-4333-8333-333333333332"),
+      organizationId: "33333333-3333-4333-8333-333333333332",
+      percentageTermsSnapshot: {
+        acceptedAt: "2026-08-03T00:00:00.000Z",
+        acceptedByUserId: "22222222-2222-4222-8222-222222222223",
+        acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION,
+        billingCadence: "monthly_in_arrears",
+        currency: "USD",
+        feeBps: PLATFORM_FEE_BPS
+      },
+      subscriptionId: null,
+      updatedAt: "2026-08-03T00:00:00.000Z"
+    }
+  ]
 )
 
 function freezeSeedAssignmentBilling(assignment: Assignment): Assignment {

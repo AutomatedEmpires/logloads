@@ -25,6 +25,7 @@ import {
   organizationBillingAccountSchema,
   organizationSchema,
   organizationSubscriptionSchema,
+  percentageFeeEventId,
   PLATFORM_FEE_BPS,
   platformFeeEventId,
   platformFeeEventSchema,
@@ -53,6 +54,7 @@ import {
 import { AdminSubscriptionRecord } from "../components/v3/AdminPages"
 
 const ORGANIZATION_ID = "11111111-1111-4111-8111-111111111111"
+const CURRENT_PERCENTAGE_ORGANIZATION_ID = "12121212-1212-4212-8212-121212121212"
 const ACCEPTED_BY = "20202020-2020-4020-8020-202020202020"
 const LANDING_ID = "23000000-0000-4000-8000-000000000001"
 const PERIOD_START = "2026-07-28T00:00:00.000Z"
@@ -228,6 +230,27 @@ function legacyBillingAccount(): OrganizationBillingAccount {
   })
 }
 
+function percentageBillingAccount(): OrganizationBillingAccount {
+  return organizationBillingAccountSchema.parse({
+    activationState: "percentage_active",
+    billingModel: "percentage_v1",
+    createdAt: PERIOD_START,
+    effectiveAt: PERIOD_START,
+    id: organizationBillingAccountId(CURRENT_PERCENTAGE_ORGANIZATION_ID),
+    organizationId: CURRENT_PERCENTAGE_ORGANIZATION_ID,
+    percentageTermsSnapshot: {
+      acceptedAt: PERIOD_START,
+      acceptedByUserId: ACCEPTED_BY,
+      acceptedTermsVersion: "percentage-v1-2026-08-03",
+      billingCadence: "monthly_in_arrears",
+      currency: "USD",
+      feeBps: PLATFORM_FEE_BPS
+    },
+    subscriptionId: null,
+    updatedAt: PERIOD_START
+  })
+}
+
 function legacyAssignment(): Assignment {
   return assignmentSchema.parse({
     assignedAt: PERIOD_START,
@@ -262,6 +285,15 @@ function legacyAssignment(): Assignment {
   })
 }
 
+function percentageAssignment(): Assignment {
+  return assignmentSchema.parse({
+    ...legacyAssignment(),
+    billingModel: "percentage_v1",
+    id: "41000000-0000-4000-8000-000000000002",
+    loadMovementId: "41000000-0000-4000-8000-000000000002"
+  })
+}
+
 function legacyEntitlement(): Entitlement {
   return entitlementSchema.parse({
     activeLandingLimit: null,
@@ -285,12 +317,14 @@ function legacyFeeEvent(): PlatformFeeEvent {
 
   return platformFeeEventSchema.parse({
     assignmentId,
+    billingModel: "legacy_percentage",
     createdAt: PERIOD_START,
     driverPayCents,
     feeBps: PLATFORM_FEE_BPS,
     feeCents: computePlatformFeeCents(driverPayCents, PLATFORM_FEE_BPS),
     id: platformFeeEventId(assignmentId),
     invoiceId: null,
+    loadMovementId: assignmentId,
     loadPostingId: "60000000-0000-4000-8000-000000000002",
     occurredAt: PERIOD_START,
     organizationId: ORGANIZATION_ID,
@@ -316,6 +350,23 @@ function legacyInvoice(): HostInvoice {
     subtotalCents: 2_500,
     updatedAt: "2026-08-01T00:00:00.000Z",
     voidedAt: null
+  })
+}
+
+function currentPercentageFeeEvent(
+  invoiceId: string | null = null
+): PlatformFeeEvent {
+  const movementId = "61000000-0000-4000-8000-000000000001"
+
+  return platformFeeEventSchema.parse({
+    ...legacyFeeEvent(),
+    assignmentId: movementId,
+    billingModel: "percentage_v1",
+    id: percentageFeeEventId(movementId),
+    invoiceId,
+    loadMovementId: movementId,
+    organizationId: CURRENT_PERCENTAGE_ORGANIZATION_ID,
+    status: invoiceId ? "invoiced" : "accrued"
   })
 }
 
@@ -509,6 +560,60 @@ function source(
 }
 
 describe("admin subscription billing read model", () => {
+  it("separates current percentage accounts and assignments from legacy history", () => {
+    const snapshot = buildAdminBillingSnapshot(
+      source({
+        assignments: [legacyAssignment(), percentageAssignment()],
+        organizationBillingAccounts: [
+          legacyBillingAccount(),
+          percentageBillingAccount()
+        ]
+      }),
+      NOW
+    )
+
+    expect(snapshot.platformFeeLedger).toMatchObject({
+      currentAssignmentCount: 1,
+      currentOrganizationCount: 1,
+      legacyAssignmentCount: 1,
+      legacyOrganizationCount: 1
+    })
+  })
+
+  it("attributes fee events, invoices, and outstanding cents to their frozen model", () => {
+    const legacyHostInvoice = legacyInvoice()
+    const currentHostInvoice = hostInvoiceSchema.parse({
+      ...legacyInvoice(),
+      id: "70000000-0000-4000-8000-000000000002",
+      organizationId: CURRENT_PERCENTAGE_ORGANIZATION_ID
+    })
+    const legacyFee = platformFeeEventSchema.parse({
+      ...legacyFeeEvent(),
+      invoiceId: legacyHostInvoice.id,
+      status: "invoiced"
+    })
+    const currentFee = currentPercentageFeeEvent(currentHostInvoice.id)
+    legacyHostInvoice.feeEventIds = [legacyFee.id]
+    currentHostInvoice.feeEventIds = [currentFee.id]
+
+    const snapshot = buildAdminBillingSnapshot(
+      source({
+        hostInvoices: [legacyHostInvoice, currentHostInvoice],
+        platformFeeEvents: [legacyFee, currentFee]
+      }),
+      NOW
+    )
+
+    expect(snapshot.platformFeeLedger).toMatchObject({
+      currentFeeEventCount: 1,
+      currentInvoiceCount: 1,
+      currentOutstandingInvoiceLabel: "$25.00",
+      legacyFeeEventCount: 1,
+      legacyInvoiceCount: 1,
+      legacyOutstandingInvoiceLabel: "$25.00"
+    })
+  })
+
   it("does not turn the plan catalog into subscriptions or revenue", () => {
     const snapshot = buildAdminBillingSnapshot(source(), NOW)
 
@@ -1069,6 +1174,10 @@ describe("admin subscription billing read model", () => {
 
   it("excludes the internal smoke subscription and keeps legacy obligations isolated", () => {
     const feeEvent = legacyFeeEvent()
+    const legacyHostInvoice = legacyInvoice()
+    feeEvent.invoiceId = legacyHostInvoice.id
+    feeEvent.status = "invoiced"
+    legacyHostInvoice.feeEventIds = [feeEvent.id]
     const internalSubscription = subscription("internal_billing_test")
     const internalSummaryId = billingPeriodSummaryId(
       internalSubscription.id,
@@ -1115,7 +1224,7 @@ describe("admin subscription billing read model", () => {
         billingAdjustments: [internalAdjustment],
         billingPeriodSummaries: [internalSummary],
         entitlements: [legacyEntitlement()],
-        hostInvoices: [legacyInvoice()],
+        hostInvoices: [legacyHostInvoice],
         networkOverageInvoices: [internalInvoice],
         networkUsageEvents: [internalUsage],
         organizationBillingAccounts: [
@@ -1160,17 +1269,23 @@ describe("admin subscription billing read model", () => {
       revenuePerCompletedNetworkLoadLabel: "Not enough data",
       totalSubscriptionRevenueLabel: "$0.00"
     })
-    expect(snapshot.legacy).toMatchObject({
-      accruedFeeLabel: "$25.00",
-      assignmentCount: 1,
+    expect(snapshot.platformFeeLedger).toMatchObject({
+      currentAccruedFeeLabel: "$0.00",
+      currentAssignmentCount: 0,
+      currentFeeEventCount: 0,
+      currentInvoiceCount: 0,
+      currentOrganizationCount: 0,
+      currentOutstandingInvoiceLabel: "$0.00",
       entitlementCount: 1,
-      feeEventCount: 1,
-      historicalInvoiceCount: 1,
-      organizationCount: 1,
-      outstandingInvoiceLabel: "$25.00"
+      legacyAccruedFeeLabel: "$0.00",
+      legacyAssignmentCount: 1,
+      legacyFeeEventCount: 1,
+      legacyInvoiceCount: 1,
+      legacyOrganizationCount: 1,
+      legacyOutstandingInvoiceLabel: "$25.00"
     })
-    expect(snapshot.legacy.entitlementExceptions).toHaveLength(1)
-    expect(snapshot.legacy.entitlementExceptions[0]).toMatchObject({
+    expect(snapshot.platformFeeLedger.entitlementExceptions).toHaveLength(1)
+    expect(snapshot.platformFeeLedger.entitlementExceptions[0]).toMatchObject({
       organizationName: "Timberline Hauling",
       planLabel: "Fleet Operations",
       status: "past_due"

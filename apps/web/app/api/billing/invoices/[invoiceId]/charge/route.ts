@@ -7,6 +7,10 @@ import {
 	platformFeeCollectionEnabled,
 	resolveStripeBilling
 } from "@/lib/billing"
+import {
+	resolveSubscriptionStripe,
+	verifyExpectedStripeAccount
+} from "@/lib/subscription-stripe"
 
 /**
  * Collects one month's platform fee from a host.
@@ -32,6 +36,22 @@ export async function POST(_request: Request, context: { params: Promise<{ invoi
 				"Platform-fee collection is not activated. The bill remains open and no Stripe call was made.",
 				409
 			)
+		}
+
+		const subscriptionStripe = resolveSubscriptionStripe(process.env)
+
+		if (!subscriptionStripe.ok) {
+			throw new ApiError("Stripe billing is not configured", 503, {
+				"Retry-After": "5"
+			})
+		}
+
+		try {
+			await verifyExpectedStripeAccount(subscriptionStripe.port, process.env)
+		} catch {
+			throw new ApiError("Stripe billing account verification failed", 503, {
+				"Retry-After": "5"
+			})
 		}
 
 		const billing = resolveStripeBilling()

@@ -83,6 +83,18 @@ function setLandingAllowance(services: LogLoadsServices, organizationId: string,
   }))
 }
 
+/** Removes the current percentage grant when a test is isolating old plan behavior. */
+function markBillingAccountLegacy(services: LogLoadsServices, organizationId: string) {
+  const account = services.state.organizationBillingAccounts.find(
+    (candidate) => candidate.organizationId === organizationId
+  )
+
+  if (!account) throw new Error("Seed billing account missing")
+  account.activationState = "legacy"
+  account.billingModel = "legacy_percentage"
+  account.percentageTermsSnapshot = null
+}
+
 /**
  * Puts a card on file for an organization, which is what publishing now requires:
  * the platform fee is charged to the host, so work that cannot be billed cannot
@@ -269,8 +281,42 @@ describe("the plan's landing allowance", () => {
     expect(services.activeLandingLimitFor(HOST_ORG)).toBeNull()
   })
 
+  it("treats an accepted percentage agreement as uncapped without a subscription entitlement", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    services.state.entitlements = services.state.entitlements.filter(
+      (entitlement) => entitlement.organizationId !== HOST_ORG
+    )
+    services.state.landings = services.state.landings.filter(
+      (landing) => landing.companyId !== HOST_ORG
+    )
+
+    expect(services.activeLandingLimitFor(HOST_ORG)).toBeNull()
+    services.createLanding(landingInput())
+    services.createLanding(landingInput({ name: "Second Percentage Spur" }))
+    expect(services.countActiveLandings(HOST_ORG)).toBe(2)
+  })
+
+  it("does not grant uncapped landings to a percentage account without accepted terms", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    services.state.entitlements = services.state.entitlements.filter(
+      (entitlement) => entitlement.organizationId !== HOST_ORG
+    )
+    services.state.organizationBillingAccounts =
+      services.state.organizationBillingAccounts.map((account) =>
+        account.organizationId === HOST_ORG
+          ? { ...account, percentageTermsSnapshot: null }
+          : account
+      )
+
+    expect(services.activeLandingLimitFor(HOST_ORG)).toBe(0)
+    expect(() => services.createLanding(landingInput())).toThrow(
+      /does not cover any active landings/
+    )
+  })
+
   it("does not read a lapsed plan as an unlimited one", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
+    markBillingAccountLegacy(services, HOST_ORG)
     setLandingAllowance(services, HOST_ORG, 3)
     services.state.landings = services.state.landings.filter(
       (landing) => landing.companyId !== HOST_ORG
@@ -294,6 +340,7 @@ describe("the plan's landing allowance", () => {
 
   it("refuses an organization carrying no plan at all", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
+    markBillingAccountLegacy(services, HOST_ORG)
     services.state.entitlements = services.state.entitlements.filter(
       (entitlement) => entitlement.organizationId !== HOST_ORG
     )
@@ -970,14 +1017,14 @@ describe("host onboarding", () => {
     // Workspace setup is free, but no legacy fee or paid plan is invented for a
     // new host. A card reference alone cannot silently enroll it either.
     expect(() => services.createLoadPostingWithPolicy(posting)).toThrow(
-      /operating plan is not active yet/
+      /accept the current LogLoads fee agreement/
     )
     expect(services.state.loadPostings.some((load) => load.title === posting.title)).toBe(false)
 
     attachCard(services, organizationId)
 
     expect(() => services.createLoadPostingWithPolicy(posting)).toThrow(
-      /operating plan is not active yet/
+      /accept the current LogLoads fee agreement/
     )
     expect(
       services.state.organizationBillingAccounts.find(

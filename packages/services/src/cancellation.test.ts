@@ -1,3 +1,4 @@
+import { PERCENTAGE_V1_TERMS_VERSION } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
@@ -458,6 +459,31 @@ describe("assignment cancellation", () => {
 
   it("lets a host organization's own driver withdraw their own-org request", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
+    const organization = services.state.organizations.find(
+      (candidate) => candidate.id === HAULER_ORG
+    )
+    const billingManager = services.state.organizationMemberships.find(
+      (candidate) =>
+        candidate.organizationId === HAULER_ORG &&
+        candidate.userId === HOST_ACTOR
+    )
+
+    expect(organization).toBeDefined()
+    expect(billingManager).toBeDefined()
+    if (!organization || !billingManager) return
+
+    // This edge case is deliberately a host organization that also employs its
+    // own driver. The shared seed models North Pine as a hauling fleet, so make
+    // the dual-role fixture explicit instead of letting a legacy fleet account
+    // bypass the post-cutover host agreement.
+    organization.type = "landing_source"
+    billingManager.role = "owner"
+    services.acceptPercentageBillingAgreement({
+      acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION,
+      actorUserId: HOST_ACTOR,
+      organizationId: HAULER_ORG
+    })
+
     const { load, slot } = publishFreshLoad(services, 1, HAULER_ORG)
     const assignment = requestFreshLoad(services, load.id, slot.id)
 

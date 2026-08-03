@@ -36,7 +36,8 @@ describe("host publishing options", () => {
       name: ownedDispatcher.contact.name
     })
     expect(options.dispatcher?.id).not.toBe(sharedDispatcher.id)
-    expect(options.billingModel).toBe("legacy_percentage")
+    expect(options.billingModel).toBe("percentage_v1")
+    expect(options.billingActivationState).toBe("percentage_active")
   })
 })
 

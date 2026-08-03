@@ -18,6 +18,8 @@ import {
   organizationSubscriptionId,
   organizationSubscriptionSchema,
   organizationRoleCan,
+  PERCENTAGE_V1_CUTOVER_AT,
+  PLATFORM_FEE_BPS,
   readFrozenDriverPay,
   subscriptionBaseInvoiceId,
   subscriptionBaseInvoiceSchema,
@@ -235,7 +237,7 @@ function insertBillingAuditEvent(
   )
 }
 
-function notifyOrganizationBilling(
+export function notifyOrganizationBilling(
   state: LogLoadsDatabaseState,
   input: {
     organizationId: string
@@ -357,6 +359,13 @@ function billingNotificationOrganizationId(
       invoice.organizationId === subscription.organizationId
       ? invoice.organizationId
       : null
+  }
+
+  if (notification.relatedEntityType === "host_invoice") {
+    return (
+      state.hostInvoices.find((invoice) => invoice.id === entityId)
+        ?.organizationId ?? null
+    )
   }
 
   return null
@@ -984,6 +993,42 @@ function activeConversionTargetForHistoricalSource(
   return target
 }
 
+/**
+ * A terminal subscription remains immutable provider history after its host
+ * accepts percentage billing. Delayed Stripe lifecycle events for that exact
+ * record may be acknowledged, but they must never mutate or reclaim the active
+ * billing account.
+ */
+function activePercentageAgreementForHistoricalSubscription(
+  state: LogLoadsDatabaseState,
+  subscription: OrganizationSubscription
+): LogLoadsDatabaseState["organizationBillingAccounts"][number] | null {
+  if (subscription.status !== "cancelled" && subscription.status !== "expired") {
+    return null
+  }
+
+  const accounts = state.organizationBillingAccounts.filter(
+    (account) => account.organizationId === subscription.organizationId
+  )
+  assertCondition(
+    accounts.length <= 1,
+    `Organization ${subscription.organizationId} has conflicting billing accounts`
+  )
+  if (accounts.length === 0) return null
+
+  const account = accounts[0]!
+  if (account.activationState !== "percentage_active") return null
+
+  assertCondition(
+    account.billingModel === "percentage_v1" &&
+      account.subscriptionId === null &&
+      Boolean(account.percentageTermsSnapshot),
+    `Organization ${subscription.organizationId} has an invalid percentage_v1 billing account`
+  )
+
+  return account
+}
+
 export interface AssignmentBillingCommitment {
   billingModel: BillingModel
   capacitySource: CapacitySource
@@ -995,6 +1040,8 @@ export interface AssignmentBillingCommitment {
   includedAllowanceSnapshot: number | null
   overageRateSnapshotCents: number | null
   includesDispatchProCapabilitiesSnapshot: boolean
+  platformFeeBps: number | null
+  platformFeeCurrency: string | null
 }
 
 export interface ResolveAssignmentBillingCommitmentInput {
@@ -1039,6 +1086,13 @@ export function resolveAssignmentBillingCommitment(
       !Array.isArray(assignment.termsSnapshot.subscriptionBilling)
         ? assignment.termsSnapshot.subscriptionBilling as Record<string, unknown>
         : {}
+    const frozenHostFee =
+      assignment.termsSnapshot.hostFee &&
+      typeof assignment.termsSnapshot.hostFee === "object" &&
+      !Array.isArray(assignment.termsSnapshot.hostFee)
+        ? assignment.termsSnapshot.hostFee as Record<string, unknown>
+        : {}
+    const frozenPay = readFrozenDriverPay(assignment.termsSnapshot)
 
     return {
       baseMonthlyPriceSnapshotCents:
@@ -1060,6 +1114,15 @@ export function resolveAssignmentBillingCommitment(
         typeof frozenTerms.overageRateCents === "number"
           ? frozenTerms.overageRateCents
           : subscription?.overageRateSnapshotCents ?? null,
+      platformFeeBps:
+        typeof frozenHostFee.rateBps === "number"
+          ? frozenHostFee.rateBps
+          : null,
+      platformFeeCurrency:
+        assignment.billingModel === "legacy_percentage" ||
+        assignment.billingModel === "percentage_v1"
+          ? frozenPay?.currency ?? null
+          : null,
       planCode: assignment.billingPlanCodeAtCommitment,
       planSnapshot: subscription
         ? structuredClone(subscription.planSnapshot)
@@ -1127,7 +1190,46 @@ export function resolveAssignmentBillingCommitment(
     `Organization ${input.hostOrganizationId} is not enrolled in a billing model`
   )
 
+  if (account.activationState === "percentage_active") {
+    const percentageTerms = assertFound(
+      account.percentageTermsSnapshot ?? undefined,
+      `Organization ${input.hostOrganizationId} has no percentage agreement snapshot`
+    )
+    assertCondition(
+      account.billingModel === "percentage_v1" &&
+        account.subscriptionId === null,
+      `Organization ${input.hostOrganizationId} has an invalid percentage_v1 billing account`
+    )
+    const frozenDriverPay = assertFound(
+      readFrozenDriverPay(assignment.termsSnapshot) ?? undefined,
+      "Percentage billing requires frozen driver pay and currency at acceptance"
+    )
+    assertDomainCondition(
+      frozenDriverPay.currency === percentageTerms.currency,
+      `Percentage billing can accept only ${percentageTerms.currency}-denominated work`
+    )
+
+    return {
+      baseMonthlyPriceSnapshotCents: null,
+      billingModel: "percentage_v1",
+      capacitySource,
+      committedAt: at,
+      includedAllowanceSnapshot: null,
+      includesDispatchProCapabilitiesSnapshot: true,
+      overageRateSnapshotCents: null,
+      planCode: null,
+      planSnapshot: null,
+      platformFeeBps: percentageTerms.feeBps,
+      platformFeeCurrency: percentageTerms.currency,
+      subscriptionId: null
+    }
+  }
+
   if (account.activationState === "legacy") {
+    assertDomainCondition(
+      Date.parse(at) < Date.parse(PERCENTAGE_V1_CUTOVER_AT),
+      "Accept the current percentage_v1 agreement before committing new work"
+    )
     assertCondition(
       account.billingModel === "legacy_percentage",
       `Organization ${input.hostOrganizationId} has an invalid legacy billing account`
@@ -1152,6 +1254,8 @@ export function resolveAssignmentBillingCommitment(
       overageRateSnapshotCents: null,
       planCode: null,
       planSnapshot: null,
+      platformFeeBps: PLATFORM_FEE_BPS,
+      platformFeeCurrency: LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
       subscriptionId: null
     }
   }
@@ -1164,6 +1268,10 @@ export function resolveAssignmentBillingCommitment(
   assertCondition(
     account.activationState === "active" || account.activationState === "suspended",
     `Organization ${input.hostOrganizationId}'s subscription billing is not configured`
+  )
+  assertDomainCondition(
+    Date.parse(at) < Date.parse(PERCENTAGE_V1_CUTOVER_AT),
+    "Historical subscriptions no longer authorize new work; accept the current percentage agreement after provider retirement"
   )
   const subscriptionId = assertFound(
     account.subscriptionId ?? undefined,
@@ -1248,6 +1356,8 @@ export function resolveAssignmentBillingCommitment(
     overageRateSnapshotCents: subscription.overageRateSnapshotCents,
     planCode: subscription.planCode,
     planSnapshot: structuredClone(subscription.planSnapshot),
+    platformFeeBps: null,
+    platformFeeCurrency: null,
     subscriptionId: subscription.id
   }
 }
@@ -1548,6 +1658,12 @@ export function configureOrganizationSubscription(
       subscription: existingSubscription
     }
   }
+
+  assertDomainCondition(
+    Date.parse(input.acceptedAt) < Date.parse(PERCENTAGE_V1_CUTOVER_AT) &&
+      Date.parse(at) < Date.parse(PERCENTAGE_V1_CUTOVER_AT),
+    "New commercial subscriptions closed when percentage_v1 became the current host agreement"
+  )
 
   assertCondition(
     !existingAccount?.subscriptionId,
@@ -4010,7 +4126,9 @@ export function bindOrganizationSubscriptionProvider(
     state,
     subscription
   )
-  if (conversionTarget) {
+  const percentageAgreement =
+    activePercentageAgreementForHistoricalSubscription(state, subscription)
+  if (conversionTarget || percentageAgreement) {
     if (
       !state.auditEvents.some(
         (event) =>
@@ -4026,7 +4144,12 @@ export function bindOrganizationSubscriptionProvider(
         entityId: subscription.id,
         entityType: "organization_subscription",
         metadata: {
-          activeSubscriptionId: conversionTarget.id,
+          activeBillingAccountId: percentageAgreement?.id ?? null,
+          activeBillingModel:
+            percentageAgreement?.billingModel ??
+            conversionTarget?.billingModel ??
+            null,
+          activeSubscriptionId: conversionTarget?.id ?? null,
           providerEffectiveAt,
           providerPaymentState: input.paymentState,
           providerStatus: input.status,

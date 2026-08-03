@@ -3,10 +3,9 @@
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js"
 import { loadStripe, type Stripe } from "@stripe/stripe-js"
 import Link from "next/link"
-import { useId, useMemo, useState, useTransition } from "react"
+import { useId, useMemo, useState } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
-import { startBillingPortalAction, startCheckoutAction } from "@/lib/billing-actions"
 import {
   cardConfirmsPaymentMethod,
   confirmedPaymentMethodId
@@ -17,12 +16,8 @@ import type {
   HostFeeTotalsView,
   HostInvoiceView
 } from "@/lib/host-billing-data"
-import type { BillingView, PlanProduct, SettingsView } from "@/lib/plans"
-import type {
-  HostSubscriptionBillingView,
-  PilotConversionPlanCode,
-  PilotConversionView
-} from "@/lib/subscription-billing-data"
+import type { BillingView, SettingsView } from "@/lib/plans"
+import type { HostSubscriptionBillingView } from "@/lib/subscription-billing-data"
 import type { VerificationRecordView } from "@/lib/verification-data"
 import { AppShell, EmptyState, SectionHeader, type ShellAccount } from "./Shells"
 import { InviteMemberForm, RevokeInvitationButton } from "./TeamActions"
@@ -46,47 +41,6 @@ const ORG_VERIFICATION_OPTIONS: Record<CockpitRole, VerificationTypeOption[]> = 
 export interface CheckoutNotice {
   message: string
   tone: "success" | "info"
-}
-
-function PlanAction({ kind, label, product }: { kind: "checkout" | "portal"; label: string; product: PlanProduct }) {
-  const [pending, startTransition] = useTransition()
-  const [notice, setNotice] = useState<string | null>(null)
-
-  return (
-    <div className="plan-action">
-      <button
-        className="action-link"
-        disabled={pending}
-        onClick={() => {
-          startTransition(async () => {
-            try {
-              const result = kind === "portal"
-                ? await startBillingPortalAction(product)
-                : await startCheckoutAction(product)
-
-              if (result.ok && result.url) {
-                window.location.assign(result.url)
-                return
-              }
-
-              setNotice(result.error ?? "Billing could not be opened. Try again.")
-            } catch {
-              setNotice("Billing could not be opened. Check your connection and try again.")
-            }
-          })
-        }}
-        type="button"
-      >
-        {pending ? "Opening billing…" : label}
-      </button>
-      {notice ? (
-        <p className="plan-action__notice" role="status">
-          <Icon aria-hidden name="status.warning" size={16} />
-          <span>{notice}</span>
-        </p>
-      ) : null}
-    </div>
-  )
 }
 
 interface CardSetup {
@@ -541,27 +495,13 @@ function OrganizationSubscriptionSections({
             <span>{notice}</span>
           </p>
         ))}
-        {subscription.subscriptionId &&
-        (subscription.canStartCheckout || subscription.canOpenPortal) ? (
-          subscription.canOpenPortal ? (
-            <SubscriptionBillingAction
-              kind="portal"
-              subscriptionId={subscription.subscriptionId}
-            />
-          ) : subscription.planCode === "dispatch_pro" ? (
-            <SubscriptionBillingAction kind="dispatch_acceptance" />
-          ) : (
-            <SubscriptionBillingAction
-              kind="checkout"
-              subscriptionId={subscription.subscriptionId}
-            />
-          )
+        {subscription.subscriptionId && subscription.canOpenPortal ? (
+          <SubscriptionBillingAction
+            kind="portal"
+            subscriptionId={subscription.subscriptionId}
+          />
         ) : null}
       </section>
-
-      {subscription.pilotConversion ? (
-        <PilotConversionPanel conversion={subscription.pilotConversion} />
-      ) : null}
 
       {subscription.allowance ? (
         <section
@@ -671,202 +611,14 @@ function OrganizationSubscriptionSections({
   )
 }
 
-function PilotConversionPanel({
-  conversion
-}: {
-  conversion: PilotConversionView
-}) {
-  const [selectedPlanCode, setSelectedPlanCode] =
-    useState<PilotConversionPlanCode>(
-      conversion.options[0]?.planCode ?? "network_25"
-    )
-  const [termsAccepted, setTermsAccepted] = useState(false)
-  const [pending, setPending] = useState(false)
-  const [notice, setNotice] = useState<string | null>(null)
-  const selectedOption = conversion.options.find(
-    (option) => option.planCode === selectedPlanCode
-  )
-
-  if (conversion.target) {
-    return (
-      <section
-        aria-label="Pilot conversion"
-        className="settings-panel"
-      >
-        <SectionHeader
-          eyebrow="Pilot conversion"
-          title={`Complete ${conversion.target.planName}`}
-        />
-        <p className="settings-meaning">
-          Your fixed target agreement is recorded. Complete provider payment
-          before {conversion.graceEndsOnLabel}; the new 12-month commitment
-          begins only from its first verified paid provider period.
-        </p>
-        <p className="settings-meaning">
-          Status: {conversion.target.statusLabel}
-        </p>
-        {conversion.target.canOpenPortal ? (
-          <SubscriptionBillingAction
-            kind="portal"
-            subscriptionId={conversion.target.subscriptionId}
-          />
-        ) : conversion.target.canStartCheckout ? (
-          <SubscriptionBillingAction
-            kind="checkout"
-            subscriptionId={conversion.target.subscriptionId}
-          />
-        ) : (
-          <p className="fee-alert" role="status">
-            This conversion cannot open payment right now. Contact LogLoads
-            before the conversion window closes.
-          </p>
-        )}
-      </section>
-    )
-  }
-
-  return (
-    <section
-      aria-label="Pilot conversion"
-      className="settings-panel"
-    >
-      <SectionHeader
-        eyebrow="Pilot conversion"
-        title="Choose the Network plan that follows your Pilot"
-      />
-      <p className="settings-meaning">
-        Your pooled Pilot allowance has ended. Convert by{" "}
-        {conversion.graceEndsOnLabel}. Each option includes Dispatch Pro
-        capabilities and starts a new 12-month minimum commitment only when
-        Stripe confirms the first paid period.
-      </p>
-      <div className="plan-cards">
-        {conversion.options.map((option) => (
-          <label className="plan-card plan-card--selectable" key={option.planCode}>
-            <span>
-              <input
-                checked={selectedPlanCode === option.planCode}
-                name="pilot-conversion-plan"
-                onChange={() => setSelectedPlanCode(option.planCode)}
-                type="radio"
-                value={option.planCode}
-              />{" "}
-              <strong>{option.name}</strong>
-            </span>
-            <span>{option.basePriceLabel}</span>
-            <span>{option.allowanceLabel}</span>
-            <span>{option.overageLabel}</span>
-            <span>{option.commitmentLabel}</span>
-          </label>
-        ))}
-      </div>
-      <label className="settings-meaning">
-        <input
-          checked={termsAccepted}
-          onChange={(event) => setTermsAccepted(event.target.checked)}
-          type="checkbox"
-        />{" "}
-        I accept the current <Link href="/terms">Network terms</Link>, the
-        selected monthly base and overage amounts, and the 12-month minimum
-        commitment.
-      </label>
-      <div className="plan-action">
-        <button
-          className="action-link"
-          disabled={pending || !termsAccepted || !selectedOption}
-          onClick={async () => {
-            if (!selectedOption) {
-              setNotice(
-                "Select a current Network conversion quote before continuing."
-              )
-              return
-            }
-
-            setPending(true)
-            setNotice(null)
-
-            try {
-              const response = await fetch(
-                "/api/billing/subscription-checkout",
-                {
-                  body: JSON.stringify({
-                    acceptNetworkTerms: true,
-                    convertPilotSubscriptionId:
-                      conversion.sourceSubscriptionId,
-                    quoteFingerprint:
-                      selectedOption.quoteFingerprint,
-                    targetPlanCode: selectedPlanCode
-                  }),
-                  headers: { "Content-Type": "application/json" },
-                  method: "POST"
-                }
-              )
-              const result = await readJson<{
-                error?: string
-                url?: string
-              }>(response)
-
-              if (!response.ok || !result?.url) {
-                throw new Error(
-                  result?.error ??
-                    "Pilot conversion billing is unavailable right now."
-                )
-              }
-
-              window.location.assign(result.url)
-            } catch (error) {
-              setNotice(
-                error instanceof Error
-                  ? error.message
-                  : "Pilot conversion billing is unavailable right now."
-              )
-            } finally {
-              setPending(false)
-            }
-          }}
-          type="button"
-        >
-          {pending
-            ? "Opening secure billing…"
-            : "Accept terms & continue to payment"}
-        </button>
-        <p className="settings-meaning">
-          No new plan activates from this click alone. LogLoads records the
-          accepted target, opens the exact pre-created Stripe Price, and waits
-          for signed payment confirmation.
-        </p>
-        {notice ? (
-          <p className="fee-alert" role="alert">
-            {notice}
-          </p>
-        ) : null}
-      </div>
-    </section>
-  )
-}
-
 function SubscriptionBillingAction({
-  kind,
   subscriptionId
-}:
-  | {
-      kind: "checkout" | "portal"
-      subscriptionId: string
-    }
-  | {
-      kind: "dispatch_acceptance"
-      subscriptionId?: never
-    }) {
+}: {
+  kind: "portal"
+  subscriptionId: string
+}) {
   const [pending, setPending] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
-  const endpoint =
-    kind === "portal"
-      ? "/api/billing/subscription-portal"
-      : "/api/billing/subscription-checkout"
-  const requestBody =
-    kind === "dispatch_acceptance"
-      ? { acceptDispatchProTerms: true }
-      : { organizationSubscriptionId: subscriptionId }
 
   return (
     <div className="plan-action">
@@ -878,8 +630,8 @@ function SubscriptionBillingAction({
           setNotice(null)
 
           try {
-            const response = await fetch(endpoint, {
-              body: JSON.stringify(requestBody),
+            const response = await fetch("/api/billing/subscription-portal", {
+              body: JSON.stringify({ organizationSubscriptionId: subscriptionId }),
               headers: { "Content-Type": "application/json" },
               method: "POST"
             })
@@ -907,32 +659,84 @@ function SubscriptionBillingAction({
         }}
         type="button"
       >
-        {pending
-          ? "Opening secure billing…"
-          : kind === "portal"
-            ? "Manage payment details"
-            : kind === "dispatch_acceptance"
-              ? "Accept terms & continue to payment"
-              : "Complete approved enrollment"}
+        {pending ? "Opening secure billing…" : "Manage payment details"}
       </button>
       <p className="settings-meaning">
-        {kind === "portal"
-          ? "Payment details and provider invoice history open in the controlled Stripe billing portal. Plan changes and non-renewal remain sales-assisted under the accepted commitment."
-          : kind === "dispatch_acceptance"
-            ? (
-                <>
-                  Continuing records this organization&apos;s acceptance of the current{" "}
-                  <Link href="/terms">Dispatch Pro terms</Link> at $499 per month,
-                  authorizes paid enrollment, and opens secure Stripe Checkout.
-                  Dispatch Pro covers established private capacity and includes no
-                  LogLoads Network units.
-                </>
-              )
-            : "This opens the exact plan already accepted for this organization. The browser cannot choose or alter a tier."}
+        Payment details and provider invoice history open in the controlled
+        Stripe billing portal. New enrollment, plan changes, and restarts are
+        closed; this control cannot alter the preserved subscription record.
       </p>
       {notice ? (
         <p className="plan-action__notice" role="alert">
           <Icon aria-hidden name="status.warning" size={16} />
+          <span>{notice}</span>
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+function PercentageAgreementControl() {
+  const [accepted, setAccepted] = useState(false)
+  const [pending, setPending] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  return (
+    <div className="plan-action">
+      <label className="settings-meaning">
+        <input
+          checked={accepted}
+          onChange={(event) => setAccepted(event.target.checked)}
+          type="checkbox"
+        />{" "}
+        I am authorized to accept the current <Link href="/terms">LogLoads Terms</Link>. I
+        understand that each completed load carries a 5% LogLoads fee added on top
+        of the driver pay I state; there is no posting fee, subscription, monthly
+        minimum, tier, allowance, or overage charge.
+      </label>
+      <button
+        className="action-link"
+        disabled={!accepted || pending}
+        onClick={async () => {
+          setPending(true)
+          setNotice(null)
+
+          try {
+            const response = await fetch("/api/billing/percentage-agreement", {
+              body: JSON.stringify({ acceptPercentageTerms: true }),
+              headers: { "Content-Type": "application/json" },
+              method: "POST"
+            })
+            const result = await readJson<{ error?: string }>(response)
+
+            if (!response.ok) {
+              throw new Error(
+                result?.error ?? "The percentage agreement could not be accepted."
+              )
+            }
+
+            setNotice("Agreement accepted. Refreshing billing…")
+            window.location.reload()
+          } catch (error) {
+            setNotice(
+              error instanceof Error
+                ? error.message
+                : "The percentage agreement could not be accepted."
+            )
+            setPending(false)
+          }
+        }}
+        type="button"
+      >
+        {pending ? "Accepting agreement…" : "Accept 5% host agreement"}
+      </button>
+      <p className="settings-meaning">
+        Acceptance does not charge a card. Add a payment method separately before
+        publishing live work.
+      </p>
+      {notice ? (
+        <p className="plan-action__notice" role={pending ? "status" : "alert"}>
+          <Icon aria-hidden name={pending ? "status.assigned" : "status.warning"} size={16} />
           <span>{notice}</span>
         </p>
       ) : null}
@@ -946,28 +750,48 @@ function SubscriptionBillingAction({
  * in this file, so a figure on this page cannot disagree with the bill.
  */
 function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
-  const { currentPeriod, fee, invoices, paymentMethod } = hostBilling
-  const hasLegacyActivity =
+  const { currentPeriod, fee, invoices, paymentMethod, percentageAgreement } = hostBilling
+  const hasPercentageActivity =
     currentPeriod.lines.length > 0 ||
     currentPeriod.voidedLines.length > 0 ||
     invoices.length > 0
 
   return (
     <>
-      {hasLegacyActivity ? (
-        <section className="settings-panel" aria-label="Legacy percentage pricing record">
+      <section className="settings-panel" aria-label="Current host pricing">
           <SectionHeader
-            eyebrow="Legacy pricing"
-            title={`${fee.rateLabel} of driver pay on previously committed loads`}
+            eyebrow="Host pricing"
+            title={`${fee.rateLabel} of stated driver pay, added on top`}
           />
-          <p className="fee-alert" role="note">
-            <Icon aria-hidden name="ops.notice" size={16} />
-            <span>
-              These frozen percentage terms are preserved only for legacy
-              assignments. New Network activity uses your subscription allowance
-              and completed-movement overage rate.
-            </span>
-          </p>
+          {percentageAgreement.state === "active" ? (
+            <p className="fee-alert" role="status">
+              <Icon aria-hidden name="status.assigned" size={16} />
+              <span>
+                Current percentage agreement active
+                {percentageAgreement.acceptedOnLabel
+                  ? ` · accepted ${percentageAgreement.acceptedOnLabel}`
+                  : ""}
+              </span>
+            </p>
+          ) : percentageAgreement.state === "legacy" ? (
+            <p className="fee-alert" role="note">
+              <Icon aria-hidden name="ops.notice" size={16} />
+              <span>
+                {percentageAgreement.canAccept
+                  ? "Previously committed percentage terms remain readable and collectible and will not be rewritten. Accept the current agreement below to use percentage_v1 for new work."
+                  : "Previously committed percentage terms remain readable and collectible and will not be rewritten. Current agreement enrollment is not open for this workspace."}
+              </span>
+            </p>
+          ) : percentageAgreement.state === "historical_subscription" ? (
+            <p className="fee-alert" role="note">
+              <Icon aria-hidden name="ops.notice" size={16} />
+              <span>
+                {percentageAgreement.canAccept
+                  ? "This workspace's terminal subscription remains preserved as history. Accept the current percentage agreement below to activate percentage_v1 for new work; the old record will not be rewritten."
+                  : "This workspace's historical subscription remains preserved as history. Current percentage enrollment requires both a terminal record and inclusion in the controlled rollout."}
+              </span>
+            </p>
+          ) : null}
           <p className="fee-headline">{fee.headline}</p>
           {/* Named as an example in visible text, not only in the label: three
               money figures with no lead-in read as this host's own money. */}
@@ -1005,8 +829,8 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
               </li>
             ))}
           </ul>
+          {percentageAgreement.canAccept ? <PercentageAgreementControl /> : null}
         </section>
-      ) : null}
 
       <section className="settings-panel" aria-label="Payment method">
         <SectionHeader eyebrow="Payment method" title="The card LogLoads bills" />
@@ -1030,9 +854,7 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
         <HostCardControl status={paymentMethod.status} />
       </section>
 
-      {hasLegacyActivity ? (
-        <>
-          <section className="settings-panel" aria-label="Legacy fees accrued this month">
+      <section className="settings-panel" aria-label="Platform fees accrued this month">
             <SectionHeader
               eyebrow="This month"
               title={
@@ -1083,8 +905,8 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
             ) : null}
           </section>
 
-          <section className="settings-panel" aria-label="Legacy bills">
-            <SectionHeader eyebrow="Legacy bills" title="Historical percentage charges" />
+          <section className="settings-panel" aria-label="Platform fee invoices">
+            <SectionHeader eyebrow="Invoices" title="Monthly platform-fee charges" />
             {invoices.length === 0 ? (
               <p className="settings-meaning">
                 No bill has been raised yet. Your first one covers {currentPeriod.periodLabel} and is charged
@@ -1098,7 +920,11 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
               </div>
             )}
           </section>
-        </>
+      {!hasPercentageActivity ? (
+        <p className="settings-meaning">
+          Your billing history begins after the first completed load under an
+          accepted percentage agreement.
+        </p>
       ) : null}
     </>
   )
@@ -1139,7 +965,8 @@ export function BillingPage({
   const hasCanonicalSubscription = Boolean(
     hostSubscriptionBilling?.subscriptionId
   )
-  const capabilityPlans = hasCanonicalSubscription ? [] : billing.plans
+  const capabilityPlans =
+    role === "host" || hasCanonicalSubscription ? [] : billing.plans
   const addUsageHref = role === "fleet" ? "/fleet/trucks" : "/host/landings"
   const addUsageLabel = role === "fleet" ? "Go to trucks" : "Go to landings"
   const addUsageBody = role === "fleet"
@@ -1150,7 +977,12 @@ export function BillingPage({
     : "This tracks landings configured in your workspace. It is separate from completed Network movement usage."
 
   return (
-    <AppShell account={account} kicker="Plan features" role={role} title="Billing">
+    <AppShell
+      account={account}
+      kicker={role === "host" ? "Host economics" : "Billing history"}
+      role={role}
+      title="Billing"
+    >
       <div className="billing-page">
         {checkoutNotice ? (
           <p className={`billing-banner billing-banner--${checkoutNotice.tone}`} role="status">
@@ -1171,20 +1003,34 @@ export function BillingPage({
           </p>
         ) : null}
 
+        {hostBilling ? <HostMoneySections hostBilling={hostBilling} /> : null}
+
+        {hostSubscriptionBilling?.subscriptionId ? (
+          <p className="billing-banner billing-banner--info" role="note">
+            <Icon aria-hidden name="ops.notice" size={18} />
+            <span>
+              Historical subscription record. New subscription enrollment, plan
+              conversion, tier changes, and overage enrollment are closed. Portal
+              access remains available only for payment details and provider invoice
+              history tied to an existing obligation.
+            </span>
+          </p>
+        ) : null}
+
         {hasCanonicalSubscription && hostSubscriptionBilling ? (
           <OrganizationSubscriptionSections
             subscription={hostSubscriptionBilling}
           />
         ) : null}
 
-        {!hasCanonicalSubscription ? (
+        {role === "fleet" && !hasCanonicalSubscription ? (
           capabilityPlans.length === 0 ? (
             hostSubscriptionBilling ? null : (
               <EmptyState
                 actionHref="/pricing"
-                actionLabel="Compare plans"
-                body={role === "fleet" ? "Dispatch Pro is $499 per month. Drivers on the account stay free." : "Network enrollment is sales-assisted. There is no posting fee; completed Network movements use the accepted plan allowance and overage rate."}
-                title="No plan on this workspace yet"
+                actionLabel="View pricing"
+                body="New subscription enrollment is closed. Existing provider-bound obligations remain visible for reconciliation."
+                title="No historical subscription on this workspace"
               />
             )
           ) : (
@@ -1229,19 +1075,6 @@ export function BillingPage({
                       </p>
                     ) : null}
                   </div>
-                  {role === "fleet" &&
-                  plan.product === "fleet_operations" &&
-                  plan.actionKind === "checkout" ? (
-                    billing.billingReady ? (
-                      <SubscriptionBillingAction kind="dispatch_acceptance" />
-                    ) : null
-                  ) : plan.actionLabel && plan.actionKind ? (
-                    <PlanAction
-                      kind={plan.actionKind}
-                      label={plan.actionLabel}
-                      product={plan.product}
-                    />
-                  ) : null}
                 </article>
               ))}
             </section>
@@ -1318,10 +1151,6 @@ export function BillingPage({
           </section>
         ) : null}
 
-        {/* What a host owes LogLoads does not depend on carrying a plan record,
-            so a workspace without an entitlement still sees its own preserved
-            fees and bills. */}
-        {hostBilling ? <HostMoneySections hostBilling={hostBilling} /> : null}
       </div>
     </AppShell>
   )

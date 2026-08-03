@@ -94,7 +94,7 @@ function getHostReadinessFacts(
 function hostActivationIsComplete(
   activationState: HostPublishingOptions["billingActivationState"]
 ): boolean {
-  return activationState === "active" || activationState === "legacy"
+  return activationState === "percentage_active"
 }
 
 function HostReadiness({
@@ -173,7 +173,7 @@ function HostReadiness({
       ? {
           href: requiredSetupAction.href,
           label: requiredSetupAction.label,
-          note: "No subscription starts and no card is charged during setup."
+          note: "Setup is free. No card is charged while you prepare the workspace."
         }
       : {
           href: "/host/settings",
@@ -187,26 +187,26 @@ function HostReadiness({
           note: "Activation is recorded for this workspace."
         }
       : {
-          href: "/contact",
-          label: "Plan assisted activation",
-          note: "LogLoads confirms the operating lane and commercial activation with you."
+          href: "/host/billing",
+          label: "Review host billing",
+          note: "Invited hosts accept the 5% completed-load agreement and attach a card before publishing live work."
         }
   const activationDetail =
-    activationState === "active"
-      ? "LogLoads has recorded active operating and commercial approval for this workspace."
+    activationState === "percentage_active"
+      ? "The current 5% completed-load agreement is active for this workspace."
       : activationState === "legacy"
-        ? "This workspace operates under its recorded grandfathered agreement."
+        ? "Historical percentage assignments remain preserved. Accept the current agreement from Billing before publishing new live work."
         : activationState === "suspended"
           ? "Activation is suspended. Contact LogLoads to resolve the operating hold before publication resumes."
           : billingModel
-            ? "A commercial lane is recorded. LogLoads still confirms the agreement and activation with you before live Network publication."
-            : "LogLoads confirms the operating lane and activation with you. Workspace setup does not enroll or charge you."
+            ? "A historical commercial record exists. Reconcile it from Billing before new percentage work can activate."
+            : "Pilot activation is invitation-based. Review Billing to accept the current 5% agreement and attach a card when this workspace is approved. Workspace setup itself does not charge you."
   const steps = [
     ...operatingSteps,
     {
       complete: activationComplete,
       detail: activationDetail,
-      title: "Assisted activation"
+      title: "Host billing activation"
     }
   ]
 
@@ -219,15 +219,15 @@ function HostReadiness({
           <p>
             {activationComplete
               ? "Activation is recorded for this workspace. Finish the operating record to put your first movement live."
-              : "Build the operating record now. Live Network publication stays off until LogLoads completes assisted activation with you."}
+              : "Build the operating record now. Live publication stays off until this workspace is approved for percentage billing and completes activation."}
           </p>
         </div>
         <div className="host-readiness__progress">
           <strong>{facts.readyCount} of 4 operating steps ready</strong>
           <span>
             {activationComplete
-              ? "Assisted activation is complete for this workspace."
-              : "Assisted activation is a separate final step."}
+              ? "Billing activation is complete for this workspace."
+              : "Pilot billing activation is a separate final step."}
           </span>
           <div
             aria-hidden
@@ -251,7 +251,7 @@ function HostReadiness({
           const status = isAssisted
             ? step.complete
               ? "Ready"
-              : "Assisted"
+              : "Pilot"
             : step.complete
               ? "Ready"
               : isNext
@@ -355,7 +355,7 @@ export function HostCommand({
           facts={readiness}
           title={
             readiness.readyCount === 4
-              ? "Plan assisted activation"
+              ? "Complete billing activation"
               : "Finish workspace setup"
           }
         />

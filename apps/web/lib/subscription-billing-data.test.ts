@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest"
 vi.mock("server-only", () => ({}))
 
 import {
+  PERCENTAGE_V1_TERMS_VERSION,
+  PLATFORM_FEE_BPS,
   SUBSCRIPTION_PLAN_CATALOG,
   billingAdjustmentSchema,
   billingPeriodSummaryId,
@@ -423,6 +425,46 @@ describe("host subscription billing read model", () => {
       canOpenPortal: false,
       canStartCheckout: false,
       statusLabel: "Not enrolled"
+    })
+  })
+
+  it("keeps terminal subscription history visible after percentage_v1 drops the live pointer", () => {
+    const preservedSubscription = pilotSubscription({
+      status: "cancelled",
+      updatedAt: "2026-08-03T00:00:00.000Z"
+    })
+    const view = buildHostSubscriptionBillingView(
+      source({
+        organizationBillingAccounts: [
+          billingAccount({
+            activationState: "percentage_active",
+            billingModel: "percentage_v1",
+            effectiveAt: "2026-08-03T00:00:00.000Z",
+            percentageTermsSnapshot: {
+              acceptedAt: "2026-08-03T00:00:00.000Z",
+              acceptedByUserId: ACCEPTED_BY,
+              acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION,
+              billingCadence: "monthly_in_arrears",
+              currency: "USD",
+              feeBps: PLATFORM_FEE_BPS
+            },
+            subscriptionId: null,
+            updatedAt: "2026-08-03T00:00:00.000Z"
+          })
+        ],
+        organizationSubscriptions: [preservedSubscription]
+      }),
+      ORGANIZATION_ID,
+      new Date("2026-08-04T12:00:00.000Z")
+    )
+
+    expect(view).toMatchObject({
+      billingModel: "percentage_v1",
+      canOpenPortal: true,
+      canStartCheckout: false,
+      planName: "Network Pilot",
+      statusLabel: "Cancelled",
+      subscriptionId: SUBSCRIPTION_ID
     })
   })
 

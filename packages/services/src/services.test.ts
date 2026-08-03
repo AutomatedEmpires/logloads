@@ -17,14 +17,14 @@ describe("logloads services", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
 
     const created = services.createLoadPosting({
-      companyId: "33333333-3333-4333-8333-333333333331",
-      dispatcherProfileId: "55555555-5555-4555-8555-555555555551",
-      loaderProfileId: "55555555-5555-4555-8555-555555555552",
-      pickupLandingId: "66666666-6666-4666-8666-666666666661",
+      companyId: "33333333-3333-4333-8333-333333333332",
+      dispatcherProfileId: "55555555-5555-4555-8555-555555555553",
+      loaderProfileId: null,
+      pickupLandingId: "66666666-6666-4666-8666-666666666662",
       driverPayCents: 52_500,
       dropoffMillId: "99999999-9999-4999-8999-999999999991",
-      routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
-      rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+      routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
+      rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
       title: "Extra afternoon run",
       loadType: "saw_logs",
       status: "open",
@@ -40,15 +40,11 @@ describe("logloads services", () => {
       roadCondition: "good",
       weatherNotes: null,
       dispatcherContact: {
-        name: "Dana Dispatch",
-        phone: "555-2001",
-        email: "dispatch@northpine.example"
+        name: "Cole Cedar",
+        phone: "555-3001",
+        email: "dispatch@summit.example"
       },
-      loaderContact: {
-        name: "Lee Loader",
-        phone: "555-2002",
-        email: "loader@northpine.example"
-      }
+      loaderContact: null
     })
 
     expect(created.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)

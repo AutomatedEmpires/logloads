@@ -711,48 +711,20 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
   return (
     <AppShell account={account} kicker={KICKER} role="admin" title="Billing">
       <section className="app-section">
-        <SectionHeader eyebrow="Subscription v1" title="Commercial position" />
+        <SectionHeader eyebrow="Percentage v1" title="Current host billing position" />
         <div className="command-grid admin-plan-mix">
-          <Metric label="Active subscriptions" value={billing.metrics.activeSubscriptionCount} />
-          <Metric label="Active MRR" value={billing.metrics.activeMrrLabel} />
-          <Metric label="Active ARR" value={billing.metrics.activeArrLabel} />
-          <Metric label="Billing failures" value={billing.metrics.billingFailureCount} />
-          <Metric
-            label="Pilot conversions"
-            value={billing.pilotConversions.convertedCount}
-          />
-          <Metric
-            label="Pilot conversion rate"
-            value={billing.pilotConversions.rateLabel}
-          />
+          <Metric label="Current percentage organizations" value={billing.platformFeeLedger.currentOrganizationCount} />
+          <Metric label="Current percentage assignments" value={billing.platformFeeLedger.currentAssignmentCount} />
+          <Metric label="Non-void fee events" value={billing.platformFeeLedger.currentFeeEventCount} />
+          <Metric label="Accrued, not invoiced" value={billing.platformFeeLedger.currentAccruedFeeLabel} />
+          <Metric label="Host invoices" value={billing.platformFeeLedger.currentInvoiceCount} />
+          <Metric label="Outstanding" value={billing.platformFeeLedger.currentOutstandingInvoiceLabel} />
         </div>
         <p className="admin-panel__intro">
-          MRR and ARR use frozen monthly amounts on active or non-renewing commercial subscriptions.
-          Pending, past-due, comped, cancelled, expired, and internal billing-test records are excluded.
-          {billing.unquantifiedMrrCount > 0
-            ? ` ${billing.unquantifiedMrrCount} active or non-renewing custom ${
-                billing.unquantifiedMrrCount === 1 ? "agreement has" : "agreements have"
-              } no recorded monthly amount and ${
-                billing.unquantifiedMrrCount === 1 ? "is" : "are"
-              } also excluded.`
-            : ""}
-        </p>
-        {billing.internalTestCount > 0 ? (
-          <p className="admin-panel__intro">
-            {billing.internalTestCount} internal billing-test{" "}
-            {billing.internalTestCount === 1 ? "record is" : "records are"} excluded from plan mix and
-            commercial metrics.
-          </p>
-        ) : null}
-        <p className="admin-panel__intro">
-          Pilot conversion is{" "}
-          {billing.pilotConversions.convertedCount} of{" "}
-          {billing.pilotConversions.cohortCount} canonical commercial Pilot{" "}
-          {billing.pilotConversions.cohortCount === 1
-            ? "agreement"
-            : "agreements"}
-          . It counts an applied conversion recorded by the subscription service;
-          a merely scheduled plan change is not a conversion.
+          Current host revenue is the 5% platform fee added on top of stated
+          driver pay for completed loads. Posting is free; there is no subscription,
+          monthly minimum, tier, allowance, or overage. Legacy percentage rows remain
+          in the same immutable ledger and retain their frozen discriminator.
         </p>
       </section>
 
@@ -767,8 +739,8 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
               Export canonical CSV
             </Link>
           }
-          eyebrow="Canonical state"
-          title="Subscription operations"
+          eyebrow="Historical subscription state"
+          title="Read-only subscription operations"
         />
         <div className="command-grid admin-plan-mix">
           <Metric
@@ -825,7 +797,8 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
           revenue use all stored commercial history, with no cohort or calendar-window
           normalization. Usage and allowance ratios cover all stored commercial periods. Movement
           counts deduplicate frozen assignment classifications by physical movement. Internal
-          billing tests and legacy fees are excluded throughout.
+          billing tests and percentage fees are excluded throughout. These are
+          historical subscription metrics, not the current host commercial model.
         </p>
       </section>
 
@@ -1174,33 +1147,35 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
       </section>
 
       <section className="app-section admin-panel">
-        <SectionHeader eyebrow="Isolated history" title="Legacy percentage billing" />
+        <SectionHeader eyebrow="Canonical fee ledger" title="Percentage billing detail" />
         <p className="admin-panel__intro">
-          These records are historical percentage-model obligations. They are never counted as
+          Current percentage_v1 and preserved legacy percentage obligations share
+          this immutable fee and invoice ledger. They are never counted as historical
           subscription MRR, ARR, plan enrollment, or completed-load usage.
         </p>
         <div className="command-grid admin-plan-mix">
-          <Metric label="Legacy organizations" value={billing.legacy.organizationCount} />
-          <Metric label="Frozen assignments" value={billing.legacy.assignmentCount} />
-          <Metric label="Non-void fee events" value={billing.legacy.feeEventCount} />
-          <Metric label="Accrued, not invoiced" value={billing.legacy.accruedFeeLabel} />
-          <Metric label="Historical invoices" value={billing.legacy.historicalInvoiceCount} />
-          <Metric label="Outstanding invoices" value={billing.legacy.outstandingInvoiceLabel} />
-          <Metric label="Previous entitlements" value={billing.legacy.entitlementCount} />
+          <Metric label="Current organizations" value={billing.platformFeeLedger.currentOrganizationCount} />
+          <Metric label="Legacy organizations" value={billing.platformFeeLedger.legacyOrganizationCount} />
+          <Metric label="Current assignments" value={billing.platformFeeLedger.currentAssignmentCount} />
+          <Metric label="Legacy assignments" value={billing.platformFeeLedger.legacyAssignmentCount} />
+          <Metric label="Legacy non-void fees" value={billing.platformFeeLedger.legacyFeeEventCount} />
+          <Metric label="Legacy invoices" value={billing.platformFeeLedger.legacyInvoiceCount} />
+          <Metric label="Legacy outstanding" value={billing.platformFeeLedger.legacyOutstandingInvoiceLabel} />
+          <Metric label="Previous entitlements" value={billing.platformFeeLedger.entitlementCount} />
         </div>
 
         <SectionHeader
-          eyebrow={`${billing.legacy.entitlementExceptions.length} to follow up`}
+          eyebrow={`${billing.platformFeeLedger.entitlementExceptions.length} to follow up`}
           title="Previous entitlement exceptions"
         />
-        {billing.legacy.entitlementExceptions.length === 0 ? (
+        {billing.platformFeeLedger.entitlementExceptions.length === 0 ? (
           <EmptyState
             body="Past-due or cancelled records from the previous entitlement system remain visible here without being treated as subscription-v1 revenue."
             title="No previous entitlement exceptions."
           />
         ) : (
           <div className="admin-rows">
-            {billing.legacy.entitlementExceptions.map((exception) => (
+            {billing.platformFeeLedger.entitlementExceptions.map((exception) => (
               <article className="admin-row" key={exception.id}>
                 <div className="admin-row__main">
                   <div className="admin-row__head">

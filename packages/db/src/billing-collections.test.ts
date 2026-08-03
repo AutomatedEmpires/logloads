@@ -24,6 +24,7 @@ function accrualForCompletedSeedLoad(state: ReturnType<typeof createInMemoryData
 
   return {
     assignmentId: assignment.id,
+    billingModel: "legacy_percentage",
     createdAt: assignment.completedAt ?? load.updatedAt,
     driverPayCents,
     feeBps: PLATFORM_FEE_BPS,
@@ -31,6 +32,7 @@ function accrualForCompletedSeedLoad(state: ReturnType<typeof createInMemoryData
     id: platformFeeEventId(assignment.id),
     invoiceId: null,
     loadPostingId: load.id,
+    loadMovementId: assignment.loadMovementId ?? assignment.id,
     occurredAt: assignment.completedAt ?? load.updatedAt,
     organizationId: load.companyId,
     status: "accrued",

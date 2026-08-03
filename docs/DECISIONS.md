@@ -2,6 +2,50 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-08-01 — `percentage_v1` is the commercial model for new activity
+
+- **The host owes LogLoads 5% of host-stated driver pay, on top.** A load with
+  $1,000 of stated driver pay leaves the host owing the driver the full $1,000
+  directly and creates a separate $50 LogLoads platform-fee obligation. LogLoads
+  never deducts its fee from driver pay or handles the transportation funds.
+- **Completion is the revenue event.** A percentage fee becomes billable only
+  after the authoritative physical movement completes. Posting, matching,
+  requesting, private-fleet planning, cancellation before execution, and
+  duplicate completion are not billable. Fees are invoiced to the host monthly
+  in arrears. There is no monthly minimum, no posting fee, and no driver charge.
+- **The new billing-model identifier is `percentage_v1`.** It is not a rename of
+  `legacy_percentage`. The legacy identifier remains read-only for assignments,
+  accepted terms, fee events, invoices, receipts, and retries frozen under the
+  earlier percentage agreement. Historical records are never rewritten into the
+  new model, and no new activity may be enrolled as `legacy_percentage`.
+- **The 2026-07-28 `subscription_v1` decision is historical/read-only.** Preserve
+  and reconcile a subscription, base invoice, usage event, adjustment, credit,
+  or provider obligation accepted while that decision governed. Do not create a
+  new subscription customer, Dispatch Pro enrollment, tier allowance, overage,
+  or subscription usage obligation. The plan catalog remains versioned evidence,
+  not an available commercial menu.
+- **One movement produces at most one commercial obligation.** Assignment-time
+  terms freeze `percentage_v1`, `legacy_percentage`, or a historical
+  `subscription_v1` obligation. Every writer must refuse dual billing across the
+  three ledgers and remain deterministic under canonical-state replay.
+- **`LOGLOADS_FEE_COLLECTION` is the sole current commercial collection gate.**
+  It defaults to `disabled`. Enabling it remains a separately authorized
+  live-money operation after dedicated Stripe-account proof, accepted terms,
+  legal posture, invoice/retry/webhook reconciliation, rollback, and a controlled
+  charge/refund are recorded. `LOGLOADS_SUBSCRIPTION_COLLECTION` and
+  `LOGLOADS_DISPATCH_SELF_SERVE` remain `disabled` historical safety gates; they
+  may not activate new work.
+- **The provider boundary remains non-custodial.** Stripe may collect only the
+  host's separate LogLoads invoice and reconcile preserved historical provider
+  obligations. `transfer_data`, destination charges, separate
+  charges-and-transfers, and `application_fee_amount` remain banned from every
+  driver-payment path.
+- This decision changes commercial authority; it does not by itself activate a
+  provider, enroll an organization, create a charge, mutate production data, or
+  certify a legal operating posture. Repository and provider surfaces that still
+  advertise subscription-v1 must be treated as transition residue until the
+  recovery implementation is merged and verified.
+
 ## 2026-07-29 — Supabase Storage is the sole private-media provider
 
 - **There is no provider choice at runtime.** New credential documents,

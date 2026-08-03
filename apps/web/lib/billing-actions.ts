@@ -52,10 +52,9 @@ async function assertLogLoadsStripeAccount(): Promise<void> {
 /**
  * Preserved server-action boundary for old UI clients.
  *
- * New Dispatch Pro obligations must begin from a canonical, accepted
- * OrganizationSubscription and the guarded subscription-checkout route. The
- * entitlement-only Checkout this action once opened is intentionally retired;
- * legacy webhooks and portal access remain for subscriptions already created.
+ * New subscription enrollment is closed. The Checkout this action once opened
+ * is intentionally retired; legacy webhooks and portal access remain solely for
+ * subscriptions already created.
  */
 export async function startCheckoutAction(product: PlanProduct): Promise<CheckoutResult> {
   try {
@@ -91,8 +90,9 @@ export async function startCheckoutAction(product: PlanProduct): Promise<Checkou
 }
 
 /**
- * Opens the Stripe billing portal for an organization with an established Stripe
- * customer (update card, change plan, cancel).
+ * Opens the Stripe billing portal for an organization with a preserved historical
+ * subscription and established Stripe customer. Provider-supported maintenance
+ * of that existing record does not authorize new enrollment or revive plan sales.
  *
  * Subscription products only. A host's card on file is not a subscription, so the
  * portal is not where it lives — and saying otherwise would send a host to a page

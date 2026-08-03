@@ -42,11 +42,12 @@ fails closed rather than silently replacing missing production data with seed da
 | Group | Variables |
 |---|---|
 | Billing provider | `STRIPE_SECRET_KEY`, `LOGLOADS_STRIPE_EXPECTED_LIVEMODE`, `LOGLOADS_STRIPE_EXPECTED_ACCOUNT_ID`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PUBLISHABLE_KEY` or `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` |
-| Dispatch Pro catalog | `STRIPE_PRICE_DISPATCH` |
-| Network recurring catalog | `STRIPE_PRICE_NETWORK_PILOT`, `STRIPE_PRICE_NETWORK_25`, `STRIPE_PRICE_NETWORK_50`, `STRIPE_PRICE_NETWORK_100` |
-| Network overage catalog | `STRIPE_PRICE_NETWORK_PILOT_OVERAGE`, `STRIPE_PRICE_NETWORK_25_OVERAGE`, `STRIPE_PRICE_NETWORK_50_OVERAGE`, `STRIPE_PRICE_NETWORK_100_OVERAGE` |
+| Historical Dispatch Pro catalog | `STRIPE_PRICE_DISPATCH` (read-only reconciliation; no new enrollment) |
+| Historical Network recurring catalog | `STRIPE_PRICE_NETWORK_PILOT`, `STRIPE_PRICE_NETWORK_25`, `STRIPE_PRICE_NETWORK_50`, `STRIPE_PRICE_NETWORK_100` |
+| Historical Network overage catalog | `STRIPE_PRICE_NETWORK_PILOT_OVERAGE`, `STRIPE_PRICE_NETWORK_25_OVERAGE`, `STRIPE_PRICE_NETWORK_50_OVERAGE`, `STRIPE_PRICE_NETWORK_100_OVERAGE` |
 | Internal billing verification | `STRIPE_PRICE_INTERNAL_BILLING_TEST`, `LOGLOADS_INTERNAL_BILLING_SMOKE`, `LOGLOADS_INTERNAL_BILLING_SMOKE_ALLOWED_USER_IDS`, `LOGLOADS_INTERNAL_BILLING_SMOKE_ALLOWED_ORGANIZATION_IDS` |
-| Collection switches | `LOGLOADS_FEE_COLLECTION` for preserved legacy invoices; `LOGLOADS_SUBSCRIPTION_COLLECTION` plus `LOGLOADS_SUBSCRIPTION_ALLOWED_ORGANIZATION_IDS` for new subscription money; independent `LOGLOADS_DISPATCH_SELF_SERVE` for Dispatch Pro self-serve |
+| Current percentage enrollment | `LOGLOADS_PERCENTAGE_ENROLLMENT`, the exact `LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS`, and its private `LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256` assertion; all default dark and none authorizes collection |
+| Collection switches | `LOGLOADS_FEE_COLLECTION` is the sole current provider-charge gate for `percentage_v1` and preserved legacy fee invoices; `LOGLOADS_SUBSCRIPTION_COLLECTION`, `LOGLOADS_SUBSCRIPTION_ALLOWED_ORGANIZATION_IDS`, and `LOGLOADS_DISPATCH_SELF_SERVE` are disabled historical controls only |
 | Credential review | `ANTHROPIC_API_KEY`; optional pinned override `CREDENTIAL_REVIEW_MODEL` |
 | Private media | `LOGLOADS_MEDIA_STORAGE=supabase`, `LOGLOADS_MEDIA_BUCKET`, `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF`, and preferred `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (or supported compatibility alias `NEXT_PUBLIC_SUPABASE_ANON_KEY`; the preferred name wins if both exist) |
 | Email | `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_REPLY_TO`, `SUPPORT_EMAIL`, `LOGLOADS_CONTACT_EMAIL` |
@@ -56,22 +57,32 @@ fails closed rather than silently replacing missing production data with seed da
 
 ## Billing activation boundaries
 
-`LOGLOADS_SUBSCRIPTION_COLLECTION` defaults to `disabled`. When absent, invalid,
-or disabled, the app may maintain canonical subscription, usage, period, and
-reconciliation records, but it must refuse new provider collection. Provisioned
-Products, Prices, webhooks, deployed code, or an accepted agreement do not turn
-this switch on.
+The founder's current model is `percentage_v1`. `LOGLOADS_FEE_COLLECTION` is
+the sole current commercial collection gate and defaults to `disabled`. When it
+is absent, invalid, or disabled, the app may maintain canonical percentage fee,
+invoice, and reconciliation records, but it must create no provider charge.
+Provider credentials, webhooks, deployed code, accepted terms, or historical
+catalog objects do not turn the switch on.
 
-Collection is not a global enrollment permission. While it is enabled,
-`LOGLOADS_SUBSCRIPTION_ALLOWED_ORGANIZATION_IDS` must contain the exact
-canonical UUID of each organization permitted to create new subscription money.
-An empty or absent value denies everyone. The explicit `*` sentinel means
-general availability and must not be used for the Pilot-first launch.
-`LOGLOADS_DISPATCH_SELF_SERVE=enabled` is an additional independent requirement
-for new Dispatch Pro self-serve Checkout; it remains `disabled` during the
-Network Pilot canary. These creation gates do not discard or suspend signed
-webhook reconciliation for an obligation that was already authorized and
-created.
+New host agreement acceptance has a separate, fail-closed boundary. It requires
+`LOGLOADS_PERCENTAGE_ENROLLMENT=enabled` and the authenticated host's exact
+organization id in `LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS`. The SHA-256
+of the sorted, normalized exact scope must also match
+`LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256`; a missing, malformed,
+or drifting assertion refuses every agreement. The wildcard `*` is not
+recognized. Keep the gate disabled, allowlist blank, and expected assertion
+blank until a dated counsel-approved operating posture and exact pilot
+authorization exist. Enrollment does not enable provider collection, and the
+collection switch does not enroll an organization.
+
+`LOGLOADS_SUBSCRIPTION_COLLECTION` and `LOGLOADS_DISPATCH_SELF_SERVE` are
+historical safety gates and must remain `disabled` for new activity.
+`LOGLOADS_SUBSCRIPTION_ALLOWED_ORGANIZATION_IDS` remains empty; the former `*`
+general-availability sentinel is not valid under the current decision. These
+disabled controls do not discard signed reconciliation for an obligation that
+was accepted and created while the 2026-07-28 subscription-v1 decision governed,
+but they may not create a new customer, Checkout, subscription, plan change,
+usage event, overage, or charge.
 
 `LOGLOADS_STRIPE_EXPECTED_LIVEMODE` is mandatory and independent of key
 presence. Production must set it to `live`; controlled local and test runtimes
@@ -85,10 +96,11 @@ catalog provisioner, and the lifecycle verifier call Stripe's account endpoint
 and fail closed unless the authenticated account is the configured LogLoads
 account. Error responses and tool output never include either account id.
 
-`LOGLOADS_FEE_COLLECTION` is separate and applies only to invoices created from
-frozen `legacy_percentage` assignments. Do not remove that switch until every
-legacy obligation is settled or deliberately voided. A physical movement may
-produce a legacy percentage fee or a Network usage event, never both.
+`LOGLOADS_FEE_COLLECTION` applies to current `percentage_v1` invoices and to
+preserved invoices created from frozen `legacy_percentage` assignments. The
+billing-model snapshot must keep those ledgers distinct. A physical movement may
+produce one `percentage_v1`, one preserved `legacy_percentage`, or one historical
+subscription-v1 obligation, never more than one.
 
 The internal verification path is a one-off $1 provider invoice, not a
 subscription or public entitlement. It requires all of:
@@ -104,14 +116,16 @@ subscription or public entitlement. It requires all of:
 Leave the smoke switch and both allowlists unset outside one founder-authorized
 run. Internal billing tests are tagged and excluded from commercial MRR and ARR.
 
-Every catalog variable contains only a pre-created `price_...` identifier.
-Ordinary customer requests never create Products or Prices and never substitute
-an inline amount. Enterprise custom terms remain sales-assisted and are frozen
-in canonical state; they do not use a public fixed-price environment variable.
+Every historical catalog variable contains only a pre-created `price_...`
+identifier. Ordinary customer requests never create Products or Prices and never
+substitute an inline amount. The catalog is retained for prior-obligation
+reconciliation only and is not a commercial menu under `percentage_v1`.
 
-The public health route reports only configuration presence, missing/invalid
-catalog counts, and gate state. It never reports keys, secrets, Price ids,
-customer ids, or webhook material.
+The public health route reports only coarse billing readiness, current gate
+state, and a boolean that says whether the private expected enrollment-scope
+assertion matches. It does not publish the organization count, scope digest,
+historical catalog posture, smoke controls, provider-account posture, keys,
+Price ids, customer ids, or webhook material.
 
 Private media is active only when `LOGLOADS_MEDIA_STORAGE` is exactly `supabase`;
 the configured Supabase URL is HTTPS on `*.supabase.co`; its project reference
@@ -163,10 +177,12 @@ tooling/integration placeholders; runtime canonical state does not read them.
 
 `LOGLOADS_EMAIL_FROM` and `LOGLOADS_EMAIL_REPLY_TO` remain supported compatibility
 fallbacks. Production uses the scoped `RESEND_FROM` and `RESEND_REPLY_TO` names.
-When Network collection is enabled, billing-email delivery runs only when both
-`RESEND_API_KEY` and a From identity are configured. Canonical billing
+When current fee collection is enabled, billing-email delivery runs only when
+both `RESEND_API_KEY` and a From identity are configured. Canonical billing
 notifications remain queued when delivery is disabled. The cron worker
 revalidates the related billing entity, active profile, and active
 `manage_billing` membership before every send, then retries failed or stale
 claims up to five times with the notification ID as the provider idempotency
-key.
+key. Host-invoice notifications follow `LOGLOADS_FEE_COLLECTION`; preserved
+subscription notifications remain separately gated by the historical
+subscription-collection switch and are not released by fee collection alone.

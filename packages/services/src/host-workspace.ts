@@ -162,6 +162,17 @@ export function activeLandingLimitFor(
       return 1
     }
 
+    // Percentage-v1 has no subscription tier or landing cap. The accepted
+    // agreement is the operating entitlement; revenue is earned only from
+    // completed movements.
+    if (
+      billingAccount?.activationState === "percentage_active" &&
+      billingAccount.billingModel === "percentage_v1" &&
+      billingAccount.percentageTermsSnapshot !== null
+    ) {
+      return null
+    }
+
     return 0
   }
 

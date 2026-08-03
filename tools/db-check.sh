@@ -15,14 +15,14 @@ if ! command -v supabase >/dev/null 2>&1; then
   exit 0
 fi
 
-if ! command -v docker >/dev/null 2>&1; then
+if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
   if [[ "${CI:-}" == "true" ]]; then
-    echo "Docker is required in CI; migration validation cannot be skipped."
+    echo "A reachable Docker daemon is required in CI; migration validation cannot be skipped."
     exit 1
   fi
 
-  echo "Docker is not available; skipping local Supabase migration check."
-  echo "Install Docker and rerun 'supabase db reset --local' from ${repo_root} to validate migrations locally."
+  echo "Docker is not installed or its daemon is unreachable; skipping the local Supabase migration check."
+  echo "Start Docker and rerun 'supabase db reset --local' from ${repo_root} to validate migrations locally."
   exit 0
 fi
 

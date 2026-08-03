@@ -340,9 +340,9 @@ export function OnboardingFlow({
           <legend tabIndex={-1}>Your workspace is ready to create</legend>
           <p className="fieldset-note">
             Next, set up the operating records your first timber movement needs.
-            Creating the workspace does not start a subscription or charge a
-            card; paid Network enrollment and operational activation are
-            sales-assisted.
+            Creating the workspace does not charge a card. Hosts accept the 5%
+            completed-load agreement and attach a payment method from Billing
+            before publishing live work; driver setup remains free.
           </p>
           <div className="onboarding-ready">
             <strong>
@@ -352,7 +352,7 @@ export function OnboardingFlow({
             </strong>
             <span>
               {path === "host"
-                ? "You can prepare the workspace and a draft before LogLoads completes assisted activation with you."
+                ? "You can prepare the workspace and a draft before accepting the current agreement and attaching a card from Billing."
                 : "Only the information needed for the next decision appears on each screen."}
             </span>
           </div>

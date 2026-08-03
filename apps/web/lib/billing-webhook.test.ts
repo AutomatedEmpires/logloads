@@ -5,6 +5,7 @@ import {
   invoicePeriodFor,
   networkOverageInvoiceId,
   networkOverageInvoiceSchema,
+  PERCENTAGE_V1_TERMS_VERSION,
   platformFeeEventId,
   PLATFORM_FEE_BPS,
   subscriptionPlanDefinition,
@@ -15,6 +16,7 @@ import {
 } from "@logloads/contracts"
 import { createInMemoryDatabase, type LogLoadsDatabaseState } from "@logloads/db"
 import {
+  acceptPercentageBillingAgreement,
   activateOrganizationSubscription,
   activateAuthorizedOrganizationSubscriptionFromProvider,
   authorizePilotConversionSubscription,
@@ -111,6 +113,7 @@ function organizationOfType(state: LogLoadsDatabaseState, type: OrganizationType
 function feeEvent(organizationId: string): PlatformFeeEvent {
   return {
     assignmentId: ASSIGNMENT_ID,
+    billingModel: "legacy_percentage",
     createdAt: PERIOD.periodStart,
     driverPayCents: 52_500,
     feeBps: PLATFORM_FEE_BPS,
@@ -118,6 +121,7 @@ function feeEvent(organizationId: string): PlatformFeeEvent {
     id: platformFeeEventId(ASSIGNMENT_ID),
     invoiceId: INVOICE_ID,
     loadPostingId: LOAD_POSTING_ID,
+    loadMovementId: ASSIGNMENT_ID,
     occurredAt: PERIOD.periodStart,
     organizationId,
     status: "invoiced",
@@ -1258,6 +1262,89 @@ describe("Network subscription provider events", () => {
     })
     expect(
       fixture.state.auditEvents.filter((event) => event.metadata?.eventId === "evt_1")
+    ).toHaveLength(1)
+  })
+
+  it("acknowledges a delayed signed deletion after percentage migration without reviving the subscription", async () => {
+    const fixture = networkSubscriptionFixture()
+
+    harness(fixture.state, {
+      event: billingEvent(
+        "customer.subscription.created",
+        { id: fixture.stripeSubscriptionId },
+        { id: "evt_bind_before_percentage_migration" }
+      ),
+      subscriptionFacts: fixture.facts
+    })
+    expect((await POST(webhookRequest())).status).toBe(200)
+
+    const subscription = fixture.state.organizationSubscriptions.find(
+      (candidate) => candidate.id === fixture.subscription.id
+    )!
+    subscription.status = "cancelled"
+    subscription.operationalExpiredAt = "2026-08-02T00:00:00.000Z"
+    const owner = fixture.state.organizationMemberships.find(
+      (membership) =>
+        membership.organizationId === fixture.host.id &&
+        membership.status === "active" &&
+        membership.role === "owner"
+    )
+    expect(owner).toBeDefined()
+    if (!owner) return
+
+    acceptPercentageBillingAgreement(
+      fixture.state,
+      {
+        acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION,
+        actorUserId: owner.userId,
+        organizationId: fixture.host.id
+      },
+      "2026-08-02T12:00:00.000Z"
+    )
+    const accountBefore = structuredClone(
+      fixture.state.organizationBillingAccounts.find(
+        (account) => account.organizationId === fixture.host.id
+      )
+    )
+    const subscriptionBefore = structuredClone(subscription)
+    const deletion = billingEvent(
+      "customer.subscription.deleted",
+      { id: fixture.stripeSubscriptionId },
+      {
+        createdAt: Date.parse("2026-08-03T12:00:00.000Z") / 1000,
+        id: "evt_historical_deleted_after_percentage"
+      }
+    )
+
+    harness(fixture.state, {
+      event: deletion,
+      subscriptionFacts: fixture.facts
+    })
+    expect((await POST(webhookRequest())).status).toBe(200)
+    expect((await POST(webhookRequest())).status).toBe(200)
+    expect(
+      fixture.state.organizationBillingAccounts.find(
+        (account) => account.organizationId === fixture.host.id
+      )
+    ).toEqual(accountBefore)
+    expect(
+      fixture.state.organizationSubscriptions.find(
+        (candidate) => candidate.id === subscription.id
+      )
+    ).toEqual(subscriptionBefore)
+    expect(
+      fixture.state.auditEvents.filter(
+        (event) =>
+          event.action === "historical_subscription_provider_event_ignored" &&
+          event.metadata?.eventId === deletion.id
+      )
+    ).toHaveLength(1)
+    expect(
+      fixture.state.auditEvents.filter(
+        (event) =>
+          event.action === "historical_subscription_provider_lifecycle_ignored" &&
+          event.entityId === subscription.id
+      )
     ).toHaveLength(1)
   })
 

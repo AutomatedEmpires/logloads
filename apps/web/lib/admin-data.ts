@@ -706,15 +706,21 @@ export interface AdminBillingSnapshot {
   commercialSubscriptionCount: number
   internalTestCount: number
   invoices: AdminOverageInvoiceRow[]
-  legacy: {
-    accruedFeeLabel: string
-    assignmentCount: number
+  platformFeeLedger: {
+    currentAccruedFeeLabel: string
+    currentAssignmentCount: number
+    currentFeeEventCount: number
+    currentInvoiceCount: number
+    currentOrganizationCount: number
     entitlementCount: number
     entitlementExceptions: AdminLegacyEntitlementException[]
-    feeEventCount: number
-    historicalInvoiceCount: number
-    organizationCount: number
-    outstandingInvoiceLabel: string
+    currentOutstandingInvoiceLabel: string
+    legacyAccruedFeeLabel: string
+    legacyAssignmentCount: number
+    legacyFeeEventCount: number
+    legacyInvoiceCount: number
+    legacyOrganizationCount: number
+    legacyOutstandingInvoiceLabel: string
   }
   metrics: {
     activeArrLabel: string
@@ -1970,9 +1976,34 @@ export function buildAdminBillingSnapshot(
       statusLabel: titleCase(entitlement.status)
     }))
     .sort((left, right) => left.organizationName.localeCompare(right.organizationName))
-  const legacyFeeEvents = source.platformFeeEvents.filter((event) => event.status !== "voided")
-  const legacyOutstandingInvoices = source.hostInvoices.filter(
-    (invoice) => invoice.status === "open" || invoice.status === "uncollectible"
+  const activePlatformFeeEvents = source.platformFeeEvents.filter(
+    (event) => event.status !== "voided"
+  )
+  const currentFeeEvents = activePlatformFeeEvents.filter(
+    (event) => event.billingModel === "percentage_v1"
+  )
+  const legacyFeeEvents = activePlatformFeeEvents.filter(
+    (event) => event.billingModel === "legacy_percentage"
+  )
+  const currentInvoiceIds = new Set(
+    currentFeeEvents.flatMap((event) => event.invoiceId ? [event.invoiceId] : [])
+  )
+  const legacyInvoiceIds = new Set(
+    legacyFeeEvents.flatMap((event) => event.invoiceId ? [event.invoiceId] : [])
+  )
+  const currentInvoices = source.hostInvoices.filter((invoice) =>
+    currentInvoiceIds.has(invoice.id)
+  )
+  const legacyInvoices = source.hostInvoices.filter((invoice) =>
+    legacyInvoiceIds.has(invoice.id)
+  )
+  const outstandingInvoiceIds = new Set(
+    source.hostInvoices
+      .filter(
+        (invoice) =>
+          invoice.status === "open" || invoice.status === "uncollectible"
+      )
+      .map((invoice) => invoice.id)
   )
   const privateMovementIds = new Set<string>()
   const networkMovementIds = new Set<string>()
@@ -2082,24 +2113,52 @@ export function buildAdminBillingSnapshot(
     commercialSubscriptionCount: commercialSubscriptions.length,
     internalTestCount,
     invoices,
-    legacy: {
-      accruedFeeLabel: adminMoney(
-        source.platformFeeEvents
+    platformFeeLedger: {
+      currentAccruedFeeLabel: adminMoney(
+        currentFeeEvents
           .filter((event) => event.status === "accrued")
           .reduce((total, event) => total + event.feeCents, 0)
       ),
-      assignmentCount: source.assignments.filter(
-        (assignment) => assignment.billingModel === "legacy_percentage"
+      currentAssignmentCount: source.assignments.filter(
+        (assignment) => assignment.billingModel === "percentage_v1"
       ).length,
+      currentFeeEventCount: currentFeeEvents.length,
+      currentInvoiceCount: currentInvoices.length,
+      currentOrganizationCount: source.organizationBillingAccounts.filter(
+        (account) => account.billingModel === "percentage_v1"
+      ).length,
+      currentOutstandingInvoiceLabel: adminMoney(
+        currentFeeEvents
+          .filter(
+            (event) =>
+              Boolean(event.invoiceId) &&
+              outstandingInvoiceIds.has(event.invoiceId!)
+          )
+          .reduce((total, event) => total + event.feeCents, 0)
+      ),
       entitlementCount: source.entitlements.length,
       entitlementExceptions,
-      feeEventCount: legacyFeeEvents.length,
-      historicalInvoiceCount: source.hostInvoices.length,
-      organizationCount: source.organizationBillingAccounts.filter(
+      legacyAccruedFeeLabel: adminMoney(
+        legacyFeeEvents
+          .filter((event) => event.status === "accrued")
+          .reduce((total, event) => total + event.feeCents, 0)
+      ),
+      legacyAssignmentCount: source.assignments.filter(
+        (assignment) => assignment.billingModel === "legacy_percentage"
+      ).length,
+      legacyFeeEventCount: legacyFeeEvents.length,
+      legacyInvoiceCount: legacyInvoices.length,
+      legacyOrganizationCount: source.organizationBillingAccounts.filter(
         (account) => account.billingModel === "legacy_percentage"
       ).length,
-      outstandingInvoiceLabel: adminMoney(
-        legacyOutstandingInvoices.reduce((total, invoice) => total + invoice.subtotalCents, 0)
+      legacyOutstandingInvoiceLabel: adminMoney(
+        legacyFeeEvents
+          .filter(
+            (event) =>
+              Boolean(event.invoiceId) &&
+              outstandingInvoiceIds.has(event.invoiceId!)
+          )
+          .reduce((total, event) => total + event.feeCents, 0)
       )
     },
     metrics: {

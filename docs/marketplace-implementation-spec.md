@@ -1,10 +1,13 @@
 # LogLoads — marketplace realignment: implementation spec
 
-> **Legacy percentage model.** This document preserves the implementation and
-> audit contract for assignments committed under `legacy_percentage`. It is not
-> the commercial model for new activity after the founder's 2026-07-28
-> subscription-v1 decision. Do not delete it or use it to enroll a new
-> organization. See `docs/SUBSCRIPTION_BILLING_V1.md`.
+> **Historical percentage-model design.** This document preserves implementation
+> and audit evidence for `legacy_percentage`, including an old monthly-minimum
+> proposal that is not part of the current offer. The intervening 2026-07-28
+> `subscription_v1` decision is also historical/read-only. New activity follows
+> the founder's 2026-08-01 `percentage_v1` decision: 5% of host-stated driver pay
+> on top, billable on completed movements, with no monthly minimum or posting
+> fee. Do not use this document to enroll an organization. Current authority is
+> the newest entry in `docs/DECISIONS.md`, then `AGENTS.md`.
 
 Generated 2026-07-24 by a 9-agent pass: four architecture sections designed in parallel, each attacked by an independent adversarial reviewer, then assembled.
 

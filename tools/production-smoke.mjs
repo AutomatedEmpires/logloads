@@ -1,6 +1,6 @@
 // LogLoads production smoke — post-deploy proof against a live URL.
 //
-//   SMOKE_BASE=https://logloads.com node tools/production-smoke.mjs
+//   SMOKE_BASE=https://logloads.com SMOKE_EXPECT_FEE_COLLECTION=disabled SMOKE_EXPECT_PERCENTAGE_ENROLLMENT=disabled node tools/production-smoke.mjs
 //
 // Adaptive: in dev-session mode it drives the full operating loop; in Clerk mode
 // (real production auth) the interactive loop is skipped with a clear MANUAL note,
@@ -22,7 +22,7 @@ let health
 try {
   const res = await fetch(`${BASE}/api/health`, { signal: AbortSignal.timeout(15000) })
   health = await res.json()
-  record(res.status === 200 && health.status === "ok" ? "PASS" : "FAIL", "health", `${res.status} engine=${health?.engine?.ok} profiles=${health?.engine?.profiles}`)
+  record(res.status === 200 && health?.status === "ok" ? "PASS" : "FAIL", "health", `${res.status} engine=${health?.engine?.ok}`)
 } catch (error) {
   record("FAIL", "health", String(error).slice(0, 120))
 }
@@ -68,7 +68,50 @@ try {
   }
 
   // 10-11. Billing / email / analytics / errors wiring
-  record(integrations.billing ? "PASS" : "SKIP", "billing wired", integrations.billing ? "Stripe key present" : "no Stripe key")
+  const percentageBilling = integrations.billingPercentageV1 ?? {}
+  const expectedFeeCollection =
+    process.env.SMOKE_EXPECT_FEE_COLLECTION?.trim().toLowerCase() ?? "missing"
+  const collectionExpectationValid =
+    expectedFeeCollection === "enabled" || expectedFeeCollection === "disabled"
+  const expectedEnrollment =
+    process.env.SMOKE_EXPECT_PERCENTAGE_ENROLLMENT?.trim().toLowerCase() ?? "missing"
+  const enrollmentExpectationValid =
+    expectedEnrollment === "enabled" || expectedEnrollment === "disabled"
+  const enrollmentScopeMatches =
+    percentageBilling.enrollment === expectedEnrollment &&
+    percentageBilling.scopeVerified === true
+  const billingReady =
+    collectionExpectationValid &&
+    (
+      integrations.billing === "dark_configured" ||
+      integrations.billing === "collection_configured"
+    ) &&
+    percentageBilling.collection === expectedFeeCollection &&
+    percentageBilling.readiness === integrations.billing
+  record(
+    billingReady ? "PASS" : "FAIL",
+    "percentage billing configuration",
+    `state=${String(integrations.billing)} collection=${String(percentageBilling.collection)} expected=${expectedFeeCollection}`
+  )
+  if (!collectionExpectationValid) {
+    record(
+      "FAIL",
+      "fee collection expectation",
+      "set SMOKE_EXPECT_FEE_COLLECTION=enabled or disabled explicitly"
+    )
+  }
+  record(
+    enrollmentExpectationValid && enrollmentScopeMatches ? "PASS" : "FAIL",
+    "percentage enrollment scope",
+    `state=${String(percentageBilling.enrollment)} expected=${expectedEnrollment} scopeVerified=${String(percentageBilling.scopeVerified)}`
+  )
+  if (!enrollmentExpectationValid) {
+    record(
+      "FAIL",
+      "percentage enrollment expectation",
+      "set SMOKE_EXPECT_PERCENTAGE_ENROLLMENT=enabled or disabled explicitly"
+    )
+  }
   record(integrations.email ? "PASS" : "SKIP", "email wired", integrations.email ? "Resend key present" : "no Resend key")
   record(integrations.analytics ? "PASS" : "SKIP", "analytics wired", integrations.analytics ? "PostHog key present" : "no PostHog key")
   record(integrations.errorTracking ? "PASS" : "SKIP", "error tracking wired", integrations.errorTracking ? "Sentry DSN present" : "no Sentry DSN")

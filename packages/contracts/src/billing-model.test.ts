@@ -5,11 +5,13 @@ import {
   computePlatformFeeCents,
   deterministicUuidV5,
   FEE_BPS_SCALE,
+  frozenPlatformFeeBps,
   hostChargeBreakdown,
   hostInvoiceStatusSchema,
   invoicePeriodFor,
   invoiceSubtotalCents,
   LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
+  percentageFeeEventId,
   platformFeeEventId,
   platformFeeEventStatusSchema,
   PLATFORM_FEE_BPS,
@@ -25,6 +27,8 @@ const uuid = z.string().uuid()
 const timestamp = "2026-07-05T18:00:00.000Z"
 const ASSIGNMENT = "dddddddd-dddd-4ddd-8ddd-ddddddddddd1"
 const OTHER_ASSIGNMENT = "dddddddd-dddd-4ddd-8ddd-ddddddddddd2"
+const MOVEMENT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"
+const OTHER_MOVEMENT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2"
 
 /** RFC 4122's own namespace constant, used here only as a published test vector. */
 const DNS_NAMESPACE = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
@@ -37,6 +41,37 @@ describe("the platform fee rate", () => {
 
   it("publishes one canonical eligible currency for legacy percentage work", () => {
     expect(LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY).toBe("USD")
+  })
+
+  it("recognizes only an authoritative, exact, bounded frozen rate", () => {
+    const terms = (rateBps: unknown, collectionState: unknown) => ({
+      hostFee: { collectionState, rateBps }
+    })
+
+    expect(
+      frozenPlatformFeeBps(
+        terms(PLATFORM_FEE_BPS, "accrues_monthly_in_arrears")
+      )
+    ).toBe(PLATFORM_FEE_BPS)
+    expect(
+      frozenPlatformFeeBps(terms(PLATFORM_FEE_BPS, "disabled"))
+    ).toBeNull()
+    expect(
+      frozenPlatformFeeBps(
+        terms(PLATFORM_FEE_BPS + 0.5, "accrues_monthly_in_arrears")
+      )
+    ).toBeNull()
+    expect(
+      frozenPlatformFeeBps(
+        terms(FEE_BPS_SCALE + 1, "accrues_monthly_in_arrears")
+      )
+    ).toBeNull()
+    expect(
+      frozenPlatformFeeBps(
+        terms(Number.MAX_SAFE_INTEGER + 1, "accrues_monthly_in_arrears")
+      )
+    ).toBeNull()
+    expect(frozenPlatformFeeBps(null)).toBeNull()
   })
 })
 
@@ -217,6 +252,22 @@ describe("platformFeeEventId", () => {
   })
 })
 
+describe("percentageFeeEventId", () => {
+  it("uses the physical movement as the current percentage fee identity", () => {
+    expect(percentageFeeEventId(MOVEMENT)).toBe(percentageFeeEventId(MOVEMENT))
+    expect(percentageFeeEventId(MOVEMENT.toUpperCase())).toBe(percentageFeeEventId(MOVEMENT))
+    expect(percentageFeeEventId(OTHER_MOVEMENT)).not.toBe(percentageFeeEventId(MOVEMENT))
+  })
+
+  it("produces a version 5 uuid and rejects anything but a movement uuid", () => {
+    const id = percentageFeeEventId(MOVEMENT)
+
+    expect(uuid.safeParse(id).success).toBe(true)
+    expect(id[14]).toBe("5")
+    expect(() => percentageFeeEventId("movement-1")).toThrow(/movement uuid/)
+  })
+})
+
 describe("deterministicUuidV5", () => {
   it("matches the published RFC 4122 version 5 vectors", () => {
     // The standard's own worked example. This is what proves the hand-rolled SHA-1
@@ -303,12 +354,14 @@ describe("invoicePeriodFor", () => {
 describe("platformFeeEventSchema", () => {
   const feeEvent = {
     assignmentId: ASSIGNMENT,
+    billingModel: "legacy_percentage",
     createdAt: timestamp,
     driverPayCents: 52_500,
     feeBps: PLATFORM_FEE_BPS,
     feeCents: 2_625,
     id: platformFeeEventId(ASSIGNMENT),
     invoiceId: null,
+    loadMovementId: MOVEMENT,
     loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
     occurredAt: timestamp,
     organizationId: "33333333-3333-4333-8333-333333333331",

@@ -261,6 +261,9 @@ export async function GET(request: Request) {
     return { invoices, reconciliation, subscriptions }
   })
   const results = run.invoices
+  const invoiceOpeningRefusals = results.filter(
+    (result) => result.outcome === "blocked_for_review"
+  )
   const reconciliationErrors = run.reconciliation.filter(
     (result) => result.outcome === "error"
   )
@@ -284,6 +287,13 @@ export async function GET(request: Request) {
       assignments: reconciliationReview
     })
   }
+
+  if (invoiceOpeningRefusals.length > 0) {
+    console.error(
+      "LogLoads billing cron blocked one or more host ledgers from invoice opening",
+      { blockedOrganizationCount: invoiceOpeningRefusals.length }
+    )
+  }
   // Read the complete open book after materializing every missed month.
   // Dark-launch months and scheduler outages can also leave older invoices open;
   // activation catches those up oldest-first.
@@ -300,13 +310,20 @@ export async function GET(request: Request) {
     )
   const billingEmailConfigured =
     isBillingNotificationEmailDeliveryEnabled(process.env)
+  const billingEmailCollectionEnabled =
+    legacyCollection || networkCollection
   const billingEmailOutbox = await state.read((current) => {
     const queued = (current.notifications ?? []).filter(
       (notification) =>
         notification.emailDeliveryState !== "none" &&
         notification.emailDeliveryState !== "delivered"
     )
-    const claimable = queued
+    const collectionEligible = queued.filter((notification) =>
+      notification.relatedEntityType === "host_invoice"
+        ? legacyCollection
+        : networkCollection
+    )
+    const claimable = collectionEligible
       .filter((notification) =>
         billingNotificationEmailIsClaimable(notification, at)
       )
@@ -318,17 +335,17 @@ export async function GET(request: Request) {
 
     return {
       candidateIds:
-        networkCollection && billingEmailConfigured
+        billingEmailCollectionEnabled && billingEmailConfigured
           ? claimable
               .slice(0, BILLING_NOTIFICATION_EMAIL_BATCH_SIZE)
               .map((notification) => notification.id)
           : [],
-      exhaustedCount: queued.filter(
+      exhaustedCount: collectionEligible.filter(
         (notification) =>
           notification.emailAttemptCount >=
           BILLING_NOTIFICATION_EMAIL_MAX_ATTEMPTS
       ).length,
-      queuedCount: queued.length,
+      queuedCount: collectionEligible.length,
       readyCount: claimable.length
     }
   })
@@ -338,7 +355,8 @@ export async function GET(request: Request) {
         if (
           subscription.internalBillingTest ||
           !subscription.stripeSubscriptionId ||
-          subscription.billingModel === "legacy_percentage"
+          subscription.billingModel === "legacy_percentage" ||
+          subscription.billingModel === "percentage_v1"
         ) {
           return false
         }
@@ -385,15 +403,20 @@ export async function GET(request: Request) {
           : null
         const isExistingCredit =
           adjustment.settlementIntent === "credit_note"
+        const subscriptionBillingModel =
+          subscription?.billingModel === "legacy_percentage" ||
+          subscription?.billingModel === "percentage_v1"
+            ? null
+            : subscription?.billingModel ?? null
         const isAllowedSupplementalDebit =
           adjustment.settlementIntent === "supplemental_debit" &&
           networkCollection &&
           Boolean(
             subscription &&
-              subscription.billingModel !== "legacy_percentage" &&
+              subscriptionBillingModel &&
               subscriptionNewMoneyAllowed(
                 subscription.organizationId,
-                subscription.billingModel,
+                subscriptionBillingModel,
                 process.env
               )
           )
@@ -1111,7 +1134,7 @@ export async function GET(request: Request) {
       delivery.outcome === "failed" || delivery.outcome === "denied"
   )
   const billingEmailDegraded =
-    networkCollection &&
+    billingEmailCollectionEnabled &&
     (
       billingEmailOutbox.exhaustedCount > 0 ||
       failedBillingEmailDeliveries.length > 0 ||
@@ -1143,6 +1166,7 @@ export async function GET(request: Request) {
       charges,
       collection: legacyCollection ? "enabled" : "disabled",
       feeReconciliation: reconciliationSummary,
+      invoicesBlockedForReview: invoiceOpeningRefusals,
       invoicesOpened: results.filter((result) => result.outcome === "opened").length,
       invoicesReady: legacyCollection ? undefined : invoices.length,
       period,
@@ -1163,7 +1187,7 @@ export async function GET(request: Request) {
           exhausted: billingEmailOutbox.exhaustedCount,
           queued: billingEmailOutbox.queuedCount,
           ready: billingEmailOutbox.readyCount,
-          state: !networkCollection
+          state: !billingEmailCollectionEnabled
             ? "collection_disabled"
             : billingEmailConfigured
               ? "enabled"
@@ -1183,7 +1207,8 @@ export async function GET(request: Request) {
         failedAdjustmentSettlements.length > 0 ||
         failedBillingEmailDeliveries.length > 0 ||
         billingEmailOutbox.exhaustedCount > 0 ||
-        reconciliationErrors.length > 0
+        reconciliationErrors.length > 0 ||
+        invoiceOpeningRefusals.length > 0
           ? 503
           : 200
     }

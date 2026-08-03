@@ -15,10 +15,19 @@ describe("host live publishing options", () => {
     }
   )
 
-  it("offers the established reach choices to a legacy account", () => {
+  it("keeps a legacy account draft-only until it accepts current terms", () => {
     expect(
       hostLiveVisibilityModes({
         billingActivationState: "legacy",
+        subscriptionPlanCode: null
+      })
+    ).toEqual([])
+  })
+
+  it("offers every live reach choice to an active percentage-v1 host", () => {
+    expect(
+      hostLiveVisibilityModes({
+        billingActivationState: "percentage_active",
         subscriptionPlanCode: null
       })
     ).toEqual(["open_network", "private_network", "verified_network"])

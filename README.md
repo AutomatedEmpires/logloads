@@ -11,6 +11,26 @@ Plan → Publish → Match → Commit → Coordinate → Haul → Confirm → Re
 
 Hosts publish timber movement with capacity, schedule, and visibility control (private network first, open network when needed). Drivers and fleets see work that fits their actual equipment, request capacity, and — once committed — unlock Route Packs, exact access, live trip state, and document history. Sensitive operational detail (gate instructions, private roads, exact coordinates) stays redacted server-side until assignment.
 
+## Commercial authority
+
+The founder's newest decision is `percentage_v1` (2026-08-01): LogLoads bills
+the host a separate platform fee equal to **5% of the host-stated driver pay**
+after a load completes. The driver remains owed the full stated amount directly
+by the host; LogLoads never receives, deducts, escrows, or distributes driver
+funds. Posting has no charge, there is no monthly minimum, and drivers are free.
+
+`legacy_percentage` is retained only for obligations already frozen under that
+legacy model. The 2026-07-28 `subscription_v1` catalog and Dispatch Pro
+self-serve paths are historical/read-only: preserve and reconcile any previously
+accepted obligation, but create no new subscription enrollment. The sole current
+commercial collection gate is `LOGLOADS_FEE_COLLECTION`, which defaults to
+`disabled`. New host agreement acceptance is independently dark behind
+`LOGLOADS_PERCENTAGE_ENROLLMENT` and an exact organization allowlist; the
+historical subscription and self-serve gates remain disabled.
+See [`docs/DECISIONS.md`](./docs/DECISIONS.md) for authority and
+[`docs/SUBSCRIPTION_BILLING_V1.md`](./docs/SUBSCRIPTION_BILLING_V1.md) for the
+preserved historical subscription contract.
+
 ## Stack (AutomatedEmpires family standard)
 
 - Runtime: Node 24.16.0 · pnpm 10.12.4 · Turborepo monorepo

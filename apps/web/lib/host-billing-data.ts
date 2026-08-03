@@ -18,12 +18,13 @@ import {
 } from "@logloads/contracts"
 import type { BadgeProps } from "@logloads/ui"
 
+import { percentageEnrollmentAllowed as currentPercentageEnrollmentAllowed } from "./percentage-enrollment"
 import { services } from "./services"
 
 /**
- * Legacy percentage-billing read model. New subscription and completed-usage
- * facts live in `subscription-billing-data.ts`; this module remains permanent
- * so a host can reconcile assignments committed under `legacy_percentage`.
+ * Percentage-billing read model. This is the current host commercial surface
+ * and also remains able to reconcile assignments frozen under the earlier
+ * `legacy_percentage` discriminator.
  *
  * It answers four questions about those historical obligations:
  *
@@ -32,10 +33,9 @@ import { services } from "./services"
  *   3. What was I last billed, was it paid, and what did it cover?
  *   4. What exactly am I charged, and is any of it taken out of driver pay?
  *
- * LEGACY CHARGE. A host stated what a load paid a driver. LogLoads charged the
- * host a frozen percentage on top after the legacy completion/receipt facts
- * existed. No new organization can enroll in this model; an explicitly
- * grandfathered legacy account remains governed by it until migration.
+ * CURRENT CHARGE. A host states what one load pays the driver. LogLoads charges
+ * the host a frozen percentage on top after completion. The driver receives the
+ * full stated amount directly from the host.
  *
  * WHAT LOGLOADS DOES NOT DO. It never holds, escrows, routes or pays out driver
  * money. Driver pay moves host → driver directly, off-platform. Nothing in this
@@ -240,7 +240,7 @@ export const PAYMENT_STATE_PRESENTATION: Record<HostBillingProfileStatus, Paymen
   attached: {
     blocksPublishing: false,
     consequence:
-      "You can publish work governed by frozen legacy terms. This card is charged only for preserved percentage invoices—never for driver or carrier compensation.",
+      "You can publish after the current host agreement is active. This card is charged only for LogLoads platform-fee invoices—never for driver or carrier compensation.",
     nextStep: null,
     statusLabel: "Card on file",
     tone: "success"
@@ -248,7 +248,7 @@ export const PAYMENT_STATE_PRESENTATION: Record<HostBillingProfileStatus, Paymen
   failed: {
     blocksPublishing: true,
     consequence:
-      "The last charge to this card did not go through, so you cannot publish new work until a working card is on file. Work already on the network is unaffected, and your drivers are still paid by you exactly as agreed.",
+      "The last LogLoads fee charge did not go through, so you cannot publish new work until a working card is on file. Work already on the network is unaffected, and your drivers are still paid by you exactly as agreed.",
     nextStep: "Replace the card on this workspace's billing profile, then publish.",
     statusLabel: "Card declined",
     tone: "critical"
@@ -256,7 +256,7 @@ export const PAYMENT_STATE_PRESENTATION: Record<HostBillingProfileStatus, Paymen
   none: {
     blocksPublishing: true,
     consequence:
-      "You cannot publish additional legacy-governed work until a card is on file. The historical model has no monthly fee and posting itself is not billed; the card supports only preserved completed-load obligations.",
+      "You cannot publish live work until a card is on file. There is no monthly fee and posting itself is not billed; the card supports only LogLoads fees on completed loads.",
     nextStep: "Attach a card to this workspace's billing profile, then publish.",
     statusLabel: "No card on file",
     tone: "critical"
@@ -324,13 +324,13 @@ function cardLineFor(profile: HostBillingProfile | undefined): string | null {
 
 function paymentMethodView(
   profile: HostBillingProfile | undefined,
-  legacyCollectionRequired: boolean
+  percentageCollectionRequired: boolean
 ): HostPaymentMethodView {
   // No profile row IS a host with no card. This collection starts empty for every
   // organization, so an absent row has to read as "none" rather than as "nothing
   // to check here" — the same direction `assertHostCanPublish` fails in.
   const status = profile?.status ?? "none"
-  const presentation = legacyCollectionRequired
+  const presentation = percentageCollectionRequired
     ? PAYMENT_STATE_PRESENTATION[status]
     : SUBSCRIPTION_CARD_PRESENTATION[status]
 
@@ -379,13 +379,13 @@ function feeExplainerView(): HostFeeExplainerView {
       hostTotalLabel: money(example.hostTotalCents),
       platformFeeLabel: money(example.platformFeeCents)
     },
-    headline: `Legacy ${CURRENT_RATE_LABEL} of frozen driver pay, charged on top after a completed assignment satisfies its historical billing terms.`,
+    headline: `${CURRENT_RATE_LABEL} of the driver pay stated for each completed load, charged to the host on top.`,
     points: [
-      "There is no monthly fee in this grandfathered lane. No new organization can enroll in the percentage model, and an explicitly grandfathered account keeps it only until migration.",
+      "There is no monthly fee, subscription, minimum, tier, allowance, overage rate, or charge to post work.",
       `Nothing is deducted from driver pay. The driver is paid exactly what you stated; the ${CURRENT_RATE_LABEL} is added to what you owe LogLoads.`,
       "You pay your driver directly. Driver money never passes through LogLoads, which holds no funds and settles no freight.",
       "Drivers pay nothing to use LogLoads, ever.",
-      "A legacy fee can accrue only when an explicit grandfathered account freezes those terms at assignment."
+      "The accepted agreement freezes the rate, currency, and monthly-in-arrears billing cadence before live work can be published."
     ],
     rateLabel: CURRENT_RATE_LABEL
   }
@@ -554,6 +554,12 @@ export interface HostBillingView {
   lastInvoice: HostInvoiceView | null
   /** False only when this host has never accrued a fee and never been billed. */
   hasBillingHistory: boolean
+  percentageAgreement: {
+    acceptedOnLabel: string | null
+    canAccept: boolean
+    state: "active" | "available" | "historical_subscription" | "legacy"
+    termsVersion: string | null
+  }
 }
 
 /**
@@ -567,15 +573,38 @@ export interface HostBillingSource {
   hostInvoices: readonly HostInvoice[]
   loadPostings: readonly Pick<LoadPosting, "id" | "title">[]
   organizationBillingAccounts?: readonly {
+    activationState?: string
     billingModel: string | null
     organizationId: string
+    subscriptionId?: string | null
+    percentageTermsSnapshot?: {
+      acceptedAt: string
+      acceptedTermsVersion: string
+    } | null
   }[]
+  organizationSubscriptions?: readonly {
+    id: string
+    internalBillingTest?: boolean
+    organizationId: string
+    status: string
+  }[]
+}
+
+export interface HostBillingViewOptions {
+  /** Mirrors the mutation boundary: only billing managers can accept terms. */
+  canManageBilling?: boolean
+  /**
+   * Server-owned rollout decision for this exact organization. Defaults false
+   * so a new caller cannot accidentally expose commercial enrollment.
+   */
+  percentageEnrollmentAllowed?: boolean
 }
 
 export function buildHostBillingView(
   source: HostBillingSource,
   organizationId: string,
-  instant: string
+  instant: string,
+  options: HostBillingViewOptions = {}
 ): HostBillingView {
   // Every collection is filtered to this organization before anything is summed.
   // A fee belonging to another host must never reach this host's total, and
@@ -586,9 +615,37 @@ export function buildHostBillingView(
   const billingAccount = source.organizationBillingAccounts?.find(
     (account) => account.organizationId === organizationId
   )
-  const legacyCollectionRequired =
+  const linkedHistoricalSubscription = billingAccount?.subscriptionId
+    ? source.organizationSubscriptions?.find(
+        (subscription) =>
+          subscription.id === billingAccount.subscriptionId &&
+          subscription.organizationId === organizationId
+      )
+    : null
+  const historicalSubscriptionIsTerminal =
+    linkedHistoricalSubscription?.status === "cancelled" ||
+    linkedHistoricalSubscription?.status === "expired"
+  const hasNonterminalCommercialSubscription =
+    source.organizationSubscriptions?.some(
+      (subscription) =>
+        subscription.organizationId === organizationId &&
+        !subscription.internalBillingTest &&
+        subscription.status !== "cancelled" &&
+        subscription.status !== "expired"
+    ) ?? false
+  const percentageCollectionRequired =
+    billingAccount?.billingModel === "percentage_v1" ||
     billingAccount?.billingModel === "legacy_percentage" ||
     (!billingAccount && (ownEvents.length > 0 || ownInvoices.length > 0))
+  const percentageAgreementState =
+    billingAccount?.billingModel === "percentage_v1" &&
+    billingAccount.activationState === "percentage_active"
+      ? "active"
+      : billingAccount?.billingModel === "legacy_percentage"
+        ? "legacy"
+        : billingAccount?.billingModel
+          ? "historical_subscription"
+          : "available"
 
   const loadTitleById = new Map(source.loadPostings.map((posting) => [posting.id, posting.title]))
   const eventsById = new Map(ownEvents.map((event) => [event.id, event]))
@@ -632,7 +689,23 @@ export function buildHostBillingView(
     hasBillingHistory: ownEvents.length > 0 || ownInvoices.length > 0,
     invoices,
     lastInvoice: invoices[0] ?? null,
-    paymentMethod: paymentMethodView(profile, legacyCollectionRequired)
+    paymentMethod: paymentMethodView(profile, percentageCollectionRequired),
+    percentageAgreement: {
+      acceptedOnLabel: billingAccount?.percentageTermsSnapshot?.acceptedAt
+        ? formatDay(billingAccount.percentageTermsSnapshot.acceptedAt)
+        : null,
+      canAccept:
+        options.canManageBilling === true &&
+        options.percentageEnrollmentAllowed === true &&
+        !hasNonterminalCommercialSubscription &&
+        (percentageAgreementState === "available" ||
+          percentageAgreementState === "legacy" ||
+          (percentageAgreementState === "historical_subscription" &&
+            historicalSubscriptionIsTerminal)),
+      state: percentageAgreementState,
+      termsVersion:
+        billingAccount?.percentageTermsSnapshot?.acceptedTermsVersion ?? null
+    }
   }
 }
 
@@ -645,8 +718,22 @@ export function buildHostBillingView(
  * await is what refreshes the operating-state document. Calling it first would
  * show a host last request's ledger.
  */
-export function getHostBillingView(organizationId: string): HostBillingView {
-  return buildHostBillingView(services.state, organizationId, new Date().toISOString())
+export function getHostBillingView(
+  organizationId: string,
+  options: Pick<HostBillingViewOptions, "canManageBilling"> = {}
+): HostBillingView {
+  return buildHostBillingView(
+    services.state,
+    organizationId,
+    new Date().toISOString(),
+    {
+      canManageBilling: options.canManageBilling,
+      percentageEnrollmentAllowed: currentPercentageEnrollmentAllowed(
+        organizationId,
+        process.env
+      )
+    }
+  )
 }
 
 /**

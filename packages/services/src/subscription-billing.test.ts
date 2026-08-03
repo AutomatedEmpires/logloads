@@ -56,7 +56,7 @@ const OTHER_LANDING = "66666666-6666-4666-8666-666666666661"
 const OWNER = "22222222-2222-4222-8222-222222222223"
 const PRIVATE_PARTNER = "33333333-3333-4333-8333-333333333331"
 const UNRELATED_HAULER = "33333333-3333-4333-8333-333333333334"
-const ACCEPTED_AT = "2026-08-01T16:00:00.000Z"
+const ACCEPTED_AT = "2026-07-30T16:00:00.000Z"
 const AUTHORIZED_AT = "2026-08-02T16:00:00.000Z"
 const PERIOD_START = "2026-08-03T16:00:00.000Z"
 const PERIOD_END = "2026-09-03T16:00:00.000Z"
@@ -229,7 +229,7 @@ describe("subscription activation and commercial scope", () => {
           organizationId: HOST,
           planCode: "network_25"
         },
-        "2026-08-01T15:59:59.999Z"
+        "2026-07-30T15:59:59.999Z"
       )
     ).toThrow(/acceptance cannot be recorded in the future/)
     expect(futureState).toEqual(before)
@@ -246,9 +246,51 @@ describe("subscription activation and commercial scope", () => {
         organizationId: HOST,
         planCode: "network_25"
       },
-      "2026-08-02T16:00:00.000Z"
+      "2026-07-31T16:00:00.000Z"
     )
     expect(recorded.subscription.acceptedAt).toBe(ACCEPTED_AT)
+  })
+
+  it("closes new subscription configuration at cutover but permits an exact historical retry", () => {
+    const blockedState = freshState()
+    const before = structuredClone(blockedState)
+
+    expect(() =>
+      configureOrganizationSubscription(
+        blockedState,
+        {
+          acceptedAt: ACCEPTED_AT,
+          acceptedByUserId: OWNER,
+          acceptedTermsVersion: "subscription-v1-2026-07-28",
+          configuredByUserId: ADMIN,
+          operatingMarketIds: [HOST_LANDING],
+          organizationId: HOST,
+          planCode: "network_25"
+        },
+        "2026-08-01T00:00:00.000Z"
+      )
+    ).toThrow(/closed when percentage_v1 became the current host agreement/)
+    expect(blockedState).toEqual(before)
+
+    const historicalState = freshState()
+    const existing = configured(historicalState)
+    const retry = configureOrganizationSubscription(
+      historicalState,
+      {
+        acceptedAt: ACCEPTED_AT,
+        acceptedByUserId: OWNER,
+        acceptedTermsVersion: "subscription-v1-2026-07-28",
+        configuredByUserId: ADMIN,
+        operatingMarketIds: [HOST_LANDING],
+        organizationId: HOST,
+        planCode: "network_25"
+      },
+      "2026-08-03T16:00:00.000Z"
+    )
+
+    expect(retry.changed).toBe(false)
+    expect(retry.subscription.id).toBe(existing.id)
+    expect(historicalState.organizationSubscriptions).toHaveLength(1)
   })
 
   it("requires Pilot scope and anchors its exact 90-day clock to first paid provider period", () => {
@@ -457,7 +499,7 @@ describe("subscription activation and commercial scope", () => {
       },
       "2026-08-03T16:01:00.000Z"
     )
-    expect(
+    expect(() =>
       resolveAssignmentBillingCommitment(
         state,
         {
@@ -468,15 +510,19 @@ describe("subscription activation and commercial scope", () => {
         },
         "2026-08-04T16:00:00.000Z"
       )
-    ).toMatchObject({
-      billingModel: "subscription_v1",
-      planCode: "network_25",
-      subscriptionId: configuredSubscription.id
-    })
+    ).toThrow(/Historical subscriptions no longer authorize new work/)
   })
 
   it("rejects non-USD legacy acceptance without blocking subscription work", () => {
     const state = freshState()
+    const account = state.organizationBillingAccounts.find(
+      (candidate) => candidate.organizationId === HOST
+    )
+    if (!account) throw new Error("Seed billing account missing")
+    account.activationState = "legacy"
+    account.billingModel = "legacy_percentage"
+    account.effectiveAt = "2026-07-30T00:00:00.000Z"
+    account.percentageTermsSnapshot = null
     const assignmentId = "69696969-6969-4969-8969-696969696962"
     addBlankAssignment(state, assignmentId)
     const assignment = state.assignments.find(
@@ -498,10 +544,10 @@ describe("subscription activation and commercial scope", () => {
     }
 
     expect(() =>
-      resolveAssignmentBillingCommitment(state, input, AUTHORIZED_AT)
+      resolveAssignmentBillingCommitment(state, input, "2026-07-31T16:00:00.000Z")
     ).toThrow(DomainRefusalError)
     expect(() =>
-      resolveAssignmentBillingCommitment(state, input, AUTHORIZED_AT)
+      resolveAssignmentBillingCommitment(state, input, "2026-07-31T16:00:00.000Z")
     ).toThrow(
       new RegExp(
         `${LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY}-denominated`
@@ -510,17 +556,25 @@ describe("subscription activation and commercial scope", () => {
 
     paidAndOperating(state)
 
-    expect(
+    expect(() =>
       resolveAssignmentBillingCommitment(
         state,
         input,
         "2026-08-04T16:00:00.000Z"
-      ).billingModel
-    ).toBe("subscription_v1")
+      )
+    ).toThrow(/Historical subscriptions no longer authorize new work/)
   })
 
   it("keeps a missing legacy frozen-pay snapshot as an invariant failure", () => {
     const state = freshState()
+    const account = state.organizationBillingAccounts.find(
+      (candidate) => candidate.organizationId === HOST
+    )
+    if (!account) throw new Error("Seed billing account missing")
+    account.activationState = "legacy"
+    account.billingModel = "legacy_percentage"
+    account.effectiveAt = "2026-07-30T00:00:00.000Z"
+    account.percentageTermsSnapshot = null
     const assignmentId = "69696969-6969-4969-8969-696969696963"
     addBlankAssignment(state, assignmentId)
     const assignment = state.assignments.find(
@@ -546,7 +600,7 @@ describe("subscription activation and commercial scope", () => {
           haulerOrganizationId: UNRELATED_HAULER,
           hostOrganizationId: HOST
         },
-        AUTHORIZED_AT
+        "2026-07-31T16:00:00.000Z"
       )
     } catch (error) {
       refusal = error
@@ -728,7 +782,7 @@ describe("subscription activation and commercial scope", () => {
     ).toBe("dispatch_pro")
   })
 
-  it("blocks Dispatch Pro public reach before publication or acceptance mutation", () => {
+  it("does not let a historical Dispatch subscription publish after percentage cutover", () => {
     const state = freshState()
     paidDispatchAndOperating(state)
     const template = state.loadPostings.find(
@@ -752,71 +806,21 @@ describe("subscription activation and commercial scope", () => {
         "request_approval",
         "2026-08-04T16:00:00.000Z"
       )
-    ).toThrow(/Dispatch Pro publishes only/)
+    ).toThrow(/current LogLoads fee agreement/)
     expect(state.opportunityCapacities).toHaveLength(capacityCount)
     expect(state.truckSlots).toHaveLength(slotCount)
 
-    provisionLoadCapacity(
-      state,
-      load,
-      "private_network",
-      "request_approval",
-      "2026-08-04T16:00:00.000Z"
-    )
-    const assignmentTemplate = state.assignments[0]
-    if (!assignmentTemplate) throw new Error("Seed assignment missing")
-    const assignmentId = "68686868-6868-4868-8868-686868686862"
-    state.assignments.push({
-      ...structuredClone(assignmentTemplate),
-      assignedAt: null,
-      billingCommittedAt: null,
-      billingModel: null,
-      billingPlanCodeAtCommitment: null,
-      billingSubscriptionIdAtCommitment: null,
-      capacitySource: null,
-      id: assignmentId,
-      loadMovementId: assignmentId,
-      loadPostingId: load.id,
-      status: "requested"
-    })
-    const capacity = state.opportunityCapacities.find(
-      (candidate) => candidate.loadPostingId === load.id
-    )
-    if (!capacity) throw new Error("Published capacity missing")
-    capacity.visibilityMode = "verified_network"
-    const before = structuredClone(
-      state.assignments.find((candidate) => candidate.id === assignmentId)
-    )
-
     expect(() =>
-      resolveAssignmentBillingCommitment(
+      provisionLoadCapacity(
         state,
-        {
-          acceptanceSource: "host_approval",
-          assignmentId,
-          haulerOrganizationId: FLEET,
-          hostOrganizationId: FLEET
-        },
-        "2026-08-04T17:00:00.000Z"
+        load,
+        "private_network",
+        "request_approval",
+        "2026-08-04T16:00:00.000Z"
       )
-    ).toThrow(/accept only private-network or direct-offer/)
-    expect(
-      state.assignments.find((candidate) => candidate.id === assignmentId)
-    ).toEqual(before)
-
-    capacity.visibilityMode = "direct_offer"
-    expect(
-      resolveAssignmentBillingCommitment(
-        state,
-        {
-          acceptanceSource: "direct_offer",
-          assignmentId,
-          haulerOrganizationId: FLEET,
-          hostOrganizationId: FLEET
-        },
-        "2026-08-04T17:01:00.000Z"
-      ).capacitySource
-    ).toBe("private_fleet")
+    ).toThrow(/current LogLoads fee agreement/)
+    expect(state.opportunityCapacities).toHaveLength(capacityCount)
+    expect(state.truckSlots).toHaveLength(slotCount)
   })
 
   it("blocks every included-Dispatch plan until a paid fleet entitlement is retired", () => {
@@ -876,112 +880,24 @@ describe("subscription activation and commercial scope", () => {
     expect(configuredDispatch.subscription.planCode).toBe("dispatch_pro")
   })
 
-  it("freezes private-partner versus marketplace capacity at acceptance", () => {
+  it("refuses new subscription capacity commitments after percentage cutover", () => {
     const state = freshState()
     paidAndOperating(state)
     const assignmentId = "79797979-7979-4979-8979-797979797971"
 
     addBlankAssignment(state, assignmentId)
-    const privateCommitment = resolveAssignmentBillingCommitment(
-      state,
-      {
-        acceptanceSource: "direct_offer",
-        assignmentId,
-        haulerOrganizationId: PRIVATE_PARTNER,
-        hostOrganizationId: HOST
-      },
-      "2026-08-04T16:00:00.000Z"
-    )
-    expect(privateCommitment.capacitySource).toBe("private_fleet")
-
-    state.privateNetworkRelationships = state.privateNetworkRelationships.map(
-      (relationship) =>
-        (
-          relationship.ownerOrganizationId === HOST &&
-          relationship.partnerOrganizationId === PRIVATE_PARTNER
-        ) ||
-        (
-          relationship.ownerOrganizationId === PRIVATE_PARTNER &&
-          relationship.partnerOrganizationId === HOST
-        )
-          ? { ...relationship, status: "paused" }
-          : relationship
-    )
-    expect(privateCommitment.capacitySource).toBe("private_fleet")
-    const networkCommitment = resolveAssignmentBillingCommitment(
-      state,
-      {
-        acceptanceSource: "host_approval",
-        assignmentId,
-        haulerOrganizationId: PRIVATE_PARTNER,
-        hostOrganizationId: HOST
-      },
-      "2026-08-04T17:00:00.000Z"
-    )
-    expect(networkCommitment.capacitySource).toBe("logloads_network")
-    expect(
-      resolveAssignmentBillingCommitment(
-        state,
-        {
-          acceptanceSource: "host_approval",
-          assignmentId,
-          haulerOrganizationId: UNRELATED_HAULER,
-          hostOrganizationId: HOST
-        },
-        "2026-08-04T17:00:00.000Z"
-      ).capacitySource
-    ).toBe("logloads_network")
-
-    const assignment = state.assignments.find(
-      (candidate) => candidate.id === assignmentId
-    )
-    const load = state.loadPostings.find(
-      (candidate) => candidate.id === assignment?.loadPostingId
-    )
-    if (!assignment || !load) throw new Error("Billing commitment fixture missing")
-    load.pickupLandingId = OTHER_LANDING
     expect(() =>
       resolveAssignmentBillingCommitment(
         state,
         {
-          acceptanceSource: "host_approval",
+          acceptanceSource: "direct_offer",
           assignmentId,
-          haulerOrganizationId: UNRELATED_HAULER,
+          haulerOrganizationId: PRIVATE_PARTNER,
           hostOrganizationId: HOST
         },
-        "2026-08-04T17:01:00.000Z"
+        "2026-08-04T16:00:00.000Z"
       )
-    ).toThrow(/outside subscription .* accepted operating locations/)
-
-    load.pickupLandingId = HOST_LANDING
-    Object.assign(assignment, {
-      billingCommittedAt: networkCommitment.committedAt,
-      billingModel: networkCommitment.billingModel,
-      billingPlanCodeAtCommitment: networkCommitment.planCode,
-      billingSubscriptionIdAtCommitment: networkCommitment.subscriptionId,
-      capacitySource: networkCommitment.capacitySource
-    })
-    const subscription = state.organizationSubscriptions.find(
-      (candidate) => candidate.id === networkCommitment.subscriptionId
-    )
-    if (!subscription) throw new Error("Subscription fixture missing")
-    subscription.operatingMarketIds = ["historical_contract_scope_unrecorded"]
-    expect(
-      resolveAssignmentBillingCommitment(
-        state,
-        {
-          acceptanceSource: "host_approval",
-          assignmentId,
-          haulerOrganizationId: UNRELATED_HAULER,
-          hostOrganizationId: HOST
-        },
-        "2026-08-04T17:02:00.000Z"
-      )
-    ).toMatchObject({
-      billingModel: "subscription_v1",
-      capacitySource: "logloads_network",
-      subscriptionId: networkCommitment.subscriptionId
-    })
+    ).toThrow(/Historical subscriptions no longer authorize new work/)
   })
 
   it("persists the exact accepted non-renewal boundary and makes exact retries idempotent", () => {
@@ -1379,7 +1295,7 @@ describe("subscription activation and commercial scope", () => {
     }
   })
 
-  it("charges accepted work to its frozen allowance after a plan boundary", () => {
+  it("does not create a new subscription allowance commitment after cutover", () => {
     const state = freshState()
     const subscription = paidAndOperating(state)
     const boundary = subscription.commitmentEnd as string
@@ -1412,100 +1328,18 @@ describe("subscription activation and commercial scope", () => {
 
     const assignmentId = "95959595-9595-4595-8595-959595959501"
     addBlankAssignment(state, assignmentId)
-    const commitment = resolveAssignmentBillingCommitment(
-      state,
-      {
-        acceptanceSource: "host_approval",
-        assignmentId,
-        haulerOrganizationId: UNRELATED_HAULER,
-        hostOrganizationId: HOST
-      },
-      acceptedAt
-    )
-    const assignment = state.assignments.find(
-      (candidate) => candidate.id === assignmentId
-    )
-    const tripTemplate = state.tripsV2[0]
-    if (!assignment || !tripTemplate) {
-      throw new Error("Historical allowance fixtures missing")
-    }
-    Object.assign(assignment, {
-      billingCommittedAt: commitment.committedAt,
-      billingModel: commitment.billingModel,
-      billingPlanCodeAtCommitment: commitment.planCode,
-      billingSubscriptionIdAtCommitment: commitment.subscriptionId,
-      capacitySource: commitment.capacitySource,
-      status: "completed"
-    })
-    const completedAt = new Date(Date.parse(boundary) + 1).toISOString()
-    state.tripsV2.push({
-      ...structuredClone(tripTemplate),
-      assignmentId,
-      completedAt,
-      completionConfirmedAt: completedAt,
-      completionConfirmedByUserId: OWNER,
-      completionStatus: "confirmed",
-      id: "95959595-9595-4595-8595-959595959502",
-      loadPostingId: assignment.loadPostingId,
-      status: "completed"
-    })
-    scheduleOrganizationSubscriptionPlanChange(
-      state,
-      {
-        actorUserId: ADMIN,
-        effectiveAt: boundary,
-        nextOperatingMarketIds: [HOST_LANDING],
-        nextPlanCode: "network_50",
-        subscriptionId: subscription.id
-      },
-      acceptedAt
-    )
-    applyScheduledOrganizationSubscriptionPlanChange(
-      state,
-      {
-        currentPeriodEnd: new Date(
-          Date.parse(boundary) + 31 * 24 * 60 * 60 * 1000
-        ).toISOString(),
-        currentPeriodStart: boundary,
-        expectedPlanCode: "network_50",
-        subscriptionId: subscription.id
-      },
-      boundary
-    )
-    expect(
-      state.organizationSubscriptions.find(
-        (candidate) => candidate.id === subscription.id
-      )?.planCode
-    ).toBe("network_50")
-
-    const first = recordCompletedNetworkUsage(
-      state,
-      { assignmentId },
-      new Date(Date.parse(boundary) + 2).toISOString()
-    )
-    const retry = recordCompletedNetworkUsage(
-      state,
-      { assignmentId },
-      new Date(Date.parse(boundary) + 3).toISOString()
-    )
-    expect(first).toMatchObject({
-      event: {
-        billingPeriodSummaryId: historicalSummary.id,
-        planCode: "network_25"
-      },
-      outcome: "recorded",
-      summary: {
-        id: historicalSummary.id,
-        planCode: "network_25"
-      }
-    })
-    expect(retry).toMatchObject({
-      event: {
-        billingPeriodSummaryId: historicalSummary.id,
-        planCode: "network_25"
-      },
-      outcome: "already_recorded"
-    })
+    expect(() =>
+      resolveAssignmentBillingCommitment(
+        state,
+        {
+          acceptanceSource: "host_approval",
+          assignmentId,
+          haulerOrganizationId: UNRELATED_HAULER,
+          hostOrganizationId: HOST
+        },
+        acceptedAt
+      )
+    ).toThrow(/Historical subscriptions no longer authorize new work/)
   })
 })
 
@@ -1584,7 +1418,7 @@ describe("dunning and Pilot conversion boundaries", () => {
 
     const assignmentId = "71717171-7171-4171-8171-717171717171"
     addBlankAssignment(state, assignmentId)
-    expect(
+    expect(() =>
       resolveAssignmentBillingCommitment(
         state,
         {
@@ -1595,10 +1429,7 @@ describe("dunning and Pilot conversion boundaries", () => {
         },
         "2027-08-03T16:00:01.000Z"
       )
-    ).toMatchObject({
-      billingModel: "subscription_v1",
-      subscriptionId: subscription.id
-    })
+    ).toThrow(/Historical subscriptions no longer authorize new work/)
   })
 
   it("rejects a late automatic renewal boundary and does not roll pending or non-renewing terms", () => {
@@ -1743,7 +1574,7 @@ describe("dunning and Pilot conversion boundaries", () => {
     expect(recovered.paymentGraceEndsAt).toBeNull()
   })
 
-  it("gates new Dispatch/private commitments at payment grace and restores them on recovery", () => {
+  it("does not revive historical Dispatch publishing through payment recovery", () => {
     const state = freshState()
     const subscription = paidDispatchAndOperating(state)
     const loadTemplate = state.loadPostings.find(
@@ -1759,97 +1590,16 @@ describe("dunning and Pilot conversion boundaries", () => {
       id: "94949494-9494-4494-8494-949494949401"
     }
     state.loadPostings.push(load)
-    provisionLoadCapacity(
-      state,
-      load,
-      "private_network",
-      "request_approval",
-      "2026-08-04T16:00:00.000Z"
-    )
-    const addFleetAssignment = (id: string) => {
-      state.assignments.push({
-        ...structuredClone(assignmentTemplate),
-        assignedAt: null,
-        billingCommittedAt: null,
-        billingModel: null,
-        billingPlanCodeAtCommitment: null,
-        billingSubscriptionIdAtCommitment: null,
-        capacitySource: null,
-        id,
-        loadMovementId: id,
-        loadPostingId: load.id,
-        status: "requested"
-      })
-    }
-    const failedAt = "2026-08-10T16:00:00.000Z"
-    const graceEndsAt = "2026-08-17T16:00:00.000Z"
-    applyOrganizationSubscriptionPaymentState(
-      state,
-      {
-        paymentState: "past_due",
-        status: "past_due",
-        subscriptionId: subscription.id
-      },
-      failedAt
-    )
-    const withinGraceId = "94949494-9494-4494-8494-949494949402"
-    addFleetAssignment(withinGraceId)
-    expect(
-      resolveAssignmentBillingCommitment(
-        state,
-        {
-          acceptanceSource: "direct_offer",
-          assignmentId: withinGraceId,
-          haulerOrganizationId: FLEET,
-          hostOrganizationId: FLEET
-        },
-        "2026-08-17T15:59:59.999Z"
-      )
-    ).toMatchObject({
-      billingModel: "dispatch_pro",
-      capacitySource: "private_fleet",
-      subscriptionId: subscription.id
-    })
-
-    planSubscriptionBillingRun(state, graceEndsAt)
-    const blockedId = "94949494-9494-4494-8494-949494949403"
-    addFleetAssignment(blockedId)
     expect(() =>
-      resolveAssignmentBillingCommitment(
+      provisionLoadCapacity(
         state,
-        {
-          acceptanceSource: "direct_offer",
-          assignmentId: blockedId,
-          haulerOrganizationId: FLEET,
-          hostOrganizationId: FLEET
-        },
-        graceEndsAt
+        load,
+        "private_network",
+        "request_approval",
+        "2026-08-04T16:00:00.000Z"
       )
-    ).toThrow(/no longer an operating agreement/)
-
-    applyOrganizationSubscriptionPaymentState(
-      state,
-      {
-        paymentState: "current",
-        status: "active",
-        subscriptionId: subscription.id
-      },
-      "2026-08-17T16:00:00.001Z"
-    )
-    const recoveredId = "94949494-9494-4494-8494-949494949404"
-    addFleetAssignment(recoveredId)
-    expect(
-      resolveAssignmentBillingCommitment(
-        state,
-        {
-          acceptanceSource: "direct_offer",
-          assignmentId: recoveredId,
-          haulerOrganizationId: FLEET,
-          hostOrganizationId: FLEET
-        },
-        "2026-08-17T16:00:00.002Z"
-      ).capacitySource
-    ).toBe("private_fleet")
+    ).toThrow(/current LogLoads fee agreement/)
+    expect(subscription.status).toBe("active")
   })
 
   it("fails closed before Pilot-expiry or payment-state mutation on account cross-wires", () => {
@@ -2038,7 +1788,7 @@ describe("dunning and Pilot conversion boundaries", () => {
       ).toISOString()
       addBlankAssignment(fixture.state, networkAssignmentId)
       addBlankAssignment(fixture.state, privateAssignmentId)
-      expect(
+      expect(() =>
         resolveAssignmentBillingCommitment(
           fixture.state,
           {
@@ -2048,9 +1798,9 @@ describe("dunning and Pilot conversion boundaries", () => {
             hostOrganizationId: HOST
           },
           withinGrace
-        ).capacitySource
-      ).toBe("logloads_network")
-      expect(
+        )
+      ).toThrow(/Historical subscriptions no longer authorize new work/)
+      expect(() =>
         resolveAssignmentBillingCommitment(
           fixture.state,
           {
@@ -2060,8 +1810,8 @@ describe("dunning and Pilot conversion boundaries", () => {
             hostOrganizationId: HOST
           },
           withinGrace
-        ).capacitySource
-      ).toBe("private_fleet")
+        )
+      ).toThrow(/Historical subscriptions no longer authorize new work/)
 
       planSubscriptionBillingRun(fixture.state, fixture.graceEndsAt)
       const blockedNetworkId =
@@ -2085,7 +1835,7 @@ describe("dunning and Pilot conversion boundaries", () => {
           },
           fixture.graceEndsAt
         )
-      ).toThrow(/cannot accept new Network work/)
+      ).toThrow(/Historical subscriptions no longer authorize new work/)
       expect(() =>
         resolveAssignmentBillingCommitment(
           fixture.state,
@@ -2097,7 +1847,7 @@ describe("dunning and Pilot conversion boundaries", () => {
           },
           fixture.graceEndsAt
         )
-      ).toThrow(/no longer an operating agreement/)
+      ).toThrow(/Historical subscriptions no longer authorize new work/)
     }
   })
 
