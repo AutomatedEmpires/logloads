@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto"
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { PERCENTAGE_V1_TERMS_VERSION } from "@logloads/contracts"
 
@@ -178,6 +180,12 @@ describe("percentage billing agreement route", () => {
     vi.stubEnv(
       "LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS",
       "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+    )
+    vi.stubEnv(
+      "LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256",
+      createHash("sha256")
+        .update("cccccccc-cccc-4ccc-8ccc-cccccccccccc")
+        .digest("hex")
     )
 
     const unlisted = await POST(

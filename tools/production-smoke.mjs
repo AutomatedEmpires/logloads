@@ -22,7 +22,7 @@ let health
 try {
   const res = await fetch(`${BASE}/api/health`, { signal: AbortSignal.timeout(15000) })
   health = await res.json()
-  record(res.status === 200 && health.status === "ok" ? "PASS" : "FAIL", "health", `${res.status} engine=${health?.engine?.ok}`)
+  record(res.status === 200 && health?.status === "ok" ? "PASS" : "FAIL", "health", `${res.status} engine=${health?.engine?.ok}`)
 } catch (error) {
   record("FAIL", "health", String(error).slice(0, 120))
 }
