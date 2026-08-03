@@ -713,12 +713,12 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
       <section className="app-section">
         <SectionHeader eyebrow="Percentage v1" title="Current host billing position" />
         <div className="command-grid admin-plan-mix">
-          <Metric label="Percentage organizations" value={billing.legacy.organizationCount} />
-          <Metric label="Frozen assignments" value={billing.legacy.assignmentCount} />
-          <Metric label="Non-void fee events" value={billing.legacy.feeEventCount} />
-          <Metric label="Accrued, not invoiced" value={billing.legacy.accruedFeeLabel} />
-          <Metric label="Host invoices" value={billing.legacy.historicalInvoiceCount} />
-          <Metric label="Outstanding" value={billing.legacy.outstandingInvoiceLabel} />
+          <Metric label="Current percentage organizations" value={billing.platformFeeLedger.currentOrganizationCount} />
+          <Metric label="Current percentage assignments" value={billing.platformFeeLedger.currentAssignmentCount} />
+          <Metric label="Non-void fee events" value={billing.platformFeeLedger.currentFeeEventCount} />
+          <Metric label="Accrued, not invoiced" value={billing.platformFeeLedger.currentAccruedFeeLabel} />
+          <Metric label="Host invoices" value={billing.platformFeeLedger.currentInvoiceCount} />
+          <Metric label="Outstanding" value={billing.platformFeeLedger.currentOutstandingInvoiceLabel} />
         </div>
         <p className="admin-panel__intro">
           Current host revenue is the 5% platform fee added on top of stated
@@ -1154,27 +1154,28 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
           subscription MRR, ARR, plan enrollment, or completed-load usage.
         </p>
         <div className="command-grid admin-plan-mix">
-          <Metric label="Percentage organizations" value={billing.legacy.organizationCount} />
-          <Metric label="Frozen assignments" value={billing.legacy.assignmentCount} />
-          <Metric label="Non-void fee events" value={billing.legacy.feeEventCount} />
-          <Metric label="Accrued, not invoiced" value={billing.legacy.accruedFeeLabel} />
-          <Metric label="Historical invoices" value={billing.legacy.historicalInvoiceCount} />
-          <Metric label="Outstanding invoices" value={billing.legacy.outstandingInvoiceLabel} />
-          <Metric label="Previous entitlements" value={billing.legacy.entitlementCount} />
+          <Metric label="Current organizations" value={billing.platformFeeLedger.currentOrganizationCount} />
+          <Metric label="Legacy organizations" value={billing.platformFeeLedger.legacyOrganizationCount} />
+          <Metric label="Current assignments" value={billing.platformFeeLedger.currentAssignmentCount} />
+          <Metric label="Legacy assignments" value={billing.platformFeeLedger.legacyAssignmentCount} />
+          <Metric label="Legacy non-void fees" value={billing.platformFeeLedger.legacyFeeEventCount} />
+          <Metric label="Legacy invoices" value={billing.platformFeeLedger.legacyInvoiceCount} />
+          <Metric label="Legacy outstanding" value={billing.platformFeeLedger.legacyOutstandingInvoiceLabel} />
+          <Metric label="Previous entitlements" value={billing.platformFeeLedger.entitlementCount} />
         </div>
 
         <SectionHeader
-          eyebrow={`${billing.legacy.entitlementExceptions.length} to follow up`}
+          eyebrow={`${billing.platformFeeLedger.entitlementExceptions.length} to follow up`}
           title="Previous entitlement exceptions"
         />
-        {billing.legacy.entitlementExceptions.length === 0 ? (
+        {billing.platformFeeLedger.entitlementExceptions.length === 0 ? (
           <EmptyState
             body="Past-due or cancelled records from the previous entitlement system remain visible here without being treated as subscription-v1 revenue."
             title="No previous entitlement exceptions."
           />
         ) : (
           <div className="admin-rows">
-            {billing.legacy.entitlementExceptions.map((exception) => (
+            {billing.platformFeeLedger.entitlementExceptions.map((exception) => (
               <article className="admin-row" key={exception.id}>
                 <div className="admin-row__main">
                   <div className="admin-row__head">

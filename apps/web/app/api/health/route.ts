@@ -5,34 +5,26 @@ import { platformFeeCollectionEnabled } from "@/lib/billing"
 import { percentageEnrollmentStatus } from "@/lib/percentage-enrollment"
 import { refreshState, services } from "@/lib/services"
 import { isClerkConfigured } from "@/lib/session"
-import {
-  dispatchSelfServeEnabled,
-  internalBillingSmokeEnabled,
-  stripeCatalogReadiness,
-  stripeRuntimeModeProblem,
-  subscriptionCollectionEnabled
-} from "@/lib/subscription-stripe"
+import { stripeRuntimeModeProblem } from "@/lib/subscription-stripe"
 
 export const dynamic = "force-dynamic"
 
 /**
  * Liveness + readiness probe for the single-node runtime. Confirms the operating
- * engine responds and reports which production integrations are wired, without
- * leaking secrets. Used by the container/host health check.
+ * engine responds and reports coarse readiness without publishing the individual
+ * controls, catalog posture, enrollment population, or enrollment fingerprint.
+ * Used by the container/host health check and post-deploy smoke.
  */
 export async function GET() {
   let engineOk = false
-  let profileCount = 0
 
   try {
     await refreshState()
-    profileCount = services.state.profiles.length
     engineOk = Array.isArray(services.state.loadPostings)
   } catch {
     engineOk = false
   }
 
-  const stripeCatalog = stripeCatalogReadiness(process.env)
   const expectedStripeMode =
     process.env.LOGLOADS_STRIPE_EXPECTED_LIVEMODE?.trim().toLowerCase()
   const stripeSecretConfigured = Boolean(process.env.STRIPE_SECRET_KEY)
@@ -56,7 +48,8 @@ export async function GET() {
     expectedProviderModeValid
   const percentageCollectionEnabled = platformFeeCollectionEnabled(process.env)
   const percentageEnrollment = percentageEnrollmentStatus(process.env)
-  const percentageBillingReadiness = percentageBillingInfrastructureReady
+  const percentageBillingReadiness =
+    percentageBillingInfrastructureReady && percentageEnrollment.scopeVerified
     ? percentageCollectionEnabled
       ? "collection_configured"
       : "dark_configured"
@@ -66,54 +59,18 @@ export async function GET() {
     status: engineOk ? "ok" : "degraded",
     environment: process.env.NODE_ENV ?? "development",
     gitCommit: process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.GITHUB_SHA ?? "unknown",
-    engine: { ok: engineOk, profiles: profileCount },
+    engine: { ok: engineOk },
     integrations: {
       auth: isClerkConfigured() ? "clerk" : "dev-session",
       canonicalState: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
       billing: percentageBillingReadiness,
       billingPercentageV1: {
-        allowedOrganizationCount:
-          percentageEnrollment.allowedOrganizationCount,
-        allowedOrganizationScopeSha256:
-          percentageEnrollment.allowedOrganizationScopeSha256,
-        cardSetupConfigured:
-          stripeSecretConfigured && stripePublishableConfigured,
         collection: percentageCollectionEnabled
           ? "enabled"
           : "disabled",
         enrollment: percentageEnrollment.enrollment,
-        expectedProviderMode:
-          expectedStripeMode === "live" || expectedStripeMode === "test"
-            ? expectedStripeMode
-            : "invalid",
-        providerAccountAssertionConfigured,
-        providerModeAligned,
-        providerVerification: "not_probed",
         readiness: percentageBillingReadiness,
-        stripeSecretConfigured,
-        invalidEnrollmentEntryCount:
-          percentageEnrollment.invalidEntryCount,
-        webhookConfigured: stripeWebhookConfigured
-      },
-      billingSubscriptionHistory: {
-        catalogConfigured: stripeCatalog.configured,
-        collection: subscriptionCollectionEnabled(process.env) ? "enabled" : "disabled",
-        dispatchSelfServe: dispatchSelfServeEnabled(process.env)
-          ? "enabled"
-          : "disabled",
-        enrollment: "closed",
-        invalidPriceIds: stripeCatalog.invalid.length,
-        missingPrices: stripeCatalog.missing.length,
-        ownerSmoke: internalBillingSmokeEnabled(process.env) ? "enabled" : "disabled",
-        ownerSmokeTargetConfigured: Boolean(
-          process.env.LOGLOADS_INTERNAL_BILLING_SMOKE_ALLOWED_ORGANIZATION_IDS
-        ),
-        portalConfigured: Boolean(
-          process.env.STRIPE_PORTAL_CONFIGURATION_NETWORK
-        ),
-        providerAccountAssertionConfigured,
-        providerModeAligned,
-        webhookConfigured: stripeWebhookConfigured
+        scopeVerified: percentageEnrollment.scopeVerified
       },
       credentialReview: Boolean(process.env.ANTHROPIC_API_KEY),
       email: Boolean(process.env.RESEND_API_KEY),

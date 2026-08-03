@@ -3,6 +3,21 @@ import type { LogLoadsDatabaseState } from "@logloads/db"
 const SEED_ANCHOR = Date.UTC(2026, 5, 5)
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/
+const IMMUTABLE_HISTORY_TABLES = [
+  "auditEvents",
+  "billingAdjustments",
+  "billingPeriodSummaries",
+  "billingPlanDefinitions",
+  "entitlements",
+  "hostBillingProfiles",
+  "hostInvoices",
+  "networkOverageInvoices",
+  "networkUsageEvents",
+  "organizationBillingAccounts",
+  "organizationSubscriptions",
+  "platformFeeEvents",
+  "subscriptionBaseInvoices"
+] as const satisfies readonly (keyof LogLoadsDatabaseState)[]
 
 /**
  * Move operational demo activity forward so a fresh bootstrap remains useful.
@@ -48,8 +63,13 @@ export function shiftSeedDates(
     return value
   }
 
-  return {
-    ...(shift(state) as LogLoadsDatabaseState),
-    organizationBillingAccounts: state.organizationBillingAccounts
-  }
+  const shifted = shift(state) as LogLoadsDatabaseState
+  const immutableHistory = Object.fromEntries(
+    IMMUTABLE_HISTORY_TABLES.map((table) => [
+      table,
+      structuredClone(state[table])
+    ])
+  )
+
+  return Object.assign(shifted, immutableHistory)
 }

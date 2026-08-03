@@ -296,6 +296,24 @@ describe("the plan's landing allowance", () => {
     expect(services.countActiveLandings(HOST_ORG)).toBe(2)
   })
 
+  it("does not grant uncapped landings to a percentage account without accepted terms", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    services.state.entitlements = services.state.entitlements.filter(
+      (entitlement) => entitlement.organizationId !== HOST_ORG
+    )
+    services.state.organizationBillingAccounts =
+      services.state.organizationBillingAccounts.map((account) =>
+        account.organizationId === HOST_ORG
+          ? { ...account, percentageTermsSnapshot: null }
+          : account
+      )
+
+    expect(services.activeLandingLimitFor(HOST_ORG)).toBe(0)
+    expect(() => services.createLanding(landingInput())).toThrow(
+      /does not cover any active landings/
+    )
+  })
+
   it("does not read a lapsed plan as an unlimited one", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     markBillingAccountLegacy(services, HOST_ORG)

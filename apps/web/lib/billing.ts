@@ -5,6 +5,7 @@ import {
   createMoney,
   deterministicUuidV5,
   formatMoney,
+  frozenPlatformFeeBps,
   hostBillingProfileSchema,
   hostInvoiceSchema,
   invoiceSubtotalCents,
@@ -29,6 +30,8 @@ import {
   stripePublishableModeProblem,
   stripeRuntimeModeProblem,
   STRIPE_API_VERSION,
+  STRIPE_MAX_NETWORK_RETRIES,
+  STRIPE_REQUEST_TIMEOUT_MS,
   subscriptionStatusDecision,
   type StripeBillingObjectClassification
 } from "./subscription-stripe"
@@ -321,7 +324,11 @@ function providerInvoiceFacts(invoice: Stripe.Invoice): StripeProviderInvoiceFac
 }
 
 function buildStripePort(secretKey: string, webhookSecret: string | null): StripeBillingPort {
-  const stripe = new Stripe(secretKey, { apiVersion: STRIPE_API_VERSION })
+  const stripe = new Stripe(secretKey, {
+    apiVersion: STRIPE_API_VERSION,
+    maxNetworkRetries: STRIPE_MAX_NETWORK_RETRIES,
+    timeout: STRIPE_REQUEST_TIMEOUT_MS
+  })
 
   return {
     constructWebhookEvent(payload, signature) {
@@ -1348,11 +1355,7 @@ function hostInvoiceLedgerProblem(
       assignment.billingModel === fee.billingModel ||
       (fee.billingModel === "legacy_percentage" && assignment.billingModel === null)
     const frozenPay = readFrozenDriverPay(assignment.termsSnapshot)
-    const hostFee = assignment.termsSnapshot.hostFee
-    const frozenFeeBps =
-      hostFee && typeof hostFee === "object" && !Array.isArray(hostFee)
-        ? (hostFee as Record<string, unknown>).rateBps
-        : null
+    const frozenFeeBps = frozenPlatformFeeBps(assignment.termsSnapshot)
     if (
       assignment.loadPostingId !== load.id ||
       load.companyId !== fee.organizationId ||

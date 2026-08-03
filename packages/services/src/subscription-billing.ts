@@ -237,7 +237,7 @@ function insertBillingAuditEvent(
   )
 }
 
-function notifyOrganizationBilling(
+export function notifyOrganizationBilling(
   state: LogLoadsDatabaseState,
   input: {
     organizationId: string
@@ -359,6 +359,13 @@ function billingNotificationOrganizationId(
       invoice.organizationId === subscription.organizationId
       ? invoice.organizationId
       : null
+  }
+
+  if (notification.relatedEntityType === "host_invoice") {
+    return (
+      state.hostInvoices.find((invoice) => invoice.id === entityId)
+        ?.organizationId ?? null
+    )
   }
 
   return null
@@ -1003,15 +1010,23 @@ function activePercentageAgreementForHistoricalSubscription(
   const accounts = state.organizationBillingAccounts.filter(
     (account) => account.organizationId === subscription.organizationId
   )
-  if (accounts.length !== 1) return null
+  assertCondition(
+    accounts.length <= 1,
+    `Organization ${subscription.organizationId} has conflicting billing accounts`
+  )
+  if (accounts.length === 0) return null
 
   const account = accounts[0]!
-  return account.activationState === "percentage_active" &&
+  if (account.activationState !== "percentage_active") return null
+
+  assertCondition(
     account.billingModel === "percentage_v1" &&
-    account.subscriptionId === null &&
-    Boolean(account.percentageTermsSnapshot)
-    ? account
-    : null
+      account.subscriptionId === null &&
+      Boolean(account.percentageTermsSnapshot),
+    `Organization ${subscription.organizationId} has an invalid percentage_v1 billing account`
+  )
+
+  return account
 }
 
 export interface AssignmentBillingCommitment {
@@ -1245,11 +1260,6 @@ export function resolveAssignmentBillingCommitment(
     }
   }
 
-  assertDomainCondition(
-    Date.parse(at) < Date.parse(PERCENTAGE_V1_CUTOVER_AT),
-    "Historical subscriptions no longer authorize new work; accept the current percentage agreement after provider retirement"
-  )
-
   assertCondition(
     account.activationState !== "unenrolled" &&
       account.activationState !== "configured_dark",
@@ -1258,6 +1268,10 @@ export function resolveAssignmentBillingCommitment(
   assertCondition(
     account.activationState === "active" || account.activationState === "suspended",
     `Organization ${input.hostOrganizationId}'s subscription billing is not configured`
+  )
+  assertDomainCondition(
+    Date.parse(at) < Date.parse(PERCENTAGE_V1_CUTOVER_AT),
+    "Historical subscriptions no longer authorize new work; accept the current percentage agreement after provider retirement"
   )
   const subscriptionId = assertFound(
     account.subscriptionId ?? undefined,
@@ -4131,7 +4145,10 @@ export function bindOrganizationSubscriptionProvider(
         entityType: "organization_subscription",
         metadata: {
           activeBillingAccountId: percentageAgreement?.id ?? null,
-          activeBillingModel: percentageAgreement?.billingModel ?? "subscription_v1",
+          activeBillingModel:
+            percentageAgreement?.billingModel ??
+            conversionTarget?.billingModel ??
+            null,
           activeSubscriptionId: conversionTarget?.id ?? null,
           providerEffectiveAt,
           providerPaymentState: input.paymentState,

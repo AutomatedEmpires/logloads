@@ -14,6 +14,7 @@ export interface PercentageEnrollmentStatus {
   allowedOrganizationScopeSha256: string | null
   enrollment: PercentageEnrollmentState
   invalidEntryCount: number
+  scopeVerified: boolean
 }
 
 type EnrollmentEnvironment = Readonly<Record<string, string | undefined>>
@@ -38,13 +39,32 @@ export function percentageEnrollmentStatus(
 ): PercentageEnrollmentStatus {
   const { invalidEntryCount, organizationIds } = enrollmentScope(env)
   const rawGate = env.LOGLOADS_PERCENTAGE_ENROLLMENT?.trim().toLowerCase() ?? ""
+  const expectedScopeSha256 =
+    env.LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256
+      ?.trim()
+      .toLowerCase() ?? ""
   const gateEnabled = rawGate === "enabled"
   const gateDisabled = rawGate === "" || rawGate === "disabled"
-  const scopeConfigured = organizationIds.length > 0 || invalidEntryCount > 0
+  const allowedOrganizationScopeSha256 = organizationIds.length > 0
+    ? createHash("sha256").update(organizationIds.join("\n")).digest("hex")
+    : null
+  const expectedScopeIsValid = /^[0-9a-f]{64}$/.test(expectedScopeSha256)
+  const enabledScopeVerified =
+    organizationIds.length > 0 &&
+    invalidEntryCount === 0 &&
+    expectedScopeIsValid &&
+    allowedOrganizationScopeSha256 === expectedScopeSha256
+  const scopeConfigured =
+    organizationIds.length > 0 ||
+    invalidEntryCount > 0 ||
+    expectedScopeSha256.length > 0
+  const scopeVerified = gateEnabled
+    ? enabledScopeVerified
+    : gateDisabled && !scopeConfigured
   const enrollment: PercentageEnrollmentState = !gateEnabled && !gateDisabled
     ? "misconfigured"
     : gateEnabled
-      ? organizationIds.length > 0 && invalidEntryCount === 0
+      ? enabledScopeVerified
         ? "enabled"
         : "misconfigured"
       : scopeConfigured
@@ -53,11 +73,10 @@ export function percentageEnrollmentStatus(
 
   return {
     allowedOrganizationCount: organizationIds.length,
-    allowedOrganizationScopeSha256: organizationIds.length > 0
-      ? createHash("sha256").update(organizationIds.join("\n")).digest("hex")
-      : null,
+    allowedOrganizationScopeSha256,
     enrollment,
-    invalidEntryCount
+    invalidEntryCount,
+    scopeVerified
   }
 }
 

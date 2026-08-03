@@ -65,6 +65,47 @@ export const FEE_BPS_SCALE = 10_000
  */
 export const PLATFORM_FEE_BPS = 500
 
+/**
+ * The fee rate an accepted assignment actually authorized.
+ *
+ * A number alone is not authority to accrue or collect money. Historical
+ * snapshots can retain a proposed rate after collection was disabled, and the
+ * canonical state is provider data that may be malformed. Every billing
+ * boundary therefore shares this one fail-closed predicate: the collection
+ * state must be authoritative and the rate must be an exact, bounded integer.
+ */
+export function frozenPlatformFeeBps(termsSnapshot: unknown): number | null {
+  if (
+    !termsSnapshot ||
+    typeof termsSnapshot !== "object" ||
+    Array.isArray(termsSnapshot)
+  ) {
+    return null
+  }
+
+  const hostFee = (termsSnapshot as Record<string, unknown>).hostFee
+
+  if (!hostFee || typeof hostFee !== "object" || Array.isArray(hostFee)) {
+    return null
+  }
+
+  const acceptedHostFee = hostFee as Record<string, unknown>
+  const rateBps = acceptedHostFee.rateBps
+
+  if (acceptedHostFee.collectionState !== "accrues_monthly_in_arrears") {
+    return null
+  }
+
+  return (
+    typeof rateBps === "number" &&
+    Number.isSafeInteger(rateBps) &&
+    rateBps >= 0 &&
+    rateBps <= FEE_BPS_SCALE
+  )
+    ? rateBps
+    : null
+}
+
 // ── Ledger states ─────────────────────────────────────────────────────────────
 
 /**

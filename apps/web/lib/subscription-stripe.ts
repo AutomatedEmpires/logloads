@@ -13,6 +13,8 @@ import Stripe from "stripe"
  */
 export const STRIPE_API_VERSION = "2026-06-24.dahlia" as const
 export const STRIPE_CURRENCY = "usd" as const
+export const STRIPE_MAX_NETWORK_RETRIES = 2
+export const STRIPE_REQUEST_TIMEOUT_MS = 15_000
 
 export type StripeCatalogPlanCode =
   | "dispatch_pro"
@@ -1245,7 +1247,11 @@ export function futureCancellationSchedulePlan(input: {
 }
 
 export function createSubscriptionStripePort(secretKey: string): SubscriptionStripePort {
-  const stripe = new Stripe(secretKey, { apiVersion: STRIPE_API_VERSION })
+  const stripe = new Stripe(secretKey, {
+    apiVersion: STRIPE_API_VERSION,
+    maxNetworkRetries: STRIPE_MAX_NETWORK_RETRIES,
+    timeout: STRIPE_REQUEST_TIMEOUT_MS
+  })
 
   return {
     async retrieveAccountId() {

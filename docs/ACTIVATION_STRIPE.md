@@ -24,7 +24,8 @@ Real percentage-v1 enrollment and platform-fee collection require all of:
 6. exact-SHA protected-preview evidence and independent review;
 7. explicit activation of `LOGLOADS_PERCENTAGE_ENROLLMENT` plus the exact
    organization id in `LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS` for the
-   counsel-cleared pilot only;
+   counsel-cleared pilot only, with its private sorted-scope SHA-256 assertion in
+   `LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256`;
 8. founder authorization for the exact live canary and controlled charge/refund;
 9. explicit activation of the sole current collection switch,
    `LOGLOADS_FEE_COLLECTION`.
@@ -150,8 +151,9 @@ The exact names and scopes live in `.env.example` and
 - `LOGLOADS_STRIPE_EXPECTED_ACCOUNT_ID`, verified against Stripe's account
   endpoint without printing either account id;
 - `LOGLOADS_PERCENTAGE_ENROLLMENT=disabled` and a blank
-  `LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS` until an exact counsel-cleared
-  pilot activation;
+  `LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS` and
+  `LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256` until an exact
+  counsel-cleared pilot activation;
 - the historical Dispatch Pro and Network Price ids only when a preserved
   accepted obligation actually requires reconciliation;
 - hidden internal-test Price id;
@@ -173,11 +175,11 @@ organization allowlist empty for new activity.
 Every hosted smoke must explicitly assert both collection and enrollment. A
 dark release uses `SMOKE_EXPECT_FEE_COLLECTION=disabled` and
 `SMOKE_EXPECT_PERCENTAGE_ENROLLMENT=disabled`, which also requires an empty,
-valid enrollment scope. An enabled pilot smoke additionally supplies the exact
-expected organization count and SHA-256 scope fingerprint through
-`SMOKE_EXPECT_PERCENTAGE_ALLOWED_ORGANIZATION_COUNT` and
-`SMOKE_EXPECT_PERCENTAGE_ALLOWED_ORGANIZATION_SCOPE_SHA256`; health exposes the
-fingerprint and count, never organization ids.
+valid enrollment scope. An enabled pilot configures the private expected SHA-256
+fingerprint through
+`LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256`. Health exposes only
+`scopeVerified: true` after that assertion matches; it never publishes the
+fingerprint, organization count, or organization ids.
 
 Never print or pipe environment values to stdout. Verify names, scopes, age, and
 presence using provider metadata only.

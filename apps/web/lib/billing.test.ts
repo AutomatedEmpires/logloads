@@ -1132,6 +1132,50 @@ describe("planHostInvoiceCharge", () => {
     })
   })
 
+  it.each([
+    {
+      collectionState: "disabled",
+      label: "a disabled collection state",
+      rateBps: PLATFORM_FEE_BPS
+    },
+    {
+      collectionState: "accrues_monthly_in_arrears",
+      label: "a fractional rate",
+      rateBps: PLATFORM_FEE_BPS + 0.5
+    },
+    {
+      collectionState: "accrues_monthly_in_arrears",
+      label: "an out-of-range rate",
+      rateBps: 10_001
+    },
+    {
+      collectionState: "accrues_monthly_in_arrears",
+      label: "an unsafe integer rate",
+      rateBps: Number.MAX_SAFE_INTEGER + 1
+    }
+  ])("refuses $label in accepted fee terms", ({ collectionState, rateBps }) => {
+    const { state } = billableHost()
+    const assignment = state.assignments.find(
+      (candidate) => candidate.id === ASSIGNMENT_ONE
+    )
+
+    if (!assignment) throw new Error("Legacy assignment missing")
+
+    assignment.termsSnapshot = {
+      ...assignment.termsSnapshot,
+      hostFee: {
+        ...(assignment.termsSnapshot.hostFee as Record<string, unknown>),
+        collectionState,
+        rateBps
+      }
+    }
+
+    expect(planHostInvoiceCharge(state, INVOICE_ID)).toMatchObject({
+      kind: "refused",
+      message: expect.stringContaining("rate frozen at acceptance")
+    })
+  })
+
   it("refuses a fee that is not reciprocally linked before first charge and retry", () => {
     const { state } = billableHost()
     state.platformFeeEvents[0] = {

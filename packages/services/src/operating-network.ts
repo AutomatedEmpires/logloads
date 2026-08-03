@@ -2597,6 +2597,11 @@ export function settleHaulCompletion(
   const platformFeeOutcome = platformFeeFailure
     ? "error"
     : platformFee?.outcome ?? "not_applicable"
+  const activePlatformFee =
+    platformFee?.outcome === "accrued" ||
+    platformFee?.outcome === "already_accrued"
+      ? platformFee.event
+      : null
 
   insertAuditEvent(
     state,
@@ -2606,16 +2611,8 @@ export function settleHaulCompletion(
     input.decision === "confirm" ? "haul_completion_confirmed" : "haul_completion_disputed",
     {
       assignmentId: assignment.id,
-      platformFeeCents:
-        platformFee?.outcome === "accrued" ||
-        platformFee?.outcome === "already_accrued"
-          ? platformFee.event.feeCents
-          : null,
-      platformFeeEventId:
-        platformFee?.outcome === "accrued" ||
-        platformFee?.outcome === "already_accrued"
-          ? platformFee.event.id
-          : null,
+      platformFeeCents: activePlatformFee?.feeCents ?? null,
+      platformFeeEventId: activePlatformFee?.id ?? null,
       platformFeeOutcome,
       previousStatus: result.previousStatus,
       reason: input.reason ?? null

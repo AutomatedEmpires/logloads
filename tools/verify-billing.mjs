@@ -8,6 +8,12 @@
 // aggregate by default: provider identifiers and unrelated organization names
 // are not printed. An optional organization-name filter narrows every count.
 
+import {
+  computePlatformFeeCents,
+  FEE_BPS_SCALE,
+  frozenPlatformFeeBps
+} from "../packages/contracts/src/billing-model.ts"
+
 const url = process.env.SUPABASE_URL
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY
 const orgFilter = process.argv[2]?.trim().toLowerCase() || null
@@ -19,17 +25,26 @@ if (!url || !key) {
   process.exit(2)
 }
 
-const response = await fetch(
-  `${url}/rest/v1/operating_state?id=eq.primary&select=state,updated_at,version,schema_version`,
-  {
-    headers: {
-      Accept: "application/json",
-      apikey: key,
-      Authorization: `Bearer ${key}`
-    },
-    signal: AbortSignal.timeout(15_000)
-  }
-)
+let response
+
+try {
+  response = await fetch(
+    `${url}/rest/v1/operating_state?id=eq.primary&select=state,updated_at,version,schema_version`,
+    {
+      headers: {
+        Accept: "application/json",
+        apikey: key,
+        Authorization: `Bearer ${key}`
+      },
+      signal: AbortSignal.timeout(15_000)
+    }
+  )
+} catch {
+  // Network errors can contain the private provider URL and low-level socket
+  // detail. The verifier needs a deterministic refusal, not that exception.
+  console.error("Canonical billing read failed before a response.")
+  process.exit(1)
+}
 
 if (!response.ok) {
   // Do not echo the provider body: an unexpected gateway or policy response can
@@ -121,13 +136,6 @@ const malformedCurrentAccounts = currentAccounts.filter((account) => {
   )
 })
 
-const computedFeeCents = (driverPayCents, feeBps) => {
-  const scaled = driverPayCents * feeBps
-  const remainder = scaled % 10_000
-  const whole = (scaled - remainder) / 10_000
-
-  return remainder * 2 >= 10_000 ? whole + 1 : whole
-}
 const noDeliveryExceptions = new Set([
   "rejected_at_scale",
   "access_blocked",
@@ -181,11 +189,29 @@ for (const fee of fees) {
   const billingModel =
     fee.billingModel ?? assignment?.billingModel ?? "legacy_percentage"
 
-  if (!fee.driverPayCents || fee.feeBps <= 0) {
+  const feeBasisIsBounded =
+    Number.isSafeInteger(fee.driverPayCents) &&
+    fee.driverPayCents > 0 &&
+    Number.isSafeInteger(fee.feeBps) &&
+    fee.feeBps > 0 &&
+    fee.feeBps <= FEE_BPS_SCALE
+  let expectedFeeCents = null
+
+  if (feeBasisIsBounded) {
+    try {
+      expectedFeeCents = computePlatformFeeCents(
+        fee.driverPayCents,
+        fee.feeBps
+      )
+    } catch {
+      // Oversized products are not exact integer arithmetic and therefore have
+      // no trustworthy amount to reconcile.
+    }
+  }
+
+  if (!feeBasisIsBounded || expectedFeeCents === null) {
     defects.push(`fee ${fee.id} has no positive frozen pay/rate basis`)
-  } else if (
-    computedFeeCents(fee.driverPayCents, fee.feeBps) !== fee.feeCents
-  ) {
+  } else if (expectedFeeCents !== fee.feeCents) {
     defects.push(`fee ${fee.id} does not match the frozen integer calculation`)
   }
 
@@ -195,7 +221,7 @@ for (const fee of fees) {
 
   const load = assignment ? loadById.get(fee.loadPostingId) : null
   const frozenPay = assignment?.termsSnapshot
-  const frozenRateBps = frozenPay?.hostFee?.rateBps
+  const frozenRateBps = frozenPlatformFeeBps(frozenPay)
   const modelMatches = assignment && (
     assignment.billingModel === billingModel ||
     (billingModel === "legacy_percentage" && assignment.billingModel == null)
@@ -347,9 +373,11 @@ for (const invoice of invoices) {
   }
 }
 
-for (const [providerInvoiceId, claims] of providerInvoiceClaims) {
+for (const claims of providerInvoiceClaims.values()) {
   if (claims.length > 1) {
-    defects.push(`Stripe invoice ${providerInvoiceId} is linked to ${claims.length} host invoices`)
+    defects.push(
+      `One provider invoice is linked to ${claims.length} host invoices: ${claims.join(", ")}`
+    )
   }
 }
 

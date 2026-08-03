@@ -5,6 +5,7 @@ import {
   computePlatformFeeCents,
   deterministicUuidV5,
   FEE_BPS_SCALE,
+  frozenPlatformFeeBps,
   hostChargeBreakdown,
   hostInvoiceStatusSchema,
   invoicePeriodFor,
@@ -40,6 +41,37 @@ describe("the platform fee rate", () => {
 
   it("publishes one canonical eligible currency for legacy percentage work", () => {
     expect(LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY).toBe("USD")
+  })
+
+  it("recognizes only an authoritative, exact, bounded frozen rate", () => {
+    const terms = (rateBps: unknown, collectionState: unknown) => ({
+      hostFee: { collectionState, rateBps }
+    })
+
+    expect(
+      frozenPlatformFeeBps(
+        terms(PLATFORM_FEE_BPS, "accrues_monthly_in_arrears")
+      )
+    ).toBe(PLATFORM_FEE_BPS)
+    expect(
+      frozenPlatformFeeBps(terms(PLATFORM_FEE_BPS, "disabled"))
+    ).toBeNull()
+    expect(
+      frozenPlatformFeeBps(
+        terms(PLATFORM_FEE_BPS + 0.5, "accrues_monthly_in_arrears")
+      )
+    ).toBeNull()
+    expect(
+      frozenPlatformFeeBps(
+        terms(FEE_BPS_SCALE + 1, "accrues_monthly_in_arrears")
+      )
+    ).toBeNull()
+    expect(
+      frozenPlatformFeeBps(
+        terms(Number.MAX_SAFE_INTEGER + 1, "accrues_monthly_in_arrears")
+      )
+    ).toBeNull()
+    expect(frozenPlatformFeeBps(null)).toBeNull()
   })
 })
 

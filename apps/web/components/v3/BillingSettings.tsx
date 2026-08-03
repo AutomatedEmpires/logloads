@@ -1028,7 +1028,7 @@ export function BillingPage({
             hostSubscriptionBilling ? null : (
               <EmptyState
                 actionHref="/pricing"
-                actionLabel="Compare plans"
+                actionLabel="View pricing"
                 body="New subscription enrollment is closed. Existing provider-bound obligations remain visible for reconciliation."
                 title="No historical subscription on this workspace"
               />

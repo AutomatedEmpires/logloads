@@ -12,8 +12,7 @@ activity, frozen `legacy_percentage` obligations preserved, and
 
 ## Canonical repository
 
-- Canonical checkout:
-  `/home/jackson/automatedempires/ventures/logloads`
+- Canonical checkout: resolve with `ae path logloads`.
 - Remote: `git@github.com:AutomatedEmpires/logloads.git`
 - Reconciled `origin/main`:
   `498fd94582efe6222f8900642694f00971cc4a68`
@@ -42,14 +41,17 @@ Those heads are preserved merge remnants, not missing application work.
 - Branch: `fable/wave-c-five-percent`
 - Local and remote head:
   `0a31d36ffbef00a5812e81709921fab3b77ea1ac`
-- State: genuine unmerged work; preserve and finish selectively.
+- State: preserved recovery source; its legitimate agreement-enrollment ideas
+  were selectively rebuilt in the production-restoration release rather than
+  merged wholesale.
 
-The branch adds a billing-enrollment service, exposes
-`acceptPercentageBillingAgreement`, and updates a publish refusal. It is not a
+The branch added an early billing-enrollment service, exposed
+`acceptPercentageBillingAgreement`, and updated a publish refusal. It was not a
 complete production slice: the API/server-action/UI path and direct enrollment
-coverage are absent. Do not merge it wholesale without reconciling it against
-current `main`, the 2026-08-01 decision, and the one-movement/one-obligation
-guard.
+coverage were absent. The recovered release now supplies those paths plus the
+exact pilot allowlist/fingerprint boundary and one-movement/one-obligation
+guard. Retain the old branch as provenance, but do not merge it into current
+`main`.
 
 ### Open PR #76 — admin and team controls
 
@@ -97,11 +99,11 @@ future cleanup can be reviewed independently.
 
 | Artifact | Classification | Disposition |
 |---|---|---|
-| `/home/jackson/automatedempires/_preserved-local-artifacts/logloads/logloads.mcp.json` | 112-byte preserved tool configuration | Archive only; not application source. Retain until separately authorized cleanup. |
-| `/home/jackson/.cache/claude-cli-nodejs/-home-jackson-automatedempires-ventures-logloads` | Claude cache/transcript data | Cache only; not source. Eligible for later cleanup, but untouched here. |
-| `C:\Users\autom\Documents\Codex\2026-07-10\execute-the-assigned-task\work\vercel-links\logloads` | Four-file Vercel link/runtime artifact | Not source. Quarantine or remove in a separate secret-hygiene cleanup after confirming it is no longer needed. Its `.env.local` contains the variable name `VERCEL_OIDC_TOKEN`; the value was not read or reported. |
+| Preserved local tool configuration | 112-byte LogLoads tool metadata | Archive only; not application source. Retain until separately authorized cleanup. |
+| Agent CLI cache and transcript data | Local runtime cache | Cache only; not source. Eligible for later cleanup, but untouched here. |
+| Windows Vercel link/runtime artifact | Four-file deployment-link artifact | Not source. Quarantine or remove in a separate secret-hygiene cleanup after confirming it is no longer needed. Environment values were not read or reported. |
 | Windows Codex task directories for LogLoads | Runtime logs and handoffs with no `.git` directory | Preserve as evidence or clean later; never integrate as source. |
-| `C:\Users\autom\Documents\Machine-Cleanup-Reports\preserved-codex-artifacts\test-evidence\logloads` | Twelve preserved test-evidence files | Retain as test evidence; not a checkout. |
+| Preserved LogLoads test-evidence bundle | Twelve test-evidence files | Retain as test evidence; not a checkout. |
 
 ## Consolidation rules from this recovery
 

@@ -476,7 +476,7 @@ describe("subscription activation and commercial scope", () => {
         },
         AUTHORIZED_AT
       )
-    ).toThrow(/Historical subscriptions no longer authorize new work/)
+    ).toThrow(/billing agreement is not active/)
 
     activateOrganizationSubscription(
       state,

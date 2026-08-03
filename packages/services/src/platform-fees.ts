@@ -2,7 +2,8 @@ import {
   auditEventSchema,
   computePlatformFeeCents,
   deterministicUuidV5,
-  FEE_BPS_SCALE,
+  frozenPlatformFeeBps,
+  formatMoney,
   hostInvoiceSchema,
   invoicePeriodFor,
   invoiceSubtotalCents,
@@ -26,6 +27,7 @@ import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { haulHasBillableDelivery } from "./haul-completion"
 import { assertOrganizationAction, getActiveOrganizationContext } from "./operating-network"
+import { notifyOrganizationBilling } from "./subscription-billing"
 import { assertCondition, assertFound, createUuid, nowIso } from "./utils"
 
 /**
@@ -302,6 +304,8 @@ export type AccruePlatformFeeResult =
   | { outcome: "accrued"; event: PlatformFeeEvent }
   /** A fee already existed. Nothing was written. THE DOUBLE-BILLING DEFENCE. */
   | { outcome: "already_accrued"; event: PlatformFeeEvent }
+  /** A fee existed and was permanently withdrawn. It must not be raised again. */
+  | { outcome: "already_voided"; event: PlatformFeeEvent }
   /** The load states no driver pay, so there is no base to charge a percentage of. */
   | { outcome: "no_basis"; assignmentId: string; reason: string }
   /** Nobody has agreed this haul was delivered, so nothing is owed yet. */
@@ -344,32 +348,6 @@ function percentageFeeTriggerAt(trip: TripV2): string | null {
   return physicalCompletionTime >= confirmationTime
     ? trip.completedAt
     : trip.completionConfirmedAt
-}
-
-function frozenPlatformFeeBps(termsSnapshot: Record<string, unknown>): number | null {
-  const hostFee = termsSnapshot.hostFee
-
-  if (!hostFee || typeof hostFee !== "object" || Array.isArray(hostFee)) {
-    return null
-  }
-
-  const acceptedHostFee = hostFee as Record<string, unknown>
-  const rateBps = acceptedHostFee.rateBps
-
-  // Legacy assignments explicitly said fee collection was disabled. A frozen
-  // number inside disabled terms is not authority to accrue a debt.
-  if (acceptedHostFee.collectionState !== "accrues_monthly_in_arrears") {
-    return null
-  }
-
-  return (
-    typeof rateBps === "number" &&
-    Number.isSafeInteger(rateBps) &&
-    rateBps >= 0 &&
-    rateBps <= FEE_BPS_SCALE
-  )
-    ? rateBps
-    : null
 }
 
 /**
@@ -469,7 +447,11 @@ export function accruePlatformFee(
         existing.billingModel === expectedBillingModel,
       `Platform fee ${existing.id} is cross-wired to another host, load, movement, or billing model`
     )
-    return { event: existing, outcome: "already_accrued" }
+    return {
+      event: existing,
+      outcome:
+        existing.status === "voided" ? "already_voided" : "already_accrued"
+    }
   }
 
   if (!assignmentUsesPercentageBilling(assignment)) {
@@ -741,7 +723,11 @@ export function reconcileMissingPlatformFees(
         at
       )
 
-      if (result.outcome === "accrued" || result.outcome === "already_accrued") {
+      if (
+        result.outcome === "accrued" ||
+        result.outcome === "already_accrued" ||
+        result.outcome === "already_voided"
+      ) {
         return {
           assignmentId: assignment.id,
           eventId: result.event.id,
@@ -906,6 +892,14 @@ export type OpenInvoiceForPeriodResult =
   | { outcome: "already_open"; invoice: HostInvoice }
   /** No fee accrued in the month, so no bill exists to send. */
   | { outcome: "nothing_to_bill"; periodStart: string; periodEnd: string; reason: string }
+  /** This host's ledger is ambiguous; other hosts in the batch may still bill. */
+  | {
+      outcome: "blocked_for_review"
+      organizationId: string
+      periodStart: string
+      periodEnd: string
+      reason: string
+    }
 
 /**
  * Refuse to materialize money from a ledger whose movement identity is
@@ -1098,8 +1092,52 @@ function openInvoiceForOrganizationPeriod(
       subtotalCents: invoice.subtotalCents
     }
   })
+  notifyOrganizationBilling(state, {
+    at,
+    body: `${formatMoney({ amountCents: invoice.subtotalCents, currency: LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY })} is ready for the separate LogLoads platform fees on completed loads in this billing period. Driver pay remains your direct obligation and is never reduced by this invoice.`,
+    eventKey: "host_invoice_opened",
+    organizationId: invoice.organizationId,
+    relatedEntityId: invoice.id,
+    relatedEntityType: "host_invoice",
+    title: "LogLoads platform fee invoice ready"
+  })
 
   return { invoice, outcome: "opened" }
+}
+
+/**
+ * Isolates a canonical-ledger refusal to one host without hiding arbitrary
+ * invoice-opening failures. The preflight is intentionally separate from the
+ * opener: only a known fail-closed ledger assertion becomes a typed refusal;
+ * any later programming or mutation error still aborts the transaction.
+ */
+function openInvoiceForOrganizationPeriodInBatch(
+  state: LogLoadsDatabaseState,
+  input: {
+    actorUserId: string | null
+    organizationId: string
+    periodStart: string
+    periodEnd: string
+  },
+  at: string
+): OpenInvoiceForPeriodResult {
+  try {
+    assertPlatformFeeLedgerCanInvoice(state, input.organizationId)
+  } catch (error) {
+    return {
+      outcome: "blocked_for_review",
+      organizationId: input.organizationId,
+      periodEnd: input.periodEnd,
+      periodStart: input.periodStart,
+      reason: (
+        error instanceof Error
+          ? error.message
+          : "Unknown platform-fee ledger failure"
+      ).slice(0, 300)
+    }
+  }
+
+  return openInvoiceForOrganizationPeriod(state, input, at)
 }
 
 /**
@@ -1169,7 +1207,7 @@ export function openClosedPeriodInvoices(
   ).sort()
 
   return organizationIds.map((organizationId) =>
-    openInvoiceForOrganizationPeriod(
+    openInvoiceForOrganizationPeriodInBatch(
       state,
       {
         actorUserId: null,

@@ -264,11 +264,6 @@ const RETIRED_SUBSCRIPTION_WRITE_ACTIONS = new Set<
   "activate_subscription",
   "authorize_pilot_enterprise_conversion",
   "configure_subscription",
-  "record_adjustment",
-  "reconcile_missing_usage",
-  "retire_dispatch_entitlement",
-  "reverse_usage",
-  "schedule_non_renewal",
   "schedule_plan_change"
 ])
 

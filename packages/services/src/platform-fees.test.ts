@@ -872,6 +872,31 @@ describe("platform fee void", () => {
     expect(state.auditEvents.filter((event) => event.action === "platform_fee_voided")).toHaveLength(1)
   })
 
+  it("treats a withdrawn movement as final instead of reporting it as accrued again", () => {
+    const state = freshState()
+    const haul = oneBillableHaul(state)
+    const actor = { actorUserId: billingMember(state), organizationId: HOST_ORG }
+
+    accruePlatformFee(state, { assignmentId: haul.assignmentId })
+    voidPlatformFee(
+      state,
+      { ...actor, assignmentId: haul.assignmentId, reason: "Delivery reversed" },
+      MID_JULY
+    )
+
+    const repeated = accruePlatformFee(state, {
+      assignmentId: haul.assignmentId
+    })
+
+    expect(repeated.outcome).toBe("already_voided")
+    expect(repeated).toMatchObject({
+      event: { assignmentId: haul.assignmentId, status: "voided" }
+    })
+    expect(state.platformFeeEvents).toHaveLength(1)
+    expect(accrualAuditEvents(state)).toHaveLength(1)
+    expect(reconcileMissingPlatformFees(state, MID_JULY)).toEqual([])
+  })
+
   it("refuses to void a fee the host has already been billed for", () => {
     const state = freshState()
     const haul = oneBillableHaul(state)
@@ -1044,6 +1069,18 @@ describe("host invoice", () => {
     expect(result.invoice.subtotalCents).toBe(
       computePlatformFeeCents(52_500, PLATFORM_FEE_BPS) + computePlatformFeeCents(62_500, PLATFORM_FEE_BPS)
     )
+    const notifications = state.notifications.filter(
+      (notification) =>
+        notification.relatedEntityType === "host_invoice" &&
+        notification.relatedEntityId === result.invoice.id
+    )
+    expect(notifications.length).toBeGreaterThan(0)
+    expect(notifications.every((notification) =>
+      notification.emailDeliveryState === "pending"
+    )).toBe(true)
+    expect(notifications[0]?.title).toMatch(/platform fee invoice ready/i)
+    expect(notifications[0]?.body).toContain("$57.50")
+    expect(notifications[0]?.body).toMatch(/driver pay.*never reduced/i)
   })
 
   it("blocks invoicing when one physical movement has duplicate active fee claims", () => {
@@ -1148,6 +1185,9 @@ describe("host invoice", () => {
     twoJuneHauls(state)
 
     const first = openInvoiceForPeriod(state, { ...actor, ...period }, BILLING_RUN)
+    const notificationCountAfterFirst = state.notifications.filter(
+      (notification) => notification.relatedEntityType === "host_invoice"
+    ).length
     const second = openInvoiceForPeriod(state, { ...actor, ...period }, BILLING_RUN)
     const third = openInvoiceForPeriod(state, { ...actor, ...period }, MID_JULY)
 
@@ -1156,6 +1196,10 @@ describe("host invoice", () => {
     expect(third.outcome).toBe("already_open")
     expect(state.hostInvoices).toHaveLength(1)
     expect(state.auditEvents.filter((event) => event.action === "host_invoice_opened")).toHaveLength(1)
+    const invoiceNotifications = state.notifications.filter(
+      (notification) => notification.relatedEntityType === "host_invoice"
+    )
+    expect(invoiceNotifications).toHaveLength(notificationCountAfterFirst)
 
     if (first.outcome !== "opened" || second.outcome !== "already_open") return
     expect(second.invoice.id).toBe(first.invoice.id)
@@ -1178,6 +1222,71 @@ describe("host invoice", () => {
     expect(
       state.auditEvents.find((event) => event.action === "host_invoice_opened")?.actorUserId
     ).toBeNull()
+  })
+
+  it("blocks only the host with an ambiguous ledger while invoicing a clean host", () => {
+    const state = freshState()
+    const blockedAssignment = hostAssignments(state, HOST_ORG)[0]
+    const cleanAssignment = hostAssignments(state, OTHER_HOST_ORG)[0]
+
+    if (!blockedAssignment || !cleanAssignment) {
+      throw new Error("The seed needs one billable assignment for each host")
+    }
+
+    const blockedHaul = billableHaul(state, {
+      assignment: blockedAssignment,
+      confirmedAt: JUNE_CONFIRMED,
+      driverPayCents: 52_500
+    })
+    const cleanHaul = billableHaul(state, {
+      assignment: cleanAssignment,
+      confirmedAt: JUNE_CONFIRMED,
+      driverPayCents: 62_500
+    })
+    const blockedFee = accruePlatformFee(state, {
+      assignmentId: blockedHaul.assignmentId
+    })
+    const cleanFee = accruePlatformFee(state, {
+      assignmentId: cleanHaul.assignmentId
+    })
+
+    if (blockedFee.outcome !== "accrued" || cleanFee.outcome !== "accrued") {
+      throw new Error("The isolation fixture did not accrue both fees")
+    }
+
+    state.platformFeeEvents = state.platformFeeEvents.map((event) =>
+      event.id === blockedFee.event.id
+        ? { ...event, driverPayCents: event.driverPayCents + 1 }
+        : event
+    )
+
+    const results = openAllClosedPeriodInvoices(state, BILLING_RUN)
+
+    expect(results).toEqual([
+      expect.objectContaining({
+        organizationId: HOST_ORG,
+        outcome: "blocked_for_review",
+        reason: expect.stringMatching(/frozen terms.*blocked for review/i)
+      }),
+      expect.objectContaining({
+        invoice: expect.objectContaining({ organizationId: OTHER_HOST_ORG }),
+        outcome: "opened"
+      })
+    ])
+    expect(
+      state.hostInvoices.filter((invoice) => invoice.organizationId === HOST_ORG)
+    ).toHaveLength(0)
+    expect(
+      state.hostInvoices.filter(
+        (invoice) => invoice.organizationId === OTHER_HOST_ORG
+      )
+    ).toHaveLength(1)
+    expect(
+      state.platformFeeEvents.find((event) => event.id === blockedFee.event.id)
+    ).toMatchObject({ invoiceId: null, status: "accrued" })
+    expect(
+      state.platformFeeEvents.find((event) => event.id === cleanFee.event.id)
+    ).toMatchObject({ status: "invoiced" })
   })
 
   it("materializes every missed closed month before collecting the open backlog", () => {

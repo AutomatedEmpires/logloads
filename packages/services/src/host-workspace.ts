@@ -167,7 +167,8 @@ export function activeLandingLimitFor(
     // completed movements.
     if (
       billingAccount?.activationState === "percentage_active" &&
-      billingAccount.billingModel === "percentage_v1"
+      billingAccount.billingModel === "percentage_v1" &&
+      billingAccount.percentageTermsSnapshot !== null
     ) {
       return null
     }

@@ -188,8 +188,8 @@ function HostReadiness({
         }
       : {
           href: "/host/billing",
-          label: "Activate host billing",
-          note: "Accept the 5% completed-load agreement and attach a card before publishing live work."
+          label: "Review host billing",
+          note: "Invited hosts accept the 5% completed-load agreement and attach a card before publishing live work."
         }
   const activationDetail =
     activationState === "percentage_active"
@@ -200,7 +200,7 @@ function HostReadiness({
           ? "Activation is suspended. Contact LogLoads to resolve the operating hold before publication resumes."
           : billingModel
             ? "A historical commercial record exists. Reconcile it from Billing before new percentage work can activate."
-            : "Accept the current 5% agreement and attach a card from Billing. Workspace setup itself does not charge you."
+            : "Pilot activation is invitation-based. Review Billing to accept the current 5% agreement and attach a card when this workspace is approved. Workspace setup itself does not charge you."
   const steps = [
     ...operatingSteps,
     {
@@ -219,15 +219,15 @@ function HostReadiness({
           <p>
             {activationComplete
               ? "Activation is recorded for this workspace. Finish the operating record to put your first movement live."
-              : "Build the operating record now. Live Network publication stays off until LogLoads completes assisted activation with you."}
+              : "Build the operating record now. Live publication stays off until this workspace is approved for percentage billing and completes activation."}
           </p>
         </div>
         <div className="host-readiness__progress">
           <strong>{facts.readyCount} of 4 operating steps ready</strong>
           <span>
             {activationComplete
-              ? "Assisted activation is complete for this workspace."
-              : "Assisted activation is a separate final step."}
+              ? "Billing activation is complete for this workspace."
+              : "Pilot billing activation is a separate final step."}
           </span>
           <div
             aria-hidden
@@ -251,7 +251,7 @@ function HostReadiness({
           const status = isAssisted
             ? step.complete
               ? "Ready"
-              : "Assisted"
+              : "Pilot"
             : step.complete
               ? "Ready"
               : isNext
@@ -355,7 +355,7 @@ export function HostCommand({
           facts={readiness}
           title={
             readiness.readyCount === 4
-              ? "Plan assisted activation"
+              ? "Complete billing activation"
               : "Finish workspace setup"
           }
         />

@@ -58,6 +58,8 @@ import { POST } from "@/app/api/billing/percentage-agreement/route"
 
 const ACTOR_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 const ORGANIZATION_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+const ORGANIZATION_SCOPE_SHA256 =
+  "00f765af1c54eb24e437746c4f64b5841490757b647bf3a392b042f872ad7090"
 
 function actor(role = "owner", type = "landing_source") {
   return {
@@ -103,6 +105,10 @@ describe("percentage billing agreement route", () => {
     vi.stubEnv(
       "LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS",
       ORGANIZATION_ID
+    )
+    vi.stubEnv(
+      "LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256",
+      ORGANIZATION_SCOPE_SHA256
     )
     mocks.requireApiActor.mockResolvedValue(actor())
     mocks.acceptPercentageBillingAgreement.mockReturnValue({

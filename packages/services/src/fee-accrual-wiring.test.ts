@@ -276,6 +276,48 @@ describe("host completion confirmation raises the platform fee", () => {
     expect(fixture.services.state.platformFeeEvents[0]!.id).toBe(firstId)
   })
 
+  it("keeps a withdrawn fee final when completion confirmation is retried", () => {
+    const fixture = settleableHaul()
+    forceSettleableState(fixture, 52_500)
+
+    expect(confirmDelivery(fixture).platformFeeOutcome).toBe("accrued")
+    expect(
+      fixture.services.voidPlatformFee({
+        actorUserId: fixture.hostBilling.userId,
+        assignmentId: fixture.assignment.id,
+        organizationId: fixture.load.companyId,
+        reason: "Delivery was reversed after confirmation"
+      }).outcome
+    ).toBe("voided")
+
+    // A corrected delivery can be submitted after the original confirmation
+    // was withdrawn. The movement identity remains the same, so this second
+    // settlement must preserve the final void rather than revive its amount.
+    const live = fixture.services.state.tripsV2.find(
+      (trip) => trip.id === fixture.trip.id
+    )!
+    live.completionConfirmedAt = null
+    live.completionConfirmedByUserId = null
+    live.completionStatus = "submitted"
+
+    const retried = confirmDelivery(fixture)
+    const completionAudit = fixture.services.state.auditEvents
+      .filter((event) => event.action === "haul_completion_confirmed")
+      .at(-1)
+
+    expect(retried.platformFeeOutcome).toBe("already_voided")
+    expect(retried.platformFee).toMatchObject({
+      event: { status: "voided" },
+      outcome: "already_voided"
+    })
+    expect(completionAudit?.metadata).toMatchObject({
+      platformFeeCents: null,
+      platformFeeEventId: null,
+      platformFeeOutcome: "already_voided"
+    })
+    expect(fixture.services.state.platformFeeEvents).toHaveLength(1)
+  })
+
   it("repairs a confirmed assignment whose fee basis was initially incomplete", () => {
     const fixture = settleableHaul()
     const { held } = forceSettleableState(fixture, 52_500)

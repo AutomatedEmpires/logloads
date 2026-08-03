@@ -77,6 +77,21 @@ function activeHistoricalSubscription(
   ).subscription
 }
 
+function delayedProviderInput(
+  subscription: ReturnType<typeof activeHistoricalSubscription>
+) {
+  return {
+    currentPeriodEnd: subscription.currentPeriodEnd as string,
+    currentPeriodStart: subscription.currentPeriodStart as string,
+    paymentState: "none" as const,
+    providerEffectiveAt: "2026-08-03T00:00:00.000Z",
+    status: "cancelled" as const,
+    stripeCustomerId: subscription.stripeCustomerId as string,
+    stripeSubscriptionId: subscription.stripeSubscriptionId as string,
+    subscriptionId: subscription.id
+  }
+}
+
 describe("percentage_v1 agreement acceptance", () => {
   it("moves an explicit legacy host to the exact current agreement without rewriting frozen work", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
@@ -333,16 +348,7 @@ describe("percentage_v1 agreement acceptance", () => {
       ACCEPTED_AT
     )
     const historicalBefore = structuredClone(stored)
-    const providerInput = {
-      currentPeriodEnd: stored.currentPeriodEnd as string,
-      currentPeriodStart: stored.currentPeriodStart as string,
-      paymentState: "none" as const,
-      providerEffectiveAt: "2026-08-03T00:00:00.000Z",
-      status: "cancelled" as const,
-      stripeCustomerId: stored.stripeCustomerId as string,
-      stripeSubscriptionId: stored.stripeSubscriptionId as string,
-      subscriptionId: stored.id
-    }
+    const providerInput = delayedProviderInput(stored)
 
     const delayed = services.bindOrganizationSubscriptionProvider(
       providerInput,
@@ -372,5 +378,64 @@ describe("percentage_v1 agreement acceptance", () => {
           event.entityId === stored.id
       )
     ).toHaveLength(1)
+  })
+
+  it("fails before mutating terminal provider history when billing accounts conflict", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const subscription = activeHistoricalSubscription(services)
+    const staleSubscriptionAccount = structuredClone(
+      services.state.organizationBillingAccounts.find(
+        (account) => account.organizationId === HOST
+      )!
+    )
+    const stored = services.state.organizationSubscriptions.find(
+      (candidate) => candidate.id === subscription.id
+    )!
+    stored.status = "cancelled"
+    stored.operationalExpiredAt = "2026-08-03T00:00:00.000Z"
+    services.acceptPercentageBillingAgreement(acceptanceInput(), ACCEPTED_AT)
+    services.state.organizationBillingAccounts.push({
+      ...staleSubscriptionAccount,
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"
+    })
+    const before = structuredClone(services.state)
+
+    expect(() =>
+      services.bindOrganizationSubscriptionProvider(
+        delayedProviderInput(stored),
+        "2026-08-04T12:10:00.000Z"
+      )
+    ).toThrow(/conflicting billing accounts/)
+    expect(services.state).toEqual(before)
+  })
+
+  it("fails before mutating terminal provider history for a malformed percentage account", () => {
+    for (const defect of ["subscription_pointer", "missing_terms"] as const) {
+      const services = createLogLoadsServices(createInMemoryDatabase())
+      const subscription = activeHistoricalSubscription(services)
+      const stored = services.state.organizationSubscriptions.find(
+        (candidate) => candidate.id === subscription.id
+      )!
+      stored.status = "cancelled"
+      stored.operationalExpiredAt = "2026-08-03T00:00:00.000Z"
+      const accepted = services.acceptPercentageBillingAgreement(
+        acceptanceInput(),
+        ACCEPTED_AT
+      )
+      if (defect === "subscription_pointer") {
+        accepted.account.subscriptionId = stored.id
+      } else {
+        accepted.account.percentageTermsSnapshot = null
+      }
+      const before = structuredClone(services.state)
+
+      expect(() =>
+        services.bindOrganizationSubscriptionProvider(
+          delayedProviderInput(stored),
+          "2026-08-04T12:10:00.000Z"
+        )
+      ).toThrow(/invalid percentage_v1 billing account/)
+      expect(services.state).toEqual(before)
+    }
   })
 })

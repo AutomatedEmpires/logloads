@@ -162,13 +162,6 @@ export function applyHaulCompletionSubmission(
     !quantity || quantity.value > 0 || Boolean(exception),
     "A zero delivery needs an exception explaining it"
   )
-  assertCondition(
-    !quantity ||
-      quantity.value === 0 ||
-      !exceptionWaivesEvidence(exception),
-    "A positive delivery contradicts an exception that says no delivery occurred"
-  )
-
   // The device can retry after the host has already acted on the first
   // submission (for example when the original response was lost). Preserve
   // that downstream decision when the same author sends the exact same
@@ -182,6 +175,13 @@ export function applyHaulCompletionSubmission(
   if (unchanged) {
     return { changed: false, previousStatus: trip.completionStatus, trip }
   }
+
+  assertCondition(
+    !quantity ||
+      quantity.value === 0 ||
+      !exceptionWaivesEvidence(exception),
+    "A positive delivery contradicts an exception that says no delivery occurred"
+  )
 
   assertCondition(
     trip.completionStatus !== "confirmed",

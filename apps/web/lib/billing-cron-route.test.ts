@@ -321,6 +321,59 @@ describe("billing cron fee reconciliation", () => {
     expect(mocks.ensureUsageInvoice).not.toHaveBeenCalled()
   })
 
+  it("reports a per-host invoice-opening refusal without hiding the completed batch", async () => {
+    const state = { marker: "state" }
+    const blocked = {
+      organizationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      outcome: "blocked_for_review",
+      periodEnd: "2026-07-01T00:00:00.000Z",
+      periodStart: "2026-06-01T00:00:00.000Z",
+      reason: "Canonical ledger validation failed for this organization"
+    }
+    const opened = {
+      invoice: {
+        id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        organizationId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+      },
+      outcome: "opened"
+    }
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined)
+
+    mocks.reconcileMissingPlatformFees.mockReturnValue([])
+    mocks.openAllClosedPeriodInvoices.mockReturnValue([blocked, opened])
+    mocks.listOpenHostInvoices.mockReturnValue([])
+    mocks.platformFeeCollectionEnabled.mockReturnValue(false)
+    mocks.operatingStateAccess.mockReturnValue({
+      async mutate(
+        mutate: (draft: { state: typeof state }) => unknown
+      ) {
+        return mutate({ state })
+      },
+      async read(read: (current: typeof state) => unknown) {
+        return read(state)
+      }
+    })
+
+    const response = await GET(
+      new Request("https://logloads.test/api/billing/cron", {
+        headers: { authorization: "Bearer cron-test-secret" }
+      })
+    )
+    const body = await response.json()
+
+    expect(response.status).toBe(503)
+    expect(body).toMatchObject({
+      invoicesBlockedForReview: [blocked],
+      invoicesOpened: 1
+    })
+    expect(error).toHaveBeenCalledWith(
+      expect.stringMatching(/blocked.*host ledgers/i),
+      { blockedOrganizationCount: 1 }
+    )
+    expect(JSON.stringify(error.mock.calls)).not.toContain(blocked.organizationId)
+    error.mockRestore()
+  })
+
   it("refuses preserved legacy collection when the Stripe account identity is not LogLoads", async () => {
     const state = { billingAdjustments: [], organizationSubscriptions: [] }
 
@@ -1263,6 +1316,69 @@ describe("billing cron fee reconciliation", () => {
       attempted: [],
       queued: 0,
       ready: 0
+    })
+  })
+
+  it("delivers host-invoice email when fee collection is enabled and subscription collection is dark", async () => {
+    const hostInvoiceNotificationId =
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa72"
+    const subscriptionNotificationId =
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa73"
+    const state = {
+      billingAdjustments: [],
+      billingPeriodSummaries: [],
+      networkOverageInvoices: [],
+      notifications: [
+        queuedBillingNotification({
+          id: hostInvoiceNotificationId,
+          relatedEntityType: "host_invoice"
+        }),
+        queuedBillingNotification({
+          id: subscriptionNotificationId,
+          relatedEntityType: "organization_subscription"
+        })
+      ],
+      organizationSubscriptions: []
+    }
+
+    configureBillingEmailCron(state)
+    mocks.platformFeeCollectionEnabled.mockReturnValue(true)
+    mocks.subscriptionCollectionEnabled.mockReturnValue(false)
+    mocks.isBillingNotificationEmailDeliveryEnabled.mockReturnValue(true)
+    mocks.deliverClaimedBillingNotificationEmail.mockResolvedValue({
+      outcome: "delivered",
+      providerMessageId: "email_provider_host_invoice"
+    })
+
+    const response = await GET(
+      new Request("https://logloads.test/api/billing/cron", {
+        headers: { authorization: "Bearer cron-test-secret" }
+      })
+    )
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(mocks.claimBillingNotificationEmail).toHaveBeenCalledTimes(1)
+    expect(mocks.claimBillingNotificationEmail).toHaveBeenCalledWith(
+      state,
+      expect.objectContaining({ notificationId: hostInvoiceNotificationId }),
+      expect.any(String)
+    )
+    expect(
+      state.notifications.find(
+        (notification) => notification.id === hostInvoiceNotificationId
+      )?.emailDeliveryState
+    ).toBe("delivered")
+    expect(
+      state.notifications.find(
+        (notification) => notification.id === subscriptionNotificationId
+      )?.emailDeliveryState
+    ).toBe("pending")
+    expect(body.subscriptionBilling.billingEmailNotifications).toMatchObject({
+      configured: true,
+      queued: 1,
+      ready: 1,
+      state: "enabled"
     })
   })
 

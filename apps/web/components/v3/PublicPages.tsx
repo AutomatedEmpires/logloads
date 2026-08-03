@@ -107,7 +107,7 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
           <SectionHeader eyebrow="One network" title="The right screen for each job" />
           <div className="feature-grid">
             <article><span>Driver accounts</span><h3>Drivers &amp; owner-operators</h3><p>See available work, know whether it fits, request it, and follow the schedule from a phone.</p><Link className="text-link" href="/sign-up?path=driver">Create a driver profile</Link></article>
-            <article><span>Free for drivers</span><h3>Dispatchers &amp; fleets</h3><p>Keep trucks, drivers, requests, schedules, and exceptions in one operating view without reducing driver pay.</p><Link className="text-link" href="/sign-up?path=fleet">Set up dispatch</Link></article>
+            <article><span>Free fleet dispatch</span><h3>Dispatchers &amp; fleets</h3><p>Keep trucks, drivers, requests, schedules, and exceptions in one operating view without reducing driver pay.</p><Link className="text-link" href="/sign-up?path=fleet">Set up dispatch</Link></article>
             <article><span>5% per completed load</span><h3>Hosts</h3><p>Post without a listing fee, coordinate qualified capacity, and pay the LogLoads fee on top of the driver pay you state.</p><Link className="text-link" href="/pricing">See the exact math</Link></article>
           </div>
         </section>

@@ -22,7 +22,7 @@ let health
 try {
   const res = await fetch(`${BASE}/api/health`, { signal: AbortSignal.timeout(15000) })
   health = await res.json()
-  record(res.status === 200 && health.status === "ok" ? "PASS" : "FAIL", "health", `${res.status} engine=${health?.engine?.ok} profiles=${health?.engine?.profiles}`)
+  record(res.status === 200 && health.status === "ok" ? "PASS" : "FAIL", "health", `${res.status} engine=${health?.engine?.ok}`)
 } catch (error) {
   record("FAIL", "health", String(error).slice(0, 120))
 }
@@ -77,38 +77,17 @@ try {
     process.env.SMOKE_EXPECT_PERCENTAGE_ENROLLMENT?.trim().toLowerCase() ?? "missing"
   const enrollmentExpectationValid =
     expectedEnrollment === "enabled" || expectedEnrollment === "disabled"
-  const expectedEnrollmentCount = Number.parseInt(
-    process.env.SMOKE_EXPECT_PERCENTAGE_ALLOWED_ORGANIZATION_COUNT ?? "",
-    10
-  )
-  const expectedEnrollmentScope =
-    process.env.SMOKE_EXPECT_PERCENTAGE_ALLOWED_ORGANIZATION_SCOPE_SHA256
-      ?.trim()
-      .toLowerCase() ?? ""
-  const enrollmentScopeMatches = expectedEnrollment === "disabled"
-    ? percentageBilling.enrollment === "disabled" &&
-      percentageBilling.allowedOrganizationCount === 0 &&
-      percentageBilling.allowedOrganizationScopeSha256 === null &&
-      percentageBilling.invalidEnrollmentEntryCount === 0
-    : percentageBilling.enrollment === "enabled" &&
-      Number.isSafeInteger(expectedEnrollmentCount) &&
-      expectedEnrollmentCount > 0 &&
-      percentageBilling.allowedOrganizationCount === expectedEnrollmentCount &&
-      /^[0-9a-f]{64}$/.test(expectedEnrollmentScope) &&
-      percentageBilling.allowedOrganizationScopeSha256 === expectedEnrollmentScope &&
-      percentageBilling.invalidEnrollmentEntryCount === 0
+  const enrollmentScopeMatches =
+    percentageBilling.enrollment === expectedEnrollment &&
+    percentageBilling.scopeVerified === true
   const billingReady =
     collectionExpectationValid &&
     (
       integrations.billing === "dark_configured" ||
       integrations.billing === "collection_configured"
     ) &&
-    percentageBilling.stripeSecretConfigured === true &&
-    percentageBilling.cardSetupConfigured === true &&
-    percentageBilling.providerAccountAssertionConfigured === true &&
-    percentageBilling.providerModeAligned === true &&
-    percentageBilling.webhookConfigured === true &&
-    percentageBilling.collection === expectedFeeCollection
+    percentageBilling.collection === expectedFeeCollection &&
+    percentageBilling.readiness === integrations.billing
   record(
     billingReady ? "PASS" : "FAIL",
     "percentage billing configuration",
@@ -124,7 +103,7 @@ try {
   record(
     enrollmentExpectationValid && enrollmentScopeMatches ? "PASS" : "FAIL",
     "percentage enrollment scope",
-    `state=${String(percentageBilling.enrollment)} expected=${expectedEnrollment} organizations=${String(percentageBilling.allowedOrganizationCount)}`
+    `state=${String(percentageBilling.enrollment)} expected=${expectedEnrollment} scopeVerified=${String(percentageBilling.scopeVerified)}`
   )
   if (!enrollmentExpectationValid) {
     record(

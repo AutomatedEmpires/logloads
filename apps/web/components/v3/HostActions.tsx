@@ -1220,7 +1220,11 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
             options.billingModel === "dispatch_pro" ||
             options.billingModel === "enterprise_custom"
               ? "This workspace has a historical subscription record. New subscription work is closed; reconcile that record from Billing before publishing new work under the current percentage agreement."
-              : `There is no charge to post, subscription, monthly minimum, tier, allowance, or overage. After a load completes, LogLoads bills you ${PERCENTAGE_FEE_PERCENT_LABEL} of the driver pay you stated, added on top and never deducted from transportation compensation.`}
+              : options.billingModel === "legacy_percentage"
+                ? "Existing legacy assignments keep their frozen fee terms. New live work requires approved activation of the current percentage agreement; check Billing for this workspace's status."
+                : options.billingActivationState === "percentage_active"
+                  ? `There is no charge to post, subscription, monthly minimum, tier, allowance, or overage. After a load completes, LogLoads bills you ${PERCENTAGE_FEE_PERCENT_LABEL} of the driver pay you stated, added on top and never deducted from transportation compensation.`
+                  : `Pilot activation is invitation-based. Once this workspace is approved, accepts the current agreement, and attaches a card, each completed load carries a separate ${PERCENTAGE_FEE_PERCENT_LABEL} LogLoads fee on top of stated driver pay.`}
           </p>
 
           <span className="req-label">Rate card for this lane</span>
