@@ -584,6 +584,7 @@ export interface HostBillingSource {
   }[]
   organizationSubscriptions?: readonly {
     id: string
+    internalBillingTest?: boolean
     organizationId: string
     status: string
   }[]
@@ -624,6 +625,14 @@ export function buildHostBillingView(
   const historicalSubscriptionIsTerminal =
     linkedHistoricalSubscription?.status === "cancelled" ||
     linkedHistoricalSubscription?.status === "expired"
+  const hasNonterminalCommercialSubscription =
+    source.organizationSubscriptions?.some(
+      (subscription) =>
+        subscription.organizationId === organizationId &&
+        !subscription.internalBillingTest &&
+        subscription.status !== "cancelled" &&
+        subscription.status !== "expired"
+    ) ?? false
   const percentageCollectionRequired =
     billingAccount?.billingModel === "percentage_v1" ||
     billingAccount?.billingModel === "legacy_percentage" ||
@@ -688,6 +697,7 @@ export function buildHostBillingView(
       canAccept:
         options.canManageBilling === true &&
         options.percentageEnrollmentAllowed === true &&
+        !hasNonterminalCommercialSubscription &&
         (percentageAgreementState === "available" ||
           percentageAgreementState === "legacy" ||
           (percentageAgreementState === "historical_subscription" &&

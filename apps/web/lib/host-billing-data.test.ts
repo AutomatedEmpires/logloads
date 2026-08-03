@@ -790,6 +790,64 @@ describe("percentage agreement state", () => {
     })
   })
 
+  it("keeps acceptance hidden until every commercial subscription is terminal", () => {
+    const view = buildHostBillingView(
+      source({
+        organizationBillingAccounts: [
+          {
+            activationState: "active",
+            billingModel: "subscription_v1",
+            organizationId: HOST,
+            subscriptionId: "20202020-2020-4020-8020-202020202020"
+          }
+        ],
+        organizationSubscriptions: [
+          {
+            id: "20202020-2020-4020-8020-202020202020",
+            organizationId: HOST,
+            status: "cancelled"
+          },
+          {
+            id: "30303030-3030-4030-8030-303030303030",
+            organizationId: HOST,
+            status: "past_due"
+          }
+        ]
+      }),
+      HOST,
+      NOW,
+      { canManageBilling: true, percentageEnrollmentAllowed: true }
+    )
+
+    expect(view.percentageAgreement).toMatchObject({
+      canAccept: false,
+      state: "historical_subscription"
+    })
+  })
+
+  it("does not let an internal billing test block commercial acceptance", () => {
+    const view = buildHostBillingView(
+      source({
+        organizationSubscriptions: [
+          {
+            id: "30303030-3030-4030-8030-303030303030",
+            internalBillingTest: true,
+            organizationId: HOST,
+            status: "active"
+          }
+        ]
+      }),
+      HOST,
+      NOW,
+      { canManageBilling: true, percentageEnrollmentAllowed: true }
+    )
+
+    expect(view.percentageAgreement).toMatchObject({
+      canAccept: true,
+      state: "legacy"
+    })
+  })
+
   it("keeps the agreement control hidden when this host is outside the rollout", () => {
     const view = buildHostBillingView(source(), HOST, NOW, { canManageBilling: true })
 
