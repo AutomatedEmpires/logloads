@@ -724,8 +724,11 @@ describe("percentage agreement state", () => {
     })
   })
 
-  it("offers current terms to a legacy account without rewriting its history", () => {
-    const view = buildHostBillingView(source(), HOST, NOW)
+  it("offers current terms to an allowlisted legacy account without rewriting its history", () => {
+    const view = buildHostBillingView(source(), HOST, NOW, {
+      canManageBilling: true,
+      percentageEnrollmentAllowed: true
+    })
 
     expect(view.percentageAgreement).toEqual({
       acceptedOnLabel: null,
@@ -747,7 +750,8 @@ describe("percentage agreement state", () => {
         ]
       }),
       HOST,
-      NOW
+      NOW,
+      { canManageBilling: true, percentageEnrollmentAllowed: true }
     )
 
     expect(view.percentageAgreement).toMatchObject({
@@ -776,12 +780,33 @@ describe("percentage agreement state", () => {
         ]
       }),
       HOST,
-      NOW
+      NOW,
+      { canManageBilling: true, percentageEnrollmentAllowed: true }
     )
 
     expect(view.percentageAgreement).toMatchObject({
       canAccept: true,
       state: "historical_subscription"
+    })
+  })
+
+  it("keeps the agreement control hidden when this host is outside the rollout", () => {
+    const view = buildHostBillingView(source(), HOST, NOW, { canManageBilling: true })
+
+    expect(view.percentageAgreement).toMatchObject({
+      canAccept: false,
+      state: "legacy"
+    })
+  })
+
+  it("keeps the agreement control hidden from a member without billing permission", () => {
+    const view = buildHostBillingView(source(), HOST, NOW, {
+      percentageEnrollmentAllowed: true
+    })
+
+    expect(view.percentageAgreement).toMatchObject({
+      canAccept: false,
+      state: "legacy"
     })
   })
 })

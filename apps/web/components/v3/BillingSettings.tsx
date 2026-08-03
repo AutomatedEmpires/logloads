@@ -777,9 +777,9 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
             <p className="fee-alert" role="note">
               <Icon aria-hidden name="ops.notice" size={16} />
               <span>
-                Previously committed percentage terms remain readable and
-                collectible and will not be rewritten. Accept the current
-                agreement below to use percentage_v1 for new work.
+                {percentageAgreement.canAccept
+                  ? "Previously committed percentage terms remain readable and collectible and will not be rewritten. Accept the current agreement below to use percentage_v1 for new work."
+                  : "Previously committed percentage terms remain readable and collectible and will not be rewritten. Current agreement enrollment is not open for this workspace."}
               </span>
             </p>
           ) : percentageAgreement.state === "historical_subscription" ? (
@@ -788,7 +788,7 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
               <span>
                 {percentageAgreement.canAccept
                   ? "This workspace's terminal subscription remains preserved as history. Accept the current percentage agreement below to activate percentage_v1 for new work; the old record will not be rewritten."
-                  : "This workspace has a historical subscription record. New subscription enrollment is closed; the active or unresolved record must become terminal before the current percentage agreement can activate."}
+                  : "This workspace's historical subscription remains preserved as history. Current percentage enrollment requires both a terminal record and inclusion in the controlled rollout."}
               </span>
             </p>
           ) : null}

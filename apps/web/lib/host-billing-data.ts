@@ -18,6 +18,7 @@ import {
 } from "@logloads/contracts"
 import type { BadgeProps } from "@logloads/ui"
 
+import { percentageEnrollmentAllowed as currentPercentageEnrollmentAllowed } from "./percentage-enrollment"
 import { services } from "./services"
 
 /**
@@ -588,10 +589,21 @@ export interface HostBillingSource {
   }[]
 }
 
+export interface HostBillingViewOptions {
+  /** Mirrors the mutation boundary: only billing managers can accept terms. */
+  canManageBilling?: boolean
+  /**
+   * Server-owned rollout decision for this exact organization. Defaults false
+   * so a new caller cannot accidentally expose commercial enrollment.
+   */
+  percentageEnrollmentAllowed?: boolean
+}
+
 export function buildHostBillingView(
   source: HostBillingSource,
   organizationId: string,
-  instant: string
+  instant: string,
+  options: HostBillingViewOptions = {}
 ): HostBillingView {
   // Every collection is filtered to this organization before anything is summed.
   // A fee belonging to another host must never reach this host's total, and
@@ -674,10 +686,12 @@ export function buildHostBillingView(
         ? formatDay(billingAccount.percentageTermsSnapshot.acceptedAt)
         : null,
       canAccept:
-        percentageAgreementState === "available" ||
-        percentageAgreementState === "legacy" ||
-        (percentageAgreementState === "historical_subscription" &&
-          historicalSubscriptionIsTerminal),
+        options.canManageBilling === true &&
+        options.percentageEnrollmentAllowed === true &&
+        (percentageAgreementState === "available" ||
+          percentageAgreementState === "legacy" ||
+          (percentageAgreementState === "historical_subscription" &&
+            historicalSubscriptionIsTerminal)),
       state: percentageAgreementState,
       termsVersion:
         billingAccount?.percentageTermsSnapshot?.acceptedTermsVersion ?? null
@@ -694,8 +708,22 @@ export function buildHostBillingView(
  * await is what refreshes the operating-state document. Calling it first would
  * show a host last request's ledger.
  */
-export function getHostBillingView(organizationId: string): HostBillingView {
-  return buildHostBillingView(services.state, organizationId, new Date().toISOString())
+export function getHostBillingView(
+  organizationId: string,
+  options: Pick<HostBillingViewOptions, "canManageBilling"> = {}
+): HostBillingView {
+  return buildHostBillingView(
+    services.state,
+    organizationId,
+    new Date().toISOString(),
+    {
+      canManageBilling: options.canManageBilling,
+      percentageEnrollmentAllowed: currentPercentageEnrollmentAllowed(
+        organizationId,
+        process.env
+      )
+    }
+  )
 }
 
 /**

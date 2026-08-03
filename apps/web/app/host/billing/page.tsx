@@ -1,3 +1,5 @@
+import { organizationRoleCan } from "@logloads/contracts"
+
 import { BillingPage } from "@/components/v3"
 import { getHostBillingView } from "@/lib/host-billing-data"
 import { getBillingView } from "@/lib/plans"
@@ -8,13 +10,17 @@ export const dynamic = "force-dynamic"
 
 export default async function Page() {
   const context = await getCockpitContext("host")
+  const activeRole = context.actor.activeMembership?.role
 
   return (
     <BillingPage
       account={shellAccountFor(context)}
       billing={getBillingView(context.network)}
       checkoutNotice={null}
-      hostBilling={getHostBillingView(context.network.activeOrganization.id)}
+      hostBilling={getHostBillingView(context.network.activeOrganization.id, {
+        canManageBilling:
+          activeRole !== undefined && organizationRoleCan(activeRole, "manage_billing")
+      })}
       hostSubscriptionBilling={getHostSubscriptionBillingView(
         context.network.activeOrganization.id
       )}
