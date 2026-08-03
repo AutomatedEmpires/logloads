@@ -54,6 +54,7 @@ import {
   upsertLandingDetails
 } from "./host-workspace"
 import { listDriverAvailability, upsertAvailabilityWindow } from "./availability"
+import { acceptPercentageBillingAgreement } from "./billing-enrollment"
 import {
   acceptInvitationAsNewAccount,
   acceptInvitationForExistingUser,
@@ -381,6 +382,8 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     listPendingInvitationsForEmail: (email: string) => listPendingInvitationsForEmail(state, email),
     listPendingInvitationsForOrganization: (organizationId: string) =>
       listPendingInvitationsForOrganization(state, organizationId),
+    acceptPercentageBillingAgreement: (input: Parameters<typeof acceptPercentageBillingAgreement>[1]) =>
+      acceptPercentageBillingAgreement(state, input),
     revokeOrganizationInvitation: (input: Parameters<typeof revokeOrganizationInvitation>[1]) =>
       revokeOrganizationInvitation(state, input),
     createThread: (input: unknown) => createThread(state, input),

@@ -970,14 +970,14 @@ describe("host onboarding", () => {
     // Workspace setup is free, but no legacy fee or paid plan is invented for a
     // new host. A card reference alone cannot silently enroll it either.
     expect(() => services.createLoadPostingWithPolicy(posting)).toThrow(
-      /operating plan is not active yet/
+      /has not accepted the LogLoads fee agreement/
     )
     expect(services.state.loadPostings.some((load) => load.title === posting.title)).toBe(false)
 
     attachCard(services, organizationId)
 
     expect(() => services.createLoadPostingWithPolicy(posting)).toThrow(
-      /operating plan is not active yet/
+      /has not accepted the LogLoads fee agreement/
     )
     expect(
       services.state.organizationBillingAccounts.find(

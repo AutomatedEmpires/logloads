@@ -192,7 +192,7 @@ export function assertHostCanPublish(
 
   assertCondition(
     Boolean(billingAccount),
-    "This organization is not enrolled in a LogLoads operating plan. Choose a plan with LogLoads before publishing; posting itself has not been charged."
+    "This organization has not accepted the LogLoads fee agreement. Accept it in Billing — 5% of stated driver pay, only on completed truckloads — then publish; posting itself is free."
   )
 
   const effectiveVisibility =
@@ -230,7 +230,7 @@ export function assertHostCanPublish(
     usesLegacyPercentage ||
       billingAccount?.activationState === "active" ||
       billingAccount?.activationState === "suspended",
-    "This organization's operating plan is not active yet. Finish plan activation before publishing; posting itself has not been charged."
+    "This organization has not accepted the LogLoads fee agreement yet. Accept it in Billing — 5% of stated driver pay, only on completed truckloads — then publish; posting itself is free."
   )
 
   assertCondition(
