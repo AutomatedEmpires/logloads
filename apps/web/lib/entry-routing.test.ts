@@ -42,6 +42,7 @@ describe("public entry routing", () => {
     expect(parseEntryIntent("fleet")).toBe("fleet")
     expect(parseEntryIntent("host")).toBe("host")
     expect(parseEntryIntent("admin")).toBeNull()
+    expect(parseEntryIntent(["driver", "host"])).toBeNull()
     expect(parseEntryIntent(undefined)).toBeNull()
   })
 
@@ -51,6 +52,7 @@ describe("public entry routing", () => {
     expect(safeEntryNext("/sign-up?path=driver", "driver")).toBe("")
     expect(safeEntryNext("/onboarding/driver", "driver")).toBe("")
     expect(safeEntryNext("/host/command", "driver")).toBe("")
+    expect(safeEntryNext(["/driver/loads", "/host/command"], "driver")).toBe("")
   })
 
   it("honors driver intent for an actor whose default cockpit is Host", () => {

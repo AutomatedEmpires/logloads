@@ -36,7 +36,7 @@ function cockpitForPath(path: string): Cockpit | null {
   return null
 }
 
-export function parseEntryIntent(value: string | null | undefined): EntryIntent | null {
+export function parseEntryIntent(value: unknown): EntryIntent | null {
   return value === "driver" || value === "fleet" || value === "host" ? value : null
 }
 
@@ -45,9 +45,13 @@ export function parseEntryIntent(value: string | null | undefined): EntryIntent 
  * entry loop, and must not contradict an explicit role intent.
  */
 export function safeEntryNext(
-  value: string | null | undefined,
+  value: unknown,
   intent: EntryIntent | null = null
 ): string {
+  if (typeof value !== "string") {
+    return ""
+  }
+
   const safePath = safeInternalPath(value, "")
 
   if (!safePath) {

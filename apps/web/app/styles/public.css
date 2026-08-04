@@ -89,6 +89,7 @@
 @media (max-width: 760px) {
   .public-actions a.action-link { display: none; }
   .public-actions > .public-session__signout { display: none; }
+  .public-actions .public-session__pending { display: none; }
 }
 @media (max-width: 420px) {
   .public-mobile-menu__actions { grid-template-columns: 1fr; }
