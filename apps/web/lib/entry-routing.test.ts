@@ -100,6 +100,49 @@ describe("public entry routing", () => {
     })
   })
 
+  it("requires an explicit organization switch before opening an inactive workspace", () => {
+    const dana = actorFor("dispatch@northpine.example")
+    const fleetMembership = dana.memberships.find(({ organization }) =>
+      organization.displayName === "North Pine Logging"
+    )
+    const hostMembership = dana.memberships.find(({ organization }) =>
+      organization.displayName === "Summit Ridge Timber"
+    )
+
+    if (!fleetMembership || !hostMembership) {
+      throw new Error("Dana's cross-organization memberships are missing")
+    }
+
+    expect(decideExistingActorEntry(dana, { intent: "host" })).toEqual({
+      href: "/host/command",
+      kind: "switch",
+      organizationId: hostMembership.organization.id,
+      organizationName: "Summit Ridge Timber"
+    })
+    expect(decideExistingActorEntry(dana, {
+      intent: "host",
+      next: "/host/command?from=public"
+    })).toEqual({
+      href: "/host/command?from=public",
+      kind: "switch",
+      organizationId: hostMembership.organization.id,
+      organizationName: "Summit Ridge Timber"
+    })
+
+    const hostActive = {
+      ...dana,
+      activeMembership: hostMembership.membership,
+      activeOrganization: hostMembership.organization
+    }
+
+    expect(decideExistingActorEntry(hostActive, { intent: "fleet" })).toEqual({
+      href: "/fleet/command",
+      kind: "switch",
+      organizationId: fleetMembership.organization.id,
+      organizationName: "North Pine Logging"
+    })
+  })
+
   it("shows active-account context for generic entry but honors an authorized next path", () => {
     const cole = actorFor("cole@summit.example")
 

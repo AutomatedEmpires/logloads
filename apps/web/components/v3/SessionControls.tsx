@@ -2,9 +2,10 @@
 
 import { useClerk } from "@clerk/nextjs"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useEffect, useState, useTransition } from "react"
 
-import { clearLocalSessionAction } from "@/lib/session-actions"
+import { clearLocalSessionAction, switchOrganizationAction } from "@/lib/session-actions"
 
 const clerkConfigured = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)
 
@@ -93,6 +94,50 @@ export function SessionSignOutButton(props: SessionSignOutButtonProps) {
   return clerkConfigured
     ? <ClerkSessionSignOutButton {...props} />
     : <LocalSessionSignOutButton {...props} />
+}
+
+export function WorkspaceSwitchButton({
+  className,
+  href,
+  label,
+  organizationId
+}: {
+  className?: string
+  href: string
+  label: string
+  organizationId: string
+}) {
+  const router = useRouter()
+  const [error, setError] = useState<string | null>(null)
+  const [pending, startTransition] = useTransition()
+
+  const switchWorkspace = () => {
+    setError(null)
+    startTransition(async () => {
+      try {
+        const switched = await switchOrganizationAction(organizationId)
+
+        if (!switched) {
+          setError("This workspace is no longer available to this account.")
+          return
+        }
+
+        router.push(href)
+        router.refresh()
+      } catch {
+        setError("Workspace switch did not finish. Try again.")
+      }
+    })
+  }
+
+  return (
+    <>
+      <button className={className} disabled={pending} onClick={switchWorkspace} type="button">
+        {pending ? "Switching workspace…" : label}
+      </button>
+      {error ? <span className="active-session__error" role="alert">{error}</span> : null}
+    </>
+  )
 }
 
 function AnonymousEntryActions({ mobile, onNavigate }: { mobile: boolean; onNavigate?: () => void }) {

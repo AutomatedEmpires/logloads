@@ -98,6 +98,19 @@ test("public entry reflects the active account and preserves driver intent", asy
   await expect(page.getByRole("heading", { exact: true, name: "Loads" })).toBeVisible()
 })
 
+test("role-specific entry offers an explicit workspace switch", async ({ page }) => {
+  test.slow()
+  await signIn(page, "dispatch@northpine.example")
+
+  await page.goto("/sign-up?path=host")
+  await expect(page.getByRole("heading", { name: "Your host workspace is already active." })).toBeVisible()
+  await expect(page.getByText(/Summit Ridge Timber/)).toBeVisible()
+
+  await page.getByRole("button", { name: "Switch to host workspace" }).click()
+  await page.waitForURL(/\/host\/command/, { timeout: 30_000 })
+  await expect(page.getByRole("heading", { exact: true, name: "Command" })).toBeVisible()
+})
+
 test("public sign-out returns to anonymous driver onboarding", async ({ page }) => {
   test.slow()
   await signIn(page, "cole@summit.example")

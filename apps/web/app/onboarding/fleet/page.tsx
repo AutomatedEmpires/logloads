@@ -18,7 +18,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ n
         email={actor.profile.email}
         intent="fleet"
         mode="sign-up"
-        requestedHome={decision.kind === "redirect" ? decision.href : null}
+        requestedHome={decision.kind === "session" ? null : decision.href}
+        requestedOrganization={decision.kind === "switch"
+          ? { id: decision.organizationId, name: decision.organizationName }
+          : null}
         restartHref={next ? `/sign-up?path=fleet&next=${encodeURIComponent(next)}` : "/sign-up?path=fleet"}
       />
     )

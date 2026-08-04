@@ -15,7 +15,7 @@ import type { DemoPersona } from "@/lib/demo-personas"
 import { DecisionPanel, EconomicsPanel, LoadCard, LoadDiscovery, OperationSections, RoutePackPreview, WeatherWidget } from "./LoadMap"
 import { BrandMark } from "./Brand"
 import { EmptyState, PageIntro, PublicShell, SectionHeader } from "./Shells"
-import { SessionSignOutButton } from "./SessionControls"
+import { SessionSignOutButton, WorkspaceSwitchButton } from "./SessionControls"
 
 const driverFlow: Array<{ step: string; question: string; body: string }> = [
   { body: "See nearby work, pay, timing, distance, and how many hauls remain.", question: "What is available?", step: "Available" },
@@ -472,6 +472,7 @@ export function AuthenticatedEntryPage({
   intent,
   mode,
   requestedHome,
+  requestedOrganization,
   restartHref
 }: {
   currentHome: string
@@ -480,6 +481,7 @@ export function AuthenticatedEntryPage({
   intent?: "driver" | "fleet" | "host" | null
   mode: "sign-in" | "sign-up"
   requestedHome?: string | null
+  requestedOrganization?: { id: string; name: string } | null
   restartHref: string
 }) {
   const requestedAccount = intent === "driver"
@@ -490,6 +492,7 @@ export function AuthenticatedEntryPage({
         ? "host workspace"
         : null
   const requestedAccountIsActive = Boolean(requestedAccount && requestedHome)
+  const requiresWorkspaceSwitch = Boolean(requestedOrganization)
   const title = requestedAccountIsActive
     ? `Your ${requestedAccount} is already active.`
     : requestedAccount
@@ -497,7 +500,9 @@ export function AuthenticatedEntryPage({
     : mode === "sign-in"
       ? "You’re already signed in."
       : "This account is already set up."
-  const body = requestedAccountIsActive
+  const body = requiresWorkspaceSwitch
+    ? `LogLoads found the ${requestedAccount} in ${requestedOrganization?.name}. Switch workspaces to open it without creating another account, or sign out if you meant to use a different identity.`
+    : requestedAccountIsActive
     ? `LogLoads found the ${requestedAccount} on this signed-in account. Open that workspace without creating another account, or sign out if you meant to use a different identity.`
     : requestedAccount
     ? `LogLoads found an active account in this browser, but it does not include a ${requestedAccount}. Open the current workspace, or sign out to start with a different account.`
@@ -510,7 +515,13 @@ export function AuthenticatedEntryPage({
       ? "Sign out and use another account"
       : "Sign out and create another account"
   const primaryHref = requestedHome ?? currentHome
-  const primaryLabel = requestedAccountIsActive
+  const primaryLabel = requiresWorkspaceSwitch
+    ? intent === "fleet"
+      ? "Switch to fleet workspace"
+      : intent === "host"
+        ? "Switch to host workspace"
+        : "Switch to driver workspace"
+    : requestedAccountIsActive
     ? intent === "driver"
       ? "Open driver workspace"
       : intent === "fleet"
@@ -532,7 +543,16 @@ export function AuthenticatedEntryPage({
             {email ? <small>{email}</small> : null}
           </div>
           <div className="active-session__actions">
-            <Link className="action-link" href={primaryHref}>{primaryLabel}</Link>
+            {requiresWorkspaceSwitch && requestedOrganization ? (
+              <WorkspaceSwitchButton
+                className="action-link"
+                href={primaryHref}
+                label={primaryLabel}
+                organizationId={requestedOrganization.id}
+              />
+            ) : (
+              <Link className="action-link" href={primaryHref}>{primaryLabel}</Link>
+            )}
             <SessionSignOutButton
               className="action-link action-link--secondary"
               label={signOutLabel}

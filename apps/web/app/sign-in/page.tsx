@@ -16,7 +16,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ n
   if (actor) {
     const decision = decideExistingActorEntry(actor, { next })
 
-    if (decision.kind === "redirect") {
+    if (decision.kind !== "session") {
       redirect(decision.href)
     }
 

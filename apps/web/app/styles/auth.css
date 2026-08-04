@@ -51,6 +51,7 @@
 .active-session__identity strong { color: var(--ink); font-size: 1.1rem; }
 .active-session__identity small { color: var(--ink-soft); font-size: 0.9rem; }
 .active-session__actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+.active-session__error { flex-basis: 100%; color: var(--red); font-size: 0.86rem; font-weight: 800; }
 .active-session__note { color: var(--muted); font-size: 0.86rem; font-weight: 700; }
 
 .auth-form {

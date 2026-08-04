@@ -20,7 +20,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ n
 
   if (actor) {
     const decision = decideExistingActorEntry(actor, { intent, next })
-    const requestedHome = intent && decision.kind === "redirect" ? decision.href : null
+    const requestedHome = intent && decision.kind !== "session" ? decision.href : null
+    const requestedOrganization = decision.kind === "switch"
+      ? { id: decision.organizationId, name: decision.organizationName }
+      : null
 
     const restartQuery = [
       intent ? `path=${intent}` : "",
@@ -35,6 +38,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ n
         intent={intent}
         mode="sign-up"
         requestedHome={requestedHome}
+        requestedOrganization={requestedOrganization}
         restartHref={restartQuery ? `/sign-up?${restartQuery}` : "/sign-up"}
       />
     )

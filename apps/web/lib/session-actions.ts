@@ -110,12 +110,7 @@ export async function clearLocalSessionAction(): Promise<void> {
   cookieStore.delete(SESSION_COOKIE)
 }
 
-export async function signOutAction(): Promise<void> {
-  await clearLocalSessionAction()
-  redirect("/")
-}
-
-export async function switchOrganizationAction(organizationId: string): Promise<void> {
+export async function switchOrganizationAction(organizationId: string): Promise<boolean> {
   const actor = await getSessionActor()
 
   if (!actor) {
@@ -125,7 +120,7 @@ export async function switchOrganizationAction(organizationId: string): Promise<
   const membership = actor.memberships.find((entry) => entry.organization.id === organizationId)
 
   if (!membership) {
-    return
+    return false
   }
 
   const cookieStore = await cookies()
@@ -133,6 +128,7 @@ export async function switchOrganizationAction(organizationId: string): Promise<
   cookieStore.set(SESSION_COOKIE, createSessionCookieValue(actor.profile.id, organizationId), COOKIE_OPTIONS)
 
   revalidatePath("/", "layout")
+  return true
 }
 
 /**

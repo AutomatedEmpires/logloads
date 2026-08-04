@@ -42,7 +42,7 @@ export default async function Page({
   if (actor) {
     const decision = decideExistingActorEntry(actor, { next })
 
-    if (decision.kind === "redirect") {
+    if (decision.kind !== "session") {
       redirect(decision.href)
     }
 

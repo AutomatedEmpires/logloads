@@ -2,6 +2,7 @@ import { safeInternalPath } from "./safe-redirect"
 import {
   canAccessCockpit,
   homePathFor,
+  membershipForCockpit,
   type Cockpit,
   type SessionActor
 } from "./session-policy"
@@ -10,6 +11,7 @@ export type EntryIntent = Exclude<Cockpit, "admin">
 
 export type ExistingActorEntryDecision =
   | { kind: "redirect"; href: string }
+  | { kind: "switch"; href: string; organizationId: string; organizationName: string }
   | { kind: "session"; currentHome: string }
 
 const ENTRY_ROUTES = ["/sign-in", "/sign-up", "/onboarding"] as const
@@ -67,16 +69,16 @@ export function safeEntryNext(
   return safePath
 }
 
-export function homePathForIntent(actor: SessionActor, intent: EntryIntent): string | null {
-  if (!canAccessCockpit(actor, intent)) {
-    return null
-  }
-
+function defaultHomeForIntent(intent: EntryIntent): string {
   if (intent === "driver") {
     return "/driver/loads"
   }
 
   return intent === "fleet" ? "/fleet/command" : "/host/command"
+}
+
+export function homePathForIntent(actor: SessionActor, intent: EntryIntent): string | null {
+  return canAccessCockpit(actor, intent) ? defaultHomeForIntent(intent) : null
 }
 
 /**
@@ -91,13 +93,23 @@ export function decideExistingActorEntry(
   const intent = options.intent ?? null
   const next = safeEntryNext(options.next, intent)
   const intentHome = intent ? homePathForIntent(actor, intent) : null
+  const inactiveMembership = intent && !intentHome ? membershipForCockpit(actor, intent) : null
 
-  if (intent && !intentHome) {
+  if (intent && !intentHome && !inactiveMembership) {
     return { currentHome: homePathFor(actor), kind: "session" }
   }
 
   if (next) {
     const targetCockpit = cockpitForPath(next)
+
+    if (intent && targetCockpit === intent && inactiveMembership) {
+      return {
+        href: next,
+        kind: "switch",
+        organizationId: inactiveMembership.organization.id,
+        organizationName: inactiveMembership.organization.displayName
+      }
+    }
 
     if (intent ? targetCockpit === intent : !targetCockpit || canAccessCockpit(actor, targetCockpit)) {
       return { href: next, kind: "redirect" }
@@ -106,6 +118,15 @@ export function decideExistingActorEntry(
 
   if (intentHome) {
     return { href: intentHome, kind: "redirect" }
+  }
+
+  if (intent && inactiveMembership) {
+    return {
+      href: defaultHomeForIntent(intent),
+      kind: "switch",
+      organizationId: inactiveMembership.organization.id,
+      organizationName: inactiveMembership.organization.displayName
+    }
   }
 
   return { currentHome: homePathFor(actor), kind: "session" }
