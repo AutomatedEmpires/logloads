@@ -9,10 +9,14 @@ import { markAllNotificationsReadAction, markNotificationReadAction } from "@/li
 import {
   acceptInvitationAction,
   declineInvitationAction,
-  signOutAction,
   switchOrganizationAction
 } from "@/lib/session-actions"
 import { BrandMark } from "./Brand"
+import {
+  PublicEntryActions,
+  SessionSignOutButton,
+  usePublicSessionState
+} from "./SessionControls"
 
 export interface ShellNotification {
   id: string
@@ -179,9 +183,10 @@ export function PageIntro({ body, eyebrow, title }: { body: string; eyebrow: str
   )
 }
 
-function PublicHeader() {
+function PublicHeader({ authenticated = false }: { authenticated?: boolean }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const pathname = usePathname()
+  const publicSessionState = usePublicSessionState(authenticated)
   const headerRef = useRef<HTMLElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
 
@@ -224,8 +229,7 @@ function PublicHeader() {
         {publicNav.map(([label, href]) => <Link aria-current={isCurrent(href) ? "page" : undefined} href={href} key={href}>{label}</Link>)}
       </nav>
       <div className="public-actions">
-        <Link href="/sign-in">Sign in</Link>
-        <Link className="action-link" href="/sign-up">Get started</Link>
+        <PublicEntryActions sessionState={publicSessionState} />
         <button
           aria-controls="public-mobile-menu"
           aria-expanded={menuOpen}
@@ -244,8 +248,11 @@ function PublicHeader() {
             <Link aria-current={isCurrent(href) ? "page" : undefined} href={href} key={href} onClick={() => setMenuOpen(false)}>{label}</Link>
           ))}
           <div className="public-mobile-menu__actions">
-            <Link className="action-link action-link--secondary" href="/sign-in" onClick={() => setMenuOpen(false)}>Sign in</Link>
-            <Link className="action-link" href="/sign-up" onClick={() => setMenuOpen(false)}>Get started</Link>
+            <PublicEntryActions
+              mobile
+              onNavigate={() => setMenuOpen(false)}
+              sessionState={publicSessionState}
+            />
           </div>
         </nav>
       ) : null}
@@ -321,11 +328,11 @@ function PublicFooter() {
   )
 }
 
-export function PublicShell({ children }: { children: ReactNode }) {
+export function PublicShell({ authenticated = false, children }: { authenticated?: boolean; children: ReactNode }) {
   return (
     <div className="site-shell">
       <a className="skip-link" href="#main-content">Skip to main content</a>
-      <PublicHeader />
+      <PublicHeader authenticated={authenticated} />
       <div className="site-content" id="main-content" tabIndex={-1}>{children}</div>
       <PublicFooter />
     </div>
@@ -707,9 +714,7 @@ function AccountMenu({ account, pathname }: { account: ShellAccount; pathname: s
             <Icon aria-hidden name="ops.notice" size={18} />
             <span>Report a problem or request a feature</span>
           </Link>
-          <button className="account-switcher__signout" onClick={() => void signOutAction()} type="button">
-            Sign out
-          </button>
+          <SessionSignOutButton className="account-switcher__signout" />
         </div>
       ) : null}
     </div>

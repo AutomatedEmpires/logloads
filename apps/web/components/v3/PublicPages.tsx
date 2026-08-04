@@ -15,6 +15,7 @@ import type { DemoPersona } from "@/lib/demo-personas"
 import { DecisionPanel, EconomicsPanel, LoadCard, LoadDiscovery, OperationSections, RoutePackPreview, WeatherWidget } from "./LoadMap"
 import { BrandMark } from "./Brand"
 import { EmptyState, PageIntro, PublicShell, SectionHeader } from "./Shells"
+import { SessionSignOutButton } from "./SessionControls"
 
 const driverFlow: Array<{ step: string; question: string; body: string }> = [
   { body: "See nearby work, pay, timing, distance, and how many hauls remain.", question: "What is available?", step: "Available" },
@@ -420,6 +421,20 @@ export function LegalPage({ content }: { content: LegalPageContent }) {
   )
 }
 
+function AuthStory() {
+  return (
+    <aside aria-label="LogLoads field coordination" className="auth-story">
+      <Image alt="" fill sizes="(max-width: 760px) 100vw, 42vw" src="/brand/logloads-hero.png" />
+      <div className="auth-story__content">
+        <BrandMark priority size={80} />
+        <p className="eyebrow">Built for timber operations</p>
+        <h2>One clear record from landing to mill.</h2>
+        <ul><li>Work and equipment fit</li><li>Schedules and next actions</li><li>Access details after assignment</li></ul>
+      </div>
+    </aside>
+  )
+}
+
 export function AuthPage({
   mode,
   next,
@@ -436,15 +451,7 @@ export function AuthPage({
   return (
     <PublicShell>
       <main className="auth-page">
-        <aside aria-label="LogLoads field coordination" className="auth-story">
-          <Image alt="" fill sizes="(max-width: 760px) 100vw, 42vw" src="/brand/logloads-hero.png" />
-          <div className="auth-story__content">
-            <BrandMark priority size={80} />
-            <p className="eyebrow">Built for timber operations</p>
-            <h2>One clear record from landing to mill.</h2>
-            <ul><li>Work and equipment fit</li><li>Schedules and next actions</li><li>Access details after assignment</li></ul>
-          </div>
-        </aside>
+        <AuthStory />
         <section className="auth-panel">
           <p className="eyebrow">{isSignUp ? "Create account" : "Welcome back"}</p>
           <h1>{isSignUp ? "Start with the work you do." : "Return to your workspace."}</h1>
@@ -452,6 +459,90 @@ export function AuthPage({
           {clerkForm ?? (isSignUp
             ? <p className="auth-form__note">Account creation happens in onboarding. <Link className="action-link" href="/onboarding">Start setup</Link></p>
             : <DevSignInForm demoPersonas={demoPersonas} next={next} />)}
+        </section>
+      </main>
+    </PublicShell>
+  )
+}
+
+export function AuthenticatedEntryPage({
+  currentHome,
+  displayName,
+  email,
+  intent,
+  mode,
+  requestedHome,
+  restartHref
+}: {
+  currentHome: string
+  displayName: string
+  email?: string | null
+  intent?: "driver" | "fleet" | "host" | null
+  mode: "sign-in" | "sign-up"
+  requestedHome?: string | null
+  restartHref: string
+}) {
+  const requestedAccount = intent === "driver"
+    ? "driver profile"
+    : intent === "fleet"
+      ? "fleet workspace"
+      : intent === "host"
+        ? "host workspace"
+        : null
+  const requestedAccountIsActive = Boolean(requestedAccount && requestedHome)
+  const title = requestedAccountIsActive
+    ? `Your ${requestedAccount} is already active.`
+    : requestedAccount
+    ? `This account does not have a ${requestedAccount}.`
+    : mode === "sign-in"
+      ? "You’re already signed in."
+      : "This account is already set up."
+  const body = requestedAccountIsActive
+    ? `LogLoads found the ${requestedAccount} on this signed-in account. Open that workspace without creating another account, or sign out if you meant to use a different identity.`
+    : requestedAccount
+    ? `LogLoads found an active account in this browser, but it does not include a ${requestedAccount}. Open the current workspace, or sign out to start with a different account.`
+    : "LogLoads found an active account in this browser. Open it now, or sign out first if you meant to use a different account."
+  const signOutLabel = requestedAccountIsActive
+    ? "Sign out and use another account"
+    : requestedAccount
+      ? `Sign out and create a ${requestedAccount}`
+    : mode === "sign-in"
+      ? "Sign out and use another account"
+      : "Sign out and create another account"
+  const primaryHref = requestedHome ?? currentHome
+  const primaryLabel = requestedAccountIsActive
+    ? intent === "driver"
+      ? "Open driver workspace"
+      : intent === "fleet"
+        ? "Open fleet workspace"
+        : "Open host workspace"
+    : "Open current workspace"
+
+  return (
+    <PublicShell authenticated>
+      <main className="auth-page">
+        <AuthStory />
+        <section className="auth-panel active-session">
+          <p className="eyebrow">Active account</p>
+          <h1>{title}</h1>
+          <p>{body}</p>
+          <div className="active-session__identity" aria-label="Currently signed-in account">
+            <span>Signed in as</span>
+            <strong>{displayName}</strong>
+            {email ? <small>{email}</small> : null}
+          </div>
+          <div className="active-session__actions">
+            <Link className="action-link" href={primaryHref}>{primaryLabel}</Link>
+            <SessionSignOutButton
+              className="action-link action-link--secondary"
+              label={signOutLabel}
+              redirectUrl={restartHref}
+            />
+          </div>
+          {requestedAccountIsActive && currentHome !== requestedHome ? (
+            <Link className="text-link active-session__current" href={currentHome}>Open current workspace instead</Link>
+          ) : null}
+          <p className="active-session__note">Nothing has been changed on your account.</p>
         </section>
       </main>
     </PublicShell>

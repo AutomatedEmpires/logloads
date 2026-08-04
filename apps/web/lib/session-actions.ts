@@ -104,10 +104,14 @@ export async function signInDemoPersona(formData: FormData): Promise<void> {
   }
 }
 
-export async function signOutAction(): Promise<void> {
+export async function clearLocalSessionAction(): Promise<void> {
   const cookieStore = await cookies()
 
   cookieStore.delete(SESSION_COOKIE)
+}
+
+export async function signOutAction(): Promise<void> {
+  await clearLocalSessionAction()
   redirect("/")
 }
 

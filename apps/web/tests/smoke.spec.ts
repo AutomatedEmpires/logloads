@@ -8,6 +8,14 @@ async function signIn(page: Page, email: string) {
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 30_000 })
 }
 
+async function openPublicMenuIfNeeded(page: Page) {
+  const menuTrigger = page.getByRole("button", { name: "Open menu" })
+
+  if (await menuTrigger.isVisible()) {
+    await menuTrigger.click()
+  }
+}
+
 test("visitor understands the public product and can inspect public loads", async ({ page }) => {
   await page.goto("/")
 
@@ -58,6 +66,50 @@ test("host signs in and reaches command with capacity view", async ({ page }) =>
 
   await page.goto("/host/command")
   await expect(page.getByRole("heading", { name: "Command" })).toBeVisible()
+})
+
+test("public entry reflects the active account and preserves driver intent", async ({ page }) => {
+  test.slow()
+  await signIn(page, "cole@summit.example")
+
+  await page.goto("/")
+  await openPublicMenuIfNeeded(page)
+
+  await expect(page.getByRole("link", { name: "Open workspace" }).last()).toBeVisible()
+  await expect(page.getByRole("link", { name: "Sign in" })).toHaveCount(0)
+
+  await page.goto("/sign-in")
+  await expect(page.getByRole("heading", { name: "You’re already signed in." })).toBeVisible()
+  await expect(page.getByText("cole@summit.example", { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/sign-in$/)
+
+  await page.goto("/sign-up")
+  await expect(page.getByRole("heading", { name: "This account is already set up." })).toBeVisible()
+  await expect(page).toHaveURL(/\/sign-up$/)
+
+  await page.goto("/")
+  await page.getByRole("link", { name: "Create a driver profile" }).first().click()
+  await expect(page).toHaveURL(/\/sign-up\?path=driver/)
+  await expect(page.getByRole("heading", { name: "Your driver profile is already active." })).toBeVisible()
+  await page.getByRole("link", { name: "Open driver workspace" }).click()
+  await expect(page).toHaveURL(/\/driver\/loads/)
+  await expect(page.getByRole("heading", { name: "Loads" })).toBeVisible()
+})
+
+test("public sign-out returns to anonymous driver onboarding", async ({ page }) => {
+  test.slow()
+  await signIn(page, "cole@summit.example")
+
+  await page.goto("/")
+  await openPublicMenuIfNeeded(page)
+  await page.getByRole("button", { name: "Sign out" }).last().click()
+  await expect(page).toHaveURL(/\/$/)
+  await openPublicMenuIfNeeded(page)
+  await expect(page.getByRole("link", { name: "Sign in" }).last()).toBeVisible()
+
+  await page.getByRole("link", { name: "Create a driver profile" }).first().click()
+  await expect(page).toHaveURL(/\/onboarding\/driver/)
+  await expect(page.getByRole("heading", { name: "See work that fits your equipment." })).toBeVisible()
 })
 
 test("platform admin reaches the admin console", async ({ page }) => {

@@ -23,11 +23,11 @@ import {
   updateEquipmentStatusAction
 } from "@/lib/cockpit-actions"
 import type { NetworkLoadView, NetworkView } from "@/lib/network"
-import { signOutAction } from "@/lib/session-actions"
 import {
   uploadSignedFile,
   type SignedUploadResponse
 } from "@/lib/signed-upload-client"
+import { SessionSignOutButton } from "./SessionControls"
 
 type TripStatus = NetworkView["trips"][number]["status"]
 type CompletionStatus = NetworkView["trips"][number]["completion"]["status"]
@@ -1389,16 +1389,5 @@ export function FeatureTruckPhotoToggle({ featured, hasPhoto }: { featured: bool
 
 /** Sign out for the mobile profile surface where the top-bar account menu is hidden. */
 export function SignOutButton() {
-  const [pending, startTransition] = useTransition()
-
-  return (
-    <button
-      className="signout-button"
-      disabled={pending}
-      onClick={() => startTransition(async () => { await signOutAction() })}
-      type="button"
-    >
-      {pending ? "Signing out…" : "Sign out"}
-    </button>
-  )
+  return <SessionSignOutButton className="signout-button" />
 }
