@@ -2,7 +2,6 @@
 
 import { useClerk } from "@clerk/nextjs"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import { useEffect, useState, useTransition } from "react"
 
 import { clearLocalSessionAction } from "@/lib/session-actions"
@@ -69,7 +68,6 @@ function ClerkSessionSignOutButton(props: SessionSignOutButtonProps) {
 }
 
 function LocalSessionSignOutButton(props: SessionSignOutButtonProps) {
-  const router = useRouter()
   const redirectUrl = props.redirectUrl ?? "/"
 
   return (
@@ -77,8 +75,14 @@ function LocalSessionSignOutButton(props: SessionSignOutButtonProps) {
       {...props}
       performSignOut={async () => {
         await clearLocalSessionAction()
-        router.replace(redirectUrl)
-        router.refresh()
+
+        const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`
+
+        if (currentUrl === redirectUrl) {
+          window.location.reload()
+        } else {
+          window.location.assign(redirectUrl)
+        }
       }}
     />
   )

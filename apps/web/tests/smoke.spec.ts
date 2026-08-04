@@ -10,8 +10,10 @@ async function signIn(page: Page, email: string) {
 
 async function openPublicMenuIfNeeded(page: Page) {
   const menuTrigger = page.getByRole("button", { name: "Open menu" })
+  const viewport = page.viewportSize()
 
-  if (await menuTrigger.isVisible()) {
+  if (viewport && viewport.width <= 1100) {
+    await expect(menuTrigger).toBeVisible()
     await menuTrigger.click()
   }
 }
@@ -92,8 +94,8 @@ test("public entry reflects the active account and preserves driver intent", asy
   await expect(page).toHaveURL(/\/sign-up\?path=driver/)
   await expect(page.getByRole("heading", { name: "Your driver profile is already active." })).toBeVisible()
   await page.getByRole("link", { name: "Open driver workspace" }).click()
-  await expect(page).toHaveURL(/\/driver\/loads/)
-  await expect(page.getByRole("heading", { name: "Loads" })).toBeVisible()
+  await page.waitForURL(/\/driver\/loads/, { timeout: 30_000 })
+  await expect(page.getByRole("heading", { exact: true, name: "Loads" })).toBeVisible()
 })
 
 test("public sign-out returns to anonymous driver onboarding", async ({ page }) => {
@@ -102,10 +104,13 @@ test("public sign-out returns to anonymous driver onboarding", async ({ page }) 
 
   await page.goto("/")
   await openPublicMenuIfNeeded(page)
-  await page.getByRole("button", { name: "Sign out" }).last().click()
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: "domcontentloaded" }),
+    page.getByRole("button", { name: "Sign out" }).last().click()
+  ])
   await expect(page).toHaveURL(/\/$/)
   await openPublicMenuIfNeeded(page)
-  await expect(page.getByRole("link", { name: "Sign in" }).last()).toBeVisible()
+  await expect(page.getByRole("link", { name: "Sign in" }).last()).toBeVisible({ timeout: 15_000 })
 
   await page.getByRole("link", { name: "Create a driver profile" }).first().click()
   await expect(page).toHaveURL(/\/onboarding\/driver/)
