@@ -83,7 +83,6 @@ vi.mock("./services", () => ({
 import { startBillingPortalAction, startCheckoutAction } from "./billing-actions"
 import {
   chargeHostInvoice,
-  checkoutEligibility,
   checkoutPlanFor,
   findHostBillingProfile,
   hostBillingProfileId,
@@ -1876,76 +1875,9 @@ describe("the real Stripe adapter", () => {
   })
 })
 
-// ── Who may buy Dispatch Pro ──────────────────────────────────────────────────
-
-describe("checkoutEligibility", () => {
-  it("refuses a host workspace, which holds manage_billing but cannot use Dispatch Pro", () => {
+describe("retired checkout catalog", () => {
+  it("has a terminal answer for every product and routes hosts to the current agreement", () => {
     const state = seedState()
-    const host = organizationOfType(state, "landing_source")
-    const eligibility = checkoutEligibility(state.entitlements, {
-      organization: host,
-      product: "fleet_operations"
-    })
-
-    expect(eligibility.allowed).toBe(false)
-    expect(eligibility.allowed === false && eligibility.message).toContain(
-      "trucks and drivers you dispatch"
-    )
-  })
-
-  it("refuses a fleet workspace with no plan record, because a payment could not be applied", () => {
-    const state = seedState()
-    const fleet = fleetWithoutEntitlement(state)
-    const eligibility = checkoutEligibility(state.entitlements, {
-      organization: fleet,
-      product: "fleet_operations"
-    })
-
-    expect(eligibility.allowed).toBe(false)
-    expect(eligibility.allowed === false && eligibility.message).toContain("no plan record")
-  })
-
-  it("allows a fleet workspace whose plan record exists", () => {
-    const state = seedState()
-    const entitlement = state.entitlements.find(
-      (candidate) => candidate.product === "fleet_operations"
-    )
-    const fleet = state.organizations.find(
-      (candidate) => candidate.id === entitlement?.organizationId
-    )
-
-    if (!entitlement || !fleet) {
-      throw new Error("The seed no longer contains a fleet organization with a Dispatch Pro record")
-    }
-
-    expect(checkoutEligibility(state.entitlements, { organization: fleet, product: "fleet_operations" })).toEqual({
-      allowed: true,
-      priceEnv: "STRIPE_PRICE_DISPATCH",
-      returnPath: "/fleet/billing"
-    })
-  })
-
-  it("allows a carrier workspace, the other organization type with a dispatch cockpit", () => {
-    const state = seedState()
-    const fleet = fleetWithoutEntitlement(state)
-    const carrier: Organization = { ...fleet, type: "carrier" }
-
-    state.entitlements.push({
-      ...state.entitlements[0]!,
-      id: "28282828-2828-4828-8828-282828282819",
-      organizationId: carrier.id,
-      product: "fleet_operations"
-    })
-
-    expect(
-      checkoutEligibility(state.entitlements, { organization: carrier, product: "fleet_operations" })
-        .allowed
-    ).toBe(true)
-  })
-
-  it("has a decided answer for every product and routes hosts to Network enrollment", () => {
-    const state = seedState()
-    const host = organizationOfType(state, "landing_source")
     const products = ["driver_core", "enterprise", "fleet_operations", "landing_operations"] as const
 
     for (const product of products) {
@@ -1957,13 +1889,9 @@ describe("checkoutEligibility", () => {
     const hostPlan = checkoutPlanFor("landing_operations")
 
     expect(hostPlan.kind).toBe("not_purchasable")
-    expect(hostPlan.kind === "not_purchasable" && hostPlan.message).toContain("Network plans")
+    expect(hostPlan.kind === "not_purchasable" && hostPlan.message).toContain("5% completed-load agreement")
     expect(hostPlan.kind === "not_purchasable" && hostPlan.message).toContain("no posting fee")
-    expect(hostPlan.kind === "not_purchasable" && hostPlan.message).not.toContain("5%")
-    expect(
-      checkoutEligibility(state.entitlements, { organization: host, product: "landing_operations" })
-        .allowed
-    ).toBe(false)
+    expect(state.organizationSubscriptions).toEqual([])
   })
 })
 
@@ -2019,7 +1947,7 @@ describe("startCheckoutAction", () => {
     expect(mocks.stripe.checkoutSessionCreate).not.toHaveBeenCalled()
   })
 
-  it("directs fleet enrollment to a canonical accepted agreement", async () => {
+  it("explains that fleet dispatch is included without checkout", async () => {
     const state = seedState()
     const fleet = fleetWithoutEntitlement(state)
 
@@ -2031,7 +1959,7 @@ describe("startCheckoutAction", () => {
     const result = await startCheckoutAction("fleet_operations")
 
     expect(result.ok).toBe(false)
-    expect(result.error).toContain("accepted agreement")
+    expect(result.error).toContain("Fleet Free")
     expect(mocks.readState).not.toHaveBeenCalled()
     expect(mocks.stripe.checkoutSessionCreate).not.toHaveBeenCalled()
   })
@@ -2058,7 +1986,7 @@ describe("startCheckoutAction", () => {
 
     expect(result).toEqual({
       error:
-        "Dispatch Pro enrollment now starts from an accepted agreement in Fleet billing. This legacy Checkout path cannot create a new paid obligation.",
+        "Fleet dispatch is included with Fleet Free and has no checkout. Hosts accept the current 5% completed-load agreement from Host Billing.",
       ok: false,
       url: null
     })
@@ -2093,7 +2021,7 @@ describe("startCheckoutAction", () => {
     const result = await startCheckoutAction("fleet_operations")
 
     expect(result.ok).toBe(false)
-    expect(result.error).toContain("legacy Checkout path")
+    expect(result.error).toContain("Fleet Free")
     expect(mocks.stripe.accountRetrieve).not.toHaveBeenCalled()
     expect(mocks.stripe.checkoutSessionCreate).not.toHaveBeenCalled()
     expect(JSON.stringify(result)).not.toContain("acct_other")
@@ -2113,7 +2041,7 @@ describe("startCheckoutAction", () => {
     expect(mocks.stripe.checkoutSessionCreate).not.toHaveBeenCalled()
   })
 
-  it("keeps the canonical-agreement direction when Stripe is not configured", async () => {
+  it("keeps the Fleet Free explanation when Stripe is not configured", async () => {
     const state = seedState()
     const entitlement = state.entitlements.find(
       (candidate) => candidate.product === "fleet_operations"
@@ -2135,7 +2063,7 @@ describe("startCheckoutAction", () => {
     const result = await startCheckoutAction("fleet_operations")
 
     expect(result.ok).toBe(false)
-    expect(result.error).toContain("accepted agreement")
+    expect(result.error).toContain("Fleet Free")
     expect(mocks.stripe.accountRetrieve).not.toHaveBeenCalled()
     expect(mocks.stripe.checkoutSessionCreate).not.toHaveBeenCalled()
   })
@@ -2148,7 +2076,7 @@ describe("startBillingPortalAction", () => {
     mocks.stripe.accountRetrieve.mockResolvedValue({ id: "acct_logloads" })
   })
 
-  it("routes a host to sales-assisted Network enrollment without reviving the legacy fee", async () => {
+  it("routes a host to the current completed-load agreement", async () => {
     const state = seedState()
     const host = organizationOfType(state, "landing_source")
 
@@ -2157,9 +2085,46 @@ describe("startBillingPortalAction", () => {
     const result = await startBillingPortalAction("landing_operations")
 
     expect(result.ok).toBe(false)
-    expect(result.error).toContain("Network plans")
+    expect(result.error).toContain("5% completed-load agreement")
     expect(result.error).toContain("no posting fee")
-    expect(result.error).not.toContain("5%")
+    expect(result.error).toContain("no posting fee, subscription, monthly minimum")
+    expect(mocks.stripe.billingPortalSessionCreate).not.toHaveBeenCalled()
+  })
+
+  it("returns Fleet Free truth before initializing unconfigured Stripe", async () => {
+    const state = seedState()
+    const entitlement = state.entitlements.find(
+      (candidate) => candidate.product === "fleet_operations"
+    )
+    const fleet = state.organizations.find(
+      (candidate) => candidate.id === entitlement?.organizationId
+    )
+
+    if (!fleet || !entitlement) {
+      throw new Error(
+        "The seed no longer contains a fleet organization with Fleet Free access"
+      )
+    }
+
+    entitlement.stripeCustomerId = null
+    entitlement.stripeSubscriptionId = null
+    vi.stubEnv("STRIPE_SECRET_KEY", "")
+    mocks.getSessionActor.mockResolvedValue(actorFor(fleet))
+    mocks.readState.mockImplementation(
+      async (
+        read: (current: { state: LogLoadsDatabaseState }) => unknown
+      ) => read({ state })
+    )
+
+    const result = await startBillingPortalAction("fleet_operations")
+
+    expect(result).toEqual({
+      error:
+        "No preserved subscription billing profile exists for this workspace. Fleet Free needs no portal; current host billing is managed from Host Billing.",
+      ok: false,
+      url: null
+    })
+    expect(mocks.stripe.accountRetrieve).not.toHaveBeenCalled()
     expect(mocks.stripe.billingPortalSessionCreate).not.toHaveBeenCalled()
   })
 

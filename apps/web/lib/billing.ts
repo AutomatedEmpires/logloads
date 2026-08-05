@@ -11,7 +11,6 @@ import {
   invoiceSubtotalCents,
   LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
   readFrozenDriverPay,
-  type Entitlement,
   type HostBillingProfile,
   type HostBillingProfileStatus,
   type HostInvoice,
@@ -2034,7 +2033,7 @@ const CHECKOUT_PLANS: Record<PlanProduct, CheckoutPlan> = {
   enterprise: {
     kind: "not_purchasable",
     message:
-      "Enterprise plans are set up with our team. Reach out through Messages and we will configure billing for your regions."
+      "New Enterprise subscription enrollment is closed. Contact support only to reconcile a preserved obligation."
   },
   fleet_operations: {
     kind: "subscription",
@@ -2048,7 +2047,7 @@ const CHECKOUT_PLANS: Record<PlanProduct, CheckoutPlan> = {
   landing_operations: {
     kind: "not_purchasable",
     message:
-      "Network plans are enrolled with our team. There is no posting fee: billing follows the accepted plan base plus completed LogLoads Network usage above its included allowance. Existing legacy obligations remain under their original accepted terms."
+      "Hosts use the current 5% completed-load agreement in Host Billing. There is no posting fee, subscription, monthly minimum, tier, allowance, or overage charge. Historical obligations remain under their original accepted terms."
   }
 }
 
@@ -2059,55 +2058,6 @@ const CHECKOUT_PLANS: Record<PlanProduct, CheckoutPlan> = {
  */
 export function checkoutPlanFor(product: PlanProduct): CheckoutPlan {
   return CHECKOUT_PLANS[product]
-}
-
-export type CheckoutEligibility =
-  | { allowed: true; priceEnv: "STRIPE_PRICE_DISPATCH"; returnPath: string }
-  | { allowed: false; message: string }
-
-/**
- * Whether this organization may start a subscription checkout for this product.
- *
- * THE HOLE THIS CLOSES. `manage_billing` is held by the owner of every
- * organization, of every type. Checking only that let a host open Dispatch Pro
- * checkout, pay $499/mo, and then have the webhook fail on "No plan record found"
- * — Stripe retried for three days and gave up with the customer charged and
- * nothing granted. So two facts are required before any money moves: the product
- * belongs to this organization TYPE, and the plan record the webhook will update
- * already exists. The second is not belt-and-braces; it is the precondition of
- * the webhook that grants what was bought.
- */
-export function checkoutEligibility(
-  entitlements: readonly Entitlement[],
-  input: { organization: Pick<Organization, "id" | "type">; product: PlanProduct }
-): CheckoutEligibility {
-  const plan = CHECKOUT_PLANS[input.product]
-
-  if (plan.kind === "not_purchasable") {
-    return { allowed: false, message: plan.message }
-  }
-
-  if (!plan.organizationTypes.includes(input.organization.type)) {
-    return {
-      allowed: false,
-      message: "This plan is for the trucks and drivers you dispatch, and is not sold to this workspace."
-    }
-  }
-
-  const entitlement = entitlements.find(
-    (candidate) =>
-      candidate.organizationId === input.organization.id && candidate.product === input.product
-  )
-
-  if (!entitlement) {
-    return {
-      allowed: false,
-      message:
-        "This workspace has no plan record for Dispatch Pro yet, so a payment could not be applied to anything. Contact support and we will set it up before you are charged."
-    }
-  }
-
-  return { allowed: true, priceEnv: plan.priceEnv, returnPath: plan.returnPath }
 }
 
 // ── Webhook handling ──────────────────────────────────────────────────────────

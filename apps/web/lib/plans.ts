@@ -39,16 +39,30 @@ const PLAN_DEFINITIONS: Record<PlanProduct, PlanDefinition> = {
   },
   fleet_operations: {
     defaultFeatures: ["Dispatch board", "Truck planning", "Free driver seats", "Private partner work"],
-    name: "Dispatch Pro",
-    priceLine: "$499/mo",
-    summary: "One operating account for the trucks and drivers you dispatch."
+    name: "Fleet Free",
+    priceLine: "Free",
+    summary: "Run dispatch, equipment, drivers, and private partner work at no cost."
   },
   landing_operations: {
     defaultFeatures: ["Load publishing", "Live landing board", "Preferred carrier tools", "Drivers always free"],
     name: "Legacy host terms",
-    priceLine: "Legacy 5%",
-    summary: "Preserved only for organizations deliberately left on a grandfathered percentage agreement. New organizations use an accepted LogLoads plan."
+    priceLine: "Recorded legacy 5%",
+    summary: "Preserved only to explain work and obligations frozen under a grandfathered percentage agreement."
   }
+}
+
+const HISTORICAL_FLEET_DEFINITION: PlanDefinition = {
+  defaultFeatures: ["Dispatch board", "Truck planning", "Driver seats", "Private partner work"],
+  name: "Dispatch Pro — historical",
+  priceLine: "Recorded monthly amount: $499",
+  summary: "A preserved software-subscription record. It does not control current Fleet Free access or authorize new billing."
+}
+
+const HISTORICAL_FLEET_CUSTOMER_DEFINITION: PlanDefinition = {
+  defaultFeatures: ["Dispatch board", "Truck planning", "Driver seats", "Private partner work"],
+  name: "Dispatch Pro enrollment — historical",
+  priceLine: "No subscription created",
+  summary: "A preserved provider customer or enrollment record with no subscription reference. It does not authorize billing."
 }
 
 const FEATURE_NAMES: Record<string, string> = {
@@ -78,14 +92,6 @@ export function planFeatureName(key: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1)
 }
 
-function formatDay(value: string): string {
-  return new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", timeZone: "UTC", year: "numeric" }).format(new Date(value))
-}
-
-function daysUntil(value: string): number {
-  return Math.ceil((new Date(value).getTime() - Date.now()) / 86_400_000)
-}
-
 export interface PlanView {
   id: string
   product: PlanProduct
@@ -97,137 +103,133 @@ export interface PlanView {
   statusTone: PlanTone
   features: string[]
   limitLines: string[]
-  actionLabel: string | null
-  actionKind: "checkout" | "portal" | null
+  recordMode: "current" | "historical"
 }
 
 interface PlanStatusView {
-  actionLabel: string | null
-  actionKind: "checkout" | "portal" | null
   statusDetail: string | null
   statusLine: string
   statusTone: PlanTone
 }
 
-function planStatusView(status: Entitlement["status"], periodEndsAt: string | null | undefined): PlanStatusView {
-  const endsAt = periodEndsAt ?? null
-
+function historicalPlanStatusView(status: Entitlement["status"]): PlanStatusView {
   if (status === "trialing") {
-    if (!endsAt) {
-      return {
-        actionKind: "checkout",
-        actionLabel: "Start subscription",
-        statusDetail: "Start your subscription anytime to keep plan features without interruption.",
-        statusLine: "Trial",
-        statusTone: "info"
-      }
-    }
-
-    const days = daysUntil(endsAt)
-
-    if (days > 0) {
-      return {
-        actionKind: "checkout",
-        actionLabel: "Start subscription",
-        statusDetail: `Trial ends ${formatDay(endsAt)}. Start your subscription to keep plan features without interruption.`,
-        statusLine: `Trial — ${days} day${days === 1 ? "" : "s"} left`,
-        statusTone: days <= 3 ? "warning" : "info"
-      }
-    }
-
     return {
-      actionKind: "checkout",
-      actionLabel: "Start subscription",
-      statusDetail: `Your trial ended ${formatDay(endsAt)}. Start your subscription to keep plan features.`,
-      statusLine: "Trial ended",
-      statusTone: "critical"
+      statusDetail: "This preserved trial record does not authorize new work, enrollment, or billing.",
+      statusLine: "Historical trial record",
+      statusTone: "neutral"
     }
   }
 
   if (status === "active") {
     return {
-      actionKind: "portal",
-      actionLabel: "Manage billing",
-      statusDetail: endsAt ? `Renews ${formatDay(endsAt)}.` : null,
-      statusLine: "Active",
-      statusTone: "success"
+      statusDetail: "Active was the recorded status. This history does not authorize new work, enrollment, or billing.",
+      statusLine: "Recorded active",
+      statusTone: "neutral"
     }
   }
 
   if (status === "past_due") {
     return {
-      actionKind: "portal",
-      actionLabel: "Update payment",
-      statusDetail: "The last payment did not go through. Update billing to keep plan features active.",
-      statusLine: "Payment issue — update billing",
+      statusDetail: "The preserved record carries a payment issue that may still require reconciliation; it does not authorize new work.",
+      statusLine: "Recorded payment issue",
       statusTone: "critical"
     }
   }
 
   if (status === "cancelled") {
-    const stillCovered = endsAt !== null && daysUntil(endsAt) > 0
-
     return {
-      actionKind: "checkout",
-      actionLabel: "Restart subscription",
-      statusDetail: stillCovered && endsAt
-        ? `Plan features stay available until ${formatDay(endsAt)}.`
-        : "This plan is no longer active. Restart the subscription to bring plan features back.",
-      statusLine: "Cancelled",
+      statusDetail: "This preserved record is cancelled and cannot be restarted from LogLoads.",
+      statusLine: "Recorded cancelled",
       statusTone: "neutral"
     }
   }
 
   return {
-    actionKind: null,
-    actionLabel: null,
-    statusDetail: "This workspace has complimentary access. No billing is needed.",
-    statusLine: "Included",
-    statusTone: "success"
+    statusDetail: "Complimentary was the recorded status. This history does not authorize new work or enrollment.",
+    statusLine: "Recorded complimentary",
+    statusTone: "neutral"
   }
 }
 
-function planLimitLines(entitlement: Entitlement): string[] {
+function historicalLimitLines(entitlement: Entitlement): string[] {
   const lines: string[] = []
 
   if (entitlement.activeTruckLimit) {
-    lines.push(`Up to ${entitlement.activeTruckLimit} active trucks`)
+    lines.push(`Recorded limit: ${entitlement.activeTruckLimit} active trucks`)
   }
 
   if (entitlement.activeLandingLimit) {
-    lines.push(`Up to ${entitlement.activeLandingLimit} active landings`)
+    lines.push(`Recorded limit: ${entitlement.activeLandingLimit} active landings`)
   }
 
   return lines
 }
 
-function toPlanView(entitlement: Entitlement): PlanView {
-  const definition = PLAN_DEFINITIONS[entitlement.product]
+export function planViewForEntitlement(entitlement: Entitlement): PlanView {
+  const providerSubscriptionFleet =
+    entitlement.product === "fleet_operations" &&
+    Boolean(entitlement.stripeSubscriptionId)
+  const providerCustomerOnlyFleet =
+    entitlement.product === "fleet_operations" &&
+    Boolean(entitlement.stripeCustomerId) &&
+    !entitlement.stripeSubscriptionId
+
+  if (entitlement.product === "driver_core") {
+    const definition = PLAN_DEFINITIONS.driver_core
+
+    return {
+      features: entitlement.features.length > 0
+        ? entitlement.features.map(planFeatureName)
+        : definition.defaultFeatures,
+      id: entitlement.id,
+      limitLines: [],
+      name: definition.name,
+      priceLine: definition.priceLine,
+      product: entitlement.product,
+      recordMode: "current",
+      statusDetail: "Driver access is included without a subscription.",
+      statusLine: "Included",
+      statusTone: "success",
+      summary: definition.summary
+    }
+  }
+
+  if (
+    entitlement.product === "fleet_operations" &&
+    !providerSubscriptionFleet &&
+    !providerCustomerOnlyFleet
+  ) {
+    return fleetFreePlanView(entitlement.id)
+  }
+
+  const definition = providerSubscriptionFleet
+    ? HISTORICAL_FLEET_DEFINITION
+    : providerCustomerOnlyFleet
+      ? HISTORICAL_FLEET_CUSTOMER_DEFINITION
+      : PLAN_DEFINITIONS[entitlement.product]
   const status = entitlement.product === "landing_operations"
     ? {
-        actionKind: null,
-        actionLabel: null,
         // This entitlement predates subscription_v1. It remains visible so a host
         // can explain historical assignments and bills, but it is never presented
         // as the commercial model for new activity.
-        statusDetail: "This organization remains on an explicit grandfathered percentage agreement until an audited cutover. No new organization can enter this lane, and driver compensation remains direct.",
-        statusLine: "Legacy percentage terms — no new enrollment",
+        statusDetail: "This grandfathered record explains frozen work and obligations only. New commercial activity uses the current 5% completed-load agreement.",
+        statusLine: "Historical legacy terms",
         statusTone: "neutral"
       } satisfies PlanStatusView
-    : planStatusView(entitlement.status, entitlement.currentPeriodEndsAt)
+    : historicalPlanStatusView(entitlement.status)
   const features = entitlement.features.length > 0
     ? entitlement.features.map(planFeatureName)
     : definition.defaultFeatures
 
   return {
-    actionKind: status.actionKind,
-    actionLabel: status.actionLabel,
     features,
     id: entitlement.id,
-    limitLines: planLimitLines(entitlement),
+    limitLines: historicalLimitLines(entitlement),
     name: definition.name,
     priceLine: definition.priceLine,
     product: entitlement.product,
+    recordMode: "historical",
     statusDetail: status.statusDetail,
     statusLine: status.statusLine,
     statusTone: status.statusTone,
@@ -248,7 +250,7 @@ export interface PlanUsageView {
 function usageRow(id: string, label: string, unit: string, used: number, limit: number | null): PlanUsageView {
   if (limit === null) {
     return {
-      detail: `${used} ${unit}${used === 1 ? "" : "s"} in use — no limit on this plan`,
+      detail: `${used} ${unit}${used === 1 ? "" : "s"} in use — no current account limit`,
       id,
       label,
       limit,
@@ -293,7 +295,28 @@ function usageRow(id: string, label: string, unit: string, used: number, limit: 
 export interface BillingView {
   plans: PlanView[]
   usage: PlanUsageView[]
-  billingReady: boolean
+}
+
+export function isFleetOrganizationType(type: string | null | undefined): boolean {
+  return type === "fleet" || type === "carrier"
+}
+
+export function fleetFreePlanView(id = "fleet-free"): PlanView {
+  const definition = PLAN_DEFINITIONS.fleet_operations
+
+  return {
+    features: definition.defaultFeatures,
+    id,
+    limitLines: [],
+    name: definition.name,
+    priceLine: definition.priceLine,
+    product: "fleet_operations",
+    recordMode: "current",
+    statusDetail: "Fleet operations are included at no cost, with no LogLoads truck limit.",
+    statusLine: "Included",
+    statusTone: "success",
+    summary: definition.summary
+  }
 }
 
 /**
@@ -324,7 +347,12 @@ export function getBillingView(network: NetworkView): BillingView {
   // plan page says you have left has to be what you actually have left.
   const activeLandings = services.countActiveLandings(organizationId)
 
-  const truckLimit = entitlements.find((entitlement) => entitlement.activeTruckLimit)?.activeTruckLimit ?? null
+  const fleetWorkspace = isFleetOrganizationType(
+    network.activeOrganization.type
+  )
+  const truckLimit = fleetWorkspace
+    ? null
+    : entitlements.find((entitlement) => entitlement.activeTruckLimit)?.activeTruckLimit ?? null
   const landingLimit = services.activeLandingLimitFor(organizationId)
 
   const usage: PlanUsageView[] = []
@@ -337,14 +365,20 @@ export function getBillingView(network: NetworkView): BillingView {
     usage.push(usageRow("landings", "Active landings", "landing", activeLandings, landingLimit))
   }
 
+  const projectedPlans = visibleEntitlements.map(planViewForEntitlement)
+  const plans = fleetWorkspace
+    ? [
+        projectedPlans.find(
+          (plan) =>
+            plan.product === "fleet_operations" &&
+            plan.recordMode === "current"
+        ) ?? fleetFreePlanView(),
+        ...projectedPlans.filter((plan) => plan.recordMode === "historical")
+      ]
+    : projectedPlans
+
   return {
-    billingReady: Boolean(
-      process.env.LOGLOADS_SUBSCRIPTION_COLLECTION === "enabled" &&
-        process.env.LOGLOADS_STRIPE_EXPECTED_ACCOUNT_ID?.trim() &&
-        process.env.STRIPE_SECRET_KEY?.trim() &&
-        process.env.STRIPE_PRICE_DISPATCH?.trim()
-    ),
-    plans: visibleEntitlements.map(toPlanView),
+    plans,
     usage
   }
 }
@@ -355,6 +389,10 @@ const ORGANIZATION_TYPE_LABELS: Record<string, string> = {
   fleet: "Fleet",
   landing_source: "Landing organization",
   platform: "Platform"
+}
+
+export function isHostOrganizationType(type: string | null | undefined): boolean {
+  return type === "landing_source" || type === "destination"
 }
 
 // `satisfies` forces coverage: adding a role to ORGANIZATION_ROLES without a
@@ -436,6 +474,7 @@ export interface PlanSummaryView {
   id: string
   name: string
   priceLine: string
+  recordMode: "current" | "historical"
   statusLine: string
   statusTone: PlanTone
 }
@@ -544,17 +583,54 @@ export function getSettingsView(network: NetworkView, currentProfileId: string):
   const verification = verificationView(organization?.verificationStatus ?? network.activeOrganization.verificationStatus)
   const team = buildTeamRosterView(state, organizationId, currentProfileId)
 
-  const planSummaries = services.listEntitlements(organizationId).map((entitlement) => {
-    const view = toPlanView(entitlement)
-
-    return {
-      id: view.id,
-      name: view.name,
-      priceLine: view.priceLine,
-      statusLine: view.statusLine,
-      statusTone: view.statusTone
-    }
-  })
+  const entitlementPlans = services
+    .listEntitlements(organizationId)
+    .map(planViewForEntitlement)
+  const settingsPlans = isFleetOrganizationType(organization?.type)
+    ? [
+        entitlementPlans.find(
+          (plan) =>
+            plan.product === "fleet_operations" &&
+            plan.recordMode === "current"
+        ) ?? fleetFreePlanView(),
+        ...entitlementPlans.filter((plan) => plan.recordMode === "historical")
+      ]
+    : entitlementPlans
+  const entitlementSummaries = settingsPlans.map((view) => ({
+    id: view.id,
+    name: view.name,
+    priceLine: view.priceLine,
+    recordMode: view.recordMode,
+    statusLine: view.statusLine,
+    statusTone: view.statusTone
+  }))
+  const percentageAccount = [...state.organizationBillingAccounts]
+    .filter(
+      (account) =>
+        account.organizationId === organizationId &&
+        account.billingModel === "percentage_v1" &&
+        account.activationState === "percentage_active"
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+    )[0]
+  const planSummaries: PlanSummaryView[] =
+    isHostOrganizationType(organization?.type) && percentageAccount
+      ? [
+          {
+            id: percentageAccount.id,
+            name: "Host 5% agreement",
+            priceLine: "5% per completed load",
+            recordMode: "current",
+            statusLine: "Accepted",
+            statusTone: "success"
+          },
+          ...entitlementSummaries.filter(
+            (summary) => summary.recordMode === "historical"
+          )
+        ]
+      : entitlementSummaries
 
   const pendingInvitations = services
     .listPendingInvitationsForOrganization(organizationId)

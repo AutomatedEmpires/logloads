@@ -77,7 +77,7 @@ export async function startCheckoutAction(product: PlanProduct): Promise<Checkou
     return {
       error:
         plan.kind === "subscription" && product === "fleet_operations"
-          ? "Dispatch Pro enrollment now starts from an accepted agreement in Fleet billing. This legacy Checkout path cannot create a new paid obligation."
+          ? "Fleet dispatch is included with Fleet Free and has no checkout. Hosts accept the current 5% completed-load agreement from Host Billing."
           : plan.kind === "not_purchasable"
             ? plan.message
             : "This subscription must start from an accepted canonical agreement.",
@@ -120,14 +120,6 @@ export async function startBillingPortalAction(product: PlanProduct): Promise<Ch
       return { error: plan.message, ok: false, url: null }
     }
 
-    const billing = resolveStripeBilling()
-
-    if (!billing.ok) {
-      return { error: billing.message, ok: false, url: null }
-    }
-
-    await assertLogLoadsStripeAccount()
-
     const stripeCustomerId = await readState(
       (current) =>
         current.state.entitlements.find(
@@ -138,11 +130,19 @@ export async function startBillingPortalAction(product: PlanProduct): Promise<Ch
     if (!stripeCustomerId) {
       return {
         error:
-          "No billing profile exists for this workspace yet. Start a plan first and the billing portal unlocks after payment.",
+          "No preserved subscription billing profile exists for this workspace. Fleet Free needs no portal; current host billing is managed from Host Billing.",
         ok: false,
         url: null
       }
     }
+
+    const billing = resolveStripeBilling()
+
+    if (!billing.ok) {
+      return { error: billing.message, ok: false, url: null }
+    }
+
+    await assertLogLoadsStripeAccount()
 
     const origin = appOrigin()
 

@@ -292,15 +292,18 @@ function PricingCard({
   variant
 }: {
   plan: PricingPlan
-  variant: "driver" | "host"
+  variant: "driver" | "fleet" | "host"
 }) {
+  const isFree = variant !== "host"
   const badge = variant === "driver"
     ? <Badge tone="success">Always free</Badge>
-    : <Badge tone="info">One host rate</Badge>
+    : variant === "fleet"
+      ? <Badge tone="success">No subscription</Badge>
+      : <Badge tone="info">One host rate</Badge>
 
   return (
     <article
-      className={`pricing-card pricing-card--${variant}${variant === "driver" ? " pricing-card--free" : ""}`}
+      className={`pricing-card pricing-card--${variant}${isFree ? " pricing-card--free" : ""}`}
     >
       <div className="pricing-card__topline">
         <p className="pricing-card__audience">{plan.audience}</p>
@@ -326,7 +329,7 @@ function PricingCard({
       </ul>
       <div className="pricing-card__footer">
         <Link
-          className={variant === "driver" ? "action-link" : "action-link action-link--secondary"}
+          className={isFree ? "action-link" : "action-link action-link--secondary"}
           href={plan.cta.href}
         >
           {plan.cta.label}
@@ -339,9 +342,10 @@ function PricingCard({
 
 export function PricingPage() {
   const driverPlan = pricingPlans.find((plan) => plan.name === "Driver")
+  const fleetPlan = pricingPlans.find((plan) => plan.name === "Fleet Free")
   const hostPlan = pricingPlans.find((plan) => plan.name === "Host")
 
-  if (!driverPlan || !hostPlan || pricingPlans.length !== 2) {
+  if (!driverPlan || !fleetPlan || !hostPlan || pricingPlans.length !== 3) {
     throw new Error("The fixed public pricing catalog is incomplete.")
   }
 
@@ -349,19 +353,20 @@ export function PricingPage() {
     <PublicShell>
       <main className="page-main pricing-page">
         <PageIntro
-          eyebrow="Simple completed-load pricing"
-          title="Drivers stay free. Hosts pay 5% on top."
-          body="The host states what one load pays the driver and remains obligated to pay that amount in full, directly to the driver. When the load completes, LogLoads adds a platform fee equal to 5% of that stated pay to the host's cost."
+          eyebrow="Straightforward pricing"
+          title="Drivers and fleets stay free. Hosts pay 5% on top."
+          body="Drivers and fleet workspaces use LogLoads without a subscription. The host states what one load pays the driver and remains obligated to pay that amount in full, directly to the driver. When the load completes, LogLoads adds a platform fee equal to 5% of that stated pay to the host's cost."
         />
 
         <section aria-labelledby="pricing-start-title" className="pricing-lane pricing-lane--baseline">
           <div className="pricing-lane__intro">
-            <p className="eyebrow">One commercial model</p>
-            <h2 id="pricing-start-title">No subscription. No monthly minimum. No tiers.</h2>
-            <p>Posting, searching, requesting, and coordinating do not create a fee. A host fee is earned only when a load completes.</p>
+            <p className="eyebrow">Three clear paths</p>
+            <h2 id="pricing-start-title">No software subscription. No monthly minimum. No tiers.</h2>
+            <p>Drivers and fleet workspaces use LogLoads for free. Posting, searching, requesting, and coordinating do not create a fee. A host fee is earned only when a load completes.</p>
           </div>
           <div className="pricing-grid pricing-grid--baseline">
             <PricingCard plan={driverPlan} variant="driver" />
+            <PricingCard plan={fleetPlan} variant="fleet" />
             <PricingCard plan={hostPlan} variant="host" />
           </div>
         </section>

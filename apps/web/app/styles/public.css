@@ -546,7 +546,7 @@
 }
 
 .pricing-page .pricing-grid { align-items: stretch; }
-.pricing-grid--baseline { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pricing-grid--baseline { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .pricing-grid--network { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .pricing-grid--enterprise { grid-template-columns: minmax(0, 1fr); }
 
@@ -799,9 +799,25 @@
 .pricing-explainer h2 { margin: 0; font-size: 1.35rem; }
 .pricing-explainer p { margin: 12px 0 0; color: var(--ink-soft); line-height: 1.58; }
 
+@media (min-width: 901px) and (max-width: 1100px) {
+  .pricing-grid--baseline { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pricing-grid--baseline .pricing-card--host {
+    grid-column: 1 / -1;
+    width: 100%;
+    max-width: 620px;
+    justify-self: center;
+  }
+}
+
 @media (max-width: 900px) {
+  .pricing-grid--baseline,
   .pricing-grid--network,
   .pricing-explainers { grid-template-columns: minmax(0, 1fr); }
+  .pricing-grid--baseline .pricing-card--host {
+    grid-column: auto;
+    width: auto;
+    max-width: none;
+  }
   .pricing-pilot {
     grid-template-columns: auto minmax(0, 1fr);
     grid-template-rows: auto auto auto;

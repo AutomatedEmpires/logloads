@@ -318,9 +318,9 @@ function PublicFooter() {
       </div>
       <div className="public-footer__legal">
         <p>
-          Dispatch Pro coordinates established private capacity. Network access
-          requires a separate agreement and recorded operating posture. LogLoads
-          does not carry freight or move transportation compensation.
+          Drivers and fleets use LogLoads without a subscription. Hosts pay a 5%
+          platform fee on top of stated driver pay only when a load completes.
+          LogLoads does not carry freight or move transportation compensation.
         </p>
         <p>&copy; 2026 LogLoads</p>
       </div>

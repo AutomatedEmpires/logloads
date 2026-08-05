@@ -2,6 +2,26 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-08-05 — Fleet workspace access is Fleet Free
+
+- **Drivers and fleet workspaces are free.** Fleet Free includes the dispatch
+  board, truck and trailer planning, driver seats, and private partner work. It
+  has no subscription, trial clock, checkout, monthly charge, or LogLoads truck
+  limit. Hosts remain the only current paying customer under the separately
+  gated 5% completed-load model.
+- **The existing `fleet_operations` key remains the capability record.** New
+  fleet onboarding creates it as active with no period, provider reference, or
+  truck/landing limit. This avoids an enum migration and preserves the service
+  and audit boundary without presenting a paid product.
+- **Provider-bound Dispatch Pro records are historical.** Preserve accepted
+  terms, invoices, payment state, webhooks, portal access, adjustments,
+  reversals, non-renewal, and reconciliation. Customer surfaces must label those
+  records as historical and cannot offer checkout, restart, conversion, tier
+  selection, or new enrollment.
+- This decision changes product and customer-surface truth. It does not cancel a
+  provider obligation, mutate a historical record, activate host enrollment or
+  collection, charge a card, or move driver compensation.
+
 ## 2026-08-05 — Administrative authority and workspace access revoke immediately
 
 - **A profile role is not platform-admin authority.** A real Clerk session opens

@@ -406,9 +406,9 @@ export function createAccount(state: LogLoadsDatabaseState, rawInput: unknown): 
     )
   }
 
-  // Driver Core remains the free driver product and fleet onboarding retains its
-  // existing trial. A new HOST receives no landing_operations entitlement:
-  // Dispatch Pro capabilities start only after an explicit accepted agreement.
+  // Driver Core and Fleet Operations are free capability entitlements. A new
+  // HOST receives no landing_operations entitlement: host billing begins only
+  // after an explicit accepted percentage agreement.
   if (input.path !== "host") {
     const entitlementProduct =
       input.path === "driver" ? "driver_core" : "fleet_operations"
@@ -416,17 +416,14 @@ export function createAccount(state: LogLoadsDatabaseState, rawInput: unknown): 
     state.entitlements.push(
       entitlementSchema.parse({
         activeLandingLimit: null,
-        activeTruckLimit: input.path === "fleet" ? 5 : 1,
+        activeTruckLimit: input.path === "fleet" ? null : 1,
         createdAt: now,
-        currentPeriodEndsAt:
-          input.path === "fleet"
-            ? new Date(nowDate.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString()
-            : null,
+        currentPeriodEndsAt: null,
         features: [],
         id: randomUUID(),
         organizationId,
         product: entitlementProduct,
-        status: input.path === "fleet" ? "trialing" : "active",
+        status: "active",
         stripeCustomerId: null,
         stripeSubscriptionId: null,
         updatedAt: now

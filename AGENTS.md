@@ -22,9 +22,10 @@ This contract binds human and automated contributors. Read it before changing th
 
 **Thesis:** forestry hauling loses time and trust when loads, truck capacity, route access, assignments, and exceptions are coordinated across calls, texts, spreadsheets, and private knowledge. LogLoads can become the field-first operating network that makes that work visible to the right participant at the right time.
 
-Primary daily users are drivers, fleet coordinators, and landing/host operators. The primary buyers are fleet and host organizations paying for coordination, visibility, and operational control—not transportation arranged by LogLoads. The product destination is one mobile-first network with distinct Driver, Fleet, Host, and Admin cockpits around the loop **Plan → Publish → Match → Commit → Coordinate → Haul → Confirm → Repeat**.
+Primary daily users are drivers, fleet coordinators, and landing/host operators. Under the current commercial model the paying customer is the host organization; driver and fleet workspace access is free. Historical fleet subscriptions remain explainable but cannot be newly sold. The product destination is one mobile-first network with distinct Driver, Fleet, Host, and Admin cockpits around the loop **Plan → Publish → Match → Commit → Coordinate → Haul → Confirm → Repeat**.
 
-Dispatch Pro is software for an organization's established private capacity.
+Fleet Free is the current software workspace for an organization's established
+private capacity. Dispatch Pro is a historical subscription record only.
 LogLoads Network is a separately versioned, percentage-fee-funded coordination
 product whose legal operating posture is an explicit activation gate. Do not
 claim that pricing decides whether LogLoads is a broker, carrier, bona fide
@@ -132,7 +133,7 @@ posture is required before real Network enrollment.
 - **Load value is the flat driver pay the host states.** The driver sees exactly that number. It replaces the rate card as the figure any driver-facing surface shows. Rate entities remain a company price-card, not per-load driver pay.
 - **LogLoads charges the host an additional 5% platform fee.** For $1,000 of stated driver pay, the driver's direct host-to-driver obligation remains $1,000 and the host's separate LogLoads obligation is $50. The fee is never deducted from driver pay.
 - **The fee becomes billable only after the physical load movement completes under the authoritative completion rules.** Posting, matching, requesting, private-fleet planning, cancellation before execution, and duplicate completion are not billable events. Percentage fees are invoiced to the host monthly in arrears.
-- **There is no monthly minimum and no charge to post.** Drivers remain free forever. Do not reintroduce the rejected minimum or the subscription catalog as an enrollment option.
+- **There is no monthly minimum and no charge to post.** Drivers and fleets remain free forever. Do not reintroduce the rejected minimum or the subscription catalog as an enrollment option.
 - **`percentage_v1` is the only model for newly accepted commercial activity.** `legacy_percentage` remains parseable and collectible only for assignments and obligations frozen while that legacy agreement was valid. `subscription_v1`, Dispatch Pro subscription enrollment, tier allowances, and overage products are historical/read-only: preserve and reconcile any obligation accepted while the 2026-07-28 decision governed, but create no new subscription customer, enrollment, or usage obligation.
 - **One physical movement may produce exactly one commercial obligation.** Assignment-time terms freeze the applicable model and rate. Never rewrite a legacy or historical subscription record into `percentage_v1`, and never dual-bill a movement.
 - **Strictly non-custodial, permanently.** LogLoads never holds, commingles, or moves driver funds — no wallet, no escrow, no balances. Driver pay is a direct host-to-driver obligation settled off-platform. The host marks payment sent, and **only the driver** may mark it received.
@@ -204,7 +205,8 @@ than 10,000,000 bytes. That billing evidence predates the 2026-08-01 decision an
 does not prove current percentage-v1 readiness, provider ownership, or authority
 to charge. Re-verify the exact production SHA, `LOGLOADS_FEE_COLLECTION` state,
 fee invoice/webhook behavior, and Stripe account before relying on it. Drivers
-are free forever, and freight payments do not move through LogLoads.
+and fleet workspaces are free forever, and freight payments do not move through
+LogLoads.
 
 **Decided and implemented does not mean activated.** Section 7's 2026-08-01
 `percentage_v1` model is the newest commercial authority. Repository and provider
