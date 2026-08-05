@@ -474,25 +474,46 @@ export function buildTeamRosterView(
   organizationId: string,
   currentProfileId: string
 ): TeamMemberView[] {
+  const profilesById = new Map(
+    state.profiles.map((profile) => [profile.id, profile] as const)
+  )
+  const driverProfileIdsByUserId = new Map<string, string[]>()
+  const assignmentCountsByDriverProfileId = new Map<string, number>()
+
+  for (const driverProfile of state.driverProfiles) {
+    if (driverProfile.companyId !== organizationId) {
+      continue
+    }
+
+    const existing = driverProfileIdsByUserId.get(driverProfile.userId) ?? []
+    existing.push(driverProfile.id)
+    driverProfileIdsByUserId.set(driverProfile.userId, existing)
+  }
+
+  for (const assignment of state.assignments) {
+    if (TERMINAL_ASSIGNMENT_STATUSES.has(assignment.status)) {
+      continue
+    }
+
+    assignmentCountsByDriverProfileId.set(
+      assignment.driverProfileId,
+      (assignmentCountsByDriverProfileId.get(assignment.driverProfileId) ?? 0) + 1
+    )
+  }
+
   return state.organizationMemberships
     .filter((membership) => membership.organizationId === organizationId && membership.status !== "removed")
     .map((membership) => {
-      const profile = state.profiles.find((candidate) => candidate.id === membership.userId)
-      const driverProfiles = state.driverProfiles.filter(
-        (candidate) => candidate.companyId === organizationId && candidate.userId === membership.userId
-      )
+      const profile = profilesById.get(membership.userId)
+      const driverProfileIds = driverProfileIdsByUserId.get(membership.userId) ?? []
 
-      if (driverProfiles.length > 1) {
+      if (driverProfileIds.length > 1) {
         throw new Error("Organization driver profile identity is ambiguous")
       }
 
-      const driverProfileId = driverProfiles[0]?.id ?? null
+      const driverProfileId = driverProfileIds[0] ?? null
       const activeOrUpcomingAssignmentCount = driverProfileId
-        ? state.assignments.filter(
-            (assignment) =>
-              assignment.driverProfileId === driverProfileId &&
-              !TERMINAL_ASSIGNMENT_STATUSES.has(assignment.status)
-          ).length
+        ? assignmentCountsByDriverProfileId.get(driverProfileId) ?? 0
         : 0
       const status = memberStatusView(membership.status)
 

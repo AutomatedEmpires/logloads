@@ -32,7 +32,8 @@ function actorFor(email: string): SessionActor {
     driverProfileId: driverProfile?.id ?? null,
     isPlatformAdmin: profile.role === "admin",
     memberships,
-    profile
+    profile,
+    workspaceSelectionInvalid: false
   }
 }
 

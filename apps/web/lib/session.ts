@@ -186,7 +186,8 @@ function buildSessionActor(
       identitySource === "clerk"
     ),
     memberships,
-    profile
+    profile,
+    workspaceSelectionInvalid: Boolean(requestedOrganizationId && !active)
   }
 }
 

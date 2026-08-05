@@ -39,7 +39,8 @@ function actorFor(email: string, organizationId?: string): SessionActor {
     driverProfileId: active?.driverProfileId ?? null,
     isPlatformAdmin: profile.role === "admin",
     memberships,
-    profile
+    profile,
+    workspaceSelectionInvalid: false
   }
 }
 
@@ -70,7 +71,8 @@ describe("membership-driven cockpit routing", () => {
       ...multiWorkspaceActor,
       activeMembership: null,
       activeOrganization: null,
-      driverProfileId: null
+      driverProfileId: null,
+      workspaceSelectionInvalid: true
     }
 
     expect(homePathFor(revokedSelection)).toBe("/access-restricted")

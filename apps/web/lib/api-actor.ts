@@ -81,6 +81,10 @@ async function requireBaseApiActor(): Promise<SessionActor> {
 export async function requireApiActor(requestedOrganizationId?: string | null): Promise<ApiActor> {
   const actor = await requireBaseApiActor()
 
+  if (actor.workspaceSelectionInvalid) {
+    throw new ApiError("Selected workspace access is no longer available", 403)
+  }
+
   const membership = requestedOrganizationId
     ? actor.memberships.find((entry) => entry.organization.id === requestedOrganizationId)
     : actor.memberships.find((entry) => entry.organization.id === actor.activeOrganization?.id) ?? actor.memberships[0]
@@ -102,6 +106,11 @@ export async function requireApiActor(requestedOrganizationId?: string | null): 
 
 export async function requireSupportApiActor(): Promise<SupportApiActor> {
   const actor = await requireBaseApiActor()
+
+  if (actor.workspaceSelectionInvalid) {
+    throw new ApiError("Selected workspace access is no longer available", 403)
+  }
+
   const organizationId = actor.activeOrganization?.id ?? actor.memberships[0]?.organization.id ?? null
 
   if (!organizationId && !actor.isPlatformAdmin) {

@@ -13,6 +13,8 @@ export interface SessionActor {
   activeMembership: OrganizationMembership | null
   driverProfileId: string | null
   isPlatformAdmin: boolean
+  /** A signed workspace id was present but no unique active membership resolved. */
+  workspaceSelectionInvalid: boolean
 }
 
 export function selectedSessionMembership(
