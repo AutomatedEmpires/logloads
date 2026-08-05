@@ -154,7 +154,12 @@ describe("route pack generation", () => {
   })
 
   it("omits suggested or stale facility instructions instead of laundering them as verified", () => {
-    for (const mode of ["suggested", "stale_destination", "stale_facility"] as const) {
+    for (const mode of [
+      "suggested",
+      "stale_destination",
+      "stale_facility",
+      "future_verification"
+    ] as const) {
       const services = createLogLoadsServices(createInMemoryDatabase())
       const destination = services.state.mills.find(
         (mill) => mill.id === "99999999-9999-4999-8999-999999999991"
@@ -172,9 +177,11 @@ describe("route pack generation", () => {
       } else if (mode === "stale_destination") {
         destination.updatedAt = "2026-06-05T18:00:00.000Z"
         facility.lastVerifiedAt = "2026-06-05T17:59:00.000Z"
-      } else {
+      } else if (mode === "stale_facility") {
         facility.lastVerifiedAt = "2026-06-05T17:59:00.000Z"
         facility.updatedAt = "2026-06-05T18:00:00.000Z"
+      } else {
+        facility.lastVerifiedAt = "2999-06-05T18:00:00.000Z"
       }
 
       const { assignment } = bookRuntimeHaul(services)

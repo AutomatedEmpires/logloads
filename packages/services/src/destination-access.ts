@@ -18,19 +18,25 @@ export function millUsableByOrganization(mill: Mill, organizationId: string): bo
  */
 export function destinationFacilityVerificationAt(
   facility: DestinationFacility | null | undefined,
-  mill: Mill
+  mill: Mill,
+  evaluationAt: Date | string
 ): string | null {
   if (!facility || facility.recordStatus !== "verified") return null
 
   const verifiedAt = Date.parse(facility.lastVerifiedAt)
   const millUpdatedAt = Date.parse(mill.updatedAt)
   const facilityUpdatedAt = Date.parse(facility.updatedAt)
+  const evaluatedAt = evaluationAt instanceof Date
+    ? evaluationAt.getTime()
+    : Date.parse(evaluationAt)
 
   return Number.isFinite(verifiedAt) &&
     Number.isFinite(millUpdatedAt) &&
     Number.isFinite(facilityUpdatedAt) &&
+    Number.isFinite(evaluatedAt) &&
     verifiedAt >= millUpdatedAt &&
-    verifiedAt >= facilityUpdatedAt
+    verifiedAt >= facilityUpdatedAt &&
+    verifiedAt <= evaluatedAt
     ? facility.lastVerifiedAt
     : null
 }

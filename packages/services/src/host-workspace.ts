@@ -467,9 +467,15 @@ export function setLandingActive(
 /** A single tenant-scoped read boundary for every mill/destination consumer. */
 export function listMillsForOrganization(
   state: LogLoadsDatabaseState,
-  rawOrganizationId: string
+  rawContext: z.input<typeof actorContextSchema>
 ): Mill[] {
-  const organizationId = z.string().uuid().parse(rawOrganizationId)
+  const { actorUserId, organizationId } = actorContextSchema.parse(rawContext)
+
+  // A tenant id is not authority. Every caller must prove the active user is
+  // an active member of the workspace before any owned destination is read.
+  const context = getActiveOrganizationContext(state, actorUserId, organizationId)
+  assertOrganizationAction(context, "view_network")
+
   return state.mills.filter((mill) => millUsableByOrganization(mill, organizationId))
 }
 

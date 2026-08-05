@@ -75,7 +75,10 @@ function sortedOptions(values: Set<string>): RequirementOption[] {
     .map((value) => ({ label: humanizeTag(value), value }))
 }
 
-export function getHostPublishingOptions(organizationId: string): HostPublishingOptions {
+export function getHostPublishingOptions(
+  organizationId: string,
+  actorUserId: string
+): HostPublishingOptions {
   const state = services.state
   // Mirrors `assertHostCanPublish`: only accounts already effective decide the
   // commercial model, so a queued future-dated account cannot make the current
@@ -104,7 +107,7 @@ export function getHostPublishingOptions(organizationId: string): HostPublishing
   ) ?? null
 
   const millsById = new Map(
-    services.listMillsForOrganization(organizationId).map((mill) => [mill.id, mill])
+    services.listMillsForOrganization({ actorUserId, organizationId }).map((mill) => [mill.id, mill])
   )
 
   // Requirement vocabularies are drawn from what carriers actually run, so a
@@ -291,10 +294,11 @@ export interface HostWorkspaceSetup {
 
 export function getHostWorkspaceSetup(
   organizationId: string,
-  role: OrganizationRole | null | undefined
+  role: OrganizationRole | null | undefined,
+  actorUserId: string
 ): HostWorkspaceSetup {
   const state = services.state
-  const visibleMills = services.listMillsForOrganization(organizationId)
+  const visibleMills = services.listMillsForOrganization({ actorUserId, organizationId })
   const canPublish = role !== null && role !== undefined && organizationRoleCan(role, "publish_load")
   const canManageDestinations = role !== null && role !== undefined && (
     organizationRoleCan(role, "manage_destination") || canPublish
@@ -359,11 +363,12 @@ const ACCESS_POLICY_LINES: Record<string, string> = {
 
 export function getHostLandingRecords(
   organizationId: string,
-  role: OrganizationRole | null | undefined
+  role: OrganizationRole | null | undefined,
+  actorUserId: string
 ): HostLandingRecord[] {
   const state = services.state
   const millsById = new Map(
-    services.listMillsForOrganization(organizationId).map((mill) => [mill.id, mill])
+    services.listMillsForOrganization({ actorUserId, organizationId }).map((mill) => [mill.id, mill])
   )
   const canManageLandings = role !== null && role !== undefined && organizationRoleCan(role, "manage_landing")
 

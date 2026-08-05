@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic"
 export default async function Page() {
   const context = await getCockpitContext("host")
   const organizationId = context.network.activeOrganization.id
+  const actorUserId = context.actor.profile.id
   // The host cockpit admits billing and destination managers too, so the
   // publishing surface follows the same role matrix the service enforces
   // rather than offering controls that would be refused. A viewer without an
@@ -21,7 +22,7 @@ export default async function Page() {
       account={shellAccountFor(context)}
       canPublish={canPublish}
       network={context.network}
-      options={getHostPublishingOptions(organizationId)}
+      options={getHostPublishingOptions(organizationId, actorUserId)}
       planFacts={getHostLoadPlanFacts(organizationId)}
     />
   )

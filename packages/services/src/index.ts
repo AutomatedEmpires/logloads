@@ -483,7 +483,8 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     createLanding: (input: Parameters<typeof createLanding>[1]) => createLanding(state, input),
     createMill: (input: Parameters<typeof createMill>[1]) => createMill(state, input),
     createRate: (input: Parameters<typeof createRate>[1]) => createRate(state, input),
-    listMillsForOrganization: (organizationId: string) => listMillsForOrganization(state, organizationId),
+    listMillsForOrganization: (input: Parameters<typeof listMillsForOrganization>[1]) =>
+      listMillsForOrganization(state, input),
     updateLanding: (input: Parameters<typeof updateLanding>[1]) => updateLanding(state, input),
     updateMill: (input: Parameters<typeof updateMill>[1]) => updateMill(state, input),
     upsertLandingDetails: (input: Parameters<typeof upsertLandingDetails>[1]) => upsertLandingDetails(state, input),

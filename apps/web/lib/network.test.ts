@@ -123,6 +123,30 @@ describe("site truth projection", () => {
     expect(unknown?.destination).toMatchObject({ freshness: "unknown", roadCondition: null })
   })
 
+  it("does not treat a future landing verification as current evidence", () => {
+    const { load, services, viewer } = networkFixture()
+    const landing = services.state.landings.find((candidate) => candidate.id === load.pickupLandingId)
+    const landingDetails = services.state.richLandingDetails.find(
+      (candidate) => candidate.landingId === landing?.id
+    )
+
+    expect(landing).toBeDefined()
+    expect(landingDetails).toBeDefined()
+    if (!landing || !landingDetails) return
+
+    landing.roadCondition = "muddy"
+    landing.updatedAt = "2026-06-05T10:00:00.000Z"
+    landingDetails.lastVerifiedAt = "2026-06-05T12:00:00.001Z"
+
+    const view = buildNetworkView(
+      services.state,
+      viewer,
+      new Date("2026-06-05T12:00:00.000Z")
+    ).loads.find((candidate) => candidate.id === load.id)
+
+    expect(view?.landing).toMatchObject({ freshness: "recent", roadCondition: "muddy" })
+  })
+
   it("only projects a facility as verified when its verification covers the current destination", () => {
     const { load, services, sourceContext } = networkFixture()
     const destination = services.state.mills.find((mill) => mill.id === load.dropoffMillId)
@@ -160,7 +184,19 @@ describe("site truth projection", () => {
     expect(staleVerification?.destination.freshness).toBe("recent")
     expect(staleVerification?.destinationFacility).toBeNull()
 
-    facility.lastVerifiedAt = destination.updatedAt
+    facility.lastVerifiedAt = "2026-06-05T12:00:00.001Z"
+    const futureVerification = buildNetworkView(
+      services.state,
+      { actorUserId: sourceContext.actorUserId, kind: "actor", organizationId: sourceContext.organizationId },
+      new Date("2026-06-05T12:00:00.000Z")
+    ).loads.find((candidate) => candidate.id === load.id)
+
+    expect(futureVerification?.destination.freshness).toBe("recent")
+    expect(futureVerification?.destinationFacility).toBeNull()
+
+    // Evidence recorded exactly at the observation boundary is current; only
+    // evidence after it is impossible knowledge and must fail closed.
+    facility.lastVerifiedAt = "2026-06-05T12:00:00.000Z"
     const verified = buildNetworkView(
       services.state,
       { actorUserId: sourceContext.actorUserId, kind: "actor", organizationId: sourceContext.organizationId },

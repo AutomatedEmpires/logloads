@@ -1173,11 +1173,40 @@ describe("creating a destination", () => {
     }
     services.state.mills.push(foreign)
 
-    const visible = services.listMillsForOrganization(HOST_ORG)
+    const visible = services.listMillsForOrganization({
+      actorUserId: HOST_OWNER,
+      organizationId: HOST_ORG
+    })
 
     expect(visible.some((mill) => mill.id === owned.id)).toBe(true)
     expect(visible.some((mill) => mill.id === MILL)).toBe(true)
     expect(visible.some((mill) => mill.id === foreign.id)).toBe(false)
+  })
+
+  it("refuses destination reads for an actor outside the requested organization", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    expect(() => services.listMillsForOrganization({
+      actorUserId: HOST_OWNER,
+      organizationId: HAULER_ORG
+    })).toThrow(/not an active member/)
+  })
+
+  it("refuses destination reads after the actor's membership is suspended", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const membership = services.state.organizationMemberships.find(
+      (candidate) =>
+        candidate.userId === HOST_OWNER && candidate.organizationId === HOST_ORG
+    )
+
+    expect(membership).toBeDefined()
+    if (!membership) return
+    membership.status = "suspended"
+
+    expect(() => services.listMillsForOrganization({
+      actorUserId: HOST_OWNER,
+      organizationId: HOST_ORG
+    })).toThrow(/not an active member/)
   })
 })
 

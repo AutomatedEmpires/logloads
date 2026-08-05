@@ -517,13 +517,22 @@ function approximateCoordinate(value: number): number {
 
 const SITE_REPORT_FRESHNESS_WINDOW_MS = 7 * 24 * 60 * 60 * 1_000
 
-function currentVerificationAt(updatedAt: string, verifiedAt?: string | null): string | null {
+function currentVerificationAt(
+  updatedAt: string,
+  verifiedAt: string | null | undefined,
+  at: Date
+): string | null {
   if (!verifiedAt) return null
 
   const updated = Date.parse(updatedAt)
   const verified = Date.parse(verifiedAt)
+  const evaluated = at.getTime()
 
-  return Number.isFinite(updated) && Number.isFinite(verified) && verified >= updated
+  return Number.isFinite(updated) &&
+    Number.isFinite(verified) &&
+    Number.isFinite(evaluated) &&
+    verified >= updated &&
+    verified <= evaluated
     ? verifiedAt
     : null
 }
@@ -534,7 +543,7 @@ function siteFreshness(
   verifiedAt?: string | null
 ): NetworkPoint["freshness"] {
   if (!site.roadCondition) return "unknown"
-  if (currentVerificationAt(site.updatedAt, verifiedAt)) return "verified"
+  if (currentVerificationAt(site.updatedAt, verifiedAt, at)) return "verified"
 
   const reportedAt = Date.parse(site.updatedAt)
   const age = at.getTime() - reportedAt
@@ -714,7 +723,8 @@ export function buildNetworkView(
       : null
     const destinationFacilityVerifiedAt = destinationFacilityVerificationAt(
       destinationFacilityCandidate,
-      destination
+      destination,
+      at
     )
     const destinationFacility = destinationFacilityVerifiedAt
       ? destinationFacilityCandidate

@@ -5,6 +5,18 @@ vi.mock("server-only", () => ({}))
 import { getHostLandingRecords, getHostPublishingOptions, getHostWorkspaceSetup } from "./host-data"
 import { services } from "./services"
 
+function hostActorFor(organizationId: string): string {
+  const membership = services.state.organizationMemberships.find(
+    (candidate) =>
+      candidate.organizationId === organizationId &&
+      candidate.role === "owner" &&
+      candidate.status === "active"
+  )
+
+  if (!membership) throw new Error("The host-data fixture has no active owner")
+  return membership.userId
+}
+
 describe("host publishing options", () => {
   it("selects the organization's dispatcher when one user dispatches for multiple companies", () => {
     const sharedDispatcher = services.state.dispatcherProfiles.find((profile) => {
@@ -29,7 +41,10 @@ describe("host publishing options", () => {
     expect(sharedDispatcher && targetMembership && ownedDispatcher).toBeTruthy()
     if (!sharedDispatcher || !targetMembership || !ownedDispatcher) return
 
-    const options = getHostPublishingOptions(targetMembership.organizationId)
+    const options = getHostPublishingOptions(
+      targetMembership.organizationId,
+      targetMembership.userId
+    )
 
     expect(options.dispatcher).toMatchObject({
       id: ownedDispatcher.id,
@@ -58,8 +73,12 @@ describe("host publishing options", () => {
     destination.companyId = foreignOrganizationId
 
     try {
-      const options = getHostPublishingOptions(hostOrganizationId)
-      const landing = getHostLandingRecords(hostOrganizationId, "owner").find(
+      const options = getHostPublishingOptions(hostOrganizationId, hostActorFor(hostOrganizationId))
+      const landing = getHostLandingRecords(
+        hostOrganizationId,
+        "owner",
+        hostActorFor(hostOrganizationId)
+      ).find(
         (candidate) => candidate.id === route.landingId
       )
       const historicalLane = landing?.lanes.find((candidate) => candidate.id === route.id)
@@ -85,10 +104,17 @@ describe("host publishing options", () => {
     landing.roadCondition = null
 
     try {
-      const option = getHostPublishingOptions(hostOrganizationId).landings.find(
+      const option = getHostPublishingOptions(
+        hostOrganizationId,
+        hostActorFor(hostOrganizationId)
+      ).landings.find(
         (candidate) => candidate.id === landing.id
       )
-      const record = getHostLandingRecords(hostOrganizationId, "owner").find(
+      const record = getHostLandingRecords(
+        hostOrganizationId,
+        "owner",
+        hostActorFor(hostOrganizationId)
+      ).find(
         (candidate) => candidate.id === landing.id
       )
 
@@ -130,7 +156,11 @@ describe("host workspace destinations", () => {
     )
 
     try {
-      const setup = getHostWorkspaceSetup(hostOrganizationId, "owner")
+      const setup = getHostWorkspaceSetup(
+        hostOrganizationId,
+        "owner",
+        hostActorFor(hostOrganizationId)
+      )
       const labels = setup.mills.map((mill) => mill.label)
 
       expect(labels.some((label) => label.startsWith("Own pilot destination"))).toBe(true)
@@ -165,7 +195,11 @@ describe("host workspace destinations", () => {
     })
 
     try {
-      const setup = getHostWorkspaceSetup(hostOrganizationId, "owner")
+      const setup = getHostWorkspaceSetup(
+        hostOrganizationId,
+        "owner",
+        hostActorFor(hostOrganizationId)
+      )
 
       expect(setup.mills.some((mill) => mill.id === retiredId)).toBe(false)
       expect(setup.destinations).toEqual(expect.arrayContaining([
@@ -193,8 +227,16 @@ describe("host workspace destinations", () => {
     })
 
     try {
-      const manager = getHostWorkspaceSetup(hostOrganizationId, "destination_manager")
-      const billing = getHostWorkspaceSetup(hostOrganizationId, "billing")
+      const manager = getHostWorkspaceSetup(
+        hostOrganizationId,
+        "destination_manager",
+        hostActorFor(hostOrganizationId)
+      )
+      const billing = getHostWorkspaceSetup(
+        hostOrganizationId,
+        "billing",
+        hostActorFor(hostOrganizationId)
+      )
 
       expect(manager.destinations).toEqual(expect.arrayContaining([
         expect.objectContaining({
@@ -218,8 +260,17 @@ describe("host landing records", () => {
   const landingId = "66666666-6666-4666-8666-666666666662"
 
   it("only serializes the private briefing for a role that may manage landings", () => {
-    const summary = getHostLandingRecords(hostOrganizationId, "viewer").find((landing) => landing.id === landingId)
-    const manageable = getHostLandingRecords(hostOrganizationId, "landing_manager").find((landing) => landing.id === landingId)
+    const summary = getHostLandingRecords(
+      hostOrganizationId,
+      "viewer",
+      hostActorFor(hostOrganizationId)
+    )
+      .find((landing) => landing.id === landingId)
+    const manageable = getHostLandingRecords(
+      hostOrganizationId,
+      "landing_manager",
+      hostActorFor(hostOrganizationId)
+    ).find((landing) => landing.id === landingId)
 
     expect(summary?.details).toBeNull()
     expect(manageable?.details?.gateInstructions).toBeTruthy()
@@ -242,7 +293,11 @@ describe("host landing records", () => {
     }
 
     try {
-      const record = getHostLandingRecords(hostOrganizationId, "landing_manager").find((landing) => landing.id === landingId)
+      const record = getHostLandingRecords(
+        hostOrganizationId,
+        "landing_manager",
+        hostActorFor(hostOrganizationId)
+      ).find((landing) => landing.id === landingId)
 
       expect(record?.details?.gateInstructions).toBe("")
       expect(record?.loadingEquipment).toEqual([])
@@ -265,7 +320,11 @@ describe("host landing records", () => {
     })
 
     try {
-      const record = getHostLandingRecords(hostOrganizationId, "landing_manager").find(
+      const record = getHostLandingRecords(
+        hostOrganizationId,
+        "landing_manager",
+        hostActorFor(hostOrganizationId)
+      ).find(
         (landing) => landing.id === landingId
       )
 

@@ -39,7 +39,7 @@ test.describe.serial("host workspace setup", () => {
     // and every test here sets a desktop viewport, as the repo's other host
     // journeys do.
     test.skip(
-      testInfo.project.name === "desktop-chrome",
+      testInfo.project.name !== "mobile-chrome",
       "stateful setup journey runs once, on the mobile-chrome project"
     )
   })
@@ -121,6 +121,15 @@ test.describe.serial("host workspace setup", () => {
     await fillWhenReady(editDestination, "Scale house or site contact", "Juniper Check-in")
     await editDestination.getByRole("button", { name: "Save destination" }).click()
     await expect(editDestination.getByRole("status")).toContainText("Saved", { timeout: 30_000 })
+
+    await page.reload()
+    await page.waitForLoadState("domcontentloaded")
+    const persistedDestination = page.locator(".workspace-section").filter({ hasText: "Destinations" })
+      .locator("li").filter({ hasText: DESTINATION }).first()
+    const persistedEditor = persistedDestination.locator("details").filter({ hasText: "Edit destination" })
+    await persistedEditor.getByText("Edit destination", { exact: true }).click()
+    await expect(persistedEditor.getByLabel("Scale house or site contact"))
+      .toHaveValue("Juniper Check-in")
   })
 
   test("the host adds a lane from that landing", async ({ page }) => {

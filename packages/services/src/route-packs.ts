@@ -173,7 +173,11 @@ export function buildAssignmentRoutePack(
   // it attests to. Ambiguous, suggested, claimed, or stale facility rows do not
   // contribute critical instructions to an assigned driver's snapshot.
   const facilityCandidate = matchingFacilities.length === 1 ? matchingFacilities[0]! : null
-  const facilityVerifiedAt = destinationFacilityVerificationAt(facilityCandidate, destination)
+  const facilityVerifiedAt = destinationFacilityVerificationAt(
+    facilityCandidate,
+    destination,
+    timestamp
+  )
   const facility = facilityVerifiedAt ? facilityCandidate : null
   const driver = state.driverProfiles.find((current) => current.id === assignment.driverProfileId) ?? null
   const driverUser = driver ? state.profiles.find((current) => current.id === driver.userId) ?? null : null
