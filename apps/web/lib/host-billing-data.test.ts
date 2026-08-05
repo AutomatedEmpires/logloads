@@ -128,7 +128,13 @@ function source(overrides: Partial<HostBillingSource> = {}): HostBillingSource {
       { id: LOAD_TWO, title: "Pulpwood — Beaver Creek" }
     ],
     organizationBillingAccounts: [
-      { billingModel: "legacy_percentage", organizationId: HOST }
+      {
+        activationState: "legacy",
+        billingModel: "legacy_percentage",
+        organizationId: HOST,
+        percentageTermsSnapshot: null,
+        subscriptionId: null
+      }
     ],
     platformFeeEvents: [],
     ...overrides
@@ -393,7 +399,12 @@ describe("nothing has accrued yet", () => {
 
 describe("the card on file, and what its state costs the host", () => {
   it("blocks publishing when there is no billing profile at all", () => {
-    const view = buildHostBillingView(source({ hostBillingProfiles: [] }), HOST, NOW)
+    const view = buildHostBillingView(
+      source({ hostBillingProfiles: [] }),
+      HOST,
+      NOW,
+      { canManageBilling: true }
+    )
 
     expect(view.paymentMethod.status).toBe("none")
     expect(view.paymentMethod.blocksPublishing).toBe(true)
@@ -454,7 +465,34 @@ describe("the card on file, and what its state costs the host", () => {
     expect(view.paymentMethod.status).toBe("none")
     expect(view.paymentMethod.blocksPublishing).toBe(false)
     expect(view.paymentMethod.consequence).toMatch(/creating a workspace or draft does not require one/i)
-    expect(view.paymentMethod.consequence).toMatch(/before an accepted paid subscription can activate/i)
+    expect(view.paymentMethod.consequence).toMatch(/approved percentage agreement/i)
+    expect(view.paymentMethod.setupAllowed).toBe(false)
+    expect(view.paymentMethod.nextStep).toBeNull()
+  })
+
+  it("shows card controls only to a billing manager with an eligible obligation", () => {
+    const manager = buildHostBillingView(source(), HOST, NOW, {
+      canManageBilling: true
+    })
+    const viewer = buildHostBillingView(source(), HOST, NOW)
+    const unenrolledManager = buildHostBillingView(
+      source({
+        hostBillingProfiles: [],
+        organizationBillingAccounts: []
+      }),
+      HOST,
+      NOW,
+      { canManageBilling: true }
+    )
+
+    expect(manager.paymentMethod.setupAllowed).toBe(true)
+    expect(manager.paymentMethod.setupUnavailableReason).toBeNull()
+    expect(viewer.paymentMethod.setupAllowed).toBe(false)
+    expect(viewer.paymentMethod.setupUnavailableReason).toMatch(/owner or billing manager/i)
+    expect(unenrolledManager.paymentMethod.setupAllowed).toBe(false)
+    expect(unenrolledManager.paymentMethod.setupUnavailableReason).toMatch(
+      /approved for percentage billing/i
+    )
   })
 
   it("covers every card state the schema allows, and exactly one of them publishes", () => {

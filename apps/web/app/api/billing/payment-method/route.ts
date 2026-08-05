@@ -9,6 +9,8 @@ import {
 	startHostCardSetup,
 	stripePublishableKey
 } from "@/lib/billing"
+import { hostCardSetupEligibility } from "@/lib/host-card-eligibility"
+import { percentageEnrollmentAllowed } from "@/lib/percentage-enrollment"
 import { readState } from "@/lib/services"
 import {
 	resolveSubscriptionStripe,
@@ -64,6 +66,19 @@ export async function POST() {
 		// tighter than the shared actor budget.
 		await enforceApiRateLimit("billing-card-setup", actorUserId, 10, 60_000)
 
+		const enrollmentAllowed = percentageEnrollmentAllowed(organization.id)
+		const eligibility = await readState((current) =>
+			hostCardSetupEligibility(
+				current.state,
+				organization.id,
+				enrollmentAllowed
+			)
+		)
+
+		if (!eligibility.allowed) {
+			throw new ApiError(eligibility.message, 409)
+		}
+
 		const billing = resolveStripeBilling()
 
 		if (!billing.ok) {
@@ -93,6 +108,7 @@ export async function POST() {
 
 		const setup = await startHostCardSetup({
 			organization,
+			percentageEnrollmentAllowed: enrollmentAllowed,
 			port: billing.value,
 			publishableKey: publishableKey.value,
 			state: operatingStateAccess()
@@ -101,7 +117,7 @@ export async function POST() {
 		if (!setup.ok) {
 			throw new ApiError(
 				setup.message,
-				setup.outcome === "unavailable" ? 503 : 422,
+				setup.outcome === "unavailable" ? 503 : 409,
 				setup.outcome === "unavailable" ? { "Retry-After": "5" } : undefined
 			)
 		}

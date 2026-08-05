@@ -25,6 +25,7 @@ import type { LogLoadsServices } from "@logloads/services"
 import Stripe from "stripe"
 
 import type { PlanProduct } from "./plans"
+import { hostCardSetupEligibility } from "./host-card-eligibility"
 import {
   classifyStripeBillingObject,
   stripePublishableModeProblem,
@@ -1932,15 +1933,26 @@ export interface HostCardSetup {
 export async function startHostCardSetup(input: {
   now?: () => string
   organization: Pick<Organization, "displayName" | "id">
+  percentageEnrollmentAllowed: boolean
   port: StripeBillingPort
   publishableKey: string
   state: BillingStateAccess
 }): Promise<BillingResult<HostCardSetup>> {
   const now = input.now ?? nowIso
   const organizationId = input.organization.id
-  const existingCustomerId = await input.state.read(
-    (state) => findHostBillingProfile(state, organizationId)?.stripeCustomerId ?? null
+  const eligibility = await input.state.read((state) =>
+    hostCardSetupEligibility(
+      state,
+      organizationId,
+      input.percentageEnrollmentAllowed
+    )
   )
+
+  if (!eligibility.allowed) {
+    return billingRefused(eligibility.message)
+  }
+
+  const existingCustomerId = eligibility.existingCustomerId
 
   const customerId =
     existingCustomerId ??
@@ -1952,7 +1964,7 @@ export async function startHostCardSetup(input: {
       })
     ).id
 
-  if (!existingCustomerId) {
+  if (!eligibility.profileCustomerId) {
     await input.state.mutate((draft) =>
       recordHostStripeCustomer(draft.state, {
         at: now(),

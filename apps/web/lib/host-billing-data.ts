@@ -19,6 +19,7 @@ import {
 import type { BadgeProps } from "@logloads/ui"
 
 import { percentageEnrollmentAllowed as currentPercentageEnrollmentAllowed } from "./percentage-enrollment"
+import { hostCardSetupEligibility, type HostCardSetupEligibility } from "./host-card-eligibility"
 import { services } from "./services"
 
 /**
@@ -270,7 +271,7 @@ export const SUBSCRIPTION_CARD_PRESENTATION: Record<
   attached: {
     blocksPublishing: false,
     consequence:
-      "This card is available for an explicitly accepted subscription or usage invoice. Driver and carrier compensation never passes through it.",
+      "This card remains available only for a billing obligation already preserved in this workspace. Driver and carrier compensation never passes through it.",
     nextStep: null,
     statusLabel: "Card on file",
     tone: "success"
@@ -278,7 +279,7 @@ export const SUBSCRIPTION_CARD_PRESENTATION: Record<
   failed: {
     blocksPublishing: false,
     consequence:
-      "The last card charge failed. Existing, accepted, and private-fleet work remains available; replace the card before paid enrollment or after the subscription dunning notice asks you to.",
+      "The last permitted LogLoads charge failed. Existing work remains unchanged; replace the card only when this panel confirms that the preserved obligation is eligible for collection.",
     nextStep: "Replace the card before the next permitted collection attempt.",
     statusLabel: "Card declined",
     tone: "critical"
@@ -286,8 +287,8 @@ export const SUBSCRIPTION_CARD_PRESENTATION: Record<
   none: {
     blocksPublishing: false,
     consequence:
-      "No card is attached. Creating a workspace or draft does not require one; a verified payment method is required before an accepted paid subscription can activate.",
-    nextStep: "Attach a card only when you are ready to complete approved enrollment.",
+      "No card is attached. Creating a workspace or draft does not require one. Card setup opens only after an approved percentage agreement is in force or a preserved obligation requires collection.",
+    nextStep: "Attach a card only after this panel confirms that setup is available.",
     statusLabel: "No card on file",
     tone: "warning"
   }
@@ -302,6 +303,10 @@ export interface HostPaymentMethodView {
   consequence: string
   nextStep: string | null
   blocksPublishing: boolean
+  /** Whether the server will permit a new Stripe SetupIntent for this host. */
+  setupAllowed: boolean
+  /** Plain-language reason shown instead of a decorative provider action. */
+  setupUnavailableReason: string | null
   /**
    * The card processor's own words about the decline, with the date. Kept off the
    * publishing refusal on purpose: it is information about a card, and it belongs
@@ -324,7 +329,8 @@ function cardLineFor(profile: HostBillingProfile | undefined): string | null {
 
 function paymentMethodView(
   profile: HostBillingProfile | undefined,
-  percentageCollectionRequired: boolean
+  percentageCollectionRequired: boolean,
+  setupEligibility: HostCardSetupEligibility
 ): HostPaymentMethodView {
   // No profile row IS a host with no card. This collection starts empty for every
   // organization, so an absent row has to read as "none" rather than as "nothing
@@ -342,7 +348,11 @@ function paymentMethodView(
       profile?.lastFailureAt && profile.lastFailureReason
         ? `Declined ${formatDay(profile.lastFailureAt)}: ${profile.lastFailureReason}`
         : null,
-    nextStep: presentation.nextStep,
+    nextStep: setupEligibility.allowed ? presentation.nextStep : null,
+    setupAllowed: setupEligibility.allowed,
+    setupUnavailableReason: setupEligibility.allowed
+      ? null
+      : setupEligibility.message,
     status,
     statusLabel: presentation.statusLabel,
     tone: presentation.tone
@@ -583,10 +593,13 @@ export interface HostBillingSource {
     } | null
   }[]
   organizationSubscriptions?: readonly {
+    billingModel?: string
     id: string
     internalBillingTest?: boolean
     organizationId: string
     status: string
+    stripeCustomerId?: string | null
+    stripeSubscriptionId?: string | null
   }[]
 }
 
@@ -646,6 +659,20 @@ export function buildHostBillingView(
         : billingAccount?.billingModel
           ? "historical_subscription"
           : "available"
+  const policyCardSetupEligibility = hostCardSetupEligibility(
+    source,
+    organizationId,
+    options.percentageEnrollmentAllowed === true
+  )
+  const cardSetupEligibility: HostCardSetupEligibility =
+    options.canManageBilling === true
+      ? policyCardSetupEligibility
+      : {
+          allowed: false,
+          basis: "agreement_required",
+          message:
+            "Only an organization owner or billing manager can add or replace this workspace's payment method."
+        }
 
   const loadTitleById = new Map(source.loadPostings.map((posting) => [posting.id, posting.title]))
   const eventsById = new Map(ownEvents.map((event) => [event.id, event]))
@@ -689,7 +716,11 @@ export function buildHostBillingView(
     hasBillingHistory: ownEvents.length > 0 || ownInvoices.length > 0,
     invoices,
     lastInvoice: invoices[0] ?? null,
-    paymentMethod: paymentMethodView(profile, percentageCollectionRequired),
+    paymentMethod: paymentMethodView(
+      profile,
+      percentageCollectionRequired,
+      cardSetupEligibility
+    ),
     percentageAgreement: {
       acceptedOnLabel: billingAccount?.percentageTermsSnapshot?.acceptedAt
         ? formatDay(billingAccount.percentageTermsSnapshot.acceptedAt)

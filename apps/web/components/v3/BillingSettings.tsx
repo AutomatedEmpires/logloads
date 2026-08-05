@@ -147,7 +147,15 @@ function CardSetupForm({ onAttached }: { onAttached: () => void }) {
   )
 }
 
-function HostCardControl({ status }: { status: CardStatus }) {
+function HostCardControl({
+  setupAllowed,
+  setupUnavailableReason,
+  status
+}: {
+  setupAllowed: boolean
+  setupUnavailableReason: string | null
+  status: CardStatus
+}) {
   const [setup, setSetup] = useState<CardSetup | null>(null)
   const [pending, setPending] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
@@ -161,6 +169,24 @@ function HostCardControl({ status }: { status: CardStatus }) {
       <Elements options={{ clientSecret: setup.clientSecret }} stripe={stripe}>
         <CardSetupForm onAttached={() => window.location.reload()} />
       </Elements>
+    )
+  }
+
+  if (!setupAllowed) {
+    return (
+      <div className="plan-action">
+        <p className="fee-next-step" role="note">
+          <Icon aria-hidden name="status.lock" size={16} />
+          <strong>
+            {setupUnavailableReason ??
+              "Payment method setup is not available for this workspace yet."}
+          </strong>
+        </p>
+        <p className="settings-meaning">
+          No card is needed to create a workspace or prepare draft work. LogLoads
+          will never ask for one before the applicable billing agreement is in force.
+        </p>
+      </div>
     )
   }
 
@@ -851,7 +877,11 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
             <strong>{paymentMethod.nextStep}</strong>
           </p>
         ) : null}
-        <HostCardControl status={paymentMethod.status} />
+        <HostCardControl
+          setupAllowed={paymentMethod.setupAllowed}
+          setupUnavailableReason={paymentMethod.setupUnavailableReason}
+          status={paymentMethod.status}
+        />
       </section>
 
       <section className="settings-panel" aria-label="Platform fees accrued this month">

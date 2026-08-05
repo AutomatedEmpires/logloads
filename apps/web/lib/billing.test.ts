@@ -1649,6 +1649,7 @@ describe("startHostCardSetup", () => {
     const setup = await startHostCardSetup({
       now: () => AT,
       organization,
+      percentageEnrollmentAllowed: true,
       port: stripe.port,
       publishableKey: "pk_test",
       state: stateAccess(state)
@@ -1676,6 +1677,7 @@ describe("startHostCardSetup", () => {
 
     await startHostCardSetup({
       organization,
+      percentageEnrollmentAllowed: true,
       port: stripe.port,
       publishableKey: "pk_test",
       state: stateAccess(state)
@@ -1683,6 +1685,29 @@ describe("startHostCardSetup", () => {
 
     expect(stripe.callNames()).toEqual(["createSetupIntent"])
     expect(stripe.inputFor("createSetupIntent")?.customerId).toBe(existing)
+  })
+
+  it("refuses an unenrolled host before creating any Stripe object or billing row", async () => {
+    const state = seedState()
+    const organization = organizationOfType(state, "landing_source")
+    const stripe = fakeStripe()
+
+    state.hostBillingProfiles = []
+    state.organizationBillingAccounts = []
+
+    const setup = await startHostCardSetup({
+      now: () => AT,
+      organization,
+      percentageEnrollmentAllowed: false,
+      port: stripe.port,
+      publishableKey: "pk_test",
+      state: stateAccess(state)
+    })
+
+    expect(setup.ok).toBe(false)
+    expect(setup.ok === false && setup.outcome).toBe("refused")
+    expect(stripe.callNames()).toEqual([])
+    expect(state.hostBillingProfiles).toEqual([])
   })
 })
 

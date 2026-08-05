@@ -37,6 +37,31 @@ have to rediscover any of this.
 - Unknown application errors remain sanitized `500` responses; typed domain
   failures never expose cross-tenant record identifiers or existence details.
 
+## Billing payment-method mutation boundary
+
+- `GET /api/billing/payment-method` remains a read-only status surface for an
+  actor with `manage_billing`, even when the organization cannot start card
+  setup. Read access does not imply permission to mutate provider state.
+- `POST /api/billing/payment-method` requires `manage_billing`. The server
+  recomputes eligibility from canonical billing state and the server-owned
+  rollout configuration; client input cannot grant commercial authority.
+- A current `percentage_v1` organization is eligible only after accepting the
+  exact current agreement and immutable terms and receiving exact organization
+  rollout authorization. Preserved provider-bound historical subscriptions,
+  explicit `legacy_percentage` accounts, and accrued or otherwise unsettled fee
+  or invoice obligations remain serviceable so an existing obligation is not
+  orphaned.
+- Duplicate profiles, accounts, subscriptions, provider mismatches, and
+  cross-organization records fail closed. An ineligible request is refused
+  before Stripe customer lookup or creation and before SetupIntent creation;
+  the billing service enforces the same rule as the route. A preserved
+  provider-bound Stripe customer is reused, and a profile/subscription customer
+  mismatch is refused rather than repaired implicitly.
+- Card setup is non-activating: it does not accept terms, enroll a host, enable
+  collection, create a fee, charge a card, or move driver compensation.
+  Percentage enrollment and fee collection remain independent, default-dark
+  gates.
+
 ## How the RLS discrepancy arose (reconciled, proven)
 
 Two earlier reports appeared to conflict; both were true subsets of the same reality:
