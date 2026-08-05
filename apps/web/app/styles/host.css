@@ -453,6 +453,8 @@
 }
 .workspace-list li:last-child { border-bottom: none; }
 .workspace-list span { color: var(--muted); font-size: 0.85rem; }
+.workspace-destination-list .workspace-edit { flex: 1 0 100%; width: 100%; }
+.workspace-destination-list .workspace-edit > summary { display: flex; align-items: center; min-height: 44px; }
 
 .workspace-lanes { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
 .workspace-lanes h3 { margin: 0 0 8px; font-size: 0.95rem; }

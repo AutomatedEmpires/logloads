@@ -26,16 +26,20 @@ export default async function Page({
   const role = context.actor.activeMembership?.role
   const canManageLandings = role !== undefined && organizationRoleCan(role, "manage_landing")
   const canPublish = role !== undefined && organizationRoleCan(role, "publish_load")
+  const canManageDestinations = role !== undefined && (
+    organizationRoleCan(role, "manage_destination") || canPublish
+  )
 
   return (
     <HostLandings
       account={shellAccountFor(context)}
       canManageLandings={canManageLandings}
+      canManageDestinations={canManageDestinations}
       canPublish={canPublish}
       landings={getHostLandingRecords(organizationId, role)}
       network={context.network}
       options={getHostPublishingOptions(organizationId)}
-      setup={getHostWorkspaceSetup(organizationId)}
+      setup={getHostWorkspaceSetup(organizationId, role)}
       welcome={welcome}
     />
   )

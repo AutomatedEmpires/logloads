@@ -12,10 +12,17 @@ import {
   createMillAction,
   createRateAction,
   setLandingActiveAction,
+  setMillActiveAction,
   updateLandingAction,
+  updateMillAction,
   upsertLandingDetailsAction
 } from "@/lib/cockpit-actions"
-import type { HostLandingDetailsDraft, HostLandingDraft, HostMillOption } from "@/lib/host-data"
+import type {
+  HostLandingDetailsDraft,
+  HostLandingDraft,
+  HostMillDraft,
+  HostMillOption
+} from "@/lib/host-data"
 import { formatHuman } from "@/lib/v3-shared"
 
 /**
@@ -31,6 +38,21 @@ const ROAD_CONDITIONS = roadConditionSchema.options
 const RATE_TYPES = rateTypeSchema.options
 
 const EMPTY_LANDING: HostLandingDraft = {
+  accessNotes: "",
+  addressLine1: "",
+  city: "",
+  contactEmail: "",
+  contactName: "",
+  contactPhone: "",
+  lat: 0,
+  lng: 0,
+  name: "",
+  postalCode: "",
+  roadCondition: "",
+  state: ""
+}
+
+const EMPTY_MILL: HostMillDraft = {
   accessNotes: "",
   addressLine1: "",
   city: "",
@@ -364,11 +386,21 @@ export function LandingActiveToggle({
  * Adds an organization-owned mill or destination. It becomes available to
  * this workspace immediately and never appears in another outfit's builder.
  */
-export function MillForm({ onDone }: { onDone?: () => void }) {
+export function MillForm({
+  mill,
+  millId,
+  onDone
+}: {
+  mill?: HostMillDraft
+  millId?: string
+  onDone?: () => void
+}) {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [pending, startTransition] = useTransition()
+  const current = mill ?? EMPTY_MILL
+  const editing = Boolean(millId)
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -385,7 +417,7 @@ export function MillForm({ onDone }: { onDone?: () => void }) {
     setError(null)
     setSaved(false)
     startTransition(async () => {
-      const result = await createMillAction({
+      const payload = {
         accessNotes: String(data.get("accessNotes") ?? "").trim() || null,
         addressLine1: String(data.get("addressLine1") ?? "").trim(),
         city: String(data.get("city") ?? "").trim(),
@@ -396,8 +428,13 @@ export function MillForm({ onDone }: { onDone?: () => void }) {
         lng,
         name: String(data.get("name") ?? "").trim(),
         postalCode: String(data.get("postalCode") ?? "").trim(),
+        roadCondition: String(data.get("roadCondition") ?? "").trim(),
         state: String(data.get("state") ?? "").trim()
-      })
+      }
+
+      const result = millId
+        ? await updateMillAction({ ...payload, millId })
+        : await createMillAction(payload)
 
       if (!result.ok) {
         setError(result.error ?? "The destination could not be saved.")
@@ -405,68 +442,121 @@ export function MillForm({ onDone }: { onDone?: () => void }) {
       }
 
       setSaved(true)
-      form.reset()
+      if (!editing) form.reset()
       onDone?.()
       router.refresh()
     })
   }
 
   return (
-    <form className="workspace-form" onSubmit={submit}>
+    <form autoComplete="off" className="workspace-form" onSubmit={submit}>
+      {editing ? (
+        <p className="workspace-hint">
+          Saving corrects this destination for new lanes and future snapshots. Existing assignment Route Packs stay frozen; re-issue an active driver&apos;s pack from the <Link href="/host/live-board">Live Board</Link> when the correction applies to their haul.
+        </p>
+      ) : null}
       <div className="workspace-form__grid">
         <label>
           Destination name
-          <input autoComplete="organization" name="name" placeholder="Cascade Mill" required type="text" />
+          <input autoComplete="off" defaultValue={current.name} maxLength={120} name="name" placeholder="Cascade Mill" required type="text" />
         </label>
         <label>
           Street address
-          <input autoComplete="street-address" name="addressLine1" required type="text" />
+          <input autoComplete="off" defaultValue={current.addressLine1} maxLength={200} name="addressLine1" required type="text" />
         </label>
         <label>
           City
-          <input autoComplete="address-level2" name="city" required type="text" />
+          <input autoComplete="off" defaultValue={current.city} maxLength={100} name="city" required type="text" />
         </label>
         <label>
           State
-          <input autoComplete="address-level1" maxLength={2} name="state" required size={2} type="text" />
+          <input autoComplete="off" defaultValue={current.state} maxLength={2} minLength={2} name="state" pattern="[A-Za-z]{2}" required size={2} type="text" />
         </label>
         <label>
           Postal code
-          <input autoComplete="postal-code" inputMode="numeric" name="postalCode" required type="text" />
+          <input autoComplete="off" defaultValue={current.postalCode} maxLength={20} name="postalCode" required type="text" />
+        </label>
+        <label>
+          Current road condition
+          <select defaultValue={current.roadCondition} name="roadCondition" required>
+            <option disabled value="">Select current condition</option>
+            {ROAD_CONDITIONS.map((value) => (
+              <option key={value} value={value}>{formatHuman(value)}</option>
+            ))}
+          </select>
         </label>
         <label>
           Map latitude
-          <input inputMode="decimal" name="lat" placeholder="44.05" required step="any" type="number" />
+          <input defaultValue={editing ? current.lat : ""} inputMode="decimal" name="lat" placeholder="44.05" required step="any" type="number" />
         </label>
         <label>
           Map longitude
-          <input inputMode="decimal" name="lng" placeholder="-121.31" required step="any" type="number" />
+          <input defaultValue={editing ? current.lng : ""} inputMode="decimal" name="lng" placeholder="-121.31" required step="any" type="number" />
         </label>
         <label>
           Scale house or site contact
-          <input autoComplete="name" name="contactName" required type="text" />
+          <input autoComplete="off" defaultValue={current.contactName} maxLength={120} name="contactName" required type="text" />
         </label>
         <label>
           Contact phone
-          <input autoComplete="tel" inputMode="tel" name="contactPhone" required type="tel" />
+          <input autoComplete="off" defaultValue={current.contactPhone} inputMode="tel" maxLength={40} minLength={7} name="contactPhone" required type="tel" />
         </label>
         <label>
           Contact email
-          <input autoComplete="email" inputMode="email" name="contactEmail" type="email" />
+          <input autoComplete="off" defaultValue={current.contactEmail} inputMode="email" maxLength={254} name="contactEmail" type="email" />
         </label>
       </div>
       <label className="workspace-form__wide">
         Check-in notes
-        <textarea name="accessNotes" placeholder="Check in at gate 2; scale is on the left." rows={2} />
+        <textarea defaultValue={current.accessNotes} maxLength={500} name="accessNotes" placeholder="Check in at gate 2; scale is on the left." rows={2} />
       </label>
       <div className="workspace-form__actions">
         <button className="action-link" disabled={pending} type="submit">
-          {pending ? "Saving…" : "Add destination"}
+          {pending ? "Saving…" : editing ? "Save destination" : "Add destination"}
         </button>
-        {saved ? <span className="action-note">Saved. It is available in your lanes now.</span> : null}
+        {saved ? (
+          <span aria-live="polite" className="action-note" role="status">
+            Saved.
+          </span>
+        ) : null}
       </div>
       {error ? <p className="action-error" role="alert">{error}</p> : null}
     </form>
+  )
+}
+
+export function MillActiveToggle({
+  isActive,
+  millId
+}: {
+  isActive: boolean
+  millId: string
+}) {
+  const router = useRouter()
+  const [error, setError] = useState<string | null>(null)
+  const [pending, startTransition] = useTransition()
+
+  const toggle = () => {
+    setError(null)
+    startTransition(async () => {
+      const result = await setMillActiveAction({ isActive: !isActive, millId })
+
+      if (!result.ok) {
+        setError(result.error ?? "That destination could not be changed.")
+        return
+      }
+
+      router.refresh()
+    })
+  }
+
+  return (
+    <>
+      <button className="action-link action-link--secondary" disabled={pending} onClick={toggle} type="button">
+        {pending ? "Working…" : isActive ? "Retire destination" : "Restore destination"}
+      </button>
+      {error ? <p className="action-error" role="alert">{error}</p> : null}
+    </>
   )
 }
 
@@ -483,9 +573,10 @@ export function HaulRouteForm({ landingId, mills }: { landingId: string; mills: 
     const data = new FormData(form)
     const distance = numberOrNull(data.get("estimatedDistanceMiles"))
     const runTime = numberOrNull(data.get("estimatedRunTimeMinutes"))
+    const roadCondition = String(data.get("roadCondition") ?? "").trim()
 
-    if (distance === null || runTime === null) {
-      setError("Give the distance and run time a driver should expect.")
+    if (distance === null || runTime === null || !roadCondition) {
+      setError("Give the distance, run time, and current road condition a driver should expect.")
       return
     }
 
@@ -497,7 +588,7 @@ export function HaulRouteForm({ landingId, mills }: { landingId: string; mills: 
         estimatedRunTimeMinutes: Math.round(runTime),
         landingId,
         millId: String(data.get("millId") ?? ""),
-        roadCondition: String(data.get("roadCondition") ?? "good"),
+        roadCondition,
         roadNotes: String(data.get("roadNotes") ?? "").trim() || null,
         routeName: String(data.get("routeName") ?? "").trim()
       })
@@ -549,7 +640,8 @@ export function HaulRouteForm({ landingId, mills }: { landingId: string; mills: 
         </label>
         <label>
           Road condition
-          <select defaultValue="good" name="roadCondition">
+          <select defaultValue="" name="roadCondition" required>
+            <option disabled value="">Select current condition</option>
             {ROAD_CONDITIONS.map((value) => (
               <option key={value} value={value}>{formatHuman(value)}</option>
             ))}

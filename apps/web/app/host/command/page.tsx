@@ -22,7 +22,7 @@ export default async function Page() {
       canPublish={canPublish}
       network={context.network}
       options={getHostPublishingOptions(organizationId)}
-      setup={getHostWorkspaceSetup(organizationId)}
+      setup={getHostWorkspaceSetup(organizationId, role)}
     />
   )
 }

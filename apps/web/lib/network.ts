@@ -28,6 +28,7 @@ import {
   activeDriverProfileForOrganization,
   createLogLoadsServices,
   directOfferClaimCount,
+  destinationFacilityVerificationAt,
   directOfferIsClaimable,
   effectiveDirectOfferStatus,
   routePackIsSafeToRead
@@ -99,8 +100,8 @@ export interface NetworkPoint {
   lng: number
   approximate: boolean
   accessNotes: string | null
-  roadCondition: RoadCondition
-  freshness: "verified" | "recent" | "stale"
+  roadCondition: RoadCondition | null
+  freshness: "verified" | "recent" | "stale" | "unknown"
 }
 
 export interface LoadAccess {
@@ -514,6 +515,34 @@ function approximateCoordinate(value: number): number {
   return Math.round(value * 50) / 50
 }
 
+const SITE_REPORT_FRESHNESS_WINDOW_MS = 7 * 24 * 60 * 60 * 1_000
+
+function currentVerificationAt(updatedAt: string, verifiedAt?: string | null): string | null {
+  if (!verifiedAt) return null
+
+  const updated = Date.parse(updatedAt)
+  const verified = Date.parse(verifiedAt)
+
+  return Number.isFinite(updated) && Number.isFinite(verified) && verified >= updated
+    ? verifiedAt
+    : null
+}
+
+function siteFreshness(
+  site: { roadCondition?: RoadCondition | null; updatedAt: string },
+  at: Date,
+  verifiedAt?: string | null
+): NetworkPoint["freshness"] {
+  if (!site.roadCondition) return "unknown"
+  if (currentVerificationAt(site.updatedAt, verifiedAt)) return "verified"
+
+  const reportedAt = Date.parse(site.updatedAt)
+  const age = at.getTime() - reportedAt
+
+  if (!Number.isFinite(reportedAt) || age < 0) return "unknown"
+  return age <= SITE_REPORT_FRESHNESS_WINDOW_MS ? "recent" : "stale"
+}
+
 function pointFromSite(
   site: {
     id: string
@@ -523,20 +552,23 @@ function pointFromSite(
     coordinates: { lat: number; lng: number }
     accessNotes?: string | null
     roadCondition?: RoadCondition | null
+    updatedAt: string
   },
   exact: boolean,
-  exactCoordinates?: { lat: number; lng: number } | null
+  at: Date,
+  exactCoordinates?: { lat: number; lng: number } | null,
+  lastVerifiedAt?: string | null
 ): NetworkPoint {
   return {
     accessNotes: exact ? site.accessNotes ?? null : null,
     approximate: !exact,
     city: site.city,
-    freshness: (site.roadCondition ?? "good") === "good" ? "verified" : "recent",
+    freshness: siteFreshness(site, at, lastVerifiedAt),
     id: site.id,
     lat: exact ? (exactCoordinates?.lat ?? site.coordinates.lat) : approximateCoordinate(site.coordinates.lat),
     lng: exact ? (exactCoordinates?.lng ?? site.coordinates.lng) : approximateCoordinate(site.coordinates.lng),
     name: site.name,
-    roadCondition: site.roadCondition ?? "good",
+    roadCondition: site.roadCondition ?? null,
     state: site.state
   }
 }
@@ -674,7 +706,19 @@ export function buildNetworkView(
     )
     const landingDetails = matchingLandingDetails.length === 1 ? matchingLandingDetails[0]! : null
     const destination = requireRecord(state.mills.find((item) => item.id === load.dropoffMillId), `destination ${load.dropoffMillId}`)
-    const destinationFacility = state.destinationFacilities.find((item) => item.millId === destination.id) ?? null
+    const matchingDestinationFacilities = state.destinationFacilities.filter(
+      (item) => item.millId === destination.id
+    )
+    const destinationFacilityCandidate = matchingDestinationFacilities.length === 1
+      ? matchingDestinationFacilities[0]!
+      : null
+    const destinationFacilityVerifiedAt = destinationFacilityVerificationAt(
+      destinationFacilityCandidate,
+      destination
+    )
+    const destinationFacility = destinationFacilityVerifiedAt
+      ? destinationFacilityCandidate
+      : null
     const route = requireRecord(state.haulRoutes.find((item) => item.id === load.routeId), `route ${load.routeId}`)
     // Route packs are per-assignment snapshots now, so "a pack for this load"
     // could belong to a different driver. Resolved below against the viewer's
@@ -856,7 +900,7 @@ export function buildNetworkView(
           counterpartReliability: counterpartReliabilitySignal(state, load.companyId),
           daysUntilSchedule: daysUntil(load.loadDate ?? load.campaignStartDate),
           distanceMiles: route.estimatedDistanceMiles,
-          freshness: (landing.roadCondition ?? "good") === "good" ? "verified" : "recent",
+          freshness: siteFreshness(landing, at, landingDetails?.lastVerifiedAt),
           isRequestable: Boolean(requestableSlot),
           remainingCapacity: capacityRemaining,
           visibility: (capacity?.visibilityMode ?? "open_network") as RecommendationVisibility
@@ -934,7 +978,13 @@ export function buildNetworkView(
             routePack?.calculatedRouteSummary ? `Route pack: ${routePack.calculatedRouteSummary}` : route.roadNotes ? `Local route: ${route.roadNotes}` : null
           ].filter((value): value is string => Boolean(value))
         : [],
-      destination: pointFromSite(destination, unlocked),
+      destination: pointFromSite(
+        destination,
+        unlocked,
+        at,
+        null,
+        destinationFacilityVerifiedAt
+      ),
       discovery: { available: discoveryAvailable, reason: discoveryReason },
       destinationFacility: destinationFacility && unlocked
         ? {
@@ -956,7 +1006,9 @@ export function buildNetworkView(
       landing: pointFromSite(
         landing,
         unlocked,
-        effectiveEntrance
+        at,
+        effectiveEntrance,
+        landingDetails?.lastVerifiedAt
       ),
       landingDetails: landingDetails
         ? {

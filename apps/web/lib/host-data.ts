@@ -103,7 +103,9 @@ export function getHostPublishingOptions(organizationId: string): HostPublishing
     (profile) => profile.companyId === organizationId
   ) ?? null
 
-  const millsById = new Map(state.mills.map((mill) => [mill.id, mill]))
+  const millsById = new Map(
+    services.listMillsForOrganization(organizationId).map((mill) => [mill.id, mill])
+  )
 
   // Requirement vocabularies are drawn from what carriers actually run, so a
   // requirement always matches at least one truck's capabilities (equipment is a
@@ -146,7 +148,7 @@ export function getHostPublishingOptions(organizationId: string): HostPublishing
       .map((landing) => ({
         id: landing.id,
         label: `${landing.name} — ${landing.city}, ${landing.state}`,
-        roadCondition: landing.roadCondition ?? "good"
+        roadCondition: landing.roadCondition ?? ""
       })),
     loadTypes: [...loadTypeSchema.options],
     rates: state.rates
@@ -161,7 +163,9 @@ export function getHostPublishingOptions(organizationId: string): HostPublishing
       })),
     subscriptionPlanCode: subscription?.planCode ?? null,
     routes: state.haulRoutes
-      .filter((route) => route.companyId === organizationId)
+      .filter((route) =>
+        route.companyId === organizationId && Boolean(millsById.get(route.millId)?.isActive)
+      )
       .map((route) => {
         const mill = millsById.get(route.millId)
 
@@ -171,7 +175,7 @@ export function getHostPublishingOptions(organizationId: string): HostPublishing
           label: route.routeName,
           landingId: route.landingId,
           millId: route.millId,
-          millLabel: mill ? `${mill.name} — ${mill.city}, ${mill.state}` : "Destination on file",
+          millLabel: mill ? `${mill.name} — ${mill.city}, ${mill.state}` : "Destination unavailable",
           roadCondition: route.roadCondition,
           runTimeMinutes: route.estimatedRunTimeMinutes
         }
@@ -249,6 +253,29 @@ export interface HostMillOption {
   label: string
 }
 
+export interface HostMillDraft {
+  accessNotes: string
+  addressLine1: string
+  city: string
+  contactEmail: string
+  contactName: string
+  contactPhone: string
+  lat: number
+  lng: number
+  name: string
+  postalCode: string
+  roadCondition: string
+  state: string
+}
+
+export interface HostDestinationRecord {
+  id: string
+  isActive: boolean
+  label: string
+  roadCondition: string
+  editable: HostMillDraft
+}
+
 /**
  * What the host's plan allows, and what they are already using. The number was
  * advertised on the billing page long before anything enforced it; now that a
@@ -257,23 +284,55 @@ export interface HostMillOption {
 export interface HostWorkspaceSetup {
   landingLimit: number | null
   activeLandingCount: number
+  destinations: HostDestinationRecord[]
   mills: HostMillOption[]
   rates: HostRateRecord[]
 }
 
-export function getHostWorkspaceSetup(organizationId: string): HostWorkspaceSetup {
+export function getHostWorkspaceSetup(
+  organizationId: string,
+  role: OrganizationRole | null | undefined
+): HostWorkspaceSetup {
   const state = services.state
+  const visibleMills = services.listMillsForOrganization(organizationId)
+  const canPublish = role !== null && role !== undefined && organizationRoleCan(role, "publish_load")
+  const canManageDestinations = role !== null && role !== undefined && (
+    organizationRoleCan(role, "manage_destination") || canPublish
+  )
 
   return {
     activeLandingCount: services.countActiveLandings(organizationId),
+    destinations: canManageDestinations ? visibleMills
+      .filter((mill) => mill.companyId === organizationId)
+      .map((mill) => ({
+        editable: {
+          accessNotes: mill.accessNotes ?? "",
+          addressLine1: mill.addressLine1,
+          city: mill.city,
+          contactEmail: mill.contact.email ?? "",
+          contactName: mill.contact.name,
+          contactPhone: mill.contact.phone,
+          lat: mill.coordinates.lat,
+          lng: mill.coordinates.lng,
+          name: mill.name,
+          postalCode: mill.postalCode,
+          roadCondition: mill.roadCondition ?? "",
+          state: mill.state
+        },
+        id: mill.id,
+        isActive: mill.isActive,
+        label: `${mill.name} — ${mill.city}, ${mill.state}`,
+        roadCondition: mill.roadCondition ?? "not_recorded"
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label)) : [],
     landingLimit: services.activeLandingLimitFor(organizationId),
     // Shared platform destinations plus this organization's own submissions;
     // another outfit's submitted destination is never offered here.
-    mills: state.mills
-      .filter((mill) => !mill.companyId || mill.companyId === organizationId)
+    mills: canPublish ? visibleMills
+      .filter((mill) => mill.isActive)
       .map((mill) => ({ id: mill.id, label: `${mill.name} — ${mill.city}, ${mill.state}` }))
-      .sort((left, right) => left.label.localeCompare(right.label)),
-    rates: state.rates
+      .sort((left, right) => left.label.localeCompare(right.label)) : [],
+    rates: canPublish ? state.rates
       .filter((rate) => rate.companyId === organizationId)
       .map((rate) => ({
         effectiveDate: rate.effectiveDate,
@@ -283,7 +342,7 @@ export function getHostWorkspaceSetup(organizationId: string): HostWorkspaceSetu
             ? `${formatRateLabel(rate.baseRate, rate.rateType)} + ${formatMoney({ amountCents: rate.fuelSurchargeCents, currency: rate.baseRate.currency })} fuel`
             : formatRateLabel(rate.baseRate, rate.rateType),
         notes: rate.notes ?? null
-      }))
+      })) : []
   }
 }
 
@@ -303,7 +362,9 @@ export function getHostLandingRecords(
   role: OrganizationRole | null | undefined
 ): HostLandingRecord[] {
   const state = services.state
-  const millsById = new Map(state.mills.map((mill) => [mill.id, mill]))
+  const millsById = new Map(
+    services.listMillsForOrganization(organizationId).map((mill) => [mill.id, mill])
+  )
   const canManageLandings = role !== null && role !== undefined && organizationRoleCan(role, "manage_landing")
 
   return state.landings
@@ -364,7 +425,7 @@ export function getHostLandingRecords(
             return {
               distanceMiles: route.estimatedDistanceMiles,
               id: route.id,
-              millLabel: mill ? `${mill.name} — ${mill.city}, ${mill.state}` : "Destination on file",
+              millLabel: mill ? `${mill.name} — ${mill.city}, ${mill.state}` : "Destination unavailable",
               roadCondition: route.roadCondition,
               routeName: route.routeName,
               runTimeMinutes: route.estimatedRunTimeMinutes
@@ -376,7 +437,7 @@ export function getHostLandingRecords(
         openLoadCount: state.loadPostings.filter(
           (load) => load.pickupLandingId === landing.id && ["open", "scheduled"].includes(load.status)
         ).length,
-        roadCondition: landing.roadCondition ?? "good",
+        roadCondition: landing.roadCondition ?? "not_recorded",
         turnaroundConstraints: details?.turnaroundConstraints ?? []
       }
     })

@@ -8,6 +8,7 @@ import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
 import { createLogLoadsServices, type LogLoadsServices } from "./index"
+import type { CreateMillInput } from "./host-workspace"
 
 const HOST_ORG = "33333333-3333-4333-8333-333333333332"
 const HAULER_ORG = "33333333-3333-4333-8333-333333333331"
@@ -52,7 +53,7 @@ function landingDetailsInput(landingId: string, overrides: Record<string, unknow
 /** Gives an actor a role in an organization so a boundary can be probed from it. */
 function grantMembership(
   services: LogLoadsServices,
-  options: { userId: string; organizationId: string; role: "viewer" | "landing_manager" | "dispatcher"; index: number }
+  options: { userId: string; organizationId: string; role: "viewer" | "landing_manager" | "destination_manager" | "dispatcher"; index: number }
 ) {
   const suffix = options.index.toString().padStart(2, "0")
 
@@ -82,6 +83,7 @@ function grantMembership(
 
 /** Replaces the org's plan so the landing allowance is a known number. */
 function setLandingAllowance(services: LogLoadsServices, organizationId: string, limit: number | null) {
+  markBillingAccountLegacy(services, organizationId)
   services.state.entitlements = services.state.entitlements.filter(
     (entitlement) => entitlement.organizationId !== organizationId
   )
@@ -312,6 +314,76 @@ describe("the plan's landing allowance", () => {
     services.createLanding(landingInput())
     services.createLanding(landingInput({ name: "Second Percentage Spur" }))
     expect(services.countActiveLandings(HOST_ORG)).toBe(2)
+  })
+
+  it("lets the current percentage agreement outrank a preserved historical landing cap", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const account = services.state.organizationBillingAccounts.find(
+      (candidate) => candidate.organizationId === HOST_ORG
+    )
+    const percentageTermsSnapshot = structuredClone(account?.percentageTermsSnapshot ?? null)
+
+    expect(percentageTermsSnapshot).not.toBeNull()
+    setLandingAllowance(services, HOST_ORG, 1)
+    if (!account || !percentageTermsSnapshot) return
+
+    account.activationState = "percentage_active"
+    account.billingModel = "percentage_v1"
+    account.percentageTermsSnapshot = percentageTermsSnapshot
+    services.state.landings = services.state.landings.filter(
+      (landing) => landing.companyId !== HOST_ORG
+    )
+
+    expect(services.activeLandingLimitFor(HOST_ORG)).toBeNull()
+    services.createLanding(landingInput())
+    services.createLanding(landingInput({ name: "Second current-model landing" }))
+    expect(services.countActiveLandings(HOST_ORG)).toBe(2)
+  })
+
+  it("does not choose an uncapped percentage account by array order when billing accounts conflict", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const account = services.state.organizationBillingAccounts.find(
+      (candidate) => candidate.organizationId === HOST_ORG
+    )
+    const percentageTermsSnapshot = structuredClone(account?.percentageTermsSnapshot ?? null)
+
+    expect(account).toBeDefined()
+    expect(percentageTermsSnapshot).not.toBeNull()
+    setLandingAllowance(services, HOST_ORG, 1)
+    if (!account || !percentageTermsSnapshot) return
+
+    account.activationState = "percentage_active"
+    account.billingModel = "percentage_v1"
+    account.percentageTermsSnapshot = percentageTermsSnapshot
+    services.state.organizationBillingAccounts.push({
+      ...structuredClone(account),
+      activationState: "legacy",
+      billingModel: "legacy_percentage",
+      id: "4f4f4f4f-4f4f-4f4f-8f4f-4f4f4f4f4f01",
+      percentageTermsSnapshot: null
+    })
+
+    // Publishing already blocks this corrupt state. Workspace capacity must do
+    // the same, never granting unlimited setup because `.find()` saw the
+    // percentage row first.
+    expect(services.activeLandingLimitFor(HOST_ORG)).toBe(1)
+  })
+
+  it("does not activate percentage capacity before the agreement becomes effective", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const account = services.state.organizationBillingAccounts.find(
+      (candidate) => candidate.organizationId === HOST_ORG
+    )
+
+    expect(account).toBeDefined()
+    if (!account) return
+
+    account.effectiveAt = "2100-01-01T00:00:00.000Z"
+    services.state.entitlements = services.state.entitlements.filter(
+      (entitlement) => entitlement.organizationId !== HOST_ORG
+    )
+
+    expect(services.activeLandingLimitFor(HOST_ORG)).toBe(0)
   })
 
   it("does not grant uncapped landings to a percentage account without accepted terms", () => {
@@ -880,7 +952,7 @@ describe("creating a haul route", () => {
 })
 
 describe("creating a destination", () => {
-  function millInput(overrides: Record<string, unknown> = {}) {
+  function millInput(overrides: Partial<CreateMillInput> = {}): CreateMillInput {
     return {
       actorUserId: HOST_OWNER,
       addressLine1: "88 Scale House Rd",
@@ -890,6 +962,7 @@ describe("creating a destination", () => {
       name: "Gilchrist Veneer",
       organizationId: HOST_ORG,
       postalCode: "97737",
+      roadCondition: "wet",
       state: "OR",
       ...overrides
     }
@@ -904,6 +977,7 @@ describe("creating a destination", () => {
 
     expect(mill.companyId).toBe(HOST_ORG)
     expect(mill.millCode).toMatch(/^HOST-[A-Z0-9]+-[A-F0-9]{32}$/)
+    expect(mill.roadCondition).toBe("wet")
     expect(services.state.auditEvents.some(
       (event) => event.action === "mill_created" && event.entityId === mill.id
     )).toBe(true)
@@ -930,7 +1004,7 @@ describe("creating a destination", () => {
     expect(north.millCode).not.toBe(south.millCode)
   })
 
-  it("refuses a member whose role cannot publish", () => {
+  it("refuses a member whose role cannot manage destinations or publish", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const viewerId = "22222222-2222-4222-8222-222222222299"
 
@@ -938,7 +1012,43 @@ describe("creating a destination", () => {
 
     expect(() =>
       services.createMill(millInput({ actorUserId: viewerId }))
-    ).toThrow(/cannot publish load/)
+    ).toThrow(/cannot manage destination/)
+  })
+
+  it("lets a destination manager maintain destinations without granting load publication", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const managerId = "22222222-2222-4222-8222-222222222298"
+    grantMembership(services, {
+      index: 42,
+      organizationId: HOST_ORG,
+      role: "destination_manager",
+      userId: managerId
+    })
+
+    const mill = services.createMill(millInput({ actorUserId: managerId }))
+    const updated = services.updateMill({
+      ...millInput({ actorUserId: managerId, city: "La Pine" }),
+      millId: mill.id
+    })
+    const retired = services.setMillActive({
+      actorUserId: managerId,
+      isActive: false,
+      millId: mill.id,
+      organizationId: HOST_ORG
+    })
+
+    expect(updated.city).toBe("La Pine")
+    expect(retired.isActive).toBe(false)
+    expect(() => services.createHaulRoute({
+      actorUserId: managerId,
+      estimatedDistanceMiles: 12,
+      estimatedRunTimeMinutes: 25,
+      landingId: services.state.landings.find((landing) => landing.companyId === HOST_ORG)!.id,
+      millId: MILL,
+      organizationId: HOST_ORG,
+      roadCondition: "good",
+      routeName: "Manager cannot publish"
+    })).toThrow(/cannot publish load/)
   })
 
   it("uses name, city, and state to detect a workspace duplicate", () => {
@@ -950,6 +1060,81 @@ describe("creating a destination", () => {
     ).toThrow(/already on file/)
 
     expect(() => services.createMill(millInput({ state: "WA" }))).not.toThrow()
+  })
+
+  it("trims and bounds destination data before it reaches the canonical document", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const mill = services.createMill(millInput({
+      contact: { email: " SCALE@GILCHRIST.EXAMPLE ", name: " Scale House ", phone: " 555-4001 " },
+      name: " Gilchrist Veneer ",
+      state: "or"
+    }))
+
+    expect(mill.name).toBe("Gilchrist Veneer")
+    expect(mill.state).toBe("OR")
+    expect(mill.contact).toEqual({
+      email: "scale@gilchrist.example",
+      name: "Scale House",
+      phone: "555-4001"
+    })
+    expect(() => services.createMill(millInput({ name: "x".repeat(121) }))).toThrow()
+    expect(() => services.createMill(millInput({ state: "Oregon" }))).toThrow(/two-letter state code/)
+    expect(() => services.createMill(millInput({
+      contact: { email: null, name: "Scale House", phone: "       " }
+    }))).toThrow(/usable destination phone/)
+  })
+
+  it("lets the owning host correct and retire a destination without changing its identity", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const mill = services.createMill(millInput())
+    const updated = services.updateMill({
+      ...millInput({ city: "La Pine", roadCondition: "muddy" }),
+      millId: mill.id
+    })
+
+    expect(updated.id).toBe(mill.id)
+    expect(updated.millCode).toBe(mill.millCode)
+    expect(updated.city).toBe("La Pine")
+    expect(updated.roadCondition).toBe("muddy")
+
+    const retired = services.setMillActive({
+      actorUserId: HOST_OWNER,
+      isActive: false,
+      millId: mill.id,
+      organizationId: HOST_ORG
+    })
+
+    expect(retired.isActive).toBe(false)
+    expect(services.state.auditEvents.some(
+      (event) => event.action === "mill_retired" && event.entityId === mill.id
+    )).toBe(true)
+  })
+
+  it("refuses corrections to a shared destination and refuses retired destinations in new lanes", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const landing = services.state.landings.find((candidate) => candidate.companyId === HOST_ORG)
+    const mill = services.createMill(millInput())
+
+    expect(landing).toBeDefined()
+    expect(() => services.updateMill({ ...millInput(), millId: MILL })).toThrow(/destination was not found/)
+
+    services.setMillActive({
+      actorUserId: HOST_OWNER,
+      isActive: false,
+      millId: mill.id,
+      organizationId: HOST_ORG
+    })
+
+    expect(() => services.createHaulRoute({
+      actorUserId: HOST_OWNER,
+      estimatedDistanceMiles: 18,
+      estimatedRunTimeMinutes: 35,
+      landingId: landing!.id,
+      millId: mill.id,
+      organizationId: HOST_ORG,
+      roadCondition: "good",
+      routeName: "Retired destination lane"
+    })).toThrow(/destination was not found/)
   })
 
   it("keeps a submitted destination invisible to other organizations' lanes", () => {
@@ -975,6 +1160,24 @@ describe("creating a destination", () => {
         routeName: "Oak to Gilchrist"
       })
     ).toThrow(/destination was not found/)
+  })
+
+  it("scopes destination reads to shared and organization-owned records", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const owned = services.createMill(millInput())
+    const foreign = {
+      ...owned,
+      companyId: HAULER_ORG,
+      id: "99999999-9999-4999-8999-999999999998",
+      millCode: "HOST-FOREIGN-SCOPED"
+    }
+    services.state.mills.push(foreign)
+
+    const visible = services.listMillsForOrganization(HOST_ORG)
+
+    expect(visible.some((mill) => mill.id === owned.id)).toBe(true)
+    expect(visible.some((mill) => mill.id === MILL)).toBe(true)
+    expect(visible.some((mill) => mill.id === foreign.id)).toBe(false)
   })
 })
 

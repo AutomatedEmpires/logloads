@@ -78,6 +78,7 @@ import {
   resolveAssignmentBillingCommitment,
   type RecordCompletedNetworkUsageResult
 } from "./subscription-billing"
+import { millUsableByOrganization } from "./destination-access"
 import {
   buildAssignmentRoutePack,
   findAssignmentRoutePack,
@@ -947,7 +948,7 @@ function requestCapacityWithPolicyInternal(
     pickupLandingId: load.pickupLandingId,
     rateId: load.rateId,
     routeId: load.routeId
-  }, { requireActiveLanding: false })
+  }, { requireActiveDestination: false, requireActiveLanding: false })
 
   // Uniqueness is per SLOT, not per posting. A posting is a series — six loads
   // on one route across two days is one posting with six slots — so scoping
@@ -1121,7 +1122,7 @@ function finalizeCapacityAssignment(
     pickupLandingId: load.pickupLandingId,
     rateId: load.rateId,
     routeId: load.routeId
-  }, { requireActiveLanding: false })
+  }, { requireActiveDestination: false, requireActiveLanding: false })
 
   const existingTrip = state.tripsV2.find((trip) => trip.assignmentId === assignment.id)
   const equipmentCombination = assertFound(
@@ -1632,6 +1633,7 @@ export interface PostingSources {
 
 interface PostingSourceOptions {
   requireActiveLanding?: boolean
+  requireActiveDestination?: boolean
 }
 
 /**
@@ -1657,9 +1659,10 @@ interface PostingSourceOptions {
  * the two would answer "does this id exist?" for records the caller cannot see,
  * which is exactly the enumeration a caller probing other organizations wants.
  *
- * Mills are not ownership-checked: they are platform records with a null
- * companyId, shared by every host. The lane check below still pins the
- * destination, because a route only reaches the mill it was drawn to.
+ * Destinations may be shared platform records or records submitted by this
+ * organization. A foreign destination refuses as not-found just like every
+ * other tenant-owned source. Retirement blocks new publication while already
+ * published work can continue through its operating lifecycle.
  *
  * Checked before `createLoadPosting`, which pushes: refusing afterwards would
  * leave the posting it was meant to prevent.
@@ -1708,6 +1711,22 @@ function assertPostingSourcesAreUsable(
     "That rate was not found"
   )
 
+  const destination = assertFound(
+    state.mills.find(
+      (current) =>
+        current.id === sources.dropoffMillId &&
+        millUsableByOrganization(current, organizationId)
+    ),
+    "That destination was not found"
+  )
+
+  if (options.requireActiveDestination !== false) {
+    assertCondition(
+      destination.isActive,
+      `${destination.name} is retired. Restore it before publishing work to it.`
+    )
+  }
+
   // A lane that does not connect the posting's own endpoints is incoherent: the
   // driver would be handed a distance, a run time, and road notes measured
   // between two other places.
@@ -1720,7 +1739,7 @@ function assertPostingSourcesAreUsable(
     `${route.routeName} does not run to the destination this work names`
   )
 
-  return { dispatcher, landing, loader, rate, route }
+  return { destination, dispatcher, landing, loader, rate, route }
 }
 
 /**
@@ -3371,7 +3390,7 @@ function createDirectOfferMutation(
     pickupLandingId: load.pickupLandingId,
     rateId: load.rateId,
     routeId: load.routeId
-  }, { requireActiveLanding: false })
+  }, { requireActiveDestination: false, requireActiveLanding: false })
   const capacity = assertFound(
     getOpportunityCapacity(state, load.id),
     `Opportunity capacity for load posting ${load.id} was not found`
@@ -3509,7 +3528,7 @@ function claimDirectOfferMutation(
     pickupLandingId: load.pickupLandingId,
     rateId: load.rateId,
     routeId: load.routeId
-  }, { requireActiveLanding: false })
+  }, { requireActiveDestination: false, requireActiveLanding: false })
   assertCondition(
     directOfferTermsAreCurrent(offer, load, postingSources),
     "Direct offer terms changed after it was sent; ask the host to send a new offer"

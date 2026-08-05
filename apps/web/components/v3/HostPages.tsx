@@ -31,6 +31,8 @@ import {
   LandingActiveToggle,
   LandingDetailsForm,
   LandingForm,
+  MillActiveToggle,
+  MillForm,
   RateForm
 } from "./HostWorkspaceActions"
 import { TripReviewForm } from "./Reputation"
@@ -306,7 +308,7 @@ function statusTone(status: string): "success" | "warning" | "critical" | "info"
 
 function roadTone(condition: string): "success" | "warning" | "critical" {
   if (condition === "good") return "success"
-  if (condition === "wet" || condition === "muddy") return "warning"
+  if (condition === "wet" || condition === "muddy" || condition === "not_recorded") return "warning"
 
   return "critical"
 }
@@ -669,6 +671,7 @@ export function HostLiveBoard({ account, network }: HostPageProps) {
 
 export function HostLandings({
   account,
+  canManageDestinations,
   canManageLandings,
   canPublish,
   landings,
@@ -677,6 +680,7 @@ export function HostLandings({
   setup,
   welcome = false
 }: HostPageProps & {
+  canManageDestinations: boolean
   canManageLandings: boolean
   canPublish: boolean
   landings: HostLandingRecord[]
@@ -714,10 +718,14 @@ export function HostLandings({
                 cannot help. The service refuses these two the same way. */}
             <p>
               {setup.landingLimit === null
-                ? "Your plan does not cap active landings."
+                ? options.billingModel === "percentage_v1" && options.billingActivationState === "percentage_active"
+                  ? "The current 5% completed-load agreement has no landing tier or allowance."
+                  : "This historical agreement does not cap active landings."
                 : setup.landingLimit === 0
-                  ? "Your plan does not cover any active landings."
-                  : `Your plan covers ${setup.landingLimit} active landing${setup.landingLimit === 1 ? "" : "s"} — ${setup.activeLandingCount} in use.`}
+                  ? "This workspace cannot add an active landing until its commercial record is reconciled."
+                  : options.billingActivationState === "unenrolled"
+                    ? `Pilot preparation includes ${setup.landingLimit} active landing before activation — ${setup.activeLandingCount} in use.`
+                    : `The historical agreement covers ${setup.landingLimit} active landing${setup.landingLimit === 1 ? "" : "s"} — ${setup.activeLandingCount} in use.`}
             </p>
           </header>
           {atLimit ? (
@@ -729,6 +737,38 @@ export function HostLandings({
           ) : (
             <LandingForm />
           )}
+        </section>
+      ) : null}
+
+      {canManageDestinations ? (
+        <section className="workspace-section" id="destinations">
+          <header className="workspace-section__head">
+            <h2>Destinations</h2>
+            <p>Add the mill, scale house, yard, or other endpoint a lane delivers to. Host reports remain marked as reported until an operating verification is recorded.</p>
+          </header>
+          {setup.destinations.length > 0 ? (
+            <ul className="workspace-list workspace-destination-list">
+              {setup.destinations.map((destination) => (
+                <li key={destination.id}>
+                  <strong>{destination.label}</strong>
+                  <span>
+                    {destination.isActive ? "Available for new lanes" : "Retired from new lanes"} · {formatHuman(destination.roadCondition)} road
+                  </span>
+                  <details className="workspace-edit">
+                    <summary>Edit destination</summary>
+                    <MillForm mill={destination.editable} millId={destination.id} />
+                    <MillActiveToggle isActive={destination.isActive} millId={destination.id} />
+                  </details>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="workspace-hint">No organization-owned destinations are on file yet. Shared platform destinations still remain available in lane builders.</p>
+          )}
+          <details className="workspace-details">
+            <summary>Add a destination</summary>
+            <MillForm />
+          </details>
         </section>
       ) : null}
 

@@ -121,9 +121,10 @@ describe("route pack generation", () => {
 
   it("snapshots the operational facts that governed the accepted haul", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    const { assignment, slot } = bookRuntimeHaul(services)
+    const { assignment, load, slot } = bookRuntimeHaul(services)
     const { routePack } = driverPack(services, assignment.id)
     const snapshot = routePack.snapshot
+    const destination = services.state.mills.find((mill) => mill.id === load.dropoffMillId)
 
     expect(snapshot).toBeTruthy()
     expect(snapshot?.driverName).toBe("Hank Hauler")
@@ -137,6 +138,7 @@ describe("route pack generation", () => {
     expect(snapshot?.routeDistanceMiles).toBeGreaterThan(0)
     expect(snapshot?.originName).toBeTruthy()
     expect(snapshot?.destinationName).toBeTruthy()
+    expect(snapshot?.destinationContact).toEqual(destination?.contact)
 
     // The landing's exact entrance and gate rules ride in the pack, which only
     // the assigned driver can open.
@@ -149,6 +151,85 @@ describe("route pack generation", () => {
     // duplicating it as an instruction makes a driver read it twice.
     expect(snapshot?.completionEvidence.length).toBeGreaterThan(0)
     expect(routePack.localInstructions.some((entry) => entry.title === "Completion evidence")).toBe(false)
+  })
+
+  it("omits suggested or stale facility instructions instead of laundering them as verified", () => {
+    for (const mode of ["suggested", "stale_destination", "stale_facility"] as const) {
+      const services = createLogLoadsServices(createInMemoryDatabase())
+      const destination = services.state.mills.find(
+        (mill) => mill.id === "99999999-9999-4999-8999-999999999991"
+      )
+      const facility = services.state.destinationFacilities.find(
+        (candidate) => candidate.millId === destination?.id
+      )
+
+      expect(destination).toBeDefined()
+      expect(facility).toBeDefined()
+      if (!destination || !facility) continue
+
+      if (mode === "suggested") {
+        facility.recordStatus = "community_suggested"
+      } else if (mode === "stale_destination") {
+        destination.updatedAt = "2026-06-05T18:00:00.000Z"
+        facility.lastVerifiedAt = "2026-06-05T17:59:00.000Z"
+      } else {
+        facility.lastVerifiedAt = "2026-06-05T17:59:00.000Z"
+        facility.updatedAt = "2026-06-05T18:00:00.000Z"
+      }
+
+      const { assignment } = bookRuntimeHaul(services)
+      const { routePack } = driverPack(services, assignment.id)
+
+      expect(routePack.localInstructions.some((entry) => entry.source === "facility_verified")).toBe(false)
+      expect(routePack.snapshot?.destinationReceivingHours).toBeNull()
+      expect(routePack.snapshot?.completionEvidence).toEqual([])
+    }
+  })
+
+  it("does not inherit a legacy facility-verified claim from the load-level source pack", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { load, slot } = publishRuntimeLoad(services)
+    const template = services.state.routePacks.find((pack) => !pack.assignmentId)
+    const facility = services.state.destinationFacilities.find(
+      (candidate) => candidate.millId === load.dropoffMillId
+    )
+
+    expect(template).toBeDefined()
+    expect(facility).toBeDefined()
+    if (!template || !facility) return
+
+    facility.recordStatus = "community_suggested"
+    services.state.routePacks.push({
+      ...structuredClone(template),
+      assignmentId: null,
+      destinationId: load.dropoffMillId,
+      haulRouteId: load.routeId,
+      id: "5a5a5a5a-5a5a-4a5a-8a5a-5a5a5a5a5a01",
+      landingId: load.pickupLandingId,
+      loadPostingId: load.id,
+      localInstructions: [{
+        detail: "LEGACY VERIFIED SCALE CLAIM",
+        severity: "critical",
+        source: "facility_verified",
+        title: "Legacy scale claim",
+        verifiedAt: facility.lastVerifiedAt
+      }]
+    })
+
+    const assignment = requestRuntimeLoad(services, load.id, slot.id)
+    services.approveCapacityRequest({
+      actorUserId: HOST_OWNER,
+      assignmentId: assignment.id,
+      organizationId: HOST_ORG
+    })
+
+    const routePack = driverPack(services, assignment.id).routePack
+    expect(routePack.localInstructions.some(
+      (entry) => entry.detail === "LEGACY VERIFIED SCALE CLAIM"
+    )).toBe(false)
+    expect(routePack.localInstructions.some(
+      (entry) => entry.source === "facility_verified"
+    )).toBe(false)
   })
 
   it("captures a host-authored landing briefing when the haul is approved", () => {
@@ -260,6 +341,28 @@ describe("route pack generation", () => {
     const after = services.state.routePacks.filter((pack) => pack.assignmentId === assignment.id)
     expect(after).toEqual(before)
     expect(after[0]?.supersededAt).toBeNull()
+  })
+
+  it("refuses to snapshot a destination owned by another organization", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { assignment, load } = bookRuntimeHaul(services)
+    const destination = services.state.mills.find((mill) => mill.id === load.dropoffMillId)
+    const before = structuredClone(
+      services.state.routePacks.filter((pack) => pack.assignmentId === assignment.id)
+    )
+
+    expect(destination).toBeDefined()
+    if (!destination) return
+    destination.companyId = HAULER_ORG
+
+    expect(() => services.refreshRoutePackForAssignment({
+      actorUserId: HOST_OWNER,
+      assignmentId: assignment.id,
+      organizationId: HOST_ORG
+    })).toThrow(/Route Pack sources are unavailable/)
+    expect(services.state.routePacks.filter(
+      (pack) => pack.assignmentId === assignment.id
+    )).toEqual(before)
   })
 
   it("refuses to supersede a pack when its required rate no longer resolves", () => {
@@ -781,6 +884,52 @@ describe("route pack material updates", () => {
     expect(services.state.notifications.some((notification) =>
       notification.title === "Route Pack updated"
     )).toBe(false)
+  })
+
+  it("keeps a corrected destination contact frozen until the host re-issues the pack", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const destination = services.state.mills.find(
+      (mill) => mill.id === "99999999-9999-4999-8999-999999999991"
+    )
+
+    expect(destination).toBeDefined()
+    if (!destination) return
+
+    destination.companyId = HOST_ORG
+    const { assignment } = bookRuntimeHaul(services)
+    const original = driverPack(services, assignment.id).routePack
+
+    services.updateMill({
+      accessNotes: destination.accessNotes,
+      actorUserId: HOST_OWNER,
+      addressLine1: destination.addressLine1,
+      city: destination.city,
+      contact: { email: "corrected@cascade.example", name: "Corrected Scale House", phone: "555-3099" },
+      coordinates: destination.coordinates,
+      millId: destination.id,
+      name: destination.name,
+      organizationId: HOST_ORG,
+      postalCode: destination.postalCode,
+      roadCondition: destination.roadCondition ?? "good",
+      state: destination.state
+    })
+
+    expect(driverPack(services, assignment.id).routePack.snapshot?.destinationContact)
+      .toEqual(original.snapshot?.destinationContact)
+
+    const refreshed = services.refreshRoutePackForAssignment({
+      actorUserId: HOST_OWNER,
+      assignmentId: assignment.id,
+      organizationId: HOST_ORG
+    })
+
+    expect(refreshed.changed).toBe(true)
+    expect(refreshed.routePack.version).toBe(2)
+    expect(refreshed.routePack.snapshot?.destinationContact).toEqual({
+      email: "corrected@cascade.example",
+      name: "Corrected Scale House",
+      phone: "555-3099"
+    })
   })
 
   it("issues a first snapshot for a haul booked before packs were per-assignment", () => {

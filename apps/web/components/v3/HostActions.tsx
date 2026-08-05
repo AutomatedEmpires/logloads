@@ -846,8 +846,9 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
 
   const isDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value)
   // The load's roadCondition is the LANDING's road (matching reports it as the
-  // landing axis, separate from the route). Default from the landing, host-editable.
-  const roadCondition = roadOverride || landing?.roadCondition || "good"
+  // landing axis, separate from the route). Use a reported landing value when
+  // one exists; otherwise the host must make an explicit current report.
+  const roadCondition = roadOverride || landing?.roadCondition || ""
   const scheduleReady =
     scheduleKind === "one_off"
       ? isDate(loadDate)
@@ -857,7 +858,7 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
 
   const stepReady = [
     title.trim().length > 0,
-    Boolean(landing && route),
+    Boolean(landing && route && roadCondition),
     Number.isInteger(truckloadCount) && truckloadCount > 0 && scheduleReady,
     // Stated driver pay is required to leave Terms: it is what the driver is
     // promised and the frozen basis for the host's 5% platform fee.
@@ -867,7 +868,7 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
   ]
 
   const publish = () => {
-    if (!route || !rate || !landing || driverPayCents === null) {
+    if (!route || !rate || !landing || !roadCondition || driverPayCents === null) {
       return
     }
 
@@ -1027,6 +1028,7 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
             <select
               onChange={(event) => {
                 setLandingId(event.target.value)
+                setRoadOverride("")
                 setRouteId("")
               }}
               value={landingId}
@@ -1067,7 +1069,8 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
           ) : null}
           <label>
             Landing road condition
-            <select onChange={(event) => setRoadOverride(event.target.value)} value={roadCondition}>
+            <select onChange={(event) => setRoadOverride(event.target.value)} required value={roadCondition}>
+              <option disabled value="">Select current condition</option>
               {ROAD_CONDITIONS.map((condition) => (
                 <option key={condition} value={condition}>
                   {formatHuman(condition)}
