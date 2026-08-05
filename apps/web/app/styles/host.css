@@ -437,6 +437,9 @@
 .workspace-form__actions button:disabled { opacity: 0.6; }
 
 .workspace-hint { margin: 0; color: var(--muted); font-size: 0.88rem; }
+.workspace-details { margin-top: 12px; }
+.workspace-details > summary { cursor: pointer; color: var(--ink-soft); font-weight: 700; min-height: 44px; display: flex; align-items: center; }
+.workspace-details[open] > summary { margin-bottom: 10px; }
 
 .workspace-list { display: grid; gap: 6px; margin: 0 0 4px; padding: 0; list-style: none; }
 .workspace-list li {

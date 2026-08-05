@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 
 vi.mock("server-only", () => ({}))
 
-import { getHostLandingRecords, getHostPublishingOptions } from "./host-data"
+import { getHostLandingRecords, getHostPublishingOptions, getHostWorkspaceSetup } from "./host-data"
 import { services } from "./services"
 
 describe("host publishing options", () => {
@@ -38,6 +38,48 @@ describe("host publishing options", () => {
     expect(options.dispatcher?.id).not.toBe(sharedDispatcher.id)
     expect(options.billingModel).toBe("percentage_v1")
     expect(options.billingActivationState).toBe("percentage_active")
+  })
+})
+
+describe("host workspace destinations", () => {
+  it("offers shared and owned destinations without leaking another organization's submission", () => {
+    const hostOrganizationId = "33333333-3333-4333-8333-333333333332"
+    const foreignOrganizationId = "33333333-3333-4333-8333-333333333331"
+    const template = services.state.mills[0]
+    const ownId = "99999999-9999-4999-8999-999999999993"
+    const foreignId = "99999999-9999-4999-8999-999999999994"
+
+    expect(template).toBeDefined()
+    if (!template) return
+
+    services.state.mills.push(
+      {
+        ...template,
+        companyId: hostOrganizationId,
+        id: ownId,
+        millCode: "HOST-OWN-TEST",
+        name: "Own pilot destination"
+      },
+      {
+        ...template,
+        companyId: foreignOrganizationId,
+        id: foreignId,
+        millCode: "HOST-FOREIGN-TEST",
+        name: "Foreign pilot destination"
+      }
+    )
+
+    try {
+      const labels = getHostWorkspaceSetup(hostOrganizationId).mills.map((mill) => mill.label)
+
+      expect(labels.some((label) => label.startsWith("Own pilot destination"))).toBe(true)
+      expect(labels.some((label) => label.startsWith("Foreign pilot destination"))).toBe(false)
+      expect(labels.some((label) => label.startsWith(template.name))).toBe(true)
+    } finally {
+      services.state.mills = services.state.mills.filter(
+        (mill) => mill.id !== ownId && mill.id !== foreignId
+      )
+    }
   })
 })
 

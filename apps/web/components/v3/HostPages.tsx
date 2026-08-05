@@ -27,7 +27,7 @@ import {
   type PendingCapacityRequest
 } from "./HostActions"
 import {
-  HaulRouteForm,
+  LaneBuilder,
   LandingActiveToggle,
   LandingDetailsForm,
   LandingForm,
@@ -828,7 +828,7 @@ export function HostLandings({
                     ))}
                   </ul>
                 )}
-                {canPublish ? <HaulRouteForm landingId={landing.id} mills={setup.mills} /> : null}
+                {canPublish ? <LaneBuilder landingId={landing.id} mills={setup.mills} /> : null}
               </div>
 
               {canManageLandings && landing.details ? (

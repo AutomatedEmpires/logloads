@@ -879,6 +879,105 @@ describe("creating a haul route", () => {
   })
 })
 
+describe("creating a destination", () => {
+  function millInput(overrides: Record<string, unknown> = {}) {
+    return {
+      actorUserId: HOST_OWNER,
+      addressLine1: "88 Scale House Rd",
+      city: "Gilchrist",
+      contact: { email: "scale@gilchrist.example", name: "Scale House", phone: "555-4001" },
+      coordinates: { lat: 43.48, lng: -121.68 },
+      name: "Gilchrist Veneer",
+      organizationId: HOST_ORG,
+      postalCode: "97737",
+      state: "OR",
+      ...overrides
+    }
+  }
+
+  it("records an organization destination that is immediately usable in a lane", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    setLandingAllowance(services, HOST_ORG, null)
+    const landing = services.createLanding(landingInput())
+
+    const mill = services.createMill(millInput())
+
+    expect(mill.companyId).toBe(HOST_ORG)
+    expect(mill.millCode).toMatch(/^HOST-[A-Z0-9]+-[A-F0-9]{32}$/)
+    expect(services.state.auditEvents.some(
+      (event) => event.action === "mill_created" && event.entityId === mill.id
+    )).toBe(true)
+
+    const route = services.createHaulRoute({
+      actorUserId: HOST_OWNER,
+      estimatedDistanceMiles: 18,
+      estimatedRunTimeMinutes: 35,
+      landingId: landing.id,
+      millId: mill.id,
+      organizationId: HOST_ORG,
+      roadCondition: "good",
+      routeName: "Blue River to Gilchrist"
+    })
+
+    expect(route.millId).toBe(mill.id)
+  })
+
+  it("uses globally unique internal codes even when destination name stems match", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const north = services.createMill(millInput({ name: "Gilchrist Veneer North" }))
+    const south = services.createMill(millInput({ name: "Gilchrist Veneer South" }))
+
+    expect(north.millCode).not.toBe(south.millCode)
+  })
+
+  it("refuses a member whose role cannot publish", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const viewerId = "22222222-2222-4222-8222-222222222299"
+
+    grantMembership(services, { index: 41, organizationId: HOST_ORG, role: "viewer", userId: viewerId })
+
+    expect(() =>
+      services.createMill(millInput({ actorUserId: viewerId }))
+    ).toThrow(/cannot publish load/)
+  })
+
+  it("uses name, city, and state to detect a workspace duplicate", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    services.createMill(millInput())
+
+    expect(() =>
+      services.createMill(millInput({ addressLine1: "Different street" }))
+    ).toThrow(/already on file/)
+
+    expect(() => services.createMill(millInput({ state: "WA" }))).not.toThrow()
+  })
+
+  it("keeps a submitted destination invisible to other organizations' lanes", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const mill = services.createMill(millInput())
+    const haulerLanding = services.state.landings.find(
+      (landing) => landing.companyId === HAULER_ORG
+    )
+
+    expect(haulerLanding).toBeDefined()
+
+    // The refusal reads exactly like a missing record so the endpoint cannot
+    // become an oracle for another organization's private destinations.
+    expect(() =>
+      services.createHaulRoute({
+        actorUserId: HOST_DISPATCHER,
+        estimatedDistanceMiles: 12,
+        estimatedRunTimeMinutes: 25,
+        landingId: haulerLanding!.id,
+        millId: mill.id,
+        organizationId: HAULER_ORG,
+        roadCondition: "good",
+        routeName: "Oak to Gilchrist"
+      })
+    ).toThrow(/destination was not found/)
+  })
+})
+
 describe("creating a rate", () => {
   it("records what the organization pays to haul", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())

@@ -21,8 +21,9 @@ async function signIn(page: Page, email: string) {
 // NOT make the run repeatable: each one permanently spends one of Summit Ridge's
 // three active landings, so a third run against an un-reset database correctly
 // meets the at-limit notice and the add form is gone.
-const STAMP = Date.now()
+const STAMP = process.env.LOGLOADS_E2E_STAMP?.trim() || String(Date.now())
 const LANDING = `Cedar Spur ${STAMP}`
+const DESTINATION = `Juniper Mill ${STAMP}`
 const LANE = `Cedar to Cascade ${STAMP}`
 const RATE_NOTE = `Cedar rate ${STAMP}`
 const GATE_NOTE = `Call dispatch for cedar gate ${STAMP}`
@@ -85,6 +86,36 @@ test.describe.serial("host workspace setup", () => {
     }).toPass({ timeout: 30_000 })
   })
 
+  test("the host adds an unlisted destination without leaving the lane builder", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await signIn(page, "cole@summit.example")
+    await page.goto("/host/landings")
+    await page.waitForLoadState("domcontentloaded")
+
+    const card = page.locator(".host-landing-card").filter({ hasText: LANDING }).first()
+    const addDestination = card.locator("details").filter({ hasText: "Haul somewhere not listed?" })
+    await addDestination.getByText("Haul somewhere not listed? Add a destination", { exact: true }).click()
+
+    await fillWhenReady(addDestination, "Destination name", DESTINATION)
+    await fillWhenReady(addDestination, "Street address", "800 Mill Yard Road")
+    await fillWhenReady(addDestination, "City", "La Pine")
+    await fillWhenReady(addDestination, "State", "OR")
+    await fillWhenReady(addDestination, "Postal code", "97739")
+    await fillWhenReady(addDestination, "Map latitude", "43.67")
+    await fillWhenReady(addDestination, "Map longitude", "-121.50")
+    await fillWhenReady(addDestination, "Scale house or site contact", "Juniper Scale House")
+    await fillWhenReady(addDestination, "Contact phone", "555-4001")
+    await addDestination.getByRole("button", { name: "Add destination" }).click()
+    await expect(addDestination.getByText("Saved. It is available in your lanes now.")).toBeVisible({ timeout: 30_000 })
+
+    await expect(async () => {
+      await page.reload()
+      await page.waitForLoadState("domcontentloaded")
+      const refreshed = page.locator(".host-landing-card").filter({ hasText: LANDING }).first()
+      await expect(refreshed.locator('select[name="millId"] option').filter({ hasText: DESTINATION })).toHaveCount(1)
+    }).toPass({ timeout: 30_000 })
+  })
+
   test("the host adds a lane from that landing", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "cole@summit.example")
@@ -101,6 +132,7 @@ test.describe.serial("host workspace setup", () => {
     await expect(card.getByText(/No lanes yet/)).toBeVisible()
 
     await card.getByLabel("Lane name").fill(LANE)
+    await card.locator('select[name="millId"]').selectOption({ label: `${DESTINATION} — La Pine, OR` })
     await card.getByLabel("Distance (miles)").fill("38.4")
     await card.getByLabel("Run time (minutes)").fill("68")
     await card.getByRole("button", { name: "Add lane" }).click()
@@ -178,7 +210,7 @@ test.describe.serial("host workspace setup", () => {
 
     await expect(page.getByText("Publish timber movement")).toBeVisible({ timeout: 15_000 })
     await fillWhenReady(page, "Work title", `Cedar haul ${STAMP}`)
-    await page.getByRole("button", { name: "Next" }).click()
+    await page.getByRole("button", { name: "Next", exact: true }).click()
 
     // Asserted on the options rather than the selects: these selects sit inside
     // their labels, so an accessible name is the label text plus whatever is
