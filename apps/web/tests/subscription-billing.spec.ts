@@ -51,19 +51,27 @@ test("public pricing states the single 5% completed-load model", async ({
 
   await expect(
     page.getByRole("heading", {
-      name: "Drivers stay free. Hosts pay 5% on top."
+      name: "Drivers and fleets stay free. Hosts pay 5% on top."
     })
   ).toBeVisible()
   await expect(
     page.getByRole("heading", {
-      name: "No subscription. No monthly minimum. No tiers."
+      name: "No software subscription. No monthly minimum. No tiers."
     })
   ).toBeVisible()
 
   const cards = page.locator(".pricing-card")
-  await expect(cards).toHaveCount(2)
+  await expect(cards).toHaveCount(3)
 
   await expect(pricingCard(page, "Driver")).toContainText("Free forever")
+
+  const fleet = pricingCard(page, "Fleet Free")
+  await expect(fleet).toContainText("Free")
+  await expect(fleet).toContainText("No subscription, trial clock, or LogLoads truck limit")
+  await expect(fleet).toContainText("Private partner work")
+  await expect(
+    fleet.getByRole("link", { name: "Create fleet workspace" })
+  ).toHaveAttribute("href", "/sign-up?path=fleet")
 
   const host = pricingCard(page, "Host")
   await expect(host).toContainText("5% per completed load")
@@ -97,6 +105,13 @@ test("public pricing states the single 5% completed-load model", async ({
   await expect(
     page.locator('a[href*="subscription-checkout"]')
   ).toHaveCount(0)
+  await expect(page).toHaveTitle(/Pricing.*Free for drivers and fleets.*LogLoads/)
+  await expect(
+    page.getByText(
+      "Drivers and fleets use LogLoads without a subscription. Hosts pay a 5% platform fee on top of stated driver pay only when a load completes.",
+      { exact: false }
+    )
+  ).toBeVisible()
 
   await expectHealthyPage(page, clientErrors)
 })
@@ -158,6 +173,62 @@ test("an active host sees percentage billing, direct driver pay, and no subscrip
   await expect(
     page.getByRole("button", { name: /subscription|enrollment|plan change/i })
   ).toHaveCount(0)
+  await expect(page.getByText("Network enrollment", { exact: true })).toHaveCount(0)
+  await expect(page.getByText("Not enrolled", { exact: true })).toHaveCount(0)
+  await expect(page.getByText("Base subscription", { exact: true })).toHaveCount(0)
+  await expect(
+    page.getByRole("heading", { exact: true, name: "Workspace capacity" })
+  ).toBeVisible()
+  await expect(
+    page.getByText(
+      "This tracks landing locations configured in your workspace. It is separate from completed-load platform fees.",
+      { exact: true }
+    )
+  ).toBeVisible()
+
+  await expectHealthyPage(page, clientErrors)
+})
+
+test("a fleet sees included Fleet Free access with no paid-plan residue", async ({
+  page
+}) => {
+  const clientErrors = captureClientErrors(page)
+
+  await signIn(page, "dispatch@northpine.example")
+  await page.goto("/fleet/billing")
+  await page.waitForLoadState("domcontentloaded")
+
+  const currentAccess = page.locator(".plan-card").filter({
+    has: page.getByRole("heading", { exact: true, name: "Fleet Free" })
+  })
+
+  await expect(currentAccess).toBeVisible()
+  await expect(currentAccess).toContainText("Current access")
+  await expect(currentAccess).toContainText("Free")
+  await expect(currentAccess).toContainText("Included")
+  await expect(currentAccess).toContainText("no LogLoads truck limit")
+
+  for (const retiredCopy of [
+    "Dispatch Pro",
+    "$499",
+    "Trial",
+    "Start subscription",
+    "Restart subscription",
+    "checkout is temporarily unavailable"
+  ]) {
+    await expect(page.getByText(retiredCopy, { exact: false })).toHaveCount(0)
+  }
+
+  await page.goto("/fleet/settings")
+  await page.waitForLoadState("domcontentloaded")
+  await expect(
+    page.getByRole("heading", { name: "Access & billing history" })
+  ).toBeVisible()
+  await expect(page.getByText("Fleet Free", { exact: true })).toBeVisible()
+  await expect(page.getByText("Free", { exact: true })).toBeVisible()
+  await expect(page.getByText("Included", { exact: true })).toBeVisible()
+  await expect(page.getByText("$499", { exact: false })).toHaveCount(0)
+  await expect(page.getByText("Trial", { exact: false })).toHaveCount(0)
 
   await expectHealthyPage(page, clientErrors)
 })

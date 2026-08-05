@@ -214,6 +214,69 @@ describe("logloads services", () => {
     expect(services.state.availabilityWindows.some((window) => window.driverProfileId === account.driverProfileId)).toBe(false)
   })
 
+  it("provisions fleet dispatch as a free capability while preserving initial equipment", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    const account = services.createAccount({
+      accountType: "small_fleet",
+      availabilityPreset: "not_ready",
+      email: "fleet-free@example.com",
+      equipment: {
+        maxPayloadTons: 32,
+        trailerType: "pole_trailer",
+        truckType: "log_truck"
+      },
+      fullName: "Fleet Free Owner",
+      organizationName: "Fleet Free Hauling",
+      path: "fleet",
+      phone: "555-9004",
+      region: "Douglas County, OR"
+    })
+    const organizationId = account.memberships[0]?.organization.id
+    const entitlement = services.state.entitlements.find(
+      (candidate) =>
+        candidate.organizationId === organizationId &&
+        candidate.product === "fleet_operations"
+    )
+    const truck = services.state.truckProfiles.find(
+      (candidate) => candidate.companyId === organizationId
+    )
+    const trailer = services.state.trailerProfiles.find(
+      (candidate) => candidate.ownerUserId === account.profile.id
+    )
+    const equipment = services.state.equipmentCombinations.find(
+      (candidate) => candidate.organizationId === organizationId
+    )
+
+    expect(entitlement).toMatchObject({
+      activeLandingLimit: null,
+      activeTruckLimit: null,
+      currentPeriodEndsAt: null,
+      product: "fleet_operations",
+      status: "active",
+      stripeCustomerId: null,
+      stripeSubscriptionId: null
+    })
+    expect(truck).toMatchObject({
+      maxPayloadTons: 32,
+      truckType: "log_truck",
+      unitNumber: "Unit 1"
+    })
+    expect(trailer).toMatchObject({
+      capacityTons: 32,
+      trailerType: "pole_trailer",
+      truckId: truck?.id,
+      unitNumber: "Trailer 1"
+    })
+    expect(equipment).toMatchObject({
+      assignedDriverProfileId: null,
+      maxPayloadTons: 32,
+      status: "available",
+      trailerProfileId: trailer?.id,
+      truckProfileId: truck?.id
+    })
+  })
+
   it("starts a new host explicitly unenrolled with no silent legacy or paid entitlement", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const account = services.createAccount({

@@ -19,7 +19,6 @@ import {
   subscriptionBaseInvoiceId,
   subscriptionBaseInvoiceSchema,
   subscriptionPlanDefinition,
-  subscriptionPlanQuoteFingerprint,
   type BillingAdjustment,
   type BillingPeriodSummary,
   type NetworkOverageInvoice,
@@ -342,8 +341,8 @@ function source(
   }
 }
 
-describe("host subscription billing read model", () => {
-  it("renders the paid Pilot as one pooled 90-day allowance and a $4,500 base commitment", () => {
+describe("historical subscription billing read model", () => {
+  it("preserves actual Pilot terms and usage without presenting a current enrollment path", () => {
     const view = buildHostSubscriptionBillingView(
       source(),
       ORGANIZATION_ID,
@@ -352,14 +351,15 @@ describe("host subscription billing read model", () => {
 
     expect(view).toMatchObject({
       basePriceLabel: "$1,500.00/month",
+      billingModel: "subscription_v1",
       commitmentLabel:
         "Jul 28, 2026 – Oct 26, 2026 · $4,500.00 minimum base",
       includesDispatchProCapabilities: true,
       overageRateLabel: "$150.00 per completed movement",
-      planName: "Network Pilot",
+      planName: "Network Pilot — historical",
+      recordMode: "historical",
       canOpenPortal: true,
-      canStartCheckout: false,
-      statusLabel: "Active"
+      statusLabel: "Recorded active"
     })
     expect(view?.allowance).toMatchObject({
       includedUnits: 30,
@@ -367,7 +367,11 @@ describe("host subscription billing read model", () => {
       remainingUnits: 27,
       usedUnits: 3
     })
-    expect(view?.recommendation).toContain("Network 25")
+    expect(view).not.toHaveProperty("canStartCheckout")
+    expect(view).not.toHaveProperty("pilotConversion")
+    expect(view).not.toHaveProperty("recommendation")
+    expect(view?.allowance).not.toHaveProperty("forecastUnits")
+    expect(view?.allowance).not.toHaveProperty("forecastOverageUnits")
   })
 
   it("describes Dispatch Pro as private-fleet software with no Network allowance or overage", () => {
@@ -391,18 +395,16 @@ describe("host subscription billing read model", () => {
       networkAllowanceLabel:
         "0 completed Network movements — Dispatch Pro includes no Network allowance",
       overageRateLabel: "No Network overage",
-      planName: "Dispatch Pro",
-      sectionLabel: "Dispatch software subscription"
+      planName: "Dispatch Pro — historical",
+      recordMode: "historical",
+      sectionLabel: "Historical Dispatch Pro record"
     })
     expect(view?.statusDetail).toContain(
-      "established private-fleet operations"
-    )
-    expect(view?.statusDetail).toContain(
-      "does not include LogLoads Network capacity"
+      "does not authorize new work"
     )
   })
 
-  it("shows a configured-dark account without inventing an accepted subscription", () => {
+  it("returns null for a configured account without a real subscription", () => {
     const view = buildHostSubscriptionBillingView(
       source({
         billingPeriodSummaries: [],
@@ -418,14 +420,51 @@ describe("host subscription billing read model", () => {
       new Date("2026-08-01T12:00:00.000Z")
     )
 
-    expect(view).toMatchObject({
-      activationLabel: "Configured, not activated",
-      collectionEnabled: false,
-      planName: "Network enrollment",
-      canOpenPortal: false,
-      canStartCheckout: false,
-      statusLabel: "Not enrolled"
-    })
+    expect(view).toBeNull()
+  })
+
+  it("returns null for legacy and percentage accounts without real subscription history", () => {
+    const legacy = buildHostSubscriptionBillingView(
+      source({
+        billingPeriodSummaries: [],
+        networkUsageEvents: [],
+        organizationBillingAccounts: [
+          billingAccount({
+            activationState: "legacy",
+            billingModel: "legacy_percentage",
+            subscriptionId: null
+          })
+        ],
+        organizationSubscriptions: []
+      }),
+      ORGANIZATION_ID
+    )
+    const percentage = buildHostSubscriptionBillingView(
+      source({
+        billingPeriodSummaries: [],
+        networkUsageEvents: [],
+        organizationBillingAccounts: [
+          billingAccount({
+            activationState: "percentage_active",
+            billingModel: "percentage_v1",
+            percentageTermsSnapshot: {
+              acceptedAt: "2026-08-03T00:00:00.000Z",
+              acceptedByUserId: ACCEPTED_BY,
+              acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION,
+              billingCadence: "monthly_in_arrears",
+              currency: "USD",
+              feeBps: PLATFORM_FEE_BPS
+            },
+            subscriptionId: null
+          })
+        ],
+        organizationSubscriptions: []
+      }),
+      ORGANIZATION_ID
+    )
+
+    expect(legacy).toBeNull()
+    expect(percentage).toBeNull()
   })
 
   it("keeps terminal subscription history visible after percentage_v1 drops the live pointer", () => {
@@ -459,16 +498,62 @@ describe("host subscription billing read model", () => {
     )
 
     expect(view).toMatchObject({
-      billingModel: "percentage_v1",
+      activationLabel: "Historical record preserved",
+      billingModel: "subscription_v1",
       canOpenPortal: true,
-      canStartCheckout: false,
-      planName: "Network Pilot",
-      statusLabel: "Cancelled",
+      paymentLabel: "Recorded current",
+      planName: "Network Pilot — historical",
+      recordMode: "historical",
+      statusLabel: "Recorded cancelled",
       subscriptionId: SUBSCRIPTION_ID
     })
+    expect(view).not.toHaveProperty("canStartCheckout")
   })
 
-  it("offers only the accepted subscription when collection is explicitly enabled", () => {
+  it("prefers the provider-bound obligation over a newer pointerless conversion record", () => {
+    const view = buildHostSubscriptionBillingView(
+      source({
+        organizationBillingAccounts: [
+          billingAccount({
+            activationState: "percentage_active",
+            billingModel: "percentage_v1",
+            percentageTermsSnapshot: {
+              acceptedAt: "2026-11-01T00:00:00.000Z",
+              acceptedByUserId: ACCEPTED_BY,
+              acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION,
+              billingCadence: "monthly_in_arrears",
+              currency: "USD",
+              feeBps: PLATFORM_FEE_BPS
+            },
+            subscriptionId: null,
+            updatedAt: "2026-11-01T00:00:00.000Z"
+          })
+        ],
+        organizationSubscriptions: [
+          pilotSubscription({
+            status: "cancelled",
+            updatedAt: "2026-10-26T12:00:00.000Z"
+          }),
+          conversionSubscription({
+            updatedAt: "2026-11-02T12:00:00.000Z"
+          })
+        ]
+      }),
+      ORGANIZATION_ID,
+      new Date("2026-11-03T12:00:00.000Z")
+    )
+
+    expect(view).toMatchObject({
+      activationLabel: "Historical record preserved",
+      canOpenPortal: true,
+      paymentLabel: "Recorded current",
+      planCode: "network_pilot",
+      subscriptionId: SUBSCRIPTION_ID
+    })
+    expect(view?.planCode).not.toBe("network_25")
+  })
+
+  it("does not offer checkout for an incomplete preserved subscription", () => {
     const pending = pilotSubscription({
       activationAuthorizedAt: "2026-07-31T12:00:00.000Z",
       activationAuthorizedByUserId: ACCEPTED_BY,
@@ -493,13 +578,15 @@ describe("host subscription billing read model", () => {
 
     expect(view).toMatchObject({
       canOpenPortal: false,
-      canStartCheckout: true,
       planCode: "network_pilot",
+      recordMode: "historical",
       subscriptionId: SUBSCRIPTION_ID
     })
+    expect(view).not.toHaveProperty("canStartCheckout")
+    expect(JSON.stringify(view)).not.toContain("Enrollment and collection are enabled")
   })
 
-  it("offers exact fixed-tier conversion terms only inside the Pilot grace window", () => {
+  it("does not project conversion offers from a preserved Pilot grace window", () => {
     const pilot = pilotSubscription({
       activationAuthorizedAt: PERIOD_START,
       activationAuthorizedByUserId: ACCEPTED_BY,
@@ -510,71 +597,21 @@ describe("host subscription billing read model", () => {
     const data = source({
       organizationSubscriptions: [pilot]
     })
-    const inGrace = buildHostSubscriptionBillingView(
+    const view = buildHostSubscriptionBillingView(
       data,
       ORGANIZATION_ID,
       new Date("2026-10-27T12:00:00.000Z"),
-      true,
       true
     )
-    const expired = buildHostSubscriptionBillingView(
-      data,
-      ORGANIZATION_ID,
-      new Date("2026-11-09T12:00:00.000Z"),
-      true,
-      true
-    )
-
-    expect(inGrace?.pilotConversion).toEqual({
-      graceEndsOnLabel: "Nov 9, 2026",
-      options: [
-        {
-          allowanceLabel: "25 completed Network movements per month",
-          basePriceLabel: "$3,000.00/month",
-          commitmentLabel: "12-month minimum commitment",
-          name: "Network 25",
-          overageLabel:
-            "$125.00 per completed movement over allowance",
-          planCode: "network_25",
-          quoteFingerprint:
-            subscriptionPlanQuoteFingerprint(
-              subscriptionPlanDefinition("network_25")
-            )
-        },
-        {
-          allowanceLabel: "50 completed Network movements per month",
-          basePriceLabel: "$5,500.00/month",
-          commitmentLabel: "12-month minimum commitment",
-          name: "Network 50",
-          overageLabel:
-            "$110.00 per completed movement over allowance",
-          planCode: "network_50",
-          quoteFingerprint:
-            subscriptionPlanQuoteFingerprint(
-              subscriptionPlanDefinition("network_50")
-            )
-        },
-        {
-          allowanceLabel: "100 completed Network movements per month",
-          basePriceLabel: "$10,000.00/month",
-          commitmentLabel: "12-month minimum commitment",
-          name: "Network 100",
-          overageLabel:
-            "$90.00 per completed movement over allowance",
-          planCode: "network_100",
-          quoteFingerprint:
-            subscriptionPlanQuoteFingerprint(
-              subscriptionPlanDefinition("network_100")
-            )
-        }
-      ],
-      sourceSubscriptionId: SUBSCRIPTION_ID,
-      target: null
+    expect(view).toMatchObject({
+      planCode: "network_pilot",
+      recordMode: "historical"
     })
-    expect(expired?.pilotConversion).toBeNull()
+    expect(view).not.toHaveProperty("pilotConversion")
+    expect(view).not.toHaveProperty("recommendation")
   })
 
-  it("hides plan selection after conversion authorization and exposes the exact target retry", () => {
+  it("keeps the linked preserved record and does not expose a conversion retry", () => {
     const pilot = pilotSubscription({
       activationAuthorizedAt: PERIOD_START,
       activationAuthorizedByUserId: ACCEPTED_BY,
@@ -589,22 +626,17 @@ describe("host subscription billing read model", () => {
       }),
       ORGANIZATION_ID,
       new Date("2026-10-28T12:00:00.000Z"),
-      true,
       true
     )
 
-    expect(view?.pilotConversion).toMatchObject({
-      options: [],
-      sourceSubscriptionId: SUBSCRIPTION_ID,
-      target: {
-        canOpenPortal: false,
-        canStartCheckout: true,
-        planCode: "network_25",
-        planName: "Network 25",
-        statusLabel: "Pending activation",
-        subscriptionId: CONVERSION_SUBSCRIPTION_ID
-      }
+    expect(view).toMatchObject({
+      canOpenPortal: true,
+      planCode: "network_pilot",
+      planName: "Network Pilot — historical",
+      recordMode: "historical",
+      subscriptionId: SUBSCRIPTION_ID
     })
+    expect(view).not.toHaveProperty("canStartCheckout")
   })
 
   it("surfaces ledger-to-summary divergence instead of hiding it", () => {

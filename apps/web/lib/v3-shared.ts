@@ -227,6 +227,18 @@ export const pricingPlans: PricingPlan[] = [
     cta: { href: "/sign-up", label: "Create free account" }
   },
   {
+    name: "Fleet Free",
+    price: "Free",
+    audience: "Fleets and dispatch teams",
+    summary: "Run dispatch, equipment, drivers, and private partner work without a LogLoads subscription.",
+    included: "Dispatch board, truck planning, driver seats, and private partner work",
+    overage: "None",
+    commitment: "No subscription, trial clock, or LogLoads truck limit",
+    features: ["Dispatch board", "Truck and equipment planning", "Driver seats", "Private partner work"],
+    cta: { href: "/sign-up?path=fleet", label: "Create fleet workspace" },
+    note: "Hosts—not fleets or drivers—owe the 5% platform fee when host-posted work completes."
+  },
+  {
     name: "Host",
     price: "5% per completed load",
     audience: "Landings, mills, and timber operations",

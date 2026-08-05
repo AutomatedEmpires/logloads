@@ -404,7 +404,7 @@ function OrganizationSubscriptionSections({
             </div>
           </div>
           <div className="subscription-overview__price">
-            <span>Base subscription</span>
+            <span>Recorded base price</span>
             <strong>{subscription.basePriceLabel}</strong>
             <small>{subscription.networkAllowanceLabel}</small>
           </div>
@@ -434,42 +434,42 @@ function OrganizationSubscriptionSections({
         <div className="subscription-overview__body">
           <dl className="subscription-overview__facts">
             <div>
-              <dt>Overage</dt>
+              <dt>Recorded overage</dt>
               <dd>{subscription.overageRateLabel}</dd>
             </div>
             <div>
-              <dt>Core operations</dt>
+              <dt>Recorded capabilities</dt>
               <dd>
                 {subscription.includesDispatchProCapabilities
-                  ? "Dispatch Pro capabilities included"
-                  : "Defined by the accepted plan"}
+                  ? "The preserved snapshot included dispatch capabilities"
+                  : "Defined by the preserved agreement"}
               </dd>
             </div>
             <div>
-              <dt>Provider collection</dt>
+              <dt>Provider reconciliation</dt>
               <dd>{subscription.collectionLabel}</dd>
             </div>
             {subscription.commitmentLabel ? (
               <div>
-                <dt>Commitment</dt>
+                <dt>Recorded term</dt>
                 <dd>{subscription.commitmentLabel}</dd>
               </div>
             ) : null}
             {subscription.renewalLabel ? (
               <div>
-                <dt>Renewal</dt>
+                <dt>Recorded renewal</dt>
                 <dd>{subscription.renewalLabel}</dd>
               </div>
             ) : null}
             {subscription.pendingPlanLabel ? (
               <div>
-                <dt>Scheduled plan</dt>
+                <dt>Recorded schedule</dt>
                 <dd>{subscription.pendingPlanLabel}</dd>
               </div>
             ) : null}
             {subscription.paymentLabel ? (
               <div>
-                <dt>Subscription payment</dt>
+                <dt>Recorded payment state</dt>
                 <dd>
                   <Badge tone={subscription.paymentTone ?? "neutral"}>
                     {subscription.paymentLabel}
@@ -536,17 +536,17 @@ function OrganizationSubscriptionSections({
 
       {subscription.allowance ? (
         <section
-          aria-label="Completed Network usage"
+          aria-label="Recorded Network usage"
           className="usage-panel usage-panel--network"
         >
           <SectionHeader
-            eyebrow="Completed Network usage"
+            eyebrow="Historical usage"
             title={subscription.allowance.periodLabel}
           />
           <article className="subscription-allowance">
             <div className="subscription-allowance__headline">
               <div>
-                <span>Completed this period</span>
+                <span>Completed in this recorded period</span>
                 <strong>
                   {subscription.allowance.usedUnits}
                   <small> / {subscription.allowance.includedUnits}</small>
@@ -583,42 +583,21 @@ function OrganizationSubscriptionSections({
           </article>
           <dl className="subscription-usage-grid">
             <div>
-              <dt>Included remaining</dt>
+              <dt>Recorded included remainder</dt>
               <dd>{subscription.allowance.remainingUnits}</dd>
             </div>
             <div>
-              <dt>Current overage</dt>
+              <dt>Recorded overage</dt>
               <dd>
                 {subscription.allowance.overageUnits} units ·{" "}
                 {subscription.allowance.overageAmountLabel}
               </dd>
             </div>
             <div>
-              <dt>Pace projection</dt>
-              <dd>
-                {subscription.allowance.forecastUnits} completions ·{" "}
-                {subscription.allowance.forecastOverageUnits} projected overage
-              </dd>
-            </div>
-            <div>
-              <dt>Window closes</dt>
+              <dt>Recorded window end</dt>
               <dd>{subscription.allowance.closesOnLabel}</dd>
             </div>
           </dl>
-          {subscription.recommendation ? (
-            <p className="subscription-overview__note">
-              <Icon aria-hidden name="ops.queue" size={18} />
-              <span>{subscription.recommendation}</span>
-            </p>
-          ) : (
-            <p className="subscription-overview__note">
-              <Icon aria-hidden name="ops.queue" size={18} />
-              <span>
-                A tier recommendation appears after completed usage establishes
-                a pace.
-              </span>
-            </p>
-          )}
           {subscription.latestOverageInvoice ? (
             <article className="subscription-invoice-preview">
               <div>
@@ -966,11 +945,10 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
 }
 
 /**
- * The legacy host ledger remains host-only. The canonical organization
- * subscription view is required in both operating cockpits because Dispatch Pro
- * and Network plans share one commercial ledger while exposing different usage.
- * The discriminated props keep a fleet from ever receiving the host's historical
- * percentage statement.
+ * The current percentage ledger remains host-only. Historical subscription
+ * records can appear in either operating cockpit when an accepted provider
+ * obligation exists. The discriminated props keep a fleet from ever receiving
+ * the host's percentage statement.
  */
 export type BillingPageProps = {
   account: ShellAccount
@@ -1000,21 +978,27 @@ export function BillingPage({
   const hasCanonicalSubscription = Boolean(
     hostSubscriptionBilling?.subscriptionId
   )
-  const capabilityPlans =
-    role === "host" || hasCanonicalSubscription ? [] : billing.plans
+  const capabilityPlans = role === "fleet"
+    ? [
+        ...billing.plans.filter((plan) => plan.recordMode === "current"),
+        ...(hasCanonicalSubscription
+          ? []
+          : billing.plans.filter((plan) => plan.recordMode === "historical"))
+      ]
+    : []
   const addUsageHref = role === "fleet" ? "/fleet/trucks" : "/host/landings"
   const addUsageLabel = role === "fleet" ? "Go to trucks" : "Go to landings"
   const addUsageBody = role === "fleet"
-    ? "Add your first truck and this section shows where you stand against your plan limits."
-    : "Add your first landing and this section shows where you stand against your plan limits."
+    ? "Add your first truck and this section shows the equipment configured for this account."
+    : "Add your first landing and this section shows the operating locations configured for this account."
   const workspaceUsageBody = role === "fleet"
     ? "This tracks trucks configured in your workspace. It is separate from completed Network movement usage."
-    : "This tracks landings configured in your workspace. It is separate from completed Network movement usage."
+    : "This tracks landing locations configured in your workspace. It is separate from completed-load platform fees."
 
   return (
     <AppShell
       account={account}
-      kicker={role === "host" ? "Host economics" : "Billing history"}
+      kicker={role === "host" ? "Host economics" : "Access & billing history"}
       role={role}
       title="Billing"
     >
@@ -1058,19 +1042,19 @@ export function BillingPage({
           />
         ) : null}
 
-        {role === "fleet" && !hasCanonicalSubscription ? (
+        {role === "fleet" ? (
           capabilityPlans.length === 0 ? (
             hostSubscriptionBilling ? null : (
               <EmptyState
                 actionHref="/pricing"
                 actionLabel="View pricing"
-                body="New subscription enrollment is closed. Existing provider-bound obligations remain visible for reconciliation."
-                title="No historical subscription on this workspace"
+                body="Fleet dispatch is free. Refresh this page or contact support if the included access record is missing."
+                title="Fleet Free access is unavailable"
               />
             )
           ) : (
             <section
-              aria-label="Current plan"
+              aria-label="Access and billing history"
               className="plan-cards"
               id="billing-plan"
             >
@@ -1078,7 +1062,11 @@ export function BillingPage({
                 <article className="plan-card plan-card--current" key={plan.id}>
                   <header className="plan-card__head">
                     <div>
-                      <p className="eyebrow">Current plan</p>
+                      <p className="eyebrow">
+                        {plan.recordMode === "current"
+                          ? "Current access"
+                          : "Historical record"}
+                      </p>
                       <h2>{plan.name}</h2>
                       <p className="plan-card__summary">{plan.summary}</p>
                     </div>
@@ -1091,7 +1079,11 @@ export function BillingPage({
                     {plan.statusDetail ? <p>{plan.statusDetail}</p> : null}
                   </div>
                   <div className="plan-card__body">
-                    <h3>What your plan includes</h3>
+                    <h3>
+                      {plan.recordMode === "current"
+                        ? "What Fleet Free includes"
+                        : "What this record included"}
+                    </h3>
                     <ul>
                       {plan.features.map((feature) => (
                         <li key={feature}>
@@ -1122,69 +1114,52 @@ export function BillingPage({
           />
         ) : null}
 
-        {role === "fleet" &&
-        !hasCanonicalSubscription &&
-        capabilityPlans.length > 0 &&
-        !billing.billingReady ? (
-          <p className="billing-pending" role="note">
-            <Icon aria-hidden name="status.lock" size={16} />
-            <span>
-              Dispatch Pro checkout is temporarily unavailable. Current trial
-              access stays active.
-            </span>
-          </p>
-        ) : null}
-
-        {hostSubscriptionBilling || capabilityPlans.length > 0 ? (
-          <section
-            aria-label="Workspace capacity"
-            className="usage-panel usage-panel--workspace"
-            id="billing-workspace-usage"
-          >
-            <SectionHeader
-              eyebrow="Operational setup"
-              title="Workspace capacity"
+        <section
+          aria-label="Workspace capacity"
+          className="usage-panel usage-panel--workspace"
+          id="billing-workspace-usage"
+        >
+          <SectionHeader
+            eyebrow="Operational setup"
+            title="Workspace capacity"
+          />
+          <p className="usage-panel__intro">{workspaceUsageBody}</p>
+          {billing.usage.length === 0 ? (
+            <EmptyState
+              actionHref={addUsageHref}
+              actionLabel={addUsageLabel}
+              body={addUsageBody}
+              title="Nothing to measure yet"
             />
-            {hasCanonicalSubscription ? (
-              <p className="usage-panel__intro">{workspaceUsageBody}</p>
-            ) : null}
-            {billing.usage.length === 0 ? (
-              <EmptyState
-                actionHref={addUsageHref}
-                actionLabel={addUsageLabel}
-                body={addUsageBody}
-                title="Nothing to measure yet"
-              />
-            ) : (
-              <div className="usage-list">
-                {billing.usage.map((row) => (
-                  <article className="usage-row" key={row.id}>
-                    <div className="usage-row__top">
-                      <strong>{row.label}</strong>
+          ) : (
+            <div className="usage-list">
+              {billing.usage.map((row) => (
+                <article className="usage-row" key={row.id}>
+                  <div className="usage-row__top">
+                    <strong>{row.label}</strong>
+                    <span
+                      className={`usage-row__detail usage-row__detail--${row.tone}`}
+                    >
+                      {row.detail}
+                    </span>
+                  </div>
+                  {row.percent !== null ? (
+                    <div
+                      aria-label={`${row.label}: ${row.detail}`}
+                      className="usage-meter"
+                      role="img"
+                    >
                       <span
-                        className={`usage-row__detail usage-row__detail--${row.tone}`}
-                      >
-                        {row.detail}
-                      </span>
+                        className={`usage-meter__fill usage-meter__fill--${row.tone}`}
+                        style={{ width: `${row.percent}%` }}
+                      />
                     </div>
-                    {row.percent !== null ? (
-                      <div
-                        aria-label={`${row.label}: ${row.detail}`}
-                        className="usage-meter"
-                        role="img"
-                      >
-                        <span
-                          className={`usage-meter__fill usage-meter__fill--${row.tone}`}
-                          style={{ width: `${row.percent}%` }}
-                        />
-                      </div>
-                    ) : null}
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-        ) : null}
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
 
       </div>
     </AppShell>
@@ -1314,18 +1289,18 @@ export function SettingsPage({
           </div>
         </section>
 
-        <section className="settings-panel" aria-label="Plan">
+        <section className="settings-panel" aria-label="Access and billing history">
           <SectionHeader
             action={<Link className="action-link action-link--secondary" href={billingHref}>Open billing</Link>}
-            eyebrow="Plan"
-            title="Plan features"
+            eyebrow="Access"
+            title="Access & billing history"
           />
           {settings.planSummaries.length === 0 ? (
             <EmptyState
-              actionHref="/pricing"
-              actionLabel="Compare plans"
-              body={role === "fleet" ? "Dispatch Pro is $499 per month. Drivers on the account stay free." : "Network enrollment is sales-assisted. There is no posting fee; completed Network movements use the accepted plan allowance and overage rate."}
-              title="No plan on this workspace yet"
+              actionHref={billingHref}
+              actionLabel="Open billing"
+              body={role === "fleet" ? "Fleet Free includes dispatch, drivers, equipment, and private partner work without a subscription." : "Review and accept the current 5% completed-load agreement in Billing before publishing live work. There is no subscription, monthly minimum, tier, allowance, or posting fee."}
+              title="No billing record on this workspace yet"
             />
           ) : (
             <ul className="plan-summary-list">

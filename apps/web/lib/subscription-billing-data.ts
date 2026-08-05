@@ -2,7 +2,6 @@ import "server-only"
 
 import {
   formatMoney,
-  subscriptionPlanQuoteFingerprint,
   type BillingAdjustment,
   type BillingPeriodSummary,
   type NetworkOverageInvoice,
@@ -13,14 +12,10 @@ import {
   type SubscriptionPlanDefinition
 } from "@logloads/contracts"
 import type { BadgeProps } from "@logloads/ui"
-import { PILOT_CONVERSION_GRACE_DAYS } from "@logloads/services"
 
 import { services } from "./services"
-import { subscriptionNewMoneyAllowed } from "./subscription-stripe"
 
 const BILLING_CURRENCY = "USD"
-const DAY_MS = 86_400_000
-const MONTHLY_NORMALIZATION_DAYS = 30
 
 export type SubscriptionBillingTone = NonNullable<BadgeProps["tone"]>
 
@@ -43,27 +38,27 @@ interface StatusPresentation {
 
 export const SUBSCRIPTION_STATUS_PRESENTATION = {
   pending: {
-    detail: "Commercial terms are recorded, but operational activation has not begun.",
+    detail: "Commercial terms were recorded, but activation was not completed before new subscription enrollment closed.",
     label: "Pending activation",
     tone: "info"
   },
   incomplete: {
-    detail: "Enrollment is incomplete. Network access does not activate until payment setup and the accepted agreement reconcile.",
+    detail: "Enrollment was incomplete when new subscription enrollment closed. The record remains for reconciliation only.",
     label: "Enrollment incomplete",
     tone: "warning"
   },
   active: {
-    detail: "The accepted plan is active for new Network commitments.",
+    detail: "Active was the last recorded provider status. It does not authorize new Network commitments.",
     label: "Active",
     tone: "success"
   },
   past_due: {
-    detail: "A base or usage payment is past due. Existing work continues; new Network commitments may be restricted only after the recorded grace process.",
+    detail: "A preserved base or usage obligation is past due and may require reconciliation.",
     label: "Payment past due",
     tone: "critical"
   },
   non_renewing: {
-    detail: "The plan remains available through its recorded term and will not renew automatically.",
+    detail: "The preserved agreement was marked non-renewing.",
     label: "Non-renewing",
     tone: "warning"
   },
@@ -78,7 +73,7 @@ export const SUBSCRIPTION_STATUS_PRESENTATION = {
     tone: "neutral"
   },
   comped: {
-    detail: "This access was explicitly granted without ordinary base collection. Usage remains auditable.",
+    detail: "This record was explicitly granted without ordinary base collection. Historical usage remains auditable.",
     label: "Complimentary",
     tone: "info"
   }
@@ -86,33 +81,33 @@ export const SUBSCRIPTION_STATUS_PRESENTATION = {
 
 export const SUBSCRIPTION_PAYMENT_PRESENTATION = {
   none: {
-    detail: "No provider-confirmed payment state is recorded.",
-    label: "Not configured",
+    detail: "No provider-confirmed payment state was recorded for this preserved obligation.",
+    label: "Recorded not configured",
     tone: "warning"
   },
   current: {
-    detail: "The canonical subscription record is current with its reconciled provider events.",
-    label: "Current",
+    detail: "Current was the last provider-confirmed payment state for this preserved obligation.",
+    label: "Recorded current",
     tone: "success"
   },
   requires_payment_method: {
-    detail: "A usable payment method is required before paid Network activation.",
-    label: "Payment method required",
+    detail: "The preserved provider record requires a usable payment method for reconciliation.",
+    label: "Recorded payment method required",
     tone: "critical"
   },
   failed: {
-    detail: "The last collection attempt failed and needs billing-manager attention.",
-    label: "Payment failed",
+    detail: "The last recorded collection attempt failed and needs billing-manager attention.",
+    label: "Recorded payment failed",
     tone: "critical"
   },
   past_due: {
-    detail: "Payment remains outstanding after its due date.",
-    label: "Past due",
+    detail: "The preserved provider record shows an amount outstanding after its due date.",
+    label: "Recorded past due",
     tone: "critical"
   },
   uncollectible: {
     detail: "The provider marked an amount uncollectible. The canonical invoice remains preserved for reconciliation.",
-    label: "Uncollectible",
+    label: "Recorded uncollectible",
     tone: "critical"
   }
 } satisfies Record<OrganizationSubscription["paymentState"], StatusPresentation>
@@ -120,8 +115,6 @@ export const SUBSCRIPTION_PAYMENT_PRESENTATION = {
 export interface HostSubscriptionAllowanceView {
   closesOnLabel: string
   detail: string
-  forecastOverageUnits: number
-  forecastUnits: number
   includedUnits: number
   overageAmountLabel: string
   overageUnits: number
@@ -149,38 +142,6 @@ export interface HostSubscriptionBaseInvoiceView {
   statusLabel: string
 }
 
-export type PilotConversionPlanCode =
-  | "network_25"
-  | "network_50"
-  | "network_100"
-export type PilotConversionTargetPlanCode =
-  | PilotConversionPlanCode
-  | "enterprise_250_plus"
-
-export interface PilotConversionPlanView {
-  allowanceLabel: string
-  basePriceLabel: string
-  commitmentLabel: string
-  name: string
-  overageLabel: string
-  planCode: PilotConversionPlanCode
-  quoteFingerprint: string
-}
-
-export interface PilotConversionView {
-  graceEndsOnLabel: string
-  options: PilotConversionPlanView[]
-  sourceSubscriptionId: string
-  target: {
-    canOpenPortal: boolean
-    canStartCheckout: boolean
-    planCode: PilotConversionTargetPlanCode
-    planName: string
-    statusLabel: string
-    subscriptionId: string
-  } | null
-}
-
 export interface HostSubscriptionBillingView {
   activationDetail: string
   activationLabel: string
@@ -203,12 +164,10 @@ export interface HostSubscriptionBillingView {
   paymentLabel: string | null
   paymentTone: SubscriptionBillingTone | null
   pendingPlanLabel: string | null
-  pilotConversion: PilotConversionView | null
   planCode: OrganizationSubscription["planCode"] | null
   planName: string
   canOpenPortal: boolean
-  canStartCheckout: boolean
-  recommendation: string | null
+  recordMode: "historical"
   renewalLabel: string | null
   sectionLabel: string
   statusDetail: string
@@ -238,6 +197,53 @@ function latestByUpdatedAt<T extends { updatedAt: string }>(rows: readonly T[]):
   return [...rows].sort(
     (left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
   )[0] ?? null
+}
+
+function historicalSubscriptionPriority(
+  source: SubscriptionBillingSource,
+  subscription: OrganizationSubscription
+): number {
+  const summaryIds = new Set(
+    source.billingPeriodSummaries
+      .filter((summary) => summary.subscriptionId === subscription.id)
+      .map((summary) => summary.id)
+  )
+  const hasOutstandingBase = source.subscriptionBaseInvoices.some(
+    (invoice) =>
+      invoice.subscriptionId === subscription.id &&
+      invoice.amountRemainingCents > 0 &&
+      invoice.status !== "paid" &&
+      invoice.status !== "void"
+  )
+  const hasOutstandingUsage = source.networkOverageInvoices.some(
+    (invoice) =>
+      summaryIds.has(invoice.billingPeriodSummaryId) &&
+      (invoice.providerAmountRemainingCents ?? invoice.amountDueCents) > 0 &&
+      invoice.status !== "paid" &&
+      invoice.status !== "void"
+  )
+
+  return (
+    (subscription.stripeSubscriptionId ? 1_000 : 0) +
+    (hasOutstandingBase || hasOutstandingUsage ? 500 : 0) +
+    (subscription.stripeCustomerId ? 100 : 0) +
+    (["active", "past_due", "non_renewing"].includes(subscription.status)
+      ? 10
+      : 0)
+  )
+}
+
+function preferredHistoricalSubscription(
+  source: SubscriptionBillingSource,
+  subscriptions: readonly OrganizationSubscription[]
+): OrganizationSubscription | null {
+  return [...subscriptions].sort((left, right) => {
+    const priorityDifference =
+      historicalSubscriptionPriority(source, right) -
+      historicalSubscriptionPriority(source, left)
+
+    return priorityDifference || Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+  })[0] ?? null
 }
 
 function planIsInternal(
@@ -300,30 +306,9 @@ function summaryAt(
   }
 }
 
-function forecastUnits(summary: BillingPeriodSummary, nowMs: number): number {
-  const startMs = Date.parse(summary.periodStart)
-  const endMs = Date.parse(summary.periodEnd)
-
-  if (nowMs <= startMs || summary.usedUnits === 0) {
-    return summary.usedUnits
-  }
-
-  if (nowMs >= endMs || summary.status !== "open") {
-    return summary.usedUnits
-  }
-
-  const elapsedMs = Math.max(DAY_MS, nowMs - startMs)
-  const projected = Math.ceil(summary.usedUnits * ((endMs - startMs) / elapsedMs))
-
-  return Math.max(summary.usedUnits, projected)
-}
-
 function allowanceView(
-  summary: BillingPeriodSummary,
-  nowMs: number
+  summary: BillingPeriodSummary
 ): HostSubscriptionAllowanceView {
-  const projectedUnits = forecastUnits(summary, nowMs)
-  const forecastOverageUnits = Math.max(0, projectedUnits - summary.includedUnits)
   const remainingUnits = Math.max(0, summary.includedUnits - summary.usedUnits)
   const percent =
     summary.includedUnits === 0
@@ -339,8 +324,6 @@ function allowanceView(
   return {
     closesOnLabel: formatDay(summary.periodEnd),
     detail,
-    forecastOverageUnits,
-    forecastUnits: projectedUnits,
     includedUnits: summary.includedUnits,
     overageAmountLabel: money(summary.overageAmountCents),
     overageUnits: summary.overageUnits,
@@ -368,6 +351,12 @@ function activationPresentation(
         detail: "This organization remains on its explicit grandfathered percentage agreement. No subscription enrollment is recorded.",
         label: "Grandfathered legacy",
         tone: "neutral"
+      }
+    case "percentage_active":
+      return {
+        detail: "The current 5% completed-load agreement is accepted for this organization.",
+        label: "Current 5% agreement active",
+        tone: "success"
       }
     case "configured_dark":
       return {
@@ -448,7 +437,7 @@ function paymentPresentation(
 
   return {
     ...base,
-    detail: "A usable payment method is required before paid Dispatch Pro activation."
+    detail: "The preserved Dispatch Pro provider record requires a usable payment method for reconciliation."
   }
 }
 
@@ -505,77 +494,6 @@ function latestBaseInvoiceView(
   }
 }
 
-function normalizedMonthlyForecast(
-  subscription: OrganizationSubscription,
-  summary: BillingPeriodSummary,
-  projectedUnits: number
-): number {
-  if (subscription.planSnapshot.allowancePeriod !== "commitment") {
-    return projectedUnits
-  }
-
-  const windowDays = Math.max(
-    1,
-    Math.round(
-      (Date.parse(summary.periodEnd) - Date.parse(summary.periodStart)) / DAY_MS
-    )
-  )
-
-  return Math.ceil(projectedUnits * (MONTHLY_NORMALIZATION_DAYS / windowDays))
-}
-
-function recommendationFor(
-  subscription: OrganizationSubscription,
-  summary: BillingPeriodSummary | null,
-  plans: readonly SubscriptionPlanDefinition[],
-  nowMs: number
-): string | null {
-  if (!summary || summary.usedUnits === 0 || subscription.planSnapshot.internalBillingTest) {
-    return null
-  }
-
-  const projected = forecastUnits(summary, nowMs)
-  const monthlyUnits = normalizedMonthlyForecast(subscription, summary, projected)
-
-  if (monthlyUnits >= 250) {
-    return `Your current pace is about ${monthlyUnits} completed Network movements per month. Review an Enterprise 250+ agreement before the next term.`
-  }
-
-  const candidates = plans
-    .filter(
-      (plan) =>
-        plan.active &&
-        ["network_25", "network_50", "network_100"].includes(plan.code) &&
-        plan.baseMonthlyPriceCents !== null &&
-        plan.includedNetworkLoadUnits !== null &&
-        plan.overageUnitPriceCents !== null
-    )
-    .map((plan) => ({
-      plan,
-      projectedCostCents:
-        plan.baseMonthlyPriceCents! +
-        Math.max(0, monthlyUnits - plan.includedNetworkLoadUnits!) *
-          plan.overageUnitPriceCents!
-    }))
-    .sort(
-      (left, right) =>
-        left.projectedCostCents - right.projectedCostCents ||
-        left.plan.includedNetworkLoadUnits! - right.plan.includedNetworkLoadUnits!
-    )
-
-  const lowest = candidates[0]
-
-  if (!lowest) {
-    return null
-  }
-
-  if (lowest.plan.code === subscription.planCode) {
-    return `At the current pace of about ${monthlyUnits} completed Network movements per month, ${lowest.plan.displayName} remains the lowest modeled monthly cost.`
-  }
-
-  return `At the current pace of about ${monthlyUnits} completed Network movements per month, ${lowest.plan.displayName} is the lowest modeled tier at ${money(lowest.projectedCostCents)} before taxes or contract-specific terms.`
-}
-
 function commitmentLabel(subscription: OrganizationSubscription): string | null {
   if (!subscription.commitmentStart || !subscription.commitmentEnd) {
     return null
@@ -597,83 +515,24 @@ function renewalLabel(subscription: OrganizationSubscription): string | null {
   }
 
   if (subscription.renewalBehavior === "automatic" && !subscription.cancelAtPeriodEnd) {
-    return `Renews under the accepted agreement after ${formatDay(boundary)}`
+    return `Recorded agreement would renew after ${formatDay(boundary)}`
   }
 
   if (
     subscription.renewalBehavior === "non_renewing" ||
     subscription.cancelAtPeriodEnd
   ) {
-    return `Does not renew after ${formatDay(boundary)}`
+    return `Recorded agreement does not renew after ${formatDay(boundary)}`
   }
 
-  return `Manual renewal review by ${formatDay(boundary)}`
-}
-
-function configuredWithoutSubscription(
-  account: OrganizationBillingAccount,
-  collectionEnabled: boolean,
-  newEnrollmentAllowed: boolean,
-  duplicateAccountCount: number
-): HostSubscriptionBillingView {
-  const activation = activationPresentation(
-    account.activationState,
-    account.billingModel
-  )
-
-  return {
-    activationDetail: activation.detail,
-    activationLabel: activation.label,
-    activationTone: activation.tone,
-    allowance: null,
-    basePriceLabel: "Not accepted",
-    billingModel: account.billingModel,
-    collectionEnabled,
-    collectionLabel: collectionEnabled
-      ? newEnrollmentAllowed
-        ? "Enrollment is enabled for this canary organization."
-        : "Enrollment is not enabled for this organization; contact LogLoads for launch access."
-      : "Network collection is disabled in this environment.",
-    commitmentLabel: null,
-    includesDispatchProCapabilities: false,
-    integrityNotices:
-      duplicateAccountCount > 1
-        ? ["More than one billing account exists for this organization. Reconcile before enrollment."]
-        : [],
-    latestBaseInvoice: null,
-    latestOverageInvoice: null,
-    networkAllowanceLabel: "Not accepted",
-    overageRateLabel: "Not accepted",
-    outstandingAmountLabel: "$0.00",
-    outstandingInvoiceCount: 0,
-    paymentDetail: null,
-    paymentLabel: null,
-    paymentTone: null,
-    pendingPlanLabel: null,
-    pilotConversion: null,
-    planCode: null,
-    planName: "Network enrollment",
-    canOpenPortal: false,
-    canStartCheckout: false,
-    recommendation: null,
-    renewalLabel: null,
-    sectionLabel:
-      account.billingModel === "dispatch_pro"
-        ? "Dispatch software enrollment"
-        : "Network enrollment",
-    statusDetail: "No accepted subscription snapshot is attached to this billing account.",
-    statusLabel: "Not enrolled",
-    statusTone: "neutral",
-    subscriptionId: null
-  }
+  return `Recorded manual renewal review by ${formatDay(boundary)}`
 }
 
 export function buildHostSubscriptionBillingView(
   source: SubscriptionBillingSource,
   organizationId: string,
   now = new Date(),
-  collectionEnabled = false,
-  newEnrollmentAllowed = collectionEnabled
+  collectionEnabled = false
 ): HostSubscriptionBillingView | null {
   const accounts = source.organizationBillingAccounts.filter(
     (account) => account.organizationId === organizationId
@@ -707,7 +566,8 @@ export function buildHostSubscriptionBillingView(
   // the billing account migrates to percentage_v1 and drops its live pointer.
   // Locate that history by tenant instead of making account.subscriptionId the
   // only way a host can still see invoices and portal details they may need.
-  const historicalCommercialSubscription = latestByUpdatedAt(
+  const historicalCommercialSubscription = preferredHistoricalSubscription(
+    source,
     source.organizationSubscriptions.filter(
       (candidate) =>
         candidate.organizationId === organizationId &&
@@ -718,12 +578,7 @@ export function buildHostSubscriptionBillingView(
     linkedCommercialSubscription ?? historicalCommercialSubscription
 
   if (!subscription) {
-    return configuredWithoutSubscription(
-      account,
-      collectionEnabled,
-      newEnrollmentAllowed,
-      accounts.length
-    )
+    return null
   }
 
   const nowMs = now.getTime()
@@ -771,10 +626,14 @@ export function buildHostSubscriptionBillingView(
   }
 
   const dispatchSoftware = subscription.billingModel === "dispatch_pro"
-  const activation = activationPresentation(
-    account.activationState,
-    subscription.billingModel
-  )
+  const linkedToCurrentAccount = linkedCommercialSubscription?.id === subscription.id
+  const activation = linkedToCurrentAccount
+    ? activationPresentation(account.activationState, subscription.billingModel)
+    : {
+        detail: "This subscription is separate from the current organization billing model and remains available only for historical reconciliation.",
+        label: "Historical record preserved",
+        tone: "neutral"
+      } satisfies StatusPresentation
   const status = statusPresentation(subscription)
   const payment = paymentPresentation(subscription)
   const plan =
@@ -783,115 +642,6 @@ export function buildHostSubscriptionBillingView(
         candidate.code === subscription.planCode &&
         candidate.version === subscription.planSnapshot.version
     ) ?? subscription.planSnapshot
-  const pilotGraceEndsAt =
-    subscription.planCode === "network_pilot" &&
-    subscription.commitmentEnd
-      ? subscription.conversionGraceEndsAt ??
-        new Date(
-          Date.parse(subscription.commitmentEnd) +
-            PILOT_CONVERSION_GRACE_DAYS * DAY_MS
-        ).toISOString()
-      : null
-  const pilotConversionTarget =
-    subscription.planCode === "network_pilot"
-      ? source.organizationSubscriptions.find(
-          (candidate) =>
-            candidate.organizationId === organizationId &&
-            candidate.convertedFromSubscriptionId === subscription.id
-        ) ?? null
-      : null
-  const pilotConversionActive = Boolean(
-    subscription.planCode === "network_pilot" &&
-      subscription.operationalActivatedAt &&
-      !subscription.operationalExpiredAt &&
-      subscription.status !== "cancelled" &&
-      subscription.commitmentEnd &&
-      pilotGraceEndsAt &&
-      nowMs >= Date.parse(subscription.commitmentEnd) &&
-      nowMs < Date.parse(pilotGraceEndsAt)
-  )
-  const pilotConversion: PilotConversionView | null =
-    pilotConversionActive && pilotGraceEndsAt
-      ? {
-          graceEndsOnLabel: formatDay(pilotGraceEndsAt),
-          options: pilotConversionTarget
-            ? []
-            : (
-                [
-                  "network_25",
-                  "network_50",
-                  "network_100"
-                ] as const
-              ).flatMap((planCode) => {
-                const definition = [...source.billingPlanDefinitions]
-                  .filter(
-                    (candidate) =>
-                      candidate.active &&
-                      candidate.code === planCode &&
-                      Date.parse(candidate.effectiveAt) <= nowMs
-                  )
-                  .sort(
-                    (left, right) =>
-                      right.version - left.version
-                  )[0]
-
-                return definition &&
-                  definition.baseMonthlyPriceCents !== null &&
-                  definition.includedNetworkLoadUnits !== null &&
-                  definition.overageUnitPriceCents !== null &&
-                  definition.commitmentMonths !== null
-                  ? [
-                      {
-                        allowanceLabel: `${definition.includedNetworkLoadUnits} completed Network movements per month`,
-                        basePriceLabel: `${money(definition.baseMonthlyPriceCents)}/month`,
-                        commitmentLabel: `${definition.commitmentMonths}-month minimum commitment`,
-                        name: definition.displayName,
-                        overageLabel: `${money(definition.overageUnitPriceCents)} per completed movement over allowance`,
-                        planCode,
-                        quoteFingerprint:
-                          subscriptionPlanQuoteFingerprint(
-                            definition
-                          )
-                      }
-                    ]
-                  : []
-              }),
-          sourceSubscriptionId: subscription.id,
-          target: pilotConversionTarget &&
-            (
-              pilotConversionTarget.planCode === "network_25" ||
-              pilotConversionTarget.planCode === "network_50" ||
-              pilotConversionTarget.planCode === "network_100" ||
-              pilotConversionTarget.planCode ===
-                "enterprise_250_plus"
-            )
-            ? {
-                canOpenPortal: Boolean(
-                  pilotConversionTarget.stripeCustomerId &&
-                  pilotConversionTarget.stripeSubscriptionId
-                ),
-                canStartCheckout:
-                  newEnrollmentAllowed &&
-                  Boolean(
-                    pilotConversionTarget.activationAuthorizedAt
-                  ) &&
-                  !pilotConversionTarget.stripeSubscriptionId &&
-                  (
-                    pilotConversionTarget.status === "pending" ||
-                    pilotConversionTarget.status === "incomplete"
-                  ),
-                planCode: pilotConversionTarget.planCode,
-                planName:
-                  pilotConversionTarget.planSnapshot.displayName,
-                statusLabel:
-                  SUBSCRIPTION_STATUS_PRESENTATION[
-                    pilotConversionTarget.status
-                  ].label,
-                subscriptionId: pilotConversionTarget.id
-              }
-            : null
-        }
-      : null
   const invoices = source.networkOverageInvoices.filter(
     (invoice) =>
       invoice.organizationId === organizationId &&
@@ -1004,30 +754,29 @@ export function buildHostSubscriptionBillingView(
     !["active", "past_due", "non_renewing", "comped"].includes(subscription.status)
   ) {
     integrityNotices.push(
-      "The billing account is operationally active but its subscription does not grant active access."
+      "The recorded account and subscription states disagree. Contact support for historical reconciliation."
     )
   }
 
   return {
-    activationDetail: activation.detail,
-    activationLabel: activation.label,
-    activationTone: activation.tone,
-    allowance: currentSummary ? allowanceView(currentSummary, nowMs) : null,
+    activationDetail: linkedToCurrentAccount
+      ? `The recorded account state was ${activation.label.toLowerCase()}. It does not authorize new work, enrollment, conversion, or tier changes.`
+      : activation.detail,
+    activationLabel: linkedToCurrentAccount
+      ? `Recorded ${activation.label.toLowerCase()}`
+      : activation.label,
+    activationTone: "neutral",
+    allowance: currentSummary ? allowanceView(currentSummary) : null,
     basePriceLabel:
       subscription.baseMonthlyPriceSnapshotCents === null
         ? "Contract-defined"
         : `${money(subscription.baseMonthlyPriceSnapshotCents)}/month`,
-    billingModel: account.billingModel,
+    billingModel: subscription.billingModel,
     collectionEnabled,
-    collectionLabel: collectionEnabled
-      ? newEnrollmentAllowed
-        ? "Enrollment and collection are enabled for this canary organization."
-        : subscription.stripeSubscriptionId
-          ? "Existing subscription reconciliation remains enabled; new enrollment is not enabled for this organization."
-          : "Enrollment is not enabled for this organization; contact LogLoads for launch access."
-      : dispatchSoftware
-        ? "Dispatch Pro collection is disabled in this environment."
-        : "Network collection is disabled in this environment.",
+    collectionLabel:
+      collectionEnabled && subscription.stripeSubscriptionId
+        ? "Existing provider reconciliation remains enabled for this recorded obligation. New enrollment and plan changes are closed."
+        : "New subscription enrollment and collection are closed. This record remains available only for historical reconciliation.",
     commitmentLabel: commitmentLabel(subscription),
     includesDispatchProCapabilities:
       subscription.includesDispatchProCapabilitiesSnapshot,
@@ -1054,32 +803,20 @@ export function buildHostSubscriptionBillingView(
     paymentLabel: payment.label,
     paymentTone: payment.tone,
     pendingPlanLabel: subscription.pendingPlanCode
-      ? `${source.billingPlanDefinitions.find((candidate) => candidate.code === subscription.pendingPlanCode)?.displayName ?? subscription.pendingPlanCode} scheduled${subscription.pendingPlanEffectiveAt ? ` for ${formatDay(subscription.pendingPlanEffectiveAt)}` : ""}`
+      ? `Recorded ${source.billingPlanDefinitions.find((candidate) => candidate.code === subscription.pendingPlanCode)?.displayName ?? subscription.pendingPlanCode} schedule${subscription.pendingPlanEffectiveAt ? ` for ${formatDay(subscription.pendingPlanEffectiveAt)}` : ""}`
       : null,
-    pilotConversion,
     planCode: subscription.planCode,
-    planName: plan.displayName,
+    planName: `${plan.displayName} — historical`,
     canOpenPortal: Boolean(
       subscription.stripeCustomerId && subscription.stripeSubscriptionId
     ),
-    canStartCheckout:
-      newEnrollmentAllowed &&
-      Boolean(subscription.activationAuthorizedAt) &&
-      !subscription.stripeSubscriptionId &&
-      (subscription.status === "pending" ||
-        subscription.status === "incomplete"),
-    recommendation: recommendationFor(
-      subscription,
-      currentSummary,
-      source.billingPlanDefinitions,
-      nowMs
-    ),
+    recordMode: "historical",
     renewalLabel: renewalLabel(subscription),
     sectionLabel: dispatchSoftware
-      ? "Dispatch software subscription"
-      : "Network subscription",
-    statusDetail: status.detail,
-    statusLabel: status.label,
+      ? "Historical Dispatch Pro record"
+      : "Historical Network subscription",
+    statusDetail: `${status.label} was the last recorded subscription status. This record does not authorize new work, enrollment, conversion, or tier changes.`,
+    statusLabel: `Recorded ${status.label.toLowerCase()}`,
     statusTone: status.tone,
     subscriptionId: subscription.id
   }
@@ -1093,15 +830,6 @@ export function getHostSubscriptionBillingView(
     services.state,
     organizationId,
     now,
-    process.env.LOGLOADS_SUBSCRIPTION_COLLECTION === "enabled",
-    subscriptionNewMoneyAllowed(
-      organizationId,
-      services.state.organizationBillingAccounts.find(
-        (account) => account.organizationId === organizationId
-      )?.billingModel === "dispatch_pro"
-        ? "dispatch_pro"
-        : "subscription_v1",
-      process.env
-    )
+    process.env.LOGLOADS_SUBSCRIPTION_COLLECTION === "enabled"
   )
 }
