@@ -2,6 +2,37 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-08-05 — Administrative authority and workspace access revoke immediately
+
+- **A profile role is not platform-admin authority.** A real Clerk session opens
+  platform administration only when its one exact `user_...` identity matches a
+  separately asserted SHA-256 scope. A temporary, expiring bootstrap gate can
+  bind that identity to the one fixed seed administrator; it cannot create or
+  promote another admin. After the claim, the temporary gate is removed while
+  the exact persistent scope remains required on every session.
+- **Workspace authority is the exact active tuple.** The person must be active,
+  the organization must not be archived, exactly one active membership must
+  join them, and a driver cockpit or private driver operation must resolve one
+  driver profile owned by that same organization. Historical driver profiles,
+  an unrelated active membership, duplicate rows, and a global profile role do
+  not substitute for that tuple.
+- **Suspension and removal are preservation events, not deletion.** The member,
+  driver profile, assignments, trips, documents, and history remain canonical.
+  Access ends immediately; the driver and current/future availability become
+  unavailable. Existing active or upcoming assignments are explicitly shown to
+  the manager and are not silently cancelled. Reactivation restores access but
+  does not mark the driver available. A later invitation reuses a removed
+  membership and driver identity rather than creating duplicates.
+- **Private responses are re-authorized instead of cached through revocation.**
+  Sensitive API success and error responses use `private, no-store`; private
+  media and featured-truck delivery no longer retain a post-revocation browser
+  cache window. Public marketplace reads remain public-only and do not inherit
+  private headers merely because private routes changed.
+- This decision builds the controlled production path but does not identify the
+  founder's Clerk user, open the temporary claim window, mutate production
+  state, activate percentage enrollment or collection, charge a card, or move
+  driver compensation. Those remain separately evidenced operator actions.
+
 ## 2026-08-05 — Payment-method setup is obligation-gated and non-activating
 
 - **A card-setup mutation requires canonical commercial authority.** For new

@@ -66,7 +66,7 @@ vi.mock("@/lib/subscription-stripe", () => ({
   verifyExpectedStripeAccount: mocks.verifyExpectedStripeAccount
 }))
 
-import { POST } from "@/app/api/billing/payment-method/route"
+import { GET, POST } from "@/app/api/billing/payment-method/route"
 
 const ACTOR_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 const ORGANIZATION_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
@@ -112,12 +112,26 @@ describe("host payment method setup route", () => {
       value: "pk_test_logloads"
     })
     mocks.operatingStateAccess.mockReturnValue({ name: "operating-state" })
+    mocks.hostCardOnFile.mockReturnValue({
+      brand: "visa",
+      last4: "4242"
+    })
     mocks.startHostCardSetup.mockResolvedValue({
       ok: true,
       value: {
         clientSecret: "seti_secret",
         publishableKey: "pk_test_logloads"
       }
+    })
+  })
+
+  it("does not cache the private card summary", async () => {
+    const response = await GET()
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
+    await expect(response.json()).resolves.toEqual({
+      card: { brand: "visa", last4: "4242" }
     })
   })
 
@@ -163,6 +177,7 @@ describe("host payment method setup route", () => {
     const response = await POST()
 
     expect(response.status).toBe(200)
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
     await expect(response.json()).resolves.toEqual({
       setup: {
         clientSecret: "seti_secret",

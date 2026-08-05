@@ -71,7 +71,10 @@ async function patch(body: Record<string, unknown>) {
 describe("support review API", () => {
   beforeEach(() => {
     vi.resetAllMocks()
-    mocks.requireAdminApiActor.mockResolvedValue({ profile: { id: ADMIN_ID } })
+    mocks.requireAdminApiActor.mockResolvedValue({
+      isPlatformAdmin: true,
+      profile: { id: ADMIN_ID }
+    })
     mocks.enforceApiRateLimit.mockResolvedValue(undefined)
   })
 
@@ -87,6 +90,7 @@ describe("support review API", () => {
     })
 
     expect(response.status).toBe(409)
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
     await expect(response.json()).resolves.toEqual({
       error: "This request changed since the page loaded. Refresh before trying again."
     })
@@ -105,13 +109,30 @@ describe("support review API", () => {
     })
 
     expect(response.status).toBe(200)
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
     expect(mocks.captureServerEvent).not.toHaveBeenCalled()
+
+    const reviewSupportRequest = vi.fn()
+    const mutate = mocks.mutateState.mock.calls[0]?.[0] as
+      | ((draft: { reviewSupportRequest: typeof reviewSupportRequest }) => unknown)
+      | undefined
+
+    expect(mutate).toBeTypeOf("function")
+    mutate?.({ reviewSupportRequest })
+    expect(reviewSupportRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        platformAdminAuthorized: true,
+        requestId: REQUEST_ID,
+        reviewerUserId: ADMIN_ID
+      })
+    )
   })
 
   it("rejects review bodies without the current-version precondition", async () => {
     const response = await patch({ expectedStatus: "open", status: "in_review" })
 
     expect(response.status).toBe(422)
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
     expect(mocks.mutateState).not.toHaveBeenCalled()
     expect(mocks.captureServerEvent).not.toHaveBeenCalled()
   })

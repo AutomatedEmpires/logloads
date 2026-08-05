@@ -157,4 +157,22 @@ describe("public entry routing", () => {
       kind: "redirect"
     })
   })
+
+  it("routes a deactivated provisioned identity to restriction instead of onboarding", () => {
+    const active = actorFor("cole@summit.example")
+    const deactivated: SessionActor = {
+      ...active,
+      activeMembership: null,
+      activeOrganization: null,
+      driverProfileId: null,
+      isPlatformAdmin: false,
+      memberships: [],
+      profile: { ...active.profile, isActive: false }
+    }
+
+    expect(decideExistingActorEntry(deactivated, {})).toEqual({
+      currentHome: "/access-restricted",
+      kind: "session"
+    })
+  })
 })

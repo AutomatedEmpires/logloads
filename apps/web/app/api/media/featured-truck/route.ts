@@ -8,8 +8,8 @@ import { services } from "@/lib/services"
 /**
  * A driver's featured rig, as seen by someone else. Authorization is the
  * service's (view_network + driver visible to the viewer's organization +
- * the flag actually on); this route only signs and streams. Cache stays
- * private and short so un-featuring takes effect at the next request.
+ * the flag actually on); this route only signs and streams. Every read is
+ * re-authorized so suspension or un-featuring takes effect immediately.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
 
     return new NextResponse(response.body, {
       headers: {
-        "Cache-Control": "private, max-age=60",
+        "Cache-Control": "private, no-store",
         "Content-Type": response.headers.get("content-type") ?? "image/jpeg",
         "X-Content-Type-Options": "nosniff"
       },

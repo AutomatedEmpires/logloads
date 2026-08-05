@@ -13,6 +13,7 @@ import {
   hostVisibleCredential,
   mediaReferenceSchema,
   organizationRoleCan,
+  type AssignmentStatus,
   type CredentialGate,
   type CredentialKind,
   type CredentialReview,
@@ -25,6 +26,9 @@ import type { LogLoadsDatabaseState } from "@logloads/db"
 import { z } from "zod"
 
 import {
+  activeDriverProfileForOrganization
+} from "./driver-access"
+import {
   assertEquipmentProfileUnitNumberUnambiguous,
   equipmentProfileUnitNumberIsUnambiguous
 } from "./equipment-unit-numbers"
@@ -34,6 +38,14 @@ import {
   createUuid,
   nowIso
 } from "./utils"
+
+const HOST_CREDENTIAL_ASSIGNMENT_STATUSES = new Set<AssignmentStatus>([
+  "accepted",
+  "checked_in",
+  "loading",
+  "hauled",
+  "completed"
+])
 
 /**
  * ── The driver credential vault ───────────────────────────────────────────────
@@ -288,6 +300,11 @@ const applyCredentialReviewInputSchema = z.object({
   confidence: z.number().min(0).max(1).optional().nullable(),
   credentialId: z.string().uuid(),
   decidedBy: credentialReviewerSchema,
+  /**
+   * Executable authority derived by the authenticated platform boundary. A
+   * stored admin role remains a second invariant, never the source of this bit.
+   */
+  platformAdminAuthorized: z.boolean().optional(),
   // Derived by subtraction in the contracts package: a reviewer cannot record
   // "pending", which would be a decision not to decide.
   decision: credentialReviewDecisionSchema,
@@ -328,7 +345,11 @@ export type CredentialViewer =
   | {
       actorUserId: string
       audience: "driver"
-      /** Limits equipment upload choices to the organization active in the session. */
+      /**
+       * Binds the vault to the organization active in the session. Older
+       * in-process callers may omit it; the service then uses the profile's
+       * current organization and still requires that exact active identity.
+       */
       organizationId?: string
     }
   /**
@@ -411,6 +432,27 @@ function findDriver(state: LogLoadsDatabaseState, driverProfileId: string): Driv
   return assertFound(
     state.driverProfiles.find((candidate) => candidate.id === driverProfileId),
     `Driver profile ${driverProfileId} was not found`
+  )
+}
+
+function requireActiveDriverProfile(
+  state: LogLoadsDatabaseState,
+  driver: DriverProfile,
+  organizationId: string | null | undefined
+): DriverProfile {
+  const exactOrganizationId = assertFound(
+    organizationId ?? undefined,
+    "This driver profile is not active in an organization"
+  )
+  const activeDriver = activeDriverProfileForOrganization(
+    state,
+    driver.userId,
+    exactOrganizationId
+  )
+
+  return assertFound(
+    activeDriver?.id === driver.id ? activeDriver : undefined,
+    "This driver profile is not active in this organization"
   )
 }
 
@@ -705,13 +747,25 @@ function activeMembership(
   actorUserId: string,
   organizationId: string
 ) {
-  return assertFound(
-    state.organizationMemberships.find(
-      (candidate) =>
-        candidate.organizationId === organizationId &&
-        candidate.status === "active" &&
-        candidate.userId === actorUserId
+  assertFound(
+    state.profiles.find((candidate) => candidate.id === actorUserId && candidate.isActive),
+    `User ${actorUserId} is not active`
+  )
+  assertFound(
+    state.organizations.find(
+      (candidate) => candidate.id === organizationId && !candidate.archivedAt
     ),
+    `Organization ${organizationId} is not active`
+  )
+  const memberships = state.organizationMemberships.filter(
+    (candidate) =>
+      candidate.organizationId === organizationId &&
+      candidate.status === "active" &&
+      candidate.userId === actorUserId
+  )
+
+  return assertFound(
+    memberships.length === 1 ? memberships[0] : undefined,
     `User ${actorUserId} is not an active member of organization ${organizationId}`
   )
 }
@@ -731,11 +785,11 @@ export function getCredentialUploadTarget(
   const input = credentialUploadTargetInputSchema.parse(rawInput)
   const driver = findDriver(state, input.driverProfileId)
 
-  activeMembership(state, input.actorUserId, input.organizationId)
   assertCondition(
     driver.userId === input.actorUserId,
     "Only the driver who owns this profile may upload to its credential vault"
   )
+  requireActiveDriverProfile(state, driver, input.organizationId)
 
   const target = resolveCredentialUploadTarget(state, driver, {
     equipmentProfileId: input.equipmentProfileId ?? null,
@@ -835,6 +889,7 @@ function assertMaySubmitFor(
   const membership = activeMembership(state, input.actorUserId, input.organizationId)
 
   if (driver.userId === input.actorUserId) {
+    requireActiveDriverProfile(state, driver, input.organizationId)
     return
   }
 
@@ -846,6 +901,7 @@ function assertMaySubmitFor(
     driver.companyId === input.organizationId,
     "This driver is not on your roster, so you cannot file their documents"
   )
+  requireActiveDriverProfile(state, driver, input.organizationId)
 }
 
 /**
@@ -879,6 +935,11 @@ function assertHostMayRead(
     assignment,
     "This driver is not hauling for your organization, so their credential summary is not yours to read"
   )
+
+  assertCondition(
+    HOST_CREDENTIAL_ASSIGNMENT_STATUSES.has(authorizedAssignment.status),
+    "This driver is not hauling for your organization, so their credential summary is not yours to read"
+  )
   const load = state.loadPostings.find(
     (candidate) => candidate.id === authorizedAssignment.loadPostingId
   )
@@ -894,11 +955,12 @@ function assertHostMayRead(
 /**
  * Whether this decider is entitled to decide at all.
  *
- * `platform_admin` must name a real, active platform administrator — the estate's
- * existing definition, a `profiles` row with `role: "admin"` (see
- * apps/web/lib/session.ts). Without this the human appeal path would be authorized
- * by nothing but the caller passing the string "platform_admin", which is a
- * documentary gate rather than an executable one.
+ * `platform_admin` must carry explicit authority from the authenticated platform
+ * boundary AND name a real, active platform administrator — the estate's existing
+ * profile invariant, a `profiles` row with `role: "admin"` (see
+ * apps/web/lib/session.ts). The stored role is deliberately only the second check:
+ * a raw row cannot manufacture executable authority, and the authority bit cannot
+ * turn a stale or non-admin profile into an administrator.
  *
  * `ai` must NOT name a user. Attributing a machine decision to a person makes the
  * audit log say somebody read a document they never saw, and it is the mirror of
@@ -906,9 +968,17 @@ function assertHostMayRead(
  */
 function assertDeciderMayDecide(
   state: LogLoadsDatabaseState,
-  input: { actorUserId?: string | null; decidedBy: "ai" | "platform_admin" }
+  input: {
+    actorUserId?: string | null
+    decidedBy: "ai" | "platform_admin"
+    platformAdminAuthorized?: boolean
+  }
 ): string | null {
   if (input.decidedBy === "ai") {
+    assertCondition(
+      input.platformAdminAuthorized !== true,
+      "An AI decision cannot carry platform administrator authority"
+    )
     assertCondition(
       !input.actorUserId,
       "An AI decision is not attributable to a person; leave actorUserId unset"
@@ -922,6 +992,10 @@ function assertDeciderMayDecide(
   assertCondition(
     typeof actorUserId === "string" && actorUserId.length > 0,
     "A platform decision must name the administrator who made it"
+  )
+  assertCondition(
+    input.platformAdminAuthorized === true,
+    "A platform decision requires explicit authenticated platform administrator authorization"
   )
 
   const profile = assertFound(
@@ -1352,9 +1426,9 @@ export function hostCredentialSummary(
  * there is no shared object that a host response is filtered out of, which is the
  * arrangement that leaks the first time somebody adds a field.
  *
- * The DRIVER's own read requires only that they own the profile. Deliberately no
- * organization membership: a driver between outfits holds no active membership and
- * must still be able to see their own documents and read why they were refused.
+ * The DRIVER's own read requires ownership plus the exact active organization
+ * profile. A suspended or removed membership revokes the private vault immediately;
+ * historical rows remain intact for audit and a future authorized reactivation.
  */
 export function listDriverCredentials(
   state: LogLoadsDatabaseState,
@@ -1365,6 +1439,7 @@ export function listDriverCredentials(
   const driver = findDriver(state, driverProfileId)
 
   if (viewer.audience === "host") {
+    requireActiveDriverProfile(state, driver, driver.companyId)
     const assignment = assertHostMayRead(state, driver, viewer)
 
     return {
@@ -1381,6 +1456,11 @@ export function listDriverCredentials(
       driver.userId === viewer.actorUserId,
       "You can only read your own credential vault"
     )
+    requireActiveDriverProfile(
+      state,
+      driver,
+      viewer.organizationId ?? driver.companyId
+    )
   } else {
     const membership = activeMembership(state, viewer.actorUserId, viewer.organizationId)
 
@@ -1392,6 +1472,7 @@ export function listDriverCredentials(
       driver.companyId === viewer.organizationId,
       "This driver is not on your roster, so their documents are not yours to read"
     )
+    requireActiveDriverProfile(state, driver, viewer.organizationId)
   }
 
   const credentials = credentialsForDriver(state, driver.id)

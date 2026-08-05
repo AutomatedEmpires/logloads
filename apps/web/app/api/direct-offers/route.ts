@@ -21,7 +21,13 @@ export async function POST(request: NextRequest) {
 			})
 		)
 
-		return NextResponse.json({ offer }, { status: 201 })
+		return NextResponse.json(
+			{ offer },
+			{
+				headers: { "Cache-Control": "private, no-store" },
+				status: 201
+			}
+		)
 	} catch (error) {
 		return apiErrorResponse(error)
 	}
@@ -59,7 +65,9 @@ export async function PATCH(request: NextRequest) {
 			throw new Error("Direct offer action must be claim, decline, or revoke")
 		})
 
-		return NextResponse.json(result)
+		return NextResponse.json(result, {
+			headers: { "Cache-Control": "private, no-store" }
+		})
 	} catch (error) {
 		return apiErrorResponse(error)
 	}

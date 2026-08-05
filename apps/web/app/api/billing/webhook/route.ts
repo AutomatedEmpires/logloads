@@ -1348,42 +1348,46 @@ function createSubscriptionEventHooks(input: {
  * target is now a 5xx: the retries are the only thing that gets a money event
  * looked at again.
  */
-export async function POST(request: NextRequest) {
-	const webhook = resolveStripeWebhook(process.env)
+function webhookJson(body: Record<string, unknown>, status = 200): NextResponse {
+	return NextResponse.json(body, {
+		headers: { "Cache-Control": "no-store" },
+		status
+	})
+}
 
-	if (!webhook.ok) {
-		return NextResponse.json({ error: webhook.message }, { status: 503 })
-	}
+export async function POST(request: NextRequest) {
+		const webhook = resolveStripeWebhook(process.env)
+
+		if (!webhook.ok) {
+			return webhookJson({ error: webhook.message }, 503)
+		}
 
 	const signature = request.headers.get("stripe-signature")
 
-	if (!signature) {
-		return NextResponse.json({ error: "Missing signature" }, { status: 400 })
-	}
+		if (!signature) {
+			return webhookJson({ error: "Missing signature" }, 400)
+		}
 
 	let event: StripeBillingEvent
 
 	try {
 		event = webhook.value.constructWebhookEvent(await request.text(), signature)
-	} catch {
-		return NextResponse.json({ error: "Invalid signature" }, { status: 400 })
-	}
+		} catch {
+			return webhookJson({ error: "Invalid signature" }, 400)
+		}
 
-	if (event.livemode !== expectedStripeLivemode(process.env)) {
-		return NextResponse.json(
-			{ error: "Stripe event provider mode mismatch" },
-			{ status: 400 }
-		)
-	}
+		if (event.livemode !== expectedStripeLivemode(process.env)) {
+			return webhookJson({ error: "Stripe event provider mode mismatch" }, 400)
+		}
 
 	try {
 		const subscriptionStripe = resolveSubscriptionStripe(process.env)
 
-		if (!subscriptionStripe.ok) {
-			return NextResponse.json(
-				{ error: "Stripe subscription billing is not configured" },
-				{ status: 503 }
-			)
+			if (!subscriptionStripe.ok) {
+				return webhookJson(
+					{ error: "Stripe subscription billing is not configured" },
+					503
+				)
 		}
 
 		try {
@@ -1393,10 +1397,10 @@ export async function POST(request: NextRequest) {
 				"LogLoads Stripe webhook account isolation verification failed"
 			)
 
-			return NextResponse.json(
-				{ error: "Stripe billing account verification failed" },
-				{ status: 503 }
-			)
+				return webhookJson(
+					{ error: "Stripe billing account verification failed" },
+					503
+				)
 		}
 		const subscriptionPort = subscriptionStripe.port
 		const state = operatingStateAccess()
@@ -1419,13 +1423,16 @@ export async function POST(request: NextRequest) {
 				eventType: result.eventType
 			})
 
-			return NextResponse.json({ error: "Webhook handling failed", received: false }, { status: 500 })
+				return webhookJson(
+					{ error: "Webhook handling failed", received: false },
+					500
+				)
+			}
+
+			return webhookJson({ handled: result.status, received: true })
+		} catch (error) {
+			console.error("logloads: billing webhook error", error)
+
+			return webhookJson({ error: "Webhook handling failed" }, 500)
 		}
-
-		return NextResponse.json({ handled: result.status, received: true })
-	} catch (error) {
-		console.error("logloads: billing webhook error", error)
-
-		return NextResponse.json({ error: "Webhook handling failed" }, { status: 500 })
 	}
-}

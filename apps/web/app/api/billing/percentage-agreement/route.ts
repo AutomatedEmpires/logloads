@@ -146,16 +146,19 @@ export async function POST(request: Request) {
       })
     )
 
-    return NextResponse.json({
-      agreement: {
-        activationState: accepted.account.activationState,
-        billingModel: accepted.account.billingModel,
-        termsVersion:
-          accepted.account.percentageTermsSnapshot?.acceptedTermsVersion ??
-          null
+    return NextResponse.json(
+      {
+        agreement: {
+          activationState: accepted.account.activationState,
+          billingModel: accepted.account.billingModel,
+          termsVersion:
+            accepted.account.percentageTermsSnapshot?.acceptedTermsVersion ??
+            null
+        },
+        changed: accepted.changed
       },
-      changed: accepted.changed
-    })
+      { headers: { "Cache-Control": "private, no-store" } }
+    )
   } catch (error) {
     return apiErrorResponse(error)
   }

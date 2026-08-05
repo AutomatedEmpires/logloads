@@ -1,12 +1,28 @@
 import {
+  availabilityWindowSchema,
+  driverProfileSchema,
   rangesOverlap,
   upsertAvailabilityWindowInputSchema,
-  availabilityWindowSchema,
-  type AvailabilityWindow
+  type AvailabilityWindow,
+  type DriverProfile
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
+import { z } from "zod"
 
+import { activeDriverProfileForOrganization } from "./driver-access"
 import { createUuid, DomainRefusalError, nowIso } from "./utils"
+
+const setDriverAvailabilityInputSchema = upsertAvailabilityWindowInputSchema.extend({
+  actorUserId: z.string().uuid(),
+  organizationId: z.string().uuid()
+})
+
+export type SetDriverAvailabilityInput = z.input<typeof setDriverAvailabilityInputSchema>
+
+export interface SetDriverAvailabilityResult {
+  driverProfile: DriverProfile
+  window: AvailabilityWindow
+}
 
 export function listDriverAvailability(
   state: LogLoadsDatabaseState,
@@ -75,4 +91,56 @@ export function upsertAvailabilityWindow(
   }
 
   return entity
+}
+
+/**
+ * Deliberately publishes one driver's readiness from their authenticated,
+ * organization-bound identity. Invitation and reactivation keep a driver
+ * unavailable; only this explicit transition may reopen their eligibility.
+ *
+ * Generic window upserts remain profile-neutral because automated offer flows
+ * use them. Letting those writes reactivate a driver would bypass the person's
+ * deliberate readiness choice.
+ */
+export function setDriverAvailability(
+  state: LogLoadsDatabaseState,
+  rawInput: SetDriverAvailabilityInput
+): SetDriverAvailabilityResult {
+  const input = setDriverAvailabilityInputSchema.parse(rawInput)
+  const draft = structuredClone(state)
+  const activeDriver = activeDriverProfileForOrganization(
+    draft,
+    input.actorUserId,
+    input.organizationId
+  )
+
+  if (activeDriver?.id !== input.driverProfileId) {
+    throw new DomainRefusalError(
+      "You can only set readiness for your active driver profile in this organization"
+    )
+  }
+
+  const window = upsertAvailabilityWindow(draft, {
+    driverProfileId: input.driverProfileId,
+    endAt: input.endAt,
+    id: input.id,
+    notes: input.notes,
+    preferredRouteIds: input.preferredRouteIds,
+    recurringSchedule: input.recurringSchedule,
+    startAt: input.startAt,
+    status: input.status,
+    truckProfileId: input.truckProfileId
+  })
+  const driverProfile = driverProfileSchema.parse({
+    ...activeDriver,
+    availabilityStatus: input.status,
+    updatedAt: window.updatedAt
+  })
+
+  draft.driverProfiles = draft.driverProfiles.map((candidate) =>
+    candidate.id === driverProfile.id ? driverProfile : candidate
+  )
+  Object.assign(state, draft)
+
+  return { driverProfile, window }
 }

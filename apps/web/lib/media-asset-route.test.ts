@@ -81,4 +81,26 @@ describe("driver media asset route", () => {
     })
     expect(fetchMock).not.toHaveBeenCalled()
   })
+
+  it("never browser-caches a private asset after authorization", async () => {
+    routeMocks.signedDeliveryUrl.mockResolvedValue(
+      "https://storage.example.test/signed-photo"
+    )
+    fetchMock.mockResolvedValue(
+      new Response("private-photo", {
+        headers: { "Content-Type": "image/jpeg" },
+        status: 200
+      })
+    )
+
+    const response = await GET(
+      new NextRequest(
+        "https://logloads.example.test/api/media/asset?kind=profile"
+      )
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
+    await expect(response.text()).resolves.toBe("private-photo")
+  })
 })

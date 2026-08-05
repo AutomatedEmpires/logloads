@@ -14,7 +14,10 @@ export async function GET(request: NextRequest) {
 			organizationId: resolvedOrganizationId
 		})
 
-		return NextResponse.json({ network })
+		return NextResponse.json(
+			{ network },
+			{ headers: { "Cache-Control": "private, no-store" } }
+		)
 	} catch (error) {
 		return apiErrorResponse(error)
 	}

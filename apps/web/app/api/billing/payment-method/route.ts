@@ -52,7 +52,10 @@ export async function GET() {
 		const { organizationId } = await requireBillingManager()
 		const card = await readState((current) => hostCardOnFile(current.state, organizationId))
 
-		return NextResponse.json({ card })
+		return NextResponse.json(
+			{ card },
+			{ headers: { "Cache-Control": "private, no-store" } }
+		)
 	} catch (error) {
 		return apiErrorResponse(error)
 	}
@@ -122,7 +125,10 @@ export async function POST() {
 			)
 		}
 
-		return NextResponse.json({ setup: setup.value })
+		return NextResponse.json(
+			{ setup: setup.value },
+			{ headers: { "Cache-Control": "private, no-store" } }
+		)
 	} catch (error) {
 		return apiErrorResponse(error)
 	}

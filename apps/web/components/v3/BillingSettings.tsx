@@ -20,7 +20,12 @@ import type { BillingView, SettingsView } from "@/lib/plans"
 import type { HostSubscriptionBillingView } from "@/lib/subscription-billing-data"
 import type { VerificationRecordView } from "@/lib/verification-data"
 import { AppShell, EmptyState, SectionHeader, type ShellAccount } from "./Shells"
-import { InviteMemberForm, RevokeInvitationButton } from "./TeamActions"
+import {
+  InviteMemberForm,
+  RevokeInvitationButton,
+  TeamMemberActions,
+  type TeamRoleOption
+} from "./TeamActions"
 import { VerificationSubmit, type VerificationTypeOption } from "./VerificationSubmit"
 
 type CockpitRole = "fleet" | "host"
@@ -1196,7 +1201,7 @@ export function SettingsPage({
 }: {
   account: ShellAccount
   canManageMembers: boolean
-  inviteRoleOptions: Array<{ label: string; value: string }>
+  inviteRoleOptions: TeamRoleOption[]
   role: CockpitRole
   settings: SettingsView
   verifications: VerificationRecordView[]
@@ -1239,14 +1244,31 @@ export function SettingsPage({
         <section className="settings-panel" aria-label="Team">
           <SectionHeader eyebrow="Team" title="Who works in this workspace" />
           {settings.team.length > 0 ? (
-            <ul className="team-list">
+            <ul className="team-list team-list--roster">
               {settings.team.map((member) => (
-                <li key={member.id}>
-                  <div>
+                <li className="team-member" key={member.id}>
+                  <div className="team-member__identity">
                     <strong>{member.name}</strong>
-                    <span>{member.roleLabel}</span>
+                    <span>
+                      {member.roleLabel} · {member.activeOrUpcomingAssignmentCount} active or upcoming assignment{member.activeOrUpcomingAssignmentCount === 1 ? "" : "s"}
+                    </span>
                   </div>
-                  <Badge tone={member.statusTone}>{member.statusLabel}</Badge>
+                  <div className="team-member__state">
+                    {member.isSelf ? <span className="team-member__self">You</span> : null}
+                    <Badge tone={member.statusTone}>{member.statusLabel}</Badge>
+                  </div>
+                  {canManageMembers && !member.isSelf ? (
+                    <TeamMemberActions
+                      activeOrUpcomingAssignmentCount={member.activeOrUpcomingAssignmentCount}
+                      key={`${member.id}:${member.role}:${member.status}`}
+                      memberName={member.name}
+                      memberUserId={member.userId}
+                      role={member.role}
+                      roleLabel={member.roleLabel}
+                      roleOptions={inviteRoleOptions}
+                      status={member.status}
+                    />
+                  ) : null}
                 </li>
               ))}
             </ul>

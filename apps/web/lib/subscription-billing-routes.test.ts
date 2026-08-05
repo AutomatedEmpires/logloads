@@ -1214,6 +1214,10 @@ describe("Network subscription portal route", () => {
     )
 
     expect(response.status).toBe(200)
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
+    await expect(response.json()).resolves.toEqual({
+      url: "https://billing.stripe.test/network"
+    })
     expect(mocks.subscriptionCollectionEnabled).not.toHaveBeenCalled()
     expect(createBillingPortalSession).toHaveBeenCalledWith({
       configurationId: "bpc_network",

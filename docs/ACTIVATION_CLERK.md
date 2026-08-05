@@ -1,8 +1,5 @@
 # LogLoads — Clerk Activation Runbook
 
-The code path is complete and the sign-in loop is fixed. This reduces Clerk to **one
-founder action**.
-
 ## Founder gate
 > **Create the dedicated LogLoads Clerk application and provide/authorize its
 > production keys.**
@@ -42,6 +39,40 @@ founder action**.
    requires once the host is live.
 7. Store `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` + `CLERK_SECRET_KEY` in Doppler → host secrets.
 
+## One-time founder platform-admin claim
+
+Do not onboard the founder through a driver, fleet, or host path. Production
+contains one fixed seed admin profile and the controlled claim binds only that
+row to one verified Clerk identity.
+
+1. Sign in to the dedicated LogLoads Clerk application and copy the founder's
+   exact `user_...` id. Confirm the account has a verified primary email.
+2. Set `LOGLOADS_PLATFORM_ADMIN_CLERK_IDS` to that one id. No second id,
+   wildcard, seed placeholder, or alternate syntax is valid.
+3. Compute the lowercase SHA-256 of this exact material (no trailing newline):
+   `logloads-platform-admin-scope-v1\n<exact user id>`. Store it as
+   `LOGLOADS_PLATFORM_ADMIN_EXPECTED_SCOPE_SHA256`.
+4. Set `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP=enabled` and set
+   `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP_EXPIRES_AT` to a short-lived future
+   canonical ISO instant such as `2026-08-05T18:00:00.000Z`. Deploy those names
+   without printing their values in logs.
+5. While signed in as that exact identity, open `/admin/bootstrap` and choose
+   **Claim founder access** once. The route requires same-origin JSON, shared
+   rate limiting, the verified Clerk primary email, the exact persistent scope,
+   and the unexpired temporary gate. It then performs one canonical CAS update.
+6. Verify `/admin` opens and the canonical activity contains one
+   `platform_admin_claimed` event for the fixed admin profile. The event stores
+   only the scope digest and claim source, not the Clerk id or email.
+7. Immediately set `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP=disabled`, remove
+   `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP_EXPIRES_AT`, and redeploy. Keep the exact
+   `LOGLOADS_PLATFORM_ADMIN_CLERK_IDS` and expected scope digest in place; those
+   two persistent values continue to authorize the claimed founder.
+
+The operation is idempotent for the same identity and digest. It refuses a
+different identity, an already-linked non-admin profile, a second admin, a
+replaced seed identity, a missing or changed claim record, or any client-selected
+actor, role, or profile id.
+
 ## Supabase JWT integration — NOT required for launch
 `current_clerk_user_id()` reads `auth.jwt() ->> 'sub'`, used only when authenticated
 users query normalized Postgres tables directly. The app currently serves all data
@@ -55,3 +86,5 @@ queries move onto RLS-scoped relational tables.
    correct cockpit.
 3. Sign out, sign back in → goes straight to the cockpit (no onboarding).
 4. Confirm `LOGLOADS_ENABLE_DEV_LOGIN` is unset (dev sign-in must be off in prod).
+5. Confirm the claimed founder can open `/admin`, while a different Clerk user
+   cannot, after the temporary bootstrap gate and expiry have been removed.

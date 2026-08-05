@@ -64,6 +64,7 @@ describe("public health route", () => {
     const serialized = JSON.stringify(body)
 
     expect(response.status).toBe(200)
+    expect(response.headers.get("cache-control")).toBe("no-store")
     expect(body.engine).toEqual({ ok: true })
     expect(body.integrations.billing).toBe("dark_configured")
     expect(body.integrations.billingPercentageV1).toEqual({

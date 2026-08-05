@@ -102,6 +102,8 @@ describe("apiErrorResponse", () => {
     expect(refused).toMatchObject({ body: { error: "You are not a member of that organization" }, status: 403 })
     expect(limited.status).toBe(429)
     expect(limited.headers.get("Retry-After")).toBe("17")
+    expect(refused.headers.get("Cache-Control")).toBe("private, no-store")
+    expect(limited.headers.get("Cache-Control")).toBe("private, no-store")
   })
 
   it("separates invalid fields from unparseable bodies", async () => {

@@ -1,5 +1,6 @@
 import type { NetworkLoadView, NetworkView } from "./network"
 import { buildNetworkView } from "./network"
+import { notificationVisibleToActor } from "./notification-access"
 import { readState, services } from "./services"
 import { requireCockpitActor, type Cockpit, type SessionActor } from "./session"
 import { loadSlug } from "./v3-shared"
@@ -68,9 +69,14 @@ export interface ShellAccount {
 // never internal type unions or raw entity handles beyond a deep-link id.
 const NOTIFICATION_LIMIT = 12
 
-export function shellNotificationsFor(userId: string): { notifications: ShellNotification[]; unreadCount: number } {
+export function shellNotificationsFor(actor: SessionActor): { notifications: ShellNotification[]; unreadCount: number } {
   const mine = services.state.notifications
-    .filter((notification) => notification.userId === userId)
+    .filter((notification) =>
+      notificationVisibleToActor(notification, {
+        isPlatformAdmin: actor.isPlatformAdmin,
+        profileId: actor.profile.id
+      })
+    )
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
 
   const unreadCount = mine.reduce((total, notification) => (notification.readAt ? total : total + 1), 0)
@@ -108,7 +114,7 @@ export function pendingInvitationsForEmail(
 }
 
 export function shellAccountFor(context: CockpitContext): ShellAccount {
-  const inbox = shellNotificationsFor(context.actor.profile.id)
+  const inbox = shellNotificationsFor(context.actor)
   const pendingInvitations = pendingInvitationsForEmail(context.actor.profile.email)
 
   return {

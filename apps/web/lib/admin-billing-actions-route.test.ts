@@ -200,6 +200,7 @@ function retiredWriteBodies(): Array<{
 beforeEach(() => {
   vi.resetAllMocks()
   mocks.requireAdminApiActor.mockResolvedValue({
+    isPlatformAdmin: true,
     profile: { id: ADMIN_ID }
   })
   mocks.enforceApiRateLimit.mockResolvedValue(undefined)
@@ -279,6 +280,7 @@ describe("historical subscription reconciliation API", () => {
     ).toHaveBeenCalledWith({
       actorUserId: ADMIN_ID,
       effectiveAt: EFFECTIVE_AT,
+      platformAdminAuthorized: true,
       subscriptionId: SUBSCRIPTION_ID
     })
   })
@@ -304,6 +306,7 @@ describe("historical subscription reconciliation API", () => {
       billingPeriodSummaryId: SUMMARY_ID,
       idempotencyKey: IDEMPOTENCY_KEY,
       invoiceId: null,
+      platformAdminAuthorized: true,
       reason: "Historical contract correction",
       type: "manual_debit"
     })
@@ -322,6 +325,7 @@ describe("historical subscription reconciliation API", () => {
     expect(response.status).toBe(200)
     expect(mocks.reverseNetworkUsage).toHaveBeenCalledWith({
       actorUserId: ADMIN_ID,
+      platformAdminAuthorized: true,
       reason: "Duplicate historical completion",
       usageEventId: USAGE_ID
     })
@@ -345,6 +349,7 @@ describe("historical subscription reconciliation API", () => {
       actorUserId: ADMIN_ID,
       entitlementId: ENTITLEMENT_ID,
       organizationId: ORGANIZATION_ID,
+      platformAdminAuthorized: true,
       providerCancellationReference: "provider-cancelled-2026-08-03"
     })
   })
@@ -360,7 +365,10 @@ describe("historical subscription reconciliation API", () => {
     expect(response.status).toBe(200)
     expect(
       mocks.reconcileMissingNetworkUsageAsPlatformAdmin
-    ).toHaveBeenCalledWith({ actorUserId: ADMIN_ID })
+    ).toHaveBeenCalledWith({
+      actorUserId: ADMIN_ID,
+      platformAdminAuthorized: true
+    })
     expect(mocks.enforceApiRateLimit).toHaveBeenNthCalledWith(
       2,
       "admin-billing-usage-reconciliation",

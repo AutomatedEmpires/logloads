@@ -23,6 +23,7 @@ export async function PATCH(
     const review = reviewSupportRequestInputSchema.parse(await readBoundedJsonObject(request))
     const result = await mutateState((draft) =>
       draft.reviewSupportRequest({
+        platformAdminAuthorized: actor.isPlatformAdmin,
         requestId,
         review,
         reviewerUserId: actor.profile.id
@@ -33,8 +34,15 @@ export async function PATCH(
       captureServerEvent("support_request_status_changed", actor.profile.id, supportStatusAnalytics(result.request))
     }
 
-    return NextResponse.json({ request: supportRequestView(result.request) })
+    return NextResponse.json(
+      { request: supportRequestView(result.request) },
+      { headers: { "Cache-Control": "private, no-store" } }
+    )
   } catch (error) {
-    return supportApiErrorResponse(error)
+    const response = supportApiErrorResponse(error)
+
+    response.headers.set("Cache-Control", "private, no-store")
+
+    return response
   }
 }

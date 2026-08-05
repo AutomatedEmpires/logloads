@@ -252,6 +252,32 @@ describe("billing cron fee reconciliation", () => {
     mocks.verifyExpectedStripeAccount.mockResolvedValue(undefined)
   })
 
+  it("does not cache scheduler configuration or authorization responses", async () => {
+    vi.stubEnv("CRON_SECRET", "")
+
+    const unconfigured = await GET(
+      new Request("https://logloads.test/api/billing/cron")
+    )
+
+    expect(unconfigured.status).toBe(503)
+    expect(unconfigured.headers.get("cache-control")).toBe(
+      "private, no-store"
+    )
+
+    vi.stubEnv("CRON_SECRET", "cron-test-secret")
+
+    const unauthorized = await GET(
+      new Request("https://logloads.test/api/billing/cron", {
+        headers: { authorization: "Bearer wrong-secret" }
+      })
+    )
+
+    expect(unauthorized.status).toBe(401)
+    expect(unauthorized.headers.get("cache-control")).toBe(
+      "private, no-store"
+    )
+  })
+
   it("repairs missing fees before opening closed invoices in dark launch", async () => {
     const state = { marker: "state" }
     const reconciliation = [
@@ -290,6 +316,7 @@ describe("billing cron fee reconciliation", () => {
     const body = await response.json()
 
     expect(response.status).toBe(200)
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
     expect(mocks.reconcileMissingPlatformFees).toHaveBeenCalledWith(
       state,
       expect.any(String)

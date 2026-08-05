@@ -50,7 +50,9 @@ export async function GET(request: NextRequest) {
         longitude: landing.coordinates.lng
       })
 
-      return NextResponse.json(weather, { headers: { "Cache-Control": "private, max-age=300, stale-while-revalidate=600" } })
+      return NextResponse.json(weather, {
+        headers: { "Cache-Control": "private, no-store" }
+      })
     } catch (error) {
       if (error instanceof LiveWeatherUnavailableError) {
         throw new ApiError(error.message, 503)

@@ -38,6 +38,7 @@ function jsonRequest(path: string, body: Record<string, unknown>): NextRequest {
 
 async function expectSanitizedConflict(response: Response): Promise<void> {
   expect(response.status).toBe(409)
+  expect(response.headers.get("cache-control")).toBe("private, no-store")
   const body = (await response.json()) as { error: string }
 
   expect(body.error).toBe(

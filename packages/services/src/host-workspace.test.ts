@@ -1,4 +1,9 @@
-import { entitlementSchema, hostBillingProfileSchema, organizationMembershipSchema } from "@logloads/contracts"
+import {
+  entitlementSchema,
+  hostBillingProfileSchema,
+  organizationMembershipSchema,
+  userSchema
+} from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
@@ -51,6 +56,19 @@ function grantMembership(
 ) {
   const suffix = options.index.toString().padStart(2, "0")
 
+  services.state.profiles.push(userSchema.parse({
+    clerkUserId: `clerk-host-workspace-${suffix}`,
+    companyId: options.organizationId,
+    createdAt: "2026-06-05T00:00:00.000Z",
+    email: `host-workspace-${suffix}@example.com`,
+    fullName: `Host workspace boundary ${suffix}`,
+    id: options.userId,
+    isActive: true,
+    phone: "555-0100",
+    role: "driver",
+    updatedAt: "2026-06-05T00:00:00.000Z",
+    verificationStatus: "pending"
+  }))
   services.state.organizationMemberships.push(organizationMembershipSchema.parse({
     createdAt: "2026-06-05T00:00:00.000Z",
     id: `3e3e3e3e-3e3e-4e3e-8e3e-3e3e3e3e3e${suffix}`,

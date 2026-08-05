@@ -20,7 +20,10 @@ export async function GET(request: NextRequest) {
 			listTruckSlotsForDate(current.state, date, organizationId)
 		)
 
-		return NextResponse.json({ slots })
+		return NextResponse.json(
+			{ slots },
+			{ headers: { "Cache-Control": "private, no-store" } }
+		)
 	} catch (error) {
 		return apiErrorResponse(error)
 	}
@@ -39,7 +42,13 @@ export async function POST(request: NextRequest) {
 			draft.createTruckSlot(payload, { actorUserId, organizationId })
 		)
 
-		return NextResponse.json({ slot }, { status: 201 })
+		return NextResponse.json(
+			{ slot },
+			{
+				headers: { "Cache-Control": "private, no-store" },
+				status: 201
+			}
+		)
 	} catch (error) {
 		return apiErrorResponse(error)
 	}

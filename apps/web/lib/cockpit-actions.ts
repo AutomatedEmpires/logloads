@@ -10,6 +10,7 @@ import {
   type DeliveredQuantity,
   type DriverCredential,
   type HaulException,
+  type OrganizationRole,
   type RoadCondition
 } from "@logloads/contracts"
 import { revalidatePath } from "next/cache"
@@ -369,16 +370,20 @@ export async function updateDriverAvailabilityAction(input: {
 }): Promise<ActionResult> {
   try {
     const actor = await requireActor()
+    const organizationId = actorOrganizationId(actor)
+    const driverProfileId = actor.driverProfileId
 
-    if (!actor.driverProfileId) {
+    if (!driverProfileId) {
       throw new Error("Add a driver profile before setting availability")
     }
 
     await commit(["/driver", "/fleet"], (draft) =>
-      draft.upsertAvailabilityWindow({
-        driverProfileId: actor.driverProfileId,
+      draft.setDriverAvailability({
+        actorUserId: actor.profile.id,
+        driverProfileId,
         endAt: input.endAt,
         notes: input.notes ?? undefined,
+        organizationId,
         startAt: input.startAt,
         status: input.status
       })
@@ -811,6 +816,88 @@ export async function revokeOrganizationInvitationAction(input: { invitationId: 
     )
 
     captureServerEvent("invitation_revoked", actor.profile.id, { invitationId: input.invitationId })
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function changeOrganizationMemberRoleAction(input: {
+  memberUserId: string
+  role: OrganizationRole
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    await commit(["/fleet", "/host"], (draft) =>
+      draft.changeOrganizationMemberRole({
+        actorUserId: actor.profile.id,
+        memberUserId: input.memberUserId,
+        organizationId: actorOrganizationId(actor),
+        role: input.role
+      })
+    )
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function suspendOrganizationMemberAction(input: {
+  memberUserId: string
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    await commit(["/fleet", "/host"], (draft) =>
+      draft.suspendOrganizationMember({
+        actorUserId: actor.profile.id,
+        memberUserId: input.memberUserId,
+        organizationId: actorOrganizationId(actor)
+      })
+    )
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function reactivateOrganizationMemberAction(input: {
+  memberUserId: string
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    await commit(["/fleet", "/host"], (draft) =>
+      draft.reactivateOrganizationMember({
+        actorUserId: actor.profile.id,
+        memberUserId: input.memberUserId,
+        organizationId: actorOrganizationId(actor)
+      })
+    )
+
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function removeOrganizationMemberAction(input: {
+  memberUserId: string
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+
+    await commit(["/fleet", "/host"], (draft) =>
+      draft.removeOrganizationMember({
+        actorUserId: actor.profile.id,
+        memberUserId: input.memberUserId,
+        organizationId: actorOrganizationId(actor)
+      })
+    )
 
     return OK
   } catch (error) {

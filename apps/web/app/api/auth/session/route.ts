@@ -7,6 +7,6 @@ export const dynamic = "force-dynamic"
 export async function GET() {
   return NextResponse.json(
     { authenticated: await hasSessionIdentity() },
-    { headers: { "Cache-Control": "no-store" } }
+    { headers: { "Cache-Control": "private, no-store" } }
   )
 }

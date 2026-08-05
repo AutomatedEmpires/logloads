@@ -32,7 +32,9 @@ export async function GET(request: NextRequest) {
 
     return new NextResponse(response.body, {
       headers: {
-        "Cache-Control": "private, max-age=300",
+        // Re-authorize every read. A suspended member must not retain five
+        // minutes of profile or equipment access through the browser cache.
+        "Cache-Control": "private, no-store",
         "Content-Type": response.headers.get("content-type") ?? "image/jpeg",
         "X-Content-Type-Options": "nosniff"
       },

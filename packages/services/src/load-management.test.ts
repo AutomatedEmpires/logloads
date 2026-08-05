@@ -1,4 +1,8 @@
-import { loaderProfileSchema, organizationMembershipSchema } from "@logloads/contracts"
+import {
+  loaderProfileSchema,
+  organizationMembershipSchema,
+  userSchema
+} from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
@@ -105,6 +109,19 @@ function publicationStateCounts(services: LogLoadsServices) {
 function memberWithRole(services: LogLoadsServices, role: string, index: number): string {
   const userId = `2a2a2a2a-2a2a-4a2a-8a2a-2a2a2a2a2a${index.toString().padStart(2, "0")}`
 
+  services.state.profiles.push(userSchema.parse({
+    clerkUserId: `clerk-load-management-${index}`,
+    companyId: HOST_ORG,
+    createdAt: "2026-06-05T00:00:00.000Z",
+    email: `load-management-${index}@example.com`,
+    fullName: `Load management boundary ${index}`,
+    id: userId,
+    isActive: true,
+    phone: "555-0100",
+    role: "driver",
+    updatedAt: "2026-06-05T00:00:00.000Z",
+    verificationStatus: "pending"
+  }))
   services.state.organizationMemberships.push(
     organizationMembershipSchema.parse({
       createdAt: "2026-06-05T00:00:00.000Z",

@@ -132,7 +132,7 @@ export async function getAdminShellAccount(): Promise<ShellAccount> {
   const context = await getCockpitContext("admin")
 
   if (!context.actor.activeOrganization) {
-    const inbox = shellNotificationsFor(context.actor.profile.id)
+    const inbox = shellNotificationsFor(context.actor)
 
     return {
       activeOrganizationId: null,
@@ -409,7 +409,10 @@ export async function getAdminReports(): Promise<AdminReportsData> {
   const actor = await requireCockpitActor("admin")
 
   const state = services.state
-  const requests = services.listSupportRequestsForAdmin(actor.profile.id).map((request) => ({
+  const requests = services.listSupportRequestsForAdmin({
+    platformAdminAuthorized: actor.isPlatformAdmin,
+    reviewerUserId: actor.profile.id
+  }).map((request) => ({
     appCommitSha: request.appCommitSha,
     closedLabel: request.closedAt ? formatDateTime(request.closedAt) : null,
     createdLabel: formatDateTime(request.createdAt),

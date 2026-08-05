@@ -17,6 +17,7 @@ import {
   DomainRefusalError,
   nowIso
 } from "./utils"
+import { activeDriverProfileForOrganization } from "./driver-access"
 
 const driverContextSchema = z.object({
   actorUserId: z.string().uuid(),
@@ -49,23 +50,16 @@ function requireOwnedDriver(
   state: LogLoadsDatabaseState,
   context: z.infer<typeof driverContextSchema>
 ) {
-  const membership = state.organizationMemberships.find((candidate) =>
-    candidate.organizationId === context.organizationId &&
-    candidate.status === "active" &&
-    candidate.userId === context.actorUserId
+  const driver = activeDriverProfileForOrganization(
+    state,
+    context.actorUserId,
+    context.organizationId
   )
 
-  if (!membership) {
-    throw new DomainRefusalError("You are not an active member of this organization")
-  }
-
-  const driver = assertFound(
-    state.driverProfiles.find((candidate) => candidate.id === context.driverProfileId),
-    "Driver profile not found"
-  )
-
-  if (driver.userId !== context.actorUserId) {
-    throw new DomainRefusalError("You can only update your own driver profile")
+  if (driver?.id !== context.driverProfileId) {
+    throw new DomainRefusalError(
+      "You can only access your own driver profile while it is active in this organization"
+    )
   }
 
   return driver
@@ -259,13 +253,20 @@ function parseFeaturedTruckPhotoViewer(rawInput: unknown): z.infer<typeof featur
  */
 export function getFeaturedTruckPhotoReference(state: LogLoadsDatabaseState, rawInput: unknown): MediaReference {
   const input = parseFeaturedTruckPhotoViewer(rawInput)
-  const membership = state.organizationMemberships.find((candidate) =>
+  const viewer = state.profiles.find(
+    (candidate) => candidate.id === input.viewerUserId && candidate.isActive
+  )
+  const viewerOrganization = state.organizations.find(
+    (candidate) => candidate.id === input.viewerOrganizationId && !candidate.archivedAt
+  )
+  const memberships = state.organizationMemberships.filter((candidate) =>
     candidate.organizationId === input.viewerOrganizationId &&
     candidate.status === "active" &&
     candidate.userId === input.viewerUserId
   )
+  const membership = memberships.length === 1 ? memberships[0] : undefined
 
-  if (!membership || !organizationRoleCan(membership.role, "view_network")) {
+  if (!viewer || !viewerOrganization || !membership || !organizationRoleCan(membership.role, "view_network")) {
     throw new DomainRefusalError("You are not authorized to view this photo")
   }
 
@@ -273,6 +274,13 @@ export function getFeaturedTruckPhotoReference(state: LogLoadsDatabaseState, raw
     state.driverProfiles.find((candidate) => candidate.id === input.driverProfileId),
     "Driver profile not found"
   )
+
+  if (
+    !driver.companyId ||
+    activeDriverProfileForOrganization(state, driver.userId, driver.companyId)?.id !== driver.id
+  ) {
+    throw new DomainRefusalError("This driver's profile is not active")
+  }
 
   if (!driver.featureTruckPhoto) {
     throw new DomainRefusalError("This driver has not featured a truck photo")

@@ -13,6 +13,7 @@ import {
   percentageFeeEventId,
   platformFeeEventId,
   tripSchemaV2,
+  userSchema,
   ORGANIZATION_ROLES,
   PLATFORM_FEE_BPS,
   type Assignment,
@@ -74,9 +75,31 @@ function freshState() {
 
 type State = ReturnType<typeof freshState>
 
+function addActiveUser(state: State, organizationId: string): string {
+  const userId = randomUUID()
+
+  state.profiles.push(
+    userSchema.parse({
+      clerkUserId: `clerk-platform-fee-${userId}`,
+      companyId: organizationId,
+      createdAt: "2026-06-01T00:00:00.000Z",
+      email: `${userId}@example.com`,
+      fullName: "Platform fee boundary member",
+      id: userId,
+      isActive: true,
+      phone: "555-0100",
+      role: "driver",
+      updatedAt: "2026-06-01T00:00:00.000Z",
+      verificationStatus: "pending"
+    })
+  )
+
+  return userId
+}
+
 /** A member of an organization in a given role. Returns the acting user id. */
 function addMember(state: State, organizationId: string, role: OrganizationRole): string {
-  const userId = randomUUID()
+  const userId = addActiveUser(state, organizationId)
 
   state.organizationMemberships.push(
     organizationMembershipSchema.parse({
@@ -981,6 +1004,7 @@ describe("platform fee void", () => {
   it("refuses a caller who is not a member of the organization at all", () => {
     const state = freshState()
     const haul = oneBillableHaul(state)
+    const nonmemberUserId = addActiveUser(state, HOST_ORG)
 
     accruePlatformFee(state, { assignmentId: haul.assignmentId })
 
@@ -988,7 +1012,7 @@ describe("platform fee void", () => {
       voidPlatformFee(
         state,
         {
-          actorUserId: randomUUID(),
+          actorUserId: nonmemberUserId,
           assignmentId: haul.assignmentId,
           organizationId: HOST_ORG,
           reason: "Reversed"
@@ -1855,11 +1879,12 @@ describe("host fee summary", () => {
   it("reads only the organization the caller belongs to", () => {
     const state = freshState()
     const haul = oneBillableHaul(state)
+    const nonmemberUserId = addActiveUser(state, HOST_ORG)
 
     accruePlatformFee(state, { assignmentId: haul.assignmentId })
 
     expect(() =>
-      hostFeeSummary(state, { actorUserId: randomUUID(), organizationId: HOST_ORG }, MID_JULY)
+      hostFeeSummary(state, { actorUserId: nonmemberUserId, organizationId: HOST_ORG }, MID_JULY)
     ).toThrow(/not an active member/)
   })
 

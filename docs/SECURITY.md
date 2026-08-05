@@ -62,6 +62,42 @@ have to rediscover any of this.
   Percentage enrollment and fee collection remain independent, default-dark
   gates.
 
+## Platform-admin authority boundary
+
+- `profiles.role = admin` is historical identity data, not authorization. Every
+  Clerk-backed platform-admin session must match exactly one server-configured
+  Clerk user id and the independently configured SHA-256 of the versioned scope
+  material. Malformed, padded, duplicate, multiple, missing, or mismatched
+  values fail closed.
+- The one-time claim additionally requires a verified Clerk primary email,
+  same-origin bounded JSON with a fixed confirmation, client and identity rate
+  limits, an exact `enabled` gate, and a strict future ISO expiry. The canonical
+  mutation can bind only the fixed active, organization-less, membership-less
+  seed administrator and writes one sanitized audit event.
+- The temporary gate has no part in ongoing authority. It is removed after the
+  claim; the exact persistent identity and scope digest remain required. Contact
+  inquiry notifications are filtered by current platform-admin authority so
+  removing that scope also removes access to historical inquiry PII on the next
+  request.
+
+## Membership revocation and private-response boundary
+
+- Organization reads and mutations require an active user, a non-archived exact
+  organization, and one unambiguous active membership. Driver reads and writes
+  additionally require one driver profile owned by that organization; request
+  paths also require the driver to be available. An unrelated membership or
+  historical driver row cannot restore access.
+- Suspension/removal preserve operating records but make the driver and every
+  current/future availability record unavailable. Reactivation does not change
+  availability. Last-owner, self-removal, self-suspension, duplicate membership,
+  duplicate driver-profile, and non-grantable-role cases fail closed inside one
+  atomic state mutation.
+- Authenticated private JSON, signatures, Route Packs, trip activity, and media
+  responses carry `Cache-Control: private, no-store`, including refusals and
+  failures. A browser therefore cannot reuse private content after revocation;
+  the next read must pass current authorization. Public load discovery remains a
+  separately redacted public surface.
+
 ## How the RLS discrepancy arose (reconciled, proven)
 
 Two earlier reports appeared to conflict; both were true subsets of the same reality:

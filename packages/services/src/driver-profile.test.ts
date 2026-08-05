@@ -1,3 +1,4 @@
+import { organizationMembershipSchema } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
@@ -64,6 +65,77 @@ describe("driver profile service", () => {
       ...context,
       photo: { ...photo, publicId: `logloads/${FLEET_ORG}/profile/not-this-driver/uploads/bad` }
     })).toThrow(/does not belong/)
+  })
+
+  it("revokes private media and profile writes when the user, organization, or exact membership is inactive", () => {
+    const assertRevoked = (
+      revoke: (services: ReturnType<typeof createLogLoadsServices>) => void
+    ) => {
+      const services = createLogLoadsServices(createInMemoryDatabase())
+      const beforeAuditCount = services.state.auditEvents.length
+
+      revoke(services)
+
+      expect(() => services.getDriverMediaTarget({
+        actorUserId: DRIVER_USER,
+        driverProfileId: DRIVER_PROFILE,
+        kind: "profile",
+        organizationId: FLEET_ORG
+      })).toThrow(/own driver profile while it is active/)
+      expect(() => services.updateDriverEconomics({
+        actorUserId: DRIVER_USER,
+        driverProfileId: DRIVER_PROFILE,
+        fuelEconomyMpg: 7.2,
+        fuelPriceCentsPerGallon: 390,
+        organizationId: FLEET_ORG
+      })).toThrow(/own driver profile while it is active/)
+      expect(services.state.auditEvents).toHaveLength(beforeAuditCount)
+    }
+
+    assertRevoked((services) => {
+      const profile = services.state.profiles.find((candidate) => candidate.id === DRIVER_USER)
+
+      if (!profile) throw new Error("Driver user fixture missing")
+      profile.isActive = false
+    })
+    assertRevoked((services) => {
+      const organization = services.state.organizations.find(
+        (candidate) => candidate.id === FLEET_ORG
+      )
+
+      if (!organization) throw new Error("Fleet organization fixture missing")
+      organization.archivedAt = "2026-08-05T12:00:00.000Z"
+    })
+    assertRevoked((services) => {
+      const membership = services.state.organizationMemberships.find(
+        (candidate) =>
+          candidate.organizationId === FLEET_ORG && candidate.userId === DRIVER_USER
+      )
+
+      if (!membership) throw new Error("Driver membership fixture missing")
+      membership.status = "suspended"
+    })
+  })
+
+  it("does not reactivate a historical profile through an unrelated active membership", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    services.state.organizationMemberships.push(organizationMembershipSchema.parse({
+      createdAt: "2026-08-05T12:00:00.000Z",
+      id: "19191919-1919-4919-8919-191919191919",
+      organizationId: HOST_ORG,
+      role: "driver",
+      status: "active",
+      updatedAt: "2026-08-05T12:00:00.000Z",
+      userId: DRIVER_USER
+    }))
+
+    expect(() => services.getDriverMediaTarget({
+      actorUserId: DRIVER_USER,
+      driverProfileId: DRIVER_PROFILE,
+      kind: "profile",
+      organizationId: HOST_ORG
+    })).toThrow(/own driver profile while it is active/)
   })
 })
 
@@ -140,6 +212,31 @@ describe("featured truck photo", () => {
       featured: true,
       organizationId: FLEET_ORG
     })).toThrow(/your own driver profile/)
+  })
+
+  it("stops serving a featured truck as soon as the driver's roster identity is suspended", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    uploadTruckPhoto(services)
+    services.setFeaturedTruckPhoto({
+      actorUserId: DRIVER_USER,
+      driverProfileId: DRIVER_PROFILE,
+      featured: true,
+      organizationId: FLEET_ORG
+    })
+    const membership = services.state.organizationMemberships.find(
+      (candidate) =>
+        candidate.organizationId === FLEET_ORG && candidate.userId === DRIVER_USER
+    )
+
+    if (!membership) throw new Error("Driver membership fixture missing")
+    membership.status = "suspended"
+
+    expect(() => services.getFeaturedTruckPhotoReference({
+      driverProfileId: DRIVER_PROFILE,
+      viewerOrganizationId: FLEET_ORG,
+      viewerUserId: OTHER_DRIVER_USER
+    })).toThrow(/not active/)
   })
 
   it("serves the featured photo to the driver's own outfit and to a host with the driver's assignment — nobody else, nothing unfeatured", () => {

@@ -10,7 +10,7 @@
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx --max-warnings=0",
     "stripe:catalog": "node ../../tools/provision-stripe-catalog.mjs",
     "stripe:verify-subscriptions": "node ../../tools/verify-stripe-subscriptions.mjs",
-    "test": "vitest run lib",
+    "test": "vitest run lib --maxWorkers=50% --testTimeout=15000",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test --config tests/playwright.config.mjs"
   },

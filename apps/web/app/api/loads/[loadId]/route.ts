@@ -21,10 +21,19 @@ export async function GET(
 		const load = network.loads.find((candidate) => candidate.id === loadId)
 
 		if (!load) {
-			return NextResponse.json({ error: "Load not found" }, { status: 404 })
+			return NextResponse.json(
+				{ error: "Load not found" },
+				{
+					headers: { "Cache-Control": "private, no-store" },
+					status: 404
+				}
+			)
 		}
 
-		return NextResponse.json({ load })
+		return NextResponse.json(
+			{ load },
+			{ headers: { "Cache-Control": "private, no-store" } }
+		)
 	} catch (error) {
 		return apiErrorResponse(error)
 	}

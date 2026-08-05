@@ -23,6 +23,8 @@ import {
 import type { LogLoadsDatabaseState } from "@logloads/db"
 import { z } from "zod"
 
+import { activeDriverProfileForOrganization } from "./driver-access"
+
 export const accountPathSchema = z.enum(["driver", "fleet", "host"])
 
 export const accountTypeSchema = z.enum([
@@ -92,31 +94,61 @@ function uniqueSlug(state: LogLoadsDatabaseState, base: string): string {
 }
 
 export function findProfileByClerkId(state: LogLoadsDatabaseState, clerkUserId: string): User | undefined {
-  return state.profiles.find((profile) => profile.clerkUserId === clerkUserId && profile.isActive)
+  // Identity uniqueness survives deactivation. Returning the historical row is
+  // what lets the session route a disabled identity to the restricted surface
+  // and prevents ordinary onboarding from minting a replacement account.
+  return state.profiles.find((profile) => profile.clerkUserId === clerkUserId)
 }
 
 export function findProfileByEmail(state: LogLoadsDatabaseState, email: string): User | undefined {
   const normalized = email.trim().toLowerCase()
 
-  return state.profiles.find((profile) => profile.email?.toLowerCase() === normalized && profile.isActive)
+  return state.profiles.find((profile) => profile.email?.toLowerCase() === normalized)
 }
 
-export function getAccountContext(state: LogLoadsDatabaseState, userId: string): AccountContext | null {
+export function getAccountContext(
+  state: LogLoadsDatabaseState,
+  userId: string,
+  organizationId?: string
+): AccountContext | null {
   const profile = state.profiles.find((candidate) => candidate.id === userId && candidate.isActive)
 
   if (!profile) {
     return null
   }
 
-  const memberships = state.organizationMemberships
-    .filter((membership) => membership.userId === userId && membership.status === "active")
+  const activeMemberships = state.organizationMemberships.filter(
+    (membership) => membership.userId === userId && membership.status === "active"
+  )
+  const activeMembershipCounts = activeMemberships.reduce<Map<string, number>>(
+    (counts, membership) => {
+      counts.set(
+        membership.organizationId,
+        (counts.get(membership.organizationId) ?? 0) + 1
+      )
+
+      return counts
+    },
+    new Map()
+  )
+  const memberships = activeMemberships
+    // Duplicate active rows are ambiguous authority. Omit only that workspace;
+    // another uniquely held workspace may remain usable.
+    .filter(
+      (membership) => activeMembershipCounts.get(membership.organizationId) === 1
+    )
     .flatMap((membership) => {
-      const organization = state.organizations.find((candidate) => candidate.id === membership.organizationId)
+      const organization = state.organizations.find(
+        (candidate) => candidate.id === membership.organizationId && !candidate.archivedAt
+      )
 
       return organization ? [{ membership, organization }] : []
     })
 
-  const driverProfile = state.driverProfiles.find((candidate) => candidate.userId === userId)
+  const driverProfile = memberships
+    .filter(({ organization }) => !organizationId || organization.id === organizationId)
+    .map(({ organization }) => activeDriverProfileForOrganization(state, userId, organization.id))
+    .find((candidate) => candidate !== null) ?? null
 
   return {
     driverProfileId: driverProfile?.id ?? null,

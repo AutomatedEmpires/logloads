@@ -8,7 +8,7 @@
   "scripts": {
     "build": "tsc --noEmit",
     "lint": "eslint src --ext .ts --max-warnings=0",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run --passWithNoTests --maxWorkers=50% --testTimeout=15000",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

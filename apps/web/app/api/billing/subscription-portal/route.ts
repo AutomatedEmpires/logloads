@@ -129,7 +129,10 @@ export async function POST(request: Request) {
       returnUrl: billingReturnUrl(portal.billingPath)
     })
 
-    return NextResponse.json({ url: session.url })
+    return NextResponse.json(
+      { url: session.url },
+      { headers: { "Cache-Control": "private, no-store" } }
+    )
   } catch (error) {
     return apiErrorResponse(error)
   }

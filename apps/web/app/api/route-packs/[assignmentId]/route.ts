@@ -17,7 +17,9 @@ export async function GET(
 			organizationId: resolvedOrganizationId
 		})
 
-		return NextResponse.json(routePack)
+		return NextResponse.json(routePack, {
+			headers: { "Cache-Control": "private, no-store" }
+		})
 	} catch (error) {
 		return apiErrorResponse(error)
 	}
