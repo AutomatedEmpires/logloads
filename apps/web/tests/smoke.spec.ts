@@ -8,6 +8,16 @@ async function signIn(page: Page, email: string) {
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 30_000 })
 }
 
+async function openPublicMenuIfNeeded(page: Page) {
+  const menuTrigger = page.getByRole("button", { name: "Open menu" })
+  const viewport = page.viewportSize()
+
+  if (viewport && viewport.width <= 1100) {
+    await expect(menuTrigger).toBeVisible()
+    await menuTrigger.click()
+  }
+}
+
 test("visitor understands the public product and can inspect public loads", async ({ page }) => {
   await page.goto("/")
 
@@ -58,6 +68,66 @@ test("host signs in and reaches command with capacity view", async ({ page }) =>
 
   await page.goto("/host/command")
   await expect(page.getByRole("heading", { name: "Command" })).toBeVisible()
+})
+
+test("public entry reflects the active account and preserves driver intent", async ({ page }) => {
+  test.slow()
+  await signIn(page, "cole@summit.example")
+
+  await page.goto("/")
+  await openPublicMenuIfNeeded(page)
+
+  await expect(page.getByRole("link", { name: "Open workspace" }).last()).toBeVisible()
+  await expect(page.getByRole("link", { name: "Sign in" })).toHaveCount(0)
+
+  await page.goto("/sign-in")
+  await expect(page.getByRole("heading", { name: "You’re already signed in." })).toBeVisible()
+  await expect(page.getByText("cole@summit.example", { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/sign-in$/)
+
+  await page.goto("/sign-up")
+  await expect(page.getByRole("heading", { name: "This account is already set up." })).toBeVisible()
+  await expect(page).toHaveURL(/\/sign-up$/)
+
+  await page.goto("/")
+  await page.getByRole("link", { name: "Create a driver profile" }).first().click()
+  await expect(page).toHaveURL(/\/sign-up\?path=driver/)
+  await expect(page.getByRole("heading", { name: "Your driver profile is already active." })).toBeVisible()
+  await page.getByRole("link", { name: "Open driver workspace" }).click()
+  await page.waitForURL(/\/driver\/loads/, { timeout: 30_000 })
+  await expect(page.getByRole("heading", { exact: true, name: "Loads" })).toBeVisible()
+})
+
+test("role-specific entry offers an explicit workspace switch", async ({ page }) => {
+  test.slow()
+  await signIn(page, "dispatch@northpine.example")
+
+  await page.goto("/sign-up?path=host")
+  await expect(page.getByRole("heading", { name: "Your host workspace is already active." })).toBeVisible()
+  await expect(page.getByText(/Summit Ridge Timber/)).toBeVisible()
+
+  await page.getByRole("button", { name: "Switch to host workspace" }).click()
+  await page.waitForURL(/\/host\/command/, { timeout: 30_000 })
+  await expect(page.getByRole("heading", { exact: true, name: "Command" })).toBeVisible()
+})
+
+test("public sign-out returns to anonymous driver onboarding", async ({ page }) => {
+  test.slow()
+  await signIn(page, "cole@summit.example")
+
+  await page.goto("/")
+  await openPublicMenuIfNeeded(page)
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: "domcontentloaded" }),
+    page.getByRole("button", { name: "Sign out" }).last().click()
+  ])
+  await expect(page).toHaveURL(/\/$/)
+  await openPublicMenuIfNeeded(page)
+  await expect(page.getByRole("link", { name: "Sign in" }).last()).toBeVisible({ timeout: 15_000 })
+
+  await page.getByRole("link", { name: "Create a driver profile" }).first().click()
+  await expect(page).toHaveURL(/\/onboarding\/driver/)
+  await expect(page.getByRole("heading", { name: "See work that fits your equipment." })).toBeVisible()
 })
 
 test("platform admin reaches the admin console", async ({ page }) => {

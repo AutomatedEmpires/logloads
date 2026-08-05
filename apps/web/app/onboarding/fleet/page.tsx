@@ -1,20 +1,33 @@
-import { redirect } from "next/navigation"
-
-import { OnboardingPage } from "@/components/v3"
-import { safeInternalPath } from "@/lib/safe-redirect"
+import { AuthenticatedEntryPage, OnboardingPage } from "@/components/v3"
+import { decideExistingActorEntry, safeEntryNext } from "@/lib/entry-routing"
 import { getClerkIdentity, getSessionActor, homePathFor } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
-  const actor = await getSessionActor()
+  const [actor, params] = await Promise.all([getSessionActor(), searchParams])
+  const next = safeEntryNext(params.next, "fleet")
 
   if (actor) {
-    redirect(homePathFor(actor))
+    const decision = decideExistingActorEntry(actor, { intent: "fleet", next })
+
+    return (
+      <AuthenticatedEntryPage
+        currentHome={homePathFor(actor)}
+        displayName={actor.profile.fullName}
+        email={actor.profile.email}
+        intent="fleet"
+        mode="sign-up"
+        requestedHome={decision.kind === "session" ? null : decision.href}
+        requestedOrganization={decision.kind === "switch"
+          ? { id: decision.organizationId, name: decision.organizationName }
+          : null}
+        restartHref={next ? `/sign-up?path=fleet&next=${encodeURIComponent(next)}` : "/sign-up?path=fleet"}
+      />
+    )
   }
 
   const identity = await getClerkIdentity()
-  const next = safeInternalPath((await searchParams).next, "") || undefined
 
-  return <OnboardingPage identityKnown={identity ?? undefined} mode="fleet" next={next} />
+  return <OnboardingPage identityKnown={identity ?? undefined} mode="fleet" next={next || undefined} />
 }

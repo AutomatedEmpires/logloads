@@ -2,6 +2,9 @@
 
 ## Implemented routes
 - `GET /api/health`
+- `GET /api/auth/session` — same-origin public session-status probe; returns
+  only JSON `{ "authenticated": boolean }` and always sends
+  `Cache-Control: no-store` so account state cannot be cached or disclosed
 - `GET /api/loads` — public, redacted network load views
 - `POST /api/loads` — authenticated; requires the `publish_load` role action; `companyId` forced to the actor's organization
 - `GET /api/loads/:loadId` — viewer-aware (public redaction vs actor view)

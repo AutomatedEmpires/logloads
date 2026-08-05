@@ -102,3 +102,22 @@ export function canAccessCockpit(actor: SessionActor, cockpit: Cockpit): boolean
 
   return organizationCockpit(actor) === cockpit
 }
+
+/**
+ * Finds an authorized workspace even when it is not the organization currently
+ * selected in the session. Callers must switch the session before opening that
+ * cockpit; `canAccessCockpit` intentionally remains scoped to the active
+ * organization so protected reads cannot cross workspace boundaries.
+ */
+export function membershipForCockpit(
+  actor: SessionActor,
+  cockpit: Exclude<Cockpit, "admin">
+): SessionActor["memberships"][number] | null {
+  return actor.memberships.find(({ membership, organization }) => {
+    if (cockpit === "driver") {
+      return membership.role === "driver"
+    }
+
+    return organizationCockpitFor(organization.type, membership.role) === cockpit
+  }) ?? null
+}

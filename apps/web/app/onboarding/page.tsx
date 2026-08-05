@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation"
 
-import { OnboardingPage, type PendingInvitationOffer } from "@/components/v3"
-import { safeInternalPath } from "@/lib/safe-redirect"
+import { AuthenticatedEntryPage, OnboardingPage, type PendingInvitationOffer } from "@/components/v3"
+import { decideExistingActorEntry, safeEntryNext } from "@/lib/entry-routing"
 import { refreshState, services } from "@/lib/services"
-import { getClerkIdentity, getSessionActor, homePathFor, isDevSessionEnabled } from "@/lib/session"
+import { getClerkIdentity, getSessionActor, isDevSessionEnabled } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
 
@@ -36,18 +36,31 @@ export default async function Page({
 }: {
   searchParams: Promise<{ as?: string; next?: string }>
 }) {
-  const actor = await getSessionActor()
+  const [actor, params] = await Promise.all([getSessionActor(), searchParams])
+  const next = safeEntryNext(params.next)
 
   if (actor) {
-    redirect(homePathFor(actor))
+    const decision = decideExistingActorEntry(actor, { next })
+
+    if (decision.kind !== "session") {
+      redirect(decision.href)
+    }
+
+    return (
+      <AuthenticatedEntryPage
+        currentHome={decision.currentHome}
+        displayName={actor.profile.fullName}
+        email={actor.profile.email}
+        mode="sign-up"
+        restartHref={next ? `/sign-up?next=${encodeURIComponent(next)}` : "/sign-up"}
+      />
+    )
   }
 
-  const params = await searchParams
   const identity = await getClerkIdentity()
   const devPreviewEmail =
     !identity && (await isDevSessionEnabled()) && params.as?.includes("@") ? params.as : null
   const invitations = await pendingInvitationsFor(identity?.email ?? devPreviewEmail)
-  const next = safeInternalPath(params.next, "") || undefined
 
-  return <OnboardingPage identityKnown={identity ?? undefined} invitations={invitations} next={next} />
+  return <OnboardingPage identityKnown={identity ?? undefined} invitations={invitations} next={next || undefined} />
 }

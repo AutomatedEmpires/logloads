@@ -109,6 +109,25 @@ export async function getClerkUserId(): Promise<string | null> {
   }
 }
 
+/**
+ * Lightweight identity check for public navigation. This deliberately avoids
+ * loading the canonical operating state: `/workspace` remains the single place
+ * that resolves whether the identity should open onboarding or a cockpit.
+ */
+export async function hasSessionIdentity(): Promise<boolean> {
+  if (await getClerkUserId()) {
+    return true
+  }
+
+  if (!(await isDevSessionEnabled())) {
+    return false
+  }
+
+  const cookieStore = await cookies()
+
+  return Boolean(verifySessionCookieValue(cookieStore.get(SESSION_COOKIE)?.value))
+}
+
 export const getClerkIdentity = cache(async (): Promise<{ email: string; fullName: string } | null> => {
   if (!isClerkConfigured()) {
     return null
