@@ -586,6 +586,26 @@ describe("historical subscription billing read model", () => {
     expect(JSON.stringify(view)).not.toContain("Enrollment and collection are enabled")
   })
 
+  it("labels a preserved pending plan as a recorded schedule", () => {
+    const view = buildHostSubscriptionBillingView(
+      source({
+        organizationSubscriptions: [
+          pilotSubscription({
+            pendingPlanCode: "network_25",
+            pendingPlanEffectiveAt: "2026-11-01T12:00:00.000Z",
+            pendingPlanSnapshot: subscriptionPlanDefinition("network_25"),
+            pendingOperatingMarketIds: [LANDING_ID]
+          })
+        ]
+      }),
+      ORGANIZATION_ID
+    )
+
+    expect(view?.pendingPlanLabel).toBe(
+      "Recorded Network 25 scheduled for Nov 1, 2026"
+    )
+  })
+
   it("does not project conversion offers from a preserved Pilot grace window", () => {
     const pilot = pilotSubscription({
       activationAuthorizedAt: PERIOD_START,

@@ -297,6 +297,10 @@ export interface BillingView {
   usage: PlanUsageView[]
 }
 
+export function isFleetOrganizationType(type: string | null | undefined): boolean {
+  return type === "fleet" || type === "carrier"
+}
+
 export function fleetFreePlanView(id = "fleet-free"): PlanView {
   const definition = PLAN_DEFINITIONS.fleet_operations
 
@@ -343,7 +347,9 @@ export function getBillingView(network: NetworkView): BillingView {
   // plan page says you have left has to be what you actually have left.
   const activeLandings = services.countActiveLandings(organizationId)
 
-  const fleetWorkspace = network.activeOrganization.type === "fleet"
+  const fleetWorkspace = isFleetOrganizationType(
+    network.activeOrganization.type
+  )
   const truckLimit = fleetWorkspace
     ? null
     : entitlements.find((entitlement) => entitlement.activeTruckLimit)?.activeTruckLimit ?? null
@@ -580,7 +586,7 @@ export function getSettingsView(network: NetworkView, currentProfileId: string):
   const entitlementPlans = services
     .listEntitlements(organizationId)
     .map(planViewForEntitlement)
-  const settingsPlans = organization?.type === "fleet"
+  const settingsPlans = isFleetOrganizationType(organization?.type)
     ? [
         entitlementPlans.find(
           (plan) =>

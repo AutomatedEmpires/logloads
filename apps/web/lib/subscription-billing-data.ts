@@ -803,7 +803,7 @@ export function buildHostSubscriptionBillingView(
     paymentLabel: payment.label,
     paymentTone: payment.tone,
     pendingPlanLabel: subscription.pendingPlanCode
-      ? `Recorded ${source.billingPlanDefinitions.find((candidate) => candidate.code === subscription.pendingPlanCode)?.displayName ?? subscription.pendingPlanCode} schedule${subscription.pendingPlanEffectiveAt ? ` for ${formatDay(subscription.pendingPlanEffectiveAt)}` : ""}`
+      ? `Recorded ${source.billingPlanDefinitions.find((candidate) => candidate.code === subscription.pendingPlanCode)?.displayName ?? subscription.pendingPlanCode} scheduled${subscription.pendingPlanEffectiveAt ? ` for ${formatDay(subscription.pendingPlanEffectiveAt)}` : ""}`
       : null,
     planCode: subscription.planCode,
     planName: `${plan.displayName} — historical`,

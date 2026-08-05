@@ -3,7 +3,11 @@ import { describe, expect, it, vi } from "vitest"
 
 vi.mock("server-only", () => ({}))
 
-import { isHostOrganizationType, planViewForEntitlement } from "./plans"
+import {
+  isFleetOrganizationType,
+  isHostOrganizationType,
+  planViewForEntitlement
+} from "./plans"
 
 const ORGANIZATION_ID = "11111111-1111-4111-8111-111111111111"
 const CREATED_AT = "2026-08-05T12:00:00.000Z"
@@ -110,6 +114,20 @@ describe("commercial plan projection", () => {
     "does not recognize %s as a Host billing workspace",
     (type) => {
       expect(isHostOrganizationType(type)).toBe(false)
+    }
+  )
+
+  it.each(["fleet", "carrier"])(
+    "recognizes %s as a Fleet Free workspace",
+    (type) => {
+      expect(isFleetOrganizationType(type)).toBe(true)
+    }
+  )
+
+  it.each(["landing_source", "destination", "platform", null, undefined])(
+    "does not recognize %s as a Fleet Free workspace",
+    (type) => {
+      expect(isFleetOrganizationType(type)).toBe(false)
     }
   )
 })
