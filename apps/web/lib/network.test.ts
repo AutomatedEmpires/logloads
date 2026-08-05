@@ -81,6 +81,142 @@ function expectPublicOnlyDriverView(
   }
 }
 
+describe("site truth projection", () => {
+  it("ages an unverified host report and keeps a missing condition unknown", () => {
+    const { load, services, viewer } = networkFixture()
+    const destination = services.state.mills.find((mill) => mill.id === load.dropoffMillId)
+
+    expect(destination).toBeDefined()
+    if (!destination) return
+
+    destination.companyId = load.companyId
+    destination.roadCondition = "wet"
+    destination.updatedAt = "2026-06-05T10:00:00.000Z"
+    services.state.destinationFacilities = services.state.destinationFacilities.filter(
+      (facility) => facility.millId !== destination.id
+    )
+
+    const reported = buildNetworkView(
+      services.state,
+      viewer,
+      new Date("2026-06-05T12:00:00.000Z")
+    ).loads.find((candidate) => candidate.id === load.id)
+
+    expect(reported?.destination).toMatchObject({ freshness: "recent", roadCondition: "wet" })
+
+    destination.updatedAt = "2026-05-01T10:00:00.000Z"
+    const stale = buildNetworkView(
+      services.state,
+      viewer,
+      new Date("2026-06-05T12:00:00.000Z")
+    ).loads.find((candidate) => candidate.id === load.id)
+
+    expect(stale?.destination).toMatchObject({ freshness: "stale", roadCondition: "wet" })
+
+    destination.roadCondition = null
+    const unknown = buildNetworkView(
+      services.state,
+      viewer,
+      new Date("2026-06-05T12:00:00.000Z")
+    ).loads.find((candidate) => candidate.id === load.id)
+
+    expect(unknown?.destination).toMatchObject({ freshness: "unknown", roadCondition: null })
+  })
+
+  it("does not treat a future landing verification as current evidence", () => {
+    const { load, services, viewer } = networkFixture()
+    const landing = services.state.landings.find((candidate) => candidate.id === load.pickupLandingId)
+    const landingDetails = services.state.richLandingDetails.find(
+      (candidate) => candidate.landingId === landing?.id
+    )
+
+    expect(landing).toBeDefined()
+    expect(landingDetails).toBeDefined()
+    if (!landing || !landingDetails) return
+
+    landing.roadCondition = "muddy"
+    landing.updatedAt = "2026-06-05T10:00:00.000Z"
+    landingDetails.lastVerifiedAt = "2026-06-05T12:00:00.001Z"
+
+    const view = buildNetworkView(
+      services.state,
+      viewer,
+      new Date("2026-06-05T12:00:00.000Z")
+    ).loads.find((candidate) => candidate.id === load.id)
+
+    expect(view?.landing).toMatchObject({ freshness: "recent", roadCondition: "muddy" })
+  })
+
+  it("only projects a facility as verified when its verification covers the current destination", () => {
+    const { load, services, sourceContext } = networkFixture()
+    const destination = services.state.mills.find((mill) => mill.id === load.dropoffMillId)
+    const facility = services.state.destinationFacilities.find(
+      (candidate) => candidate.millId === destination?.id
+    )
+
+    expect(destination).toBeDefined()
+    expect(facility).toBeDefined()
+    if (!destination || !facility) return
+
+    destination.updatedAt = "2026-06-05T10:00:00.000Z"
+    destination.roadCondition = "wet"
+    facility.lastVerifiedAt = "2026-06-05T11:00:00.000Z"
+    facility.recordStatus = "community_suggested"
+
+    const suggested = buildNetworkView(
+      services.state,
+      { actorUserId: sourceContext.actorUserId, kind: "actor", organizationId: sourceContext.organizationId },
+      new Date("2026-06-05T12:00:00.000Z")
+    ).loads.find((candidate) => candidate.id === load.id)
+
+    expect(suggested?.destination).toMatchObject({ freshness: "recent", roadCondition: "wet" })
+    expect(suggested?.destinationFacility).toBeNull()
+    expect(suggested?.criticalInstructions.some((instruction) => instruction.startsWith("Destination check-in:"))).toBe(false)
+
+    facility.recordStatus = "verified"
+    facility.lastVerifiedAt = "2026-06-04T16:00:00.000Z"
+    const staleVerification = buildNetworkView(
+      services.state,
+      { actorUserId: sourceContext.actorUserId, kind: "actor", organizationId: sourceContext.organizationId },
+      new Date("2026-06-05T12:00:00.000Z")
+    ).loads.find((candidate) => candidate.id === load.id)
+
+    expect(staleVerification?.destination.freshness).toBe("recent")
+    expect(staleVerification?.destinationFacility).toBeNull()
+
+    facility.lastVerifiedAt = "2026-06-05T12:00:00.001Z"
+    const futureVerification = buildNetworkView(
+      services.state,
+      { actorUserId: sourceContext.actorUserId, kind: "actor", organizationId: sourceContext.organizationId },
+      new Date("2026-06-05T12:00:00.000Z")
+    ).loads.find((candidate) => candidate.id === load.id)
+
+    expect(futureVerification?.destination.freshness).toBe("recent")
+    expect(futureVerification?.destinationFacility).toBeNull()
+
+    // Evidence recorded exactly at the observation boundary is current; only
+    // evidence after it is impossible knowledge and must fail closed.
+    facility.lastVerifiedAt = "2026-06-05T12:00:00.000Z"
+    const verified = buildNetworkView(
+      services.state,
+      { actorUserId: sourceContext.actorUserId, kind: "actor", organizationId: sourceContext.organizationId },
+      new Date("2026-06-05T12:00:00.000Z")
+    ).loads.find((candidate) => candidate.id === load.id)
+
+    expect(verified?.destination.freshness).toBe("verified")
+    expect(verified?.destinationFacility?.checkInProcess).toBe(facility.checkInProcess)
+
+    destination.roadCondition = null
+    const noCondition = buildNetworkView(
+      services.state,
+      { actorUserId: sourceContext.actorUserId, kind: "actor", organizationId: sourceContext.organizationId },
+      new Date("2026-06-05T12:00:00.000Z")
+    ).loads.find((candidate) => candidate.id === load.id)
+
+    expect(noCondition?.destination).toMatchObject({ freshness: "unknown", roadCondition: null })
+  })
+})
+
 describe("trip document deliverability", () => {
   function projectDocument(provider: "cloudinary" | "supabase") {
     const services = createLogLoadsServices(createInMemoryDatabase())
@@ -684,6 +820,7 @@ describe("driver network access", () => {
     expect(accepted?.landing.lng).toBe(details?.entranceLng)
     expect(accepted?.criticalInstructions.length).toBeGreaterThan(0)
     expect(accepted?.routePack).not.toBeNull()
+    expect(accepted?.routePack?.snapshot?.destinationContact?.phone).toBeTruthy()
   })
 
   it("keeps a host viewer out of exact location and instruction fields", () => {

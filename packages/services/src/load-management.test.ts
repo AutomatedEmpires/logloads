@@ -467,6 +467,69 @@ describe("posting source ownership and lane coherence", () => {
     expect(publicationStateCounts(wrongDestination)).toEqual(beforeWrongDestination)
   })
 
+  it("refuses a foreign or retired destination before creating publication state", () => {
+    const foreign = createLogLoadsServices(createInMemoryDatabase())
+    const foreignDestination = foreign.state.mills.find(
+      (candidate) => candidate.id === "99999999-9999-4999-8999-999999999991"
+    )
+
+    expect(foreignDestination).toBeDefined()
+    if (!foreignDestination) return
+
+    foreignDestination.companyId = HAULER_ORG
+    const beforeForeign = publicationStateCounts(foreign)
+    expect(() => publishAsOwner(foreign)).toThrow(/That destination was not found/)
+    expect(publicationStateCounts(foreign)).toEqual(beforeForeign)
+
+    const retired = createLogLoadsServices(createInMemoryDatabase())
+    const retiredDestination = retired.state.mills.find(
+      (candidate) => candidate.id === "99999999-9999-4999-8999-999999999991"
+    )
+
+    expect(retiredDestination).toBeDefined()
+    if (!retiredDestination) return
+
+    retiredDestination.isActive = false
+    const beforeRetired = publicationStateCounts(retired)
+    expect(() => publishAsOwner(retired)).toThrow(/is retired.*Restore it before publishing work to it/)
+    expect(publicationStateCounts(retired)).toEqual(beforeRetired)
+  })
+
+  it("blocks a draft after destination retirement without cancelling work already on the network", () => {
+    const draftServices = createLogLoadsServices(createInMemoryDatabase())
+    const draft = publishAsOwner(draftServices, "draft")
+    const draftDestination = draftServices.state.mills.find(
+      (candidate) => candidate.id === draft.dropoffMillId
+    )
+
+    expect(draftDestination).toBeDefined()
+    if (!draftDestination) return
+
+    draftDestination.isActive = false
+    const beforeDraftPublish = publicationStateCounts(draftServices)
+    expect(() => draftServices.openDraftLoadPosting({
+      actorUserId: HOST_OWNER,
+      loadPostingId: draft.id,
+      organizationId: HOST_ORG
+    })).toThrow(/is retired/)
+    expect(publicationStateCounts(draftServices)).toEqual(beforeDraftPublish)
+    expect(draftServices.state.loadPostings.find((candidate) => candidate.id === draft.id)?.status).toBe("draft")
+
+    const liveServices = createLogLoadsServices(createInMemoryDatabase())
+    const live = publishAsOwner(liveServices)
+    const slot = slotFor(liveServices, live.id)
+    const liveDestination = liveServices.state.mills.find(
+      (candidate) => candidate.id === live.dropoffMillId
+    )
+
+    expect(liveDestination).toBeDefined()
+    if (!liveDestination) return
+
+    liveDestination.isActive = false
+    const request = requestAsHauler(liveServices, live.id, slot.id)
+    expect(request.loadPostingId).toBe(live.id)
+  })
+
   it.each([
     ["landing", { pickupLandingId: "66666666-6666-4666-8666-666666666661" }, /That landing was not found/],
     ["haul route", { routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1" }, /That haul route was not found/],

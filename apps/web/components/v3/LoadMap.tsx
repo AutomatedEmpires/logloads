@@ -440,10 +440,10 @@ export function RoutePackPreview({ load, locked = false }: { load: NetworkLoadVi
           {load.landingDetails ? ` near ${load.landingDetails.publicApproximateArea}` : ""}. It includes:
         </p>
         <ul className="route-pack-includes">
-          <li><Icon aria-hidden name="map.landing" size={18} /><span>Exact landing location, gate instructions, and private road notes</span></li>
-          <li><Icon aria-hidden name="map.route" size={18} /><span>Calculated route with current road conditions and local cautions</span></li>
-          <li><Icon aria-hidden name="map.destination" size={18} /><span>Destination check-in, scale process, and receiving hours</span></li>
-          <li><Icon aria-hidden name="ops.document" size={18} /><span>Safety requirements and the proof you need to bring back</span></li>
+          <li><Icon aria-hidden name="map.landing" size={18} /><span>Exact landing coordinates when recorded, plus any stated gate and private-road notes</span></li>
+          <li><Icon aria-hidden name="map.route" size={18} /><span>Planned route, reported road condition, and any local cautions</span></li>
+          <li><Icon aria-hidden name="map.destination" size={18} /><span>Destination contact and any verified check-in, scale, or receiving details on file</span></li>
+          <li><Icon aria-hidden name="ops.document" size={18} /><span>Any stated safety requirements and completion proof; missing facts are called out</span></li>
         </ul>
       </section>
     )
@@ -503,6 +503,18 @@ export function RoutePackPreview({ load, locked = false }: { load: NetworkLoadVi
           <div>
             <dt>Deliver to</dt>
             <dd>{snapshot.destinationName}{snapshot.destinationReceivingHours ? ` · ${snapshot.destinationReceivingHours}` : ""}</dd>
+          </div>
+          <div>
+            <dt>Destination check-in</dt>
+            <dd>
+              {snapshot.destinationContact?.phone ? (
+                <a href={`tel:${snapshot.destinationContact.phone}`}>
+                  {snapshot.destinationContact.name} · {snapshot.destinationContact.phone}
+                </a>
+              ) : (
+                snapshot.destinationContact?.name ?? "Not stated"
+              )}
+            </dd>
           </div>
         </dl>
       ) : null}

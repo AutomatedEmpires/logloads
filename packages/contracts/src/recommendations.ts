@@ -21,7 +21,7 @@ export interface RecommendationSignals {
   daysUntilSchedule: number | null
   /** Haul distance in miles; null when unknown. */
   distanceMiles: number | null
-  freshness: "verified" | "recent" | "stale"
+  freshness: "verified" | "recent" | "stale" | "unknown"
   visibility: RecommendationVisibility
   /** The publishing host's track record; null under a cold-start sample size. */
   counterpartReliability: { onTimeRate: number | null; avgRating: number | null; ratedTrips: number } | null

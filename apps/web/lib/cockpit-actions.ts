@@ -1156,6 +1156,118 @@ export async function setLandingActiveAction(input: {
   }
 }
 
+export async function createMillAction(input: {
+  name: string
+  addressLine1: string
+  city: string
+  state: string
+  postalCode: string
+  lat: number
+  lng: number
+  contactName: string
+  contactPhone: string
+  contactEmail?: string | null
+  accessNotes?: string | null
+  roadCondition: string
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+    const mill = await commit(HOST_SETUP_PATHS, (draft) =>
+      draft.createMill({
+        accessNotes: input.accessNotes ?? null,
+        actorUserId: actor.profile.id,
+        addressLine1: input.addressLine1,
+        city: input.city,
+        contact: {
+          email: input.contactEmail || null,
+          name: input.contactName,
+          phone: input.contactPhone
+        },
+        coordinates: { lat: input.lat, lng: input.lng },
+        name: input.name,
+        organizationId: actorOrganizationId(actor),
+        postalCode: input.postalCode,
+        roadCondition: roadConditionSchema.parse(input.roadCondition),
+        state: input.state
+      })
+    )
+
+    captureServerEvent("mill_created", actor.profile.id, { millId: mill.id })
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function updateMillAction(input: {
+  millId: string
+  name: string
+  addressLine1: string
+  city: string
+  state: string
+  postalCode: string
+  lat: number
+  lng: number
+  contactName: string
+  contactPhone: string
+  contactEmail?: string | null
+  accessNotes?: string | null
+  roadCondition: string
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+    const mill = await commit(HOST_SETUP_PATHS, (draft) =>
+      draft.updateMill({
+        accessNotes: input.accessNotes ?? null,
+        actorUserId: actor.profile.id,
+        addressLine1: input.addressLine1,
+        city: input.city,
+        contact: {
+          email: input.contactEmail || null,
+          name: input.contactName,
+          phone: input.contactPhone
+        },
+        coordinates: { lat: input.lat, lng: input.lng },
+        millId: input.millId,
+        name: input.name,
+        organizationId: actorOrganizationId(actor),
+        postalCode: input.postalCode,
+        roadCondition: roadConditionSchema.parse(input.roadCondition),
+        state: input.state
+      })
+    )
+
+    captureServerEvent("mill_updated", actor.profile.id, { millId: mill.id })
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function setMillActiveAction(input: {
+  millId: string
+  isActive: boolean
+}): Promise<ActionResult> {
+  try {
+    const actor = await requireActor()
+    await commit(HOST_SETUP_PATHS, (draft) =>
+      draft.setMillActive({
+        actorUserId: actor.profile.id,
+        isActive: input.isActive,
+        millId: input.millId,
+        organizationId: actorOrganizationId(actor)
+      })
+    )
+
+    captureServerEvent(input.isActive ? "mill_restored" : "mill_retired", actor.profile.id, {
+      millId: input.millId
+    })
+    return OK
+  } catch (error) {
+    return failure(error)
+  }
+}
+
 export async function createHaulRouteAction(input: {
   landingId: string
   millId: string

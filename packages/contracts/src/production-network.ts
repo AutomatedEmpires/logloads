@@ -10,7 +10,7 @@ import {
   verificationStatusSchema
 } from "./enums"
 import { organizationRoleSchema } from "./operating-network"
-import { mediaReferenceSchema } from "./schemas"
+import { contactSchema, mediaReferenceSchema } from "./schemas"
 
 const uuidSchema = z.string().uuid()
 const timestampSchema = z.string().datetime()
@@ -239,6 +239,7 @@ export const routePackSnapshotSchema = z.object({
   originEntranceLat: z.number().min(-90).max(90).optional().nullable(),
   originEntranceLng: z.number().min(-180).max(180).optional().nullable(),
   destinationName: z.string().min(1),
+  destinationContact: contactSchema.optional().nullable().default(null),
   destinationReceivingHours: z.string().optional().nullable(),
   routeDistanceMiles: z.number().nonnegative().optional().nullable(),
   routeRunTimeMinutes: z.number().nonnegative().optional().nullable(),
@@ -616,4 +617,3 @@ export function transitionTripStatus(current: TripStatusV2, next: TripStatusV2):
 
   return next
 }
-

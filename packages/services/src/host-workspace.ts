@@ -4,7 +4,9 @@ import {
   coordinatesSchema,
   haulRouteSchema,
   landingSchema,
+  millSchema,
   moneySchema,
+  organizationRoleCan,
   rateSchema,
   rateTypeSchema,
   richLandingDetailsSchema,
@@ -12,12 +14,14 @@ import {
   type Entitlement,
   type HaulRoute,
   type Landing,
+  type Mill,
   type RichLandingDetails,
   type Rate
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 import { z } from "zod"
 
+import { millUsableByOrganization } from "./destination-access"
 import { assertOrganizationAction, getActiveOrganizationContext } from "./operating-network"
 import { assertCondition, assertFound, createUuid, nowIso } from "./utils"
 
@@ -25,6 +29,17 @@ const actorContextSchema = z.object({
   actorUserId: z.string().uuid(),
   organizationId: z.string().uuid()
 })
+
+const destinationContactSchema = z.object({
+  name: z.string().trim().min(1, "Name the destination contact").max(120),
+  phone: z.string().trim().min(7, "Give a usable destination phone number").max(40)
+    .refine((value) => /\d/.test(value), "Give a usable destination phone number"),
+  email: z.string().trim().toLowerCase().email().max(254).optional().nullable()
+})
+
+const destinationStateSchema = z.string().trim().length(2, "Use the two-letter state code")
+  .regex(/^[A-Za-z]{2}$/, "Use the two-letter state code")
+  .transform((value) => value.toUpperCase())
 
 /**
  * The place trucks load. A physical site the organization controls, so it is
@@ -146,13 +161,31 @@ export function activeLandingLimitFor(
   state: LogLoadsDatabaseState,
   organizationId: string
 ): number | null {
+  const now = Date.now()
+  const billingAccounts = state.organizationBillingAccounts.filter(
+    (account) =>
+      account.organizationId === organizationId &&
+      Date.parse(account.effectiveAt) <= now
+  )
+  const billingAccount = billingAccounts.length === 1 ? billingAccounts[0]! : null
+
+  // The approved model has no subscription tier or landing allowance. A
+  // percentage-v1 agreement therefore outranks any preserved historical
+  // entitlement row; those rows remain audit evidence, not current capacity.
+  // Exactly one already-effective account is required. A duplicate or queued
+  // future agreement must never be selected by array order and accidentally
+  // grant uncapped capacity before commercial reconciliation.
+  if (
+    billingAccount?.activationState === "percentage_active" &&
+    billingAccount.billingModel === "percentage_v1" &&
+    billingAccount.percentageTermsSnapshot !== null
+  ) {
+    return null
+  }
+
   const plans = livePlansFor(state, organizationId)
 
   if (plans.length === 0) {
-    const billingAccount = state.organizationBillingAccounts.find(
-      (account) => account.organizationId === organizationId
-    )
-
     // A brand-new, explicitly unenrolled host may prepare one real landing so
     // sales-assisted activation does not require support staff to recreate its
     // operating data. This is workspace setup only: it grants no entitlement,
@@ -160,17 +193,6 @@ export function activeLandingLimitFor(
     // plan is explicitly configured and activated.
     if (billingAccount?.activationState === "unenrolled") {
       return 1
-    }
-
-    // Percentage-v1 has no subscription tier or landing cap. The accepted
-    // agreement is the operating entitlement; revenue is earned only from
-    // completed movements.
-    if (
-      billingAccount?.activationState === "percentage_active" &&
-      billingAccount.billingModel === "percentage_v1" &&
-      billingAccount.percentageTermsSnapshot !== null
-    ) {
-      return null
     }
 
     return 0
@@ -442,16 +464,224 @@ export function setLandingActive(
   return updated
 }
 
+/** A single tenant-scoped read boundary for every mill/destination consumer. */
+export function listMillsForOrganization(
+  state: LogLoadsDatabaseState,
+  rawContext: z.input<typeof actorContextSchema>
+): Mill[] {
+  const { actorUserId, organizationId } = actorContextSchema.parse(rawContext)
+
+  // A tenant id is not authority. Every caller must prove the active user is
+  // an active member of the workspace before any owned destination is read.
+  const context = getActiveOrganizationContext(state, actorUserId, organizationId)
+  assertOrganizationAction(context, "view_network")
+
+  return state.mills.filter((mill) => millUsableByOrganization(mill, organizationId))
+}
+
+function assertDestinationAction(
+  context: ReturnType<typeof getActiveOrganizationContext>
+): void {
+  assertCondition(
+    organizationRoleCan(context.membership.role, "manage_destination") ||
+      organizationRoleCan(context.membership.role, "publish_load"),
+    `${context.membership.role} cannot manage destination`
+  )
+}
+
+const millInputSchema = actorContextSchema.extend({
+  name: z.string().trim().min(1, "Name the mill or destination so a lane can end there").max(120),
+  addressLine1: z.string().trim().min(1).max(200),
+  city: z.string().trim().min(1).max(100),
+  state: destinationStateSchema,
+  postalCode: z.string().trim().min(3).max(20),
+  coordinates: coordinatesSchema,
+  contact: destinationContactSchema,
+  accessNotes: z.string().trim().max(500).optional().nullable(),
+  roadCondition: roadConditionSchema
+})
+
+const updateMillInputSchema = millInputSchema.extend({
+  millId: z.string().uuid()
+})
+
+const setMillActiveInputSchema = actorContextSchema.extend({
+  millId: z.string().uuid(),
+  isActive: z.boolean()
+})
+
+export type CreateMillInput = z.input<typeof millInputSchema>
+export type UpdateMillInput = z.input<typeof updateMillInputSchema>
+export type SetMillActiveInput = z.input<typeof setMillActiveInputSchema>
+
+function normalizedMillIdentity(input: Pick<Mill, "name" | "city" | "state">): string {
+  return [input.name, input.city, input.state]
+    .map((value) => value.trim().toLowerCase())
+    .join(" ")
+}
+
+function requireOwnMill(
+  state: LogLoadsDatabaseState,
+  millId: string,
+  organizationId: string
+): Mill {
+  const mill = assertFound(
+    state.mills.find((candidate) => candidate.id === millId),
+    "That destination was not found"
+  )
+
+  assertCondition(mill.companyId === organizationId, "That destination was not found")
+  return mill
+}
+
+/**
+ * Records a mill or destination supplied in-product by a host. Dedicated
+ * destination managers and roles that publish lanes can both maintain these
+ * records; the record remains invisible in every other organization's builder.
+ */
+export function createMill(state: LogLoadsDatabaseState, rawInput: CreateMillInput): Mill {
+  const input = millInputSchema.parse(rawInput)
+  const context = getActiveOrganizationContext(state, input.actorUserId, input.organizationId)
+  assertDestinationAction(context)
+
+  const normalized = normalizedMillIdentity(input)
+
+  assertCondition(
+    !state.mills.some(
+      (candidate) =>
+        millUsableByOrganization(candidate, input.organizationId) &&
+        normalizedMillIdentity(candidate) === normalized
+    ),
+    "That destination is already on file for this workspace"
+  )
+
+  const timestamp = nowIso()
+  const destinationId = createUuid()
+  const codeStem = input.name.replace(/[^A-Za-z0-9]/g, "").slice(0, 10).toUpperCase() || "DEST"
+  const mill = millSchema.parse({
+    accessNotes: input.accessNotes ?? null,
+    addressLine1: input.addressLine1,
+    city: input.city,
+    companyId: input.organizationId,
+    contact: input.contact,
+    coordinates: input.coordinates,
+    createdAt: timestamp,
+    id: destinationId,
+    isActive: true,
+    // Internal and globally unique; hosts are never asked to know a mill code.
+    millCode: `HOST-${codeStem}-${destinationId.replaceAll("-", "").toUpperCase()}`,
+    name: input.name,
+    postalCode: input.postalCode,
+    roadCondition: input.roadCondition,
+    slotWindowMinutes: null,
+    state: input.state,
+    updatedAt: timestamp,
+    weatherNotes: null
+  })
+
+  state.mills.push(mill)
+  state.auditEvents.push(auditEventSchema.parse({
+    action: "mill_created",
+    actorUserId: input.actorUserId,
+    createdAt: timestamp,
+    entityId: mill.id,
+    entityType: "mill",
+    id: createUuid(),
+    metadata: { name: mill.name, organizationId: input.organizationId }
+  }))
+
+  return mill
+}
+
+/** Corrects an owned destination without changing its identity or visibility. */
+export function updateMill(state: LogLoadsDatabaseState, rawInput: UpdateMillInput): Mill {
+  const input = updateMillInputSchema.parse(rawInput)
+  const context = getActiveOrganizationContext(state, input.actorUserId, input.organizationId)
+  assertDestinationAction(context)
+
+  const existing = requireOwnMill(state, input.millId, input.organizationId)
+  const normalized = normalizedMillIdentity(input)
+
+  assertCondition(
+    !state.mills.some(
+      (candidate) =>
+        candidate.id !== existing.id &&
+        millUsableByOrganization(candidate, input.organizationId) &&
+        normalizedMillIdentity(candidate) === normalized
+    ),
+    "That destination is already on file for this workspace"
+  )
+
+  const timestamp = nowIso()
+  const updated = millSchema.parse({
+    ...existing,
+    accessNotes: input.accessNotes ?? null,
+    addressLine1: input.addressLine1,
+    city: input.city,
+    contact: input.contact,
+    coordinates: input.coordinates,
+    name: input.name,
+    postalCode: input.postalCode,
+    roadCondition: input.roadCondition,
+    state: input.state,
+    updatedAt: timestamp
+  })
+
+  state.mills = state.mills.map((candidate) => candidate.id === updated.id ? updated : candidate)
+  state.auditEvents.push(auditEventSchema.parse({
+    action: "mill_updated",
+    actorUserId: input.actorUserId,
+    createdAt: timestamp,
+    entityId: updated.id,
+    entityType: "mill",
+    id: createUuid(),
+    metadata: { isActive: updated.isActive, name: updated.name }
+  }))
+
+  return updated
+}
+
+/** Retires or restores only an organization-owned destination. */
+export function setMillActive(state: LogLoadsDatabaseState, rawInput: SetMillActiveInput): Mill {
+  const input = setMillActiveInputSchema.parse(rawInput)
+  const context = getActiveOrganizationContext(state, input.actorUserId, input.organizationId)
+  assertDestinationAction(context)
+
+  const existing = requireOwnMill(state, input.millId, input.organizationId)
+  if (existing.isActive === input.isActive) return existing
+
+  const timestamp = nowIso()
+  const updated = millSchema.parse({ ...existing, isActive: input.isActive, updatedAt: timestamp })
+
+  state.mills = state.mills.map((candidate) => candidate.id === updated.id ? updated : candidate)
+  state.auditEvents.push(auditEventSchema.parse({
+    action: updated.isActive ? "mill_restored" : "mill_retired",
+    actorUserId: input.actorUserId,
+    createdAt: timestamp,
+    entityId: updated.id,
+    entityType: "mill",
+    id: createUuid(),
+    metadata: { name: updated.name }
+  }))
+
+  return updated
+}
+
 export function createHaulRoute(state: LogLoadsDatabaseState, rawInput: CreateHaulRouteInput): HaulRoute {
   const input = haulRouteInputSchema.parse(rawInput)
   const context = getActiveOrganizationContext(state, input.actorUserId, input.organizationId)
   assertOrganizationAction(context, "publish_load")
 
   // The lane must start somewhere this organization actually controls; the
-  // destination is platform-managed and shared, so it need only exist.
+  // destination must be shared by the platform or owned by this organization.
   requireOwnLanding(state, input.landingId, input.organizationId)
-  assertFound(
+  const destination = assertFound(
     state.mills.find((candidate) => candidate.id === input.millId),
+    "That destination was not found"
+  )
+
+  assertCondition(
+    millUsableByOrganization(destination, input.organizationId) && destination.isActive,
     "That destination was not found"
   )
 

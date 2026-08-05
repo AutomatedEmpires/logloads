@@ -11,6 +11,10 @@ import {
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
+import {
+  destinationFacilityVerificationAt,
+  millUsableByOrganization
+} from "./destination-access"
 import { createUuid, nowIso } from "./utils"
 
 export interface RoutePackSources {
@@ -51,6 +55,11 @@ export function loadPostingHasOwnedCoherentSources(
   const route = state.haulRoutes.find(
     (candidate) => candidate.id === load.routeId && candidate.companyId === load.companyId
   )
+  const destination = state.mills.find(
+    (candidate) =>
+      candidate.id === load.dropoffMillId &&
+      millUsableByOrganization(candidate, load.companyId)
+  )
 
   return Boolean(
     dispatcher &&
@@ -58,6 +67,7 @@ export function loadPostingHasOwnedCoherentSources(
     landing &&
     rate &&
     route &&
+    destination &&
     route.landingId === load.pickupLandingId &&
     route.millId === load.dropoffMillId
   )
@@ -119,6 +129,11 @@ export function buildAssignmentRoutePack(
   timestamp = nowIso()
 ): RoutePack {
   const { assignment, load, route, slot, rate } = sources
+  const destination = state.mills.find(
+    (current) =>
+      current.id === load.dropoffMillId &&
+      millUsableByOrganization(current, load.companyId)
+  ) ?? null
 
   // Approval normally validates these before calling the builder, but accepted
   // legacy assignments and direct regeneration calls can predate that boundary.
@@ -126,6 +141,7 @@ export function buildAssignmentRoutePack(
   // lane even when the stored posting itself is malformed.
   if (
     rate === null ||
+    destination === null ||
     route.id !== load.routeId ||
     route.companyId !== load.companyId ||
     route.landingId !== load.pickupLandingId ||
@@ -150,10 +166,19 @@ export function buildAssignmentRoutePack(
   // operating-state documents can still contain duplicates. Ambiguity is not
   // authority: omit the private briefing rather than pick whichever came first.
   const landingDetails = matchingLandingDetails.length === 1 ? matchingLandingDetails[0]! : null
-  const destination = state.mills.find((current) => current.id === load.dropoffMillId) ?? null
-  const facility = destination
-    ? state.destinationFacilities.find((current) => current.millId === destination.id) ?? null
-    : null
+  const matchingFacilities = state.destinationFacilities.filter(
+    (current) => current.millId === destination.id
+  )
+  // A verified facility has to be unique and newer than the destination facts
+  // it attests to. Ambiguous, suggested, claimed, or stale facility rows do not
+  // contribute critical instructions to an assigned driver's snapshot.
+  const facilityCandidate = matchingFacilities.length === 1 ? matchingFacilities[0]! : null
+  const facilityVerifiedAt = destinationFacilityVerificationAt(
+    facilityCandidate,
+    destination,
+    timestamp
+  )
+  const facility = facilityVerifiedAt ? facilityCandidate : null
   const driver = state.driverProfiles.find((current) => current.id === assignment.driverProfileId) ?? null
   const driverUser = driver ? state.profiles.find((current) => current.id === driver.userId) ?? null : null
   const truck = state.truckProfiles.find((current) => current.id === assignment.truckProfileId) ?? null
@@ -174,7 +199,13 @@ export function buildAssignmentRoutePack(
   ) ?? null
 
   const instructions = [
-    ...(sourcePack?.localInstructions ?? []),
+    // Facility facts are re-derived from the current, version-covered facility
+    // record below. Never inherit an older load-level `facility_verified`
+    // claim: its provenance can have become suggested, ambiguous, or stale
+    // since the host authored that source pack.
+    ...(sourcePack?.localInstructions.filter(
+      (entry) => entry.source !== "facility_verified"
+    ) ?? []),
     instruction("operator_provided", "critical", "Gate access", landingDetails?.gateInstructions, landingDetails?.lastVerifiedAt),
     instruction("operator_provided", "critical", "Private road", landingDetails?.privateRoadNotes, landingDetails?.lastVerifiedAt),
     instruction("operator_provided", "standard", "Staging", landingDetails?.stagingInstructions, landingDetails?.lastVerifiedAt),
@@ -186,11 +217,11 @@ export function buildAssignmentRoutePack(
       instruction("operator_provided", "critical", "Safety and PPE", requirement, landingDetails?.lastVerifiedAt)
     ),
     instruction("operator_provided", "standard", "Communication", landingDetails?.communicationInstructions, landingDetails?.lastVerifiedAt),
-    instruction("facility_verified", "critical", "Check in", facility?.checkInProcess, facility?.lastVerifiedAt),
-    instruction("facility_verified", "critical", "Scale and ticket", facility?.scaleProcess, facility?.lastVerifiedAt),
-    instruction("facility_verified", "standard", "Unloading", facility?.unloadingInstructions, facility?.lastVerifiedAt),
+    instruction("facility_verified", "critical", "Check in", facility?.checkInProcess, facilityVerifiedAt),
+    instruction("facility_verified", "critical", "Scale and ticket", facility?.scaleProcess, facilityVerifiedAt),
+    instruction("facility_verified", "standard", "Unloading", facility?.unloadingInstructions, facilityVerifiedAt),
     facility && facility.currentStatus !== "open"
-      ? instruction("facility_verified", "critical", `Destination ${facility.currentStatus}`, facility.currentNotice ?? `The destination is ${facility.currentStatus}.`, facility.lastVerifiedAt)
+      ? instruction("facility_verified", "critical", `Destination ${facility.currentStatus}`, facility.currentNotice ?? `The destination is ${facility.currentStatus}.`, facilityVerifiedAt)
       : null,
     // Completion evidence is deliberately NOT an instruction: it has its own
     // section in the pack, and listing it twice makes a driver scanning at the
@@ -213,6 +244,7 @@ export function buildAssignmentRoutePack(
     contactEmail: dispatcher?.contact.email ?? null,
     contactName: dispatcher?.contact.name ?? null,
     contactPhone: dispatcher?.contact.phone ?? null,
+    destinationContact: destination.contact,
     destinationName: destination?.name ?? "Destination on file",
     destinationReceivingHours: facility?.receivingHours ?? null,
     driverName: driverUser?.fullName ?? "Assigned driver",

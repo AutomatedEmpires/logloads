@@ -17,6 +17,7 @@ export default async function Page({
 }) {
   const context = await getCockpitContext("host")
   const organizationId = context.network.activeOrganization.id
+  const actorUserId = context.actor.profile.id
   const welcome = (await searchParams).welcome === "1"
   // The host cockpit admits billing and destination managers too, so these
   // controls follow the same role matrix the services enforce rather than
@@ -26,16 +27,20 @@ export default async function Page({
   const role = context.actor.activeMembership?.role
   const canManageLandings = role !== undefined && organizationRoleCan(role, "manage_landing")
   const canPublish = role !== undefined && organizationRoleCan(role, "publish_load")
+  const canManageDestinations = role !== undefined && (
+    organizationRoleCan(role, "manage_destination") || canPublish
+  )
 
   return (
     <HostLandings
       account={shellAccountFor(context)}
       canManageLandings={canManageLandings}
+      canManageDestinations={canManageDestinations}
       canPublish={canPublish}
-      landings={getHostLandingRecords(organizationId, role)}
+      landings={getHostLandingRecords(organizationId, role, actorUserId)}
       network={context.network}
-      options={getHostPublishingOptions(organizationId)}
-      setup={getHostWorkspaceSetup(organizationId)}
+      options={getHostPublishingOptions(organizationId, actorUserId)}
+      setup={getHostWorkspaceSetup(organizationId, role, actorUserId)}
       welcome={welcome}
     />
   )

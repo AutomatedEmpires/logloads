@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic"
 export default async function Page() {
   const context = await getCockpitContext("host")
   const organizationId = context.network.activeOrganization.id
+  const actorUserId = context.actor.profile.id
   const role = context.actor.activeMembership?.role
   const canManageLandings =
     role !== undefined && organizationRoleCan(role, "manage_landing")
@@ -21,8 +22,8 @@ export default async function Page() {
       canManageLandings={canManageLandings}
       canPublish={canPublish}
       network={context.network}
-      options={getHostPublishingOptions(organizationId)}
-      setup={getHostWorkspaceSetup(organizationId)}
+      options={getHostPublishingOptions(organizationId, actorUserId)}
+      setup={getHostWorkspaceSetup(organizationId, role, actorUserId)}
     />
   )
 }

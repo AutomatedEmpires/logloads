@@ -50,9 +50,13 @@ import {
   countActiveLandings,
   createHaulRoute,
   createLanding,
+  createMill,
   createRate,
+  listMillsForOrganization,
   setLandingActive,
+  setMillActive,
   updateLanding,
+  updateMill,
   upsertLandingDetails
 } from "./host-workspace"
 import {
@@ -477,10 +481,15 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     createLoadPosting: (input: unknown) => createLoadPosting(state, input),
     createHaulRoute: (input: Parameters<typeof createHaulRoute>[1]) => createHaulRoute(state, input),
     createLanding: (input: Parameters<typeof createLanding>[1]) => createLanding(state, input),
+    createMill: (input: Parameters<typeof createMill>[1]) => createMill(state, input),
     createRate: (input: Parameters<typeof createRate>[1]) => createRate(state, input),
+    listMillsForOrganization: (input: Parameters<typeof listMillsForOrganization>[1]) =>
+      listMillsForOrganization(state, input),
     updateLanding: (input: Parameters<typeof updateLanding>[1]) => updateLanding(state, input),
+    updateMill: (input: Parameters<typeof updateMill>[1]) => updateMill(state, input),
     upsertLandingDetails: (input: Parameters<typeof upsertLandingDetails>[1]) => upsertLandingDetails(state, input),
     setLandingActive: (input: Parameters<typeof setLandingActive>[1]) => setLandingActive(state, input),
+    setMillActive: (input: Parameters<typeof setMillActive>[1]) => setMillActive(state, input),
     activeLandingLimitFor: (organizationId: string) => activeLandingLimitFor(state, organizationId),
     countActiveLandings: (organizationId: string) => countActiveLandings(state, organizationId),
     createNotification: (input: unknown) => createNotification(state, input),
@@ -630,6 +639,7 @@ export {
   SupportRequestNotFoundError
 } from "./support-requests"
 export { loadPostingHasOwnedCoherentSources, routePackIsSafeToRead } from "./route-packs"
+export { destinationFacilityVerificationAt, millUsableByOrganization } from "./destination-access"
 export { directOfferClaimCount, directOfferIsClaimable, effectiveDirectOfferStatus } from "./operating-network"
 export { DomainRefusalError } from "./utils"
 /**

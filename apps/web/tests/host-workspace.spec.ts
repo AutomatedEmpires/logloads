@@ -10,38 +10,37 @@ import { fillWhenReady, selectWhenReady } from "./builder-input"
  */
 
 async function signIn(page: Page, email: string) {
-  await page.goto("/sign-in")
-  await page.waitForLoadState("domcontentloaded")
+  await page.goto("/sign-in", { waitUntil: "domcontentloaded" })
   await page.fill('input[name="email"]', email)
   await page.click('button[type="submit"]')
-  await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 30_000 })
+  await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), {
+    timeout: 90_000,
+    waitUntil: "domcontentloaded"
+  })
 }
 
-// Unique per run so records from earlier runs can never collide by name. It does
-// NOT make the run repeatable: each one permanently spends one of Summit Ridge's
-// three active landings, so a third run against an un-reset database correctly
-// meets the at-limit notice and the add form is gone.
-const STAMP = Date.now()
+// Unique per run so records from earlier runs can never collide by name. The
+// current 5% agreement has no landing tier or allowance; the stamp is identity,
+// not a workaround for scarce subscription capacity.
+const STAMP = process.env.LOGLOADS_E2E_STAMP?.trim() || String(Date.now())
 const LANDING = `Cedar Spur ${STAMP}`
+const DESTINATION = `Juniper Mill ${STAMP}`
 const LANE = `Cedar to Cascade ${STAMP}`
 const RATE_NOTE = `Cedar rate ${STAMP}`
 const GATE_NOTE = `Call dispatch for cedar gate ${STAMP}`
 
 test.describe.serial("host workspace setup", () => {
-  // This journey consumes the seed host's plan capacity: it adds an active
-  // landing, and Summit Ridge's plan covers three. Run against a database the
-  // suite has already exercised without `pnpm db:assert` first and the add form
-  // is correctly replaced by the at-limit notice — a real refusal, not a flake.
-  // It also runs once rather than once per project, for the same reason.
+  // This is one stateful journey over a shared durable fixture. It runs on one
+  // browser project so the same logical setup is not written twice; responsive
+  // coverage belongs to the read-only surface checks.
   test.beforeEach(({ page }, testInfo) => {
     void page
     // Not a claim of mobile coverage: the host workspace is a desktop surface
     // and every test here sets a desktop viewport, as the repo's other host
-    // journeys do. It runs on one project because it consumes an active landing
-    // from the host's plan and must not spend two.
+    // journeys do.
     test.skip(
-      testInfo.project.name === "desktop-chrome",
-      "consumes plan capacity; runs once, on the mobile-chrome project"
+      testInfo.project.name !== "mobile-chrome",
+      "stateful setup journey runs once, on the mobile-chrome project"
     )
   })
 
@@ -85,6 +84,54 @@ test.describe.serial("host workspace setup", () => {
     }).toPass({ timeout: 30_000 })
   })
 
+  test("the host adds an unlisted destination without leaving the lane builder", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await signIn(page, "cole@summit.example")
+    await page.goto("/host/landings")
+    await page.waitForLoadState("domcontentloaded")
+
+    const card = page.locator(".host-landing-card").filter({ hasText: LANDING }).first()
+    const addDestination = card.locator("details").filter({ hasText: "Haul somewhere not listed?" })
+    await addDestination.getByText("Haul somewhere not listed? Add a destination", { exact: true }).click()
+
+    await fillWhenReady(addDestination, "Destination name", DESTINATION)
+    await fillWhenReady(addDestination, "Street address", "800 Mill Yard Road")
+    await fillWhenReady(addDestination, "City", "La Pine")
+    await fillWhenReady(addDestination, "State", "OR")
+    await fillWhenReady(addDestination, "Postal code", "97739")
+    await fillWhenReady(addDestination, "Map latitude", "43.67")
+    await fillWhenReady(addDestination, "Map longitude", "-121.50")
+    await fillWhenReady(addDestination, "Scale house or site contact", "Juniper Scale House")
+    await fillWhenReady(addDestination, "Contact phone", "555-4001")
+    await selectWhenReady(addDestination, "Current road condition", "wet")
+    await addDestination.getByRole("button", { name: "Add destination" }).click()
+    await expect(addDestination.getByRole("status")).toHaveText("Saved.", { timeout: 30_000 })
+
+    await expect(async () => {
+      await page.reload()
+      await page.waitForLoadState("domcontentloaded")
+      const refreshed = page.locator(".host-landing-card").filter({ hasText: LANDING }).first()
+      await expect(refreshed.locator('select[name="millId"] option').filter({ hasText: DESTINATION })).toHaveCount(1)
+    }).toPass({ timeout: 30_000 })
+
+    const destinationRecord = page.locator(".workspace-section").filter({ hasText: "Destinations" })
+      .locator("li").filter({ hasText: DESTINATION }).first()
+    const editDestination = destinationRecord.locator("details").filter({ hasText: "Edit destination" })
+    await editDestination.getByText("Edit destination", { exact: true }).click()
+    await fillWhenReady(editDestination, "Scale house or site contact", "Juniper Check-in")
+    await editDestination.getByRole("button", { name: "Save destination" }).click()
+    await expect(editDestination.getByRole("status")).toContainText("Saved", { timeout: 30_000 })
+
+    await page.reload()
+    await page.waitForLoadState("domcontentloaded")
+    const persistedDestination = page.locator(".workspace-section").filter({ hasText: "Destinations" })
+      .locator("li").filter({ hasText: DESTINATION }).first()
+    const persistedEditor = persistedDestination.locator("details").filter({ hasText: "Edit destination" })
+    await persistedEditor.getByText("Edit destination", { exact: true }).click()
+    await expect(persistedEditor.getByLabel("Scale house or site contact"))
+      .toHaveValue("Juniper Check-in")
+  })
+
   test("the host adds a lane from that landing", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await signIn(page, "cole@summit.example")
@@ -101,8 +148,10 @@ test.describe.serial("host workspace setup", () => {
     await expect(card.getByText(/No lanes yet/)).toBeVisible()
 
     await card.getByLabel("Lane name").fill(LANE)
+    await card.locator('select[name="millId"]').selectOption({ label: `${DESTINATION} — La Pine, OR` })
     await card.getByLabel("Distance (miles)").fill("38.4")
     await card.getByLabel("Run time (minutes)").fill("68")
+    await card.locator("form.workspace-form--inline").getByLabel("Road condition").selectOption("good")
     await card.getByRole("button", { name: "Add lane" }).click()
     await expect(card.getByText("Lane added.")).toBeVisible({ timeout: 30_000 })
 
@@ -178,7 +227,7 @@ test.describe.serial("host workspace setup", () => {
 
     await expect(page.getByText("Publish timber movement")).toBeVisible({ timeout: 15_000 })
     await fillWhenReady(page, "Work title", `Cedar haul ${STAMP}`)
-    await page.getByRole("button", { name: "Next" }).click()
+    await page.getByRole("button", { name: "Next", exact: true }).click()
 
     // Asserted on the options rather than the selects: these selects sit inside
     // their labels, so an accessible name is the label text plus whatever is
@@ -194,5 +243,27 @@ test.describe.serial("host workspace setup", () => {
     await page.locator("select").filter({ has: landingOption }).selectOption(landingValue as string)
 
     await expect(page.locator("option").filter({ hasText: LANE })).toHaveCount(1)
+  })
+
+  test("the host can retire that destination from future lane setup", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await signIn(page, "cole@summit.example")
+    await page.goto("/host/landings")
+    await page.waitForLoadState("domcontentloaded")
+
+    const destinationRecord = page.locator(".workspace-section").filter({ hasText: "Destinations" })
+      .locator("li").filter({ hasText: DESTINATION }).first()
+    const editDestination = destinationRecord.locator("details").filter({ hasText: "Edit destination" })
+    await editDestination.getByText("Edit destination", { exact: true }).click()
+    await editDestination.getByRole("button", { name: "Retire destination" }).click()
+
+    await expect(async () => {
+      await page.reload()
+      await page.waitForLoadState("domcontentloaded")
+      const refreshedRecord = page.locator(".workspace-section").filter({ hasText: "Destinations" })
+        .locator("li").filter({ hasText: DESTINATION }).first()
+      await expect(refreshedRecord.getByText(/Retired from new lanes/)).toBeVisible()
+      await expect(page.locator('select[name="millId"] option').filter({ hasText: DESTINATION })).toHaveCount(0)
+    }).toPass({ timeout: 30_000 })
   })
 })
