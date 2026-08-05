@@ -120,14 +120,6 @@ export async function startBillingPortalAction(product: PlanProduct): Promise<Ch
       return { error: plan.message, ok: false, url: null }
     }
 
-    const billing = resolveStripeBilling()
-
-    if (!billing.ok) {
-      return { error: billing.message, ok: false, url: null }
-    }
-
-    await assertLogLoadsStripeAccount()
-
     const stripeCustomerId = await readState(
       (current) =>
         current.state.entitlements.find(
@@ -143,6 +135,14 @@ export async function startBillingPortalAction(product: PlanProduct): Promise<Ch
         url: null
       }
     }
+
+    const billing = resolveStripeBilling()
+
+    if (!billing.ok) {
+      return { error: billing.message, ok: false, url: null }
+    }
+
+    await assertLogLoadsStripeAccount()
 
     const origin = appOrigin()
 

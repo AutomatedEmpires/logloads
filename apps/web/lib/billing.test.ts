@@ -2091,6 +2091,43 @@ describe("startBillingPortalAction", () => {
     expect(mocks.stripe.billingPortalSessionCreate).not.toHaveBeenCalled()
   })
 
+  it("returns Fleet Free truth before initializing unconfigured Stripe", async () => {
+    const state = seedState()
+    const entitlement = state.entitlements.find(
+      (candidate) => candidate.product === "fleet_operations"
+    )
+    const fleet = state.organizations.find(
+      (candidate) => candidate.id === entitlement?.organizationId
+    )
+
+    if (!fleet || !entitlement) {
+      throw new Error(
+        "The seed no longer contains a fleet organization with Fleet Free access"
+      )
+    }
+
+    entitlement.stripeCustomerId = null
+    entitlement.stripeSubscriptionId = null
+    vi.stubEnv("STRIPE_SECRET_KEY", "")
+    mocks.getSessionActor.mockResolvedValue(actorFor(fleet))
+    mocks.readState.mockImplementation(
+      async (
+        read: (current: { state: LogLoadsDatabaseState }) => unknown
+      ) => read({ state })
+    )
+
+    const result = await startBillingPortalAction("fleet_operations")
+
+    expect(result).toEqual({
+      error:
+        "No preserved subscription billing profile exists for this workspace. Fleet Free needs no portal; current host billing is managed from Host Billing.",
+      ok: false,
+      url: null
+    })
+    expect(mocks.stripe.accountRetrieve).not.toHaveBeenCalled()
+    expect(mocks.stripe.billingPortalSessionCreate).not.toHaveBeenCalled()
+  })
+
   it("fails closed before the legacy portal when Stripe account isolation fails", async () => {
     const state = seedState()
     const entitlement = state.entitlements.find(
