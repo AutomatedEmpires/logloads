@@ -59,7 +59,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       await signedUpload({
         publicIdPrefix: target.publicIdPrefix
-      })
+      }),
+      { headers: { "Cache-Control": "private, no-store" } }
     )
   } catch (error) {
     return apiErrorResponse(error)

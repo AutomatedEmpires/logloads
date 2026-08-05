@@ -1,4 +1,4 @@
-import { organizationMembershipSchema } from "@logloads/contracts"
+import { organizationMembershipSchema, userSchema } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
@@ -500,6 +500,61 @@ describe("route pack access", () => {
     })).toThrow(/Only the assigned driver/)
   })
 
+  it("revokes the assigned driver's pack despite an unrelated active participant membership", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { assignment } = bookRuntimeHaul(services)
+    const haulingMembership = services.state.organizationMemberships.find(
+      (membership) =>
+        membership.organizationId === HAULER_ORG &&
+        membership.userId === HAULER_DRIVER_ACTOR
+    )
+
+    if (!haulingMembership) throw new Error("Assigned driver membership fixture missing")
+    haulingMembership.status = "suspended"
+    services.state.organizationMemberships.push(organizationMembershipSchema.parse({
+      createdAt: "2026-08-05T12:00:00.000Z",
+      id: "29292929-2929-4929-8929-292929292929",
+      organizationId: HOST_ORG,
+      role: "driver",
+      status: "active",
+      updatedAt: "2026-08-05T12:00:00.000Z",
+      userId: HAULER_DRIVER_ACTOR
+    }))
+
+    expect(() => driverPack(services, assignment.id)).toThrow(/not an active member/)
+    expect(() => services.getRoutePackForAssignment({
+      actorUserId: HAULER_DRIVER_ACTOR,
+      assignmentId: assignment.id,
+      organizationId: HOST_ORG
+    })).toThrow(/Only the assigned driver/)
+  })
+
+  it("requires an active user and non-archived organization before serving a pack", () => {
+    const inactiveUserServices = createLogLoadsServices(createInMemoryDatabase())
+    const { assignment: inactiveUserAssignment } = bookRuntimeHaul(inactiveUserServices)
+    const profile = inactiveUserServices.state.profiles.find(
+      (candidate) => candidate.id === HAULER_DRIVER_ACTOR
+    )
+
+    if (!profile) throw new Error("Assigned driver user fixture missing")
+    profile.isActive = false
+    expect(() => driverPack(inactiveUserServices, inactiveUserAssignment.id)).toThrow(/not active/)
+
+    const archivedOrganizationServices = createLogLoadsServices(createInMemoryDatabase())
+    const { assignment: archivedOrganizationAssignment } = bookRuntimeHaul(
+      archivedOrganizationServices
+    )
+    const organization = archivedOrganizationServices.state.organizations.find(
+      (candidate) => candidate.id === HAULER_ORG
+    )
+
+    if (!organization) throw new Error("Hauler organization fixture missing")
+    organization.archivedAt = "2026-08-05T12:00:00.000Z"
+    expect(() =>
+      driverPack(archivedOrganizationServices, archivedOrganizationAssignment.id)
+    ).toThrow(/not active/)
+  })
+
   it("refuses members with no operational need on either side of the haul", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const { assignment } = bookRuntimeHaul(services)
@@ -517,6 +572,19 @@ describe("route pack access", () => {
     denied.forEach(([label, role, organizationId], index) => {
       const userId = `2c2c2c2c-2c2c-4c2c-8c2c-2c2c2c2c2c${index.toString().padStart(2, "0")}`
 
+      services.state.profiles.push(userSchema.parse({
+        clerkUserId: `clerk-route-pack-${index}`,
+        companyId: organizationId,
+        createdAt: "2026-06-05T00:00:00.000Z",
+        email: `route-pack-${index}@example.com`,
+        fullName: `Route Pack boundary ${index}`,
+        id: userId,
+        isActive: true,
+        phone: "555-0100",
+        role: "driver",
+        updatedAt: "2026-06-05T00:00:00.000Z",
+        verificationStatus: "pending"
+      }))
       services.state.organizationMemberships.push(
         organizationMembershipSchema.parse({
           createdAt: "2026-06-05T00:00:00.000Z",

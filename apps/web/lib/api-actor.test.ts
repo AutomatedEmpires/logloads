@@ -1,12 +1,28 @@
 import { createLoadPostingInputSchema } from "@logloads/contracts"
-import { OperatingStateConflictError, OperatingStateUnavailableError } from "@logloads/db"
+import { createInMemoryDatabase, OperatingStateConflictError, OperatingStateUnavailableError } from "@logloads/db"
 import { DomainRefusalError } from "@logloads/services"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-vi.mock("server-only", () => ({}))
+const actorMocks = vi.hoisted(() => ({
+  checkRateLimit: vi.fn(),
+  getSessionActor: vi.fn()
+}))
 
-import { ApiError, apiErrorResponse } from "./api-actor"
+vi.mock("server-only", () => ({}))
+vi.mock("./session", () => ({ getSessionActor: actorMocks.getSessionActor }))
+vi.mock("./rate-limit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./rate-limit")>()),
+  checkRateLimit: actorMocks.checkRateLimit
+}))
+
+import {
+  ApiError,
+  apiErrorResponse,
+  requireApiActor,
+  requireSupportApiActor
+} from "./api-actor"
 import { clientKeyFromHeaders } from "./rate-limit-client-key"
+import type { SessionActor } from "./session-policy"
 
 const LOAD_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 const ORGANIZATION_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
@@ -16,6 +32,85 @@ async function answer(error: unknown) {
 
   return { body: (await response.json()) as { error: string }, headers: response.headers, status: response.status }
 }
+
+function revokedMultiWorkspaceActor(): SessionActor {
+  const state = createInMemoryDatabase()
+  const profile = state.profiles.find(
+    (candidate) => candidate.email === "dispatch@northpine.example"
+  )
+
+  if (!profile) {
+    throw new Error("Seeded multi-workspace profile is missing")
+  }
+
+  const memberships = state.organizationMemberships
+    .filter(
+      (membership) =>
+        membership.userId === profile.id && membership.status === "active"
+    )
+    .flatMap((membership) => {
+      const organization = state.organizations.find(
+        (candidate) => candidate.id === membership.organizationId
+      )
+
+      return organization ? [{ membership, organization }] : []
+    })
+
+  if (memberships.length < 2) {
+    throw new Error("Seeded actor no longer spans multiple workspaces")
+  }
+
+  return {
+    activeMembership: null,
+    activeOrganization: null,
+    driverProfileId: null,
+    isPlatformAdmin: false,
+    memberships,
+    profile,
+    workspaceSelectionInvalid: true
+  }
+}
+
+describe("workspace-scoped API actors", () => {
+  beforeEach(() => {
+    actorMocks.checkRateLimit.mockResolvedValue(undefined)
+    actorMocks.getSessionActor.mockReset()
+  })
+
+  it("fails every organization API gate closed after the signed workspace is revoked", async () => {
+    const actor = revokedMultiWorkspaceActor()
+    const otherOrganizationId = actor.memberships[0]!.organization.id
+
+    actorMocks.getSessionActor.mockResolvedValue(actor)
+
+    await expect(requireApiActor()).rejects.toMatchObject({ status: 403 })
+    await expect(requireApiActor(otherOrganizationId)).rejects.toMatchObject({
+      status: 403
+    })
+    await expect(requireSupportApiActor()).rejects.toMatchObject({ status: 403 })
+  })
+
+  it("still resolves the active workspace when the signed selection is valid", async () => {
+    const actor = revokedMultiWorkspaceActor()
+    const active = actor.memberships[0]!
+
+    actorMocks.getSessionActor.mockResolvedValue({
+      ...actor,
+      activeMembership: active.membership,
+      activeOrganization: active.organization,
+      workspaceSelectionInvalid: false
+    })
+
+    await expect(requireApiActor()).resolves.toMatchObject({
+      actorUserId: actor.profile.id,
+      organizationId: active.organization.id
+    })
+    await expect(requireSupportApiActor()).resolves.toMatchObject({
+      actorUserId: actor.profile.id,
+      organizationId: active.organization.id
+    })
+  })
+})
 
 describe("apiErrorResponse", () => {
   beforeEach(() => {
@@ -102,6 +197,8 @@ describe("apiErrorResponse", () => {
     expect(refused).toMatchObject({ body: { error: "You are not a member of that organization" }, status: 403 })
     expect(limited.status).toBe(429)
     expect(limited.headers.get("Retry-After")).toBe("17")
+    expect(refused.headers.get("Cache-Control")).toBe("private, no-store")
+    expect(limited.headers.get("Cache-Control")).toBe("private, no-store")
   })
 
   it("separates invalid fields from unparseable bodies", async () => {

@@ -12,13 +12,15 @@ export default function robots(): MetadataRoute.Robots {
         disallow: [
           "/admin",
           "/api",
+          "/access-restricted",
           "/driver",
           "/fleet",
           "/host",
           "/onboarding",
           "/sign-in",
           "/sign-up",
-          "/support"
+          "/support",
+          "/workspace"
         ],
         userAgent: "*"
       }

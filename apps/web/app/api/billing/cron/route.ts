@@ -215,7 +215,10 @@ function authorize(request: Request): NextResponse | null {
   if (!secret) {
     return NextResponse.json(
       { error: "Billing scheduler is not configured" },
-      { status: 503 }
+      {
+        headers: { "Cache-Control": "private, no-store" },
+        status: 503
+      }
     )
   }
 
@@ -223,7 +226,13 @@ function authorize(request: Request): NextResponse | null {
   const received = Buffer.from(request.headers.get("authorization") ?? "")
 
   if (expected.length !== received.length || !timingSafeEqual(expected, received)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      {
+        headers: { "Cache-Control": "private, no-store" },
+        status: 401
+      }
+    )
   }
 
   return null
@@ -448,7 +457,10 @@ export async function GET(request: Request) {
         providerSchedulesReady: scheduleCandidates.length,
         subscriptionInvoicesReady: subscriptionInvoicesToCollect.length
       },
-      { status: 503 }
+      {
+        headers: { "Cache-Control": "private, no-store" },
+        status: 503
+      }
     )
   }
   const subscriptionPort =
@@ -469,7 +481,10 @@ export async function GET(request: Request) {
           providerSchedulesReady: scheduleCandidates.length,
           subscriptionInvoicesReady: subscriptionInvoicesToCollect.length
         },
-        { status: 503 }
+        {
+          headers: { "Cache-Control": "private, no-store" },
+          status: 503
+        }
       )
     }
   }
@@ -484,7 +499,13 @@ export async function GET(request: Request) {
   const billing = legacyCollection && invoices.length > 0 ? resolveStripeBilling() : null
 
   if (billing && !billing.ok) {
-    return NextResponse.json({ error: billing.message, period }, { status: 503 })
+    return NextResponse.json(
+      { error: billing.message, period },
+      {
+        headers: { "Cache-Control": "private, no-store" },
+        status: 503
+      }
+    )
   }
 
   for (const invoice of legacyCollection ? invoices : []) {
@@ -1200,6 +1221,7 @@ export async function GET(request: Request) {
       }
     },
     {
+      headers: { "Cache-Control": "private, no-store" },
       status:
         failed.length > 0 ||
         failedSubscriptionCharges.length > 0 ||

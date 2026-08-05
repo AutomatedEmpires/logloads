@@ -162,7 +162,8 @@ function fixture() {
     driverProfileId: driver.id,
     isPlatformAdmin: false,
     memberships: [{ membership, organization }],
-    profile
+    profile,
+    workspaceSelectionInvalid: false
   }
 
   return { actor, driver, organization, state }

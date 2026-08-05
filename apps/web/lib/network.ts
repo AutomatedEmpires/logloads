@@ -25,6 +25,7 @@ import {
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 import {
+  activeDriverProfileForOrganization,
   createLogLoadsServices,
   directOfferClaimCount,
   directOfferIsClaimable,
@@ -576,35 +577,46 @@ export function buildNetworkView(
 
   // --- Resolve the viewer -------------------------------------------------
   const actorUserId = viewer.kind === "actor" ? viewer.actorUserId : null
-  const currentUser = actorUserId
-    ? requireRecord(state.profiles.find((profile) => profile.id === actorUserId), "current user")
+  const actorProfile = actorUserId
+    ? state.profiles.find((profile) => profile.id === actorUserId) ?? null
     : null
+  const currentUser = actorProfile?.isActive ? actorProfile : null
 
-  const memberships = actorUserId
-    ? state.organizationMemberships.filter((membership) => membership.userId === actorUserId && membership.status === "active")
+  const memberships = currentUser
+    ? state.organizationMemberships.filter(
+        (membership) => membership.userId === currentUser.id && membership.status === "active"
+      )
     : []
   const requestedOrganizationId = viewer.kind === "actor" ? viewer.organizationId ?? null : null
-  const activeMembership = (requestedOrganizationId
-    ? memberships.find((membership) => membership.organizationId === requestedOrganizationId)
-    : undefined) ?? memberships[0] ?? null
+  const eligibleMemberships = memberships.filter((membership) =>
+    state.organizations.some(
+      (organization) => organization.id === membership.organizationId && !organization.archivedAt
+    )
+  )
+  const selectedOrganizationId = requestedOrganizationId
+  const selectedMemberships = selectedOrganizationId
+    ? eligibleMemberships.filter((membership) => membership.organizationId === selectedOrganizationId)
+    : []
+  // A requested organization is exact authority. Never fall through to some
+  // other membership when it is suspended, removed, archived, or ambiguous.
+  const activeMembership = selectedMemberships.length === 1 ? selectedMemberships[0]! : null
   const activeOrganization = activeMembership
-    ? requireRecord(
-        state.organizations.find((organization) => organization.id === activeMembership.organizationId),
-        "active organization"
-      )
+    ? state.organizations.find(
+        (organization) => organization.id === activeMembership.organizationId && !organization.archivedAt
+      ) ?? null
     : null
 
-  const currentDriverProfile = actorUserId
-    ? state.driverProfiles.find((driver) => driver.userId === actorUserId) ?? null
+  const currentDriverProfile = actorUserId && activeOrganization
+    ? activeDriverProfileForOrganization(state, actorUserId, activeOrganization.id)
     : null
 
   const organizationCombinations = activeOrganization
     ? state.equipmentCombinations.filter((combination) => combination.organizationId === activeOrganization.id)
     : []
   const currentCombination = currentDriverProfile
-    ? organizationCombinations.find((combination) => combination.assignedDriverProfileId === currentDriverProfile.id) ??
-      state.equipmentCombinations.find((combination) => combination.assignedDriverProfileId === currentDriverProfile.id) ??
-      null
+    ? organizationCombinations.find(
+        (combination) => combination.assignedDriverProfileId === currentDriverProfile.id
+      ) ?? null
     : null
   const currentTruck = currentCombination
     ? state.truckProfiles.find((truck) => truck.id === currentCombination.truckProfileId) ?? null
@@ -616,16 +628,23 @@ export function buildNetworkView(
     ? state.availabilityWindows.filter((window) => window.driverProfileId === currentDriverProfile.id)
     : []
 
-  const organizationDriverProfileIds = new Set(
+  const activeOrganizationDriverProfileIds = new Set(
     activeOrganization
       ? state.driverProfiles
-          .filter((driver) => driver.companyId === activeOrganization.id ||
-            organizationCombinations.some((combination) => combination.assignedDriverProfileId === driver.id) ||
-            state.organizationMemberships.some((membership) =>
-              membership.organizationId === activeOrganization.id &&
-              membership.status === "active" &&
-              membership.userId === driver.userId
-            ))
+          .filter(
+            (driver) =>
+              activeDriverProfileForOrganization(state, driver.userId, activeOrganization.id)?.id === driver.id
+          )
+          .map((driver) => driver.id)
+      : []
+  )
+  // Membership revocation removes live authority, not historical ownership.
+  // Authorized fleet staff still need the exact organization's preserved
+  // assignment and trip records for reconciliation and audit.
+  const organizationOwnedDriverProfileIds = new Set(
+    activeOrganization
+      ? state.driverProfiles
+          .filter((driver) => driver.companyId === activeOrganization.id)
           .map((driver) => driver.id)
       : []
   )
@@ -702,7 +721,7 @@ export function buildNetworkView(
     const staffAccessAssignment = staffCanViewPrivateLocation
       ? orderedAssignments.find(
           (assignment) =>
-            organizationDriverProfileIds.has(assignment.driverProfileId) &&
+            organizationOwnedDriverProfileIds.has(assignment.driverProfileId) &&
             ACCESS_UNLOCKED_ASSIGNMENT_STATUSES.includes(assignment.status)
         ) ?? null
       : null
@@ -796,7 +815,14 @@ export function buildNetworkView(
             : !discoveryAvailable
               ? "not_requestable"
               : "available"
-    const viewerCanRequest = !(viewerHasActiveAssignment || viewer.kind === "public" || !discoveryAvailable)
+    const viewerCanRequest = Boolean(
+      currentUser &&
+      activeOrganization &&
+      activeMembership &&
+      currentDriverProfile &&
+      !viewerHasActiveAssignment &&
+      discoveryAvailable
+    )
     // Slot-level availability is not viewer eligibility. A public visitor, or a
     // driver who already holds this load, can have open slots in front of them
     // and still be unable to take one — offering them a picker would be a
@@ -844,7 +870,7 @@ export function buildNetworkView(
       ? loadAssignments
       : loadAssignments.filter((assignment) =>
           (currentDriverProfile && assignment.driverProfileId === currentDriverProfile.id) ||
-          (staffCanViewOrganizationAssignments && organizationDriverProfileIds.has(assignment.driverProfileId))
+          (staffCanViewOrganizationAssignments && organizationOwnedDriverProfileIds.has(assignment.driverProfileId))
         )
     ).map((assignment) => {
       const driver = requireRecord(
@@ -1117,8 +1143,11 @@ export function buildNetworkView(
   // --- Organization-scoped operational data --------------------------------
   const trucks = organizationCombinations.map((combination): TruckView => {
     const truck = requireRecord(state.truckProfiles.find((item) => item.id === combination.truckProfileId), `truck ${combination.truckProfileId}`)
-    const driver = combination.assignedDriverProfileId
+    const assignedDriver = combination.assignedDriverProfileId
       ? state.driverProfiles.find((profile) => profile.id === combination.assignedDriverProfileId)
+      : undefined
+    const driver = assignedDriver && activeOrganizationDriverProfileIds.has(assignedDriver.id)
+      ? assignedDriver
       : undefined
     const user = state.profiles.find((profile) => profile.id === driver?.userId)
     const availability = state.futureAvailability.find((window) => window.equipmentCombinationId === combination.id)
@@ -1210,7 +1239,7 @@ export function buildNetworkView(
         return true
       }
 
-      return organizationDriverProfileIds.has(trip.driverProfileId)
+      return organizationOwnedDriverProfileIds.has(trip.driverProfileId)
     })
     // Corrupt rows are withheld by the store, so one orphaned trip can survive
     // while its assignment or load is quarantined. Omit that trip from the board
@@ -1454,7 +1483,11 @@ export function buildNetworkView(
       .filter((membership) => membership.organizationId === activeOrganization.id && membership.status === "active")
       .map((membership) => membership.userId)
   )
-  const canSeeActivity = ["owner", "admin"].includes(activeMembership.role) || currentUser.role === "admin"
+  // Organization activity is workspace authority, not a global profile-role
+  // shortcut. Platform administration has its own allowlisted read model; a
+  // stale or corrupted `profiles.role = admin` must never widen a member's
+  // tenant visibility here.
+  const canSeeActivity = ["owner", "admin"].includes(activeMembership.role)
 
   const relevantTripIds = new Set(trips.map((trip) => trip.id))
   const auditEvents = canSeeActivity
@@ -1518,7 +1551,7 @@ export function buildNetworkView(
         VIEWER_ASSIGNMENT_STATUSES.includes(assignment.status) &&
         (activeMembership.role === "driver"
           ? assignment.driverProfileId === currentDriverProfile?.id
-          : organizationDriverProfileIds.has(assignment.driverProfileId) ||
+          : organizationOwnedDriverProfileIds.has(assignment.driverProfileId) ||
             organizationLoadIds.has(assignment.loadPostingId))
       ).length,
       criticalNotices: notices.filter((notice) => notice.severity === "critical").length,

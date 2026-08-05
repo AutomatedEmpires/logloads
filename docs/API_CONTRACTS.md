@@ -28,10 +28,17 @@
   organization-scoped target in the private media bucket
 - `GET /api/media/asset` — authenticated; proxies the viewer-authorized private image with an upstream timeout
 - `GET /api/weather?loadId=...` — rate-limited; returns cached destination weather for a visible load
-- `GET|POST /api/billing/payment-method` — organization-scoped card status and
-  SetupIntent creation for current `percentage_v1` collection and preserved
-  `legacy_percentage` obligations; requires
-  `manage_billing` and never moves driver or carrier compensation
+- `GET /api/billing/payment-method` — organization-scoped, read-only card status;
+  remains readable to an actor with `manage_billing` even when card setup is
+  unavailable
+- `POST /api/billing/payment-method` — requires `manage_billing` and creates a
+  SetupIntent only when canonical state proves either (a) the exact current
+  `percentage_v1` agreement plus exact organization rollout authorization or
+  (b) a preserved provider-bound, `legacy_percentage`, or unsettled billing
+  obligation. Duplicate or cross-wired billing records fail closed. An
+  ineligible request is refused before any Stripe customer lookup/creation or
+  SetupIntent creation. Card setup never enrolls an organization, enables fee
+  collection, or moves driver or carrier compensation.
 - `POST /api/billing/subscription-checkout` — **historical route, disabled for
   new activity.** It remains only as frozen `subscription_v1` implementation
   evidence for accepted historical obligations. Both historical activation

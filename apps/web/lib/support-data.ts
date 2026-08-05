@@ -53,7 +53,10 @@ export async function getSupportPageData(rawFromPath: string | null): Promise<Su
   const role = shellRoleFor(actor, fromPath)
 
   if (!role) {
-    redirect("/onboarding")
+    // This is an existing identity without a usable cockpit, not a new user.
+    // Sending revoked or malformed accounts back through onboarding creates a
+    // recovery loop and suggests that a second account can restore access.
+    redirect("/access-restricted")
   }
 
   const account = role === "admin"

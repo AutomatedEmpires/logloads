@@ -2,6 +2,65 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-08-05 — Administrative authority and workspace access revoke immediately
+
+- **A profile role is not platform-admin authority.** A real Clerk session opens
+  platform administration only when its one exact `user_...` identity matches a
+  separately asserted SHA-256 scope. A temporary, expiring bootstrap gate can
+  bind that identity to the one fixed seed administrator; it cannot create or
+  promote another admin. After the claim, the temporary gate is removed while
+  the exact persistent scope remains required on every session.
+- **Workspace authority is the exact active tuple.** The person must be active,
+  the organization must not be archived, exactly one active membership must
+  join them, and a driver cockpit or private driver operation must resolve one
+  driver profile owned by that same organization. Historical driver profiles,
+  an unrelated active membership, duplicate rows, and a global profile role do
+  not substitute for that tuple.
+- **Suspension and removal are preservation events, not deletion.** The member,
+  driver profile, assignments, trips, documents, and history remain canonical.
+  Access ends immediately; the driver and current/future availability become
+  unavailable. Existing active or upcoming assignments are explicitly shown to
+  the manager and are not silently cancelled. Reactivation restores access but
+  does not mark the driver available. A later invitation reuses a removed
+  membership and driver identity rather than creating duplicates.
+- **Private responses are re-authorized instead of cached through revocation.**
+  Sensitive API success and error responses use `private, no-store`; private
+  media and featured-truck delivery no longer retain a post-revocation browser
+  cache window. Public marketplace reads remain public-only and do not inherit
+  private headers merely because private routes changed.
+- This decision builds the controlled production path but does not identify the
+  founder's Clerk user, open the temporary claim window, mutate production
+  state, activate percentage enrollment or collection, charge a card, or move
+  driver compensation. Those remain separately evidenced operator actions.
+
+## 2026-08-05 — Payment-method setup is obligation-gated and non-activating
+
+- **A card-setup mutation requires canonical commercial authority.** For new
+  `percentage_v1` activity, the organization must have accepted the exact
+  current agreement and immutable terms, and the server-side rollout gate must
+  authorize that exact organization. Alternatively, setup may service a
+  preserved provider-bound historical subscription, an explicit
+  `legacy_percentage` account, or an accrued or otherwise unsettled fee or
+  invoice that already exists. A workspace without one of those bases cannot
+  create a Stripe customer or SetupIntent.
+- **The boundary is enforced before Stripe.** The API and billing service both
+  recompute eligibility from canonical state. Duplicate billing profiles,
+  duplicate account or subscription records, provider/account mismatches, and
+  cross-organization records fail closed. When a preserved provider-bound
+  obligation already identifies a Stripe customer, setup reuses that customer
+  rather than minting a second one.
+- **Read access and mutation authority are separate.** Actors with
+  `manage_billing` can continue to read card status when setup is unavailable.
+  The product surface explains why setup is locked and does not expose an
+  unusable Add or Replace card action to an actor without billing-management
+  authority.
+- **Setup activates nothing.** Storing a card does not accept terms, enroll an
+  organization, enable percentage collection, create a fee, charge a host, or
+  move driver compensation. `LOGLOADS_PERCENTAGE_ENROLLMENT` and
+  `LOGLOADS_FEE_COLLECTION` remain independent, default-dark gates, and no
+  provider, production-data, legal, or live-money activation is authorized by
+  this decision.
+
 ## 2026-08-01 — `percentage_v1` is the commercial model for new activity
 
 - **The host owes LogLoads 5% of host-stated driver pay, on top.** A load with

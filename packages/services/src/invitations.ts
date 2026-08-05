@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto"
 
 import {
   auditEventSchema,
-  driverProfileSchema,
   invitableRolesForOrganizationType,
   organizationInvitationSchema,
   organizationMembershipSchema,
   organizationRoleCan,
+  organizationRoleSchema,
   userSchema,
   type Organization,
   type OrganizationInvitation,
@@ -17,6 +17,10 @@ import {
 import type { LogLoadsDatabaseState } from "@logloads/db"
 import { z } from "zod"
 
+import {
+  assertOrganizationDriverProfileIntegrity,
+  ensureUnavailableOrganizationDriverProfile
+} from "./driver-access"
 import { createNotification } from "./notifications"
 
 /**
@@ -34,7 +38,7 @@ const createInvitationInputSchema = z.object({
   actorUserId: z.string().uuid(),
   // Trim before validating: a pasted address with padding is still an address.
   invitedEmail: z.string().trim().email(),
-  invitedRole: z.string(),
+  invitedRole: organizationRoleSchema,
   organizationId: z.string().uuid()
 })
 
@@ -126,20 +130,6 @@ function insertAudit(
   }))
 }
 
-function activeMemberEmails(state: LogLoadsDatabaseState, organizationId: string): Set<string> {
-  const memberUserIds = new Set(
-    state.organizationMemberships
-      .filter((membership) => membership.organizationId === organizationId && membership.status === "active")
-      .map((membership) => membership.userId)
-  )
-
-  return new Set(
-    state.profiles
-      .filter((profile) => memberUserIds.has(profile.id))
-      .map((profile) => normalizeEmail(profile.email))
-  )
-}
-
 export function listPendingInvitationsForOrganization(
   state: LogLoadsDatabaseState,
   organizationId: string
@@ -180,14 +170,42 @@ export function createOrganizationInvitation(
 
   const invitableRoles = invitableRolesForOrganizationType(organization.type)
 
-  if (!invitableRoles.includes(input.invitedRole as OrganizationRole)) {
+  if (!invitableRoles.includes(input.invitedRole)) {
     throw new Error(`A ${organization.type.replaceAll("_", " ")} workspace cannot invite the role "${input.invitedRole}"`)
   }
 
   const invitedEmail = normalizeEmail(input.invitedEmail)
+  const matchingProfiles = state.profiles.filter(
+    (profile) => normalizeEmail(profile.email) === invitedEmail
+  )
 
-  if (activeMemberEmails(state, input.organizationId).has(invitedEmail)) {
+  if (matchingProfiles.length > 1) {
+    throw new Error("That email is linked to an ambiguous account identity")
+  }
+
+  const invitedProfile = matchingProfiles[0] ?? null
+  const existingMemberships = invitedProfile
+    ? state.organizationMemberships.filter(
+        (membership) =>
+          membership.organizationId === input.organizationId &&
+          membership.userId === invitedProfile.id
+      )
+    : []
+
+  if (existingMemberships.length > 1) {
+    throw new Error("That account has an ambiguous workspace membership")
+  }
+
+  if (existingMemberships[0]?.status === "active") {
     throw new Error("That person is already an active member of this workspace")
+  }
+
+  if (existingMemberships[0]?.status === "suspended") {
+    throw new Error("That member is suspended. Reactivate their existing access instead of inviting them again")
+  }
+
+  if (invitedProfile && !invitedProfile.isActive) {
+    throw new Error("That account is inactive and cannot be invited")
   }
 
   const at = nowIso()
@@ -226,10 +244,6 @@ export function createOrganizationInvitation(
 
   // If the invited email already belongs to a signed-up person, tell them
   // in-product — that is the only delivery channel that exists.
-  const invitedProfile = state.profiles.find(
-    (profile) => profile.isActive && normalizeEmail(profile.email) === invitedEmail
-  )
-
   if (invitedProfile) {
     createNotification(state, {
       body: `${organization.displayName} invited you to join as ${String(invitation.invitedRole).replaceAll("_", " ")}. Open your account menu to accept.`,
@@ -328,40 +342,6 @@ function notifyInviter(
   }
 }
 
-/**
- * Ensures a driver invited into an organization can actually reach the driver
- * cockpit there: the cockpit resolves through a driverProfile, so joining as
- * "driver" without one would accept into a blank workspace.
- */
-function ensureDriverProfile(
-  state: LogLoadsDatabaseState,
-  userId: string,
-  organization: Organization,
-  timestamp: string
-): void {
-  const existing = state.driverProfiles.find(
-    (profile) => profile.userId === userId && profile.companyId === organization.id
-  )
-
-  if (existing) {
-    return
-  }
-
-  state.driverProfiles.push(driverProfileSchema.parse({
-    availabilityStatus: "available",
-    companyId: organization.id,
-    createdAt: timestamp,
-    equipmentPreferences: [],
-    homeBase: organization.primaryRegion,
-    id: randomUUID(),
-    licenseNumber: "pending-review",
-    notes: null,
-    updatedAt: timestamp,
-    userId,
-    yearsExperience: 0
-  }))
-}
-
 /** An already-onboarded person accepts: one new active membership, no new org. */
 export function acceptInvitationForExistingUser(
   state: LogLoadsDatabaseState,
@@ -371,32 +351,70 @@ export function acceptInvitationForExistingUser(
   const { actor, invitation } = requireActionableInvitationForActor(state, input.actorUserId, input.invitationId)
   const organization = requireOrganization(state, invitation.organizationId)
 
-  const alreadyMember = state.organizationMemberships.some(
+  const priorMemberships = state.organizationMemberships.filter(
     (membership) =>
       membership.organizationId === invitation.organizationId &&
-      membership.userId === actor.id &&
-      membership.status === "active"
+      membership.userId === actor.id
   )
 
-  if (alreadyMember) {
+  if (priorMemberships.length > 1) {
+    throw new Error("Organization membership identity is ambiguous")
+  }
+
+  const priorMembership = priorMemberships[0] ?? null
+
+  if (priorMembership?.status === "active") {
     throw new Error("You are already an active member of this workspace")
   }
 
-  const timestamp = nowIso()
-  const membership = organizationMembershipSchema.parse({
-    createdAt: timestamp,
-    id: randomUUID(),
-    organizationId: invitation.organizationId,
-    role: invitation.invitedRole,
-    status: "active",
-    updatedAt: timestamp,
-    userId: actor.id
-  })
+  if (priorMembership?.status === "suspended") {
+    throw new Error("Your suspended membership must be restored by a workspace manager")
+  }
 
-  state.organizationMemberships.push(membership)
+  if (priorMembership && priorMembership.status !== "removed") {
+    throw new Error("This account already has a membership record for the workspace")
+  }
 
   if (invitation.invitedRole === "driver") {
-    ensureDriverProfile(state, actor.id, organization, timestamp)
+    assertOrganizationDriverProfileIntegrity(state, actor.id, organization.id)
+  }
+
+  const timestamp = nowIso()
+  const membership = organizationMembershipSchema.parse(
+    priorMembership?.status === "removed"
+      ? {
+          ...priorMembership,
+          role: invitation.invitedRole,
+          status: "active",
+          updatedAt: timestamp
+        }
+      : {
+          createdAt: timestamp,
+          id: randomUUID(),
+          organizationId: invitation.organizationId,
+          role: invitation.invitedRole,
+          status: "active",
+          updatedAt: timestamp,
+          userId: actor.id
+        }
+  )
+
+  if (priorMembership?.status === "removed") {
+    state.organizationMemberships = state.organizationMemberships.map((candidate) =>
+      candidate.id === membership.id ? membership : candidate
+    )
+  } else {
+    state.organizationMemberships.push(membership)
+  }
+
+  if (invitation.invitedRole === "driver") {
+    ensureUnavailableOrganizationDriverProfile(
+      state,
+      actor.id,
+      organization,
+      timestamp,
+      randomUUID()
+    )
   }
 
   const updated = organizationInvitationSchema.parse({
@@ -475,6 +493,10 @@ export function acceptInvitationAsNewAccount(
   const timestamp = nowIso()
   const userId = randomUUID()
 
+  if (invitation.invitedRole === "driver") {
+    assertOrganizationDriverProfileIntegrity(state, userId, organization.id)
+  }
+
   const profile = userSchema.parse({
     clerkUserId: input.clerkUserId ?? `local-${userId}`,
     companyId: organization.id,
@@ -503,7 +525,13 @@ export function acceptInvitationAsNewAccount(
   state.organizationMemberships.push(membership)
 
   if (invitation.invitedRole === "driver") {
-    ensureDriverProfile(state, userId, organization, timestamp)
+    ensureUnavailableOrganizationDriverProfile(
+      state,
+      userId,
+      organization,
+      timestamp,
+      randomUUID()
+    )
   }
 
   const updated = organizationInvitationSchema.parse({

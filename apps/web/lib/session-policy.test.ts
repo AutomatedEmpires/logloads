@@ -6,6 +6,8 @@ import {
   canAccessCockpit,
   homePathFor,
   homePathForMembership,
+  restrictedAccessRecoveryPath,
+  selectedSessionMembership,
   type SessionActor
 } from "./session-policy"
 
@@ -21,22 +23,65 @@ function actorFor(email: string, organizationId?: string): SessionActor {
     .flatMap((membership) => {
       const organization = state.organizations.find((candidate) => candidate.id === membership.organizationId)
 
-      return organization ? [{ membership, organization }] : []
+      const driverProfileId = state.driverProfiles.find(
+        (candidate) =>
+          candidate.userId === profile.id &&
+          candidate.companyId === membership.organizationId
+      )?.id ?? null
+
+      return organization ? [{ driverProfileId, membership, organization }] : []
     })
   const active = memberships.find((entry) => entry.organization.id === organizationId) ?? memberships[0] ?? null
-  const driverProfile = state.driverProfiles.find((candidate) => candidate.userId === profile.id)
 
   return {
     activeMembership: active?.membership ?? null,
     activeOrganization: active?.organization ?? null,
-    driverProfileId: driverProfile?.id ?? null,
+    driverProfileId: active?.driverProfileId ?? null,
     isPlatformAdmin: profile.role === "admin",
     memberships,
-    profile
+    profile,
+    workspaceSelectionInvalid: false
   }
 }
 
 describe("membership-driven cockpit routing", () => {
+  it("does not fall through to another workspace when an exact signed selection is unavailable", () => {
+    const actor = actorFor("hank@northpine.example")
+    const selected = actor.memberships[0]
+
+    expect(selected).toBeDefined()
+    expect(
+      selectedSessionMembership(actor.memberships, selected!.organization.id)
+    ).toBe(selected)
+    expect(
+      selectedSessionMembership(
+        actor.memberships,
+        "99999999-9999-4999-8999-999999999999"
+      )
+    ).toBeNull()
+    expect(selectedSessionMembership(actor.memberships, null)).toBe(selected)
+  })
+
+  it("does not loop or silently switch when a selected workspace was revoked", () => {
+    const multiWorkspaceActor = actorFor("dispatch@northpine.example")
+
+    expect(multiWorkspaceActor.memberships.length).toBeGreaterThan(1)
+
+    const revokedSelection: SessionActor = {
+      ...multiWorkspaceActor,
+      activeMembership: null,
+      activeOrganization: null,
+      driverProfileId: null,
+      workspaceSelectionInvalid: true
+    }
+
+    expect(homePathFor(revokedSelection)).toBe("/access-restricted")
+    expect(restrictedAccessRecoveryPath(revokedSelection)).toBeNull()
+    expect(restrictedAccessRecoveryPath(multiWorkspaceActor)).toBe(
+      "/fleet/command"
+    )
+  })
+
   it("opens Cole in Host even though he also has a driver profile", () => {
     const cole = actorFor("cole@summit.example")
 
@@ -65,7 +110,21 @@ describe("membership-driven cockpit routing", () => {
 
     expect(canAccessCockpit(lee, "fleet")).toBe(false)
     expect(canAccessCockpit(lee, "host")).toBe(false)
-    expect(homePathFor(lee)).toBe("/")
+    expect(homePathFor(lee)).toBe("/access-restricted")
+  })
+
+  it("never revives Driver from a historical profile after membership revocation", () => {
+    const hank = actorFor("hank@northpine.example")
+    const revoked = {
+      ...hank,
+      activeMembership: null,
+      activeOrganization: null,
+      driverProfileId: null,
+      memberships: []
+    }
+
+    expect(canAccessCockpit(revoked, "driver")).toBe(false)
+    expect(homePathFor(revoked)).toBe("/access-restricted")
   })
 
   it("keeps demo email sign-in limited to identities with a valid cockpit recovery path", () => {

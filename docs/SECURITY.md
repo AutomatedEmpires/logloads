@@ -37,6 +37,67 @@ have to rediscover any of this.
 - Unknown application errors remain sanitized `500` responses; typed domain
   failures never expose cross-tenant record identifiers or existence details.
 
+## Billing payment-method mutation boundary
+
+- `GET /api/billing/payment-method` remains a read-only status surface for an
+  actor with `manage_billing`, even when the organization cannot start card
+  setup. Read access does not imply permission to mutate provider state.
+- `POST /api/billing/payment-method` requires `manage_billing`. The server
+  recomputes eligibility from canonical billing state and the server-owned
+  rollout configuration; client input cannot grant commercial authority.
+- A current `percentage_v1` organization is eligible only after accepting the
+  exact current agreement and immutable terms and receiving exact organization
+  rollout authorization. Preserved provider-bound historical subscriptions,
+  explicit `legacy_percentage` accounts, and accrued or otherwise unsettled fee
+  or invoice obligations remain serviceable so an existing obligation is not
+  orphaned.
+- Duplicate profiles, accounts, subscriptions, provider mismatches, and
+  cross-organization records fail closed. An ineligible request is refused
+  before Stripe customer lookup or creation and before SetupIntent creation;
+  the billing service enforces the same rule as the route. A preserved
+  provider-bound Stripe customer is reused, and a profile/subscription customer
+  mismatch is refused rather than repaired implicitly.
+- Card setup is non-activating: it does not accept terms, enroll a host, enable
+  collection, create a fee, charge a card, or move driver compensation.
+  Percentage enrollment and fee collection remain independent, default-dark
+  gates.
+
+## Platform-admin authority boundary
+
+- `profiles.role = admin` is historical identity data, not authorization. Every
+  Clerk-backed platform-admin session must match exactly one server-configured
+  Clerk user id and the independently configured SHA-256 of the versioned scope
+  material. Malformed, padded, duplicate, multiple, missing, or mismatched
+  values fail closed.
+- The one-time claim additionally requires a verified Clerk primary email,
+  same-origin bounded JSON with a fixed confirmation, client and identity rate
+  limits, an exact `enabled` gate, and a strict future ISO expiry. The canonical
+  mutation can bind only the fixed active, organization-less, membership-less
+  seed administrator and writes one sanitized audit event.
+- The temporary gate has no part in ongoing authority. It is removed after the
+  claim; the exact persistent identity and scope digest remain required. Contact
+  inquiry notifications are filtered by current platform-admin authority so
+  removing that scope also removes access to historical inquiry PII on the next
+  request.
+
+## Membership revocation and private-response boundary
+
+- Organization reads and mutations require an active user, a non-archived exact
+  organization, and one unambiguous active membership. Driver reads and writes
+  additionally require one driver profile owned by that organization; request
+  paths also require the driver to be available. An unrelated membership or
+  historical driver row cannot restore access.
+- Suspension/removal preserve operating records but make the driver and every
+  current/future availability record unavailable. Reactivation does not change
+  availability. Last-owner, self-removal, self-suspension, duplicate membership,
+  duplicate driver-profile, and non-grantable-role cases fail closed inside one
+  atomic state mutation.
+- Authenticated private JSON, signatures, Route Packs, trip activity, and media
+  responses carry `Cache-Control: private, no-store`, including refusals and
+  failures. A browser therefore cannot reuse private content after revocation;
+  the next read must pass current authorization. Public load discovery remains a
+  separately redacted public surface.
+
 ## How the RLS discrepancy arose (reconciled, proven)
 
 Two earlier reports appeared to conflict; both were true subsets of the same reality:

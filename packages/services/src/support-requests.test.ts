@@ -75,6 +75,7 @@ describe("authenticated support requests", () => {
       {
         appCommitSha: "a09aee359e32d16546323c0f391b7ec2d89e8a51",
         organizationId,
+        platformAdminAuthorized: false,
         reporterUserId: reporter.id,
         submission: submission()
       },
@@ -113,6 +114,7 @@ describe("authenticated support requests", () => {
     const firstSubmission = submission()
     const command = {
       organizationId,
+      platformAdminAuthorized: false,
       reporterUserId: reporter.id,
       submission: firstSubmission
     }
@@ -187,11 +189,17 @@ describe("authenticated support requests", () => {
   it("rejects submission id reuse with different content", () => {
     const { organizationId, reporter, state } = fixture()
     const original = submission()
-    createSupportRequest(state, { organizationId, reporterUserId: reporter.id, submission: original })
+    createSupportRequest(state, {
+      organizationId,
+      platformAdminAuthorized: false,
+      reporterUserId: reporter.id,
+      submission: original
+    })
 
     expect(() =>
       createSupportRequest(state, {
         organizationId,
+        platformAdminAuthorized: false,
         reporterUserId: reporter.id,
         submission: { ...original, title: "A different product problem" }
       })
@@ -202,6 +210,7 @@ describe("authenticated support requests", () => {
     const { organizationId, peer, reporter, state } = fixture()
     const created = createSupportRequest(state, {
       organizationId,
+      platformAdminAuthorized: false,
       reporterUserId: reporter.id,
       submission: submission()
     })
@@ -228,6 +237,7 @@ describe("authenticated support requests", () => {
     expect(() =>
       createSupportRequest(state, {
         organizationId: null,
+        platformAdminAuthorized: false,
         reporterUserId: reporter.id,
         submission: submission()
       })
@@ -236,15 +246,26 @@ describe("authenticated support requests", () => {
       expect(() =>
         createSupportRequest(state, {
           organizationId: foreignOrganization.id,
+          platformAdminAuthorized: false,
           reporterUserId: reporter.id,
           submission: submission()
         })
       ).toThrow(SupportRequestAuthorizationError)
     }
 
+    expect(() =>
+      createSupportRequest(state, {
+        organizationId: null,
+        platformAdminAuthorized: false,
+        reporterUserId: admin.id,
+        submission: submission()
+      })
+    ).toThrow(SupportRequestAuthorizationError)
+
     expect(
       createSupportRequest(state, {
         organizationId: null,
+        platformAdminAuthorized: true,
         reporterUserId: admin.id,
         submission: submission()
       }).created
@@ -255,13 +276,20 @@ describe("authenticated support requests", () => {
     const { admin, organizationId, reporter, state } = fixture()
     const created = createSupportRequest(state, {
       organizationId,
+      platformAdminAuthorized: false,
       reporterUserId: reporter.id,
       submission: submission()
     })
 
-    expect(() => listSupportRequestsForAdmin(state, reporter.id)).toThrow(SupportRequestAuthorizationError)
+    expect(() =>
+      listSupportRequestsForAdmin(state, {
+        platformAdminAuthorized: false,
+        reviewerUserId: reporter.id
+      })
+    ).toThrow(SupportRequestAuthorizationError)
     expect(() =>
       reviewSupportRequest(state, {
+        platformAdminAuthorized: false,
         requestId: created.request.id,
         review: {
           expectedStatus: "open",
@@ -272,9 +300,31 @@ describe("authenticated support requests", () => {
       })
     ).toThrow(SupportRequestAuthorizationError)
 
-    expect(listSupportRequestsForAdmin(state, admin.id).map((request) => request.id)).toContain(
-      created.request.id
-    )
+    expect(() =>
+      listSupportRequestsForAdmin(state, {
+        platformAdminAuthorized: false,
+        reviewerUserId: admin.id
+      })
+    ).toThrow(SupportRequestAuthorizationError)
+    expect(() =>
+      reviewSupportRequest(state, {
+        platformAdminAuthorized: false,
+        requestId: created.request.id,
+        review: {
+          expectedStatus: "open",
+          expectedUpdatedAt: created.request.updatedAt,
+          status: "in_review"
+        },
+        reviewerUserId: admin.id
+      })
+    ).toThrow(SupportRequestAuthorizationError)
+
+    expect(
+      listSupportRequestsForAdmin(state, {
+        platformAdminAuthorized: true,
+        reviewerUserId: admin.id
+      }).map((request) => request.id)
+    ).toContain(created.request.id)
   })
 
   it("rejects inactive identities and inactive organization context without mutation", () => {
@@ -288,6 +338,7 @@ describe("authenticated support requests", () => {
     expect(() =>
       createSupportRequest(first.state, {
         organizationId: first.organizationId,
+        platformAdminAuthorized: false,
         reporterUserId: first.reporter.id,
         submission: submission()
       })
@@ -306,6 +357,7 @@ describe("authenticated support requests", () => {
     expect(() =>
       createSupportRequest(second.state, {
         organizationId: second.organizationId,
+        platformAdminAuthorized: false,
         reporterUserId: second.reporter.id,
         submission: submission()
       })
@@ -314,7 +366,12 @@ describe("authenticated support requests", () => {
 
     const third = fixture()
     third.admin.isActive = false
-    expect(() => listSupportRequestsForAdmin(third.state, third.admin.id)).toThrow(SupportRequestAuthorizationError)
+    expect(() =>
+      listSupportRequestsForAdmin(third.state, {
+        platformAdminAuthorized: true,
+        reviewerUserId: third.admin.id
+      })
+    ).toThrow(SupportRequestAuthorizationError)
   })
 
   it("keeps terminal retries side-effect free and requires reopening before a different outcome", () => {
@@ -322,16 +379,19 @@ describe("authenticated support requests", () => {
     const firstSubmission = submission()
     const created = createSupportRequest(state, {
       organizationId,
+      platformAdminAuthorized: false,
       reporterUserId: reporter.id,
       submission: firstSubmission
     })
     const duplicateSubmissionId = randomUUID()
     createSupportRequest(state, {
       organizationId,
+      platformAdminAuthorized: false,
       reporterUserId: reporter.id,
       submission: { ...firstSubmission, submissionId: duplicateSubmissionId }
     })
     const review = {
+      platformAdminAuthorized: true,
       requestId: created.request.id,
       review: {
         expectedStatus: "open" as const,
@@ -355,6 +415,7 @@ describe("authenticated support requests", () => {
     expect(reviewSupportRequest(state, review).changed).toBe(false)
     expect(() =>
       reviewSupportRequest(state, {
+        platformAdminAuthorized: true,
         requestId: created.request.id,
         review: {
           expectedStatus: "resolved",
@@ -371,6 +432,7 @@ describe("authenticated support requests", () => {
         state,
         {
           organizationId,
+          platformAdminAuthorized: false,
           reporterUserId: reporter.id,
           submission: { ...firstSubmission, submissionId: duplicateSubmissionId }
         },
@@ -386,22 +448,20 @@ describe("authenticated support requests", () => {
 
   it("rejects stale and ABA admin decisions while preserving idempotent lost-response retries", () => {
     const { admin, organizationId, reporter, state } = fixture()
-    const secondAdmin = {
-      ...admin,
-      clerkUserId: `admin-${randomUUID()}`,
-      email: `admin-${randomUUID()}@example.test`,
-      fullName: "Second Platform Admin",
-      id: randomUUID()
-    }
-    state.profiles.push(secondAdmin)
     const created = createSupportRequest(
       state,
-      { organizationId, reporterUserId: reporter.id, submission: submission() },
+      {
+        organizationId,
+        platformAdminAuthorized: false,
+        reporterUserId: reporter.id,
+        submission: submission()
+      },
       new Date("2026-07-21T12:00:00.000Z")
     )
     const resolutionA = reviewSupportRequest(
       state,
       {
+        platformAdminAuthorized: true,
         requestId: created.request.id,
         review: {
           expectedStatus: "open",
@@ -422,13 +482,14 @@ describe("authenticated support requests", () => {
 
     expect(() =>
       reviewSupportRequest(state, {
+        platformAdminAuthorized: true,
         requestId: created.request.id,
         review: {
           expectedStatus: "open",
           expectedUpdatedAt: created.request.updatedAt,
           status: "in_review"
         },
-        reviewerUserId: secondAdmin.id
+        reviewerUserId: admin.id
       })
     ).toThrow(SupportRequestConflictError)
     expect({
@@ -440,17 +501,19 @@ describe("authenticated support requests", () => {
     const reopened = reviewSupportRequest(
       state,
       {
+        platformAdminAuthorized: true,
         requestId: created.request.id,
         review: {
           expectedStatus: "resolved",
           expectedUpdatedAt: resolutionA.request.updatedAt,
           status: "in_review"
         },
-        reviewerUserId: secondAdmin.id
+        reviewerUserId: admin.id
       },
       new Date("2026-07-21T14:00:00.000Z")
     )
     const resolutionBCommand = {
+      platformAdminAuthorized: true,
       requestId: created.request.id,
       review: {
         expectedStatus: "in_review" as const,
@@ -459,7 +522,7 @@ describe("authenticated support requests", () => {
         resolutionNote: "A later reviewer confirmed and fixed the defect.",
         status: "resolved" as const
       },
-      reviewerUserId: secondAdmin.id
+      reviewerUserId: admin.id
     }
     const resolutionB = reviewSupportRequest(
       state,
@@ -474,6 +537,7 @@ describe("authenticated support requests", () => {
 
     expect(() =>
       reviewSupportRequest(state, {
+        platformAdminAuthorized: true,
         requestId: created.request.id,
         review: {
           expectedStatus: resolutionA.request.status,
@@ -485,6 +549,7 @@ describe("authenticated support requests", () => {
     ).toThrow(SupportRequestConflictError)
     expect(() =>
       reviewSupportRequest(state, {
+        platformAdminAuthorized: true,
         requestId: created.request.id,
         review: {
           expectedStatus: resolutionA.request.status,
@@ -513,13 +578,19 @@ describe("authenticated support requests", () => {
     const { admin, organizationId, reporter, state } = fixture()
     const created = createSupportRequest(
       state,
-      { organizationId, reporterUserId: reporter.id, submission: submission() },
+      {
+        organizationId,
+        platformAdminAuthorized: false,
+        reporterUserId: reporter.id,
+        submission: submission()
+      },
       new Date("2026-07-21T12:00:00.000Z")
     )
     const before = { audits: state.auditEvents.length, notifications: state.notifications.length }
     const inReview = reviewSupportRequest(
       state,
       {
+        platformAdminAuthorized: true,
         requestId: created.request.id,
         review: {
           expectedStatus: "open",
@@ -533,6 +604,7 @@ describe("authenticated support requests", () => {
     const unchanged = reviewSupportRequest(
       state,
       {
+        platformAdminAuthorized: true,
         requestId: created.request.id,
         review: {
           expectedStatus: "open",
@@ -547,6 +619,7 @@ describe("authenticated support requests", () => {
     const resolved = reviewSupportRequest(
       state,
       {
+        platformAdminAuthorized: true,
         requestId: created.request.id,
         review: {
           expectedStatus: "in_review",
@@ -562,6 +635,7 @@ describe("authenticated support requests", () => {
     const reopened = reviewSupportRequest(
       state,
       {
+        platformAdminAuthorized: true,
         requestId: created.request.id,
         review: {
           expectedStatus: "resolved",

@@ -53,6 +53,10 @@ import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { declineAssignment, requestAssignment } from "./assignments"
 import { upsertAvailabilityWindow } from "./availability"
+import {
+  activeDriverProfileForOrganization,
+  driverProfileCanRequestForOrganization
+} from "./driver-access"
 import { driverCredentialGate, hostCredentialSummary } from "./driver-credentials"
 import {
   applyHaulCompletionConfirmation,
@@ -315,10 +319,24 @@ export function getActiveOrganizationContext(
   actorUserId = DEFAULT_ACTOR_USER_ID,
   organizationId = DEFAULT_ORGANIZATION_ID
 ): ActiveOrganizationContext {
-  const membership = assertFound(
-    state.organizationMemberships.find(
-      (current) => current.userId === actorUserId && current.organizationId === organizationId && current.status === "active"
+  assertFound(
+    state.profiles.find((profile) => profile.id === actorUserId && profile.isActive),
+    `User ${actorUserId} is not active`
+  )
+  assertFound(
+    state.organizations.find(
+      (organization) => organization.id === organizationId && !organization.archivedAt
     ),
+    `Organization ${organizationId} is not active`
+  )
+  const memberships = state.organizationMemberships.filter(
+    (current) =>
+      current.userId === actorUserId &&
+      current.organizationId === organizationId &&
+      current.status === "active"
+  )
+  const membership = assertFound(
+    memberships.length === 1 ? memberships[0] : undefined,
     `User ${actorUserId} is not an active member of organization ${organizationId}`
   )
 
@@ -694,12 +712,13 @@ function assertAssignedDriverForDriverRole(
     return
   }
 
-  const driver = assertFound(
-    state.driverProfiles.find((current) => current.id === assignment.driverProfileId),
-    `Driver profile ${assignment.driverProfileId} was not found`
+  const driver = activeDriverProfileForOrganization(
+    state,
+    context.actorUserId,
+    context.organizationId
   )
 
-  assertCondition(driver.userId === context.actorUserId, message)
+  assertCondition(driver?.id === assignment.driverProfileId, message)
 }
 
 /**
@@ -893,6 +912,10 @@ function requestCapacityWithPolicyInternal(
   const selectedDriver = assertFound(
     state.driverProfiles.find((driver) => driver.id === parsed.driverProfileId),
     `Driver profile ${parsed.driverProfileId} was not found`
+  )
+  assertCondition(
+    driverProfileCanRequestForOrganization(state, selectedDriver, context.organizationId),
+    "Driver must be active, available, and belong to this organization"
   )
   assertCondition(
     context.membership.role !== "driver" || selectedDriver.userId === context.actorUserId,
@@ -2862,9 +2885,13 @@ export function getRoutePackForAssignment(
     state.loadPostings.find((current) => current.id === assignment.loadPostingId),
     `Load posting ${assignment.loadPostingId} was not found`
   )
-  const driver = state.driverProfiles.find((current) => current.id === assignment.driverProfileId)
   const hostAccess = load.companyId === context.organizationId
-  const assignedDriverAccess = driver?.userId === context.actorUserId
+  const assignedDriverAccess =
+    activeDriverProfileForOrganization(
+      state,
+      context.actorUserId,
+      context.organizationId
+    )?.id === assignment.driverProfileId
   // Everyone other than the assigned driver needs an operational reason to see
   // an entrance pin or a gate code, on either side of the haul —
   // view_private_location is exactly that action, and it excludes viewer and

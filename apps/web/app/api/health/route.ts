@@ -81,5 +81,8 @@ export async function GET() {
     timestamp: new Date().toISOString()
   }
 
-  return NextResponse.json(body, { status: engineOk ? 200 : 503 })
+  return NextResponse.json(body, {
+    headers: { "Cache-Control": "no-store" },
+    status: engineOk ? 200 : 503
+  })
 }

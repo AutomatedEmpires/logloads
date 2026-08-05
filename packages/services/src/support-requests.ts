@@ -22,13 +22,22 @@ const createSupportRequestCommandSchema = z
   .object({
     appCommitSha: z.string().regex(/^[a-f0-9]{7,64}$/i).optional().nullable(),
     organizationId: z.string().uuid().optional().nullable(),
+    platformAdminAuthorized: z.boolean(),
     reporterUserId: z.string().uuid(),
     submission: submitSupportRequestInputSchema
   })
   .strict()
 
+const listSupportRequestsForAdminCommandSchema = z
+  .object({
+    platformAdminAuthorized: z.boolean(),
+    reviewerUserId: z.string().uuid()
+  })
+  .strict()
+
 const reviewSupportRequestCommandSchema = z
   .object({
+    platformAdminAuthorized: z.boolean(),
     requestId: z.string().uuid(),
     review: reviewSupportRequestInputSchema,
     reviewerUserId: z.string().uuid()
@@ -38,11 +47,18 @@ const reviewSupportRequestCommandSchema = z
 export interface CreateSupportRequestCommand {
   appCommitSha?: string | null
   organizationId?: string | null
+  platformAdminAuthorized: boolean
   reporterUserId: string
   submission: SubmitSupportRequestInput
 }
 
+export interface ListSupportRequestsForAdminCommand {
+  platformAdminAuthorized: boolean
+  reviewerUserId: string
+}
+
 export interface ReviewSupportRequestCommand {
+  platformAdminAuthorized: boolean
   requestId: string
   review: ReviewSupportRequestInput
   reviewerUserId: string
@@ -94,10 +110,14 @@ function requireActiveProfile(state: LogLoadsDatabaseState, userId: string) {
   return profile
 }
 
-function requirePlatformAdmin(state: LogLoadsDatabaseState, userId: string) {
+function requirePlatformAdmin(
+  state: LogLoadsDatabaseState,
+  userId: string,
+  platformAdminAuthorized: boolean
+) {
   const profile = requireActiveProfile(state, userId)
 
-  if (profile.role !== "admin") {
+  if (!platformAdminAuthorized || profile.role !== "admin") {
     throw new SupportRequestAuthorizationError("Platform access required")
   }
 
@@ -107,12 +127,13 @@ function requirePlatformAdmin(state: LogLoadsDatabaseState, userId: string) {
 function requireSubmissionOrganization(
   state: LogLoadsDatabaseState,
   reporterUserId: string,
-  organizationId: string | null
+  organizationId: string | null,
+  platformAdminAuthorized: boolean
 ): void {
   const reporter = requireActiveProfile(state, reporterUserId)
 
   if (organizationId === null) {
-    if (reporter.role !== "admin") {
+    if (!platformAdminAuthorized || reporter.role !== "admin") {
       throw new SupportRequestAuthorizationError("Finish onboarding before using product feedback")
     }
 
@@ -227,7 +248,12 @@ export function createSupportRequest(
   const organizationId = command.organizationId ?? null
   const submission = command.submission
 
-  requireSubmissionOrganization(state, command.reporterUserId, organizationId)
+  requireSubmissionOrganization(
+    state,
+    command.reporterUserId,
+    organizationId,
+    command.platformAdminAuthorized
+  )
 
   const fingerprint = contentFingerprint(command.reporterUserId, organizationId, submission)
   const idempotent = state.supportRequests.find(
@@ -322,9 +348,15 @@ export function listSupportRequestsForReporter(
 
 export function listSupportRequestsForAdmin(
   state: LogLoadsDatabaseState,
-  reviewerUserId: string
+  rawCommand: ListSupportRequestsForAdminCommand
 ): SupportRequest[] {
-  requirePlatformAdmin(state, reviewerUserId)
+  const command = listSupportRequestsForAdminCommandSchema.parse(rawCommand)
+
+  requirePlatformAdmin(
+    state,
+    command.reviewerUserId,
+    command.platformAdminAuthorized
+  )
 
   return [...state.supportRequests].sort((left, right) => {
     const leftActive = ACTIVE_STATUSES.has(left.status) ? 1 : 0
@@ -352,7 +384,11 @@ export function reviewSupportRequest(
   nowDate = new Date()
 ): ReviewSupportRequestResult {
   const command = reviewSupportRequestCommandSchema.parse(rawCommand)
-  requirePlatformAdmin(state, command.reviewerUserId)
+  requirePlatformAdmin(
+    state,
+    command.reviewerUserId,
+    command.platformAdminAuthorized
+  )
 
   const existing = state.supportRequests.find((request) => request.id === command.requestId)
 

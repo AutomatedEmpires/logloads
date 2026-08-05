@@ -8,10 +8,16 @@ export async function GET() {
 		const { actor } = await requireApiActor()
 
 		if (!actor.driverProfileId) {
-			return NextResponse.json({ availability: [] })
+			return NextResponse.json(
+				{ availability: [] },
+				{ headers: { "Cache-Control": "private, no-store" } }
+			)
 		}
 
-		return NextResponse.json({ availability: services.listDriverAvailability(actor.driverProfileId) })
+		return NextResponse.json(
+			{ availability: services.listDriverAvailability(actor.driverProfileId) },
+			{ headers: { "Cache-Control": "private, no-store" } }
+		)
 	} catch (error) {
 		return apiErrorResponse(error)
 	}
@@ -20,23 +26,32 @@ export async function GET() {
 export async function POST(request: NextRequest) {
 	try {
 		const payload = await request.json()
-		const { actor } = await requireApiActor()
+		const { actor, actorUserId, organizationId } = await requireApiActor()
+		const driverProfileId = actor.driverProfileId
 
-		if (!actor.driverProfileId) {
+		if (!driverProfileId) {
 			throw new ApiError("Add a driver profile before setting availability", 403)
 		}
 
-		// The driver comes from the session, never from the body. `id` still does
-		// come from the body, so the service — not this route — decides whether the
-		// window that id names belongs to this driver before replacing it.
-		const window = await mutateState((draft) =>
-			draft.upsertAvailabilityWindow({
+		// Every identity field comes from the authenticated actor. The explicit
+		// readiness service validates that exact user, organization, and profile
+		// before it publishes the window or reactivates the driver.
+		const result = await mutateState((draft) =>
+			draft.setDriverAvailability({
 				...payload,
-				driverProfileId: actor.driverProfileId
+				actorUserId,
+				driverProfileId,
+				organizationId
 			})
 		)
 
-		return NextResponse.json({ window }, { status: 201 })
+		return NextResponse.json(
+			{ window: result.window },
+			{
+				headers: { "Cache-Control": "private, no-store" },
+				status: 201
+			}
+		)
 	} catch (error) {
 		return apiErrorResponse(error)
 	}

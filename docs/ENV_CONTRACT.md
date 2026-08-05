@@ -32,10 +32,35 @@ document reading, latency, and refusal behavior. `/api/health` reports
 
 ## Controlled bootstrap
 
+### Canonical state
+
 `LOGLOADS_ALLOW_STATE_BOOTSTRAP=true` permits creation of the singleton canonical
 row if it is absent. It must be used only after an operator proves the table is
 intentionally empty, and removed immediately afterward. Without it, production
 fails closed rather than silently replacing missing production data with seed data.
+
+### Founder platform access
+
+Clerk-backed platform administration has a persistent identity scope and a
+separate temporary claim gate:
+
+- `LOGLOADS_PLATFORM_ADMIN_CLERK_IDS` must canonicalize to exactly one real
+  Clerk `user_...` id. The seeded `clerk-admin-1` placeholder, a wildcard,
+  multiple identities, or any malformed entry fails closed.
+- `LOGLOADS_PLATFORM_ADMIN_EXPECTED_SCOPE_SHA256` must be the exact lowercase
+  SHA-256 of `logloads-platform-admin-scope-v1`, one newline, and that exact
+  Clerk user id. The digest is compared byte-for-byte; padding or uppercase is
+  invalid.
+- `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP=enabled` and a strict future
+  `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP_EXPIRES_AT` permit that identity, with a
+  verified Clerk primary email, to claim the fixed seed admin at
+  `/admin/bootstrap`.
+
+The claim runs inside the canonical compare-and-swap mutation, creates no user
+or second admin, and records one scope-fingerprinted audit event. Immediately
+after a verified claim, set the bootstrap gate back to `disabled` and remove its
+expiry. Keep the exact persistent identity and digest configured: they remain
+required for ongoing Clerk-backed platform-admin authority.
 
 ## Feature-gated
 
@@ -46,6 +71,7 @@ fails closed rather than silently replacing missing production data with seed da
 | Historical Network recurring catalog | `STRIPE_PRICE_NETWORK_PILOT`, `STRIPE_PRICE_NETWORK_25`, `STRIPE_PRICE_NETWORK_50`, `STRIPE_PRICE_NETWORK_100` |
 | Historical Network overage catalog | `STRIPE_PRICE_NETWORK_PILOT_OVERAGE`, `STRIPE_PRICE_NETWORK_25_OVERAGE`, `STRIPE_PRICE_NETWORK_50_OVERAGE`, `STRIPE_PRICE_NETWORK_100_OVERAGE` |
 | Internal billing verification | `STRIPE_PRICE_INTERNAL_BILLING_TEST`, `LOGLOADS_INTERNAL_BILLING_SMOKE`, `LOGLOADS_INTERNAL_BILLING_SMOKE_ALLOWED_USER_IDS`, `LOGLOADS_INTERNAL_BILLING_SMOKE_ALLOWED_ORGANIZATION_IDS` |
+| Founder platform access | Persistent `LOGLOADS_PLATFORM_ADMIN_CLERK_IDS` plus `LOGLOADS_PLATFORM_ADMIN_EXPECTED_SCOPE_SHA256`; temporary claim-only `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP` and `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP_EXPIRES_AT` |
 | Current percentage enrollment | `LOGLOADS_PERCENTAGE_ENROLLMENT`, the exact `LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS`, and its private `LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256` assertion; all default dark and none authorizes collection |
 | Collection switches | `LOGLOADS_FEE_COLLECTION` is the sole current provider-charge gate for `percentage_v1` and preserved legacy fee invoices; `LOGLOADS_SUBSCRIPTION_COLLECTION`, `LOGLOADS_SUBSCRIPTION_ALLOWED_ORGANIZATION_IDS`, and `LOGLOADS_DISPATCH_SELF_SERVE` are disabled historical controls only |
 | Credential review | `ANTHROPIC_API_KEY`; optional pinned override `CREDENTIAL_REVIEW_MODEL` |

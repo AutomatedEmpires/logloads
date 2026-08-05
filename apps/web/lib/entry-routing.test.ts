@@ -32,7 +32,8 @@ function actorFor(email: string): SessionActor {
     driverProfileId: driverProfile?.id ?? null,
     isPlatformAdmin: profile.role === "admin",
     memberships,
-    profile
+    profile,
+    workspaceSelectionInvalid: false
   }
 }
 
@@ -155,6 +156,24 @@ describe("public entry routing", () => {
     expect(decideExistingActorEntry(cole, { next: "/support" })).toEqual({
       href: "/support",
       kind: "redirect"
+    })
+  })
+
+  it("routes a deactivated provisioned identity to restriction instead of onboarding", () => {
+    const active = actorFor("cole@summit.example")
+    const deactivated: SessionActor = {
+      ...active,
+      activeMembership: null,
+      activeOrganization: null,
+      driverProfileId: null,
+      isPlatformAdmin: false,
+      memberships: [],
+      profile: { ...active.profile, isActive: false }
+    }
+
+    expect(decideExistingActorEntry(deactivated, {})).toEqual({
+      currentHome: "/access-restricted",
+      kind: "session"
     })
   })
 })

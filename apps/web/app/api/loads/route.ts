@@ -7,7 +7,10 @@ import { mutateState, readState } from "@/lib/services"
 export async function GET() {
 	const network = await readState((current) => buildNetworkView(current.state, { kind: "public" }))
 
-	return NextResponse.json({ loads: network.loads })
+	return NextResponse.json(
+		{ loads: network.loads },
+		{ headers: { "Cache-Control": "public, no-store" } }
+	)
 }
 
 export async function POST(request: NextRequest) {
@@ -24,7 +27,13 @@ export async function POST(request: NextRequest) {
 			})
 		)
 
-		return NextResponse.json({ load }, { status: 201 })
+		return NextResponse.json(
+			{ load },
+			{
+				headers: { "Cache-Control": "private, no-store" },
+				status: 201
+			}
+		)
 	} catch (error) {
 		return apiErrorResponse(error)
 	}

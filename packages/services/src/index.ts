@@ -36,6 +36,7 @@ import {
   setFeaturedTruckPhoto,
   updateDriverEconomics
 } from "./driver-profile"
+import { activeDriverProfileForOrganization } from "./driver-access"
 import {
   createThread,
   listThreadMessages,
@@ -54,7 +55,11 @@ import {
   updateLanding,
   upsertLandingDetails
 } from "./host-workspace"
-import { listDriverAvailability, upsertAvailabilityWindow } from "./availability"
+import {
+  listDriverAvailability,
+  setDriverAvailability,
+  upsertAvailabilityWindow
+} from "./availability"
 import {
   acceptInvitationAsNewAccount,
   acceptInvitationForExistingUser,
@@ -66,11 +71,18 @@ import {
 } from "./invitations"
 import { createLoadPosting, getLoadById, listOpenLoads, updateLoadPosting } from "./loads"
 import {
+  changeOrganizationMemberRole,
+  reactivateOrganizationMember,
+  removeOrganizationMember,
+  suspendOrganizationMember
+} from "./team"
+import {
   createNotification,
   listNotificationsForUser,
   markAllNotificationsRead,
   markNotificationRead
 } from "./notifications"
+import { claimFounderPlatformAdmin } from "./platform-admin"
 import {
   DEFAULT_ACTOR_USER_ID,
   DEFAULT_ORGANIZATION_ID,
@@ -377,6 +389,10 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     createAccount: (input: unknown) => createAccount(state, input),
     createOrganizationInvitation: (input: Parameters<typeof createOrganizationInvitation>[1]) =>
       createOrganizationInvitation(state, input),
+    claimFounderPlatformAdmin: (
+      input: Parameters<typeof claimFounderPlatformAdmin>[1],
+      at?: Parameters<typeof claimFounderPlatformAdmin>[2]
+    ) => claimFounderPlatformAdmin(state, input, at),
     declineOrganizationInvitation: (input: Parameters<typeof declineOrganizationInvitation>[1]) =>
       declineOrganizationInvitation(state, input),
     listPendingInvitationsForEmail: (email: string) => listPendingInvitationsForEmail(state, email),
@@ -384,6 +400,18 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
       listPendingInvitationsForOrganization(state, organizationId),
     revokeOrganizationInvitation: (input: Parameters<typeof revokeOrganizationInvitation>[1]) =>
       revokeOrganizationInvitation(state, input),
+    changeOrganizationMemberRole: (
+      input: Parameters<typeof changeOrganizationMemberRole>[1]
+    ) => changeOrganizationMemberRole(state, input),
+    reactivateOrganizationMember: (
+      input: Parameters<typeof reactivateOrganizationMember>[1]
+    ) => reactivateOrganizationMember(state, input),
+    removeOrganizationMember: (
+      input: Parameters<typeof removeOrganizationMember>[1]
+    ) => removeOrganizationMember(state, input),
+    suspendOrganizationMember: (
+      input: Parameters<typeof suspendOrganizationMember>[1]
+    ) => suspendOrganizationMember(state, input),
     acceptPercentageBillingAgreement: (
       input: Parameters<typeof acceptPercentageBillingAgreement>[1],
       at?: Parameters<typeof acceptPercentageBillingAgreement>[2]
@@ -395,11 +423,18 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     ) => createSupportRequest(state, input, now),
     findProfileByClerkId: (clerkUserId: string) => findProfileByClerkId(state, clerkUserId),
     findProfileByEmail: (email: string) => findProfileByEmail(state, email),
-    getAccountContext: (userId: string) => getAccountContext(state, userId),
+    activeDriverProfileForOrganization: (
+      userId: string,
+      organizationId: string
+    ) => activeDriverProfileForOrganization(state, userId, organizationId),
+    getAccountContext: (userId: string, organizationId?: string) =>
+      getAccountContext(state, userId, organizationId),
     getDriverMediaTarget: (input: Parameters<typeof getDriverMediaTarget>[1]) => getDriverMediaTarget(state, input),
     linkProfileToClerkUser: (userId: string, clerkUserId: string) => linkProfileToClerkUser(state, userId, clerkUserId),
     listThreadMessages: (threadId: string, viewerUserId: string) => listThreadMessages(state, threadId, viewerUserId),
-    listSupportRequestsForAdmin: (reviewerUserId: string) => listSupportRequestsForAdmin(state, reviewerUserId),
+    listSupportRequestsForAdmin: (
+      input: Parameters<typeof listSupportRequestsForAdmin>[1]
+    ) => listSupportRequestsForAdmin(state, input),
     listSupportRequestsForReporter: (reporterUserId: string) => listSupportRequestsForReporter(state, reporterUserId),
     listThreadsForUser: (userId: string) => listThreadsForUser(state, userId),
     markThreadRead: (input: { threadId: string; userId: string }) => markThreadRead(state, input),
@@ -509,6 +544,8 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
       options?: Parameters<typeof revokeDirectOffer>[2]
     ) => revokeDirectOffer(state, input, options),
     saveDriverMediaReference: (input: Parameters<typeof saveDriverMediaReference>[1]) => saveDriverMediaReference(state, input),
+    setDriverAvailability: (input: Parameters<typeof setDriverAvailability>[1]) =>
+      setDriverAvailability(state, input),
     getFeaturedTruckPhotoReference: (input: Parameters<typeof getFeaturedTruckPhotoReference>[1]) =>
       getFeaturedTruckPhotoReference(state, input),
     setFeaturedTruckPhoto: (input: Parameters<typeof setFeaturedTruckPhoto>[1]) => setFeaturedTruckPhoto(state, input),
@@ -521,6 +558,22 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
 export type LogLoadsServices = ReturnType<typeof createLogLoadsServices>
 
 export { getDriverMediaTarget, getTripDocumentTarget, tripDocumentPublicIdPrefix }
+export {
+  activeDriverProfileForOrganization,
+  driverProfileCanRequestForOrganization
+} from "./driver-access"
+export {
+  changeOrganizationMemberRole,
+  reactivateOrganizationMember,
+  removeOrganizationMember,
+  suspendOrganizationMember
+} from "./team"
+export {
+  claimFounderPlatformAdmin,
+  PLATFORM_ADMIN_CLAIM_ACTION,
+  PLATFORM_ADMIN_SEED_CLERK_PLACEHOLDER,
+  PLATFORM_ADMIN_SEED_PROFILE_ID
+} from "./platform-admin"
 export { acceptPercentageBillingAgreement } from "./percentage-billing"
 export type {
   AcceptPercentageBillingAgreementInput,

@@ -1,4 +1,4 @@
-import { organizationMembershipSchema } from "@logloads/contracts"
+import { organizationMembershipSchema, userSchema } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
@@ -7,7 +7,7 @@ import { recordPassingPreTripInspection, stubTripDocumentMedia } from "./test-he
 
 const HAULER_ORG = "33333333-3333-4333-8333-333333333331"
 const HOST_ORG = "33333333-3333-4333-8333-333333333332"
-const OUTSIDE_ORG = "33333333-3333-4333-8333-333333333333"
+const OUTSIDE_ORG = "33333333-3333-4333-8333-333333333334"
 const HAULER_DRIVER_ACTOR = "22222222-2222-4222-8222-222222222221"
 const HAULER_COWORKER_DRIVER_ACTOR = "22222222-2222-4222-8222-222222222222"
 const HOST_OWNER = "22222222-2222-4222-8222-222222222223"
@@ -99,6 +99,19 @@ function grantMembership(
 ) {
   const suffix = options.index.toString().padStart(2, "0")
 
+  services.state.profiles.push(userSchema.parse({
+    clerkUserId: `clerk-trip-document-${suffix}`,
+    companyId: options.organizationId,
+    createdAt: "2026-06-05T00:00:00.000Z",
+    email: `trip-document-${suffix}@example.com`,
+    fullName: `Trip document boundary ${suffix}`,
+    id: options.userId,
+    isActive: true,
+    phone: "555-0100",
+    role: "driver",
+    updatedAt: "2026-06-05T00:00:00.000Z",
+    verificationStatus: "pending"
+  }))
   services.state.organizationMemberships.push(organizationMembershipSchema.parse({
     createdAt: "2026-06-05T00:00:00.000Z",
     id: `2d2d2d2d-2d2d-4d2d-8d2d-2d2d2d2d2e${suffix}`,
@@ -196,6 +209,45 @@ describe("attaching trip documents", () => {
       type: "scale_ticket"
     })).toThrow(/only access documents for their own hauls/)
 
+    expect(services.listTripDocuments(trip.id)).toHaveLength(0)
+  })
+
+  it("revokes signing, attaching, and reading after suspension despite another participant membership", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { trip } = bookHaul(services)
+    const haulingMembership = services.state.organizationMemberships.find(
+      (membership) =>
+        membership.organizationId === HAULER_ORG &&
+        membership.userId === HAULER_DRIVER_ACTOR
+    )
+
+    if (!haulingMembership) throw new Error("Assigned driver membership fixture missing")
+    haulingMembership.status = "suspended"
+    services.state.organizationMemberships.push(organizationMembershipSchema.parse({
+      createdAt: "2026-08-05T12:00:00.000Z",
+      id: "29292929-2929-4929-8929-292929292928",
+      organizationId: HOST_ORG,
+      role: "driver",
+      status: "active",
+      updatedAt: "2026-08-05T12:00:00.000Z",
+      userId: HAULER_DRIVER_ACTOR
+    }))
+    const input = {
+      actorUserId: HAULER_DRIVER_ACTOR,
+      organizationId: HOST_ORG,
+      tripId: trip.id
+    }
+
+    expect(() => services.getTripDocumentTarget(input, "write"))
+      .toThrow(/only access documents for their own hauls/)
+    expect(() => services.getTripDocumentTarget(input, "read"))
+      .toThrow(/only access documents for their own hauls/)
+    expect(() => services.attachTripDocument({
+      ...input,
+      filename: "revoked-driver-ticket.jpg",
+      media: stubTripDocumentMedia(trip.id),
+      type: "scale_ticket"
+    })).toThrow(/only access documents for their own hauls/)
     expect(services.listTripDocuments(trip.id)).toHaveLength(0)
   })
 

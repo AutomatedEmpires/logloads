@@ -51,7 +51,10 @@ export async function POST(
 			})
 		)
 
-		return NextResponse.json(result, { status: 201 })
+		return NextResponse.json(result, {
+			headers: { "Cache-Control": "private, no-store" },
+			status: 201
+		})
 	} catch (error) {
 		return apiErrorResponse(error)
 	}

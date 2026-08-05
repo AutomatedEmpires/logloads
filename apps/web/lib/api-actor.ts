@@ -81,6 +81,10 @@ async function requireBaseApiActor(): Promise<SessionActor> {
 export async function requireApiActor(requestedOrganizationId?: string | null): Promise<ApiActor> {
   const actor = await requireBaseApiActor()
 
+  if (actor.workspaceSelectionInvalid) {
+    throw new ApiError("Selected workspace access is no longer available", 403)
+  }
+
   const membership = requestedOrganizationId
     ? actor.memberships.find((entry) => entry.organization.id === requestedOrganizationId)
     : actor.memberships.find((entry) => entry.organization.id === actor.activeOrganization?.id) ?? actor.memberships[0]
@@ -102,6 +106,11 @@ export async function requireApiActor(requestedOrganizationId?: string | null): 
 
 export async function requireSupportApiActor(): Promise<SupportApiActor> {
   const actor = await requireBaseApiActor()
+
+  if (actor.workspaceSelectionInvalid) {
+    throw new ApiError("Selected workspace access is no longer available", 403)
+  }
+
   const organizationId = actor.activeOrganization?.id ?? actor.memberships[0]?.organization.id ?? null
 
   if (!organizationId && !actor.isPlatformAdmin) {
@@ -144,9 +153,20 @@ const DOMAIN_REFUSAL_MESSAGE =
 const CONFLICT_RETRY_AFTER_SECONDS = 1
 const UNAVAILABLE_RETRY_AFTER_SECONDS = 5
 
+function privateNoStoreHeaders(headers?: HeadersInit): Headers {
+  const responseHeaders = new Headers(headers)
+
+  responseHeaders.set("Cache-Control", "private, no-store")
+
+  return responseHeaders
+}
+
 export function apiErrorResponse(error: unknown): NextResponse {
   if (error instanceof ApiError) {
-    return NextResponse.json({ error: error.message }, { headers: error.headers, status: error.status })
+    return NextResponse.json(
+      { error: error.message },
+      { headers: privateNoStoreHeaders(error.headers), status: error.status }
+    )
   }
 
   // Contention on the single global operating_state row is transient and the
@@ -156,36 +176,58 @@ export function apiErrorResponse(error: unknown): NextResponse {
   if (error instanceof OperatingStateConflictError) {
     return NextResponse.json(
       { error: BUSY_STATE_MESSAGE },
-      { headers: { "Retry-After": String(CONFLICT_RETRY_AFTER_SECONDS) }, status: 503 }
+      {
+        headers: privateNoStoreHeaders({
+          "Retry-After": String(CONFLICT_RETRY_AFTER_SECONDS)
+        }),
+        status: 503
+      }
     )
   }
 
   if (error instanceof OperatingStateUnavailableError) {
     return NextResponse.json(
       { error: BUSY_STATE_MESSAGE },
-      { headers: { "Retry-After": String(UNAVAILABLE_RETRY_AFTER_SECONDS) }, status: 503 }
+      {
+        headers: privateNoStoreHeaders({
+          "Retry-After": String(UNAVAILABLE_RETRY_AFTER_SECONDS)
+        }),
+        status: 503
+      }
     )
   }
 
   if (error instanceof DomainRefusalError) {
     console.info("logloads: domain request refused")
 
-    return NextResponse.json({ error: DOMAIN_REFUSAL_MESSAGE }, { status: 409 })
+    return NextResponse.json(
+      { error: DOMAIN_REFUSAL_MESSAGE },
+      { headers: privateNoStoreHeaders(), status: 409 }
+    )
   }
 
   if (error instanceof Error && error.name === "ZodError") {
-    return NextResponse.json({ error: INVALID_FIELDS_MESSAGE }, { status: 422 })
+    return NextResponse.json(
+      { error: INVALID_FIELDS_MESSAGE },
+      { headers: privateNoStoreHeaders(), status: 422 }
+    )
   }
 
   // request.json() on a body that is not JSON. The caller can fix this one, so
   // it stays a 4xx rather than being reported as a server fault.
   if (error instanceof SyntaxError) {
-    return NextResponse.json({ error: MALFORMED_BODY_MESSAGE }, { status: 400 })
+    return NextResponse.json(
+      { error: MALFORMED_BODY_MESSAGE },
+      { headers: privateNoStoreHeaders(), status: 400 }
+    )
   }
 
   // Anything left is a service invariant the route failed to translate into an
   // ApiError, or a bug. The operator needs the detail; the client must not have it.
   console.error("logloads: api request failed", error)
 
-  return NextResponse.json({ error: GENERIC_FAILURE_MESSAGE }, { status: 500 })
+  return NextResponse.json(
+    { error: GENERIC_FAILURE_MESSAGE },
+    { headers: privateNoStoreHeaders(), status: 500 }
+  )
 }

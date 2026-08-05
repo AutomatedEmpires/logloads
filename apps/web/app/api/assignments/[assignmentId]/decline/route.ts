@@ -20,7 +20,10 @@ export async function POST(
 			})
 		)
 
-		return NextResponse.json({ assignment })
+		return NextResponse.json(
+			{ assignment },
+			{ headers: { "Cache-Control": "private, no-store" } }
+		)
 	} catch (error) {
 		return apiErrorResponse(error)
 	}

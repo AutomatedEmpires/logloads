@@ -618,6 +618,7 @@ export async function POST(request: Request) {
             overageMilestoneIntervalUnits:
               input.overageMilestoneIntervalUnits,
             paymentGraceDays: input.paymentGraceDays,
+            platformAdminAuthorized: actor.isPlatformAdmin,
             planCode: input.planCode
           })
 
@@ -631,6 +632,7 @@ export async function POST(request: Request) {
           const activated = draft.activateOrganizationSubscription({
             actorUserId,
             organizationId: input.organizationId,
+            platformAdminAuthorized: actor.isPlatformAdmin,
             subscriptionId: input.subscriptionId
           })
 
@@ -649,6 +651,7 @@ export async function POST(request: Request) {
               actorUserId,
               negotiatedTerms: input.negotiatedTerms,
               operatingMarketIds: input.operatingMarketIds,
+              platformAdminAuthorized: actor.isPlatformAdmin,
               sourceSubscriptionId: input.sourceSubscriptionId,
               targetPlanCode: "enterprise_250_plus"
             })
@@ -674,6 +677,7 @@ export async function POST(request: Request) {
                 ? []
                 : input.nextOperatingMarketIds,
             nextPlanCode: input.nextPlanCode,
+            platformAdminAuthorized: actor.isPlatformAdmin,
             subscriptionId: input.subscriptionId
           })
 
@@ -687,6 +691,7 @@ export async function POST(request: Request) {
           const scheduled = draft.scheduleOrganizationSubscriptionNonRenewal({
             actorUserId,
             effectiveAt: input.effectiveAt,
+            platformAdminAuthorized: actor.isPlatformAdmin,
             subscriptionId: input.subscriptionId
           })
 
@@ -701,6 +706,7 @@ export async function POST(request: Request) {
             amountCents: input.amountCents,
             billingPeriodSummaryId: input.billingPeriodSummaryId,
             idempotencyKey: input.idempotencyKey,
+            platformAdminAuthorized: actor.isPlatformAdmin,
             reason: input.reason
           }
           const adjusted =
@@ -725,6 +731,7 @@ export async function POST(request: Request) {
         case "reverse_usage": {
           const reversed = draft.reverseNetworkUsage({
             actorUserId,
+            platformAdminAuthorized: actor.isPlatformAdmin,
             reason: input.reason,
             usageEventId: input.usageEventId
           })
@@ -741,6 +748,7 @@ export async function POST(request: Request) {
               actorUserId,
               entitlementId: input.entitlementId,
               organizationId: input.organizationId,
+              platformAdminAuthorized: actor.isPlatformAdmin,
               providerCancellationReference:
                 input.providerCancellationReference
             })
@@ -753,7 +761,8 @@ export async function POST(request: Request) {
         case "reconcile_missing_usage": {
           const reconciled =
             draft.reconcileMissingNetworkUsageAsPlatformAdmin({
-              actorUserId
+              actorUserId,
+              platformAdminAuthorized: actor.isPlatformAdmin
             })
           const recordedCount = reconciled.filter(
             (entry) => entry.outcome === "recorded"

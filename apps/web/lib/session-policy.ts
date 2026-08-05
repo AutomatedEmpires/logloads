@@ -4,11 +4,33 @@ export type Cockpit = "driver" | "fleet" | "host" | "admin"
 
 export interface SessionActor {
   profile: User
-  memberships: Array<{ membership: OrganizationMembership; organization: Organization }>
+  memberships: Array<{
+    driverProfileId?: string | null
+    membership: OrganizationMembership
+    organization: Organization
+  }>
   activeOrganization: Organization | null
   activeMembership: OrganizationMembership | null
   driverProfileId: string | null
   isPlatformAdmin: boolean
+  /** A signed workspace id was present but no unique active membership resolved. */
+  workspaceSelectionInvalid: boolean
+}
+
+export function selectedSessionMembership(
+  memberships: SessionActor["memberships"],
+  requestedOrganizationId: string | null
+): SessionActor["memberships"][number] | null {
+  if (requestedOrganizationId) {
+    // A signed workspace selection is exact intent. If that membership was
+    // revoked, archived, or became ambiguous, never fall through to another
+    // company's workspace on the same identity.
+    return memberships.find(
+      (entry) => entry.organization.id === requestedOrganizationId
+    ) ?? null
+  }
+
+  return memberships[0] ?? null
 }
 
 const FLEET_ROLES = new Set(["owner", "admin", "dispatcher", "fleet_manager"])
@@ -78,13 +100,28 @@ export function homePathFor(actor: SessionActor): string {
     return "/host/command"
   }
 
-  if (actor.driverProfileId || actor.activeMembership?.role === "driver") {
+  if (actor.driverProfileId) {
     return "/driver/map"
   }
 
-  // A malformed or legacy membership must never bounce between a protected
-  // cockpit and onboarding. The public root is a safe recovery surface.
-  return "/"
+  // The profile exists, so onboarding would create an identity loop. Keep a
+  // revoked or malformed account on a transparent, non-operational surface.
+  return "/access-restricted"
+}
+
+/**
+ * Returns a real recovery destination for the restricted-access surface.
+ * An exact signed workspace selection can be revoked while the identity still
+ * has another membership. In that state, silently selecting the other company
+ * would cross the user's explicit workspace boundary, and redirecting to the
+ * computed restricted home would loop back to the same page.
+ */
+export function restrictedAccessRecoveryPath(
+  actor: SessionActor
+): string | null {
+  const homePath = homePathFor(actor)
+
+  return homePath === "/access-restricted" ? null : homePath
 }
 
 export function canAccessCockpit(actor: SessionActor, cockpit: Cockpit): boolean {
@@ -97,7 +134,7 @@ export function canAccessCockpit(actor: SessionActor, cockpit: Cockpit): boolean
   }
 
   if (cockpit === "driver") {
-    return Boolean(actor.driverProfileId) || actor.activeMembership?.role === "driver"
+    return Boolean(actor.driverProfileId)
   }
 
   return organizationCockpit(actor) === cockpit
@@ -113,11 +150,14 @@ export function membershipForCockpit(
   actor: SessionActor,
   cockpit: Exclude<Cockpit, "admin">
 ): SessionActor["memberships"][number] | null {
-  return actor.memberships.find(({ membership, organization }) => {
+  return actor.memberships.find((entry) => {
     if (cockpit === "driver") {
-      return membership.role === "driver"
+      return Boolean(entry.driverProfileId)
     }
 
-    return organizationCockpitFor(organization.type, membership.role) === cockpit
+    return organizationCockpitFor(
+      entry.organization.type,
+      entry.membership.role
+    ) === cockpit
   }) ?? null
 }

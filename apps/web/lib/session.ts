@@ -9,15 +9,21 @@ import { redirect } from "next/navigation"
 import { cache } from "react"
 
 import { decideDevSession } from "./demo-mode"
+import { isPlatformAdminAllowed } from "./platform-admin"
 import { refreshState, services } from "./services"
 import {
   canAccessCockpit,
   homePathFor,
+  selectedSessionMembership,
   type Cockpit,
   type SessionActor
 } from "./session-policy"
 
-export { canAccessCockpit, homePathFor } from "./session-policy"
+export {
+  canAccessCockpit,
+  homePathFor,
+  restrictedAccessRecoveryPath
+} from "./session-policy"
 export type { Cockpit, SessionActor } from "./session-policy"
 
 export const SESSION_COOKIE = "ll_session"
@@ -154,20 +160,34 @@ async function resolveClerkProfile(): Promise<User | null> {
   return services.findProfileByClerkId(clerkUserId) ?? null
 }
 
-function buildSessionActor(profile: User, requestedOrganizationId: string | null): SessionActor {
+function buildSessionActor(
+  profile: User,
+  requestedOrganizationId: string | null,
+  identitySource: "clerk" | "dev"
+): SessionActor {
   const account = services.getAccountContext(profile.id)
-  const memberships = account?.memberships ?? []
-  const active = (requestedOrganizationId
-    ? memberships.find((entry) => entry.organization.id === requestedOrganizationId)
-    : undefined) ?? memberships[0] ?? null
+  const memberships = (account?.memberships ?? []).map((entry) => ({
+    ...entry,
+    driverProfileId:
+      services.activeDriverProfileForOrganization(
+        profile.id,
+        entry.organization.id
+      )?.id ?? null
+  }))
+  const active = selectedSessionMembership(memberships, requestedOrganizationId)
 
   return {
     activeMembership: active?.membership ?? null,
     activeOrganization: active?.organization ?? null,
-    driverProfileId: account?.driverProfileId ?? null,
-    isPlatformAdmin: profile.role === "admin",
+    driverProfileId: active?.driverProfileId ?? null,
+    isPlatformAdmin: isPlatformAdminAllowed(
+      profile,
+      services.state,
+      identitySource === "clerk"
+    ),
     memberships,
-    profile
+    profile,
+    workspaceSelectionInvalid: Boolean(requestedOrganizationId && !active)
   }
 }
 
@@ -180,20 +200,26 @@ export const getSessionActor = cache(async (): Promise<SessionActor | null> => {
   const clerkProfile = await resolveClerkProfile()
 
   if (clerkProfile) {
-    return buildSessionActor(clerkProfile, devSession?.organizationId ?? null)
+    return buildSessionActor(
+      clerkProfile,
+      devSession?.organizationId ?? null,
+      "clerk"
+    )
   }
 
   if (!(await isDevSessionEnabled()) || !devSession) {
     return null
   }
 
-  const profile = services.state.profiles.find((candidate) => candidate.id === devSession.userId && candidate.isActive)
+  const profile = services.state.profiles.find(
+    (candidate) => candidate.id === devSession.userId
+  )
 
   if (!profile) {
     return null
   }
 
-  return buildSessionActor(profile, devSession.organizationId)
+  return buildSessionActor(profile, devSession.organizationId, "dev")
 })
 
 /**

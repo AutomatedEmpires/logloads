@@ -625,6 +625,7 @@ function assertOrganizationBillingActor(
   state: LogLoadsDatabaseState,
   organizationId: string,
   actorUserId: string,
+  platformAdminAuthorized: boolean | undefined,
   assertPolicyCondition: typeof assertCondition = assertCondition
 ): void {
   const membership = state.organizationMemberships.find(
@@ -633,12 +634,14 @@ function assertOrganizationBillingActor(
       candidate.userId === actorUserId &&
       candidate.status === "active"
   )
-  const platformAdmin = state.profiles.find(
-    (candidate) =>
-      candidate.id === actorUserId &&
-      candidate.role === "admin" &&
-      candidate.isActive
-  )
+  const platformAdmin = platformAdminAuthorized === true
+    ? state.profiles.find(
+        (candidate) =>
+          candidate.id === actorUserId &&
+          candidate.role === "admin" &&
+          candidate.isActive
+      )
+    : undefined
 
   assertPolicyCondition(
     Boolean(
@@ -1463,6 +1466,8 @@ export interface ConfigureOrganizationSubscriptionInput {
    * customer's active billing manager.
    */
   configuredByUserId?: string
+  /** Server-derived platform authority; omitted/false preserves organization-only access. */
+  platformAdminAuthorized?: boolean
   acceptedAt: string
   /**
    * Exact active landing ids accepted as operating locations. Required for
@@ -1496,11 +1501,17 @@ export function retirePaidDispatchEntitlementForSubscription(
     organizationId: string
     entitlementId: string
     actorUserId: string
+    platformAdminAuthorized?: boolean
     providerCancellationReference: string
   },
   at = nowIso()
 ): { changed: boolean; entitlement: LogLoadsDatabaseState["entitlements"][number] } {
-  assertOrganizationBillingActor(state, input.organizationId, input.actorUserId)
+  assertOrganizationBillingActor(
+    state,
+    input.organizationId,
+    input.actorUserId,
+    input.platformAdminAuthorized
+  )
   const entitlement = assertFound(
     state.entitlements.find((candidate) => candidate.id === input.entitlementId),
     `Entitlement ${input.entitlementId} was not found`
@@ -1613,7 +1624,8 @@ export function configureOrganizationSubscription(
   assertOrganizationBillingActor(
     state,
     input.organizationId,
-    input.configuredByUserId ?? input.acceptedByUserId
+    input.configuredByUserId ?? input.acceptedByUserId,
+    input.platformAdminAuthorized
   )
   assertCondition(
     Boolean(input.acceptedTermsVersion.trim()),
@@ -1774,6 +1786,8 @@ export interface AuthorizePilotConversionSubscriptionInput {
   acceptedTermsVersion: string
   acceptedByUserId: string
   actorUserId: string
+  /** Server-derived platform authority; omitted/false preserves organization-only access. */
+  platformAdminAuthorized?: boolean
   acceptedAt: string
   operatingMarketIds?: string[]
   paymentGraceDays?: number
@@ -1917,6 +1931,7 @@ export function authorizePilotConversionSubscription(
     state,
     source.organizationId,
     input.actorUserId,
+    input.platformAdminAuthorized,
     assertDomainCondition
   )
   const acceptedTermsVersion = input.acceptedTermsVersion.trim()
@@ -2787,15 +2802,17 @@ export function reconcileMissingNetworkUsage(
 
 export function reconcileMissingNetworkUsageAsPlatformAdmin(
   state: LogLoadsDatabaseState,
-  input: { actorUserId: string },
+  input: { actorUserId: string; platformAdminAuthorized: boolean },
   at = nowIso()
 ): NetworkUsageReconciliationResult[] {
-  const actor = state.profiles.find(
-    (candidate) =>
-      candidate.id === input.actorUserId &&
-      candidate.role === "admin" &&
-      candidate.isActive
-  )
+  const actor = input.platformAdminAuthorized
+    ? state.profiles.find(
+        (candidate) =>
+          candidate.id === input.actorUserId &&
+          candidate.role === "admin" &&
+          candidate.isActive
+      )
+    : undefined
   assertCondition(
     Boolean(actor),
     "Only an active platform admin may reconcile billing usage across organizations"
@@ -2817,6 +2834,7 @@ export function reverseNetworkUsage(
   input: {
     usageEventId: string
     actorUserId: string
+    platformAdminAuthorized?: boolean
     reason: string
   },
   at = nowIso()
@@ -2827,7 +2845,12 @@ export function reverseNetworkUsage(
   )
   const reason = input.reason.trim()
 
-  assertOrganizationBillingActor(state, event.organizationId, input.actorUserId)
+  assertOrganizationBillingActor(
+    state,
+    event.organizationId,
+    input.actorUserId,
+    input.platformAdminAuthorized
+  )
   assertCondition(reason.length > 0, "A Network usage reversal needs a reason")
   assertCondition(reason.length <= 500, "Keep the Network usage reversal reason under 500 characters")
   const adjustmentId = billingUsageReversalAdjustmentId(event.id)
@@ -2985,6 +3008,7 @@ interface RecordBillingAdjustmentBaseInput {
   amountCents: number
   reason: string
   actorUserId: string
+  platformAdminAuthorized?: boolean
   idempotencyKey: string
 }
 
@@ -3037,7 +3061,8 @@ export function recordBillingAdjustment(
   assertOrganizationBillingActor(
     state,
     summary.organizationId,
-    input.actorUserId
+    input.actorUserId,
+    input.platformAdminAuthorized
   )
   assertCondition(
     Number.isSafeInteger(input.amountCents) && input.amountCents > 0,
@@ -4295,12 +4320,22 @@ export function bindOrganizationSubscriptionProvider(
 
 export function activateOrganizationSubscription(
   state: LogLoadsDatabaseState,
-  input: { organizationId: string; subscriptionId: string; actorUserId: string },
+  input: {
+    organizationId: string
+    subscriptionId: string
+    actorUserId: string
+    platformAdminAuthorized?: boolean
+  },
   at = nowIso()
 ): ConfigureOrganizationSubscriptionResult {
   const subscription = requireUniqueOrganizationSubscription(state, input.subscriptionId)
 
-  assertOrganizationBillingActor(state, input.organizationId, input.actorUserId)
+  assertOrganizationBillingActor(
+    state,
+    input.organizationId,
+    input.actorUserId,
+    input.platformAdminAuthorized
+  )
   assertCondition(
     !subscription.includesDispatchProCapabilitiesSnapshot ||
       overlappingPaidDispatchEntitlements(state, input.organizationId).length === 0,
@@ -4595,6 +4630,8 @@ export interface ScheduleOrganizationSubscriptionPlanChangeInput {
   nextPlanCode: SubscriptionPlanCode
   effectiveAt: string
   actorUserId: string
+  /** Server-derived platform authority; omitted/false preserves organization-only access. */
+  platformAdminAuthorized?: boolean
   /** Accepted scope for the target plan; current scope is carried when omitted. */
   nextOperatingMarketIds?: string[]
   /** Required only when the accepted target is Enterprise 250+. */
@@ -4611,7 +4648,8 @@ export function scheduleOrganizationSubscriptionPlanChange(
   assertOrganizationBillingActor(
     state,
     subscription.organizationId,
-    input.actorUserId
+    input.actorUserId,
+    input.platformAdminAuthorized
   )
   assertCondition(
     input.nextPlanCode !== subscription.planCode,
@@ -4966,6 +5004,7 @@ export function scheduleOrganizationSubscriptionNonRenewal(
     subscriptionId: string
     effectiveAt: string
     actorUserId: string
+    platformAdminAuthorized?: boolean
   },
   at = nowIso()
 ): { changed: boolean; subscription: OrganizationSubscription } {
@@ -4974,7 +5013,8 @@ export function scheduleOrganizationSubscriptionNonRenewal(
   assertOrganizationBillingActor(
     state,
     subscription.organizationId,
-    input.actorUserId
+    input.actorUserId,
+    input.platformAdminAuthorized
   )
   const termEnd = subscription.commitmentEnd ?? subscription.currentPeriodEnd
   assertSubscriptionRenewalBoundary(

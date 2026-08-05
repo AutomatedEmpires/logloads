@@ -10,6 +10,7 @@ import {
   organizationMembershipSchema,
   organizationRoleCan,
   ORGANIZATION_ROLES,
+  userSchema,
   type CredentialKind,
   type MediaReference,
   type OrganizationRole
@@ -119,6 +120,21 @@ function instantAfter(days: number, from = AT): string {
 function addMember(state: State, organizationId: string, role: OrganizationRole): string {
   const userId = randomUUID()
 
+  state.profiles.push(
+    userSchema.parse({
+      clerkUserId: `clerk-test-${userId}`,
+      companyId: organizationId,
+      createdAt: SUBMITTED,
+      email: `${userId}@example.com`,
+      fullName: "Credential boundary test member",
+      id: userId,
+      isActive: true,
+      phone: "555-0100",
+      role: "driver",
+      updatedAt: SUBMITTED,
+      verificationStatus: "pending"
+    })
+  )
   state.organizationMemberships.push(
     organizationMembershipSchema.parse({
       createdAt: SUBMITTED,
@@ -388,7 +404,7 @@ describe("the seeded facts these tests rely on", () => {
 // ── Submission ────────────────────────────────────────────────────────────────
 
 describe("getCredentialUploadTarget", () => {
-  it("derives an independent driver's exact active rig namespace from its combination", () => {
+  it("refuses a historical profile whose organization binding was removed", () => {
     const state = freshState()
     const independentDriver = state.driverProfiles.find(
       (candidate) => candidate.id === RILEY_DRIVER
@@ -411,7 +427,7 @@ describe("getCredentialUploadTarget", () => {
       label: "Riley independent rig"
     })
 
-    expect(
+    expect(() =>
       getCredentialUploadTarget(state, {
         actorUserId: RILEY_USER,
         driverProfileId: RILEY_DRIVER,
@@ -419,16 +435,7 @@ describe("getCredentialUploadTarget", () => {
         kind: "truck",
         organizationId: MAYA_ORG
       })
-    ).toEqual({
-      equipmentProfileId: HANK_TRUCK,
-      kind: "truck",
-      organizationId: MAYA_ORG,
-      publicIdPrefix: credentialDocumentPublicIdPrefix(
-        RILEY_DRIVER,
-        "truck",
-        HANK_TRUCK
-      )
-    })
+    ).toThrow(/not active in this organization/)
   })
 
   it("refuses upload signing for anyone other than the driver who owns the vault", () => {
@@ -457,6 +464,42 @@ describe("getCredentialUploadTarget", () => {
         organizationId: MAYA_ORG
       })
     ).toThrow(DomainRefusalError)
+  })
+
+  it("refuses signing when the driver user or exact organization is inactive", () => {
+    const inactiveUserState = freshState()
+    const profile = inactiveUserState.profiles.find((candidate) => candidate.id === RILEY_USER)
+
+    if (!profile) throw new Error("Riley user fixture missing")
+    profile.isActive = false
+
+    expect(() =>
+      getCredentialUploadTarget(inactiveUserState, {
+        actorUserId: RILEY_USER,
+        driverProfileId: RILEY_DRIVER,
+        equipmentProfileId: null,
+        kind: "cdl",
+        organizationId: MAYA_ORG
+      })
+    ).toThrow(/not active in this organization/)
+
+    const archivedOrganizationState = freshState()
+    const organization = archivedOrganizationState.organizations.find(
+      (candidate) => candidate.id === MAYA_ORG
+    )
+
+    if (!organization) throw new Error("Maya organization fixture missing")
+    organization.archivedAt = "2026-08-05T12:00:00.000Z"
+
+    expect(() =>
+      getCredentialUploadTarget(archivedOrganizationState, {
+        actorUserId: RILEY_USER,
+        driverProfileId: RILEY_DRIVER,
+        equipmentProfileId: null,
+        kind: "cdl",
+        organizationId: MAYA_ORG
+      })
+    ).toThrow(/not active in this organization/)
   })
 })
 
@@ -639,7 +682,7 @@ describe("submitCredential", () => {
     expect(result.credential.identifier).not.toBe("CALLER-SPOOFED-UNIT")
   })
 
-  it("lets an independent driver file evidence for their exact active assigned rig", () => {
+  it("refuses a historical profile even when its old equipment remains assigned", () => {
     const state = freshState()
     const independentDriver = state.driverProfiles.find(
       (candidate) => candidate.id === RILEY_DRIVER
@@ -651,26 +694,15 @@ describe("submitCredential", () => {
 
     independentDriver.companyId = null
 
-    const result = file(state, {
+    const before = structuredClone(state.driverCredentials)
+
+    expect(() => file(state, {
       actorUserId: RILEY_USER,
       driverProfileId: RILEY_DRIVER,
       kind: "truck",
       organizationId: MAYA_ORG
-    })
-    const assignedCombination = state.equipmentCombinations.find(
-      (candidate) =>
-        candidate.assignedDriverProfileId === RILEY_DRIVER &&
-        candidate.organizationId === MAYA_ORG &&
-        candidate.truckProfileId === result.credential.truckProfileId
-    )
-
-    expect(result.outcome).toBe("submitted")
-    expect(assignedCombination).toBeDefined()
-    expect(result.credential.identifier).toBe(
-      state.truckProfiles.find(
-        (candidate) => candidate.id === assignedCombination?.truckProfileId
-      )?.unitNumber
-    )
+    })).toThrow(/not active in this organization/)
+    expect(state.driverCredentials).toEqual(before)
   })
 
   it("refuses equipment evidence when two assigned trucks share a normalized unit number", () => {
@@ -768,7 +800,7 @@ describe("submitCredential", () => {
     ).toThrow(/not on your roster/)
   })
 
-  it("refuses anyone who is not an active member of the organization they file under", () => {
+  it("refuses anyone who is not an active user and member of the organization they file under", () => {
     const state = freshState()
 
     expect(() =>
@@ -778,7 +810,7 @@ describe("submitCredential", () => {
         kind: "cdl",
         organizationId: MAYA_ORG
       })
-    ).toThrow(/not an active member/)
+    ).toThrow(/not active/)
   })
 
   it("refuses a submission against a driver profile that does not exist", () => {
@@ -792,6 +824,37 @@ describe("submitCredential", () => {
         organizationId: MAYA_ORG
       })
     ).toThrow(/was not found/)
+  })
+
+  it("keeps a suspended driver's vault read-only even with an unrelated active membership", () => {
+    const state = freshState()
+    const membership = state.organizationMemberships.find(
+      (candidate) =>
+        candidate.organizationId === MAYA_ORG && candidate.userId === RILEY_USER
+    )
+
+    if (!membership) throw new Error("Riley membership fixture missing")
+    membership.status = "suspended"
+    state.organizationMemberships.push(organizationMembershipSchema.parse({
+      createdAt: SUBMITTED,
+      id: "19191919-1919-4919-8919-191919191918",
+      organizationId: EXTERNAL_HOST_ORG,
+      role: "driver",
+      status: "active",
+      updatedAt: SUBMITTED,
+      userId: RILEY_USER
+    }))
+    const beforeCredentials = structuredClone(state.driverCredentials)
+    const beforeAudit = structuredClone(state.auditEvents)
+
+    expect(() => file(state, {
+      actorUserId: RILEY_USER,
+      driverProfileId: RILEY_DRIVER,
+      kind: "cdl",
+      organizationId: MAYA_ORG
+    })).toThrow(/not an active member|not active in this organization/)
+    expect(state.driverCredentials).toEqual(beforeCredentials)
+    expect(state.auditEvents).toEqual(beforeAudit)
   })
 })
 
@@ -1294,6 +1357,31 @@ describe("applyCredentialReview", () => {
     expect(auditActions(state, "driver_credential_reviewed")[0]?.actorUserId).toBeNull()
   })
 
+  it("refuses to attach platform administrator authority to an AI decision", () => {
+    const state = freshState()
+    const submission = file(state, {
+      actorUserId: RILEY_USER,
+      driverProfileId: RILEY_DRIVER,
+      kind: "cdl",
+      organizationId: MAYA_ORG
+    })
+
+    expect(() =>
+      applyCredentialReview(
+        state,
+        {
+          credentialId: submission.credential.id,
+          decidedBy: "ai",
+          decision: "denied",
+          model: "test-reviewer",
+          platformAdminAuthorized: true,
+          rationale: "Refused."
+        },
+        REVIEWED
+      )
+    ).toThrow(/cannot carry platform administrator authority/)
+  })
+
   it("refuses a platform decision that names nobody", () => {
     const state = freshState()
     const submission = file(state, {
@@ -1310,6 +1398,7 @@ describe("applyCredentialReview", () => {
           credentialId: submission.credential.id,
           decidedBy: "platform_admin",
           decision: "approved",
+          platformAdminAuthorized: true,
           rationale: "Approved on appeal."
         },
         REVIEWED
@@ -1337,6 +1426,7 @@ describe("applyCredentialReview", () => {
           credentialId: submission.credential.id,
           decidedBy: "platform_admin",
           decision: "approved",
+          platformAdminAuthorized: true,
           rationale: "Approving my own licence."
         },
         REVIEWED
@@ -1365,11 +1455,89 @@ describe("applyCredentialReview", () => {
           credentialId: submission.credential.id,
           decidedBy: "platform_admin",
           decision: "approved",
+          platformAdminAuthorized: true,
           rationale: "Approved on appeal."
         },
         REVIEWED
       )
     ).toThrow(/active LogLoads administrator/)
+  })
+
+  it.each([
+    ["missing", undefined],
+    ["false", false]
+  ] as const)(
+    "refuses a seeded active administrator when explicit platform authority is %s",
+    (_label, platformAdminAuthorized) => {
+      const state = freshState()
+      const submission = file(state, {
+        actorUserId: RILEY_USER,
+        driverProfileId: RILEY_DRIVER,
+        kind: "cdl",
+        organizationId: MAYA_ORG
+      })
+      const platformAdmin = state.profiles.find(
+        (profile) => profile.id === PLATFORM_ADMIN_USER
+      )
+      const reviewCount = state.credentialReviews.length
+      const auditCount = auditActions(state, "driver_credential_reviewed").length
+      const authority = platformAdminAuthorized === undefined
+        ? {}
+        : { platformAdminAuthorized }
+
+      expect(platformAdmin).toMatchObject({ isActive: true, role: "admin" })
+      expect(() =>
+        applyCredentialReview(
+          state,
+          {
+            actorUserId: PLATFORM_ADMIN_USER,
+            ...authority,
+            credentialId: submission.credential.id,
+            decidedBy: "platform_admin",
+            decision: "approved",
+            rationale: "Approved without authenticated platform authority."
+          },
+          REVIEWED
+        )
+      ).toThrow(/requires explicit authenticated platform administrator authorization/)
+      expect(state.credentialReviews).toHaveLength(reviewCount)
+      expect(auditActions(state, "driver_credential_reviewed")).toHaveLength(auditCount)
+      expect(
+        state.driverCredentials.find((credential) => credential.id === submission.credential.id)?.status
+      ).toBe("pending")
+    }
+  )
+
+  it("accepts an explicitly authorized active platform administrator", () => {
+    const state = freshState()
+    const submission = file(state, {
+      actorUserId: RILEY_USER,
+      driverProfileId: RILEY_DRIVER,
+      kind: "cdl",
+      organizationId: MAYA_ORG
+    })
+
+    const result = applyCredentialReview(
+      state,
+      {
+        actorUserId: PLATFORM_ADMIN_USER,
+        credentialId: submission.credential.id,
+        decidedBy: "platform_admin",
+        decision: "approved",
+        platformAdminAuthorized: true,
+        rationale: "Approved through the authenticated platform review boundary."
+      },
+      REVIEWED
+    )
+
+    expect(result).toMatchObject({
+      credential: { status: "approved" },
+      outcome: "reviewed",
+      review: { decidedBy: "platform_admin", decision: "approved" }
+    })
+    expect(auditActions(state, "driver_credential_reviewed")[0]?.actorUserId).toBe(
+      PLATFORM_ADMIN_USER
+    )
   })
 
   it("refuses a decision on a credential that does not exist", () => {
@@ -1484,6 +1652,7 @@ describe("the review trail is append-only", () => {
         credentialId: submission.credential.id,
         decidedBy: "platform_admin",
         decision: "approved",
+        platformAdminAuthorized: true,
         rationale: "Read the certificate by hand; the expiry is legible on the reverse."
       },
       "2026-07-02T10:00:00.000Z"
@@ -1514,6 +1683,7 @@ describe("the review trail is append-only", () => {
         credentialId: submission.credential.id,
         decidedBy: "platform_admin",
         decision: "denied",
+        platformAdminAuthorized: true,
         rationale: "Refused on first reading."
       },
       REVIEWED
@@ -1525,6 +1695,7 @@ describe("the review trail is append-only", () => {
         credentialId: submission.credential.id,
         decidedBy: "platform_admin",
         decision: "approved",
+        platformAdminAuthorized: true,
         rationale: "Reversed after the driver supplied context by phone."
       },
       "2026-07-02T10:00:00.000Z"
@@ -1559,6 +1730,7 @@ describe("the review trail is append-only", () => {
         credentialId: submission.credential.id,
         decidedBy: "platform_admin",
         decision: "approved",
+        platformAdminAuthorized: true,
         rationale: "Read by hand on appeal."
       },
       "2026-07-02T10:00:00.000Z"
@@ -1962,7 +2134,27 @@ describe("the host boundary", () => {
     ).toThrow(/not hauling for your organization/)
   })
 
-  it("refuses somebody who is not an active member of the host organization", () => {
+  it.each(["requested", "offered", "declined", "cancelled"] as const)(
+    "refuses host credential access for a %s assignment that never establishes or no longer retains the hauling relationship",
+    (status) => {
+      const state = clearedMaya()
+      const assignment = state.assignments.find(
+        (candidate) => candidate.id === MAYA_EXTERNAL_HOST_ASSIGNMENT
+      )
+
+      if (!assignment) {
+        throw new Error("Maya external-host assignment fixture is missing")
+      }
+
+      assignment.status = status
+
+      expect(() => hostView(state, MAYA_DRIVER, hostViewer)).toThrow(
+        /not hauling for your organization/
+      )
+    }
+  )
+
+  it("refuses somebody who is not an active user and member of the host organization", () => {
     const state = clearedMaya()
 
     expect(() =>
@@ -1972,7 +2164,7 @@ describe("the host boundary", () => {
         audience: "host",
         organizationId: EXTERNAL_HOST_ORG
       })
-    ).toThrow(/not an active member/)
+    ).toThrow(/not active/)
   })
 
   it("builds the same summary for the acceptance path, which holds no viewer", () => {
@@ -2014,20 +2206,19 @@ describe("listDriverCredentials", () => {
     expect(refusal?.requestedEvidence.length).toBeGreaterThan(0)
   })
 
-  it("lets a driver with no active membership anywhere still read their own vault", () => {
-    // A driver between outfits must not lose sight of their own documents.
+  it("revokes a driver's private vault when their exact membership is removed", () => {
     const state = freshState()
 
     state.organizationMemberships = state.organizationMemberships.filter(
       (membership) => membership.userId !== MAYA_USER
     )
 
-    const view = vaultView(state, MAYA_DRIVER, { actorUserId: MAYA_USER, audience: "driver" })
-
-    expect(view.credentials.length).toBeGreaterThan(0)
+    expect(() =>
+      vaultView(state, MAYA_DRIVER, { actorUserId: MAYA_USER, audience: "driver" })
+    ).toThrow(/not active in this organization/)
   })
 
-  it("shows an independent driver only the active organization's equipment choices", () => {
+  it("does not use an unrelated active membership to revive a historical profile", () => {
     const state = freshState()
     const independentDriver = state.driverProfiles.find(
       (candidate) => candidate.id === RILEY_DRIVER
@@ -2076,22 +2267,17 @@ describe("listDriverCredentials", () => {
       secondOrganizationRig
     )
 
-    const view = vaultView(state, RILEY_DRIVER, {
+    expect(() => vaultView(state, RILEY_DRIVER, {
       actorUserId: RILEY_USER,
       audience: "driver",
       organizationId: MAYA_ORG
-    })
+    })).toThrow(/not active in this organization/)
 
-    expect(view.equipmentSelections.map((selection) => selection.combinationId))
-      .toEqual([firstOrganizationRig.id])
-    const expectedProfileIds = [
-      firstOrganizationRig.truckProfileId,
-      firstOrganizationRig.trailerProfileId
-    ].filter((profileId): profileId is string => Boolean(profileId)).sort()
-
-    expect(
-      view.equipmentOptions.map((option) => option.profileId).sort()
-    ).toEqual(expectedProfileIds)
+    expect(() => vaultView(state, RILEY_DRIVER, {
+      actorUserId: RILEY_USER,
+      audience: "driver",
+      organizationId: EXTERNAL_HOST_ORG
+    })).toThrow(/not active in this organization/)
   })
 
   it("refuses a driver reading another driver's vault", () => {
@@ -2112,6 +2298,34 @@ describe("listDriverCredentials", () => {
 
     expect(view.audience).toBe("fleet")
     expect(view.credentials.length).toBeGreaterThan(0)
+  })
+
+  it("revokes driver, fleet, and host credential reads when the driver's roster membership is suspended", () => {
+    const state = freshState()
+    const membership = state.organizationMemberships.find(
+      (candidate) =>
+        candidate.organizationId === MAYA_ORG && candidate.userId === MAYA_USER
+    )
+
+    if (!membership) throw new Error("Maya membership fixture missing")
+    membership.status = "suspended"
+
+    expect(() => vaultView(state, MAYA_DRIVER, {
+      actorUserId: MAYA_USER,
+      audience: "driver",
+      organizationId: MAYA_ORG
+    })).toThrow(/not active in this organization/)
+    expect(() => vaultView(state, MAYA_DRIVER, {
+      actorUserId: DISPATCHER_USER,
+      audience: "fleet",
+      organizationId: MAYA_ORG
+    })).toThrow(/not active in this organization/)
+    expect(() => hostView(state, MAYA_DRIVER, {
+      actorUserId: DISPATCHER_USER,
+      assignmentId: MAYA_EXTERNAL_HOST_ASSIGNMENT,
+      audience: "host",
+      organizationId: EXTERNAL_HOST_ORG
+    })).toThrow(/not active in this organization/)
   })
 
   it("refuses a member of the driver's own outfit who cannot manage drivers", () => {

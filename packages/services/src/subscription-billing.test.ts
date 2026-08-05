@@ -30,6 +30,7 @@ import {
   markBillingNotificationEmailFailed,
   openNetworkOverageInvoice,
   planSubscriptionBillingRun,
+  reconcileMissingNetworkUsageAsPlatformAdmin,
   recordBillingAdjustment,
   recordBillingAdjustmentProviderSettlement,
   recordBillingAdjustmentProviderSettlementFailure,
@@ -112,6 +113,7 @@ function configured(
       configuredByUserId: ADMIN,
       operatingMarketIds: [HOST_LANDING],
       organizationId: HOST,
+      platformAdminAuthorized: true,
       planCode
     },
     ACCEPTED_AT
@@ -131,6 +133,7 @@ function paidAndOperating(
     {
       actorUserId: ADMIN,
       organizationId: HOST,
+      platformAdminAuthorized: true,
       subscriptionId: subscription.id
     },
     AUTHORIZED_AT
@@ -214,6 +217,108 @@ function addBlankAssignment(
 }
 
 describe("subscription activation and commercial scope", () => {
+  it("requires explicit platform proof while preserving organization billing-manager authority", () => {
+    const missingProofState = freshState()
+    const missingProofBefore = structuredClone(missingProofState)
+    expect(() =>
+      configureOrganizationSubscription(
+        missingProofState,
+        {
+          acceptedAt: ACCEPTED_AT,
+          acceptedByUserId: OWNER,
+          acceptedTermsVersion: "subscription-v1-2026-07-28",
+          configuredByUserId: ADMIN,
+          operatingMarketIds: [HOST_LANDING],
+          organizationId: HOST,
+          planCode: "network_25"
+        },
+        ACCEPTED_AT
+      )
+    ).toThrow(/active organization billing managers or active platform admins/)
+    expect(missingProofState).toEqual(missingProofBefore)
+
+    const falseProofState = freshState()
+    expect(() =>
+      configureOrganizationSubscription(
+        falseProofState,
+        {
+          acceptedAt: ACCEPTED_AT,
+          acceptedByUserId: OWNER,
+          acceptedTermsVersion: "subscription-v1-2026-07-28",
+          configuredByUserId: ADMIN,
+          operatingMarketIds: [HOST_LANDING],
+          organizationId: HOST,
+          platformAdminAuthorized: false,
+          planCode: "network_25"
+        },
+        ACCEPTED_AT
+      )
+    ).toThrow(/active organization billing managers or active platform admins/)
+
+    const nonAdminState = freshState()
+    expect(() =>
+      configureOrganizationSubscription(
+        nonAdminState,
+        {
+          acceptedAt: ACCEPTED_AT,
+          acceptedByUserId: OWNER,
+          acceptedTermsVersion: "subscription-v1-2026-07-28",
+          configuredByUserId: DRIVER,
+          operatingMarketIds: [HOST_LANDING],
+          organizationId: HOST,
+          platformAdminAuthorized: true,
+          planCode: "network_25"
+        },
+        ACCEPTED_AT
+      )
+    ).toThrow(/active organization billing managers or active platform admins/)
+
+    const managerState = freshState()
+    expect(
+      configureOrganizationSubscription(
+        managerState,
+        {
+          acceptedAt: ACCEPTED_AT,
+          acceptedByUserId: OWNER,
+          acceptedTermsVersion: "subscription-v1-2026-07-28",
+          configuredByUserId: OWNER,
+          operatingMarketIds: [HOST_LANDING],
+          organizationId: HOST,
+          planCode: "network_25"
+        },
+        ACCEPTED_AT
+      ).changed
+    ).toBe(true)
+  })
+
+  it("requires explicit platform proof for global usage reconciliation", () => {
+    const state = freshState()
+    const before = structuredClone(state)
+
+    expect(() =>
+      reconcileMissingNetworkUsageAsPlatformAdmin(
+        state,
+        { actorUserId: ADMIN, platformAdminAuthorized: false },
+        ACCEPTED_AT
+      )
+    ).toThrow(/Only an active platform admin/)
+    expect(state).toEqual(before)
+    expect(() =>
+      reconcileMissingNetworkUsageAsPlatformAdmin(
+        state,
+        { actorUserId: OWNER, platformAdminAuthorized: true },
+        ACCEPTED_AT
+      )
+    ).toThrow(/Only an active platform admin/)
+    expect(
+      reconcileMissingNetworkUsageAsPlatformAdmin(
+        state,
+        { actorUserId: ADMIN, platformAdminAuthorized: true },
+        ACCEPTED_AT
+      )
+    ).toEqual(expect.any(Array))
+  })
+
   it("accepts offline agreement timestamps but rejects future-dated acceptance", () => {
     const futureState = freshState()
     const before = structuredClone(futureState)
@@ -244,6 +349,7 @@ describe("subscription activation and commercial scope", () => {
         configuredByUserId: ADMIN,
         operatingMarketIds: [HOST_LANDING],
         organizationId: HOST,
+        platformAdminAuthorized: true,
         planCode: "network_25"
       },
       "2026-07-31T16:00:00.000Z"
@@ -265,6 +371,7 @@ describe("subscription activation and commercial scope", () => {
           configuredByUserId: ADMIN,
           operatingMarketIds: [HOST_LANDING],
           organizationId: HOST,
+          platformAdminAuthorized: true,
           planCode: "network_25"
         },
         "2026-08-01T00:00:00.000Z"
@@ -283,6 +390,7 @@ describe("subscription activation and commercial scope", () => {
         configuredByUserId: ADMIN,
         operatingMarketIds: [HOST_LANDING],
         organizationId: HOST,
+        platformAdminAuthorized: true,
         planCode: "network_25"
       },
       "2026-08-03T16:00:00.000Z"
@@ -317,6 +425,7 @@ describe("subscription activation and commercial scope", () => {
       {
         actorUserId: ADMIN,
         organizationId: HOST,
+        platformAdminAuthorized: true,
         subscriptionId: subscription.id
       },
       AUTHORIZED_AT
@@ -483,6 +592,7 @@ describe("subscription activation and commercial scope", () => {
       {
         actorUserId: ADMIN,
         organizationId: HOST,
+        platformAdminAuthorized: true,
         subscriptionId: configuredSubscription.id
       },
       AUTHORIZED_AT
@@ -653,6 +763,7 @@ describe("subscription activation and commercial scope", () => {
         acceptedTermsVersion: "subscription-v1-2026-07-28",
         configuredByUserId: ADMIN,
         organizationId: FLEET,
+        platformAdminAuthorized: true,
         planCode: "dispatch_pro"
       },
       ACCEPTED_AT
@@ -662,6 +773,7 @@ describe("subscription activation and commercial scope", () => {
       {
         actorUserId: ADMIN,
         organizationId: FLEET,
+        platformAdminAuthorized: true,
         subscriptionId: configuredDispatch.id
       },
       AUTHORIZED_AT
@@ -704,6 +816,7 @@ describe("subscription activation and commercial scope", () => {
           effectiveAt: activatedDispatch.commitmentEnd as string,
           nextOperatingMarketIds: [HOST_LANDING],
           nextPlanCode: "network_25",
+          platformAdminAuthorized: true,
           subscriptionId: activatedDispatch.id
         },
         "2026-08-04T16:00:00.000Z"
@@ -859,6 +972,7 @@ describe("subscription activation and commercial scope", () => {
         actorUserId: ADMIN,
         entitlementId: "28282828-2828-4828-8828-282828282899",
         organizationId: FLEET,
+        platformAdminAuthorized: true,
         providerCancellationReference: "sub_legacyfleet001:cancelled"
       },
       ACCEPTED_AT
@@ -871,6 +985,7 @@ describe("subscription activation and commercial scope", () => {
         acceptedTermsVersion: "subscription-v1-2026-07-28",
         configuredByUserId: ADMIN,
         organizationId: FLEET,
+        platformAdminAuthorized: true,
         planCode: "dispatch_pro"
       },
       ACCEPTED_AT
@@ -916,6 +1031,7 @@ describe("subscription activation and commercial scope", () => {
           effectiveAt: new Date(
             Date.parse(commitmentEnd) - 1
           ).toISOString(),
+          platformAdminAuthorized: true,
           subscriptionId: subscription.id
         },
         "2026-08-04T16:00:00.000Z"
@@ -929,6 +1045,7 @@ describe("subscription activation and commercial scope", () => {
           effectiveAt: new Date(
             Date.parse(commitmentEnd) + 15 * 24 * 60 * 60 * 1000
           ).toISOString(),
+          platformAdminAuthorized: true,
           subscriptionId: subscription.id
         },
         "2026-08-04T16:00:00.000Z"
@@ -940,6 +1057,7 @@ describe("subscription activation and commercial scope", () => {
       {
         actorUserId: ADMIN,
         effectiveAt,
+        platformAdminAuthorized: true,
         subscriptionId: subscription.id
       },
       "2026-08-04T16:00:00.000Z"
@@ -949,6 +1067,7 @@ describe("subscription activation and commercial scope", () => {
       {
         actorUserId: ADMIN,
         effectiveAt,
+        platformAdminAuthorized: true,
         subscriptionId: subscription.id
       },
       "2026-08-04T16:01:00.000Z"
@@ -994,6 +1113,7 @@ describe("subscription activation and commercial scope", () => {
         negotiatedTerms: ENTERPRISE_TERMS,
         operatingMarketIds: [HOST_LANDING],
         organizationId: HOST,
+        platformAdminAuthorized: true,
         planCode: "enterprise_250_plus"
       },
       ACCEPTED_AT
@@ -1008,6 +1128,7 @@ describe("subscription activation and commercial scope", () => {
         negotiatedTerms: ENTERPRISE_TERMS,
         operatingMarketIds: [HOST_LANDING],
         organizationId: HOST,
+        platformAdminAuthorized: true,
         planCode: "enterprise_250_plus"
       },
       "2026-08-01T16:01:00.000Z"
@@ -1036,6 +1157,7 @@ describe("subscription activation and commercial scope", () => {
       {
         actorUserId: ADMIN,
         organizationId: HOST,
+        platformAdminAuthorized: true,
         subscriptionId: first.subscription.id
       },
       AUTHORIZED_AT
@@ -1087,6 +1209,7 @@ describe("subscription activation and commercial scope", () => {
           negotiatedTerms: ENTERPRISE_TERMS,
           nextOperatingMarketIds: [HOST_LANDING],
           nextPlanCode: "enterprise_250_plus",
+          platformAdminAuthorized: true,
           subscriptionId: subscription.id
         },
         "2026-08-04T16:00:00.000Z"
@@ -1102,6 +1225,7 @@ describe("subscription activation and commercial scope", () => {
         negotiatedTerms: ENTERPRISE_TERMS,
         nextOperatingMarketIds: [HOST_LANDING],
         nextPlanCode: "enterprise_250_plus",
+        platformAdminAuthorized: true,
         subscriptionId: subscription.id
       },
       "2026-08-04T16:00:00.000Z"
@@ -1468,6 +1592,7 @@ describe("dunning and Pilot conversion boundaries", () => {
         effectiveAt: pendingSubscription.commitmentEnd as string,
         nextOperatingMarketIds: [HOST_LANDING],
         nextPlanCode: "network_50",
+        platformAdminAuthorized: true,
         subscriptionId: pendingSubscription.id
       },
       "2026-08-04T16:00:00.000Z"
@@ -1496,6 +1621,7 @@ describe("dunning and Pilot conversion boundaries", () => {
       {
         actorUserId: ADMIN,
         effectiveAt: nonRenewingSubscription.commitmentEnd as string,
+        platformAdminAuthorized: true,
         subscriptionId: nonRenewingSubscription.id
       },
       "2026-08-04T16:00:00.000Z"
@@ -1933,6 +2059,7 @@ describe("dunning and Pilot conversion boundaries", () => {
         amountCents: 1_000,
         billingPeriodSummaryId: pilotSummary.id,
         idempotencyKey: "old-pilot-overage-invoice",
+        platformAdminAuthorized: true,
         reason: "Create historical Pilot invoice",
         type: "manual_debit"
       },
@@ -1957,6 +2084,7 @@ describe("dunning and Pilot conversion boundaries", () => {
         acceptedTermsVersion: "subscription-v1-2026-07-28",
         actorUserId: ADMIN,
         operatingMarketIds: [HOST_LANDING],
+        platformAdminAuthorized: true,
         sourceSubscriptionId: pilot.id,
         targetPlanCode: "network_25"
       },
@@ -2009,6 +2137,7 @@ describe("dunning and Pilot conversion boundaries", () => {
           acceptedTermsVersion: "subscription-v1-2026-07-28",
           actorUserId: ADMIN,
           operatingMarketIds: [HOST_LANDING],
+          platformAdminAuthorized: true,
           sourceSubscriptionId: pilot.id,
           targetPlanCode: "network_25"
         },
@@ -2297,6 +2426,7 @@ describe("dunning and Pilot conversion boundaries", () => {
           acceptedTermsVersion: "subscription-v1-2026-07-28",
           actorUserId: ADMIN,
           operatingMarketIds: [HOST_LANDING],
+          platformAdminAuthorized: true,
           sourceSubscriptionId: pilot.id,
           targetPlanCode: "network_25"
         },
@@ -2312,6 +2442,7 @@ describe("dunning and Pilot conversion boundaries", () => {
           acceptedTermsVersion: "subscription-v1-2026-07-28",
           actorUserId: ADMIN,
           operatingMarketIds: [HOST_LANDING],
+          platformAdminAuthorized: true,
           sourceSubscriptionId: pilot.id,
           targetPlanCode: "network_25"
         },
@@ -2341,6 +2472,7 @@ describe("dunning and Pilot conversion boundaries", () => {
           acceptedTermsVersion: "subscription-v1-2026-07-28",
           actorUserId: ADMIN,
           operatingMarketIds: [],
+          platformAdminAuthorized: true,
           sourceSubscriptionId: scopePilot.id,
           targetPlanCode: "network_25"
         },
@@ -2356,6 +2488,7 @@ describe("dunning and Pilot conversion boundaries", () => {
           acceptedTermsVersion: "subscription-v1-2026-07-28",
           actorUserId: ADMIN,
           operatingMarketIds: [],
+          platformAdminAuthorized: true,
           sourceSubscriptionId: scopePilot.id,
           targetPlanCode: "network_25"
         },
@@ -2397,6 +2530,7 @@ describe("dunning and Pilot conversion boundaries", () => {
           acceptedTermsVersion: "subscription-v1-2026-07-28",
           actorUserId: ADMIN,
           operatingMarketIds: [HOST_LANDING],
+          platformAdminAuthorized: true,
           sourceSubscriptionId: entitlementPilot.id,
           targetPlanCode: "network_25"
         },
@@ -2412,6 +2546,7 @@ describe("dunning and Pilot conversion boundaries", () => {
           acceptedTermsVersion: "subscription-v1-2026-07-28",
           actorUserId: ADMIN,
           operatingMarketIds: [HOST_LANDING],
+          platformAdminAuthorized: true,
           sourceSubscriptionId: entitlementPilot.id,
           targetPlanCode: "network_25"
         },
@@ -2442,6 +2577,7 @@ describe("dunning and Pilot conversion boundaries", () => {
           acceptedTermsVersion: "subscription-v1-2026-07-28",
           actorUserId: ADMIN,
           operatingMarketIds: [HOST_LANDING],
+          platformAdminAuthorized: true,
           sourceSubscriptionId: pilot.id,
           targetPlanCode: "network_25"
         },
@@ -2484,6 +2620,7 @@ describe("dunning and Pilot conversion boundaries", () => {
           actorUserId: ADMIN,
           negotiatedTerms: entry.negotiatedTerms,
           operatingMarketIds: [HOST_LANDING],
+          platformAdminAuthorized: true,
           sourceSubscriptionId: pilot.id,
           targetPlanCode: entry.planCode
         },
@@ -2548,6 +2685,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
         amountCents: 5_000,
         billingPeriodSummaryId: summary.id,
         idempotencyKey: "manual-debit-1",
+        platformAdminAuthorized: true,
         reason: "Contract true-up",
         type: "manual_debit"
       },
@@ -2578,6 +2716,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
         billingPeriodSummaryId: summary.id,
         idempotencyKey: "service-credit-post-final",
         invoiceId: opened.invoice.id,
+        platformAdminAuthorized: true,
         reason: "Post-final correction",
         type: "service_credit"
       },
@@ -2620,6 +2759,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
           amountCents: 100,
           billingPeriodSummaryId: unissuedSummary.id,
           idempotencyKey: "unissued-service-credit",
+          platformAdminAuthorized: true,
           reason: "Open-period service recovery",
           type: "service_credit"
         } as Parameters<typeof recordBillingAdjustment>[1],
@@ -2643,6 +2783,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
           amountCents: 100,
           billingPeriodSummaryId: summary.id,
           idempotencyKey: "one-dollar-invoice",
+          platformAdminAuthorized: true,
           reason: "Create a one-dollar invoice",
           type: "manual_debit"
         },
@@ -2670,6 +2811,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
           billingPeriodSummaryId: summary.id,
           idempotencyKey: `bounded-credit-${amountCents}`,
           invoiceId: invoice.id,
+          platformAdminAuthorized: true,
           reason: "Bounded service recovery",
           type: "service_credit"
         },
@@ -2695,6 +2837,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
             billingPeriodSummaryId: summary.id,
             idempotencyKey: `bounded-credit-${amountCents}`,
             invoiceId: invoice.id,
+            platformAdminAuthorized: true,
             reason: "Bounded service recovery",
             type: "service_credit"
           },
@@ -2825,6 +2968,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
         billingPeriodSummaryId: summary.id,
         idempotencyKey: "credit-before-reversals",
         invoiceId,
+        platformAdminAuthorized: true,
         reason: "Service recovery before reversal",
         type: "service_credit"
       },
@@ -2835,6 +2979,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
       state,
       {
         actorUserId: ADMIN,
+        platformAdminAuthorized: true,
         reason: "First duplicate movement",
         usageEventId: usageEventIds[0] as string
       },
@@ -2849,6 +2994,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
       state,
       {
         actorUserId: ADMIN,
+        platformAdminAuthorized: true,
         reason: "Second duplicate movement",
         usageEventId: usageEventIds[1] as string
       },
@@ -2878,6 +3024,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
       state,
       {
         actorUserId: ADMIN,
+        platformAdminAuthorized: true,
         reason: "Second duplicate movement",
         usageEventId: usageEventIds[1] as string
       },
@@ -2980,6 +3127,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
       state,
       {
         actorUserId: ADMIN,
+        platformAdminAuthorized: true,
         reason: "The first included movement was duplicated",
         usageEventId: usageEventIds[0]!
       },
@@ -3002,6 +3150,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
       state,
       {
         actorUserId: ADMIN,
+        platformAdminAuthorized: true,
         reason: "The first included movement was duplicated",
         usageEventId: usageEventIds[0]!
       },
@@ -3091,6 +3240,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
       state,
       {
         actorUserId: ADMIN,
+        platformAdminAuthorized: true,
         reason: "The included movement was never completed",
         usageEventId: usageEventIds[0]!
       },
@@ -3120,6 +3270,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
         amountCents: 1_000,
         billingPeriodSummaryId: summary.id,
         idempotencyKey: "seed-first-invoice",
+        platformAdminAuthorized: true,
         reason: "Seed first invoice",
         type: "manual_debit"
       },
@@ -3138,6 +3289,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
         amountCents: 200,
         billingPeriodSummaryId: summary.id,
         idempotencyKey: "lost-response-action",
+        platformAdminAuthorized: true,
         reason: "Supplemental correction",
         type: "manual_debit"
       },
@@ -3175,6 +3327,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
         amountCents: 200,
         billingPeriodSummaryId: summary.id,
         idempotencyKey: "lost-response-action",
+        platformAdminAuthorized: true,
         reason: "Supplemental correction",
         type: "manual_debit"
       },
@@ -3193,6 +3346,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
           billingPeriodSummaryId: summary.id,
           idempotencyKey: "lost-response-action",
           invoiceId: secondInvoice.id,
+          platformAdminAuthorized: true,
           reason: "Supplemental correction",
           type: "manual_debit"
         },
@@ -3207,6 +3361,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
         amountCents: 200,
         billingPeriodSummaryId: summary.id,
         idempotencyKey: "one-admin-action",
+        platformAdminAuthorized: true,
         reason: "One immutable action",
         type: "manual_debit"
       },
@@ -3222,6 +3377,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
           billingPeriodSummaryId: summary.id,
           idempotencyKey: "one-admin-action",
           invoiceId: firstInvoice.invoice.id,
+          platformAdminAuthorized: true,
           reason: "One immutable action",
           type: "service_credit"
         },
@@ -3252,6 +3408,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
           amountCents: 200,
           billingPeriodSummaryId: secondSummary.id,
           idempotencyKey: "one-admin-action",
+          platformAdminAuthorized: true,
           reason: "One immutable action",
           type: "manual_debit"
         },
@@ -3280,6 +3437,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
         amountCents: 1_000,
         billingPeriodSummaryId: overageFirstSummary.id,
         idempotencyKey: "overage-first-debit",
+        platformAdminAuthorized: true,
         reason: "Create an overage collection target",
         type: "manual_debit"
       },
@@ -3379,6 +3537,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
         amountCents: 1_000,
         billingPeriodSummaryId: baseFirstSummary.id,
         idempotencyKey: "base-first-overage-debit",
+        platformAdminAuthorized: true,
         reason: "Create a paid overage target",
         type: "manual_debit"
       },
@@ -3456,6 +3615,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
         amountCents: 1_000,
         billingPeriodSummaryId: summary.id,
         idempotencyKey: "provider-delinquency-overage-debit",
+        platformAdminAuthorized: true,
         reason: "Create an unrelated overage invoice",
         type: "manual_debit"
       },
@@ -3538,6 +3698,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
         amountCents: 1_000,
         billingPeriodSummaryId: summary.id,
         idempotencyKey: "terminal-overage-debit",
+        platformAdminAuthorized: true,
         reason: "Create a terminal overage invoice",
         type: "manual_debit"
       },
@@ -3689,6 +3850,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
         amountCents: 1_000,
         billingPeriodSummaryId: summary.id,
         idempotencyKey: "invoice-seed-debit",
+        platformAdminAuthorized: true,
         reason: "Seed finalized adjustment invoice",
         type: "manual_debit"
       },
@@ -3710,6 +3872,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
         billingPeriodSummaryId: summary.id,
         idempotencyKey: "post-final-credit",
         invoiceId: finalInvoice.invoice.id,
+        platformAdminAuthorized: true,
         reason: "Unpaid receivable correction",
         type: "service_credit"
       },
@@ -3776,6 +3939,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
         billingPeriodSummaryId: summary.id,
         idempotencyKey: "post-final-debit",
         invoiceId: finalInvoice.invoice.id,
+        platformAdminAuthorized: true,
         reason: "Post-final debit",
         type: "manual_debit"
       },
@@ -3920,6 +4084,7 @@ describe("provider ledgers, invoice composition, and billing email", () => {
         amountCents: 1_000,
         billingPeriodSummaryId: crossSummary.id,
         idempotencyKey: "cross-org-email",
+        platformAdminAuthorized: true,
         reason: "Test recipient relationship",
         type: "manual_debit"
       },

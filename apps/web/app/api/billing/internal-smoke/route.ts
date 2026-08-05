@@ -158,7 +158,10 @@ export async function POST(request: Request) {
       }))
 
       if (existing.refunded) {
-        return NextResponse.json({ outcome: "already_refunded" })
+        return NextResponse.json(
+          { outcome: "already_refunded" },
+          { headers: { "Cache-Control": "private, no-store" } }
+        )
       }
 
       if (!existing.invoiceId) {
@@ -194,11 +197,14 @@ export async function POST(request: Request) {
         )
       })
 
-      return NextResponse.json({
-        outcome: "refunded",
-        refundId: refund.id,
-        status: refund.status
-      })
+      return NextResponse.json(
+        {
+          outcome: "refunded",
+          refundId: refund.id,
+          status: refund.status
+        },
+        { headers: { "Cache-Control": "private, no-store" } }
+      )
     }
 
     const existingInvoiceId = await state.read((current) =>
@@ -208,7 +214,10 @@ export async function POST(request: Request) {
     if (existingInvoiceId) {
       return NextResponse.json(
         { outcome: "already_charged", stripeInvoiceId: existingInvoiceId },
-        { status: 409 }
+        {
+          headers: { "Cache-Control": "private, no-store" },
+          status: 409
+        }
       )
     }
 
@@ -270,11 +279,14 @@ export async function POST(request: Request) {
       )
     })
 
-    return NextResponse.json({
-      outcome: "charged",
-      paid: invoice.paid,
-      stripeInvoiceId: invoice.id
-    })
+    return NextResponse.json(
+      {
+        outcome: "charged",
+        paid: invoice.paid,
+        stripeInvoiceId: invoice.id
+      },
+      { headers: { "Cache-Control": "private, no-store" } }
+    )
   } catch (error) {
     return apiErrorResponse(error)
   }

@@ -47,6 +47,40 @@ function networkFixture() {
   return { load, request, services, sourceContext, viewer }
 }
 
+function expectPublicOnlyDriverView(
+  view: ReturnType<typeof buildNetworkView>,
+  loadPostingId: string
+) {
+  const load = view.loads.find((candidate) => candidate.id === loadPostingId)
+
+  expect(view.activeOrganization).toMatchObject({ id: "public", role: "visitor", type: "public" })
+  expect(view.currentDriver).toBeNull()
+  expect(view.currentEquipment).toBeNull()
+  expect(view.trips).toEqual([])
+  expect(view.trucks).toEqual([])
+  expect(load?.access.unlocked ?? false).toBe(false)
+  expect(load?.assignments ?? []).toEqual([])
+  expect(load?.viewerAssignment ?? null).toBeNull()
+  expect(load?.viewerDecision ?? null).toBeNull()
+  expect(load?.routePack ?? null).toBeNull()
+  expect(load?.slots.selectable ?? []).toEqual([])
+
+  for (const publicLoad of view.loads) {
+    expect(publicLoad.access).toEqual({ reason: "locked", unlocked: false })
+    expect(publicLoad.assignments).toEqual([])
+    expect(publicLoad.viewerAssignment).toBeNull()
+    expect(publicLoad.viewerDecision).toBeNull()
+    expect(publicLoad.landing).toMatchObject({ accessNotes: null, approximate: true })
+    expect(publicLoad.destination).toMatchObject({ accessNotes: null, approximate: true })
+    expect(publicLoad.landingDetails?.gateInstructions).toBeNull()
+    expect(publicLoad.landingDetails?.privateRoadNotes).toBeNull()
+    expect(publicLoad.criticalInstructions).toEqual([])
+    expect(publicLoad.route.localNotes).toBe("Route notes unlock after assignment.")
+    expect(publicLoad.routePack).toBeNull()
+    expect(publicLoad.slots.selectable).toEqual([])
+  }
+}
+
 describe("trip document deliverability", () => {
   function projectDocument(provider: "cloudinary" | "supabase") {
     const services = createLogLoadsServices(createInMemoryDatabase())
@@ -98,6 +132,45 @@ describe("trip document deliverability", () => {
     expect(stored.media?.provider).toBe("supabase")
     expect(stored.storageProvider).toBe("supabase")
     expect(document?.viewable).toBe(true)
+  })
+})
+
+describe("workspace activity authority", () => {
+  it("does not turn a global profile admin flag into organization audit access", () => {
+    const { services, viewer } = networkFixture()
+    const profile = services.state.profiles.find(
+      (candidate) => candidate.id === viewer.actorUserId
+    )
+    const membership = services.state.organizationMemberships.find(
+      (candidate) =>
+        candidate.organizationId === viewer.organizationId &&
+        candidate.userId === viewer.actorUserId &&
+        candidate.status === "active"
+    )
+
+    if (!profile || !membership) {
+      throw new Error("The activity-authority fixture is incomplete")
+    }
+
+    profile.role = "admin"
+    membership.role = "driver"
+    services.state.auditEvents.push({
+      action: "private_workspace_event",
+      actorUserId: viewer.actorUserId,
+      createdAt: "2026-06-05T11:00:00.000Z",
+      entityId: viewer.organizationId,
+      entityType: "organization",
+      id: "16161616-1616-4616-8616-161616161621",
+      metadata: {}
+    })
+
+    const view = buildNetworkView(
+      services.state,
+      viewer,
+      new Date("2026-06-05T12:00:00.000Z")
+    )
+
+    expect(view.auditEvents).toEqual([])
   })
 })
 
@@ -241,6 +314,237 @@ describe("driver network access", () => {
       (assignment) => assignment.driverProfileId === driver.id
     )).toBe(true)
   })
+
+  it.each(["suspended", "removed"] as const)(
+    "revokes a %s driver's private network data instead of falling through to another active membership",
+    (membershipStatus) => {
+      const { load, request, services, sourceContext, viewer } = networkFixture()
+      const assignment = request()
+
+      services.approveCapacityRequest({ ...sourceContext, assignmentId: assignment.id })
+
+      const driver = services.state.driverProfiles.find(
+        (candidate) => candidate.id === assignment.driverProfileId
+      )
+      const membership = services.state.organizationMemberships.find(
+        (candidate) =>
+          candidate.organizationId === viewer.organizationId &&
+          candidate.userId === viewer.actorUserId &&
+          candidate.status === "active"
+      )
+      const unrelatedOrganization = services.state.organizations.find(
+        (candidate) =>
+          candidate.id !== viewer.organizationId &&
+          candidate.id !== load.companyId &&
+          !candidate.archivedAt
+      )
+
+      if (!driver || !membership || !unrelatedOrganization) {
+        throw new Error("The driver revocation fixture is incomplete")
+      }
+
+      const before = buildNetworkView(
+        services.state,
+        viewer,
+        new Date("2026-06-05T12:00:00.000Z")
+      )
+      const beforeLoad = before.loads.find((candidate) => candidate.id === load.id)
+
+      expect(before.currentDriver?.id).toBe(driver.id)
+      expect(before.currentEquipment).not.toBeNull()
+      expect(before.trips.some((trip) => trip.assignmentId === assignment.id)).toBe(true)
+      expect(beforeLoad?.viewerAssignment?.id).toBe(assignment.id)
+      expect(beforeLoad?.landing.approximate).toBe(false)
+      expect(beforeLoad?.routePack).not.toBeNull()
+
+      membership.status = membershipStatus
+      services.state.organizationMemberships.push({
+        ...membership,
+        id: membershipStatus === "suspended"
+          ? "16161616-1616-4616-8616-161616161621"
+          : "16161616-1616-4616-8616-161616161622",
+        organizationId: unrelatedOrganization.id,
+        role: "driver",
+        status: "active"
+      })
+
+      const revoked = buildNetworkView(
+        services.state,
+        viewer,
+        new Date("2026-06-05T12:00:00.000Z")
+      )
+
+      expectPublicOnlyDriverView(revoked, load.id)
+    }
+  )
+
+  it("resolves an inactive user with an otherwise-active membership as public-only", () => {
+    const { load, request, services, sourceContext, viewer } = networkFixture()
+    const assignment = request()
+
+    services.approveCapacityRequest({ ...sourceContext, assignmentId: assignment.id })
+    const profile = services.state.profiles.find((candidate) => candidate.id === viewer.actorUserId)
+
+    if (!profile) {
+      throw new Error("The inactive-user fixture is incomplete")
+    }
+
+    profile.isActive = false
+
+    expectPublicOnlyDriverView(
+      buildNetworkView(services.state, viewer, new Date("2026-06-05T12:00:00.000Z")),
+      load.id
+    )
+  })
+
+  it("does not infer an organization when the actor has not requested one", () => {
+    const { load, request, services, sourceContext, viewer } = networkFixture()
+    const assignment = request()
+
+    services.approveCapacityRequest({ ...sourceContext, assignmentId: assignment.id })
+
+    expectPublicOnlyDriverView(
+      buildNetworkView(
+        services.state,
+        { actorUserId: viewer.actorUserId, kind: "actor", organizationId: null },
+        new Date("2026-06-05T12:00:00.000Z")
+      ),
+      load.id
+    )
+  })
+
+  it("resolves a requested archived organization as public-only", () => {
+    const { load, request, services, sourceContext, viewer } = networkFixture()
+    const assignment = request()
+
+    services.approveCapacityRequest({ ...sourceContext, assignmentId: assignment.id })
+    const organization = services.state.organizations.find(
+      (candidate) => candidate.id === viewer.organizationId
+    )
+
+    if (!organization) {
+      throw new Error("The archived-organization fixture is incomplete")
+    }
+
+    organization.archivedAt = "2026-06-05T12:01:00.000Z"
+
+    expectPublicOnlyDriverView(
+      buildNetworkView(services.state, viewer, new Date("2026-06-05T12:02:00.000Z")),
+      load.id
+    )
+  })
+
+  it("uses only the requested organization's active driver profile and equipment", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const user = services.state.profiles.find(
+      (candidate) => candidate.email === "hank@northpine.example"
+    )
+    const originalDriver = services.state.driverProfiles.find(
+      (candidate) => candidate.userId === user?.id
+    )
+    const originalMembership = services.state.organizationMemberships.find(
+      (candidate) =>
+        candidate.organizationId === originalDriver?.companyId &&
+        candidate.userId === user?.id &&
+        candidate.status === "active"
+    )
+    const otherOrganization = services.state.organizations.find(
+      (candidate) => candidate.id !== originalDriver?.companyId && !candidate.archivedAt
+    )
+
+    if (!user || !originalDriver || !originalMembership || !otherOrganization) {
+      throw new Error("The exact-organization driver fixture is incomplete")
+    }
+
+    const otherDriver = {
+      ...originalDriver,
+      companyId: otherOrganization.id,
+      id: "44444444-4444-4444-8444-444444444449",
+      licenseNumber: "CDL-A-EXACT-ORG"
+    }
+    services.state.driverProfiles.push(otherDriver)
+    services.state.organizationMemberships.push({
+      ...originalMembership,
+      id: "16161616-1616-4616-8616-161616161623",
+      organizationId: otherOrganization.id
+    })
+
+    const view = buildNetworkView(
+      services.state,
+      { actorUserId: user.id, kind: "actor", organizationId: otherOrganization.id },
+      new Date("2026-06-05T12:00:00.000Z")
+    )
+
+    expect(view.activeOrganization.id).toBe(otherOrganization.id)
+    expect(view.currentDriver?.id).toBe(otherDriver.id)
+    expect(view.currentDriver?.id).not.toBe(originalDriver.id)
+    expect(view.currentEquipment).toBeNull()
+    expect(view.trips).toEqual([])
+    expect(view.loads.flatMap((load) => load.assignments)).not.toContainEqual(
+      expect.objectContaining({ driverProfileId: originalDriver.id })
+    )
+  })
+
+  it.each(["suspended", "removed"] as const)(
+    "keeps a %s driver's preserved history visible to staff but removes them from the active roster",
+    (membershipStatus) => {
+      const { load, request, services, sourceContext, viewer } = networkFixture()
+      const assignment = request()
+
+      services.approveCapacityRequest({ ...sourceContext, assignmentId: assignment.id })
+      const membership = services.state.organizationMemberships.find(
+        (candidate) =>
+          candidate.organizationId === viewer.organizationId &&
+          candidate.userId === viewer.actorUserId &&
+          candidate.status === "active"
+      )
+      const combination = services.state.equipmentCombinations.find(
+        (candidate) => candidate.assignedDriverProfileId === assignment.driverProfileId
+      )
+      const staffMembership = services.state.organizationMemberships.find(
+        (candidate) =>
+          candidate.organizationId === viewer.organizationId &&
+          candidate.userId !== viewer.actorUserId &&
+          candidate.status === "active"
+      )
+
+      if (!membership || !combination || !staffMembership) {
+        throw new Error("The organization roster revocation fixture is incomplete")
+      }
+
+      membership.status = membershipStatus
+      staffMembership.role = "fleet_manager"
+
+      const staffView = buildNetworkView(
+        services.state,
+        {
+          actorUserId: staffMembership.userId,
+          kind: "actor",
+          organizationId: staffMembership.organizationId
+        },
+        new Date("2026-06-05T12:00:00.000Z")
+      )
+      const revokedTruck = staffView.trucks.find((candidate) => candidate.id === combination.id)
+      const networkLoad = staffView.loads.find((candidate) => candidate.id === load.id)
+      const revokedRoutePack = services.state.routePacks.find(
+        (candidate) => candidate.assignmentId === assignment.id
+      )
+
+      expect(revokedTruck).toMatchObject({
+        driverName: "Unassigned",
+        driverProfileId: null,
+        reputation: null
+      })
+      expect(staffView.trips).toContainEqual(
+        expect.objectContaining({ assignmentId: assignment.id, driverProfileId: assignment.driverProfileId })
+      )
+      expect(networkLoad?.assignments).toContainEqual(
+        expect.objectContaining({ id: assignment.id, driverProfileId: assignment.driverProfileId })
+      )
+      expect(revokedRoutePack).toBeDefined()
+      expect(networkLoad?.routePack?.id).toBe(revokedRoutePack?.id)
+    }
+  )
 
   it("omits an orphan trip instead of crashing every participant trip board", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())

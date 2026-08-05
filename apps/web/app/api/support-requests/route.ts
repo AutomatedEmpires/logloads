@@ -17,7 +17,7 @@ import {
 
 export async function POST(request: NextRequest) {
   try {
-    const { actorUserId, organizationId } = await requireSupportApiActor()
+    const { actor, actorUserId, organizationId } = await requireSupportApiActor()
     await enforceApiRateLimit("support-request-submit", actorUserId, 5, 60 * 60_000)
 
     const submission = submitSupportRequestInputSchema.parse(await readBoundedJsonObject(request))
@@ -25,6 +25,7 @@ export async function POST(request: NextRequest) {
       draft.createSupportRequest({
         appCommitSha: deploymentCommitSha(),
         organizationId,
+        platformAdminAuthorized: actor.isPlatformAdmin,
         reporterUserId: actorUserId,
         submission
       })
@@ -39,9 +40,16 @@ export async function POST(request: NextRequest) {
         deduplicated: result.deduplicated,
         request: supportRequestView(result.request)
       },
-      { status: result.created ? 201 : 200 }
+      {
+        headers: { "Cache-Control": "private, no-store" },
+        status: result.created ? 201 : 200
+      }
     )
   } catch (error) {
-    return supportApiErrorResponse(error)
+    const response = supportApiErrorResponse(error)
+
+    response.headers.set("Cache-Control", "private, no-store")
+
+    return response
   }
 }

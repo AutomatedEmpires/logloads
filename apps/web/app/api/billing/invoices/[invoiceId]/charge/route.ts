@@ -74,7 +74,10 @@ export async function POST(_request: Request, context: { params: Promise<{ invoi
 			)
 		}
 
-		return NextResponse.json({ charge: charge.value })
+		return NextResponse.json(
+			{ charge: charge.value },
+			{ headers: { "Cache-Control": "private, no-store" } }
+		)
 	} catch (error) {
 		return apiErrorResponse(error)
 	}

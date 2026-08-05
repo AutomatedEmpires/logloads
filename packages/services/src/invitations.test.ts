@@ -94,6 +94,31 @@ describe("creating invitations", () => {
     )
   })
 
+  it("directs suspended members to reactivation and keeps inactive identities closed", () => {
+    const suspended = fixture()
+    const danaMembership = suspended.state.organizationMemberships.find(
+      (membership) =>
+        membership.organizationId === SUMMIT && membership.userId === DANA
+    )
+
+    if (!danaMembership) throw new Error("Dana membership fixture missing")
+    danaMembership.status = "suspended"
+
+    expect(() =>
+      inviteAtSummit(suspended, "dispatch@northpine.example", "dispatcher")
+    ).toThrow(/Reactivate their existing access/)
+
+    const inactive = fixture()
+    const maya = inactive.state.profiles.find((profile) => profile.id === MAYA)
+
+    if (!maya) throw new Error("Maya profile fixture missing")
+    maya.isActive = false
+
+    expect(() =>
+      inviteAtSummit(inactive, "maya@northpine.example", "dispatcher")
+    ).toThrow(/inactive and cannot be invited/)
+  })
+
   it("tells an invited person who already has an account, in-product", () => {
     const services = fixture()
 
@@ -251,7 +276,10 @@ describe("accepting as a brand-new account", () => {
     // The driver cockpit resolves through a driver profile — it must exist.
     expect(
       services.state.driverProfiles.some(
-        (candidate) => candidate.userId === joined.userId && candidate.companyId === NEW_RIVER
+        (candidate) =>
+          candidate.userId === joined.userId &&
+          candidate.companyId === NEW_RIVER &&
+          candidate.availabilityStatus === "unavailable"
       )
     ).toBe(true)
     expect(

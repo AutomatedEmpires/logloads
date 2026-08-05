@@ -491,7 +491,112 @@
 .team-list li:first-child { border-top: 0; padding-top: 0; }
 .team-list li:last-child { padding-bottom: 0; }
 .team-list strong { display: block; }
-.team-list li > div > span { color: var(--muted); font-weight: 700; font-size: 0.92rem; }
+.team-list li > div:first-child > span,
+.team-member__identity > span { color: var(--muted); font-weight: 700; font-size: 0.92rem; }
+
+.team-list--roster .team-member {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px 16px;
+}
+.team-member__identity { min-width: 0; }
+.team-member__identity strong,
+.team-member__identity span { overflow-wrap: anywhere; }
+.team-member__state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+.team-member__self {
+  color: var(--pine);
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.team-actions {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bone);
+  padding: 14px;
+}
+.team-actions__impact {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.team-role-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+.team-role-form label {
+  display: grid;
+  flex: 1 1 230px;
+  gap: 5px;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+.team-role-form select {
+  min-height: var(--control-field);
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  padding: 8px 10px;
+}
+.team-role-form__buttons,
+.team-actions__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.team-role-form button,
+.team-action {
+  min-height: var(--control-min);
+  border: 1px solid var(--pine);
+  border-radius: var(--radius);
+  background: var(--pine);
+  color: #fff;
+  padding: 9px 12px;
+  font-weight: 850;
+}
+.team-action--quiet {
+  border-color: var(--line-strong);
+  background: var(--paper);
+  color: var(--ink);
+}
+.team-action--warning {
+  border-color: var(--amber);
+  background: var(--amber-bg);
+  color: #6b3b10;
+}
+.team-action--restore {
+  border-color: var(--green);
+  background: var(--green-bg);
+  color: var(--pine);
+}
+.team-action--danger {
+  border-color: var(--red);
+  background: var(--red-bg);
+  color: #6d211b;
+}
+.team-role-form button:disabled,
+.team-action:disabled { opacity: 0.6; }
+.team-actions__feedback:empty { display: none; }
+.team-actions__feedback .action-error,
+.team-actions__feedback .action-note { line-height: 1.45; }
 
 .notify-line { display: flex; align-items: flex-start; gap: 12px; }
 .notify-line svg { flex-shrink: 0; margin-top: 2px; color: var(--pine); }
@@ -655,6 +760,14 @@
   .settings-panel { padding: 16px; }
   .identity-grid { grid-template-columns: minmax(0, 1fr); }
   .settings-panel .section-heading { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .team-list--roster .team-member { grid-template-columns: minmax(0, 1fr); }
+  .team-member__state { justify-content: flex-start; }
+  .team-role-form,
+  .team-role-form__buttons,
+  .team-actions__buttons { align-items: stretch; flex-direction: column; }
+  .team-role-form label { flex-basis: auto; }
+  .team-role-form button,
+  .team-action { width: 100%; }
   .fee-figures { grid-template-columns: minmax(0, 1fr); }
   .fee-figures dd { font-size: 1.2rem; }
   .subscription-overview { padding: 0; }

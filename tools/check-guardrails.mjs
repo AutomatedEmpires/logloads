@@ -109,6 +109,20 @@ const checks = [
     message: "Cockpit identity comes from the session; hardcoded or client-supplied actors are banned in apps/web.",
     pattern: /V3_ACTORS|DEFAULT_ACTOR_USER_ID|DEFAULT_ORGANIZATION_ID|devActorUserId|LOGLOADS_ENABLE_DEMO_ACTORS|22222222-2222-4222-8222/g,
     include: (file) => file.startsWith("apps/web/") && !file.startsWith("apps/web/tests/")
+  },
+  {
+    message: "Platform-admin authority must use the exact persistent allowlist helper; a raw profile role is not authorization.",
+    pattern: /(?:actor\.profile|currentUser|profile|user)\.role\s*(?:===|!==)\s*["']admin["']/g,
+    include: (file) => {
+      const runtimeSource =
+        file.startsWith("apps/web/") &&
+        (file.endsWith(".ts") || file.endsWith(".tsx"))
+      const testSource =
+        file.startsWith("apps/web/tests/") ||
+        /\.(?:spec|test)\.[cm]?[jt]sx?$/.test(file)
+
+      return runtimeSource && !testSource && file !== "apps/web/lib/platform-admin.ts"
+    }
   }
 ]
 

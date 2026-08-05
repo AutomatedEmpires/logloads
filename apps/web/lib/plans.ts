@@ -1,4 +1,10 @@
-import type { Entitlement, OrganizationRole } from "@logloads/contracts"
+import type {
+  AssignmentStatus,
+  Entitlement,
+  OrganizationMembership,
+  OrganizationRole
+} from "@logloads/contracts"
+import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import type { NetworkView } from "./network"
 import { services } from "./services"
@@ -414,11 +420,16 @@ export interface OrganizationIdentityView {
 }
 
 export interface TeamMemberView {
+  activeOrUpcomingAssignmentCount: number
   id: string
+  isSelf: boolean
   name: string
+  role: OrganizationMembership["role"]
   roleLabel: string
+  status: OrganizationMembership["status"]
   statusLabel: string
   statusTone: PlanTone
+  userId: string
 }
 
 export interface PlanSummaryView {
@@ -455,31 +466,83 @@ function memberStatusView(status: string): { label: string; tone: PlanTone } {
   return { label: "Suspended", tone: "critical" }
 }
 
+const TERMINAL_ASSIGNMENT_STATUSES = new Set<AssignmentStatus>(["cancelled", "completed", "declined"])
+
+/** Keep assignment impact tied to the one driver identity owned by this workspace. */
+export function buildTeamRosterView(
+  state: LogLoadsDatabaseState,
+  organizationId: string,
+  currentProfileId: string
+): TeamMemberView[] {
+  const profilesById = new Map(
+    state.profiles.map((profile) => [profile.id, profile] as const)
+  )
+  const driverProfileIdsByUserId = new Map<string, string[]>()
+  const assignmentCountsByDriverProfileId = new Map<string, number>()
+
+  for (const driverProfile of state.driverProfiles) {
+    if (driverProfile.companyId !== organizationId) {
+      continue
+    }
+
+    const existing = driverProfileIdsByUserId.get(driverProfile.userId) ?? []
+    existing.push(driverProfile.id)
+    driverProfileIdsByUserId.set(driverProfile.userId, existing)
+  }
+
+  for (const assignment of state.assignments) {
+    if (TERMINAL_ASSIGNMENT_STATUSES.has(assignment.status)) {
+      continue
+    }
+
+    assignmentCountsByDriverProfileId.set(
+      assignment.driverProfileId,
+      (assignmentCountsByDriverProfileId.get(assignment.driverProfileId) ?? 0) + 1
+    )
+  }
+
+  return state.organizationMemberships
+    .filter((membership) => membership.organizationId === organizationId && membership.status !== "removed")
+    .map((membership) => {
+      const profile = profilesById.get(membership.userId)
+      const driverProfileIds = driverProfileIdsByUserId.get(membership.userId) ?? []
+
+      if (driverProfileIds.length > 1) {
+        throw new Error("Organization driver profile identity is ambiguous")
+      }
+
+      const driverProfileId = driverProfileIds[0] ?? null
+      const activeOrUpcomingAssignmentCount = driverProfileId
+        ? assignmentCountsByDriverProfileId.get(driverProfileId) ?? 0
+        : 0
+      const status = memberStatusView(membership.status)
+
+      return {
+        activeOrUpcomingAssignmentCount,
+        id: membership.id,
+        isSelf: membership.userId === currentProfileId,
+        name: profile?.fullName ?? "Pending member",
+        role: membership.role,
+        roleLabel: MEMBER_ROLE_LABELS[membership.role] ?? planFeatureName(membership.role),
+        status: membership.status,
+        statusLabel: status.label,
+        statusTone: status.tone,
+        userId: membership.userId
+      }
+    })
+    .sort((left, right) => left.name.localeCompare(right.name) || left.userId.localeCompare(right.userId))
+}
+
 /**
  * Server helper: organization identity, team roster, and plan summary for
  * the settings surfaces. Never call from client components.
  */
-export function getSettingsView(network: NetworkView): SettingsView {
+export function getSettingsView(network: NetworkView, currentProfileId: string): SettingsView {
   const organizationId = network.activeOrganization.id
   const state = services.state
   const organization = state.organizations.find((candidate) => candidate.id === organizationId)
   const verification = verificationView(organization?.verificationStatus ?? network.activeOrganization.verificationStatus)
-
-  const team = state.organizationMemberships
-    .filter((membership) => membership.organizationId === organizationId && membership.status !== "removed")
-    .map((membership) => {
-      const profile = state.profiles.find((candidate) => candidate.id === membership.userId)
-      const status = memberStatusView(membership.status)
-
-      return {
-        id: membership.id,
-        name: profile?.fullName ?? "Pending member",
-        roleLabel: MEMBER_ROLE_LABELS[membership.role] ?? planFeatureName(membership.role),
-        statusLabel: status.label,
-        statusTone: status.tone
-      }
-    })
-    .sort((left, right) => left.name.localeCompare(right.name))
+  const team = buildTeamRosterView(state, organizationId, currentProfileId)
 
   const planSummaries = services.listEntitlements(organizationId).map((entitlement) => {
     const view = toPlanView(entitlement)

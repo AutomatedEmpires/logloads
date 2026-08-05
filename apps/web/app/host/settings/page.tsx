@@ -26,7 +26,7 @@ export default async function Page() {
           : []
       }
       role="host"
-      settings={getSettingsView(context.network)}
+      settings={getSettingsView(context.network, context.actor.profile.id)}
       verifications={orgId ? listSubjectVerifications("organization", orgId) : []}
     />
   )

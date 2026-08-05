@@ -1,7 +1,7 @@
 import { createInMemoryDatabase, seedDatabaseState } from "@logloads/db"
 import { createLogLoadsServices } from "@logloads/services"
 import { NextRequest } from "next/server"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const routeMocks = vi.hoisted(() => ({
   ApiError: class ApiError extends Error {
@@ -91,10 +91,12 @@ function request(driverProfileId?: string): NextRequest {
 }
 
 describe("featured truck photo route", () => {
+  const fetchMock = vi.fn()
   let services: ReturnType<typeof createLogLoadsServices>
 
   beforeEach(() => {
     vi.resetAllMocks()
+    vi.stubGlobal("fetch", fetchMock)
     services = createLogLoadsServices(createInMemoryDatabase())
     routeMocks.requireApiActor.mockResolvedValue({
       actorUserId: FLEET_VIEWER,
@@ -103,6 +105,10 @@ describe("featured truck photo route", () => {
     routeMocks.getFeaturedTruckPhotoReference.mockImplementation((input) =>
       services.getFeaturedTruckPhotoReference(input)
     )
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it("returns one sanitized 409 for omitted, malformed, nonexistent, and hidden targets", async () => {
@@ -194,5 +200,33 @@ describe("featured truck photo route", () => {
       error: "We could not complete that request."
     })
     expect(routeMocks.signedDeliveryUrl).not.toHaveBeenCalled()
+  })
+
+  it("re-authorizes private featured media on every browser request", async () => {
+    routeMocks.getFeaturedTruckPhotoReference.mockReturnValue({
+      bytes: 125_000,
+      format: "jpg",
+      height: 900,
+      provider: "supabase",
+      publicId: "logloads/test/truck/uploads/featured",
+      uploadedAt: "2026-08-05T00:00:00.000Z",
+      version: 1,
+      width: 1200
+    })
+    routeMocks.signedDeliveryUrl.mockResolvedValue(
+      "https://storage.example.test/signed-featured"
+    )
+    fetchMock.mockResolvedValue(
+      new Response("featured-photo", {
+        headers: { "Content-Type": "image/jpeg" },
+        status: 200
+      })
+    )
+
+    const response = await GET(request(DRIVER_PROFILE))
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
+    await expect(response.text()).resolves.toBe("featured-photo")
   })
 })

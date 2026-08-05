@@ -9,6 +9,8 @@ import {
 	startHostCardSetup,
 	stripePublishableKey
 } from "@/lib/billing"
+import { hostCardSetupEligibility } from "@/lib/host-card-eligibility"
+import { percentageEnrollmentAllowed } from "@/lib/percentage-enrollment"
 import { readState } from "@/lib/services"
 import {
 	resolveSubscriptionStripe,
@@ -50,7 +52,10 @@ export async function GET() {
 		const { organizationId } = await requireBillingManager()
 		const card = await readState((current) => hostCardOnFile(current.state, organizationId))
 
-		return NextResponse.json({ card })
+		return NextResponse.json(
+			{ card },
+			{ headers: { "Cache-Control": "private, no-store" } }
+		)
 	} catch (error) {
 		return apiErrorResponse(error)
 	}
@@ -63,6 +68,19 @@ export async function POST() {
 		// A Stripe customer and a setup intent are created per call, so this is
 		// tighter than the shared actor budget.
 		await enforceApiRateLimit("billing-card-setup", actorUserId, 10, 60_000)
+
+		const enrollmentAllowed = percentageEnrollmentAllowed(organization.id)
+		const eligibility = await readState((current) =>
+			hostCardSetupEligibility(
+				current.state,
+				organization.id,
+				enrollmentAllowed
+			)
+		)
+
+		if (!eligibility.allowed) {
+			throw new ApiError(eligibility.message, 409)
+		}
 
 		const billing = resolveStripeBilling()
 
@@ -93,6 +111,7 @@ export async function POST() {
 
 		const setup = await startHostCardSetup({
 			organization,
+			percentageEnrollmentAllowed: enrollmentAllowed,
 			port: billing.value,
 			publishableKey: publishableKey.value,
 			state: operatingStateAccess()
@@ -101,12 +120,15 @@ export async function POST() {
 		if (!setup.ok) {
 			throw new ApiError(
 				setup.message,
-				setup.outcome === "unavailable" ? 503 : 422,
+				setup.outcome === "unavailable" ? 503 : 409,
 				setup.outcome === "unavailable" ? { "Retry-After": "5" } : undefined
 			)
 		}
 
-		return NextResponse.json({ setup: setup.value })
+		return NextResponse.json(
+			{ setup: setup.value },
+			{ headers: { "Cache-Control": "private, no-store" } }
+		)
 	} catch (error) {
 		return apiErrorResponse(error)
 	}
