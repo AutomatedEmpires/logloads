@@ -75,10 +75,13 @@ describe("public entry routing", () => {
     expect(firstRunDestination("host")).toBe("/host/landings?welcome=1")
   })
 
-  it("keeps first-run URLs free of nested private continuations", () => {
-    expect(firstRunDestination("driver")).toBe("/driver/profile?welcome=1")
-    expect(firstRunDestination("fleet")).toBe("/fleet/command?welcome=1")
-    expect(firstRunDestination("host")).toBe("/host/landings?welcome=1")
+  it("limits first-run URLs to the welcome flag without a private continuation", () => {
+    for (const intent of ["driver", "fleet", "host"] as const) {
+      const destination = firstRunDestination(intent)
+
+      expect(destination).not.toContain("next")
+      expect(destination.split("?").at(1)).toBe("welcome=1")
+    }
   })
 
   it("carries only a path-only same-role continuation in a scoped cookie", () => {

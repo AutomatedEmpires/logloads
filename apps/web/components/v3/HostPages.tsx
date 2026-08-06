@@ -182,23 +182,44 @@ export function HostReadiness({
   ]
   const requiredSetupAction =
     nextIndex >= 0 ? setupActions[nextIndex] ?? null : null
-  const activationDetail = activationComplete
-    ? "The current 5% completed-load agreement is active and a working payment method is attached."
-    : currentPercentageAgreementActive
-      ? billingProfileStatus === "failed"
-        ? "The current 5% completed-load agreement is active, but the payment method failed. Replace it in Billing before publishing live work."
-        : billingProfileStatus === null
-          ? "The current 5% completed-load agreement is active, but the billing profile is conflicting. Resolve it before publishing live work."
-          : "The current 5% completed-load agreement is active. Attach a working payment method in Billing before publishing live work."
-      : activationState === "percentage_active"
-        ? "The percentage agreement record is incomplete or not current. Reconcile it in Billing before publishing live work."
-        : activationState === "legacy"
-          ? "Historical percentage assignments remain preserved. Accept the current agreement from Billing before publishing new live work."
-          : activationState === "suspended"
-            ? "Activation is suspended. Contact LogLoads to resolve the operating hold before publication resumes."
-            : billingModel
-              ? "A historical commercial record exists. Reconcile it from Billing before new percentage work can activate."
-              : "Pilot activation is invitation-based. Review Billing to accept the current 5% agreement and attach a card when this workspace is approved. Workspace setup itself does not charge you."
+  let activationDetail: string
+
+  if (activationComplete) {
+    activationDetail =
+      "The current 5% completed-load agreement is active and a working payment method is attached."
+  } else if (activationState === "suspended") {
+    activationDetail =
+      "Activation is suspended. Contact LogLoads to resolve the operating hold before publication resumes."
+  } else if (activationState === "legacy") {
+    activationDetail =
+      "Historical percentage assignments remain preserved. Accept the current agreement from Billing before publishing new live work."
+  } else if (billingModel && billingModel !== "percentage_v1") {
+    activationDetail =
+      "A historical commercial record exists. Reconcile it from Billing before new percentage work can activate."
+  } else if (currentPercentageAgreementActive && billingModel === "percentage_v1") {
+    if (billingProfileStatus === "failed") {
+      activationDetail =
+        "The current 5% completed-load agreement is active, but the payment method failed. Replace it in Billing before publishing live work."
+    } else if (billingProfileStatus === null) {
+      activationDetail =
+        "The current 5% completed-load agreement is active, but the billing profile is conflicting. Resolve it before publishing live work."
+    } else if (billingProfileStatus === "attached") {
+      activationDetail =
+        "The current 5% completed-load agreement is active, but activation is not recorded yet. Reconcile it in Billing before publishing live work."
+    } else {
+      activationDetail =
+        "The current 5% completed-load agreement is active. Attach a working payment method in Billing before publishing live work."
+    }
+  } else if (activationState === "percentage_active") {
+    activationDetail =
+      "The percentage agreement record is incomplete or not current. Reconcile it in Billing before publishing live work."
+  } else if (billingModel) {
+    activationDetail =
+      "A historical commercial record exists. Reconcile it from Billing before new percentage work can activate."
+  } else {
+    activationDetail =
+      "Pilot activation is invitation-based. Review Billing to accept the current 5% agreement and attach a card when this workspace is approved. Workspace setup itself does not charge you."
+  }
   const readinessDescription = welcome
     ? welcomeSource === "invited"
       ? activationComplete

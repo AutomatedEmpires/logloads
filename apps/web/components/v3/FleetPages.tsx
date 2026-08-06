@@ -285,7 +285,7 @@ export function FleetFirstRunPanel({
           ) : null}
         </nav>
       </div>
-      <div
+      <section
         aria-labelledby="fleet-first-run-readiness-title"
         className="first-run-panel__state"
       >
@@ -307,7 +307,7 @@ export function FleetFirstRunPanel({
             </li>
           ))}
         </ul>
-      </div>
+      </section>
     </section>
   )
 }

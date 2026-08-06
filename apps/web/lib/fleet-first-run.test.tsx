@@ -63,6 +63,9 @@ describe("Fleet Free first-run readiness", () => {
     expect(html).toContain("Fleet Free is active")
     expect(html).toContain("no checkout")
     expect(html).toContain('aria-labelledby="fleet-first-run-title"')
+    expect(html).toContain(
+      '<section aria-labelledby="fleet-first-run-readiness-title" class="first-run-panel__state">'
+    )
     expect(driversAction).toBeGreaterThan(-1)
     expect(trucksAction).toBeGreaterThan(driversAction)
     expect(continuation).toBeGreaterThan(trucksAction)

@@ -114,6 +114,8 @@ describe("DriverFirstRunPanel", () => {
 
     expect(markup).toContain("Equipment record:")
     expect(markup).toContain("Exact-rig requirements are evaluated separately below.")
-    expect(markup).not.toContain("Complete: </span><strong>Equipment:</strong>")
+    expect(markup).toMatch(
+      /<li[^>]*data-state="complete"[^>]*data-testid="driver-first-run-equipment"/
+    )
   })
 })

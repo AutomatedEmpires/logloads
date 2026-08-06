@@ -77,6 +77,20 @@ describe("Host first-run billing readiness", () => {
     expect(markup).not.toContain("Open command center")
   })
 
+  it("reports a suspension before suggesting payment-method work", () => {
+    const markup = renderReadiness({
+      activationState: "suspended",
+      billingProfileStatus: "attached",
+      currentPercentageAgreementActive: true
+    })
+
+    expect(markup).toContain(
+      "Activation is suspended. Contact LogLoads to resolve the operating hold before publication resumes."
+    )
+    expect(markup).not.toContain("Attach a working payment method")
+    expect(markup).not.toContain("Open command center")
+  })
+
   it("describes an invitation as joining the existing workspace", () => {
     const markup = renderReadiness({ welcomeSource: "invited" })
 

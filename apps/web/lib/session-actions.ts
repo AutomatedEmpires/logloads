@@ -305,13 +305,6 @@ export async function completeOnboardingAction(
       )
       joined = accepted
 
-      const analyticsEvents = [
-        captureServerEvent("invitation_accepted", joined.userId, {
-          invitationId,
-          newAccount: true
-        })
-      ]
-
       const cookieStore = await cookies()
 
       cookieStore.set(SESSION_COOKIE, createSessionCookieValue(joined.userId, joined.organizationId), COOKIE_OPTIONS)
@@ -331,20 +324,26 @@ export async function completeOnboardingAction(
             firstRunContinuationCookieOptions(joinedIntent)
           )
 
-          analyticsEvents.push(
-            captureServerEvent("account_created", joined.userId, {
-              accountType: "invited_member",
-              path: joinedIntent
-            }),
-            captureServerEvent("onboarding_completed", joined.userId, {
-              accountType: "invited_member",
-              invitedRole: accepted.invitation.invitedRole,
-              organizationId: joined.organizationId,
-              path: joinedIntent
-            })
-          )
         }
       }
+
+      const analyticsPath = joinedIntent ?? "workspace"
+      const analyticsEvents = [
+        captureServerEvent("invitation_accepted", joined.userId, {
+          invitationId,
+          newAccount: true
+        }),
+        captureServerEvent("account_created", joined.userId, {
+          accountType: "invited_member",
+          path: analyticsPath
+        }),
+        captureServerEvent("onboarding_completed", joined.userId, {
+          accountType: "invited_member",
+          invitedRole: accepted.invitation.invitedRole,
+          organizationId: joined.organizationId,
+          path: analyticsPath
+        })
+      ]
 
       await Promise.all(analyticsEvents)
     } catch (error) {
@@ -383,19 +382,6 @@ export async function completeOnboardingAction(
     )
 
     const organizationId = account.memberships[0]?.organization.id ?? null
-
-    await Promise.all([
-      captureServerEvent("account_created", account.profile.id, {
-        path: intent,
-        accountType
-      }),
-      captureServerEvent("onboarding_completed", account.profile.id, {
-        accountType,
-        organizationId,
-        path: intent
-      })
-    ])
-
     const cookieStore = await cookies()
 
     cookieStore.set(
@@ -409,6 +395,18 @@ export async function completeOnboardingAction(
       createFirstRunHandoffCookie(intent, next, "created", account.profile.id),
       firstRunContinuationCookieOptions(intent)
     )
+
+    await Promise.all([
+      captureServerEvent("account_created", account.profile.id, {
+        path: intent,
+        accountType
+      }),
+      captureServerEvent("onboarding_completed", account.profile.id, {
+        accountType,
+        organizationId,
+        path: intent
+      })
+    ])
   } catch (error) {
     return { error: serializeError(error).error }
   }

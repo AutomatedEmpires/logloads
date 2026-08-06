@@ -66,6 +66,24 @@ function onboardingForm(entries: Record<string, string>): FormData {
   return formData
 }
 
+function handoffCookiePayload(name: string): {
+  intent?: unknown
+  path?: unknown
+  source?: unknown
+  userId?: unknown
+} {
+  const call = mocks.cookieSet.mock.calls.find((entry) => entry[0] === name)
+
+  if (!call) throw new Error("Missing cookie: " + name)
+
+  return JSON.parse(decodeURIComponent(String(call[1]))) as {
+    intent?: unknown
+    path?: unknown
+    source?: unknown
+    userId?: unknown
+  }
+}
+
 async function completeExpectingRedirect(formData: FormData, destination: string) {
   await expect(completeOnboardingAction({ error: null }, formData)).rejects.toThrow(
     `REDIRECT:${destination}`
@@ -129,6 +147,15 @@ describe("completeOnboardingAction first-run handoff", () => {
       expect.any(String),
       expect.objectContaining({ httpOnly: true, maxAge: 600, path: "/driver" })
     )
+    expect(handoffCookiePayload("ll_first_run_driver")).toMatchObject({
+      intent: "driver",
+      path: "/driver/loads/private-load",
+      source: "created",
+      userId: "driver-user-1"
+    })
+    expect(mocks.cookieSet.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.captureServerEvent.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+    )
   })
 
   it("routes an invited member through a joined Host handoff without creating an organization", async () => {
@@ -175,5 +202,53 @@ describe("completeOnboardingAction first-run handoff", () => {
       expect.any(String),
       expect.objectContaining({ httpOnly: true, maxAge: 600, path: "/host" })
     )
+    expect(handoffCookiePayload("ll_first_run_host")).toMatchObject({
+      intent: "host",
+      path: "/host/opportunities/private-load",
+      source: "invited",
+      userId: "invited-user-1"
+    })
+  })
+
+  it("still emits completion events when a joined workspace cannot resolve a cockpit", async () => {
+    const acceptInvitationAsNewAccount = vi.fn(() => ({
+      invitation: { invitedRole: "viewer" },
+      organizationId: "missing-organization",
+      userId: "invited-user-2"
+    }))
+    mocks.mutateState.mockImplementation(async (mutation: (draft: unknown) => unknown) =>
+      mutation({ acceptInvitationAsNewAccount })
+    )
+
+    await completeExpectingRedirect(
+      onboardingForm({
+        email: "unresolved-invitee@example.test",
+        fullName: "Unresolved Invitee",
+        invitationId: "invitation-2",
+        phone: "555-0102"
+      }),
+      "/workspace"
+    )
+
+    expect(mocks.captureServerEvent).toHaveBeenCalledWith(
+      "account_created",
+      "invited-user-2",
+      { accountType: "invited_member", path: "workspace" }
+    )
+    expect(mocks.captureServerEvent).toHaveBeenCalledWith(
+      "onboarding_completed",
+      "invited-user-2",
+      {
+        accountType: "invited_member",
+        invitedRole: "viewer",
+        organizationId: "missing-organization",
+        path: "workspace"
+      }
+    )
+    expect(
+      mocks.cookieSet.mock.calls.some(([name]) =>
+        String(name).startsWith("ll_first_run_")
+      )
+    ).toBe(false)
   })
 })
