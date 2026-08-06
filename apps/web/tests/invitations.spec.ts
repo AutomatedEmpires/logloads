@@ -128,9 +128,14 @@ test.describe.serial("workspace invitations", () => {
       await joinCard.getByLabel("Phone").fill("555-7007")
       await joinCard.getByRole("button", { name: /Join Summit Ridge/ }).click()
 
-      // A landing manager lands in the host cockpit of the outfit they joined.
-      await page.waitForURL((url) => url.pathname.startsWith("/host"), { timeout: 30_000 })
+      // A landing manager receives a truthful handoff for the existing host
+      // workspace they joined — no new organization is implied or created.
+      await page.waitForURL(/\/host\/landings\?welcome=1/, { timeout: 30_000 })
       await expect(accountTrigger(page)).toContainText("Summit Ridge", { timeout: 15_000 })
+      const firstRun = page.getByTestId("host-first-run")
+      await expect(firstRun.getByText("Workspace joined", { exact: true })).toBeVisible()
+      await expect(firstRun.getByText(/Summit Ridge Timber is now your active host workspace/)).toBeVisible()
+      await expect(firstRun.getByText("Workspace created", { exact: true })).toHaveCount(0)
     } else {
       await signIn(page, "cole@summit.example")
       await page.goto("/host/settings")

@@ -52,6 +52,43 @@ export type PercentageAgreementTerms = z.infer<
 >
 
 /**
+ * The stored commercial fields needed to determine whether a host accepted the
+ * exact percentage agreement that currently authorizes new publication.
+ *
+ * This intentionally accepts a narrow structural shape instead of a complete
+ * billing account. Read projections and mutation services can therefore share
+ * one pure rule without contracts depending on either layer.
+ */
+export interface CurrentPercentageAgreementAccount {
+  activationState?: string | null
+  billingModel?: string | null
+  percentageTermsSnapshot?: {
+    acceptedTermsVersion?: string | null
+    billingCadence?: string | null
+    currency?: string | null
+    feeBps?: number | null
+  } | null
+  subscriptionId?: string | null
+}
+
+/** Whether an account exactly matches the current self-serve percentage terms. */
+export function isCurrentPercentageAgreement(
+  account: CurrentPercentageAgreementAccount | null | undefined
+): boolean {
+  const terms = account?.percentageTermsSnapshot
+
+  return (
+    account?.activationState === "percentage_active" &&
+    account.billingModel === "percentage_v1" &&
+    account.subscriptionId === null &&
+    terms?.acceptedTermsVersion === PERCENTAGE_V1_TERMS_VERSION &&
+    terms.billingCadence === "monthly_in_arrears" &&
+    terms.currency === LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY &&
+    terms.feeBps === PLATFORM_FEE_BPS
+  )
+}
+
+/**
  * Capacity provenance frozen when an assignment is accepted. `private_fleet`
  * includes the host's own equipment and capacity from an active, established
  * private-network partner; it means non-marketplace capacity, not legal title.

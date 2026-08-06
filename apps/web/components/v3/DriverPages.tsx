@@ -821,23 +821,183 @@ const DRIVER_VERIFICATION_OPTIONS: VerificationTypeOption[] = [
   { value: "contact", label: "Contact details", hint: "Tell us whether to review the phone or email already on your account; do not repeat the full value here." }
 ]
 
+export function DriverFirstRunPanel({
+  accountName,
+  availability,
+  continuationHref,
+  credentialVault,
+  driverName,
+  equipmentLabel,
+  verifications
+}: {
+  accountName: string
+  availability: DriverAvailabilitySummary["current"]
+  continuationHref?: string | null
+  credentialVault: Pick<CredentialVaultView, "blockedNotice" | "headline" | "satisfied"> | null
+  driverName: string | null
+  equipmentLabel: string | null
+  verifications: readonly Pick<VerificationRecordView, "status">[]
+}) {
+  const profileCreated = driverName !== null
+  const credentialsSatisfied = credentialVault?.satisfied === true
+  const credentialDetail = credentialVault
+    ? credentialsSatisfied
+      ? credentialVault.headline
+      : credentialVault.blockedNotice ?? credentialVault.headline
+    : "No credential gate can be evaluated until a driver profile is on file."
+  const verifiedCount = verifications.filter((record) => record.status === "verified").length
+  const pendingCount = verifications.filter((record) => record.status === "pending").length
+  const attentionCount = verifications.filter(
+    (record) => record.status === "rejected" || record.status === "suspended"
+  ).length
+  const verificationComplete = verifiedCount > 0 && pendingCount === 0 && attentionCount === 0
+  const verificationDetail = attentionCount > 0
+    ? `${attentionCount} verification ${attentionCount === 1 ? "record needs" : "records need"} attention below.`
+    : pendingCount > 0
+      ? `${pendingCount} verification ${pendingCount === 1 ? "submission is" : "submissions are"} in review.`
+      : verifiedCount > 0
+        ? `${verifiedCount} verification ${verifiedCount === 1 ? "record is" : "records are"} approved.`
+        : "Submit identity or contact details for review."
+  const checklist = [
+    {
+      complete: true,
+      detail: `The sign-in account for ${accountName} is on file.`,
+      key: "account",
+      title: "Account"
+    },
+    {
+      complete: profileCreated,
+      detail: profileCreated
+        ? `Driver profile created for ${driverName}.`
+        : "No driver profile is on file yet.",
+      key: "profile",
+      title: "Driver profile"
+    },
+    {
+      complete: equipmentLabel !== null,
+      detail: equipmentLabel
+        ? `${equipmentLabel} is on file. Exact-rig requirements are evaluated separately below.`
+        : "Add an equipment record for the truck and trailer combination you will use.",
+      key: "equipment",
+      title: "Equipment record"
+    },
+    {
+      complete: availability !== null,
+      detail: availability
+        ? `${formatHuman(availability.status)} · ${availability.windowLabel}`
+        : "Post when you are available to haul.",
+      key: "availability",
+      title: "Availability"
+    },
+    {
+      complete: verificationComplete,
+      detail: verificationDetail,
+      key: "verification",
+      title: "Verification"
+    }
+  ]
+
+  return (
+    <section
+      aria-labelledby="driver-first-run-title"
+      className="first-run-panel first-run-panel--driver"
+      data-testid="driver-first-run"
+    >
+      <div className="first-run-panel__copy">
+        <p className="eyebrow">{profileCreated ? "Account and profile created" : "Account created"}</p>
+        <h2 id="driver-first-run-title">
+          {profileCreated
+            ? "Your driver workspace is ready to finish."
+            : "Your account is open; your driver profile still needs setup."}
+        </h2>
+        <p>
+          {profileCreated
+            ? "Your driver record is on file. Complete the operating details below so matching and readiness use current equipment, availability, verification, and credential truth. Hosts on accepted work receive only the scoped status and expiry summary required for that movement."
+            : "Your sign-in account exists, but LogLoads has no driver profile on file. Finish that record before filing work credentials."}
+        </p>
+      </div>
+      <div
+        aria-label="Current load acceptance state"
+        className="first-run-panel__state"
+        data-credential-satisfied={credentialsSatisfied ? "true" : "false"}
+        data-testid="driver-first-run-credential-state"
+      >
+        <strong>{credentialsSatisfied ? "Credential gate cleared" : "Load acceptance locked"}</strong>
+        <span>{credentialDetail}</span>
+      </div>
+      <div className="first-run-panel__setup">
+        <ul aria-label="Driver setup checklist" className="first-run-panel__checklist" data-testid="driver-first-run-checklist">
+          {checklist.map((step) => (
+            <li
+              className={step.complete ? "is-complete" : undefined}
+              data-state={step.complete ? "complete" : "incomplete"}
+              data-testid={`driver-first-run-${step.key}`}
+              key={step.key}
+            >
+              <span>
+                <span className="sr-only">{step.complete ? "Complete: " : "Not complete: "}</span>
+                <strong>{step.title}:</strong> {step.detail}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <div className="first-run-panel__actions">
+          <Link
+            className="action-link"
+            data-testid="driver-first-run-credential-link"
+            href="#driver-credential-vault"
+          >
+            {credentialsSatisfied ? "Review credential vault" : "Review credential requirements"}
+          </Link>
+          {continuationHref ? (
+            <form action="/driver/first-run/continue" method="post">
+              <button
+                className="action-link action-link--secondary"
+                data-testid="driver-first-run-continuation"
+                type="submit"
+              >
+                Continue where you left off
+              </button>
+            </form>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 export function DriverProfile({
   account,
   availability,
+  continuationHref = null,
   credentialVault,
   mediaReady,
   network,
-  verifications
+  verifications,
+  welcome = false
 }: DriverPageProps & {
   availability: DriverAvailabilitySummary
+  continuationHref?: string | null
   credentialVault: CredentialVaultView | null
   mediaReady: boolean
   verifications: VerificationRecordView[]
+  welcome?: boolean
 }) {
   const verification = verificationBadge(network.activeOrganization.verificationStatus)
 
   return (
     <AppShell account={account} kicker="Your setup" role="driver" title="Profile">
+      {welcome ? (
+        <DriverFirstRunPanel
+          accountName={account.userName}
+          availability={availability.current}
+          continuationHref={continuationHref}
+          credentialVault={credentialVault}
+          driverName={network.currentDriver?.name ?? null}
+          equipmentLabel={network.currentEquipment?.label ?? null}
+          verifications={verifications}
+        />
+      ) : null}
       <section className="profile-panel">
         <div className="profile-head">
           <div>
@@ -907,7 +1067,13 @@ export function DriverProfile({
           hasPhoto={network.currentEquipment?.hasTruckPhoto ?? false}
         />
       </section>
-      <section className="app-section">
+      <section
+        aria-label="Driver credential readiness"
+        className="app-section"
+        data-testid="driver-credential-vault-section"
+        id="driver-credential-vault"
+        tabIndex={-1}
+      >
         <SectionHeader eyebrow="Work credentials" title="Keep every record current" />
         {credentialVault ? (
           <CredentialVault vault={credentialVault} />

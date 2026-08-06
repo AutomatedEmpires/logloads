@@ -677,6 +677,7 @@ a { color: inherit; text-decoration: none; }
 .perf-tag { border: 1px solid var(--line); border-radius: 999px; background: var(--green-bg); color: var(--green); padding: 3px 9px; font-size: 0.78rem; font-weight: 700; }
 
 .mobile-app-nav { display: none; }
+.first-run-panel,
 .app-section,
 .driver-now,
 .equipment-setup,
@@ -694,6 +695,93 @@ a { color: inherit; text-decoration: none; }
 .settings-grid,
 .relationship-grid {
   margin: 18px 24px 0;
+}
+.first-run-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(240px, 0.65fr);
+  gap: clamp(18px, 3vw, 32px);
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid rgba(35, 88, 62, 0.26);
+  border-left: 6px solid var(--pine);
+  border-radius: var(--radius-md);
+  background:
+    radial-gradient(circle at 100% 0, rgba(46, 118, 81, 0.16), transparent 42%),
+    linear-gradient(145deg, var(--paper), #edf4ec);
+  padding: clamp(18px, 3vw, 28px);
+  box-shadow: var(--shadow-1);
+}
+.first-run-panel__copy {
+  display: grid;
+  align-content: center;
+  gap: 8px;
+}
+.first-run-panel__copy > * { margin: 0; }
+.first-run-panel__copy h2 {
+  max-width: 720px;
+  color: var(--pine);
+  font-size: clamp(1.45rem, 3vw, 2.35rem);
+  line-height: 1.04;
+}
+.first-run-panel__copy > p:not(.eyebrow) {
+  max-width: 68ch;
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+.first-run-panel--driver {
+  grid-template-areas:
+    "copy state"
+    "setup state";
+}
+.first-run-panel--driver .first-run-panel__copy { grid-area: copy; }
+.first-run-panel--driver .first-run-panel__state { grid-area: state; }
+.first-run-panel__setup {
+  display: grid;
+  grid-area: setup;
+  gap: 8px;
+}
+.first-run-panel__state {
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  border: 1px solid rgba(35, 88, 62, 0.2);
+  border-radius: var(--radius);
+  background: rgba(255, 253, 247, 0.76);
+  padding: 16px;
+}
+.first-run-panel__state strong { color: var(--pine); font-size: 1.08rem; }
+.first-run-panel__state span { color: var(--ink-soft); line-height: 1.45; }
+.first-run-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+.first-run-panel__actions form { margin: 0; }
+.first-run-panel__checklist {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.first-run-panel__checklist li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--ink-soft);
+  font-weight: 750;
+  line-height: 1.4;
+}
+.first-run-panel__checklist li::before {
+  flex: 0 0 auto;
+  color: var(--amber);
+  content: "○";
+  font-weight: 900;
+}
+.first-run-panel__checklist li.is-complete::before {
+  color: var(--green);
+  content: "✓";
 }
 .driver-now,
 .host-need {
@@ -1084,6 +1172,7 @@ dd { margin: 0; font-weight: 900; text-align: right; }
   .mobile-app-nav a[aria-current="page"] { background: var(--green-bg); color: var(--pine); }
   .mobile-app-nav a[aria-current="page"]::before { position: absolute; top: 0; width: 34px; height: 3px; border-radius: 0 0 4px 4px; background: var(--pine); content: ""; }
   .mobile-app-nav a { position: relative; }
+  .first-run-panel,
   .app-section,
   .driver-now,
   .equipment-setup,
@@ -1101,6 +1190,20 @@ dd { margin: 0; font-weight: 900; text-align: right; }
   .settings-grid,
   .relationship-grid,
   .invite-panel { margin: 12px 12px 0; }
+  .first-run-panel {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    border-left-width: 4px;
+    padding: 18px;
+  }
+  .first-run-panel--driver {
+    grid-template-areas:
+      "copy"
+      "state"
+      "setup";
+  }
+  .first-run-panel__actions { display: grid; }
+  .first-run-panel__actions .action-link { width: 100%; }
   /* Was 1fr, which stacked these supporting facts into roughly 1100px on a
      phone and pushed the map off the first screen of a page called "Map".
      They stay a row on the device the driver actually uses. */
@@ -1175,6 +1278,8 @@ dd { margin: 0; font-weight: 900; text-align: right; }
   .radio-card:has(input:checked),
   .plan-card--selectable:has(input:checked) { outline: 2px solid Highlight; }
   .brand-mark { border: 2px solid CanvasText; }
+  .first-run-panel,
+  .first-run-panel__state { border-color: CanvasText; }
   .action-link:hover,
   .action-link:active { transform: none; box-shadow: none; }
   .ui-button:disabled,

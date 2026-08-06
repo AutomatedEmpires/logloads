@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest"
 import { DEMO_EMAIL_SIGN_IN_ALLOWLIST, DEMO_PERSONAS, isDemoSignInEmail } from "./demo-personas"
 import {
   canAccessCockpit,
+  cockpitForMembership,
   homePathFor,
   homePathForMembership,
   restrictedAccessRecoveryPath,
@@ -98,6 +99,10 @@ describe("membership-driven cockpit routing", () => {
   })
 
   it("routes a newly accepted invitation from its persisted membership facts", () => {
+    expect(cockpitForMembership("carrier", "driver")).toBe("driver")
+    expect(cockpitForMembership("fleet", "dispatcher")).toBe("fleet")
+    expect(cockpitForMembership("landing_source", "landing_manager")).toBe("host")
+    expect(cockpitForMembership("destination", "billing")).toBe("host")
     expect(homePathForMembership("landing_source", "landing_manager")).toBe("/host/command")
     expect(homePathForMembership("destination", "billing")).toBe("/host/command")
     expect(homePathForMembership("fleet", "dispatcher")).toBe("/fleet/command")

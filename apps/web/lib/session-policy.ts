@@ -55,6 +55,17 @@ function organizationCockpitFor(
   return null
 }
 
+export function cockpitForMembership(
+  organizationType: Organization["type"],
+  role: OrganizationMembership["role"]
+): Exclude<Cockpit, "admin"> | null {
+  if (role === "driver") {
+    return "driver"
+  }
+
+  return organizationCockpitFor(organizationType, role)
+}
+
 function organizationCockpit(actor: SessionActor): "fleet" | "host" | null {
   return organizationCockpitFor(actor.activeOrganization?.type, actor.activeMembership?.role)
 }
@@ -68,7 +79,7 @@ export function homePathForMembership(
   organizationType: Organization["type"],
   role: OrganizationMembership["role"]
 ): string {
-  const cockpit = organizationCockpitFor(organizationType, role)
+  const cockpit = cockpitForMembership(organizationType, role)
 
   if (cockpit === "fleet") {
     return "/fleet/command"
@@ -78,7 +89,7 @@ export function homePathForMembership(
     return "/host/command"
   }
 
-  if (role === "driver") {
+  if (cockpit === "driver") {
     return "/driver/map"
   }
 

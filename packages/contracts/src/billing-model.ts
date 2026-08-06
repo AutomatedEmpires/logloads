@@ -126,10 +126,10 @@ export const hostInvoiceStatusSchema = z.enum([
 ])
 
 /**
- * Whether a legacy_percentage host has a card on file. `attached` gates new
- * legacy work whose frozen terms will accrue the percentage fee. Subscription
- * publishing is free and uses its own agreement/payment state; a missing legacy
- * card must never become a universal publishing block.
+ * Whether a percentage-billed host has a usable card on file. `attached` gates
+ * new percentage work whose frozen terms will accrue the fee. Historical
+ * subscription records use their own provider state and remain serviceable for
+ * reconciliation without authorizing post-cutover publication.
  */
 export const hostBillingProfileStatusSchema = z.enum(["none", "attached", "failed"])
 

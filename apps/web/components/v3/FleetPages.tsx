@@ -106,9 +106,227 @@ function DecisionColumn({ children, count, title }: { children: ReactNode; count
   )
 }
 
+export interface FleetCredentialReadiness {
+  missingLabels: string[]
+  satisfied: boolean
+}
+
+export interface FleetFirstRunFact {
+  complete: boolean
+  detail: string
+  id: "organization" | "unit" | "driver" | "credentials"
+  label: string
+}
+
+function listSentence(items: string[]): string {
+  if (items.length === 0) {
+    return "the required driver and exact-rig records"
+  }
+
+  if (items.length === 1) {
+    return items[0] ?? "the required records"
+  }
+
+  if (items.length === 2) {
+    return `${items[0]} and ${items[1]}`
+  }
+
+  return `${items.slice(0, -1).join(", ")}, and ${items.at(-1)}`
+}
+
+/**
+ * First-run facts are projected only from the fleet read model and, when the
+ * authorized server page can read it, the same credential gate used before a
+ * load request. An assigned driver alone never becomes a credential claim.
+ */
+export function getFleetFirstRunReadiness(
+  network: Pick<NetworkView, "activeOrganization" | "trucks">,
+  credentialReadiness: FleetCredentialReadiness | null
+): FleetFirstRunFact[] {
+  const firstUnit = network.trucks.at(0) ?? null
+  const driverAssigned = Boolean(firstUnit?.driverProfileId)
+  const driverName = driverAssigned ? firstUnit?.driverName ?? "Assigned driver" : null
+  const organizationVerified = network.activeOrganization.verificationStatus === "verified"
+
+  let credentialFact: FleetFirstRunFact
+
+  if (!driverAssigned) {
+    credentialFact = {
+      complete: false,
+      detail: "Choose a driver before LogLoads can evaluate driver and exact-rig records for load requests.",
+      id: "credentials",
+      label: "Credential readiness follows driver assignment"
+    }
+  } else if (credentialReadiness?.satisfied) {
+    credentialFact = {
+      complete: true,
+      detail: `${driverName}'s approved, current records cover ${firstUnit?.unitNumber ?? "the assigned unit"}.`,
+      id: "credentials",
+      label: "Driver and exact-rig credential gate clear"
+    }
+  } else if (credentialReadiness) {
+    credentialFact = {
+      complete: false,
+      detail: `Before ${driverName} can request work with ${firstUnit?.unitNumber ?? "this unit"}, complete ${listSentence(credentialReadiness.missingLabels)}.`,
+      id: "credentials",
+      label: "Driver and exact-rig records need attention"
+    }
+  } else {
+    credentialFact = {
+      complete: false,
+      detail: `Open Drivers to review ${driverName}'s current driver and exact-rig records before requesting work.`,
+      id: "credentials",
+      label: "Credential gate needs review"
+    }
+  }
+
+  return [
+    {
+      complete: organizationVerified,
+      detail: organizationVerified
+        ? `${network.activeOrganization.name} is verified.`
+        : `Current state: ${formatHuman(network.activeOrganization.verificationStatus)}.`,
+      id: "organization",
+      label: organizationVerified
+        ? "Organization verified"
+        : `Organization verification: ${formatHuman(network.activeOrganization.verificationStatus)}`
+    },
+    {
+      complete: firstUnit !== null,
+      detail: firstUnit
+        ? `${firstUnit.unitNumber} is the first unit in this workspace.`
+        : "Add the first truck and its working configuration.",
+      id: "unit",
+      label: firstUnit ? "First unit created" : "First unit still needed"
+    },
+    {
+      complete: driverAssigned,
+      detail: driverAssigned
+        ? `${driverName} is assigned to ${firstUnit?.unitNumber ?? "the first unit"}.`
+        : "Add a driver, then assign that person to the first unit.",
+      id: "driver",
+      label: driverAssigned ? "Driver assigned" : "Driver assignment still needed"
+    },
+    credentialFact
+  ]
+}
+
+export function FleetFirstRunPanel({
+  continuationHref,
+  credentialReadiness,
+  network
+}: {
+  continuationHref: string | null
+  credentialReadiness: FleetCredentialReadiness | null
+  network: Pick<NetworkView, "activeOrganization" | "trucks">
+}) {
+  const readiness = getFleetFirstRunReadiness(network, credentialReadiness)
+  const completeCount = readiness.filter((fact) => fact.complete).length
+  const firstUnitReady = readiness.find((fact) => fact.id === "unit")?.complete ?? false
+  const driverReady = readiness.find((fact) => fact.id === "driver")?.complete ?? false
+  const primaryAction = firstUnitReady
+    ? {
+        href: "/fleet/drivers",
+        label: driverReady ? "Review driver records" : "Add or assign a driver",
+        testId: "fleet-first-run-drivers"
+      }
+    : {
+        href: "/fleet/trucks",
+        label: "Add the first unit",
+        testId: "fleet-first-run-trucks"
+      }
+  const secondaryAction = firstUnitReady
+    ? {
+        href: "/fleet/trucks",
+        label: "Review the first unit",
+        testId: "fleet-first-run-trucks"
+      }
+    : {
+        href: "/fleet/drivers",
+        label: "Open drivers",
+        testId: "fleet-first-run-drivers"
+      }
+
+  return (
+    <section
+      aria-labelledby="fleet-first-run-title"
+      className="first-run-panel"
+      data-testid="fleet-first-run"
+    >
+      <div className="first-run-panel__copy">
+        <p className="eyebrow">Fleet Free is active</p>
+        <h2 id="fleet-first-run-title">Build the operating picture before you put a truck on work.</h2>
+        <p>
+          This workspace is ready for drivers, trucks, and dispatch with no checkout. Confirm the
+          organization, review the first unit, and assign its driver. A load request opens only
+          when that driver&apos;s records and the exact rig meet the credential gate.
+        </p>
+        <nav className="first-run-panel__actions" aria-label="Fleet setup actions">
+          <Link className="action-link" data-testid={primaryAction.testId} href={primaryAction.href}>
+            {primaryAction.label}
+          </Link>
+          <Link
+            className="action-link action-link--secondary"
+            data-testid={secondaryAction.testId}
+            href={secondaryAction.href}
+          >
+            {secondaryAction.label}
+          </Link>
+          {continuationHref ? (
+            <form action="/fleet/first-run/continue" method="post">
+              <button
+                className="action-link action-link--secondary"
+                data-testid="fleet-first-run-continue"
+                type="submit"
+              >
+                Continue to the requested Fleet page
+              </button>
+            </form>
+          ) : null}
+        </nav>
+      </div>
+      <section
+        aria-labelledby="fleet-first-run-readiness-title"
+        className="first-run-panel__state"
+      >
+        <strong id="fleet-first-run-readiness-title">
+          {completeCount} of {readiness.length} readiness checks complete
+        </strong>
+        <ul className="first-run-panel__checklist">
+          {readiness.map((fact) => (
+            <li
+              className={fact.complete ? "is-complete" : undefined}
+              data-status={fact.complete ? "complete" : "waiting"}
+              data-testid={`fleet-readiness-${fact.id}`}
+              key={fact.id}
+            >
+              <span>
+                <span className="sr-only">{fact.complete ? "Complete: " : "Waiting: "}</span>
+                {fact.label}. {fact.detail}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </section>
+  )
+}
+
 // --- Command -------------------------------------------------------------------
 
-export function FleetCommand({ account, dispatchPlan, network }: FleetShellProps & { dispatchPlan: DispatchTruckPlan[] }) {
+export function FleetCommand({
+  account,
+  continuationHref = null,
+  credentialReadiness = null,
+  dispatchPlan,
+  network,
+  welcome = false
+}: FleetShellProps & {
+  continuationHref?: string | null
+  credentialReadiness?: FleetCredentialReadiness | null
+  dispatchPlan: DispatchTruckPlan[]
+  welcome?: boolean
+}) {
   const activeTrips = network.trips.filter(isActiveTrip)
   const movingDriverIds = new Set(activeTrips.map((trip) => trip.driverProfileId))
   const availableTrucks = network.trucks.filter((truck) =>
@@ -133,6 +351,13 @@ export function FleetCommand({ account, dispatchPlan, network }: FleetShellProps
 
   return (
     <AppShell account={account} role="fleet" title="Command" kicker="Fleet operations" orgName={network.activeOrganization.name}>
+      {welcome ? (
+        <FleetFirstRunPanel
+          continuationHref={continuationHref}
+          credentialReadiness={credentialReadiness}
+          network={network}
+        />
+      ) : null}
       <section className="command-grid">
         <Metric label="Trucks free now" value={availableTrucks.length} />
         <Metric label="Moving now" value={activeTrips.length} />

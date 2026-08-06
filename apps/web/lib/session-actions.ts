@@ -7,6 +7,13 @@ import { redirect } from "next/navigation"
 
 import { captureServerEvent } from "./analytics"
 import { DEMO_PERSONAS, isDemoSignInEmail } from "./demo-personas"
+import {
+  createFirstRunHandoffCookie,
+  firstRunContinuationCookieName,
+  firstRunDestination,
+  parseEntryIntent,
+  type EntryIntent
+} from "./entry-routing"
 import { checkRateLimit, requestClientKey } from "./rate-limit"
 import { mutateState, refreshState, serializeError, services } from "./services"
 import {
@@ -19,7 +26,10 @@ import {
   isDevSessionEnabled,
   isFounderDemoMode
 } from "./session"
-import { homePathForMembership } from "./session-policy"
+import {
+  cockpitForMembership,
+  homePathForMembership
+} from "./session-policy"
 import { safeInternalPath } from "./safe-redirect"
 
 const COOKIE_OPTIONS = {
@@ -28,6 +38,14 @@ const COOKIE_OPTIONS = {
   path: "/",
   sameSite: "lax" as const,
   secure: process.env.NODE_ENV === "production"
+}
+
+function firstRunContinuationCookieOptions(intent: EntryIntent) {
+  return {
+    ...COOKIE_OPTIONS,
+    maxAge: 10 * 60,
+    path: `/${intent}`
+  }
 }
 
 export interface AuthFormState {
@@ -108,6 +126,12 @@ export async function clearLocalSessionAction(): Promise<void> {
   const cookieStore = await cookies()
 
   cookieStore.delete(SESSION_COOKIE)
+  for (const intent of ["driver", "fleet", "host"] as const) {
+    cookieStore.set(firstRunContinuationCookieName(intent), "", {
+      ...firstRunContinuationCookieOptions(intent),
+      maxAge: 0
+    })
+  }
 }
 
 export async function switchOrganizationAction(organizationId: string): Promise<boolean> {
@@ -267,6 +291,7 @@ export async function completeOnboardingAction(
   if (invitationId) {
     let joined: { organizationId: string; userId: string }
     let joinedHome = "/workspace"
+    let joinedIntent: EntryIntent | null = null
 
     try {
       const accepted = await mutateState((draft) =>
@@ -280,8 +305,6 @@ export async function completeOnboardingAction(
       )
       joined = accepted
 
-      captureServerEvent("invitation_accepted", joined.userId, { invitationId, newAccount: true })
-
       const cookieStore = await cookies()
 
       cookieStore.set(SESSION_COOKIE, createSessionCookieValue(joined.userId, joined.organizationId), COOKIE_OPTIONS)
@@ -292,12 +315,48 @@ export async function completeOnboardingAction(
 
       if (organization) {
         joinedHome = homePathForMembership(organization.type, accepted.invitation.invitedRole)
+        joinedIntent = cockpitForMembership(organization.type, accepted.invitation.invitedRole)
+
+        if (joinedIntent) {
+          cookieStore.set(
+            firstRunContinuationCookieName(joinedIntent),
+            createFirstRunHandoffCookie(joinedIntent, next, "invited", joined.userId),
+            firstRunContinuationCookieOptions(joinedIntent)
+          )
+
+        }
       }
+
+      const analyticsPath = joinedIntent ?? "workspace"
+      const analyticsEvents = [
+        captureServerEvent("invitation_accepted", joined.userId, {
+          invitationId,
+          newAccount: true
+        }),
+        captureServerEvent("account_created", joined.userId, {
+          accountType: "invited_member",
+          path: analyticsPath
+        }),
+        captureServerEvent("onboarding_completed", joined.userId, {
+          accountType: "invited_member",
+          invitedRole: accepted.invitation.invitedRole,
+          organizationId: joined.organizationId,
+          path: analyticsPath
+        })
+      ]
+
+      await Promise.all(analyticsEvents)
     } catch (error) {
       return { error: serializeError(error).error }
     }
 
-    redirect(safeInternalPath(next, joinedHome))
+    redirect(joinedIntent ? firstRunDestination(joinedIntent) : safeInternalPath(next, joinedHome))
+  }
+
+  const intent = parseEntryIntent(path)
+
+  if (!intent) {
+    return { error: "Choose whether you haul timber, manage trucks, or have timber to move." }
   }
 
   try {
@@ -316,34 +375,41 @@ export async function completeOnboardingAction(
           : null,
         fullName,
         organizationName: organizationName || null,
-        path,
+        path: intent,
         phone,
         region
       })
     )
 
-    captureServerEvent("account_created", account.profile.id, { path, accountType })
-
+    const organizationId = account.memberships[0]?.organization.id ?? null
     const cookieStore = await cookies()
 
     cookieStore.set(
       SESSION_COOKIE,
-      createSessionCookieValue(account.profile.id, account.memberships[0]?.organization.id ?? null),
+      createSessionCookieValue(account.profile.id, organizationId),
       COOKIE_OPTIONS
     )
+
+    cookieStore.set(
+      firstRunContinuationCookieName(intent),
+      createFirstRunHandoffCookie(intent, next, "created", account.profile.id),
+      firstRunContinuationCookieOptions(intent)
+    )
+
+    await Promise.all([
+      captureServerEvent("account_created", account.profile.id, {
+        path: intent,
+        accountType
+      }),
+      captureServerEvent("onboarding_completed", account.profile.id, {
+        accountType,
+        organizationId,
+        path: intent
+      })
+    ])
   } catch (error) {
     return { error: serializeError(error).error }
   }
 
-  const actor = await getSessionActor()
-
-  const fallback =
-    path === "driver"
-      ? "/driver/loads?welcome=1"
-      : path === "host"
-        ? "/host/landings?welcome=1"
-        : actor
-          ? homePathFor(actor)
-          : "/workspace"
-  redirect(safeInternalPath(next, fallback))
+  redirect(firstRunDestination(intent))
 }

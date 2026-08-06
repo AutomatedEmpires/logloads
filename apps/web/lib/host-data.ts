@@ -3,9 +3,11 @@ import "server-only"
 import {
   formatMoney,
   formatRateLabel,
+  isCurrentPercentageAgreement,
   loadTypeSchema,
   organizationRoleCan,
   type BillingModel,
+  type HostBillingProfileStatus,
   type OrganizationBillingAccount,
   type OrganizationRole,
   type SubscriptionPlanCode
@@ -58,7 +60,11 @@ export interface RequirementOption {
 export interface HostPublishingOptions {
   dispatcher: HostDispatcherOption | null
   billingActivationState: OrganizationBillingAccount["activationState"] | null
+  /** `null` means conflicting profiles; zero profiles projects canonical `none`. */
+  billingProfileStatus: HostBillingProfileStatus | null
   billingModel: BillingModel | null
+  /** Exact current percentage-v1 terms, independent of payment-method readiness. */
+  currentPercentageAgreementActive: boolean
   subscriptionPlanCode: SubscriptionPlanCode | null
   landings: HostLandingOption[]
   loadTypes: string[]
@@ -90,6 +96,17 @@ export function getHostPublishingOptions(
       Date.parse(account.effectiveAt) <= now
   )
   const billingAccount = billingAccounts.length === 1 ? billingAccounts[0]! : null
+  const billingProfiles = state.hostBillingProfiles.filter(
+    (profile) => profile.organizationId === organizationId
+  )
+  const billingProfileStatus: HostBillingProfileStatus | null =
+    billingProfiles.length === 0
+      ? "none"
+      : billingProfiles.length === 1
+        ? billingProfiles[0]!.status
+        : null
+  const currentPercentageAgreementActive =
+    isCurrentPercentageAgreement(billingAccount)
   const subscription = billingAccount?.subscriptionId
     ? state.organizationSubscriptions.find(
         (candidate) =>
@@ -136,7 +153,9 @@ export function getHostPublishingOptions(
   return {
     accessVocabulary: sortedOptions(accessValues),
     billingActivationState: billingAccount?.activationState ?? null,
+    billingProfileStatus,
     billingModel: billingAccount?.billingModel ?? null,
+    currentPercentageAgreementActive,
     dispatcher: dispatcherProfile
       ? {
           email: dispatcherProfile.contact.email ?? null,

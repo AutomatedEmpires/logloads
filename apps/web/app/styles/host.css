@@ -169,6 +169,7 @@
   align-items: center;
   gap: 10px 14px;
 }
+.host-readiness__actions form { margin: 0; }
 .host-readiness__actions > span {
   color: var(--muted);
   font-size: 0.86rem;

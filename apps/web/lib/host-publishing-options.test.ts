@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest"
 
-import { hostLiveVisibilityModes } from "./host-publishing-options"
+import {
+  hostLiveVisibilityModes,
+  hostPercentagePublicationIsReady
+} from "./host-publishing-options"
 
 describe("host live publishing options", () => {
   it.each([null, "unenrolled", "configured_dark"] as const)(
@@ -9,6 +12,9 @@ describe("host live publishing options", () => {
       expect(
         hostLiveVisibilityModes({
           billingActivationState: activationState,
+          billingModel: null,
+          billingProfileStatus: "none",
+          currentPercentageAgreementActive: false,
           subscriptionPlanCode: null
         })
       ).toEqual([])
@@ -19,6 +25,9 @@ describe("host live publishing options", () => {
     expect(
       hostLiveVisibilityModes({
         billingActivationState: "legacy",
+        billingModel: "legacy_percentage",
+        billingProfileStatus: "attached",
+        currentPercentageAgreementActive: false,
         subscriptionPlanCode: null
       })
     ).toEqual([])
@@ -28,36 +37,77 @@ describe("host live publishing options", () => {
     expect(
       hostLiveVisibilityModes({
         billingActivationState: "percentage_active",
+        billingModel: "percentage_v1",
+        billingProfileStatus: "attached",
+        currentPercentageAgreementActive: true,
         subscriptionPlanCode: null
       })
     ).toEqual(["open_network", "private_network", "verified_network"])
   })
 
-  it("offers Network reach to an active Network subscription", () => {
+  it.each(["none", "failed", null] as const)(
+    "keeps an accepted percentage agreement draft-only while card status is %s",
+    (billingProfileStatus) => {
+      const options = {
+        billingActivationState: "percentage_active" as const,
+        billingModel: "percentage_v1" as const,
+        billingProfileStatus,
+        currentPercentageAgreementActive: true,
+        subscriptionPlanCode: null
+      }
+
+      expect(hostPercentagePublicationIsReady(options)).toBe(false)
+      expect(hostLiveVisibilityModes(options)).toEqual([])
+    }
+  )
+
+  it("fails closed when a card is attached to an incomplete percentage agreement", () => {
+    const options = {
+      billingActivationState: "percentage_active" as const,
+      billingModel: "percentage_v1" as const,
+      billingProfileStatus: "attached" as const,
+      currentPercentageAgreementActive: false,
+      subscriptionPlanCode: null
+    }
+
+    expect(hostPercentagePublicationIsReady(options)).toBe(false)
+    expect(hostLiveVisibilityModes(options)).toEqual([])
+  })
+
+  it("keeps a historical active Network subscription draft-only after cutover", () => {
     expect(
       hostLiveVisibilityModes({
         billingActivationState: "active",
+        billingModel: "subscription_v1",
+        billingProfileStatus: "none",
+        currentPercentageAgreementActive: false,
         subscriptionPlanCode: "network_25"
       })
-    ).toEqual(["open_network", "private_network", "verified_network"])
+    ).toEqual([])
   })
 
-  it("keeps an active Dispatch Pro subscription private-partner-only", () => {
+  it("keeps a historical Dispatch Pro subscription draft-only after cutover", () => {
     expect(
       hostLiveVisibilityModes({
         billingActivationState: "active",
+        billingModel: "dispatch_pro",
+        billingProfileStatus: "none",
+        currentPercentageAgreementActive: false,
         subscriptionPlanCode: "dispatch_pro"
       })
-    ).toEqual(["private_network"])
+    ).toEqual([])
   })
 
-  it("keeps only private-partner publication available while suspended", () => {
+  it("keeps a suspended historical subscription draft-only after cutover", () => {
     expect(
       hostLiveVisibilityModes({
         billingActivationState: "suspended",
+        billingModel: "subscription_v1",
+        billingProfileStatus: "none",
+        currentPercentageAgreementActive: false,
         subscriptionPlanCode: "network_50"
       })
-    ).toEqual(["private_network"])
+    ).toEqual([])
   })
 
   it.each(["active", "suspended"] as const)(
@@ -66,6 +116,9 @@ describe("host live publishing options", () => {
       expect(
         hostLiveVisibilityModes({
           billingActivationState,
+          billingModel: null,
+          billingProfileStatus: "none",
+          currentPercentageAgreementActive: false,
           subscriptionPlanCode: null
         })
       ).toEqual([])
