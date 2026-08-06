@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react"
+import { Fragment, useEffect, useMemo, useState, useTransition, type ReactNode } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
 import type { NetworkLoadView, NetworkView } from "@/lib/network"
@@ -1007,27 +1007,34 @@ export function FleetOpportunityDetail({
   // forever: after a bounded wait the operator gets an explicit retry.
   const router = useRouter()
   const [claimConvergenceStalled, setClaimConvergenceStalled] = useState(false)
+  const [refreshPending, startRefreshTransition] = useTransition()
   useEffect(() => {
     if (!claimConvergenceActive) {
       setClaimConvergenceStalled(false)
       return
     }
 
-    // A refresh issued inside the action transition can be folded into that
-    // response. Keep asking for the canonical projection for a bounded window
-    // so the operator sees the assignment without having to discover a manual
-    // reload. The explicit retry remains if the server never converges.
-    const refreshInterval = setInterval(() => router.refresh(), 1_500)
     const stalledTimer = setTimeout(() => {
-      clearInterval(refreshInterval)
       setClaimConvergenceStalled(true)
     }, 12_000)
 
-    return () => {
-      clearInterval(refreshInterval)
-      clearTimeout(stalledTimer)
+    return () => clearTimeout(stalledTimer)
+  }, [claimConvergenceActive])
+  useEffect(() => {
+    if (!claimConvergenceActive || claimConvergenceStalled || refreshPending) {
+      return
     }
-  }, [claimConvergenceActive, router])
+
+    // A refresh issued inside the action transition can be folded into that
+    // response. Ask again only after the previous refresh has settled so slow
+    // server projections cannot stack work in the browser. The separate
+    // deadline above preserves the explicit manual fallback.
+    const refreshTimer = setTimeout(() => {
+      startRefreshTransition(() => router.refresh())
+    }, 1_500)
+
+    return () => clearTimeout(refreshTimer)
+  }, [claimConvergenceActive, claimConvergenceStalled, refreshPending, router])
   const displayedRemainingTruckloads = serverDirectOffer
     ? optimisticOffer?.directOfferId === serverDirectOffer.id &&
       optimisticOffer.serverRemainingTruckloads ===

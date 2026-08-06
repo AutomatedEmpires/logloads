@@ -403,6 +403,7 @@ export function StartConversation({ counterparties, draftScope, emptyHint }: Sta
                   <button
                     aria-pressed={entry.key === selectedKey}
                     className={entry.key === selectedKey ? "is-selected" : undefined}
+                    data-counterparty-key={entry.key}
                     disabled={pending}
                     key={entry.key}
                     onClick={() => selectCounterparty(entry)}
