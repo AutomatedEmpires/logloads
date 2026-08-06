@@ -1012,9 +1012,22 @@ export function FleetOpportunityDetail({
       setClaimConvergenceStalled(false)
       return
     }
-    const timer = setTimeout(() => setClaimConvergenceStalled(true), 12_000)
-    return () => clearTimeout(timer)
-  }, [claimConvergenceActive])
+
+    // A refresh issued inside the action transition can be folded into that
+    // response. Keep asking for the canonical projection for a bounded window
+    // so the operator sees the assignment without having to discover a manual
+    // reload. The explicit retry remains if the server never converges.
+    const refreshInterval = setInterval(() => router.refresh(), 1_500)
+    const stalledTimer = setTimeout(() => {
+      clearInterval(refreshInterval)
+      setClaimConvergenceStalled(true)
+    }, 12_000)
+
+    return () => {
+      clearInterval(refreshInterval)
+      clearTimeout(stalledTimer)
+    }
+  }, [claimConvergenceActive, router])
   const displayedRemainingTruckloads = serverDirectOffer
     ? optimisticOffer?.directOfferId === serverDirectOffer.id &&
       optimisticOffer.serverRemainingTruckloads ===

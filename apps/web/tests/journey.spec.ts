@@ -186,6 +186,10 @@ test.describe.serial("operating loop", () => {
       await expect(recipient).toBeVisible({ timeout: 15_000 })
       await recipient.click()
       await page.locator(".messages-new__form textarea").fill(uniqueMessage)
+      await page.reload()
+      await page.getByRole("button", { name: "New message" }).click()
+      await page.locator(".messages-new__people button").first().click()
+      await expect(page.locator(".messages-new__form textarea")).toHaveValue(uniqueMessage)
       await page.locator('.messages-new__form button[type="submit"]').click()
       await page.waitForURL(/thread=/, { timeout: 15_000 })
       await expect(page.getByText(uniqueMessage).first()).toBeVisible({ timeout: 15_000 })
@@ -193,7 +197,11 @@ test.describe.serial("operating loop", () => {
       return
     }
 
-    await page.locator('textarea[aria-label="Message"]').fill(uniqueMessage)
+    const composer = page.locator('textarea[aria-label="Message"]')
+
+    await composer.fill(uniqueMessage)
+    await page.reload()
+    await expect(composer).toHaveValue(uniqueMessage, { timeout: 15_000 })
     await page.getByRole("button", { name: "Send", exact: true }).click()
     await expect(page.getByText(uniqueMessage).first()).toBeVisible({ timeout: 15_000 })
   })

@@ -1796,21 +1796,30 @@ export async function createOperationalNoticeAction(input: {
 
 // --- Messages ------------------------------------------------------------------
 
-export async function sendMessageAction(input: { threadId: string; body: string }): Promise<ActionResult> {
+export async function sendMessageAction(input: {
+  body: string
+  messageId: string
+  threadId: string
+}): Promise<ActionResult> {
   try {
     const actor = await requireActor()
 
-    await commit(["/driver/messages", "/fleet/messages", "/host/messages"], (draft) =>
-      draft.postMessage({
-        authorUserId: actor.profile.id,
-        body: input.body,
-        organizationId: actorOrganizationId(actor),
-        threadId: input.threadId
-      })
+    const submission = await commit(
+      ["/driver/messages", "/fleet/messages", "/host/messages"],
+      (draft) =>
+        draft.postMessage({
+          authorUserId: actor.profile.id,
+          body: input.body,
+          messageId: input.messageId,
+          organizationId: actorOrganizationId(actor),
+          threadId: input.threadId
+        })
     )
 
     // Event only — never the message body (PII/content stays out of analytics).
-    captureServerEvent("message_sent", actor.profile.id, { threadId: input.threadId })
+    if (submission.created) {
+      captureServerEvent("message_sent", actor.profile.id, { threadId: input.threadId })
+    }
     return OK
   } catch (error) {
     return failure(error)
@@ -1825,19 +1834,21 @@ export async function startThreadAction(input: {
   participantUserIds: string[]
   subject: string
   body: string
+  initialMessageId: string
   loadPostingId?: string | null
   assignmentId?: string | null
 }): Promise<StartThreadResult> {
   try {
     const actor = await requireActor()
 
-    const thread = await commit(
+    const submission = await commit(
       ["/driver/messages", "/fleet/messages", "/host/messages"],
       (draft) =>
         draft.createThread({
           assignmentId: input.assignmentId ?? null,
           body: input.body,
           creatorUserId: actor.profile.id,
+          initialMessageId: input.initialMessageId,
           loadPostingId: input.loadPostingId ?? null,
           organizationId: actorOrganizationId(actor),
           participantUserIds: input.participantUserIds,
@@ -1845,7 +1856,14 @@ export async function startThreadAction(input: {
         })
     )
 
-    return { ...OK, threadId: thread.id }
+    // Event only — never the message body (PII/content stays out of analytics).
+    if (submission.messageCreated) {
+      captureServerEvent("message_sent", actor.profile.id, {
+        threadId: submission.thread.id
+      })
+    }
+
+    return { ...OK, threadId: submission.thread.id }
   } catch (error) {
     return { ...failure(error), threadId: null }
   }
