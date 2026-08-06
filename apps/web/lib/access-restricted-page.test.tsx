@@ -126,6 +126,19 @@ describe("restricted access routing", () => {
     })
   })
 
+  it.each(["removed", "suspended"])(
+    "does not disclose a locked organization through a %s membership",
+    async (status) => {
+      mocks.memberships[0]!.status = status
+
+      expect((await Page()).props).toMatchObject({
+        organizationName: null,
+        reason: status
+      })
+      expect(mocks.buildResidualSettlements).not.toHaveBeenCalled()
+    }
+  )
+
   it("does not offer a workspace switch when the membership has no compatible cockpit", async () => {
     mocks.homePathForMembership.mockReturnValueOnce("/")
 

@@ -29,7 +29,10 @@ export default async function Page() {
   const accountMemberships = services.state.organizationMemberships.filter(
     (membership) => membership.userId === actor.profile.id
   )
-  const unavailableOrganizations = Array.from(new Map(accountMemberships.flatMap((membership) => {
+  const activeMemberships = accountMemberships.filter(
+    (membership) => membership.status === "active"
+  )
+  const unavailableOrganizations = Array.from(new Map(activeMemberships.flatMap((membership) => {
     const organization = services.state.organizations.find(
       (candidate) => candidate.id === membership.organizationId
     )
@@ -64,7 +67,7 @@ export default async function Page() {
         (membership) => membership.organizationId === selectedOrganizationId
       ) ?? null
     : null
-  const selectedOrganization = selectedMembership
+  const selectedOrganization = selectedMembership?.status === "active"
     ? services.state.organizations.find(
         (organization) => organization.id === selectedMembership.organizationId
       ) ?? null
@@ -95,23 +98,19 @@ export default async function Page() {
       ? []
       : [{ href, id: entry.organization.id, name: entry.organization.displayName }]
   })
-  const activeMembershipCounts = accountMemberships.reduce<Map<string, number>>(
+  const activeMembershipCounts = activeMemberships.reduce<Map<string, number>>(
     (counts, membership) => {
-      if (membership.status === "active") {
-        counts.set(
-          membership.organizationId,
-          (counts.get(membership.organizationId) ?? 0) + 1
-        )
-      }
+      counts.set(
+        membership.organizationId,
+        (counts.get(membership.organizationId) ?? 0) + 1
+      )
 
       return counts
     },
     new Map()
   )
-  const soleActiveOrganizationId = accountMemberships.filter(
-    (membership) => membership.status === "active"
-  ).length === 1
-    ? accountMemberships.find((membership) => membership.status === "active")?.organizationId ?? null
+  const soleActiveOrganizationId = activeMemberships.length === 1
+    ? activeMemberships[0]?.organizationId ?? null
     : null
   const settlementOrganizationId =
     selectedOrganization &&
