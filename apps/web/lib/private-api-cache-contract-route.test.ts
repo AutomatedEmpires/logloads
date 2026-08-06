@@ -96,7 +96,7 @@ vi.mock("@/lib/weather-provider", () => ({
   LiveWeatherUnavailableError: mocks.LiveWeatherUnavailableError,
   fetchLiveWeather: mocks.fetchLiveWeather
 }))
-vi.mock("@logloads/services/src/truck-slots", () => ({
+vi.mock("@logloads/services", () => ({
   listTruckSlotsForDate: mocks.listTruckSlotsForDate
 }))
 

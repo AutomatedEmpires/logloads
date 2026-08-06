@@ -1927,6 +1927,7 @@ export async function reviewVerificationAction(input: {
       draft.reviewVerificationRecord({
         decision: input.decision,
         note: input.note ?? null,
+        platformAdminAuthorized: actor.isPlatformAdmin,
         recordId: input.recordId,
         reviewerUserId: actor.profile.id
       })
@@ -1949,6 +1950,7 @@ export async function reviewOrganizationAction(input: {
       draft.reviewOrganization({
         decision: input.decision,
         organizationId: input.organizationId,
+        platformAdminAuthorized: actor.isPlatformAdmin,
         reviewerUserId: actor.profile.id
       })
     )
@@ -1966,6 +1968,7 @@ export async function resolveNoticeAction(input: { noticeId: string }): Promise<
     await commit(["/admin", "/host", "/fleet", "/driver"], (draft) =>
       draft.resolveOperationalNotice({
         noticeId: input.noticeId,
+        platformAdminAuthorized: actor.isPlatformAdmin,
         reviewerUserId: actor.profile.id
       })
     )

@@ -5,16 +5,28 @@ import { z } from "zod"
 
 export const reviewVerificationInputSchema = z.object({
   decision: z.enum(["verified", "rejected", "suspended"]),
+  platformAdminAuthorized: z.boolean(),
   recordId: z.string().uuid(),
   reviewerUserId: z.string().uuid(),
   note: z.string().max(500).optional().nullable()
-})
+}).strict()
 
 export const reviewOrganizationInputSchema = z.object({
   decision: z.enum(["verified", "rejected", "suspended"]),
   organizationId: z.string().uuid(),
+  platformAdminAuthorized: z.boolean(),
   reviewerUserId: z.string().uuid()
-})
+}).strict()
+
+export const resolveOperationalNoticeInputSchema = z.object({
+  noticeId: z.string().uuid(),
+  platformAdminAuthorized: z.boolean(),
+  reviewerUserId: z.string().uuid()
+}).strict()
+
+export type ReviewVerificationInput = z.infer<typeof reviewVerificationInputSchema>
+export type ReviewOrganizationInput = z.infer<typeof reviewOrganizationInputSchema>
+export type ResolveOperationalNoticeInput = z.infer<typeof resolveOperationalNoticeInputSchema>
 
 export interface VerificationQueueItem {
   id: string
@@ -70,8 +82,30 @@ export function listVerificationQueue(state: LogLoadsDatabaseState): Verificatio
     })
 }
 
-export function reviewVerificationRecord(state: LogLoadsDatabaseState, rawInput: unknown) {
+function requireActivePlatformAdmin(
+  state: LogLoadsDatabaseState,
+  reviewerUserId: string,
+  platformAdminAuthorized: boolean
+): void {
+  const reviewer = state.profiles.find((profile) => profile.id === reviewerUserId)
+
+  if (!platformAdminAuthorized || !reviewer?.isActive || reviewer.role !== "admin") {
+    throw new Error("Platform access required")
+  }
+}
+
+export function reviewVerificationRecord(
+  state: LogLoadsDatabaseState,
+  rawInput: ReviewVerificationInput
+) {
   const input = reviewVerificationInputSchema.parse(rawInput)
+
+  requireActivePlatformAdmin(
+    state,
+    input.reviewerUserId,
+    input.platformAdminAuthorized
+  )
+
   const record = state.verificationRecords.find((candidate) => candidate.id === input.recordId)
 
   if (!record) {
@@ -109,8 +143,18 @@ export function reviewVerificationRecord(state: LogLoadsDatabaseState, rawInput:
   return record
 }
 
-export function reviewOrganization(state: LogLoadsDatabaseState, rawInput: unknown) {
+export function reviewOrganization(
+  state: LogLoadsDatabaseState,
+  rawInput: ReviewOrganizationInput
+) {
   const input = reviewOrganizationInputSchema.parse(rawInput)
+
+  requireActivePlatformAdmin(
+    state,
+    input.reviewerUserId,
+    input.platformAdminAuthorized
+  )
+
   const organization = state.organizations.find((candidate) => candidate.id === input.organizationId)
 
   if (!organization) {
@@ -137,8 +181,16 @@ export function reviewOrganization(state: LogLoadsDatabaseState, rawInput: unkno
 
 export function resolveOperationalNotice(
   state: LogLoadsDatabaseState,
-  input: { noticeId: string; reviewerUserId: string }
+  rawInput: ResolveOperationalNoticeInput
 ) {
+  const input = resolveOperationalNoticeInputSchema.parse(rawInput)
+
+  requireActivePlatformAdmin(
+    state,
+    input.reviewerUserId,
+    input.platformAdminAuthorized
+  )
+
   const notice = state.operationalNotices.find((candidate) => candidate.id === input.noticeId)
 
   if (!notice) {

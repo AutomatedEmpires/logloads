@@ -2,6 +2,21 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-08-06 — Canonical mutations carry their own authority
+
+- **Raw assignment writers are package-internal.** The services package exports
+  only its declared root contract, and the root contract exposes assignment
+  requests and cancellations only through their policy-enforcing mutations.
+  Scoped truck-slot reads are an explicit root export rather than a deep import.
+- **Platform administration is re-authorized inside the mutation.** Verification
+  review, organization review, and operational-notice resolution require a
+  trusted platform-admin attestation and the exact active admin profile inside
+  the compare-and-swap callback, before looking up the target. UI visibility and
+  session checks remain useful routing controls, not mutation authority.
+- This closes application authority boundaries only. It does not change schema,
+  providers, environment configuration, production data, percentage enrollment,
+  fee collection, charges, refunds, or driver compensation.
+
 ## 2026-08-05 — Fleet workspace access is Fleet Free
 
 - **Drivers and fleet workspaces are free.** Fleet Free includes the dispatch
