@@ -1,5 +1,8 @@
 import { type LogLoadsDatabaseState } from "@logloads/db"
 
+import { resolveRestrictedOrganizationAccess } from "./organization-access"
+import { residualSettlementItemsForOrganization } from "./residual-settlement"
+
 import {
   createAccount,
   findProfileByClerkId,
@@ -8,6 +11,7 @@ import {
   linkProfileToClerkUser
 } from "./accounts"
 import {
+  getOrganizationSuspensionBlockers,
   listVerificationQueue,
   resolveOperationalNotice,
   reviewOrganization,
@@ -195,6 +199,13 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     state,
     DEFAULT_ACTOR_USER_ID,
     DEFAULT_ORGANIZATION_ID,
+    resolveRestrictedOrganizationAccess: (
+      input: Parameters<typeof resolveRestrictedOrganizationAccess>[1]
+    ) => resolveRestrictedOrganizationAccess(state, input),
+    residualSettlementItemsForOrganization: (
+      userId: string,
+      organizationId: string
+    ) => residualSettlementItemsForOrganization(state, userId, organizationId),
     addEquipmentCombination: (input: unknown) => addEquipmentCombination(state, input),
     applyBillingUpdate: (input: unknown) => applyBillingUpdate(state, input),
     // The platform fee ledger. Separate from applyBillingUpdate above, which is the
@@ -432,16 +443,22 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     ) => activeDriverProfileForOrganization(state, userId, organizationId),
     getAccountContext: (userId: string, organizationId?: string) =>
       getAccountContext(state, userId, organizationId),
+    getOrganizationSuspensionBlockers: (organizationId: string) =>
+      getOrganizationSuspensionBlockers(state, organizationId),
     getDriverMediaTarget: (input: Parameters<typeof getDriverMediaTarget>[1]) => getDriverMediaTarget(state, input),
     linkProfileToClerkUser: (userId: string, clerkUserId: string) => linkProfileToClerkUser(state, userId, clerkUserId),
-    listThreadMessages: (threadId: string, viewerUserId: string) => listThreadMessages(state, threadId, viewerUserId),
+    listThreadMessages: (threadId: string, viewerUserId: string, organizationId: string) =>
+      listThreadMessages(state, threadId, viewerUserId, organizationId),
     listSupportRequestsForAdmin: (
       input: Parameters<typeof listSupportRequestsForAdmin>[1]
     ) => listSupportRequestsForAdmin(state, input),
     listSupportRequestsForReporter: (reporterUserId: string) => listSupportRequestsForReporter(state, reporterUserId),
-    listThreadsForUser: (userId: string) => listThreadsForUser(state, userId),
-    markThreadRead: (input: { threadId: string; userId: string }) => markThreadRead(state, input),
-    unreadThreadCounts: (userId: string) => unreadThreadCounts(state, userId),
+    listThreadsForUser: (userId: string, organizationId: string) =>
+      listThreadsForUser(state, userId, organizationId),
+    markThreadRead: (input: { organizationId: string; threadId: string; userId: string }) =>
+      markThreadRead(state, input),
+    unreadThreadCounts: (userId: string, organizationId: string) =>
+      unreadThreadCounts(state, userId, organizationId),
     listVerificationQueue: () => listVerificationQueue(state),
     postMessage: (input: unknown) => postMessage(state, input),
     resolveOperationalNotice: (
@@ -649,6 +666,26 @@ export { loadPostingHasOwnedCoherentSources, routePackIsSafeToRead } from "./rou
 export { destinationFacilityVerificationAt, millUsableByOrganization } from "./destination-access"
 export { directOfferClaimCount, directOfferIsClaimable, effectiveDirectOfferStatus } from "./operating-network"
 export { DomainRefusalError } from "./utils"
+export {
+  organizationOperationallyAccessible,
+  resolveRestrictedOrganizationAccess
+} from "./organization-access"
+export type { RestrictedOrganizationAccess } from "./organization-access"
+export { operationalOrganizationIdsForUser } from "./messaging"
+export { residualSettlementItemsForOrganization } from "./residual-settlement"
+export type {
+  ResidualDriverReceipt,
+  ResidualHostPayment,
+  ResidualSettlementItem
+} from "./residual-settlement"
+export { getOrganizationSuspensionBlockers } from "./admin"
+export type {
+  OrganizationSuspensionBlockers,
+  ReviewOrganizationInput,
+  ReviewOrganizationResult,
+  VerificationQueueDecision,
+  VerificationQueueDecisionContext
+} from "./admin"
 /**
  * Exported as free functions as well as bound methods: the accrual has to be
  * callable from INSIDE the compare-and-swap mutation that settles a completion,

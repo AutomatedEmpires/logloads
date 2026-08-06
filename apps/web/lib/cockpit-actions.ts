@@ -14,6 +14,7 @@ import {
   type RoadCondition
 } from "@logloads/contracts"
 import { revalidatePath } from "next/cache"
+import { cookies } from "next/headers"
 
 import { captureServerEvent } from "./analytics"
 import { parseStatedCredentialExpiry } from "./credential-date"
@@ -29,10 +30,19 @@ import {
   verifiedMediaReference,
   type MediaKind
 } from "./media"
-import { listActiveLoadsUsingCombination } from "@logloads/services"
+import {
+  listActiveLoadsUsingCombination,
+  organizationOperationallyAccessible,
+  type ReviewOrganizationInput
+} from "@logloads/services"
 
 import { mutateState, serializeError, services } from "./services"
-import { getSessionActor, type SessionActor } from "./session"
+import {
+  getSessionActor,
+  SESSION_COOKIE,
+  verifySessionCookieValue,
+  type SessionActor
+} from "./session"
 
 export interface ActionResult {
   ok: boolean
@@ -79,6 +89,15 @@ async function requireActor(): Promise<SessionActor> {
     throw new Error("Sign in to continue")
   }
 
+  if (
+    !actor.isPlatformAdmin &&
+    (actor.workspaceSelectionInvalid ||
+      (actor.activeOrganization &&
+        !organizationOperationallyAccessible(actor.activeOrganization)))
+  ) {
+    throw new Error("Organization operations are not available")
+  }
+
   return actor
 }
 
@@ -89,7 +108,32 @@ function actorOrganizationId(actor: SessionActor): string {
     throw new Error("Finish onboarding before using this feature")
   }
 
+  if (!organizationOperationallyAccessible(actor.activeOrganization)) {
+    throw new Error("Organization operations are not available")
+  }
+
   return organizationId
+}
+
+async function requireResidualSettlementActor(): Promise<{
+  actor: SessionActor
+  organizationId: string | undefined
+}> {
+  const actor = await getSessionActor()
+
+  if (!actor) {
+    throw new Error("Sign in to continue")
+  }
+
+  const cookieStore = await cookies()
+  const selection = verifySessionCookieValue(cookieStore.get(SESSION_COOKIE)?.value)
+  const organizationId = selection
+    ? selection.userId === actor.profile.id
+      ? selection.organizationId ?? actor.activeOrganization?.id ?? undefined
+      : undefined
+    : actor.activeOrganization?.id ?? undefined
+
+  return { actor, organizationId }
 }
 
 async function commit<T>(
@@ -1431,13 +1475,13 @@ export async function markDriverPaymentSentAction(input: {
   assignmentId: string
 }): Promise<ActionResult> {
   try {
-    const actor = await requireActor()
+    const { actor, organizationId } = await requireResidualSettlementActor()
 
     const result = await commit(["/driver", "/fleet", "/host"], (draft) =>
       draft.markDriverPaymentSent({
         actorUserId: actor.profile.id,
         assignmentId: input.assignmentId,
-        organizationId: actorOrganizationId(actor)
+        organizationId
       })
     )
 
@@ -1464,7 +1508,7 @@ export async function confirmDriverPaymentReceivedAction(input: {
   }
 > {
   try {
-    const actor = await requireActor()
+    const { actor, organizationId } = await requireResidualSettlementActor()
     const amountCents = parseDriverPayCents(input.amount)
 
     if (amountCents === null) {
@@ -1483,7 +1527,7 @@ export async function confirmDriverPaymentReceivedAction(input: {
         amountCents,
         assignmentId: input.assignmentId,
         currency,
-        organizationId: actorOrganizationId(actor)
+        organizationId
       })
     )
 
@@ -1760,6 +1804,7 @@ export async function sendMessageAction(input: { threadId: string; body: string 
       draft.postMessage({
         authorUserId: actor.profile.id,
         body: input.body,
+        organizationId: actorOrganizationId(actor),
         threadId: input.threadId
       })
     )
@@ -1794,6 +1839,7 @@ export async function startThreadAction(input: {
           body: input.body,
           creatorUserId: actor.profile.id,
           loadPostingId: input.loadPostingId ?? null,
+          organizationId: actorOrganizationId(actor),
           participantUserIds: input.participantUserIds,
           subject: input.subject
         })
@@ -1941,7 +1987,8 @@ export async function reviewVerificationAction(input: {
 
 export async function reviewOrganizationAction(input: {
   organizationId: string
-  decision: "verified" | "rejected" | "suspended"
+  decision: ReviewOrganizationInput["decision"]
+  note?: string | null
 }): Promise<ActionResult> {
   try {
     const actor = await requireAdmin()
@@ -1949,6 +1996,7 @@ export async function reviewOrganizationAction(input: {
     await commit(["/admin"], (draft) =>
       draft.reviewOrganization({
         decision: input.decision,
+        note: input.note ?? null,
         organizationId: input.organizationId,
         platformAdminAuthorized: actor.isPlatformAdmin,
         reviewerUserId: actor.profile.id

@@ -254,6 +254,35 @@ describe("direct-offer lifecycle", () => {
     }
   )
 
+  it("rejects an assigned driver with ambiguous active memberships without any partial mutation", () => {
+    const services = directOfferServices()
+    const combination = services.state.equipmentCombinations.find(
+      (candidate) => candidate.id === FIRST_COMBINATION_ID
+    )
+    const driver = services.state.driverProfiles.find(
+      (candidate) => candidate.id === combination?.assignedDriverProfileId
+    )
+
+    if (!driver) throw new Error("Direct-offer test driver is missing")
+
+    const membership = services.state.organizationMemberships.find((candidate) =>
+      candidate.organizationId === TARGET_ORGANIZATION_ID &&
+      candidate.status === "active" &&
+      candidate.userId === driver.userId
+    )
+
+    if (!membership) throw new Error("Direct-offer test membership is missing")
+
+    services.state.organizationMemberships.push({
+      ...membership,
+      id: "19191919-1919-4919-8919-191919191918"
+    })
+    const beforeClaim = structuredClone(services.state)
+
+    expect(() => services.claimDirectOffer(claimInput(), { at: AT })).toThrow(/driver is not active/)
+    expect(services.state).toEqual(beforeClaim)
+  })
+
   it("derives offer terms server-side and rejects over-capacity, stale, and duplicate invitations", () => {
     const services = directOfferServices()
     services.state.directOffers = []

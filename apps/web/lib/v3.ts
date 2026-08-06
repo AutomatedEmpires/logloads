@@ -1,5 +1,5 @@
 import type { NetworkLoadView, NetworkView } from "./network"
-import { buildNetworkView } from "./network"
+import { buildNetworkView, publicAvailableEquipmentCount } from "./network"
 import { notificationVisibleToActor } from "./notification-access"
 import { readState, services } from "./services"
 import { requireCockpitActor, type Cockpit, type SessionActor } from "./session"
@@ -57,6 +57,8 @@ export interface ShellAccount {
   verificationStatus: string
   activeOrganizationId: string | null
   memberships: Array<{ id: string; name: string; role: string }>
+  /** Exact locked workspaces with preserved settlement records. */
+  restrictedWorkspaces: Array<{ id: string; name: string }>
   /** Workspace invitations waiting on THIS signed-in person's email. */
   pendingInvitations: Array<{ id: string; organizationName: string; roleLabel: string }>
   notifications: ShellNotification[]
@@ -113,6 +115,35 @@ export function pendingInvitationsForEmail(
   }))
 }
 
+export function restrictedWorkspacesForActor(
+  actor: Pick<SessionActor, "profile">
+): ShellAccount["restrictedWorkspaces"] {
+  const state = services.state
+  const activeMembershipCounts = state.organizationMemberships.reduce<Map<string, number>>(
+    (counts, membership) => {
+      if (membership.userId === actor.profile.id && membership.status === "active") {
+        counts.set(
+          membership.organizationId,
+          (counts.get(membership.organizationId) ?? 0) + 1
+        )
+      }
+
+      return counts
+    },
+    new Map()
+  )
+
+  return state.organizations
+    .filter(
+      (organization) =>
+        !organization.archivedAt &&
+        ["rejected", "suspended"].includes(organization.verificationStatus) &&
+        activeMembershipCounts.get(organization.id) === 1
+    )
+    .map((organization) => ({ id: organization.id, name: organization.displayName }))
+    .sort((left, right) => left.name.localeCompare(right.name))
+}
+
 export function shellAccountFor(context: CockpitContext): ShellAccount {
   const inbox = shellNotificationsFor(context.actor)
   const pendingInvitations = pendingInvitationsForEmail(context.actor.profile.email)
@@ -127,6 +158,7 @@ export function shellAccountFor(context: CockpitContext): ShellAccount {
     notifications: inbox.notifications,
     organizationName: context.network.activeOrganization.name,
     pendingInvitations,
+    restrictedWorkspaces: restrictedWorkspacesForActor(context.actor),
     unreadCount: inbox.unreadCount,
     userName: context.actor.profile.fullName,
     verificationStatus: context.network.activeOrganization.verificationStatus
@@ -187,7 +219,7 @@ export async function getPublicHomeSnapshot(): Promise<PublicHomeSnapshot> {
       destinations: state.mills.length,
       landings: state.landings.length,
       openLoads: openLoads.length,
-      trucksAvailable: state.equipmentCombinations.filter((combination) => combination.status === "available").length
+      trucksAvailable: publicAvailableEquipmentCount(state)
     }
   })
 }

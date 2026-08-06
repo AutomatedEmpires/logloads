@@ -504,6 +504,31 @@ describe("getCredentialUploadTarget", () => {
 })
 
 describe("submitCredential", () => {
+  it.each(["rejected", "suspended"] as const)(
+    "refuses a new credential for a %s roster organization without mutation",
+    (verificationStatus) => {
+      const state = freshState()
+      const organization = state.organizations.find(
+        (candidate) => candidate.id === MAYA_ORG
+      )
+
+      if (!organization) {
+        throw new Error("Maya organization fixture missing")
+      }
+
+      organization.verificationStatus = verificationStatus
+      const before = structuredClone(state)
+
+      expect(() => file(state, {
+        actorUserId: RILEY_USER,
+        driverProfileId: RILEY_DRIVER,
+        kind: "cdl",
+        organizationId: MAYA_ORG
+      })).toThrow(/is not active/)
+      expect(state).toEqual(before)
+    }
+  )
+
   it("files every submission as pending, never as approved", () => {
     const state = freshState()
     const result = file(state, {

@@ -5,17 +5,25 @@ import Link from "next/link"
 import { useActionState, type ReactNode } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
+import { accessRestrictionMessage, type AccessRestrictionReason } from "@/lib/access-restriction"
 import { submitContactInquiryAction, type ContactFormState } from "@/lib/contact-actions"
 import type { NetworkLoadView } from "@/lib/network"
 import { payHeadline, presentPay } from "@/lib/pay-display"
+import type { ResidualSettlementItem } from "@/lib/residual-settlement-data"
 
 import { legalPages, loadProductLabel, pricingPlans, publicLoadHref, slugify, type LegalPageContent, type PublicStoryPage, visibilityLabel } from "@/lib/v3-shared"
 import { DevSignInForm, OnboardingFlow, type PendingInvitationOffer } from "./AuthForms"
+import { DriverPaymentReceiptControl } from "./DriverActions"
 import type { DemoPersona } from "@/lib/demo-personas"
+import { DriverPaymentControl } from "./HostActions"
 import { DecisionPanel, EconomicsPanel, LoadCard, LoadDiscovery, OperationSections, RoutePackPreview, WeatherWidget } from "./LoadMap"
 import { BrandMark } from "./Brand"
 import { EmptyState, PageIntro, PublicShell, SectionHeader } from "./Shells"
-import { SessionSignOutButton, WorkspaceSwitchButton } from "./SessionControls"
+import {
+  RestrictedWorkspaceSelectButton,
+  SessionSignOutButton,
+  WorkspaceSwitchButton
+} from "./SessionControls"
 
 const driverFlow: Array<{ step: string; question: string; body: string }> = [
   { body: "See nearby work, pay, timing, distance, and how many hauls remain.", question: "What is available?", step: "Available" },
@@ -575,31 +583,23 @@ export function AuthenticatedEntryPage({
 }
 
 export function AccessRestrictedPage({
+  availableWorkspaces = [],
   displayName,
   email,
-  reason
+  organizationName,
+  reason,
+  residualSettlements = [],
+  restrictedWorkspaces = []
 }: {
+  availableWorkspaces?: Array<{ href: string; id: string; name: string }>
   displayName: string
   email?: string | null
-  reason: "removed" | "suspended" | "unavailable"
+  organizationName?: string | null
+  reason: AccessRestrictionReason
+  residualSettlements?: ResidualSettlementItem[]
+  restrictedWorkspaces?: Array<{ id: string; name: string }>
 }) {
-  const message = reason === "suspended"
-    ? {
-        body: "A workspace owner or administrator paused this membership. LogLoads has blocked dashboards, private locations, Route Packs, documents, and new work while the pause is active.",
-        note: "A workspace owner or administrator can restore membership. Driver availability stays unavailable until the driver deliberately marks themselves ready again.",
-        title: "This workspace membership is suspended."
-      }
-    : reason === "removed"
-      ? {
-          body: "This account no longer has an active workspace seat. LogLoads has blocked dashboards, private locations, Route Packs, documents, and new work. Existing operating records remain intact for authorized workspace staff.",
-          note: "A workspace owner or administrator can send a new invitation if access should be restored. Driver availability will remain unavailable until deliberately changed after rejoining.",
-          title: "Workspace access has been removed."
-        }
-      : {
-          body: "This account is signed in, but it does not have an active, available LogLoads workspace. Private operating surfaces remain closed.",
-          note: "Contact LogLoads support if you expected an active workspace here, or sign out to use another account.",
-          title: "No active workspace is available."
-        }
+  const message = accessRestrictionMessage(reason, organizationName)
 
   return (
     <PublicShell authenticated>
@@ -617,7 +617,78 @@ export function AccessRestrictedPage({
             <strong>{displayName}</strong>
             {email ? <small>{email}</small> : null}
           </div>
+          {residualSettlements.length > 0 ? (
+            <section
+              aria-labelledby="remaining-settlement-heading"
+              className="restricted-settlement"
+            >
+              <div className="restricted-settlement__heading">
+                <p className="eyebrow">Completed-haul records</p>
+                <h2 id="remaining-settlement-heading">Finish what is already owed.</h2>
+                <p>
+                  Operating access remains locked. These controls only finish
+                  off-platform driver-payment records for completed, confirmed
+                  hauls. LogLoads does not hold or move the funds.
+                </p>
+              </div>
+              <div className="restricted-settlement__list">
+                {residualSettlements.map((settlement) => (
+                  <article
+                    className="restricted-settlement__item"
+                    key={settlement.assignmentId}
+                  >
+                    <div className="restricted-settlement__item-heading">
+                      <span>Completed haul</span>
+                      <h3>{settlement.loadTitle}</h3>
+                      <p>
+                        {settlement.kind === "host_payment"
+                          ? `Driver: ${settlement.driverName}`
+                          : `Host: ${settlement.hostName}`}
+                      </p>
+                    </div>
+                    {settlement.kind === "host_payment" ? (
+                      <DriverPaymentControl
+                        assignmentId={settlement.assignmentId}
+                        driverName={settlement.driverName}
+                        expectedPayLabel={settlement.expectedPayLabel}
+                        matchesExpected={settlement.matchesExpected}
+                        receivedPayLabel={settlement.receivedPayLabel}
+                        status={settlement.status}
+                      />
+                    ) : (
+                      <DriverPaymentReceiptControl
+                        assignmentId={settlement.assignmentId}
+                        expectedPayAmountCents={settlement.expectedPayAmountCents}
+                        expectedPayCurrency={settlement.expectedPayCurrency}
+                        expectedPayLabel={settlement.expectedPayLabel}
+                        matchesExpected={settlement.matchesExpected}
+                        receivedPayLabel={settlement.receivedPayLabel}
+                        status={settlement.status}
+                      />
+                    )}
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
           <div className="active-session__actions">
+            {availableWorkspaces.map((workspace) => (
+              <WorkspaceSwitchButton
+                className="action-link"
+                href={workspace.href}
+                key={workspace.id}
+                label={`Switch to ${workspace.name}`}
+                organizationId={workspace.id}
+              />
+            ))}
+            {restrictedWorkspaces.map((workspace) => (
+              <RestrictedWorkspaceSelectButton
+                className="action-link action-link--secondary"
+                key={workspace.id}
+                label={`Review settlement for ${workspace.name}`}
+                organizationId={workspace.id}
+              />
+            ))}
             <Link className="action-link" href="/contact">
               Contact LogLoads support
             </Link>

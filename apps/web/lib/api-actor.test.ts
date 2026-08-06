@@ -110,6 +110,32 @@ describe("workspace-scoped API actors", () => {
       organizationId: active.organization.id
     })
   })
+
+  it.each(["rejected", "suspended"] as const)(
+    "refuses a mocked active membership when its organization is %s",
+    async (verificationStatus) => {
+      const actor = revokedMultiWorkspaceActor()
+      const active = actor.memberships[0]!
+
+      actorMocks.getSessionActor.mockResolvedValue({
+        ...actor,
+        activeMembership: active.membership,
+        activeOrganization: { ...active.organization, verificationStatus },
+        memberships: [
+          {
+            ...active,
+            organization: { ...active.organization, verificationStatus }
+          }
+        ],
+        workspaceSelectionInvalid: false
+      })
+
+      await expect(requireApiActor()).rejects.toMatchObject({
+        message: "Organization operations are not available",
+        status: 403
+      })
+    }
+  )
 })
 
 describe("apiErrorResponse", () => {

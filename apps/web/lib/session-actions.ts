@@ -156,6 +156,38 @@ export async function switchOrganizationAction(organizationId: string): Promise<
 }
 
 /**
+ * Selects a locked workspace without reopening its cockpit. This explicit,
+ * signed selection lets a multi-workspace user finish only the residual
+ * payment records for that organization from `/access-restricted`.
+ */
+export async function selectRestrictedOrganizationAction(
+  organizationId: string
+): Promise<boolean> {
+  const actor = await getSessionActor()
+
+  if (!actor) {
+    redirect("/sign-in")
+  }
+
+  if (!services.resolveRestrictedOrganizationAccess({
+    actorUserId: actor.profile.id,
+    organizationId
+  })) {
+    return false
+  }
+
+  const cookieStore = await cookies()
+
+  cookieStore.set(
+    SESSION_COOKIE,
+    createSessionCookieValue(actor.profile.id, organizationId),
+    COOKIE_OPTIONS
+  )
+  revalidatePath("/", "layout")
+  return true
+}
+
+/**
  * An already-onboarded person accepting a workspace invitation: one new
  * active membership, then the session moves to the joined workspace so the
  * switcher shows both. The service owns every rule (invited email match,

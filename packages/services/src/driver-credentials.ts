@@ -28,6 +28,7 @@ import { z } from "zod"
 import {
   activeDriverProfileForOrganization
 } from "./driver-access"
+import { organizationOperationallyAccessible } from "./organization-access"
 import {
   assertEquipmentProfileUnitNumberUnambiguous,
   equipmentProfileUnitNumberIsUnambiguous
@@ -753,7 +754,9 @@ function activeMembership(
   )
   assertFound(
     state.organizations.find(
-      (candidate) => candidate.id === organizationId && !candidate.archivedAt
+      (candidate) =>
+        candidate.id === organizationId &&
+        organizationOperationallyAccessible(candidate)
     ),
     `Organization ${organizationId} is not active`
   )

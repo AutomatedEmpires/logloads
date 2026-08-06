@@ -8,6 +8,8 @@ import {
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
+import { organizationOperationallyAccessible } from "./organization-access"
+
 /**
  * Driver access is organization-scoped. A profile alone is only historical
  * identity; it becomes usable when the person and the exact organization
@@ -21,7 +23,9 @@ export function activeDriverProfileForOrganization(
 ): DriverProfile | null {
   const user = state.profiles.find((candidate) => candidate.id === userId && candidate.isActive)
   const organization = state.organizations.find(
-    (candidate) => candidate.id === organizationId && !candidate.archivedAt
+    (candidate) =>
+      candidate.id === organizationId &&
+      organizationOperationallyAccessible(candidate)
   )
   const memberships = state.organizationMemberships.filter(
     (membership) =>

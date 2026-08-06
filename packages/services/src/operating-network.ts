@@ -68,6 +68,7 @@ import {
   requiredCompletionEvidence
 } from "./haul-completion"
 import { createLoadPosting, parsePublishModes, provisionLoadCapacity } from "./loads"
+import { organizationOperationallyAccessible } from "./organization-access"
 import {
   accruePlatformFee,
   assignmentUsesPercentageBilling,
@@ -310,8 +311,39 @@ export function getOrganizationMemberships(
   state: LogLoadsDatabaseState,
   actorUserId: string
 ): OrganizationMembership[] {
+  if (!state.profiles.some((profile) => profile.id === actorUserId && profile.isActive)) {
+    return []
+  }
+
+  const operationalOrganizationIds = new Set(
+    state.organizations
+      .filter(organizationOperationallyAccessible)
+      .map((organization) => organization.id)
+  )
+  const activeMembershipCounts = state.organizationMemberships.reduce<Map<string, number>>(
+    (counts, membership) => {
+      if (
+        membership.userId === actorUserId &&
+        membership.status === "active" &&
+        operationalOrganizationIds.has(membership.organizationId)
+      ) {
+        counts.set(
+          membership.organizationId,
+          (counts.get(membership.organizationId) ?? 0) + 1
+        )
+      }
+
+      return counts
+    },
+    new Map()
+  )
+
   return state.organizationMemberships.filter(
-    (membership) => membership.userId === actorUserId && membership.status === "active"
+    (membership) =>
+      membership.userId === actorUserId &&
+      membership.status === "active" &&
+      operationalOrganizationIds.has(membership.organizationId) &&
+      activeMembershipCounts.get(membership.organizationId) === 1
   )
 }
 
@@ -326,7 +358,9 @@ export function getActiveOrganizationContext(
   )
   assertFound(
     state.organizations.find(
-      (organization) => organization.id === organizationId && !organization.archivedAt
+      (organization) =>
+        organization.id === organizationId &&
+        organizationOperationallyAccessible(organization)
     ),
     `Organization ${organizationId} is not active`
   )
@@ -368,6 +402,64 @@ function getContextForInput(
   return getActiveOrganizationContext(state, actorUserId, organizationId)
 }
 
+/**
+ * A locked organization cannot resume operations, but people on either side of
+ * a completed haul must still be able to finish its off-platform payment
+ * receipt. This deliberately narrower context omits the operational-status
+ * predicate while retaining active identity, exact-one membership, and
+ * non-archived organization checks. Callers must additionally prove the exact
+ * completed assignment side before writing.
+ */
+function getResidualSettlementContext(
+  state: LogLoadsDatabaseState,
+  input: { actorUserId?: string; organizationId?: string }
+): ActiveOrganizationContext {
+  const actorUserId = getActorUserId(input.actorUserId)
+  assertFound(
+    state.profiles.find((profile) => profile.id === actorUserId && profile.isActive),
+    `User ${actorUserId} is not active`
+  )
+
+  const activeMemberships = state.organizationMemberships.filter(
+    (membership) => membership.userId === actorUserId && membership.status === "active"
+  )
+  const membershipCounts = activeMemberships.reduce<Map<string, number>>(
+    (counts, membership) => {
+      counts.set(
+        membership.organizationId,
+        (counts.get(membership.organizationId) ?? 0) + 1
+      )
+      return counts
+    },
+    new Map()
+  )
+  const uniqueOrganizationIds = Array.from(membershipCounts.entries())
+    .filter(([, count]) => count === 1)
+    .map(([organizationId]) => organizationId)
+  const inferredOrganizationId = uniqueOrganizationIds.length === 1
+    ? uniqueOrganizationIds[0]
+    : undefined
+  const organizationId = input.organizationId ?? assertFound(
+    inferredOrganizationId,
+    `User ${actorUserId} must select exactly one organization for settlement`
+  )
+  assertFound(
+    state.organizations.find(
+      (candidate) => candidate.id === organizationId && !candidate.archivedAt
+    ),
+    `Organization ${organizationId} is not active`
+  )
+  const memberships = activeMemberships.filter(
+    (membership) => membership.organizationId === organizationId
+  )
+  const membership = assertFound(
+    memberships.length === 1 ? memberships[0] : undefined,
+    `User ${actorUserId} is not an active member of organization ${organizationId}`
+  )
+
+  return { actorUserId, membership, organizationId }
+}
+
 function activeRelationshipExists(state: LogLoadsDatabaseState, firstOrganizationId: string, secondOrganizationId: string): boolean {
   return state.privateNetworkRelationships.some((relationship) =>
     relationship.status === "active" &&
@@ -398,7 +490,16 @@ export function directOfferIsClaimable(
   offer: DirectOffer,
   at = nowIso()
 ): boolean {
+  const source = state.organizations.find(
+    (organization) => organization.id === offer.offeredByOrganizationId
+  )
+  const target = state.organizations.find(
+    (organization) => organization.id === offer.offeredToOrganizationId
+  )
+
   return (
+    organizationOperationallyAccessible(source) &&
+    organizationOperationallyAccessible(target) &&
     effectiveDirectOfferStatus(offer, at) === "sent" &&
     directOfferClaimCount(state, offer.id) < offer.offeredTruckloads
   )
@@ -427,11 +528,33 @@ export function isLoadVisibleToOrganization(
   organizationId: string,
   at = nowIso()
 ): boolean {
+  const publisher = state.organizations.find(
+    (organization) => organization.id === load.companyId
+  )
+  const viewer = state.organizations.find(
+    (organization) => organization.id === organizationId
+  )
+  const publicScope = organizationId.length === 0
+
+  if (!organizationOperationallyAccessible(publisher)) {
+    return false
+  }
+
+  if (!publicScope && !organizationOperationallyAccessible(viewer)) {
+    return false
+  }
+
   if (load.companyId === organizationId) {
     return true
   }
 
   const capacity = getOpportunityCapacity(state, load.id)
+
+  if (publicScope) {
+    return capacity
+      ? capacity.visibilityMode === "open_network"
+      : load.status === "open"
+  }
 
   if (!capacity) {
     return load.status === "open"
@@ -478,6 +601,14 @@ export function isLoadRequestableAt(
   load: LoadPosting,
   at = nowIso()
 ): boolean {
+  const publisher = state.organizations.find(
+    (organization) => organization.id === load.companyId
+  )
+
+  if (!organizationOperationallyAccessible(publisher)) {
+    return false
+  }
+
   if (load.archivedAt || !["open", "scheduled"].includes(load.status)) {
     return false
   }
@@ -2702,7 +2833,7 @@ export function markDriverPaymentSent(
   state: LogLoadsDatabaseState,
   input: DriverPaymentActionInput
 ): { assignment: Assignment; changed: boolean } {
-  const context = getContextForInput(state, input)
+  const context = getResidualSettlementContext(state, input)
   assertOrganizationAction(context, "manage_billing")
 
   const assignment = assertFound(
@@ -2723,8 +2854,10 @@ export function markDriverPaymentSent(
   )
 
   assertCondition(load.companyId === context.organizationId, "Only the posting organization can record driver payment")
-  assertCondition(trip.completionStatus === "confirmed", "Confirm the delivered record before recording driver payment")
   assertCondition(assignment.status !== "cancelled", "A cancelled haul cannot be marked paid")
+  assertCondition(assignment.status === "completed", "Only a completed haul can record driver payment")
+  assertCondition(trip.status === "completed", "Only a completed trip can record driver payment")
+  assertCondition(trip.completionStatus === "confirmed", "Confirm the delivered record before recording driver payment")
   assertCondition(
     context.actorUserId !== driver.userId,
     "The assigned driver cannot record the host side of their own payment receipt"
@@ -2780,7 +2913,7 @@ export function confirmDriverPaymentReceived(
   platformFeeOutcome: AccruePlatformFeeResult["outcome"] | "error" | "not_applicable"
   receivedPay: { amountCents: number; currency: string }
 } {
-  const context = getContextForInput(state, input)
+  const context = getResidualSettlementContext(state, input)
   assertOrganizationAction(context, "progress_trip")
 
   const assignment = assertFound(
@@ -2795,10 +2928,20 @@ export function confirmDriverPaymentReceived(
     state.driverProfiles.find((candidate) => candidate.id === assignment.driverProfileId),
     `Driver profile ${assignment.driverProfileId} was not found`
   )
+  const trip = assertFound(
+    state.tripsV2.find((candidate) => candidate.assignmentId === assignment.id),
+    `Trip for assignment ${assignment.id} was not found`
+  )
 
-  assertCondition(context.membership.role === "driver", "Only the assigned driver can confirm receipt of driver pay")
-  assertCondition(driver.userId === context.actorUserId, "Drivers can only confirm payment on their own haul")
+  assertCondition(
+    driver.userId === context.actorUserId,
+    "Only the assigned driver can confirm receipt of driver pay"
+  )
+  assertCondition(driver.companyId === context.organizationId, "Drivers can only confirm payment for their assigned organization")
   assertCondition(assignment.status !== "cancelled", "A cancelled haul cannot confirm driver payment receipt")
+  assertCondition(assignment.status === "completed", "Only a completed haul can confirm driver payment receipt")
+  assertCondition(trip.status === "completed", "Only a completed trip can confirm driver payment receipt")
+  assertCondition(trip.completionStatus === "confirmed", "Confirm the delivered record before confirming driver payment receipt")
   assertCondition(Boolean(assignment.driverPaymentSentAt), "The host has not marked driver pay sent yet")
   assertCondition(
     assignment.driverPaymentSentByUserId !== context.actorUserId,
@@ -3357,7 +3500,11 @@ function createDirectOfferMutation(
   )
   const targetOrganizationId = requireText(input.offeredToOrganizationId, "offeredToOrganizationId")
   const target = assertFound(
-    state.organizations.find((organization) => organization.id === targetOrganizationId && !organization.archivedAt),
+    state.organizations.find(
+      (organization) =>
+        organization.id === targetOrganizationId &&
+        organizationOperationallyAccessible(organization)
+    ),
     `Organization ${targetOrganizationId} was not found`
   )
 
@@ -3514,6 +3661,13 @@ function claimDirectOfferMutation(
     state.loadPostings.find((candidate) => candidate.id === offer.loadPostingId),
     `Load posting ${offer.loadPostingId} was not found`
   )
+  const source = state.organizations.find(
+    (organization) => organization.id === offer.offeredByOrganizationId
+  )
+  assertCondition(
+    organizationOperationallyAccessible(source),
+    "The organization that sent this direct offer is no longer active"
+  )
   assertCondition(load.companyId === offer.offeredByOrganizationId, "Direct offer source no longer owns this load")
   assertCondition(!load.archivedAt && ["open", "scheduled"].includes(load.status), "This load is no longer accepting trucks")
   assertCondition(
@@ -3547,11 +3701,14 @@ function claimDirectOfferMutation(
   const driverIsActive = state.profiles.some((profile) =>
     profile.id === driver.userId && profile.isActive
   )
-  const driverMembership = state.organizationMemberships.find((membership) =>
+  const driverMemberships = state.organizationMemberships.filter((membership) =>
     membership.organizationId === context.organizationId &&
     membership.status === "active" &&
     membership.userId === driver.userId
   )
+  const driverMembership = driverMemberships.length === 1
+    ? driverMemberships[0]
+    : undefined
 
   assertCondition(
     driverIsActive && Boolean(driverMembership && organizationRoleCan(driverMembership.role, "progress_trip")),
@@ -3825,6 +3982,12 @@ export function publishFutureAvailability(
 }
 
 export function listAttentionItems(state: LogLoadsDatabaseState, organizationId = DEFAULT_ORGANIZATION_ID): AttentionItem[] {
+  const organization = state.organizations.find((candidate) => candidate.id === organizationId)
+
+  if (!organizationOperationallyAccessible(organization)) {
+    return []
+  }
+
   const notices = state.operationalNotices
     .filter((notice) => !notice.expiresAt || notice.expiresAt >= nowIso())
     .filter((notice) => notice.organizationId === organizationId || !notice.relatedLoadId || listVisibleLoadsForOrganization(state, organizationId).some((load) => load.id === notice.relatedLoadId))
@@ -3854,16 +4017,50 @@ export function listEntitlements(state: LogLoadsDatabaseState, organizationId = 
 }
 
 export function listPrivateNetworkRelationships(state: LogLoadsDatabaseState, organizationId = DEFAULT_ORGANIZATION_ID) {
-  return state.privateNetworkRelationships.filter((relationship) =>
-    relationship.ownerOrganizationId === organizationId || relationship.partnerOrganizationId === organizationId
-  )
+  const viewer = state.organizations.find((organization) => organization.id === organizationId)
+
+  if (!organizationOperationallyAccessible(viewer)) {
+    return []
+  }
+
+  return state.privateNetworkRelationships.filter((relationship) => {
+    const owner = state.organizations.find(
+      (organization) => organization.id === relationship.ownerOrganizationId
+    )
+    const partner = state.organizations.find(
+      (organization) => organization.id === relationship.partnerOrganizationId
+    )
+
+    return (
+      organizationOperationallyAccessible(owner) &&
+      organizationOperationallyAccessible(partner) &&
+      (
+        relationship.ownerOrganizationId === organizationId ||
+        relationship.partnerOrganizationId === organizationId
+      )
+    )
+  })
 }
 
 export function listFutureAvailabilityForOrganization(state: LogLoadsDatabaseState, organizationId = DEFAULT_ORGANIZATION_ID) {
+  const viewer = state.organizations.find(
+    (organization) => organization.id === organizationId
+  )
+
+  if (!organizationOperationallyAccessible(viewer)) {
+    return []
+  }
+
   const visibleRelationshipIds = listPrivateNetworkRelationships(state, organizationId).map((relationship) => relationship.id)
 
-  return state.futureAvailability.filter((availability) =>
-    availability.organizationId === organizationId ||
-    availability.visibleToRelationshipIds.some((relationshipId) => visibleRelationshipIds.includes(relationshipId))
-  )
+  return state.futureAvailability.filter((availability) => {
+    const publisher = state.organizations.find(
+      (organization) => organization.id === availability.organizationId
+    )
+
+    return organizationOperationallyAccessible(publisher) && (
+      availability.organizationId === organizationId ||
+      availability.visibleToRelationshipIds.some((relationshipId) => visibleRelationshipIds.includes(relationshipId))
+    )
+  })
 }

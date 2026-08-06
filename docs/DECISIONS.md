@@ -2,6 +2,39 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-08-06 — Organization review status is an operational authority boundary
+
+- **Pending and verified organizations may operate; rejected and suspended
+  organizations may not.** The same predicate now governs account resolution,
+  protected service mutations, invitations, team and equipment management,
+  credentials, messaging, load discovery, direct offers, and future
+  availability. Archival remains an independent lock. A second usable workspace
+  never becomes an implicit key into a locked one.
+- **Administrative transitions are explicit and directional.** Review may move
+  `pending -> verified`, `pending -> rejected`, `rejected -> pending`,
+  `verified -> suspended`, or `suspended -> verified`. No other transition is
+  accepted. Suspension requires a bounded written reason. Any transition into
+  a locked state is refused while either side of the organization has a
+  nonterminal assignment or trip, or a completed trip has a pending, submitted,
+  or disputed completion. Organization identity-review rollups use the same
+  guard before either record is mutated. Registry decisions and linked
+  organization-identity review records converge in the same atomic operation,
+  so neither administrative surface can strand the other in an impossible
+  state.
+- **A lock preserves evidence and obligations.** Loads, assignments, trips,
+  documents, messages, audit history, billing records, and settlement duties are
+  not erased. Locked publishers and haulers leave public and partner discovery;
+  members receive accurate restricted-access guidance and can explicitly switch
+  to another usable workspace. The restricted surface exposes only unfinished
+  off-platform driver-payment records for completed, confirmed hauls, behind an
+  exact signed workspace selection; it does not reopen a cockpit. Public
+  contact, platform administration, reconciliation, and settlement remain
+  separate recovery paths.
+- This is a schema-free application authority change. It does not alter provider
+  configuration, production data, billing enrollment, fee collection, charges,
+  refunds, or driver compensation. Those gates remain independently dark until
+  separately authorized and proven.
+
 ## 2026-08-06 — Canonical mutations carry their own authority
 
 - **Raw assignment writers are package-internal.** The services package exports

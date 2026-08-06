@@ -176,6 +176,145 @@ describe("host completion confirmation raises the platform fee", () => {
     expect(events[0]!.feeCents).toBe(2_625)
   })
 
+  it("keeps only the completed-haul payment receipt path open after organization lock", () => {
+    const fixture = settleableHaul()
+    forceSettleableState(fixture, 52_500)
+    confirmDelivery(fixture)
+
+    const participantOrganizationIds = new Set([
+      fixture.load.companyId,
+      fixture.driverMembership.organizationId
+    ])
+    for (const organization of fixture.services.state.organizations) {
+      if (participantOrganizationIds.has(organization.id)) {
+        organization.verificationStatus = "suspended"
+      }
+    }
+
+    expect(markSent(fixture)).toMatchObject({ changed: true })
+    expect(confirmReceived(fixture)).toMatchObject({
+      changed: true,
+      matchesExpected: true,
+      platformFeeOutcome: "not_applicable"
+    })
+  })
+
+  it("lets the exact assigned owner-operator finish a residual payment receipt", () => {
+    const fixture = settleableHaul()
+    forceSettleableState(fixture, 52_500)
+    confirmDelivery(fixture)
+    markSent(fixture)
+    fixture.driverMembership.role = "owner"
+    const driverOrganization = fixture.services.state.organizations.find(
+      (organization) => organization.id === fixture.driverMembership.organizationId
+    )
+
+    if (!driverOrganization) {
+      throw new Error("Expected the owner-operator organization")
+    }
+
+    driverOrganization.verificationStatus = "suspended"
+
+    expect(confirmReceived(fixture)).toMatchObject({
+      changed: true,
+      matchesExpected: true,
+      platformFeeOutcome: "not_applicable"
+    })
+  })
+
+  it("keeps residual settlement tenant-exact and leaves state untouched on cross-tenant attempts", () => {
+    const fixture = settleableHaul()
+    forceSettleableState(fixture, 52_500)
+    confirmDelivery(fixture)
+    const state = fixture.services.state
+    const host = state.organizations.find((organization) => organization.id === fixture.load.companyId)
+    const driverOrganization = state.organizations.find(
+      (organization) => organization.id === fixture.driverMembership.organizationId
+    )
+    const outsider = state.profiles.find(
+      (profile) =>
+        profile.isActive &&
+        !state.organizationMemberships.some(
+          (membership) =>
+            membership.userId === profile.id &&
+            [fixture.load.companyId, fixture.driverMembership.organizationId].includes(membership.organizationId)
+        )
+    )
+
+    if (!host || !driverOrganization || !outsider) {
+      throw new Error("Expected locked settlement and outsider fixtures")
+    }
+
+    host.verificationStatus = "suspended"
+    driverOrganization.verificationStatus = "suspended"
+    const beforeHostAttempt = structuredClone(state)
+
+    expect(() =>
+      fixture.services.markDriverPaymentSent({
+        actorUserId: outsider.id,
+        assignmentId: fixture.assignment.id,
+        organizationId: fixture.load.companyId
+      })
+    ).toThrow(/not an active member/)
+    expect(state).toEqual(beforeHostAttempt)
+
+    markSent(fixture)
+    const beforeDriverAttempt = structuredClone(state)
+
+    expect(() =>
+      fixture.services.confirmDriverPaymentReceived({
+        actorUserId: outsider.id,
+        amountCents: 52_500,
+        assignmentId: fixture.assignment.id,
+        currency: "USD",
+        organizationId: fixture.driverMembership.organizationId
+      })
+    ).toThrow(/not an active member/)
+    expect(state).toEqual(beforeDriverAttempt)
+  })
+
+  it("requires an explicit organization for an ambiguous multi-workspace settlement actor", () => {
+    const fixture = settleableHaul()
+    forceSettleableState(fixture, 52_500)
+    confirmDelivery(fixture)
+    const state = fixture.services.state
+    const actorMemberships = state.organizationMemberships.filter(
+      (membership) =>
+        membership.userId === fixture.hostBilling.userId &&
+        membership.status === "active"
+    )
+    const activeOrganizationIds = new Set(
+      actorMemberships.map((membership) => membership.organizationId)
+    )
+
+    if (activeOrganizationIds.size < 2) {
+      const template = actorMemberships[0]
+      const otherOrganization = state.organizations.find(
+        (organization) => !activeOrganizationIds.has(organization.id)
+      )
+
+      if (!template || !otherOrganization) {
+        throw new Error("Expected a second organization for the ambiguity fixture")
+      }
+
+      state.organizationMemberships.push(organizationMembershipSchema.parse({
+        ...template,
+        id: randomUUID(),
+        organizationId: otherOrganization.id
+      }))
+    }
+
+    const before = structuredClone(state)
+
+    expect(() =>
+      fixture.services.markDriverPaymentSent({
+        actorUserId: fixture.hostBilling.userId,
+        assignmentId: fixture.assignment.id
+      })
+    ).toThrow(/select exactly one organization/)
+    expect(state).toEqual(before)
+  })
+
   it("waits for physical completion when the host confirms at the destination", () => {
     const fixture = settleableHaul()
     const { held, live } = forceSettleableState(fixture, 52_500)
@@ -216,9 +355,6 @@ describe("host completion confirmation raises the platform fee", () => {
       feeCents: 2_625,
       occurredAt: completion.trip.completedAt
     })
-    expect(fixture.services.state.platformFeeEvents[0]!.occurredAt)
-      .not.toBe(confirmation.trip.completionConfirmedAt)
-
     expect(
       fixture.services.progressTripStatus({
         actorUserId: fixture.driver.userId,

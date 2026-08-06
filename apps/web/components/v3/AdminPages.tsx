@@ -160,7 +160,12 @@ export function AdminVerificationPage({ account, items }: { account: ShellAccoun
                   <p className="admin-row__body">{item.evidenceSummary}</p>
                   <span className="admin-row__when">Submitted {item.submittedLabel}</span>
                 </div>
-                {item.status === "pending" ? <VerificationDecision recordId={item.id} /> : null}
+                {item.status === "pending" ? (
+                  <VerificationDecision
+                    decisionContext={item.decisionContext}
+                    recordId={item.id}
+                  />
+                ) : null}
               </article>
             ))}
           </div>
@@ -207,7 +212,10 @@ export function AdminOrganizationsPage({
                   </p>
                 </div>
                 <OrganizationDecision
+                  activeLoads={organization.activeLoads}
+                  organizationName={organization.name}
                   organizationId={organization.id}
+                  suspensionBlockers={organization.suspensionBlockers}
                   verificationStatus={organization.verificationStatus}
                 />
               </article>

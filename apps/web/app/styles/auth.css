@@ -6,6 +6,7 @@
   grid-template-columns: minmax(340px, 0.86fr) minmax(420px, 1.14fr);
   gap: clamp(18px, 4vw, 56px);
   align-items: stretch;
+  justify-items: stretch;
   padding: clamp(18px, 4vw, 54px);
   background:
     radial-gradient(80% 60% at 100% 0%, rgba(35, 88, 62, 0.1), transparent 60%),
@@ -53,6 +54,42 @@
 .active-session__actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
 .active-session__error { flex-basis: 100%; color: var(--red); font-size: 0.86rem; font-weight: 800; }
 .active-session__note { color: var(--muted); font-size: 0.86rem; font-weight: 700; }
+
+.restricted-settlement {
+  display: grid;
+  gap: 16px;
+  border: 1px solid color-mix(in srgb, var(--amber) 32%, var(--line));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--amber-bg) 38%, var(--paper));
+  padding: clamp(16px, 3vw, 22px);
+}
+.restricted-settlement__heading { display: grid; gap: 6px; }
+.restricted-settlement__heading > * { margin: 0; }
+.restricted-settlement__heading h2 { color: var(--ink); font-size: clamp(1.25rem, 3vw, 1.6rem); }
+.restricted-settlement__heading > p:last-child { color: var(--ink-soft); line-height: 1.55; }
+.restricted-settlement__list { display: grid; gap: 12px; }
+.restricted-settlement__item {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 16px;
+  box-shadow: var(--shadow-1);
+}
+.restricted-settlement__item-heading { display: grid; gap: 4px; }
+.restricted-settlement__item-heading > * { margin: 0; }
+.restricted-settlement__item-heading > span {
+  color: var(--amber);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.restricted-settlement__item-heading h3 { color: var(--ink); font-size: 1.08rem; }
+.restricted-settlement__item-heading p { color: var(--muted); font-size: 0.88rem; font-weight: 700; }
+.restricted-settlement .completion-form,
+.restricted-settlement .host-stack-form { margin: 0; }
 
 .auth-form {
   display: grid;
@@ -254,5 +291,7 @@
   .active-session__actions .action-link,
   .onboarding-form__actions .action-link { justify-self: stretch; width: 100%; }
   .active-session__actions { display: grid; }
+  .restricted-settlement { padding: 14px; }
+  .restricted-settlement__item { padding: 14px; }
   .choice-grid { grid-template-columns: 1fr; }
 }

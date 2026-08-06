@@ -51,8 +51,14 @@ beforeEach(() => {
     suspendOrganizationMember: vi.fn()
   }
   mocks.getSessionActor.mockResolvedValue({
-    activeOrganization: { id: ORGANIZATION_ID },
-    profile: { id: ACTOR_USER_ID }
+    activeOrganization: {
+      archivedAt: null,
+      id: ORGANIZATION_ID,
+      verificationStatus: "verified"
+    },
+    isPlatformAdmin: false,
+    profile: { id: ACTOR_USER_ID },
+    workspaceSelectionInvalid: false
   })
   mocks.mutateState.mockImplementation(async (mutation: (current: Draft) => unknown) => mutation(draft))
 })

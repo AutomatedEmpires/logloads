@@ -415,7 +415,7 @@ interface VerificationView {
   meaning: string
 }
 
-function verificationView(status: string): VerificationView {
+export function verificationView(status: string): VerificationView {
   if (status === "verified") {
     return {
       label: "Verified",
@@ -427,7 +427,7 @@ function verificationView(status: string): VerificationView {
   if (status === "rejected") {
     return {
       label: "Not approved",
-      meaning: "The last review was not approved. Submit updated organization details to start a new review.",
+      meaning: "Operations and network visibility are locked. Contact LogLoads support to correct the organization details and request a new review.",
       tone: "critical"
     }
   }
@@ -435,7 +435,7 @@ function verificationView(status: string): VerificationView {
   if (status === "suspended") {
     return {
       label: "Suspended",
-      meaning: "Access is limited while the platform team reviews this organization. Reply to the review thread in Messages to resolve it.",
+      meaning: "Operations and network visibility are locked. Contact LogLoads support for the suspension reason and the steps required for reinstatement.",
       tone: "critical"
     }
   }

@@ -352,6 +352,28 @@ describe("platform fee accrual", () => {
     })
   })
 
+  it("keeps provider-independent billing reconciliation available after an organization lock", () => {
+    const state = freshState()
+    const haul = oneBillableHaul(state, 52_500)
+    const load = state.loadPostings.find(
+      (candidate) => candidate.id === haul.loadPostingId
+    )
+    const organization = state.organizations.find(
+      (candidate) => candidate.id === load?.companyId
+    )
+
+    if (!load || !organization) {
+      throw new Error("Billable host organization fixture missing")
+    }
+
+    organization.verificationStatus = "suspended"
+
+    expect(reconcileMissingPlatformFees(state, MID_JULY)).toEqual([
+      expect.objectContaining({ outcome: "accrued" })
+    ])
+    expect(state.platformFeeEvents).toHaveLength(1)
+  })
+
   it("bills the organization that POSTED the load, never the one that hauled it", () => {
     const state = freshState()
     const haul = oneBillableHaul(state)

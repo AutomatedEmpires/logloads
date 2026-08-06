@@ -345,6 +345,18 @@ describe("setDriverAvailability", () => {
         organization.archivedAt = T
       },
       (state) => {
+        const organization = state.organizations.find((candidate) => candidate.id === NORTH_PINE)
+
+        if (!organization) throw new Error("North Pine fixture missing")
+        organization.verificationStatus = "rejected"
+      },
+      (state) => {
+        const organization = state.organizations.find((candidate) => candidate.id === NORTH_PINE)
+
+        if (!organization) throw new Error("North Pine fixture missing")
+        organization.verificationStatus = "suspended"
+      },
+      (state) => {
         const membership = state.organizationMemberships.find(
           (candidate) => candidate.organizationId === NORTH_PINE && candidate.userId === HANK
         )

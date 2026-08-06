@@ -18,6 +18,7 @@ import type { LogLoadsDatabaseState } from "@logloads/db"
 import { z } from "zod"
 
 import { isLoadVisibleToOrganization } from "./operating-network"
+import { organizationOperationallyAccessible } from "./organization-access"
 
 export interface ThreadView {
   id: string
@@ -33,6 +34,7 @@ export interface ThreadView {
 export const postMessageInputSchema = z.object({
   authorUserId: z.string().uuid(),
   body: z.string().min(1).max(4000),
+  organizationId: z.string().uuid(),
   threadId: z.string().uuid()
 })
 
@@ -41,9 +43,146 @@ export const createThreadInputSchema = z.object({
   body: z.string().min(1).max(4000),
   creatorUserId: z.string().uuid(),
   loadPostingId: z.string().uuid().optional().nullable(),
+  organizationId: z.string().uuid(),
   participantUserIds: z.array(z.string().uuid()).min(1),
   subject: z.string().min(1).max(140)
 })
+
+export function operationalOrganizationIdsForUser(
+  state: LogLoadsDatabaseState,
+  userId: string
+): Set<string> {
+  if (!state.profiles.some((profile) => profile.id === userId && profile.isActive)) {
+    return new Set()
+  }
+
+  const accessibleOrganizationIds = new Set(
+    state.organizations
+      .filter(organizationOperationallyAccessible)
+      .map((organization) => organization.id)
+  )
+
+  const membershipCounts = state.organizationMemberships.reduce<Map<string, number>>(
+    (counts, membership) => {
+      if (
+        membership.userId === userId &&
+        membership.status === "active" &&
+        accessibleOrganizationIds.has(membership.organizationId)
+      ) {
+        counts.set(
+          membership.organizationId,
+          (counts.get(membership.organizationId) ?? 0) + 1
+        )
+      }
+
+      return counts
+    },
+    new Map()
+  )
+
+  return new Set(
+    Array.from(membershipCounts.entries())
+      .filter(([, count]) => count === 1)
+      .map(([organizationId]) => organizationId)
+  )
+}
+
+function threadOrganizationIds(
+  state: LogLoadsDatabaseState,
+  thread: MessageThread
+): Set<string> {
+  const organizationIds = new Set<string>()
+  const explicitAssignment = thread.assignmentId
+    ? state.assignments.find((candidate) => candidate.id === thread.assignmentId)
+    : undefined
+  const loadPostingId = thread.loadPostingId ?? explicitAssignment?.loadPostingId
+  const load = loadPostingId
+    ? state.loadPostings.find((candidate) => candidate.id === loadPostingId)
+    : undefined
+  const assignments = explicitAssignment
+    ? [explicitAssignment]
+    : loadPostingId
+      ? state.assignments.filter((assignment) => assignment.loadPostingId === loadPostingId)
+      : []
+
+  if (load?.companyId) {
+    organizationIds.add(load.companyId)
+  }
+
+  for (const assignment of assignments) {
+    const driver = state.driverProfiles.find(
+      (candidate) => candidate.id === assignment.driverProfileId
+    )
+    const truck = state.truckProfiles.find(
+      (candidate) => candidate.id === assignment.truckProfileId
+    )
+
+    for (const participantOrganizationId of [driver?.companyId, truck?.companyId]) {
+      if (!participantOrganizationId) {
+        continue
+      }
+
+      const participantIsOnAssignmentSide = thread.participantUserIds.some(
+        (participantUserId) =>
+          participantUserId === driver?.userId ||
+          state.organizationMemberships.some(
+            (membership) =>
+              membership.userId === participantUserId &&
+              membership.organizationId === participantOrganizationId &&
+              membership.status === "active"
+          )
+      )
+
+      if (participantIsOnAssignmentSide) {
+        organizationIds.add(participantOrganizationId)
+      }
+    }
+  }
+
+  return organizationIds
+}
+
+function userCanOperateThread(
+  state: LogLoadsDatabaseState,
+  userId: string,
+  organizationId: string,
+  thread: MessageThread
+): boolean {
+  if (thread.archivedAt) {
+    return false
+  }
+
+  if (!operationalOrganizationIdsForUser(state, userId).has(organizationId)) {
+    return false
+  }
+
+  // The legacy schema has no durable organization authority for contextless
+  // threads. Reconstructing one from today's memberships would let a later,
+  // unrelated shared workspace become the key to historical private messages.
+  // Keep those rows intact but fail closed until an explicit authority field can
+  // be persisted and backfilled under a separately reviewed migration.
+  if (!thread.assignmentId && !thread.loadPostingId) {
+    return false
+  }
+
+  return threadOrganizationIds(state, thread).has(organizationId)
+}
+
+function userHasOperationalThreadAccess(
+  state: LogLoadsDatabaseState,
+  userId: string,
+  thread: MessageThread
+): boolean {
+  if (thread.archivedAt || (!thread.assignmentId && !thread.loadPostingId)) {
+    return false
+  }
+
+  const userOrganizationIds = operationalOrganizationIdsForUser(state, userId)
+
+  return Array.from(threadOrganizationIds(state, thread)).some((organizationId) =>
+    userOrganizationIds.has(organizationId)
+  )
+}
 
 function threadContextLabel(state: LogLoadsDatabaseState, thread: MessageThread): string {
   if (thread.assignmentId) {
@@ -62,9 +201,18 @@ function threadContextLabel(state: LogLoadsDatabaseState, thread: MessageThread)
   return "Working relationship"
 }
 
-export function listThreadsForUser(state: LogLoadsDatabaseState, userId: string): ThreadView[] {
+export function listThreadsForUser(
+  state: LogLoadsDatabaseState,
+  userId: string,
+  organizationId: string
+): ThreadView[] {
   return state.messageThreads
-    .filter((thread) => thread.participantUserIds.includes(userId) && !thread.archivedAt)
+    .filter(
+      (thread) =>
+        thread.participantUserIds.includes(userId) &&
+        !thread.archivedAt &&
+        userCanOperateThread(state, userId, organizationId, thread)
+    )
     .map((thread) => {
       const events = state.messageEvents
         .filter((event) => event.threadId === thread.id)
@@ -94,11 +242,16 @@ export function listThreadsForUser(state: LogLoadsDatabaseState, userId: string)
 export function listThreadMessages(
   state: LogLoadsDatabaseState,
   threadId: string,
-  viewerUserId: string
+  viewerUserId: string,
+  organizationId: string
 ): Array<{ id: string; body: string; authorUserId: string; authorName: string; createdAt: string }> {
   const thread = state.messageThreads.find((candidate) => candidate.id === threadId)
 
-  if (!thread || !thread.participantUserIds.includes(viewerUserId)) {
+  if (
+    !thread ||
+    !thread.participantUserIds.includes(viewerUserId) ||
+    !userCanOperateThread(state, viewerUserId, organizationId, thread)
+  ) {
     throw new Error("Conversation not found")
   }
 
@@ -126,6 +279,20 @@ export function postMessage(state: LogLoadsDatabaseState, rawInput: unknown): Me
     throw new Error("Only conversation participants can send messages")
   }
 
+  if (!userCanOperateThread(state, input.authorUserId, input.organizationId, thread)) {
+    throw new Error("Conversation not found")
+  }
+
+  const recipientUserIds = thread.participantUserIds.filter(
+    (participantId) =>
+      participantId !== input.authorUserId &&
+      userHasOperationalThreadAccess(state, participantId, thread)
+  )
+
+  if (recipientUserIds.length === 0) {
+    throw new Error("No conversation participants are currently available")
+  }
+
   const now = new Date().toISOString()
   const event = messageEventSchema.parse({
     authorUserId: input.authorUserId,
@@ -142,11 +309,7 @@ export function postMessage(state: LogLoadsDatabaseState, rawInput: unknown): Me
 
   const author = state.profiles.find((profile) => profile.id === input.authorUserId)
 
-  for (const participantId of thread.participantUserIds) {
-    if (participantId === input.authorUserId) {
-      continue
-    }
-
+  for (const participantId of recipientUserIds) {
     state.notifications.push(
       notificationSchema.parse({
         body: input.body.slice(0, 140),
@@ -170,7 +333,11 @@ export function postMessage(state: LogLoadsDatabaseState, rawInput: unknown): Me
  * Unread message counts per thread for a user, derived from their undelivered
  * message notifications (postMessage writes one per recipient).
  */
-export function unreadThreadCounts(state: LogLoadsDatabaseState, userId: string): Record<string, number> {
+export function unreadThreadCounts(
+  state: LogLoadsDatabaseState,
+  userId: string,
+  organizationId: string
+): Record<string, number> {
   const counts: Record<string, number> = {}
 
   for (const notification of state.notifications) {
@@ -179,7 +346,13 @@ export function unreadThreadCounts(state: LogLoadsDatabaseState, userId: string)
       notification.type === "message_received" &&
       !notification.readAt &&
       notification.relatedEntityType === "message_thread" &&
-      notification.relatedEntityId
+      notification.relatedEntityId &&
+      state.messageThreads.some(
+        (thread) =>
+          thread.id === notification.relatedEntityId &&
+          thread.participantUserIds.includes(userId) &&
+          userCanOperateThread(state, userId, organizationId, thread)
+      )
     ) {
       counts[notification.relatedEntityId] = (counts[notification.relatedEntityId] ?? 0) + 1
     }
@@ -189,7 +362,20 @@ export function unreadThreadCounts(state: LogLoadsDatabaseState, userId: string)
 }
 
 /** Marks the viewer's message notifications for a thread as read. */
-export function markThreadRead(state: LogLoadsDatabaseState, input: { threadId: string; userId: string }): number {
+export function markThreadRead(
+  state: LogLoadsDatabaseState,
+  input: { organizationId: string; threadId: string; userId: string }
+): number {
+  const thread = state.messageThreads.find((candidate) => candidate.id === input.threadId)
+
+  if (
+    !thread ||
+    !thread.participantUserIds.includes(input.userId) ||
+    !userCanOperateThread(state, input.userId, input.organizationId, thread)
+  ) {
+    throw new Error("Conversation not found")
+  }
+
   const now = new Date().toISOString()
   let marked = 0
 
@@ -246,10 +432,24 @@ interface ReachableContact {
   assignmentId: string
 }
 
-function threadCreatorContext(state: LogLoadsDatabaseState, creatorUserId: string): ThreadCreatorContext {
+function threadCreatorContext(
+  state: LogLoadsDatabaseState,
+  creatorUserId: string,
+  organizationId: string
+): ThreadCreatorContext {
+  const organizationIds = operationalOrganizationIdsForUser(state, creatorUserId).has(organizationId)
+    ? new Set([organizationId])
+    : new Set<string>()
+
   return {
     driverProfileIds: new Set(
-      state.driverProfiles.filter((driver) => driver.userId === creatorUserId).map((driver) => driver.id)
+      state.driverProfiles
+        .filter(
+          (driver) =>
+            driver.userId === creatorUserId &&
+            Boolean(driver.companyId && organizationIds.has(driver.companyId))
+        )
+        .map((driver) => driver.id)
     ),
     dispatchOrganizationIds: new Set(
       state.organizationMemberships
@@ -257,15 +457,12 @@ function threadCreatorContext(state: LogLoadsDatabaseState, creatorUserId: strin
           (membership) =>
             membership.userId === creatorUserId &&
             membership.status === "active" &&
+            organizationIds.has(membership.organizationId) &&
             organizationRoleCan(membership.role, "assign_capacity")
         )
         .map((membership) => membership.organizationId)
     ),
-    organizationIds: new Set(
-      state.organizationMemberships
-        .filter((membership) => membership.userId === creatorUserId && membership.status === "active")
-        .map((membership) => membership.organizationId)
-    )
+    organizationIds
   }
 }
 
@@ -311,13 +508,26 @@ function fleetDriverProfileIds(state: LogLoadsDatabaseState, context: ThreadCrea
  * server-side derivation any signed-in user could name any user id and land text
  * in that person's notification bell.
  */
-function reachableContacts(state: LogLoadsDatabaseState, creatorUserId: string): ReachableContact[] {
-  const context = threadCreatorContext(state, creatorUserId)
+function reachableContacts(
+  state: LogLoadsDatabaseState,
+  creatorUserId: string,
+  organizationId: string
+): ReachableContact[] {
+  const context = threadCreatorContext(state, creatorUserId, organizationId)
   const fleetDriverIds = fleetDriverProfileIds(state, context)
   const contacts: ReachableContact[] = []
 
-  function pushContact(userId: string, loadPostingId: string, assignmentId: string): void {
-    if (userId === creatorUserId || !state.profiles.some((profile) => profile.id === userId && profile.isActive)) {
+  function pushContact(
+    userId: string,
+    participantOrganizationId: string,
+    loadPostingId: string,
+    assignmentId: string
+  ): void {
+    if (
+      userId === creatorUserId ||
+      !state.profiles.some((profile) => profile.id === userId && profile.isActive) ||
+      !operationalOrganizationIdsForUser(state, userId).has(participantOrganizationId)
+    ) {
       return
     }
 
@@ -331,7 +541,7 @@ function reachableContacts(state: LogLoadsDatabaseState, creatorUserId: string):
         membership.status === "active" &&
         PUBLISHER_CONTACT_ROLES.has(membership.role)
       ) {
-        pushContact(membership.userId, load.id, assignmentId)
+        pushContact(membership.userId, load.companyId, load.id, assignmentId)
       }
     }
   }
@@ -343,7 +553,11 @@ function reachableContacts(state: LogLoadsDatabaseState, creatorUserId: string):
 
     const load = state.loadPostings.find((candidate) => candidate.id === assignment.loadPostingId)
 
-    if (!load) {
+    const publisher = load
+      ? state.organizations.find((organization) => organization.id === load.companyId)
+      : undefined
+
+    if (!load || !organizationOperationallyAccessible(publisher)) {
       continue
     }
 
@@ -357,9 +571,13 @@ function reachableContacts(state: LogLoadsDatabaseState, creatorUserId: string):
 
     if (dispatchesIt || publishesIt) {
       const driver = state.driverProfiles.find((candidate) => candidate.id === assignment.driverProfileId)
+      const driverOrganizationId = driver?.companyId
+      const driverOrganization = driverOrganizationId
+        ? state.organizations.find((organization) => organization.id === driverOrganizationId)
+        : undefined
 
-      if (driver) {
-        pushContact(driver.userId, load.id, assignment.id)
+      if (driver && driverOrganizationId && organizationOperationallyAccessible(driverOrganization)) {
+        pushContact(driver.userId, driverOrganizationId, load.id, assignment.id)
       }
     }
   }
@@ -375,10 +593,19 @@ function reachableContacts(state: LogLoadsDatabaseState, creatorUserId: string):
  */
 function assertThreadContextPermitted(
   state: LogLoadsDatabaseState,
-  input: { assignmentId?: string | null; creatorUserId: string; loadPostingId?: string | null },
+  input: {
+    assignmentId?: string | null
+    creatorUserId: string
+    loadPostingId?: string | null
+    organizationId: string
+  },
   participantUserIds: string[]
 ): void {
-  const contacts = reachableContacts(state, input.creatorUserId)
+  if (!input.assignmentId && !input.loadPostingId) {
+    throw new Error("A conversation must identify shared work")
+  }
+
+  const contacts = reachableContacts(state, input.creatorUserId, input.organizationId)
 
   for (const participantUserId of participantUserIds) {
     if (participantUserId === input.creatorUserId) {
@@ -420,7 +647,7 @@ function assertThreadContextPermitted(
     return
   }
 
-  const context = threadCreatorContext(state, input.creatorUserId)
+  const context = threadCreatorContext(state, input.creatorUserId, input.organizationId)
   const readable =
     contacts.some((contact) => contact.loadPostingId === load.id) ||
     Array.from(context.organizationIds).some((organizationId) =>
@@ -465,6 +692,10 @@ export function createThread(state: LogLoadsDatabaseState, rawInput: unknown): M
     updatedAt: now
   })
 
+  if (!userCanOperateThread(state, input.creatorUserId, input.organizationId, thread)) {
+    throw new Error("Conversation not found")
+  }
+
   if (!existing) {
     state.messageThreads.push(thread)
   }
@@ -472,6 +703,7 @@ export function createThread(state: LogLoadsDatabaseState, rawInput: unknown): M
   postMessage(state, {
     authorUserId: input.creatorUserId,
     body: input.body,
+    organizationId: input.organizationId,
     threadId: thread.id
   })
 

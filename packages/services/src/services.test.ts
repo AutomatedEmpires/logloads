@@ -23,6 +23,60 @@ describe("logloads services", () => {
     expect(services).not.toHaveProperty("cancelAssignment")
   })
 
+  it("discovers only exact, operational memberships while preserving another workspace", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const membershipsByUser = services.state.organizationMemberships.reduce<Map<string, typeof services.state.organizationMemberships>>(
+      (byUser, membership) => {
+        if (membership.status === "active") {
+          byUser.set(membership.userId, [...(byUser.get(membership.userId) ?? []), membership])
+        }
+        return byUser
+      },
+      new Map()
+    )
+    const entry = Array.from(membershipsByUser.entries()).find(
+      ([, memberships]) => new Set(memberships.map((membership) => membership.organizationId)).size >= 2
+    )
+
+    if (!entry) {
+      throw new Error("Expected a multi-workspace membership fixture")
+    }
+
+    const [userId, memberships] = entry
+    const lockedMembership = memberships[0]
+    const usableMembership = memberships.find(
+      (membership) => membership.organizationId !== lockedMembership?.organizationId
+    )
+    const lockedOrganization = services.state.organizations.find(
+      (organization) => organization.id === lockedMembership?.organizationId
+    )
+
+    if (!lockedMembership || !usableMembership || !lockedOrganization) {
+      throw new Error("Expected locked and usable workspace fixtures")
+    }
+
+    lockedOrganization.verificationStatus = "suspended"
+    expect(services.getOrganizationMemberships(userId).map((membership) => membership.id)).toEqual([
+      usableMembership.id
+    ])
+
+    const profile = services.state.profiles.find((candidate) => candidate.id === userId)
+
+    if (!profile) {
+      throw new Error("Expected the multi-workspace profile")
+    }
+
+    profile.isActive = false
+    expect(services.getOrganizationMemberships(userId)).toEqual([])
+    profile.isActive = true
+
+    services.state.organizationMemberships.push({
+      ...usableMembership,
+      id: "78787878-7878-4878-8878-787878787878"
+    })
+    expect(services.getOrganizationMemberships(userId)).toEqual([])
+  })
+
   it("creates a valid load posting", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
 
@@ -367,6 +421,55 @@ describe("logloads services", () => {
 
     expect(visible.map((load) => load.id)).toContain("cccccccc-cccc-4ccc-8ccc-ccccccccccc3")
   })
+
+  it.each(["rejected", "suspended"] as const)(
+    "removes opportunities published by a %s organization",
+    (verificationStatus) => {
+      const services = createLogLoadsServices(createInMemoryDatabase())
+      const publisherId = "33333333-3333-4333-8333-333333333332"
+      const viewerId = "33333333-3333-4333-8333-333333333331"
+      const loadId = "cccccccc-cccc-4ccc-8ccc-ccccccccccc3"
+      const publisher = services.state.organizations.find(
+        (organization) => organization.id === publisherId
+      )
+
+      if (!publisher) {
+        throw new Error("Opportunity publisher fixture missing")
+      }
+
+      expect(services.listVisibleLoadsForOrganization(viewerId).map((load) => load.id)).toContain(loadId)
+      publisher.verificationStatus = verificationStatus
+
+      expect(services.listVisibleLoadsForOrganization(viewerId).map((load) => load.id)).not.toContain(loadId)
+      expect(
+        services
+          .listRequestableLoadsForOrganization(viewerId, "2026-06-05T12:00:00.000Z")
+          .map((load) => load.id)
+      ).not.toContain(loadId)
+    }
+  )
+
+  it.each(["rejected", "suspended"] as const)(
+    "returns no opportunities to a %s viewing organization",
+    (verificationStatus) => {
+      const services = createLogLoadsServices(createInMemoryDatabase())
+      const viewerId = "33333333-3333-4333-8333-333333333331"
+      const viewer = services.state.organizations.find(
+        (organization) => organization.id === viewerId
+      )
+
+      if (!viewer) {
+        throw new Error("Opportunity viewer fixture missing")
+      }
+
+      viewer.verificationStatus = verificationStatus
+
+      expect(services.listVisibleLoadsForOrganization(viewerId)).toEqual([])
+      expect(
+        services.listRequestableLoadsForOrganization(viewerId, "2026-06-05T12:00:00.000Z")
+      ).toEqual([])
+    }
+  )
 
   it("keeps expired operating records out of live load discovery", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
@@ -866,6 +969,44 @@ describe("logloads services", () => {
     expect(availability.organizationId).toBe("33333333-3333-4333-8333-333333333331")
     expect(summitVisible).toBe(true)
   })
+
+  it.each(["rejected", "suspended"] as const)(
+    "removes future availability from a %s publisher and viewer",
+    (verificationStatus) => {
+      const services = createLogLoadsServices(createInMemoryDatabase())
+      const publisherId = "33333333-3333-4333-8333-333333333331"
+      const viewerId = "33333333-3333-4333-8333-333333333332"
+      const availability = services.publishFutureAvailability({
+        actorUserId: "22222222-2222-4222-8222-222222222224",
+        endsAt: "2026-06-09T22:00:00.000Z",
+        equipmentCombinationId: "18181818-1818-4818-8818-181818181811",
+        notes: "Availability lock fixture.",
+        organizationId: publisherId,
+        startsAt: "2026-06-09T12:00:00.000Z",
+        status: "available",
+        visibleToRelationshipIds: ["17171717-1717-4717-8717-171717171713"]
+      })
+      const publisher = services.state.organizations.find(
+        (organization) => organization.id === publisherId
+      )
+      const viewer = services.state.organizations.find(
+        (organization) => organization.id === viewerId
+      )
+
+      if (!publisher || !viewer) {
+        throw new Error("Availability organization fixtures missing")
+      }
+
+      publisher.verificationStatus = verificationStatus
+      expect(
+        services.listFutureAvailabilityForOrganization(viewerId).map((entry) => entry.id)
+      ).not.toContain(availability.id)
+
+      publisher.verificationStatus = "verified"
+      viewer.verificationStatus = verificationStatus
+      expect(services.listFutureAvailabilityForOrganization(viewerId)).toEqual([])
+    }
+  )
 
 
 })

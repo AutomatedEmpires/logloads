@@ -1,7 +1,10 @@
 import "server-only"
 
 import { OperatingStateConflictError, OperatingStateUnavailableError } from "@logloads/db"
-import { DomainRefusalError } from "@logloads/services"
+import {
+  DomainRefusalError,
+  organizationOperationallyAccessible
+} from "@logloads/services"
 import { NextResponse } from "next/server"
 
 import { RateLimitError, RateLimitUnavailableError, checkRateLimit } from "./rate-limit"
@@ -95,6 +98,10 @@ export async function requireApiActor(requestedOrganizationId?: string | null): 
 
   if (!membership) {
     throw new ApiError("Finish onboarding before using this feature", 403)
+  }
+
+  if (!organizationOperationallyAccessible(membership.organization)) {
+    throw new ApiError("Organization operations are not available", 403)
   }
 
   return {

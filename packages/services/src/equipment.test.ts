@@ -79,6 +79,28 @@ describe("equipment mutation authorization", () => {
     expect(services.state).toEqual(before)
   })
 
+  it.each(["rejected", "suspended"] as const)(
+    "refuses equipment mutation when the organization is %s without partial writes",
+    (verificationStatus) => {
+      const services = createLogLoadsServices()
+      const organization = services.state.organizations.find(
+        (candidate) => candidate.id === NORTH_PINE_ORG_ID
+      )
+
+      if (!organization) {
+        throw new Error("North Pine organization fixture missing")
+      }
+
+      organization.verificationStatus = verificationStatus
+      const before = structuredClone(services.state)
+
+      expect(() => services.addEquipmentCombination(addInput())).toThrow(/active member/)
+      expect(() => services.updateEquipmentStatus(statusInput())).toThrow(/active member/)
+      expect(() => services.assignDriverToEquipment(assignmentInput())).toThrow(/active member/)
+      expect(services.state).toEqual(before)
+    }
+  )
+
   it("derives new equipment ownership and audit identity from the active manager actor", () => {
     const services = createLogLoadsServices()
     const before = {

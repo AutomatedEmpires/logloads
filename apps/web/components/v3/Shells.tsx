@@ -34,6 +34,7 @@ export interface ShellAccount {
   verificationStatus: string
   activeOrganizationId: string | null
   memberships: Array<{ id: string; name: string; role: string }>
+  restrictedWorkspaces?: Array<{ id: string; name: string }>
   /** Workspace invitations waiting on THIS signed-in person's email. */
   pendingInvitations: Array<{ id: string; organizationName: string; roleLabel: string }>
   notifications: ShellNotification[]
@@ -705,6 +706,20 @@ function AccountMenu({ account, pathname }: { account: ShellAccount; pathname: s
                 </p>
               ) : null}
             </div>
+          ) : null}
+          {account.restrictedWorkspaces?.length ? (
+            <Link
+              className="account-switcher__support"
+              href="/access-restricted"
+              onClick={() => setOpen(false)}
+            >
+              <Icon aria-hidden name="ops.notice" size={18} />
+              <span>
+                Review {account.restrictedWorkspaces.length === 1
+                  ? account.restrictedWorkspaces[0]!.name
+                  : `${account.restrictedWorkspaces.length} locked workspaces`}
+              </span>
+            </Link>
           ) : null}
           <Link
             className="account-switcher__support"

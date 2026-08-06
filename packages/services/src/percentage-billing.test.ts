@@ -131,6 +131,66 @@ describe("percentage_v1 agreement acceptance", () => {
     ).toHaveLength(1)
   })
 
+  it.each(["pending", "verified"] as const)(
+    "allows a %s host workspace to accept the current agreement",
+    (verificationStatus) => {
+      const services = createLogLoadsServices(createInMemoryDatabase())
+      const organization = services.state.organizations.find(
+        (candidate) => candidate.id === HOST
+      )
+
+      if (!organization) throw new Error("Seed host organization missing")
+
+      markHostLegacy(services)
+      organization.verificationStatus = verificationStatus
+
+      expect(
+        services.acceptPercentageBillingAgreement(
+          acceptanceInput(),
+          ACCEPTED_AT
+        )
+      ).toMatchObject({
+        changed: true,
+        account: {
+          activationState: "percentage_active",
+          billingModel: "percentage_v1"
+        }
+      })
+    }
+  )
+
+  it.each([
+    { archivedAt: null, verificationStatus: "rejected" as const },
+    { archivedAt: null, verificationStatus: "suspended" as const },
+    {
+      archivedAt: "2026-08-04T11:59:00.000Z",
+      verificationStatus: "verified" as const
+    }
+  ])(
+    "refuses a $verificationStatus host workspace with archivedAt=$archivedAt without writing",
+    ({ archivedAt, verificationStatus }) => {
+      const services = createLogLoadsServices(createInMemoryDatabase())
+      const organization = services.state.organizations.find(
+        (candidate) => candidate.id === HOST
+      )
+
+      if (!organization) throw new Error("Seed host organization missing")
+
+      markHostLegacy(services)
+      organization.archivedAt = archivedAt
+      organization.verificationStatus = verificationStatus
+      const before = structuredClone(services.state)
+
+      expect(() =>
+        services.acceptPercentageBillingAgreement(
+          acceptanceInput(),
+          ACCEPTED_AT
+        )
+      ).toThrow(/workspace is locked/)
+      expect(services.state).toEqual(before)
+    }
+  )
+
   it("makes an exact retry a no-op", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     markHostLegacy(services)

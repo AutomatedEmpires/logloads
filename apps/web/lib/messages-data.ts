@@ -1,7 +1,17 @@
 import "server-only"
 
+import {
+  operationalOrganizationIdsForUser,
+  organizationOperationallyAccessible
+} from "@logloads/services"
+import { redirect } from "next/navigation"
+
 import { mutateState, services } from "./services"
-import { requireCockpitActor, type SessionActor } from "./session"
+import {
+  homePathFor,
+  requireCockpitActor,
+  type SessionActor
+} from "./session"
 
 export type MessagesCockpit = "driver" | "fleet" | "host"
 
@@ -56,6 +66,10 @@ function activeAssignments() {
   return services.state.assignments.filter((assignment) => ACTIVE_ASSIGNMENT_STATUSES.has(assignment.status))
 }
 
+function userCanOperateOrganization(userId: string, organizationId: string): boolean {
+  return operationalOrganizationIdsForUser(services.state, userId).has(organizationId)
+}
+
 /**
  * People the viewer can start a conversation with, derived from live assignment
  * records: haulers reach the organization that published their assigned load,
@@ -81,7 +95,13 @@ function deriveCounterparties(actor: SessionActor, cockpit: MessagesCockpit): Me
   function pushPublisherContacts(loadPostingId: string, assignmentId: string): void {
     const load = state.loadPostings.find((candidate) => candidate.id === loadPostingId)
 
-    if (!load || (organizationId && load.companyId === organizationId)) {
+    if (
+      !load ||
+      (organizationId && load.companyId === organizationId) ||
+      !organizationOperationallyAccessible(
+        state.organizations.find((organization) => organization.id === load.companyId)
+      )
+    ) {
       return
     }
 
@@ -95,7 +115,7 @@ function deriveCounterparties(actor: SessionActor, cockpit: MessagesCockpit): Me
     for (const contact of contacts) {
       const profile = state.profiles.find((candidate) => candidate.id === contact.userId && candidate.isActive)
 
-      if (!profile) {
+      if (!profile || !userCanOperateOrganization(profile.id, load.companyId)) {
         continue
       }
 
@@ -116,7 +136,12 @@ function deriveCounterparties(actor: SessionActor, cockpit: MessagesCockpit): Me
     const driver = state.driverProfiles.find((candidate) => candidate.id === driverProfileId)
     const profile = driver ? state.profiles.find((candidate) => candidate.id === driver.userId && candidate.isActive) : undefined
 
-    if (!load || !profile) {
+    if (
+      !load ||
+      !profile ||
+      !driver?.companyId ||
+      !userCanOperateOrganization(profile.id, driver.companyId)
+    ) {
       return
     }
 
@@ -192,26 +217,33 @@ function deriveCounterparties(actor: SessionActor, cockpit: MessagesCockpit): Me
 export async function getMessagesData(cockpit: MessagesCockpit, threadId: string | null): Promise<MessagesData> {
   const actor = await requireCockpitActor(cockpit)
   const viewerUserId = actor.profile.id
+  const organizationId = actor.activeOrganization?.id
+
+  if (!organizationId) {
+    redirect(homePathFor(actor))
+  }
 
   let selectedThread: SelectedThreadView | null = null
   let threadNotFound = false
 
   if (threadId) {
-    const meta = services.listThreadsForUser(viewerUserId).find((thread) => thread.id === threadId)
+    const meta = services
+      .listThreadsForUser(viewerUserId, organizationId)
+      .find((thread) => thread.id === threadId)
 
     if (meta) {
       try {
         selectedThread = {
           contextLabel: meta.contextLabel,
           id: meta.id,
-          messages: services.listThreadMessages(meta.id, viewerUserId),
+          messages: services.listThreadMessages(meta.id, viewerUserId, organizationId),
           participants: meta.participants,
           subject: meta.subject
         }
 
-        if ((services.unreadThreadCounts(viewerUserId)[meta.id] ?? 0) > 0) {
+        if ((services.unreadThreadCounts(viewerUserId, organizationId)[meta.id] ?? 0) > 0) {
           await mutateState((draft) =>
-            draft.markThreadRead({ threadId: meta.id, userId: viewerUserId })
+            draft.markThreadRead({ organizationId, threadId: meta.id, userId: viewerUserId })
           )
         }
       } catch {
@@ -226,7 +258,7 @@ export async function getMessagesData(cockpit: MessagesCockpit, threadId: string
     counterparties: deriveCounterparties(actor, cockpit),
     selectedThread,
     threadNotFound,
-    unreadByThread: services.unreadThreadCounts(viewerUserId),
+    unreadByThread: services.unreadThreadCounts(viewerUserId, organizationId),
     viewerUserId
   }
 }
