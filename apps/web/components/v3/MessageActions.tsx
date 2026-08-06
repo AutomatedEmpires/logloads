@@ -234,9 +234,17 @@ export function StartConversation({ counterparties, draftScope, emptyHint }: Sta
     nextBody: string,
     intent: MessageSubmissionIntent | null
   ): boolean {
+    const storage = browserSessionStorage()
+    const storageKey = threadDraftStorageKey(draftScope, recipient.key)
+
+    if (!nextSubject.trim() && !nextBody.trim() && !intent) {
+      removeMessageSubmissionDraft(storage, storageKey)
+      return Boolean(storage)
+    }
+
     return writeMessageSubmissionDraft(
-      browserSessionStorage(),
-      threadDraftStorageKey(draftScope, recipient.key),
+      storage,
+      storageKey,
       draftScope,
       {
         body: nextBody,

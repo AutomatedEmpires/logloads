@@ -61,6 +61,14 @@ function sameDraftScope(left: MessageDraftScope, right: MessageDraftScope): bool
   )
 }
 
+function isSemanticallyEmptyDraft(draft: MessageSubmissionDraft): boolean {
+  return (
+    !draft.intent &&
+    draft.body.trim().length === 0 &&
+    (draft.subject === null || draft.subject.trim().length === 0)
+  )
+}
+
 export function replyDraftStorageKey(scope: MessageDraftScope, threadId: string): string {
   return `${MESSAGE_DRAFT_STORAGE_PREFIX}:${draftScopeStorageKey(scope)}:reply:${encodeURIComponent(threadId)}`
 }
@@ -105,11 +113,18 @@ export function readMessageSubmissionDraft(
       return null
     }
 
-    return {
+    const draft: MessageSubmissionDraft = {
       body: candidate.body,
       intent: isMessageSubmissionIntent(candidate.intent) ? candidate.intent : null,
       subject: candidate.subject ?? null
     }
+
+    if (isSemanticallyEmptyDraft(draft)) {
+      removeMessageSubmissionDraft(storage, key)
+      return null
+    }
+
+    return draft
   } catch {
     removeMessageSubmissionDraft(storage, key)
     return null
@@ -125,6 +140,11 @@ export function writeMessageSubmissionDraft(
 ): boolean {
   if (!storage) {
     return false
+  }
+
+  if (isSemanticallyEmptyDraft(draft)) {
+    removeMessageSubmissionDraft(storage, key)
+    return true
   }
 
   try {

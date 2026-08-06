@@ -130,6 +130,41 @@ describe("message submission intent", () => {
     expect(storage.getItem(secondKey)).toBeNull()
   })
 
+  it("removes semantically empty drafts and heals blank records from an earlier client", () => {
+    const storage = new MemoryStorage()
+    const scope = {
+      cockpit: "host" as const,
+      organizationId: "host-one",
+      viewerUserId: "dispatcher-one"
+    }
+    const key = threadDraftStorageKey(scope, "driver-one:assignment-one")
+
+    writeMessageSubmissionDraft(storage, key, scope, {
+      body: "Call when you reach the gate.",
+      intent: null,
+      subject: "Gate access"
+    }, 3_000)
+
+    expect(writeMessageSubmissionDraft(storage, key, scope, {
+      body: " \n ",
+      intent: null,
+      subject: "\t"
+    }, 4_000)).toBe(true)
+    expect(storage.getItem(key)).toBeNull()
+
+    storage.setItem(key, JSON.stringify({
+      body: "",
+      intent: null,
+      scope,
+      subject: "",
+      updatedAtMs: 5_000,
+      version: 1
+    }))
+
+    expect(readMessageSubmissionDraft(storage, key, scope, 5_000)).toBeNull()
+    expect(storage.getItem(key)).toBeNull()
+  })
+
   it("keeps drafts scoped to the exact viewer, organization, and cockpit and expires them", () => {
     const storage = new MemoryStorage()
     const scope = {
