@@ -116,8 +116,14 @@ test.describe("direct-offer commitment", () => {
     await expect(selectedRig.getByText(/immediately creates the assignment/)).toBeVisible()
     await selectedRig.getByRole("button", { name: "Confirm assignment" }).click()
     await expect(page.getByRole("heading", { name: "1 truckload still invited" })).toBeVisible({ timeout: 15_000 })
-    const commitment = page.locator("article").filter({ hasText: driverName }).filter({ hasText: unitNumber })
-    await expect(commitment).toContainText("accepted")
+    const commitments = page
+      .getByRole("heading", { name: "Assignments on this load" })
+      .locator("xpath=ancestor::section")
+    const commitment = commitments
+      .getByRole("article")
+      .filter({ hasText: driverName })
+      .filter({ hasText: unitNumber })
+    await expect(commitment.getByText("accepted", { exact: true })).toBeVisible()
 
     await page.goto("/fleet/trips")
     await page.waitForLoadState("domcontentloaded")

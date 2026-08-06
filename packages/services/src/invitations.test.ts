@@ -130,6 +130,29 @@ describe("creating invitations", () => {
       )
     ).toBe(true)
   })
+
+  it.each(["rejected", "suspended"] as const)(
+    "hides and refuses invitations for a %s organization without mutation",
+    (verificationStatus) => {
+      const services = fixture()
+      const existing = inviteAtSummit(services, "existing@summit.example")
+      const organization = services.state.organizations.find(
+        (candidate) => candidate.id === SUMMIT
+      )
+
+      if (!organization) {
+        throw new Error("Summit organization fixture missing")
+      }
+
+      organization.verificationStatus = verificationStatus
+      const before = structuredClone(services.state)
+
+      expect(() => inviteAtSummit(services, "locked@summit.example")).toThrow(/Organization not found/)
+      expect(services.listPendingInvitationsForOrganization(SUMMIT)).toEqual([])
+      expect(services.listPendingInvitationsForEmail(existing.invitedEmail)).toEqual([])
+      expect(services.state).toEqual(before)
+    }
+  )
 })
 
 describe("revoking invitations", () => {
@@ -172,6 +195,29 @@ describe("revoking invitations", () => {
         organizationId: NORTH_PINE
       })
     ).toThrow()
+  })
+})
+
+describe("responding to invitations from locked organizations", () => {
+  it("refuses a direct decline before changing the invitation or audit trail", () => {
+    const services = fixture()
+    const invitation = inviteAtSummit(services, "maya@northpine.example", "dispatcher")
+    const organization = services.state.organizations.find(
+      (candidate) => candidate.id === SUMMIT
+    )
+
+    if (!organization) {
+      throw new Error("Summit organization fixture missing")
+    }
+
+    organization.verificationStatus = "suspended"
+    const before = structuredClone(services.state)
+
+    expect(() => services.declineOrganizationInvitation({
+      actorUserId: MAYA,
+      invitationId: invitation.id
+    })).toThrow(/Organization not found/)
+    expect(services.state).toEqual(before)
   })
 })
 

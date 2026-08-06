@@ -24,6 +24,7 @@ import type { LogLoadsDatabaseState } from "@logloads/db"
 import { z } from "zod"
 
 import { activeDriverProfileForOrganization } from "./driver-access"
+import { organizationOperationallyAccessible } from "./organization-access"
 
 export const accountPathSchema = z.enum(["driver", "fleet", "host"])
 
@@ -139,7 +140,9 @@ export function getAccountContext(
     )
     .flatMap((membership) => {
       const organization = state.organizations.find(
-        (candidate) => candidate.id === membership.organizationId && !candidate.archivedAt
+        (candidate) =>
+          candidate.id === membership.organizationId &&
+          organizationOperationallyAccessible(candidate)
       )
 
       return organization ? [{ membership, organization }] : []

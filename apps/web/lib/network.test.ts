@@ -2,7 +2,7 @@ import { createInMemoryDatabase } from "@logloads/db"
 import { createLogLoadsServices } from "@logloads/services"
 import { describe, expect, it } from "vitest"
 
-import { buildNetworkView } from "./network"
+import { buildNetworkView, publicAvailableEquipmentCount } from "./network"
 
 function networkFixture() {
   const services = createLogLoadsServices(createInMemoryDatabase())
@@ -80,6 +80,84 @@ function expectPublicOnlyDriverView(
     expect(publicLoad.slots.selectable).toEqual([])
   }
 }
+
+describe("public equipment availability aggregate", () => {
+  it("counts only available equipment owned by pending or verified non-archived organizations", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const sourceCombination = services.state.equipmentCombinations[0]
+    const sourceOrganization = services.state.organizations.find(
+      (organization) => organization.id === sourceCombination?.organizationId
+    )
+
+    if (!sourceCombination || !sourceOrganization) {
+      throw new Error("The equipment availability fixture is incomplete")
+    }
+
+    const organizations = [
+      {
+        archivedAt: null,
+        id: "12121212-1212-4212-8212-121212121201",
+        verificationStatus: "pending" as const
+      },
+      {
+        archivedAt: null,
+        id: "12121212-1212-4212-8212-121212121202",
+        verificationStatus: "verified" as const
+      },
+      {
+        archivedAt: null,
+        id: "12121212-1212-4212-8212-121212121203",
+        verificationStatus: "rejected" as const
+      },
+      {
+        archivedAt: null,
+        id: "12121212-1212-4212-8212-121212121204",
+        verificationStatus: "suspended" as const
+      },
+      {
+        archivedAt: "2026-06-05T11:00:00.000Z",
+        id: "12121212-1212-4212-8212-121212121205",
+        verificationStatus: "verified" as const
+      }
+    ]
+
+    services.state.organizations.push(
+      ...organizations.map((organization) => ({
+        ...sourceOrganization,
+        ...organization
+      }))
+    )
+    services.state.equipmentCombinations = [
+      ...organizations.map((organization, index) => ({
+        ...sourceCombination,
+        id: `13131313-1313-4313-8313-13131313130${index + 1}`,
+        organizationId: organization.id,
+        status: "available" as const
+      })),
+      {
+        ...sourceCombination,
+        id: "13131313-1313-4313-8313-131313131306",
+        organizationId: organizations[1]!.id,
+        status: "inactive"
+      },
+      {
+        ...sourceCombination,
+        id: "13131313-1313-4313-8313-131313131307",
+        organizationId: "12121212-1212-4212-8212-121212121299",
+        status: "available"
+      }
+    ]
+
+    expect(publicAvailableEquipmentCount(services.state)).toBe(2)
+    expect(
+      buildNetworkView(
+        services.state,
+        { kind: "public" },
+        new Date("2026-06-05T12:00:00.000Z")
+      ).metrics.trucksAvailable
+    ).toBe(2)
+  })
+})
 
 describe("site truth projection", () => {
   it("ages an unverified host report and keeps a missing condition unknown", () => {
@@ -569,6 +647,30 @@ describe("driver network access", () => {
       load.id
     )
   })
+
+  it.each(["rejected", "suspended"] as const)(
+    "resolves a requested %s organization as public-only",
+    (verificationStatus) => {
+      const { load, request, services, sourceContext, viewer } = networkFixture()
+      const assignment = request()
+
+      services.approveCapacityRequest({ ...sourceContext, assignmentId: assignment.id })
+      const organization = services.state.organizations.find(
+        (candidate) => candidate.id === viewer.organizationId
+      )
+
+      if (!organization) {
+        throw new Error("The locked-organization fixture is incomplete")
+      }
+
+      organization.verificationStatus = verificationStatus
+
+      expectPublicOnlyDriverView(
+        buildNetworkView(services.state, viewer, new Date("2026-06-05T12:02:00.000Z")),
+        load.id
+      )
+    }
+  )
 
   it("uses only the requested organization's active driver profile and equipment", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())

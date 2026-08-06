@@ -19,6 +19,7 @@ import {
   markOrganizationDriverUnavailable
 } from "./driver-access"
 import { createNotification } from "./notifications"
+import { organizationOperationallyAccessible } from "./organization-access"
 
 const memberActionInputSchema = z.object({
   actorUserId: z.string().uuid(),
@@ -48,6 +49,7 @@ function requireMemberManager(
   actorUserId: string,
   organizationId: string
 ): OrganizationMembership {
+  requireActiveOrganization(state, organizationId)
   const actor = state.profiles.find((candidate) => candidate.id === actorUserId && candidate.isActive)
   const memberships = state.organizationMemberships.filter(
     (candidate) =>
@@ -95,7 +97,7 @@ function requireTargetMembership(
 function requireActiveOrganization(state: LogLoadsDatabaseState, organizationId: string): Organization {
   const organization = state.organizations.find((candidate) => candidate.id === organizationId)
 
-  if (!organization || organization.archivedAt) {
+  if (!organization || !organizationOperationallyAccessible(organization)) {
     throw new Error("Organization not found")
   }
 

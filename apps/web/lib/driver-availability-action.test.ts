@@ -36,9 +36,15 @@ beforeEach(() => {
   vi.clearAllMocks()
   draft = { setDriverAvailability: vi.fn() }
   mocks.getSessionActor.mockResolvedValue({
-    activeOrganization: { id: ORGANIZATION_ID },
+    activeOrganization: {
+      archivedAt: null,
+      id: ORGANIZATION_ID,
+      verificationStatus: "verified"
+    },
     driverProfileId: DRIVER_PROFILE_ID,
-    profile: { id: ACTOR_USER_ID }
+    isPlatformAdmin: false,
+    profile: { id: ACTOR_USER_ID },
+    workspaceSelectionInvalid: false
   })
   mocks.mutateState.mockImplementation(
     async (mutation: (current: Draft) => unknown) => mutation(draft)
@@ -84,6 +90,36 @@ describe("updateDriverAvailabilityAction", () => {
     expect(mocks.mutateState).not.toHaveBeenCalled()
     expect(mocks.revalidatePath).not.toHaveBeenCalled()
   })
+
+  it.each(["rejected", "suspended"] as const)(
+    "refuses a direct field mutation when the organization is %s",
+    async (verificationStatus) => {
+      mocks.getSessionActor.mockResolvedValue({
+        activeOrganization: {
+          archivedAt: null,
+          id: ORGANIZATION_ID,
+          verificationStatus
+        },
+        driverProfileId: DRIVER_PROFILE_ID,
+        isPlatformAdmin: false,
+        profile: { id: ACTOR_USER_ID },
+        workspaceSelectionInvalid: false
+      })
+
+      const result = await updateDriverAvailabilityAction({
+        endAt: "2026-08-06T18:00:00.000Z",
+        startAt: "2026-08-06T08:00:00.000Z",
+        status: "available"
+      })
+
+      expect(result).toEqual({
+        error: "Organization operations are not available",
+        ok: false
+      })
+      expect(mocks.mutateState).not.toHaveBeenCalled()
+      expect(mocks.revalidatePath).not.toHaveBeenCalled()
+    }
+  )
 
   it("returns a service refusal without revalidating stale readiness", async () => {
     draft.setDriverAvailability.mockImplementation(() => {

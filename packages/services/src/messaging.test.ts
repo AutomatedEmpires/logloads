@@ -3,6 +3,7 @@ import {
   assignmentSchema,
   driverProfileSchema,
   loadPostingSchema,
+  messageThreadSchema,
   opportunityCapacitySchema,
   organizationMembershipSchema,
   organizationSchema,
@@ -12,7 +13,14 @@ import {
 import { createInMemoryDatabase, type LogLoadsDatabaseState, type LogLoadsTableName } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
-import { createThread, listThreadsForUser, postMessage } from "./messaging"
+import {
+  createThread as createThreadInWorkspace,
+  listThreadMessages as listThreadMessagesInWorkspace,
+  listThreadsForUser as listThreadsForUserInWorkspace,
+  markThreadRead as markThreadReadInWorkspace,
+  postMessage as postMessageInWorkspace,
+  unreadThreadCounts as unreadThreadCountsInWorkspace
+} from "./messaging"
 
 const NOW = "2026-07-20T12:00:00.000Z"
 
@@ -52,6 +60,96 @@ const FILLER = {
   truckSlotHost: "ffffffff-ffff-4fff-8fff-ffffffffff10",
   truckSlotStranger: "ffffffff-ffff-4fff-8fff-ffffffffff11"
 } as const
+
+function defaultOrganizationIdForUser(userId: string): string {
+  if (userId === DRIVER_USER) {
+    return ORG_CARRIER
+  }
+
+  if (
+    userId === HOST_DISPATCHER_USER ||
+    userId === HOST_BILLING_USER ||
+    userId === HOST_LANDING_MANAGER_USER
+  ) {
+    return ORG_HOST
+  }
+
+  return ORG_STRANGER
+}
+
+interface TestCreateThreadInput {
+  assignmentId?: string | null
+  body: string
+  creatorUserId: string
+  loadPostingId?: string | null
+  organizationId?: string
+  participantUserIds: string[]
+  subject: string
+}
+
+interface TestPostMessageInput {
+  authorUserId: string
+  body: string
+  organizationId?: string
+  threadId: string
+}
+
+function createThread(
+  state: LogLoadsDatabaseState,
+  input: TestCreateThreadInput
+) {
+  return createThreadInWorkspace(state, {
+    ...input,
+    organizationId: input.organizationId ?? defaultOrganizationIdForUser(input.creatorUserId)
+  })
+}
+
+function listThreadsForUser(
+  state: LogLoadsDatabaseState,
+  userId: string,
+  organizationId = defaultOrganizationIdForUser(userId)
+) {
+  return listThreadsForUserInWorkspace(state, userId, organizationId)
+}
+
+function listThreadMessages(
+  state: LogLoadsDatabaseState,
+  threadId: string,
+  userId: string,
+  organizationId = defaultOrganizationIdForUser(userId)
+) {
+  return listThreadMessagesInWorkspace(state, threadId, userId, organizationId)
+}
+
+function postMessage(
+  state: LogLoadsDatabaseState,
+  input: TestPostMessageInput
+) {
+  return postMessageInWorkspace(state, {
+    ...input,
+    organizationId: input.organizationId ?? defaultOrganizationIdForUser(input.authorUserId)
+  })
+}
+
+function unreadThreadCounts(
+  state: LogLoadsDatabaseState,
+  userId: string,
+  organizationId = defaultOrganizationIdForUser(userId)
+) {
+  return unreadThreadCountsInWorkspace(state, userId, organizationId)
+}
+
+function markThreadRead(
+  state: LogLoadsDatabaseState,
+  input: Omit<Parameters<typeof markThreadReadInWorkspace>[1], "organizationId"> & {
+    organizationId?: string
+  }
+) {
+  return markThreadReadInWorkspace(state, {
+    ...input,
+    organizationId: input.organizationId ?? defaultOrganizationIdForUser(input.userId)
+  })
+}
 
 /**
  * An authorization test must not inherit permission from the demo seed. Every
@@ -273,6 +371,21 @@ function writeCounts(state: LogLoadsDatabaseState): Record<string, number> {
 }
 
 describe("createThread authorization", () => {
+  it("refuses contextless creation even when the users share active work", () => {
+    const state = operatingState()
+    const before = structuredClone(state)
+
+    expect(() =>
+      createThread(state, {
+        body: "This must not acquire authority from current memberships.",
+        creatorUserId: DRIVER_USER,
+        participantUserIds: [HOST_DISPATCHER_USER],
+        subject: "No durable context"
+      })
+    ).toThrow(/must identify shared work/i)
+    expect(state).toEqual(before)
+  })
+
   it("refuses a thread between users who share no assignment or load", () => {
     const state = operatingState()
     const before = writeCounts(state)
@@ -284,7 +397,7 @@ describe("createThread authorization", () => {
         participantUserIds: [STRANGER_USER],
         subject: "Cold open"
       })
-    ).toThrow(/share active work/i)
+    ).toThrow(/shar.*work/i)
 
     expect(writeCounts(state)).toEqual(before)
   })
@@ -299,7 +412,7 @@ describe("createThread authorization", () => {
         participantUserIds: [DRIVER_USER],
         subject: "Poaching"
       })
-    ).toThrow(/share active work/i)
+    ).toThrow(/shar.*work/i)
 
     expect(state.notifications).toHaveLength(0)
   })
@@ -528,21 +641,21 @@ describe("createThread on the legitimate operating path", () => {
     expect(state.notifications[0]?.userId).toBe(DRIVER_USER)
   })
 
-  it("accepts a load context the creator's organization can already browse", () => {
+  it("does not treat browse permission as organization authority for a load-only thread", () => {
     const state = operatingState()
+    const before = writeCounts(state)
 
-    // BROWSABLE_LOAD belongs to another organization but is published to the open
-    // network, so naming it as context discloses nothing the creator cannot look
-    // up — this is the branch that defers to `isLoadVisibleToOrganization`.
-    const thread = createThread(state, {
-      body: "Saw your open posting while hauling for North Pine.",
-      creatorUserId: DRIVER_USER,
-      loadPostingId: BROWSABLE_LOAD,
-      participantUserIds: [HOST_DISPATCHER_USER],
-      subject: "Open posting"
-    })
+    expect(() =>
+      createThread(state, {
+        body: "Saw your open posting while hauling for North Pine.",
+        creatorUserId: DRIVER_USER,
+        loadPostingId: BROWSABLE_LOAD,
+        participantUserIds: [HOST_DISPATCHER_USER],
+        subject: "Open posting"
+      })
+    ).toThrow(/Conversation not found/)
 
-    expect(thread.loadPostingId).toBe(BROWSABLE_LOAD)
+    expect(writeCounts(state)).toEqual(before)
   })
 
   it("reuses the existing thread instead of opening a duplicate", () => {
@@ -602,5 +715,256 @@ describe("postMessage participation", () => {
       HOST_DISPATCHER_USER,
       DRIVER_USER
     ])
+  })
+})
+
+describe("organization-level messaging lock", () => {
+  it.each(["rejected", "suspended"] as const)(
+    "removes a %s hauler from thread reads and writes without mutating history",
+    (verificationStatus) => {
+      const state = operatingState()
+      const thread = createThread(state, {
+        assignmentId: HOST_ASSIGNMENT,
+        body: "Scale house closes at four today.",
+        creatorUserId: HOST_DISPATCHER_USER,
+        loadPostingId: HOST_LOAD,
+        participantUserIds: [DRIVER_USER],
+        subject: "Scale hours"
+      })
+      const carrier = state.organizations.find((organization) => organization.id === ORG_CARRIER)
+
+      if (!carrier) {
+        throw new Error("Carrier organization fixture missing")
+      }
+
+      carrier.verificationStatus = verificationStatus
+      const before = structuredClone(state)
+
+      expect(listThreadsForUser(state, DRIVER_USER)).toEqual([])
+      expect(listThreadsForUser(state, HOST_DISPATCHER_USER).map((view) => view.id)).toContain(thread.id)
+      expect(() => listThreadMessages(state, thread.id, DRIVER_USER)).toThrow(/Conversation not found/)
+      expect(() => postMessage(state, {
+        authorUserId: DRIVER_USER,
+        body: "I should not be able to operate here.",
+        threadId: thread.id
+      })).toThrow(/Conversation not found/)
+      expect(() => markThreadRead(state, { threadId: thread.id, userId: DRIVER_USER })).toThrow(
+        /Conversation not found/
+      )
+      expect(unreadThreadCounts(state, DRIVER_USER)).toEqual({})
+      expect(state).toEqual(before)
+    }
+  )
+
+  it("does not let a second usable workspace reopen a thread authorized through a locked one", () => {
+    const state = operatingState()
+    const thread = createThread(state, {
+      body: "Scale house closes at four today.",
+      creatorUserId: HOST_DISPATCHER_USER,
+      loadPostingId: HOST_LOAD,
+      participantUserIds: [DRIVER_USER],
+      subject: "Scale hours"
+    })
+    const carrier = state.organizations.find((organization) => organization.id === ORG_CARRIER)
+
+    if (!carrier) {
+      throw new Error("Carrier organization fixture missing")
+    }
+
+    pushMembership(state, {
+      organizationId: ORG_STRANGER,
+      role: "viewer",
+      userId: DRIVER_USER
+    })
+    carrier.verificationStatus = "suspended"
+    const before = structuredClone(state)
+
+    expect(listThreadsForUser(state, DRIVER_USER)).toEqual([])
+    expect(() => postMessage(state, {
+      authorUserId: DRIVER_USER,
+      body: "Unrelated workspace must not be a bypass.",
+      threadId: thread.id
+    })).toThrow(/Conversation not found/)
+    expect(state).toEqual(before)
+  })
+
+  it("preserves a historical contextless thread but refuses every read and write", () => {
+    const state = operatingState()
+    const thread = messageThreadSchema.parse({
+      archivedAt: null,
+      assignmentId: null,
+      createdAt: NOW,
+      id: "90909090-9090-4090-8090-909090909090",
+      lastMessageAt: null,
+      loadPostingId: null,
+      participantUserIds: [HOST_DISPATCHER_USER, HOST_LANDING_MANAGER_USER],
+      subject: "Shared workspace operations",
+      updatedAt: NOW
+    })
+    state.messageThreads.push(thread)
+    const before = structuredClone(state)
+
+    expect(listThreadsForUser(state, HOST_DISPATCHER_USER)).toEqual([])
+    expect(() => listThreadMessages(state, thread.id, HOST_DISPATCHER_USER)).toThrow(
+      /Conversation not found/
+    )
+    expect(() => postMessage(state, {
+      authorUserId: HOST_DISPATCHER_USER,
+      body: "A current membership must not rebind historical private text.",
+      threadId: thread.id
+    })).toThrow(/Conversation not found/)
+    expect(() => markThreadRead(state, {
+      threadId: thread.id,
+      userId: HOST_DISPATCHER_USER
+    })).toThrow(/Conversation not found/)
+    expect(unreadThreadCounts(state, HOST_DISPATCHER_USER)).toEqual({})
+    expect(state).toEqual(before)
+  })
+
+  it("keeps every message operation exact to the selected workspace for a multi-workspace user", () => {
+    const state = operatingState()
+    pushMembership(state, {
+      organizationId: ORG_STRANGER,
+      role: "dispatcher",
+      userId: HOST_DISPATCHER_USER
+    })
+    pushMembership(state, {
+      organizationId: ORG_STRANGER,
+      role: "driver",
+      userId: STRANGER_DRIVER_USER
+    })
+
+    const hostThread = createThread(state, {
+      assignmentId: HOST_ASSIGNMENT,
+      body: "Host workspace thread.",
+      creatorUserId: HOST_DISPATCHER_USER,
+      loadPostingId: HOST_LOAD,
+      organizationId: ORG_HOST,
+      participantUserIds: [DRIVER_USER],
+      subject: "Host work"
+    })
+    const beforeWrongCreate = structuredClone(state)
+
+    expect(() => createThread(state, {
+      assignmentId: STRANGER_ASSIGNMENT,
+      body: "Wrong workspace must not reach this assignment.",
+      creatorUserId: HOST_DISPATCHER_USER,
+      loadPostingId: PRIVATE_LOAD,
+      organizationId: ORG_HOST,
+      participantUserIds: [STRANGER_DRIVER_USER],
+      subject: "Cross-workspace probe"
+    })).toThrow(/shar.*work/i)
+    expect(state).toEqual(beforeWrongCreate)
+
+    const strangerThread = createThread(state, {
+      assignmentId: STRANGER_ASSIGNMENT,
+      body: "Separate workspace thread.",
+      creatorUserId: HOST_DISPATCHER_USER,
+      loadPostingId: PRIVATE_LOAD,
+      organizationId: ORG_STRANGER,
+      participantUserIds: [STRANGER_DRIVER_USER],
+      subject: "Stranger work"
+    })
+    postMessage(state, {
+      authorUserId: STRANGER_DRIVER_USER,
+      body: "Reply within the selected workspace.",
+      organizationId: ORG_STRANGER,
+      threadId: strangerThread.id
+    })
+
+    expect(listThreadsForUser(state, HOST_DISPATCHER_USER, ORG_HOST).map((thread) => thread.id)).toEqual([
+      hostThread.id
+    ])
+    expect(listThreadsForUser(state, HOST_DISPATCHER_USER, ORG_STRANGER).map((thread) => thread.id)).toEqual([
+      strangerThread.id
+    ])
+    expect(unreadThreadCounts(state, HOST_DISPATCHER_USER, ORG_HOST)).toEqual({})
+    expect(unreadThreadCounts(state, HOST_DISPATCHER_USER, ORG_STRANGER)).toEqual({
+      [strangerThread.id]: 1
+    })
+
+    const beforeWrongOperations = structuredClone(state)
+
+    expect(() => listThreadMessages(
+      state,
+      strangerThread.id,
+      HOST_DISPATCHER_USER,
+      ORG_HOST
+    )).toThrow(/Conversation not found/)
+    expect(() => postMessage(state, {
+      authorUserId: HOST_DISPATCHER_USER,
+      body: "Wrong selected workspace.",
+      organizationId: ORG_HOST,
+      threadId: strangerThread.id
+    })).toThrow(/Conversation not found/)
+    expect(() => markThreadRead(state, {
+      organizationId: ORG_HOST,
+      threadId: strangerThread.id,
+      userId: HOST_DISPATCHER_USER
+    })).toThrow(/Conversation not found/)
+    expect(state).toEqual(beforeWrongOperations)
+
+    expect(markThreadRead(state, {
+      organizationId: ORG_STRANGER,
+      threadId: strangerThread.id,
+      userId: HOST_DISPATCHER_USER
+    })).toBe(1)
+  })
+
+  it.each([
+    {
+      label: "an inactive participant",
+      mutate: (state: LogLoadsDatabaseState) => {
+        const user = state.profiles.find((profile) => profile.id === DRIVER_USER)
+        if (!user) throw new Error("Driver user fixture missing")
+        user.isActive = false
+      }
+    },
+    {
+      label: "duplicate active memberships",
+      mutate: (state: LogLoadsDatabaseState) => {
+        const membership = state.organizationMemberships.find(
+          (candidate) =>
+            candidate.userId === DRIVER_USER &&
+            candidate.organizationId === ORG_CARRIER
+        )
+        if (!membership) throw new Error("Driver membership fixture missing")
+        state.organizationMemberships.push({
+          ...membership,
+          id: "10101010-1010-4010-8010-000000000099"
+        })
+      }
+    },
+    {
+      label: "an archived thread",
+      mutate: (state: LogLoadsDatabaseState, threadId: string) => {
+        const thread = state.messageThreads.find((candidate) => candidate.id === threadId)
+        if (!thread) throw new Error("Message thread fixture missing")
+        thread.archivedAt = NOW
+      }
+    }
+  ])("fails closed for $label on direct-ID operations", ({ mutate }) => {
+    const state = operatingState()
+    const thread = createThread(state, {
+      assignmentId: HOST_ASSIGNMENT,
+      body: "Arrival note.",
+      creatorUserId: HOST_DISPATCHER_USER,
+      loadPostingId: HOST_LOAD,
+      participantUserIds: [DRIVER_USER],
+      subject: "Arrival"
+    })
+    mutate(state, thread.id)
+    const before = structuredClone(state)
+
+    expect(() => listThreadMessages(state, thread.id, DRIVER_USER)).toThrow(/Conversation not found/)
+    expect(() => postMessage(state, {
+      authorUserId: DRIVER_USER,
+      body: "Refused direct-ID write.",
+      threadId: thread.id
+    })).toThrow(/Conversation not found/)
+    expect(() => markThreadRead(state, { threadId: thread.id, userId: DRIVER_USER })).toThrow(
+      /Conversation not found/
+    )
+    expect(state).toEqual(before)
   })
 })

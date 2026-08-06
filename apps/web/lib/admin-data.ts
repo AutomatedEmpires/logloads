@@ -12,14 +12,20 @@ import {
   type SubscriptionBaseInvoice,
   type SubscriptionPlanDefinition,
   type SubscriptionPlanCode,
-  type SupportRequest
+  type SupportRequest,
+  type VerificationStatus
 } from "@logloads/contracts"
+import type {
+  OrganizationSuspensionBlockers,
+  VerificationQueueDecisionContext
+} from "@logloads/services"
 
 import { services } from "./services"
 import { requireCockpitActor } from "./session"
 import {
   getCockpitContext,
   pendingInvitationsForEmail,
+  restrictedWorkspacesForActor,
   shellAccountFor,
   shellNotificationsFor,
   type ShellAccount
@@ -146,6 +152,7 @@ export async function getAdminShellAccount(): Promise<ShellAccount> {
       // An org-less admin has no other cockpit, so invitations to their
       // address must surface here or they would never see them.
       pendingInvitations: pendingInvitationsForEmail(context.actor.profile.email),
+      restrictedWorkspaces: restrictedWorkspacesForActor(context.actor),
       unreadCount: inbox.unreadCount,
       userName: context.actor.profile.fullName,
       verificationStatus: context.actor.profile.verificationStatus
@@ -265,6 +272,7 @@ export async function getAdminOverview(): Promise<AdminOverview> {
 // --- Verification queue ---------------------------------------------------------
 
 export interface AdminVerificationItem {
+  decisionContext: VerificationQueueDecisionContext
   evidenceSummary: string
   id: string
   sourceLabel: string
@@ -279,6 +287,7 @@ export async function getAdminVerificationQueue(): Promise<AdminVerificationItem
   await requireCockpitActor("admin")
 
   return services.listVerificationQueue().map((item) => ({
+    decisionContext: item.decisionContext,
     evidenceSummary: item.evidenceSummary,
     id: item.id,
     sourceLabel: VERIFICATION_SOURCE_LABELS[item.source] ?? titleCase(item.source),
@@ -298,8 +307,9 @@ export interface AdminOrganizationRow {
   memberCount: number
   name: string
   region: string
+  suspensionBlockers: OrganizationSuspensionBlockers
   typeLabel: string
-  verificationStatus: string
+  verificationStatus: VerificationStatus
 }
 
 export async function getAdminOrganizations(): Promise<AdminOrganizationRow[]> {
@@ -319,6 +329,7 @@ export async function getAdminOrganizations(): Promise<AdminOrganizationRow[]> {
       ).length,
       name: organization.displayName,
       region: organization.primaryRegion,
+      suspensionBlockers: services.getOrganizationSuspensionBlockers(organization.id),
       typeLabel: ORG_TYPE_LABELS[organization.type] ?? titleCase(organization.type),
       verificationStatus: organization.verificationStatus
     }))

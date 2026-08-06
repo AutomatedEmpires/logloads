@@ -40,6 +40,7 @@ test.describe.serial("workspace invitations", () => {
     await signIn(page, "cole@summit.example")
     await page.goto("/host/settings")
     await page.waitForLoadState("domcontentloaded")
+    await expect(page.getByRole("heading", { name: "Who works in this workspace" })).toBeVisible()
 
     // Serial-group retries reuse the same database, so a previous attempt may
     // already have recorded the invitation (pending row) or carried it all the
@@ -49,7 +50,9 @@ test.describe.serial("workspace invitations", () => {
     const pendingRow = page
       .getByRole("group", { name: "Waiting invitations" })
       .getByText("maya@northpine.example")
-    const rosterRow = page.locator(".team-list").getByText("Maya Mills")
+    const rosterRow = page
+      .locator(".team-list--roster .team-member")
+      .filter({ hasText: "Maya Mills" })
 
     if (await rosterRow.isVisible()) {
       return

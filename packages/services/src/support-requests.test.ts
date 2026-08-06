@@ -109,6 +109,37 @@ describe("authenticated support requests", () => {
     }
   })
 
+  it.each(["rejected", "suspended"] as const)(
+    "keeps private support intake available when the reporter organization is %s",
+    (verificationStatus) => {
+      const { organizationId, reporter, state } = fixture()
+      const organization = state.organizations.find(
+        (candidate) => candidate.id === organizationId
+      )
+
+      if (!organization) {
+        throw new Error("Reporter organization fixture missing")
+      }
+
+      organization.verificationStatus = verificationStatus
+      const result = createSupportRequest(state, {
+        organizationId,
+        platformAdminAuthorized: false,
+        reporterUserId: reporter.id,
+        submission: submission()
+      })
+
+      expect(result).toMatchObject({
+        created: true,
+        request: {
+          organizationId,
+          reporterUserId: reporter.id,
+          status: "open"
+        }
+      })
+    }
+  )
+
   it("is idempotent by submission id and deduplicates normalized active content for 24 hours", () => {
     const { organizationId, reporter, state } = fixture()
     const firstSubmission = submission()

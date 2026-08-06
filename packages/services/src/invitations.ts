@@ -22,6 +22,7 @@ import {
   ensureUnavailableOrganizationDriverProfile
 } from "./driver-access"
 import { createNotification } from "./notifications"
+import { organizationOperationallyAccessible } from "./organization-access"
 
 /**
  * Organization invitations, end to end. Until this module every membership was
@@ -84,12 +85,14 @@ function requireMemberManager(
   actorUserId: string,
   organizationId: string
 ): OrganizationMembership {
+  requireOrganization(state, organizationId)
   const actor = state.profiles.find((candidate) => candidate.id === actorUserId && candidate.isActive)
-  const membership = state.organizationMemberships.find((candidate) =>
+  const memberships = state.organizationMemberships.filter((candidate) =>
     candidate.organizationId === organizationId &&
     candidate.status === "active" &&
     candidate.userId === actorUserId
   )
+  const membership = memberships.length === 1 ? memberships[0] : undefined
 
   if (!actor || !membership) {
     throw new Error("You are not an active member of this organization")
@@ -105,7 +108,7 @@ function requireMemberManager(
 function requireOrganization(state: LogLoadsDatabaseState, organizationId: string): Organization {
   const organization = state.organizations.find((candidate) => candidate.id === organizationId)
 
-  if (!organization || organization.archivedAt) {
+  if (!organization || !organizationOperationallyAccessible(organization)) {
     throw new Error("Organization not found")
   }
 
@@ -134,6 +137,14 @@ export function listPendingInvitationsForOrganization(
   state: LogLoadsDatabaseState,
   organizationId: string
 ): OrganizationInvitation[] {
+  const organization = state.organizations.find(
+    (candidate) => candidate.id === organizationId
+  )
+
+  if (!organizationOperationallyAccessible(organization)) {
+    return []
+  }
+
   const at = nowIso()
 
   return state.organizationInvitations.filter(
@@ -148,9 +159,17 @@ export function listPendingInvitationsForEmail(
   const normalized = normalizeEmail(email)
   const at = nowIso()
 
-  return state.organizationInvitations.filter(
-    (invitation) => normalizeEmail(invitation.invitedEmail) === normalized && isPending(invitation, at)
-  )
+  return state.organizationInvitations.filter((invitation) => {
+    const organization = state.organizations.find(
+      (candidate) => candidate.id === invitation.organizationId
+    )
+
+    return (
+      organizationOperationallyAccessible(organization) &&
+      normalizeEmail(invitation.invitedEmail) === normalized &&
+      isPending(invitation, at)
+    )
+  })
 }
 
 /**
@@ -312,6 +331,8 @@ function requireActionableInvitationForActor(
   if (!invitation || !isPending(invitation, nowIso())) {
     throw new Error("This invitation is no longer open")
   }
+
+  requireOrganization(state, invitation.organizationId)
 
   if (normalizeEmail(invitation.invitedEmail) !== normalizeEmail(actor.email)) {
     throw new Error("This invitation was issued to a different email address")

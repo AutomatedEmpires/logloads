@@ -21,6 +21,7 @@ import type { LogLoadsDatabaseState } from "@logloads/db"
 import { z } from "zod"
 
 import { assertEquipmentUnitNumberAvailable } from "./equipment-unit-numbers"
+import { organizationOperationallyAccessible } from "./organization-access"
 import { applyEquipmentDownConsequence } from "./operating-network"
 
 const ACTIVE_ASSIGNMENT_STATUSES: ReadonlySet<AssignmentStatus> = new Set([
@@ -76,14 +77,18 @@ function requireActiveMembership(
   actorUserId: string,
   organizationId: string
 ): OrganizationMembership {
+  const organization = state.organizations.find(
+    (candidate) => candidate.id === organizationId
+  )
   const actor = state.profiles.find((candidate) => candidate.id === actorUserId && candidate.isActive)
-  const membership = state.organizationMemberships.find((candidate) =>
+  const memberships = state.organizationMemberships.filter((candidate) =>
     candidate.organizationId === organizationId &&
     candidate.status === "active" &&
     candidate.userId === actorUserId
   )
+  const membership = memberships.length === 1 ? memberships[0] : undefined
 
-  if (!actor || !membership) {
+  if (!organizationOperationallyAccessible(organization) || !actor || !membership) {
     throw new Error("You are not an active member of this organization")
   }
 
@@ -104,21 +109,31 @@ function requireActiveOrganizationDriver(
   driverProfileId: string,
   organizationId: string
 ): DriverProfile {
+  const organization = state.organizations.find(
+    (candidate) => candidate.id === organizationId
+  )
   const driver = state.driverProfiles.find((candidate) =>
     candidate.id === driverProfileId && candidate.companyId === organizationId
   )
   const user = driver
     ? state.profiles.find((candidate) => candidate.id === driver.userId && candidate.isActive)
     : undefined
-  const membership = driver
-    ? state.organizationMemberships.find((candidate) =>
+  const memberships = driver
+    ? state.organizationMemberships.filter((candidate) =>
       candidate.organizationId === organizationId &&
       candidate.status === "active" &&
       candidate.userId === driver.userId
     )
-    : undefined
+    : []
+  const membership = memberships.length === 1 ? memberships[0] : undefined
 
-  if (!driver || !user || !membership || !organizationRoleCan(membership.role, "progress_trip")) {
+  if (
+    !organizationOperationallyAccessible(organization) ||
+    !driver ||
+    !user ||
+    !membership ||
+    !organizationRoleCan(membership.role, "progress_trip")
+  ) {
     throw new Error("Driver profile not found for this organization")
   }
 

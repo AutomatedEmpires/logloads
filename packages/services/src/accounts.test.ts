@@ -81,6 +81,54 @@ describe("account context authority", () => {
     ).toThrow(/email address/)
   })
 
+  it.each(["rejected", "suspended"] as const)(
+    "recovers a separate usable workspace when one membership organization is %s",
+    (lockedStatus) => {
+      const services = createLogLoadsServices(createInMemoryDatabase())
+      const membershipsByUser = services.state.organizationMemberships.reduce<Map<string, string[]>>(
+        (byUser, membership) => {
+          if (membership.status === "active") {
+            byUser.set(membership.userId, [
+              ...(byUser.get(membership.userId) ?? []),
+              membership.organizationId
+            ])
+          }
+          return byUser
+        },
+        new Map()
+      )
+      const multiWorkspace = Array.from(membershipsByUser.entries()).find(
+        ([, organizationIds]) => new Set(organizationIds).size >= 2
+      )
+
+      if (!multiWorkspace) {
+        throw new Error("Expected a seeded multi-workspace member")
+      }
+
+      const [userId, organizationIds] = multiWorkspace
+      const lockedOrganization = services.state.organizations.find(
+        (organization) => organization.id === organizationIds[0]
+      )
+      const usableOrganization = services.state.organizations.find(
+        (organization) => organization.id === organizationIds[1]
+      )
+
+      if (!lockedOrganization || !usableOrganization) {
+        throw new Error("Expected both multi-workspace organizations")
+      }
+
+      lockedOrganization.verificationStatus = lockedStatus
+      usableOrganization.verificationStatus = "pending"
+
+      const context = services.getAccountContext(userId, lockedOrganization.id)
+
+      expect(context?.memberships.map((entry) => entry.organization.id)).toEqual([
+        usableOrganization.id
+      ])
+      expect(context?.driverProfileId).toBeNull()
+    }
+  )
+
   it("omits an ambiguously duplicated workspace without revoking a separate exact membership", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const profile = services.state.profiles.find((candidate) =>

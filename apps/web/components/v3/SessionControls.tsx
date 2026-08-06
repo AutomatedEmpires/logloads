@@ -5,7 +5,11 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useState, useTransition } from "react"
 
-import { clearLocalSessionAction, switchOrganizationAction } from "@/lib/session-actions"
+import {
+  clearLocalSessionAction,
+  selectRestrictedOrganizationAction,
+  switchOrganizationAction
+} from "@/lib/session-actions"
 
 const clerkConfigured = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)
 
@@ -134,6 +138,48 @@ export function WorkspaceSwitchButton({
     <>
       <button className={className} disabled={pending} onClick={switchWorkspace} type="button">
         {pending ? "Switching workspace…" : label}
+      </button>
+      {error ? <span className="active-session__error" role="alert">{error}</span> : null}
+    </>
+  )
+}
+
+export function RestrictedWorkspaceSelectButton({
+  className,
+  label,
+  organizationId
+}: {
+  className?: string
+  label: string
+  organizationId: string
+}) {
+  const router = useRouter()
+  const [error, setError] = useState<string | null>(null)
+  const [pending, startTransition] = useTransition()
+
+  const selectWorkspace = () => {
+    setError(null)
+    startTransition(async () => {
+      try {
+        const selected = await selectRestrictedOrganizationAction(organizationId)
+
+        if (!selected) {
+          setError("This restricted workspace is no longer available to this account.")
+          return
+        }
+
+        router.push("/access-restricted")
+        router.refresh()
+      } catch {
+        setError("Restricted workspace selection did not finish. Try again.")
+      }
+    })
+  }
+
+  return (
+    <>
+      <button className={className} disabled={pending} onClick={selectWorkspace} type="button">
+        {pending ? "Opening settlement records…" : label}
       </button>
       {error ? <span className="active-session__error" role="alert">{error}</span> : null}
     </>

@@ -31,6 +31,7 @@ import {
   destinationFacilityVerificationAt,
   directOfferIsClaimable,
   effectiveDirectOfferStatus,
+  organizationOperationallyAccessible,
   routePackIsSafeToRead
 } from "@logloads/services"
 
@@ -43,6 +44,23 @@ export type OrgReputationView = {
   avgRating: number | null
   ratingCount: number
 } | null
+
+/** Public capacity may only represent equipment from an operational workspace. */
+export function publicAvailableEquipmentCount(
+  state: LogLoadsDatabaseState
+): number {
+  const operationalOrganizationIds = new Set(
+    state.organizations
+      .filter(organizationOperationallyAccessible)
+      .map((organization) => organization.id)
+  )
+
+  return state.equipmentCombinations.filter(
+    (combination) =>
+      combination.status === "available" &&
+      operationalOrganizationIds.has(combination.organizationId)
+  ).length
+}
 
 /** An organization's public reputation aggregate, or null when it has none yet. */
 function organizationReputation(state: LogLoadsDatabaseState, organizationId: string): OrgReputationView {
@@ -631,7 +649,9 @@ export function buildNetworkView(
   const requestedOrganizationId = viewer.kind === "actor" ? viewer.organizationId ?? null : null
   const eligibleMemberships = memberships.filter((membership) =>
     state.organizations.some(
-      (organization) => organization.id === membership.organizationId && !organization.archivedAt
+      (organization) =>
+        organization.id === membership.organizationId &&
+        organizationOperationallyAccessible(organization)
     )
   )
   const selectedOrganizationId = requestedOrganizationId
@@ -643,7 +663,9 @@ export function buildNetworkView(
   const activeMembership = selectedMemberships.length === 1 ? selectedMemberships[0]! : null
   const activeOrganization = activeMembership
     ? state.organizations.find(
-        (organization) => organization.id === activeMembership.organizationId && !organization.archivedAt
+        (organization) =>
+          organization.id === activeMembership.organizationId &&
+          organizationOperationallyAccessible(organization)
       ) ?? null
     : null
 
@@ -1192,7 +1214,7 @@ export function buildNetworkView(
         activeAssignments: 0,
         criticalNotices: 0,
         openLoads: loads.filter((load) => load.status === "open").length,
-        trucksAvailable: state.equipmentCombinations.filter((combination) => combination.status === "available").length
+        trucksAvailable: publicAvailableEquipmentCount(state)
       },
       notices: [],
       privateNetwork: [],
@@ -1255,7 +1277,7 @@ export function buildNetworkView(
 
   const notices: NoticeView[] = services.listAttentionItems(activeOrganization.id)
 
-  const messages = services.listThreadsForUser(currentUser.id).map((thread) => ({
+  const messages = services.listThreadsForUser(currentUser.id, activeOrganization.id).map((thread) => ({
     contextLabel: thread.contextLabel,
     id: thread.id,
     lastMessage: thread.lastMessage?.body ?? "No messages yet.",

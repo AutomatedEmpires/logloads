@@ -18,6 +18,7 @@ import {
   nowIso
 } from "./utils"
 import { activeDriverProfileForOrganization } from "./driver-access"
+import { organizationOperationallyAccessible } from "./organization-access"
 
 const driverContextSchema = z.object({
   actorUserId: z.string().uuid(),
@@ -257,7 +258,9 @@ export function getFeaturedTruckPhotoReference(state: LogLoadsDatabaseState, raw
     (candidate) => candidate.id === input.viewerUserId && candidate.isActive
   )
   const viewerOrganization = state.organizations.find(
-    (candidate) => candidate.id === input.viewerOrganizationId && !candidate.archivedAt
+    (candidate) =>
+      candidate.id === input.viewerOrganizationId &&
+      organizationOperationallyAccessible(candidate)
   )
   const memberships = state.organizationMemberships.filter((candidate) =>
     candidate.organizationId === input.viewerOrganizationId &&

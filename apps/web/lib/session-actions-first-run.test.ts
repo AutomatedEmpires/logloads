@@ -12,7 +12,10 @@ const mocks = vi.hoisted(() => ({
   mutateState: vi.fn(),
   redirect: vi.fn(),
   requestClientKey: vi.fn(),
-  servicesState: { organizations: [] as Array<{ id: string; type: string }> }
+  servicesState: {
+    organizationMemberships: [] as Array<Record<string, unknown>>,
+    organizations: [] as Array<Record<string, unknown>>
+  }
 }))
 
 vi.mock("server-only", () => ({}))
@@ -54,7 +57,10 @@ vi.mock("./session", () => ({
   isFounderDemoMode: vi.fn(async () => false)
 }))
 
-import { completeOnboardingAction } from "./session-actions"
+import {
+  completeOnboardingAction,
+  selectRestrictedOrganizationAction
+} from "./session-actions"
 
 function onboardingForm(entries: Record<string, string>): FormData {
   const formData = new FormData()
@@ -94,10 +100,88 @@ async function completeExpectingRedirect(formData: FormData, destination: string
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.servicesState.organizations = []
+  mocks.servicesState.organizationMemberships = []
   mocks.getSessionActor.mockResolvedValue(null)
   mocks.requestClientKey.mockResolvedValue("client-1")
   mocks.redirect.mockImplementation((destination: string) => {
     throw new Error(`REDIRECT:${destination}`)
+  })
+})
+
+describe("restricted workspace selection", () => {
+  const organizationId = "11111111-1111-4111-8111-111111111111"
+
+  beforeEach(() => {
+    mocks.getSessionActor.mockResolvedValue({
+      profile: { id: "user-1" }
+    })
+    mocks.servicesState.organizations = [
+      {
+        archivedAt: null,
+        id: organizationId,
+        type: "fleet",
+        verificationStatus: "suspended"
+      }
+    ]
+    mocks.servicesState.organizationMemberships = [
+      {
+        organizationId,
+        status: "active",
+        userId: "user-1"
+      }
+    ]
+  })
+
+  it("writes an exact signed selection for one active membership in a locked organization", async () => {
+    await expect(selectRestrictedOrganizationAction(organizationId)).resolves.toBe(true)
+
+    expect(mocks.cookieSet).toHaveBeenCalledWith(
+      "ll_session",
+      `user-1:${organizationId}`,
+      expect.objectContaining({ httpOnly: true, path: "/" })
+    )
+  })
+
+  it("refuses operational, archived, inactive, unrelated, and duplicate memberships without writing a cookie", async () => {
+    for (const mutate of [
+      () => {
+        mocks.servicesState.organizations[0]!.verificationStatus = "verified"
+      },
+      () => {
+        mocks.servicesState.organizations[0]!.archivedAt = "2026-08-01T00:00:00.000Z"
+      },
+      () => {
+        mocks.servicesState.organizationMemberships[0]!.status = "suspended"
+      },
+      () => {
+        mocks.servicesState.organizationMemberships[0]!.userId = "user-2"
+      },
+      () => {
+        mocks.servicesState.organizationMemberships.push({
+          ...mocks.servicesState.organizationMemberships[0],
+          id: "duplicate-membership"
+        })
+      }
+    ]) {
+      mocks.servicesState.organizations[0] = {
+        archivedAt: null,
+        id: organizationId,
+        type: "fleet",
+        verificationStatus: "suspended"
+      }
+      mocks.servicesState.organizationMemberships = [
+        {
+          organizationId,
+          status: "active",
+          userId: "user-1"
+        }
+      ]
+      mocks.cookieSet.mockClear()
+      mutate()
+
+      await expect(selectRestrictedOrganizationAction(organizationId)).resolves.toBe(false)
+      expect(mocks.cookieSet).not.toHaveBeenCalled()
+    }
   })
 })
 

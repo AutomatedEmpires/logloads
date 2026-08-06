@@ -6,7 +6,8 @@ vi.mock("server-only", () => ({}))
 import {
   isFleetOrganizationType,
   isHostOrganizationType,
-  planViewForEntitlement
+  planViewForEntitlement,
+  verificationView
 } from "./plans"
 
 const ORGANIZATION_ID = "11111111-1111-4111-8111-111111111111"
@@ -128,6 +129,22 @@ describe("commercial plan projection", () => {
     "does not recognize %s as a Fleet Free workspace",
     (type) => {
       expect(isFleetOrganizationType(type)).toBe(false)
+    }
+  )
+
+  it.each([
+    ["rejected", "Not approved", "request a new review"],
+    ["suspended", "Suspended", "steps required for reinstatement"]
+  ])(
+    "describes %s organizations as operationally locked with a real support path",
+    (status, label, supportCopy) => {
+      const view = verificationView(status)
+
+      expect(view).toMatchObject({ label, tone: "critical" })
+      expect(view.meaning).toContain("Operations and network visibility are locked")
+      expect(view.meaning).toContain("Contact LogLoads support")
+      expect(view.meaning).toContain(supportCopy)
+      expect(view.meaning).not.toMatch(/message|thread/i)
     }
   )
 })

@@ -1,4 +1,4 @@
-import { organizationMembershipSchema } from "@logloads/contracts"
+import { assignmentSchema, organizationMembershipSchema } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
@@ -167,6 +167,24 @@ function uploadTruckPhoto(services: ReturnType<typeof createLogLoadsServices>) {
   })
 }
 
+function establishHostVisibilityForDriver(services: ReturnType<typeof createLogLoadsServices>) {
+  const hostLoad = services.state.loadPostings.find(
+    (candidate) => candidate.companyId === HOST_ORG
+  )
+  const sourceAssignment = services.state.assignments[0]
+
+  if (!hostLoad || !sourceAssignment) throw new Error("Featured-photo visibility fixture missing")
+
+  // This isolated relation is all the read path consumes: the driver has work
+  // on a load owned by the viewing host organization.
+  services.state.assignments.push(assignmentSchema.parse({
+    ...sourceAssignment,
+    driverProfileId: DRIVER_PROFILE,
+    id: "19191919-1919-4919-8919-191919191917",
+    loadPostingId: hostLoad.id
+  }))
+}
+
 describe("featured truck photo", () => {
   it.each([
     ["missing", undefined],
@@ -238,6 +256,39 @@ describe("featured truck photo", () => {
       viewerUserId: OTHER_DRIVER_USER
     })).toThrow(/not active/)
   })
+
+  it.each(["rejected", "suspended"] as const)(
+    "refuses a %s viewer organization without mutating state",
+    (verificationStatus) => {
+      const services = createLogLoadsServices(createInMemoryDatabase())
+
+      uploadTruckPhoto(services)
+      services.setFeaturedTruckPhoto({
+        actorUserId: DRIVER_USER,
+        driverProfileId: DRIVER_PROFILE,
+        featured: true,
+        organizationId: FLEET_ORG
+      })
+      establishHostVisibilityForDriver(services)
+
+      const viewerInput = {
+        driverProfileId: DRIVER_PROFILE,
+        viewerOrganizationId: HOST_ORG,
+        viewerUserId: HOST_OWNER
+      }
+      expect(services.getFeaturedTruckPhotoReference(viewerInput).publicId).toContain("/truck/")
+
+      const viewerOrganization = services.state.organizations.find(
+        (candidate) => candidate.id === HOST_ORG
+      )
+      if (!viewerOrganization) throw new Error("Featured-photo viewer organization fixture missing")
+      viewerOrganization.verificationStatus = verificationStatus
+      const beforeRead = structuredClone(services.state)
+
+      expect(() => services.getFeaturedTruckPhotoReference(viewerInput)).toThrow(/not authorized/)
+      expect(services.state).toEqual(beforeRead)
+    }
+  )
 
   it("serves the featured photo to the driver's own outfit and to a host with the driver's assignment — nobody else, nothing unfeatured", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())

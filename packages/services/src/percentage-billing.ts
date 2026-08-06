@@ -10,6 +10,7 @@ import type { LogLoadsDatabaseState } from "@logloads/db"
 import { z } from "zod"
 
 import { createNotification } from "./notifications"
+import { organizationOperationallyAccessible } from "./organization-access"
 import {
   assertCondition,
   assertDomainCondition,
@@ -73,10 +74,13 @@ export function acceptPercentageBillingAgreement(
   )
 
   const organizations = state.organizations.filter(
-    (candidate) =>
-      candidate.id === input.organizationId && !candidate.archivedAt
+    (candidate) => candidate.id === input.organizationId
   )
   assertDomainCondition(organizations.length === 1, "Organization not found")
+  assertDomainCondition(
+    organizationOperationallyAccessible(organizations[0]),
+    "This organization cannot accept a new fee agreement while its workspace is locked"
+  )
   assertDomainCondition(
     organizations[0]!.type === "landing_source" ||
       organizations[0]!.type === "destination",
