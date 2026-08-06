@@ -93,7 +93,7 @@ describe("workspace-scoped message actions", () => {
     })
 
     await expect(sendMessageAction({ body: "No workspace.", threadId: THREAD_ID })).resolves.toEqual({
-      error: "Organization operations are not available",
+      error: "Finish onboarding before using this feature",
       ok: false
     })
     expect(mocks.postMessage).not.toHaveBeenCalled()
@@ -114,7 +114,7 @@ describe("workspace-scoped message actions", () => {
       participantUserIds: [PARTICIPANT_ID],
       subject: "Refused"
     })).resolves.toEqual({
-      error: "Organization operations are not available",
+      error: "Finish onboarding before using this feature",
       ok: false,
       threadId: null
     })

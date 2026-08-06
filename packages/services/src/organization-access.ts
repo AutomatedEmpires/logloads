@@ -1,4 +1,5 @@
-import type { Organization } from "@logloads/contracts"
+import type { Organization, OrganizationMembership } from "@logloads/contracts"
+import type { LogLoadsDatabaseState } from "@logloads/db"
 
 /**
  * One canonical organization-level operating gate.
@@ -18,4 +19,42 @@ export function organizationOperationallyAccessible(
     (organization.verificationStatus === "pending" ||
       organization.verificationStatus === "verified")
   )
+}
+
+export interface RestrictedOrganizationAccess {
+  membership: OrganizationMembership
+  organization: Organization
+}
+
+/**
+ * Resolves the narrow recovery authority for a locked workspace. A stale,
+ * inactive, or duplicate seat is never enough to disclose or settle records.
+ */
+export function resolveRestrictedOrganizationAccess(
+  state: LogLoadsDatabaseState,
+  input: { actorUserId: string; organizationId: string }
+): RestrictedOrganizationAccess | null {
+  if (!state.profiles.some(
+    (profile) => profile.id === input.actorUserId && profile.isActive
+  )) {
+    return null
+  }
+
+  const memberships = state.organizationMemberships.filter(
+    (membership) =>
+      membership.userId === input.actorUserId &&
+      membership.organizationId === input.organizationId &&
+      membership.status === "active"
+  )
+  const organization = state.organizations.find(
+    (candidate) =>
+      candidate.id === input.organizationId &&
+      !candidate.archivedAt &&
+      (candidate.verificationStatus === "rejected" ||
+        candidate.verificationStatus === "suspended")
+  )
+
+  return memberships.length === 1 && organization
+    ? { membership: memberships[0]!, organization }
+    : null
 }

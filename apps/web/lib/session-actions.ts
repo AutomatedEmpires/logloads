@@ -169,20 +169,10 @@ export async function selectRestrictedOrganizationAction(
     redirect("/sign-in")
   }
 
-  const memberships = services.state.organizationMemberships.filter(
-    (membership) =>
-      membership.userId === actor.profile.id &&
-      membership.organizationId === organizationId &&
-      membership.status === "active"
-  )
-  const organization = services.state.organizations.find(
-    (candidate) =>
-      candidate.id === organizationId &&
-      !candidate.archivedAt &&
-      ["rejected", "suspended"].includes(candidate.verificationStatus)
-  )
-
-  if (memberships.length !== 1 || !organization) {
+  if (!services.resolveRestrictedOrganizationAccess({
+    actorUserId: actor.profile.id,
+    organizationId
+  })) {
     return false
   }
 

@@ -1,9 +1,17 @@
 import "server-only"
 
-import { organizationOperationallyAccessible } from "@logloads/services"
+import {
+  operationalOrganizationIdsForUser,
+  organizationOperationallyAccessible
+} from "@logloads/services"
+import { redirect } from "next/navigation"
 
 import { mutateState, services } from "./services"
-import { requireCockpitActor, type SessionActor } from "./session"
+import {
+  homePathFor,
+  requireCockpitActor,
+  type SessionActor
+} from "./session"
 
 export type MessagesCockpit = "driver" | "fleet" | "host"
 
@@ -59,19 +67,7 @@ function activeAssignments() {
 }
 
 function userCanOperateOrganization(userId: string, organizationId: string): boolean {
-  const state = services.state
-  const organization = state.organizations.find((candidate) => candidate.id === organizationId)
-
-  return Boolean(
-    state.profiles.some((profile) => profile.id === userId && profile.isActive) &&
-    organizationOperationallyAccessible(organization) &&
-    state.organizationMemberships.filter(
-      (membership) =>
-        membership.userId === userId &&
-        membership.organizationId === organizationId &&
-        membership.status === "active"
-    ).length === 1
-  )
+  return operationalOrganizationIdsForUser(services.state, userId).has(organizationId)
 }
 
 /**
@@ -224,7 +220,7 @@ export async function getMessagesData(cockpit: MessagesCockpit, threadId: string
   const organizationId = actor.activeOrganization?.id
 
   if (!organizationId) {
-    throw new Error("Select an operating workspace before opening messages")
+    redirect(homePathFor(actor))
   }
 
   let selectedThread: SelectedThreadView | null = null

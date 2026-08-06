@@ -156,10 +156,10 @@
   font: inherit;
   line-height: 1.45;
 }
-.admin-suspension__form textarea:focus-visible { outline: 3px solid rgba(159, 51, 43, 0.25); outline-offset: 2px; }
+.admin-suspension__form textarea:focus-visible { outline: 3px solid var(--red); outline-offset: 2px; }
 .admin-suspension__count { color: var(--muted); font-size: 0.78rem; font-weight: 800; text-align: right; }
 .admin-suspension__confirm { display: flex; align-items: flex-start; gap: 8px; color: var(--ink-soft); font-size: 0.84rem; font-weight: 800; line-height: 1.4; }
-.admin-suspension__confirm input { width: 18px; height: 18px; margin: 1px 0 0; flex: 0 0 auto; accent-color: var(--red); }
+.admin-suspension__confirm input { width: 24px; height: 24px; margin: 0; flex: 0 0 auto; accent-color: var(--red); }
 .admin-decision__success { min-height: 1.3em; margin: 0; color: var(--green); font-size: 0.85rem; font-weight: 800; text-align: right; }
 .admin-support-row { align-items: flex-start; scroll-margin-top: 84px; }
 .admin-support-row:target { border-radius: var(--radius); box-shadow: 0 0 0 3px rgba(46, 118, 81, 0.16); }

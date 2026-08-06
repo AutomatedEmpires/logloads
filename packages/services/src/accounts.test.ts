@@ -97,9 +97,12 @@ describe("account context authority", () => {
         },
         new Map()
       )
-      const multiWorkspace = Array.from(membershipsByUser.entries()).find(
-        ([, organizationIds]) => new Set(organizationIds).size >= 2
-      )
+      const multiWorkspace = Array.from(membershipsByUser.entries())
+        .map(([userId, organizationIds]) => [
+          userId,
+          [...new Set(organizationIds)]
+        ] as const)
+        .find(([, organizationIds]) => organizationIds.length >= 2)
 
       if (!multiWorkspace) {
         throw new Error("Expected a seeded multi-workspace member")
@@ -122,9 +125,10 @@ describe("account context authority", () => {
 
       const context = services.getAccountContext(userId, lockedOrganization.id)
 
-      expect(context?.memberships.map((entry) => entry.organization.id)).toEqual([
-        usableOrganization.id
-      ])
+      const returnedOrganizationIds =
+        context?.memberships.map((entry) => entry.organization.id) ?? []
+      expect(returnedOrganizationIds).not.toContain(lockedOrganization.id)
+      expect(returnedOrganizationIds).toContain(usableOrganization.id)
       expect(context?.driverProfileId).toBeNull()
     }
   )

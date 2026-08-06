@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   mutateState: vi.fn(),
   redirect: vi.fn(),
   requestClientKey: vi.fn(),
+  resolveRestrictedOrganizationAccess: vi.fn(),
   servicesState: {
     organizationMemberships: [] as Array<Record<string, unknown>>,
     organizations: [] as Array<Record<string, unknown>>
@@ -42,7 +43,10 @@ vi.mock("./services", () => ({
   serializeError: (error: unknown) => ({
     error: error instanceof Error ? error.message : "Unknown error"
   }),
-  services: { state: mocks.servicesState }
+  services: {
+    resolveRestrictedOrganizationAccess: mocks.resolveRestrictedOrganizationAccess,
+    state: mocks.servicesState
+  }
 }))
 vi.mock("./session", () => ({
   SESSION_COOKIE: "ll_session",
@@ -103,6 +107,7 @@ beforeEach(() => {
   mocks.servicesState.organizationMemberships = []
   mocks.getSessionActor.mockResolvedValue(null)
   mocks.requestClientKey.mockResolvedValue("client-1")
+  mocks.resolveRestrictedOrganizationAccess.mockReturnValue(null)
   mocks.redirect.mockImplementation((destination: string) => {
     throw new Error(`REDIRECT:${destination}`)
   })
@@ -115,21 +120,10 @@ describe("restricted workspace selection", () => {
     mocks.getSessionActor.mockResolvedValue({
       profile: { id: "user-1" }
     })
-    mocks.servicesState.organizations = [
-      {
-        archivedAt: null,
-        id: organizationId,
-        type: "fleet",
-        verificationStatus: "suspended"
-      }
-    ]
-    mocks.servicesState.organizationMemberships = [
-      {
-        organizationId,
-        status: "active",
-        userId: "user-1"
-      }
-    ]
+    mocks.resolveRestrictedOrganizationAccess.mockReturnValue({
+      membership: { organizationId, status: "active", userId: "user-1" },
+      organization: { id: organizationId, verificationStatus: "suspended" }
+    })
   })
 
   it("writes an exact signed selection for one active membership in a locked organization", async () => {
@@ -140,48 +134,17 @@ describe("restricted workspace selection", () => {
       `user-1:${organizationId}`,
       expect.objectContaining({ httpOnly: true, path: "/" })
     )
+    expect(mocks.resolveRestrictedOrganizationAccess).toHaveBeenCalledWith({
+      actorUserId: "user-1",
+      organizationId
+    })
   })
 
-  it("refuses operational, archived, inactive, unrelated, and duplicate memberships without writing a cookie", async () => {
-    for (const mutate of [
-      () => {
-        mocks.servicesState.organizations[0]!.verificationStatus = "verified"
-      },
-      () => {
-        mocks.servicesState.organizations[0]!.archivedAt = "2026-08-01T00:00:00.000Z"
-      },
-      () => {
-        mocks.servicesState.organizationMemberships[0]!.status = "suspended"
-      },
-      () => {
-        mocks.servicesState.organizationMemberships[0]!.userId = "user-2"
-      },
-      () => {
-        mocks.servicesState.organizationMemberships.push({
-          ...mocks.servicesState.organizationMemberships[0],
-          id: "duplicate-membership"
-        })
-      }
-    ]) {
-      mocks.servicesState.organizations[0] = {
-        archivedAt: null,
-        id: organizationId,
-        type: "fleet",
-        verificationStatus: "suspended"
-      }
-      mocks.servicesState.organizationMemberships = [
-        {
-          organizationId,
-          status: "active",
-          userId: "user-1"
-        }
-      ]
-      mocks.cookieSet.mockClear()
-      mutate()
+  it("refuses when the service finds no exact restricted-workspace authority", async () => {
+    mocks.resolveRestrictedOrganizationAccess.mockReturnValue(null)
 
-      await expect(selectRestrictedOrganizationAction(organizationId)).resolves.toBe(false)
-      expect(mocks.cookieSet).not.toHaveBeenCalled()
-    }
+    await expect(selectRestrictedOrganizationAction(organizationId)).resolves.toBe(false)
+    expect(mocks.cookieSet).not.toHaveBeenCalled()
   })
 })
 

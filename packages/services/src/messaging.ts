@@ -48,7 +48,7 @@ export const createThreadInputSchema = z.object({
   subject: z.string().min(1).max(140)
 })
 
-function operationalOrganizationIdsForUser(
+export function operationalOrganizationIdsForUser(
   state: LogLoadsDatabaseState,
   userId: string
 ): Set<string> {
@@ -283,6 +283,16 @@ export function postMessage(state: LogLoadsDatabaseState, rawInput: unknown): Me
     throw new Error("Conversation not found")
   }
 
+  const recipientUserIds = thread.participantUserIds.filter(
+    (participantId) =>
+      participantId !== input.authorUserId &&
+      userHasOperationalThreadAccess(state, participantId, thread)
+  )
+
+  if (recipientUserIds.length === 0) {
+    throw new Error("No conversation participants are currently available")
+  }
+
   const now = new Date().toISOString()
   const event = messageEventSchema.parse({
     authorUserId: input.authorUserId,
@@ -299,14 +309,7 @@ export function postMessage(state: LogLoadsDatabaseState, rawInput: unknown): Me
 
   const author = state.profiles.find((profile) => profile.id === input.authorUserId)
 
-  for (const participantId of thread.participantUserIds) {
-    if (
-      participantId === input.authorUserId ||
-      !userHasOperationalThreadAccess(state, participantId, thread)
-    ) {
-      continue
-    }
-
+  for (const participantId of recipientUserIds) {
     state.notifications.push(
       notificationSchema.parse({
         body: input.body.slice(0, 140),

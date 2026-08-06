@@ -100,7 +100,6 @@ describe("restricted access routing", () => {
     })
     expect(mocks.homePathForMembership).toHaveBeenCalledWith("fleet", "owner")
     expect(mocks.buildResidualSettlements).toHaveBeenCalledWith(
-      expect.objectContaining({ organizations: mocks.organizations }),
       "user-1",
       SELECTED_ORGANIZATION_ID
     )

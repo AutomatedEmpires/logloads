@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 const mocks = vi.hoisted(() => ({
   listThreadMessages: vi.fn(),
   listThreadsForUser: vi.fn(),
+  homePathFor: vi.fn(),
   markThreadRead: vi.fn(),
   mutateState: vi.fn(),
+  redirect: vi.fn(),
   requireCockpitActor: vi.fn(),
   state: {
     assignments: [] as Array<{
@@ -36,7 +38,11 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock("server-only", () => ({}))
-vi.mock("./session", () => ({ requireCockpitActor: mocks.requireCockpitActor }))
+vi.mock("next/navigation", () => ({ redirect: mocks.redirect }))
+vi.mock("./session", () => ({
+  homePathFor: mocks.homePathFor,
+  requireCockpitActor: mocks.requireCockpitActor
+}))
 vi.mock("./services", () => ({
   mutateState: mocks.mutateState,
   services: {
@@ -68,6 +74,10 @@ beforeEach(() => {
     activeOrganization: { id: ORGANIZATION_ID },
     driverProfileId: null,
     profile: { id: USER_ID }
+  })
+  mocks.homePathFor.mockReturnValue("/access-restricted")
+  mocks.redirect.mockImplementation((destination: string) => {
+    throw new Error(`REDIRECT:${destination}`)
   })
   mocks.listThreadsForUser.mockReturnValue([{
     contextLabel: "Assignment - Cedar ridge",
@@ -105,8 +115,9 @@ describe("workspace-scoped message data", () => {
     })
 
     await expect(getMessagesData("host", THREAD_ID)).rejects.toThrow(
-      /Select an operating workspace/
+      /REDIRECT:\/access-restricted/
     )
+    expect(mocks.redirect).toHaveBeenCalledWith("/access-restricted")
     expect(mocks.listThreadsForUser).not.toHaveBeenCalled()
     expect(mocks.listThreadMessages).not.toHaveBeenCalled()
     expect(mocks.mutateState).not.toHaveBeenCalled()

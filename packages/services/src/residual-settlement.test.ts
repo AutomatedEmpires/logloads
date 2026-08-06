@@ -4,11 +4,9 @@ import {
   organizationMembershipSchema
 } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 
-vi.mock("server-only", () => ({}))
-
-import { residualSettlementItemsForOrganization } from "./residual-settlement-data"
+import { residualSettlementItemsForOrganization } from "./residual-settlement"
 
 function settlementFixture() {
   const state = createInMemoryDatabase()

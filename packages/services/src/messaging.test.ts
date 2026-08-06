@@ -743,6 +743,13 @@ describe("organization-level messaging lock", () => {
       expect(listThreadsForUser(state, DRIVER_USER)).toEqual([])
       expect(listThreadsForUser(state, HOST_DISPATCHER_USER).map((view) => view.id)).toContain(thread.id)
       expect(() => listThreadMessages(state, thread.id, DRIVER_USER)).toThrow(/Conversation not found/)
+      const beforeUndeliverableReply = structuredClone(state)
+      expect(() => postMessage(state, {
+        authorUserId: HOST_DISPATCHER_USER,
+        body: "This must not look delivered when nobody can receive it.",
+        threadId: thread.id
+      })).toThrow(/participants.*available/i)
+      expect(state).toEqual(beforeUndeliverableReply)
       expect(() => postMessage(state, {
         authorUserId: DRIVER_USER,
         body: "I should not be able to operate here.",

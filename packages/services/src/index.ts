@@ -1,5 +1,8 @@
 import { type LogLoadsDatabaseState } from "@logloads/db"
 
+import { resolveRestrictedOrganizationAccess } from "./organization-access"
+import { residualSettlementItemsForOrganization } from "./residual-settlement"
+
 import {
   createAccount,
   findProfileByClerkId,
@@ -196,6 +199,13 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     state,
     DEFAULT_ACTOR_USER_ID,
     DEFAULT_ORGANIZATION_ID,
+    resolveRestrictedOrganizationAccess: (
+      input: Parameters<typeof resolveRestrictedOrganizationAccess>[1]
+    ) => resolveRestrictedOrganizationAccess(state, input),
+    residualSettlementItemsForOrganization: (
+      userId: string,
+      organizationId: string
+    ) => residualSettlementItemsForOrganization(state, userId, organizationId),
     addEquipmentCombination: (input: unknown) => addEquipmentCombination(state, input),
     applyBillingUpdate: (input: unknown) => applyBillingUpdate(state, input),
     // The platform fee ledger. Separate from applyBillingUpdate above, which is the
@@ -656,7 +666,18 @@ export { loadPostingHasOwnedCoherentSources, routePackIsSafeToRead } from "./rou
 export { destinationFacilityVerificationAt, millUsableByOrganization } from "./destination-access"
 export { directOfferClaimCount, directOfferIsClaimable, effectiveDirectOfferStatus } from "./operating-network"
 export { DomainRefusalError } from "./utils"
-export { organizationOperationallyAccessible } from "./organization-access"
+export {
+  organizationOperationallyAccessible,
+  resolveRestrictedOrganizationAccess
+} from "./organization-access"
+export type { RestrictedOrganizationAccess } from "./organization-access"
+export { operationalOrganizationIdsForUser } from "./messaging"
+export { residualSettlementItemsForOrganization } from "./residual-settlement"
+export type {
+  ResidualDriverReceipt,
+  ResidualHostPayment,
+  ResidualSettlementItem
+} from "./residual-settlement"
 export { getOrganizationSuspensionBlockers } from "./admin"
 export type {
   OrganizationSuspensionBlockers,

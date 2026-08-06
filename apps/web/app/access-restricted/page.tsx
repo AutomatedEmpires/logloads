@@ -126,7 +126,6 @@ export default async function Page() {
         : null
   const residualSettlements = settlementOrganizationId
     ? residualSettlementItemsForOrganization(
-        services.state,
         actor.profile.id,
         settlementOrganizationId
       )

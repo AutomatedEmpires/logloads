@@ -91,7 +91,9 @@ async function requireActor(): Promise<SessionActor> {
 
   if (
     !actor.isPlatformAdmin &&
-    (actor.workspaceSelectionInvalid || !organizationOperationallyAccessible(actor.activeOrganization))
+    (actor.workspaceSelectionInvalid ||
+      (actor.activeOrganization &&
+        !organizationOperationallyAccessible(actor.activeOrganization)))
   ) {
     throw new Error("Organization operations are not available")
   }
