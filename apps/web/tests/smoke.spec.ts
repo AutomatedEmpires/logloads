@@ -190,7 +190,10 @@ test("onboarding provisions a truthful driver first run", async ({ page }, testI
   await expect(firstRun.getByTestId("driver-first-run-equipment")).toContainText("Equipment record")
   await expect(firstRun.getByTestId("driver-first-run-availability")).toHaveAttribute("data-state", "complete")
   await expect(firstRun.getByRole("link", { name: "Review credential requirements" })).toBeVisible()
-  await expect(firstRun.getByRole("button", { name: "Continue where you left off" })).toBeVisible()
+  const driverContinuation = firstRun.getByRole("button", { name: "Continue where you left off" })
+  const driverContinuationForm = firstRun.locator('form[action="/driver/first-run/continue"]')
+  await expect(driverContinuation).toBeVisible()
+  await expect(driverContinuationForm).not.toHaveCSS("display", "contents")
 
   await page.reload()
   await expect(page.getByTestId("driver-first-run")).toBeVisible()
@@ -225,7 +228,7 @@ test("onboarding provisions a truthful driver first run", async ({ page }, testI
 test("fleet onboarding opens a Fleet Free activation handoff", async ({ page }, testInfo) => {
   const pageErrors = watchPageErrors(page)
 
-  await page.goto("/onboarding/fleet")
+  await page.goto("/onboarding/fleet?next=%2Ffleet%2Fopportunities")
   await page.waitForLoadState("domcontentloaded")
 
   await expect(page.getByRole("radio", { name: /Small fleet/ })).toBeChecked()
@@ -253,6 +256,24 @@ test("fleet onboarding opens a Fleet Free activation handoff", async ({ page }, 
   await expect(firstRun.getByTestId("fleet-readiness-driver")).toHaveAttribute("data-status", "waiting")
   await expect(firstRun.getByTestId("fleet-readiness-credentials")).toHaveAttribute("data-status", "waiting")
   await expect(firstRun.getByRole("link", { name: "Add or assign a driver" })).toBeVisible()
+  const fleetContinuation = firstRun.getByRole("button", {
+    name: "Continue to the requested Fleet page"
+  })
+  const fleetContinuationForm = firstRun.locator('form[action="/fleet/first-run/continue"]')
+  await expect(fleetContinuation).toBeVisible()
+  await expect(fleetContinuationForm).not.toHaveCSS("display", "contents")
+
+  if (testInfo.project.name !== "desktop-chrome") {
+    const formBox = await fleetContinuationForm.boundingBox()
+    const buttonBox = await fleetContinuation.boundingBox()
+
+    if (!formBox || !buttonBox) throw new Error("Fleet continuation geometry is missing")
+    expect(buttonBox.height).toBeGreaterThanOrEqual(44)
+    expect(Math.abs(buttonBox.width - formBox.width)).toBeLessThanOrEqual(1)
+    const viewportWidth = await page.evaluate(() => document.documentElement.clientWidth)
+    const contentWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+    expect(contentWidth).toBeLessThanOrEqual(viewportWidth + 1)
+  }
 
   await page.reload()
   await expect(page.getByTestId("fleet-first-run")).toBeVisible()
@@ -265,6 +286,9 @@ test("fleet onboarding opens a Fleet Free activation handoff", async ({ page }, 
   })
   expect(pageErrors).toEqual([])
   await expect(page.locator("[data-nextjs-dialog], .vite-error-overlay")).toHaveCount(0)
+
+  await fleetContinuation.press("Enter")
+  await page.waitForURL(/\/fleet\/opportunities$/, { timeout: 30_000 })
 })
 
 test("host onboarding opens a mobile first-movement launchpad", async ({ page }, testInfo) => {
@@ -275,7 +299,7 @@ test("host onboarding opens a mobile first-movement launchpad", async ({ page },
   const pageErrors = watchPageErrors(page)
 
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto("/onboarding/host")
+  await page.goto("/onboarding/host?next=%2Fhost%2Fcommand")
   await page.waitForLoadState("domcontentloaded")
 
   await expect(page.getByRole("radio", { name: /Logging contractor/ })).toBeChecked()
@@ -310,6 +334,12 @@ test("host onboarding opens a mobile first-movement launchpad", async ({ page },
   await expect(readiness.getByText("Host billing activation", { exact: true })).toBeVisible()
   await expect(readiness.getByText(/accept the current 5% agreement and attach a card/i)).toBeVisible()
   await expect(readiness.getByText(/workspace setup itself does not charge you/i)).toBeVisible()
+  const hostContinuation = readiness.getByRole("button", {
+    name: "Continue to the host work you opened"
+  })
+  const hostContinuationForm = readiness.locator('form[action="/host/first-run/continue"]')
+  await expect(hostContinuation).toBeVisible()
+  await expect(hostContinuationForm).not.toHaveCSS("display", "contents")
 
   await page.evaluate(() => window.scrollTo(0, 0))
   const primaryAction = readiness.getByRole("link", { name: "Add first landing" })
@@ -321,6 +351,13 @@ test("host onboarding opens a mobile first-movement launchpad", async ({ page },
   if (!actionBox || !mobileNavBox) throw new Error("Host first-run or mobile navigation geometry is missing")
   expect(actionBox.height).toBeGreaterThanOrEqual(44)
   expect(actionBox.y + actionBox.height).toBeLessThanOrEqual(mobileNavBox.y - 8)
+  const continuationFormBox = await hostContinuationForm.boundingBox()
+  const continuationButtonBox = await hostContinuation.boundingBox()
+  if (!continuationFormBox || !continuationButtonBox) {
+    throw new Error("Host continuation geometry is missing")
+  }
+  expect(continuationButtonBox.height).toBeGreaterThanOrEqual(44)
+  expect(Math.abs(continuationButtonBox.width - continuationFormBox.width)).toBeLessThanOrEqual(1)
   const viewportWidth = await page.evaluate(() => document.documentElement.clientWidth)
   const contentWidth = await page.evaluate(() => document.documentElement.scrollWidth)
   expect(contentWidth).toBeLessThanOrEqual(viewportWidth + 1)
@@ -332,7 +369,8 @@ test("host onboarding opens a mobile first-movement launchpad", async ({ page },
   expect(pageErrors).toEqual([])
   await expect(page.locator("[data-nextjs-dialog], .vite-error-overlay")).toHaveCount(0)
 
-  await page.goto("/host/command")
+  await hostContinuation.press("Enter")
+  await page.waitForURL(/\/host\/command$/, { timeout: 30_000 })
   await expect(page.getByRole("heading", { name: "Finish workspace setup" })).toBeVisible()
   await expect(page.getByText("No truckloads scheduled")).toHaveCount(0)
   await expect(page.getByText("Every planned truckload is committed")).toHaveCount(0)

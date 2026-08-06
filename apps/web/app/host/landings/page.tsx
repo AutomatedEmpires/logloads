@@ -8,6 +8,7 @@ import {
   getHostWorkspaceSetup
 } from "@/lib/host-data"
 import {
+  firstSearchValue,
   firstRunContinuationCookieName,
   readFirstRunHandoffCookie
 } from "@/lib/entry-routing"
@@ -27,7 +28,7 @@ export default async function Page({
   ])
   const organizationId = context.network.activeOrganization.id
   const actorUserId = context.actor.profile.id
-  const welcome = params.welcome === "1"
+  const welcome = firstSearchValue(params.welcome) === "1"
   const handoff = welcome
     ? readFirstRunHandoffCookie(
         "host",

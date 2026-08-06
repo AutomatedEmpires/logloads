@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest"
 import {
   createFirstRunHandoffCookie,
   decideExistingActorEntry,
+  firstSearchValue,
   firstRunDestination,
   homePathForIntent,
   parseEntryIntent,
@@ -42,6 +43,14 @@ function actorFor(email: string): SessionActor {
 }
 
 describe("public entry routing", () => {
+  it("uses the first value when Next.js projects duplicate search parameters", () => {
+    expect(firstSearchValue("1")).toBe("1")
+    expect(firstSearchValue(["1", "0"])).toBe("1")
+    expect(firstSearchValue(["0", "1"])).toBe("0")
+    expect(firstSearchValue([])).toBeUndefined()
+    expect(firstSearchValue(undefined)).toBeUndefined()
+  })
+
   it("recognizes only supported role intents", () => {
     expect(parseEntryIntent("driver")).toBe("driver")
     expect(parseEntryIntent("fleet")).toBe("fleet")

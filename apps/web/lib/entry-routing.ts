@@ -56,6 +56,12 @@ export function parseEntryIntent(value: unknown): EntryIntent | null {
   return value === "driver" || value === "fleet" || value === "host" ? value : null
 }
 
+export function firstSearchValue(
+  value: string | string[] | undefined
+): string | undefined {
+  return Array.isArray(value) ? value.at(0) : value
+}
+
 /**
  * Authentication continuations must stay internal, must not point back into an
  * entry loop, and must not contradict an explicit role intent.

@@ -4,6 +4,7 @@ import { DriverProfile } from "@/components/v3"
 import { getDriverCredentialVaultView } from "@/lib/credential-data"
 import { getDriverAvailability } from "@/lib/driver-data"
 import {
+  firstSearchValue,
   firstRunContinuationCookieName,
   readFirstRunHandoffCookie
 } from "@/lib/entry-routing"
@@ -23,7 +24,7 @@ export default async function Page({
     searchParams,
     cookies()
   ])
-  const welcome = params.welcome === "1"
+  const welcome = firstSearchValue(params.welcome) === "1"
   const handoff = welcome
     ? readFirstRunHandoffCookie(
         "driver",

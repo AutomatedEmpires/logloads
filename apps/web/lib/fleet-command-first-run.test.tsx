@@ -59,6 +59,11 @@ beforeEach(() => {
 })
 
 describe("Fleet Command first-run routing", () => {
+  it("uses the first duplicate welcome value consistently", async () => {
+    expect((await pageProps({ welcome: ["1", "0"] })).welcome).toBe(true)
+    expect((await pageProps({ welcome: ["0", "1"] })).welcome).toBe(false)
+  })
+
   it("reads a path-only Fleet continuation from the HttpOnly handoff cookie", async () => {
     mocks.cookieGet.mockReturnValue({
       value: createFirstRunHandoffCookie(

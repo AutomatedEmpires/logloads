@@ -5,16 +5,13 @@ import { FleetCommand, type FleetCredentialReadiness } from "@/components/v3"
 import { getDriverCredentialVaultView } from "@/lib/credential-data"
 import { getFleetCockpitData } from "@/lib/fleet-data"
 import {
+  firstSearchValue,
   firstRunContinuationCookieName,
   readFirstRunHandoffCookie
 } from "@/lib/entry-routing"
 import { getSessionActor } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
-
-function firstSearchValue(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value.at(0) : value
-}
 
 export default async function Page({
   searchParams
