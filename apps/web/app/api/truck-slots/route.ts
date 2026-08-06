@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 
-// The services facade binds listTruckSlotsForDate with a date alone, which reads
-// at the public scope. This endpoint has to answer at the caller's own scope, so
-// it calls the service function directly instead of through that binding.
-import { listTruckSlotsForDate } from "@logloads/services/src/truck-slots"
+// The bound services facade reads at the public scope. This endpoint has to
+// answer at the caller's own scope, so it uses the package's explicitly public
+// read helper with the verified organization id.
+import { listTruckSlotsForDate } from "@logloads/services"
 
 import { apiErrorResponse, requireApiActor } from "@/lib/api-actor"
 import { mutateState, readState } from "@/lib/services"

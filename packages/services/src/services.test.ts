@@ -1,6 +1,8 @@
 import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
+import servicesPackage from "../package.json"
+import { declineAssignment, requestAssignment } from "./assignments"
 import { createLogLoadsServices, type LogLoadsServices } from "./index"
 
 // The seed fixtures live in early June 2026; pin the request clock inside
@@ -13,6 +15,14 @@ function requestJune(
 }
 
 describe("logloads services", () => {
+  it("does not expose raw assignment mutations through the public service facade", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    expect(servicesPackage.exports).toEqual({ ".": "./src/index.ts" })
+    expect(services).not.toHaveProperty("requestAssignment")
+    expect(services).not.toHaveProperty("cancelAssignment")
+  })
+
   it("creates a valid load posting", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
 
@@ -90,7 +100,7 @@ describe("logloads services", () => {
 
   it("mints an uncommitted request with a stable physical-movement identity", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    const assignment = services.requestAssignment({
+    const assignment = requestAssignment(services.state, {
       loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
       truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd2",
       driverProfileId: "44444444-4444-4444-8444-444444444441",
@@ -120,10 +130,10 @@ describe("logloads services", () => {
       truckProfileId: "77777777-7777-4777-8777-777777777771",
       truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd2"
     }
-    const first = services.requestAssignment(request)
+    const first = requestAssignment(services.state, request)
 
-    services.cancelAssignment(first.id, "Driver became unavailable")
-    const replacement = services.requestAssignment(request)
+    declineAssignment(services.state, first.id, "Driver became unavailable")
+    const replacement = requestAssignment(services.state, request)
 
     expect(replacement.id).not.toBe(first.id)
     expect(replacement.loadMovementId).toBe(first.loadMovementId)
@@ -133,7 +143,7 @@ describe("logloads services", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
 
     expect(() =>
-      services.requestAssignment({
+      requestAssignment(services.state, {
         loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc2",
         truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd3",
         driverProfileId: "44444444-4444-4444-8444-444444444442",
@@ -338,7 +348,7 @@ describe("logloads services", () => {
     slot.status = "cancelled"
 
     expect(() =>
-      services.requestAssignment({
+      requestAssignment(services.state, {
         loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
         truckSlotId: slot.id,
         driverProfileId: "44444444-4444-4444-8444-444444444441",
@@ -349,28 +359,6 @@ describe("logloads services", () => {
       })
     ).toThrow(/cannot be reserved while cancelled/)
   })
-
-  it("releases slot capacity when an assignment is cancelled", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    const assignment = services.requestAssignment({
-      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
-      truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd2",
-      driverProfileId: "44444444-4444-4444-8444-444444444441",
-      truckProfileId: "77777777-7777-4777-8777-777777777771",
-      trailerProfileId: "88888888-8888-4888-8888-888888888881",
-      cancellationReason: null,
-      dispatcherNotes: "Temporary hold."
-    })
-
-    const cancelled = services.cancelAssignment(assignment.id, "Weather closure")
-    const slot = services.listTruckSlotsForDate("2026-06-06").find((current) => current.id === "dddddddd-dddd-4ddd-8ddd-ddddddddddd2")
-
-    expect(cancelled.status).toBe("cancelled")
-    expect(cancelled.cancellationReason).toBe("Weather closure")
-    expect(slot?.reservedCount).toBe(0)
-    expect(slot?.status).toBe("open")
-  })
-
 
   it("shows private-network opportunities to connected organizations", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())

@@ -13,7 +13,6 @@ import {
   reviewOrganization,
   reviewVerificationRecord
 } from "./admin"
-import { cancelAssignment, requestAssignment } from "./assignments"
 import { applyBillingUpdate, findEntitlementByStripeSubscription } from "./billing"
 import { acceptPercentageBillingAgreement } from "./percentage-billing"
 import {
@@ -445,13 +444,19 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     unreadThreadCounts: (userId: string) => unreadThreadCounts(state, userId),
     listVerificationQueue: () => listVerificationQueue(state),
     postMessage: (input: unknown) => postMessage(state, input),
-    resolveOperationalNotice: (input: { noticeId: string; reviewerUserId: string }) => resolveOperationalNotice(state, input),
-    reviewOrganization: (input: unknown) => reviewOrganization(state, input),
+    resolveOperationalNotice: (
+      input: Parameters<typeof resolveOperationalNotice>[1]
+    ) => resolveOperationalNotice(state, input),
+    reviewOrganization: (
+      input: Parameters<typeof reviewOrganization>[1]
+    ) => reviewOrganization(state, input),
     reviewSupportRequest: (
       input: Parameters<typeof reviewSupportRequest>[1],
       now?: Parameters<typeof reviewSupportRequest>[2]
     ) => reviewSupportRequest(state, input, now),
-    reviewVerificationRecord: (input: unknown) => reviewVerificationRecord(state, input),
+    reviewVerificationRecord: (
+      input: Parameters<typeof reviewVerificationRecord>[1]
+    ) => reviewVerificationRecord(state, input),
     submitVerificationRecord: (input: unknown) => submitVerificationRecord(state, input),
     submitTripReview: (input: unknown) => submitTripReview(state, input),
     getReputationForOrganization: (organizationId: string) => getReputationForOrganization(state, organizationId),
@@ -462,8 +467,6 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     updateEquipmentStatus: (input: unknown) => updateEquipmentStatus(state, input),
     approveCapacityRequest: (input: Parameters<typeof approveCapacityRequest>[1]) => approveCapacityRequest(state, input),
     attachTripDocument: (input: Parameters<typeof attachTripDocument>[1]) => attachTripDocument(state, input),
-    cancelAssignment: (assignmentId: string, cancellationReason: string) =>
-      cancelAssignment(state, assignmentId, cancellationReason),
     cancelAssignmentWithPolicy: (input: Parameters<typeof cancelAssignmentWithPolicy>[1]) =>
       cancelAssignmentWithPolicy(state, input),
     closeLoadPosting: (input: Parameters<typeof closeLoadPosting>[1]) => closeLoadPosting(state, input),
@@ -543,7 +546,6 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     recordPreTripInspection: (input: Parameters<typeof recordPreTripInspection>[1]) =>
       recordPreTripInspection(state, input),
     publishFutureAvailability: (input: Parameters<typeof publishFutureAvailability>[1]) => publishFutureAvailability(state, input),
-    requestAssignment: (input: unknown) => requestAssignment(state, input),
     requestCapacityWithPolicy: (
       input: Parameters<typeof requestCapacityWithPolicy>[1],
       options?: Parameters<typeof requestCapacityWithPolicy>[2]
@@ -566,7 +568,12 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
 
 export type LogLoadsServices = ReturnType<typeof createLogLoadsServices>
 
-export { getDriverMediaTarget, getTripDocumentTarget, tripDocumentPublicIdPrefix }
+export {
+  getDriverMediaTarget,
+  getTripDocumentTarget,
+  listTruckSlotsForDate,
+  tripDocumentPublicIdPrefix
+}
 export {
   activeDriverProfileForOrganization,
   driverProfileCanRequestForOrganization

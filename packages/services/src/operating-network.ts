@@ -1154,10 +1154,9 @@ function finalizeCapacityAssignment(
   // have lapsed by the time the host approves, and an expired credential must
   // stop being valid rather than stay valid because it was valid once.
   //
-  // It is also the only guard standing on `requestAssignment`, which is exported
-  // unguarded and can mint a `requested` row with no vault at all. Because every
-  // path to `accepted` passes through here, nothing can reach `accepted` without
-  // a complete, current vault — see the handoff note on that writer.
+  // It is also the final guard after the package-internal request primitive.
+  // Because every path to `accepted` passes through here, nothing can reach
+  // `accepted` without a complete, current vault.
   //
   // Placed before the first mutation below, so a refusal leaves the assignment,
   // the slot, the route pack, the trip and the audit trail untouched.

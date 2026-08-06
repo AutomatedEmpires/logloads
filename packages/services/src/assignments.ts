@@ -157,30 +157,3 @@ export function declineAssignment(
 
   return updated
 }
-
-export function cancelAssignment(
-  state: LogLoadsDatabaseState,
-  assignmentId: string,
-  cancellationReason: string
-): Assignment {
-  const assignment = assertFound(
-    state.assignments.find((current) => current.id === assignmentId),
-    `Assignment ${assignmentId} was not found`
-  )
-
-  const updated = assignmentSchema.parse({
-    ...assignment,
-    cancelledAt: nowIso(),
-    cancellationReason,
-    status: transitionAssignmentStatus(assignment.status, "cancelled"),
-    updatedAt: nowIso()
-  })
-
-  releaseTruckSlotReservation(state, assignment.truckSlotId)
-
-  state.assignments = state.assignments.map((current) =>
-    current.id === assignmentId ? updated : current
-  )
-
-  return updated
-}
