@@ -63,6 +63,64 @@ function billingProfileFor(state: LogLoadsDatabaseState, organizationId = HOST_O
   return profile
 }
 
+interface MutablePercentageAccount {
+  percentageTermsSnapshot: {
+    acceptedTermsVersion: string
+    billingCadence: string
+    currency: string
+    feeBps: number
+  }
+  subscriptionId: string | null
+}
+
+function percentageAccountFor(state: LogLoadsDatabaseState): MutablePercentageAccount {
+  const account = state.organizationBillingAccounts.find(
+    (entry) => entry.organizationId === HOST_ORG
+  )
+
+  if (!account || !account.percentageTermsSnapshot) {
+    throw new Error("the seed has no current percentage agreement for the host")
+  }
+
+  return account as unknown as MutablePercentageAccount
+}
+
+const INVALID_CURRENT_AGREEMENT_CASES: Array<{
+  corrupt: (account: MutablePercentageAccount) => void
+  reason: string
+}> = [
+  {
+    corrupt: (account) => {
+      account.percentageTermsSnapshot.acceptedTermsVersion = "percentage-v1-retired"
+    },
+    reason: "a stale terms version"
+  },
+  {
+    corrupt: (account) => {
+      account.percentageTermsSnapshot.feeBps = PLATFORM_FEE_BPS - 1
+    },
+    reason: "an altered fee"
+  },
+  {
+    corrupt: (account) => {
+      account.percentageTermsSnapshot.billingCadence = "weekly"
+    },
+    reason: "an altered billing cadence"
+  },
+  {
+    corrupt: (account) => {
+      account.percentageTermsSnapshot.currency = "CAD"
+    },
+    reason: "an altered currency"
+  },
+  {
+    corrupt: (account) => {
+      account.subscriptionId = "20202020-2020-4020-8020-202020202020"
+    },
+    reason: "a subscription attached to the percentage account"
+  }
+]
+
 describe("publishing a load makes it requestable", () => {
   it("creates an opportunity-capacity ledger and a requestable loading slot for a live load", () => {
     const state = createInMemoryDatabase()
@@ -252,6 +310,27 @@ describe("what a published load pays the driver", () => {
 })
 
 describe("a host may not publish work they cannot be billed for", () => {
+  it.each(INVALID_CURRENT_AGREEMENT_CASES)(
+    "refuses $reason before creating live work",
+    ({ corrupt }) => {
+      const state = createInMemoryDatabase()
+      const before = {
+        capacities: state.opportunityCapacities.length,
+        postings: state.loadPostings.length,
+        slots: state.truckSlots.length
+      }
+
+      corrupt(percentageAccountFor(state))
+
+      expect(() => createLoadPosting(state, { ...BASE_LOAD, status: "open" })).toThrow(
+        /must accept the current LogLoads fee agreement/
+      )
+      expect(state.loadPostings).toHaveLength(before.postings)
+      expect(state.truckSlots).toHaveLength(before.slots)
+      expect(state.opportunityCapacities).toHaveLength(before.capacities)
+    }
+  )
+
   it("refuses an organization with no card on file, and says what to do about it", () => {
     const state = createInMemoryDatabase()
     removeCard(state)
@@ -282,7 +361,7 @@ describe("a host may not publish work they cannot be billed for", () => {
     expect(state.opportunityCapacities).toHaveLength(before.capacities)
   })
 
-  it("publishes for the same organization once a card is attached", () => {
+  it("publishes with the exact current agreement and an attached card", () => {
     // The positive control for the refusal above: nothing else about the input
     // changes, so the card is demonstrably the only thing that was blocking it.
     const state = createInMemoryDatabase()

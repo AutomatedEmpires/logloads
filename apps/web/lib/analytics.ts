@@ -9,28 +9,33 @@ export function isAnalyticsEnabled(): boolean {
 
 /**
  * Server-side capture for meaningful operating events (onboarding, capacity
- * request, approval, trip progress). Fire-and-forget: never blocks or throws
- * into the request path, and is a no-op when no PostHog key is configured.
+ * request, approval, trip progress). The promise never rejects and is a no-op
+ * when no PostHog key is configured. Completion-critical call sites may await
+ * it before redirecting; ordinary operating telemetry may remain non-blocking.
  */
-export function captureServerEvent(
+export async function captureServerEvent(
   event: string,
   distinctId: string,
   properties: Record<string, unknown> = {}
-): void {
+): Promise<void> {
   if (!POSTHOG_KEY) {
     return
   }
 
-  void fetch(`${POSTHOG_HOST}/capture/`, {
-    body: JSON.stringify({
-      api_key: POSTHOG_KEY,
-      distinct_id: distinctId,
-      event,
-      properties: { ...properties, $lib: "logloads-server" },
-      timestamp: new Date().toISOString()
-    }),
-    headers: { "Content-Type": "application/json" },
-    method: "POST",
-    signal: AbortSignal.timeout(4000)
-  }).catch(() => {})
+  try {
+    await fetch(`${POSTHOG_HOST}/capture/`, {
+      body: JSON.stringify({
+        api_key: POSTHOG_KEY,
+        distinct_id: distinctId,
+        event,
+        properties: { ...properties, $lib: "logloads-server" },
+        timestamp: new Date().toISOString()
+      }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+      signal: AbortSignal.timeout(4000)
+    })
+  } catch {
+    // Analytics cannot make an otherwise durable operating action fail.
+  }
 }

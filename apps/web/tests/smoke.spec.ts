@@ -18,6 +18,17 @@ async function openPublicMenuIfNeeded(page: Page) {
   }
 }
 
+function watchPageErrors(page: Page): string[] {
+  const errors: string[] = []
+
+  page.on("pageerror", (error) => errors.push(error.message))
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text())
+  })
+
+  return errors
+}
+
 test("visitor understands the public product and can inspect public loads", async ({ page }) => {
   await page.goto("/")
 
@@ -137,10 +148,19 @@ test("platform admin reaches the admin console", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Admin" })).toBeVisible()
 })
 
-test("onboarding provisions a working driver account", async ({ page }) => {
-  await page.goto("/onboarding")
+test("onboarding provisions a truthful driver first run", async ({ page }, testInfo) => {
+  const pageErrors = watchPageErrors(page)
+
+  for (const rejectedNext of [
+    "/host/command",
+    "https://example.com/driver/loads"
+  ]) {
+    await page.goto(`/onboarding/driver?next=${encodeURIComponent(rejectedNext)}`)
+    await expect(page.locator('input[name="next"]')).toHaveValue("")
+  }
+
+  await page.goto("/onboarding/driver?next=%2Fdriver%2Floads")
   await page.waitForLoadState("domcontentloaded")
-  await page.click("text=I haul timber")
   await expect(page.getByRole("radio", { name: /Owner-operator/ })).toBeChecked()
   await page.getByRole("button", { name: "Choose a different role" }).click()
   await page.getByRole("button", { name: /I have timber to move/ }).click()
@@ -156,9 +176,95 @@ test("onboarding provisions a working driver account", async ({ page }) => {
   await page.fill('input[name="region"]', "Test Valley")
   await page.getByRole("button", { name: "Continue" }).click()
   await expect(page.getByRole("radio", { name: /Available today/ })).toBeChecked()
-  await page.getByRole("button", { name: "Show me matching loads" }).click()
-  await page.waitForURL(/\/driver\/loads/, { timeout: 30_000 })
-  await expect(page.getByRole("heading", { name: "Loads" })).toBeVisible()
+  await expect(page.getByText("Your driver profile opens in setup.")).toBeVisible()
+  await page.getByRole("button", { name: "Create profile and finish setup" }).click()
+  await page.waitForURL(/\/driver\/profile\?welcome=1/, { timeout: 30_000 })
+  expect(new URL(page.url()).searchParams.has("next")).toBe(false)
+  await expect(page.getByRole("heading", { name: "Profile", exact: true })).toBeVisible()
+
+  const firstRun = page.getByTestId("driver-first-run")
+  await expect(firstRun.getByText("Account and profile created", { exact: true })).toBeVisible()
+  await expect(firstRun.getByRole("heading", { name: "Your driver workspace is ready to finish." })).toBeVisible()
+  await expect(firstRun.getByText("Load acceptance locked", { exact: true })).toBeVisible()
+  await expect(firstRun.getByTestId("driver-first-run-equipment")).toHaveAttribute("data-state", "complete")
+  await expect(firstRun.getByTestId("driver-first-run-equipment")).toContainText("Equipment record")
+  await expect(firstRun.getByTestId("driver-first-run-availability")).toHaveAttribute("data-state", "complete")
+  await expect(firstRun.getByRole("link", { name: "Review credential requirements" })).toBeVisible()
+  await expect(firstRun.getByRole("button", { name: "Continue where you left off" })).toBeVisible()
+
+  await page.reload()
+  await expect(page.getByTestId("driver-first-run")).toBeVisible()
+  await expect(page.getByText("Load acceptance locked", { exact: true })).toBeVisible()
+  await page.evaluate(() => window.scrollTo(0, 0))
+
+  if (testInfo.project.name !== "desktop-chrome") {
+    const credentialState = page.getByTestId("driver-first-run-credential-state")
+    const mobileNav = page.getByRole("navigation", { name: "driver mobile navigation" })
+
+    await expect(mobileNav).toBeVisible()
+    const stateBox = await credentialState.boundingBox()
+    const navBox = await mobileNav.boundingBox()
+
+    if (!stateBox || !navBox) throw new Error("Driver first-run or mobile navigation geometry is missing")
+    expect(stateBox.y + stateBox.height).toBeLessThanOrEqual(navBox.y - 8)
+  }
+
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath(`driver-first-run-${testInfo.project.name}.png`)
+  })
+  expect(pageErrors).toEqual([])
+  await expect(page.locator("[data-nextjs-dialog], .vite-error-overlay")).toHaveCount(0)
+
+  await page.getByRole("button", { name: "Continue where you left off" }).click()
+  await page.waitForURL(/\/driver\/loads$/, { timeout: 30_000 })
+  await page.goto("/driver/profile?welcome=1")
+  await expect(page.getByRole("button", { name: "Continue where you left off" })).toHaveCount(0)
+})
+
+test("fleet onboarding opens a Fleet Free activation handoff", async ({ page }, testInfo) => {
+  const pageErrors = watchPageErrors(page)
+
+  await page.goto("/onboarding/fleet")
+  await page.waitForLoadState("domcontentloaded")
+
+  await expect(page.getByRole("radio", { name: /Small fleet/ })).toBeChecked()
+  await page.getByLabel("Full name").fill("First Run Fleet Manager")
+  await page.getByLabel("Email").fill(`fleet-${Date.now()}@smoke.example`)
+  await page.getByLabel("Phone").fill("555-0172")
+  await page.getByRole("button", { name: "Continue" }).click()
+
+  await page.getByLabel("Fleet name").fill("First Run Timber Fleet")
+  await page.getByLabel("Operating region").fill("Test Valley")
+  await page.getByRole("button", { name: "Continue" }).click()
+
+  await expect(page.getByText("Fleet Free opens with your first unit on file.")).toBeVisible()
+  await page.getByRole("button", { name: "Create Fleet Free workspace" }).click()
+  await page.waitForURL(/\/fleet\/command\?welcome=1/, { timeout: 30_000 })
+  await expect(page.getByRole("heading", { name: "Command", exact: true })).toBeVisible()
+
+  const firstRun = page.getByTestId("fleet-first-run")
+  await expect(firstRun.getByText("Fleet Free is active", { exact: true })).toBeVisible()
+  await expect(
+    firstRun.getByRole("heading", { name: "Build the operating picture before you put a truck on work." })
+  ).toBeVisible()
+  await expect(firstRun.getByText(/no checkout/i)).toBeVisible()
+  await expect(firstRun.getByTestId("fleet-readiness-unit")).toHaveAttribute("data-status", "complete")
+  await expect(firstRun.getByTestId("fleet-readiness-driver")).toHaveAttribute("data-status", "waiting")
+  await expect(firstRun.getByTestId("fleet-readiness-credentials")).toHaveAttribute("data-status", "waiting")
+  await expect(firstRun.getByRole("link", { name: "Add or assign a driver" })).toBeVisible()
+
+  await page.reload()
+  await expect(page.getByTestId("fleet-first-run")).toBeVisible()
+  await expect(page.getByText(/no checkout/i)).toBeVisible()
+  await page.evaluate(() => window.scrollTo(0, 0))
+
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath(`fleet-first-run-${testInfo.project.name}.png`)
+  })
+  expect(pageErrors).toEqual([])
+  await expect(page.locator("[data-nextjs-dialog], .vite-error-overlay")).toHaveCount(0)
 })
 
 test("host onboarding opens a mobile first-movement launchpad", async ({ page }, testInfo) => {
@@ -166,6 +272,7 @@ test("host onboarding opens a mobile first-movement launchpad", async ({ page },
     testInfo.project.name === "desktop-chrome",
     "this path sets and verifies the exact 390px host onboarding viewport"
   )
+  const pageErrors = watchPageErrors(page)
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto("/onboarding/host")
@@ -184,12 +291,18 @@ test("host onboarding opens a mobile first-movement launchpad", async ({ page },
   await expect(
     page.getByRole("group", { name: "Your workspace is ready to create" })
   ).toBeVisible()
-  await page.getByRole("button", { name: "Create workspace and continue" }).click()
+  await page.getByRole("button", { name: "Create host workspace" }).click()
   await page.waitForURL(/\/host\/landings\?welcome=1/, { timeout: 30_000 })
 
   await expect(page.getByRole("heading", { name: "Landings", exact: true })).toBeVisible()
-  await expect(page.getByRole("heading", { name: "Prepare your first timber movement" })).toBeVisible()
-  const readiness = page.locator(".host-readiness")
+  const firstRun = page.getByTestId("host-first-run")
+  await expect(firstRun.getByText("Workspace created", { exact: true })).toBeVisible()
+  await expect(
+    firstRun.getByRole("heading", { name: "Prepare your first timber movement" })
+  ).toBeVisible()
+  await expect(firstRun.getByText(/your host workspace is created/i)).toBeVisible()
+  await expect(firstRun.getByText(/live publication stays off/i)).toBeVisible()
+  const readiness = firstRun
   await expect(readiness.getByText("Add a landing", { exact: true })).toBeVisible()
   await expect(readiness.getByText("Add a lane", { exact: true })).toBeVisible()
   await expect(readiness.getByText("Add a pay rate", { exact: true })).toBeVisible()
@@ -198,10 +311,16 @@ test("host onboarding opens a mobile first-movement launchpad", async ({ page },
   await expect(readiness.getByText(/accept the current 5% agreement and attach a card/i)).toBeVisible()
   await expect(readiness.getByText(/workspace setup itself does not charge you/i)).toBeVisible()
 
+  await page.evaluate(() => window.scrollTo(0, 0))
   const primaryAction = readiness.getByRole("link", { name: "Add first landing" })
   const actionBox = await primaryAction.boundingBox()
-  expect(actionBox?.height ?? 0).toBeGreaterThanOrEqual(44)
-  expect(actionBox?.y ?? Number.POSITIVE_INFINITY).toBeLessThan(844)
+  const mobileNavBox = await page
+    .getByRole("navigation", { name: "host mobile navigation" })
+    .boundingBox()
+  await expect(page.getByRole("navigation", { name: "host mobile navigation" })).toBeVisible()
+  if (!actionBox || !mobileNavBox) throw new Error("Host first-run or mobile navigation geometry is missing")
+  expect(actionBox.height).toBeGreaterThanOrEqual(44)
+  expect(actionBox.y + actionBox.height).toBeLessThanOrEqual(mobileNavBox.y - 8)
   const viewportWidth = await page.evaluate(() => document.documentElement.clientWidth)
   const contentWidth = await page.evaluate(() => document.documentElement.scrollWidth)
   expect(contentWidth).toBeLessThanOrEqual(viewportWidth + 1)
@@ -210,6 +329,8 @@ test("host onboarding opens a mobile first-movement launchpad", async ({ page },
     fullPage: true,
     path: testInfo.outputPath("host-first-movement-mobile.png")
   })
+  expect(pageErrors).toEqual([])
+  await expect(page.locator("[data-nextjs-dialog], .vite-error-overlay")).toHaveCount(0)
 
   await page.goto("/host/command")
   await expect(page.getByRole("heading", { name: "Finish workspace setup" })).toBeVisible()

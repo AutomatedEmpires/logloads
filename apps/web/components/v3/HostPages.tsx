@@ -10,6 +10,7 @@ import type {
   HostPublishingOptions,
   HostWorkspaceSetup
 } from "@/lib/host-data"
+import { hostPercentagePublicationIsReady } from "@/lib/host-publishing-options"
 import type { NetworkLoadView, NetworkView } from "@/lib/network"
 import { formatDateTime, formatHuman, tripStatusLabel } from "@/lib/v3-shared"
 import { DecisionList, toneForNotice } from "./Common"
@@ -93,28 +94,39 @@ function getHostReadinessFacts(
   }
 }
 
-function hostActivationIsComplete(
-  activationState: HostPublishingOptions["billingActivationState"]
-): boolean {
-  return activationState === "percentage_active"
-}
-
-function HostReadiness({
+export function HostReadiness({
   activationState,
+  billingProfileStatus,
   billingModel,
   canManageLandings,
   canPublish,
+  continuationHref,
+  currentPercentageAgreementActive,
   facts,
-  title
+  title,
+  welcome = false,
+  welcomeSource,
+  workspaceName
 }: {
   activationState: HostPublishingOptions["billingActivationState"]
+  billingProfileStatus: HostPublishingOptions["billingProfileStatus"]
   billingModel: HostPublishingOptions["billingModel"]
   canManageLandings: boolean
   canPublish: boolean
+  continuationHref?: string
+  currentPercentageAgreementActive: boolean
   facts: HostReadinessFacts
   title: string
+  welcome?: boolean
+  welcomeSource?: "created" | "invited"
+  workspaceName: string
 }) {
-  const activationComplete = hostActivationIsComplete(activationState)
+  const activationComplete = hostPercentagePublicationIsReady({
+    billingActivationState: activationState,
+    billingModel,
+    billingProfileStatus,
+    currentPercentageAgreementActive
+  })
   const operatingSteps = [
     {
       complete: facts.hasLanding,
@@ -170,6 +182,40 @@ function HostReadiness({
   ]
   const requiredSetupAction =
     nextIndex >= 0 ? setupActions[nextIndex] ?? null : null
+  const activationDetail = activationComplete
+    ? "The current 5% completed-load agreement is active and a working payment method is attached."
+    : currentPercentageAgreementActive
+      ? billingProfileStatus === "failed"
+        ? "The current 5% completed-load agreement is active, but the payment method failed. Replace it in Billing before publishing live work."
+        : billingProfileStatus === null
+          ? "The current 5% completed-load agreement is active, but the billing profile is conflicting. Resolve it before publishing live work."
+          : "The current 5% completed-load agreement is active. Attach a working payment method in Billing before publishing live work."
+      : activationState === "percentage_active"
+        ? "The percentage agreement record is incomplete or not current. Reconcile it in Billing before publishing live work."
+        : activationState === "legacy"
+          ? "Historical percentage assignments remain preserved. Accept the current agreement from Billing before publishing new live work."
+          : activationState === "suspended"
+            ? "Activation is suspended. Contact LogLoads to resolve the operating hold before publication resumes."
+            : billingModel
+              ? "A historical commercial record exists. Reconcile it from Billing before new percentage work can activate."
+              : "Pilot activation is invitation-based. Review Billing to accept the current 5% agreement and attach a card when this workspace is approved. Workspace setup itself does not charge you."
+  const readinessDescription = welcome
+    ? welcomeSource === "invited"
+      ? activationComplete
+        ? workspaceName +
+          " is now your active host workspace. The agreement and payment method are ready. Finish the operating record to put your first movement live."
+        : workspaceName +
+          " is now your active host workspace. Build the operating record with your team; live publication stays off until percentage billing is approved and activated."
+      : welcomeSource === "created"
+        ? activationComplete
+          ? "Your host workspace is created. The agreement and payment method are ready. Finish the operating record to put your first movement live."
+          : "Your host workspace is created. Build the operating record now; live publication stays off until percentage billing is approved and activated."
+        : activationComplete
+          ? "This host workspace is ready. The agreement and payment method are ready. Finish the operating record to put your first movement live."
+          : "This host workspace is ready for setup. Build the operating record now; live publication stays off until percentage billing is approved and activated."
+    : activationComplete
+      ? "The agreement and payment method are ready. Finish the operating record to put your first movement live."
+      : "Build the operating record now. Live publication stays off until this workspace is approved for percentage billing and completes activation."
   const nextAction = requiredSetupAction
     ? requiredSetupAction.allowed
       ? {
@@ -191,18 +237,8 @@ function HostReadiness({
       : {
           href: "/host/billing",
           label: "Review host billing",
-          note: "Invited hosts accept the 5% completed-load agreement and attach a card before publishing live work."
+          note: activationDetail
         }
-  const activationDetail =
-    activationState === "percentage_active"
-      ? "The current 5% completed-load agreement is active for this workspace."
-      : activationState === "legacy"
-        ? "Historical percentage assignments remain preserved. Accept the current agreement from Billing before publishing new live work."
-        : activationState === "suspended"
-          ? "Activation is suspended. Contact LogLoads to resolve the operating hold before publication resumes."
-          : billingModel
-            ? "A historical commercial record exists. Reconcile it from Billing before new percentage work can activate."
-            : "Pilot activation is invitation-based. Review Billing to accept the current 5% agreement and attach a card when this workspace is approved. Workspace setup itself does not charge you."
   const steps = [
     ...operatingSteps,
     {
@@ -213,16 +249,24 @@ function HostReadiness({
   ]
 
   return (
-    <section aria-labelledby="host-readiness-title" className="host-readiness">
+    <section
+      aria-labelledby="host-readiness-title"
+      className={`host-readiness${welcome ? " host-readiness--welcome" : ""}`}
+      data-testid={welcome ? "host-first-run" : undefined}
+    >
       <header className="host-readiness__head">
         <div>
-          <p className="eyebrow">First movement launchpad</p>
-          <h2 id="host-readiness-title">{title}</h2>
-          <p>
-            {activationComplete
-              ? "Activation is recorded for this workspace. Finish the operating record to put your first movement live."
-              : "Build the operating record now. Live publication stays off until this workspace is approved for percentage billing and completes activation."}
+          <p className="eyebrow">
+            {welcome
+              ? welcomeSource === "invited"
+                ? "Workspace joined"
+                : welcomeSource === "created"
+                  ? "Workspace created"
+                  : "Workspace ready"
+              : "First movement launchpad"}
           </p>
+          <h2 id="host-readiness-title">{title}</h2>
+          <p>{readinessDescription}</p>
         </div>
         <div className="host-readiness__progress">
           <strong>{facts.readyCount} of 4 operating steps ready</strong>
@@ -242,6 +286,13 @@ function HostReadiness({
       </header>
       <div className="host-readiness__actions">
         <Link className="action-link" href={nextAction.href}>{nextAction.label}</Link>
+        {welcome && continuationHref ? (
+          <form action="/host/first-run/continue" method="post">
+            <button className="action-link action-link--secondary" type="submit">
+              Continue to the host work you opened
+            </button>
+          </form>
+        ) : null}
         <span>{nextAction.note}</span>
       </div>
       <ol className="host-readiness__steps">
@@ -330,9 +381,7 @@ export function HostCommand({
 }) {
   const own = ownLoads(network)
   const readiness = getHostReadinessFacts(network, options, setup)
-  const activationComplete = hostActivationIsComplete(
-    options.billingActivationState
-  )
+  const activationComplete = hostPercentagePublicationIsReady(options)
   const showReadiness =
     own.length === 0 ||
     (!activationComplete && options.billingActivationState !== "suspended")
@@ -351,15 +400,18 @@ export function HostCommand({
       {showReadiness ? (
         <HostReadiness
           activationState={options.billingActivationState}
+          billingProfileStatus={options.billingProfileStatus}
           billingModel={options.billingModel}
           canManageLandings={canManageLandings}
           canPublish={canPublish}
+          currentPercentageAgreementActive={options.currentPercentageAgreementActive}
           facts={readiness}
           title={
             readiness.readyCount === 4
               ? "Complete billing activation"
               : "Finish workspace setup"
           }
+          workspaceName={network.activeOrganization.name}
         />
       ) : null}
       <section className="host-need">
@@ -674,25 +726,27 @@ export function HostLandings({
   canManageDestinations,
   canManageLandings,
   canPublish,
+  continuation,
   landings,
   network,
   options,
   setup,
-  welcome = false
+  welcome = false,
+  welcomeSource
 }: HostPageProps & {
   canManageDestinations: boolean
   canManageLandings: boolean
   canPublish: boolean
+  continuation?: string
   landings: HostLandingRecord[]
   options: HostPublishingOptions
   setup: HostWorkspaceSetup
   welcome?: boolean
+  welcomeSource?: "created" | "invited"
 }) {
   const atLimit = setup.landingLimit !== null && setup.activeLandingCount >= setup.landingLimit
   const readiness = getHostReadinessFacts(network, options, setup)
-  const activationComplete = hostActivationIsComplete(
-    options.billingActivationState
-  )
+  const activationComplete = hostPercentagePublicationIsReady(options)
   const showReadiness =
     welcome || readiness.readyCount < 4 || !activationComplete
 
@@ -701,11 +755,17 @@ export function HostLandings({
       {showReadiness ? (
         <HostReadiness
           activationState={options.billingActivationState}
+          billingProfileStatus={options.billingProfileStatus}
           billingModel={options.billingModel}
           canManageLandings={canManageLandings}
           canPublish={canPublish}
+          continuationHref={continuation}
+          currentPercentageAgreementActive={options.currentPercentageAgreementActive}
           facts={readiness}
           title="Prepare your first timber movement"
+          welcome={welcome}
+          welcomeSource={welcomeSource}
+          workspaceName={network.activeOrganization.name}
         />
       ) : null}
       {canManageLandings ? (

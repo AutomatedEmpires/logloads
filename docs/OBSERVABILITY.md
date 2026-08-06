@@ -1,8 +1,8 @@
 # LogLoads — Observability
 
 Analytics (PostHog) and error tracking (Sentry) are wired and env-gated. Both are inert
-with no keys and activate the moment their key is set. The only remaining external steps
-are providing the LogLoads project keys.
+with no keys. Production health on 2026-08-05 reported both integrations configured;
+that proves environment presence, not event delivery, source-map upload, or alerting.
 
 ## PostHog — event inventory
 
@@ -12,8 +12,9 @@ Client (`components/analytics/AnalyticsProvider.tsx`) and server
 
 | Event | Source | distinct_id | Properties | PII/secrets? |
 |---|---|---|---|---|
-| `$pageview` | client | device id | `$current_url` (path) | none — cockpit paths carry only UUIDs |
+| `$pageview` | client | device id | `$current_url` (origin + pathname only) | query strings and fragments are always removed before capture |
 | `account_created` | server (onboarding) | profile UUID | `path`, `accountType` | none |
+| `onboarding_completed` | server (onboarding) | profile UUID | `path`, `accountType`, `organizationId`; invited joins also include `invitedRole` | none (UUID and enums only) |
 | `capacity_requested` | server (driver/fleet) | profile UUID | `loadPostingId` | none (UUID) |
 | `capacity_approved` | server (host) | profile UUID | `assignmentId` | none |
 | `capacity_declined` | server (host) | profile UUID | `assignmentId` | none |
@@ -24,9 +25,16 @@ Client (`components/analytics/AnalyticsProvider.tsx`) and server
 - `distinct_id` is the stable profile **UUID**, not email/name/phone.
 - Properties are UUIDs and enum statuses only — **no PII, no secrets, no message content**.
 - Event names are stable snake_case operating verbs.
+- Browser autocapture, exception/performance/dead-click/heatmap capture, session
+  recording, console logs, surveys, tours, conversations, experiments, and
+  remote feature/config loading are explicitly disabled. Campaign/referrer
+  persistence is off. The only client event is the manual path-only pageview
+  above; a global send hook also removes URL queries/fragments and drops
+  extracted campaign/search terms as defense in depth.
 
-**Founder step:** create a dedicated **LogLoads** PostHog project, set
-`NEXT_PUBLIC_POSTHOG_KEY` (and `NEXT_PUBLIC_POSTHOG_HOST` if not US cloud).
+**Production proof still required:** confirm the configured key belongs to the dedicated
+**LogLoads** PostHog project, then observe `onboarding_completed` and the operating-loop
+events in Live Events without any PII properties.
 
 **Optional enhancement (not required):** call `posthog.identify(profileId)` client-side
 after auth to link anonymous pageviews to the operating events. Deliberately omitted to
@@ -55,7 +63,9 @@ minified. To get readable traces post-launch: wrap `next.config.ts` with
 `withSentryConfig` and set `SENTRY_AUTH_TOKEN` at build. This is the one optional
 enhancement; it is **not** required to receive errors.
 
-**Founder step:** create a dedicated **LogLoads** Sentry project, set `SENTRY_DSN`.
+**Production proof still required:** confirm the configured DSN belongs to the dedicated
+**LogLoads** Sentry project, deliver a controlled test event, verify alert routing, and
+record the result without retaining a public test route.
 
 **Verify after activation:** `curl /api/health` → `integrations.errorTracking: true`;
 trigger a safe test error on a throwaway route (or temporarily add `/api/_sentry-test`)

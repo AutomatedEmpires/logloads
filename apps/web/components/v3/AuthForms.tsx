@@ -71,6 +71,32 @@ export function DevSignInForm({
 
 type OnboardingPath = "driver" | "fleet" | "host"
 
+const COMPLETION_COPY: Record<OnboardingPath, {
+  body: string
+  button: string
+  pending: string
+  title: string
+}> = {
+  driver: {
+    body: "Your truck and availability are recorded first. You can browse matching work, but requesting or accepting a load stays locked until the required insurance, CDL, and exact equipment records are approved.",
+    button: "Create profile and finish setup",
+    pending: "Creating profile...",
+    title: "Your driver profile opens in setup."
+  },
+  fleet: {
+    body: "There is no trial, checkout, subscription, or LogLoads truck limit. Assign or invite a driver and complete that driver's required credential review before the truck can request work.",
+    button: "Create Fleet Free workspace",
+    pending: "Creating Fleet Free workspace...",
+    title: "Fleet Free opens with your first unit on file."
+  },
+  host: {
+    body: "Workspace creation is free and does not activate live publication. An authorized host can prepare a draft; pilot approval, the current 5% completed-load agreement, and a card are required before publishing.",
+    button: "Create host workspace",
+    pending: "Creating host workspace...",
+    title: "Start with one landing, its first lane, and the rate you pay."
+  }
+}
+
 const PATH_CHOICES: Array<{ path: OnboardingPath; title: string; body: string }> = [
   { body: "Owner-operators, company drivers, and leased-on drivers.", path: "driver", title: "I haul timber" },
   { body: "Fleet owners, dispatchers, and carrier operations.", path: "fleet", title: "I manage trucks" },
@@ -203,6 +229,7 @@ export function OnboardingFlow({
   const needsEquipment = path !== "host"
   const orgLabel = path === "host" ? "Company or operation name" : path === "fleet" ? "Fleet name" : "Business name (optional)"
   const stepLabels = ["Your role", "Operating area", needsEquipment ? "Equipment" : "Ready"]
+  const completionCopy = COMPLETION_COPY[path]
 
   function advanceStep(event: MouseEvent<HTMLButtonElement>) {
     // Prevent the browser's default action before React swaps this control for
@@ -294,7 +321,11 @@ export function OnboardingFlow({
       {needsEquipment ? (
         <fieldset data-onboarding-step="2" hidden={step !== 2}>
           <legend tabIndex={-1}>Your main setup</legend>
-          <p className="fieldset-note">Choose the truck and trailer you use most. Photos and other equipment can wait.</p>
+          <p className="fieldset-note">
+            {path === "driver"
+              ? "Choose the truck and trailer you use most. You’ll file the exact equipment and credential records from your profile before taking work."
+              : "Choose the first unit to put on your board. Assign or invite a cleared driver from Fleet Free before requesting work."}
+          </p>
           <label>
             <span>Truck type</span>
             <select defaultValue="log_truck" name="truckType">
@@ -319,12 +350,12 @@ export function OnboardingFlow({
                 <label className="radio-card">
                   <input defaultChecked name="availabilityPreset" type="radio" value="today" />
                   <strong>Available today</strong>
-                  <span>Show work I can request now.</span>
+                  <span>Post a 24-hour window. Work requests stay locked until required records are approved.</span>
                 </label>
                 <label className="radio-card">
                   <input name="availabilityPreset" type="radio" value="three_days" />
                   <strong>Next 3 days</strong>
-                  <span>Keep me open for nearby work.</span>
+                  <span>Post a 72-hour window for nearby work; approval still controls when you can request it.</span>
                 </label>
                 <label className="radio-card">
                   <input name="availabilityPreset" type="radio" value="not_ready" />
@@ -334,6 +365,10 @@ export function OnboardingFlow({
               </div>
             </div>
           ) : null}
+          <div className="onboarding-ready">
+            <strong>{completionCopy.title}</strong>
+            <span>{completionCopy.body}</span>
+          </div>
         </fieldset>
       ) : (
         <fieldset data-onboarding-step="2" hidden={step !== 2}>
@@ -345,16 +380,8 @@ export function OnboardingFlow({
             before publishing live work; driver setup remains free.
           </p>
           <div className="onboarding-ready">
-            <strong>
-              {path === "host"
-                ? "Start with one landing, its first lane, and the rate you pay."
-                : "Start by setting up your operation."}
-            </strong>
-            <span>
-              {path === "host"
-                ? "You can prepare the workspace and a draft before accepting the current agreement and attaching a card from Billing."
-                : "Only the information needed for the next decision appears on each screen."}
-            </span>
+            <strong>{completionCopy.title}</strong>
+            <span>{completionCopy.body}</span>
           </div>
         </fieldset>
       )}
@@ -362,7 +389,7 @@ export function OnboardingFlow({
       {state.error ? <p className="form-error" role="alert">{state.error}</p> : null}
 
       {step === 2 ? (
-        <p className="onboarding-consent">By opening your workspace, you agree to the <Link href="/terms">Terms</Link> and acknowledge the <Link href="/privacy">Privacy Notice</Link>.</p>
+        <p className="onboarding-consent">By creating your profile or workspace, you agree to the <Link href="/terms">Terms</Link> and acknowledge the <Link href="/privacy">Privacy Notice</Link>.</p>
       ) : null}
 
       <div className="onboarding-form__actions">
@@ -370,13 +397,7 @@ export function OnboardingFlow({
           <button className="action-link" onClick={advanceStep} type="button">Continue</button>
         ) : (
           <button className="action-link" disabled={pending} type="submit">
-            {pending
-              ? "Setting up..."
-              : path === "driver"
-                ? "Show me matching loads"
-                : path === "host"
-                  ? "Create workspace and continue"
-                  : "Open my workspace"}
+            {pending ? completionCopy.pending : completionCopy.button}
           </button>
         )}
         {step > 0 ? (

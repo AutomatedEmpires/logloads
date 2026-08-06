@@ -1,8 +1,7 @@
 import "server-only"
 
 import {
-  PERCENTAGE_V1_TERMS_VERSION,
-  PLATFORM_FEE_BPS,
+  isCurrentPercentageAgreement,
   type HostBillingProfile,
   type HostInvoice,
   type PlatformFeeEvent
@@ -67,22 +66,6 @@ export type HostCardSetupEligibility =
 const AGREEMENT_REQUIRED_MESSAGE =
   "Payment method setup opens only after this workspace is approved for percentage billing and accepts the current agreement, or when a preserved obligation still requires collection."
 
-function acceptedCurrentAgreement(
-  account: HostCardEligibilityAccount
-): boolean {
-  const terms = account.percentageTermsSnapshot
-
-  return (
-    account.activationState === "percentage_active" &&
-    account.billingModel === "percentage_v1" &&
-    account.subscriptionId === null &&
-    terms?.acceptedTermsVersion === PERCENTAGE_V1_TERMS_VERSION &&
-    terms.billingCadence === "monthly_in_arrears" &&
-    terms.currency === "USD" &&
-    terms.feeBps === PLATFORM_FEE_BPS
-  )
-}
-
 function preservedSubscriptionAgreement(
   account: HostCardEligibilityAccount
 ): boolean {
@@ -134,7 +117,7 @@ export function hostCardSetupEligibility(
   if (
     account &&
     percentageEnrollmentAllowed &&
-    acceptedCurrentAgreement(account)
+    isCurrentPercentageAgreement(account)
   ) {
     return {
       allowed: true,

@@ -1,4 +1,5 @@
 import { organizationRoleCan } from "@logloads/contracts"
+import { cookies } from "next/headers"
 
 import { HostLandings } from "@/components/v3"
 import {
@@ -6,6 +7,10 @@ import {
   getHostPublishingOptions,
   getHostWorkspaceSetup
 } from "@/lib/host-data"
+import {
+  firstRunContinuationCookieName,
+  readFirstRunHandoffCookie
+} from "@/lib/entry-routing"
 import { getCockpitContext, shellAccountFor } from "@/lib/v3"
 
 export const dynamic = "force-dynamic"
@@ -13,12 +18,23 @@ export const dynamic = "force-dynamic"
 export default async function Page({
   searchParams
 }: {
-  searchParams: Promise<{ welcome?: string }>
+  searchParams: Promise<{ next?: string | string[]; welcome?: string | string[] }>
 }) {
-  const context = await getCockpitContext("host")
+  const [context, params, cookieStore] = await Promise.all([
+    getCockpitContext("host"),
+    searchParams,
+    cookies()
+  ])
   const organizationId = context.network.activeOrganization.id
   const actorUserId = context.actor.profile.id
-  const welcome = (await searchParams).welcome === "1"
+  const welcome = params.welcome === "1"
+  const handoff = welcome
+    ? readFirstRunHandoffCookie(
+        "host",
+        cookieStore.get(firstRunContinuationCookieName("host"))?.value,
+        actorUserId
+      )
+    : null
   // The host cockpit admits billing and destination managers too, so these
   // controls follow the same role matrix the services enforce rather than
   // offering a form that would be refused. Establishing a landing is the
@@ -37,11 +53,13 @@ export default async function Page({
       canManageLandings={canManageLandings}
       canManageDestinations={canManageDestinations}
       canPublish={canPublish}
+      continuation={handoff?.continuation || undefined}
       landings={getHostLandingRecords(organizationId, role, actorUserId)}
       network={context.network}
       options={getHostPublishingOptions(organizationId, actorUserId)}
       setup={getHostWorkspaceSetup(organizationId, role, actorUserId)}
       welcome={welcome}
+      welcomeSource={handoff?.source}
     />
   )
 }

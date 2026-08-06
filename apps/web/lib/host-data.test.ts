@@ -53,6 +53,60 @@ describe("host publishing options", () => {
     expect(options.dispatcher?.id).not.toBe(sharedDispatcher.id)
     expect(options.billingModel).toBe("percentage_v1")
     expect(options.billingActivationState).toBe("percentage_active")
+    expect(options.billingProfileStatus).toBe("attached")
+    expect(options.currentPercentageAgreementActive).toBe(true)
+  })
+
+  it("keeps an accepted current agreement distinct from a missing card", () => {
+    const hostOrganizationId = "33333333-3333-4333-8333-333333333332"
+    const originalProfiles = services.state.hostBillingProfiles
+
+    services.state.hostBillingProfiles = originalProfiles.filter(
+      (profile) => profile.organizationId !== hostOrganizationId
+    )
+
+    try {
+      const options = getHostPublishingOptions(
+        hostOrganizationId,
+        hostActorFor(hostOrganizationId)
+      )
+
+      expect(options).toMatchObject({
+        billingActivationState: "percentage_active",
+        billingModel: "percentage_v1",
+        billingProfileStatus: "none",
+        currentPercentageAgreementActive: true
+      })
+    } finally {
+      services.state.hostBillingProfiles = originalProfiles
+    }
+  })
+
+  it("does not project an attached card as current when the terms version is stale", () => {
+    const hostOrganizationId = "33333333-3333-4333-8333-333333333332"
+    const account = services.state.organizationBillingAccounts.find(
+      (candidate) => candidate.organizationId === hostOrganizationId
+    )
+
+    expect(account?.percentageTermsSnapshot).toBeTruthy()
+    if (!account?.percentageTermsSnapshot) return
+
+    const originalTermsVersion = account.percentageTermsSnapshot.acceptedTermsVersion
+    account.percentageTermsSnapshot.acceptedTermsVersion = "percentage-v1-retired"
+
+    try {
+      const options = getHostPublishingOptions(
+        hostOrganizationId,
+        hostActorFor(hostOrganizationId)
+      )
+
+      expect(options).toMatchObject({
+        billingProfileStatus: "attached",
+        currentPercentageAgreementActive: false
+      })
+    } finally {
+      account.percentageTermsSnapshot.acceptedTermsVersion = originalTermsVersion
+    }
   })
 
   it("does not expose a foreign destination through a corrupt legacy lane", () => {

@@ -1,33 +1,40 @@
 "use client"
 
-import { usePathname, useSearchParams } from "next/navigation"
-import { Suspense, useEffect } from "react"
+import { usePathname } from "next/navigation"
+import { useEffect } from "react"
+
+import {
+  ANALYTICS_CAPTURE_POLICY,
+  captureAnalyticsPageview,
+  createAnalyticsClientLoader,
+  sanitizePostHogEvent
+} from "@/lib/analytics-pageview"
 
 const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY
 const POSTHOG_HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com"
 
-let initialized = false
-
-async function ensurePostHog() {
-  if (initialized || !POSTHOG_KEY || typeof window === "undefined") {
-    return null
-  }
-
-  initialized = true
+const loadPostHogClient = createAnalyticsClientLoader(async () => {
   const { default: posthog } = await import("posthog-js")
 
-  posthog.init(POSTHOG_KEY, {
+  posthog.init(POSTHOG_KEY!, {
+    ...ANALYTICS_CAPTURE_POLICY,
     api_host: POSTHOG_HOST,
-    capture_pageview: false,
-    person_profiles: "identified_only"
+    before_send: sanitizePostHogEvent
   })
 
   return posthog
+})
+
+async function ensurePostHog() {
+  if (!POSTHOG_KEY || typeof window === "undefined") {
+    return null
+  }
+
+  return loadPostHogClient()
 }
 
 function PageViewTracker() {
   const pathname = usePathname()
-  const searchParams = useSearchParams()
 
   useEffect(() => {
     if (!POSTHOG_KEY) {
@@ -39,10 +46,9 @@ function PageViewTracker() {
         return
       }
 
-      const query = searchParams.toString()
-      posthog.capture("$pageview", { $current_url: window.location.origin + pathname + (query ? `?${query}` : "") })
+      captureAnalyticsPageview(posthog, window.location.origin, pathname)
     })
-  }, [pathname, searchParams])
+  }, [pathname])
 
   return null
 }
@@ -56,9 +62,5 @@ export function AnalyticsProvider() {
     return null
   }
 
-  return (
-    <Suspense fallback={null}>
-      <PageViewTracker />
-    </Suspense>
-  )
+  return <PageViewTracker />
 }

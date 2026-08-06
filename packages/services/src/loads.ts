@@ -4,6 +4,7 @@ import {
   PLATFORM_FEE_BPS,
   allocationModeSchema,
   createLoadPostingInputSchema,
+  isCurrentPercentageAgreement,
   loadPostingSchema,
   opportunityCapacitySchema,
   opportunityVisibilityModeSchema,
@@ -123,7 +124,7 @@ function scheduleDates(entity: LoadPosting, fallbackDate: string): string[] {
 const FEE_PERCENT_LABEL = `${(PLATFORM_FEE_BPS / FEE_BPS_SCALE) * 100}%`
 
 /**
- * Whether a legacy_percentage host in each billing state may publish work, and
+ * Whether a percentage-billed host in each card state may publish work, and
  * what to tell them when they may not. `null` means publishing is allowed.
  *
  * An exhaustive record rather than a `status !== "attached"` check: adding a
@@ -147,8 +148,8 @@ const BILLING_STATE_PUBLISH_REFUSAL: Record<HostBillingProfileStatus, string | n
 }
 
 /**
- * The operating promise and, only for legacy_percentage, collection readiness
- * that have to be true before work reaches the network.
+ * The operating promise, exact current percentage agreement, and collection
+ * readiness that have to be true before work reaches the network.
  *
  * WHY IN THE SERVICE. Both a server action and `POST /api/loads` publish work,
  * and a field marked required in the builder guards neither: a bare REST body
@@ -156,10 +157,9 @@ const BILLING_STATE_PUBLISH_REFUSAL: Record<HostBillingProfileStatus, string | n
  * chokepoint both callers pass through.
  *
  * Driver pay remains required in every model because it is the driver's accepted
- * operating promise. A card is required only when this posting would freeze the
- * permanent legacy percentage obligation. Subscription posting itself costs
- * nothing; delinquency is enforced later on NEW Network commitments, where the
- * capacity source is known, without stopping private-fleet work.
+ * operating promise. Percentage publication also requires one usable attached
+ * card. Historical subscription records remain readable and collectible, but
+ * after the percentage-v1 cutover they do not authorize new publication.
  *
  * WHY A DRAFT IS EXEMPT. A draft is not on the network and accrues nothing.
  * A draft becomes work through `provisionLoadCapacity`, which calls this, so a
@@ -190,10 +190,7 @@ export function assertHostCanPublish(
   const usesLegacyPercentage =
     billingAccount?.activationState === "legacy" &&
     billingAccount.billingModel === "legacy_percentage"
-  const usesCurrentPercentage =
-    billingAccount?.activationState === "percentage_active" &&
-    billingAccount.billingModel === "percentage_v1" &&
-    billingAccount.percentageTermsSnapshot !== null
+  const usesCurrentPercentage = isCurrentPercentageAgreement(billingAccount)
   const usesPercentage = usesLegacyPercentage || usesCurrentPercentage
 
   assertCondition(

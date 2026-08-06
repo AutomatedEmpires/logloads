@@ -2,10 +2,14 @@ import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
 import {
+  createFirstRunHandoffCookie,
   decideExistingActorEntry,
+  firstRunDestination,
   homePathForIntent,
   parseEntryIntent,
-  safeEntryNext
+  readFirstRunHandoffCookie,
+  safeEntryNext,
+  safeFirstRunContinuation
 } from "./entry-routing"
 import type { SessionActor } from "./session-policy"
 
@@ -54,6 +58,98 @@ describe("public entry routing", () => {
     expect(safeEntryNext("/onboarding/driver", "driver")).toBe("")
     expect(safeEntryNext("/host/command", "driver")).toBe("")
     expect(safeEntryNext(["/driver/loads", "/host/command"], "driver")).toBe("")
+  })
+
+  it("routes every new account through its role-specific first-run handoff", () => {
+    expect(firstRunDestination("driver")).toBe("/driver/profile?welcome=1")
+    expect(firstRunDestination("fleet")).toBe("/fleet/command?welcome=1")
+    expect(firstRunDestination("host")).toBe("/host/landings?welcome=1")
+  })
+
+  it("keeps first-run URLs free of nested private continuations", () => {
+    expect(firstRunDestination("driver")).toBe("/driver/profile?welcome=1")
+    expect(firstRunDestination("fleet")).toBe("/fleet/command?welcome=1")
+    expect(firstRunDestination("host")).toBe("/host/landings?welcome=1")
+  })
+
+  it("carries only a path-only same-role continuation in a scoped cookie", () => {
+    const driverCookie = createFirstRunHandoffCookie(
+      "driver",
+      "/driver/loads/abc?from=public#fit",
+      "created",
+      "user-1"
+    )
+    const fleetCookie = createFirstRunHandoffCookie(
+      "fleet",
+      "/fleet/opportunities/abc",
+      "created",
+      "user-1"
+    )
+    const hostCookie = createFirstRunHandoffCookie(
+      "host",
+      "/host/opportunities?draft=abc",
+      "invited",
+      "user-1"
+    )
+
+    expect(readFirstRunHandoffCookie("driver", driverCookie, "user-1")).toEqual({
+      continuation: "/driver/loads/abc",
+      source: "created"
+    })
+    expect(readFirstRunHandoffCookie("fleet", fleetCookie, "user-1")).toEqual({
+      continuation: "/fleet/opportunities/abc",
+      source: "created"
+    })
+    expect(readFirstRunHandoffCookie("host", hostCookie, "user-1")).toEqual({
+      continuation: "/host/opportunities",
+      source: "invited"
+    })
+    expect(driverCookie).not.toContain("from")
+    expect(hostCookie).not.toContain("draft")
+
+    for (const continuation of [
+      "https://example.com/driver/loads",
+      "/sign-up?path=driver",
+      "/support",
+      "/host/command",
+      "/driver/profile?welcome=1"
+    ]) {
+      expect(
+        readFirstRunHandoffCookie(
+          "driver",
+          createFirstRunHandoffCookie("driver", continuation, "created", "user-1"),
+          "user-1"
+        )?.continuation,
+        continuation
+      ).toBe("")
+    }
+
+    expect(readFirstRunHandoffCookie("host", driverCookie, "user-1")).toBeNull()
+    expect(readFirstRunHandoffCookie("driver", driverCookie, "user-2")).toBeNull()
+    expect(readFirstRunHandoffCookie("driver", "not-json", "user-1")).toBeNull()
+  })
+
+  it("revalidates a first-run continuation at the consuming page", () => {
+    expect(
+      safeFirstRunContinuation("driver", "/driver/profile", "/driver/loads/abc?from=public")
+    ).toBe("/driver/loads/abc")
+    expect(
+      safeFirstRunContinuation("host", "/host/landings", "/host/opportunities?draft=abc")
+    ).toBe("/host/opportunities")
+
+    for (const continuation of [
+      "/support",
+      "/pricing",
+      "/host/command",
+      "/driver/profile",
+      "/driver/profile/",
+      "/driver/profile?welcome=0"
+    ]) {
+      expect(
+        safeFirstRunContinuation("driver", "/driver/profile", continuation),
+        continuation
+      ).toBe("")
+    }
   })
 
   it("honors driver intent for an actor whose default cockpit is Host", () => {

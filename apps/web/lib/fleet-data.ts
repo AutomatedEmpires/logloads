@@ -93,6 +93,7 @@ export interface LoadDispatchOption {
 
 export interface FleetCockpitData {
   account: ShellAccount
+  actorUserId: string
   network: NetworkView
   drivers: FleetDriverRow[]
   driverOptions: DriverOption[]
@@ -345,6 +346,7 @@ export async function getFleetCockpitData(): Promise<FleetCockpitData> {
 
   return {
     account: shellAccountFor(context),
+    actorUserId: context.actor.profile.id,
     combinations: combinations.map((combination) => ({ id: combination.id, label: combination.label })),
     dispatchPlan,
     driverOptions,
