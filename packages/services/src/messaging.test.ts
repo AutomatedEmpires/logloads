@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto"
+
 import {
   ORGANIZATION_ROLES,
   assignmentSchema,
@@ -81,6 +83,7 @@ interface TestCreateThreadInput {
   assignmentId?: string | null
   body: string
   creatorUserId: string
+  initialMessageId?: string
   loadPostingId?: string | null
   organizationId?: string
   participantUserIds: string[]
@@ -90,6 +93,7 @@ interface TestCreateThreadInput {
 interface TestPostMessageInput {
   authorUserId: string
   body: string
+  messageId?: string
   organizationId?: string
   threadId: string
 }
@@ -98,10 +102,13 @@ function createThread(
   state: LogLoadsDatabaseState,
   input: TestCreateThreadInput
 ) {
+  const { initialMessageId = randomUUID(), ...threadInput } = input
+
   return createThreadInWorkspace(state, {
-    ...input,
+    ...threadInput,
+    initialMessageId,
     organizationId: input.organizationId ?? defaultOrganizationIdForUser(input.creatorUserId)
-  })
+  }).thread
 }
 
 function listThreadsForUser(
@@ -125,10 +132,13 @@ function postMessage(
   state: LogLoadsDatabaseState,
   input: TestPostMessageInput
 ) {
+  const { messageId = randomUUID(), ...messageInput } = input
+
   return postMessageInWorkspace(state, {
-    ...input,
+    ...messageInput,
+    messageId,
     organizationId: input.organizationId ?? defaultOrganizationIdForUser(input.authorUserId)
-  })
+  }).event
 }
 
 function unreadThreadCounts(
@@ -362,7 +372,11 @@ function operatingState(): LogLoadsDatabaseState {
   return state
 }
 
-function writeCounts(state: LogLoadsDatabaseState): Record<string, number> {
+function writeCounts(state: LogLoadsDatabaseState): {
+  events: number
+  notifications: number
+  threads: number
+} {
   return {
     events: state.messageEvents.length,
     notifications: state.notifications.length,
@@ -675,6 +689,182 @@ describe("createThread on the legitimate operating path", () => {
     expect(state.messageThreads).toHaveLength(1)
     expect(state.messageEvents).toHaveLength(2)
   })
+
+  it("converges an opening-message retry on one thread, event, and notification", () => {
+    const state = operatingState()
+    const input = {
+      assignmentId: HOST_ASSIGNMENT,
+      body: "The mill changed my arrival window.",
+      creatorUserId: DRIVER_USER,
+      initialMessageId: "12121212-1212-4212-8212-121212121212",
+      loadPostingId: HOST_LOAD,
+      organizationId: ORG_CARRIER,
+      participantUserIds: [HOST_DISPATCHER_USER],
+      subject: "Arrival window"
+    }
+
+    const first = createThreadInWorkspace(state, input)
+    const afterFirst = writeCounts(state)
+    const second = createThreadInWorkspace(state, input)
+
+    expect(first.messageCreated).toBe(true)
+    expect(second).toEqual({ messageCreated: false, thread: first.thread })
+    expect(writeCounts(state)).toEqual(afterFirst)
+    expect(state.messageEvents.map((event) => event.id)).toEqual([
+      input.initialMessageId
+    ])
+  })
+
+  it("reconciles an opening-message retry after shared work becomes terminal", () => {
+    const state = operatingState()
+    const input = {
+      assignmentId: HOST_ASSIGNMENT,
+      body: "The mill changed my arrival window.",
+      creatorUserId: DRIVER_USER,
+      initialMessageId: "14141414-1414-4414-8414-141414141414",
+      loadPostingId: HOST_LOAD,
+      organizationId: ORG_CARRIER,
+      participantUserIds: [HOST_DISPATCHER_USER],
+      subject: "Arrival window"
+    }
+
+    const first = createThreadInWorkspace(state, input)
+    const assignment = state.assignments.find((candidate) => candidate.id === HOST_ASSIGNMENT)
+
+    if (!assignment) {
+      throw new Error("Expected the shared assignment fixture")
+    }
+
+    assignment.status = "completed"
+    const beforeRetry = structuredClone(state)
+    const retry = createThreadInWorkspace(state, input)
+
+    expect(retry).toEqual({ messageCreated: false, thread: first.thread })
+    expect(state).toEqual(beforeRetry)
+  })
+
+  it("refuses an opening-message id replay whose subject alone changed", () => {
+    const state = operatingState()
+    const input = {
+      assignmentId: HOST_ASSIGNMENT,
+      body: "The mill changed my arrival window.",
+      creatorUserId: DRIVER_USER,
+      initialMessageId: "15151515-1515-4515-8515-151515151515",
+      loadPostingId: HOST_LOAD,
+      organizationId: ORG_CARRIER,
+      participantUserIds: [HOST_DISPATCHER_USER],
+      subject: "Arrival window"
+    }
+
+    createThreadInWorkspace(state, input)
+    const before = structuredClone(state)
+
+    expect(() => createThreadInWorkspace(state, {
+      ...input,
+      subject: "Gate access"
+    })).toThrow(/could not be reconciled/i)
+    expect(state).toEqual(before)
+  })
+
+  it("reconciles a later message when an existing thread retained its original subject", () => {
+    const state = operatingState()
+
+    const original = createThreadInWorkspace(state, {
+      assignmentId: HOST_ASSIGNMENT,
+      body: "Which gate should I use?",
+      creatorUserId: DRIVER_USER,
+      initialMessageId: "16161616-1616-4616-8616-161616161616",
+      loadPostingId: HOST_LOAD,
+      organizationId: ORG_CARRIER,
+      participantUserIds: [HOST_DISPATCHER_USER],
+      subject: "Gate access"
+    })
+    const retryInput = {
+      assignmentId: HOST_ASSIGNMENT,
+      body: "The mill changed my arrival window.",
+      creatorUserId: DRIVER_USER,
+      initialMessageId: "17171717-1717-4717-8717-171717171717",
+      loadPostingId: HOST_LOAD,
+      organizationId: ORG_CARRIER,
+      participantUserIds: [HOST_DISPATCHER_USER],
+      subject: "Arrival window"
+    }
+
+    const first = createThreadInWorkspace(state, retryInput)
+    const afterFirst = structuredClone(state)
+    const retry = createThreadInWorkspace(state, retryInput)
+
+    expect(first).toEqual({ messageCreated: true, thread: original.thread })
+    expect(first.thread.subject).toBe("Gate access")
+    expect(retry).toEqual({ messageCreated: false, thread: original.thread })
+    expect(state).toEqual(afterFirst)
+  })
+
+  it("adopts a first subject transactionally for a pre-existing empty thread", () => {
+    const state = operatingState()
+    const original = createThreadInWorkspace(state, {
+      assignmentId: HOST_ASSIGNMENT,
+      body: "Placeholder opening.",
+      creatorUserId: DRIVER_USER,
+      initialMessageId: "18181818-1818-4818-8818-181818181818",
+      loadPostingId: HOST_LOAD,
+      organizationId: ORG_CARRIER,
+      participantUserIds: [HOST_DISPATCHER_USER],
+      subject: "Original placeholder"
+    })
+
+    state.messageEvents.length = 0
+    state.notifications.length = 0
+    original.thread.lastMessageAt = null
+    original.thread.updatedAt = original.thread.createdAt
+
+    const input = {
+      assignmentId: HOST_ASSIGNMENT,
+      body: "Use the east gate.",
+      creatorUserId: DRIVER_USER,
+      initialMessageId: "19191919-1919-4919-8919-191919191919",
+      loadPostingId: HOST_LOAD,
+      organizationId: ORG_CARRIER,
+      participantUserIds: [HOST_DISPATCHER_USER],
+      subject: "Gate access"
+    }
+    const first = createThreadInWorkspace(state, input)
+    const afterFirst = structuredClone(state)
+    const retry = createThreadInWorkspace(state, input)
+
+    expect(first.messageCreated).toBe(true)
+    expect(first.thread.subject).toBe("Gate access")
+    expect(retry).toEqual({ messageCreated: false, thread: original.thread })
+    expect(state).toEqual(afterFirst)
+  })
+
+  it("refuses conflicting opening-message reuse without leaving a partial thread", () => {
+    const state = operatingState()
+    const initialMessageId = "13131313-1313-4313-8313-131313131313"
+
+    createThreadInWorkspace(state, {
+      assignmentId: HOST_ASSIGNMENT,
+      body: "Original opening note.",
+      creatorUserId: DRIVER_USER,
+      initialMessageId,
+      loadPostingId: HOST_LOAD,
+      organizationId: ORG_CARRIER,
+      participantUserIds: [HOST_DISPATCHER_USER],
+      subject: "Arrival window"
+    })
+    const before = structuredClone(state)
+
+    expect(() => createThreadInWorkspace(state, {
+      body: "Changed opening note.",
+      creatorUserId: DRIVER_USER,
+      initialMessageId,
+      loadPostingId: HOST_LOAD,
+      organizationId: ORG_CARRIER,
+      participantUserIds: [HOST_DISPATCHER_USER],
+      subject: "Load question"
+    })).toThrow(/could not be reconciled/i)
+    expect(state).toEqual(before)
+  })
 })
 
 describe("postMessage participation", () => {
@@ -715,6 +905,103 @@ describe("postMessage participation", () => {
       HOST_DISPATCHER_USER,
       DRIVER_USER
     ])
+  })
+
+  it("converges an exact reply retry without changing thread or notification state", () => {
+    const state = operatingState()
+    const thread = createThread(state, {
+      assignmentId: HOST_ASSIGNMENT,
+      body: "Opening note.",
+      creatorUserId: DRIVER_USER,
+      loadPostingId: HOST_LOAD,
+      participantUserIds: [HOST_DISPATCHER_USER],
+      subject: "Arrival window"
+    })
+    const input = {
+      authorUserId: HOST_DISPATCHER_USER,
+      body: "Understood.",
+      messageId: "14141414-1414-4414-8414-141414141414",
+      organizationId: ORG_HOST,
+      threadId: thread.id
+    }
+
+    const first = postMessageInWorkspace(state, input)
+    const afterFirst = structuredClone(state)
+    const second = postMessageInWorkspace(state, input)
+
+    expect(first.created).toBe(true)
+    expect(second).toEqual({ created: false, event: first.event })
+    expect(state).toEqual(afterFirst)
+  })
+
+  it("refuses a reused message id with changed intent and writes nothing", () => {
+    const state = operatingState()
+    const thread = createThread(state, {
+      assignmentId: HOST_ASSIGNMENT,
+      body: "Opening note.",
+      creatorUserId: DRIVER_USER,
+      loadPostingId: HOST_LOAD,
+      participantUserIds: [HOST_DISPATCHER_USER],
+      subject: "Arrival window"
+    })
+    const messageId = "15151515-1515-4515-8515-151515151515"
+
+    postMessageInWorkspace(state, {
+      authorUserId: HOST_DISPATCHER_USER,
+      body: "Original reply.",
+      messageId,
+      organizationId: ORG_HOST,
+      threadId: thread.id
+    })
+    const before = structuredClone(state)
+
+    expect(() => postMessageInWorkspace(state, {
+      authorUserId: HOST_DISPATCHER_USER,
+      body: "Changed reply.",
+      messageId,
+      organizationId: ORG_HOST,
+      threadId: thread.id
+    })).toThrow(/could not be reconciled/i)
+    expect(() => postMessageInWorkspace(state, {
+      authorUserId: DRIVER_USER,
+      body: "Original reply.",
+      messageId,
+      organizationId: ORG_CARRIER,
+      threadId: thread.id
+    })).toThrow(/could not be reconciled/i)
+    expect(state).toEqual(before)
+  })
+
+  it("allows two intentional same-text messages when their ids differ", () => {
+    const state = operatingState()
+    const thread = createThread(state, {
+      assignmentId: HOST_ASSIGNMENT,
+      body: "Opening note.",
+      creatorUserId: DRIVER_USER,
+      loadPostingId: HOST_LOAD,
+      participantUserIds: [HOST_DISPATCHER_USER],
+      subject: "Arrival window"
+    })
+    const before = writeCounts(state)
+
+    for (const messageId of [
+      "16161616-1616-4616-8616-161616161616",
+      "17171717-1717-4717-8717-171717171717"
+    ]) {
+      postMessageInWorkspace(state, {
+        authorUserId: HOST_DISPATCHER_USER,
+        body: "Call me.",
+        messageId,
+        organizationId: ORG_HOST,
+        threadId: thread.id
+      })
+    }
+
+    expect(writeCounts(state)).toEqual({
+      events: before.events + 2,
+      notifications: before.notifications + 2,
+      threads: before.threads
+    })
   })
 })
 

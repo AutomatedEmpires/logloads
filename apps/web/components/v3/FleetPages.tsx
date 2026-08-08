@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react"
+import { Fragment, useEffect, useMemo, useState, useTransition, type ReactNode } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
 import type { NetworkLoadView, NetworkView } from "@/lib/network"
@@ -1007,14 +1007,34 @@ export function FleetOpportunityDetail({
   // forever: after a bounded wait the operator gets an explicit retry.
   const router = useRouter()
   const [claimConvergenceStalled, setClaimConvergenceStalled] = useState(false)
+  const [refreshPending, startRefreshTransition] = useTransition()
   useEffect(() => {
     if (!claimConvergenceActive) {
       setClaimConvergenceStalled(false)
       return
     }
-    const timer = setTimeout(() => setClaimConvergenceStalled(true), 12_000)
-    return () => clearTimeout(timer)
+
+    const stalledTimer = setTimeout(() => {
+      setClaimConvergenceStalled(true)
+    }, 12_000)
+
+    return () => clearTimeout(stalledTimer)
   }, [claimConvergenceActive])
+  useEffect(() => {
+    if (!claimConvergenceActive || claimConvergenceStalled || refreshPending) {
+      return
+    }
+
+    // A refresh issued inside the action transition can be folded into that
+    // response. Ask again only after the previous refresh has settled so slow
+    // server projections cannot stack work in the browser. The separate
+    // deadline above preserves the explicit manual fallback.
+    const refreshTimer = setTimeout(() => {
+      startRefreshTransition(() => router.refresh())
+    }, 1_500)
+
+    return () => clearTimeout(refreshTimer)
+  }, [claimConvergenceActive, claimConvergenceStalled, refreshPending, router])
   const displayedRemainingTruckloads = serverDirectOffer
     ? optimisticOffer?.directOfferId === serverDirectOffer.id &&
       optimisticOffer.serverRemainingTruckloads ===

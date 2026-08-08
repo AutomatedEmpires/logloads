@@ -2,6 +2,41 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-08-06 — Direct-offer confirmation converges on canonical state
+
+- A successful truck claim keeps its immediate field confirmation while the
+  load detail retries the canonical server projection every 1.5 seconds for a
+  bounded 12-second window. This closes the Next.js transition case where the
+  first refresh is folded into the action response and assignments remain
+  visually stale. If convergence still does not arrive, the existing explicit
+  refresh control remains available instead of hiding the condition.
+- This changes only read-after-write convergence. It does not alter direct-offer
+  capacity policy, assignment authority, schema, providers, production data,
+  billing activation, or money movement.
+
+## 2026-08-06 — Message submission identity is durable and retry-safe
+
+- **The browser owns each message event id until delivery is confirmed.** A
+  reply carries `messageId`; a new conversation carries `initialMessageId`.
+  The service authorizes the current workspace and thread before looking up
+  that id. An exact author, thread, and body replay returns the already durable
+  event, while changed or ambiguous reuse is refused before any write.
+- **One intent creates one operational side effect.** Thread creation converges
+  on the existing participant/work context, message notifications are created
+  only with the first event, and message-sent analytics are emitted only when
+  the service reports a new event. Distinct ids still allow two intentional
+  messages with identical text.
+- **Uncertain delivery remains recoverable on a phone.** Both composers retain
+  the exact submission id and draft across returned or transport failures in
+  versioned, 24-hour session storage scoped to the exact user, workspace, role,
+  and thread or recipient. A same-tab reload or remount recovers that intent; if
+  browser storage is unavailable, the UI accurately limits the guarantee to the
+  still-open conversation or selected recipient. Changing the body, subject,
+  recipient, or work context mints a new intent.
+- This reuses the existing `MessageEvent.id` primary identity. It requires no
+  SQL migration, operating-state schema-version change, provider setting,
+  production-data rewrite, billing activation, or money movement.
+
 ## 2026-08-06 — Organization review status is an operational authority boundary
 
 - **Pending and verified organizations may operate; rejected and suspended

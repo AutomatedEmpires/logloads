@@ -31,9 +31,22 @@ export interface ThreadView {
   updatedAt: string
 }
 
+export interface MessageSubmissionResult {
+  created: boolean
+  event: MessageEvent
+}
+
+export interface ThreadSubmissionResult {
+  messageCreated: boolean
+  thread: MessageThread
+}
+
+const MESSAGE_SUBMISSION_CONFLICT = "Message submission could not be reconciled"
+
 export const postMessageInputSchema = z.object({
   authorUserId: z.string().uuid(),
   body: z.string().min(1).max(4000),
+  messageId: z.string().uuid(),
   organizationId: z.string().uuid(),
   threadId: z.string().uuid()
 })
@@ -42,6 +55,7 @@ export const createThreadInputSchema = z.object({
   assignmentId: z.string().uuid().optional().nullable(),
   body: z.string().min(1).max(4000),
   creatorUserId: z.string().uuid(),
+  initialMessageId: z.string().uuid(),
   loadPostingId: z.string().uuid().optional().nullable(),
   organizationId: z.string().uuid(),
   participantUserIds: z.array(z.string().uuid()).min(1),
@@ -267,7 +281,10 @@ export function listThreadMessages(
     }))
 }
 
-export function postMessage(state: LogLoadsDatabaseState, rawInput: unknown): MessageEvent {
+export function postMessage(
+  state: LogLoadsDatabaseState,
+  rawInput: unknown
+): MessageSubmissionResult {
   const input = postMessageInputSchema.parse(rawInput)
   const thread = state.messageThreads.find((candidate) => candidate.id === input.threadId)
 
@@ -281,6 +298,31 @@ export function postMessage(state: LogLoadsDatabaseState, rawInput: unknown): Me
 
   if (!userCanOperateThread(state, input.authorUserId, input.organizationId, thread)) {
     throw new Error("Conversation not found")
+  }
+
+  // The browser owns this event identity and retains it until delivery is
+  // confirmed. A CAS replay or a user retry after a lost response therefore
+  // converges on the durable event instead of posting and notifying twice.
+  // Authorization intentionally runs first so an event id cannot be used to
+  // probe a conversation the caller cannot currently operate.
+  const existingEvents = state.messageEvents.filter(
+    (candidate) => candidate.id === input.messageId
+  )
+
+  if (existingEvents.length > 0) {
+    const existing = existingEvents[0]
+
+    if (
+      existingEvents.length !== 1 ||
+      !existing ||
+      existing.authorUserId !== input.authorUserId ||
+      existing.body !== input.body ||
+      existing.threadId !== thread.id
+    ) {
+      throw new Error(MESSAGE_SUBMISSION_CONFLICT)
+    }
+
+    return { created: false, event: existing }
   }
 
   const recipientUserIds = thread.participantUserIds.filter(
@@ -298,35 +340,33 @@ export function postMessage(state: LogLoadsDatabaseState, rawInput: unknown): Me
     authorUserId: input.authorUserId,
     body: input.body,
     createdAt: now,
-    id: randomUUID(),
+    id: input.messageId,
     threadId: thread.id,
     updatedAt: now
   })
 
+  const author = state.profiles.find((profile) => profile.id === input.authorUserId)
+  const notifications = recipientUserIds.map((participantId) =>
+    notificationSchema.parse({
+      body: input.body.slice(0, 140),
+      createdAt: now,
+      id: randomUUID(),
+      readAt: null,
+      relatedEntityId: thread.id,
+      relatedEntityType: "message_thread",
+      title: `New message from ${author?.fullName ?? "a participant"}`,
+      type: "message_received",
+      updatedAt: now,
+      userId: participantId
+    })
+  )
+
   state.messageEvents.push(event)
+  state.notifications.push(...notifications)
   thread.lastMessageAt = now
   thread.updatedAt = now
 
-  const author = state.profiles.find((profile) => profile.id === input.authorUserId)
-
-  for (const participantId of recipientUserIds) {
-    state.notifications.push(
-      notificationSchema.parse({
-        body: input.body.slice(0, 140),
-        createdAt: now,
-        id: randomUUID(),
-        readAt: null,
-        relatedEntityId: thread.id,
-        relatedEntityType: "message_thread",
-        title: `New message from ${author?.fullName ?? "a participant"}`,
-        type: "message_received",
-        updatedAt: now,
-        userId: participantId
-      })
-    )
-  }
-
-  return event
+  return { created: true, event }
 }
 
 /**
@@ -659,17 +699,16 @@ function assertThreadContextPermitted(
   }
 }
 
-export function createThread(state: LogLoadsDatabaseState, rawInput: unknown): MessageThread {
+export function createThread(
+  state: LogLoadsDatabaseState,
+  rawInput: unknown
+): ThreadSubmissionResult {
   const input = createThreadInputSchema.parse(rawInput)
   const participantUserIds = Array.from(new Set([input.creatorUserId, ...input.participantUserIds]))
 
   if (participantUserIds.length < 2) {
     throw new Error("A conversation needs at least two participants")
   }
-
-  // Before any write: a refused thread must leave no thread, no message, and no
-  // notification behind.
-  assertThreadContextPermitted(state, input, participantUserIds)
 
   const existing = state.messageThreads.find((thread) =>
     !thread.archivedAt &&
@@ -678,6 +717,47 @@ export function createThread(state: LogLoadsDatabaseState, rawInput: unknown): M
     thread.participantUserIds.length === participantUserIds.length &&
     participantUserIds.every((participantId) => thread.participantUserIds.includes(participantId))
   )
+
+  if (existing) {
+    if (!userCanOperateThread(state, input.creatorUserId, input.organizationId, existing)) {
+      throw new Error("Conversation not found")
+    }
+
+    const replayedMessages = state.messageEvents.filter(
+      (event) => event.id === input.initialMessageId
+    )
+
+    if (replayedMessages.length > 0) {
+      const replayedMessage = replayedMessages[0]
+      const durableThreadOpening = state.messageEvents.find(
+        (event) => event.threadId === existing.id
+      )
+
+      if (
+        replayedMessages.length !== 1 ||
+        !replayedMessage ||
+        replayedMessage.threadId !== existing.id ||
+        replayedMessage.authorUserId !== input.creatorUserId ||
+        replayedMessage.body !== input.body ||
+        (
+          durableThreadOpening?.id === replayedMessage.id &&
+          existing.subject !== input.subject
+        )
+      ) {
+        throw new Error(MESSAGE_SUBMISSION_CONFLICT)
+      }
+
+      // Reconcile an already-authorized durable submission before reapplying the
+      // active-work rule. The shared assignment may have become terminal after
+      // the original commit while its response was still in flight.
+      return { messageCreated: false, thread: existing }
+    }
+  }
+
+  // Before any new write: a refused thread or opening message must leave no
+  // thread, message, or notification behind. Existing exact replays above are
+  // confirmations of an earlier authorized write, not new contact attempts.
+  assertThreadContextPermitted(state, input, participantUserIds)
 
   const now = new Date().toISOString()
   const thread = existing ?? messageThreadSchema.parse({
@@ -696,16 +776,53 @@ export function createThread(state: LogLoadsDatabaseState, rawInput: unknown): M
     throw new Error("Conversation not found")
   }
 
+  const messageCount = state.messageEvents.length
+  const notificationCount = state.notifications.length
+  const previousLastMessageAt = thread.lastMessageAt
+  const previousSubject = thread.subject
+  const previousUpdatedAt = thread.updatedAt
+  const existingThreadWasEmpty = Boolean(existing) && !state.messageEvents.some(
+    (event) => event.threadId === thread.id
+  )
+
   if (!existing) {
     state.messageThreads.push(thread)
   }
 
-  postMessage(state, {
-    authorUserId: input.creatorUserId,
-    body: input.body,
-    organizationId: input.organizationId,
-    threadId: thread.id
-  })
+  try {
+    // A legacy/pre-created empty thread has no opening event that can prove
+    // which subject accompanied this submission. Adopt the first submitted
+    // subject transactionally so its exact retry has a durable receipt.
+    if (existingThreadWasEmpty) {
+      thread.subject = input.subject
+    }
 
-  return thread
+    const submission = postMessage(state, {
+      authorUserId: input.creatorUserId,
+      body: input.body,
+      messageId: input.initialMessageId,
+      organizationId: input.organizationId,
+      threadId: thread.id
+    })
+
+    return { messageCreated: submission.created, thread }
+  } catch (error) {
+    state.messageEvents.length = messageCount
+    state.notifications.length = notificationCount
+    thread.lastMessageAt = previousLastMessageAt
+    thread.subject = previousSubject
+    thread.updatedAt = previousUpdatedAt
+
+    if (!existing) {
+      const threadIndex = state.messageThreads.findIndex(
+        (candidate) => candidate.id === thread.id
+      )
+
+      if (threadIndex >= 0) {
+        state.messageThreads.splice(threadIndex, 1)
+      }
+    }
+
+    throw error
+  }
 }

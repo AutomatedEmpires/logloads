@@ -3,6 +3,7 @@
 import Link from "next/link"
 
 import type { MessagesData } from "@/lib/messages-data"
+import type { MessageDraftScope } from "@/lib/message-submission"
 import type { NetworkView } from "@/lib/network"
 import { formatDateTime } from "@/lib/v3-shared"
 import { StartConversation, ThreadComposer } from "./MessageActions"
@@ -35,6 +36,16 @@ export function MessagesPage({ account, data, network, role }: MessagesPageProps
   const selected = data.selectedThread
   const pane = selected || data.threadNotFound ? "thread" : "list"
   const totalUnread = Object.values(data.unreadByThread).reduce((sum, count) => sum + count, 0)
+  const draftScope: MessageDraftScope = {
+    cockpit: role,
+    organizationId: network.activeOrganization.id,
+    viewerUserId: data.viewerUserId
+  }
+  const draftScopeKey = JSON.stringify([
+    draftScope.cockpit,
+    draftScope.organizationId,
+    draftScope.viewerUserId
+  ])
 
   return (
     <AppShell account={account} kicker="Connected conversations" orgName={network.activeOrganization.name} role={role} title="Messages">
@@ -49,7 +60,12 @@ export function MessagesPage({ account, data, network, role }: MessagesPageProps
               <span aria-label={`${totalUnread} unread`} className="unread-pill">{totalUnread}</span>
             ) : null}
           </header>
-          <StartConversation counterparties={data.counterparties} emptyHint={NEW_MESSAGE_HINTS[role]} />
+          <StartConversation
+            counterparties={data.counterparties}
+            draftScope={draftScope}
+            emptyHint={NEW_MESSAGE_HINTS[role]}
+            key={draftScopeKey}
+          />
           {threads.length === 0 ? (
             <EmptyState
               actionHref={data.counterparties.length === 0 ? EMPTY_LIST_ACTION[role].href : undefined}
@@ -95,7 +111,13 @@ export function MessagesPage({ account, data, network, role }: MessagesPageProps
               title="Conversation not found."
             />
           ) : selected ? (
-            <ThreadView basePath={basePath} thread={selected} viewerUserId={data.viewerUserId} />
+            <ThreadView
+              basePath={basePath}
+              draftScope={draftScope}
+              draftScopeKey={draftScopeKey}
+              thread={selected}
+              viewerUserId={data.viewerUserId}
+            />
           ) : (
             <div className="messages-thread-placeholder">
               <p className="eyebrow">Conversation</p>
@@ -115,10 +137,14 @@ export function MessagesPage({ account, data, network, role }: MessagesPageProps
 
 function ThreadView({
   basePath,
+  draftScope,
+  draftScopeKey,
   thread,
   viewerUserId
 }: {
   basePath: string
+  draftScope: MessageDraftScope
+  draftScopeKey: string
   thread: NonNullable<MessagesData["selectedThread"]>
   viewerUserId: string
 }) {
@@ -153,7 +179,11 @@ function ThreadView({
           })
         )}
       </ol>
-      <ThreadComposer threadId={thread.id} />
+      <ThreadComposer
+        draftScope={draftScope}
+        key={`${draftScopeKey}:${thread.id}`}
+        threadId={thread.id}
+      />
     </>
   )
 }
