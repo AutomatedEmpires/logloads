@@ -65,6 +65,8 @@
 }
 .public-header .public-mobile-menu a:not(.action-link):hover { background: rgba(23, 61, 43, 0.08); }
 .public-header .public-mobile-menu a[aria-current="page"] { background: var(--green-bg); color: var(--pine); }
+.public-header .public-mobile-menu a.action-link { color: #fff; }
+.public-header .public-mobile-menu a.action-link--secondary { color: var(--pine); }
 .public-mobile-menu__actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

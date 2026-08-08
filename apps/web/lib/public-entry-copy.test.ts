@@ -72,6 +72,15 @@ describe("public role entry copy", () => {
     )
   })
 
+  it("keeps the mobile primary action legible over its pine background", () => {
+    expect(publicCssSource).toContain(
+      ".public-header .public-mobile-menu a.action-link { color: #fff; }"
+    )
+    expect(publicCssSource).toContain(
+      ".public-header .public-mobile-menu a.action-link--secondary { color: var(--pine); }"
+    )
+  })
+
   it("keeps Clerk's changing form-step title visible", () => {
     expect(authCssSource).not.toMatch(
       /\.cl-headerTitle[^{}]*\{[^}]*display\s*:\s*none\s*;/
