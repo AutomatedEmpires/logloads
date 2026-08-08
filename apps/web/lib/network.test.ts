@@ -160,6 +160,55 @@ describe("public equipment availability aggregate", () => {
 })
 
 describe("site truth projection", () => {
+  it("projects the same active assigned rig that driver media actions target", () => {
+    const { services, viewer } = networkFixture()
+    const driver = services.state.driverProfiles.find(
+      (profile) => profile.userId === viewer.actorUserId && profile.companyId === viewer.organizationId
+    )
+    const inactiveCombination = services.state.equipmentCombinations.find(
+      (combination) =>
+        combination.organizationId === viewer.organizationId &&
+        combination.assignedDriverProfileId === driver?.id
+    )
+    const activeTruck = inactiveCombination
+      ? services.state.truckProfiles.find((truck) => truck.id === inactiveCombination.truckProfileId)
+      : null
+
+    if (!driver || !inactiveCombination || !activeTruck) {
+      throw new Error("The active rig projection fixture is incomplete")
+    }
+
+    inactiveCombination.status = "inactive"
+    const activeTruckId = "17171717-1717-4717-8717-171717171701"
+    const activeCombinationId = "18181818-1818-4818-8818-181818181801"
+
+    services.state.truckProfiles.push({
+      ...activeTruck,
+      id: activeTruckId,
+      unitNumber: "NP-202"
+    })
+    services.state.equipmentCombinations.push({
+      ...inactiveCombination,
+      id: activeCombinationId,
+      label: "NP-202 active rig",
+      status: "available",
+      truckProfileId: activeTruckId
+    })
+
+    const view = buildNetworkView(
+      services.state,
+      viewer,
+      new Date("2026-06-05T12:00:00.000Z")
+    )
+
+    expect(view.currentEquipment).toMatchObject({
+      combinationId: activeCombinationId,
+      label: "NP-202 active rig",
+      truckId: activeTruckId
+    })
+    expect(view.currentDriver?.truckId).toBe(activeTruckId)
+  })
+
   it("ages an unverified host report and keeps a missing condition unknown", () => {
     const { load, services, viewer } = networkFixture()
     const destination = services.state.mills.find((mill) => mill.id === load.dropoffMillId)

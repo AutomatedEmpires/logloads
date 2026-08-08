@@ -43,7 +43,7 @@ vi.mock("./v3", () => ({
 
 import { DomainRefusalError } from "@logloads/services"
 
-import { getFleetOpportunityData } from "./fleet-data"
+import { getFleetCockpitData, getFleetOpportunityData } from "./fleet-data"
 
 const ORGANIZATION_ID = "11111111-1111-4111-8111-111111111111"
 const LOAD_ID = "29292929-2929-4929-8929-292929292929"
@@ -59,7 +59,8 @@ function combination(
   id: string,
   driverProfileId: string,
   truckProfileId: string,
-  label: string
+  label: string,
+  status: "available" | "committed" | "maintenance" | "inactive" = "available"
 ) {
   return {
     assignedDriverProfileId: driverProfileId,
@@ -68,12 +69,91 @@ function combination(
     label,
     maxPayloadTons: 32,
     organizationId: ORGANIZATION_ID,
-    status: "available",
+    status,
     trailerProfileId: null,
     truckProfileId,
     truckTypes: ["log_truck"]
   }
 }
+
+describe("fleet driver presentation rig", () => {
+  it("prefers an available assigned rig over earlier inactive history and aligns dispatch", async () => {
+    const driverUserId = "77777777-7777-4777-8777-777777777779"
+    const driverProfileId = "55555555-5555-4555-8555-555555555559"
+    const inactiveCombinationId = "44444444-4444-4444-8444-444444444449"
+    const availableCombinationId = "44444444-4444-4444-8444-444444444450"
+    const inactiveTruckId = "66666666-6666-4666-8666-666666666669"
+    const availableTruckId = "66666666-6666-4666-8666-666666666670"
+
+    mocks.state = {
+      assignments: [],
+      availabilityWindows: [],
+      driverProfiles: [{
+        availabilityStatus: "available",
+        companyId: ORGANIZATION_ID,
+        featureTruckPhoto: false,
+        homeBase: "Test Valley",
+        id: driverProfileId,
+        userId: driverUserId,
+        yearsExperience: 9
+      }],
+      equipmentCombinations: [
+        combination(
+          inactiveCombinationId,
+          driverProfileId,
+          inactiveTruckId,
+          "Historical Unit 4",
+          "inactive"
+        ),
+        combination(
+          availableCombinationId,
+          driverProfileId,
+          availableTruckId,
+          "Current Unit 9",
+          "available"
+        )
+      ],
+      haulRoutes: [],
+      loadPostings: [],
+      organizationMemberships: [],
+      profiles: [{
+        fullName: "Riley Woods",
+        id: driverUserId,
+        phone: "+15035550110"
+      }],
+      trailerProfiles: [],
+      tripsV2: [],
+      truckProfiles: [{ id: inactiveTruckId }, { id: availableTruckId }]
+    }
+    mocks.getCockpitContext.mockResolvedValue({
+      actor: { profile: { id: "actor-1" } },
+      network: {
+        activeOrganization: { id: ORGANIZATION_ID, name: "Test Fleet" },
+        loads: [],
+        trips: [],
+        trucks: []
+      }
+    })
+
+    const result = await getFleetCockpitData()
+
+    expect(result.drivers).toEqual([
+      expect.objectContaining({
+        equipmentLabel: "Current Unit 9",
+        equipmentStatus: "available",
+        id: driverProfileId
+      })
+    ])
+    expect(result.dispatchPlan).toEqual([
+      expect.objectContaining({
+        combinationId: availableCombinationId,
+        driverProfileId,
+        label: "Current Unit 9"
+      })
+    ])
+    expect(result.drivers[0]?.equipmentLabel).toBe(result.dispatchPlan[0]?.label)
+  })
+})
 
 function opportunityState() {
   return {

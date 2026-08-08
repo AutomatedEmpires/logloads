@@ -678,7 +678,9 @@ export function buildNetworkView(
     : []
   const currentCombination = currentDriverProfile
     ? organizationCombinations.find(
-        (combination) => combination.assignedDriverProfileId === currentDriverProfile.id
+        (combination) =>
+          combination.assignedDriverProfileId === currentDriverProfile.id &&
+          combination.status !== "inactive"
       ) ?? null
     : null
   const currentTruck = currentCombination

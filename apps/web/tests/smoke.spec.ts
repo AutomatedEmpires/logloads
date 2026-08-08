@@ -70,15 +70,13 @@ test("cockpits are protected: unauthenticated visitors are sent to sign-in", asy
   }
 })
 
-test("driver signs in and reaches the map", async ({ page }) => {
+test("driver signs in and reaches the map", async ({ page }, testInfo) => {
   await signIn(page, "hank@northpine.example")
 
   await expect(page).toHaveURL(/\/driver\/map/)
   await expect(page.getByRole("heading", { name: "Map" })).toBeVisible()
 
   await page.goto("/driver/profile")
-  await expect(page.getByText("Photo uploads are currently unavailable.").first()).toBeVisible()
-  await expect(page.locator('input[type="file"][name="photo"]')).toHaveCount(0)
   await expect(page.getByRole("heading", { name: "Keep every record current" })).toBeVisible()
   const credentialVault = page.getByRole("region", { name: "Driver credential vault" })
   await expect(credentialVault).toBeVisible()
@@ -86,6 +84,19 @@ test("driver signs in and reaches the map", async ({ page }) => {
   await expect(credentialVault.getByText("Cleared", { exact: true })).toBeVisible()
   await expect(credentialVault.getByText(/Document uploads are temporarily unavailable/)).toBeVisible()
   await expect(credentialVault.locator('input[type="file"][name="document"]')).toHaveCount(0)
+  const matchingTools = page.locator('details.driver-profile-stage:has(#driver-profile-stage-match)')
+  await expect(matchingTools).not.toHaveAttribute("open", "")
+  await matchingTools.locator("summary").click()
+  await expect(matchingTools).toHaveAttribute("open", "")
+  await expect(matchingTools.getByRole("heading", { name: "Show your driver and primary equipment" })).toBeVisible()
+  await expect(matchingTools.getByText("Photo uploads are currently unavailable.").first()).toBeVisible()
+  await expect(matchingTools.locator('input[type="file"][name="photo"]')).toHaveCount(0)
+  await matchingTools.locator("summary").click()
+  await expect(matchingTools).not.toHaveAttribute("open", "")
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath(`driver-profile-${testInfo.project.name}.png`)
+  })
 })
 
 test("driver cannot open the admin console", async ({ page }) => {
@@ -242,8 +253,65 @@ test("onboarding provisions a truthful driver first run", async ({ page }, testI
 
   await page.getByRole("button", { name: "Continue where you left off" }).click()
   await page.waitForURL(/\/driver\/loads$/, { timeout: 30_000 })
-  await page.goto("/driver/profile?welcome=1")
+  await page.goto("/driver/profile")
+  await expect(page.getByTestId("driver-first-run")).toBeVisible()
+  await expect(page.getByTestId("driver-readiness-meter")).toBeVisible()
   await expect(page.getByRole("button", { name: "Continue where you left off" })).toHaveCount(0)
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath(`driver-readiness-return-${testInfo.project.name}.png`)
+  })
+})
+
+test("driver load discovery keeps each open load in one searchable board", async ({ page }, testInfo) => {
+  await signIn(page, "hank@northpine.example")
+  await page.goto("/driver/loads")
+
+  await expect(page.getByRole("heading", { name: "Loads", exact: true })).toBeVisible()
+  const cards = page.locator('a.load-card-v3[href^="/driver/loads/"]')
+  await expect(cards.first()).toBeVisible()
+  const hrefs = await cards.evaluateAll((links) =>
+    links.map((link) => link.getAttribute("href")).filter((href): href is string => href !== null)
+  )
+
+  expect(new Set(hrefs).size).toBe(hrefs.length)
+  await expect(page.getByRole("region", { name: "Load discovery" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Best matches" })).toHaveCount(0)
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath(`driver-load-board-${testInfo.project.name}.png`)
+  })
+})
+
+test("fleet dispatch and driver roster expose one truthful next action per unit", async ({ page }, testInfo) => {
+  await signIn(page, "dispatch@northpine.example")
+  await page.goto("/fleet/dispatch")
+
+  await expect(page.getByRole("heading", { name: "Dispatch", exact: true })).toBeVisible()
+  await expect(page.getByRole("region", { name: "Dispatch queue summary" })).toBeVisible()
+  await expect(page.locator(".dispatch-board")).toHaveCount(0)
+  const dispatchCards = page.locator(".fleet-dispatch-decision")
+  await expect(dispatchCards.first()).toBeVisible()
+  const dispatchUnits = await dispatchCards.locator("header strong").allTextContents()
+  expect(new Set(dispatchUnits).size).toBe(dispatchUnits.length)
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath(`fleet-dispatch-${testInfo.project.name}.png`)
+  })
+
+  await page.goto("/fleet/drivers")
+  const roster = page.getByRole("region", { name: "Fleet driver roster" })
+  await expect(roster).toBeVisible()
+  await expect(roster.getByText("Work gate").first()).toBeVisible()
+  await expect(roster.getByRole("navigation", { name: /Actions for/ }).first()).toBeVisible()
+
+  const viewportWidth = await page.evaluate(() => document.documentElement.clientWidth)
+  const contentWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+  expect(contentWidth).toBeLessThanOrEqual(viewportWidth + 1)
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath(`fleet-driver-roster-${testInfo.project.name}.png`)
+  })
 })
 
 test("fleet onboarding opens a Fleet Free activation handoff", async ({ page }, testInfo) => {

@@ -38,6 +38,7 @@ export interface FleetDriverRow {
   availabilityStatus: string
   availabilityLabel: string
   equipmentLabel: string | null
+  equipmentStatus: EquipmentCombination["status"] | null
   activeTrip: { id: string; loadTitle: string; statusLabel: string } | null
   /** The driver chose to show their rig; the photo streams via /api/media/featured-truck. */
   hasFeaturedTruckPhoto: boolean
@@ -142,6 +143,36 @@ function organizationDriverProfiles(organizationId: string, combinations: Equipm
       membership.userId === driver.userId
     )
   )
+}
+
+const DRIVER_COMBINATION_PRESENTATION_PRIORITY: Record<EquipmentCombination["status"], number> = {
+  available: 0,
+  committed: 1,
+  maintenance: 2,
+  inactive: 3
+}
+
+function presentationCombinationForDriver(
+  combinations: EquipmentCombination[],
+  driverProfileId: string
+): EquipmentCombination | null {
+  let selected: EquipmentCombination | null = null
+
+  for (const combination of combinations) {
+    if (combination.assignedDriverProfileId !== driverProfileId) {
+      continue
+    }
+
+    if (
+      selected === null ||
+      DRIVER_COMBINATION_PRESENTATION_PRIORITY[combination.status] <
+        DRIVER_COMBINATION_PRESENTATION_PRIORITY[selected.status]
+    ) {
+      selected = combination
+    }
+  }
+
+  return selected
 }
 
 function availabilitySummary(driverProfileId: string, fallbackStatus: string): { status: string; label: string } {
@@ -250,7 +281,7 @@ export async function getFleetCockpitData(): Promise<FleetCockpitData> {
 
   const drivers: FleetDriverRow[] = orgDrivers.map((driver) => {
     const user = state.profiles.find((profile) => profile.id === driver.userId)
-    const equipment = combinations.find((combination) => combination.assignedDriverProfileId === driver.id) ?? null
+    const equipment = presentationCombinationForDriver(combinations, driver.id)
     const activeTrip = activeTripsByDriver.get(driver.id) ?? null
     const activeLoad = activeTrip
       ? state.loadPostings.find((load) => load.id === activeTrip.loadPostingId) ?? null
@@ -268,6 +299,7 @@ export async function getFleetCockpitData(): Promise<FleetCockpitData> {
       availabilityLabel: availability.label,
       availabilityStatus: availability.status,
       equipmentLabel: equipment?.label ?? null,
+      equipmentStatus: equipment?.status ?? null,
       // Mirrors getFeaturedTruckPhotoReference's resolution (active
       // combination only) — a badge computed from an inactive rig would
       // render a broken image against the streaming route.

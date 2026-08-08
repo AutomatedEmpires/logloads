@@ -34,6 +34,7 @@ test("founder demo clears every provider and creates a local-only runtime", () =
   }
 
   assert.equal(environment.LOGLOADS_DEMO_MODE, "true")
+  assert.equal(environment.LOGLOADS_RATE_LIMIT_HMAC_SECRET, "random-session-secret")
   assert.equal(environment.LOGLOADS_STATE_FILE, "/tmp/demo-state.json")
   assert.equal(environment.LOGLOADS_SESSION_SECRET, "random-session-secret")
   assert.equal(environment.NEXT_PUBLIC_APP_URL, DEMO_URL)
