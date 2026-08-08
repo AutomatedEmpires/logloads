@@ -28,8 +28,75 @@
 .auth-story__content h2 { max-width: 520px; margin: 0; font-size: clamp(2rem, 4vw, 3.6rem); line-height: 0.96; }
 .auth-story__content ul { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 6px 0 0; padding: 0; list-style: none; color: rgba(255,255,255,0.82); font-weight: 800; }
 .auth-story__content li::before { color: #b9e7c8; content: "✓ "; }
-.auth-panel { align-self: center; width: 100%; max-width: 680px; box-shadow: var(--shadow); }
+.auth-panel { align-self: center; width: 100%; min-width: 0; max-width: 680px; box-shadow: var(--shadow); }
 .auth-panel .eyebrow { color: var(--pine); }
+.auth-panel > * { min-width: 0; }
+
+.auth-intent {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 16px;
+  align-items: center;
+  margin-top: 16px;
+  border: 1px solid rgba(46, 118, 81, 0.28);
+  border-radius: var(--radius);
+  background: var(--green-bg);
+  padding: 12px 14px;
+}
+.auth-intent span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.auth-intent strong { grid-column: 1; color: var(--ink); }
+.auth-intent a {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  min-height: var(--control-min);
+  display: inline-flex;
+  align-items: center;
+  color: var(--pine);
+  font-weight: 900;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Keep Clerk inside the branded panel. Clerk owns the changing form-step title,
+   so verification and recovery states retain their visible context. */
+.auth-panel .cl-rootBox,
+.auth-panel .cl-cardBox,
+.auth-panel .cl-card {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.auth-panel .cl-rootBox { margin-top: 18px; }
+.auth-panel .cl-cardBox { margin: 0; box-shadow: none; }
+.auth-panel .cl-card {
+  border: 0;
+  background: transparent;
+  padding-inline: 0;
+  box-shadow: none;
+}
+.auth-panel .cl-headerSubtitle { margin: 0; color: var(--ink-soft); }
+.auth-panel .cl-formButtonPrimary,
+.auth-panel .cl-formFieldInput,
+.auth-panel .cl-socialButtonsBlockButton,
+.auth-panel .cl-alternativeMethodsBlockButton,
+.auth-panel .cl-identityPreviewEditButton,
+.auth-panel .cl-formResendCodeLink,
+.auth-panel .cl-footerActionLink,
+.auth-panel .cl-formFieldAction {
+  min-height: var(--control-min);
+}
+.auth-panel .cl-footerActionLink,
+.auth-panel .cl-formResendCodeLink,
+.auth-panel .cl-formFieldAction {
+  display: inline-flex;
+  align-items: center;
+}
 
 .active-session { display: grid; gap: 14px; }
 .active-session > h1,
@@ -276,8 +343,13 @@
   .radio-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
-  .auth-page { min-height: 0; grid-template-columns: 1fr; padding: 14px; }
+  .auth-page { width: 100%; min-height: 0; grid-template-columns: minmax(0, 1fr); padding: 14px; }
   .auth-panel { order: 1; padding: 18px; }
+  .auth-intent { grid-template-columns: minmax(0, 1fr); }
+  .auth-intent a { grid-column: 1; grid-row: auto; width: fit-content; }
+  .auth-panel .cl-card,
+  .auth-panel .cl-main,
+  .auth-panel .cl-form { min-width: 0; max-width: 100%; }
   .auth-story { order: 2; min-height: 280px; }
   .auth-story__content { padding: 22px; }
   .auth-story__content .brand-mark { display: none; }

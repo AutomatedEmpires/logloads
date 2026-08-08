@@ -42,6 +42,27 @@ test("visitor understands the public product and can inspect public loads", asyn
   await expect(page.getByRole("button", { name: "Strong fit" })).toHaveCount(0)
 })
 
+test("mobile public header keeps account actions inside the menu", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto("/")
+
+  const header = page.locator(".public-header")
+  const menuTrigger = header.getByRole("button", { name: "Open menu" })
+  const inlineSignIn = header.locator(".public-actions > a", { hasText: "Sign in" })
+
+  await expect(menuTrigger).toBeVisible()
+
+  const triggerBox = await menuTrigger.boundingBox()
+  if (!triggerBox) throw new Error("Public menu control geometry is missing")
+  expect(triggerBox.width).toBeGreaterThanOrEqual(44)
+  expect(triggerBox.height).toBeGreaterThanOrEqual(44)
+
+  await menuTrigger.click()
+  const mobileMenu = header.getByRole("navigation", { name: "Menu" })
+  await expect(mobileMenu.getByRole("link", { name: "Sign in" })).toBeVisible({ timeout: 15_000 })
+  await expect(inlineSignIn).toBeHidden()
+})
+
 test("cockpits are protected: unauthenticated visitors are sent to sign-in", async ({ page }) => {
   for (const route of ["/driver/map", "/fleet/command", "/host/command", "/admin", "/support"]) {
     await page.goto(route)
@@ -383,8 +404,69 @@ test("driver mobile navigation follows the directed flow", async ({ page }) => {
   const nav = page.getByRole("navigation", { name: "driver mobile navigation" })
   await expect(nav.getByRole("link")).toHaveText(["Map", "Loads", "Schedule", "Profile"])
   await expect(nav.getByRole("link", { name: "Map" })).toHaveAttribute("aria-current", "page")
-  await page.getByRole("button", { name: "Open more tools" }).click()
-  await expect(page.getByRole("navigation", { name: "More tools" }).getByRole("link", { name: "Assistant" })).toBeVisible()
+  const moreTrigger = nav.getByRole("button", { name: "Open more tools" })
+  await expect(moreTrigger).toHaveText("More")
+  await moreTrigger.click()
+  const moreDialog = page.getByRole("dialog", { name: "More tools" })
+  await expect(moreDialog.getByRole("heading", { name: "More tools" })).toBeVisible()
+  await expect(moreDialog.getByRole("link", { name: "Assistant" })).toBeVisible()
   await page.keyboard.press("Escape")
-  await expect(page.getByRole("button", { name: "Open more tools" })).toBeFocused()
+  await expect(moreTrigger).toBeFocused()
+})
+
+test("fleet mobile frame keeps command, dispatch, work, and trips one thumb away", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await signIn(page, "dispatch@northpine.example")
+  await page.goto("/fleet/command")
+
+  const nav = page.getByRole("navigation", { name: "fleet mobile navigation" })
+  await expect(nav.getByRole("link")).toHaveText(["Command", "Dispatch", "Work", "Trips"])
+  await expect(nav.getByRole("link", { name: "Command" })).toHaveAttribute("aria-current", "page")
+
+  const workspace = page.locator(".app-topbar__workspace")
+  await expect(workspace).toBeVisible()
+  await expect(workspace.locator("span")).toHaveCount(2)
+  await expect(workspace.locator("span").first()).toHaveText(/\S+/)
+  await expect(workspace).toContainText(/Verified|Review pending|Not approved|Suspended/)
+
+  const moreTrigger = nav.getByRole("button", { name: "Open more tools" })
+  const moreTriggerBox = await moreTrigger.boundingBox()
+  if (!moreTriggerBox) throw new Error("Fleet More control geometry is missing")
+  expect(moreTriggerBox.height).toBeGreaterThanOrEqual(44)
+
+  await moreTrigger.click()
+  const moreDialog = page.getByRole("dialog", { name: "More tools" })
+  await expect(moreDialog.getByRole("heading")).toHaveText(["Operate", "Find work", "Capacity", "Insights", "Workspace"])
+  await expect(moreDialog.getByRole("link")).toHaveText([
+    "Messages",
+    "Network",
+    "Drivers",
+    "Trucks",
+    "Availability",
+    "Performance",
+    "Assistant",
+    "Workspace",
+    "Billing"
+  ])
+  await page.keyboard.press("Escape")
+  await expect(moreTrigger).toBeFocused()
+
+  await page.goto("/fleet/opportunities")
+  await expect(nav.getByRole("link", { name: "Work" })).toHaveAttribute("aria-current", "page")
+
+  await page.goto("/fleet/messages")
+  await expect(moreTrigger).toHaveAttribute("aria-current", "page")
+})
+
+test("host root keeps Command current in the authenticated frame", async ({ page }) => {
+  await signIn(page, "cole@summit.example")
+  await page.goto("/host")
+
+  await expect(page).toHaveURL(/\/host\/command$/)
+  const navigationName = (page.viewportSize()?.width ?? 1280) <= 760
+    ? "host mobile navigation"
+    : "host operate navigation"
+
+  await expect(page.getByRole("navigation", { name: navigationName }).getByRole("link", { name: "Command" }))
+    .toHaveAttribute("aria-current", "page")
 })

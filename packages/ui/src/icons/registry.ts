@@ -13,6 +13,7 @@ import {
   CircleNotch,
   Compass,
   CurrencyDollar,
+  DotsThree,
   Eye,
   Funnel,
   GearSix,
@@ -62,6 +63,7 @@ export type IconKey =
   | "nav.loads"
   | "nav.map"
   | "nav.messages"
+  | "nav.more"
   | "nav.profile"
   | "nav.today"
   | "nav.trips"
@@ -111,6 +113,7 @@ export const ICON_REGISTRY = {
   "nav.today": { key: "nav.today", icon: SunHorizon, label: "Today" },
   "nav.map": { key: "nav.map", icon: MapTrifold, label: "Map" },
   "nav.messages": { key: "nav.messages", icon: ChatCircle, label: "Messages" },
+  "nav.more": { key: "nav.more", icon: DotsThree, label: "More" },
   "nav.profile": { key: "nav.profile", icon: UserCircle, label: "Profile" },
   "nav.trips": { key: "nav.trips", icon: Van, label: "Trips" },
   "ops.audit": { key: "ops.audit", icon: Eye, label: "Audit" },

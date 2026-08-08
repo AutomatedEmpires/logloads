@@ -11,7 +11,18 @@ import type { NetworkLoadView } from "@/lib/network"
 import { payHeadline, presentPay } from "@/lib/pay-display"
 import type { ResidualSettlementItem } from "@/lib/residual-settlement-data"
 
-import { legalPages, loadProductLabel, pricingPlans, publicLoadHref, slugify, type LegalPageContent, type PublicStoryPage, visibilityLabel } from "@/lib/v3-shared"
+import {
+  legalPages,
+  loadProductLabel,
+  pricingPlans,
+  publicLoadHref,
+  publicSignUpCopy,
+  slugify,
+  type LegalPageContent,
+  type PublicSignUpIntent,
+  type PublicStoryPage,
+  visibilityLabel
+} from "@/lib/v3-shared"
 import { DevSignInForm, OnboardingFlow, type PendingInvitationOffer } from "./AuthForms"
 import { DriverPaymentReceiptControl } from "./DriverActions"
 import type { DemoPersona } from "@/lib/demo-personas"
@@ -56,7 +67,7 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
               <h1>Move more loads. Make fewer calls.</h1>
               <p>Landings publish the work. Fleets commit capacity. Drivers see what fits, where to go, and what happens next.</p>
               <div className="hero-actions">
-                <Link className="action-link" href="/sign-up?path=host">Post timber work</Link>
+                <Link className="action-link" href="/sign-up?path=host">Create a host workspace</Link>
                 <Link className="action-link action-link--secondary" href="/loads">Find a load</Link>
                 <Link className="hero-tertiary" href="/for-fleets">Run fleet dispatch <span aria-hidden>→</span></Link>
               </div>
@@ -117,7 +128,7 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
           <div className="feature-grid">
             <article><span>Driver accounts</span><h3>Drivers &amp; owner-operators</h3><p>See available work, know whether it fits, request it, and follow the schedule from a phone.</p><Link className="text-link" href="/sign-up?path=driver">Create a driver profile</Link></article>
             <article><span>Free fleet dispatch</span><h3>Dispatchers &amp; fleets</h3><p>Keep trucks, drivers, requests, schedules, and exceptions in one operating view without reducing driver pay.</p><Link className="text-link" href="/sign-up?path=fleet">Set up dispatch</Link></article>
-            <article><span>5% per completed load</span><h3>Hosts</h3><p>Post without a listing fee, coordinate qualified capacity, and pay the LogLoads fee on top of the driver pay you state.</p><Link className="text-link" href="/pricing">See the exact math</Link></article>
+            <article><span>5% per completed load</span><h3>Hosts</h3><p>Create a free operating workspace and prepare landing work. Live publication requires separate pilot approval; approved completed work creates the 5% fee on top of stated driver pay.</p><Link className="text-link" href="/pricing">See the exact math</Link></article>
           </div>
         </section>
         <section className="loads-preview">
@@ -130,9 +141,9 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
             </div>
           ) : (
             <EmptyState
-              actionHref="/for-landings"
-              actionLabel="Publish the first load"
-              body="No public loads are on the board right now. Hosts can publish work in minutes, and drivers get matched as soon as it goes live."
+              actionHref="/sign-up?path=host"
+              actionLabel="Create a host workspace"
+              body="No public loads are on the board right now. Hosts can prepare landings and draft work in a free workspace. Live publication remains limited to separately approved pilot organizations."
               title="The board is quiet."
             />
           )}
@@ -159,9 +170,9 @@ export function PublicLoadsPage({ loads }: { loads: NetworkLoadView[] }) {
           <LoadDiscovery loads={loads} publicMode />
         ) : (
           <EmptyState
-              actionHref="/sign-up"
-              actionLabel="Create an account"
-              body="Nothing is public right now. Partner and private work appears only when an organization invites or grants access. Check back as landings publish more work."
+            actionHref="/sign-up?path=driver"
+            actionLabel="Create a driver profile"
+            body="Nothing is public right now. Partner and private work appears only when an organization invites or grants access. Check back as landings publish more work."
             title="No public loads at the moment."
           />
         )}
@@ -366,6 +377,14 @@ export function PricingPage() {
           body="Drivers and fleet workspaces use LogLoads without a subscription. The host states what one load pays the driver and remains obligated to pay that amount in full, directly to the driver. When the load completes, LogLoads adds a platform fee equal to 5% of that stated pay to the host's cost."
         />
 
+        <aside className="pricing-availability" role="note">
+          <Icon aria-hidden name="status.warning" size={24} />
+          <div>
+            <strong>Host pilot enrollment is not self-serve.</strong>
+            <p>Create a free workspace to prepare operating records. Live publication remains locked until LogLoads approves the exact pilot organization, its authorized representative accepts the current agreement, and Billing is ready.</p>
+          </div>
+        </aside>
+
         <section aria-labelledby="pricing-start-title" className="pricing-lane pricing-lane--baseline">
           <div className="pricing-lane__intro">
             <p className="eyebrow">Three clear paths</p>
@@ -452,23 +471,38 @@ export function AuthPage({
   mode,
   next,
   clerkForm,
-  demoPersonas
+  demoPersonas,
+  intent
 }: {
   mode: "sign-in" | "sign-up"
   next?: string
   clerkForm?: ReactNode
   demoPersonas?: readonly DemoPersona[]
+  intent?: PublicSignUpIntent | null
 }) {
   const isSignUp = mode === "sign-up"
+  const signUpCopy = publicSignUpCopy(intent)
+  const eyebrow = isSignUp ? signUpCopy.eyebrow : "Welcome back"
+  const title = isSignUp ? signUpCopy.title : "Return to your workspace."
+  const body = isSignUp
+    ? signUpCopy.body
+    : "Sign in to open the driver, fleet, landing, or admin tools your membership grants."
 
   return (
     <PublicShell>
       <main className="auth-page">
         <AuthStory />
         <section className="auth-panel">
-          <p className="eyebrow">{isSignUp ? "Create account" : "Welcome back"}</p>
-          <h1>{isSignUp ? "Start with the work you do." : "Return to your workspace."}</h1>
-          <p>{isSignUp ? "Tell us how you work and LogLoads sets up the right first screen." : "Sign in to open the driver, fleet, landing, or admin tools your membership grants."}</p>
+          <p className="eyebrow">{eyebrow}</p>
+          <h1>{title}</h1>
+          <p>{body}</p>
+          {isSignUp && signUpCopy.intentLabel ? (
+            <div className="auth-intent" role="note">
+              <span>Selected setup</span>
+              <strong>{signUpCopy.intentLabel}</strong>
+              <Link href="/sign-up">Choose another role</Link>
+            </div>
+          ) : null}
           {clerkForm ?? (isSignUp
             ? <p className="auth-form__note">Account creation happens in onboarding. <Link className="action-link" href="/onboarding">Start setup</Link></p>
             : <DevSignInForm demoPersonas={demoPersonas} next={next} />)}
@@ -793,7 +827,7 @@ export function ContactPage() {
         <PageIntro
           eyebrow="Contact"
           title="Talk with LogLoads."
-          body="Questions about host onboarding, the 5% completed-load fee, driver access, verification, integrations, or a season of timber to move? Send the context we need to help."
+          body="Questions about preparing a host pilot workspace, the 5% completed-load fee, driver access, verification, integrations, or a season of timber to move? Send the context we need to help."
         />
         <div className="contact-layout">
           <ContactForm />
@@ -801,6 +835,10 @@ export function ContactPage() {
             <section>
               <h2>What to include</h2>
               <p>Your operating region, roughly how many trucks or landings you run, and what you are trying to get done. It helps us give a useful first answer.</p>
+            </section>
+            <section>
+              <h2>Host pilot access</h2>
+              <p>Workspace creation is free. Live publication and Network enrollment require separate approval for the exact pilot organization. Creating an account does not activate billing.</p>
             </section>
             <section>
               <h2>Simple host pricing</h2>

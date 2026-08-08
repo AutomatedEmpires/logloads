@@ -57,6 +57,11 @@ interface NavItem {
   label: string
 }
 
+interface NavGroup {
+  label: string
+  items: NavItem[]
+}
+
 export interface EmptyStateProps {
   actionHref?: string
   actionLabel?: string
@@ -72,13 +77,134 @@ export const publicNav: Array<[string, string]> = [
   ["Pricing", "/pricing"]
 ]
 
-const navByRole: Record<ShellProps["role"], NavItem[]> = {
+const desktopNavByRole: Record<ShellProps["role"], NavGroup[]> = {
+  admin: [
+    {
+      label: "Platform",
+      items: [
+        { href: "/admin", icon: "nav.admin", label: "Command" },
+        { href: "/admin/organizations", icon: "nav.fleet", label: "Organizations" },
+        { href: "/admin/verification", icon: "status.verified", label: "Verification" },
+        { href: "/admin/reports", icon: "status.warning", label: "Reports" }
+      ]
+    },
+    {
+      label: "Operations",
+      items: [
+        { href: "/admin/opportunities", icon: "nav.loads", label: "Opportunities" },
+        { href: "/admin/reliability", icon: "status.verified", label: "Reliability" },
+        { href: "/admin/disputes", icon: "ops.notice", label: "Cancellations" },
+        { href: "/admin/notices", icon: "ops.notice", label: "Notices" },
+        { href: "/admin/audit", icon: "ops.audit", label: "History" }
+      ]
+    },
+    {
+      label: "Workspace",
+      items: [{ href: "/admin/billing", icon: "load.pay", label: "Billing" }]
+    }
+  ],
+  driver: [
+    {
+      label: "Workspace",
+      items: [
+        { href: "/driver/map", icon: "nav.map", label: "Map" },
+        { href: "/driver/loads", icon: "nav.loads", label: "Loads" },
+        { href: "/driver/schedule", icon: "load.schedule", label: "Schedule" },
+        { href: "/driver/profile", icon: "nav.profile", label: "Profile" }
+      ]
+    },
+    {
+      label: "More tools",
+      items: [
+        { href: "/driver/messages", icon: "nav.messages", label: "Messages" },
+        { href: "/driver/equipment", icon: "load.equipment", label: "Equipment" },
+        { href: "/driver/assistant", icon: "action.search", label: "Assistant" },
+        { href: "/driver/network", icon: "map.network", label: "Network" }
+      ]
+    }
+  ],
+  fleet: [
+    {
+      label: "Operate",
+      items: [
+        { href: "/fleet/command", icon: "ops.queue", label: "Command" },
+        { href: "/fleet/dispatch", icon: "nav.fleet", label: "Dispatch" },
+        { href: "/fleet/trips", icon: "nav.trips", label: "Trips" },
+        { href: "/fleet/messages", icon: "nav.messages", label: "Messages" }
+      ]
+    },
+    {
+      label: "Find work",
+      items: [
+        { href: "/fleet/opportunities", icon: "nav.loads", label: "Opportunities" },
+        { href: "/fleet/network", icon: "map.network", label: "Network" }
+      ]
+    },
+    {
+      label: "Capacity",
+      items: [
+        { href: "/fleet/drivers", icon: "nav.fleet", label: "Drivers" },
+        { href: "/fleet/trucks", icon: "truck.log", label: "Trucks" },
+        { href: "/fleet/availability", icon: "load.schedule", label: "Availability" }
+      ]
+    },
+    {
+      label: "Insights",
+      items: [
+        { href: "/fleet/performance", icon: "status.verified", label: "Performance" },
+        { href: "/fleet/assistant", icon: "action.search", label: "Assistant" }
+      ]
+    },
+    {
+      label: "Workspace",
+      items: [
+        { href: "/fleet/settings", icon: "truck.service", label: "Workspace" },
+        { href: "/fleet/billing", icon: "load.pay", label: "Billing" }
+      ]
+    }
+  ],
+  host: [
+    {
+      label: "Operate",
+      items: [
+        { href: "/host/command", icon: "ops.queue", label: "Command" },
+        { href: "/host/opportunities", icon: "nav.loads", label: "Work" },
+        { href: "/host/live-board", icon: "map.network", label: "Live" },
+        { href: "/host/messages", icon: "nav.messages", label: "Messages" }
+      ]
+    },
+    {
+      label: "Network",
+      items: [
+        { href: "/host/carriers", icon: "nav.fleet", label: "Carriers" },
+        { href: "/host/landings", icon: "map.landing", label: "Landings" },
+        { href: "/host/schedule", icon: "load.schedule", label: "Schedule" },
+        { href: "/host/reliability", icon: "status.verified", label: "Reliability" }
+      ]
+    },
+    {
+      label: "Insights",
+      items: [
+        { href: "/host/assistant", icon: "action.search", label: "Assistant" },
+        { href: "/host/analytics", icon: "ops.queue", label: "Analytics" }
+      ]
+    },
+    {
+      label: "Workspace",
+      items: [
+        { href: "/host/settings", icon: "truck.service", label: "Workspace" },
+        { href: "/host/billing", icon: "load.pay", label: "Billing" }
+      ]
+    }
+  ]
+}
+
+const mobileNavByRole: Record<ShellProps["role"], NavItem[]> = {
   admin: [
     { href: "/admin", icon: "nav.admin", label: "Command" },
-    { href: "/admin/organizations", icon: "nav.fleet", label: "Organizations" },
-    { href: "/admin/verification", icon: "status.verified", label: "Verification" },
-    { href: "/admin/reports", icon: "status.warning", label: "Reports" },
-    { href: "/admin/billing", icon: "load.pay", label: "Billing" }
+    { href: "/admin/organizations", icon: "nav.fleet", label: "Orgs" },
+    { href: "/admin/verification", icon: "status.verified", label: "Verify" },
+    { href: "/admin/reports", icon: "status.warning", label: "Reports" }
   ],
   driver: [
     { href: "/driver/map", icon: "nav.map", label: "Map" },
@@ -89,51 +215,14 @@ const navByRole: Record<ShellProps["role"], NavItem[]> = {
   fleet: [
     { href: "/fleet/command", icon: "ops.queue", label: "Command" },
     { href: "/fleet/dispatch", icon: "nav.fleet", label: "Dispatch" },
-    { href: "/fleet/trips", icon: "nav.trips", label: "Trips" },
-    { href: "/fleet/messages", icon: "nav.messages", label: "Messages" },
-    { href: "/fleet/trucks", icon: "truck.log", label: "Trucks" }
+    { href: "/fleet/opportunities", icon: "nav.loads", label: "Work" },
+    { href: "/fleet/trips", icon: "nav.trips", label: "Trips" }
   ],
   host: [
     { href: "/host/command", icon: "ops.queue", label: "Command" },
     { href: "/host/opportunities", icon: "nav.loads", label: "Work" },
     { href: "/host/live-board", icon: "map.network", label: "Live" },
-    { href: "/host/messages", icon: "nav.messages", label: "Messages" },
-    { href: "/host/carriers", icon: "nav.fleet", label: "Carriers" }
-  ]
-}
-
-const desktopMoreByRole: Record<ShellProps["role"], NavItem[]> = {
-  admin: [
-    { href: "/admin/opportunities", icon: "nav.loads", label: "Opportunities" },
-    { href: "/admin/reliability", icon: "status.verified", label: "Reliability" },
-    { href: "/admin/disputes", icon: "ops.notice", label: "Cancellations" },
-    { href: "/admin/notices", icon: "ops.notice", label: "Notices" },
-    { href: "/admin/audit", icon: "ops.audit", label: "History" }
-  ],
-  driver: [
-    { href: "/driver/messages", icon: "nav.messages", label: "Messages" },
-    { href: "/driver/equipment", icon: "load.equipment", label: "Equipment" },
-    { href: "/driver/assistant", icon: "action.search", label: "Assistant" },
-    { href: "/driver/network", icon: "map.network", label: "Network" }
-  ],
-  fleet: [
-    { href: "/fleet/drivers", icon: "nav.fleet", label: "Drivers" },
-    { href: "/fleet/availability", icon: "load.schedule", label: "Availability" },
-    { href: "/fleet/opportunities", icon: "nav.loads", label: "Opportunities" },
-    { href: "/fleet/performance", icon: "status.verified", label: "Performance" },
-    { href: "/fleet/assistant", icon: "action.search", label: "Assistant" },
-    { href: "/fleet/network", icon: "map.network", label: "Network" },
-    { href: "/fleet/billing", icon: "load.pay", label: "Billing" },
-    { href: "/fleet/settings", icon: "truck.service", label: "Workspace" }
-  ],
-  host: [
-    { href: "/host/landings", icon: "map.landing", label: "Landings" },
-    { href: "/host/schedule", icon: "load.schedule", label: "Schedule" },
-    { href: "/host/reliability", icon: "status.verified", label: "Reliability" },
-    { href: "/host/assistant", icon: "action.search", label: "Assistant" },
-    { href: "/host/analytics", icon: "ops.queue", label: "Analytics" },
-    { href: "/host/billing", icon: "load.pay", label: "Billing" },
-    { href: "/host/settings", icon: "truck.service", label: "Workspace" }
+    { href: "/host/messages", icon: "nav.messages", label: "Messages" }
   ]
 }
 
@@ -404,14 +493,22 @@ function notificationHref(role: ShellProps["role"], type: string | null, id: str
   switch (type) {
     case "load":
     case "load_posting":
-      return role === "driver"
-        ? (id ? `/driver/loads/${id}` : "/driver/loads")
-        : role === "host" ? "/host/opportunities" : "/fleet/opportunities"
+      if (role === "driver") return id ? `/driver/loads/${id}` : "/driver/loads"
+      if (role === "host") return "/host/opportunities"
+      if (role === "fleet") return "/fleet/opportunities"
+      return "/admin/opportunities"
     case "assignment":
-      return role === "driver" ? "/driver/schedule" : role === "host" ? "/host/live-board" : "/fleet/dispatch"
+      if (role === "driver") return "/driver/schedule"
+      if (role === "host") return "/host/live-board"
+      if (role === "fleet") return "/fleet/dispatch"
+      return "/admin/audit"
     case "direct_offer":
-      return role === "host" ? "/host/carriers" : "/fleet/opportunities"
+      if (role === "host") return "/host/carriers"
+      if (role === "fleet") return "/fleet/opportunities"
+      return role === "admin" ? "/admin/opportunities" : null
     case "message_thread": {
+      if (role === "admin") return null
+
       const messagesPath = role === "driver"
         ? "/driver/messages"
         : role === "host"
@@ -736,13 +833,17 @@ function AccountMenu({ account, pathname }: { account: ShellAccount; pathname: s
   )
 }
 
-function MobileTools({ isCurrent, items }: { isCurrent: (href: string) => boolean; items: NavItem[] }) {
+function MobileMore({ groups, isCurrent }: { groups: NavGroup[]; isCurrent: (href: string) => boolean }) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const currentInMore = groups.some((group) => group.items.some((item) => isCurrent(item.href)))
 
   useEffect(() => {
     if (!open) return
+
+    panelRef.current?.querySelector<HTMLElement>("a, button")?.focus()
 
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -765,33 +866,48 @@ function MobileTools({ isCurrent, items }: { isCurrent: (href: string) => boolea
   }, [open])
 
   return (
-    <div className="mobile-tools" ref={containerRef}>
+    <div className="mobile-more" ref={containerRef}>
       <button
-        aria-controls="mobile-tools-panel"
+        aria-controls="mobile-more-panel"
+        aria-current={currentInMore ? "page" : undefined}
         aria-expanded={open}
+        aria-haspopup="dialog"
         aria-label={open ? "Close more tools" : "Open more tools"}
-        className="mobile-tools__trigger"
+        className="mobile-more__trigger"
         onClick={() => setOpen((current) => !current)}
         ref={triggerRef}
         type="button"
       >
-        <Icon aria-hidden name="truck.service" size={20} />
-        <span>Tools</span>
+        <Icon aria-hidden name="nav.more" size={20} />
+        <span>More</span>
       </button>
       {open ? (
-        <div className="mobile-tools__panel" id="mobile-tools-panel">
-          <div className="mobile-tools__head">
-            <div><span>More tools</span><strong>Everything in this workspace</strong></div>
+        <div
+          aria-label="More tools"
+          className="mobile-more__panel"
+          id="mobile-more-panel"
+          ref={panelRef}
+          role="dialog"
+        >
+          <div className="mobile-more__head">
+            <div><span>More</span><strong>Everything in this workspace</strong></div>
             <button onClick={() => { setOpen(false); triggerRef.current?.focus() }} type="button">Close</button>
           </div>
-          <nav aria-label="More tools">
-            {items.map((item) => (
-              <Link aria-current={isCurrent(item.href) ? "page" : undefined} href={item.href} key={item.href} onClick={() => setOpen(false)}>
-                <Icon aria-hidden name={item.icon} size={20} />
-                <span>{item.label}</span>
-              </Link>
+          <div className="mobile-more__groups">
+            {groups.map((group) => (
+              <section className="mobile-more__group" key={group.label}>
+                <h2>{group.label}</h2>
+                <nav aria-label={`${group.label} navigation`}>
+                  {group.items.map((item) => (
+                    <Link aria-current={isCurrent(item.href) ? "page" : undefined} href={item.href} key={item.href} onClick={() => setOpen(false)}>
+                      <Icon aria-hidden name={item.icon} size={20} />
+                      <span>{item.label}</span>
+                    </Link>
+                  ))}
+                </nav>
+              </section>
             ))}
-          </nav>
+          </div>
         </div>
       ) : null}
     </div>
@@ -800,10 +916,22 @@ function MobileTools({ isCurrent, items }: { isCurrent: (href: string) => boolea
 
 export function AppShell({ account, children, contentOwnsHeading = false, kicker, orgName, role, title }: ShellProps) {
   const pathname = usePathname()
-  const primaryNav = navByRole[role]
-  const toolsNav = desktopMoreByRole[role]
-  const currentHref = [...primaryNav, ...toolsNav]
-    .filter((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))
+  const desktopGroups = desktopNavByRole[role]
+  const desktopItems = desktopGroups.flatMap((group) => group.items)
+  const mobileNav = mobileNavByRole[role]
+  const mobileHrefs = new Set(mobileNav.map((item) => item.href))
+  const mobileMoreGroups = desktopGroups
+    .map((group) => ({ ...group, items: group.items.filter((item) => !mobileHrefs.has(item.href)) }))
+    .filter((group) => group.items.length > 0)
+  const roleHome: Record<ShellProps["role"], string> = {
+    admin: "/admin",
+    driver: "/driver/map",
+    fleet: "/fleet/command",
+    host: "/host/command"
+  }
+  const activePathname = pathname === `/${role}` ? roleHome[role] : pathname
+  const currentHref = desktopItems
+    .filter((item) => activePathname === item.href || activePathname.startsWith(`${item.href}/`))
     .sort((left, right) => right.href.length - left.href.length)[0]?.href
   const isCurrent = (href: string) => currentHref === href
 
@@ -815,40 +943,35 @@ export function AppShell({ account, children, contentOwnsHeading = false, kicker
           <BrandMark priority size={44} />
           <span>LogLoads</span>
         </Link>
-        <nav aria-label={`${role} primary navigation`}>
-          <span className="app-sidebar__label">Workspace</span>
-          {primaryNav.map((item) => (
-            <Link aria-current={isCurrent(item.href) ? "page" : undefined} href={item.href} key={item.href}>
-              <Icon aria-hidden name={item.icon} size={20} />
-              <span>{item.label}</span>
-            </Link>
-          ))}
-        </nav>
-        <nav aria-label={`${role} tools`}>
-          <span className="app-sidebar__label">More tools</span>
-          {toolsNav.map((item) => (
-            <Link aria-current={isCurrent(item.href) ? "page" : undefined} href={item.href} key={item.href}>
-              <Icon aria-hidden name={item.icon} size={20} />
-              <span>{item.label}</span>
-            </Link>
-          ))}
-        </nav>
+        {desktopGroups.map((group) => (
+          <nav aria-label={`${role} ${group.label.toLowerCase()} navigation`} key={group.label}>
+            <span className="app-sidebar__label">{group.label}</span>
+            {group.items.map((item) => (
+              <Link aria-current={isCurrent(item.href) ? "page" : undefined} href={item.href} key={item.href}>
+                <Icon aria-hidden name={item.icon} size={20} />
+                <span>{item.label}</span>
+              </Link>
+            ))}
+          </nav>
+        ))}
       </aside>
       <main className="app-main" id="app-content" tabIndex={-1}>
         <header className="app-topbar">
-          <div>
+          <div className="app-topbar__context">
             <p className="eyebrow">{kicker}</p>
             {contentOwnsHeading ? <p className="app-topbar__title">{title}</p> : <h1>{title}</h1>}
+            <p className="app-topbar__workspace">
+              <span>{account?.organizationName ?? orgName ?? "Platform"}</span>
+              {account ? <span>{verificationLabel(account.verificationStatus)}</span> : null}
+            </p>
           </div>
           {account ? (
             <div className="app-topbar__account">
-              <MobileTools isCurrent={isCurrent} items={toolsNav} />
               <NotificationBell notifications={account.notifications} role={role} unreadCount={account.unreadCount} />
               <AccountMenu account={account} pathname={pathname} />
             </div>
           ) : (
             <div className="app-topbar__account">
-              <MobileTools isCurrent={isCurrent} items={toolsNav} />
               <div className="account-switcher"><span>{orgName ?? "Platform"}</span></div>
             </div>
           )}
@@ -856,12 +979,13 @@ export function AppShell({ account, children, contentOwnsHeading = false, kicker
         {children}
       </main>
       <nav className="mobile-app-nav" aria-label={`${role} mobile navigation`}>
-        {primaryNav.map((item) => (
+        {mobileNav.map((item) => (
           <Link aria-current={isCurrent(item.href) ? "page" : undefined} href={item.href} key={item.href}>
             <Icon aria-hidden name={item.icon} size={20} />
             <span>{item.label}</span>
           </Link>
         ))}
+        <MobileMore groups={mobileMoreGroups} isCurrent={isCurrent} />
       </nav>
     </div>
   )

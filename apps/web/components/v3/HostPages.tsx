@@ -44,6 +44,88 @@ interface HostPageProps {
   network: NetworkView
 }
 
+export function HostOpportunityAction({
+  activationComplete,
+  canPublish,
+  context
+}: {
+  activationComplete: boolean
+  canPublish: boolean
+  context: "command" | "landing"
+}) {
+  const action = hostOpportunityActionState({ activationComplete, canPublish, context })
+
+  return (
+    <Link className={action.className} href={action.href}>
+      {action.label}
+    </Link>
+  )
+}
+
+export function hostOpportunityActionState({
+  activationComplete,
+  canPublish,
+  context
+}: {
+  activationComplete: boolean
+  canPublish: boolean
+  context: "command" | "landing"
+}): { className: string; href: string; label: string } {
+  if (!canPublish) {
+    return {
+      className: "action-link action-link--secondary",
+      href: context === "landing" ? "/host/settings" : "/host/opportunities",
+      label: context === "landing" ? "Review workspace access" : "Review work"
+    }
+  }
+
+  return {
+    className: context === "landing" ? "action-link action-link--secondary" : "action-link",
+    href: "/host/opportunities",
+    label: context === "landing" || !activationComplete ? "Prepare work" : "Publish work"
+  }
+}
+
+export function hostCapacityGapEmptyState({
+  activationComplete,
+  canPublish,
+  planned
+}: {
+  activationComplete: boolean
+  canPublish: boolean
+  planned: number
+}): { actionHref: string; actionLabel: string; body: string; title: string } {
+  const action = hostOpportunityActionState({
+    activationComplete,
+    canPublish,
+    context: "command"
+  })
+
+  if (planned === 0) {
+    return {
+      actionHref: action.href,
+      actionLabel: action.label,
+      body: canPublish
+        ? activationComplete
+          ? "Drafts and closed work do not create live capacity. Publish the next block when it is ready to move."
+          : "Drafts and closed work do not create live capacity. Prepare the next block now; publication remains locked until host billing activation is ready."
+        : "No live capacity is published. Review Work to follow drafts and closed records; an authorized publisher opens the next block.",
+      title: "No published capacity yet."
+    }
+  }
+
+  return {
+    actionHref: action.href,
+    actionLabel: action.label,
+    body: canPublish
+      ? activationComplete
+        ? "Every planned truckload is committed. Publish the next block when it is ready to move."
+        : "Every planned truckload is committed. Prepare the next block now; publication remains locked until host billing activation is ready."
+      : "Every planned truckload is committed. Review the operation while an authorized publisher prepares the next block.",
+    title: "No open gaps."
+  }
+}
+
 type HostTrip = NetworkView["trips"][number]
 
 function ownLoads(network: NetworkView): NetworkLoadView[] {
@@ -415,6 +497,11 @@ export function HostCommand({
   const gaps = active.filter(
     (load) => load.capacity.remaining > 0 && ["open", "scheduled"].includes(load.status)
   )
+  const capacityGapEmptyState = hostCapacityGapEmptyState({
+    activationComplete,
+    canPublish,
+    planned
+  })
 
   return (
     <AppShell account={account} kicker="Landing operations" role="host" title="Command">
@@ -455,9 +542,11 @@ export function HostCommand({
         <p>
           {planned} planned · {committed} committed · {delivered} delivered
         </p>
-        <Link className="action-link" href="/host/opportunities">
-          Publish work
-        </Link>
+        <HostOpportunityAction
+          activationComplete={activationComplete}
+          canPublish={canPublish}
+          context="command"
+        />
       </section>
       <section className="decision-grid host-command-grid">
         <article className="decision-list">
@@ -476,14 +565,10 @@ export function HostCommand({
           <h2>Capacity gaps</h2>
           {gaps.length === 0 ? (
             <EmptyState
-              actionHref="/host/opportunities"
-              actionLabel="Publish work"
-              body={
-                planned === 0
-                  ? "Drafts and closed work do not create live capacity. Open Work when the next block is ready to prepare."
-                  : "Every planned truckload is committed. Publish the next block when it is ready to move."
-              }
-              title={planned === 0 ? "No published capacity yet." : "No open gaps."}
+              actionHref={capacityGapEmptyState.actionHref}
+              actionLabel={capacityGapEmptyState.actionLabel}
+              body={capacityGapEmptyState.body}
+              title={capacityGapEmptyState.title}
             />
           ) : (
             <>
@@ -974,9 +1059,11 @@ export function HostLandings({
                       : "Details not yet verified"
                     : "Retired — not available for new work"}
                 </span>
-                <Link className="action-link action-link--secondary" href="/host/opportunities">
-                  Publish from this landing
-                </Link>
+                <HostOpportunityAction
+                  activationComplete={activationComplete}
+                  canPublish={canPublish}
+                  context="landing"
+                />
               </footer>
             </article>
           ))
