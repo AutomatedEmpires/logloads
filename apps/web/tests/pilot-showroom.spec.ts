@@ -142,6 +142,9 @@ test("every role tour exposes its complete current-product surface atlas", async
     await expectControlFloor(firstFullSizeLink)
 
     if (tour.role === "host") {
+      await page.evaluate(() => {
+        document.documentElement.style.scrollBehavior = "auto"
+      })
       await firstSurfaceLink.focus()
       await firstSurfaceLink.press("Enter")
       await expect(page).toHaveURL(/#surface-host-command$/)
@@ -150,9 +153,18 @@ test("every role tour exposes its complete current-product surface atlas", async
       await expect(fragmentTarget).toBeFocused()
       await expect(fragmentTarget).toBeInViewport()
       const targetBox = await fragmentTarget.boundingBox()
+      const headerBox = await page.locator(".public-header").boundingBox()
+      const roleNavBox = await roleNavigation.boundingBox()
 
       if (!targetBox) throw new Error("Pilot surface fragment geometry is missing")
-      expect(targetBox.y).toBeGreaterThanOrEqual(120)
+      if (!headerBox) throw new Error("Public header geometry is missing")
+      if (!roleNavBox) throw new Error("Pilot role navigation geometry is missing")
+      const obstructionBottom = Math.max(
+        headerBox.y + headerBox.height,
+        roleNavBox.y + roleNavBox.height
+      )
+      expect(targetBox.y).toBeGreaterThanOrEqual(obstructionBottom + 4)
+      expect(targetBox.y).toBeLessThanOrEqual(obstructionBottom + 32)
 
       const viewerPromise = page.context().waitForEvent("page")
       await firstFullSizeLink.click()
@@ -218,4 +230,35 @@ test("pilot CTAs preserve role intent without submitting operating state", async
     unsafeRequests: []
   })
   await expectNoHorizontalOverflow(page)
+})
+
+test("unknown Pilot routes fail closed before streamed rendering", async ({ page }) => {
+  const assetResponse = await page.request.get("/pilot/host-command.jpg")
+
+  expect(assetResponse.status()).toBe(200)
+  expect(assetResponse.headers()["content-type"]).toContain("image/jpeg")
+
+  const roleResponse = await page.goto("/pilot/not-a-role")
+
+  expect(roleResponse?.status()).toBe(404)
+  await expect(page.getByRole("heading", {
+    name: "That pilot surface is not available."
+  })).toBeVisible()
+  await expect(page.getByRole("link", {
+    name: "Return to the Pilot Center"
+  })).toHaveAttribute("href", "/pilot")
+
+  const captureResponse = await page.goto("/pilot/capture/not-a-capture")
+
+  expect(captureResponse?.status()).toBe(404)
+  await expect(page.getByRole("heading", {
+    name: "That pilot surface is not available."
+  })).toBeVisible()
+
+  const dottedResponse = await page.goto("/pilot/not.a-role")
+
+  expect(dottedResponse?.status()).toBe(404)
+  await expect(page.getByRole("heading", {
+    name: "That pilot surface is not available."
+  })).toBeVisible()
 })

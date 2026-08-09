@@ -91,6 +91,12 @@ describe("pilot showroom product truth", () => {
   it("defines the complete role atlas with exact capture paths and dimensions", () => {
     expect(pilotRoleSlugs).toEqual(["host", "fleet", "driver"])
 
+    const catalogSlugs = pilotRoleSlugs.flatMap((role) =>
+      pilotRoles[role].surfaces.map((surface) => surface.slug)
+    )
+
+    expect(catalogSlugs).toEqual(pilotSurfaceSlugs)
+
     for (const role of pilotRoleSlugs) {
       const surfaces = pilotRoles[role].surfaces
 

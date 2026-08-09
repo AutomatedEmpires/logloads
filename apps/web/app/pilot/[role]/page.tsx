@@ -13,8 +13,8 @@ interface PilotRolePageProps {
   params: Promise<{ role: string }>
 }
 
-export const dynamicParams = false
-
+// Middleware rejects unknown public slugs before streaming with a true 404.
+// This guard remains defense in depth while known values stay prerendered.
 export function generateStaticParams(): Array<{ role: PilotRole }> {
   return pilotRoleSlugs.map((role) => ({ role }))
 }

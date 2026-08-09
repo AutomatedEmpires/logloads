@@ -1,8 +1,15 @@
 import type { IconKey } from "@logloads/ui"
 
-export const pilotRoleSlugs = ["host", "fleet", "driver"] as const
+import {
+  pilotRoleSlugs,
+  type PilotRole
+} from "./pilot-route-contract"
 
-export type PilotRole = (typeof pilotRoleSlugs)[number]
+export {
+  pilotRoleSlugs,
+  pilotSurfaceSlugs,
+  type PilotRole
+} from "./pilot-route-contract"
 
 export interface PilotSurface {
   alt: string
@@ -656,10 +663,6 @@ export interface PilotSurfaceSelection {
   role: PilotRole
   surface: PilotSurface
 }
-
-export const pilotSurfaceSlugs = pilotRoleSlugs.flatMap((role) =>
-  pilotRoles[role].surfaces.map((surface) => surface.slug)
-)
 
 export function getPilotSurface(value: string): PilotSurfaceSelection | null {
   for (const role of pilotRoleSlugs) {

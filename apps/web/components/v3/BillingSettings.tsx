@@ -1,7 +1,8 @@
 "use client"
 
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js"
-import { loadStripe, type Stripe } from "@stripe/stripe-js"
+import type { Stripe } from "@stripe/stripe-js"
+import { loadStripe } from "@stripe/stripe-js/pure"
 import Link from "next/link"
 import { useId, useMemo, useState } from "react"
 import { Badge, Icon } from "@logloads/ui"

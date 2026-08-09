@@ -12,8 +12,8 @@ interface PilotCapturePageProps {
   params: Promise<{ slug: string }>
 }
 
-export const dynamicParams = false
-
+// Middleware rejects unknown public slugs before streaming with a true 404.
+// This guard remains defense in depth while known values stay prerendered.
 export function generateStaticParams(): Array<{ slug: string }> {
   return pilotSurfaceSlugs.map((slug) => ({ slug }))
 }
