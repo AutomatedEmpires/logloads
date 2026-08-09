@@ -251,6 +251,20 @@ test("platform admin reaches the admin console", async ({ page }) => {
 
 test("admin command keeps commercial and operating exceptions truthful", async ({ page }, testInfo) => {
   const pageErrors = watchPageErrors(page)
+  const noticeTitle = `E2E current notice ${testInfo.project.name} ${Date.now()}`
+
+  // Seed an actually current notice through the same authorized host workflow
+  // operators use. The canonical demo notices have real effective/expiry
+  // windows, so they correctly move into history as time passes and must not be
+  // treated as permanent action fixtures.
+  await signIn(page, "cole@summit.example")
+  await page.goto("/host/carriers")
+  await page.getByLabel("Headline").fill(noticeTitle)
+  await page.getByLabel("What crews need to know").fill("Use the signed north approach until this E2E check ends.")
+  await page.getByRole("button", { name: "Publish notice" }).click()
+  await expect(page.getByText("Notice published. It now shows in the attention feed for your operation.")).toBeVisible()
+
+  await page.context().clearCookies()
 
   await signIn(page, "admin@logloads.example")
   await page.goto("/admin")
@@ -291,7 +305,11 @@ test("admin command keeps commercial and operating exceptions truthful", async (
   await expect(page.getByRole("heading", { name: "Contact inquiries", exact: true })).toBeVisible()
 
   await page.goto("/admin/notices")
-  const endNotice = page.getByRole("button", { name: "End notice" }).first()
+  const currentNotice = page.locator(".admin-row").filter({
+    has: page.getByText(noticeTitle, { exact: true })
+  })
+  await expect(currentNotice).toHaveCount(1)
+  const endNotice = currentNotice.getByRole("button", { name: "End notice" })
   await expect(endNotice).toBeVisible()
   await endNotice.click()
   const confirmEnd = page.getByRole("button", { name: "Confirm end notice" })

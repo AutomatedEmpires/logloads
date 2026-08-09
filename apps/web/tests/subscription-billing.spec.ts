@@ -270,7 +270,10 @@ test("admin billing is percentage-first and subscription writes stay closed", as
     page.getByRole("heading", { name: "New subscription writes are closed" })
   ).toBeVisible()
   await expect(
-    page.getByText("Read-only subscription operations", { exact: false })
+    page.getByRole("heading", {
+      exact: true,
+      name: "Historical subscription operations"
+    })
   ).toBeVisible()
 
   await expect(
