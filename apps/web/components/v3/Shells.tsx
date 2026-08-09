@@ -75,6 +75,7 @@ export const publicNav: Array<[string, string]> = [
   ["Drivers", "/for-haulers"],
   ["Dispatch", "/for-fleets"],
   ["Hosts", "/for-landings"],
+  ["Pilot", "/pilot"],
   ["Pricing", "/pricing"]
 ]
 
@@ -357,6 +358,7 @@ const footerColumns: Array<{ heading: string; links: Array<[string, string]> }> 
     links: [
       ["Loads", "/loads"],
       ["How it works", "/how-it-works"],
+      ["Pilot Center", "/pilot"],
       ["Pricing", "/pricing"],
       ["Trust", "/trust"]
     ]

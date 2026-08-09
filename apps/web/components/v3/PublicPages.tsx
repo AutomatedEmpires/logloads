@@ -7,6 +7,10 @@ import { Badge, Icon } from "@logloads/ui"
 
 import { accessRestrictionMessage, type AccessRestrictionReason } from "@/lib/access-restriction"
 import { submitContactInquiryAction, type ContactFormState } from "@/lib/contact-actions"
+import {
+  CONTACT_INTEREST_OPTIONS,
+  type ContactInterest
+} from "@/lib/contact-intent"
 import type { NetworkLoadView } from "@/lib/network"
 import { payHeadline, presentPay } from "@/lib/pay-display"
 import type { ResidualSettlementItem } from "@/lib/residual-settlement-data"
@@ -69,6 +73,7 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
               <div className="hero-actions">
                 <Link className="action-link" href="/sign-up?path=host">Create a host workspace</Link>
                 <Link className="action-link action-link--secondary" href="/loads">Find a load</Link>
+                <Link className="hero-tertiary" href="/pilot">Explore every cockpit <span aria-hidden>→</span></Link>
                 <Link className="hero-tertiary" href="/for-fleets">Run fleet dispatch <span aria-hidden>→</span></Link>
               </div>
             </div>
@@ -153,6 +158,7 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
           <p>Start with one load or one truck. Drivers are free forever.</p>
           <div className="hero-actions">
             <Link className="action-link" href="/sign-up">Choose your role</Link>
+            <Link className="action-link action-link--secondary" href="/pilot">Explore the Pilot Center</Link>
             <Link className="text-link" href="/pricing">See pricing</Link>
           </div>
         </section>
@@ -217,6 +223,13 @@ export function PublicLoadDetail({ load }: { load: NetworkLoadView }) {
 
 export function StoryPage({ page }: { page: PublicStoryPage }) {
   const isProcess = page.slug === "how-it-works"
+  const pilotHref = page.slug === "for-haulers"
+    ? "/pilot/driver"
+    : page.slug === "for-fleets"
+      ? "/pilot/fleet"
+      : page.slug === "for-landings"
+        ? "/pilot/host"
+        : null
   const storyIcons = ["ops.document", "map.network", "status.verified"] as const
 
   return (
@@ -229,9 +242,16 @@ export function StoryPage({ page }: { page: PublicStoryPage }) {
               eyebrow={page.eyebrow}
               title={page.title}
             />
-            <Link className="action-link story-hero__action" href={page.cta.href}>
-              {page.cta.label}
-            </Link>
+            <div className="hero-actions story-hero__actions">
+              <Link className="action-link story-hero__action" href={page.cta.href}>
+                {page.cta.label}
+              </Link>
+              {pilotHref ? (
+                <Link className="action-link action-link--secondary" href={pilotHref}>
+                  Preview every surface
+                </Link>
+              ) : null}
+            </div>
           </div>
           <aside
             aria-label={`${page.eyebrow} at a glance`}
@@ -382,6 +402,7 @@ export function PricingPage() {
           <div>
             <strong>Host pilot enrollment is not self-serve.</strong>
             <p>Create a free workspace to prepare operating records. Live publication remains locked until LogLoads approves the exact pilot organization, its authorized representative accepts the current agreement, and Billing is ready.</p>
+            <Link className="text-link" href="/pilot">Explore the complete product before setup</Link>
           </div>
         </aside>
 
@@ -780,7 +801,7 @@ export function OnboardingPage({
 
 const INITIAL_CONTACT_STATE: ContactFormState = { error: null, ok: false }
 
-function ContactForm() {
+function ContactForm({ initialInterest }: { initialInterest: ContactInterest }) {
   const [state, formAction, pending] = useActionState(submitContactInquiryAction, INITIAL_CONTACT_STATE)
 
   if (state.ok) {
@@ -808,6 +829,14 @@ function ContactForm() {
         <input autoComplete="organization" name="organization" type="text" />
       </label>
       <label>
+        <span>What are you exploring?</span>
+        <select defaultValue={initialInterest} name="interest">
+          {CONTACT_INTEREST_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+      </label>
+      <label>
         <span>What can we help with?</span>
         <textarea maxLength={4000} name="message" required rows={6} />
       </label>
@@ -820,7 +849,11 @@ function ContactForm() {
   )
 }
 
-export function ContactPage() {
+export function ContactPage({
+  initialInterest = "general"
+}: {
+  initialInterest?: ContactInterest
+}) {
   return (
     <PublicShell>
       <main className="page-main contact-page">
@@ -830,7 +863,7 @@ export function ContactPage() {
           body="Questions about preparing a host pilot workspace, the 5% completed-load fee, driver access, verification, integrations, or a season of timber to move? Send the context we need to help."
         />
         <div className="contact-layout">
-          <ContactForm />
+          <ContactForm initialInterest={initialInterest} key={initialInterest} />
           <aside className="contact-aside">
             <section>
               <h2>What to include</h2>

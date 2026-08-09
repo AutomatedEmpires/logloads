@@ -1,6 +1,7 @@
 "use server"
 
 import { deliverEmail } from "./notify"
+import { contactInterestLabel, parseContactInterest } from "./contact-intent"
 import { checkRateLimit, requestClientKey } from "./rate-limit"
 import { mutateState, serializeError } from "./services"
 
@@ -21,6 +22,8 @@ export async function submitContactInquiryAction(
   const email = String(formData.get("email") ?? "").trim().slice(0, 200)
   const organization = String(formData.get("organization") ?? "").trim().slice(0, 200)
   const message = String(formData.get("message") ?? "").trim().slice(0, 4000)
+  const rawInterest = String(formData.get("interest") ?? "").trim()
+  const interest = parseContactInterest(rawInterest) ?? (rawInterest ? null : "general")
 
   if (!name || !email || !message) {
     return { error: "Add your name, email, and a short message so we can follow up.", ok: false }
@@ -28,6 +31,10 @@ export async function submitContactInquiryAction(
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return { error: "That email address does not look right. Check it and try again.", ok: false }
+  }
+
+  if (!interest) {
+    return { error: "Choose what you want to explore so we can route your request.", ok: false }
   }
 
   try {
@@ -39,6 +46,7 @@ export async function submitContactInquiryAction(
   const bodyLines = [
     `From: ${name} <${email}>`,
     organization ? `Organization: ${organization}` : null,
+    `Interest: ${contactInterestLabel(interest)}`,
     "",
     message
   ].filter((line): line is string => line !== null)

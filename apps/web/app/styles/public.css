@@ -952,6 +952,7 @@
 .contact-form label { display: grid; gap: 6px; color: var(--muted); font-weight: 900; }
 .contact-form label em { font-style: normal; font-weight: 700; text-transform: none; }
 .contact-form input,
+.contact-form select,
 .contact-form textarea {
   min-height: 44px;
   border: 1px solid var(--line);
@@ -963,6 +964,7 @@
 }
 .contact-form textarea { min-height: 140px; resize: vertical; }
 .contact-form input:focus,
+.contact-form select:focus,
 .contact-form textarea:focus { border-color: var(--green); outline: 3px solid rgba(46, 118, 81, 0.2); outline-offset: 0; }
 .contact-form .action-link { justify-self: start; }
 .contact-form__privacy { margin: 0; color: var(--muted); font-size: 0.82rem; line-height: 1.45; }

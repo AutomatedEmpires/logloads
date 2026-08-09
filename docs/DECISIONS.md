@@ -2,6 +2,37 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-08-09 — The Pilot Center explains the real product without granting a demo identity
+
+- **Public exploration is an editorial product surface, not a cockpit.** `/pilot`
+  and its Host, Fleet, and Driver role views may navigate between product
+  explanations and current-product captures. They never create a session,
+  select an organization, impersonate a seeded person, read canonical state, or
+  submit an operating mutation. The 2026-07-06 ban on public actor switching
+  remains intact.
+- **The captures come from the product, but the operation is fictional.** Pilot
+  imagery is generated from the disposable, provider-disabled founder demo and
+  is labeled as synthetic on every pilot route. Generation may not call Clerk,
+  Supabase, Stripe, Resend, Storage, maps, analytics, AI, or production data.
+  The public surface must not imply that a screenshot is a live workspace.
+- **Hands-on evaluation remains isolated and assisted.** The loopback founder
+  demo is the immediate guided rehearsal environment. A hosted prospect
+  environment requires a dedicated Vercel Preview, dedicated Supabase project
+  and canonical row, Clerk development tenancy, deterministic reset, synthetic
+  media, and all money, enrollment, email, and external side effects disabled.
+  A shared public `operating_state.id=primary` or hosted demo-persona launcher is
+  not an acceptable substitute.
+- **Three stages stay distinct.** Anyone may inspect the public product tour. A
+  serious prospect may rehearse in an isolated synthetic environment. Real work
+  starts only for an exact approved pilot organization after the current legal,
+  agreement, payment-method, enrollment, and collection gates are satisfied.
+  Drivers and fleets remain free; an approved host owes the separate 5% fee only
+  after a physical load completes, on top of whole driver pay.
+- This decision adds public explanation, synthetic captures, and pilot intake.
+  It does not create a membership, publish work, provision a provider, copy a
+  production credential, activate enrollment or fee collection, send email,
+  charge a card, move driver compensation, or authorize a public launch.
+
 ## 2026-08-06 — Direct-offer confirmation converges on canonical state
 
 - A successful truck claim keeps its immediate field confirmation while the

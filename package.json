@@ -31,6 +31,7 @@
     "db:assert": "bash ./tools/db-check.sh",
     "db:check": "bash ./tools/db-check.sh",
     "demo": "node tools/founder-demo.mjs",
+    "demo:capture-pilot": "node tools/capture-pilot-surfaces.mjs",
     "dev": "pnpm --filter @logloads/web dev",
     "guardrails": "node tools/check-guardrails.mjs",
     "lint": "turbo run lint && pnpm lint:workflows",
