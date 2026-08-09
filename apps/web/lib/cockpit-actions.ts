@@ -1876,7 +1876,11 @@ export async function markNotificationReadAction(input: { notificationId: string
     const actor = await requireActor()
 
     await commit(["/driver", "/fleet", "/host", "/admin"], (draft) =>
-      draft.markNotificationRead({ notificationId: input.notificationId, userId: actor.profile.id })
+      draft.markNotificationRead({
+        notificationId: input.notificationId,
+        platformAdminAuthorized: actor.isPlatformAdmin,
+        userId: actor.profile.id
+      })
     )
 
     return OK
@@ -1890,7 +1894,10 @@ export async function markAllNotificationsReadAction(): Promise<ActionResult> {
     const actor = await requireActor()
 
     await commit(["/driver", "/fleet", "/host", "/admin"], (draft) =>
-      draft.markAllNotificationsRead(actor.profile.id)
+      draft.markAllNotificationsRead({
+        platformAdminAuthorized: actor.isPlatformAdmin,
+        userId: actor.profile.id
+      })
     )
 
     return OK

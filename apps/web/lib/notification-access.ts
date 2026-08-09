@@ -9,14 +9,23 @@ import type { Notification } from "@logloads/contracts"
  */
 export function notificationVisibleToActor(
   notification: Pick<Notification, "relatedEntityType" | "userId">,
-  actor: { isPlatformAdmin: boolean; profileId: string }
+  actor: {
+    isPlatformAdmin: boolean
+    operationalNoticeAuthorized?: boolean
+    profileId: string
+  }
 ): boolean {
   if (notification.userId !== actor.profileId) {
     return false
   }
 
-  return (
-    notification.relatedEntityType !== "contact_inquiry" ||
-    actor.isPlatformAdmin
-  )
+  if (notification.relatedEntityType === "contact_inquiry") {
+    return actor.isPlatformAdmin
+  }
+
+  if (notification.relatedEntityType === "operational_notice") {
+    return actor.operationalNoticeAuthorized === true
+  }
+
+  return true
 }

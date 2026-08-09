@@ -671,7 +671,7 @@ export function buildHostBillingView(
           allowed: false,
           basis: "agreement_required",
           message:
-            "Only an organization owner or billing manager can add or replace this workspace's payment method."
+            "Only an organization owner, administrator, or billing manager can add or replace this workspace's payment method."
         }
 
   const loadTitleById = new Map(source.loadPostings.map((posting) => [posting.id, posting.title]))

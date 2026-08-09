@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, useTransition, type ReactNode } from "reac
 import { Badge, Icon, type IconKey } from "@logloads/ui"
 
 import { markAllNotificationsReadAction, markNotificationReadAction } from "@/lib/cockpit-actions"
+import { notificationHref } from "@/lib/notification-routing"
 import {
   acceptInvitationAction,
   declineInvitationAction,
@@ -83,23 +84,23 @@ const desktopNavByRole: Record<ShellProps["role"], NavGroup[]> = {
       label: "Platform",
       items: [
         { href: "/admin", icon: "nav.admin", label: "Command" },
-        { href: "/admin/organizations", icon: "nav.fleet", label: "Organizations" },
         { href: "/admin/verification", icon: "status.verified", label: "Verification" },
-        { href: "/admin/reports", icon: "status.warning", label: "Reports" }
+        { href: "/admin/organizations", icon: "nav.fleet", label: "Organizations" },
+        { href: "/admin/reports", icon: "status.warning", label: "Feedback" }
       ]
     },
     {
       label: "Operations",
       items: [
-        { href: "/admin/opportunities", icon: "nav.loads", label: "Opportunities" },
-        { href: "/admin/reliability", icon: "status.verified", label: "Reliability" },
-        { href: "/admin/disputes", icon: "ops.notice", label: "Cancellations" },
+        { href: "/admin/opportunities", icon: "nav.loads", label: "Work registry" },
+        { href: "/admin/disputes", icon: "ops.notice", label: "Exceptions" },
         { href: "/admin/notices", icon: "ops.notice", label: "Notices" },
+        { href: "/admin/reliability", icon: "status.verified", label: "Reliability" },
         { href: "/admin/audit", icon: "ops.audit", label: "History" }
       ]
     },
     {
-      label: "Workspace",
+      label: "Commercial",
       items: [{ href: "/admin/billing", icon: "load.pay", label: "Billing" }]
     }
   ],
@@ -202,9 +203,9 @@ const desktopNavByRole: Record<ShellProps["role"], NavGroup[]> = {
 const mobileNavByRole: Record<ShellProps["role"], NavItem[]> = {
   admin: [
     { href: "/admin", icon: "nav.admin", label: "Command" },
-    { href: "/admin/organizations", icon: "nav.fleet", label: "Orgs" },
     { href: "/admin/verification", icon: "status.verified", label: "Verify" },
-    { href: "/admin/reports", icon: "status.warning", label: "Reports" }
+    { href: "/admin/disputes", icon: "ops.notice", label: "Exceptions" },
+    { href: "/admin/billing", icon: "load.pay", label: "Billing" }
   ],
   driver: [
     { href: "/driver/map", icon: "nav.map", label: "Map" },
@@ -482,48 +483,6 @@ function relativeTime(iso: string): string {
 
   const days = Math.round(hours / 24)
   return days < 7 ? `${days}d ago` : new Date(iso).toLocaleDateString()
-}
-
-/**
- * Resolves a notification to a cockpit destination. Targets are role-scoped
- * because the same event (an assignment, a load) is viewed at different routes
- * per role. Unknown types stay unlinked rather than dead-linking.
- */
-function notificationHref(role: ShellProps["role"], type: string | null, id: string | null): string | null {
-  switch (type) {
-    case "load":
-    case "load_posting":
-      if (role === "driver") return id ? `/driver/loads/${id}` : "/driver/loads"
-      if (role === "host") return "/host/opportunities"
-      if (role === "fleet") return "/fleet/opportunities"
-      return "/admin/opportunities"
-    case "assignment":
-      if (role === "driver") return "/driver/schedule"
-      if (role === "host") return "/host/live-board"
-      if (role === "fleet") return "/fleet/dispatch"
-      return "/admin/audit"
-    case "direct_offer":
-      if (role === "host") return "/host/carriers"
-      if (role === "fleet") return "/fleet/opportunities"
-      return role === "admin" ? "/admin/opportunities" : null
-    case "message_thread": {
-      if (role === "admin") return null
-
-      const messagesPath = role === "driver"
-        ? "/driver/messages"
-        : role === "host"
-          ? "/host/messages"
-          : "/fleet/messages"
-
-      return id ? `${messagesPath}?thread=${encodeURIComponent(id)}` : messagesPath
-    }
-    case "support_request":
-      return role === "admin"
-        ? (id ? `/admin/reports#support-request-${id}` : "/admin/reports")
-        : (id ? `/support#support-request-${id}` : "/support")
-    default:
-      return null
-  }
 }
 
 function NotificationBell({ notifications, role, unreadCount }: {

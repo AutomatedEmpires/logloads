@@ -380,8 +380,10 @@ function InvoiceCard({ invoice }: { invoice: HostInvoiceView }) {
 }
 
 function OrganizationSubscriptionSections({
+  canManageBilling,
   subscription
 }: {
+  canManageBilling: boolean
   subscription: HostSubscriptionBillingView
 }) {
   return (
@@ -527,10 +529,17 @@ function OrganizationSubscriptionSections({
           </p>
         ))}
         {subscription.subscriptionId && subscription.canOpenPortal ? (
-          <SubscriptionBillingAction
-            kind="portal"
-            subscriptionId={subscription.subscriptionId}
-          />
+          canManageBilling ? (
+            <SubscriptionBillingAction
+              kind="portal"
+              subscriptionId={subscription.subscriptionId}
+            />
+          ) : (
+            <p className="subscription-overview__note">
+              <Icon aria-hidden name="status.lock" size={18} />
+              <span>An owner, administrator, or billing manager can open provider payment details.</span>
+            </p>
+          )
         ) : null}
       </section>
 
@@ -953,6 +962,7 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
 export type BillingPageProps = {
   account: ShellAccount
   billing: BillingView
+  canManageBilling: boolean
   checkoutNotice?: CheckoutNotice | null
 } & (
   | {
@@ -970,6 +980,7 @@ export type BillingPageProps = {
 export function BillingPage({
   account,
   billing,
+  canManageBilling,
   checkoutNotice,
   hostBilling,
   hostSubscriptionBilling,
@@ -1038,6 +1049,7 @@ export function BillingPage({
 
         {hasCanonicalSubscription && hostSubscriptionBilling ? (
           <OrganizationSubscriptionSections
+            canManageBilling={canManageBilling}
             subscription={hostSubscriptionBilling}
           />
         ) : null}
@@ -1110,6 +1122,7 @@ export function BillingPage({
 
         {!hasCanonicalSubscription && hostSubscriptionBilling ? (
           <OrganizationSubscriptionSections
+            canManageBilling={canManageBilling}
             subscription={hostSubscriptionBilling}
           />
         ) : null}

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs"
+import { readdirSync, readFileSync } from "node:fs"
 
 import { ORGANIZATION_ROLES, ORGANIZATION_ROLE_ACTIONS, type OrganizationRole } from "@logloads/contracts"
 import { describe, expect, it } from "vitest"
@@ -13,10 +13,21 @@ import { describe, expect, it } from "vitest"
  * This parses the newest definition of org_role_can and compares it, role by
  * role, against the TypeScript matrix. Update BOTH sides together.
  */
-const migration = readFileSync(
-  new URL("../../../supabase/migrations/20260716120000_dispatcher_publish_load.sql", import.meta.url),
-  "utf8"
-)
+const migrationDirectory = new URL("../../../supabase/migrations/", import.meta.url)
+const migrationName = readdirSync(migrationDirectory)
+  .filter((name) => name.endsWith(".sql"))
+  .sort()
+  .reverse()
+  .find((name) =>
+    readFileSync(new URL(name, migrationDirectory), "utf8")
+      .includes("create or replace function public.org_role_can")
+  )
+
+if (!migrationName) {
+  throw new Error("No migration defines public.org_role_can")
+}
+
+const migration = readFileSync(new URL(migrationName, migrationDirectory), "utf8")
 
 function sqlActionsFor(role: OrganizationRole): string[] {
   // Matches: when 'role' then array['a','b',...]
@@ -61,6 +72,11 @@ describe("org_role_can matches the application role matrix", () => {
     expect(dispatcher).toContain("publish_load")
     expect(dispatcher).not.toContain("manage_members")
     expect(dispatcher).not.toContain("manage_billing")
+  })
+
+  it("lets organization admins manage billing without granting it to dispatchers", () => {
+    expect(sqlActionsFor("admin")).toContain("manage_billing")
+    expect(sqlActionsFor("dispatcher")).not.toContain("manage_billing")
   })
 
   it("keeps the helper least-privileged and additive", () => {

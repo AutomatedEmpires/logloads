@@ -27,7 +27,7 @@ export async function POST(request: Request) {
       !organizationRoleCan(membership.membership.role, "manage_billing")
     ) {
       throw new ApiError(
-        "Only an organization owner or billing manager can manage billing",
+        "Only an organization owner, administrator, or billing manager can manage billing",
         403
       )
     }

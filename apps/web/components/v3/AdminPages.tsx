@@ -1,7 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
+import { useMemo, useState, useTransition } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
 import type {
@@ -15,6 +16,7 @@ import type {
   AdminReportsData,
   AdminVerificationItem
 } from "@/lib/admin-data"
+import { markNotificationReadAction } from "@/lib/cockpit-actions"
 import { AdminBillingActions } from "./AdminBillingActions"
 import { toneForNotice } from "./Common"
 import { AdminReportDecision, OrganizationDecision, ResolveNoticeButton, VerificationDecision } from "./AdminActions"
@@ -74,6 +76,106 @@ function loadStatusTone(status: string): "success" | "warning" | "critical" | "i
   return "neutral"
 }
 
+export function getAdminVerificationBuckets(items: AdminVerificationItem[]) {
+  return {
+    history: items.filter((item) => item.status !== "pending"),
+    pending: items.filter((item) => item.status === "pending")
+  }
+}
+
+export function getAdminNoticeBuckets(notices: AdminNoticeRow[]) {
+  return {
+    current: notices.filter((notice) => notice.state !== "ended"),
+    history: notices.filter((notice) => notice.state === "ended")
+  }
+}
+
+const CURRENT_OPPORTUNITY_STATUSES = new Set(["open", "scheduled", "filled", "in_transit"])
+
+export function getAdminOpportunityBuckets(loads: AdminOpportunityRow[]) {
+  return {
+    current: loads.filter((load) => CURRENT_OPPORTUNITY_STATUSES.has(load.status)),
+    history: loads.filter((load) => !CURRENT_OPPORTUNITY_STATUSES.has(load.status))
+  }
+}
+
+function VerificationRows({ items }: { items: AdminVerificationItem[] }) {
+  return (
+    <div className="admin-rows">
+      {items.map((item) => (
+        <article className="admin-row" key={item.id}>
+          <div className="admin-row__main">
+            <div className="admin-row__head">
+              <strong>{item.subjectLabel}</strong>
+              <Badge tone={reviewTone(item.status)}>{reviewLabel(item.status)}</Badge>
+            </div>
+            <p className="admin-row__meta">
+              {item.typeLabel} · {item.subjectTypeLabel} · {item.sourceLabel}
+            </p>
+            <p className="admin-row__body">{item.evidenceSummary}</p>
+            <span className="admin-row__when">Submitted {item.submittedLabel}</span>
+          </div>
+          {item.status === "pending" ? (
+            <VerificationDecision decisionContext={item.decisionContext} recordId={item.id} />
+          ) : null}
+        </article>
+      ))}
+    </div>
+  )
+}
+
+function NoticeRows({ notices }: { notices: AdminNoticeRow[] }) {
+  return (
+    <div className="admin-rows">
+      {notices.map((notice) => (
+        <article className="admin-row" key={notice.id}>
+          <div className="admin-row__main">
+            <div className="admin-row__head">
+              <strong>{notice.title}</strong>
+              <Badge tone={toneForNotice(notice.severity)}>
+                {notice.severity === "critical" ? "Critical" : notice.severity === "watch" ? "Watch" : "Info"}
+              </Badge>
+              <Badge tone={notice.state === "active" ? "success" : notice.state === "scheduled" ? "info" : "neutral"}>
+                {notice.stateLabel}
+              </Badge>
+            </div>
+            <p className="admin-row__meta">{notice.organizationName}</p>
+            <p className="admin-row__body">{notice.body}</p>
+            <span className="admin-row__when">
+              {notice.state === "scheduled" ? "Starts" : "Effective"} {notice.effectiveLabel} · {notice.expiresLabel === "No expiry set" ? notice.expiresLabel : `Ends ${notice.expiresLabel}`}
+            </span>
+          </div>
+          {notice.state === "active" ? <ResolveNoticeButton noticeId={notice.id} /> : null}
+        </article>
+      ))}
+    </div>
+  )
+}
+
+function OpportunityRows({ loads }: { loads: AdminOpportunityRow[] }) {
+  return (
+    <div className="admin-rows">
+      {loads.map((load) => (
+        <article className="admin-row" key={load.id}>
+          <div className="admin-row__main">
+            <div className="admin-row__head">
+              <strong>{load.title}</strong>
+              <Badge tone={loadStatusTone(load.status)}>{load.statusLabel}</Badge>
+              <Badge tone="info">{load.visibilityLabel}</Badge>
+            </div>
+            <p className="admin-row__meta">
+              {load.organizationName} · {load.lane}
+            </p>
+            <span className="admin-row__when">
+              {load.allocationLabel} · {load.truckloadsPerDay} {load.truckloadsPerDay === 1 ? "truck" : "trucks"}/day · Posted {load.createdLabel}
+            </span>
+          </div>
+        </article>
+      ))}
+    </div>
+  )
+}
+
 // --- Command dashboard ---------------------------------------------------------
 
 export function AdminDashboard({ account, overview }: { account: ShellAccount; overview: AdminOverview }) {
@@ -131,46 +233,38 @@ export function AdminDashboard({ account, overview }: { account: ShellAccount; o
 // --- Verification queue ----------------------------------------------------------
 
 export function AdminVerificationPage({ account, items }: { account: ShellAccount; items: AdminVerificationItem[] }) {
-  const pendingCount = items.filter((item) => item.status === "pending").length
+  const { history, pending } = getAdminVerificationBuckets(items)
 
   return (
     <AppShell account={account} kicker={KICKER} role="admin" title="Verification">
       <section className="app-section admin-panel">
         <SectionHeader
-          eyebrow={pendingCount === 1 ? "1 decision waiting" : `${pendingCount} decisions waiting`}
-          title="Review queue"
+          eyebrow={pending.length === 1 ? "1 decision waiting" : `${pending.length} decisions waiting`}
+          title="Decisions that need a reviewer"
         />
-        {items.length === 0 ? (
+        {pending.length === 0 ? (
           <EmptyState
-            body="When someone submits identity, organization, equipment, or landing evidence, it lands in this queue for a human decision."
-            title="No verification requests yet."
+            body="New identity, organization, equipment, or landing evidence appears here only while a human decision is still required."
+            title="No verification decisions waiting."
           />
         ) : (
-          <div className="admin-rows">
-            {items.map((item) => (
-              <article className="admin-row" key={item.id}>
-                <div className="admin-row__main">
-                  <div className="admin-row__head">
-                    <strong>{item.subjectLabel}</strong>
-                    <Badge tone={reviewTone(item.status)}>{reviewLabel(item.status)}</Badge>
-                  </div>
-                  <p className="admin-row__meta">
-                    {item.typeLabel} · {item.subjectTypeLabel} · {item.sourceLabel}
-                  </p>
-                  <p className="admin-row__body">{item.evidenceSummary}</p>
-                  <span className="admin-row__when">Submitted {item.submittedLabel}</span>
-                </div>
-                {item.status === "pending" ? (
-                  <VerificationDecision
-                    decisionContext={item.decisionContext}
-                    recordId={item.id}
-                  />
-                ) : null}
-              </article>
-            ))}
-          </div>
+          <VerificationRows items={pending} />
         )}
       </section>
+      {history.length > 0 ? (
+        <details className="app-section admin-history">
+          <summary>
+            <span>
+              <strong>Decision history</strong>
+              <small>{history.length} reviewed {history.length === 1 ? "record" : "records"}</small>
+            </span>
+            <span className="admin-history__toggle" aria-hidden />
+          </summary>
+          <div className="admin-history__body">
+            <VerificationRows items={history} />
+          </div>
+        </details>
+      ) : null}
     </AppShell>
   )
 }
@@ -184,10 +278,24 @@ export function AdminOrganizationsPage({
   account: ShellAccount
   organizations: AdminOrganizationRow[]
 }) {
+  const pendingCount = organizations.filter((organization) => organization.verificationStatus === "pending").length
+  const verifiedCount = organizations.filter((organization) => organization.verificationStatus === "verified").length
+  const restrictedCount = organizations.filter((organization) =>
+    organization.verificationStatus === "rejected" || organization.verificationStatus === "suspended"
+  ).length
+
   return (
     <AppShell account={account} kicker={KICKER} role="admin" title="Organizations">
+      <section className="app-section">
+        <SectionHeader eyebrow="Operating registry" title="Review posture" />
+        <div className="command-grid admin-registry-summary">
+          <Metric label="Pending review" value={pendingCount} />
+          <Metric label="Verified" value={verifiedCount} />
+          <Metric label="Restricted" value={restrictedCount} />
+        </div>
+      </section>
       <section className="app-section admin-panel">
-        <SectionHeader eyebrow={`${organizations.length} registered`} title="Registry" />
+        <SectionHeader eyebrow={`${organizations.length} registered`} title="Organization registry" />
         {organizations.length === 0 ? (
           <EmptyState
             body="Organizations appear here as soon as they finish onboarding, with their review status and operating footprint."
@@ -230,41 +338,40 @@ export function AdminOrganizationsPage({
 // --- Operational notices --------------------------------------------------------------
 
 export function AdminNoticesPage({ account, notices }: { account: ShellAccount; notices: AdminNoticeRow[] }) {
-  const activeCount = notices.filter((notice) => notice.active).length
+  const { current, history } = getAdminNoticeBuckets(notices)
+  const activeCount = current.filter((notice) => notice.state === "active").length
+  const scheduledCount = current.filter((notice) => notice.state === "scheduled").length
 
   return (
     <AppShell account={account} kicker={KICKER} role="admin" title="Notices">
       <section className="app-section admin-panel">
-        <SectionHeader eyebrow={`${activeCount} in effect`} title="Operational notices" />
-        {notices.length === 0 ? (
+        <SectionHeader
+          eyebrow={`${activeCount} in effect · ${scheduledCount} scheduled`}
+          title="Current field notices"
+        />
+        {current.length === 0 ? (
           <EmptyState
-            body="Notices published by organizations — road closures, delays, weather calls — appear here with severity and expiry."
-            title="No operational notices."
+            body="Active road closures, delays, weather calls, and notices scheduled to begin later appear here."
+            title="No current or scheduled notices."
           />
         ) : (
-          <div className="admin-rows">
-            {notices.map((notice) => (
-              <article className="admin-row" key={notice.id}>
-                <div className="admin-row__main">
-                  <div className="admin-row__head">
-                    <strong>{notice.title}</strong>
-                    <Badge tone={toneForNotice(notice.severity)}>
-                      {notice.severity === "critical" ? "Critical" : notice.severity === "watch" ? "Watch" : "Info"}
-                    </Badge>
-                    {!notice.active ? <Badge tone="neutral">Resolved</Badge> : null}
-                  </div>
-                  <p className="admin-row__meta">{notice.organizationName}</p>
-                  <p className="admin-row__body">{notice.body}</p>
-                  <span className="admin-row__when">
-                    Effective {notice.effectiveLabel} · {notice.active ? `Expires ${notice.expiresLabel}` : `Ended ${notice.expiresLabel}`}
-                  </span>
-                </div>
-                {notice.active ? <ResolveNoticeButton noticeId={notice.id} /> : null}
-              </article>
-            ))}
-          </div>
+          <NoticeRows notices={current} />
         )}
       </section>
+      {history.length > 0 ? (
+        <details className="app-section admin-history">
+          <summary>
+            <span>
+              <strong>Ended notice history</strong>
+              <small>{history.length} ended {history.length === 1 ? "notice" : "notices"}</small>
+            </span>
+            <span className="admin-history__toggle" aria-hidden />
+          </summary>
+          <div className="admin-history__body">
+            <NoticeRows notices={history} />
+          </div>
+        </details>
+      ) : null}
     </AppShell>
   )
 }
@@ -284,6 +391,41 @@ function supportStatusTone(status: string): "success" | "warning" | "info" {
   return "info"
 }
 
+function MarkInquiryReadButton({ inquiryId, title }: { inquiryId: string; title: string }) {
+  const router = useRouter()
+  const [error, setError] = useState<string | null>(null)
+  const [pending, startTransition] = useTransition()
+
+  function markRead(): void {
+    setError(null)
+    startTransition(async () => {
+      const result = await markNotificationReadAction({ notificationId: inquiryId })
+
+      if (!result.ok) {
+        setError(result.error ?? "This inquiry could not be marked read.")
+        return
+      }
+
+      router.refresh()
+    })
+  }
+
+  return (
+    <div className="admin-decision">
+      <button
+        aria-label={`Mark ${title} read`}
+        className="admin-btn"
+        disabled={pending}
+        onClick={markRead}
+        type="button"
+      >
+        {pending ? "Marking read…" : "Mark read"}
+      </button>
+      {error ? <p className="admin-decision__error" role="alert">{error}</p> : null}
+    </div>
+  )
+}
+
 export function AdminReportsPage({ account, reports }: { account: ShellAccount; reports: AdminReportsData }) {
   const [statusFilter, setStatusFilter] = useState<"attention" | "all" | "terminal">("attention")
   const [kindFilter, setKindFilter] = useState<"all" | "problem" | "feature_request">("all")
@@ -300,7 +442,45 @@ export function AdminReportsPage({ account, reports }: { account: ShellAccount; 
   )
 
   return (
-    <AppShell account={account} kicker={KICKER} role="admin" title="Reports">
+    <AppShell account={account} kicker={KICKER} role="admin" title="Feedback">
+      <section className="app-section admin-panel" id="contact-inquiries">
+        <SectionHeader
+          eyebrow={`${reports.inquiries.filter((inquiry) => !inquiry.read).length} unread · ${reports.inquiries.length} total`}
+          title="Contact inquiries"
+        />
+        <p className="admin-panel__intro">
+          This is the durable, admin-only record written by the public contact form. Email delivery is separate and is not inferred here.
+        </p>
+        {reports.inquiries.length === 0 ? (
+          <EmptyState
+            body="Messages sent through the public contact form will remain available here even after they leave the notification menu."
+            title="No contact inquiries yet."
+          />
+        ) : (
+          <div className="admin-rows">
+            {reports.inquiries.map((inquiry) => (
+              <article
+                className="admin-row admin-inquiry-row"
+                id={`contact-inquiry-${inquiry.id}`}
+                key={inquiry.id}
+              >
+                <div className="admin-row__main">
+                  <div className="admin-row__head">
+                    <h3>{inquiry.title}</h3>
+                    <Badge tone={inquiry.read ? "neutral" : "warning"}>
+                      {inquiry.read ? "Read in inbox" : "Unread"}
+                    </Badge>
+                  </div>
+                  <p className="admin-row__body admin-inquiry-row__body">{inquiry.body}</p>
+                  <span className="admin-row__when">Received {inquiry.createdLabel}</span>
+                </div>
+                {!inquiry.read ? <MarkInquiryReadButton inquiryId={inquiry.id} title={inquiry.title} /> : null}
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
       <section className="app-section admin-panel">
         <SectionHeader eyebrow={`${reports.requests.length} recorded`} title="User requests" />
         <div className="filter-bar admin-filter-bar" aria-label="Filter user requests">
@@ -407,29 +587,43 @@ export function AdminReportsPage({ account, reports }: { account: ShellAccount; 
 // --- Disputes -----------------------------------------------------------------------
 
 export function AdminDisputesPage({ account, disputes }: { account: ShellAccount; disputes: AdminDisputeRow[] }) {
+  const completionCount = disputes.filter((dispute) => dispute.kind.startsWith("completion_")).length
+  const paymentCount = disputes.length - completionCount
+
   return (
-    <AppShell account={account} kicker={KICKER} role="admin" title="Cancellations">
+    <AppShell account={account} kicker={KICKER} role="admin" title="Completion & payment">
+      <section className="app-section">
+        <SectionHeader eyebrow="Open operating handoffs" title="What still needs agreement" />
+        <div className="command-grid admin-exception-summary">
+          <Metric label="Completion decisions" value={completionCount} />
+          <Metric label="Direct payment receipts" value={paymentCount} />
+        </div>
+        <p className="admin-panel__intro">
+          These are unresolved records, not historical cancellations. LogLoads records completion and each party&apos;s payment marker; it never holds or moves driver funds.
+          The assigned host and driver resolve them from their authorized trip workspaces.
+        </p>
+      </section>
       <section className="app-section admin-panel">
-        <SectionHeader eyebrow={`${disputes.length} recorded`} title="Cancelled assignments" />
+        <SectionHeader eyebrow={`${disputes.length} open`} title="Exceptions requiring follow-up" />
         {disputes.length === 0 ? (
           <EmptyState
-            body="When an assignment is cancelled, it appears here with its recorded reason so a reviewer can follow up."
-            title="No cancelled assignments."
+            body="Every completed trip has a settled completion decision and no outstanding direct-payment receipt mismatch in the local record. This does not verify a bank transfer."
+            title="No completion or payment exceptions."
           />
         ) : (
           <div className="admin-rows">
             {disputes.map((dispute) => (
-              <article className="admin-row" key={dispute.id}>
+              <article className={`admin-row admin-exception-row admin-exception-row--${dispute.tone}`} key={dispute.id}>
                 <div className="admin-row__main">
                   <div className="admin-row__head">
                     <strong>{dispute.loadTitle}</strong>
-                    <Badge tone="warning">Cancelled</Badge>
+                    <Badge tone={dispute.tone}>{dispute.statusLabel}</Badge>
                   </div>
                   <p className="admin-row__meta">
                     {dispute.organizationName} · Driver: {dispute.driverName}
                   </p>
-                  <p className="admin-row__body">{dispute.reason}</p>
-                  <span className="admin-row__when">Cancelled {dispute.cancelledLabel}</span>
+                  <p className="admin-row__body">{dispute.detail}</p>
+                  <span className="admin-row__when">Last changed {dispute.whenLabel}</span>
                 </div>
               </article>
             ))}
@@ -736,7 +930,46 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
         </p>
       </section>
 
-      <section className="app-section admin-panel">
+      <section className="app-section admin-panel" id="current-fee-exceptions">
+        <SectionHeader
+          action={
+            <Link className="action-link action-link--secondary" href="/admin/disputes">
+              Review completion &amp; payment
+            </Link>
+          }
+          eyebrow={`${billing.platformFeeLedger.currentExceptionCount} current ${billing.platformFeeLedger.currentExceptionCount === 1 ? "exception" : "exceptions"}`}
+          title="Percentage fee attention"
+        />
+        <p className="admin-panel__intro">
+          This queue covers only current percentage-v1 fee and invoice disagreements. Normal monthly-arrears accrual and open invoices are not treated as failures, and no live Stripe state is inferred.
+        </p>
+        {billing.platformFeeLedger.currentExceptions.length === 0 ? (
+          <EmptyState
+            body="Current percentage fee events and their local invoice references are internally consistent. Provider state was not checked."
+            title="No current fee exceptions."
+          />
+        ) : (
+          <div className="admin-rows">
+            {billing.platformFeeLedger.currentExceptions.map((exception) => (
+              <article className={`admin-row admin-exception-row admin-exception-row--${exception.severity}`} key={exception.id}>
+                <div className="admin-row__main">
+                  <div className="admin-row__head">
+                    <strong>{exception.title}</strong>
+                    <Badge tone={exception.severity}>
+                      {exception.severity === "critical" ? "Critical" : "Warning"}
+                    </Badge>
+                  </div>
+                  <p className="admin-row__meta">{exception.organizationName}</p>
+                  <p className="admin-row__body">{exception.detail}</p>
+                  <span className="admin-row__when">Local record updated {exception.updatedLabel}</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="app-section admin-panel admin-legacy-panel">
         <SectionHeader
           action={
             <Link
@@ -747,8 +980,8 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
               Export canonical CSV
             </Link>
           }
-          eyebrow="Historical subscription state"
-          title="Read-only subscription operations"
+          eyebrow="Preserved legacy subscription state"
+          title="Historical subscription operations"
         />
         <div className="command-grid admin-plan-mix">
           <Metric
@@ -830,7 +1063,7 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
           eyebrow={`${billing.reconciliationWarnings.length} local ${
             billing.reconciliationWarnings.length === 1 ? "warning" : "warnings"
           }`}
-          title="Reconciliation and provider evidence"
+          title="Historical subscription reconciliation"
         />
         <p className="admin-panel__intro">
           These checks compare canonical records and the provider references stored on them. They do
@@ -870,7 +1103,7 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
       <section className="app-section admin-panel">
         <SectionHeader
           eyebrow={`${billing.attention.length} to follow up`}
-          title="Billing failures and dunning"
+          title="Historical subscription failures"
         />
         {billing.attention.length === 0 ? (
           <EmptyState
@@ -891,7 +1124,7 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
           eyebrow={`${billing.commercialSubscriptionCount} commercial ${
             billing.commercialSubscriptionCount === 1 ? "subscription" : "subscriptions"
           }`}
-          title="Plan mix"
+          title="Historical plan mix"
         />
         {billing.planMix.length === 0 ? (
           <EmptyState
@@ -923,7 +1156,7 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
           eyebrow={`${billing.accounts.length} ${
             billing.accounts.length === 1 ? "account" : "accounts"
           }`}
-          title="Organization billing authority"
+          title="All organization billing authority"
         />
         {billing.accounts.length === 0 ? (
           <EmptyState
@@ -960,7 +1193,7 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
       </section>
 
       <section className="app-section admin-panel">
-        <SectionHeader eyebrow="Canonical records" title="Organization subscriptions" />
+        <SectionHeader eyebrow="Preserved legacy records" title="Historical organization subscriptions" />
         {billing.subscriptions.length === 0 ? (
           <EmptyState
             body="No organization has an accepted subscription-v1 agreement. Configured plan definitions and provider products are not shown as customers."
@@ -980,7 +1213,7 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
           eyebrow={`${billing.usageLedger.length} ${
             billing.usageLedger.length === 1 ? "event" : "events"
           }`}
-          title="Completed Network usage ledger"
+          title="Historical subscription usage ledger"
         />
         {billing.usageLedger.length === 0 ? (
           <EmptyState
@@ -1021,7 +1254,7 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
           eyebrow={`${billing.periodSummaries.length} ${
             billing.periodSummaries.length === 1 ? "period" : "periods"
           }`}
-          title="Allowance period summaries"
+          title="Historical allowance period summaries"
         />
         {billing.periodSummaries.length === 0 ? (
           <EmptyState
@@ -1069,7 +1302,7 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
           eyebrow={`${billing.invoices.length} ${
             billing.invoices.length === 1 ? "invoice" : "invoices"
           }`}
-          title="Network overage invoices"
+          title="Historical Network overage invoices"
         />
         {billing.invoices.length === 0 ? (
           <EmptyState
@@ -1115,7 +1348,7 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
           eyebrow={`${billing.adjustments.length} ${
             billing.adjustments.length === 1 ? "adjustment" : "adjustments"
           }`}
-          title="Adjustments and reversals"
+          title="Historical adjustments and reversals"
         />
         {billing.adjustments.length === 0 ? (
           <EmptyState
@@ -1208,38 +1441,38 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
 // --- Load posting moderation view ---------------------------------------------------------
 
 export function AdminOpportunitiesPage({ account, loads }: { account: ShellAccount; loads: AdminOpportunityRow[] }) {
+  const { current, history } = getAdminOpportunityBuckets(loads)
+
   return (
-    <AppShell account={account} kicker={KICKER} role="admin" title="Opportunities">
+    <AppShell account={account} kicker={KICKER} role="admin" title="Work registry">
       <section className="app-section admin-panel">
-        <SectionHeader eyebrow={`${loads.length} postings`} title="Every load posting on the platform" />
-        {loads.length === 0 ? (
+        <SectionHeader eyebrow={`${current.length} current · ${history.length} historical`} title="Current load postings" />
+        <p className="admin-panel__intro">
+          Platform-wide posting context for moderation. Exact private route and access details remain assignment-gated in the operating cockpits.
+        </p>
+        {current.length === 0 ? (
           <EmptyState
-            body="Every load posting published anywhere on the platform appears here with its status and visibility, for moderation context."
-            title="No load postings yet."
+            body="Open, scheduled, filled, and in-transit postings appear here. Draft and terminal records remain in history below."
+            title="No current load postings."
           />
         ) : (
-          <div className="admin-rows">
-            {loads.map((load) => (
-              <article className="admin-row" key={load.id}>
-                <div className="admin-row__main">
-                  <div className="admin-row__head">
-                    <strong>{load.title}</strong>
-                    <Badge tone={loadStatusTone(load.status)}>{load.statusLabel}</Badge>
-                    <Badge tone="info">{load.visibilityLabel}</Badge>
-                  </div>
-                  <p className="admin-row__meta">
-                    {load.organizationName} · {load.lane}
-                  </p>
-                  <span className="admin-row__when">
-                    {load.allocationLabel} · {load.truckloadsPerDay}{" "}
-                    {load.truckloadsPerDay === 1 ? "truck" : "trucks"}/day · Posted {load.createdLabel}
-                  </span>
-                </div>
-              </article>
-            ))}
-          </div>
+          <OpportunityRows loads={current} />
         )}
       </section>
+      {history.length > 0 ? (
+        <details className="app-section admin-history">
+          <summary>
+            <span>
+              <strong>Draft and terminal posting history</strong>
+              <small>{history.length} preserved {history.length === 1 ? "record" : "records"}</small>
+            </span>
+            <span className="admin-history__toggle" aria-hidden />
+          </summary>
+          <div className="admin-history__body">
+            <OpportunityRows loads={history} />
+          </div>
+        </details>
+      ) : null}
     </AppShell>
   )
 }

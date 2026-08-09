@@ -1277,7 +1277,10 @@ export function buildNetworkView(
     }
   })
 
-  const notices: NoticeView[] = services.listAttentionItems(activeOrganization.id)
+  const notices: NoticeView[] = services.listAttentionItems({
+    actorUserId: currentUser.id,
+    organizationId: activeOrganization.id
+  })
 
   const messages = services.listThreadsForUser(currentUser.id, activeOrganization.id).map((thread) => ({
     contextLabel: thread.contextLabel,

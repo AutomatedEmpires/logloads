@@ -3,6 +3,7 @@ import { organizationRoleCan } from "@logloads/contracts"
 import { HostCommand } from "@/components/v3"
 import { getHostPublishingOptions, getHostWorkspaceSetup } from "@/lib/host-data"
 import { getCockpitContext, shellAccountFor } from "@/lib/v3"
+import { hostPublishingOptionsForSurface } from "../publishing-options"
 
 export const dynamic = "force-dynamic"
 
@@ -11,18 +12,23 @@ export default async function Page() {
   const organizationId = context.network.activeOrganization.id
   const actorUserId = context.actor.profile.id
   const role = context.actor.activeMembership?.role
+  const canAssignCapacity =
+    role !== undefined && organizationRoleCan(role, "assign_capacity")
   const canManageLandings =
     role !== undefined && organizationRoleCan(role, "manage_landing")
   const canPublish =
     role !== undefined && organizationRoleCan(role, "publish_load")
+  const publishingOptions = getHostPublishingOptions(organizationId, actorUserId)
+  const options = hostPublishingOptionsForSurface(publishingOptions, canPublish)
 
   return (
     <HostCommand
       account={shellAccountFor(context)}
+      canAssignCapacity={canAssignCapacity}
       canManageLandings={canManageLandings}
       canPublish={canPublish}
       network={context.network}
-      options={getHostPublishingOptions(organizationId, actorUserId)}
+      options={options}
       setup={getHostWorkspaceSetup(organizationId, role, actorUserId)}
     />
   )

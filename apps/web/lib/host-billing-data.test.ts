@@ -488,7 +488,7 @@ describe("the card on file, and what its state costs the host", () => {
     expect(manager.paymentMethod.setupAllowed).toBe(true)
     expect(manager.paymentMethod.setupUnavailableReason).toBeNull()
     expect(viewer.paymentMethod.setupAllowed).toBe(false)
-    expect(viewer.paymentMethod.setupUnavailableReason).toMatch(/owner or billing manager/i)
+    expect(viewer.paymentMethod.setupUnavailableReason).toMatch(/owner, administrator, or billing manager/i)
     expect(unenrolledManager.paymentMethod.setupAllowed).toBe(false)
     expect(unenrolledManager.paymentMethod.setupUnavailableReason).toMatch(
       /approved for percentage billing/i

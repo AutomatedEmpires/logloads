@@ -13,6 +13,7 @@ import {
   readFirstRunHandoffCookie
 } from "@/lib/entry-routing"
 import { getCockpitContext, shellAccountFor } from "@/lib/v3"
+import { hostPublishingOptionsForSurface } from "../publishing-options"
 
 export const dynamic = "force-dynamic"
 
@@ -44,9 +45,16 @@ export default async function Page({
   const role = context.actor.activeMembership?.role
   const canManageLandings = role !== undefined && organizationRoleCan(role, "manage_landing")
   const canPublish = role !== undefined && organizationRoleCan(role, "publish_load")
+  const canViewPrivateLocation =
+    role !== undefined && organizationRoleCan(role, "view_private_location")
   const canManageDestinations = role !== undefined && (
     organizationRoleCan(role, "manage_destination") || canPublish
   )
+  const publishingOptions = getHostPublishingOptions(organizationId, actorUserId)
+  const options = hostPublishingOptionsForSurface(publishingOptions, canPublish)
+  const landingRecords = canViewPrivateLocation
+    ? getHostLandingRecords(organizationId, role, actorUserId)
+    : []
 
   return (
     <HostLandings
@@ -55,9 +63,12 @@ export default async function Page({
       canManageDestinations={canManageDestinations}
       canPublish={canPublish}
       continuation={handoff?.continuation || undefined}
-      landings={getHostLandingRecords(organizationId, role, actorUserId)}
+      landingDetailsRestricted={!canViewPrivateLocation}
+      landings={landingRecords.map((landing) =>
+        canManageLandings ? landing : { ...landing, editable: null }
+      )}
       network={context.network}
-      options={getHostPublishingOptions(organizationId, actorUserId)}
+      options={options}
       setup={getHostWorkspaceSetup(organizationId, role, actorUserId)}
       welcome={welcome}
       welcomeSource={handoff?.source}

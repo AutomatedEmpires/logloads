@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import {
   driverLoadBoardPresentation,
+  driverNoticeForLoad,
   driverOwnedTrucks,
   driverPendingAssignmentPresentation,
   driverScheduleDecisionBuckets
@@ -80,6 +81,39 @@ describe("driver equipment presentation", () => {
 })
 
 describe("driver schedule decision presentation", () => {
+  it("puts the highest-priority current field notice on its exact haul", () => {
+    const notices: NetworkView["notices"] = [
+      { body: "General update", id: "info", relatedLoadId: "load-a", severity: "info", title: "Info" },
+      { body: "Stop before bridge", id: "critical", relatedLoadId: "load-a", severity: "critical", title: "Bridge hold" },
+      { body: "Different haul", id: "other", relatedLoadId: "load-b", severity: "critical", title: "Other" }
+    ]
+
+    expect(driverNoticeForLoad(notices, "load-a")?.id).toBe("critical")
+    expect(driverNoticeForLoad(notices, "load-c")).toBeNull()
+  })
+
+  it("excludes synthetic capacity attention from a haul's field notice", () => {
+    const notices: NetworkView["notices"] = [
+      {
+        body: "A derived capacity warning, not an operational field notice.",
+        id: "capacity-load-a",
+        relatedLoadId: "load-a",
+        severity: "critical",
+        title: "Capacity attention"
+      },
+      {
+        body: "Use the marked bypass until the landing road reopens.",
+        id: "field-load-a",
+        relatedLoadId: "load-a",
+        severity: "watch",
+        title: "Landing road closure"
+      }
+    ]
+
+    expect(driverNoticeForLoad(notices, "load-a")?.id).toBe("field-load-a")
+    expect(driverNoticeForLoad([notices[0]!], "load-a")).toBeNull()
+  })
+
   it("keeps offers that need a driver response ahead of requests waiting on a host", () => {
     const offered = loadWithAssignment("offered-a", "offered")
     const requested = loadWithAssignment("requested-a", "requested")

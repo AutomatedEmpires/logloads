@@ -51,4 +51,9 @@ describe("organization permissions", () => {
     expect(organizationRoleCan("billing", "publish_load")).toBe(false)
     expect(organizationRoleCan("billing", "assign_capacity")).toBe(false)
   })
+
+  it("lets owners and organization admins manage billing", () => {
+    expect(organizationRoleCan("owner", "manage_billing")).toBe(true)
+    expect(organizationRoleCan("admin", "manage_billing")).toBe(true)
+  })
 })

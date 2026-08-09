@@ -113,6 +113,75 @@ test("host signs in and reaches command with capacity view", async ({ page }) =>
   await expect(page.getByRole("heading", { name: "Command" })).toBeVisible()
 })
 
+test("host operating surfaces separate live decisions, work, and history", async ({ page }, testInfo) => {
+  const pageErrors = watchPageErrors(page)
+  const mobile = (page.viewportSize()?.width ?? 1280) <= 760
+  const expectNoHorizontalOverflow = async () => {
+    if (!mobile) return
+
+    const viewportWidth = await page.evaluate(() => document.documentElement.clientWidth)
+    const contentWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+    expect(contentWidth).toBeLessThanOrEqual(viewportWidth + 1)
+  }
+
+  await signIn(page, "cole@summit.example")
+  await page.goto("/host/command")
+  await expect(page.getByRole("heading", { name: "Command", exact: true })).toBeVisible()
+  await expect(page.getByRole("region", { name: "Current host operations" })).toBeVisible()
+  await expect(page.locator("#capacity-requests")).toBeVisible()
+  await expect(page.locator("#capacity-gaps")).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Live exceptions" })).toBeVisible()
+  await expectNoHorizontalOverflow()
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath(`host-command-${testInfo.project.name}.png`)
+  })
+
+  await page.goto("/host/opportunities")
+  await expect(page.getByRole("heading", { name: "Work", exact: true })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Publish timber movement" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Your work" })).toBeVisible()
+  await expect(page.locator("#live-work")).toBeVisible()
+  await expect(page.locator(".host-publication-state")).toBeVisible()
+  await expectNoHorizontalOverflow()
+
+  await page.goto("/host/live-board")
+  await expect(page.getByRole("heading", { name: "Live Board", exact: true })).toBeVisible()
+  await expect(page.getByRole("region", { name: "Live board summary" })).toBeVisible()
+  await expect(page.locator(".live-board")).toBeVisible()
+  await expectNoHorizontalOverflow()
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath(`host-live-board-${testInfo.project.name}.png`)
+  })
+
+  await page.goto("/host/schedule")
+  await expect(page.getByRole("heading", { name: "Schedule", exact: true })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Accepting and moving" })).toBeVisible()
+  await expect(page.locator(".host-schedule-row").first()).toBeVisible()
+  await expectNoHorizontalOverflow()
+
+  await page.goto("/host/carriers")
+  await expect(page.getByRole("heading", { name: "Carriers", exact: true })).toBeVisible()
+  await expect(page.locator(".host-network-summary")).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Send a direct offer" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Publish an operational notice" })).toBeVisible()
+  await expectNoHorizontalOverflow()
+
+  await page.goto("/host/landings")
+  await expect(page.getByRole("heading", { name: "Landings", exact: true })).toBeVisible()
+  await expect(page.locator("#landings")).toBeVisible()
+  await expect(page.locator("#add-landing")).toBeVisible()
+  await expectNoHorizontalOverflow()
+
+  await page.goto("/host/analytics")
+  await expect(page.getByRole("heading", { name: "Analytics", exact: true })).toBeVisible()
+  await expectNoHorizontalOverflow()
+
+  expect(pageErrors).toEqual([])
+  await expect(page.locator("[data-nextjs-dialog], .vite-error-overlay")).toHaveCount(0)
+})
+
 test("public entry reflects the active account and preserves driver intent", async ({ page }) => {
   test.slow()
   await signIn(page, "cole@summit.example")
@@ -178,6 +247,60 @@ test("platform admin reaches the admin console", async ({ page }) => {
 
   await page.goto("/admin")
   await expect(page.getByRole("heading", { name: "Admin" })).toBeVisible()
+})
+
+test("admin command keeps commercial and operating exceptions truthful", async ({ page }, testInfo) => {
+  const pageErrors = watchPageErrors(page)
+
+  await signIn(page, "admin@logloads.example")
+  await page.goto("/admin")
+
+  await expect(page.getByRole("heading", { name: "Admin" })).toBeVisible()
+  await expect(page.getByRole("link", { name: /Completion and payment/ })).toBeVisible()
+  await expect(page.getByRole("link", { name: /Current fee exceptions/ })).toBeVisible()
+  await expect(page.getByRole("link", { name: /Support and contact/ })).toBeVisible()
+
+  if ((page.viewportSize()?.width ?? 1280) <= 760) {
+    const mobileNav = page.getByRole("navigation", { name: "admin mobile navigation" })
+    await expect(mobileNav.getByRole("link")).toHaveText(["Command", "Verify", "Exceptions", "Billing"])
+    const moreTrigger = mobileNav.getByRole("button", { name: "Open more tools" })
+    await moreTrigger.click()
+    const moreDialog = page.getByRole("dialog", { name: "More tools" })
+    await expect(moreDialog.getByRole("link", { name: "Organizations" })).toBeVisible()
+    await expect(moreDialog.getByRole("link", { name: "Work registry" })).toBeVisible()
+    await expect(moreDialog.getByRole("link", { name: "Feedback" })).toBeVisible()
+    await page.keyboard.press("Escape")
+    await expect(moreTrigger).toBeFocused()
+  }
+
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath(`admin-command-${testInfo.project.name}.png`)
+  })
+
+  await page.goto("/admin/disputes")
+  await expect(page.getByRole("heading", { name: "Completion & payment" })).toBeVisible()
+  await expect(page.getByText(/These are unresolved records, not historical cancellations/)).toBeVisible()
+
+  await page.goto("/admin/billing")
+  await expect(page.getByRole("heading", { name: "Percentage fee attention" })).toBeVisible()
+  await expect(page.getByText(/Current host revenue is the 5% platform fee/)).toBeVisible()
+
+  await page.goto("/admin/reports")
+  await expect(page.getByRole("heading", { name: "Feedback" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Contact inquiries", exact: true })).toBeVisible()
+
+  await page.goto("/admin/notices")
+  const endNotice = page.getByRole("button", { name: "End notice" }).first()
+  await expect(endNotice).toBeVisible()
+  await endNotice.click()
+  const confirmEnd = page.getByRole("button", { name: "Confirm end notice" })
+  await expect(confirmEnd).toBeFocused()
+  await page.getByRole("button", { name: "Keep active" }).click()
+  await expect(endNotice).toBeFocused()
+
+  expect(pageErrors).toEqual([])
+  await expect(page.locator("[data-nextjs-dialog], .vite-error-overlay")).toHaveCount(0)
 })
 
 test("onboarding provisions a truthful driver first run", async ({ page }, testInfo) => {

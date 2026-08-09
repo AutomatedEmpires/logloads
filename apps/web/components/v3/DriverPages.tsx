@@ -73,6 +73,21 @@ function activeTripFor(network: NetworkView): TripView | null {
   return inProgress[0] ?? trips.filter((trip) => trip.status === "assigned").sort(mostRecentlyUpdated)[0] ?? null
 }
 
+export function driverNoticeForLoad(
+  notices: NetworkView["notices"],
+  loadPostingId: string
+): NetworkView["notices"][number] | null {
+  const severityOrder: Record<NetworkView["notices"][number]["severity"], number> = {
+    critical: 0,
+    watch: 1,
+    info: 2
+  }
+
+  return notices
+    .filter((notice) => notice.relatedLoadId === loadPostingId && !notice.id.startsWith("capacity-"))
+    .toSorted((left, right) => severityOrder[left.severity] - severityOrder[right.severity])[0] ?? null
+}
+
 function requestableLoads(network: NetworkView): NetworkLoadView[] {
   return network.loads.filter((load) =>
     load.discovery.available &&
@@ -166,10 +181,10 @@ function TodayActiveTrip({ load, network, trip }: { load: NetworkLoadView | null
   const headingToLanding = ["assigned", "en_route_to_landing", "checked_in", "loading"].includes(trip.status)
   const stop = load ? (headingToLanding ? load.landing : load.destination) : null
   const lastEvent = trip.events[trip.events.length - 1] ?? null
-  const criticalNotice = network.notices.find(
-    (notice) => notice.severity === "critical" && notice.relatedLoadId === trip.loadPostingId
-  ) ?? null
-  const interrupt = criticalNotice ? `${criticalNotice.title}: ${criticalNotice.body}` : load?.warnings[0] ?? null
+  const operationalNotice = driverNoticeForLoad(network.notices, trip.loadPostingId)
+  const interrupt = operationalNotice
+    ? `${operationalNotice.title}: ${operationalNotice.body}`
+    : load?.warnings[0] ?? null
 
   return (
     <section className="driver-now">
@@ -409,6 +424,7 @@ function TripCard({ mediaReady, network, trip }: { mediaReady: boolean; network:
   const lastEvent = trip.events[trip.events.length - 1] ?? null
   const open = isOpenTrip(trip)
   const isOwnHaul = trip.driverProfileId === network.currentDriver?.id
+  const operationalNotice = driverNoticeForLoad(network.notices, trip.loadPostingId)
 
   return (
     <article className="trip-card" data-trip-id={trip.id}>
@@ -441,6 +457,12 @@ function TripCard({ mediaReady, network, trip }: { mediaReady: boolean; network:
           "This haul is booked. Start it when you head to the landing."
         )}
       </p>
+      {operationalNotice ? (
+        <div className="interrupt">
+          <Icon aria-hidden name="status.warning" size={18} />
+          <span><strong>{operationalNotice.title}:</strong> {operationalNotice.body}</span>
+        </div>
+      ) : null}
       {/* The instruction, not just the badge: a driver should never have to
           infer the required action from a status chip. */}
       {open && isOwnHaul ? (

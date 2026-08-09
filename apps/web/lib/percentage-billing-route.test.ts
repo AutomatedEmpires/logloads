@@ -148,6 +148,15 @@ describe("percentage billing agreement route", () => {
     })
   })
 
+  it("allows an organization administrator to accept the current agreement", async () => {
+    mocks.requireApiActor.mockResolvedValue(actor("admin"))
+
+    const response = await POST(request({ acceptPercentageTerms: true }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.acceptPercentageBillingAgreement).toHaveBeenCalledOnce()
+  })
+
   it("refuses a carrier workspace", async () => {
     mocks.requireApiActor.mockResolvedValue(actor("owner", "carrier"))
 
@@ -159,6 +168,15 @@ describe("percentage billing agreement route", () => {
 
   it("refuses a host member without billing authority", async () => {
     mocks.requireApiActor.mockResolvedValue(actor("viewer"))
+
+    const response = await POST(request({ acceptPercentageTerms: true }))
+
+    expect(response.status).toBe(403)
+    expect(mocks.acceptPercentageBillingAgreement).not.toHaveBeenCalled()
+  })
+
+  it("refuses a dispatcher without billing authority", async () => {
+    mocks.requireApiActor.mockResolvedValue(actor("dispatcher"))
 
     const response = await POST(request({ acceptPercentageTerms: true }))
 

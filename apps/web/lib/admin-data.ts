@@ -3,6 +3,8 @@ import "server-only"
 import {
   enterpriseAgreementTermsSchema,
   formatMoney,
+  invoiceSubtotalCents,
+  readFrozenDriverPay,
   type BillingAdjustment,
   type BillingPeriodSummary,
   type NetworkOverageInvoice,
@@ -21,6 +23,7 @@ import type {
 } from "@logloads/services"
 
 import { services } from "./services"
+import { notificationVisibleToActor } from "./notification-access"
 import { requireCockpitActor } from "./session"
 import {
   getCockpitContext,
@@ -114,8 +117,18 @@ function metadataDetail(metadata: Record<string, unknown>): string | null {
   return null
 }
 
-function isNoticeActive(expiresAt: string | null | undefined, now: number): boolean {
-  return !expiresAt || Date.parse(expiresAt) > now
+export type AdminNoticeState = "scheduled" | "active" | "ended"
+
+export function adminNoticeState(
+  effectiveAt: string,
+  expiresAt: string | null | undefined,
+  now: number
+): AdminNoticeState {
+  if (Date.parse(effectiveAt) > now) {
+    return "scheduled"
+  }
+
+  return !expiresAt || Date.parse(expiresAt) > now ? "active" : "ended"
 }
 
 function subscriptionNeedsBillingAttention(subscription: OrganizationSubscription): boolean {
@@ -172,6 +185,360 @@ export interface AdminQueue {
   tone: "critical" | "warning" | "clear"
 }
 
+export type AdminDisputeKind =
+  | "completion_disputed"
+  | "completion_missing"
+  | "completion_review"
+  | "payment_amount_mismatch"
+  | "payment_not_sent"
+  | "payment_record_missing"
+  | "payment_receipt_pending"
+
+export interface AdminDisputeRow {
+  detail: string
+  driverName: string
+  id: string
+  kind: AdminDisputeKind
+  loadTitle: string
+  organizationName: string
+  statusLabel: string
+  tone: "critical" | "warning"
+  whenLabel: string
+}
+
+type AdminCompletionSource = Pick<
+  PlatformState,
+  "assignments" | "driverProfiles" | "loadPostings" | "organizations" | "profiles" | "tripsV2"
+>
+
+const ADMIN_DISPUTE_RANK: Record<AdminDisputeKind, number> = {
+  completion_disputed: 0,
+  payment_amount_mismatch: 1,
+  completion_missing: 2,
+  payment_record_missing: 3,
+  completion_review: 4,
+  payment_not_sent: 5,
+  payment_receipt_pending: 6
+}
+
+/**
+ * Project only work that still needs an operational handoff. Cancellation is a
+ * terminal historical fact, not an open dispute. Driver pay stays off-platform;
+ * these rows report the two-party receipt state without implying LogLoads can
+ * move or resolve the money.
+ */
+export function buildAdminCompletionExceptions(source: AdminCompletionSource): AdminDisputeRow[] {
+  return source.tripsV2
+    .flatMap((trip): Array<AdminDisputeRow & { sortAt: string }> => {
+      if (trip.status !== "completed") {
+        return []
+      }
+
+      const assignment = source.assignments.find((candidate) => candidate.id === trip.assignmentId)
+      const load = source.loadPostings.find((candidate) => candidate.id === trip.loadPostingId)
+      const driver = source.driverProfiles.find((candidate) => candidate.id === trip.driverProfileId)
+      const common = {
+        driverName: actorName(source, driver?.userId),
+        id: trip.id,
+        loadTitle: load?.title ?? "Removed posting",
+        organizationName: organizationName(source, load?.companyId),
+        sortAt: trip.updatedAt,
+        whenLabel: formatDateTime(trip.updatedAt)
+      }
+
+      if (trip.completionStatus === "disputed") {
+        return [{
+          ...common,
+          detail: trip.completionDisputeReason?.trim() || "The host disputed the submitted completion without a recorded reason.",
+          kind: "completion_disputed",
+          statusLabel: "Completion disputed",
+          tone: "critical"
+        }]
+      }
+
+      if (trip.completionStatus === "pending") {
+        return [{
+          ...common,
+          detail: "The trip is marked physically complete, but no driver completion submission is recorded.",
+          kind: "completion_missing",
+          statusLabel: "Completion not submitted",
+          tone: "critical"
+        }]
+      }
+
+      if (trip.completionStatus === "submitted") {
+        return [{
+          ...common,
+          detail: "The driver submitted the completion record. The host has not confirmed or disputed it yet.",
+          kind: "completion_review",
+          statusLabel: "Host review waiting",
+          tone: "warning"
+        }]
+      }
+
+      if (!assignment) {
+        return [{
+          ...common,
+          detail: "The confirmed trip no longer resolves to its assignment, so the direct payment receipt cannot be reconciled locally.",
+          kind: "payment_record_missing",
+          statusLabel: "Payment record missing",
+          tone: "critical"
+        }]
+      }
+
+      const frozenPay = readFrozenDriverPay(assignment.termsSnapshot)
+      const receivedPayCents = assignment.driverPaymentReceivedAmountCents
+      const receivedCurrency = assignment.driverPaymentReceivedCurrency
+
+      if (!frozenPay) {
+        return [{
+          ...common,
+          detail: "The completion is confirmed, but the assignment has no frozen driver-pay amount and currency to reconcile against the two-party receipt.",
+          kind: "payment_record_missing",
+          statusLabel: "Frozen payment terms missing",
+          tone: "critical"
+        }]
+      }
+
+      if (
+        assignment.driverPaymentReceivedAt &&
+        typeof receivedPayCents === "number" &&
+        (receivedPayCents !== frozenPay.amountCents || receivedCurrency !== frozenPay.currency)
+      ) {
+        const receivedLabel = receivedCurrency
+          ? formatMoney({ amountCents: receivedPayCents, currency: receivedCurrency })
+          : `${receivedPayCents} cents with no currency recorded`
+
+        return [{
+          ...common,
+          detail: `The driver recorded ${receivedLabel} received against ${formatMoney(frozenPay)} frozen driver pay. LogLoads does not move these funds.`,
+          kind: "payment_amount_mismatch",
+          sortAt: assignment.driverPaymentReceivedAt,
+          statusLabel: "Payment amount differs",
+          tone: "critical",
+          whenLabel: formatDateTime(assignment.driverPaymentReceivedAt)
+        }]
+      }
+
+      if (!assignment.driverPaymentSentAt) {
+        return [{
+          ...common,
+          detail: "Completion is confirmed, but the host has not marked its direct driver payment sent.",
+          kind: "payment_not_sent",
+          statusLabel: "Payment not marked sent",
+          tone: "warning"
+        }]
+      }
+
+      if (!assignment.driverPaymentReceivedAt) {
+        return [{
+          ...common,
+          detail: `The host marked payment sent ${formatDateTime(assignment.driverPaymentSentAt)}. Only the driver can confirm receipt.`,
+          kind: "payment_receipt_pending",
+          sortAt: assignment.driverPaymentSentAt,
+          statusLabel: "Driver receipt waiting",
+          tone: "warning",
+          whenLabel: formatDateTime(assignment.driverPaymentSentAt)
+        }]
+      }
+
+      return []
+    })
+    .sort(
+      (left, right) =>
+        ADMIN_DISPUTE_RANK[left.kind] - ADMIN_DISPUTE_RANK[right.kind] ||
+        right.sortAt.localeCompare(left.sortAt) ||
+        left.id.localeCompare(right.id)
+    )
+    .map(({ sortAt, ...row }) => {
+      void sortAt
+      return row
+    })
+}
+
+export interface AdminCurrentFeeException {
+  detail: string
+  id: string
+  organizationName: string
+  severity: "critical" | "warning"
+  title: string
+  updatedLabel: string
+}
+
+type AdminCurrentFeeSource = Pick<
+  PlatformState,
+  "hostInvoices" | "organizations" | "platformFeeEvents"
+>
+
+function invoiceIdsLinkedToFeeEvents(
+  events: PlatformState["platformFeeEvents"],
+  invoices: PlatformState["hostInvoices"]
+): Set<string> {
+  const eventIds = new Set(events.map((event) => event.id))
+
+  return new Set([
+    ...events.flatMap((event) => event.invoiceId ? [event.invoiceId] : []),
+    ...invoices
+      .filter((invoice) => invoice.feeEventIds.some((eventId) => eventIds.has(eventId)))
+      .map((invoice) => invoice.id)
+  ])
+}
+
+/** Local percentage-v1 exceptions only; open monthly-arrears invoices and accrued fees are normal state. */
+export function buildAdminCurrentFeeExceptions(source: AdminCurrentFeeSource): AdminCurrentFeeException[] {
+  const exceptions = new Map<string, AdminCurrentFeeException>()
+  const currentEvents = source.platformFeeEvents.filter(
+    (event) => event.billingModel === "percentage_v1" && event.status !== "voided"
+  )
+  const currentInvoiceIds = invoiceIdsLinkedToFeeEvents(currentEvents, source.hostInvoices)
+
+  const push = (exception: AdminCurrentFeeException) => exceptions.set(exception.id, exception)
+
+  for (const event of currentEvents) {
+    if (event.status !== "invoiced") {
+      continue
+    }
+
+    const invoice = event.invoiceId
+      ? source.hostInvoices.find((candidate) => candidate.id === event.invoiceId)
+      : undefined
+    const name = organizationName(source, event.organizationId)
+
+    if (!invoice) {
+      push({
+        detail: "A current percentage fee is marked invoiced, but its local host invoice does not resolve.",
+        id: `fee:${event.id}:invoice-missing`,
+        organizationName: name,
+        severity: "critical",
+        title: "Current fee invoice is missing",
+        updatedLabel: formatDateTime(event.updatedAt)
+      })
+    } else if (!invoice.feeEventIds.includes(event.id)) {
+      push({
+        detail: "The fee points to a host invoice that does not list the fee in its immutable line-item references.",
+        id: `fee:${event.id}:invoice-membership`,
+        organizationName: name,
+        severity: "critical",
+        title: "Current fee and invoice disagree",
+        updatedLabel: formatDateTime(event.updatedAt)
+      })
+    }
+  }
+
+  for (const invoice of source.hostInvoices.filter((candidate) => currentInvoiceIds.has(candidate.id))) {
+    const name = organizationName(source, invoice.organizationId)
+    const resolvedLines = invoice.feeEventIds.flatMap((feeEventId) => {
+      const line = source.platformFeeEvents.find((candidate) => candidate.id === feeEventId)
+
+      return line ? [line] : []
+    })
+    const missingLineCount = invoice.feeEventIds.length - resolvedLines.length
+    const foreignLineCount = resolvedLines.filter(
+      (line) => line.organizationId !== invoice.organizationId
+    ).length
+    const legacyLineCount = resolvedLines.filter(
+      (line) => line.billingModel !== "percentage_v1"
+    ).length
+    const nonInvoicedLiveLineCount = resolvedLines.filter(
+      (line) =>
+        line.status !== "voided" &&
+        (line.status !== "invoiced" || line.invoiceId !== invoice.id)
+    ).length
+    const calculatedSubtotalCents = invoiceSubtotalCents(resolvedLines)
+
+    if (missingLineCount > 0) {
+      push({
+        detail: `${missingLineCount} immutable fee ${missingLineCount === 1 ? "reference does" : "references do"} not resolve locally.`,
+        id: `invoice:${invoice.id}:missing-fee-lines`,
+        organizationName: name,
+        severity: "critical",
+        title: "Current invoice has missing fee lines",
+        updatedLabel: formatDateTime(invoice.updatedAt)
+      })
+    }
+
+    if (foreignLineCount > 0) {
+      push({
+        detail: `${foreignLineCount} resolved fee ${foreignLineCount === 1 ? "line belongs" : "lines belong"} to a different organization than the host invoice.`,
+        id: `invoice:${invoice.id}:foreign-fee-lines`,
+        organizationName: name,
+        severity: "critical",
+        title: "Current invoice crosses organizations",
+        updatedLabel: formatDateTime(invoice.updatedAt)
+      })
+    }
+
+    if (legacyLineCount > 0) {
+      push({
+        detail: `${legacyLineCount} fee ${legacyLineCount === 1 ? "line uses" : "lines use"} a preserved legacy billing model on an invoice referenced by current percentage-v1 work.`,
+        id: `invoice:${invoice.id}:legacy-fee-lines`,
+        organizationName: name,
+        severity: "critical",
+        title: "Current invoice mixes billing models",
+        updatedLabel: formatDateTime(invoice.updatedAt)
+      })
+    }
+
+    if (nonInvoicedLiveLineCount > 0) {
+      push({
+        detail: `${nonInvoicedLiveLineCount} live fee ${nonInvoicedLiveLineCount === 1 ? "line is" : "lines are"} not frozen back to this invoice as invoiced.`,
+        id: `invoice:${invoice.id}:non-invoiced-fee-lines`,
+        organizationName: name,
+        severity: "critical",
+        title: "Current invoice has unfrozen fee lines",
+        updatedLabel: formatDateTime(invoice.updatedAt)
+      })
+    }
+
+    if (calculatedSubtotalCents !== invoice.subtotalCents) {
+      push({
+        detail: `The stored subtotal is ${adminMoney(invoice.subtotalCents)}, but its resolved non-void fee lines total ${adminMoney(calculatedSubtotalCents)}.`,
+        id: `invoice:${invoice.id}:subtotal`,
+        organizationName: name,
+        severity: "critical",
+        title: "Current invoice subtotal disagrees",
+        updatedLabel: formatDateTime(invoice.updatedAt)
+      })
+    }
+
+    if (invoice.status === "uncollectible") {
+      push({
+        detail: "The current percentage invoice is locally marked uncollectible. No live provider state is inferred.",
+        id: `invoice:${invoice.id}:uncollectible`,
+        organizationName: name,
+        severity: "critical",
+        title: "Current host invoice is uncollectible",
+        updatedLabel: formatDateTime(invoice.updatedAt)
+      })
+    } else if (invoice.status === "void") {
+      push({
+        detail: "A void host invoice is still referenced by a non-void current percentage fee event.",
+        id: `invoice:${invoice.id}:void-link`,
+        organizationName: name,
+        severity: "critical",
+        title: "Voided invoice still holds a current fee",
+        updatedLabel: formatDateTime(invoice.updatedAt)
+      })
+    } else if (invoice.status === "paid" && !invoice.stripeInvoiceId) {
+      push({
+        detail: "The local invoice says paid but stores no provider invoice reference. This is not live payment proof.",
+        id: `invoice:${invoice.id}:paid-provider-evidence`,
+        organizationName: name,
+        severity: "critical",
+        title: "Paid current invoice lacks provider evidence",
+        updatedLabel: formatDateTime(invoice.updatedAt)
+      })
+    }
+  }
+
+  return [...exceptions.values()].sort(
+    (left, right) =>
+      Number(right.severity === "critical") - Number(left.severity === "critical") ||
+      left.organizationName.localeCompare(right.organizationName) ||
+      left.title.localeCompare(right.title)
+  )
+}
+
 export interface AdminOverview {
   queues: AdminQueue[]
   stats: Array<{ label: string; value: number }>
@@ -179,7 +546,7 @@ export interface AdminOverview {
 }
 
 export async function getAdminOverview(): Promise<AdminOverview> {
-  await requireCockpitActor("admin")
+  const actor = await requireCockpitActor("admin")
 
   const state = services.state
   const now = Date.now()
@@ -189,22 +556,46 @@ export async function getAdminOverview(): Promise<AdminOverview> {
     (organization) => organization.type !== "platform" && !organization.archivedAt && organization.verificationStatus === "pending"
   ).length
   const criticalNotices = state.operationalNotices.filter(
-    (notice) => notice.severity === "critical" && isNoticeActive(notice.expiresAt, now)
+    (notice) => notice.severity === "critical" && adminNoticeState(notice.effectiveAt, notice.expiresAt, now) === "active"
   ).length
-  const billingExceptions = new Set([
-    ...state.entitlements
-      .filter((entitlement) => entitlement.status === "past_due" || entitlement.status === "cancelled")
-      .map((entitlement) => entitlement.organizationId),
-    ...state.organizationSubscriptions
-      .filter(subscriptionNeedsBillingAttention)
-      .map((subscription) => subscription.organizationId)
-  ]).size
+  const completionExceptionRows = buildAdminCompletionExceptions(state)
+  const completionExceptions = completionExceptionRows.length
+  const currentFeeExceptions = buildAdminCurrentFeeExceptions(state).length
   const openReports = state.supportRequests.filter(
     (request) => request.status === "open" || request.status === "in_review"
   ).length
-  const openDisputes = state.assignments.filter((assignment) => assignment.status === "cancelled").length
+  const unreadContactInquiries = state.notifications.filter(
+    (notification) =>
+      notification.relatedEntityType === "contact_inquiry" &&
+      !notification.readAt &&
+      notificationVisibleToActor(notification, {
+        isPlatformAdmin: actor.isPlatformAdmin,
+        profileId: actor.profile.id
+      })
+  ).length
+  const completionQueueTone: AdminQueue["tone"] = completionExceptionRows.some(
+    (exception) => exception.tone === "critical"
+  )
+    ? "critical"
+    : completionExceptions > 0
+      ? "warning"
+      : "clear"
 
   const queues: AdminQueue[] = [
+    {
+      count: completionExceptions,
+      description: "Completed hauls with a completion decision or direct driver-payment receipt still unresolved.",
+      href: "/admin/disputes",
+      label: "Completion and payment",
+      tone: completionQueueTone
+    },
+    {
+      count: currentFeeExceptions,
+      description: "Local percentage-v1 fee and invoice records that disagree or carry an uncollectible state.",
+      href: "/admin/billing#current-fee-exceptions",
+      label: "Current fee exceptions",
+      tone: currentFeeExceptions > 0 ? "critical" : "clear"
+    },
     {
       count: pendingVerifications,
       description: "Identity, equipment, and landing evidence waiting for a reviewer decision.",
@@ -227,32 +618,23 @@ export async function getAdminOverview(): Promise<AdminOverview> {
       tone: criticalNotices > 0 ? "critical" : "clear"
     },
     {
-      count: billingExceptions,
-      description: "Plans that are past due or cancelled and may need follow-up.",
-      href: "/admin/billing",
-      label: "Billing exceptions",
-      tone: billingExceptions > 0 ? "warning" : "clear"
-    },
-    {
-      count: openReports,
-      description: "Product problems and feature requests waiting for a platform response.",
+      count: openReports + unreadContactInquiries,
+      description: `${openReports} support ${openReports === 1 ? "request" : "requests"} need a response; ${unreadContactInquiries} contact ${unreadContactInquiries === 1 ? "inquiry is" : "inquiries are"} unread.`,
       href: "/admin/reports",
-      label: "Reports",
-      tone: openReports > 0 ? "critical" : "clear"
-    },
-    {
-      count: openDisputes,
-      description: "Cancelled assignments and their recorded reasons.",
-      href: "/admin/disputes",
-      label: "Cancellations",
-      tone: openDisputes > 0 ? "warning" : "clear"
+      label: "Support and contact",
+      tone: openReports > 0 ? "critical" : unreadContactInquiries > 0 ? "warning" : "clear"
     }
   ]
 
   const stats = [
-    { label: "Organizations", value: state.organizations.filter((organization) => organization.type !== "platform").length },
+    {
+      label: "Organizations",
+      value: state.organizations.filter(
+        (organization) => organization.type !== "platform" && !organization.archivedAt
+      ).length
+    },
     { label: "Open loads", value: state.loadPostings.filter((load) => load.status === "open").length },
-    { label: "Trips in motion", value: state.tripsV2.filter((trip) => trip.status !== "completed" && trip.status !== "cancelled").length },
+    { label: "Active trips", value: state.tripsV2.filter((trip) => trip.status !== "completed" && trip.status !== "cancelled").length },
     { label: "Trucks registered", value: state.equipmentCombinations.length }
   ]
 
@@ -350,10 +732,13 @@ export interface AdminNoticeRow {
   id: string
   organizationName: string
   severity: string
+  state: AdminNoticeState
+  stateLabel: string
   title: string
 }
 
 const SEVERITY_RANK: Record<string, number> = { critical: 0, info: 2, watch: 1 }
+const NOTICE_STATE_RANK: Record<AdminNoticeState, number> = { active: 0, scheduled: 1, ended: 2 }
 
 export async function getAdminNotices(): Promise<AdminNoticeRow[]> {
   await requireCockpitActor("admin")
@@ -362,19 +747,25 @@ export async function getAdminNotices(): Promise<AdminNoticeRow[]> {
   const now = Date.now()
 
   return [...state.operationalNotices]
-    .map((notice) => ({
-      active: isNoticeActive(notice.expiresAt, now),
-      body: notice.body,
-      effectiveLabel: formatDateTime(notice.effectiveAt),
-      expiresLabel: notice.expiresAt ? formatDateTime(notice.expiresAt) : "No expiry set",
-      id: notice.id,
-      organizationName: organizationName(state, notice.organizationId),
-      severity: notice.severity,
-      title: notice.title
-    }))
+    .map((notice) => {
+      const noticeState = adminNoticeState(notice.effectiveAt, notice.expiresAt, now)
+
+      return {
+        active: noticeState === "active",
+        body: notice.body,
+        effectiveLabel: formatDateTime(notice.effectiveAt),
+        expiresLabel: notice.expiresAt ? formatDateTime(notice.expiresAt) : "No expiry set",
+        id: notice.id,
+        organizationName: organizationName(state, notice.organizationId),
+        severity: notice.severity,
+        state: noticeState,
+        stateLabel: titleCase(noticeState),
+        title: notice.title
+      }
+    })
     .sort(
       (left, right) =>
-        Number(right.active) - Number(left.active) ||
+        NOTICE_STATE_RANK[left.state] - NOTICE_STATE_RANK[right.state] ||
         (SEVERITY_RANK[left.severity] ?? 3) - (SEVERITY_RANK[right.severity] ?? 3) ||
         left.title.localeCompare(right.title)
     )
@@ -411,15 +802,53 @@ export interface AdminSupportRequestRow {
   updatedLabel: string
 }
 
+export interface AdminContactInquiryRow {
+  body: string
+  createdLabel: string
+  id: string
+  read: boolean
+  title: string
+}
+
 export interface AdminReportsData {
+  inquiries: AdminContactInquiryRow[]
   requests: AdminSupportRequestRow[]
   systemFlags: AdminSystemFlagRow[]
+}
+
+export function buildAdminContactInquiries(
+  source: Pick<PlatformState, "notifications">,
+  actor: { isPlatformAdmin: boolean; profileId: string }
+): AdminContactInquiryRow[] {
+  return source.notifications
+    .filter(
+      (notification) =>
+        notification.relatedEntityType === "contact_inquiry" &&
+        notificationVisibleToActor(notification, actor)
+    )
+    .sort(
+      (left, right) =>
+        Number(Boolean(left.readAt)) - Number(Boolean(right.readAt)) ||
+        right.createdAt.localeCompare(left.createdAt) ||
+        left.id.localeCompare(right.id)
+    )
+    .map((notification) => ({
+      body: notification.body,
+      createdLabel: formatDateTime(notification.createdAt),
+      id: notification.id,
+      read: Boolean(notification.readAt),
+      title: notification.title
+    }))
 }
 
 export async function getAdminReports(): Promise<AdminReportsData> {
   const actor = await requireCockpitActor("admin")
 
   const state = services.state
+  const inquiries = buildAdminContactInquiries(state, {
+    isPlatformAdmin: actor.isPlatformAdmin,
+    profileId: actor.profile.id
+  })
   const requests = services.listSupportRequestsForAdmin({
     platformAdminAuthorized: actor.isPlatformAdmin,
     reviewerUserId: actor.profile.id
@@ -455,39 +884,13 @@ export async function getAdminReports(): Promise<AdminReportsData> {
       whenLabel: formatDateTime(event.createdAt)
     }))
 
-  return { requests, systemFlags }
-}
-
-export interface AdminDisputeRow {
-  cancelledLabel: string
-  driverName: string
-  id: string
-  loadTitle: string
-  organizationName: string
-  reason: string
+  return { inquiries, requests, systemFlags }
 }
 
 export async function getAdminDisputes(): Promise<AdminDisputeRow[]> {
   await requireCockpitActor("admin")
 
-  const state = services.state
-
-  return state.assignments
-    .filter((assignment) => assignment.status === "cancelled")
-    .sort((left, right) => (right.cancelledAt ?? right.updatedAt).localeCompare(left.cancelledAt ?? left.updatedAt))
-    .map((assignment) => {
-      const load = state.loadPostings.find((candidate) => candidate.id === assignment.loadPostingId)
-      const driver = state.driverProfiles.find((candidate) => candidate.id === assignment.driverProfileId)
-
-      return {
-        cancelledLabel: formatDateTime(assignment.cancelledAt ?? assignment.updatedAt),
-        driverName: actorName(state, driver?.userId),
-        id: assignment.id,
-        loadTitle: load?.title ?? "Removed posting",
-        organizationName: organizationName(state, load?.companyId),
-        reason: assignment.cancellationReason?.trim() || "No reason recorded"
-      }
-    })
+  return buildAdminCompletionExceptions(services.state)
 }
 
 // --- Activity history ------------------------------------------------------------
@@ -723,6 +1126,8 @@ export interface AdminBillingSnapshot {
   platformFeeLedger: {
     currentAccruedFeeLabel: string
     currentAssignmentCount: number
+    currentExceptionCount: number
+    currentExceptions: AdminCurrentFeeException[]
     currentFeeEventCount: number
     currentInvoiceCount: number
     currentOrganizationCount: number
@@ -1087,6 +1492,8 @@ function buildAdminBillingAccountRows(
 
       if (account.billingModel === "legacy_percentage" && !account.subscriptionId) {
         subscriptionLabel = "Legacy model; no subscription pointer"
+      } else if (account.billingModel === "percentage_v1" && !account.subscriptionId) {
+        subscriptionLabel = "Current percentage agreement; no subscription by design"
       } else if (account.subscriptionId && !subscription) {
         subscriptionLabel = "Subscription reference does not resolve locally"
       } else if (subscription) {
@@ -1431,6 +1838,20 @@ function buildAdminBillingWarnings(
           organizationName: name,
           severity: "critical",
           title: "Legacy account links to a subscription"
+        })
+      }
+      continue
+    }
+
+    if (account.billingModel === "percentage_v1") {
+      if (account.subscriptionId) {
+        push({
+          detail:
+            "A current percentage billing account carries a subscription pointer. Percentage-v1 has no subscription record.",
+          id: `account:${account.id}:percentage-subscription-pointer`,
+          organizationName: name,
+          severity: "critical",
+          title: "Current percentage account links to a subscription"
         })
       }
       continue
@@ -1999,12 +2420,9 @@ export function buildAdminBillingSnapshot(
   const legacyFeeEvents = activePlatformFeeEvents.filter(
     (event) => event.billingModel === "legacy_percentage"
   )
-  const currentInvoiceIds = new Set(
-    currentFeeEvents.flatMap((event) => event.invoiceId ? [event.invoiceId] : [])
-  )
-  const legacyInvoiceIds = new Set(
-    legacyFeeEvents.flatMap((event) => event.invoiceId ? [event.invoiceId] : [])
-  )
+  const currentExceptions = buildAdminCurrentFeeExceptions(source)
+  const currentInvoiceIds = invoiceIdsLinkedToFeeEvents(currentFeeEvents, source.hostInvoices)
+  const legacyInvoiceIds = invoiceIdsLinkedToFeeEvents(legacyFeeEvents, source.hostInvoices)
   const currentInvoices = source.hostInvoices.filter((invoice) =>
     currentInvoiceIds.has(invoice.id)
   )
@@ -2136,6 +2554,8 @@ export function buildAdminBillingSnapshot(
       currentAssignmentCount: source.assignments.filter(
         (assignment) => assignment.billingModel === "percentage_v1"
       ).length,
+      currentExceptionCount: currentExceptions.length,
+      currentExceptions,
       currentFeeEventCount: currentFeeEvents.length,
       currentInvoiceCount: currentInvoices.length,
       currentOrganizationCount: source.organizationBillingAccounts.filter(
