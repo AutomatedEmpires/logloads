@@ -169,6 +169,10 @@ export function operationalNoticeVisibleToActor(
   for (const membership of memberships) {
     if (membership.role === "driver") {
       if (!notice.relatedLoadId) {
+        if (notice.organizationId === membership.organizationId) {
+          return true
+        }
+
         continue
       }
 

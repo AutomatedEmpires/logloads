@@ -141,6 +141,60 @@ describe("operational attention projection", () => {
     expect(attentionIds).not.toContain("31313131-3131-4131-8131-313131313124")
   })
 
+  it("shows active drivers only their own workspace-wide notices", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const driverMembership = services.state.organizationMemberships.find(
+      (membership) =>
+        membership.role === "driver" &&
+        membership.status === "active" &&
+        services.state.driverProfiles.some(
+          (driver) =>
+            driver.companyId === membership.organizationId &&
+            driver.userId === membership.userId
+        )
+    )
+    const foreignOrganization = services.state.companies.find(
+      (organization) => organization.id !== driverMembership?.organizationId
+    )
+    const noticeTemplate = services.state.operationalNotices[0]
+
+    if (!driverMembership || !foreignOrganization || !noticeTemplate) {
+      throw new Error("Expected active driver, foreign organization, and notice fixtures")
+    }
+
+    const current = Date.now()
+    services.state.operationalNotices.push(
+      {
+        ...noticeTemplate,
+        effectiveAt: new Date(current - 60_000).toISOString(),
+        expiresAt: null,
+        id: "31313131-3131-4131-8131-313131313130",
+        organizationId: driverMembership.organizationId,
+        relatedLoadId: null,
+        title: "Own fleet-wide notice"
+      },
+      {
+        ...noticeTemplate,
+        effectiveAt: new Date(current - 60_000).toISOString(),
+        expiresAt: null,
+        id: "31313131-3131-4131-8131-313131313131",
+        organizationId: foreignOrganization.id,
+        relatedLoadId: null,
+        title: "Foreign fleet-wide notice"
+      }
+    )
+
+    const attentionIds = new Set(
+      services.listAttentionItems({
+        actorUserId: driverMembership.userId,
+        organizationId: driverMembership.organizationId
+      }).map((item) => item.id)
+    )
+
+    expect(attentionIds).toContain("31313131-3131-4131-8131-313131313130")
+    expect(attentionIds).not.toContain("31313131-3131-4131-8131-313131313131")
+  })
+
   it("does not surface capacity pressure for a load the workspace cannot see", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const viewerOrganizationId = "33333333-3333-4333-8333-333333333331"
