@@ -1,4 +1,8 @@
-import { evaluateLoadCompatibility, type EquipmentCombination } from "@logloads/contracts"
+import {
+  evaluateLoadCompatibility,
+  selectDriverEquipmentCombination,
+  type EquipmentCombination
+} from "@logloads/contracts"
 import {
   DomainRefusalError,
   driverCredentialGate,
@@ -145,34 +149,16 @@ function organizationDriverProfiles(organizationId: string, combinations: Equipm
   )
 }
 
-const DRIVER_COMBINATION_PRESENTATION_PRIORITY: Record<EquipmentCombination["status"], number> = {
-  available: 0,
-  committed: 1,
-  maintenance: 2,
-  inactive: 3
-}
-
 function presentationCombinationForDriver(
   combinations: EquipmentCombination[],
-  driverProfileId: string
+  driverProfileId: string,
+  organizationId: string
 ): EquipmentCombination | null {
-  let selected: EquipmentCombination | null = null
-
-  for (const combination of combinations) {
-    if (combination.assignedDriverProfileId !== driverProfileId) {
-      continue
-    }
-
-    if (
-      selected === null ||
-      DRIVER_COMBINATION_PRESENTATION_PRIORITY[combination.status] <
-        DRIVER_COMBINATION_PRESENTATION_PRIORITY[selected.status]
-    ) {
-      selected = combination
-    }
-  }
-
-  return selected
+  return selectDriverEquipmentCombination(combinations, {
+    driverProfileId,
+    includeInactive: true,
+    organizationId
+  })
 }
 
 function availabilitySummary(driverProfileId: string, fallbackStatus: string): { status: string; label: string } {
@@ -281,7 +267,7 @@ export async function getFleetCockpitData(): Promise<FleetCockpitData> {
 
   const drivers: FleetDriverRow[] = orgDrivers.map((driver) => {
     const user = state.profiles.find((profile) => profile.id === driver.userId)
-    const equipment = presentationCombinationForDriver(combinations, driver.id)
+    const equipment = presentationCombinationForDriver(combinations, driver.id, organizationId)
     const activeTrip = activeTripsByDriver.get(driver.id) ?? null
     const activeLoad = activeTrip
       ? state.loadPostings.find((load) => load.id === activeTrip.loadPostingId) ?? null
@@ -300,24 +286,17 @@ export async function getFleetCockpitData(): Promise<FleetCockpitData> {
       availabilityStatus: availability.status,
       equipmentLabel: equipment?.label ?? null,
       equipmentStatus: equipment?.status ?? null,
-      // Mirrors getFeaturedTruckPhotoReference's resolution (active
-      // combination only) — a badge computed from an inactive rig would
-      // render a broken image against the streaming route.
+      // The roster label, badge, and authorized streaming route all use the
+      // same domain selector, so a multi-rig driver never gets one unit's name
+      // beside another unit's photo.
       hasFeaturedTruckPhoto: Boolean(
         driver.featureTruckPhoto &&
-        (() => {
-          const active = combinations.find(
-            (candidate) => candidate.assignedDriverProfileId === driver.id && candidate.status !== "inactive"
-          )
-
-          return isViewableMediaReference(
-            active
-              ? state.truckProfiles.find(
-                  (truck) => truck.id === active.truckProfileId
-                )?.photo
-              : null
-          )
-        })()
+        equipment?.status !== "inactive" &&
+        isViewableMediaReference(
+          equipment
+            ? state.truckProfiles.find((truck) => truck.id === equipment.truckProfileId)?.photo
+            : null
+        )
       ),
       homeBase: driver.homeBase,
       id: driver.id,

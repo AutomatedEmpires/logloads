@@ -8,6 +8,7 @@ import {
   readFrozenDriverPay,
   recommendLoad,
   reputationLabel,
+  selectDriverEquipmentCombination,
   summarizeReviews,
   type AssignmentStatus,
   type LoadStatus,
@@ -677,11 +678,10 @@ export function buildNetworkView(
     ? state.equipmentCombinations.filter((combination) => combination.organizationId === activeOrganization.id)
     : []
   const currentCombination = currentDriverProfile
-    ? organizationCombinations.find(
-        (combination) =>
-          combination.assignedDriverProfileId === currentDriverProfile.id &&
-          combination.status !== "inactive"
-      ) ?? null
+    ? selectDriverEquipmentCombination(organizationCombinations, {
+        driverProfileId: currentDriverProfile.id,
+        organizationId: activeOrganization?.id
+      })
     : null
   const currentTruck = currentCombination
     ? state.truckProfiles.find((truck) => truck.id === currentCombination.truckProfileId) ?? null

@@ -1,8 +1,11 @@
+import { NextRequest, NextResponse } from "next/server"
 import { describe, expect, it } from "vitest"
 
 import {
   config,
+  pilotCaptureNoIndexRoutePatterns,
   privateIndexingRoutePatterns,
+  protectFromIndexing,
   protectedRoutePatterns
 } from "../middleware"
 import {
@@ -17,6 +20,16 @@ describe("middleware matcher", () => {
 
   it("runs every Pilot path through the exact public catalog guard", () => {
     expect(config.matcher).toContain("/pilot/:path*")
+  })
+
+  it("keeps raw synthetic Pilot captures out of search indexes", () => {
+    expect(pilotCaptureNoIndexRoutePatterns).toEqual(["/pilot/(.*).jpg"])
+    const response = protectFromIndexing(
+      new NextRequest("https://logloads.test/pilot/host-command.jpg"),
+      NextResponse.next()
+    )
+
+    expect(response.headers.get("X-Robots-Tag")).toBe("noindex, nofollow")
   })
 
   it("protects product feedback for every authenticated role", () => {

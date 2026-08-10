@@ -22,6 +22,8 @@ export const privateIndexingRoutePatterns = [
 
 const isProtectedRoute = createRouteMatcher(protectedRoutePatterns)
 const isPrivateIndexingRoute = createRouteMatcher(privateIndexingRoutePatterns)
+export const pilotCaptureNoIndexRoutePatterns = ["/pilot/(.*).jpg"]
+const isPilotCaptureAssetRoute = createRouteMatcher(pilotCaptureNoIndexRoutePatterns)
 
 const clerkConfigured = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY)
 
@@ -66,8 +68,8 @@ function rejectUnknownPilotPath(request: NextRequest): NextResponse | null {
   })
 }
 
-function protectFromIndexing(request: NextRequest, response: NextResponse): NextResponse {
-  if (isPrivateIndexingRoute(request)) {
+export function protectFromIndexing(request: NextRequest, response: NextResponse): NextResponse {
+  if (isPrivateIndexingRoute(request) || isPilotCaptureAssetRoute(request)) {
     response.headers.set("X-Robots-Tag", "noindex, nofollow")
   }
 
