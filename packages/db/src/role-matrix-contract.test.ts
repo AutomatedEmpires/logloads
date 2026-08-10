@@ -81,11 +81,16 @@ describe("org_role_can matches the application role matrix", () => {
 
   it("keeps the helper least-privileged and additive", () => {
     expect(migration).toContain("create or replace function public.org_role_can")
-    expect(migration).toContain("revoke execute on function public.org_role_can(uuid, text[]) from public")
     expect(migration).toContain(
-      "grant execute on function public.org_role_can(uuid, text[]) to authenticated, service_role"
+      "revoke execute on function public.org_role_can(uuid, text[]) from public, anon, authenticated"
     )
-    expect(migration).not.toContain("to anon")
+    expect(migration).toContain(
+      "grant execute on function public.org_role_can(uuid, text[]) to service_role"
+    )
+    expect(migration).not.toContain(
+      "grant execute on function public.org_role_can(uuid, text[]) to authenticated"
+    )
+    expect(migration).not.toContain("grant execute on function public.org_role_can(uuid, text[]) to anon")
     expect(migration).not.toContain("drop function")
   })
 })

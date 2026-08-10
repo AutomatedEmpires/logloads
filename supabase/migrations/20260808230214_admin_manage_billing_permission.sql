@@ -4,7 +4,8 @@
 -- Replace the shared authorization helper so RLS agrees with that exact
 -- least-privilege matrix; every other role remains unchanged.
 --
--- Additive and idempotent: function body only, no data or policy rewrite.
+-- Additive and idempotent: function body plus the existing server-only ACL;
+-- no data or policy rewrite.
 
 create or replace function public.org_role_can(p_company_id uuid, p_actions text[])
 returns boolean
@@ -33,5 +34,10 @@ as $$
   select exists (select 1 from role_actions where actions && p_actions)
 $$;
 
-revoke execute on function public.org_role_can(uuid, text[]) from public;
-grant execute on function public.org_role_can(uuid, text[]) to authenticated, service_role;
+-- The application never evaluates relational RLS as anon/authenticated; it
+-- reads and writes the canonical operating_state row through service_role.
+-- Preserve the service-role-only boundary established by
+-- 20260726090000_revoke_public_relational_grants.sql instead of reviving a
+-- direct PostgREST execution surface on this SECURITY DEFINER helper.
+revoke execute on function public.org_role_can(uuid, text[]) from public, anon, authenticated;
+grant execute on function public.org_role_can(uuid, text[]) to service_role;
