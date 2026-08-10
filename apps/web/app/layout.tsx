@@ -8,6 +8,7 @@ import { enabledFlag } from "@/lib/demo-mode"
 
 import "./globals.css"
 import "./styles/public.css"
+import "./styles/pilot.css"
 import "./styles/auth.css"
 import "./styles/map.css"
 import "./styles/driver.css"

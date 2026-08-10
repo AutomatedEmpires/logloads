@@ -109,6 +109,121 @@ const activeAssignmentStatuses = new Set<AssignmentStatus>([
   "hauled"
 ])
 
+// Operational notice bodies may contain road, gate, facility, or schedule
+// guidance. Discovery visibility is not enough: only accepted/in-progress
+// hauling participants and the posting/notice-owning organizations receive it.
+const noticeParticipantAssignmentStatuses = new Set<AssignmentStatus>([
+  "accepted",
+  "checked_in",
+  "loading",
+  "hauled"
+])
+
+function organizationParticipatesInNoticeLoad(
+  state: LogLoadsDatabaseState,
+  organizationId: string,
+  loadPostingId: string
+): boolean {
+  const organizationDriverIds = new Set(
+    state.driverProfiles
+      .filter((driver) => driver.companyId === organizationId)
+      .map((driver) => driver.id)
+  )
+
+  return state.assignments.some(
+    (assignment) =>
+      assignment.loadPostingId === loadPostingId &&
+      organizationDriverIds.has(assignment.driverProfileId) &&
+      noticeParticipantAssignmentStatuses.has(assignment.status)
+  )
+}
+
+export function operationalNoticeVisibleToActor(
+  state: LogLoadsDatabaseState,
+  input: {
+    actorUserId: string
+    noticeId: string
+    organizationId?: string
+    at?: number
+  }
+): boolean {
+  const notice = state.operationalNotices.find((candidate) => candidate.id === input.noticeId)
+  const at = input.at ?? Date.now()
+  const effectiveAt = notice ? Date.parse(notice.effectiveAt) : Number.NaN
+  const expiresAt = notice?.expiresAt ? Date.parse(notice.expiresAt) : null
+
+  if (
+    !notice ||
+    !Number.isFinite(effectiveAt) ||
+    (expiresAt !== null && !Number.isFinite(expiresAt)) ||
+    effectiveAt > at ||
+    (expiresAt !== null && expiresAt <= at)
+  ) {
+    return false
+  }
+
+  const memberships = getOrganizationMemberships(state, input.actorUserId).filter(
+    (membership) => !input.organizationId || membership.organizationId === input.organizationId
+  )
+
+  for (const membership of memberships) {
+    if (membership.role === "driver") {
+      if (!notice.relatedLoadId) {
+        if (notice.organizationId === membership.organizationId) {
+          return true
+        }
+
+        continue
+      }
+
+      const actorDriverIds = new Set(
+        state.driverProfiles
+          .filter(
+            (driver) =>
+              driver.companyId === membership.organizationId &&
+              driver.userId === input.actorUserId
+          )
+          .map((driver) => driver.id)
+      )
+
+      if (
+        state.assignments.some(
+          (assignment) =>
+            assignment.loadPostingId === notice.relatedLoadId &&
+            actorDriverIds.has(assignment.driverProfileId) &&
+            noticeParticipantAssignmentStatuses.has(assignment.status)
+        )
+      ) {
+        return true
+      }
+
+      continue
+    }
+
+    if (!organizationRoleCan(membership.role, "view_private_location")) {
+      continue
+    }
+
+    if (notice.organizationId === membership.organizationId) {
+      return true
+    }
+
+    const relatedLoad = notice.relatedLoadId
+      ? state.loadPostings.find((load) => load.id === notice.relatedLoadId)
+      : null
+
+    if (
+      relatedLoad &&
+      (relatedLoad.companyId === membership.organizationId ||
+        organizationParticipatesInNoticeLoad(state, membership.organizationId, relatedLoad.id))
+    ) {
+      return true
+    }
+  }
+
+  return false
+}
+
 const assignmentStatusByTripStatus: Partial<Record<TripStatusV2, AssignmentStatus>> = {
   at_destination: "hauled",
   checked_in: "checked_in",
@@ -3379,8 +3494,9 @@ export function createOperationalNotice(state: LogLoadsDatabaseState, input: Cre
       `Load posting ${input.relatedLoadId} was not found`
     )
     assertCondition(
-      load.companyId === context.organizationId || isLoadVisibleToOrganization(state, load, context.organizationId),
-      `Load posting ${load.id} is not visible to organization ${context.organizationId}`
+      load.companyId === context.organizationId ||
+        organizationParticipatesInNoticeLoad(state, context.organizationId, load.id),
+      `Organization ${context.organizationId} cannot publish an operational notice for load posting ${load.id}`
     )
   }
 
@@ -3406,7 +3522,8 @@ export function createOperationalNotice(state: LogLoadsDatabaseState, input: Cre
 
   if (notice.relatedLoadId) {
     const affectedAssignments = state.assignments.filter((assignment) =>
-      assignment.loadPostingId === notice.relatedLoadId && activeAssignmentStatuses.has(assignment.status)
+      assignment.loadPostingId === notice.relatedLoadId &&
+      noticeParticipantAssignmentStatuses.has(assignment.status)
     )
 
     for (const assignment of affectedAssignments) {
@@ -3981,16 +4098,41 @@ export function publishFutureAvailability(
   return availability
 }
 
-export function listAttentionItems(state: LogLoadsDatabaseState, organizationId = DEFAULT_ORGANIZATION_ID): AttentionItem[] {
+export function listAttentionItems(
+  state: LogLoadsDatabaseState,
+  input: { actorUserId: string; organizationId?: string }
+): AttentionItem[] {
+  const organizationId = input.organizationId ?? DEFAULT_ORGANIZATION_ID
   const organization = state.organizations.find((candidate) => candidate.id === organizationId)
+  const actor = state.profiles.find(
+    (profile) => profile.id === input.actorUserId && profile.isActive
+  )
+  const memberships = actor
+    ? state.organizationMemberships.filter(
+        (membership) =>
+          membership.userId === actor.id &&
+          membership.organizationId === organizationId &&
+          membership.status === "active"
+      )
+    : []
+  const membership = memberships.length === 1 ? memberships[0]! : null
 
-  if (!organizationOperationallyAccessible(organization)) {
+  if (!organizationOperationallyAccessible(organization) || !actor || !membership) {
     return []
   }
 
+  const now = Date.now()
+  const visibleLoadIds = new Set(
+    listVisibleLoadsForOrganization(state, organizationId).map((load) => load.id)
+  )
+
   const notices = state.operationalNotices
-    .filter((notice) => !notice.expiresAt || notice.expiresAt >= nowIso())
-    .filter((notice) => notice.organizationId === organizationId || !notice.relatedLoadId || listVisibleLoadsForOrganization(state, organizationId).some((load) => load.id === notice.relatedLoadId))
+    .filter((notice) => operationalNoticeVisibleToActor(state, {
+      actorUserId: actor.id,
+      at: now,
+      noticeId: notice.id,
+      organizationId
+    }))
     .map((notice): AttentionItem => ({
       body: notice.body,
       id: notice.id,
@@ -4000,7 +4142,11 @@ export function listAttentionItems(state: LogLoadsDatabaseState, organizationId 
     }))
 
   const lowCapacity = state.opportunityCapacities
-    .filter((capacity) => capacity.remainingTruckloads === 0 && capacity.completedTruckloads < capacity.totalTruckloads)
+    .filter((capacity) =>
+      visibleLoadIds.has(capacity.loadPostingId) &&
+      capacity.remainingTruckloads === 0 &&
+      capacity.completedTruckloads < capacity.totalTruckloads
+    )
     .map((capacity): AttentionItem => ({
       body: "Opportunity has no remaining requestable capacity but is not fully completed.",
       id: `capacity-${capacity.id}`,

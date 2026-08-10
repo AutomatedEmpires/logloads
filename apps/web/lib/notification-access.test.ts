@@ -44,4 +44,32 @@ describe("notification visibility", () => {
       })
     ).toBe(false)
   })
+
+  it("requires current field authority before serializing an operational notice", () => {
+    const notification = {
+      relatedEntityType: "operational_notice",
+      userId: ADMIN_PROFILE_ID
+    }
+
+    expect(
+      notificationVisibleToActor(notification, {
+        isPlatformAdmin: false,
+        operationalNoticeAuthorized: true,
+        profileId: ADMIN_PROFILE_ID
+      })
+    ).toBe(true)
+    expect(
+      notificationVisibleToActor(notification, {
+        isPlatformAdmin: false,
+        operationalNoticeAuthorized: false,
+        profileId: ADMIN_PROFILE_ID
+      })
+    ).toBe(false)
+    expect(
+      notificationVisibleToActor(notification, {
+        isPlatformAdmin: false,
+        profileId: ADMIN_PROFILE_ID
+      })
+    ).toBe(false)
+  })
 })

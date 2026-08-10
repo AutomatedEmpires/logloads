@@ -3,14 +3,25 @@
 /* ---------- Header ---------- */
 
 .public-header { flex-wrap: wrap; }
-.public-header__nav a { border-radius: 6px; padding: 6px 8px; }
+.public-header__nav a {
+  display: inline-flex;
+  min-height: var(--control-min);
+  align-items: center;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
 .public-header__nav a:hover { background: rgba(23, 61, 43, 0.08); color: var(--ink); }
 .public-header__nav a[aria-current="page"] { background: var(--green-bg); color: var(--pine); }
+.public-actions > a:not(.action-link) {
+  display: inline-flex;
+  min-height: var(--control-min);
+  align-items: center;
+}
 
 .public-menu-toggle {
   display: none;
-  min-width: 42px;
-  min-height: 42px;
+  min-width: var(--control-min);
+  min-height: var(--control-min);
   align-items: center;
   justify-content: center;
   border: 1px solid var(--line);
@@ -54,6 +65,8 @@
 }
 .public-header .public-mobile-menu a:not(.action-link):hover { background: rgba(23, 61, 43, 0.08); }
 .public-header .public-mobile-menu a[aria-current="page"] { background: var(--green-bg); color: var(--pine); }
+.public-header .public-mobile-menu a.action-link { color: #fff; }
+.public-header .public-mobile-menu a.action-link--secondary { color: var(--pine); }
 .public-mobile-menu__actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -87,6 +100,7 @@
   .public-header .public-mobile-menu { display: flex; }
 }
 @media (max-width: 760px) {
+  .public-actions > a:not(.action-link) { display: none; }
   .public-actions a.action-link { display: none; }
   .public-actions > .public-session__signout { display: none; }
   .public-actions .public-session__pending { display: none; }
@@ -116,7 +130,12 @@
   font-weight: 900;
   text-transform: uppercase;
 }
-.public-footer__column a { width: fit-content; }
+.public-footer__column a {
+  display: inline-flex;
+  width: fit-content;
+  min-height: var(--control-min);
+  align-items: center;
+}
 .public-footer__column a:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 4px; }
 .public-footer__legal {
   display: flex;
@@ -528,6 +547,23 @@
 .pricing-page { max-width: 1540px; margin-inline: auto; }
 .pricing-page .page-intro { margin-bottom: 24px; }
 
+.pricing-availability {
+  display: flex;
+  max-width: 940px;
+  gap: 14px;
+  align-items: flex-start;
+  border: 1px solid color-mix(in srgb, var(--amber) 34%, var(--line));
+  border-left: 4px solid var(--amber);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--amber-bg) 42%, var(--paper));
+  margin: -6px 0 28px;
+  padding: 16px;
+}
+.pricing-availability svg { flex: 0 0 auto; color: var(--amber); }
+.pricing-availability div { display: grid; gap: 5px; }
+.pricing-availability strong { color: var(--ink); }
+.pricing-availability p { margin: 0; color: var(--ink-soft); line-height: 1.5; }
+
 .pricing-lane { margin-top: clamp(42px, 5vw, 68px); }
 .pricing-page .page-intro + .pricing-lane { margin-top: 0; }
 .pricing-lane__intro { max-width: 820px; margin-bottom: 20px; }
@@ -884,7 +920,16 @@
 .legal-boundary-summary { border-left: 4px solid var(--pine); }
 .legal-boundary-summary p { margin: 6px 0 0; color: var(--ink-soft); line-height: 1.5; }
 .legal-toc ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px 18px; margin: 10px 0 0; padding-left: 18px; }
-.legal-toc a { color: var(--pine); font-weight: 800; text-decoration: underline; text-underline-offset: 3px; }
+.legal-toc a,
+.legal-page section a {
+  display: inline-flex;
+  min-height: var(--control-min);
+  align-items: center;
+  color: var(--pine);
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .legal-page section { scroll-margin-top: 88px; }
 
 /* ---------- Contact ---------- */
@@ -907,6 +952,7 @@
 .contact-form label { display: grid; gap: 6px; color: var(--muted); font-weight: 900; }
 .contact-form label em { font-style: normal; font-weight: 700; text-transform: none; }
 .contact-form input,
+.contact-form select,
 .contact-form textarea {
   min-height: 44px;
   border: 1px solid var(--line);
@@ -918,6 +964,7 @@
 }
 .contact-form textarea { min-height: 140px; resize: vertical; }
 .contact-form input:focus,
+.contact-form select:focus,
 .contact-form textarea:focus { border-color: var(--green); outline: 3px solid rgba(46, 118, 81, 0.2); outline-offset: 0; }
 .contact-form .action-link { justify-self: start; }
 .contact-form__privacy { margin: 0; color: var(--muted); font-size: 0.82rem; line-height: 1.45; }

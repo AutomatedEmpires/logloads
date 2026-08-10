@@ -29,6 +29,47 @@ export interface LegalPageContent {
   }>
 }
 
+export type PublicSignUpIntent = "driver" | "fleet" | "host"
+
+export interface PublicSignUpCopy {
+  body: string
+  eyebrow: string
+  intentLabel: string | null
+  title: string
+}
+
+const DEFAULT_SIGN_UP_COPY: PublicSignUpCopy = {
+  body: "Tell us how you work and LogLoads sets up the right first screen.",
+  eyebrow: "Create account",
+  intentLabel: null,
+  title: "Start with the work you do."
+}
+
+const SIGN_UP_COPY_BY_INTENT: Record<PublicSignUpIntent, PublicSignUpCopy> = {
+  driver: {
+    body: "Drivers use LogLoads free forever. Add your operating area and main equipment, then finish the required records before requesting work.",
+    eyebrow: "Driver account",
+    intentLabel: "Driver profile",
+    title: "Create your driver profile."
+  },
+  fleet: {
+    body: "Create a free workspace for trucks, drivers, availability, and dispatch. There is no subscription, trial clock, or LogLoads truck limit.",
+    eyebrow: "Fleet Free",
+    intentLabel: "Fleet workspace",
+    title: "Set up dispatch for your fleet."
+  },
+  host: {
+    body: "Create a free workspace to prepare landings and timber work. Live publication still requires separate pilot approval, the current 5% agreement, and a card in Billing.",
+    eyebrow: "Host workspace",
+    intentLabel: "Host workspace",
+    title: "Prepare your timber operation."
+  }
+}
+
+export function publicSignUpCopy(intent?: PublicSignUpIntent | null): PublicSignUpCopy {
+  return intent ? SIGN_UP_COPY_BY_INTENT[intent] : DEFAULT_SIGN_UP_COPY
+}
+
 export function slugify(value: string): string {
   return value
     .toLowerCase()
@@ -224,7 +265,7 @@ export const pricingPlans: PricingPlan[] = [
     audience: "Owner-operators and company drivers",
     summary: "Find, request, schedule, and complete work without paying LogLoads.",
     features: ["Loads ranked for your truck", "Plain-language match checks", "Request and booking status", "Mobile schedule and haul steps"],
-    cta: { href: "/sign-up", label: "Create free account" }
+    cta: { href: "/sign-up?path=driver", label: "Create driver profile" }
   },
   {
     name: "Fleet Free",
@@ -248,7 +289,7 @@ export const pricingPlans: PricingPlan[] = [
     commitment: "No subscription or monthly minimum",
     features: ["No charge to post", "No tiers or allowances", "Itemized monthly fee invoices", "Driver pay remains direct and whole"],
     cta: { href: "/sign-up?path=host", label: "Create host workspace" },
-    note: "Example: $500 driver pay + $25 LogLoads fee = $525 total host cost."
+    note: "Workspace setup is free. Live publication requires separate pilot approval; creating an account does not activate billing. Example after approval: $500 driver pay + $25 LogLoads fee = $525 total host cost."
   }
 ]
 
@@ -272,7 +313,7 @@ export const storyPages: Record<string, PublicStoryPage> = {
       {
         title: "Haul and confirm",
         body: "The assignment unlocks the Route Pack — gate access, road notes, who to call — and the trip carries its own status and paperwork.",
-        points: ["Exact access after assignment, not before", "Live trip status everyone can see", "Scale tickets and photos stay on the record"]
+        points: ["Exact access after assignment, not before", "Live trip status shared with assigned participants", "Scale tickets and photos stay on the record"]
       }
     ],
     cta: { href: "/loads", label: "See current loads" }
@@ -305,13 +346,13 @@ export const storyPages: Record<string, PublicStoryPage> = {
     slug: "for-landings",
     eyebrow: "For landing and logging teams",
     title: "Know exactly how many trucks you still need.",
-    intro: "Post the timber that has to move, decide who sees it, and watch the board as trucks commit, arrive, load, and roll.",
+    intro: "Create a free workspace for landings, lanes, schedules, equipment, and driver pay. Live network publication is available only after separate pilot approval.",
     sections: [
-      { title: "Publish with control", body: "Set the schedule, equipment, pay, and visibility before the work goes live. Approve requests yourself or let capacity fill.", points: ["Private carrier circle", "Manual approval when you want it", "Reusable load setups"] },
+      { title: "Prepare with control", body: "Set the schedule, equipment, pay, and visibility in a draft before work goes live. Publishing remains locked until the exact pilot organization is approved.", points: ["Private carrier circle", "Manual approval when you want it", "Reusable load setups"] },
       { title: "Run the landing", body: "The live board shows who is expected, who is arriving, who is loading, and who is late — without a phone call.", points: ["Truck identity at the gate", "Trip status as it changes", "Issues flagged, not buried"] },
       { title: "Keep good carriers close", body: "Invite the haulers you already work with, share your future schedule, and send direct offers when it matters.", points: ["Preferred carriers", "Shared forward schedule", "Direct offers"] }
     ],
-    cta: { href: "/sign-up?path=host", label: "Publish your first load" }
+    cta: { href: "/sign-up?path=host", label: "Create a host workspace" }
   },
   about: {
     slug: "about",

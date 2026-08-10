@@ -3,6 +3,7 @@ import {
   driverProfileSchema,
   mediaReferenceSchema,
   organizationRoleCan,
+  selectDriverEquipmentCombination,
   trailerProfileSchema,
   truckProfileSchema,
   type MediaReference
@@ -71,11 +72,10 @@ function requireActiveEquipment(
   context: z.infer<typeof driverContextSchema>
 ) {
   return assertFound(
-    state.equipmentCombinations.find((candidate) =>
-      candidate.assignedDriverProfileId === context.driverProfileId &&
-      candidate.organizationId === context.organizationId &&
-      candidate.status !== "inactive"
-    ),
+    selectDriverEquipmentCombination(state.equipmentCombinations, {
+      driverProfileId: context.driverProfileId,
+      organizationId: context.organizationId
+    }) ?? undefined,
     "Assign your primary equipment before updating it"
   )
 }
@@ -183,11 +183,10 @@ function resolveOwnTruckPhoto(
   state: LogLoadsDatabaseState,
   driver: { id: string; companyId?: string | null }
 ): MediaReference | null {
-  const combination = state.equipmentCombinations.find((candidate) =>
-    candidate.assignedDriverProfileId === driver.id &&
-    candidate.organizationId === driver.companyId &&
-    candidate.status !== "inactive"
-  )
+  const combination = selectDriverEquipmentCombination(state.equipmentCombinations, {
+    driverProfileId: driver.id,
+    organizationId: driver.companyId ?? undefined
+  })
   const truck = combination
     ? state.truckProfiles.find((candidate) => candidate.id === combination.truckProfileId)
     : undefined

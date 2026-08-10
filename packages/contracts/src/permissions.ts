@@ -46,6 +46,7 @@ export const ORGANIZATION_ROLE_ACTIONS = {
   admin: [
     "view_network",
     "manage_members",
+    "manage_billing",
     "manage_trucks",
     "manage_drivers",
     "publish_load",

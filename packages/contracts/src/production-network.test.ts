@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  equipmentCombinationSchema,
   opportunityCapacitySchema,
   routePackSchema,
+  selectDriverEquipmentCombination,
   transitionTripStatus,
   tripDocumentSchema,
   tripSchemaV2
@@ -11,6 +13,59 @@ import {
 const timestamp = "2026-06-05T12:00:00.000Z"
 
 describe("production operating network contracts", () => {
+  it("selects one operational rig consistently and keeps inactive history opt-in", () => {
+    const driverProfileId = "11111111-1111-4111-8111-111111111118"
+    const organizationId = "22222222-2222-4222-8222-222222222228"
+    const base = equipmentCombinationSchema.parse({
+      assignedDriverProfileId: driverProfileId,
+      capabilityTags: [],
+      createdAt: timestamp,
+      homeRegion: "Test Valley",
+      id: "33333333-3333-4333-8333-333333333338",
+      label: "Maintenance unit",
+      lastVerifiedAt: null,
+      maxPayloadTons: 30,
+      organizationId,
+      status: "maintenance",
+      trailerProfileId: null,
+      trailerTypes: [],
+      truckProfileId: "44444444-4444-4444-8444-444444444448",
+      truckTypes: ["log_truck"],
+      updatedAt: timestamp
+    })
+    const available = equipmentCombinationSchema.parse({
+      ...base,
+      id: "33333333-3333-4333-8333-333333333339",
+      label: "Available unit",
+      status: "available",
+      truckProfileId: "44444444-4444-4444-8444-444444444449"
+    })
+    const inactive = equipmentCombinationSchema.parse({
+      ...base,
+      id: "33333333-3333-4333-8333-333333333340",
+      label: "Historical unit",
+      status: "inactive",
+      truckProfileId: "44444444-4444-4444-8444-444444444450"
+    })
+
+    expect(
+      selectDriverEquipmentCombination([base, inactive, available], {
+        driverProfileId,
+        organizationId
+      })?.id
+    ).toBe(available.id)
+    expect(
+      selectDriverEquipmentCombination([inactive], { driverProfileId, organizationId })
+    ).toBeNull()
+    expect(
+      selectDriverEquipmentCombination([inactive], {
+        driverProfileId,
+        includeInactive: true,
+        organizationId
+      })?.id
+    ).toBe(inactive.id)
+  })
+
   it("validates opportunity capacity ledgers", () => {
     const result = opportunityCapacitySchema.safeParse({
       id: "11111111-1111-4111-8111-111111111111",

@@ -1,6 +1,7 @@
 import "server-only"
 
 import { formatRate, rateTone, reputationLabel, reputationTone } from "@logloads/contracts"
+import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { services } from "./services"
 import { requireCockpitActor } from "./session"
@@ -42,6 +43,58 @@ function orgName(id: string): string {
 
 function ratingStatValue(avgRating: number | null): string {
   return avgRating === null ? "—" : avgRating.toFixed(1)
+}
+
+export function adminReliabilitySubtitleForOrganization(organization: {
+  archivedAt?: string | null
+  type: string
+  verificationStatus: string
+}): "Carrier" | "Host" | null {
+  if (
+    organization.archivedAt ||
+    !["pending", "verified"].includes(organization.verificationStatus)
+  ) {
+    return null
+  }
+
+  if (organization.type === "landing_source" || organization.type === "destination") {
+    return "Host"
+  }
+
+  if (organization.type === "carrier" || organization.type === "fleet") {
+    return "Carrier"
+  }
+
+  return null
+}
+
+export function completedCarrierOrganizationIds(
+  source: Pick<LogLoadsDatabaseState, "driverProfiles" | "loadPostings" | "tripsV2">,
+  hostOrganizationId: string
+): string[] {
+  const hostLoadIds = new Set(
+    source.loadPostings
+      .filter((load) => load.companyId === hostOrganizationId)
+      .map((load) => load.id)
+  )
+  const driverOrganizationById = new Map(
+    source.driverProfiles.map((driver) => [driver.id, driver.companyId] as const)
+  )
+  const carrierIds = new Set<string>()
+
+  for (const trip of source.tripsV2) {
+    if (trip.status !== "completed" || !hostLoadIds.has(trip.loadPostingId)) {
+      continue
+    }
+
+    const carrierId = driverOrganizationById.get(trip.driverProfileId)
+
+    if (carrierId && carrierId !== hostOrganizationId) {
+      carrierIds.add(carrierId)
+    }
+  }
+
+  return [...carrierIds]
 }
 
 function orgPerformanceRow(id: string, subtitle: string): PerformanceRow {
@@ -115,32 +168,19 @@ export async function getHostCarrierPerformance(): Promise<PerformanceView> {
   }
 
   const ownReputation = services.getReputationForOrganization(orgId)
-  const hostLoadIds = new Set(
-    services.state.loadPostings.filter((load) => load.companyId === orgId).map((load) => load.id)
-  )
-
-  const carrierIds = new Set<string>()
-  for (const assignment of services.state.assignments) {
-    if (!hostLoadIds.has(assignment.loadPostingId)) {
-      continue
-    }
-    const driver = services.state.driverProfiles.find((candidate) => candidate.id === assignment.driverProfileId)
-    if (driver?.companyId && driver.companyId !== orgId) {
-      carrierIds.add(driver.companyId)
-    }
-  }
+  const carrierIds = completedCarrierOrganizationIds(services.state, orgId)
 
   // Rank best-first on the underlying numeric on-time rate (null last) — never on
   // the formatted "%" label, which would sort lexicographically ("100%" < "90%").
-  const rows = [...carrierIds]
+  const rows = carrierIds
     .map((id) => ({ onTime: services.getReliabilityForOrganization(id).onTimeRate ?? -1, row: orgPerformanceRow(id, "Carrier") }))
     .sort((left, right) => right.onTime - left.onTime)
     .map((entry) => entry.row)
 
   const stats: ReliabilityStat[] = [
     { label: "Your landing rating", tone: reputationTone(ownReputation.band), value: ratingStatValue(ownReputation.avgRating) },
-    { label: "Carriers", tone: "neutral", value: String(carrierIds.size) },
-    { label: "Your reviews", tone: "neutral", value: String(ownReputation.ratedCount) }
+    { label: "Carriers", tone: "neutral", value: String(carrierIds.length) },
+    { label: "Ratings received", tone: "neutral", value: String(ownReputation.ratedCount) }
   ]
 
   return {
@@ -155,7 +195,11 @@ export async function getAdminReliability(): Promise<PerformanceView> {
   await requireCockpitActor("admin")
 
   const rows = services.state.organizations
-    .map((org) => orgPerformanceRow(org.id, org.type === "landing_source" ? "Host" : "Carrier"))
+    .flatMap((organization) => {
+      const subtitle = adminReliabilitySubtitleForOrganization(organization)
+
+      return subtitle ? [orgPerformanceRow(organization.id, subtitle)] : []
+    })
     .sort((left, right) => Number(right.ratingLabel !== "New") - Number(left.ratingLabel !== "New"))
 
   const rated = rows.filter((row) => row.ratingLabel !== "New").length
@@ -163,7 +207,7 @@ export async function getAdminReliability(): Promise<PerformanceView> {
   const stats: ReliabilityStat[] = [
     { label: "Reviews on record", tone: "neutral", value: String(services.state.tripReviews.length) },
     { label: "Organizations rated", tone: "info", value: String(rated) },
-    { label: "Organizations", tone: "neutral", value: String(rows.length) }
+    { label: "Operating organizations", tone: "neutral", value: String(rows.length) }
   ]
 
   return {

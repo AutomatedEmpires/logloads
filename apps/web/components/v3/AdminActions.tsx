@@ -6,7 +6,7 @@ import type {
   VerificationQueueDecision,
   VerificationQueueDecisionContext
 } from "@logloads/services"
-import { useState, useTransition, type FormEvent } from "react"
+import { useEffect, useRef, useState, useTransition, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 
 import {
@@ -352,19 +352,66 @@ export function OrganizationDecision({
 
 export function ResolveNoticeButton({ noticeId }: { noticeId: string }) {
   const { error, pending, run, runningLabel } = useDecision()
+  const [confirming, setConfirming] = useState(false)
+  const confirmRef = useRef<HTMLButtonElement>(null)
+  const restoreTriggerFocus = useRef(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (confirming) {
+      confirmRef.current?.focus()
+      return
+    }
+
+    if (restoreTriggerFocus.current) {
+      restoreTriggerFocus.current = false
+      triggerRef.current?.focus()
+    }
+  }, [confirming])
 
   return (
     <div className="admin-decision">
-      <div className="admin-decision__buttons">
-        <button
-          className="admin-btn admin-btn--primary"
-          disabled={pending}
-          onClick={() => run("resolve", () => resolveNoticeAction({ noticeId }))}
-          type="button"
-        >
-          {runningLabel === "resolve" ? "Resolving…" : "Resolve"}
-        </button>
-      </div>
+      {confirming ? (
+        <>
+          <p className="admin-row__body">
+            End this active notice? It will leave current field queues, while its historical record stays intact.
+          </p>
+          <div className="admin-decision__buttons">
+            <button
+              className="admin-btn admin-btn--danger"
+              disabled={pending}
+              onClick={() => run("resolve", () => resolveNoticeAction({ noticeId }))}
+              ref={confirmRef}
+              type="button"
+            >
+              {runningLabel === "resolve" ? "Ending…" : "Confirm end notice"}
+            </button>
+            <button
+              className="admin-btn"
+              disabled={pending}
+              onClick={() => {
+                restoreTriggerFocus.current = true
+                setConfirming(false)
+              }}
+              type="button"
+            >
+              Keep active
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="admin-decision__buttons">
+          <button
+            className="admin-btn admin-btn--danger"
+            disabled={pending}
+            onClick={() => setConfirming(true)}
+            ref={triggerRef}
+            type="button"
+          >
+            End notice
+          </button>
+        </div>
+      )}
       <DecisionError error={error} />
     </div>
   )

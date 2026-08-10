@@ -8,6 +8,7 @@ import {
   readFrozenDriverPay,
   recommendLoad,
   reputationLabel,
+  selectDriverEquipmentCombination,
   summarizeReviews,
   type AssignmentStatus,
   type LoadStatus,
@@ -677,9 +678,10 @@ export function buildNetworkView(
     ? state.equipmentCombinations.filter((combination) => combination.organizationId === activeOrganization.id)
     : []
   const currentCombination = currentDriverProfile
-    ? organizationCombinations.find(
-        (combination) => combination.assignedDriverProfileId === currentDriverProfile.id
-      ) ?? null
+    ? selectDriverEquipmentCombination(organizationCombinations, {
+        driverProfileId: currentDriverProfile.id,
+        organizationId: activeOrganization?.id
+      })
     : null
   const currentTruck = currentCombination
     ? state.truckProfiles.find((truck) => truck.id === currentCombination.truckProfileId) ?? null
@@ -1275,7 +1277,10 @@ export function buildNetworkView(
     }
   })
 
-  const notices: NoticeView[] = services.listAttentionItems(activeOrganization.id)
+  const notices: NoticeView[] = services.listAttentionItems({
+    actorUserId: currentUser.id,
+    organizationId: activeOrganization.id
+  })
 
   const messages = services.listThreadsForUser(currentUser.id, activeOrganization.id).map((thread) => ({
     contextLabel: thread.contextLabel,

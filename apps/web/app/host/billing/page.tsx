@@ -11,15 +11,17 @@ export const dynamic = "force-dynamic"
 export default async function Page() {
   const context = await getCockpitContext("host")
   const activeRole = context.actor.activeMembership?.role
+  const canManageBilling =
+    activeRole !== undefined && organizationRoleCan(activeRole, "manage_billing")
 
   return (
     <BillingPage
       account={shellAccountFor(context)}
       billing={getBillingView(context.network)}
+      canManageBilling={canManageBilling}
       checkoutNotice={null}
       hostBilling={getHostBillingView(context.network.activeOrganization.id, {
-        canManageBilling:
-          activeRole !== undefined && organizationRoleCan(activeRole, "manage_billing")
+        canManageBilling
       })}
       hostSubscriptionBilling={getHostSubscriptionBillingView(
         context.network.activeOrganization.id

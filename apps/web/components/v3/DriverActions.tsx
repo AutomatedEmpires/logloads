@@ -441,23 +441,36 @@ const CANCEL_COPY = {
   haul: {
     confirm: "Yes, cancel the haul",
     done: "Haul cancelled. The host has been notified and the truckload is open again.",
+    pending: "Cancelling…",
     prompt: "Cancel this haul? The host is notified and the truckload reopens for other drivers.",
     trigger: "Cancel haul"
+  },
+  offer: {
+    confirm: "Yes, decline the offer",
+    done: "Offer declined. The host has been notified.",
+    pending: "Declining…",
+    prompt: "Decline this offer? It will be removed from your schedule and the host will be notified.",
+    trigger: "Decline offer"
   },
   request: {
     confirm: "Yes, withdraw it",
     done: "Request withdrawn. The truckload is open for other drivers.",
+    pending: "Cancelling…",
     prompt: "Withdraw this request? The host will see the truckload as open again.",
     trigger: "Withdraw request"
   }
 } as const
+
+export function assignmentCancellationCopy(kind: keyof typeof CANCEL_COPY): (typeof CANCEL_COPY)[keyof typeof CANCEL_COPY] {
+  return CANCEL_COPY[kind]
+}
 
 /**
  * Two-step cancel so a pocket tap can't kill a booked haul: a quiet trigger,
  * then an explicit confirmation with an optional reason the host will see.
  */
 export function CancelHaulControl({ assignmentId, kind }: { assignmentId: string; kind: keyof typeof CANCEL_COPY }) {
-  const copy = CANCEL_COPY[kind]
+  const copy = assignmentCancellationCopy(kind)
   const router = useRouter()
   const [confirming, setConfirming] = useState(false)
   const [reason, setReason] = useState("")
@@ -509,7 +522,7 @@ export function CancelHaulControl({ assignmentId, kind }: { assignmentId: string
       </label>
       <div className="cancel-haul__actions">
         <button className="cancel-haul__confirm" disabled={pending} onClick={cancel} type="button">
-          {pending ? "Cancelling…" : copy.confirm}
+          {pending ? copy.pending : copy.confirm}
         </button>
         <button
           className="cancel-haul__keep"

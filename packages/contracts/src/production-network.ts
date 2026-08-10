@@ -556,6 +556,50 @@ export type Entitlement = z.infer<typeof entitlementSchema>
 export type DirectOffer = z.infer<typeof directOfferSchema>
 export type FutureAvailability = z.infer<typeof futureAvailabilitySchema>
 
+const DRIVER_EQUIPMENT_STATUS_PRIORITY: Record<EquipmentCombinationStatus, number> = {
+  available: 0,
+  committed: 1,
+  maintenance: 2,
+  inactive: 3
+}
+
+/**
+ * One deterministic rig selector for every driver-facing projection and media
+ * read. Prefer dispatchable equipment, keep the first record within an equal
+ * status, and exclude inactive history unless a presentation explicitly asks
+ * to show it.
+ */
+export function selectDriverEquipmentCombination(
+  combinations: readonly EquipmentCombination[],
+  input: {
+    driverProfileId: string
+    includeInactive?: boolean
+    organizationId?: string
+  }
+): EquipmentCombination | null {
+  let selected: EquipmentCombination | null = null
+
+  for (const combination of combinations) {
+    if (
+      combination.assignedDriverProfileId !== input.driverProfileId ||
+      (input.organizationId && combination.organizationId !== input.organizationId) ||
+      (!input.includeInactive && combination.status === "inactive")
+    ) {
+      continue
+    }
+
+    if (
+      selected === null ||
+      DRIVER_EQUIPMENT_STATUS_PRIORITY[combination.status] <
+        DRIVER_EQUIPMENT_STATUS_PRIORITY[selected.status]
+    ) {
+      selected = combination
+    }
+  }
+
+  return selected
+}
+
 const opportunityTransitions: Record<z.infer<typeof loadStatusSchema>, z.infer<typeof loadStatusSchema>[]> = {
   archived: [],
   cancelled: ["archived"],

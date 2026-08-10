@@ -120,6 +120,7 @@ import {
   isLoadRequestableAt,
   latestTripInspection,
   markDriverPaymentSent,
+  operationalNoticeVisibleToActor,
   progressTripStatus,
   publishFutureAvailability,
   recordPreTripInspection,
@@ -543,13 +544,28 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     listTripDocuments: (tripId: string) => listTripDocuments(state, tripId),
     requiredCompletionEvidence: (trip: Parameters<typeof requiredCompletionEvidence>[1]) =>
       requiredCompletionEvidence(state, trip),
-    listAttentionItems: (organizationId?: string) => listAttentionItems(state, organizationId),
+    listAttentionItems: (input: Parameters<typeof listAttentionItems>[1]) =>
+      listAttentionItems(state, input),
     listDriverAvailability: (driverProfileId?: string) => listDriverAvailability(state, driverProfileId),
     listEntitlements: (organizationId?: string) => listEntitlements(state, organizationId),
     listFutureAvailabilityForOrganization: (organizationId?: string) => listFutureAvailabilityForOrganization(state, organizationId),
     listNotificationsForUser: (userId: string) => listNotificationsForUser(state, userId),
-    markNotificationRead: (input: { userId: string; notificationId: string }) => markNotificationRead(state, input.userId, input.notificationId),
-    markAllNotificationsRead: (userId: string) => markAllNotificationsRead(state, userId),
+    operationalNoticeVisibleToActor: (
+      input: Parameters<typeof operationalNoticeVisibleToActor>[1]
+    ) => operationalNoticeVisibleToActor(state, input),
+    markNotificationRead: (input: {
+      userId: string
+      notificationId: string
+      platformAdminAuthorized?: boolean
+    }) => markNotificationRead(state, input.userId, input.notificationId, {
+      platformAdminAuthorized: input.platformAdminAuthorized
+    }),
+    markAllNotificationsRead: (input: {
+      userId: string
+      platformAdminAuthorized?: boolean
+    }) => markAllNotificationsRead(state, input.userId, {
+      platformAdminAuthorized: input.platformAdminAuthorized
+    }),
     listPrivateNetworkRelationships: (organizationId?: string) => listPrivateNetworkRelationships(state, organizationId),
     isLoadRequestableAt: (load: Parameters<typeof isLoadRequestableAt>[1], at?: string) => isLoadRequestableAt(state, load, at),
     listRequestableLoadsForOrganization: (organizationId?: string, at?: string) => listRequestableLoadsForOrganization(state, organizationId, at),

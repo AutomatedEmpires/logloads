@@ -42,6 +42,27 @@ test("visitor understands the public product and can inspect public loads", asyn
   await expect(page.getByRole("button", { name: "Strong fit" })).toHaveCount(0)
 })
 
+test("mobile public header keeps account actions inside the menu", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto("/")
+
+  const header = page.locator(".public-header")
+  const menuTrigger = header.getByRole("button", { name: "Open menu" })
+  const inlineSignIn = header.locator(".public-actions > a", { hasText: "Sign in" })
+
+  await expect(menuTrigger).toBeVisible()
+
+  const triggerBox = await menuTrigger.boundingBox()
+  if (!triggerBox) throw new Error("Public menu control geometry is missing")
+  expect(triggerBox.width).toBeGreaterThanOrEqual(44)
+  expect(triggerBox.height).toBeGreaterThanOrEqual(44)
+
+  await menuTrigger.click()
+  const mobileMenu = header.getByRole("navigation", { name: "Menu" })
+  await expect(mobileMenu.getByRole("link", { name: "Sign in" })).toBeVisible({ timeout: 15_000 })
+  await expect(inlineSignIn).toBeHidden()
+})
+
 test("cockpits are protected: unauthenticated visitors are sent to sign-in", async ({ page }) => {
   for (const route of ["/driver/map", "/fleet/command", "/host/command", "/admin", "/support"]) {
     await page.goto(route)
@@ -49,15 +70,13 @@ test("cockpits are protected: unauthenticated visitors are sent to sign-in", asy
   }
 })
 
-test("driver signs in and reaches the map", async ({ page }) => {
+test("driver signs in and reaches the map", async ({ page }, testInfo) => {
   await signIn(page, "hank@northpine.example")
 
   await expect(page).toHaveURL(/\/driver\/map/)
   await expect(page.getByRole("heading", { name: "Map" })).toBeVisible()
 
   await page.goto("/driver/profile")
-  await expect(page.getByText("Photo uploads are currently unavailable.").first()).toBeVisible()
-  await expect(page.locator('input[type="file"][name="photo"]')).toHaveCount(0)
   await expect(page.getByRole("heading", { name: "Keep every record current" })).toBeVisible()
   const credentialVault = page.getByRole("region", { name: "Driver credential vault" })
   await expect(credentialVault).toBeVisible()
@@ -65,6 +84,19 @@ test("driver signs in and reaches the map", async ({ page }) => {
   await expect(credentialVault.getByText("Cleared", { exact: true })).toBeVisible()
   await expect(credentialVault.getByText(/Document uploads are temporarily unavailable/)).toBeVisible()
   await expect(credentialVault.locator('input[type="file"][name="document"]')).toHaveCount(0)
+  const matchingTools = page.locator('details.driver-profile-stage:has(#driver-profile-stage-match)')
+  await expect(matchingTools).not.toHaveAttribute("open", "")
+  await matchingTools.locator("summary").click()
+  await expect(matchingTools).toHaveAttribute("open", "")
+  await expect(matchingTools.getByRole("heading", { name: "Show your driver and primary equipment" })).toBeVisible()
+  await expect(matchingTools.getByText("Photo uploads are currently unavailable.").first()).toBeVisible()
+  await expect(matchingTools.locator('input[type="file"][name="photo"]')).toHaveCount(0)
+  await matchingTools.locator("summary").click()
+  await expect(matchingTools).not.toHaveAttribute("open", "")
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath(`driver-profile-${testInfo.project.name}.png`)
+  })
 })
 
 test("driver cannot open the admin console", async ({ page }) => {
@@ -79,6 +111,75 @@ test("host signs in and reaches command with capacity view", async ({ page }) =>
 
   await page.goto("/host/command")
   await expect(page.getByRole("heading", { name: "Command" })).toBeVisible()
+})
+
+test("host operating surfaces separate live decisions, work, and history", async ({ page }, testInfo) => {
+  const pageErrors = watchPageErrors(page)
+  const mobile = (page.viewportSize()?.width ?? 1280) <= 760
+  const expectNoHorizontalOverflow = async () => {
+    if (!mobile) return
+
+    const viewportWidth = await page.evaluate(() => document.documentElement.clientWidth)
+    const contentWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+    expect(contentWidth).toBeLessThanOrEqual(viewportWidth + 1)
+  }
+
+  await signIn(page, "cole@summit.example")
+  await page.goto("/host/command")
+  await expect(page.getByRole("heading", { name: "Command", exact: true })).toBeVisible()
+  await expect(page.getByRole("region", { name: "Current host operations" })).toBeVisible()
+  await expect(page.locator("#capacity-requests")).toBeVisible()
+  await expect(page.locator("#capacity-gaps")).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Live exceptions" })).toBeVisible()
+  await expectNoHorizontalOverflow()
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath(`host-command-${testInfo.project.name}.png`)
+  })
+
+  await page.goto("/host/opportunities")
+  await expect(page.getByRole("heading", { name: "Work", exact: true })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Publish timber movement" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Your work" })).toBeVisible()
+  await expect(page.locator("#live-work")).toBeVisible()
+  await expect(page.locator(".host-publication-state")).toBeVisible()
+  await expectNoHorizontalOverflow()
+
+  await page.goto("/host/live-board")
+  await expect(page.getByRole("heading", { name: "Live Board", exact: true })).toBeVisible()
+  await expect(page.getByRole("region", { name: "Live board summary" })).toBeVisible()
+  await expect(page.locator(".live-board")).toBeVisible()
+  await expectNoHorizontalOverflow()
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath(`host-live-board-${testInfo.project.name}.png`)
+  })
+
+  await page.goto("/host/schedule")
+  await expect(page.getByRole("heading", { name: "Schedule", exact: true })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Accepting and moving" })).toBeVisible()
+  await expect(page.locator(".host-schedule-row").first()).toBeVisible()
+  await expectNoHorizontalOverflow()
+
+  await page.goto("/host/carriers")
+  await expect(page.getByRole("heading", { name: "Carriers", exact: true })).toBeVisible()
+  await expect(page.locator(".host-network-summary")).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Send a direct offer" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Publish an operational notice" })).toBeVisible()
+  await expectNoHorizontalOverflow()
+
+  await page.goto("/host/landings")
+  await expect(page.getByRole("heading", { name: "Landings", exact: true })).toBeVisible()
+  await expect(page.locator("#landings")).toBeVisible()
+  await expect(page.locator("#add-landing")).toBeVisible()
+  await expectNoHorizontalOverflow()
+
+  await page.goto("/host/analytics")
+  await expect(page.getByRole("heading", { name: "Analytics", exact: true })).toBeVisible()
+  await expectNoHorizontalOverflow()
+
+  expect(pageErrors).toEqual([])
+  await expect(page.locator("[data-nextjs-dialog], .vite-error-overlay")).toHaveCount(0)
 })
 
 test("public entry reflects the active account and preserves driver intent", async ({ page }) => {
@@ -146,6 +247,78 @@ test("platform admin reaches the admin console", async ({ page }) => {
 
   await page.goto("/admin")
   await expect(page.getByRole("heading", { name: "Admin" })).toBeVisible()
+})
+
+test("admin command keeps commercial and operating exceptions truthful", async ({ page }, testInfo) => {
+  const pageErrors = watchPageErrors(page)
+  const noticeTitle = `E2E current notice ${testInfo.project.name} ${Date.now()}`
+
+  // Seed an actually current notice through the same authorized host workflow
+  // operators use. The canonical demo notices have real effective/expiry
+  // windows, so they correctly move into history as time passes and must not be
+  // treated as permanent action fixtures.
+  await signIn(page, "cole@summit.example")
+  await page.goto("/host/carriers")
+  await page.getByLabel("Headline").fill(noticeTitle)
+  await page.getByLabel("What crews need to know").fill("Use the signed north approach until this E2E check ends.")
+  await page.getByRole("button", { name: "Publish notice" }).click()
+  await expect(page.getByText("Notice published. It now shows in the attention feed for your operation.")).toBeVisible()
+
+  await page.context().clearCookies()
+
+  await signIn(page, "admin@logloads.example")
+  await page.goto("/admin")
+
+  await expect(page.getByRole("heading", { name: "Admin" })).toBeVisible()
+  await expect(page.getByRole("link", { name: /Completion and payment/ })).toBeVisible()
+  await expect(page.getByRole("link", { name: /Current fee exceptions/ })).toBeVisible()
+  await expect(page.getByRole("link", { name: /Support and contact/ })).toBeVisible()
+
+  if ((page.viewportSize()?.width ?? 1280) <= 760) {
+    const mobileNav = page.getByRole("navigation", { name: "admin mobile navigation" })
+    await expect(mobileNav.getByRole("link")).toHaveText(["Command", "Verify", "Exceptions", "Billing"])
+    const moreTrigger = mobileNav.getByRole("button", { name: "Open more tools" })
+    await moreTrigger.click()
+    const moreDialog = page.getByRole("dialog", { name: "More tools" })
+    await expect(moreDialog.getByRole("link", { name: "Organizations" })).toBeVisible()
+    await expect(moreDialog.getByRole("link", { name: "Work registry" })).toBeVisible()
+    await expect(moreDialog.getByRole("link", { name: "Feedback" })).toBeVisible()
+    await page.keyboard.press("Escape")
+    await expect(moreTrigger).toBeFocused()
+  }
+
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath(`admin-command-${testInfo.project.name}.png`)
+  })
+
+  await page.goto("/admin/disputes")
+  await expect(page.getByRole("heading", { name: "Completion & payment" })).toBeVisible()
+  await expect(page.getByText(/These are unresolved records, not historical cancellations/)).toBeVisible()
+
+  await page.goto("/admin/billing")
+  await expect(page.getByRole("heading", { name: "Percentage fee attention" })).toBeVisible()
+  await expect(page.getByText(/Current host revenue is the 5% platform fee/)).toBeVisible()
+
+  await page.goto("/admin/reports")
+  await expect(page.getByRole("heading", { name: "Feedback" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Contact inquiries", exact: true })).toBeVisible()
+
+  await page.goto("/admin/notices")
+  const currentNotice = page.locator(".admin-row").filter({
+    has: page.getByText(noticeTitle, { exact: true })
+  })
+  await expect(currentNotice).toHaveCount(1)
+  const endNotice = currentNotice.getByRole("button", { name: "End notice" })
+  await expect(endNotice).toBeVisible()
+  await endNotice.click()
+  const confirmEnd = page.getByRole("button", { name: "Confirm end notice" })
+  await expect(confirmEnd).toBeFocused()
+  await page.getByRole("button", { name: "Keep active" }).click()
+  await expect(endNotice).toBeFocused()
+
+  expect(pageErrors).toEqual([])
+  await expect(page.locator("[data-nextjs-dialog], .vite-error-overlay")).toHaveCount(0)
 })
 
 test("onboarding provisions a truthful driver first run", async ({ page }, testInfo) => {
@@ -221,8 +394,65 @@ test("onboarding provisions a truthful driver first run", async ({ page }, testI
 
   await page.getByRole("button", { name: "Continue where you left off" }).click()
   await page.waitForURL(/\/driver\/loads$/, { timeout: 30_000 })
-  await page.goto("/driver/profile?welcome=1")
+  await page.goto("/driver/profile")
+  await expect(page.getByTestId("driver-first-run")).toBeVisible()
+  await expect(page.getByTestId("driver-readiness-meter")).toBeVisible()
   await expect(page.getByRole("button", { name: "Continue where you left off" })).toHaveCount(0)
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath(`driver-readiness-return-${testInfo.project.name}.png`)
+  })
+})
+
+test("driver load discovery keeps each open load in one searchable board", async ({ page }, testInfo) => {
+  await signIn(page, "hank@northpine.example")
+  await page.goto("/driver/loads")
+
+  await expect(page.getByRole("heading", { name: "Loads", exact: true })).toBeVisible()
+  const cards = page.locator('a.load-card-v3[href^="/driver/loads/"]')
+  await expect(cards.first()).toBeVisible()
+  const hrefs = await cards.evaluateAll((links) =>
+    links.map((link) => link.getAttribute("href")).filter((href): href is string => href !== null)
+  )
+
+  expect(new Set(hrefs).size).toBe(hrefs.length)
+  await expect(page.getByRole("region", { name: "Load discovery" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Best matches" })).toHaveCount(0)
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath(`driver-load-board-${testInfo.project.name}.png`)
+  })
+})
+
+test("fleet dispatch and driver roster expose one truthful next action per unit", async ({ page }, testInfo) => {
+  await signIn(page, "dispatch@northpine.example")
+  await page.goto("/fleet/dispatch")
+
+  await expect(page.getByRole("heading", { name: "Dispatch", exact: true })).toBeVisible()
+  await expect(page.getByRole("region", { name: "Dispatch queue summary" })).toBeVisible()
+  await expect(page.locator(".dispatch-board")).toHaveCount(0)
+  const dispatchCards = page.locator(".fleet-dispatch-decision")
+  await expect(dispatchCards.first()).toBeVisible()
+  const dispatchUnits = await dispatchCards.locator("header strong").allTextContents()
+  expect(new Set(dispatchUnits).size).toBe(dispatchUnits.length)
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath(`fleet-dispatch-${testInfo.project.name}.png`)
+  })
+
+  await page.goto("/fleet/drivers")
+  const roster = page.getByRole("region", { name: "Fleet driver roster" })
+  await expect(roster).toBeVisible()
+  await expect(roster.getByText("Work gate").first()).toBeVisible()
+  await expect(roster.getByRole("navigation", { name: /Actions for/ }).first()).toBeVisible()
+
+  const viewportWidth = await page.evaluate(() => document.documentElement.clientWidth)
+  const contentWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+  expect(contentWidth).toBeLessThanOrEqual(viewportWidth + 1)
+  await page.screenshot({
+    fullPage: true,
+    path: testInfo.outputPath(`fleet-driver-roster-${testInfo.project.name}.png`)
+  })
 })
 
 test("fleet onboarding opens a Fleet Free activation handoff", async ({ page }, testInfo) => {
@@ -383,8 +613,69 @@ test("driver mobile navigation follows the directed flow", async ({ page }) => {
   const nav = page.getByRole("navigation", { name: "driver mobile navigation" })
   await expect(nav.getByRole("link")).toHaveText(["Map", "Loads", "Schedule", "Profile"])
   await expect(nav.getByRole("link", { name: "Map" })).toHaveAttribute("aria-current", "page")
-  await page.getByRole("button", { name: "Open more tools" }).click()
-  await expect(page.getByRole("navigation", { name: "More tools" }).getByRole("link", { name: "Assistant" })).toBeVisible()
+  const moreTrigger = nav.getByRole("button", { name: "Open more tools" })
+  await expect(moreTrigger).toHaveText("More")
+  await moreTrigger.click()
+  const moreDialog = page.getByRole("dialog", { name: "More tools" })
+  await expect(moreDialog.getByRole("heading", { name: "More tools" })).toBeVisible()
+  await expect(moreDialog.getByRole("link", { name: "Assistant" })).toBeVisible()
   await page.keyboard.press("Escape")
-  await expect(page.getByRole("button", { name: "Open more tools" })).toBeFocused()
+  await expect(moreTrigger).toBeFocused()
+})
+
+test("fleet mobile frame keeps command, dispatch, work, and trips one thumb away", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await signIn(page, "dispatch@northpine.example")
+  await page.goto("/fleet/command")
+
+  const nav = page.getByRole("navigation", { name: "fleet mobile navigation" })
+  await expect(nav.getByRole("link")).toHaveText(["Command", "Dispatch", "Work", "Trips"])
+  await expect(nav.getByRole("link", { name: "Command" })).toHaveAttribute("aria-current", "page")
+
+  const workspace = page.locator(".app-topbar__workspace")
+  await expect(workspace).toBeVisible()
+  await expect(workspace.locator("span")).toHaveCount(2)
+  await expect(workspace.locator("span").first()).toHaveText(/\S+/)
+  await expect(workspace).toContainText(/Verified|Review pending|Not approved|Suspended/)
+
+  const moreTrigger = nav.getByRole("button", { name: "Open more tools" })
+  const moreTriggerBox = await moreTrigger.boundingBox()
+  if (!moreTriggerBox) throw new Error("Fleet More control geometry is missing")
+  expect(moreTriggerBox.height).toBeGreaterThanOrEqual(44)
+
+  await moreTrigger.click()
+  const moreDialog = page.getByRole("dialog", { name: "More tools" })
+  await expect(moreDialog.getByRole("heading")).toHaveText(["Operate", "Find work", "Capacity", "Insights", "Workspace"])
+  await expect(moreDialog.getByRole("link")).toHaveText([
+    "Messages",
+    "Network",
+    "Drivers",
+    "Trucks",
+    "Availability",
+    "Performance",
+    "Assistant",
+    "Workspace",
+    "Billing"
+  ])
+  await page.keyboard.press("Escape")
+  await expect(moreTrigger).toBeFocused()
+
+  await page.goto("/fleet/opportunities")
+  await expect(nav.getByRole("link", { name: "Work" })).toHaveAttribute("aria-current", "page")
+
+  await page.goto("/fleet/messages")
+  await expect(moreTrigger).toHaveAttribute("aria-current", "page")
+})
+
+test("host root keeps Command current in the authenticated frame", async ({ page }) => {
+  await signIn(page, "cole@summit.example")
+  await page.goto("/host")
+
+  await expect(page).toHaveURL(/\/host\/command$/)
+  const navigationName = (page.viewportSize()?.width ?? 1280) <= 760
+    ? "host mobile navigation"
+    : "host operate navigation"
+
+  await expect(page.getByRole("navigation", { name: navigationName }).getByRole("link", { name: "Command" }))
+    .toHaveAttribute("aria-current", "page")
 })

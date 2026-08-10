@@ -73,6 +73,60 @@
 .admin-row__meta { margin: 0; color: var(--muted); font-size: 0.86rem; font-weight: 800; }
 .admin-row__body { margin: 0; max-width: 72ch; color: var(--ink-soft); line-height: 1.5; }
 .admin-row__when { color: var(--muted); font-size: 0.82rem; font-weight: 800; }
+.admin-exception-row {
+  border-left: 4px solid var(--amber);
+  padding-left: 14px;
+}
+.admin-exception-row--critical { border-left-color: var(--red); }
+.admin-exception-row--warning { border-left-color: var(--amber); }
+.admin-exception-summary,
+.admin-registry-summary { max-width: 880px; }
+#current-fee-exceptions,
+#contact-inquiries,
+.admin-inquiry-row { scroll-margin-top: 84px; }
+.admin-inquiry-row:target {
+  border-radius: var(--radius);
+  box-shadow: 0 0 0 3px rgba(46, 118, 81, 0.18);
+}
+.admin-inquiry-row__body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.admin-legacy-panel {
+  border-style: dashed;
+  background: var(--paper);
+}
+
+/* --- Progressive history --------------------------------------------------- */
+
+.admin-history {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+}
+.admin-history > summary {
+  display: flex;
+  min-height: 60px;
+  cursor: pointer;
+  list-style: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+}
+.admin-history > summary::-webkit-details-marker { display: none; }
+.admin-history > summary > span:first-child { display: grid; gap: 3px; }
+.admin-history > summary strong { color: var(--ink); font-size: 1rem; }
+.admin-history > summary small { color: var(--muted); font-size: 0.82rem; font-weight: 800; }
+.admin-history__toggle::before {
+  content: "Show";
+  color: var(--pine);
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+.admin-history[open] .admin-history__toggle::before { content: "Hide"; }
+.admin-history[open] > summary { border-bottom: 1px solid var(--line); }
+.admin-history__body { padding: 0 18px 18px; }
 
 /* --- Decision buttons ------------------------------------------------------- */
 
@@ -250,4 +304,7 @@
   .admin-btn { min-height: 48px; }
   .admin-activity-strip em { margin-left: 0; flex-basis: 100%; }
   .admin-select { width: 100%; }
+  .admin-history { margin-right: 12px; margin-left: 12px; }
+  .admin-history > summary { min-height: 64px; padding: 14px; }
+  .admin-history__body { padding: 0 14px 14px; }
 }

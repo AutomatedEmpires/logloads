@@ -2,11 +2,15 @@ import React from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.stubGlobal("React", React)
+vi.mock("server-only", () => ({}))
 
 const mocks = vi.hoisted(() => ({
   cookieGet: vi.fn(),
   getCockpitContext: vi.fn(),
-  organizationRoleCan: vi.fn(() => true)
+  getHostLandingRecords: vi.fn(() => []),
+  getHostPublishingOptions: vi.fn(),
+  getHostWorkspaceSetup: vi.fn(() => ({})),
+  organizationRoleCan: vi.fn((role: string, action: string) => Boolean(role && action))
 }))
 
 vi.mock("@logloads/contracts", () => ({
@@ -17,9 +21,9 @@ vi.mock("next/headers", () => ({
 }))
 vi.mock("@/components/v3", () => ({ HostLandings: () => null }))
 vi.mock("@/lib/host-data", () => ({
-  getHostLandingRecords: vi.fn(() => []),
-  getHostPublishingOptions: vi.fn(() => ({})),
-  getHostWorkspaceSetup: vi.fn(() => ({}))
+  getHostLandingRecords: mocks.getHostLandingRecords,
+  getHostPublishingOptions: mocks.getHostPublishingOptions,
+  getHostWorkspaceSetup: mocks.getHostWorkspaceSetup
 }))
 vi.mock("@/lib/v3", () => ({
   getCockpitContext: mocks.getCockpitContext,
@@ -49,6 +53,20 @@ beforeEach(() => {
     }
   })
   mocks.organizationRoleCan.mockReturnValue(true)
+  mocks.getHostPublishingOptions.mockReturnValue({
+    accessVocabulary: [{ label: "Steep", value: "steep" }],
+    billingActivationState: "unenrolled",
+    billingModel: null,
+    billingProfileStatus: "none",
+    currentPercentageAgreementActive: false,
+    dispatcher: { email: "private@example.com", id: "dispatcher-1", name: "Private", phone: "555-0100" },
+    equipmentVocabulary: [{ label: "Self loader", value: "self_loader" }],
+    landings: [{ id: "landing-1", label: "Private landing", roadCondition: "good" }],
+    loadTypes: ["saw_logs"],
+    rates: [{ detail: null, id: "rate-1", label: "$500/load" }],
+    routes: [{ id: "route-1", label: "Private route" }],
+    subscriptionPlanCode: null
+  })
 })
 
 describe("Host Landings first-run routing", () => {
@@ -77,5 +95,34 @@ describe("Host Landings first-run routing", () => {
       welcomeSource: undefined
     })
     expect(mocks.cookieGet).not.toHaveBeenCalled()
+  })
+
+  it("does not fetch or serialize private operating options for a billing-only member", async () => {
+    mocks.getCockpitContext.mockResolvedValue({
+      actor: {
+        activeMembership: { role: "billing" },
+        profile: { id: "actor-1" }
+      },
+      network: {
+        activeOrganization: { id: "host-1", name: "Summit Ridge Timber" }
+      }
+    })
+    mocks.organizationRoleCan.mockImplementation((_role, action) => action === "manage_billing")
+
+    const props = await pageProps({})
+
+    expect(mocks.getHostLandingRecords).not.toHaveBeenCalled()
+    expect(props).toMatchObject({
+      landingDetailsRestricted: true,
+      landings: [],
+      options: {
+        accessVocabulary: [],
+        dispatcher: null,
+        equipmentVocabulary: [],
+        landings: [],
+        rates: [],
+        routes: []
+      }
+    })
   })
 })

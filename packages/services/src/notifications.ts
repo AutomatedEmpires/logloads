@@ -5,7 +5,49 @@ import {
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
+import { operationalNoticeVisibleToActor } from "./operating-network"
 import { createUuid, nowIso } from "./utils"
+
+interface NotificationReadAuthority {
+  platformAdminAuthorized?: boolean
+}
+
+function canReadContactInquiries(
+  state: LogLoadsDatabaseState,
+  userId: string,
+  authority: NotificationReadAuthority
+): boolean {
+  const profile = state.profiles.find((candidate) => candidate.id === userId)
+
+  return (
+    authority.platformAdminAuthorized === true &&
+    profile?.isActive === true &&
+    profile.role === "admin"
+  )
+}
+
+function notificationReadAuthorized(
+  state: LogLoadsDatabaseState,
+  notification: Notification,
+  userId: string,
+  authority: NotificationReadAuthority
+): boolean {
+  if (notification.relatedEntityType === "contact_inquiry") {
+    return canReadContactInquiries(state, userId, authority)
+  }
+
+  if (notification.relatedEntityType === "operational_notice") {
+    return Boolean(
+      notification.relatedEntityId &&
+        operationalNoticeVisibleToActor(state, {
+          actorUserId: userId,
+          noticeId: notification.relatedEntityId
+        })
+    )
+  }
+
+  return true
+}
 
 export function listNotificationsForUser(
   state: LogLoadsDatabaseState,
@@ -38,13 +80,14 @@ export function createNotification(state: LogLoadsDatabaseState, input: unknown)
 export function markNotificationRead(
   state: LogLoadsDatabaseState,
   userId: string,
-  notificationId: string
+  notificationId: string,
+  authority: NotificationReadAuthority = {}
 ): Notification | null {
   const existing = state.notifications.find(
     (notification) => notification.id === notificationId && notification.userId === userId
   )
 
-  if (!existing) {
+  if (!existing || !notificationReadAuthorized(state, existing, userId, authority)) {
     return null
   }
 
@@ -63,12 +106,20 @@ export function markNotificationRead(
 }
 
 /** Clears a user's whole inbox in one action. Returns how many were marked. */
-export function markAllNotificationsRead(state: LogLoadsDatabaseState, userId: string): number {
+export function markAllNotificationsRead(
+  state: LogLoadsDatabaseState,
+  userId: string,
+  authority: NotificationReadAuthority = {}
+): number {
   const timestamp = nowIso()
   let marked = 0
 
   state.notifications = state.notifications.map((notification) => {
-    if (notification.userId !== userId || notification.readAt) {
+    if (
+      notification.userId !== userId ||
+      notification.readAt ||
+      !notificationReadAuthorized(state, notification, userId, authority)
+    ) {
       return notification
     }
 

@@ -45,6 +45,17 @@ const ACTIVE_TRIP_STATUSES = new Set([
   "unloading"
 ])
 
+const CURRENT_COMMITMENT_ASSIGNMENT_STATUSES = new Set<
+  NetworkLoadView["assignments"][number]["status"]
+>(["accepted", "checked_in", "loading", "hauled"])
+
+const CURRENT_COMMITMENT_LOAD_STATUSES = new Set<NetworkLoadView["status"]>([
+  "open",
+  "scheduled",
+  "filled",
+  "in_transit"
+])
+
 const STALL_THRESHOLD_MS = 8 * 60 * 60 * 1000
 
 function isActiveTrip(trip: Trip): boolean {
@@ -55,14 +66,26 @@ function lastActivityAt(trip: Trip): string | null {
   return trip.events.at(-1)?.occurredAt ?? trip.lastSyncedAt
 }
 
-function isStalledTrip(trip: Trip): boolean {
-  if (!isActiveTrip(trip)) {
+export function isStalledTrip(trip: Trip): boolean {
+  // `assigned` can be valid future work. This view has no due-time fact that
+  // would distinguish "scheduled later" from "late".
+  if (!isActiveTrip(trip) || trip.status === "assigned") {
     return false
   }
 
   const last = lastActivityAt(trip)
 
   return last !== null && Date.now() - Date.parse(last) > STALL_THRESHOLD_MS
+}
+
+export function loadHasCurrentFleetWarning(
+  load: Pick<NetworkLoadView, "assignments" | "status" | "warnings">
+): boolean {
+  return CURRENT_COMMITMENT_LOAD_STATUSES.has(load.status) &&
+    load.warnings.length > 0 &&
+    load.assignments.some((assignment) =>
+      CURRENT_COMMITMENT_ASSIGNMENT_STATUSES.has(assignment.status)
+    )
 }
 
 function opportunityHref(loadId: string): string {
@@ -330,7 +353,9 @@ export function FleetCommand({
   const activeTrips = network.trips.filter(isActiveTrip)
   const movingDriverIds = new Set(activeTrips.map((trip) => trip.driverProfileId))
   const availableTrucks = network.trucks.filter((truck) =>
-    ["available", "tentative"].includes(truck.status) && !(truck.driverProfileId && movingDriverIds.has(truck.driverProfileId))
+    truck.status === "available" &&
+    truck.combinationStatus === "available" &&
+    !(truck.driverProfileId && movingDriverIds.has(truck.driverProfileId))
   )
 
   const readyDecisions = dispatchPlan.flatMap((plan) =>
@@ -338,15 +363,14 @@ export function FleetCommand({
   )
   const staffingDecisions = dispatchPlan.filter((plan) => plan.blocked === "no_driver")
   const stalledTrips = network.trips.filter(isStalledTrip)
-  const cancelledTrips = network.trips.filter((trip) => trip.status === "cancelled")
-  const warningLoads = network.loads.filter((load) => load.assignments.length > 0 && load.warnings.length > 0)
+  const warningLoads = network.loads.filter(loadHasCurrentFleetWarning)
   const waitingRequests = network.loads.flatMap((load) =>
     load.assignments
       .filter((assignment) => assignment.status === "requested")
       .map((assignment) => ({ assignment, load }))
   )
 
-  const exceptionCount = stalledTrips.length + cancelledTrips.length + warningLoads.length
+  const exceptionCount = stalledTrips.length + warningLoads.length
   const decisionCount = readyDecisions.length + staffingDecisions.length
 
   return (
@@ -360,7 +384,7 @@ export function FleetCommand({
       ) : null}
       <section className="command-grid">
         <Metric label="Trucks free now" value={availableTrucks.length} />
-        <Metric label="Moving now" value={activeTrips.length} />
+        <Metric label="Active trips" value={activeTrips.length} />
         <Metric label="Waiting on approval" value={waitingRequests.length} />
         <Metric label="Exceptions" value={exceptionCount} />
       </section>
@@ -402,7 +426,7 @@ export function FleetCommand({
 
         <DecisionColumn count={exceptionCount} title="Exceptions">
           {exceptionCount === 0 ? (
-            <EmptyState title="No exceptions." body="No stalled trips, cancellations, or road warnings on committed work." />
+            <EmptyState title="No exceptions." body="No stalled trips or road warnings on active committed work." />
           ) : (
             <>
               {stalledTrips.map((trip) => (
@@ -412,16 +436,6 @@ export function FleetCommand({
                   href="/fleet/trips"
                   key={`stalled-${trip.id}`}
                   title={`${trip.loadTitle} has gone quiet`}
-                  tone="critical"
-                />
-              ))}
-              {cancelledTrips.map((trip) => (
-                <DecisionRow
-                  actionLabel="Open trips"
-                  body={`${trip.driverName}'s trip was cancelled. ${trip.events.at(-1)?.note ?? "Review the timeline for the reason."}`}
-                  href="/fleet/trips"
-                  key={`cancelled-${trip.id}`}
-                  title={`Cancelled: ${trip.loadTitle}`}
                   tone="critical"
                 />
               ))}
@@ -479,43 +493,203 @@ export function FleetCommand({
 
 // --- Dispatch --------------------------------------------------------------------
 
+export type FleetDispatchWorkState = "ready" | "needs_driver" | "no_match" | "moving"
+
+export interface FleetDispatchWorkItem {
+  plan: DispatchTruckPlan
+  state: FleetDispatchWorkState
+}
+
+export interface FleetDispatchSummary {
+  moving: number
+  needsDriver: number
+  noMatch: number
+  ready: number
+}
+
+export interface FleetDispatchEmptyState {
+  actionHref: "/fleet/availability" | "/fleet/trips" | "/fleet/trucks"
+  actionLabel: string
+  body: string
+  title: string
+}
+
+const DISPATCH_STATE_PRIORITY: Record<FleetDispatchWorkState, number> = {
+  ready: 0,
+  needs_driver: 1,
+  no_match: 2,
+  moving: 3
+}
+
+/**
+ * Each available combination becomes exactly one dispatch decision. Aggregate
+ * counts may summarize the queue, but no second lane board repeats the trucks.
+ */
+export function getFleetDispatchWorkItems(
+  dispatchPlan: DispatchTruckPlan[]
+): FleetDispatchWorkItem[] {
+  return dispatchPlan
+    .map((plan): FleetDispatchWorkItem => ({
+      plan,
+      state: plan.blocked === "no_driver"
+        ? "needs_driver"
+        : plan.blocked === "driver_on_trip"
+          ? "moving"
+          : plan.suggestion?.requestableSlotId
+            ? "ready"
+            : "no_match"
+    }))
+    .sort((left, right) => {
+      const stateDelta = DISPATCH_STATE_PRIORITY[left.state] - DISPATCH_STATE_PRIORITY[right.state]
+
+      return stateDelta !== 0 ? stateDelta : left.plan.label.localeCompare(right.plan.label)
+    })
+}
+
+export function getFleetDispatchSummary(
+  workItems: FleetDispatchWorkItem[]
+): FleetDispatchSummary {
+  const summary: FleetDispatchSummary = {
+    moving: 0,
+    needsDriver: 0,
+    noMatch: 0,
+    ready: 0
+  }
+
+  for (const item of workItems) {
+    if (item.state === "needs_driver") {
+      summary.needsDriver += 1
+    } else if (item.state === "no_match") {
+      summary.noMatch += 1
+    } else {
+      summary[item.state] += 1
+    }
+  }
+
+  return summary
+}
+
+export function getFleetDispatchEmptyState(
+  trucks: Array<Pick<NetworkView["trucks"][number], "combinationStatus">>
+): FleetDispatchEmptyState {
+  if (trucks.length === 0) {
+    return {
+      actionHref: "/fleet/trucks",
+      actionLabel: "Add equipment",
+      body: "Add the first truck and its working configuration before dispatching capacity.",
+      title: "No equipment is ready for dispatch."
+    }
+  }
+
+  if (trucks.some((truck) =>
+    truck.combinationStatus === "maintenance" || truck.combinationStatus === "inactive"
+  )) {
+    return {
+      actionHref: "/fleet/trucks",
+      actionLabel: "Review equipment",
+      body: "Equipment in maintenance or parked inactive must return to an available state before it can enter dispatch.",
+      title: "No available trucks are in the dispatch queue."
+    }
+  }
+
+  if (trucks.some((truck) => truck.combinationStatus === "committed")) {
+    return {
+      actionHref: "/fleet/trips",
+      actionLabel: "Review committed work",
+      body: "Current capacity is already committed. Follow the work before planning the next free move.",
+      title: "No available trucks are in the dispatch queue."
+    }
+  }
+
+  return {
+    actionHref: "/fleet/availability",
+    actionLabel: "Review availability",
+    body: "Review the current availability window before putting free equipment back in the queue.",
+    title: "No available trucks are in the dispatch queue."
+  }
+}
+
 export function FleetDispatch({ account, dispatchPlan, network }: FleetShellProps & { dispatchPlan: DispatchTruckPlan[] }) {
   const activeTripDriverIds = new Set(
     network.trips.filter(isActiveTrip).map((trip) => trip.driverProfileId)
   )
-  const lanes = [
-    { title: "Available", trucks: network.trucks.filter((truck) => truck.status === "available" && !(truck.driverProfileId && activeTripDriverIds.has(truck.driverProfileId))) },
-    { title: "Committed", trucks: network.trucks.filter((truck) => (truck.status === "committed" || truck.status === "tentative") && !(truck.driverProfileId && activeTripDriverIds.has(truck.driverProfileId))) },
-    { title: "Moving", trucks: network.trucks.filter((truck) => truck.driverProfileId && activeTripDriverIds.has(truck.driverProfileId)) },
-    { title: "Exception", trucks: network.trucks.filter((truck) => truck.status === "maintenance" || truck.status === "limited") }
-  ]
-  const dispatchable = dispatchPlan.filter((plan) => plan.blocked !== "no_driver")
+  const workItems = getFleetDispatchWorkItems(dispatchPlan)
+  const summary = getFleetDispatchSummary(workItems)
+  const committedCount = network.trucks.filter((truck) =>
+    truck.combinationStatus === "committed" &&
+    !(truck.driverProfileId && activeTripDriverIds.has(truck.driverProfileId))
+  ).length
+  const exceptionTrucks = network.trucks.filter((truck) => truck.combinationStatus === "maintenance")
+  const emptyState = getFleetDispatchEmptyState(network.trucks)
 
   return (
     <AppShell account={account} role="fleet" title="Dispatch" kicker="Assign capacity" orgName={network.activeOrganization.name}>
-      <section className="fleet-panel">
-        <SectionHeader eyebrow="Next moves" title="Put free trucks on work" />
-        {dispatchable.length === 0 ? (
+      <section className="fleet-dispatch-overview" aria-label="Dispatch queue summary">
+        <div>
+          <strong>{summary.ready}</strong>
+          <span>Ready to request</span>
+        </div>
+        <div>
+          <strong>{summary.needsDriver}</strong>
+          <span>Need a driver</span>
+        </div>
+        <div>
+          <strong>{summary.noMatch}</strong>
+          <span>No requestable match</span>
+        </div>
+        <div>
+          <strong>{summary.moving}</strong>
+          <span>Finish active trip first</span>
+        </div>
+        <div>
+          <strong>{committedCount}</strong>
+          <span>Committed ahead</span>
+        </div>
+      </section>
+
+      <section className="fleet-panel fleet-dispatch-workbench">
+        <SectionHeader eyebrow="Dispatch queue" title="One truck, one next move" />
+        {workItems.length === 0 ? (
           <EmptyState
-            title="No trucks are available right now."
-            body="Update availability or review upcoming commitments."
-            actionHref="/fleet/availability"
-            actionLabel="Update availability"
+            title={emptyState.title}
+            body={emptyState.body}
+            actionHref={emptyState.actionHref}
+            actionLabel={emptyState.actionLabel}
           />
         ) : (
-          <div className="fleet-dispatch-decisions">
-            {dispatchable.map((plan) => (
-              <article className="fleet-dispatch-decision" key={plan.combinationId}>
+          <div className="fleet-dispatch-queue">
+            {workItems.map(({ plan, state }) => (
+              <article
+                className="fleet-dispatch-decision"
+                data-state={state}
+                key={plan.combinationId}
+              >
                 <header>
-                  <strong>{plan.label}</strong>
-                  <span>{plan.driverName ?? "Unassigned"} · {plan.payload} · {plan.region}</span>
+                  <div>
+                    <strong>{plan.label}</strong>
+                    <span>{plan.driverName ?? "Driver unassigned"} · {plan.payload} · {plan.region}</span>
+                  </div>
+                  <Badge tone={state === "ready" ? "success" : state === "moving" ? "info" : "warning"}>
+                    {state === "ready"
+                      ? "Ready to request"
+                      : state === "needs_driver"
+                        ? "Driver needed"
+                        : state === "moving"
+                          ? "On active trip"
+                          : "No requestable match"}
+                  </Badge>
                 </header>
-                {plan.blocked === "driver_on_trip" ? (
+                {state === "moving" ? (
                   <div className="fleet-dispatch-decision__body">
                     <p>{plan.driverName} is on an active trip. This truck frees up when the trip completes.</p>
                     <Link className="action-link action-link--secondary" href="/fleet/trips">Follow the trip</Link>
                   </div>
-                ) : plan.suggestion ? (
+                ) : state === "needs_driver" ? (
+                  <div className="fleet-dispatch-decision__body">
+                    <p>Assign a driver before LogLoads can evaluate the driver, exact rig, and matching work.</p>
+                    <Link className="action-link action-link--secondary" href="/fleet/trucks">Assign a driver</Link>
+                  </div>
+                ) : state === "ready" && plan.suggestion ? (
                   <div className="fleet-dispatch-decision__body">
                     <div className="fleet-dispatch-decision__load">
                       <Badge tone={plan.suggestion.fit === "Strong fit" ? "success" : "warning"}>{plan.suggestion.fit}</Badge>
@@ -534,7 +708,11 @@ export function FleetDispatch({ account, dispatchPlan, network }: FleetShellProp
                   </div>
                 ) : (
                   <div className="fleet-dispatch-decision__body">
-                    <p>No open load fits this truck right now.</p>
+                    <p>
+                      {plan.suggestion
+                        ? `${plan.suggestion.title} is the closest current fit, but it has no open request window.`
+                        : "No open load currently fits this driver and truck. The truck stays in the queue without implying a match."}
+                    </p>
                     <Link className="action-link action-link--secondary" href="/fleet/opportunities">Browse all opportunities</Link>
                   </div>
                 )}
@@ -544,27 +722,27 @@ export function FleetDispatch({ account, dispatchPlan, network }: FleetShellProp
         )}
       </section>
 
-      <section className="dispatch-board" aria-label="Dispatch lanes">
-        {lanes.map((lane) => (
-          <article key={lane.title}>
-            <h2>{lane.title}</h2>
-            {lane.trucks.length === 0 ? (
-              <p className="muted">No trucks in this lane.</p>
-            ) : (
-              lane.trucks.map((truck) => (
-                <div className="dispatch-card" key={`${lane.title}-${truck.id}`}>
+      {exceptionTrucks.length > 0 ? (
+        <section className="fleet-panel fleet-panel--secondary fleet-dispatch-exceptions" aria-labelledby="fleet-dispatch-exceptions-title">
+          <div>
+            <p className="eyebrow">Equipment attention</p>
+            <h2 id="fleet-dispatch-exceptions-title">Resolve capacity outside the queue</h2>
+            <p>These units are not presented as dispatch candidates until their equipment status changes.</p>
+          </div>
+          <ul>
+            {exceptionTrucks.map((truck) => (
+              <li key={truck.id}>
+                <span>
                   <strong>{truck.unitNumber}</strong>
-                  <span>{truck.driverName}</span>
-                  <span>{truck.payload} · {truck.region}</span>
-                  <Badge tone={truck.status === "available" ? "success" : lane.title === "Exception" ? "critical" : "warning"}>
-                    {formatHuman(truck.status)}
-                  </Badge>
-                </div>
-              ))
-            )}
-          </article>
-        ))}
-      </section>
+                  <small>{truck.driverName || "Driver unassigned"} · {truck.payload} · {truck.region}</small>
+                </span>
+                <Badge tone="critical">{formatHuman(truck.combinationStatus)}</Badge>
+              </li>
+            ))}
+          </ul>
+          <Link className="action-link action-link--secondary" href="/fleet/trucks">Review equipment</Link>
+        </section>
+      ) : null}
     </AppShell>
   )
 }
@@ -650,57 +828,213 @@ function driverTone(status: string): "success" | "warning" | "critical" {
   return "critical"
 }
 
+export interface FleetDriverPresentation {
+  actionHref: "/fleet/availability" | "/fleet/dispatch" | "/fleet/trips" | "/fleet/trucks"
+  actionLabel: string
+  bucket: "moving" | "dispatch_ready" | "needs_truck" | "equipment_review" | "availability_review"
+  currentDetail: string
+  currentLabel: string
+  currentTone: "success" | "warning" | "critical" | "info"
+  gateDetail: string
+  gateLabel: string
+}
+
+export interface FleetDriverSummary {
+  availabilityReview: number
+  dispatchReady: number
+  equipmentReview: number
+  moving: number
+  needsTruck: number
+}
+
+/**
+ * FleetDriverRow intentionally carries no credential verdict. This projection
+ * describes only known capacity and makes the per-request credential gate
+ * explicit instead of turning a truck assignment into a verification claim.
+ */
+export function getFleetDriverPresentation(driver: FleetDriverRow): FleetDriverPresentation {
+  const gateDetail = driver.equipmentLabel
+    ? "Driver and exact-rig credentials are checked before each new load request."
+    : "Assign a truck before the exact-rig credential gate can be evaluated."
+
+  if (driver.activeTrip) {
+    return {
+      actionHref: "/fleet/trips",
+      actionLabel: "Open trip",
+      bucket: "moving",
+      currentDetail: driver.activeTrip.loadTitle,
+      currentLabel: driver.activeTrip.statusLabel,
+      currentTone: "info",
+      gateDetail,
+      gateLabel: driver.equipmentLabel ? "Checked on the next request" : "Blocked by truck assignment"
+    }
+  }
+
+  if (!driver.equipmentLabel || driver.equipmentStatus === null) {
+    return {
+      actionHref: "/fleet/trucks",
+      actionLabel: "Assign a truck",
+      bucket: "needs_truck",
+      currentDetail: driver.availabilityLabel,
+      currentLabel: "Truck needed",
+      currentTone: "warning",
+      gateDetail,
+      gateLabel: "Blocked by truck assignment"
+    }
+  }
+
+  if (driver.equipmentStatus !== "available") {
+    const committed = driver.equipmentStatus === "committed"
+
+    return {
+      actionHref: committed ? "/fleet/trips" : "/fleet/trucks",
+      actionLabel: committed ? "Open trips" : "Review equipment",
+      bucket: "equipment_review",
+      currentDetail: committed
+        ? `${driver.equipmentLabel} is committed to upcoming work.`
+        : `${driver.equipmentLabel} is ${formatHuman(driver.equipmentStatus)}.`,
+      currentLabel: committed ? "Committed" : formatHuman(driver.equipmentStatus),
+      currentTone: committed ? "info" : driver.equipmentStatus === "maintenance" ? "critical" : "warning",
+      gateDetail: "The assigned combination must be available before another load can be requested; credentials are still checked at request time.",
+      gateLabel: "Rig unavailable for new work"
+    }
+  }
+
+  if (driver.availabilityStatus === "available") {
+    return {
+      actionHref: "/fleet/dispatch",
+      actionLabel: "Open dispatch",
+      bucket: "dispatch_ready",
+      currentDetail: driver.availabilityLabel,
+      currentLabel: "Available",
+      currentTone: "success",
+      gateDetail,
+      gateLabel: "Checked on request"
+    }
+  }
+
+  return {
+    actionHref: "/fleet/availability",
+    actionLabel: "Update availability",
+    bucket: "availability_review",
+    currentDetail: driver.availabilityLabel,
+    currentLabel: formatHuman(driver.availabilityStatus),
+    currentTone: driverTone(driver.availabilityStatus),
+    gateDetail,
+    gateLabel: "Checked when availability opens"
+  }
+}
+
+export function getFleetDriverSummary(
+  presentations: FleetDriverPresentation[]
+): FleetDriverSummary {
+  const summary: FleetDriverSummary = {
+    availabilityReview: 0,
+    dispatchReady: 0,
+    equipmentReview: 0,
+    moving: 0,
+    needsTruck: 0
+  }
+
+  for (const presentation of presentations) {
+    if (presentation.bucket === "availability_review") {
+      summary.availabilityReview += 1
+    } else if (presentation.bucket === "dispatch_ready") {
+      summary.dispatchReady += 1
+    } else if (presentation.bucket === "needs_truck") {
+      summary.needsTruck += 1
+    } else if (presentation.bucket === "equipment_review") {
+      summary.equipmentReview += 1
+    } else {
+      summary.moving += 1
+    }
+  }
+
+  return summary
+}
+
 export function FleetDrivers({ account, drivers, network }: FleetShellProps & { drivers: FleetDriverRow[] }) {
+  const driverPresentations = drivers.map((driver) => ({
+    driver,
+    presentation: getFleetDriverPresentation(driver)
+  }))
+  const driverSummary = getFleetDriverSummary(
+    driverPresentations.map(({ presentation }) => presentation)
+  )
+
   return (
     <AppShell account={account} role="fleet" title="Drivers" kicker="People and availability" orgName={network.activeOrganization.name}>
       {drivers.length === 0 ? (
         <EmptyState
           title="No drivers in this organization yet."
-          body="Invite drivers from Workspace settings — the invitation appears for them at sign-in — or assign a driver profile to equipment so their work shows up here."
+          body="Open Workspace to review driver invitations and access. Driver profiles assigned to this organization appear here."
           actionHref="/fleet/settings"
-          actionLabel="Invite a driver"
+          actionLabel="Open workspace"
         />
       ) : (
-        <div className="fleet-driver-list">
-          {drivers.map((driver) => (
-            <article className="fleet-driver-row" key={driver.id}>
-              {/* The rig the driver chose to show off — streamed through the
-                  authorized delivery route, never a raw provider URL. */}
-              {driver.hasFeaturedTruckPhoto ? (
-                // eslint-disable-next-line @next/next/no-img-element -- authorized streaming route, not a static asset
-                <img
-                  alt={`${driver.name}'s truck`}
-                  className="fleet-driver-row__truck-photo"
-                  height={56}
-                  loading="lazy"
-                  src={`/api/media/featured-truck?driverProfileId=${driver.id}`}
-                  width={56}
-                />
-              ) : null}
-              <div className="fleet-driver-row__who">
-                <strong>{driver.name}</strong>
-                <span>{driver.homeBase} · {driver.yearsExperience} yrs</span>
-              </div>
-              <div className="fleet-driver-row__state">
-                {driver.activeTrip ? (
-                  <>
-                    <Badge tone="info">{driver.activeTrip.statusLabel}</Badge>
-                    <span>{driver.activeTrip.loadTitle}</span>
-                  </>
-                ) : (
-                  <>
-                    <Badge tone={driverTone(driver.availabilityStatus)}>{formatHuman(driver.availabilityStatus)}</Badge>
-                    <span>{driver.availabilityLabel}</span>
-                  </>
-                )}
-              </div>
-              <div className="fleet-driver-row__rig">
-                <Icon aria-hidden name="truck.log" size={16} />
-                <span>{driver.equipmentLabel ?? "No truck assigned"}</span>
-              </div>
-            </article>
-          ))}
-        </div>
+        <section className="fleet-panel fleet-driver-roster" aria-label="Fleet driver roster">
+          <SectionHeader
+            action={<Link className="action-link action-link--secondary" href="/fleet/settings">Open roster settings</Link>}
+            eyebrow="Operating roster"
+            title="Drivers and next actions"
+          />
+          <div className="fleet-driver-overview" aria-label="Driver capacity summary">
+            <div><strong>{driverSummary.dispatchReady}</strong><span>Available with a truck</span></div>
+            <div><strong>{driverSummary.moving}</strong><span>On active trips</span></div>
+            <div><strong>{driverSummary.needsTruck}</strong><span>Need a truck</span></div>
+            <div><strong>{driverSummary.equipmentReview}</strong><span>Rig status to review</span></div>
+            <div><strong>{driverSummary.availabilityReview}</strong><span>Availability to review</span></div>
+          </div>
+          <div className="fleet-driver-list">
+            {driverPresentations.map(({ driver, presentation }) => (
+              <article aria-labelledby={`fleet-driver-${driver.id}`} className="fleet-driver-row" key={driver.id}>
+                {/* The rig the driver chose to show off — streamed through the
+                    authorized delivery route, never a raw provider URL. */}
+                <div className="fleet-driver-row__identity">
+                  {driver.hasFeaturedTruckPhoto ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- authorized streaming route, not a static asset
+                    <img
+                      alt={`${driver.name}'s truck`}
+                      className="fleet-driver-row__truck-photo"
+                      height={64}
+                      loading="lazy"
+                      src={`/api/media/featured-truck?driverProfileId=${driver.id}`}
+                      width={64}
+                    />
+                  ) : (
+                    <span aria-hidden className="fleet-driver-row__photo-placeholder">
+                      <Icon name="nav.fleet" size={22} />
+                    </span>
+                  )}
+                  <div className="fleet-driver-row__who">
+                    <h3 id={`fleet-driver-${driver.id}`}>{driver.name}</h3>
+                    <span>{driver.homeBase} · {driver.yearsExperience} yrs</span>
+                    <span className="fleet-driver-row__rig">
+                      <Icon aria-hidden name="truck.log" size={16} />
+                      {driver.equipmentLabel ?? "No truck assigned"}
+                    </span>
+                  </div>
+                </div>
+                <div className="fleet-driver-row__state">
+                  <span className="card-kicker">Current capacity</span>
+                  <Badge tone={presentation.currentTone}>{presentation.currentLabel}</Badge>
+                  <span>{presentation.currentDetail}</span>
+                </div>
+                <div className="fleet-driver-row__gate">
+                  <span className="card-kicker">Work gate</span>
+                  <strong>{presentation.gateLabel}</strong>
+                  <span>{presentation.gateDetail}</span>
+                </div>
+                <nav aria-label={`Actions for ${driver.name}`} className="fleet-driver-row__actions">
+                  <Link className="action-link action-link--secondary" href={presentation.actionHref}>
+                    {presentation.actionLabel}
+                  </Link>
+                  {driver.phone ? <a className="text-link" href={`tel:${driver.phone}`}>Call driver</a> : null}
+                </nav>
+              </article>
+            ))}
+          </div>
+        </section>
       )}
     </AppShell>
   )

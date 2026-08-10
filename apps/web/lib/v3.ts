@@ -76,6 +76,15 @@ export function shellNotificationsFor(actor: SessionActor): { notifications: She
     .filter((notification) =>
       notificationVisibleToActor(notification, {
         isPlatformAdmin: actor.isPlatformAdmin,
+        operationalNoticeAuthorized:
+          notification.relatedEntityType === "operational_notice" &&
+          Boolean(
+            notification.relatedEntityId &&
+              services.operationalNoticeVisibleToActor({
+                actorUserId: actor.profile.id,
+                noticeId: notification.relatedEntityId
+              })
+          ),
         profileId: actor.profile.id
       })
     )

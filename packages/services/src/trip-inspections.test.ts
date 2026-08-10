@@ -193,7 +193,8 @@ describe("pre-trip inspection gate", () => {
       )
     ).toBe(true)
     expect(
-      services.listAttentionItems(HOST_ORG).some((item) => item.relatedLoadId === load.id && item.severity === "critical")
+      services.listAttentionItems({ actorUserId: HOST_OWNER, organizationId: HOST_ORG })
+        .some((item) => item.relatedLoadId === load.id && item.severity === "critical")
     ).toBe(true)
 
     // And the truck still does not roll.

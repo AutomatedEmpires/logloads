@@ -1,3 +1,5 @@
-import Page from "./command/page"
+import { redirect } from "next/navigation"
 
-export default Page
+export default function Page(): never {
+  redirect("/host/command")
+}

@@ -33,17 +33,17 @@ test.describe.serial("published-work lifecycle", () => {
     await expect(page.getByText("Publish timber movement")).toBeVisible()
 
     await fillWhenReady(page, "Work title", TITLE)
-    await page.getByRole("button", { name: "Next" }).click()
+    await page.getByRole("button", { exact: true, name: "Next" }).click()
     await selectWhenReady(page, "Haul route", { index: 1 })
-    await page.getByRole("button", { name: "Next" }).click()
+    await page.getByRole("button", { exact: true, name: "Next" }).click()
     await fillWhenReady(page, "Truckloads needed per day", "1")
-    await page.getByRole("button", { name: "Next" }).click()
+    await page.getByRole("button", { exact: true, name: "Next" }).click()
     await fillWhenReady(page, "What this work pays a driver, per truckload", "525.00")
-    await page.getByRole("button", { name: "Next" }).click()
+    await page.getByRole("button", { exact: true, name: "Next" }).click()
 
     // Visibility step: hold the work as a team-only draft.
     await page.getByText("Draft — team only").click()
-    await page.getByRole("button", { name: "Next" }).click()
+    await page.getByRole("button", { exact: true, name: "Next" }).click()
     await page.getByRole("button", { name: "Save draft" }).click()
     await expect(page.getByText(/is saved as a draft/)).toBeVisible({ timeout: 15_000 })
 
@@ -90,10 +90,18 @@ test.describe.serial("published-work lifecycle", () => {
     await row.getByRole("button", { name: "Close work" }).click()
     await row.getByRole("button", { name: "Yes, close this work" }).click()
 
-    // Poll through reloads: the badge flip arrives with a server re-render.
+    // Closed work moves out of the live list and into the collapsed History
+    // ledger. Poll through reloads, open that user-visible surface, and assert
+    // the lifecycle state there rather than against its hidden row.
     await expect(async () => {
       await page.reload()
-      await expect(row.getByText(/^cancelled$/i)).toBeVisible({ timeout: 2_000 })
+      const history = page.locator("details.host-work-history")
+      await expect(history).toBeVisible({ timeout: 2_000 })
+      await history.locator("summary").click()
+
+      const historicalRow = history.locator(".host-load-row").filter({ hasText: TITLE }).first()
+      await expect(historicalRow).toBeVisible({ timeout: 2_000 })
+      await expect(historicalRow.getByText(/^cancelled$/i)).toBeVisible({ timeout: 2_000 })
     }).toPass({ timeout: 20_000 })
   })
 

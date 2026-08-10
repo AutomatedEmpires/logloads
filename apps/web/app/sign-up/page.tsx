@@ -48,5 +48,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ n
     redirect(destination)
   }
 
-  return <AuthPage clerkForm={<SignUp forceRedirectUrl={destination} routing="hash" />} mode="sign-up" />
+  return (
+    <AuthPage
+      clerkForm={<SignUp forceRedirectUrl={destination} routing="hash" />}
+      intent={intent}
+      mode="sign-up"
+    />
+  )
 }

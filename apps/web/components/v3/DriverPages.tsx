@@ -73,6 +73,21 @@ function activeTripFor(network: NetworkView): TripView | null {
   return inProgress[0] ?? trips.filter((trip) => trip.status === "assigned").sort(mostRecentlyUpdated)[0] ?? null
 }
 
+export function driverNoticeForLoad(
+  notices: NetworkView["notices"],
+  loadPostingId: string
+): NetworkView["notices"][number] | null {
+  const severityOrder: Record<NetworkView["notices"][number]["severity"], number> = {
+    critical: 0,
+    watch: 1,
+    info: 2
+  }
+
+  return notices
+    .filter((notice) => notice.relatedLoadId === loadPostingId && !notice.id.startsWith("capacity-"))
+    .toSorted((left, right) => severityOrder[left.severity] - severityOrder[right.severity])[0] ?? null
+}
+
 function requestableLoads(network: NetworkView): NetworkLoadView[] {
   return network.loads.filter((load) =>
     load.discovery.available &&
@@ -86,6 +101,19 @@ function matchingLoads(network: NetworkView): NetworkLoadView[] {
   return requestableLoads(network).filter((load) =>
     (!load.compatibility || load.compatibility.eligibility !== "ineligible")
   )
+}
+
+export function driverLoadBoardPresentation(loads: readonly NetworkLoadView[]): {
+  orderedLoads: NetworkLoadView[]
+  strongMatchCount: number
+} {
+  const strongMatches = loads.filter((load) => load.compatibility?.eligibility === "strong_match")
+  const otherLoads = loads.filter((load) => load.compatibility?.eligibility !== "strong_match")
+
+  return {
+    orderedLoads: [...strongMatches, ...otherLoads],
+    strongMatchCount: strongMatches.length
+  }
 }
 
 function recommendBandTone(band: NetworkView["topRecommendations"][number]["band"]): "success" | "warning" | "info" | "neutral" {
@@ -153,10 +181,10 @@ function TodayActiveTrip({ load, network, trip }: { load: NetworkLoadView | null
   const headingToLanding = ["assigned", "en_route_to_landing", "checked_in", "loading"].includes(trip.status)
   const stop = load ? (headingToLanding ? load.landing : load.destination) : null
   const lastEvent = trip.events[trip.events.length - 1] ?? null
-  const criticalNotice = network.notices.find(
-    (notice) => notice.severity === "critical" && notice.relatedLoadId === trip.loadPostingId
-  ) ?? null
-  const interrupt = criticalNotice ? `${criticalNotice.title}: ${criticalNotice.body}` : load?.warnings[0] ?? null
+  const operationalNotice = driverNoticeForLoad(network.notices, trip.loadPostingId)
+  const interrupt = operationalNotice
+    ? `${operationalNotice.title}: ${operationalNotice.body}`
+    : load?.warnings[0] ?? null
 
   return (
     <section className="driver-now">
@@ -270,7 +298,7 @@ export function DriverToday({ account, availability, network }: DriverPageProps 
 export function DriverLoads({ account, network }: DriverPageProps) {
   const availableLoads = requestableLoads(network)
   const openHauls = availableLoads.reduce((total, load) => total + load.capacity.remaining, 0)
-  const matches = availableLoads.filter((load) => load.compatibility?.eligibility === "strong_match")
+  const { orderedLoads, strongMatchCount } = driverLoadBoardPresentation(availableLoads)
   const pendingRequests = network.loads.filter((load) => load.viewerAssignment?.status === "requested").length
 
   return (
@@ -280,28 +308,35 @@ export function DriverLoads({ account, network }: DriverPageProps) {
           <p className="eyebrow">What can I haul?</p>
           <h2>{openHauls} open {openHauls === 1 ? "haul" : "hauls"}</h2>
           <p>
-            {matches.length > 0
-              ? `${matches.length} strong ${matches.length === 1 ? "match" : "matches"} for your active truck. Open one to see why it fits.`
+            {strongMatchCount > 0
+              ? `${strongMatchCount} strong ${strongMatchCount === 1 ? "match" : "matches"} for your active truck. Open one to see why it fits.`
               : "Nothing is a perfect match right now. Open a load to see what needs review."}
           </p>
         </div>
         <dl>
           <div><dt>Load postings</dt><dd>{availableLoads.length}</dd></div>
-          <div><dt>Strong matches</dt><dd>{matches.length}</dd></div>
+          <div><dt>Strong matches</dt><dd>{strongMatchCount}</dd></div>
           <div><dt>Waiting on hosts</dt><dd>{pendingRequests}</dd></div>
         </dl>
       </section>
-      {matches.length > 0 ? (
-        <section className="app-section">
-          <SectionHeader eyebrow="Best matches" title="Start with the loads that fit your truck" />
-          <div className="load-list-v3">
-            {matches.map((load) => <LoadCard href={`/driver/loads/${load.id}`} key={load.id} load={load} />)}
-          </div>
-        </section>
-      ) : null}
-      <div className="app-section">
-        <LoadDiscovery loads={availableLoads} />
-      </div>
+      <section className="app-section driver-load-discovery">
+        {availableLoads.length === 0 ? (
+          <EmptyState
+            title="No open loads are available right now."
+            body="There is no requestable host work on the board at the moment. Keep your equipment and availability current so the next matching load is useful when it appears."
+            actionHref="/driver/profile"
+            actionLabel="Review my readiness"
+          />
+        ) : (
+          <>
+            <SectionHeader
+              eyebrow={strongMatchCount > 0 ? "Best matches first" : "Open work"}
+              title={strongMatchCount > 0 ? "Compare every open load in one board" : "Find work that fits your day"}
+            />
+            <LoadDiscovery loads={orderedLoads} />
+          </>
+        )}
+      </section>
     </AppShell>
   )
 }
@@ -389,6 +424,7 @@ function TripCard({ mediaReady, network, trip }: { mediaReady: boolean; network:
   const lastEvent = trip.events[trip.events.length - 1] ?? null
   const open = isOpenTrip(trip)
   const isOwnHaul = trip.driverProfileId === network.currentDriver?.id
+  const operationalNotice = driverNoticeForLoad(network.notices, trip.loadPostingId)
 
   return (
     <article className="trip-card" data-trip-id={trip.id}>
@@ -421,6 +457,12 @@ function TripCard({ mediaReady, network, trip }: { mediaReady: boolean; network:
           "This haul is booked. Start it when you head to the landing."
         )}
       </p>
+      {operationalNotice ? (
+        <div className="interrupt">
+          <Icon aria-hidden name="status.warning" size={18} />
+          <span><strong>{operationalNotice.title}:</strong> {operationalNotice.body}</span>
+        </div>
+      ) : null}
       {/* The instruction, not just the badge: a driver should never have to
           infer the required action from a status chip. */}
       {open && isOwnHaul ? (
@@ -508,8 +550,33 @@ function TripCard({ mediaReady, network, trip }: { mediaReady: boolean; network:
   )
 }
 
+export function driverPendingAssignmentPresentation(status: string | null | undefined): {
+  badge: string
+  body: string
+  cancellationKind: "offer" | "request"
+  openLabel: string
+  tone: "info" | "warning"
+} {
+  return status === "offered"
+    ? {
+        badge: "Offered to you",
+        body: "Review the load details. You can message the host or decline this offer here.",
+        cancellationKind: "offer",
+        openLabel: "Review offer",
+        tone: "info"
+      }
+    : {
+        badge: "Host deciding",
+        body: "Your request is sent. We will notify you when the host makes a decision.",
+        cancellationKind: "request",
+        openLabel: "Open request",
+        tone: "warning"
+      }
+}
+
 function RequestedHaulCard({ load }: { load: NetworkLoadView }) {
-  const isOffer = load.viewerAssignment?.status === "offered"
+  const presentation = driverPendingAssignmentPresentation(load.viewerAssignment?.status)
+  const isOffer = presentation.cancellationKind === "offer"
 
   return (
     <article className="schedule-request-card">
@@ -518,7 +585,7 @@ function RequestedHaulCard({ load }: { load: NetworkLoadView }) {
           <span className="card-kicker">{load.landing.city} to {load.destination.name}</span>
           <strong>{payHeadline(load)}</strong>
         </div>
-        <Badge tone={isOffer ? "info" : "warning"}>{isOffer ? "Offered to you" : "Host deciding"}</Badge>
+        <Badge tone={presentation.tone}>{presentation.badge}</Badge>
       </header>
       <h3>{load.title}</h3>
       <div className="schedule-request-card__facts">
@@ -526,12 +593,15 @@ function RequestedHaulCard({ load }: { load: NetworkLoadView }) {
         <span>{load.route.distanceMiles.toFixed(0)} miles</span>
         <span>{load.capacity.remaining} of {load.capacity.total} still open</span>
       </div>
-      <p>{isOffer ? "Review the load and decide whether it works for you." : "Your request is sent. We will notify you when the host makes a decision."}</p>
+      <p>{presentation.body}</p>
       <div className="primary-action-row">
-        <Link className="action-link action-link--secondary" href={`/driver/loads/${load.id}`}>Open request</Link>
+        <Link className={isOffer ? "action-link" : "action-link action-link--secondary"} href={`/driver/loads/${load.id}`}>
+          {presentation.openLabel}
+        </Link>
         {load.viewerAssignment ? (
-          <CancelHaulControl assignmentId={load.viewerAssignment.id} kind="request" />
+          <CancelHaulControl assignmentId={load.viewerAssignment.id} kind={presentation.cancellationKind} />
         ) : null}
+        {isOffer ? <Link className="action-link action-link--secondary" href="/driver/messages">Message host</Link> : null}
       </div>
     </article>
   )
@@ -598,19 +668,22 @@ function NextActionPanel({
   bookedTrips,
   completedTrips,
   network,
-  requestedLoads
+  pendingLoads
 }: {
   activeTrips: ScheduleTrip[]
   bookedTrips: ScheduleTrip[]
   completedTrips: ScheduleTrip[]
   network: NetworkView
-  requestedLoads: NetworkLoadView[]
+  pendingLoads: NetworkLoadView[]
 }) {
   // A haul already rolling outranks one that is merely booked.
   const focus = activeTrips[0] ?? bookedTrips[0] ?? null
   const focusLoad = focus ? network.loads.find((load) => load.id === focus.loadPostingId) ?? null : null
 
+  const offeredLoads = pendingLoads.filter((load) => load.viewerAssignment?.status === "offered")
+  const requestedLoads = pendingLoads.filter((load) => load.viewerAssignment?.status === "requested")
   const counts = [
+    { label: "offered", value: offeredLoads.length },
     { label: "requested", value: requestedLoads.length },
     { label: "booked", value: bookedTrips.length },
     { label: "in progress", value: activeTrips.length },
@@ -619,15 +692,14 @@ function NextActionPanel({
 
   // An offer is the host's decision already made — the driver is the one who
   // has to answer it. Only a plain request is genuinely waiting on the host.
-  const offeredLoads = requestedLoads.filter((load) => load.viewerAssignment?.status === "offered")
-  const awaitingHost = requestedLoads.length - offeredLoads.length
+  const awaitingHost = requestedLoads.length
 
   const headline = focus
     ? nextStepForTrip(focus)
     : offeredLoads.length > 0
       ? offeredLoads.length === 1
-        ? "Answer the offer on your truck"
-        : "Answer the offers on your truck"
+        ? "Review the offer on your truck"
+        : "Review the offers on your truck"
       : awaitingHost > 0
         ? "Waiting on a host decision"
         // "yet" would be wrong for a driver who has already run hauls.
@@ -638,7 +710,7 @@ function NextActionPanel({
   const detail = focus
     ? `${focus.loadTitle}${focusLoad ? ` · ${focusLoad.landing.city} to ${focusLoad.destination.name}` : ""}`
     : offeredLoads.length > 0
-      ? `${pluralize(offeredLoads.length, "offer")} to accept or decline.`
+      ? `${pluralize(offeredLoads.length, "offer")} waiting for your review.`
       : awaitingHost > 0
         ? `${pluralize(awaitingHost, "request")} waiting on a host decision.`
         : "Find a load that fits your truck and request the haul."
@@ -662,8 +734,19 @@ function NextActionPanel({
   )
 }
 
+export function driverScheduleDecisionBuckets(loads: readonly NetworkLoadView[]): {
+  offeredLoads: NetworkLoadView[]
+  requestedLoads: NetworkLoadView[]
+} {
+  return {
+    offeredLoads: loads.filter((load) => load.viewerAssignment?.status === "offered"),
+    requestedLoads: loads.filter((load) => load.viewerAssignment?.status === "requested")
+  }
+}
+
 export function DriverSchedule({ account, mediaReady, network }: DriverPageProps & { mediaReady: boolean }) {
-  const requestedLoads = network.loads.filter((load) => ["requested", "offered"].includes(load.viewerAssignment?.status ?? ""))
+  const { offeredLoads, requestedLoads } = driverScheduleDecisionBuckets(network.loads)
+  const pendingLoads = [...offeredLoads, ...requestedLoads]
   const decisionLoads = network.loads.filter((load) => load.viewerDecision?.status === "declined")
   const bookedTrips = network.trips.filter((trip) => trip.status === "assigned")
   const activeTrips = network.trips.filter((trip) => isOpenTrip(trip) && trip.status !== "assigned")
@@ -674,17 +757,17 @@ export function DriverSchedule({ account, mediaReady, network }: DriverPageProps
     <AppShell account={account} kicker="Your work" role="driver" title="Schedule">
       {/* With nothing scheduled at all, the empty state below already says so
           and offers the way out — a panel repeating it would be noise. */}
-      {network.trips.length > 0 || requestedLoads.length > 0 || decisionLoads.length > 0 ? (
+      {network.trips.length > 0 || pendingLoads.length > 0 || decisionLoads.length > 0 ? (
         <NextActionPanel
           activeTrips={activeTrips}
           bookedTrips={bookedTrips}
           completedTrips={completedTrips}
           network={network}
-          requestedLoads={requestedLoads}
+          pendingLoads={pendingLoads}
         />
       ) : null}
 
-      {requestedLoads.length === 0 && decisionLoads.length === 0 && network.trips.length === 0 ? (
+      {pendingLoads.length === 0 && decisionLoads.length === 0 && network.trips.length === 0 ? (
         <div className="app-section">
           <EmptyState
             title="Nothing scheduled yet."
@@ -695,6 +778,14 @@ export function DriverSchedule({ account, mediaReady, network }: DriverPageProps
         </div>
       ) : (
         <>
+          {offeredLoads.length > 0 ? (
+            <section className="app-section">
+              <SectionHeader eyebrow="Your decision" title="Offers to review now" />
+              <div className="schedule-request-list">
+                {offeredLoads.map((load) => <RequestedHaulCard key={load.id} load={load} />)}
+              </div>
+            </section>
+          ) : null}
           {requestedLoads.length > 0 ? (
             <section className="app-section">
               <SectionHeader eyebrow="Waiting on a decision" title="Requested hauls" />
@@ -749,24 +840,30 @@ export function DriverSchedule({ account, mediaReady, network }: DriverPageProps
   )
 }
 
-export function DriverEquipment({ account, mediaReady, network }: DriverPageProps & { mediaReady: boolean }) {
+export function driverOwnedTrucks(
+  network: Pick<NetworkView, "currentDriver" | "trucks">
+): NetworkView["trucks"] {
+  const driverId = network.currentDriver?.id
+
+  return driverId ? network.trucks.filter((truck) => truck.driverProfileId === driverId) : []
+}
+
+export function DriverEquipment({ account, network }: DriverPageProps & { mediaReady: boolean }) {
+  const ownedTrucks = driverOwnedTrucks(network)
+
   return (
     <AppShell account={account} kicker="Garage" role="driver" title="Equipment">
       <section className="app-section">
         <SectionHeader eyebrow="Active setup" title="What you run decides what you see" />
-        {network.trucks.length === 0 ? (
+        {ownedTrucks.length === 0 ? (
           <EmptyState
-            title="Add your first truck."
-            body="Equipment powers matching, availability, and assignments. Fill in the combination below to start seeing work that fits."
+            title="No equipment is assigned to your driver profile."
+            body="Add the truck and trailer combination you run. Equipment powers your matching, readiness, and assignments without exposing another driver's setup."
           />
         ) : (
           <div className="truck-grid">
-            {network.trucks.map((truck) => {
+            {ownedTrucks.map((truck) => {
               const verification = verificationBadge(truck.verification)
-
-              const isOwnRig = Boolean(
-                network.currentDriver && truck.driverProfileId === network.currentDriver.id
-              )
 
               return (
                 <article className="truck-card-v3" key={truck.id}>
@@ -783,20 +880,12 @@ export function DriverEquipment({ account, mediaReady, network }: DriverPageProp
                     <ReputationChip reputation={truck.reputation} />
                   </div>
                   <EquipmentStatusToggle combinationId={truck.id} status={truck.combinationStatus} />
-                  {/* The rig's photo lives here, with the rig — upload works
-                      only on the combination assigned to the signed-in driver
-                      (the service refuses anyone else's). */}
-                  {isOwnRig ? (
-                    <MediaUpload
-                      available={mediaReady}
-                      hasCurrent={network.currentEquipment?.hasTruckPhoto ?? false}
-                      kind="truck"
-                      label="Truck photo"
-                    />
-                  ) : null}
                 </article>
               )
             })}
+            <Link className="truck-grid__photo-link" href="/driver/profile">
+              Manage photos for your primary equipment in Profile
+            </Link>
           </div>
         )}
       </section>
@@ -821,6 +910,135 @@ const DRIVER_VERIFICATION_OPTIONS: VerificationTypeOption[] = [
   { value: "contact", label: "Contact details", hint: "Tell us whether to review the phone or email already on your account; do not repeat the full value here." }
 ]
 
+interface DriverProfileReadinessInput {
+  accountName: string
+  availability: DriverAvailabilitySummary["current"]
+  credentialVault: Pick<CredentialVaultView, "blockedNotice" | "headline" | "satisfied"> | null
+  driverName: string | null
+  equipmentLabel: string | null
+  verifications: readonly Pick<VerificationRecordView, "status">[]
+}
+
+export interface DriverProfileReadinessStep {
+  actionHref: string | null
+  actionLabel: string | null
+  complete: boolean
+  detail: string
+  key: "account" | "profile" | "equipment" | "availability" | "credentials" | "verification"
+  title: string
+}
+
+export interface DriverProfileReadiness {
+  complete: boolean
+  completedCount: number
+  nextStep: DriverProfileReadinessStep | null
+  steps: DriverProfileReadinessStep[]
+}
+
+export function getDriverProfileReadiness({
+  accountName,
+  availability,
+  credentialVault,
+  driverName,
+  equipmentLabel,
+  verifications
+}: DriverProfileReadinessInput): DriverProfileReadiness {
+  const profileCreated = driverName !== null
+  const credentialsSatisfied = credentialVault?.satisfied === true
+  const credentialDetail = credentialVault
+    ? credentialsSatisfied
+      ? credentialVault.headline
+      : credentialVault.blockedNotice ?? credentialVault.headline
+    : profileCreated
+      ? "Credential readiness is not available yet. Review the vault below before requesting work."
+      : "No credential gate can be evaluated until a driver profile is on file."
+  const verifiedCount = verifications.filter((record) => record.status === "verified").length
+  const pendingCount = verifications.filter((record) => record.status === "pending").length
+  const attentionCount = verifications.filter(
+    (record) => record.status === "rejected" || record.status === "suspended"
+  ).length
+  const verificationComplete = verifiedCount > 0 && pendingCount === 0 && attentionCount === 0
+  const verificationDetail = attentionCount > 0
+    ? `${attentionCount} verification ${attentionCount === 1 ? "record needs" : "records need"} attention below.`
+    : pendingCount > 0
+      ? `${pendingCount} verification ${pendingCount === 1 ? "submission is" : "submissions are"} in review.`
+      : verifiedCount > 0
+        ? `${verifiedCount} verification ${verifiedCount === 1 ? "record is" : "records are"} approved.`
+        : "Submit identity or contact details for review."
+  const steps: DriverProfileReadinessStep[] = [
+    {
+      actionHref: null,
+      actionLabel: null,
+      complete: true,
+      detail: `The sign-in account for ${accountName} is on file.`,
+      key: "account",
+      title: "Account"
+    },
+    {
+      actionHref: profileCreated ? null : "/contact",
+      actionLabel: profileCreated ? null : "Get help with my driver record",
+      complete: profileCreated,
+      detail: profileCreated
+        ? `Driver profile created for ${driverName}.`
+        : "No driver profile is on file yet.",
+      key: "profile",
+      title: "Driver profile"
+    },
+    {
+      actionHref: "/driver/equipment",
+      actionLabel: equipmentLabel ? "Review equipment" : "Add equipment",
+      complete: equipmentLabel !== null,
+      detail: equipmentLabel
+        ? `${equipmentLabel} is on file. Exact-rig requirements are evaluated separately below.`
+        : "Add an equipment record for the truck and trailer combination you will use.",
+      key: "equipment",
+      title: "Equipment record"
+    },
+    {
+      actionHref: "#driver-availability",
+      actionLabel: availability ? "Update availability" : "Post availability",
+      complete: availability !== null,
+      detail: availability
+        ? `${formatHuman(availability.status)} · ${availability.windowLabel}`
+        : "Post when you are available to haul.",
+      key: "availability",
+      title: "Availability"
+    },
+    {
+      actionHref: "#driver-credential-vault",
+      actionLabel: credentialsSatisfied ? "Review credential vault" : "Review credential requirements",
+      complete: credentialsSatisfied,
+      detail: credentialDetail,
+      key: "credentials",
+      title: "Driver and exact-rig records"
+    },
+    {
+      actionHref: pendingCount > 0 && attentionCount === 0 ? null : "#driver-verification",
+      actionLabel: pendingCount > 0 && attentionCount === 0
+        ? null
+        : verificationComplete
+          ? "Review verification"
+          : "Review verification steps",
+      complete: verificationComplete,
+      detail: verificationDetail,
+      key: "verification",
+      title: "Verification"
+    }
+  ]
+  const completedCount = steps.filter((step) => step.complete).length
+
+  return {
+    complete: completedCount === steps.length,
+    completedCount,
+    nextStep: steps.find((step) => !step.complete && step.actionHref !== null) ?? null,
+    steps
+  }
+}
+
+export function shouldShowDriverReadiness(readiness: Pick<DriverProfileReadiness, "complete">, welcome: boolean): boolean {
+  return welcome || !readiness.complete
+}
+
 export function DriverFirstRunPanel({
   accountName,
   availability,
@@ -839,63 +1057,19 @@ export function DriverFirstRunPanel({
   verifications: readonly Pick<VerificationRecordView, "status">[]
 }) {
   const profileCreated = driverName !== null
+  const readiness = getDriverProfileReadiness({
+    accountName,
+    availability,
+    credentialVault,
+    driverName,
+    equipmentLabel,
+    verifications
+  })
   const credentialsSatisfied = credentialVault?.satisfied === true
-  const credentialDetail = credentialVault
-    ? credentialsSatisfied
-      ? credentialVault.headline
-      : credentialVault.blockedNotice ?? credentialVault.headline
-    : "No credential gate can be evaluated until a driver profile is on file."
-  const verifiedCount = verifications.filter((record) => record.status === "verified").length
-  const pendingCount = verifications.filter((record) => record.status === "pending").length
-  const attentionCount = verifications.filter(
-    (record) => record.status === "rejected" || record.status === "suspended"
-  ).length
-  const verificationComplete = verifiedCount > 0 && pendingCount === 0 && attentionCount === 0
-  const verificationDetail = attentionCount > 0
-    ? `${attentionCount} verification ${attentionCount === 1 ? "record needs" : "records need"} attention below.`
-    : pendingCount > 0
-      ? `${pendingCount} verification ${pendingCount === 1 ? "submission is" : "submissions are"} in review.`
-      : verifiedCount > 0
-        ? `${verifiedCount} verification ${verifiedCount === 1 ? "record is" : "records are"} approved.`
-        : "Submit identity or contact details for review."
-  const checklist = [
-    {
-      complete: true,
-      detail: `The sign-in account for ${accountName} is on file.`,
-      key: "account",
-      title: "Account"
-    },
-    {
-      complete: profileCreated,
-      detail: profileCreated
-        ? `Driver profile created for ${driverName}.`
-        : "No driver profile is on file yet.",
-      key: "profile",
-      title: "Driver profile"
-    },
-    {
-      complete: equipmentLabel !== null,
-      detail: equipmentLabel
-        ? `${equipmentLabel} is on file. Exact-rig requirements are evaluated separately below.`
-        : "Add an equipment record for the truck and trailer combination you will use.",
-      key: "equipment",
-      title: "Equipment record"
-    },
-    {
-      complete: availability !== null,
-      detail: availability
-        ? `${formatHuman(availability.status)} · ${availability.windowLabel}`
-        : "Post when you are available to haul.",
-      key: "availability",
-      title: "Availability"
-    },
-    {
-      complete: verificationComplete,
-      detail: verificationDetail,
-      key: "verification",
-      title: "Verification"
-    }
-  ]
+  const credentialStep = readiness.steps.find((step) => step.key === "credentials")
+  const credentialDetail = credentialStep?.detail ?? "Review credential readiness below."
+  const nextStep = readiness.nextStep
+  const waitingStep = readiness.steps.find((step) => !step.complete && step.actionHref === null)
 
   return (
     <section
@@ -906,15 +1080,36 @@ export function DriverFirstRunPanel({
       <div className="first-run-panel__copy">
         <p className="eyebrow">{profileCreated ? "Account and profile created" : "Account created"}</p>
         <h2 id="driver-first-run-title">
-          {profileCreated
-            ? "Your driver workspace is ready to finish."
-            : "Your account is open; your driver profile still needs setup."}
+          {readiness.complete
+            ? "Your driver workspace is ready."
+            : profileCreated
+              ? "Your driver workspace is ready to finish."
+              : "Your account is open; your driver profile still needs setup."}
         </h2>
         <p>
-          {profileCreated
+          {readiness.complete
+            ? "Your operating details are current. Keep equipment, availability, verification, and credential records updated as they change."
+            : profileCreated
             ? "Your driver record is on file. Complete the operating details below so matching and readiness use current equipment, availability, verification, and credential truth. Hosts on accepted work receive only the scoped status and expiry summary required for that movement."
             : "Your sign-in account exists, but LogLoads has no driver profile on file. Finish that record before filing work credentials."}
         </p>
+        <div className="driver-readiness-meter" data-testid="driver-readiness-meter">
+          <div>
+            <strong>{readiness.completedCount} of {readiness.steps.length} setup steps complete</strong>
+            <span>
+              {nextStep
+                ? `Next: ${nextStep.title}`
+                : readiness.complete
+                  ? "Ready to review matching work"
+                  : `Waiting: ${waitingStep?.title ?? "setup review"}`}
+            </span>
+          </div>
+          <progress
+            aria-label="Driver setup progress"
+            max={readiness.steps.length}
+            value={readiness.completedCount}
+          />
+        </div>
       </div>
       <div
         aria-label="Current load acceptance state"
@@ -927,7 +1122,7 @@ export function DriverFirstRunPanel({
       </div>
       <div className="first-run-panel__setup">
         <ul aria-label="Driver setup checklist" className="first-run-panel__checklist" data-testid="driver-first-run-checklist">
-          {checklist.map((step) => (
+          {readiness.steps.map((step) => (
             <li
               className={step.complete ? "is-complete" : undefined}
               data-state={step.complete ? "complete" : "incomplete"}
@@ -942,8 +1137,17 @@ export function DriverFirstRunPanel({
           ))}
         </ul>
         <div className="first-run-panel__actions">
+          {nextStep?.actionHref && nextStep.key !== "credentials" ? (
+            <Link
+              className="action-link"
+              data-testid="driver-first-run-next-step"
+              href={nextStep.actionHref}
+            >
+              {nextStep.actionLabel}
+            </Link>
+          ) : null}
           <Link
-            className="action-link"
+            className={nextStep?.key === "credentials" ? "action-link" : "action-link action-link--secondary"}
             data-testid="driver-first-run-credential-link"
             href="#driver-credential-vault"
           >
@@ -984,10 +1188,19 @@ export function DriverProfile({
   welcome?: boolean
 }) {
   const verification = verificationBadge(network.activeOrganization.verificationStatus)
+  const profileReadiness = getDriverProfileReadiness({
+    accountName: account.userName,
+    availability: availability.current,
+    credentialVault,
+    driverName: network.currentDriver?.name ?? null,
+    equipmentLabel: network.currentEquipment?.label ?? null,
+    verifications
+  })
+  const showReadinessGuidance = shouldShowDriverReadiness(profileReadiness, welcome)
 
   return (
     <AppShell account={account} kicker="Your setup" role="driver" title="Profile">
-      {welcome ? (
+      {showReadinessGuidance ? (
         <DriverFirstRunPanel
           accountName={account.userName}
           availability={availability.current}
@@ -998,7 +1211,7 @@ export function DriverProfile({
           verifications={verifications}
         />
       ) : null}
-      <section className="profile-panel">
+      <section className="profile-panel" id="driver-profile-summary">
         <div className="profile-head">
           <div>
             <h2>{network.currentDriver?.name ?? account.userName}</h2>
@@ -1024,87 +1237,128 @@ export function DriverProfile({
           </div>
         </dl>
       </section>
-      <section className="app-section availability-panel">
-        <SectionHeader eyebrow="Availability" title="Keep your window current" />
-        <AvailabilityQuickSet
-          currentStatus={availability.current?.status ?? null}
-          currentWindow={availability.current?.windowLabel ?? null}
-          hasDriverProfile={Boolean(network.currentDriver)}
-        />
-        {availability.upcoming.length > 0 ? (
-          <ul className="availability-list">
-            {availability.upcoming.map((window) => (
-              <li key={window.id}>
-                <Badge tone={window.status === "available" ? "success" : window.status === "unavailable" ? "critical" : "warning"}>
-                  {formatHuman(window.status)}
-                </Badge>
-                <span>{window.windowLabel}</span>
-                {window.notes ? <em>{window.notes}</em> : null}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </section>
-      <section className="app-section">
-        <SectionHeader eyebrow="Fuel" title="Make earnings estimates yours" />
-        <p className="muted">Add your truck MPG and current diesel price. LogLoads shows gross after estimated fuel—not profit—and labels every assumption.</p>
-        <DriverEconomicsForm
-          currentFuelEconomyMpg={network.currentEquipment?.fuelEconomyMpg ?? null}
-          currentFuelPriceCentsPerGallon={network.currentDriver?.preferredFuelPriceCentsPerGallon ?? null}
-        />
-      </section>
-      <section className="app-section">
-        <SectionHeader eyebrow="Photos" title="Show your driver and primary equipment" />
-        <div className="media-upload-grid">
-          <MediaUpload available={mediaReady} hasCurrent={network.currentDriver?.hasProfilePhoto ?? false} kind="profile" label="Profile photo" />
-          <MediaUpload available={mediaReady} hasCurrent={network.currentEquipment?.hasTruckPhoto ?? false} kind="truck" label="Truck photo" />
-          {network.currentDriver?.trailerId ? (
-            <MediaUpload available={mediaReady} hasCurrent={network.currentEquipment?.hasTrailerPhoto ?? false} kind="trailer" label="Trailer photo" />
-          ) : null}
+      <section aria-labelledby="driver-profile-stage-ready" className="driver-profile-stage">
+        <header className="driver-profile-stage__head">
+          <span aria-hidden>1</span>
+          <div>
+            <p className="eyebrow">Work readiness</p>
+            <h2 id="driver-profile-stage-ready">Get cleared for the next load</h2>
+            <p>Keep the truck you run, your haul window, and required records current. These are the facts LogLoads uses before a request can move forward.</p>
+          </div>
+        </header>
+        <div className="driver-profile-stage__content">
+          <Link className="driver-equipment-summary" href="/driver/equipment">
+            <Icon aria-hidden name="truck.log" size={22} />
+            <span>
+              <strong>{network.currentEquipment?.label ?? "Add your truck and trailer"}</strong>
+              <small>{network.currentEquipment ? "Review the exact rig used for matching" : "Equipment is needed before fit can be evaluated"}</small>
+            </span>
+            <span aria-hidden>Open equipment</span>
+          </Link>
+          <section className="app-section availability-panel" id="driver-availability" tabIndex={-1}>
+            <SectionHeader eyebrow="Availability" title="Keep your window current" />
+            <AvailabilityQuickSet
+              currentStatus={availability.current?.status ?? null}
+              currentWindow={availability.current?.windowLabel ?? null}
+              hasDriverProfile={Boolean(network.currentDriver)}
+            />
+            {availability.upcoming.length > 0 ? (
+              <ul className="availability-list">
+                {availability.upcoming.map((window) => (
+                  <li key={window.id}>
+                    <Badge tone={window.status === "available" ? "success" : window.status === "unavailable" ? "critical" : "warning"}>
+                      {formatHuman(window.status)}
+                    </Badge>
+                    <span>{window.windowLabel}</span>
+                    {window.notes ? <em>{window.notes}</em> : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
+          <section
+            aria-label="Driver credential readiness"
+            className="app-section"
+            data-testid="driver-credential-vault-section"
+            id="driver-credential-vault"
+            tabIndex={-1}
+          >
+            <SectionHeader eyebrow="Work credentials" title="Keep every record current" />
+            {credentialVault ? (
+              <CredentialVault vault={credentialVault} />
+            ) : (
+              <p className="action-note action-note--muted" role="note">
+                Add your driver profile before filing work credentials.
+              </p>
+            )}
+          </section>
+          <section className="app-section" id="driver-verification" tabIndex={-1}>
+            <SectionHeader eyebrow="Account identity" title="Get your profile verified" />
+            <VerificationSubmit options={DRIVER_VERIFICATION_OPTIONS} records={verifications} subjectType="person" />
+          </section>
         </div>
-        <FeatureTruckPhotoToggle
-          featured={network.currentDriver?.featureTruckPhoto ?? false}
-          hasPhoto={network.currentEquipment?.hasTruckPhoto ?? false}
-        />
       </section>
-      <section
-        aria-label="Driver credential readiness"
-        className="app-section"
-        data-testid="driver-credential-vault-section"
-        id="driver-credential-vault"
-        tabIndex={-1}
-      >
-        <SectionHeader eyebrow="Work credentials" title="Keep every record current" />
-        {credentialVault ? (
-          <CredentialVault vault={credentialVault} />
-        ) : (
-          <p className="action-note action-note--muted" role="note">
-            Add your driver profile before filing work credentials.
-          </p>
-        )}
-      </section>
-      <section className="app-section">
-        <SectionHeader eyebrow="Account identity" title="Get your profile verified" />
-        <VerificationSubmit options={DRIVER_VERIFICATION_OPTIONS} records={verifications} subjectType="person" />
-      </section>
-      <section className="app-section">
-        <SectionHeader eyebrow="Account" title="Shortcuts" />
-        <div className="choice-grid">
-          <Link href="/driver/equipment">
-            <strong>Equipment</strong>
-            <span>{network.currentEquipment ? network.currentEquipment.label : "Add your truck and trailer"}</span>
-          </Link>
-          <Link href="/driver/schedule">
-            <strong>Schedule</strong>
-            <span>{network.trips.length === 0 ? "No hauls on your schedule" : `${network.trips.length} hauls on record`}</span>
-          </Link>
-          <Link href="/driver/messages">
-            <strong>Messages</strong>
-            <span>{network.messages.length === 0 ? "No threads yet" : `${network.messages.length} threads`}</span>
-          </Link>
+      <details aria-labelledby="driver-profile-stage-match" className="driver-profile-stage driver-profile-stage--disclosure">
+        <summary className="driver-profile-stage__head">
+          <span aria-hidden>2</span>
+          <span className="driver-profile-stage__summary-copy">
+            <span className="eyebrow">Better matching</span>
+            <span className="driver-profile-stage__summary-title" id="driver-profile-stage-match">Make every load easier to judge</span>
+            <span className="driver-profile-stage__summary-description">Fuel assumptions and current photos improve the decision without changing what the host stated as driver pay.</span>
+          </span>
+          <span aria-hidden className="driver-profile-stage__toggle" />
+        </summary>
+        <div className="driver-profile-stage__content driver-profile-stage__content--split">
+          <section className="app-section">
+            <SectionHeader eyebrow="Fuel" title="Make earnings estimates yours" />
+            <p className="muted">Add your truck MPG and current diesel price. LogLoads shows gross after estimated fuel—not profit—and labels every assumption.</p>
+            <DriverEconomicsForm
+              currentFuelEconomyMpg={network.currentEquipment?.fuelEconomyMpg ?? null}
+              currentFuelPriceCentsPerGallon={network.currentDriver?.preferredFuelPriceCentsPerGallon ?? null}
+            />
+          </section>
+          <section className="app-section">
+            <SectionHeader eyebrow="Photos" title="Show your driver and primary equipment" />
+            <div className="media-upload-grid">
+              <MediaUpload available={mediaReady} hasCurrent={network.currentDriver?.hasProfilePhoto ?? false} kind="profile" label="Profile photo" />
+              <MediaUpload available={mediaReady} hasCurrent={network.currentEquipment?.hasTruckPhoto ?? false} kind="truck" label="Truck photo" />
+              {network.currentDriver?.trailerId ? (
+                <MediaUpload available={mediaReady} hasCurrent={network.currentEquipment?.hasTrailerPhoto ?? false} kind="trailer" label="Trailer photo" />
+              ) : null}
+            </div>
+            <FeatureTruckPhotoToggle
+              featured={network.currentDriver?.featureTruckPhoto ?? false}
+              hasPhoto={network.currentEquipment?.hasTruckPhoto ?? false}
+            />
+          </section>
         </div>
-        <div className="signout-row">
-          <SignOutButton />
+      </details>
+      <section aria-labelledby="driver-profile-stage-workspace" className="driver-profile-stage driver-profile-stage--compact">
+        <header className="driver-profile-stage__head">
+          <span aria-hidden>3</span>
+          <div>
+            <p className="eyebrow">Workspace</p>
+            <h2 id="driver-profile-stage-workspace">Return to the work</h2>
+          </div>
+        </header>
+        <div className="driver-profile-stage__content">
+          <nav aria-label="Driver workspace shortcuts" className="choice-grid">
+            <Link href="/driver/equipment">
+              <strong>Equipment</strong>
+              <span>{network.currentEquipment ? network.currentEquipment.label : "Add your truck and trailer"}</span>
+            </Link>
+            <Link href="/driver/schedule">
+              <strong>Schedule</strong>
+              <span>{network.trips.length === 0 ? "No hauls on your schedule" : `${network.trips.length} hauls on record`}</span>
+            </Link>
+            <Link href="/driver/messages">
+              <strong>Messages</strong>
+              <span>{network.messages.length === 0 ? "No threads yet" : `${network.messages.length} threads`}</span>
+            </Link>
+          </nav>
+          <div className="signout-row">
+            <SignOutButton />
+          </div>
         </div>
       </section>
     </AppShell>
