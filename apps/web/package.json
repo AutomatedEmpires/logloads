@@ -33,7 +33,7 @@
     "react-dom": "^19.2.7",
     "react-map-gl": "^7.1.9",
     "server-only": "^0.0.1",
-    "sharp": "0.35.3",
+    "sharp": "0.35.4",
     "stripe": "22.3.0",
     "zod": "^3.25.76"
   },
