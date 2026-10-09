@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import type { CSSProperties } from "react"
+import { haulCancellationBlock } from "@logloads/contracts"
 import { Badge, Icon } from "@logloads/ui"
 
 import type {
@@ -1103,6 +1104,10 @@ function HostTripCard({
   truckUnit: string
 }) {
   const lastUpdate = tripLastUpdate(trip)
+  // At the mill, or once the driver has recorded the delivery, the host
+  // confirms or disputes it — the service refuses a cancellation from here.
+  const canCancel =
+    canAssignCapacity && haulCancellationBlock({ completionStatus: trip.completion.status, status: trip.status }) === null
   const paymentStatus =
     trip.driverPayment.status === "received"
       ? "Driver confirmed payment received."
@@ -1205,12 +1210,12 @@ function HostTripCard({
           </p>
         )
       ) : null}
-      {!["cancelled", "completed"].includes(trip.status) && (canPublish || canAssignCapacity) ? (
+      {!["cancelled", "completed"].includes(trip.status) && (canPublish || canCancel) ? (
         <div className="live-card__actions">
           {canPublish ? (
             <RefreshRoutePackButton assignmentId={trip.assignmentId} driverName={trip.driverName} />
           ) : null}
-          {canAssignCapacity ? (
+          {canCancel ? (
             <CancelAssignmentButton assignmentId={trip.assignmentId} driverName={trip.driverName} />
           ) : null}
         </div>

@@ -460,7 +460,7 @@ describe("host settlement", () => {
       deliveredQuantity: { unit: "tons", value: 40 },
       organizationId: HAULER_ORG,
       tripId: trip.id
-    })).toThrow(/confirmed; ask the host to reopen/)
+    })).toThrow(/confirmed and its record is final/)
   })
 
   it("preserves confirmation when an identical submission response is retried", () => {
@@ -603,12 +603,22 @@ describe("separation of duties", () => {
       organizationId: HAULER_ORG,
       tripId: trip.id
     })
-    services.cancelAssignmentWithPolicy({
+    // A recorded delivery can no longer be cancelled away...
+    expect(() => services.cancelAssignmentWithPolicy({
       actorUserId: HOST_OWNER,
       assignmentId: assignment.id,
       organizationId: HOST_ORG,
       reason: "Load pulled."
-    })
+    })).toThrow(/delivery is already recorded/i)
+
+    // ...but records cancelled before that rule existed are still in the
+    // canonical state, and settlement must keep refusing them.
+    services.state.tripsV2 = services.state.tripsV2.map((current) =>
+      current.id === trip.id ? { ...current, status: "cancelled" } : current
+    )
+    services.state.assignments = services.state.assignments.map((current) =>
+      current.id === assignment.id ? { ...current, status: "cancelled" } : current
+    )
 
     expect(() => services.settleHaulCompletion({
       actorUserId: HOST_OWNER,

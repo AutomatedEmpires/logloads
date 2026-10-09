@@ -185,7 +185,7 @@ export function applyHaulCompletionSubmission(
 
   assertCondition(
     trip.completionStatus !== "confirmed",
-    "This haul is confirmed; ask the host to reopen it before changing the record"
+    "This haul is confirmed and its record is final. Message the host if something on it is wrong"
   )
 
   const updated = tripSchemaV2.parse({

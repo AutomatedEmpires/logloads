@@ -654,6 +654,34 @@ export function canTransitionTripStatus(current: TripStatusV2, next: TripStatusV
   return tripTransitions[current].includes(next)
 }
 
+const TRIP_STATUSES_AT_DESTINATION = new Set<TripStatusV2>(["at_destination", "unloading", "completed"])
+
+export type HaulCancellationBlock = "confirmed" | "delivery_recorded" | "at_destination"
+
+/**
+ * Why a booked haul can no longer be cancelled, or null while it still can.
+ * Cancelling withdraws a booking; it must never erase a physical movement.
+ * Once the hauling side has recorded what came off the truck, or the truck is
+ * at the mill, the paths that keep the record are recording the delivery (or
+ * the exception explaining why nothing was delivered) and the host confirming
+ * or disputing it. One predicate for the service guard and every cockpit's
+ * Cancel control, so neither can offer what the other refuses.
+ */
+export function haulCancellationBlock(trip: {
+  completionStatus: HaulCompletionStatus
+  status: TripStatusV2
+}): HaulCancellationBlock | null {
+  if (trip.completionStatus === "confirmed") {
+    return "confirmed"
+  }
+
+  if (trip.completionStatus !== "pending") {
+    return "delivery_recorded"
+  }
+
+  return TRIP_STATUSES_AT_DESTINATION.has(trip.status) ? "at_destination" : null
+}
+
 export function transitionTripStatus(current: TripStatusV2, next: TripStatusV2): TripStatusV2 {
   if (!canTransitionTripStatus(current, next)) {
     throw new Error(`Invalid trip transition from ${current} to ${next}`)

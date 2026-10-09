@@ -2,6 +2,34 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-10-09 — A recorded delivery cannot be cancelled away
+
+- **Cancellation withdraws a booking; it never erases a physical movement.**
+  Once the truck is `at_destination`, `unloading`, or `completed`, or once the
+  hauling side has recorded the delivery (`submitted`, `disputed`, or
+  `confirmed`), both cancellation surfaces refuse, for either side. Previously
+  only a `confirmed` record was protected, so a host could cancel a delivery
+  the driver had already recorded (or one the host had disputed), returning the
+  capacity, never completing the trip, and never accruing the completed-load
+  fee. This implements `docs/marketplace-implementation-spec.md` §(d3).
+- **The way out at the mill is the record, not a cancellation.** The hauler
+  records the delivery or the exception that explains why nothing was
+  delivered (for example `rejected_at_scale`), and the host confirms or
+  disputes it. `haulCancellationBlock` in `packages/contracts` is the single
+  predicate behind the service guard and the host and driver Cancel controls.
+- **Notifications say what is true.** A capacity request names the driver and
+  their organization instead of an internal organization id. A declined driver
+  sees the host's actual reason and that they can request another open slot;
+  the copy no longer promises a "reopen" action that does not exist. A
+  confirmed record's edit refusal points to messaging the host for the same
+  reason.
+- Records cancelled under the old rule stay as they are; settlement still
+  refuses them. No schema, migration, provider, enrollment, collection, or
+  money movement changes.
+- **Not decided here:** a required counter-figure on disputes and auto-confirm
+  after a disclosed window (spec §(b)/(c)). Auto-confirm turns host silence
+  into a billable event and needs a founder decision.
+
 ## 2026-08-09 — The Pilot Center explains the real product without granting a demo identity
 
 - **Public exploration is an editorial product surface, not a cockpit.** `/pilot`

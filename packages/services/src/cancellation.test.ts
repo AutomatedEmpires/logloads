@@ -571,3 +571,195 @@ describe("assignment cancellation", () => {
     ).toBe(true)
   })
 })
+
+describe("cancellation never erases a physical movement", () => {
+  function haulTo(
+    services: LogLoadsServices,
+    stop: "en_route_to_destination" | "at_destination" | "unloading"
+  ) {
+    const { load, slot } = publishFreshLoad(services)
+    const assignment = requestFreshLoad(services, load.id, slot.id)
+    const { trip } = services.approveCapacityRequest({
+      actorUserId: HOST_ACTOR,
+      assignmentId: assignment.id,
+      organizationId: HOST_ORG
+    })
+
+    recordPassingPreTripInspection(services.state, {
+      actorUserId: HAULER_ACTOR,
+      organizationId: HAULER_ORG,
+      tripId: trip.id
+    })
+
+    const steps = [
+      "en_route_to_landing",
+      "checked_in",
+      "loading",
+      "loaded",
+      "en_route_to_destination",
+      "at_destination",
+      "unloading"
+    ] as const
+
+    for (const nextStatus of steps.slice(0, steps.indexOf(stop) + 1)) {
+      services.progressTripStatus({
+        actorUserId: HAULER_ACTOR,
+        organizationId: HAULER_ORG,
+        tripId: trip.id,
+        nextStatus,
+        source: "driver"
+      })
+    }
+
+    return { assignment, load, trip }
+  }
+
+  function recordDelivery(services: LogLoadsServices, tripId: string) {
+    services.submitHaulCompletion({
+      actorUserId: HAULER_ACTOR,
+      deliveredQuantity: { ticketNumber: "SC-ERASE", unit: "tons", value: 26.4 },
+      organizationId: HAULER_ORG,
+      tripId
+    })
+  }
+
+  it("refuses a host cancellation once the driver has recorded the delivery", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { assignment, load, trip } = haulTo(services, "at_destination")
+    recordDelivery(services, trip.id)
+    const before = structuredClone(services.state)
+
+    expect(() => services.cancelAssignmentWithPolicy({
+      actorUserId: HOST_ACTOR,
+      assignmentId: assignment.id,
+      organizationId: HOST_ORG,
+      reason: "Changed our minds."
+    })).toThrow(/delivery is already recorded/i)
+    // Nothing moved: the record, the booking, and the committed capacity stand.
+    expect(services.state).toEqual(before)
+    expect(capacityFor(services, load.id)?.committedTruckloads).toBe(1)
+  })
+
+  it("refuses a host cancellation of a delivery the host has disputed", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { assignment, trip } = haulTo(services, "unloading")
+    recordDelivery(services, trip.id)
+    services.settleHaulCompletion({
+      actorUserId: HOST_ACTOR,
+      decision: "dispute",
+      organizationId: HOST_ORG,
+      reason: "Scale shows 24 tons, not 26.4.",
+      tripId: trip.id
+    })
+    const before = structuredClone(services.state)
+
+    expect(() => services.cancelAssignmentWithPolicy({
+      actorUserId: HOST_ACTOR,
+      assignmentId: assignment.id,
+      organizationId: HOST_ORG
+    })).toThrow(/delivery is already recorded/i)
+    expect(() => services.progressTripStatus({
+      actorUserId: HOST_ACTOR,
+      organizationId: HOST_ORG,
+      tripId: trip.id,
+      nextStatus: "cancelled",
+      source: "dispatcher"
+    })).toThrow(/delivery is already recorded/i)
+    expect(services.state).toEqual(before)
+  })
+
+  it("refuses either side cancelling while the truck is at the destination, on both surfaces", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { assignment, trip } = haulTo(services, "at_destination")
+    const before = structuredClone(services.state)
+
+    expect(() => services.progressTripStatus({
+      actorUserId: HAULER_ACTOR,
+      organizationId: HAULER_ORG,
+      tripId: trip.id,
+      nextStatus: "cancelled",
+      note: "Rejected at the scale.",
+      source: "driver"
+    })).toThrow(/at the destination/i)
+    expect(() => services.cancelAssignmentWithPolicy({
+      actorUserId: HAULER_ACTOR,
+      assignmentId: assignment.id,
+      organizationId: HAULER_ORG
+    })).toThrow(/at the destination/i)
+    expect(() => services.cancelAssignmentWithPolicy({
+      actorUserId: HOST_ACTOR,
+      assignmentId: assignment.id,
+      organizationId: HOST_ORG
+    })).toThrow(/at the destination/i)
+    expect(services.state).toEqual(before)
+
+    // The recovery path that keeps the record still works: the driver states
+    // the exception, and the haul closes on it without erasing anything.
+    services.submitHaulCompletion({
+      actorUserId: HAULER_ACTOR,
+      exception: { note: "Rejected at the scale: bark content.", type: "rejected_at_scale" },
+      organizationId: HAULER_ORG,
+      tripId: trip.id
+    })
+    expect(services.state.tripsV2.find((current) => current.id === trip.id)?.completionStatus).toBe("submitted")
+  })
+
+  it("still lets a booking be cancelled on the way to the destination", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { assignment, load } = haulTo(services, "en_route_to_destination")
+
+    const { assignment: cancelled, trip } = services.cancelAssignmentWithPolicy({
+      actorUserId: HOST_ACTOR,
+      assignmentId: assignment.id,
+      organizationId: HOST_ORG,
+      reason: "Mill closed for the afternoon."
+    })
+
+    expect(cancelled.status).toBe("cancelled")
+    expect(trip?.status).toBe("cancelled")
+    expect(capacityFor(services, load.id)?.committedTruckloads).toBe(0)
+  })
+})
+
+describe("request and decline notifications speak to people", () => {
+  it("names the requesting driver and organization instead of an internal id", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { load, slot } = publishFreshLoad(services)
+    const assignment = requestFreshLoad(services, load.id, slot.id)
+
+    const notification = services.state.notifications.find((candidate) =>
+      candidate.relatedEntityId === assignment.id && candidate.type === "assignment_requested"
+    )
+    const organization = services.state.organizations.find((candidate) => candidate.id === HAULER_ORG)
+    const driverUserId = services.state.driverProfiles.find((profile) => profile.id === DRIVER_PROFILE)?.userId
+    const driver = services.state.profiles.find((profile) => profile.id === driverUserId)
+
+    expect(notification?.body).toBe(`${driver?.fullName} (${organization?.displayName}) requested ${load.title}.`)
+    expect(notification?.body).not.toContain(HAULER_ORG)
+  })
+
+  it("tells a declined driver the host's reason and the real next step", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { load, slot } = publishFreshLoad(services)
+    const assignment = requestFreshLoad(services, load.id, slot.id)
+
+    services.declineCapacityRequest({
+      actorUserId: HOST_ACTOR,
+      assignmentId: assignment.id,
+      organizationId: HOST_ORG,
+      reason: "Need a self-loader for this landing"
+    })
+
+    const notification = services.state.notifications.find((candidate) =>
+      candidate.relatedEntityId === assignment.id && candidate.type === "assignment_declined"
+    )
+
+    expect(notification?.body).toBe(
+      `The host did not take your request for ${load.title}. Need a self-loader for this landing. You can request another open slot from Loads.`
+    )
+    expect(notification?.body).not.toMatch(/reopen/i)
+    // The promise is true: the capacity is back and the same driver can ask again.
+    expect(capacityFor(services, load.id)?.remainingTruckloads).toBe(1)
+    expect(requestFreshLoad(services, load.id, slot.id).status).toBe("requested")
+  })
+})

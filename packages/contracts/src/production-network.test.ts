@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   equipmentCombinationSchema,
+  haulCancellationBlock,
   opportunityCapacitySchema,
   routePackSchema,
   selectDriverEquipmentCombination,
@@ -201,5 +202,25 @@ describe("production operating network contracts", () => {
     })
 
     expect(result.success).toBe(true)
+  })
+})
+
+describe("haulCancellationBlock", () => {
+  it("allows cancelling a booking until the truck reaches the destination", () => {
+    for (const status of ["assigned", "en_route_to_landing", "checked_in", "loading", "loaded", "en_route_to_destination"] as const) {
+      expect(haulCancellationBlock({ completionStatus: "pending", status })).toBeNull()
+    }
+  })
+
+  it("refuses once the truck is at the destination, even before anything is recorded", () => {
+    for (const status of ["at_destination", "unloading", "completed"] as const) {
+      expect(haulCancellationBlock({ completionStatus: "pending", status })).toBe("at_destination")
+    }
+  })
+
+  it("refuses once a delivery is recorded or disputed, and names a confirmed one", () => {
+    expect(haulCancellationBlock({ completionStatus: "submitted", status: "unloading" })).toBe("delivery_recorded")
+    expect(haulCancellationBlock({ completionStatus: "disputed", status: "completed" })).toBe("delivery_recorded")
+    expect(haulCancellationBlock({ completionStatus: "confirmed", status: "completed" })).toBe("confirmed")
   })
 })

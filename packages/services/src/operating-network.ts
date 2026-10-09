@@ -11,6 +11,7 @@ import {
   canTransitionLoadPostingStatus,
   evaluateLoadCompatibility,
   formatMoney,
+  haulCancellationBlock,
   mediaReferenceSchema,
   moneySchema,
   notificationSchema,
@@ -28,6 +29,7 @@ import {
   truckSlotSchema,
   type Assignment,
   type AssignmentStatus,
+  type HaulCancellationBlock,
   type CredentialKind,
   type DeliveredQuantity,
   type DirectOffer,
@@ -979,6 +981,33 @@ function findPostingDispatcher(state: LogLoadsDatabaseState, load: LoadPosting) 
   )
 }
 
+/** A free-text reason joined into notification copy reads as its own sentence. */
+function asSentence(text: string | null | undefined): string | null {
+  const trimmed = text?.trim()
+
+  if (!trimmed) {
+    return null
+  }
+
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`
+}
+
+/**
+ * Who asked, in words a host can act on: the driver and the organization they
+ * haul for. Never an internal id — a notification is read by a person.
+ */
+function requesterDisplayName(state: LogLoadsDatabaseState, organizationId: string, driverProfileId: string): string {
+  const organizationName = state.organizations.find((organization) => organization.id === organizationId)?.displayName
+  const driverUserId = state.driverProfiles.find((profile) => profile.id === driverProfileId)?.userId
+  const driverName = state.profiles.find((profile) => profile.id === driverUserId)?.fullName
+
+  if (driverName && organizationName) {
+    return `${driverName} (${organizationName})`
+  }
+
+  return driverName ?? organizationName ?? "A hauler"
+}
+
 /**
  * ── The credential gate on taking work ────────────────────────────────────────
  *
@@ -1294,7 +1323,7 @@ function requestCapacityWithPolicyInternal(
       state,
       dispatcher.userId,
       "Capacity request received",
-      `${context.organizationId} requested ${load.title}.`,
+      `${requesterDisplayName(state, context.organizationId, parsed.driverProfileId)} requested ${load.title}.`,
       "assignment",
       assignment.id,
       "assignment_requested"
@@ -1647,7 +1676,13 @@ export function declineCapacityRequest(
       state,
       driver.userId,
       "Not selected for this haul",
-      `${load.title} went to another truck. The capacity is available again if the host reopens the decision.`,
+      // The host's own reason, not an assumed one, and the real next step:
+      // declining restores the capacity, so there is nothing to "reopen".
+      [
+        `The host did not take your request for ${load.title}.`,
+        asSentence(declined.cancellationReason),
+        "You can request another open slot from Loads."
+      ].filter(Boolean).join(" "),
       "assignment",
       declined.id,
       "assignment_declined"
@@ -1739,6 +1774,28 @@ function notifyAssignmentCancelled(
 
 const MAX_CANCELLATION_REASON_LENGTH = 140
 
+const HAUL_CANCELLATION_REFUSALS: Record<HaulCancellationBlock, string> = {
+  at_destination:
+    "The truck is at the destination. Record what was delivered, or the exception that explains why nothing was; the haul can no longer be cancelled",
+  confirmed: "This delivery is confirmed and cannot be cancelled",
+  delivery_recorded:
+    "The delivery is already recorded. The host confirms or disputes it; it can no longer be cancelled"
+}
+
+/**
+ * A cancellation here would wipe the delivered record, hand the capacity back
+ * to the board, and keep the trip from ever completing — so the host's
+ * completed-load fee would never accrue either. Shared by both cancellation
+ * surfaces so neither can drift; see `haulCancellationBlock`.
+ */
+function assertHaulStillCancellable(trip: TripV2 | null | undefined): void {
+  const block = trip ? haulCancellationBlock(trip) : null
+
+  if (block) {
+    throw new Error(HAUL_CANCELLATION_REFUSALS[block])
+  }
+}
+
 /**
  * One authorization rule for every cancellation surface (the policy entry
  * point AND the trip-cancel mirror): the assigned driver may always cancel
@@ -1798,13 +1855,7 @@ export function cancelAssignmentWithPolicy(
     `Only an active assignment can be cancelled, and this one is ${assignment.status}`
   )
 
-  // Delivered work that both sides already settled is not cancellable — that
-  // would roll back a confirmed record and the capacity it consumed.
-  const settledTrip = state.tripsV2.find((current) => current.assignmentId === assignment.id)
-  assertCondition(
-    settledTrip?.completionStatus !== "confirmed",
-    "This delivery is confirmed and cannot be cancelled"
-  )
+  assertHaulStillCancellable(state.tripsV2.find((current) => current.assignmentId === assignment.id))
 
   const providedReason = input.reason?.trim() ?? ""
   assertCondition(
@@ -2522,10 +2573,7 @@ export function progressTripStatus(
       `Load posting ${trip.loadPostingId} was not found`
     )
     cancellationSide = assertCancellationAuthority(state, context, assignment, load).side
-    assertCondition(
-      trip.completionStatus !== "confirmed",
-      "This delivery is confirmed and cannot be cancelled"
-    )
+    assertHaulStillCancellable(trip)
   }
 
   // Validate the state-machine edge before applying step-specific

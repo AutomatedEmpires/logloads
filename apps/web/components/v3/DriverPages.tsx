@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { haulCancellationBlock } from "@logloads/contracts"
 import { Badge, Icon } from "@logloads/ui"
 
 import type { DriverAvailabilitySummary } from "@/lib/driver-data"
@@ -504,7 +505,11 @@ function TripCard({ mediaReady, network, trip }: { mediaReady: boolean; network:
           {canRecordDelivery(trip) ? (
             <CompletionForm completion={trip.completion} tripId={trip.id} />
           ) : null}
-          <CancelHaulControl assignmentId={trip.assignmentId} kind="haul" />
+          {/* At the mill the way out is the delivery record or its exception,
+              not a cancellation that would erase the movement. */}
+          {haulCancellationBlock({ completionStatus: trip.completion.status, status: trip.status }) === null ? (
+            <CancelHaulControl assignmentId={trip.assignmentId} kind="haul" />
+          ) : null}
         </div>
       ) : null}
       {trip.status === "completed" ? (
