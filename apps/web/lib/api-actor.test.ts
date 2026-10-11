@@ -271,13 +271,17 @@ describe("clientKeyFromHeaders", () => {
     expect(key).not.toContain("198.51.100.7")
   })
 
-  it("uses Fly's trusted client IP on the non-Vercel deployment target", () => {
+  it("does not trust a client-IP header off Vercel, including the retired Fly one", () => {
     const headers = new Headers({ "fly-client-ip": "198.51.100.9", "x-forwarded-for": "203.0.113.99" })
 
     const key = clientKeyFromHeaders(headers, environment())
 
-    expect(key.startsWith("verified:")).toBe(true)
+    expect(key.startsWith("unverified:")).toBe(true)
     expect(key).not.toContain("198.51.100.9")
+    // A forged header cannot claim another caller's verified window.
+    expect(key).not.toBe(
+      clientKeyFromHeaders(new Headers({ "x-vercel-forwarded-for": "198.51.100.9" }), environment({ VERCEL: "1" }))
+    )
   })
 
   it("never steers a Vercel request with a forged Fly header", () => {

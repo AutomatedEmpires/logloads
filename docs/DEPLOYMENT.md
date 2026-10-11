@@ -2,15 +2,16 @@
 
 ## Current target
 
-The transitional runtime is now compatible with Vercel/serverless execution:
-Supabase `public.operating_state` is canonical, each request awaits remote state,
-and each mutation uses a conditional `version` update with deterministic retry.
-The process-global service object is only a request cache; local disk is never
+Production runs on **Vercel** (Node runtime). Merging `main` deploys
+`logloads.com`; pull requests get Vercel Preview deployments. Supabase
+`public.operating_state` is canonical: each request awaits remote state, and each
+mutation uses a conditional `version` update with deterministic retry. The
+process-global service object is only a request cache; local disk is never
 production authority.
 
-This repository change does **not** itself apply the migration or cut traffic.
-`fly.toml` and the Docker image remain rollback/reference artifacts until an
-exact-SHA Vercel preview and production rollback gate are approved.
+The Fly.io manifest and Docker image that served as the pre-cutover rollback host
+were removed on 2026-10-11 (see `docs/DECISIONS.md`). Code rollback is a Vercel
+promotion of an earlier canonical-aware deployment (see Rollback below).
 
 ## Runtime contract
 
@@ -115,6 +116,8 @@ compare-and-swap and could bypass the new concurrency contract.
 
 - Preserve the pre-cutover row backup and the immediately preceding canonical-aware
   deployment SHA.
+- Roll code back by promoting the previous production deployment in Vercel
+  (Instant Rollback), then revert the offending commit on `main` through a PR.
 - Code rollback is safe only to a canonical-aware SHA. Rolling back to the legacy
   fire-and-forget mirror requires maintenance mode because it can overwrite a newer
   state document.
@@ -129,6 +132,4 @@ compare-and-swap and could bypass the new concurrency contract.
 - `main` must contain the converged CI/release automation and the canonical-state
   implementation before any production deploy.
 - Vercel must build from the reviewed Git commit, never a dashboard-only upload.
-- `fly.toml` and `Dockerfile` are retained as explicit legacy-host rollback/reference
-  artifacts; they are not production truth after Vercel cutover.
 - `/api/health` exposes `VERCEL_GIT_COMMIT_SHA` (or `GITHUB_SHA`) for exact-SHA proof.

@@ -69,18 +69,16 @@ function fingerprint(
 /**
  * The rate-limit window key for one caller.
  *
- * Both deployment targets overwrite their own client-IP header at their edge on
- * every request, so on either platform that header is the caller's real address
- * and cannot be forged end-to-end: `x-vercel-forwarded-for` on Vercel,
- * `fly-client-ip` on the Fly target in fly.toml. The Vercel signal comes from
- * the environment and is therefore decided first — a request served by Vercel
- * can never be steered by a forged Fly header. Every other forwarded-IP header
- * is client-controlled outside both trust boundaries.
+ * Vercel, the only deployment target, overwrites `x-vercel-forwarded-for` at its
+ * edge on every request, so on Vercel that header is the caller's real address
+ * and cannot be forged end-to-end. That trust comes from the environment, not the
+ * request. Every forwarded-IP header — including the `fly-client-ip` header a
+ * retired Fly.io target once vouched for — is client-controlled anywhere else.
  *
- * Off both platforms nothing vouches for an address, so the key falls back to a
- * hashed fingerprint of the request's own headers. It must NOT fall back to a
- * shared constant: onboarding allows 5 requests per hour, so one key shared by
- * every caller let a single attacker lock out every user for an hour. A caller
+ * Off Vercel nothing vouches for an address, so the key falls back to a hashed
+ * fingerprint of the request's own headers. It must NOT fall back to a shared
+ * constant: onboarding allows 5 requests per hour, so one key shared by every
+ * caller let a single attacker lock out every user for an hour. A caller
  * off-platform can rotate its fingerprint to dodge its own window, which is the
  * accepted cost of not handing it everybody else's.
  */
@@ -88,15 +86,7 @@ export function clientKeyFromHeaders(
   headerStore: ClientKeyHeaders,
   environment: ClientKeyEnvironment
 ): string {
-  if (environment.VERCEL === "1") {
-    const ip = trustedIp(headerStore.get("x-vercel-forwarded-for"))
-
-    return ip
-      ? `${VERIFIED_PREFIX}${pseudonymize(`ip:${ip}`, environment)}`
-      : fingerprint(headerStore, environment)
-  }
-
-  const ip = trustedIp(headerStore.get("fly-client-ip"))
+  const ip = environment.VERCEL === "1" ? trustedIp(headerStore.get("x-vercel-forwarded-for")) : null
 
   return ip
     ? `${VERIFIED_PREFIX}${pseudonymize(`ip:${ip}`, environment)}`
