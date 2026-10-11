@@ -6,12 +6,14 @@ import { Badge, Icon } from "@logloads/ui"
 
 import type { DriverAvailabilitySummary } from "@/lib/driver-data"
 import type { CredentialVaultView } from "@/lib/credential-data"
+import type { DriverProfileShowcaseView } from "@/lib/driver-profile-showcase"
 import type { NetworkLoadView, NetworkView } from "@/lib/network"
 import type { VerificationRecordView } from "@/lib/verification-data"
 import { payHeadline, presentPay } from "@/lib/pay-display"
 import { formatHuman, pluralize, tripStatusLabel } from "@/lib/v3-shared"
 import { LocalTime, RelationshipGrid } from "./Common"
 import { CredentialVault } from "./CredentialVault"
+import { DriverProfileShowcase } from "./DriverProfileShowcase"
 import { ReputationChip, TripReviewForm } from "./Reputation"
 import { VerificationSubmit, type VerificationTypeOption } from "./VerificationSubmit"
 import {
@@ -1074,6 +1076,7 @@ export function DriverProfile({
   credentialVault,
   mediaReady,
   network,
+  showcase,
   verifications,
   welcome = false
 }: DriverPageProps & {
@@ -1081,10 +1084,10 @@ export function DriverProfile({
   continuationHref?: string | null
   credentialVault: CredentialVaultView | null
   mediaReady: boolean
+  showcase: DriverProfileShowcaseView
   verifications: VerificationRecordView[]
   welcome?: boolean
 }) {
-  const verification = verificationBadge(network.activeOrganization.verificationStatus)
   const profileReadiness = getDriverProfileReadiness({
     accountName: account.userName,
     availability: availability.current,
@@ -1097,6 +1100,7 @@ export function DriverProfile({
 
   return (
     <AppShell account={account} kicker="Your setup" role="driver" title="Profile">
+      <DriverProfileShowcase organizationReputation={network.activeOrganization.reputation} view={showcase} />
       {showReadinessGuidance ? (
         <DriverFirstRunPanel
           accountName={account.userName}
@@ -1108,32 +1112,6 @@ export function DriverProfile({
           verifications={verifications}
         />
       ) : null}
-      <section className="profile-panel" id="driver-profile-summary">
-        <div className="profile-head">
-          <div>
-            <h2>{network.currentDriver?.name ?? account.userName}</h2>
-            <p className="muted">{account.organizationName} · {formatHuman(network.activeOrganization.role)}</p>
-          </div>
-          <div className="profile-head__badges">
-            <Badge tone={verification.tone}>{verification.label}</Badge>
-            <ReputationChip reputation={network.activeOrganization.reputation} />
-          </div>
-        </div>
-        <dl>
-          <div>
-            <dt>Driver record</dt>
-            <dd>{network.currentDriver ? "On file" : "Not set up"}</dd>
-          </div>
-          <div>
-            <dt>Active equipment</dt>
-            <dd>{network.currentEquipment?.label ?? "None assigned"}</dd>
-          </div>
-          <div>
-            <dt>Availability now</dt>
-            <dd>{availability.current ? formatHuman(availability.current.status) : "Not posted"}</dd>
-          </div>
-        </dl>
-      </section>
       <section aria-labelledby="driver-profile-stage-ready" className="driver-profile-stage">
         <header className="driver-profile-stage__head">
           <span aria-hidden>1</span>
@@ -1195,7 +1173,7 @@ export function DriverProfile({
           </section>
         </div>
       </section>
-      <details aria-labelledby="driver-profile-stage-match" className="driver-profile-stage driver-profile-stage--disclosure">
+      <details aria-labelledby="driver-profile-stage-match" className="driver-profile-stage driver-profile-stage--disclosure" id="driver-profile-matching">
         <summary className="driver-profile-stage__head">
           <span aria-hidden>2</span>
           <span className="driver-profile-stage__summary-copy">
@@ -1214,7 +1192,7 @@ export function DriverProfile({
               currentFuelPriceCentsPerGallon={network.currentDriver?.preferredFuelPriceCentsPerGallon ?? null}
             />
           </section>
-          <section className="app-section">
+          <section className="app-section" id="driver-photos" tabIndex={-1}>
             <SectionHeader eyebrow="Photos" title="Show your driver and primary equipment" />
             <div className="media-upload-grid">
               <MediaUpload available={mediaReady} hasCurrent={network.currentDriver?.hasProfilePhoto ?? false} kind="profile" label="Profile photo" />

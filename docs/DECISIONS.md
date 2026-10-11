@@ -2,6 +2,31 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-10-11 — The driver profile leads with who the driver is and what they have done
+
+- **The driver's own profile opens with a showcase.** It has a truck-photo hero
+  with the driver's photo and live availability, plus company, driver, truck and
+  trailer details, a photo strip, and an eight-tile track record. The readiness,
+  credential, verification, fuel and photo tools follow unchanged below it.
+- **Every figure is earned from a record.** Request and approval counts cover
+  the past 365 days. Completed hauls, states hauled and on-time share are all
+  time. On-time comes only from host reviews that mention timing; ratings come
+  from host reviews of the driver; insurance and CDL tiles repeat the credential
+  vault's own state and expiry. `getDriverTrackRecord` (services) derives the
+  counts, and empty history reads as "New" or "No hauls yet", never as zero
+  scores.
+- **Nothing is called verified.** The hero badge reads "Cleared to haul" only
+  when the credential gate is satisfied and "Records needed" otherwise. The
+  showcase never says verified or certified (enforced by test), consistent with
+  `CREDENTIAL_ASSURANCE_STATEMENT`. The truck shows only the last six VIN
+  characters, and photos are shown only when private media can actually serve
+  them.
+- Not built: truck model year (the schema has none, and there is no
+  equipment-edit path yet), trailer make and length, insurance coverage
+  amounts, and CDL class or endorsements. None of these is stored, so none is
+  displayed.
+- No schema, migration, provider, enrollment, collection, or money change.
+
 ## 2026-10-11 — Vercel is the only host; the repository is cleaned for handoff
 
 - **The Fly.io manifest and Dockerfile are removed.** They were kept as a

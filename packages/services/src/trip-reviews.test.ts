@@ -2,6 +2,7 @@ import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
 import {
+  getDriverTrackRecord,
   getReliabilityForOrganization,
   getReputationForOrganization,
   submitTripReview
@@ -123,5 +124,99 @@ describe("trip reviews", () => {
     expect(reliability.avgRating).toBe(4.5)
     expect(reliability.onTimeRate).toBe(1)
     expect(reliability.completionRate).not.toBeNull()
+  })
+})
+
+describe("driver track record", () => {
+  const AT = "2026-06-20T12:00:00.000Z"
+
+  function fixture() {
+    const state = createInMemoryDatabase()
+    const driverProfileId = state.driverProfiles[0]!.id
+    const template = state.assignments[0]!
+    const trip = state.tripsV2[0]!
+    const load = state.loadPostings.find((posting) => posting.id === trip.loadPostingId)!
+
+    // Isolate the driver: only the rows written below count.
+    state.assignments = state.assignments.filter((assignment) => assignment.driverProfileId !== driverProfileId)
+    state.tripsV2 = state.tripsV2.filter((candidate) => candidate.driverProfileId !== driverProfileId)
+    state.tripReviews = state.tripReviews.filter((review) => review.subjectDriverProfileId !== driverProfileId)
+
+    const assignment = (id: string, over: Partial<typeof template>) => ({
+      ...template,
+      assignedAt: null,
+      driverProfileId,
+      id,
+      status: "requested" as const,
+      ...over
+    })
+
+    state.assignments.push(
+      assignment("aaaaaaaa-0000-4000-8000-000000000001", { assignedAt: "2026-05-02T10:00:00.000Z", requestedAt: "2026-05-01T10:00:00.000Z", status: "completed" }),
+      assignment("aaaaaaaa-0000-4000-8000-000000000002", { assignedAt: "2026-05-03T10:00:00.000Z", requestedAt: "2026-05-02T10:00:00.000Z", status: "cancelled" }),
+      assignment("aaaaaaaa-0000-4000-8000-000000000003", { requestedAt: "2026-05-04T10:00:00.000Z", status: "declined" }),
+      assignment("aaaaaaaa-0000-4000-8000-000000000004", { requestedAt: "2026-06-19T10:00:00.000Z" }),
+      // Outside the 365-day window: an old season must not count.
+      assignment("aaaaaaaa-0000-4000-8000-000000000005", { assignedAt: "2025-05-02T10:00:00.000Z", requestedAt: "2025-05-01T10:00:00.000Z", status: "completed" })
+    )
+    state.tripsV2.push(
+      { ...trip, driverProfileId, id: "bbbbbbbb-0000-4000-8000-000000000001", status: "completed" },
+      { ...trip, driverProfileId, id: "bbbbbbbb-0000-4000-8000-000000000002", status: "cancelled" }
+    )
+
+    const review = state.tripReviews[0]!
+    state.tripReviews.push(
+      { ...review, direction: "host_rates_hauler", id: "cccccccc-0000-4000-8000-000000000001", subjectDriverProfileId: driverProfileId, tags: ["on_time", "safe"] },
+      { ...review, direction: "host_rates_hauler", id: "cccccccc-0000-4000-8000-000000000002", subjectDriverProfileId: driverProfileId, tags: ["late"] },
+      { ...review, direction: "host_rates_hauler", id: "cccccccc-0000-4000-8000-000000000003", subjectDriverProfileId: driverProfileId, tags: ["professional"] }
+    )
+
+    return { driverProfileId, load, state }
+  }
+
+  it("counts requests and approvals inside the window, and only decided outcomes", () => {
+    const { driverProfileId, state } = fixture()
+
+    const record = getDriverTrackRecord(state, driverProfileId, AT)
+
+    expect(record.requested).toBe(4)
+    // An approval stays an approval even when the haul was later cancelled.
+    expect(record.approved).toBe(2)
+    expect(record.declined).toBe(1)
+  })
+
+  it("counts completed hauls and timing only from what hosts recorded", () => {
+    const { driverProfileId, state } = fixture()
+
+    const record = getDriverTrackRecord(state, driverProfileId, AT)
+
+    expect(record.completedHauls).toBe(1)
+    // The untimed review says nothing about timing, so it is not in the denominator.
+    expect(record.timedReviews).toBe(2)
+    expect(record.onTimeReviews).toBe(1)
+  })
+
+  it("lists the states of landings and mills on completed hauls only", () => {
+    const { driverProfileId, load, state } = fixture()
+    const landing = state.landings.find((candidate) => candidate.id === load.pickupLandingId)!
+    const mill = state.mills.find((candidate) => candidate.id === load.dropoffMillId)!
+
+    const record = getDriverTrackRecord(state, driverProfileId, AT)
+
+    expect(record.statesHauled).toEqual([...new Set([landing.state, mill.state])].sort())
+  })
+
+  it("is empty, not invented, for a driver with no history", () => {
+    const state = createInMemoryDatabase()
+
+    expect(getDriverTrackRecord(state, "dddddddd-0000-4000-8000-000000000000", AT)).toEqual({
+      approved: 0,
+      completedHauls: 0,
+      declined: 0,
+      onTimeReviews: 0,
+      requested: 0,
+      statesHauled: [],
+      timedReviews: 0
+    })
   })
 })

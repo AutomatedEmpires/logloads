@@ -177,6 +177,7 @@ import {
 import { getRouteById, listRoutes } from "./routes"
 import { createTruckSlot, listTruckSlotsForDate } from "./truck-slots"
 import {
+  getDriverTrackRecord,
   getReliabilityForOrganization,
   getReputationForDriver,
   getReputationForOrganization,
@@ -479,6 +480,7 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     submitTripReview: (input: unknown) => submitTripReview(state, input),
     getReputationForOrganization: (organizationId: string) => getReputationForOrganization(state, organizationId),
     getReputationForDriver: (driverProfileId: string) => getReputationForDriver(state, driverProfileId),
+    getDriverTrackRecord: (driverProfileId: string, at?: string) => getDriverTrackRecord(state, driverProfileId, at),
     getReliabilityForOrganization: (organizationId: string) => getReliabilityForOrganization(state, organizationId),
     listReviewsForOrganization: (organizationId: string) => listReviewsForOrganization(state, organizationId),
     hasTripReview: (input: { tripId: string; direction: "host_rates_hauler" | "hauler_rates_host" }) => hasTripReview(state, input.tripId, input.direction),
@@ -695,6 +697,8 @@ export type {
   ResidualSettlementItem
 } from "./residual-settlement"
 export { getOrganizationSuspensionBlockers } from "./admin"
+export { DRIVER_TRACK_RECORD_WINDOW_DAYS } from "./trip-reviews"
+export type { DriverTrackRecord } from "./trip-reviews"
 export type {
   OrganizationSuspensionBlockers,
   ReviewOrganizationInput,

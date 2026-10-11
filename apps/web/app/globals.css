@@ -258,7 +258,6 @@ a { color: inherit; text-decoration: none; }
 .settings-grid article,
 .auth-panel,
 .legal-note,
-.profile-panel,
 .invite-panel {
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -594,7 +593,6 @@ a { color: inherit; text-decoration: none; }
 
 /* --- Reputation + reviews -------------------------------------------------- */
 .reputation-chip { display: inline-flex; }
-.profile-head__badges { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .truck-card-v3__badges { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .review-done { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: var(--green); font-weight: 800; }
 .review-form {
@@ -683,7 +681,6 @@ a { color: inherit; text-decoration: none; }
 .driver-now,
 .equipment-setup,
 .messages-layout,
-.profile-panel,
 .host-need,
 .availability-board,
 .builder-layout,
@@ -1084,7 +1081,6 @@ dd { margin: 0; font-weight: 900; text-align: right; }
   font-size: 0.72rem;
 }
 .invite-panel { margin: 14px 24px 0; }
-.profile-panel .choice-grid,
 .auth-panel .choice-grid { margin-top: 16px; }
 .choice-grid a { display: grid; gap: 6px; }
 .choice-grid span { color: var(--ink-soft); line-height: 1.45; }
@@ -1225,7 +1221,6 @@ dd { margin: 0; font-weight: 900; text-align: right; }
   .driver-now,
   .equipment-setup,
   .messages-layout,
-  .profile-panel,
   .host-need,
   .availability-board,
   .builder-layout,

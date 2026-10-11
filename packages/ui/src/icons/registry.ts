@@ -4,11 +4,13 @@ import type { Icon as PhosphorIcon } from "@phosphor-icons/react"
 import {
   Archive,
   Bell,
+  Buildings,
   BookmarkSimple,
   CalendarBlank,
   ChartDonut,
   ChatCircle,
   CheckCircle,
+  Clock,
   CircleDashed,
   CircleNotch,
   Compass,
@@ -17,6 +19,8 @@ import {
   Eye,
   Funnel,
   GearSix,
+  IdentificationCard,
+  Images,
   Lock,
   MagnifyingGlass,
   MapPin,
@@ -26,10 +30,12 @@ import {
   PaperPlaneTilt,
   SealCheck,
   ShieldStar,
+  Star,
   Stack,
   Storefront,
   SunHorizon,
   TreeStructure,
+  Truck,
   UploadSimple,
   UserCircle,
   UsersThree,
@@ -68,12 +74,17 @@ export type IconKey =
   | "nav.today"
   | "nav.trips"
   | "ops.audit"
+  | "ops.company"
+  | "ops.credential"
   | "ops.document"
   | "ops.notice"
+  | "ops.photos"
   | "ops.queue"
+  | "ops.rating"
   | "status.assigned"
   | "status.freshness"
   | "status.lock"
+  | "status.ontime"
   | "status.open"
   | "status.scheduled"
   | "status.verified"
@@ -81,6 +92,7 @@ export type IconKey =
   | "truck.chip"
   | "truck.log"
   | "truck.service"
+  | "truck.trailer"
 
 export interface IconEntry {
   key: IconKey
@@ -117,19 +129,25 @@ export const ICON_REGISTRY = {
   "nav.profile": { key: "nav.profile", icon: UserCircle, label: "Profile" },
   "nav.trips": { key: "nav.trips", icon: Van, label: "Trips" },
   "ops.audit": { key: "ops.audit", icon: Eye, label: "Audit" },
+  "ops.company": { key: "ops.company", icon: Buildings, label: "Company" },
+  "ops.credential": { key: "ops.credential", icon: IdentificationCard, label: "Work records" },
   "ops.document": { key: "ops.document", icon: NotePencil, label: "Document" },
   "ops.notice": { key: "ops.notice", icon: Megaphone, label: "Notice" },
+  "ops.photos": { key: "ops.photos", icon: Images, label: "Photos" },
   "ops.queue": { key: "ops.queue", icon: ChartDonut, label: "Queue" },
+  "ops.rating": { key: "ops.rating", icon: Star, label: "Rating", weight: "fill" },
   "status.assigned": { key: "status.assigned", icon: CheckCircle, label: "Assigned", weight: "fill" },
   "status.freshness": { key: "status.freshness", icon: CircleNotch, label: "Freshness" },
   "status.lock": { key: "status.lock", icon: Lock, label: "Protected" },
+  "status.ontime": { key: "status.ontime", icon: Clock, label: "On time" },
   "status.open": { key: "status.open", icon: CircleDashed, label: "Open" },
   "status.scheduled": { key: "status.scheduled", icon: CalendarBlank, label: "Scheduled" },
   "status.verified": { key: "status.verified", icon: SealCheck, label: "Verified", weight: "duotone" },
   "status.warning": { key: "status.warning", icon: Warning, label: "Warning", weight: "bold" },
   "truck.chip": { key: "truck.chip", icon: Archive, label: "Chip truck" },
   "truck.log": { key: "truck.log", icon: Van, label: "Log truck" },
-  "truck.service": { key: "truck.service", icon: GearSix, label: "Service truck" }
+  "truck.service": { key: "truck.service", icon: GearSix, label: "Service truck" },
+  "truck.trailer": { key: "truck.trailer", icon: Truck, label: "Trailer" }
 } as const satisfies Record<IconKey, IconEntry>
 
 export function getIcon(name: IconKey): IconEntry {

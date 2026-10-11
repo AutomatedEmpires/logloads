@@ -200,6 +200,77 @@ export function getReliabilityForOrganization(state: LogLoadsDatabaseState, orga
   }
 }
 
+/** The window a driver's request and approval counts cover. */
+export const DRIVER_TRACK_RECORD_WINDOW_DAYS = 365
+
+export interface DriverTrackRecord {
+  /** Requests this driver made inside the window. */
+  requested: number
+  /** Of those, how many a host approved (assignedAt set), whatever happened next. */
+  approved: number
+  /** Of those, how many a host declined. Undecided requests are neither. */
+  declined: number
+  /** Hauls this driver completed, all time. */
+  completedHauls: number
+  /** Host reviews of this driver that said anything about timing (on time or late). */
+  timedReviews: number
+  /** Of those, how many said on time. */
+  onTimeReviews: number
+  /** States of the landings and mills on this driver's completed hauls, sorted. */
+  statesHauled: string[]
+}
+
+/**
+ * A driver's own track record, derived from records LogLoads already keeps — no
+ * self-reported figure. Requests and approvals are windowed so an old season
+ * doesn't stand in for current work; completions, timing and geography are all
+ * time because they describe what the driver has actually done.
+ */
+export function getDriverTrackRecord(
+  state: LogLoadsDatabaseState,
+  driverProfileId: string,
+  at = new Date().toISOString()
+): DriverTrackRecord {
+  const windowStart = new Date(Date.parse(at) - DRIVER_TRACK_RECORD_WINDOW_DAYS * 86_400_000).toISOString()
+  const windowed = state.assignments.filter((assignment) =>
+    assignment.driverProfileId === driverProfileId &&
+    assignment.requestedAt >= windowStart &&
+    assignment.requestedAt <= at
+  )
+  const completedTrips = state.tripsV2.filter(
+    (trip) => trip.driverProfileId === driverProfileId && trip.status === "completed"
+  )
+  const states = new Set<string>()
+
+  for (const trip of completedTrips) {
+    const load = state.loadPostings.find((posting) => posting.id === trip.loadPostingId)
+    const landing = load ? state.landings.find((candidate) => candidate.id === load.pickupLandingId) : undefined
+    const mill = load ? state.mills.find((candidate) => candidate.id === load.dropoffMillId) : undefined
+
+    for (const stateCode of [landing?.state, mill?.state]) {
+      if (stateCode) {
+        states.add(stateCode.trim().toUpperCase())
+      }
+    }
+  }
+
+  const reviews = state.tripReviews.filter(
+    (review) => review.direction === "host_rates_hauler" && review.subjectDriverProfileId === driverProfileId
+  )
+  const onTimeReviews = reviews.filter((review) => review.tags.includes("on_time")).length
+  const lateReviews = reviews.filter((review) => review.tags.includes("late")).length
+
+  return {
+    approved: windowed.filter((assignment) => Boolean(assignment.assignedAt)).length,
+    completedHauls: completedTrips.length,
+    declined: windowed.filter((assignment) => assignment.status === "declined").length,
+    onTimeReviews,
+    requested: windowed.length,
+    statesHauled: [...states].sort(),
+    timedReviews: onTimeReviews + lateReviews
+  }
+}
+
 /** Whether a review already exists for a given trip + direction (drives UI state). */
 export function hasTripReview(
   state: LogLoadsDatabaseState,

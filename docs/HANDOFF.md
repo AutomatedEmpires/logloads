@@ -45,7 +45,9 @@ driver pay, and fee collection and enrollment are dark until separately authoriz
   - the Fly.io/Docker rollback host removed;
   - the rate limiter no longer trusts `fly-client-ip`;
   - dead code removed and knip enforced;
-  - docs consolidated.
+  - docs consolidated;
+  - the driver profile opens with a showcase: truck-photo hero, identity card,
+    photos, and an eight-tile track record built only from LogLoads records.
 
 ## Open work, ranked
 
@@ -69,14 +71,22 @@ driver pay, and fee collection and enrollment are dark until separately authoriz
 4. **Built, not surfaced: host view of driver credentials.** `HostCredentialSummary`
    (`components/v3/CredentialVault.tsx`) and `getHostDriverCredentialSummary`
    (`lib/credential-data.ts`) are finished and tested but no host page renders them.
-   The natural home is the host's request-approval decision. Both are tagged
-   `@public` so the dead-code check keeps them.
-5. **Seed-only allocation modes.** `open_claim` and `dispatcher_assignment` exist only
+   The natural home is the host's request-approval decision, as a host-facing
+   version of the driver profile showcase. Both are tagged `@public` so the
+   dead-code check keeps them.
+5. **Driver profile facts the showcase can't show yet.** Truck model year,
+   trailer make and length, insurance coverage amount, and CDL class or
+   endorsements aren't stored. Model year is the cheapest win: add an optional
+   `modelYear` to `truckProfileSchema`, accept it in `addEquipmentInputSchema`,
+   and add an equipment-edit path so existing trucks can set it. The
+   `/driver/profile` showcase (`components/v3/DriverProfileShowcase.tsx`, view in
+   `lib/driver-profile-showcase.ts`) will pick it up in the truck row.
+6. **Seed-only allocation modes.** `open_claim` and `dispatcher_assignment` exist only
    in schema and seed. Publishing always writes `request_approval`, and nothing lets
    a dispatcher assign directly. Remove them, or build the path when a criterion
    needs it.
-6. **`vitest` 3 → 4.** Dev-only major upgrade (Dependabot #94).
-7. **Operational proof still owed** (`AGENTS.md` §11): an authenticated production
+7. **`vitest` 3 → 4.** Dev-only major upgrade (Dependabot #94).
+8. **Operational proof still owed** (`AGENTS.md` §11): an authenticated production
    request → approval → trip → message loop, and forced cold-start recovery.
 
 Dependabot #95, #96 and #97 (next, sharp, image-size) are superseded by the

@@ -16,7 +16,8 @@ vi.mock("@/lib/credential-data", () => ({
   getDriverCredentialVaultView: vi.fn()
 }))
 vi.mock("@/lib/driver-data", () => ({
-  getDriverAvailability: vi.fn(() => [])
+  getDriverAvailability: vi.fn(() => ({ current: null, upcoming: [] })),
+  getDriverProfileShowcase: vi.fn(() => null)
 }))
 vi.mock("@/lib/media-config", () => ({
   isDedicatedMediaConfigured: vi.fn(() => true)
