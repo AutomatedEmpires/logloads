@@ -3,10 +3,6 @@ import "server-only"
 const POSTHOG_HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com"
 const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY
 
-export function isAnalyticsEnabled(): boolean {
-  return Boolean(POSTHOG_KEY)
-}
-
 /**
  * Server-side capture for meaningful operating events (onboarding, capacity
  * request, approval, trip progress). The promise never rejects and is a no-op

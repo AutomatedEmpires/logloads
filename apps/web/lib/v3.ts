@@ -5,28 +5,7 @@ import { readState, services } from "./services"
 import { requireCockpitActor, type Cockpit, type SessionActor } from "./session"
 import { loadSlug } from "./v3-shared"
 
-export type {
-  LegalPageContent,
-  PublicStoryPage
-} from "./v3-shared"
-export {
-  fitLabel,
-  fitTone,
-  formatDateTime,
-  formatHuman,
-  legalPages,
-  loadProductLabel,
-  loadSlug,
-  pricingPlans,
-  publicLoadHref,
-  shortLane,
-  slugify,
-  storyPages,
-  tripActionLabel,
-  tripStatusLabel,
-  userPlanFeatures,
-  visibilityLabel
-} from "./v3-shared"
+export { legalPages, storyPages } from "./v3-shared"
 
 function actorNetwork(actor: SessionActor): NetworkView {
   return buildNetworkView(services.state, {
@@ -184,18 +163,6 @@ export async function getCockpitContext(cockpit: Cockpit): Promise<CockpitContex
   return { actor, network: actorNetwork(actor) }
 }
 
-export async function getDriverNetwork(): Promise<NetworkView> {
-  return (await getCockpitContext("driver")).network
-}
-
-export async function getFleetNetwork(): Promise<NetworkView> {
-  return (await getCockpitContext("fleet")).network
-}
-
-export async function getHostNetwork(): Promise<NetworkView> {
-  return (await getCockpitContext("host")).network
-}
-
 export async function getPublicNetwork(): Promise<NetworkView> {
   return readState((current) => buildNetworkView(current.state, { kind: "public" }))
 }
@@ -231,21 +198,4 @@ export async function getPublicHomeSnapshot(): Promise<PublicHomeSnapshot> {
       trucksAvailable: publicAvailableEquipmentCount(state)
     }
   })
-}
-
-export async function getAdminSummary() {
-  await requireCockpitActor("admin")
-
-  const state = services.state
-  const activeReports = state.operationalNotices.filter((notice) => notice.severity === "critical").length
-
-  return {
-    activeReports,
-    billingExceptions: state.entitlements.filter((entitlement) => !["active", "trialing", "comped"].includes(entitlement.status)).length,
-    openLoads: state.loadPostings.filter((load) => load.status === "open").length,
-    organizations: state.organizations.length,
-    suspiciousReviews: state.auditEvents.filter((event) => event.action.includes("blocked") || event.action.includes("flagged")).length,
-    trips: state.tripsV2.length,
-    verificationRecords: state.verificationRecords.filter((record) => record.status === "pending").length
-  }
 }

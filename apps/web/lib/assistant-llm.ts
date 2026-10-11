@@ -10,9 +10,6 @@ import type { AssistantAnswer, AssistantGrounding } from "@logloads/contracts"
  * any error/timeout falls straight back to the deterministic text. Nothing here
  * runs unless a key is set, so the default deployment makes no external calls.
  */
-export function isAssistantLlmEnabled(): boolean {
-  return Boolean(process.env.ANTHROPIC_API_KEY)
-}
 
 const SYSTEM_PROMPT = [
   "You are a logistics operations assistant inside a freight-hauling coordination app.",

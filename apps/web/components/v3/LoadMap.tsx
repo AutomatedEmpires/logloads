@@ -619,9 +619,3 @@ export function OperationSections({ load, publicMode = false }: { load: NetworkL
     </section>
   )
 }
-
-export function protectedAccessLine(load: NetworkLoadView) {
-  return load.landingDetails?.publicApproximateArea ?? `${load.landing.city}, ${load.landing.state}`
-}
-
-export { formatHuman }

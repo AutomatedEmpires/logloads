@@ -174,23 +174,6 @@ export function shortLane(load: Pick<NetworkLoadView, "landing" | "destination">
   return `${load.landing.city} to ${load.destination.name}`
 }
 
-export function tripActionLabel(status: NetworkView["trips"][number]["status"]): string {
-  const labels: Record<NetworkView["trips"][number]["status"], string> = {
-    assigned: "Head to landing",
-    at_destination: "Start unloading",
-    cancelled: "Cancelled",
-    checked_in: "Wait for loader",
-    completed: "Delivered",
-    en_route_to_destination: "Head to mill",
-    en_route_to_landing: "Head to landing",
-    loaded: "Head to mill",
-    loading: "Confirm loaded",
-    unloading: "Confirm delivery"
-  }
-
-  return labels[status]
-}
-
 export function tripStatusLabel(status: NetworkView["trips"][number]["status"]): string {
   const labels: Record<NetworkView["trips"][number]["status"], string> = {
     assigned: "Assigned",
@@ -228,18 +211,6 @@ export function formatDateTime(value: string | null): string {
     timeZone: "UTC",
     timeZoneName: "short"
   }).format(new Date(value))
-}
-
-export function userPlanFeatures(product: string): string[] {
-  if (product === "fleet_operations") {
-    return ["Dispatch board", "Truck planning", "Partner work", "Route packs", "Trip documents"]
-  }
-
-  if (product === "landing_operations") {
-    return ["Private opportunities", "Live board", "Carrier network", "Route briefings", "Capacity planning"]
-  }
-
-  return ["Verified access", "Team seats", "Support"]
 }
 
 export interface PricingPlan {

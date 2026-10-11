@@ -1014,6 +1014,11 @@ export function getDriverCredentialVaultView(
  * review note — rather than filtering a fuller object down. A caller cannot ask for
  * the vault by passing a different audience, because the audience decides the return
  * shape and the compiler knows it.
+ *
+ * Built and tested, but no host surface renders it yet (see `HostCredentialSummary`
+ * and docs/HANDOFF.md). Tagged so the dead-code check keeps it.
+ *
+ * @public
  */
 export function getHostDriverCredentialSummary(
   driverProfileId: string,

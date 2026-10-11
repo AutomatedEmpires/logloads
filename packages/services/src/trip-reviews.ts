@@ -29,8 +29,6 @@ export const submitTripReviewInputSchema = z.object({
   raterOrganizationId: z.string().uuid()
 })
 
-export type SubmitTripReviewInput = z.infer<typeof submitTripReviewInputSchema>
-
 interface TripSides {
   hostOrganizationId: string
   haulerOrganizationId: string

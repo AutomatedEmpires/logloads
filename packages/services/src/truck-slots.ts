@@ -134,20 +134,6 @@ export function reserveTruckSlot(state: LogLoadsDatabaseState, slotId: string): 
   return updated
 }
 
-export function confirmTruckSlot(state: LogLoadsDatabaseState, slotId: string): TruckSlot {
-  const slot = assertFound(getTruckSlotById(state, slotId), `Truck slot ${slotId} was not found`)
-  const nextStatus = slot.status === "requested" ? transitionTruckSlotStatus("requested", "reserved") : slot.status
-  const updated = truckSlotSchema.parse({
-    ...slot,
-    status: nextStatus,
-    updatedAt: nowIso()
-  })
-
-  state.truckSlots = state.truckSlots.map((current) => (current.id === slotId ? updated : current))
-
-  return updated
-}
-
 export function releaseTruckSlotReservation(state: LogLoadsDatabaseState, slotId: string): TruckSlot {
   const slot = assertFound(getTruckSlotById(state, slotId), `Truck slot ${slotId} was not found`)
   const reservedCount = Math.max(0, slot.reservedCount - 1)

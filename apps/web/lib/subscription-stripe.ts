@@ -1807,54 +1807,6 @@ export async function verifyZeroStripeCustomerBalance(
   }
 }
 
-export interface ExpectedSubscription {
-  customerId: string
-  livemode: boolean
-  organizationId: string
-  organizationSubscriptionId: string
-  planCode: StripeCatalogPlanCode
-  priceId: string
-}
-
-export function commercialSubscriptionMismatch(
-  actual: CommercialSubscriptionFacts,
-  expected: ExpectedSubscription
-): string | null {
-  if (actual.customerId !== expected.customerId) {
-    return "Stripe subscription customer does not match the canonical billing account"
-  }
-
-  if (actual.priceId !== expected.priceId) {
-    return "Stripe subscription price does not match the accepted plan"
-  }
-
-  if (actual.metadata.organizationSubscriptionId !== expected.organizationSubscriptionId) {
-    return "Stripe subscription metadata does not match the canonical subscription"
-  }
-
-  if (actual.metadata.organizationId !== expected.organizationId) {
-    return "Stripe subscription metadata does not match the canonical organization"
-  }
-
-  if (actual.metadata.planCode !== expected.planCode) {
-    return "Stripe subscription metadata does not match the accepted plan code"
-  }
-
-  if (actual.metadata.billingModel !== STRIPE_SUBSCRIPTION_CATALOG[expected.planCode].providerMetadata.billing_model) {
-    return "Stripe subscription metadata does not match the accepted billing model"
-  }
-
-  if (actual.livemode !== expected.livemode) {
-    return "Stripe subscription mode does not match the current environment"
-  }
-
-  if (!subscriptionStatusDecision(actual.status)) {
-    return `Stripe returned unknown subscription status ${actual.status}`
-  }
-
-  return null
-}
-
 export interface EnsureUsageInvoiceInput {
   adjustments: Array<{
     adjustmentId: string

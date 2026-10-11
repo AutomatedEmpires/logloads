@@ -11,10 +11,6 @@ export interface OutboundEmail {
   text: string
 }
 
-export function isEmailDeliveryEnabled(): boolean {
-  return Boolean(process.env.RESEND_API_KEY)
-}
-
 export async function deliverEmail(email: OutboundEmail): Promise<boolean> {
   const apiKey = process.env.RESEND_API_KEY
 

@@ -235,7 +235,7 @@ function MaplibreRealMap({ loads, mapStyle, onPick, selectedLoadId }: InnerMapPr
   )
 }
 
-export function RealMap({ loads, onSelect, selectedLoadId }: RealMapProps) {
+function RealMap({ loads, onSelect, selectedLoadId }: RealMapProps) {
   const handlePick = (loadId: string) => {
     onSelect?.(loadId)
   }

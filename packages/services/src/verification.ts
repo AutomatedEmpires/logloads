@@ -30,8 +30,6 @@ export const submitVerificationInputSchema = z.object({
   submittedByUserId: z.string().uuid()
 })
 
-export type SubmitVerificationInput = z.infer<typeof submitVerificationInputSchema>
-
 export function submitVerificationRecord(state: LogLoadsDatabaseState, rawInput: unknown): VerificationRecord {
   const input = submitVerificationInputSchema.parse(rawInput)
   const timestamp = nowIso()

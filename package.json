@@ -35,17 +35,21 @@
     "build": "turbo run build",
     "db:assert": "bash ./tools/db-check.sh",
     "db:check": "bash ./tools/db-check.sh",
+    "deadcode": "knip",
     "demo": "node tools/founder-demo.mjs",
     "demo:capture-pilot": "node tools/capture-pilot-surfaces.mjs",
     "dev": "pnpm --filter @logloads/web dev",
     "guardrails": "node tools/check-guardrails.mjs",
     "lint": "turbo run lint && pnpm lint:workflows",
     "lint:workflows": "npx --yes github-actionlint@1.7.12",
+    "screenshot": "node tools/screenshot.mjs",
+    "smoke": "node tools/production-smoke.mjs",
+    "state:backup": "node tools/operating-state-backup.mjs",
     "test": "turbo run test --concurrency=1 && pnpm test:tools",
-    "test:tools": "node --test tools/*.test.mjs",
     "test:e2e": "node tools/run-e2e.mjs",
+    "test:tools": "node --test tools/*.test.mjs",
     "typecheck": "turbo run typecheck",
-    "validate": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm db:assert && pnpm guardrails"
+    "validate": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm db:assert && pnpm guardrails && pnpm deadcode"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
@@ -53,6 +57,7 @@
     "@typescript-eslint/eslint-plugin": "^8.37.0",
     "@typescript-eslint/parser": "^8.37.0",
     "eslint": "^8.57.1",
+    "knip": "5.88.1",
     "turbo": "^2.5.4",
     "typescript": "^5.6.3",
     "vitest": "^3.2.4"

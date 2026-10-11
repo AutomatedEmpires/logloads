@@ -30,7 +30,7 @@ import {
   SignOutButton,
   TripProgressButton
 } from "./DriverActions"
-import { DecisionPanel, EconomicsPanel, LoadCard, LoadDiscovery, OperatingMap, OperationSections, RoutePackPreview, WeatherWidget } from "./LoadMap"
+import { DecisionPanel, EconomicsPanel, LoadDiscovery, OperatingMap, OperationSections, RoutePackPreview, WeatherWidget } from "./LoadMap"
 import { AppShell, EmptyState, Metric, SectionHeader, type ShellAccount } from "./Shells"
 
 interface DriverPageProps {
@@ -98,12 +98,6 @@ function requestableLoads(network: NetworkView): NetworkLoadView[] {
   )
 }
 
-function matchingLoads(network: NetworkView): NetworkLoadView[] {
-  return requestableLoads(network).filter((load) =>
-    (!load.compatibility || load.compatibility.eligibility !== "ineligible")
-  )
-}
-
 export function driverLoadBoardPresentation(loads: readonly NetworkLoadView[]): {
   orderedLoads: NetworkLoadView[]
   strongMatchCount: number
@@ -115,50 +109,6 @@ export function driverLoadBoardPresentation(loads: readonly NetworkLoadView[]): 
     orderedLoads: [...strongMatches, ...otherLoads],
     strongMatchCount: strongMatches.length
   }
-}
-
-function recommendBandTone(band: NetworkView["topRecommendations"][number]["band"]): "success" | "warning" | "info" | "neutral" {
-  if (band === "top_pick" || band === "strong") {
-    return "success"
-  }
-
-  if (band === "worth_review") {
-    return "warning"
-  }
-
-  return "info"
-}
-
-export function RecommendedLoads({ recommendations }: { recommendations: NetworkView["topRecommendations"] }) {
-  return (
-    <ol className="recommend-list">
-      {recommendations.map((rec, index) => (
-        <li key={rec.loadId}>
-          <Link className="recommend-card" href={`/driver/loads/${rec.loadId}`}>
-            <span aria-hidden className="recommend-rank">{index + 1}</span>
-            <div className="recommend-body">
-              <div className="recommend-head">
-                <strong>{rec.title}</strong>
-                <Badge tone={recommendBandTone(rec.band)}>{rec.label}</Badge>
-              </div>
-              <span className="recommend-lane">
-                <Icon aria-hidden name="load.origin" size={14} /> {rec.lane}
-              </span>
-              <span className="recommend-meta">{rec.scheduleLabel} · {rec.payLabel}</span>
-              <ul className="recommend-reasons">
-                {rec.reasons.map((reason) => (
-                  <li key={reason}>
-                    <Icon aria-hidden name="status.assigned" size={13} /> {reason}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <span className="recommend-go">View load</span>
-          </Link>
-        </li>
-      ))}
-    </ol>
-  )
 }
 
 function verificationBadge(status: string): { label: string; tone: "success" | "warning" | "critical" } {
@@ -235,64 +185,6 @@ function TodayActiveTrip({ load, network, trip }: { load: NetworkLoadView | null
         <Link className="action-link action-link--secondary" href="/driver/messages">Message dispatch</Link>
       </div>
     </section>
-  )
-}
-
-export function DriverToday({ account, availability, network }: DriverPageProps & { availability: DriverAvailabilitySummary }) {
-  const activeTrip = activeTripFor(network)
-  const activeLoad = activeTrip ? network.loads.find((load) => load.id === activeTrip.loadPostingId) ?? null : null
-  const matches = matchingLoads(network)
-
-  return (
-    <AppShell account={account} kicker="Driver cockpit" role="driver" title="Today">
-      {activeTrip ? (
-        <TodayActiveTrip load={activeLoad} network={network} trip={activeTrip} />
-      ) : (
-        <>
-          <section className="driver-now driver-now--clear">
-            <p className="eyebrow">Today</p>
-            <h2>You&apos;re clear right now.</h2>
-            <p>
-              {matches.length === 0
-                ? "No open loads fit your setup yet. Keep your availability current so new work finds you."
-                : `${matches.length} open ${matches.length === 1 ? "load fits" : "loads fit"} your setup.`}
-            </p>
-            <div className="primary-action-row">
-              <Link className="action-link" href="/driver/loads">Find loads</Link>
-            </div>
-          </section>
-          <section className="app-section availability-panel">
-            <SectionHeader eyebrow="Availability" title="Tell hosts when you can haul" />
-            <AvailabilityQuickSet
-              currentStatus={availability.current?.status ?? null}
-              currentWindow={availability.current?.windowLabel ?? null}
-              hasDriverProfile={Boolean(network.currentDriver)}
-            />
-          </section>
-          <section className="app-section">
-            <SectionHeader
-              action={<Link className="action-link action-link--secondary" href="/driver/loads">See all loads</Link>}
-              eyebrow="Recommended for you"
-              title="Best work for your truck right now"
-            />
-            {network.topRecommendations.length > 0 ? (
-              <RecommendedLoads recommendations={network.topRecommendations} />
-            ) : matches.length === 0 ? (
-              <EmptyState
-                title="No loads fit your current setup."
-                body="Add your truck so matching can work with real equipment details, then recommendations appear here ranked for you."
-                actionHref="/driver/equipment"
-                actionLabel="Update equipment"
-              />
-            ) : (
-              <div className="load-card-grid">
-                {matches.slice(0, 3).map((load) => <LoadCard href={`/driver/loads/${load.id}`} key={load.id} load={load} />)}
-              </div>
-            )}
-          </section>
-        </>
-      )}
-    </AppShell>
   )
 }
 
@@ -1367,14 +1259,6 @@ export function DriverProfile({
         </div>
       </section>
     </AppShell>
-  )
-}
-
-export function FitWorkList({ network }: { network: NetworkView }) {
-  return (
-    <div className="load-card-grid">
-      {matchingLoads(network).slice(0, 4).map((load) => <LoadCard href={`/driver/loads/${load.id}`} key={load.id} load={load} />)}
-    </div>
   )
 }
 

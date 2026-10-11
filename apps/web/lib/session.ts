@@ -256,11 +256,3 @@ export async function requireAuthenticatedActor(nextPath = "/support"): Promise<
 
   return actor
 }
-
-/**
- * Actor resolution for API routes: returns null instead of redirecting so the
- * route can respond 401/403.
- */
-export async function getApiActor(): Promise<SessionActor | null> {
-  return getSessionActor()
-}

@@ -549,6 +549,10 @@ function HostCredentialRow({ line }: { line: HostCredentialLineView }) {
  * contract's own words. Nothing on this surface may say LogLoads verified a driver,
  * certified them, or stands behind their legal right to operate: LogLoads
  * orchestrates the work, and legitimacy sits between the host and the driver.
+ *
+ * Not yet rendered by any host page; see docs/HANDOFF.md.
+ *
+ * @public
  */
 export function HostCredentialSummary({ summary }: { summary: HostDriverCredentialSummaryView }) {
   return (
