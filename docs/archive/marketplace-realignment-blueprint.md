@@ -16,13 +16,13 @@ Operating model: host-stated flat driver pay; platform fee charged ON TOP to the
 > **This document is research input, not the current plan.** It was produced *before* the founder decided the rate, and four things in it are now superseded:
 >
 > 1. **The current rate is 5%, not 3%, and it is charged on top.** Every "3%", "3.00%", and `$500 → $485` deduction example below predates the decision and also describes a forbidden deduction from driver pay. Under `percentage_v1`, $500 of driver pay remains $500 to the driver and creates a separate $25 host obligation. The authoritative terms live in the newest `docs/DECISIONS.md` entry and `AGENTS.md` section 7.
-> 2. **The implementation sequence here is incomplete.** The synthesis agent exceeded its output limit and its narrative begins partway through, at Step 3. Do not follow this sequence — the complete, adversarially-reviewed spec is **`docs/marketplace-implementation-spec.md`**.
+> 2. **The implementation sequence here is incomplete.** The synthesis agent exceeded its output limit and its narrative begins partway through, at Step 3. Do not follow this sequence — the complete, adversarially-reviewed spec is **`docs/archive/marketplace-implementation-spec.md`**.
 > 3. **Phase 0 payment records must never store payout credentials.** Where this document mentions "ACH details", Zelle handles, or check-by-mail addresses, the stored contract is **method + status + optional non-sensitive instructions only** — never account or routing numbers, credentials, or TINs. A record-only MVP must not quietly become a store of financial PII.
 > 4. **Uniqueness cannot be enforced in SQL.** Where this document recommends a database constraint against duplicate fee events: the live runtime is a single JSON snapshot row and the SQL mirror is not the execution path. Idempotency and at-most-one-per-slot must be enforced in the zod/service/CAS mutation path; SQL constraints are defence in depth only.
 >
-> **Historical authority order:** `docs/marketplace-implementation-spec.md`
+> **Historical authority order:** `docs/archive/marketplace-implementation-spec.md`
 > (legacy design) → this document (legacy evidence) →
-> `docs/SUBSCRIPTION_BILLING_V1.md` (intervening historical subscription
+> `docs/archive/SUBSCRIPTION_BILLING_V1.md` (intervening historical subscription
 > contract). For new work, use the newest `docs/DECISIONS.md` entry and
 > `AGENTS.md`.
 >

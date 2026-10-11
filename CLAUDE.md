@@ -1,6 +1,6 @@
 # Claude Guidance
 
-Read `AGENTS.md` first. This file is a shorter execution reminder for Claude-specific or generic LLM runs.
+Read `AGENTS.md` first, then `docs/HANDOFF.md` (current state and open work). This file is a shorter execution reminder for Claude-specific or generic LLM runs.
 
 ## Non-negotiables
 - Never commit secrets.

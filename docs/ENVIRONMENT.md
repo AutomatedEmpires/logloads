@@ -17,11 +17,8 @@
 - `pnpm test:e2e` requires that stack plus a production build. Its wrapper captures local service credentials in-process and never prints them.
 
 ## Linked Supabase project
-- Required variables:
-  - `SUPABASE_PROJECT_REF`
-  - `SUPABASE_URL`
-  - `SUPABASE_ANON_KEY`
-  - `SUPABASE_SERVICE_ROLE_KEY`
+- The runtime reads `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
+  `SUPABASE_PROJECT_REF` and `SUPABASE_ANON_KEY` are Supabase CLI/tooling inputs only.
 - These values belong in Doppler, GitHub Actions secrets, or Vercel env, not in git.
 
 ## GitHub Actions
@@ -31,20 +28,11 @@
   - Future deployment workflows should read Vercel and Supabase secrets from repo/org secrets.
 
 ## Vercel / deployment
-- Required variables for the web app:
-  - `NEXT_PUBLIC_APP_URL`
-  - `NEXT_PUBLIC_MAP_PROVIDER`
-  - `NEXT_PUBLIC_MAPBOX_TOKEN`
-  - `NEXT_PUBLIC_NOTIFICATION_PROVIDER`
-  - `SUPABASE_URL`
-  - `SUPABASE_SERVICE_ROLE_KEY`
-- Optional server-only variables:
-  - `VERCEL_TOKEN`
-  - `SENTRY_DSN`
-  - `RESEND_API_KEY`
-  - `LOGLOADS_EMAIL_FROM`
-  - `LOGLOADS_EMAIL_REPLY_TO` (defaults to `support@logloads.com`)
-  - `LOGLOADS_CONTACT_EMAIL` (defaults to `support@logloads.com`)
+- The production variable contract (required, optional, secret, and absent
+  behavior for every name the code reads) is [ENV_CONTRACT.md](./ENV_CONTRACT.md),
+  backed by [`ops/production-env-contract.json`](../ops/production-env-contract.json).
+- Every third-party provider and the variables that activate it are listed in
+  [PROVIDERS.md](./PROVIDERS.md).
 
 ## Sessions and identity
 - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` + `CLERK_SECRET_KEY` activate Clerk (production auth provider).
@@ -71,7 +59,3 @@
 
 ## Maps
 - `NEXT_PUBLIC_MAPBOX_TOKEN` activates Mapbox (locked provider). Without it, the map renders real geography through the MapLibre + Carto fallback.
-
-## Placeholders and future providers
-- Notification provider placeholder: `NOTIFICATION_PROVIDER=placeholder`
-- Do not commit secrets while provider choice is still fluid.

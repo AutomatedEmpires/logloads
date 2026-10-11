@@ -10,7 +10,7 @@ equal to 5% of host-stated driver pay after the physical load completes, with no
 monthly minimum and no posting fee. `LOGLOADS_FEE_COLLECTION` is the sole current
 commercial collection gate. `LOGLOADS_SUBSCRIPTION_COLLECTION` and
 `LOGLOADS_DISPATCH_SELF_SERVE` must remain disabled historical safety gates.
-See the 2026-08-01 entry in [`DECISIONS.md`](./DECISIONS.md).
+See the 2026-08-01 entry in [`DECISIONS.md`](../DECISIONS.md).
 
 ## Historical commercial model
 
@@ -117,7 +117,7 @@ The percentage implementation remains intentionally reachable for frozen
 | Legacy host statement and collection | `apps/web/lib/host-billing-data.ts`, `apps/web/lib/billing.ts`, `apps/web/app/api/billing/invoices`, `apps/web/app/api/billing/cron`, `apps/web/app/api/billing/webhook` | Legacy rows are labeled as historical/grandfathered; subscription base and usage invoices have separate canonical identities and metadata classifiers |
 | Commitment disclosure | `apps/web/components/v3/HostActions.tsx` | Percentage copy appears only when the organization and assignment are explicitly legacy; new Network work shows the accepted subscription unit rules |
 | Provider controls | `LOGLOADS_FEE_COLLECTION`, legacy invoice metadata, and the existing signed webhook path | `LOGLOADS_SUBSCRIPTION_COLLECTION` remains disabled and exists only as a historical safety gate; it cannot activate or retire percentage collection |
-| Historical design evidence | `docs/HANDOFF-2026-07-27.md`, `docs/marketplace-implementation-spec.md`, `docs/marketplace-realignment-blueprint.md` | Each document is marked historical; this document and the newest decision-log entry govern new work |
+| Historical design evidence | `docs/archive/HANDOFF-2026-07-27.md`, `docs/archive/marketplace-implementation-spec.md`, `docs/archive/marketplace-realignment-blueprint.md` | Each document is marked historical; this document and the newest decision-log entry govern new work |
 
 ## State migration and controlled cutover
 

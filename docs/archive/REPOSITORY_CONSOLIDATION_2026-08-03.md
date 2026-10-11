@@ -6,7 +6,7 @@ resource, production data, or non-repository artifact was deleted or moved.
 
 This record captures the evidence used to resume development from one canonical
 source of truth. It is not production-activation evidence. Commercial authority
-is the newest entry in [`DECISIONS.md`](DECISIONS.md): `percentage_v1` for new
+is the newest entry in [`DECISIONS.md`](../DECISIONS.md): `percentage_v1` for new
 activity, frozen `legacy_percentage` obligations preserved, and
 `subscription_v1` historical/read-only.
 

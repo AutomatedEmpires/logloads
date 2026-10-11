@@ -30,15 +30,16 @@ commercial collection gate is `LOGLOADS_FEE_COLLECTION`, which defaults to
 `LOGLOADS_PERCENTAGE_ENROLLMENT` and an exact organization allowlist; the
 historical subscription and self-serve gates remain disabled.
 See [`docs/DECISIONS.md`](./docs/DECISIONS.md) for authority and
-[`docs/SUBSCRIPTION_BILLING_V1.md`](./docs/SUBSCRIPTION_BILLING_V1.md) for the
+[`docs/archive/SUBSCRIPTION_BILLING_V1.md`](./docs/archive/SUBSCRIPTION_BILLING_V1.md) for the
 preserved historical subscription contract.
 
 ## Stack (AutomatedEmpires family standard)
 
 - Runtime: Node 24.16.0 · pnpm 10.12.4 · Turborepo monorepo
-- Auth: Clerk (dev sessions until keys are provisioned — see `docs/ENVIRONMENT.md`) · DB: Supabase Postgres (+ PostGIS; versioned `operating_state` is the transitional canonical store) · Maps: Mapbox (keyless MapLibre fallback)
+- Auth: Clerk (local development without keys uses dev sessions — see `docs/ENVIRONMENT.md`) · DB: Supabase Postgres (+ PostGIS; versioned `operating_state` is the transitional canonical store) · Maps: Mapbox (keyless MapLibre fallback)
 - Secrets: Doppler · Hosting: Vercel · Media: private Supabase Storage · Observability: PostHog + Sentry · Email: Resend
 - Icons: Phosphor through `@logloads/ui` semantic icon registry (`<Icon name="domain.action" />`)
+- Every third-party service, its gate, and its code: [`docs/PROVIDERS.md`](./docs/PROVIDERS.md)
 
 ## Getting started
 
@@ -51,6 +52,10 @@ pnpm dev           # http://localhost:3002 (doppler run -- pnpm dev once secrets
 
 Local sign-in (no Clerk keys): use the email of a seeded account — `hank@northpine.example` (driver), `dispatch@northpine.example` (fleet), `cole@summit.example` (host), `admin@logloads.example` (admin) — or create a real account through `/onboarding`. When using only the local JSON fallback, delete `apps/web/.data/logloads-state.json` to reset it; never delete a canonical Supabase row as a development reset.
 
-Validation gate: `pnpm validate` (lint, typecheck, unit tests, build, fresh local Supabase migration reset, guardrails), then `pnpm test:e2e` for the production-build journey suite. The E2E wrapper reads the isolated local Supabase status without printing credentials; run `pnpm guardrails` first if the stack is not already active.
+Validation gate: `pnpm validate` (lint, typecheck, unit tests, build, fresh local Supabase migration reset, guardrails, dead-code check), then `pnpm test:e2e` for the production-build journey suite. The E2E wrapper reads the isolated local Supabase status without printing credentials; run `pnpm db:assert` first if the stack is not already active.
 
-See [`AGENTS.md`](./AGENTS.md) for the operating contract every agent (human or AI) must follow before touching this repo.
+## Docs
+
+- [`AGENTS.md`](./AGENTS.md): the operating contract every agent (human or AI) follows before touching this repo.
+- [`docs/HANDOFF.md`](./docs/HANDOFF.md): current state, ranked open work, and traps.
+- [`docs/README.md`](./docs/README.md): index of everything else.

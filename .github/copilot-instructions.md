@@ -1,7 +1,7 @@
 # Copilot Instructions
 
 ## Repo rules
-- Read `AGENTS.md` before large changes.
+- Read `AGENTS.md` and `docs/HANDOFF.md` before large changes.
 - Never commit secrets or real environment values.
 - Run `pnpm validate` before proposing merge-ready work.
 - Keep business logic in `packages/services`.

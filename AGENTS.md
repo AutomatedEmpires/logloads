@@ -177,12 +177,13 @@ pnpm typecheck
 pnpm test
 pnpm build
 pnpm guardrails
+pnpm deadcode
 pnpm validate
 pnpm test:e2e
 git diff --check
 ```
 
-`pnpm validate` runs lint, typecheck, unit tests, build, database assertion, and guardrails. Run `pnpm db:check` for database-contract work when the local Supabase CLI/Docker prerequisites exist; CI must not silently skip it. Use `pnpm test:e2e` for affected production-build journeys. Docs-only work requires `git diff --check` plus focused Markdown/link and factual review; report application checks as not run because no executable code changed.
+`pnpm validate` runs lint, typecheck, unit tests, build, database assertion, guardrails, and the knip dead-code check. Run `pnpm db:check` for database-contract work when the local Supabase CLI/Docker prerequisites exist; CI must not silently skip it. Use `pnpm test:e2e` for affected production-build journeys. Docs-only work requires `git diff --check` plus focused Markdown/link and factual review; report application checks as not run because no executable code changed.
 
 A change is done only when it:
 
@@ -220,7 +221,9 @@ The last verified production pass reported eight automated smoke checks passing,
 
 ## 12. Future-agent output format
 
-Every handoff or final report must include:
+Current state, ranked open work, and known traps live in `docs/HANDOFF.md`;
+update it when you change what the next agent should pick up. Every handoff or
+final report must include:
 
 1. branch, HEAD, base, issue/acceptance criteria, and governing decision/spec;
 2. outcome achieved for which user, not merely activities performed;

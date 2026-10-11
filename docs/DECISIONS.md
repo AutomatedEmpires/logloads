@@ -2,6 +2,30 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-10-11 — Vercel is the only host; the repository is cleaned for handoff
+
+- **The Fly.io manifest and Dockerfile are removed.** They were kept as a
+  pre-cutover rollback host, but production has run on Vercel since the
+  canonical-state cutover and the image was never exercised. Code rollback is a
+  Vercel promotion of the previous canonical-aware deployment, followed by a
+  reverting PR (`docs/DEPLOYMENT.md`). Git history keeps both files.
+- **The rate limiter no longer trusts `fly-client-ip`.** That header was trusted
+  off Vercel only because a Fly edge overwrote it. With no Fly target, any client
+  could set it and pick its own "verified" window key. Off Vercel, every caller now
+  gets the hashed request fingerprint; Vercel's `x-vercel-forwarded-for` path is
+  unchanged.
+- **Dead code is a failing check.** `pnpm deadcode` (knip, `knip.json`) is part of
+  `pnpm validate`. Unreferenced components, helpers, one-off repro scripts and an
+  unused image were removed. An intentionally unused export must carry `@public`
+  and say why; the host driver-credential summary is the one current case.
+- **Docs have a single entry path:** `AGENTS.md` → `docs/HANDOFF.md` →
+  `docs/README.md`. Superseded handoffs, audits, the historical subscription
+  contract and the percentage-model design spec moved to `docs/archive/`. The
+  provider inventory is `docs/PROVIDERS.md`. `.env.example` lists only names that
+  code or tooling reads.
+- No schema, migration, provider setting, production data, enrollment,
+  collection, or money movement changed.
+
 ## 2026-10-09 — A recorded delivery cannot be cancelled away
 
 - **Cancellation withdraws a booking; it never erases a physical movement.**
@@ -11,7 +35,7 @@ Append-only. Newest at top. Every runtime / provider / architecture change needs
   only a `confirmed` record was protected, so a host could cancel a delivery
   the driver had already recorded (or one the host had disputed), returning the
   capacity, never completing the trip, and never accruing the completed-load
-  fee. This implements `docs/marketplace-implementation-spec.md` §(d3).
+  fee. This implements `docs/archive/marketplace-implementation-spec.md` §(d3).
 - **The way out at the mill is the record, not a cancellation.** The hauler
   records the delivery or the exception that explains why nothing was
   delivered (for example `rejected_at_scale`), and the host confirms or
@@ -352,7 +376,7 @@ Append-only. Newest at top. Every runtime / provider / architecture change needs
 - **The regulatory question remains explicit.** Subscription pricing is not a
   broker-classification workaround. Real Network activation requires a recorded
   counsel-approved authority or commodity-and-route posture and accepted
-  commercial terms. See `docs/SUBSCRIPTION_BILLING_V1.md`.
+  commercial terms. See `docs/archive/SUBSCRIPTION_BILLING_V1.md`.
 
 ## 2026-07-25 — Scheduling integrity, decided: what a slot means, and what silence from a driver means
 Foundation for the conflict guard. Pure code, nothing wired, no gating, no migration — but the two product questions underneath it are settled here, because every later PR in the sequence inherits them.
