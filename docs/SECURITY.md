@@ -4,6 +4,13 @@ Authoritative record of the database security posture. Verified against the live
 Supabase project `fdzohbiiyzgvjzfsjyxo` on 2026-07-08. The next agent should not
 have to rediscover any of this.
 
+> That project was deleted on 2026-10-11. Its replacement, `cmbinynkzkhuvjywwmff`,
+> was rebuilt from `supabase/migrations/` and re-verified the same day: 37 tables,
+> all with RLS on; `operating_state` service-role only; advisors show only the
+> PostGIS exceptions. The checks and counts are in
+> [RECOVERY.md → Rebuild record](./RECOVERY.md#rebuild-record-2026-10-11). The
+> July figures below describe the old project.
+
 ## Status: SECURITY VERIFIED
 
 - 36 public tables · **35 RLS-enabled** · 1 documented PostGIS exception

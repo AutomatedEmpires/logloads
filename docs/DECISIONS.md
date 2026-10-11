@@ -2,6 +2,27 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-10-11 — Supabase is rebuilt from the migrations into a new project
+
+- **Why.** The production Supabase project (`fdzohbiiyzgvjzfsjyxo`) was deleted.
+  No backup file exists, so the only source of truth for the schema is
+  `supabase/migrations/`.
+- **What.** New project `cmbinynkzkhuvjywwmff` (us-east-1, free plan). All 11
+  migrations are applied in order, the private media bucket is recreated, and
+  Vercel Production's non-secret Supabase variables point at the new project.
+- **Net-equivalent, not byte-identical.**
+  - No-op `drop … if exists` lines were stripped, because the connector holds
+    every drop for a confirmation and times out after 60 seconds.
+  - The permissive `operating_state_rw` policy was never created, because a later
+    migration drops it.
+  - The ledger carries the repo's versions.
+
+  The verification counts and remaining steps are in
+  [RECOVERY.md → Rebuild record](./RECOVERY.md#rebuild-record-2026-10-11).
+- **Not decided here.** Whether production starts from the synthetic seed or
+  empty is the founder's call (RECOVERY.md step 6), because the seed puts
+  fictional organizations and loads on the public site.
+
 ## 2026-10-11 — The driver profile leads with who the driver is and what they have done
 
 - **The driver's own profile opens with a showcase.** It has a truck-photo hero

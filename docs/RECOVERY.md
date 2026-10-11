@@ -101,7 +101,18 @@ through chat.
    ref.
 2. **Apply every migration in `supabase/migrations/` in filename order**, as
    separate migrations so the ledger matches the repo. All are additive, so a
-   fresh project has nothing to break.
+   fresh project has nothing to break. Install `postgis` first
+   (`create extension if not exists postgis;`), because `20260706090000` uses
+   geography columns.
+
+   Through the Supabase connector, any `drop` statement waits for a dashboard
+   confirmation and times out after 60 seconds if nobody answers. On a fresh
+   project every `drop … if exists` is a no-op, so the 2026-10-11 rebuild
+   stripped those lines rather than wait. One drop is *not* a no-op:
+   `20260707050000` drops the permissive `operating_state_rw` policy that
+   `20260706210000` creates (anon/authenticated `using (true)`). If you strip
+   drops, also omit that policy's `create`, or the table opens to anon. See the
+   rebuild record below.
 3. **Create the private media bucket.** No migration creates it, and
    `apps/web/lib/media.ts` refuses to sign uploads unless it matches exactly:
    ```sql
@@ -110,9 +121,14 @@ through chat.
            array['image/jpeg', 'image/png', 'image/webp']);
    ```
 4. **Verify:**
-   - `operating_state` and the rate-limit table exist with RLS on;
-   - anon and authenticated roles have no grants;
-   - the security advisors are clean;
+   - `operating_state` and the rate-limit table exist with RLS on and no policies;
+   - only `service_role` holds grants on `operating_state` (select, insert, update);
+   - anon and authenticated hold SELECT only on the relational tables
+     (`20260726090000` keeps SELECT on purpose) and no EXECUTE on the app's
+     functions;
+   - the security advisors show only the PostGIS exceptions listed in
+     `20260707050000`, plus "RLS enabled, no policy" on the two service-role-only
+     tables;
    - the bucket is private with the limits above.
 5. **Rotate the app's Supabase variables** in Vercel Production (and Doppler):
    - `SUPABASE_URL`
@@ -142,6 +158,64 @@ through chat.
    - add `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` as repository secrets and
      schedule `tools/operating-state-backup.mjs` (open items below);
    - enable deletion protection where the plan offers it.
+
+### Rebuild record, 2026-10-11
+
+New project: **`cmbinynkzkhuvjywwmff`** (`logloads`, us-east-1, free plan), in
+the founder's organization.
+
+**Done (agent, through the Supabase and Vercel connectors):**
+
+| Step | State |
+|---|---|
+| 1. Project | Created; `postgis` 3.3.7 installed |
+| 2. Migrations | All 11 applied, in order |
+| 3. Bucket | `logloads-private-media` private, 10,000,000 bytes, JPEG/PNG/WebP |
+| 4. Verify | Passed (below) |
+| 5. Vercel Production | `SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF`, `SUPABASE_PROJECT_REF` and `SUPABASE_ANON_KEY` point at the new project. **`SUPABASE_SERVICE_ROLE_KEY` does not:** the connector can't read secret keys |
+
+**Verified against the live project after step 2:**
+- 37 app tables, all with RLS on;
+- 39 policies (the repo's 40, minus the dropped `operating_state_rw`), none on
+  `operating_state`;
+- 31 triggers and the 9 app functions;
+- `operating_state` grants: `service_role` select, insert and update only;
+- no anon or authenticated EXECUTE on any app function. `set_updated_at` is the
+  exception: a trigger function, which can't be called as RPC;
+- anon/authenticated write grants exist only on the PostGIS objects
+  (`spatial_ref_sys`, `geometry_columns`, `geography_columns`);
+- security advisors: only the PostGIS exceptions, plus "RLS enabled, no policy" on
+  `operating_state` and `rate_limit_windows` (service-role only by design).
+
+**Deviations from the repo files, all net-equivalent on a fresh database:**
+- `drop … if exists` lines were stripped from `20260706090000`,
+  `20260707050000` and `20260711034301`. On an empty project they drop nothing.
+- `20260706210000` was applied without its `operating_state_rw` policy, which
+  `20260707050000` drops anyway. The end state matches the repo; the open window
+  in between never existed.
+- `20260706090000` went in as four parts so each call finished inside the
+  connector's timeout. Its ledger row (`20260706090000`, `operating_network_phase2`)
+  holds all four statements, and every ledger version was renumbered to the
+  repo's filename timestamp.
+
+**Left for the founder:**
+1. Paste the new project's **legacy `service_role` key** (Project Settings → API
+   Keys → Legacy API keys; starts with `eyJ`) into Vercel Production
+   `SUPABASE_SERVICE_ROLE_KEY`, and mirror the Supabase values in Doppler. The
+   app sends this key as a `Bearer` token (`packages/db/src/snapshot.ts`,
+   `apps/web/lib/rate-limit-supabase.ts`), so use the JWT, not a new
+   `sb_secret_` key.
+2. Three ledger rows are leftovers from the split apply:
+   `20261011164231`, `20261011165008` and `20261011165106`
+   (`operating_network_phase2_part2a/b/c`). Their SQL is already in the
+   `20260706090000` row. The connector's delete needs a dashboard confirmation, so
+   run this once in the SQL editor:
+   ```sql
+   delete from supabase_migrations.schema_migrations
+   where version in ('20261011164231', '20261011165008', '20261011165106');
+   ```
+   Until then, `supabase migration list --linked` shows them as remote-only.
+3. Steps 6–9.
 
 ## RPO and RTO
 
