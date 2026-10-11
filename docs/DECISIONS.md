@@ -2,6 +2,35 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-10-11 — Production launches empty; Preview carries the sample operation
+
+- **Production starts from the launch document.** `createLaunchDatabase`
+  (`packages/db/src/store.ts`) holds two things. One is the unclaimed platform
+  admin, which `/admin/bootstrap` can only bind, never create. The other is the
+  subscription plan catalog. Every other collection is empty, so the first real
+  host or driver is the first organization. The rebuilt production row was
+  inserted as that document.
+- **The sample is for Preview and test stacks only.** A bootstrap writes the
+  launch document unless `LOGLOADS_STATE_BOOTSTRAP_DATA=sample`.
+  `apps/web/lib/state-bootstrap.ts` refuses `sample` on a Vercel Production
+  deployment and refuses any unrecognized value, so a copied setting can't put
+  fictional organizations and loads in front of real users. Before its first
+  refresh, a hosted runtime holds the launch document in memory, not the seed.
+- **Preview is isolated, as 2026-08-09 required.** It has its own Supabase
+  project (`logloads-preview`, `vbvdymbyhwnztqrbyygi`) with its own canonical
+  row, seeded with the sample on the first Preview request. Production
+  credentials are never configured for Preview, and the hosted demo-persona ban
+  stands, so signing in on Preview needs a Clerk development instance.
+- **Verified by:**
+  - `packages/db/src/store.test.ts`: the launch document's shape, and that it
+    validates with nothing withheld;
+  - `packages/services/src/accounts.test.ts`: on a launch database the founder
+    claims admin and the first host and driver sign up;
+  - `apps/web/lib/state-bootstrap.test.ts`: the production refusal, with a
+    negative control;
+  - `tools/run-e2e.mjs`: e2e explicitly asks for the sample its journeys sign in
+    as.
+
 ## 2026-10-11 — Supabase is rebuilt from the migrations into a new project
 
 - **Why.** The production Supabase project (`fdzohbiiyzgvjzfsjyxo`) was deleted.

@@ -1,7 +1,8 @@
-import { createInMemoryDatabase } from "@logloads/db"
+import { createInMemoryDatabase, createLaunchDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
 import { createLogLoadsServices } from "./index"
+import { claimFounderPlatformAdmin } from "./platform-admin"
 
 describe("account context authority", () => {
   it("does not expose an archived organization through an otherwise active membership", () => {
@@ -170,5 +171,53 @@ describe("account context authority", () => {
       otherOrganization.id
     ])
     expect(context?.driverProfileId).toBeNull()
+  })
+})
+
+describe("a launch database", () => {
+  it("lets the founder claim admin and the first host and driver sign up", () => {
+    const services = createLogLoadsServices(createLaunchDatabase())
+
+    const claim = claimFounderPlatformAdmin(services.state, {
+      clerkUserId: "user_2zLaunchFounder1",
+      scopeSha256: "b".repeat(64),
+      verifiedPrimaryEmail: "founder@logloads.com"
+    })
+
+    expect(claim.changed).toBe(true)
+
+    const host = services.createAccount({
+      accountType: "timber_organization",
+      clerkUserId: "user_2zLaunchHost1",
+      email: "first-host@timberco.example",
+      fullName: "Pat Timber",
+      organizationName: "Timber Co",
+      path: "host",
+      phone: "555-9100",
+      region: "Central Oregon"
+    })
+    const driver = services.createAccount({
+      accountType: "owner_operator",
+      availabilityPreset: "not_ready",
+      clerkUserId: "user_2zLaunchDriver1",
+      email: "first-driver@example.test",
+      equipment: { maxPayloadTons: 30, trailerType: "pole_trailer", truckType: "log_truck" },
+      fullName: "Sam Rigger",
+      organizationName: null,
+      path: "driver",
+      phone: "555-9200",
+      region: "Central Oregon"
+    })
+
+    expect(services.state.organizations.map((organization) => organization.id).sort()).toEqual(
+      [host.memberships[0]!.organization.id, driver.memberships[0]!.organization.id].sort()
+    )
+    expect(services.state.profiles.map((profile) => profile.role).sort()).toEqual(
+      ["admin", "logging_company_admin", "owner_operator"]
+    )
+    expect(driver.driverProfileId).not.toBeNull()
+    // Nothing from the sample operation is there to be seen or requested.
+    expect(services.state.loadPostings).toEqual([])
+    expect(services.state.mills).toEqual([])
   })
 })

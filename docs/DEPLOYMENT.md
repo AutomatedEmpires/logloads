@@ -59,6 +59,19 @@ Production fails closed if either canonical Supabase variable is absent.
 `LOGLOADS_ALLOW_STATE_BOOTSTRAP=true` is a one-time recovery/provisioning switch.
 Use it only after proving `operating_state` is intentionally empty, then remove it.
 The established live project already has a row and should not need this switch.
+A bootstrap writes the empty launch document unless `LOGLOADS_STATE_BOOTSTRAP_DATA=sample`,
+which only Preview uses and Production refuses.
+
+### Preview deployments
+
+Vercel Preview runs on its own Supabase project (`logloads-preview`, ref
+`vbvdymbyhwnztqrbyygi`) holding the fictional sample operation. It never touches
+the production project. Preview sets `LOGLOADS_ALLOW_STATE_BOOTSTRAP=true` and
+`LOGLOADS_STATE_BOOTSTRAP_DATA=sample`, so the first request against an empty
+preview row seeds it. To reset Preview to fresh sample data, delete the
+`operating_state` row in that project; the next request re-seeds it. Sign-in on
+Preview needs Clerk **development** keys, because production Clerk keys only work
+on `logloads.com`.
 
 ## Migration order
 

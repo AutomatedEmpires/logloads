@@ -60,7 +60,10 @@ const result = spawnSync(
     env: {
       ...process.env,
       ...supabaseEnvironment,
-      LOGLOADS_ALLOW_STATE_BOOTSTRAP: "true"
+      LOGLOADS_ALLOW_STATE_BOOTSTRAP: "true",
+      // The journeys sign in as the fictional seed people; a bootstrap writes the
+      // empty launch document unless the sample is asked for.
+      LOGLOADS_STATE_BOOTSTRAP_DATA: "sample"
     },
     stdio: "inherit"
   }

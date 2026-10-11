@@ -52,15 +52,20 @@ driver pay, and fee collection and enrollment are dark until separately authoriz
 ## Open work, ranked
 
 0. **P0: production is down. The Supabase project was deleted on 2026-10-11.**
-   `/api/health` returns 503 (`engine.ok: false`). The rebuild is partly done. New
-   project `cmbinynkzkhuvjywwmff` has every migration and the media bucket, and
-   passes verification. Vercel Production's non-secret Supabase variables point
-   at it. Still owed, all by the founder:
+   `/api/health` returns 503 (`engine.ok: false`). The rebuild is partly done.
+   - New project `cmbinynkzkhuvjywwmff` has every migration and the media
+     bucket, and passes verification.
+   - Its canonical row is the empty launch document (no sample data on launch).
+   - Vercel Production's non-secret Supabase variables point at it.
+
+   Still owed, all by the founder:
    - the service-role key;
-   - the seed-or-restore choice;
    - the platform-admin reclaim;
    - a redeploy;
    - backups.
+
+   Preview runs separately on `logloads-preview` with the sample operation
+   ([DEPLOYMENT.md → Preview deployments](./DEPLOYMENT.md#preview-deployments)).
 
    See [RECOVERY.md → Rebuild record](./RECOVERY.md#rebuild-record-2026-10-11).
    Do no other production work until health is 200.

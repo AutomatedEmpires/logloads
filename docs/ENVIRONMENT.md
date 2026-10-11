@@ -45,6 +45,7 @@
 - Every request entry awaits the canonical row. Mutations compare `version`, replay on a conflict, and resolve only after the remote commit succeeds.
 - `LOGLOADS_STATE_FILE` overrides the non-production fallback path (default `apps/web/.data/logloads-state.json`). Delete that file only to reset local development state.
 - `LOGLOADS_ALLOW_STATE_BOOTSTRAP=true` allows one controlled insert when the remote row is intentionally empty. Leave it unset in established production and remove it immediately after a planned bootstrap.
+- `LOGLOADS_STATE_BOOTSTRAP_DATA` picks what that insert writes. `launch` (the default) is empty apart from the unclaimed platform admin and the plan catalog. `sample` is the fictional seed operation and is refused on Vercel Production. Local development without Supabase keeps using the seed through `LOGLOADS_STATE_FILE`.
 
 ## Distributed rate limiting
 - Production reuses `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` to call the service-role-only `consume_rate_limit` Postgres RPC. Both are already required for canonical operating state; partial configuration fails closed.

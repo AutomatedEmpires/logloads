@@ -39,6 +39,15 @@ row if it is absent. It must be used only after an operator proves the table is
 intentionally empty, and removed immediately afterward. Without it, production
 fails closed rather than silently replacing missing production data with seed data.
 
+`LOGLOADS_STATE_BOOTSTRAP_DATA` chooses what that bootstrap writes:
+- `launch` (the default): empty, except the unclaimed platform admin and the plan
+  catalog;
+- `sample`: the fictional seed operation, for Vercel Preview and isolated test
+  stacks.
+
+A Vercel Production deployment refuses `sample` (`apps/web/lib/state-bootstrap.ts`),
+and any other value is refused.
+
 ### Founder platform access
 
 Clerk-backed platform administration has a persistent identity scope and a

@@ -140,10 +140,13 @@ through chat.
    Leave `LOGLOADS_MEDIA_BUCKET=logloads-private-media` and the rate-limit HMAC
    secret as they are.
 6. **Initialize the canonical row**, choosing exactly one:
-   - a. **Seeded (the pre-incident behavior):** set
-     `LOGLOADS_ALLOW_STATE_BOOTSTRAP=true`, redeploy, and load `/api/health`
-     once. The app writes the synthetic seed (fictional organizations and
-     loads). Then remove the variable and redeploy.
+   - a. **Launch (empty):** set `LOGLOADS_ALLOW_STATE_BOOTSTRAP=true`, redeploy,
+     and load `/api/health` once. Then remove the variable and redeploy. The app
+     writes the launch document: no organizations, people or loads, only the
+     unclaimed platform admin and the plan catalog. Production never takes the
+     sample operation; `LOGLOADS_STATE_BOOTSTRAP_DATA=sample` is refused there.
+     A deployment older than that guard writes the sample instead, so on old
+     code insert the launch row directly, as the 2026-10-11 rebuild did.
    - b. **From a backup file:**
      `node tools/operating-state-backup.mjs restore <file> --i-understand-this-overwrites-production`
      (see Restoring above).
@@ -173,6 +176,7 @@ the founder's organization.
 | 3. Bucket | `logloads-private-media` private, 10,000,000 bytes, JPEG/PNG/WebP |
 | 4. Verify | Passed (below) |
 | 5. Vercel Production | `SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF`, `SUPABASE_PROJECT_REF` and `SUPABASE_ANON_KEY` point at the new project. **`SUPABASE_SERVICE_ROLE_KEY` does not:** the connector can't read secret keys |
+| 6. Canonical row | The launch document (`createLaunchDatabase`), inserted directly as `id='primary'`, `schema_version` 2, `version` 0: one unclaimed platform admin, seven plan definitions, every other collection empty. It was inserted directly rather than bootstrapped because `main` still wrote the sample on bootstrap. No `LOGLOADS_ALLOW_STATE_BOOTSTRAP` is needed in Production |
 
 **Verified against the live project after step 2:**
 - 37 app tables, all with RLS on;
@@ -215,7 +219,7 @@ the founder's organization.
    where version in ('20261011164231', '20261011165008', '20261011165106');
    ```
    Until then, `supabase migration list --linked` shows them as remote-only.
-3. Steps 6–9.
+3. Steps 7–9: claim admin, redeploy `main`, enable backups.
 
 ## RPO and RTO
 

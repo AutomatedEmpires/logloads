@@ -4,6 +4,7 @@ import { join } from "node:path"
 
 import {
   createInMemoryDatabase,
+  createLaunchDatabase,
   initializeRemoteOperatingState,
   loadRemoteOperatingState,
   loadStateSnapshot,
@@ -17,6 +18,7 @@ import {
 import { createLogLoadsServices } from "@logloads/services"
 
 import { shiftSeedDates } from "./seed-dates"
+import { bootstrapState } from "./state-bootstrap"
 
 const stateFilePath =
   process.env.LOGLOADS_STATE_FILE ?? join(process.cwd(), ".data", "logloads-state.json")
@@ -32,7 +34,12 @@ const globalStore = globalThis as typeof globalThis & {
 }
 
 const localBootState = loadStateSnapshot(stateFilePath)
-const initialState = localBootState ?? shiftSeedDates(createInMemoryDatabase())
+// Hosted runtimes replace this with the canonical row before any read. Until
+// then they hold the launch document, so a path that reads before refreshing
+// can't show the sample operation on a real deployment.
+const initialState =
+  localBootState ??
+  (localFallbackAllowed() ? shiftSeedDates(createInMemoryDatabase()) : createLaunchDatabase())
 
 export const services: ServicesSingleton =
   globalStore.__logloadsServices ??
@@ -98,7 +105,13 @@ async function canonicalSnapshot(): Promise<RemoteOperatingStateSnapshot | null>
     )
   }
 
-  return initializeRemoteOperatingState(remote, structuredClone(services.state))
+  return initializeRemoteOperatingState(
+    remote,
+    bootstrapState({
+      LOGLOADS_STATE_BOOTSTRAP_DATA: process.env.LOGLOADS_STATE_BOOTSTRAP_DATA,
+      VERCEL_ENV: process.env.VERCEL_ENV
+    })
+  )
 }
 
 /**
