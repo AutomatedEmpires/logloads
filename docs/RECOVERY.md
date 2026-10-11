@@ -82,6 +82,67 @@ Against a real Postgres + PostgREST, not a mock:
 An unrehearsed restore is not a recovery plan. Re-run this rehearsal whenever the
 document shape changes materially.
 
+## Rebuilding after the Supabase project is lost
+
+Incident of 2026-10-11: the LogLoads Supabase project was deleted. Production
+health returned 503 (`engine.ok: false`) because the canonical row was gone.
+No backup file is known to exist, so this is a rebuild, not a restore. If a
+`backups/operating-state-*.json` file turns up, restore it with step 6b instead
+of bootstrapping.
+
+Who does what: steps 1–4 and 9 run through the Supabase connector (an agent
+can do them). Steps 5–8 are secret- and production-bearing, so the founder does
+them in the Supabase, Vercel and Doppler dashboards. Secret values never go
+through chat.
+
+1. **Create the project** in the founder's Supabase organization: Postgres 17,
+   in the region closest to Vercel's. Confirm any cost before creating it, since
+   a paid plan upgrade is a hard stop (`AGENTS.md` §4). Record the new project
+   ref.
+2. **Apply every migration in `supabase/migrations/` in filename order**, as
+   separate migrations so the ledger matches the repo. All are additive, so a
+   fresh project has nothing to break.
+3. **Create the private media bucket.** No migration creates it, and
+   `apps/web/lib/media.ts` refuses to sign uploads unless it matches exactly:
+   ```sql
+   insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+   values ('logloads-private-media', 'logloads-private-media', false, 10000000,
+           array['image/jpeg', 'image/png', 'image/webp']);
+   ```
+4. **Verify:**
+   - `operating_state` and the rate-limit table exist with RLS on;
+   - anon and authenticated roles have no grants;
+   - the security advisors are clean;
+   - the bucket is private with the limits above.
+5. **Rotate the app's Supabase variables** in Vercel Production (and Doppler):
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+   - `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF`
+   - (tooling) `SUPABASE_PROJECT_REF`
+
+   Leave `LOGLOADS_MEDIA_BUCKET=logloads-private-media` and the rate-limit HMAC
+   secret as they are.
+6. **Initialize the canonical row**, choosing exactly one:
+   - a. **Seeded (the pre-incident behavior):** set
+     `LOGLOADS_ALLOW_STATE_BOOTSTRAP=true`, redeploy, and load `/api/health`
+     once. The app writes the synthetic seed (fictional organizations and
+     loads). Then remove the variable and redeploy.
+   - b. **From a backup file:**
+     `node tools/operating-state-backup.mjs restore <file> --i-understand-this-overwrites-production`
+     (see Restoring above).
+7. **Reclaim platform admin.** The founder's admin profile lived in the lost
+   row. Follow `docs/ACTIVATION_CLERK.md` steps 4–7: open a short
+   `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP` window, claim `/admin/bootstrap`, then
+   close the window.
+8. **Redeploy `main`** and confirm `/api/health` is 200 with `engine.ok: true`
+   on the exact SHA.
+9. **Close the gap that made this possible:**
+   - enable point-in-time recovery or daily backups on the new project;
+   - add `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` as repository secrets and
+     schedule `tools/operating-state-backup.mjs` (open items below);
+   - enable deletion protection where the plan offers it.
+
 ## RPO and RTO
 
 **Both are currently undefined, and they will stay undefined until this is

@@ -51,6 +51,10 @@ driver pay, and fee collection and enrollment are dark until separately authoriz
 
 ## Open work, ranked
 
+0. **P0: production is down. The Supabase project was deleted on 2026-10-11.**
+   `/api/health` returns 503 (`engine.ok: false`). Rebuild with
+   [RECOVERY.md → Rebuilding after the Supabase project is lost](./RECOVERY.md#rebuilding-after-the-supabase-project-is-lost)
+   before any other production work.
 1. **`maplibre-gl` critical advisory.** Upgrade 4.x → 6.x. This needs `react-map-gl`
    7 → 8 (`@vis.gl/react-maplibre`) in `apps/web/components/v3/RealMap.tsx`, with
    visual verification on phone and desktop. Dependabot #93.
