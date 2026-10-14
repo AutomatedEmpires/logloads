@@ -1,3 +1,42 @@
+-- LogLoads database schema.
+--
+-- The application keeps all state in one versioned JSONB document
+-- (public.operating_state, row id 'primary') and uses one shared fixed-window
+-- rate limiter (public.rate_limit_windows + public.consume_rate_limit). Both are
+-- reached only with the service-role key over PostgREST. The private media
+-- bucket 'logloads-private-media' lives in Supabase Storage and is not created
+-- by migrations.
+
+-- --- operating_state ---------------------------------------------------------
+
+create table if not exists public.operating_state (
+  id text primary key,
+  state jsonb not null,
+  updated_at timestamptz not null default now(),
+  schema_version integer not null default 2,
+  version bigint not null default 0,
+  constraint operating_state_schema_version_positive
+    check (schema_version > 0),
+  constraint operating_state_version_nonnegative
+    check (version >= 0)
+);
+
+alter table public.operating_state enable row level security;
+
+-- The service role bypasses RLS, but PostgREST still requires table grants.
+-- Keep authority explicit and least-privileged: the runtime can read, bootstrap,
+-- and conditionally update the singleton row, but cannot delete or truncate it.
+revoke all on table public.operating_state from public, anon, authenticated, service_role;
+grant select, insert, update on table public.operating_state to service_role;
+
+comment on table public.operating_state is
+  'Canonical versioned LogLoads operating-state document. Server-only service-role access; optimistic concurrency enforced by the version column.';
+comment on column public.operating_state.schema_version is
+  'Application document schema version.';
+comment on column public.operating_state.version is
+  'Monotonic compare-and-swap version incremented by every committed mutation.';
+
+-- --- shared rate limiter -----------------------------------------------------
 -- Shared fixed-window abuse-control state for all serverless instances. The
 -- application sends only HMAC-SHA-256 digests; raw IPs, actor ids, and emails
 -- never enter Postgres.
@@ -119,3 +158,15 @@ comment on table public.rate_limit_windows is
   'Shared atomic fixed-window rate-limit counters. Keys are HMAC-SHA-256 pseudonyms; service-role only.';
 comment on function public.consume_rate_limit(text, text, bigint) is
   'Atomically consumes one shared fixed-window request and returns the count plus database-authoritative TTL.';
+
+-- --- default privileges ------------------------------------------------------
+-- Supabase's default privileges grant anon and authenticated write access to
+-- every new table and EXECUTE on every new function created by the migration
+-- role. Remove those defaults so the next object does not arrive pre-granted;
+-- explicit grants (as above) still work.
+
+alter default privileges in schema public
+  revoke insert, update, delete, truncate on tables from anon, authenticated;
+
+alter default privileges in schema public
+  revoke execute on functions from anon, authenticated;
