@@ -8,11 +8,12 @@ import {
   dispatcherProfileSchema,
   driverCredentialSchema,
   driverProfileSchema,
-  entitlementSchema,
   equipmentCombinationSchema,
   futureAvailabilitySchema,
   haulRouteSchema,
   hostBillingProfileSchema,
+  hostFeeAgreementId,
+  hostFeeAgreementSchema,
   landingSchema,
   loaderProfileSchema,
   loggingCompanySchema,
@@ -23,8 +24,6 @@ import {
   notificationSchema,
   operationalNoticeSchema,
   opportunityCapacitySchema,
-  organizationBillingAccountId,
-  organizationBillingAccountSchema,
   organizationInvitationSchema,
   organizationMembershipSchema,
   organizationSchema,
@@ -41,9 +40,9 @@ import {
   truckSlotSchema,
   userSchema,
   verificationRecordSchema,
-  PERCENTAGE_V1_TERMS_VERSION,
-  SUBSCRIPTION_PLAN_CATALOG,
+  HOST_FEE_TERMS_VERSION,
   PLATFORM_FEE_BPS,
+  PLATFORM_FEE_CURRENCY,
   type Assignment,
   type AuditEvent,
   type AvailabilityWindow,
@@ -53,11 +52,11 @@ import {
   type DispatcherProfile,
   type DriverCredential,
   type DriverProfile,
-  type Entitlement,
   type EquipmentCombination,
   type FutureAvailability,
   type HaulRoute,
   type HostBillingProfile,
+  type HostFeeAgreement,
   type Landing,
   type LoaderProfile,
   type LoggingCompany,
@@ -69,7 +68,6 @@ import {
   type OperationalNotice,
   type OpportunityCapacity,
   type Organization,
-  type OrganizationBillingAccount,
   type OrganizationInvitation,
   type OrganizationMembership,
   type PrivateNetworkRelationship,
@@ -3066,37 +3064,6 @@ export const seedVerificationRecords: VerificationRecord[] = parseMany(verificat
   }
 ])
 
-export const seedEntitlements: Entitlement[] = parseMany(entitlementSchema, [
-  {
-    id: "28282828-2828-4828-8828-282828282811",
-    organizationId: "33333333-3333-4333-8333-333333333331",
-    product: "fleet_operations",
-    status: "active",
-    features: ["private_network", "route_packs", "trip_documents", "fleet_dispatch"],
-    activeTruckLimit: null,
-    activeLandingLimit: null,
-    stripeCustomerId: null,
-    stripeSubscriptionId: null,
-    currentPeriodEndsAt: null,
-    createdAt: timestamps.created,
-    updatedAt: timestamps.updated
-  },
-  {
-    id: "28282828-2828-4828-8828-282828282812",
-    organizationId: "33333333-3333-4333-8333-333333333332",
-    product: "landing_operations",
-    status: "active",
-    features: ["private_loads", "landing_control", "route_pack_publishing"],
-    activeTruckLimit: null,
-    activeLandingLimit: 3,
-    stripeCustomerId: null,
-    stripeSubscriptionId: null,
-    currentPeriodEndsAt: "2026-08-04T16:00:00.000Z",
-    createdAt: timestamps.created,
-    updatedAt: timestamps.updated
-  }
-])
-
 export const seedDirectOffers: DirectOffer[] = parseMany(directOfferSchema, [
   {
     id: "29292929-2929-4929-8929-292929292911",
@@ -3268,7 +3235,7 @@ export const seedOperationalNotices: OperationalNotice[] = parseMany(operational
 ])
 
 /**
- * A card on file for both host organizations that post the seeded loads.
+ * A card on file for both organizations that post the seeded loads.
  *
  * Publishing requires an attached payment method, so without these the entire
  * seeded bench — every e2e journey and service test that posts a load — would be
@@ -3311,61 +3278,60 @@ export const seedHostBillingProfiles: HostBillingProfile[] = parseMany(hostBilli
 ])
 
 /**
- * The landing-source demo host carries an agreement accepted by its actual owner
- * so new demo activity exercises production behavior. The fleet organization
- * stays explicit legacy history because it has no billing-authorized member.
- * Already-assigned rows remain frozen legacy below in either case.
+ * Both organizations that publish the seeded loads have accepted the LogLoads fee
+ * terms at the current rate and terms version, so seeded publishing exercises the
+ * same gate production does. Summit Ridge's agreement was accepted by its owner.
+ * North Pine has no owner or billing member in this sample operation, so its
+ * agreement names the dispatcher who runs its postings.
  */
-export const seedOrganizationBillingAccounts: OrganizationBillingAccount[] = parseMany(
-  organizationBillingAccountSchema,
-  [
-    {
-      activationState: "legacy",
-      billingModel: "legacy_percentage",
-      createdAt: timestamps.created,
-      effectiveAt: timestamps.created,
-      id: organizationBillingAccountId("33333333-3333-4333-8333-333333333331"),
-      organizationId: "33333333-3333-4333-8333-333333333331",
-      percentageTermsSnapshot: null,
-      subscriptionId: null,
-      updatedAt: timestamps.updated
-    },
-    {
-      activationState: "percentage_active",
-      billingModel: "percentage_v1",
-      createdAt: timestamps.created,
-      effectiveAt: "2026-08-03T00:00:00.000Z",
-      id: organizationBillingAccountId("33333333-3333-4333-8333-333333333332"),
-      organizationId: "33333333-3333-4333-8333-333333333332",
-      percentageTermsSnapshot: {
-        acceptedAt: "2026-08-03T00:00:00.000Z",
-        acceptedByUserId: "22222222-2222-4222-8222-222222222223",
-        acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION,
-        billingCadence: "monthly_in_arrears",
-        currency: "USD",
-        feeBps: PLATFORM_FEE_BPS
-      },
-      subscriptionId: null,
-      updatedAt: "2026-08-03T00:00:00.000Z"
-    }
-  ]
-)
+const SEED_FEE_AGREEMENT_ACCEPTED_AT = "2026-06-04T16:00:00.000Z"
 
+export const seedHostFeeAgreements: HostFeeAgreement[] = parseMany(hostFeeAgreementSchema, [
+  {
+    acceptedAt: SEED_FEE_AGREEMENT_ACCEPTED_AT,
+    acceptedByUserId: "22222222-2222-4222-8222-222222222224",
+    createdAt: SEED_FEE_AGREEMENT_ACCEPTED_AT,
+    feeBps: PLATFORM_FEE_BPS,
+    id: hostFeeAgreementId("33333333-3333-4333-8333-333333333331"),
+    organizationId: "33333333-3333-4333-8333-333333333331",
+    termsVersion: HOST_FEE_TERMS_VERSION,
+    updatedAt: SEED_FEE_AGREEMENT_ACCEPTED_AT
+  },
+  {
+    acceptedAt: SEED_FEE_AGREEMENT_ACCEPTED_AT,
+    acceptedByUserId: "22222222-2222-4222-8222-222222222223",
+    createdAt: SEED_FEE_AGREEMENT_ACCEPTED_AT,
+    feeBps: PLATFORM_FEE_BPS,
+    id: hostFeeAgreementId("33333333-3333-4333-8333-333333333332"),
+    organizationId: "33333333-3333-4333-8333-333333333332",
+    termsVersion: HOST_FEE_TERMS_VERSION,
+    updatedAt: SEED_FEE_AGREEMENT_ACCEPTED_AT
+  }
+])
+
+/**
+ * Freezes the host fee onto every seeded assignment that was accepted, exactly as
+ * host approval does: the movement identity, the commitment time, and the 2%
+ * terms. The seeded assignments carry no frozen driver pay, so no fee is derived
+ * from them and the ledger stays empty.
+ */
 function freezeSeedAssignmentBilling(assignment: Assignment): Assignment {
-  const load = seedLoadPostings.find((candidate) => candidate.id === assignment.loadPostingId)
-  const driver = seedDriverProfiles.find((candidate) => candidate.id === assignment.driverProfileId)
   const committed = Boolean(assignment.assignedAt)
 
   return assignmentSchema.parse({
     ...assignment,
     billingCommittedAt: committed ? assignment.assignedAt : null,
-    billingModel: committed ? "legacy_percentage" : null,
-    billingPlanCodeAtCommitment: null,
-    billingSubscriptionIdAtCommitment: null,
-    capacitySource: committed && load && driver
-      ? (load.companyId === driver.companyId ? "private_fleet" : "logloads_network")
-      : null,
-    loadMovementId: assignment.id
+    loadMovementId: assignment.id,
+    termsSnapshot: committed
+      ? {
+          ...assignment.termsSnapshot,
+          hostFee: {
+            collectionState: "accrues_monthly_in_arrears",
+            currency: PLATFORM_FEE_CURRENCY,
+            rateBps: PLATFORM_FEE_BPS
+          }
+        }
+      : assignment.termsSnapshot
   })
 }
 
@@ -3404,7 +3370,7 @@ export const seedDatabaseState: LogLoadsDatabaseState = {
   tripInspections: [],
   tripReviews: seedTripReviews,
   verificationRecords: seedVerificationRecords,
-  entitlements: seedEntitlements,
+  hostFeeAgreements: seedHostFeeAgreements,
   hostBillingProfiles: seedHostBillingProfiles,
   // The fee ledger and the invoice book start EMPTY, deliberately.
   //
@@ -3416,14 +3382,6 @@ export const seedDatabaseState: LogLoadsDatabaseState = {
   // what fills it.
   platformFeeEvents: [],
   hostInvoices: [],
-  billingPlanDefinitions: SUBSCRIPTION_PLAN_CATALOG.map((plan) => structuredClone(plan)),
-  organizationBillingAccounts: seedOrganizationBillingAccounts,
-  organizationSubscriptions: [],
-  networkUsageEvents: [],
-  billingPeriodSummaries: [],
-  billingAdjustments: [],
-  networkOverageInvoices: [],
-  subscriptionBaseInvoices: [],
   operationalNotices: seedOperationalNotices,
   notifications: seedNotifications,
   supportRequests: [],

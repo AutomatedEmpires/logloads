@@ -23,19 +23,15 @@ describe("notification cockpit routing", () => {
     }
   )
 
-  it.each([
-    "billing_adjustment",
-    "billing_period_summary",
-    "host_invoice",
-    "organization_billing_account",
-    "organization_subscription",
-    "subscription_base_invoice"
-  ])("routes %s to the role-owned billing surface", (entityType) => {
-    expect(notificationHref("admin", entityType, "billing-1")).toBe("/admin/billing")
-    expect(notificationHref("host", entityType, "billing-1")).toBe("/host/billing")
-    expect(notificationHref("fleet", entityType, "billing-1")).toBe("/fleet/billing")
-    expect(notificationHref("driver", entityType, "billing-1")).toBe("/workspace")
-  })
+  it.each(["host_fee_agreement", "host_invoice"])(
+    "routes %s to the role-owned billing surface",
+    (entityType) => {
+      expect(notificationHref("admin", entityType, "billing-1")).toBe("/admin/billing")
+      expect(notificationHref("host", entityType, "billing-1")).toBe("/host/billing")
+      expect(notificationHref("fleet", entityType, "billing-1")).toBe("/workspace")
+      expect(notificationHref("driver", entityType, "billing-1")).toBe("/workspace")
+    }
+  )
 
   it("keeps message threads scoped and safely encodes the selected thread", () => {
     expect(notificationHref("driver", "message_thread", "thread/with spaces")).toBe(

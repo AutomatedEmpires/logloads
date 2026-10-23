@@ -2,10 +2,8 @@ import { describe, expect, it } from "vitest"
 
 import { auditStateSnapshot, createInMemoryDatabase, createLaunchDatabase } from "./index"
 
-const LAUNCH_POPULATED = new Set(["billingPlanDefinitions", "profiles"])
-
 describe("createLaunchDatabase", () => {
-  it("starts every collection the seed has, and leaves all but two empty", () => {
+  it("starts every collection the seed has, and leaves all but the admin profile empty", () => {
     const launch = createLaunchDatabase()
     const seed = createInMemoryDatabase()
 
@@ -16,7 +14,7 @@ describe("createLaunchDatabase", () => {
       .map(([table]) => table)
       .sort()
 
-    expect(populated).toEqual([...LAUNCH_POPULATED].sort())
+    expect(populated).toEqual(["profiles"])
   })
 
   it("carries only the unclaimed platform admin, so no sample person reaches a real deployment", () => {
@@ -35,12 +33,6 @@ describe("createLaunchDatabase", () => {
     expect(seed.profiles.length).toBeGreaterThan(1)
     expect(seed.organizations.length).toBeGreaterThan(0)
     expect(seed.loadPostings.length).toBeGreaterThan(0)
-  })
-
-  it("keeps the full subscription plan catalog, which is product configuration", () => {
-    expect(createLaunchDatabase().billingPlanDefinitions).toEqual(
-      createInMemoryDatabase().billingPlanDefinitions
-    )
   })
 
   it("is a valid stored document with nothing withheld or reported", () => {

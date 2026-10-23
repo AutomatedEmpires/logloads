@@ -25,15 +25,11 @@ vi.mock("@/lib/session", () => ({
   isClerkConfigured: () => true
 }))
 
-vi.mock("@/lib/subscription-stripe", () => ({
+vi.mock("@/lib/stripe-account", () => ({
   stripeRuntimeModeProblem: mocks.stripeRuntimeModeProblem
 }))
 
 import { GET } from "@/app/api/health/route"
-
-const ORGANIZATION_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-const ORGANIZATION_SCOPE_SHA256 =
-  "303617b9730210ef3c86c52dc2aecc4dce54aaca6af8c8b0f4ceec9ecc54e57e"
 
 describe("public health route", () => {
   beforeEach(() => {
@@ -41,12 +37,6 @@ describe("public health route", () => {
     mocks.platformFeeCollectionEnabled.mockReturnValue(false)
     mocks.refreshState.mockResolvedValue(undefined)
     mocks.stripeRuntimeModeProblem.mockReturnValue(null)
-    vi.stubEnv("LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS", ORGANIZATION_ID)
-    vi.stubEnv("LOGLOADS_PERCENTAGE_ENROLLMENT", "enabled")
-    vi.stubEnv(
-      "LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256",
-      ORGANIZATION_SCOPE_SHA256
-    )
     vi.stubEnv("LOGLOADS_STRIPE_EXPECTED_ACCOUNT_ID", "acct_expected")
     vi.stubEnv("LOGLOADS_STRIPE_EXPECTED_LIVEMODE", "test")
     vi.stubEnv("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY", "pk_test_example")
@@ -58,7 +48,7 @@ describe("public health route", () => {
     vi.unstubAllEnvs()
   })
 
-  it("publishes only coarse billing posture and a boolean scope proof", async () => {
+  it("publishes only coarse billing posture", async () => {
     const response = await GET()
     const body = await response.json()
     const serialized = JSON.stringify(body)
@@ -66,21 +56,12 @@ describe("public health route", () => {
     expect(response.status).toBe(200)
     expect(response.headers.get("cache-control")).toBe("no-store")
     expect(body.engine).toEqual({ ok: true })
-    expect(body.integrations.billing).toBe("dark_configured")
-    expect(body.integrations.billingPercentageV1).toEqual({
+    expect(body.integrations.billing).toEqual({
       collection: "disabled",
-      enrollment: "enabled",
-      readiness: "dark_configured",
-      scopeVerified: true
+      readiness: "configured"
     })
-    expect(body.integrations).not.toHaveProperty("billingSubscriptionHistory")
     for (const forbidden of [
-      "allowedOrganizationCount",
-      "allowedOrganizationScopeSha256",
-      ORGANIZATION_SCOPE_SHA256,
-      "invalidEnrollmentEntryCount",
-      "missingPrices",
-      "ownerSmoke",
+      "acct_expected",
       "providerAccountAssertionConfigured",
       "providerModeAligned",
       "stripeSecretConfigured",
@@ -90,21 +71,30 @@ describe("public health route", () => {
     }
   })
 
-  it("reports billing misconfigured when the private scope assertion drifts", async () => {
-    vi.stubEnv(
-      "LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256",
-      "0".repeat(64)
-    )
+  it("reports collection when the single fee-collection switch is on", async () => {
+    mocks.platformFeeCollectionEnabled.mockReturnValue(true)
 
-    const response = await GET()
-    const body = await response.json()
+    const body = await (await GET()).json()
 
-    expect(response.status).toBe(200)
-    expect(body.integrations.billing).toBe("misconfigured")
-    expect(body.integrations.billingPercentageV1).toMatchObject({
-      enrollment: "misconfigured",
-      readiness: "misconfigured",
-      scopeVerified: false
+    expect(body.integrations.billing).toEqual({
+      collection: "enabled",
+      readiness: "configured"
     })
+  })
+
+  it("reports billing misconfigured when the Stripe key does not match the expected mode", async () => {
+    mocks.stripeRuntimeModeProblem.mockReturnValue("mode mismatch")
+
+    const body = await (await GET()).json()
+
+    expect(body.integrations.billing).toMatchObject({ readiness: "misconfigured" })
+  })
+
+  it("reports billing misconfigured without the expected account assertion", async () => {
+    vi.stubEnv("LOGLOADS_STRIPE_EXPECTED_ACCOUNT_ID", "")
+
+    const body = await (await GET()).json()
+
+    expect(body.integrations.billing).toMatchObject({ readiness: "misconfigured" })
   })
 })

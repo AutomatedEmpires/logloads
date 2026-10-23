@@ -7,10 +7,7 @@ import {
 	platformFeeCollectionEnabled,
 	resolveStripeBilling
 } from "@/lib/billing"
-import {
-	resolveSubscriptionStripe,
-	verifyExpectedStripeAccount
-} from "@/lib/subscription-stripe"
+import { verifyExpectedStripeAccount } from "@/lib/stripe-account"
 
 /**
  * Collects one month's platform fee from a host.
@@ -23,7 +20,8 @@ import {
  * Stripe invoice, and every Stripe call it makes carries an idempotency key
  * derived from the bill's id, so a repeat lands on the same Stripe invoice rather
  * than a second one. That is what makes this callable from a scheduler that
- * retries.
+ * retries. A bill below Stripe's minimum card charge is answered as such and
+ * stays open.
  */
 export async function POST(_request: Request, context: { params: Promise<{ invoiceId: string }> }) {
 	try {
@@ -38,26 +36,18 @@ export async function POST(_request: Request, context: { params: Promise<{ invoi
 			)
 		}
 
-		const subscriptionStripe = resolveSubscriptionStripe(process.env)
-
-		if (!subscriptionStripe.ok) {
-			throw new ApiError("Stripe billing is not configured", 503, {
-				"Retry-After": "5"
-			})
-		}
-
-		try {
-			await verifyExpectedStripeAccount(subscriptionStripe.port, process.env)
-		} catch {
-			throw new ApiError("Stripe billing account verification failed", 503, {
-				"Retry-After": "5"
-			})
-		}
-
 		const billing = resolveStripeBilling()
 
 		if (!billing.ok) {
 			throw new ApiError(billing.message, 503, { "Retry-After": "5" })
+		}
+
+		try {
+			await verifyExpectedStripeAccount(billing.value, process.env)
+		} catch {
+			throw new ApiError("Stripe billing account verification failed", 503, {
+				"Retry-After": "5"
+			})
 		}
 
 		const charge = await chargeHostInvoice({

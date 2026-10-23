@@ -277,10 +277,10 @@ export function FleetFirstRunPanel({
       data-testid="fleet-first-run"
     >
       <div className="first-run-panel__copy">
-        <p className="eyebrow">Fleet Free is active</p>
+        <p className="eyebrow">Fleet workspace is active</p>
         <h2 id="fleet-first-run-title">Build the operating picture before you put a truck on work.</h2>
         <p>
-          This workspace is ready for drivers, trucks, and dispatch with no checkout. Confirm the
+          This workspace is ready for drivers, trucks, and dispatch, and fleets pay LogLoads nothing. Confirm the
           organization, review the first unit, and assign its driver. A load request opens only
           when that driver&apos;s records and the exact rig meet the credential gate.
         </p>

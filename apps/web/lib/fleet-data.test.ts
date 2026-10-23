@@ -21,7 +21,8 @@ const mocks = vi.hoisted(() => {
 })
 
 vi.mock("server-only", () => ({}))
-vi.mock("@logloads/contracts", () => ({
+vi.mock("@logloads/contracts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@logloads/contracts")>()),
   evaluateLoadCompatibility: mocks.evaluateLoadCompatibility,
   selectDriverEquipmentCombination: mocks.selectDriverEquipmentCombination
 }))

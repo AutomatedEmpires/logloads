@@ -19,7 +19,6 @@ const mocks = vi.hoisted(() => {
     platformFeeCollectionEnabled: vi.fn(),
     requireAdminApiActor: vi.fn(),
     resolveStripeBilling: vi.fn(),
-    resolveSubscriptionStripe: vi.fn(),
     verifyExpectedStripeAccount: vi.fn()
   }
 })
@@ -44,19 +43,40 @@ vi.mock("@/lib/billing", () => ({
   platformFeeCollectionEnabled: mocks.platformFeeCollectionEnabled,
   resolveStripeBilling: mocks.resolveStripeBilling
 }))
-vi.mock("@/lib/subscription-stripe", () => ({
-  resolveSubscriptionStripe: mocks.resolveSubscriptionStripe,
+vi.mock("@/lib/stripe-account", () => ({
   verifyExpectedStripeAccount: mocks.verifyExpectedStripeAccount
 }))
 
 import { POST } from "@/app/api/billing/invoices/[invoiceId]/charge/route"
 
+function charge() {
+  return POST(
+    new Request("https://logloads.test/api/billing/invoices/invoice-1/charge", {
+      method: "POST"
+    }),
+    { params: Promise.resolve({ invoiceId: "invoice-1" }) }
+  )
+}
+
 describe("manual host invoice collection", () => {
+  const port = { marker: "stripe-billing-port" }
+
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.platformFeeCollectionEnabled.mockReturnValue(true)
-    mocks.resolveSubscriptionStripe.mockReturnValue({ ok: true, port: {} })
-    mocks.resolveStripeBilling.mockReturnValue({ ok: true, value: {} })
+    mocks.resolveStripeBilling.mockReturnValue({ ok: true, value: port })
+    mocks.verifyExpectedStripeAccount.mockResolvedValue(undefined)
+    mocks.operatingStateAccess.mockReturnValue({ marker: "operating-state" })
+  })
+
+  it("refuses while fee collection is switched off, before resolving Stripe", async () => {
+    mocks.platformFeeCollectionEnabled.mockReturnValue(false)
+
+    const response = await charge()
+
+    expect(response.status).toBe(409)
+    expect(mocks.resolveStripeBilling).not.toHaveBeenCalled()
+    expect(mocks.chargeHostInvoice).not.toHaveBeenCalled()
   })
 
   it("fails closed before any charge when the Stripe account assertion fails", async () => {
@@ -64,18 +84,35 @@ describe("manual host invoice collection", () => {
       new Error("wrong Stripe account")
     )
 
-    const response = await POST(
-      new Request("https://logloads.test/api/billing/invoices/invoice-1/charge", {
-        method: "POST"
-      }),
-      { params: Promise.resolve({ invoiceId: "invoice-1" }) }
-    )
+    const response = await charge()
 
     expect(response.status).toBe(503)
     await expect(response.json()).resolves.toEqual({
       error: "Stripe billing account verification failed"
     })
-    expect(mocks.resolveStripeBilling).not.toHaveBeenCalled()
+    expect(mocks.verifyExpectedStripeAccount).toHaveBeenCalledWith(port, process.env)
     expect(mocks.chargeHostInvoice).not.toHaveBeenCalled()
+  })
+
+  it("answers a bill below the card minimum as held open, not as an error", async () => {
+    const held = {
+      invoiceId: "invoice-1",
+      minimumChargeCents: 50,
+      outcome: "below_card_minimum",
+      status: "open",
+      subtotalCents: 40
+    }
+
+    mocks.chargeHostInvoice.mockResolvedValue({ ok: true, outcome: "ok", value: held })
+
+    const response = await charge()
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ charge: held })
+    expect(mocks.chargeHostInvoice).toHaveBeenCalledWith({
+      invoiceId: "invoice-1",
+      port,
+      state: { marker: "operating-state" }
+    })
   })
 })

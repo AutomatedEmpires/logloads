@@ -1,7 +1,7 @@
 import { invitableRolesForOrganizationType, organizationRoleCan } from "@logloads/contracts"
 
 import { SettingsPage } from "@/components/v3"
-import { getSettingsView, MEMBER_ROLE_LABELS } from "@/lib/plans"
+import { getSettingsView, MEMBER_ROLE_LABELS } from "@/lib/settings-data"
 import { getCockpitContext, shellAccountFor } from "@/lib/v3"
 import { listSubjectVerifications } from "@/lib/verification-data"
 

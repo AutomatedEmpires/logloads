@@ -1,8 +1,10 @@
 import {
-  FEE_BPS_SCALE,
+  HOST_FEE_TERMS_VERSION,
   PLATFORM_FEE_BPS,
   computePlatformFeeCents,
-  type HostBillingProfile
+  platformFeePercentLabel,
+  type HostBillingProfile,
+  type HostFeeAgreement
 } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import type { LogLoadsDatabaseState } from "@logloads/db"
@@ -16,7 +18,7 @@ const HOST_ORG = "33333333-3333-4333-8333-333333333332"
  * The rate a host is quoted, derived the way the refusals derive it, so the
  * message assertions below survive a rate change instead of pinning a string.
  */
-const FEE_PERCENT = `${(PLATFORM_FEE_BPS / FEE_BPS_SCALE) * 100}%`
+const FEE_PERCENT = platformFeePercentLabel()
 
 const BASE_LOAD = {
   companyId: HOST_ORG,
@@ -63,61 +65,48 @@ function billingProfileFor(state: LogLoadsDatabaseState, organizationId = HOST_O
   return profile
 }
 
-interface MutablePercentageAccount {
-  percentageTermsSnapshot: {
-    acceptedTermsVersion: string
-    billingCadence: string
-    currency: string
-    feeBps: number
-  }
-  subscriptionId: string | null
-}
+function agreementFor(state: LogLoadsDatabaseState): HostFeeAgreement {
+  const agreement = state.hostFeeAgreements.find((entry) => entry.organizationId === HOST_ORG)
 
-function percentageAccountFor(state: LogLoadsDatabaseState): MutablePercentageAccount {
-  const account = state.organizationBillingAccounts.find(
-    (entry) => entry.organizationId === HOST_ORG
-  )
-
-  if (!account || !account.percentageTermsSnapshot) {
-    throw new Error("the seed has no current percentage agreement for the host")
+  if (!agreement) {
+    throw new Error("the seed has no fee agreement for the host")
   }
 
-  return account as unknown as MutablePercentageAccount
+  return agreement
 }
 
-const INVALID_CURRENT_AGREEMENT_CASES: Array<{
-  corrupt: (account: MutablePercentageAccount) => void
+const INVALID_AGREEMENT_CASES: Array<{
+  corrupt: (state: LogLoadsDatabaseState) => void
   reason: string
 }> = [
   {
-    corrupt: (account) => {
-      account.percentageTermsSnapshot.acceptedTermsVersion = "percentage-v1-retired"
+    corrupt: (state) => {
+      state.hostFeeAgreements = state.hostFeeAgreements.filter(
+        (entry) => entry.organizationId !== HOST_ORG
+      )
     },
-    reason: "a stale terms version"
+    reason: "no accepted agreement"
   },
   {
-    corrupt: (account) => {
-      account.percentageTermsSnapshot.feeBps = PLATFORM_FEE_BPS - 1
+    corrupt: (state) => {
+      agreementFor(state).termsVersion = "2026-01-01"
     },
-    reason: "an altered fee"
+    reason: "an agreement to other terms"
   },
   {
-    corrupt: (account) => {
-      account.percentageTermsSnapshot.billingCadence = "weekly"
+    corrupt: (state) => {
+      agreementFor(state).feeBps = PLATFORM_FEE_BPS - 1
     },
-    reason: "an altered billing cadence"
+    reason: "an agreement at another rate"
   },
   {
-    corrupt: (account) => {
-      account.percentageTermsSnapshot.currency = "CAD"
+    corrupt: (state) => {
+      state.hostFeeAgreements = state.hostFeeAgreements.filter(
+        (entry) => entry.organizationId !== HOST_ORG
+      )
+      expect(state.hostFeeAgreements.length).toBeGreaterThan(0)
     },
-    reason: "an altered currency"
-  },
-  {
-    corrupt: (account) => {
-      account.subscriptionId = "20202020-2020-4020-8020-202020202020"
-    },
-    reason: "a subscription attached to the percentage account"
+    reason: "only another organization's agreement on file"
   }
 ]
 
@@ -230,9 +219,9 @@ describe("what a published load pays the driver", () => {
     const created = createLoadPosting(state, { ...BASE_LOAD, driverPayCents: 52_500, status: "open" })
     const stored = state.loadPostings.find((load) => load.id === created.id)!
 
-    // 5% of $525.00, from the contracts function the ledger and the invoice use.
+    // 2% of $525.00, from the contracts function the ledger and the invoice use.
     // If this row's pay were null or an estimate, there would be nothing to bill.
-    expect(computePlatformFeeCents(stored.driverPayCents!, PLATFORM_FEE_BPS)).toBe(2_625)
+    expect(computePlatformFeeCents(stored.driverPayCents!, PLATFORM_FEE_BPS)).toBe(1_050)
   })
 
   it("keeps the rate card alongside the stated pay rather than replacing it", () => {
@@ -301,17 +290,17 @@ describe("what a published load pays the driver", () => {
     }
   })
 
-  it("quotes the founder-decided rate", () => {
+  it("quotes the 2% host fee", () => {
     // Pinned once, here, rather than as a literal inside every message
-    // assertion: 5% of stated driver pay is the decided commercial term, and a
-    // silent change to it should stop this suite.
-    expect(FEE_PERCENT).toBe("5%")
+    // assertion: 2% of stated driver pay is the commercial term, and a silent
+    // change to it should stop this suite.
+    expect(FEE_PERCENT).toBe("2%")
   })
 })
 
 describe("a host may not publish work they cannot be billed for", () => {
-  it.each(INVALID_CURRENT_AGREEMENT_CASES)(
-    "refuses $reason before creating live work",
+  it.each(INVALID_AGREEMENT_CASES)(
+    "refuses $reason before creating live work, and names the fix",
     ({ corrupt }) => {
       const state = createInMemoryDatabase()
       const before = {
@@ -320,16 +309,55 @@ describe("a host may not publish work they cannot be billed for", () => {
         slots: state.truckSlots.length
       }
 
-      corrupt(percentageAccountFor(state))
+      corrupt(state)
 
-      expect(() => createLoadPosting(state, { ...BASE_LOAD, status: "open" })).toThrow(
-        /must accept the current LogLoads fee agreement/
-      )
+      let message = ""
+
+      try {
+        createLoadPosting(state, { ...BASE_LOAD, status: "open" })
+        throw new Error("publishing without the current fee agreement should have been refused")
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error)
+      }
+
+      expect(message).toContain("has not accepted the LogLoads fee terms")
+      expect(message).toContain(FEE_PERCENT)
+      expect(message).toContain("Accept the fee terms in Billing, then publish")
       expect(state.loadPostings).toHaveLength(before.postings)
       expect(state.truckSlots).toHaveLength(before.slots)
       expect(state.opportunityCapacities).toHaveLength(before.capacities)
     }
   )
+
+  it("publishes once the host accepts the current terms again", () => {
+    // The negative control for every agreement refusal above: the same input
+    // publishes as soon as the agreement is current.
+    const state = createInMemoryDatabase()
+
+    agreementFor(state).termsVersion = "2026-01-01"
+    expect(() => createLoadPosting(state, { ...BASE_LOAD, status: "open" })).toThrow(
+      /has not accepted the LogLoads fee terms/
+    )
+
+    agreementFor(state).termsVersion = HOST_FEE_TERMS_VERSION
+
+    const load = createLoadPosting(state, { ...BASE_LOAD, status: "open" })
+
+    expect(state.truckSlots.some((slot) => slot.loadPostingId === load.id)).toBe(true)
+  })
+
+  it("refuses when one organization has two fee agreements, instead of picking one", () => {
+    const state = createInMemoryDatabase()
+
+    state.hostFeeAgreements.push({
+      ...agreementFor(state),
+      id: "34343434-3434-4434-8434-3434343434f1"
+    })
+
+    expect(() => createLoadPosting(state, { ...BASE_LOAD, status: "open" })).toThrow(
+      /2 fee agreements on file/
+    )
+  })
 
   it("refuses an organization with no card on file, and says what to do about it", () => {
     const state = createInMemoryDatabase()
@@ -354,14 +382,14 @@ describe("a host may not publish work they cannot be billed for", () => {
     expect(message).toContain("no payment card on file")
     expect(message).toContain(FEE_PERCENT)
     expect(message).toContain("only on truckloads that actually complete")
-    expect(message).toContain("Attach a card")
+    expect(message).toContain("Attach a card in Billing")
 
     expect(state.loadPostings).toHaveLength(before.postings)
     expect(state.truckSlots).toHaveLength(before.slots)
     expect(state.opportunityCapacities).toHaveLength(before.capacities)
   })
 
-  it("publishes with the exact current agreement and an attached card", () => {
+  it("publishes with the current agreement, stated pay and an attached card", () => {
     // The positive control for the refusal above: nothing else about the input
     // changes, so the card is demonstrably the only thing that was blocking it.
     const state = createInMemoryDatabase()

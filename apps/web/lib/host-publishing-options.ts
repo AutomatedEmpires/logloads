@@ -2,55 +2,28 @@ import type { OpportunityVisibilityMode } from "@logloads/contracts"
 
 import type { HostPublishingOptions } from "./host-data"
 
-type CurrentPercentagePublicationState = Pick<
+type HostPublicationState = Pick<
   HostPublishingOptions,
-  | "billingActivationState"
-  | "billingModel"
-  | "billingProfileStatus"
-  | "currentPercentageAgreementActive"
+  "billingProfileStatus" | "feeAgreementAccepted"
 >
 
 /**
- * Current percentage work needs two independent recorded facts: the exact
- * agreement and one usable attached payment method. Agreement acceptance alone
- * deliberately cannot become a "ready to publish" claim.
+ * Mirrors the organization-level part of `assertHostCanPublish`: the host has
+ * accepted the current LogLoads fee terms AND has one attached card the fee can
+ * be charged to. Accepting the terms alone is deliberately not "ready".
  */
-export function hostPercentagePublicationIsReady(
-  options: CurrentPercentagePublicationState
-): boolean {
-  return (
-    options.billingActivationState === "percentage_active" &&
-    options.billingModel === "percentage_v1" &&
-    options.currentPercentageAgreementActive &&
-    options.billingProfileStatus === "attached"
-  )
+export function hostPublicationIsReady(options: HostPublicationState): boolean {
+  return options.feeAgreementAccepted && options.billingProfileStatus === "attached"
 }
 
 /**
- * Mirrors the publication portion of `assertHostCanPublish`.
- *
- * Drafts remain available in every activation state. After the percentage-v1
- * cutover, only an exact current percentage agreement plus an attached card may
- * advertise live publication. Historical subscriptions stay visible in Billing
- * for reconciliation and collection, but no longer authorize new activity.
+ * The reach a host may publish live work to. Drafts are always available; live
+ * publication is offered only once the host is ready to be billed for it.
  */
 export function hostLiveVisibilityModes(
-  options: Pick<
-    HostPublishingOptions,
-    | "billingActivationState"
-    | "billingModel"
-    | "billingProfileStatus"
-    | "currentPercentageAgreementActive"
-    | "subscriptionPlanCode"
-  >
+  options: HostPublicationState
 ): OpportunityVisibilityMode[] {
-  if (hostPercentagePublicationIsReady(options)) {
-    return ["open_network", "private_network", "verified_network"]
-  }
-
-  if (options.billingActivationState === "legacy") {
-    return []
-  }
-
-  return []
+  return hostPublicationIsReady(options)
+    ? ["open_network", "private_network", "verified_network"]
+    : []
 }

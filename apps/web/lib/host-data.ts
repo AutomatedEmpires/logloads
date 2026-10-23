@@ -3,14 +3,11 @@ import "server-only"
 import {
   formatMoney,
   formatRateLabel,
-  isCurrentPercentageAgreement,
+  isCurrentHostFeeAgreement,
   loadTypeSchema,
   organizationRoleCan,
-  type BillingModel,
   type HostBillingProfileStatus,
-  type OrganizationBillingAccount,
-  type OrganizationRole,
-  type SubscriptionPlanCode
+  type OrganizationRole
 } from "@logloads/contracts"
 
 import { services } from "./services"
@@ -59,13 +56,10 @@ export interface RequirementOption {
 
 export interface HostPublishingOptions {
   dispatcher: HostDispatcherOption | null
-  billingActivationState: OrganizationBillingAccount["activationState"] | null
   /** `null` means conflicting profiles; zero profiles projects canonical `none`. */
   billingProfileStatus: HostBillingProfileStatus | null
-  billingModel: BillingModel | null
-  /** Exact current percentage-v1 terms, independent of payment-method readiness. */
-  currentPercentageAgreementActive: boolean
-  subscriptionPlanCode: SubscriptionPlanCode | null
+  /** Exactly one agreement at the current fee terms, independent of the card. */
+  feeAgreementAccepted: boolean
   landings: HostLandingOption[]
   loadTypes: string[]
   rates: HostRateOption[]
@@ -86,16 +80,12 @@ export function getHostPublishingOptions(
   actorUserId: string
 ): HostPublishingOptions {
   const state = services.state
-  // Mirrors `assertHostCanPublish`: only accounts already effective decide the
-  // commercial model, so a queued future-dated account cannot make the current
-  // state read as ambiguous here while the service still publishes.
-  const now = Date.now()
-  const billingAccounts = state.organizationBillingAccounts.filter(
-    (account) =>
-      account.organizationId === organizationId &&
-      Date.parse(account.effectiveAt) <= now
+  // Mirrors `assertHostCanPublish`: exactly one agreement at the current terms.
+  const feeAgreements = state.hostFeeAgreements.filter(
+    (agreement) => agreement.organizationId === organizationId
   )
-  const billingAccount = billingAccounts.length === 1 ? billingAccounts[0]! : null
+  const feeAgreementAccepted =
+    feeAgreements.length === 1 && isCurrentHostFeeAgreement(feeAgreements[0])
   const billingProfiles = state.hostBillingProfiles.filter(
     (profile) => profile.organizationId === organizationId
   )
@@ -105,16 +95,6 @@ export function getHostPublishingOptions(
       : billingProfiles.length === 1
         ? billingProfiles[0]!.status
         : null
-  const currentPercentageAgreementActive =
-    isCurrentPercentageAgreement(billingAccount)
-  const subscription = billingAccount?.subscriptionId
-    ? state.organizationSubscriptions.find(
-        (candidate) =>
-          candidate.id === billingAccount.subscriptionId &&
-          candidate.organizationId === organizationId &&
-          candidate.billingModel === billingAccount.billingModel
-      ) ?? null
-    : null
 
   // A dispatch coordinate is required on every posting and is an
   // organization-owned source. Never advertise another outfit's profile as a
@@ -152,10 +132,8 @@ export function getHostPublishingOptions(
 
   return {
     accessVocabulary: sortedOptions(accessValues),
-    billingActivationState: billingAccount?.activationState ?? null,
     billingProfileStatus,
-    billingModel: billingAccount?.billingModel ?? null,
-    currentPercentageAgreementActive,
+    feeAgreementAccepted,
     dispatcher: dispatcherProfile
       ? {
           email: dispatcherProfile.contact.email ?? null,
@@ -183,7 +161,6 @@ export function getHostPublishingOptions(
             ? `${formatRateLabel(rate.baseRate, rate.rateType)} + ${formatMoney({ amountCents: rate.fuelSurchargeCents, currency: rate.baseRate.currency })} fuel`
             : formatRateLabel(rate.baseRate, rate.rateType)
       })),
-    subscriptionPlanCode: subscription?.planCode ?? null,
     routes: state.haulRoutes
       .filter((route) =>
         route.companyId === organizationId && Boolean(millsById.get(route.millId)?.isActive)
@@ -298,13 +275,8 @@ export interface HostDestinationRecord {
   editable: HostMillDraft
 }
 
-/**
- * What the host's plan allows, and what they are already using. The number was
- * advertised on the billing page long before anything enforced it; now that a
- * landing can actually be created, the page has to say where they stand.
- */
+/** The operating records a host keeps: landings in use, destinations, rates. */
 export interface HostWorkspaceSetup {
-  landingLimit: number | null
   activeLandingCount: number
   destinations: HostDestinationRecord[]
   mills: HostMillOption[]
@@ -348,7 +320,6 @@ export function getHostWorkspaceSetup(
         roadCondition: mill.roadCondition ?? "not_recorded"
       }))
       .sort((left, right) => left.label.localeCompare(right.label)) : [],
-    landingLimit: services.activeLandingLimitFor(organizationId),
     // Shared platform destinations plus this organization's own submissions;
     // another outfit's submitted destination is never offered here.
     mills: canPublish ? visibleMills

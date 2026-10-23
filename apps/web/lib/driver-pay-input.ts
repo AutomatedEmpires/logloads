@@ -1,28 +1,27 @@
 import { PLATFORM_FEE_BPS, hostChargeBreakdown, type HostChargeBreakdown } from "@logloads/contracts"
 
 /**
- * Turning what a host TYPES into integer cents for direct transportation
- * compensation and, only for preserved `legacy_percentage` assignments, the
- * frozen fee base.
+ * Turning what a host TYPES into integer cents: the direct transportation
+ * compensation a load pays its driver, and the base of the 2% host fee.
  *
  * WHY THIS IS NOT INLINE IN THE BUILDER. This is the boundary where a human's
- * dollars become operational money evidence. It is also the boundary used to
- * preserve historical percentage obligations, so it can be wrong by money
- * rather than by ordinary validation. It lives in a module of its own so it can
- * be tested: `"19.99" * 100` is 1998.9999999999998 in this language.
+ * dollars become operational money evidence, and the fee is charged on what it
+ * returns, so it can be wrong by money rather than by ordinary validation. It
+ * lives in a module of its own so it can be tested: `"19.99" * 100` is
+ * 1998.9999999999998 in this language.
  *
  * WHY IT DOES NO FEE ARITHMETIC OF ITS OWN. The fee comes from
  * `hostChargeBreakdown` in @logloads/contracts, the same function the ledger and
- * the legacy invoice use. A second implementation here would be a historical
- * quote that can disagree with the bill.
+ * the invoice use. A second implementation here would be a quote that can
+ * disagree with the bill.
  */
 
 /**
  * The most a host may state one truckload pays a driver: $1,000,000.
  *
  * A cap rather than a trust: a fat-fingered extra zero changes the compensation
- * promised to a driver or carrier and, for a legacy assignment, its fee base. It
- * also keeps historical `driverPayCents * feeBps` arithmetic exact.
+ * promised to a driver or carrier and the fee charged on it. It also keeps
+ * `driverPayCents * feeBps` arithmetic exact.
  */
 export const MAX_DRIVER_PAY_CENTS = 100_000_000
 
@@ -86,9 +85,8 @@ export function parseDriverPayCents(typed: string): number | null {
 }
 
 /**
- * Legacy-only three-number quote for a truckload, or null while what the host
- * typed is not yet an amount. New subscription work must not call this function
- * to derive LogLoads revenue.
+ * The three numbers a host sees for one truckload — driver pay, the 2% fee, and
+ * the total — or null while what the host typed is not yet an amount.
  *
  * Returns the contracts breakdown untouched, so the fee the builder shows is by
  * construction the fee `computePlatformFeeCents` produces at the current rate.
@@ -105,17 +103,17 @@ export interface PayOutlook extends HostChargeBreakdown {
 }
 
 /**
- * Legacy-only outlook for several truckloads if every one of them runs.
+ * What several truckloads come to if every one of them runs.
  *
  * MULTIPLIES THE PER-TRUCKLOAD FEE; it does not rate the summed pay. The fee
  * ledger raises one event per completed assignment — one truckload hauled by one
  * driver — so six truckloads are six roundings, not one rounding of six times
- * the pay. Those differ by whole cents (three truckloads at $10.09 bill 150c as
- * three fees and 151c as one fee on $30.27), and the number shown to a host has
+ * the pay. Those differ by whole cents (three truckloads at $10.09 bill 60c as
+ * three fees and 61c as one fee on $30.27), and the number shown to a host has
  * to be the one the invoice will add up to.
  *
- * "If every one of them runs" is the honest framing: a preserved legacy fee is
- * charged on completed loads only, so this is a ceiling, never an amount owed.
+ * "If every one of them runs" is the honest framing: the fee is charged on
+ * completed loads only, so this is a ceiling, never an amount owed.
  */
 export function payOutlookForTruckloads(driverPayCents: number, truckloads: number): PayOutlook {
   const each = hostChargeBreakdown(driverPayCents, PLATFORM_FEE_BPS)

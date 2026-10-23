@@ -3,12 +3,12 @@ import { expect, test, type Page, type TestInfo } from "@playwright/test"
 const ROLE_TOURS = [
   {
     captureCount: 12,
-    commercialTruth: /5% on top of stated driver pay only after an authoritative physical completion/,
+    commercialTruth: /2% on top of stated driver pay only after an authoritative physical completion/,
     heading: "Run the landing from one shared operating picture.",
     role: "host"
   },
   {
-    captureCount: 14,
+    captureCount: 13,
     commercialTruth: /Fleet workspace access is free forever/,
     heading: "Coordinate every truck without taxing driver pay.",
     role: "fleet"

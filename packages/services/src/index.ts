@@ -17,8 +17,7 @@ import {
   reviewOrganization,
   reviewVerificationRecord
 } from "./admin"
-import { applyBillingUpdate, findEntitlementByStripeSubscription } from "./billing"
-import { acceptPercentageBillingAgreement } from "./percentage-billing"
+import { acceptHostFeeAgreement } from "./host-fee-agreement"
 import {
   addEquipmentCombination,
   assignDriverToEquipment,
@@ -49,7 +48,6 @@ import {
   unreadThreadCounts
 } from "./messaging"
 import {
-  activeLandingLimitFor,
   countActiveLandings,
   createHaulRoute,
   createLanding,
@@ -111,7 +109,6 @@ import {
   getTripDocumentTarget,
   tripDocumentPublicIdPrefix,
   listAttentionItems,
-  listEntitlements,
   listFutureAvailabilityForOrganization,
   listPrivateNetworkRelationships,
   listRequestableLoadsForOrganization,
@@ -133,47 +130,16 @@ import {
 import { listTripDocuments, requiredCompletionEvidence } from "./haul-completion"
 import {
   accruePlatformFee,
-  hostFeeSummary,
-  markInvoicePaid,
-  markInvoiceUncollectible,
   openAllClosedPeriodInvoices,
   openClosedPeriodInvoices,
-  openInvoiceForPeriod,
   reconcileMissingPlatformFees,
   voidPlatformFee
 } from "./platform-fees"
 import {
-  acceptDispatchProSubscription,
-  activateAuthorizedOrganizationSubscriptionFromProvider,
-  activateOrganizationSubscription,
-  applyScheduledOrganizationSubscriptionPlanChange,
-  applyOrganizationSubscriptionPaymentState,
-  bindBillingAdjustmentProviderReference,
-  bindNetworkOverageInvoiceProvider,
-  bindOrganizationSubscriptionProvider,
-  bindOrganizationSubscriptionScheduleProvider,
-  authorizePilotConversionSubscription,
-  configureOrganizationSubscription,
   claimBillingNotificationEmail,
-  ensureBillingPeriodSummary,
-  markNetworkOverageInvoiceFailed,
-  markNetworkOverageInvoicePaid,
   markBillingNotificationEmailDelivered,
-  markBillingNotificationEmailFailed,
-  openNetworkOverageInvoice,
-  planSubscriptionBillingRun,
-  recordBillingAdjustment,
-  recordBillingAdjustmentProviderSettlement,
-  recordBillingAdjustmentProviderSettlementFailure,
-  recordSubscriptionBaseInvoiceProviderState,
-  reconcileMissingNetworkUsage,
-  reconcileMissingNetworkUsageAsPlatformAdmin,
-  recordCompletedNetworkUsage,
-  retirePaidDispatchEntitlementForSubscription,
-  scheduleOrganizationSubscriptionNonRenewal,
-  scheduleOrganizationSubscriptionPlanChange,
-  reverseNetworkUsage
-} from "./subscription-billing"
+  markBillingNotificationEmailFailed
+} from "./billing-notifications"
 import { getRouteById, listRoutes } from "./routes"
 import { createTruckSlot, listTruckSlotsForDate } from "./truck-slots"
 import {
@@ -209,10 +175,7 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
       organizationId: string
     ) => residualSettlementItemsForOrganization(state, userId, organizationId),
     addEquipmentCombination: (input: unknown) => addEquipmentCombination(state, input),
-    applyBillingUpdate: (input: unknown) => applyBillingUpdate(state, input),
-    // The platform fee ledger. Separate from applyBillingUpdate above, which is the
-    // Dispatch Pro software subscription: a plan webhook must never be able to
-    // touch a per-load charge.
+    // The LogLoads fee ledger.
     accruePlatformFee: (
       input: Parameters<typeof accruePlatformFee>[1],
       at?: Parameters<typeof accruePlatformFee>[2]
@@ -221,10 +184,6 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
       input: Parameters<typeof voidPlatformFee>[1],
       at?: Parameters<typeof voidPlatformFee>[2]
     ) => voidPlatformFee(state, input, at),
-    openInvoiceForPeriod: (
-      input: Parameters<typeof openInvoiceForPeriod>[1],
-      at?: Parameters<typeof openInvoiceForPeriod>[2]
-    ) => openInvoiceForPeriod(state, input, at),
     openClosedPeriodInvoices: (
       input: Parameters<typeof openClosedPeriodInvoices>[1],
       at?: Parameters<typeof openClosedPeriodInvoices>[2]
@@ -235,101 +194,6 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     reconcileMissingPlatformFees: (
       at?: Parameters<typeof reconcileMissingPlatformFees>[1]
     ) => reconcileMissingPlatformFees(state, at),
-    markInvoicePaid: (
-      input: Parameters<typeof markInvoicePaid>[1],
-      at?: Parameters<typeof markInvoicePaid>[2]
-    ) => markInvoicePaid(state, input, at),
-    markInvoiceUncollectible: (
-      input: Parameters<typeof markInvoiceUncollectible>[1],
-      at?: Parameters<typeof markInvoiceUncollectible>[2]
-    ) => markInvoiceUncollectible(state, input, at),
-    hostFeeSummary: (
-      input: Parameters<typeof hostFeeSummary>[1],
-      at?: Parameters<typeof hostFeeSummary>[2]
-    ) => hostFeeSummary(state, input, at),
-    configureOrganizationSubscription: (
-      input: Parameters<typeof configureOrganizationSubscription>[1],
-      at?: Parameters<typeof configureOrganizationSubscription>[2]
-    ) => configureOrganizationSubscription(state, input, at),
-    acceptDispatchProSubscription: (
-      input: Parameters<typeof acceptDispatchProSubscription>[1],
-      at?: Parameters<typeof acceptDispatchProSubscription>[2]
-    ) => acceptDispatchProSubscription(state, input, at),
-    activateOrganizationSubscription: (
-      input: Parameters<typeof activateOrganizationSubscription>[1],
-      at?: Parameters<typeof activateOrganizationSubscription>[2]
-    ) => activateOrganizationSubscription(state, input, at),
-    activateAuthorizedOrganizationSubscriptionFromProvider: (
-      input: Parameters<typeof activateAuthorizedOrganizationSubscriptionFromProvider>[1],
-      at?: Parameters<typeof activateAuthorizedOrganizationSubscriptionFromProvider>[2]
-    ) => activateAuthorizedOrganizationSubscriptionFromProvider(state, input, at),
-    authorizePilotConversionSubscription: (
-      input: Parameters<typeof authorizePilotConversionSubscription>[1],
-      at?: Parameters<typeof authorizePilotConversionSubscription>[2]
-    ) => authorizePilotConversionSubscription(state, input, at),
-    scheduleOrganizationSubscriptionPlanChange: (
-      input: Parameters<typeof scheduleOrganizationSubscriptionPlanChange>[1],
-      at?: Parameters<typeof scheduleOrganizationSubscriptionPlanChange>[2]
-    ) => scheduleOrganizationSubscriptionPlanChange(state, input, at),
-    bindOrganizationSubscriptionScheduleProvider: (
-      input: Parameters<typeof bindOrganizationSubscriptionScheduleProvider>[1],
-      at?: Parameters<typeof bindOrganizationSubscriptionScheduleProvider>[2]
-    ) => bindOrganizationSubscriptionScheduleProvider(state, input, at),
-    applyScheduledOrganizationSubscriptionPlanChange: (
-      input: Parameters<typeof applyScheduledOrganizationSubscriptionPlanChange>[1],
-      at?: Parameters<typeof applyScheduledOrganizationSubscriptionPlanChange>[2]
-    ) => applyScheduledOrganizationSubscriptionPlanChange(state, input, at),
-    scheduleOrganizationSubscriptionNonRenewal: (
-      input: Parameters<typeof scheduleOrganizationSubscriptionNonRenewal>[1],
-      at?: Parameters<typeof scheduleOrganizationSubscriptionNonRenewal>[2]
-    ) => scheduleOrganizationSubscriptionNonRenewal(state, input, at),
-    retirePaidDispatchEntitlementForSubscription: (
-      input: Parameters<typeof retirePaidDispatchEntitlementForSubscription>[1],
-      at?: Parameters<typeof retirePaidDispatchEntitlementForSubscription>[2]
-    ) => retirePaidDispatchEntitlementForSubscription(state, input, at),
-    bindOrganizationSubscriptionProvider: (
-      input: Parameters<typeof bindOrganizationSubscriptionProvider>[1],
-      at?: Parameters<typeof bindOrganizationSubscriptionProvider>[2]
-    ) => bindOrganizationSubscriptionProvider(state, input, at),
-    applyOrganizationSubscriptionPaymentState: (
-      input: Parameters<typeof applyOrganizationSubscriptionPaymentState>[1],
-      at?: Parameters<typeof applyOrganizationSubscriptionPaymentState>[2]
-    ) => applyOrganizationSubscriptionPaymentState(state, input, at),
-    ensureBillingPeriodSummary: (
-      input: Parameters<typeof ensureBillingPeriodSummary>[1],
-      at?: Parameters<typeof ensureBillingPeriodSummary>[2]
-    ) => ensureBillingPeriodSummary(state, input, at),
-    recordCompletedNetworkUsage: (
-      input: Parameters<typeof recordCompletedNetworkUsage>[1],
-      at?: Parameters<typeof recordCompletedNetworkUsage>[2]
-    ) => recordCompletedNetworkUsage(state, input, at),
-    reconcileMissingNetworkUsage: (
-      at?: Parameters<typeof reconcileMissingNetworkUsage>[1]
-    ) => reconcileMissingNetworkUsage(state, at),
-    reconcileMissingNetworkUsageAsPlatformAdmin: (
-      input: Parameters<typeof reconcileMissingNetworkUsageAsPlatformAdmin>[1],
-      at?: Parameters<typeof reconcileMissingNetworkUsageAsPlatformAdmin>[2]
-    ) => reconcileMissingNetworkUsageAsPlatformAdmin(state, input, at),
-    reverseNetworkUsage: (
-      input: Parameters<typeof reverseNetworkUsage>[1],
-      at?: Parameters<typeof reverseNetworkUsage>[2]
-    ) => reverseNetworkUsage(state, input, at),
-    recordBillingAdjustment: (
-      input: Parameters<typeof recordBillingAdjustment>[1],
-      at?: Parameters<typeof recordBillingAdjustment>[2]
-    ) => recordBillingAdjustment(state, input, at),
-    recordBillingAdjustmentProviderSettlement: (
-      input: Parameters<typeof recordBillingAdjustmentProviderSettlement>[1],
-      at?: Parameters<typeof recordBillingAdjustmentProviderSettlement>[2]
-    ) => recordBillingAdjustmentProviderSettlement(state, input, at),
-    recordBillingAdjustmentProviderSettlementFailure: (
-      input: Parameters<typeof recordBillingAdjustmentProviderSettlementFailure>[1],
-      at?: Parameters<typeof recordBillingAdjustmentProviderSettlementFailure>[2]
-    ) => recordBillingAdjustmentProviderSettlementFailure(state, input, at),
-    bindBillingAdjustmentProviderReference: (
-      input: Parameters<typeof bindBillingAdjustmentProviderReference>[1],
-      at?: Parameters<typeof bindBillingAdjustmentProviderReference>[2]
-    ) => bindBillingAdjustmentProviderReference(state, input, at),
     claimBillingNotificationEmail: (
       input: Parameters<typeof claimBillingNotificationEmail>[1],
       at?: Parameters<typeof claimBillingNotificationEmail>[2]
@@ -342,30 +206,6 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
       input: Parameters<typeof markBillingNotificationEmailFailed>[1],
       at?: Parameters<typeof markBillingNotificationEmailFailed>[2]
     ) => markBillingNotificationEmailFailed(state, input, at),
-    recordSubscriptionBaseInvoiceProviderState: (
-      input: Parameters<typeof recordSubscriptionBaseInvoiceProviderState>[1],
-      at?: Parameters<typeof recordSubscriptionBaseInvoiceProviderState>[2]
-    ) => recordSubscriptionBaseInvoiceProviderState(state, input, at),
-    openNetworkOverageInvoice: (
-      input: Parameters<typeof openNetworkOverageInvoice>[1],
-      at?: Parameters<typeof openNetworkOverageInvoice>[2]
-    ) => openNetworkOverageInvoice(state, input, at),
-    planSubscriptionBillingRun: (
-      at?: Parameters<typeof planSubscriptionBillingRun>[1]
-    ) => planSubscriptionBillingRun(state, at),
-    bindNetworkOverageInvoiceProvider: (
-      input: Parameters<typeof bindNetworkOverageInvoiceProvider>[1],
-      at?: Parameters<typeof bindNetworkOverageInvoiceProvider>[2]
-    ) => bindNetworkOverageInvoiceProvider(state, input, at),
-    markNetworkOverageInvoicePaid: (
-      input: Parameters<typeof markNetworkOverageInvoicePaid>[1],
-      at?: Parameters<typeof markNetworkOverageInvoicePaid>[2]
-    ) => markNetworkOverageInvoicePaid(state, input, at),
-    markNetworkOverageInvoiceFailed: (
-      input: Parameters<typeof markNetworkOverageInvoiceFailed>[1],
-      at?: Parameters<typeof markNetworkOverageInvoiceFailed>[2]
-    ) => markNetworkOverageInvoiceFailed(state, input, at),
-    findEntitlementByStripeSubscription: (stripeSubscriptionId: string) => findEntitlementByStripeSubscription(state, stripeSubscriptionId),
     // The credential vault. `driverCredentialGate` is the one answer to "may this
     // driver accept work", and it is also exported as a free function below —
     // an acceptance guard has to run it INSIDE the compare-and-swap mutation that
@@ -428,10 +268,10 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     suspendOrganizationMember: (
       input: Parameters<typeof suspendOrganizationMember>[1]
     ) => suspendOrganizationMember(state, input),
-    acceptPercentageBillingAgreement: (
-      input: Parameters<typeof acceptPercentageBillingAgreement>[1],
-      at?: Parameters<typeof acceptPercentageBillingAgreement>[2]
-    ) => acceptPercentageBillingAgreement(state, input, at),
+    acceptHostFeeAgreement: (
+      input: Parameters<typeof acceptHostFeeAgreement>[1],
+      at?: Parameters<typeof acceptHostFeeAgreement>[2]
+    ) => acceptHostFeeAgreement(state, input, at),
     createThread: (input: unknown) => createThread(state, input),
     createSupportRequest: (
       input: Parameters<typeof createSupportRequest>[1],
@@ -513,7 +353,6 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     upsertLandingDetails: (input: Parameters<typeof upsertLandingDetails>[1]) => upsertLandingDetails(state, input),
     setLandingActive: (input: Parameters<typeof setLandingActive>[1]) => setLandingActive(state, input),
     setMillActive: (input: Parameters<typeof setMillActive>[1]) => setMillActive(state, input),
-    activeLandingLimitFor: (organizationId: string) => activeLandingLimitFor(state, organizationId),
     countActiveLandings: (organizationId: string) => countActiveLandings(state, organizationId),
     createNotification: (input: unknown) => createNotification(state, input),
     createOperationalNotice: (input: Parameters<typeof createOperationalNotice>[1]) => createOperationalNotice(state, input),
@@ -549,7 +388,6 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     listAttentionItems: (input: Parameters<typeof listAttentionItems>[1]) =>
       listAttentionItems(state, input),
     listDriverAvailability: (driverProfileId?: string) => listDriverAvailability(state, driverProfileId),
-    listEntitlements: (organizationId?: string) => listEntitlements(state, organizationId),
     listFutureAvailabilityForOrganization: (organizationId?: string) => listFutureAvailabilityForOrganization(state, organizationId),
     listNotificationsForUser: (userId: string) => listNotificationsForUser(state, userId),
     operationalNoticeVisibleToActor: (
@@ -625,11 +463,11 @@ export {
   PLATFORM_ADMIN_SEED_CLERK_PLACEHOLDER,
   PLATFORM_ADMIN_SEED_PROFILE_ID
 } from "./platform-admin"
-export { acceptPercentageBillingAgreement } from "./percentage-billing"
+export { acceptHostFeeAgreement } from "./host-fee-agreement"
 export type {
-  AcceptPercentageBillingAgreementInput,
-  AcceptPercentageBillingAgreementResult
-} from "./percentage-billing"
+  AcceptHostFeeAgreementInput,
+  AcceptHostFeeAgreementResult
+} from "./host-fee-agreement"
 /**
  * The credential vault, as free functions as well as bound methods.
  *
@@ -714,88 +552,26 @@ export type {
  */
 export {
   accruePlatformFee,
-  assignmentUsesPercentageBilling,
-  hostFeeSummary,
+  assignmentAccruesPlatformFee,
+  freezeHostFeeTerms,
   hostInvoiceId,
-  LEGACY_PLATFORM_FEE_CURRENCY,
-  markInvoicePaid,
-  markInvoiceUncollectible,
   openAllClosedPeriodInvoices,
   openClosedPeriodInvoices,
-  openInvoiceForPeriod,
   reconcileMissingPlatformFees,
   voidPlatformFee
 } from "./platform-fees"
 export {
   BILLING_NOTIFICATION_EMAIL_CLAIM_TTL_MS,
   BILLING_NOTIFICATION_EMAIL_MAX_ATTEMPTS,
-  PILOT_CONVERSION_GRACE_DAYS,
-  acceptDispatchProSubscription,
-  activateAuthorizedOrganizationSubscriptionFromProvider,
-  activateOrganizationSubscription,
-  applyScheduledOrganizationSubscriptionPlanChange,
-  applyOrganizationSubscriptionPaymentState,
-  bindBillingAdjustmentProviderReference,
-  bindNetworkOverageInvoiceProvider,
-  bindOrganizationSubscriptionProvider,
-  bindOrganizationSubscriptionScheduleProvider,
-  authorizePilotConversionSubscription,
-  configureOrganizationSubscription,
   billingNotificationEmailIsClaimable,
   claimBillingNotificationEmail,
-  ensureBillingPeriodSummary,
-  markNetworkOverageInvoiceFailed,
-  markNetworkOverageInvoicePaid,
   markBillingNotificationEmailDelivered,
-  markBillingNotificationEmailFailed,
-  openNetworkOverageInvoice,
-  planSubscriptionBillingRun,
-  recordBillingAdjustment,
-  recordBillingAdjustmentProviderSettlement,
-  recordBillingAdjustmentProviderSettlementFailure,
-  recordSubscriptionBaseInvoiceProviderState,
-  reconcileMissingNetworkUsage,
-  reconcileMissingNetworkUsageAsPlatformAdmin,
-  recordCompletedNetworkUsage,
-  retirePaidDispatchEntitlementForSubscription,
-  resolveAssignmentBillingCommitment,
-  scheduleOrganizationSubscriptionNonRenewal,
-  scheduleOrganizationSubscriptionPlanChange,
-  usageNotificationThresholdsFor,
-  reverseNetworkUsage
-} from "./subscription-billing"
-export type {
-  AcceptDispatchProSubscriptionInput,
-  ActivateAuthorizedOrganizationSubscriptionFromProviderInput,
-  ApplyOrganizationSubscriptionPaymentStateInput,
-  ApplyScheduledOrganizationSubscriptionPlanChangeInput,
-  AssignmentBillingCommitment,
-  AuthorizePilotConversionSubscriptionInput,
-  AuthorizePilotConversionSubscriptionResult,
-  BindOrganizationSubscriptionProviderInput,
-  ConfigureOrganizationSubscriptionInput,
-  ConfigureOrganizationSubscriptionResult,
-  EnsureBillingPeriodSummaryInput,
-  NetworkUsageReconciliationResult,
-  NegotiatedSubscriptionTerms,
-  OpenNetworkOverageInvoiceResult,
-  RecordCompletedNetworkUsageResult,
-  RecordBillingAdjustmentInput,
-  RecordBillingAdjustmentProviderSettlementInput,
-  RecordSubscriptionBaseInvoiceProviderStateInput,
-  ResolveAssignmentBillingCommitmentInput,
-  ScheduleOrganizationSubscriptionPlanChangeInput,
-  ReverseNetworkUsageResult,
-  SubscriptionBillingRunPlan
-} from "./subscription-billing"
+  markBillingNotificationEmailFailed
+} from "./billing-notifications"
 export type {
   AccruePlatformFeeInput,
   AccruePlatformFeeResult,
-  HostFeeSummary,
-  HostFeeSummaryInput,
-  InvoiceSettlementInput,
-  InvoiceSettlementResult,
-  OpenInvoiceForPeriodInput,
+  FrozenHostFeeTerms,
   OpenInvoiceForPeriodResult,
   PlatformFeeReconciliationResult,
   VoidPlatformFeeInput,

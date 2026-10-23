@@ -4,34 +4,18 @@ vi.mock("server-only", () => ({}))
 
 const mocks = vi.hoisted(() => ({
   billingNotificationEmailIsClaimable: vi.fn(),
-  bindBillingAdjustmentProviderReference: vi.fn(),
-  bindNetworkOverageInvoiceProvider: vi.fn(),
-  bindOrganizationSubscriptionScheduleProvider: vi.fn(),
   chargeHostInvoice: vi.fn(),
   claimBillingNotificationEmail: vi.fn(),
   deliverClaimedBillingNotificationEmail: vi.fn(),
-  ensureCreditAdjustment: vi.fn(),
-  ensureSupplementalAdjustmentInvoice: vi.fn(),
-  ensureUsageInvoice: vi.fn(),
-  expectedStripeLivemode: vi.fn(),
-  listOpenHostInvoices: vi.fn(),
   isBillingNotificationEmailDeliveryEnabled: vi.fn(),
+  listOpenHostInvoices: vi.fn(),
   markBillingNotificationEmailDelivered: vi.fn(),
   markBillingNotificationEmailFailed: vi.fn(),
-  markNetworkOverageInvoiceFailed: vi.fn(),
-  markNetworkOverageInvoicePaid: vi.fn(),
   openAllClosedPeriodInvoices: vi.fn(),
   operatingStateAccess: vi.fn(),
-  planSubscriptionBillingRun: vi.fn(),
   platformFeeCollectionEnabled: vi.fn(),
-  recordBillingAdjustmentProviderSettlement: vi.fn(),
-  recordBillingAdjustmentProviderSettlementFailure: vi.fn(),
   reconcileMissingPlatformFees: vi.fn(),
   resolveStripeBilling: vi.fn(),
-  resolveSubscriptionStripe: vi.fn(),
-  subscriptionCollectionEnabled: vi.fn(),
-  subscriptionNewMoneyAllowed: vi.fn(),
-  verifyAcceptedPrice: vi.fn(),
   verifyExpectedStripeAccount: vi.fn()
 }))
 
@@ -39,24 +23,12 @@ vi.mock("@logloads/services", () => ({
   BILLING_NOTIFICATION_EMAIL_MAX_ATTEMPTS: 5,
   billingNotificationEmailIsClaimable:
     mocks.billingNotificationEmailIsClaimable,
-  bindBillingAdjustmentProviderReference:
-    mocks.bindBillingAdjustmentProviderReference,
-  bindNetworkOverageInvoiceProvider: mocks.bindNetworkOverageInvoiceProvider,
-  bindOrganizationSubscriptionScheduleProvider:
-    mocks.bindOrganizationSubscriptionScheduleProvider,
   claimBillingNotificationEmail: mocks.claimBillingNotificationEmail,
   markBillingNotificationEmailDelivered:
     mocks.markBillingNotificationEmailDelivered,
   markBillingNotificationEmailFailed:
     mocks.markBillingNotificationEmailFailed,
-  markNetworkOverageInvoiceFailed: mocks.markNetworkOverageInvoiceFailed,
-  markNetworkOverageInvoicePaid: mocks.markNetworkOverageInvoicePaid,
   openAllClosedPeriodInvoices: mocks.openAllClosedPeriodInvoices,
-  planSubscriptionBillingRun: mocks.planSubscriptionBillingRun,
-  recordBillingAdjustmentProviderSettlement:
-    mocks.recordBillingAdjustmentProviderSettlement,
-  recordBillingAdjustmentProviderSettlementFailure:
-    mocks.recordBillingAdjustmentProviderSettlementFailure,
   reconcileMissingPlatformFees: mocks.reconcileMissingPlatformFees
 }))
 
@@ -75,16 +47,7 @@ vi.mock("@/lib/billing", () => ({
   resolveStripeBilling: mocks.resolveStripeBilling
 }))
 
-vi.mock("@/lib/subscription-stripe", () => ({
-  ensureCreditAdjustment: mocks.ensureCreditAdjustment,
-  ensureSupplementalAdjustmentInvoice:
-    mocks.ensureSupplementalAdjustmentInvoice,
-  ensureUsageInvoice: mocks.ensureUsageInvoice,
-  expectedStripeLivemode: mocks.expectedStripeLivemode,
-  resolveSubscriptionStripe: mocks.resolveSubscriptionStripe,
-  subscriptionCollectionEnabled: mocks.subscriptionCollectionEnabled,
-  subscriptionNewMoneyAllowed: mocks.subscriptionNewMoneyAllowed,
-  verifyAcceptedPrice: mocks.verifyAcceptedPrice,
+vi.mock("@/lib/stripe-account", () => ({
   verifyExpectedStripeAccount: mocks.verifyExpectedStripeAccount
 }))
 
@@ -104,26 +67,21 @@ function queuedBillingNotification(
     emailClaimedAt: null,
     emailDeliveryState: "pending",
     id: BILLING_NOTIFICATION_ID,
+    relatedEntityType: "host_invoice",
     title: "Billing update",
     ...overrides
   }
 }
 
 function configureBillingEmailCron(
-  state: {
-    billingAdjustments: unknown[]
-    billingPeriodSummaries: unknown[]
-    networkOverageInvoices: unknown[]
-    notifications: Array<Record<string, unknown>>
-    organizationSubscriptions: unknown[]
-  },
+  state: { notifications: Array<Record<string, unknown>> },
   recipientAuthorized = true
 ) {
   mocks.reconcileMissingPlatformFees.mockReturnValue([])
   mocks.openAllClosedPeriodInvoices.mockReturnValue([])
   mocks.listOpenHostInvoices.mockReturnValue([])
-  mocks.platformFeeCollectionEnabled.mockReturnValue(false)
-  mocks.subscriptionCollectionEnabled.mockReturnValue(true)
+  // Billing email rides on fee collection; with no open invoice nothing is charged.
+  mocks.platformFeeCollectionEnabled.mockReturnValue(true)
   mocks.operatingStateAccess.mockReturnValue({
     async mutate<T>(
       mutate: (draft: { state: typeof state }) => T | Promise<T>
@@ -223,11 +181,6 @@ describe("billing cron fee reconciliation", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubEnv("CRON_SECRET", "cron-test-secret")
-    mocks.planSubscriptionBillingRun.mockReturnValue({
-      invoicesToCollect: [],
-      summariesToClose: [],
-      usageReconciliation: []
-    })
     mocks.billingNotificationEmailIsClaimable.mockImplementation(
       (notification: {
         emailAttemptCount: number
@@ -239,18 +192,42 @@ describe("billing cron fee reconciliation", () => {
         )
     )
     mocks.isBillingNotificationEmailDeliveryEnabled.mockReturnValue(false)
-    mocks.subscriptionCollectionEnabled.mockReturnValue(false)
-    mocks.subscriptionNewMoneyAllowed.mockReturnValue(true)
-    mocks.expectedStripeLivemode.mockReturnValue(false)
-    mocks.recordBillingAdjustmentProviderSettlement.mockReturnValue({
-      changed: true
-    })
-    mocks.recordBillingAdjustmentProviderSettlementFailure.mockReturnValue({
-      changed: true
-    })
-    mocks.verifyAcceptedPrice.mockResolvedValue({ id: "price_verified" })
     mocks.verifyExpectedStripeAccount.mockResolvedValue(undefined)
   })
+
+  function cronRequest(): Request {
+    return new Request("https://logloads.test/api/billing/cron", {
+      headers: { authorization: "Bearer cron-test-secret" }
+    })
+  }
+
+  function serveState<T extends object>(state: T): void {
+    mocks.operatingStateAccess.mockReturnValue({
+      async mutate(mutate: (draft: { state: T }) => unknown) {
+        return mutate({ state })
+      },
+      async read(read: (current: T) => unknown) {
+        return read(state)
+      }
+    })
+  }
+
+  /** Two open bills and fee collection switched on. */
+  function configureCollection(): { port: { marker: string } } {
+    const port = { marker: "stripe" }
+
+    mocks.reconcileMissingPlatformFees.mockReturnValue([])
+    mocks.openAllClosedPeriodInvoices.mockReturnValue([])
+    mocks.listOpenHostInvoices.mockReturnValue([
+      { id: "invoice-1", organizationId: "organization-1" },
+      { id: "invoice-2", organizationId: "organization-2" }
+    ])
+    mocks.platformFeeCollectionEnabled.mockReturnValue(true)
+    mocks.resolveStripeBilling.mockReturnValue({ ok: true, outcome: "ok", value: port })
+    serveState({ notifications: [] })
+
+    return { port }
+  }
 
   it("does not cache scheduler configuration or authorization responses", async () => {
     vi.stubEnv("CRON_SECRET", "")
@@ -278,8 +255,8 @@ describe("billing cron fee reconciliation", () => {
     )
   })
 
-  it("repairs missing fees before opening closed invoices in dark launch", async () => {
-    const state = { marker: "state" }
+  it("repairs missing fees before opening closed invoices, and charges nothing while collection is off", async () => {
+    const state = { notifications: [] }
     const reconciliation = [
       {
         assignmentId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee91",
@@ -292,27 +269,13 @@ describe("billing cron fee reconciliation", () => {
 
     mocks.reconcileMissingPlatformFees.mockReturnValue(reconciliation)
     mocks.openAllClosedPeriodInvoices.mockReturnValue(opened)
-    mocks.listOpenHostInvoices.mockReturnValue([])
+    mocks.listOpenHostInvoices.mockReturnValue([
+      { id: "invoice-1", organizationId: "organization-1" }
+    ])
     mocks.platformFeeCollectionEnabled.mockReturnValue(false)
-    mocks.operatingStateAccess.mockReturnValue({
-      async mutate(
-        mutate: (draft: { state: typeof state }) => {
-          invoices: typeof opened
-          reconciliation: typeof reconciliation
-        }
-      ) {
-        return mutate({ state })
-      },
-      async read(read: (current: typeof state) => unknown) {
-        return read(state)
-      }
-    })
+    serveState(state)
 
-    const response = await GET(
-      new Request("https://logloads.test/api/billing/cron", {
-        headers: { authorization: "Bearer cron-test-secret" }
-      })
-    )
+    const response = await GET(cronRequest())
     const body = await response.json()
 
     expect(response.status).toBe(200)
@@ -325,31 +288,26 @@ describe("billing cron fee reconciliation", () => {
       state,
       expect.any(String)
     )
-    expect(mocks.planSubscriptionBillingRun).toHaveBeenCalledWith(
-      state,
-      expect.any(String)
-    )
     expect(
       mocks.reconcileMissingPlatformFees.mock.invocationCallOrder[0]
     ).toBeLessThan(mocks.openAllClosedPeriodInvoices.mock.invocationCallOrder[0]!)
-    expect(
-      mocks.openAllClosedPeriodInvoices.mock.invocationCallOrder[0]
-    ).toBeLessThan(mocks.planSubscriptionBillingRun.mock.invocationCallOrder[0]!)
     expect(body).toMatchObject({
+      charges: [],
       collection: "disabled",
       feeReconciliation: {
         accrued: 1,
         errors: [],
         requiresReview: []
       },
-      invoicesOpened: 1
+      invoicesOpened: 1,
+      invoicesReady: 1
     })
+    expect(mocks.resolveStripeBilling).not.toHaveBeenCalled()
     expect(mocks.chargeHostInvoice).not.toHaveBeenCalled()
-    expect(mocks.ensureUsageInvoice).not.toHaveBeenCalled()
   })
 
   it("reports a per-host invoice-opening refusal without hiding the completed batch", async () => {
-    const state = { marker: "state" }
+    const state = { notifications: [] }
     const blocked = {
       organizationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       outcome: "blocked_for_review",
@@ -370,22 +328,9 @@ describe("billing cron fee reconciliation", () => {
     mocks.openAllClosedPeriodInvoices.mockReturnValue([blocked, opened])
     mocks.listOpenHostInvoices.mockReturnValue([])
     mocks.platformFeeCollectionEnabled.mockReturnValue(false)
-    mocks.operatingStateAccess.mockReturnValue({
-      async mutate(
-        mutate: (draft: { state: typeof state }) => unknown
-      ) {
-        return mutate({ state })
-      },
-      async read(read: (current: typeof state) => unknown) {
-        return read(state)
-      }
-    })
+    serveState(state)
 
-    const response = await GET(
-      new Request("https://logloads.test/api/billing/cron", {
-        headers: { authorization: "Bearer cron-test-secret" }
-      })
-    )
+    const response = await GET(cronRequest())
     const body = await response.json()
 
     expect(response.status).toBe(503)
@@ -401,874 +346,154 @@ describe("billing cron fee reconciliation", () => {
     error.mockRestore()
   })
 
-  it("refuses preserved legacy collection when the Stripe account identity is not LogLoads", async () => {
-    const state = { billingAdjustments: [], organizationSubscriptions: [] }
+  it("charges every open invoice, oldest first, once collection is enabled", async () => {
+    const { port } = configureCollection()
 
-    mocks.reconcileMissingPlatformFees.mockReturnValue([])
-    mocks.openAllClosedPeriodInvoices.mockReturnValue([])
-    mocks.listOpenHostInvoices.mockReturnValue([
-      { id: "legacy-invoice", organizationId: "organization-1" }
-    ])
-    mocks.platformFeeCollectionEnabled.mockReturnValue(true)
-    mocks.subscriptionCollectionEnabled.mockReturnValue(false)
-    mocks.resolveSubscriptionStripe.mockReturnValue({
+    mocks.chargeHostInvoice.mockImplementation(async (input: { invoiceId: string }) => ({
       ok: true,
-      port: { marker: "stripe" }
+      outcome: "ok",
+      value: {
+        alreadyCharged: false,
+        invoiceId: input.invoiceId,
+        outcome: "charged",
+        status: "paid",
+        stripeInvoiceId: `in_${input.invoiceId}`,
+        subtotalCents: 1_050
+      }
+    }))
+
+    const response = await GET(cronRequest())
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(mocks.verifyExpectedStripeAccount).toHaveBeenCalledWith(port, process.env)
+    expect(mocks.chargeHostInvoice.mock.calls.map(([input]) => [input.invoiceId, input.port]))
+      .toEqual([
+        ["invoice-1", port],
+        ["invoice-2", port]
+      ])
+    expect(body).toMatchObject({
+      charges: [
+        { invoiceId: "invoice-1", outcome: "charged", status: "paid" },
+        { invoiceId: "invoice-2", outcome: "charged", status: "paid" }
+      ],
+      collection: "enabled"
     })
-    mocks.verifyExpectedStripeAccount.mockRejectedValue(
-      new Error("actual acct_other expected acct_logloads")
-    )
-    mocks.operatingStateAccess.mockReturnValue({
-      async mutate(mutate: (draft: { state: typeof state }) => unknown) {
-        return mutate({ state })
-      },
-      async read(read: (current: typeof state) => unknown) {
-        return read(state)
+    expect(body.invoicesReady).toBeUndefined()
+  })
+
+  it("reports a bill below the card minimum as held, not as a failure", async () => {
+    configureCollection()
+    mocks.listOpenHostInvoices.mockReturnValue([
+      { id: "invoice-1", organizationId: "organization-1" }
+    ])
+    mocks.chargeHostInvoice.mockResolvedValue({
+      ok: true,
+      outcome: "ok",
+      value: {
+        invoiceId: "invoice-1",
+        minimumChargeCents: 50,
+        outcome: "below_card_minimum",
+        status: "open",
+        subtotalCents: 40
       }
     })
 
-    const response = await GET(
-      new Request("https://logloads.test/api/billing/cron", {
-        headers: { authorization: "Bearer cron-test-secret" }
+    const response = await GET(cronRequest())
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.charges).toEqual([
+      { invoiceId: "invoice-1", outcome: "below_card_minimum", status: "open" }
+    ])
+  })
+
+  it("answers 503 when a charge fails or throws, and keeps going to the next bill", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined)
+
+    configureCollection()
+    mocks.chargeHostInvoice
+      .mockRejectedValueOnce(new Error("Stripe timed out"))
+      .mockResolvedValueOnce({
+        message: "Stripe is unavailable",
+        ok: false,
+        outcome: "unavailable",
+        reason: "stripe_error"
       })
+
+    const response = await GET(cronRequest())
+    const body = await response.json()
+
+    expect(response.status).toBe(503)
+    expect(mocks.chargeHostInvoice).toHaveBeenCalledTimes(2)
+    expect(body.charges).toEqual([
+      { invoiceId: "invoice-1", outcome: "failed", reason: "Stripe timed out" },
+      { invoiceId: "invoice-2", outcome: "failed", reason: "Stripe is unavailable" }
+    ])
+    error.mockRestore()
+  })
+
+  it("reports a refused bill for operator action without failing the run", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined)
+
+    configureCollection()
+    mocks.listOpenHostInvoices.mockReturnValue([
+      { id: "invoice-1", organizationId: "organization-1" }
+    ])
+    mocks.chargeHostInvoice.mockResolvedValue({
+      message: "This host has no card on file",
+      ok: false,
+      outcome: "refused"
+    })
+
+    const response = await GET(cronRequest())
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.charges).toEqual([
+      { invoiceId: "invoice-1", outcome: "refused", reason: "This host has no card on file" }
+    ])
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it("refuses collection when the Stripe account identity is not LogLoads", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined)
+
+    configureCollection()
+    mocks.verifyExpectedStripeAccount.mockRejectedValue(
+      new Error("actual acct_other expected acct_logloads")
     )
+
+    const response = await GET(cronRequest())
     const body = await response.json()
 
     expect(response.status).toBe(503)
     expect(mocks.chargeHostInvoice).not.toHaveBeenCalled()
     expect(JSON.stringify(body)).not.toContain("acct_other")
     expect(JSON.stringify(body)).not.toContain("acct_logloads")
+    error.mockRestore()
   })
 
-  it("collects a frozen Network overage only behind its independent switch", async () => {
-    const invoice = {
-      billingPeriodSummaryId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa81",
-      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa82",
-      internalBillingTest: false,
-      organizationId: "11111111-1111-4111-8111-111111111111",
-      periodEnd: "2026-07-01T00:00:00.000Z",
-      periodStart: "2026-06-01T00:00:00.000Z",
-      planCode: "network_25",
-      quantity: 2,
-      subtotalCents: 25_000,
-      unitAmountCents: 12_500
-    }
-    const subscription = {
-      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa83",
-      internalBillingTest: false,
-      organizationId: invoice.organizationId,
-      planCode: "network_25",
-      planSnapshot: {
-        overageUnitPriceCents: 12_500,
-        stripeOveragePriceId: null
-      },
-      stripeCustomerId: "cus_host"
-    }
-    const state = {
-      billingPeriodSummaries: [
-        { id: invoice.billingPeriodSummaryId, subscriptionId: subscription.id }
-      ],
-      organizationSubscriptions: [subscription]
-    }
-
-    vi.stubEnv("STRIPE_PRICE_NETWORK_25_OVERAGE", "price_overage")
-    mocks.reconcileMissingPlatformFees.mockReturnValue([])
-    mocks.openAllClosedPeriodInvoices.mockReturnValue([])
-    mocks.planSubscriptionBillingRun.mockReturnValue({
-      invoicesToCollect: [invoice],
-      summariesToClose: [],
-      usageReconciliation: []
-    })
-    mocks.listOpenHostInvoices.mockReturnValue([])
-    mocks.platformFeeCollectionEnabled.mockReturnValue(false)
-    mocks.subscriptionCollectionEnabled.mockReturnValue(true)
-    mocks.resolveSubscriptionStripe.mockReturnValue({ ok: true, port: { marker: "stripe" } })
-    mocks.ensureUsageInvoice.mockResolvedValue({
-      amountDueCents: 25_000,
-      amountPaidCents: 25_000,
-      amountRemainingCents: 0,
-      id: "in_overage",
-      paid: true,
-      status: "paid"
-    })
-    mocks.bindNetworkOverageInvoiceProvider.mockReturnValue({ changed: true })
-    mocks.markNetworkOverageInvoicePaid.mockReturnValue({ changed: true })
-    mocks.operatingStateAccess.mockReturnValue({
-      async mutate(mutate: (draft: { state: typeof state }) => unknown) {
-        return mutate({ state })
-      },
-      async read(read: (current: typeof state) => unknown) {
-        return read(state)
-      }
+  it("refuses collection without Stripe configured, and charges nothing", async () => {
+    configureCollection()
+    mocks.resolveStripeBilling.mockReturnValue({
+      message: "Billing is not configured for this environment",
+      ok: false,
+      outcome: "unavailable",
+      reason: "stripe_secret_missing"
     })
 
-    const response = await GET(
-      new Request("https://logloads.test/api/billing/cron", {
-        headers: { authorization: "Bearer cron-test-secret" }
-      })
-    )
-    const body = await response.json()
-
-    expect(response.status).toBe(200)
-    expect(mocks.ensureUsageInvoice).toHaveBeenCalledWith(
-      { marker: "stripe" },
-      expect.objectContaining({
-        collect: true,
-        customerId: "cus_host",
-        networkOverageInvoiceId: invoice.id,
-        priceId: "price_overage",
-        quantity: 2,
-        unitAmountCents: 12_500
-      })
-    )
-    expect(mocks.bindNetworkOverageInvoiceProvider).toHaveBeenCalledWith(
-      state,
-      {
-        invoiceId: invoice.id,
-        providerAmountDueCents: 25_000,
-        providerAmountPaidCents: 25_000,
-        providerAmountRemainingCents: 0,
-        stripeInvoiceId: "in_overage"
-      },
-      expect.any(String)
-    )
-    expect(body.subscriptionBilling).toMatchObject({
-      collection: "enabled",
-      invoices: [
-        {
-          invoiceId: invoice.id,
-          outcome: "paid",
-          stripeInvoiceId: "in_overage"
-        }
-      ]
-    })
-  })
-
-  it("persists an unpaid provider attempt and leaves the invoice retryable", async () => {
-    const invoice = {
-      billingPeriodSummaryId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa81",
-      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa82",
-      internalBillingTest: false,
-      organizationId: "11111111-1111-4111-8111-111111111111",
-      periodEnd: "2026-07-01T00:00:00.000Z",
-      periodStart: "2026-06-01T00:00:00.000Z",
-      planCode: "network_25",
-      quantity: 2,
-      subtotalCents: 25_000,
-      unitAmountCents: 12_500
-    }
-    const subscription = {
-      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa83",
-      internalBillingTest: false,
-      organizationId: invoice.organizationId,
-      planCode: "network_25",
-      planSnapshot: {
-        overageUnitPriceCents: 12_500,
-        stripeOveragePriceId: null
-      },
-      stripeCustomerId: "cus_host"
-    }
-    const state = {
-      billingPeriodSummaries: [
-        { id: invoice.billingPeriodSummaryId, subscriptionId: subscription.id }
-      ],
-      organizationSubscriptions: [subscription]
-    }
-
-    vi.stubEnv("STRIPE_PRICE_NETWORK_25_OVERAGE", "price_overage")
-    mocks.reconcileMissingPlatformFees.mockReturnValue([])
-    mocks.openAllClosedPeriodInvoices.mockReturnValue([])
-    mocks.planSubscriptionBillingRun.mockReturnValue({
-      invoicesToCollect: [invoice],
-      summariesToClose: [],
-      usageReconciliation: []
-    })
-    mocks.listOpenHostInvoices.mockReturnValue([])
-    mocks.platformFeeCollectionEnabled.mockReturnValue(false)
-    mocks.subscriptionCollectionEnabled.mockReturnValue(true)
-    mocks.resolveSubscriptionStripe.mockReturnValue({
-      ok: true,
-      port: { marker: "stripe" }
-    })
-    mocks.ensureUsageInvoice.mockResolvedValue({
-      amountDueCents: 25_000,
-      amountPaidCents: 0,
-      amountRemainingCents: 25_000,
-      id: "in_overage",
-      paid: false,
-      status: "open"
-    })
-    mocks.bindNetworkOverageInvoiceProvider.mockReturnValue({ changed: true })
-    mocks.markNetworkOverageInvoiceFailed.mockReturnValue({ changed: true })
-    mocks.operatingStateAccess.mockReturnValue({
-      async mutate(mutate: (draft: { state: typeof state }) => unknown) {
-        return mutate({ state })
-      },
-      async read(read: (current: typeof state) => unknown) {
-        return read(state)
-      }
-    })
-
-    const response = await GET(
-      new Request("https://logloads.test/api/billing/cron", {
-        headers: { authorization: "Bearer cron-test-secret" }
-      })
-    )
-    const body = await response.json()
+    const response = await GET(cronRequest())
 
     expect(response.status).toBe(503)
-    expect(mocks.markNetworkOverageInvoiceFailed).toHaveBeenCalledWith(
-      state,
-      {
-        invoiceId: invoice.id,
-        providerFacts: {
-          providerAmountDueCents: 25_000,
-          providerAmountPaidCents: 0,
-          providerAmountRemainingCents: 25_000,
-          stripeInvoiceId: "in_overage"
-        },
-        reason: "Stripe invoice in_overage remains open"
-      },
-      expect.any(String)
-    )
-    expect(mocks.markNetworkOverageInvoicePaid).not.toHaveBeenCalled()
-    expect(body.subscriptionBilling.invoices).toEqual([
-      {
-        invoiceId: invoice.id,
-        outcome: "outstanding",
-        reason: "Stripe invoice remains open",
-        stripeInvoiceId: "in_overage"
-      }
-    ])
-  })
-
-  it("persists a thrown provider failure so the next cron can retry it", async () => {
-    const invoice = {
-      billingPeriodSummaryId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa81",
-      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa82",
-      internalBillingTest: false,
-      organizationId: "11111111-1111-4111-8111-111111111111",
-      periodEnd: "2026-07-01T00:00:00.000Z",
-      periodStart: "2026-06-01T00:00:00.000Z",
-      planCode: "network_25",
-      quantity: 2,
-      subtotalCents: 25_000,
-      unitAmountCents: 12_500
-    }
-    const subscription = {
-      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa83",
-      internalBillingTest: false,
-      organizationId: invoice.organizationId,
-      planCode: "network_25",
-      planSnapshot: {
-        overageUnitPriceCents: 12_500,
-        stripeOveragePriceId: null
-      },
-      stripeCustomerId: "cus_host"
-    }
-    const state = {
-      billingPeriodSummaries: [
-        { id: invoice.billingPeriodSummaryId, subscriptionId: subscription.id }
-      ],
-      organizationSubscriptions: [subscription]
-    }
-
-    vi.stubEnv("STRIPE_PRICE_NETWORK_25_OVERAGE", "price_overage")
-    mocks.reconcileMissingPlatformFees.mockReturnValue([])
-    mocks.openAllClosedPeriodInvoices.mockReturnValue([])
-    mocks.planSubscriptionBillingRun.mockReturnValue({
-      invoicesToCollect: [invoice],
-      summariesToClose: [],
-      usageReconciliation: []
-    })
-    mocks.listOpenHostInvoices.mockReturnValue([])
-    mocks.platformFeeCollectionEnabled.mockReturnValue(false)
-    mocks.subscriptionCollectionEnabled.mockReturnValue(true)
-    mocks.resolveSubscriptionStripe.mockReturnValue({
-      ok: true,
-      port: { marker: "stripe" }
-    })
-    mocks.ensureUsageInvoice.mockRejectedValue(new Error("provider timeout"))
-    mocks.markNetworkOverageInvoiceFailed.mockReturnValue({ changed: true })
-    mocks.operatingStateAccess.mockReturnValue({
-      async mutate(mutate: (draft: { state: typeof state }) => unknown) {
-        return mutate({ state })
-      },
-      async read(read: (current: typeof state) => unknown) {
-        return read(state)
-      }
-    })
-
-    const response = await GET(
-      new Request("https://logloads.test/api/billing/cron", {
-        headers: { authorization: "Bearer cron-test-secret" }
-      })
-    )
-
-    expect(response.status).toBe(503)
-    expect(mocks.markNetworkOverageInvoiceFailed).toHaveBeenCalledWith(
-      state,
-      { invoiceId: invoice.id, reason: "provider timeout" },
-      expect.any(String)
-    )
-  })
-
-  it("settles an existing service credit after collection and canary gates are disabled", async () => {
-    const adjustment = {
-      amountDeltaCents: -5_000,
-      billingPeriodSummaryId: "summary-credit",
-      id: "adjustment-credit",
-      invoiceId: "invoice-credit",
-      organizationId: "organization-credit",
-      providerReference: null,
-      providerSettlementState: "not_started",
-      reason: "Approved service credit",
-      settlementIntent: "credit_note",
-      type: "service_credit"
-    }
-    const state = {
-      billingAdjustments: [adjustment],
-      billingPeriodSummaries: [
-        {
-          id: adjustment.billingPeriodSummaryId,
-          internalBillingTest: false,
-          organizationId: adjustment.organizationId,
-          subscriptionId: "subscription-credit"
-        }
-      ],
-      networkOverageInvoices: [
-        {
-          billingPeriodSummaryId: adjustment.billingPeriodSummaryId,
-          id: adjustment.invoiceId,
-          internalBillingTest: false,
-          organizationId: adjustment.organizationId,
-          stripeInvoiceId: "in_original"
-        }
-      ],
-      organizationSubscriptions: [
-        {
-          id: "subscription-credit",
-          internalBillingTest: false,
-          organizationId: adjustment.organizationId,
-          stripeCustomerId: "cus_host"
-        }
-      ]
-    }
-
-    mocks.reconcileMissingPlatformFees.mockReturnValue([])
-    mocks.openAllClosedPeriodInvoices.mockReturnValue([])
-    mocks.listOpenHostInvoices.mockReturnValue([])
-    mocks.platformFeeCollectionEnabled.mockReturnValue(false)
-    mocks.subscriptionCollectionEnabled.mockReturnValue(false)
-    mocks.subscriptionNewMoneyAllowed.mockReturnValue(false)
-    mocks.resolveSubscriptionStripe.mockReturnValue({
-      ok: true,
-      port: { marker: "stripe" }
-    })
-    mocks.ensureCreditAdjustment.mockResolvedValue({
-      amountCents: 5_000,
-      id: "cn_credit",
-      invoiceId: "in_original",
-      postPaymentAmountCents: 2_000,
-      prePaymentAmountCents: 3_000,
-      refundedAmountCents: 2_000,
-      status: "issued"
-    })
-    mocks.operatingStateAccess.mockReturnValue({
-      async mutate(mutate: (draft: { state: typeof state }) => unknown) {
-        return mutate({ state })
-      },
-      async read(read: (current: typeof state) => unknown) {
-        return read(state)
-      }
-    })
-
-    const response = await GET(
-      new Request("https://logloads.test/api/billing/cron", {
-        headers: { authorization: "Bearer cron-test-secret" }
-      })
-    )
-    const body = await response.json()
-
-    expect(response.status).toBe(200)
-    expect(mocks.subscriptionNewMoneyAllowed).not.toHaveBeenCalled()
-    expect(mocks.ensureCreditAdjustment).toHaveBeenCalledWith(
-      { marker: "stripe" },
-      {
-        adjustmentId: adjustment.id,
-        amountCents: 5_000,
-        customerId: "cus_host",
-        originalStripeInvoiceId: "in_original",
-        reason: adjustment.reason
-      }
-    )
-    expect(
-      mocks.recordBillingAdjustmentProviderSettlement
-    ).toHaveBeenCalledWith(
-      state,
-      {
-        adjustmentId: adjustment.id,
-        postPaymentAmountCents: 2_000,
-        prePaymentAmountCents: 3_000,
-        providerReference: "cn_credit",
-        refundedAmountCents: 2_000,
-        settlementIntent: "credit_note",
-        totalAmountCents: 5_000
-      },
-      expect.any(String)
-    )
-    expect(body.subscriptionBilling.adjustmentSettlements).toEqual([
-      {
-        adjustmentId: adjustment.id,
-        outcome: "credited",
-        providerReference: "cn_credit",
-        settlementIntent: "credit_note"
-      }
-    ])
-  })
-
-  it("stores the exact paid and remaining balance of a supplemental debit", async () => {
-    const adjustment = {
-      amountDeltaCents: 8_000,
-      billingPeriodSummaryId: "summary-debit",
-      id: "adjustment-debit",
-      invoiceId: "invoice-debit",
-      organizationId: "organization-debit",
-      providerReference: null,
-      providerSettlementState: "not_started",
-      reason: "Approved supplemental debit",
-      settlementIntent: "supplemental_debit",
-      type: "manual_debit"
-    }
-    const state = {
-      billingAdjustments: [adjustment],
-      billingPeriodSummaries: [
-        {
-          id: adjustment.billingPeriodSummaryId,
-          internalBillingTest: false,
-          organizationId: adjustment.organizationId,
-          subscriptionId: "subscription-debit"
-        }
-      ],
-      networkOverageInvoices: [
-        {
-          billingPeriodSummaryId: adjustment.billingPeriodSummaryId,
-          id: adjustment.invoiceId,
-          internalBillingTest: false,
-          organizationId: adjustment.organizationId,
-          stripeInvoiceId: "in_original_debit"
-        }
-      ],
-      organizationSubscriptions: [
-        {
-          billingModel: "subscription_v1",
-          id: "subscription-debit",
-          internalBillingTest: false,
-          organizationId: adjustment.organizationId,
-          stripeCustomerId: "cus_host"
-        }
-      ]
-    }
-
-    mocks.reconcileMissingPlatformFees.mockReturnValue([])
-    mocks.openAllClosedPeriodInvoices.mockReturnValue([])
-    mocks.listOpenHostInvoices.mockReturnValue([])
-    mocks.platformFeeCollectionEnabled.mockReturnValue(false)
-    mocks.subscriptionCollectionEnabled.mockReturnValue(true)
-    mocks.resolveSubscriptionStripe.mockReturnValue({
-      ok: true,
-      port: { marker: "stripe" }
-    })
-    mocks.ensureSupplementalAdjustmentInvoice.mockResolvedValue({
-      amountDueCents: 8_000,
-      amountPaidCents: 3_000,
-      amountRemainingCents: 5_000,
-      id: "in_supplemental",
-      paid: false,
-      status: "open"
-    })
-    mocks.operatingStateAccess.mockReturnValue({
-      async mutate(mutate: (draft: { state: typeof state }) => unknown) {
-        return mutate({ state })
-      },
-      async read(read: (current: typeof state) => unknown) {
-        return read(state)
-      }
-    })
-
-    const response = await GET(
-      new Request("https://logloads.test/api/billing/cron", {
-        headers: { authorization: "Bearer cron-test-secret" }
-      })
-    )
-
-    expect(response.status).toBe(503)
-    expect(
-      mocks.recordBillingAdjustmentProviderSettlement
-    ).toHaveBeenCalledWith(
-      state,
-      {
-        adjustmentId: adjustment.id,
-        amountDueCents: 8_000,
-        amountPaidCents: 3_000,
-        amountRemainingCents: 5_000,
-        providerReference: "in_supplemental",
-        settlementIntent: "supplemental_debit"
-      },
-      expect.any(String)
-    )
-  })
-
-  it("persists a safe retryable failure when provider adjustment reconciliation fails", async () => {
-    const adjustment = {
-      amountDeltaCents: -5_000,
-      billingPeriodSummaryId: "summary-failed-credit",
-      id: "adjustment-failed-credit",
-      invoiceId: "invoice-failed-credit",
-      organizationId: "organization-failed-credit",
-      providerReference: null,
-      providerSettlementState: "not_started",
-      reason: "Approved service credit",
-      settlementIntent: "credit_note",
-      type: "service_credit"
-    }
-    const state = {
-      billingAdjustments: [adjustment],
-      billingPeriodSummaries: [
-        {
-          id: adjustment.billingPeriodSummaryId,
-          internalBillingTest: false,
-          organizationId: adjustment.organizationId,
-          subscriptionId: "subscription-failed-credit"
-        }
-      ],
-      networkOverageInvoices: [
-        {
-          billingPeriodSummaryId: adjustment.billingPeriodSummaryId,
-          id: adjustment.invoiceId,
-          internalBillingTest: false,
-          organizationId: adjustment.organizationId,
-          stripeInvoiceId: "in_original_failed"
-        }
-      ],
-      organizationSubscriptions: [
-        {
-          id: "subscription-failed-credit",
-          internalBillingTest: false,
-          organizationId: adjustment.organizationId,
-          stripeCustomerId: "cus_host"
-        }
-      ]
-    }
-
-    mocks.reconcileMissingPlatformFees.mockReturnValue([])
-    mocks.openAllClosedPeriodInvoices.mockReturnValue([])
-    mocks.listOpenHostInvoices.mockReturnValue([])
-    mocks.platformFeeCollectionEnabled.mockReturnValue(false)
-    mocks.subscriptionCollectionEnabled.mockReturnValue(true)
-    mocks.resolveSubscriptionStripe.mockReturnValue({
-      ok: true,
-      port: { marker: "stripe" }
-    })
-    mocks.ensureCreditAdjustment.mockRejectedValue(
-      new Error("provider payload drifted")
-    )
-    mocks.operatingStateAccess.mockReturnValue({
-      async mutate(mutate: (draft: { state: typeof state }) => unknown) {
-        return mutate({ state })
-      },
-      async read(read: (current: typeof state) => unknown) {
-        return read(state)
-      }
-    })
-
-    const response = await GET(
-      new Request("https://logloads.test/api/billing/cron", {
-        headers: { authorization: "Bearer cron-test-secret" }
-      })
-    )
-
-    expect(response.status).toBe(503)
-    expect(
-      mocks.recordBillingAdjustmentProviderSettlementFailure
-    ).toHaveBeenCalledWith(
-      state,
-      {
-        adjustmentId: adjustment.id,
-        reason: "Provider adjustment settlement failed"
-      },
-      expect.any(String)
-    )
-  })
-
-  it("fails closed before Stripe when an adjustment is cross-wired to another organization", async () => {
-    const adjustment = {
-      amountDeltaCents: -5_000,
-      billingPeriodSummaryId: "summary-cross-wired",
-      id: "adjustment-cross-wired",
-      invoiceId: "invoice-cross-wired",
-      organizationId: "organization-adjustment",
-      providerReference: null,
-      providerSettlementState: "not_started",
-      reason: "Approved service credit",
-      settlementIntent: "credit_note",
-      type: "service_credit"
-    }
-    const state = {
-      billingAdjustments: [adjustment],
-      billingPeriodSummaries: [
-        {
-          id: adjustment.billingPeriodSummaryId,
-          internalBillingTest: false,
-          organizationId: "organization-invoice",
-          subscriptionId: "subscription-cross-wired"
-        }
-      ],
-      networkOverageInvoices: [
-        {
-          billingPeriodSummaryId: adjustment.billingPeriodSummaryId,
-          id: adjustment.invoiceId,
-          internalBillingTest: false,
-          organizationId: "organization-invoice",
-          stripeInvoiceId: "in_cross_wired"
-        }
-      ],
-      organizationSubscriptions: [
-        {
-          id: "subscription-cross-wired",
-          internalBillingTest: false,
-          organizationId: "organization-invoice",
-          stripeCustomerId: "cus_other"
-        }
-      ]
-    }
-
-    mocks.reconcileMissingPlatformFees.mockReturnValue([])
-    mocks.openAllClosedPeriodInvoices.mockReturnValue([])
-    mocks.listOpenHostInvoices.mockReturnValue([])
-    mocks.platformFeeCollectionEnabled.mockReturnValue(false)
-    mocks.subscriptionCollectionEnabled.mockReturnValue(true)
-    mocks.resolveSubscriptionStripe.mockReturnValue({
-      ok: true,
-      port: { marker: "stripe" }
-    })
-    mocks.operatingStateAccess.mockReturnValue({
-      async mutate(mutate: (draft: { state: typeof state }) => unknown) {
-        return mutate({ state })
-      },
-      async read(read: (current: typeof state) => unknown) {
-        return read(state)
-      }
-    })
-
-    const response = await GET(
-      new Request("https://logloads.test/api/billing/cron", {
-        headers: { authorization: "Bearer cron-test-secret" }
-      })
-    )
-
-    expect(response.status).toBe(503)
-    expect(mocks.ensureCreditAdjustment).not.toHaveBeenCalled()
-    expect(
-      mocks.recordBillingAdjustmentProviderSettlementFailure
-    ).toHaveBeenCalledWith(
-      state,
-      {
-        adjustmentId: adjustment.id,
-        reason: "Provider adjustment settlement failed"
-      },
-      expect.any(String)
-    )
-  })
-
-  it("recovers and binds a pending provider plan schedule idempotently", async () => {
-    const schedulePriceChange = vi.fn().mockResolvedValue({
-      effectiveAt: "2027-08-01T00:00:00.000Z",
-      scheduleId: "sub_sched_network",
-      targetPriceId: "price_network_50"
-    })
-    const subscription = {
-      cancelAtPeriodEnd: false,
-      commitmentEnd: "2027-08-01T00:00:00.000Z",
-      currentPeriodEnd: "2026-09-01T00:00:00.000Z",
-      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa83",
-      internalBillingTest: false,
-      organizationId: "11111111-1111-4111-8111-111111111111",
-      pendingPlanCode: "network_50",
-      pendingPlanEffectiveAt: "2027-08-01T00:00:00.000Z",
-      pendingPlanSnapshot: {
-        billingModel: "subscription_v1",
-        code: "network_50",
-        internalBillingTest: false,
-        stripePriceId: null
-      },
-      planCode: "network_25",
-      planSnapshot: {
-        billingModel: "subscription_v1",
-        code: "network_25",
-        internalBillingTest: false,
-        stripePriceId: null
-      },
-      stripeScheduleId: null,
-      stripeSubscriptionId: "sub_network"
-    }
-    const state = {
-      billingPeriodSummaries: [],
-      organizationSubscriptions: [subscription]
-    }
-
-    vi.stubEnv("STRIPE_PRICE_NETWORK_50", "price_network_50")
-    mocks.reconcileMissingPlatformFees.mockReturnValue([])
-    mocks.openAllClosedPeriodInvoices.mockReturnValue([])
-    mocks.planSubscriptionBillingRun.mockReturnValue({
-      invoicesToCollect: [],
-      summariesToClose: [],
-      usageReconciliation: []
-    })
-    mocks.listOpenHostInvoices.mockReturnValue([])
-    mocks.platformFeeCollectionEnabled.mockReturnValue(false)
-    mocks.subscriptionCollectionEnabled.mockReturnValue(true)
-    mocks.resolveSubscriptionStripe.mockReturnValue({
-      ok: true,
-      port: { schedulePriceChange }
-    })
-    mocks.bindOrganizationSubscriptionScheduleProvider
-      .mockReturnValueOnce({ changed: true })
-      .mockReturnValueOnce({ changed: false })
-    mocks.operatingStateAccess.mockReturnValue({
-      async mutate(mutate: (draft: { state: typeof state }) => unknown) {
-        return mutate({ state })
-      },
-      async read(read: (current: typeof state) => unknown) {
-        return read(state)
-      }
-    })
-
-    const request = () =>
-      new Request("https://logloads.test/api/billing/cron", {
-        headers: { authorization: "Bearer cron-test-secret" }
-      })
-    const first = await GET(request())
-    const second = await GET(request())
-
-    expect(first.status).toBe(200)
-    expect(second.status).toBe(200)
-    expect(schedulePriceChange).toHaveBeenCalledTimes(2)
-    expect(schedulePriceChange.mock.calls[0]?.[0]).toEqual(
-      schedulePriceChange.mock.calls[1]?.[0]
-    )
-    expect(schedulePriceChange).toHaveBeenCalledWith(
-      expect.objectContaining({
-        effectiveAt: "2027-08-01T00:00:00.000Z",
-        idempotencyKey:
-          "logloads:subscription:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa83:plan:network_50:2027-08-01T00:00:00.000Z",
-        subscriptionId: "sub_network",
-        targetPriceId: "price_network_50"
-      })
-    )
-    expect(
-      mocks.bindOrganizationSubscriptionScheduleProvider
-    ).toHaveBeenCalledWith(
-      state,
-      {
-        stripeScheduleId: "sub_sched_network",
-        subscriptionId: subscription.id
-      },
-      expect.any(String)
-    )
-  })
-
-  it("schedules an existing non-renewal after collection and canary gates are disabled", async () => {
-    const scheduleCancellation = vi.fn().mockResolvedValue({
-      cancelAt: "2027-10-01T00:00:00.000Z",
-      scheduleId: "sub_sched_nonrenewal"
-    })
-    const subscription = {
-      cancelAtPeriodEnd: true,
-      commitmentEnd: "2027-08-01T00:00:00.000Z",
-      currentPeriodEnd: "2026-09-01T00:00:00.000Z",
-      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa84",
-      internalBillingTest: false,
-      nonRenewalEffectiveAt: "2027-10-01T00:00:00.000Z",
-      organizationId: "11111111-1111-4111-8111-111111111111",
-      pendingPlanCode: null,
-      pendingPlanEffectiveAt: null,
-      pendingPlanSnapshot: null,
-      planCode: "network_25",
-      planSnapshot: {
-        billingModel: "subscription_v1",
-        code: "network_25",
-        internalBillingTest: false,
-        stripePriceId: null
-      },
-      stripeScheduleId: null,
-      stripeSubscriptionId: "sub_network"
-    }
-    const state = {
-      billingAdjustments: [],
-      billingPeriodSummaries: [],
-      networkOverageInvoices: [],
-      notifications: [],
-      organizationSubscriptions: [subscription]
-    }
-
-    vi.stubEnv("STRIPE_PRICE_NETWORK_25", "price_network_25")
-    mocks.reconcileMissingPlatformFees.mockReturnValue([])
-    mocks.openAllClosedPeriodInvoices.mockReturnValue([])
-    mocks.listOpenHostInvoices.mockReturnValue([])
-    mocks.platformFeeCollectionEnabled.mockReturnValue(false)
-    mocks.subscriptionCollectionEnabled.mockReturnValue(false)
-    mocks.subscriptionNewMoneyAllowed.mockReturnValue(false)
-    mocks.resolveSubscriptionStripe.mockReturnValue({
-      ok: true,
-      port: { scheduleCancellation }
-    })
-    mocks.bindOrganizationSubscriptionScheduleProvider.mockReturnValue({
-      changed: true
-    })
-    mocks.operatingStateAccess.mockReturnValue({
-      async mutate(
-        mutate: (draft: { state: typeof state }) => unknown
-      ) {
-        return mutate({ state })
-      },
-      async read(
-        read: (current: typeof state) => unknown
-      ) {
-        return read(state)
-      }
-    })
-
-    const response = await GET(
-      new Request("https://logloads.test/api/billing/cron", {
-        headers: { authorization: "Bearer cron-test-secret" }
-      })
-    )
-
-    expect(response.status).toBe(200)
-    expect(mocks.subscriptionNewMoneyAllowed).not.toHaveBeenCalled()
-    expect(scheduleCancellation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        effectiveAt: "2027-10-01T00:00:00.000Z",
-        idempotencyKey:
-          "logloads:subscription:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa84:non-renewal:2027-10-01T00:00:00.000Z",
-        subscriptionId: "sub_network"
-      })
-    )
-    expect(scheduleCancellation).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        effectiveAt: subscription.commitmentEnd
-      })
-    )
+    expect(mocks.verifyExpectedStripeAccount).not.toHaveBeenCalled()
+    expect(mocks.chargeHostInvoice).not.toHaveBeenCalled()
   })
 
   it("leaves queued billing email untouched when delivery configuration is disabled", async () => {
     const state = {
-      billingAdjustments: [],
-      billingPeriodSummaries: [],
-      networkOverageInvoices: [],
-      notifications: [queuedBillingNotification()],
-      organizationSubscriptions: []
+      notifications: [queuedBillingNotification()]
     }
 
     configureBillingEmailCron(state)
@@ -1288,7 +513,7 @@ describe("billing cron fee reconciliation", () => {
     expect(
       mocks.deliverClaimedBillingNotificationEmail
     ).not.toHaveBeenCalled()
-    expect(body.subscriptionBilling.billingEmailNotifications).toMatchObject({
+    expect(body.billingEmailNotifications).toMatchObject({
       attempted: [],
       configured: false,
       degraded: true,
@@ -1300,11 +525,7 @@ describe("billing cron fee reconciliation", () => {
 
   it("claims, delivers, and canonically completes one billing email exactly once", async () => {
     const state = {
-      billingAdjustments: [],
-      billingPeriodSummaries: [],
-      networkOverageInvoices: [],
-      notifications: [queuedBillingNotification()],
-      organizationSubscriptions: []
+      notifications: [queuedBillingNotification()]
     }
 
     configureBillingEmailCron(state)
@@ -1331,7 +552,7 @@ describe("billing cron fee reconciliation", () => {
     expect(mocks.markBillingNotificationEmailDelivered).toHaveBeenCalledTimes(
       1
     )
-    expect(firstBody.subscriptionBilling.billingEmailNotifications.attempted)
+    expect(firstBody.billingEmailNotifications.attempted)
       .toEqual([
         {
           attemptCount: 1,
@@ -1339,38 +560,32 @@ describe("billing cron fee reconciliation", () => {
           outcome: "delivered"
         }
       ])
-    expect(secondBody.subscriptionBilling.billingEmailNotifications).toMatchObject({
+    expect(secondBody.billingEmailNotifications).toMatchObject({
       attempted: [],
       queued: 0,
       ready: 0
     })
   })
 
-  it("delivers host-invoice email when fee collection is enabled and subscription collection is dark", async () => {
+  it("delivers host-invoice email only, and leaves other billing notifications in-app", async () => {
     const hostInvoiceNotificationId =
       "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa72"
-    const subscriptionNotificationId =
+    const agreementNotificationId =
       "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa73"
     const state = {
-      billingAdjustments: [],
-      billingPeriodSummaries: [],
-      networkOverageInvoices: [],
       notifications: [
         queuedBillingNotification({
           id: hostInvoiceNotificationId,
           relatedEntityType: "host_invoice"
         }),
         queuedBillingNotification({
-          id: subscriptionNotificationId,
-          relatedEntityType: "organization_subscription"
+          id: agreementNotificationId,
+          relatedEntityType: "host_fee_agreement"
         })
-      ],
-      organizationSubscriptions: []
+      ]
     }
 
     configureBillingEmailCron(state)
-    mocks.platformFeeCollectionEnabled.mockReturnValue(true)
-    mocks.subscriptionCollectionEnabled.mockReturnValue(false)
     mocks.isBillingNotificationEmailDeliveryEnabled.mockReturnValue(true)
     mocks.deliverClaimedBillingNotificationEmail.mockResolvedValue({
       outcome: "delivered",
@@ -1398,10 +613,10 @@ describe("billing cron fee reconciliation", () => {
     ).toBe("delivered")
     expect(
       state.notifications.find(
-        (notification) => notification.id === subscriptionNotificationId
+        (notification) => notification.id === agreementNotificationId
       )?.emailDeliveryState
     ).toBe("pending")
-    expect(body.subscriptionBilling.billingEmailNotifications).toMatchObject({
+    expect(body.billingEmailNotifications).toMatchObject({
       configured: true,
       queued: 1,
       ready: 1,
@@ -1409,18 +624,38 @@ describe("billing cron fee reconciliation", () => {
     })
   })
 
+  it("sends no billing email while fee collection is switched off", async () => {
+    const state = { notifications: [queuedBillingNotification()] }
+
+    configureBillingEmailCron(state)
+    mocks.platformFeeCollectionEnabled.mockReturnValue(false)
+    mocks.isBillingNotificationEmailDeliveryEnabled.mockReturnValue(true)
+
+    const response = await GET(
+      new Request("https://logloads.test/api/billing/cron", {
+        headers: { authorization: "Bearer cron-test-secret" }
+      })
+    )
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(mocks.claimBillingNotificationEmail).not.toHaveBeenCalled()
+    expect(body.billingEmailNotifications).toMatchObject({
+      attempted: [],
+      degraded: false,
+      queued: 1,
+      state: "collection_disabled"
+    })
+  })
+
   it("retries provider failures but never exceeds five canonical attempts", async () => {
     const state = {
-      billingAdjustments: [],
-      billingPeriodSummaries: [],
-      networkOverageInvoices: [],
       notifications: [
         queuedBillingNotification({
           emailAttemptCount: 3,
           emailDeliveryState: "failed"
         })
-      ],
-      organizationSubscriptions: []
+      ]
     }
 
     configureBillingEmailCron(state)
@@ -1447,7 +682,7 @@ describe("billing cron fee reconciliation", () => {
     ).toHaveBeenCalledTimes(2)
     expect(mocks.markBillingNotificationEmailFailed).toHaveBeenCalledTimes(2)
     expect(state.notifications[0]?.emailAttemptCount).toBe(5)
-    expect(exhaustedBody.subscriptionBilling.billingEmailNotifications)
+    expect(exhaustedBody.billingEmailNotifications)
       .toMatchObject({
         attempted: [],
         exhausted: 1,
@@ -1458,9 +693,6 @@ describe("billing cron fee reconciliation", () => {
 
   it("denies a stale claim whose recipient no longer has active billing authority", async () => {
     const state = {
-      billingAdjustments: [],
-      billingPeriodSummaries: [],
-      networkOverageInvoices: [],
       notifications: [
         queuedBillingNotification({
           emailAttemptCount: 1,
@@ -1468,8 +700,7 @@ describe("billing cron fee reconciliation", () => {
           emailClaimedAt: "2026-07-27T00:00:00.000Z",
           emailDeliveryState: "claimed"
         })
-      ],
-      organizationSubscriptions: []
+      ]
     }
 
     configureBillingEmailCron(state, false)
@@ -1496,7 +727,7 @@ describe("billing cron fee reconciliation", () => {
       }),
       expect.any(String)
     )
-    expect(body.subscriptionBilling.billingEmailNotifications.attempted)
+    expect(body.billingEmailNotifications.attempted)
       .toEqual([
         {
           attemptCount: 2,

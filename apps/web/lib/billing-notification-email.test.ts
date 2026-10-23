@@ -10,11 +10,11 @@ import {
 const NOTIFICATION_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 
 const claimedNotification = {
-  body: "Your Network subscription payment needs attention.",
+  body: "$10.50 is ready for the LogLoads fees on completed loads in this billing period.",
   claimToken: "billing-cron-attempt-1",
   notificationId: NOTIFICATION_ID,
   recipientEmail: "billing@example.com",
-  title: "Subscription payment needs attention"
+  title: "LogLoads platform fee invoice ready"
 }
 
 const configuredEnvironment = {

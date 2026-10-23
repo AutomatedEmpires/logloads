@@ -11,7 +11,7 @@ import type {
   HostPublishingOptions,
   HostWorkspaceSetup
 } from "@/lib/host-data"
-import { hostPercentagePublicationIsReady } from "@/lib/host-publishing-options"
+import { hostPublicationIsReady } from "@/lib/host-publishing-options"
 import type { NetworkLoadView, NetworkView } from "@/lib/network"
 import { formatDateTime, formatHuman, tripStatusLabel } from "@/lib/v3-shared"
 import {
@@ -334,37 +334,31 @@ function getHostReadinessFacts(
 }
 
 export function HostReadiness({
-  activationState,
   billingProfileStatus,
-  billingModel,
   canManageLandings,
   canPublish,
   continuationHref,
-  currentPercentageAgreementActive,
   facts,
+  feeAgreementAccepted,
   title,
   welcome = false,
   welcomeSource,
   workspaceName
 }: {
-  activationState: HostPublishingOptions["billingActivationState"]
   billingProfileStatus: HostPublishingOptions["billingProfileStatus"]
-  billingModel: HostPublishingOptions["billingModel"]
   canManageLandings: boolean
   canPublish: boolean
   continuationHref?: string
-  currentPercentageAgreementActive: boolean
   facts: HostReadinessFacts
+  feeAgreementAccepted: boolean
   title: string
   welcome?: boolean
   welcomeSource?: "created" | "invited"
   workspaceName: string
 }) {
-  const activationComplete = hostPercentagePublicationIsReady({
-    billingActivationState: activationState,
-    billingModel,
+  const activationComplete = hostPublicationIsReady({
     billingProfileStatus,
-    currentPercentageAgreementActive
+    feeAgreementAccepted
   })
   const operatingSteps = [
     {
@@ -425,39 +419,19 @@ export function HostReadiness({
 
   if (activationComplete) {
     activationDetail =
-      "The current 5% completed-load agreement is active and a working payment method is attached."
-  } else if (activationState === "suspended") {
+      "The 2% host fee terms are accepted and a working payment method is attached."
+  } else if (!feeAgreementAccepted) {
     activationDetail =
-      "Activation is suspended. Contact LogLoads to resolve the operating hold before publication resumes."
-  } else if (activationState === "legacy") {
+      "Accept the 2% host fee terms in Billing and attach a card before publishing live work. Workspace setup itself does not charge you."
+  } else if (billingProfileStatus === "failed") {
     activationDetail =
-      "Historical percentage assignments remain preserved. Accept the current agreement from Billing before publishing new live work."
-  } else if (billingModel && billingModel !== "percentage_v1") {
+      "The 2% host fee terms are accepted, but the payment method failed. Replace it in Billing before publishing live work."
+  } else if (billingProfileStatus === null) {
     activationDetail =
-      "A historical commercial record exists. Reconcile it from Billing before new percentage work can activate."
-  } else if (currentPercentageAgreementActive && billingModel === "percentage_v1") {
-    if (billingProfileStatus === "failed") {
-      activationDetail =
-        "The current 5% completed-load agreement is active, but the payment method failed. Replace it in Billing before publishing live work."
-    } else if (billingProfileStatus === null) {
-      activationDetail =
-        "The current 5% completed-load agreement is active, but the billing profile is conflicting. Resolve it before publishing live work."
-    } else if (billingProfileStatus === "attached") {
-      activationDetail =
-        "The current 5% completed-load agreement is active, but activation is not recorded yet. Reconcile it in Billing before publishing live work."
-    } else {
-      activationDetail =
-        "The current 5% completed-load agreement is active. Attach a working payment method in Billing before publishing live work."
-    }
-  } else if (activationState === "percentage_active") {
-    activationDetail =
-      "The percentage agreement record is incomplete or not current. Reconcile it in Billing before publishing live work."
-  } else if (billingModel) {
-    activationDetail =
-      "A historical commercial record exists. Reconcile it from Billing before new percentage work can activate."
+      "The 2% host fee terms are accepted, but the billing profile is conflicting. Resolve it before publishing live work."
   } else {
     activationDetail =
-      "Pilot activation is invitation-based. Review Billing to accept the current 5% agreement and attach a card when this workspace is approved. Workspace setup itself does not charge you."
+      "The 2% host fee terms are accepted. Attach a working payment method in Billing before publishing live work."
   }
   const readinessDescription = welcome
     ? welcomeSource === "invited"
@@ -465,17 +439,17 @@ export function HostReadiness({
         ? workspaceName +
           " is now your active host workspace. The agreement and payment method are ready. Finish the operating record to put your first movement live."
         : workspaceName +
-          " is now your active host workspace. Build the operating record with your team; live publication stays off until percentage billing is approved and activated."
+          " is now your active host workspace. Build the operating record with your team; live publication stays off until the fee terms are accepted and a card is attached."
       : welcomeSource === "created"
         ? activationComplete
           ? "Your host workspace is created. The agreement and payment method are ready. Finish the operating record to put your first movement live."
-          : "Your host workspace is created. Build the operating record now; live publication stays off until percentage billing is approved and activated."
+          : "Your host workspace is created. Build the operating record now; live publication stays off until the fee terms are accepted and a card is attached."
         : activationComplete
           ? "This host workspace is ready. The agreement and payment method are ready. Finish the operating record to put your first movement live."
-          : "This host workspace is ready for setup. Build the operating record now; live publication stays off until percentage billing is approved and activated."
+          : "This host workspace is ready for setup. Build the operating record now; live publication stays off until the fee terms are accepted and a card is attached."
     : activationComplete
       ? "The agreement and payment method are ready. Finish the operating record to put your first movement live."
-      : "Build the operating record now. Live publication stays off until this workspace is approved for percentage billing and completes activation."
+      : "Build the operating record now. Live publication stays off until the fee terms are accepted and a card is attached."
   const nextAction = requiredSetupAction
     ? requiredSetupAction.allowed
       ? {
@@ -492,7 +466,7 @@ export function HostReadiness({
       ? {
           href: "/host/command",
           label: "Open command center",
-          note: "Activation is recorded for this workspace."
+          note: "Billing is ready for this workspace."
         }
       : {
           href: "/host/billing",
@@ -504,7 +478,7 @@ export function HostReadiness({
     {
       complete: activationComplete,
       detail: activationDetail,
-      title: "Host billing activation"
+      title: "Accept the fee terms and attach a card"
     }
   ]
 
@@ -532,8 +506,8 @@ export function HostReadiness({
           <strong>{facts.readyCount} of 4 operating steps ready</strong>
           <span>
             {activationComplete
-              ? "Billing activation is complete for this workspace."
-              : "Pilot billing activation is a separate final step."}
+              ? "Billing is ready for this workspace."
+              : "Accepting the fee terms and attaching a card is the final step."}
           </span>
           <div
             aria-hidden
@@ -564,7 +538,7 @@ export function HostReadiness({
           const status = isAssisted
             ? step.complete
               ? "Ready"
-              : "Pilot"
+              : "Billing"
             : step.complete
               ? "Ready"
               : isNext
@@ -650,11 +624,9 @@ export function HostCommand({
 }) {
   const own = ownLoads(network)
   const readiness = getHostReadinessFacts(network, options, setup)
-  const activationComplete = hostPercentagePublicationIsReady(options)
+  const activationComplete = hostPublicationIsReady(options)
   const showReadiness =
-    (canManageLandings || canPublish) &&
-    (own.length === 0 ||
-      (!activationComplete && options.billingActivationState !== "suspended"))
+    (canManageLandings || canPublish) && (own.length === 0 || !activationComplete)
   const active = activeLoads(own)
   const planned = active.reduce((sum, load) => sum + load.capacity.total, 0)
   const committed = active.reduce((sum, load) => sum + load.capacity.committed, 0)
@@ -683,16 +655,14 @@ export function HostCommand({
     <AppShell account={account} kicker="Landing operations" role="host" title="Command">
       {showReadiness ? (
         <HostReadiness
-          activationState={options.billingActivationState}
           billingProfileStatus={options.billingProfileStatus}
-          billingModel={options.billingModel}
           canManageLandings={canManageLandings}
           canPublish={canPublish}
-          currentPercentageAgreementActive={options.currentPercentageAgreementActive}
           facts={readiness}
+          feeAgreementAccepted={options.feeAgreementAccepted}
           title={
             readiness.readyCount === 4
-              ? "Complete billing activation"
+              ? "Accept the fee terms and attach a card"
               : "Finish workspace setup"
           }
           workspaceName={network.activeOrganization.name}
@@ -856,42 +826,26 @@ function hostPublicationGateState(options: HostPublishingOptions): {
   ready: boolean
   title: string
 } {
-  if (hostPercentagePublicationIsReady(options)) {
+  if (hostPublicationIsReady(options)) {
     return {
-      body: "The current 5% completed-load agreement and a working payment method are recorded. Driver pay remains the separate amount shown on each posting.",
+      body: "The 2% host fee terms are accepted and a working payment method is on file. Driver pay remains the separate amount shown on each posting.",
       ready: true,
       title: "Live publication is ready"
     }
   }
 
-  if (options.billingActivationState === "suspended") {
+  if (options.feeAgreementAccepted && options.billingProfileStatus === "failed") {
     return {
-      body: "Drafts remain available, but new live work is suspended. Review Billing or contact LogLoads to resolve the operating hold.",
-      ready: false,
-      title: "Live publication is suspended"
-    }
-  }
-
-  if (options.billingActivationState === "legacy" || (options.billingModel && options.billingModel !== "percentage_v1")) {
-    return {
-      body: "Historical obligations stay preserved. Prepare drafts here, then reconcile the current percentage agreement from Billing before publishing new live work.",
-      ready: false,
-      title: "Current agreement required"
-    }
-  }
-
-  if (options.currentPercentageAgreementActive && options.billingProfileStatus === "failed") {
-    return {
-      body: "The current agreement is active, but the payment method failed. Drafts remain available while Billing is corrected.",
+      body: "The fee terms are accepted, but the payment method failed. Drafts remain available while Billing is corrected.",
       ready: false,
       title: "Payment method needs attention"
     }
   }
 
   return {
-    body: "Drafts are free to prepare. Live publication stays off until this workspace is approved for the pilot, accepts the current 5% completed-load agreement, and attaches a working payment method.",
+    body: "Drafts are free to prepare. Live publication opens once this workspace accepts the 2% host fee terms and attaches a working payment method in Billing.",
     ready: false,
-    title: "Prepare now; activate separately"
+    title: "Prepare now; publish once billing is ready"
   }
 }
 
@@ -1399,9 +1353,8 @@ export function HostLandings({
   welcome?: boolean
   welcomeSource?: "created" | "invited"
 }) {
-  const atLimit = setup.landingLimit !== null && setup.activeLandingCount >= setup.landingLimit
   const readiness = getHostReadinessFacts(network, options, setup)
-  const activationComplete = hostPercentagePublicationIsReady(options)
+  const activationComplete = hostPublicationIsReady(options)
   const showReadiness =
     (canManageLandings || canPublish) &&
     (welcome || readiness.readyCount < 4 || !activationComplete)
@@ -1410,14 +1363,12 @@ export function HostLandings({
     <AppShell account={account} kicker="Access control" role="host" title="Landings">
       {showReadiness ? (
         <HostReadiness
-          activationState={options.billingActivationState}
           billingProfileStatus={options.billingProfileStatus}
-          billingModel={options.billingModel}
           canManageLandings={canManageLandings}
           canPublish={canPublish}
           continuationHref={continuation}
-          currentPercentageAgreementActive={options.currentPercentageAgreementActive}
           facts={readiness}
+          feeAgreementAccepted={options.feeAgreementAccepted}
           title="Prepare your first timber movement"
           welcome={welcome}
           welcomeSource={welcomeSource}
@@ -1428,31 +1379,9 @@ export function HostLandings({
         <section className="workspace-section" id="add-landing">
           <header className="workspace-section__head">
             <h2>Add a landing</h2>
-            {/* No live plan and a full plan are different problems and read
-                differently: there is no slot to free when the plan covers none,
-                so telling them to retire one would send them somewhere that
-                cannot help. The service refuses these two the same way. */}
-            <p>
-              {setup.landingLimit === null
-                ? options.billingModel === "percentage_v1" && options.billingActivationState === "percentage_active"
-                  ? "The current 5% completed-load agreement has no landing tier or allowance."
-                  : "This historical agreement does not cap active landings."
-                : setup.landingLimit === 0
-                  ? "This workspace cannot add an active landing until its commercial record is reconciled."
-                  : options.billingActivationState === "unenrolled"
-                    ? `Pilot preparation includes ${setup.landingLimit} active landing before activation — ${setup.activeLandingCount} in use.`
-                    : `The historical agreement covers ${setup.landingLimit} active landing${setup.landingLimit === 1 ? "" : "s"} — ${setup.activeLandingCount} in use.`}
-            </p>
+            <p>Add every landing trucks load at. There is no limit on active landings.</p>
           </header>
-          {atLimit ? (
-            <p className="workspace-hint">
-              {setup.landingLimit === 0
-                ? "Check your billing to add landing coverage before setting one up."
-                : "You are using every active landing your plan covers. Retire one below to free the slot, or talk to us about more."}
-            </p>
-          ) : (
-            <LandingForm />
-          )}
+          <LandingForm />
         </section>
       ) : null}
 

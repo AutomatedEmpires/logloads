@@ -10,10 +10,14 @@ import {
   hostInvoiceStatusSchema,
   invoicePeriodFor,
   invoiceSubtotalCents,
-  LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
-  percentageFeeEventId,
+  HOST_FEE_TERMS_VERSION,
+  hostFeeAgreementId,
+  hostFeeAgreementSchema,
+  isCurrentHostFeeAgreement,
+  PLATFORM_FEE_CURRENCY,
   platformFeeEventId,
   platformFeeEventStatusSchema,
+  platformFeePercentLabel,
   PLATFORM_FEE_BPS,
   type PlatformFeeLedgerEntry
 } from "./billing-model"
@@ -26,7 +30,6 @@ import {
 const uuid = z.string().uuid()
 const timestamp = "2026-07-05T18:00:00.000Z"
 const ASSIGNMENT = "dddddddd-dddd-4ddd-8ddd-ddddddddddd1"
-const OTHER_ASSIGNMENT = "dddddddd-dddd-4ddd-8ddd-ddddddddddd2"
 const MOVEMENT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"
 const OTHER_MOVEMENT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2"
 
@@ -34,13 +37,14 @@ const OTHER_MOVEMENT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2"
 const DNS_NAMESPACE = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
 
 describe("the platform fee rate", () => {
-  it("is the founder-decided flat 5%", () => {
-    expect(PLATFORM_FEE_BPS).toBe(500)
-    expect(PLATFORM_FEE_BPS / FEE_BPS_SCALE).toBe(0.05)
+  it("is a flat 2%", () => {
+    expect(PLATFORM_FEE_BPS).toBe(200)
+    expect(PLATFORM_FEE_BPS / FEE_BPS_SCALE).toBe(0.02)
+    expect(platformFeePercentLabel()).toBe("2%")
   })
 
-  it("publishes one canonical eligible currency for legacy percentage work", () => {
-    expect(LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY).toBe("USD")
+  it("is billed in one currency", () => {
+    expect(PLATFORM_FEE_CURRENCY).toBe("USD")
   })
 
   it("recognizes only an authoritative, exact, bounded frozen rate", () => {
@@ -76,22 +80,24 @@ describe("the platform fee rate", () => {
 })
 
 describe("computePlatformFeeCents", () => {
-  it("charges 5% of stated driver pay when the arithmetic is exact", () => {
-    // $525.00 -> $26.25. No rounding involved, so this pins the rate itself.
-    expect(computePlatformFeeCents(52_500, PLATFORM_FEE_BPS)).toBe(2_625)
+  it("charges 2% of stated driver pay when the arithmetic is exact", () => {
+    // $500.00 -> $10.00, and $525.00 -> $10.50. No rounding involved, so these pin
+    // the rate itself.
+    expect(computePlatformFeeCents(50_000, PLATFORM_FEE_BPS)).toBe(1_000)
+    expect(computePlatformFeeCents(52_500, PLATFORM_FEE_BPS)).toBe(1_050)
   })
 
   it("rounds a fractional cent half-up", () => {
-    // 5% of $99.99 is 499.95c. Half-up bills 500c.
-    expect(computePlatformFeeCents(9_999, PLATFORM_FEE_BPS)).toBe(500)
-    // 5% of $0.50 is exactly 2.5c: the exact-half case, and it goes up.
-    expect(computePlatformFeeCents(50, PLATFORM_FEE_BPS)).toBe(3)
+    // 2% of $99.99 is 199.98c. Half-up bills 200c.
+    expect(computePlatformFeeCents(9_999, PLATFORM_FEE_BPS)).toBe(200)
+    // 2% of $0.25 is exactly 0.5c: the exact-half case, and it goes up.
+    expect(computePlatformFeeCents(25, PLATFORM_FEE_BPS)).toBe(1)
   })
 
   it("rounds down when the discarded remainder is under half a cent", () => {
-    // Negative control for the rule above: 5% of $10.01 is 50.05c, and bills 50c.
+    // Negative control for the rule above: 2% of $10.01 is 20.02c, and bills 20c.
     // Without this, "always round up" would pass every other rounding test here.
-    expect(computePlatformFeeCents(1_001, PLATFORM_FEE_BPS)).toBe(50)
+    expect(computePlatformFeeCents(1_001, PLATFORM_FEE_BPS)).toBe(20)
   })
 
   it("agrees with the arithmetic it claims, across a wide range of pay figures", () => {
@@ -129,23 +135,24 @@ describe("computePlatformFeeCents", () => {
 
 describe("hostChargeBreakdown", () => {
   it("shows the fee on top of driver pay, never taken out of it", () => {
-    const breakdown = hostChargeBreakdown(52_500, PLATFORM_FEE_BPS)
+    // The canonical example: $500 of driver pay, a $10 fee, $510 for the host.
+    const breakdown = hostChargeBreakdown(50_000, PLATFORM_FEE_BPS)
 
     expect(breakdown).toEqual({
-      driverPayCents: 52_500,
-      hostTotalCents: 55_125,
-      platformFeeCents: 2_625
+      driverPayCents: 50_000,
+      hostTotalCents: 51_000,
+      platformFeeCents: 1_000
     })
     // The two claims that matter, stated as arithmetic: the driver's number is
     // untouched, and the host's total is that number plus the fee.
-    expect(breakdown.driverPayCents).toBe(52_500)
+    expect(breakdown.driverPayCents).toBe(50_000)
     expect(breakdown.hostTotalCents - breakdown.driverPayCents).toBe(breakdown.platformFeeCents)
     expect(breakdown.hostTotalCents).toBeGreaterThan(breakdown.driverPayCents)
   })
 
   it("never returns a net-of-fee driver figure for a surface to show", () => {
-    const breakdown = hostChargeBreakdown(52_500, PLATFORM_FEE_BPS)
-    const netOfFee = 52_500 - 2_625
+    const breakdown = hostChargeBreakdown(50_000, PLATFORM_FEE_BPS)
+    const netOfFee = 50_000 - 1_000
 
     expect(Object.values(breakdown)).not.toContain(netOfFee)
   })
@@ -157,7 +164,7 @@ describe("hostChargeBreakdown", () => {
     expect(breakdown.hostTotalCents).toBe(52_500)
   })
 
-  it("uses the rate it is handed, so history is explained at its own rate", () => {
+  it("uses the rate it is handed, so a load is explained at its own frozen rate", () => {
     expect(hostChargeBreakdown(52_500, 300).platformFeeCents).toBe(1_575)
   })
 })
@@ -205,16 +212,16 @@ describe("invoiceSubtotalCents", () => {
 })
 
 describe("platformFeeEventId", () => {
-  it("gives one assignment one id, forever", () => {
-    expect(platformFeeEventId(ASSIGNMENT)).toBe(platformFeeEventId(ASSIGNMENT))
+  it("gives one physical movement one id, forever", () => {
+    expect(platformFeeEventId(MOVEMENT)).toBe(platformFeeEventId(MOVEMENT))
   })
 
-  it("is the at-most-one key: different assignments never share an id", () => {
+  it("is the at-most-one key: different movements never share an id", () => {
     const ids = new Set(
       [
-        ASSIGNMENT,
-        OTHER_ASSIGNMENT,
-        "dddddddd-dddd-4ddd-8ddd-ddddddddddd3",
+        MOVEMENT,
+        OTHER_MOVEMENT,
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
         "00000000-0000-4000-8000-000000000000"
       ].map(platformFeeEventId)
     )
@@ -223,15 +230,15 @@ describe("platformFeeEventId", () => {
   })
 
   it("produces a uuid, because every id in this system is uuid-shaped", () => {
-    const id = platformFeeEventId(ASSIGNMENT)
+    const id = platformFeeEventId(MOVEMENT)
 
     expect(uuid.safeParse(id).success).toBe(true)
     expect(id[14]).toBe("5") // version 5: derived, not random
     expect(["8", "9", "a", "b"]).toContain(id[19]) // RFC 4122 variant
   })
 
-  it("treats an upper-case assignment id as the same assignment", () => {
-    expect(platformFeeEventId(ASSIGNMENT.toUpperCase())).toBe(platformFeeEventId(ASSIGNMENT))
+  it("treats an upper-case movement id as the same movement", () => {
+    expect(platformFeeEventId(MOVEMENT.toUpperCase())).toBe(platformFeeEventId(MOVEMENT))
   })
 
   it("derives the same ids this build shipped with", () => {
@@ -239,32 +246,50 @@ describe("platformFeeEventId", () => {
     // hash implementation and the frozen namespace: change either and every fee
     // that has already been billed gets a new id, so the duplicate check stops
     // recognising it and every host is charged twice.
-    expect(platformFeeEventId(ASSIGNMENT)).toBe("876389db-4838-55a3-9b2f-b32ca01f3937")
-    expect(platformFeeEventId(OTHER_ASSIGNMENT)).toBe("f609e682-d59b-5bbf-b597-a25d3d1bfd1c")
+    expect(platformFeeEventId(MOVEMENT)).toBe("5d7d2f7c-886d-565a-8f6d-89fb17931ef1")
+    expect(platformFeeEventId(OTHER_MOVEMENT)).toBe("fafd2b84-868c-5422-996d-433ab5ad66b0")
     expect(platformFeeEventId("00000000-0000-4000-8000-000000000000")).toBe(
-      "85703b35-1547-5f1a-804a-817570baacb8"
+      "937474bc-9184-58e4-ad66-5c74f01481d0"
     )
   })
 
-  it("refuses anything that is not an assignment uuid", () => {
-    expect(() => platformFeeEventId("assignment-1")).toThrow(/assignment uuid/)
-    expect(() => platformFeeEventId("")).toThrow(/assignment uuid/)
+  it("refuses anything that is not a movement uuid", () => {
+    expect(() => platformFeeEventId("movement-1")).toThrow(/movement uuid/)
+    expect(() => platformFeeEventId("")).toThrow(/movement uuid/)
   })
 })
 
-describe("percentageFeeEventId", () => {
-  it("uses the physical movement as the current percentage fee identity", () => {
-    expect(percentageFeeEventId(MOVEMENT)).toBe(percentageFeeEventId(MOVEMENT))
-    expect(percentageFeeEventId(MOVEMENT.toUpperCase())).toBe(percentageFeeEventId(MOVEMENT))
-    expect(percentageFeeEventId(OTHER_MOVEMENT)).not.toBe(percentageFeeEventId(MOVEMENT))
+describe("the host fee agreement", () => {
+  const organizationId = "33333333-3333-4333-8333-333333333332"
+  const agreement = {
+    acceptedAt: timestamp,
+    acceptedByUserId: "22222222-2222-4222-8222-222222222222",
+    createdAt: timestamp,
+    feeBps: PLATFORM_FEE_BPS,
+    id: hostFeeAgreementId(organizationId),
+    organizationId,
+    termsVersion: HOST_FEE_TERMS_VERSION,
+    updatedAt: timestamp
+  }
+
+  it("gives one organization one agreement id, forever", () => {
+    expect(hostFeeAgreementId(organizationId)).toBe("19f8e8dc-7e24-56bb-81bc-9c2530cfff12")
+    expect(hostFeeAgreementId(organizationId.toUpperCase())).toBe(agreement.id)
+    expect(() => hostFeeAgreementId("org-1")).toThrow(/organization uuid/)
   })
 
-  it("produces a version 5 uuid and rejects anything but a movement uuid", () => {
-    const id = percentageFeeEventId(MOVEMENT)
+  it("stores exactly the accepted rate and terms version", () => {
+    expect(hostFeeAgreementSchema.safeParse(agreement).success).toBe(true)
+    expect(hostFeeAgreementSchema.safeParse({ ...agreement, feeBps: 12.5 }).success).toBe(false)
+    expect(hostFeeAgreementSchema.safeParse({ ...agreement, termsVersion: "" }).success).toBe(false)
+    expect(hostFeeAgreementSchema.safeParse({ ...agreement, billingModel: "x" }).success).toBe(false)
+  })
 
-    expect(uuid.safeParse(id).success).toBe(true)
-    expect(id[14]).toBe("5")
-    expect(() => percentageFeeEventId("movement-1")).toThrow(/movement uuid/)
+  it("covers new work only at the current rate and terms version", () => {
+    expect(isCurrentHostFeeAgreement(agreement)).toBe(true)
+    expect(isCurrentHostFeeAgreement({ ...agreement, feeBps: PLATFORM_FEE_BPS + 1 })).toBe(false)
+    expect(isCurrentHostFeeAgreement({ ...agreement, termsVersion: "2026-01-01" })).toBe(false)
+    expect(isCurrentHostFeeAgreement(null)).toBe(false)
   })
 })
 
@@ -354,12 +379,11 @@ describe("invoicePeriodFor", () => {
 describe("platformFeeEventSchema", () => {
   const feeEvent = {
     assignmentId: ASSIGNMENT,
-    billingModel: "legacy_percentage",
     createdAt: timestamp,
     driverPayCents: 52_500,
     feeBps: PLATFORM_FEE_BPS,
-    feeCents: 2_625,
-    id: platformFeeEventId(ASSIGNMENT),
+    feeCents: 1_050,
+    id: platformFeeEventId(MOVEMENT),
     invoiceId: null,
     loadMovementId: MOVEMENT,
     loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
@@ -376,7 +400,7 @@ describe("platformFeeEventSchema", () => {
   })
 
   it("rejects a fee that does not follow from the numbers stored beside it", () => {
-    expect(platformFeeEventSchema.safeParse({ ...feeEvent, feeCents: 2_626 }).success).toBe(false)
+    expect(platformFeeEventSchema.safeParse({ ...feeEvent, feeCents: 1_051 }).success).toBe(false)
     expect(platformFeeEventSchema.safeParse({ ...feeEvent, feeCents: 0 }).success).toBe(false)
   })
 
@@ -439,7 +463,7 @@ describe("platformFeeEventSchema", () => {
 describe("hostInvoiceSchema", () => {
   const invoice = {
     createdAt: timestamp,
-    feeEventIds: [platformFeeEventId(ASSIGNMENT)],
+    feeEventIds: [platformFeeEventId(MOVEMENT)],
     id: "35353535-3535-4535-8535-353535353531",
     issuedAt: null,
     organizationId: "33333333-3333-4333-8333-333333333331",
@@ -448,7 +472,7 @@ describe("hostInvoiceSchema", () => {
     periodStart: "2026-07-01T00:00:00.000Z",
     status: "draft",
     stripeInvoiceId: null,
-    subtotalCents: 2_625,
+    subtotalCents: 1_050,
     updatedAt: timestamp,
     voidedAt: null
   }
@@ -471,7 +495,7 @@ describe("hostInvoiceSchema", () => {
     expect(
       hostInvoiceSchema.safeParse({
         ...invoice,
-        feeEventIds: [platformFeeEventId(ASSIGNMENT), platformFeeEventId(ASSIGNMENT)]
+        feeEventIds: [platformFeeEventId(MOVEMENT), platformFeeEventId(MOVEMENT)]
       }).success
     ).toBe(false)
   })

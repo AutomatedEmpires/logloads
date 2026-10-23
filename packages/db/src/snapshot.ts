@@ -6,19 +6,17 @@ import {
   assignmentSchema,
   auditEventSchema,
   availabilityWindowSchema,
-  billingAdjustmentSchema,
-  billingPeriodSummarySchema,
   credentialReviewSchema,
   destinationFacilitySchema,
   directOfferSchema,
   dispatcherProfileSchema,
   driverCredentialSchema,
   driverProfileSchema,
-  entitlementSchema,
   equipmentCombinationSchema,
   futureAvailabilitySchema,
   haulRouteSchema,
   hostBillingProfileSchema,
+  hostFeeAgreementSchema,
   hostInvoiceSchema,
   landingSchema,
   loadPostingSchema,
@@ -28,25 +26,17 @@ import {
   messageThreadSchema,
   millSchema,
   notificationSchema,
-  networkOverageInvoiceSchema,
-  networkUsageEventSchema,
   operationalNoticeSchema,
   opportunityCapacitySchema,
   organizationInvitationSchema,
-  organizationBillingAccountId,
-  organizationBillingAccountSchema,
   organizationMembershipSchema,
   organizationSchema,
-  organizationSubscriptionSchema,
   platformFeeEventSchema,
   privateNetworkRelationshipSchema,
   rateSchema,
   richLandingDetailsSchema,
   routePackSchema,
   supportRequestSchema,
-  subscriptionBaseInvoiceSchema,
-  subscriptionPlanDefinitionSchema,
-  SUBSCRIPTION_PLAN_CATALOG,
   trailerProfileSchema,
   tripDocumentSchema,
   tripEventSchema,
@@ -98,9 +88,6 @@ const ROW_VALIDATORS: Record<LogLoadsTableName, RowValidator> = {
   assignments: assignmentSchema,
   auditEvents: auditEventSchema,
   availabilityWindows: availabilityWindowSchema,
-  billingAdjustments: billingAdjustmentSchema,
-  billingPeriodSummaries: billingPeriodSummarySchema,
-  billingPlanDefinitions: subscriptionPlanDefinitionSchema,
   companies: loggingCompanySchema,
   credentialReviews: credentialReviewSchema,
   destinationFacilities: destinationFacilitySchema,
@@ -108,11 +95,11 @@ const ROW_VALIDATORS: Record<LogLoadsTableName, RowValidator> = {
   dispatcherProfiles: dispatcherProfileSchema,
   driverCredentials: driverCredentialSchema,
   driverProfiles: driverProfileSchema,
-  entitlements: entitlementSchema,
   equipmentCombinations: equipmentCombinationSchema,
   futureAvailability: futureAvailabilitySchema,
   haulRoutes: haulRouteSchema,
   hostBillingProfiles: hostBillingProfileSchema,
+  hostFeeAgreements: hostFeeAgreementSchema,
   hostInvoices: hostInvoiceSchema,
   landings: landingSchema,
   loadPostings: loadPostingSchema,
@@ -121,15 +108,11 @@ const ROW_VALIDATORS: Record<LogLoadsTableName, RowValidator> = {
   messageThreads: messageThreadSchema,
   mills: millSchema,
   notifications: notificationSchema,
-  networkOverageInvoices: networkOverageInvoiceSchema,
-  networkUsageEvents: networkUsageEventSchema,
   operationalNotices: operationalNoticeSchema,
   opportunityCapacities: opportunityCapacitySchema,
   organizationInvitations: organizationInvitationSchema,
-  organizationBillingAccounts: organizationBillingAccountSchema,
   organizationMemberships: organizationMembershipSchema,
   organizations: organizationSchema,
-  organizationSubscriptions: organizationSubscriptionSchema,
   platformFeeEvents: platformFeeEventSchema,
   privateNetworkRelationships: privateNetworkRelationshipSchema,
   profiles: userSchema,
@@ -137,7 +120,6 @@ const ROW_VALIDATORS: Record<LogLoadsTableName, RowValidator> = {
   richLandingDetails: richLandingDetailsSchema,
   routePacks: routePackSchema,
   supportRequests: supportRequestSchema,
-  subscriptionBaseInvoices: subscriptionBaseInvoiceSchema,
   trailerProfiles: trailerProfileSchema,
   tripDocuments: tripDocumentSchema,
   tripEvents: tripEventSchema,
@@ -186,16 +168,6 @@ const ROW_REFERENCES: Partial<Record<LogLoadsTableName, readonly RowReference[]>
     { field: "driverProfileId", target: "driverProfiles" },
     { field: "truckProfileId", target: "truckProfiles" }
   ],
-  billingAdjustments: [
-    { field: "billingPeriodSummaryId", target: "billingPeriodSummaries" },
-    { field: "invoiceId", target: "networkOverageInvoices" },
-    { field: "organizationId", target: "organizations" },
-    { field: "usageEventId", target: "networkUsageEvents" }
-  ],
-  billingPeriodSummaries: [
-    { field: "organizationId", target: "organizations" },
-    { field: "subscriptionId", target: "organizationSubscriptions" }
-  ],
   // A review is the answer to "why was I refused". If the credential it decided is
   // gone the answer no longer attaches to anything, which is the one thing this
   // trail exists to prevent.
@@ -220,6 +192,10 @@ const ROW_REFERENCES: Partial<Record<LogLoadsTableName, readonly RowReference[]>
     { field: "truckProfileId", target: "truckProfiles" }
   ],
   hostBillingProfiles: [{ field: "organizationId", target: "organizations" }],
+  hostFeeAgreements: [
+    { field: "acceptedByUserId", target: "profiles" },
+    { field: "organizationId", target: "organizations" }
+  ],
   hostInvoices: [{ field: "organizationId", target: "organizations" }],
   loadPostings: [
     { field: "dispatcherProfileId", target: "dispatcherProfiles" },
@@ -230,28 +206,11 @@ const ROW_REFERENCES: Partial<Record<LogLoadsTableName, readonly RowReference[]>
   ],
   loaderProfiles: [{ field: "userId", target: "profiles" }],
   messageEvents: [{ field: "threadId", target: "messageThreads" }],
-  networkOverageInvoices: [
-    { field: "billingPeriodSummaryId", target: "billingPeriodSummaries" },
-    { field: "organizationId", target: "organizations" }
-  ],
-  networkUsageEvents: [
-    { field: "assignmentId", target: "assignments" },
-    { field: "billingPeriodSummaryId", target: "billingPeriodSummaries" },
-    { field: "invoiceId", target: "networkOverageInvoices" },
-    { field: "loadPostingId", target: "loadPostings" },
-    { field: "organizationId", target: "organizations" },
-    { field: "reversalAdjustmentId", target: "billingAdjustments" }
-  ],
   opportunityCapacities: [{ field: "loadPostingId", target: "loadPostings" }],
   organizationMemberships: [
     { field: "organizationId", target: "organizations" },
     { field: "userId", target: "profiles" }
   ],
-  organizationBillingAccounts: [
-    { field: "organizationId", target: "organizations" },
-    { field: "subscriptionId", target: "organizationSubscriptions" }
-  ],
-  organizationSubscriptions: [{ field: "organizationId", target: "organizations" }],
   // A fee is a claim about one specific completed load. If anything it names is
   // missing, the charge can no longer be explained to the host it was billed to,
   // which is the one thing a fee ledger must always be able to do. invoiceId is
@@ -440,15 +399,14 @@ function publishReport(report: OperatingStateReport): void {
  * introduced the tripReviews collection. supportRequests is additive and
  * schema-v2-compatible (its SQL migration applies the same backfill).
  * tripInspections is additive and RUNTIME-ONLY — no SQL migration exists for it;
- * this guard is the only backfill. The three platform-fee billing collections and
- * the two driver-credential collections are additive and RUNTIME-ONLY on the same
- * terms. Old and new deployments can overlap during rollout and rollback.
+ * this guard is the only backfill. The four host-fee collections and the two
+ * driver-credential collections are additive and RUNTIME-ONLY on the same terms.
+ * Old and new deployments can overlap during rollout and rollback.
  */
 function backfillStateSnapshot(
   value: Partial<LogLoadsDatabaseState>
 ): Partial<LogLoadsDatabaseState> {
   const candidate: Partial<LogLoadsDatabaseState> = { ...value }
-  const billingAccountsWereMissing = candidate.organizationBillingAccounts === undefined
 
   // This must happen before the required-collection check. The SQL migration
   // applies the same additive backfill, while this runtime guard keeps code-first
@@ -466,12 +424,16 @@ function backfillStateSnapshot(
     candidate.tripInspections = []
   }
 
-  // Platform fee billing. These three are in REQUIRED_TABLES the moment they have a
-  // row validator, and the canonical document in production predates them, so
-  // without this guard the very first read after deploy would refuse the whole
-  // document and every request would fail. Empty is also the only honest default:
-  // no host has been charged anything, so an absent ledger means nothing accrued,
-  // never that a bill was lost.
+  // The host fee. These four are in REQUIRED_TABLES the moment they have a row
+  // validator, so without this guard a stored document that predates any of them
+  // would be refused on its first read and every request would fail. Empty is
+  // also the only honest default: an absent agreement collection means no host
+  // has accepted the fee terms, and an absent ledger means nothing accrued, never
+  // that a bill was lost.
+  if (candidate.hostFeeAgreements === undefined) {
+    candidate.hostFeeAgreements = []
+  }
+
   if (candidate.hostBillingProfiles === undefined) {
     candidate.hostBillingProfiles = []
   }
@@ -482,44 +444,6 @@ function backfillStateSnapshot(
 
   if (candidate.hostInvoices === undefined) {
     candidate.hostInvoices = []
-  }
-
-  // Subscription-v1 is additive beside the permanent legacy ledger. Code may
-  // roll out before the SQL JSON backfill, so every new collection receives the
-  // only honest deploy-safe default here. Plan definitions are commercial
-  // configuration rather than activity and therefore backfill from the frozen
-  // version-one catalog; all organization/customer/usage collections start
-  // empty so no real account is silently enrolled or charged.
-  if (candidate.billingPlanDefinitions === undefined) {
-    candidate.billingPlanDefinitions = SUBSCRIPTION_PLAN_CATALOG.map((plan) => structuredClone(plan))
-  }
-
-  if (candidate.organizationBillingAccounts === undefined) {
-    candidate.organizationBillingAccounts = []
-  }
-
-  if (candidate.organizationSubscriptions === undefined) {
-    candidate.organizationSubscriptions = []
-  }
-
-  if (candidate.networkUsageEvents === undefined) {
-    candidate.networkUsageEvents = []
-  }
-
-  if (candidate.billingPeriodSummaries === undefined) {
-    candidate.billingPeriodSummaries = []
-  }
-
-  if (candidate.billingAdjustments === undefined) {
-    candidate.billingAdjustments = []
-  }
-
-  if (candidate.networkOverageInvoices === undefined) {
-    candidate.networkOverageInvoices = []
-  }
-
-  if (candidate.subscriptionBaseInvoices === undefined) {
-    candidate.subscriptionBaseInvoices = []
   }
 
   // The driver credential vault. Additive and RUNTIME-ONLY on the same terms: a
@@ -569,308 +493,19 @@ function backfillStateSnapshot(
   }
 
   if (Array.isArray(candidate.assignments)) {
-    candidate.assignments = candidate.assignments.map((assignment) => {
-      const hadNoBillingClassification =
-        assignment.billingCommittedAt == null &&
-        assignment.billingModel == null &&
-        assignment.billingPlanCodeAtCommitment == null &&
-        assignment.billingSubscriptionIdAtCommitment == null &&
-        assignment.capacitySource == null
-      const preserveAcceptedLegacyObligation =
-        hadNoBillingClassification && Boolean(assignment.assignedAt)
-      const load = candidate.loadPostings?.find(
-        (posting) => posting.id === assignment.loadPostingId
-      )
-      const driver = candidate.driverProfiles?.find(
-        (profile) => profile.id === assignment.driverProfileId
-      )
-      const historicalCapacitySource =
-        load && driver?.companyId === load.companyId
-          ? "private_fleet"
-          : "logloads_network"
-
-      return {
-        ...assignment,
-        billingCommittedAt:
-          assignment.billingCommittedAt ??
-          (preserveAcceptedLegacyObligation ? assignment.assignedAt ?? null : null),
-        billingModel:
-          assignment.billingModel ??
-          (preserveAcceptedLegacyObligation ? "legacy_percentage" : null),
-        billingPlanCodeAtCommitment: assignment.billingPlanCodeAtCommitment ?? null,
-        billingSubscriptionIdAtCommitment: assignment.billingSubscriptionIdAtCommitment ?? null,
-        capacitySource:
-          assignment.capacitySource ??
-          (preserveAcceptedLegacyObligation ? historicalCapacitySource : null),
-        // A truck-slot reservation is the strongest historical physical-load
-        // identity available. This lets a cancelled/replacement assignment on
-        // the same reservation converge on one billable movement. Only fall
-        // back to the assignment when even that source is unavailable.
-        loadMovementId:
-          assignment.loadMovementId ??
-          assignment.truckSlotId ??
-          assignment.id,
-        termsSnapshot: assignment.termsSnapshot ?? {}
-      }
-    })
-  }
-
-  // Agreement snapshots were added after billing accounts already existed.
-  // Null preserves every unenrolled, legacy, and subscription account exactly;
-  // percentage_v1 is never inferred or silently activated by a read.
-  if (Array.isArray(candidate.organizationBillingAccounts)) {
-    candidate.organizationBillingAccounts =
-      candidate.organizationBillingAccounts.map((account) => ({
-        ...account,
-        percentageTermsSnapshot: account.percentageTermsSnapshot ?? null
-      }))
-  }
-
-  // Historical fee rows were keyed by assignment. Preserve their ids and
-  // classification while making physical-movement ownership explicit. New
-  // percentage_v1 writes use a movement-derived id; this backfill never remints
-  // an existing financial record.
-  if (Array.isArray(candidate.platformFeeEvents)) {
-    candidate.platformFeeEvents = candidate.platformFeeEvents.map((event) => {
-      const assignment = candidate.assignments?.find(
-        (row) => row.id === event.assignmentId
-      )
-
-      return {
-        ...event,
-        billingModel:
-          event.billingModel ??
-          (assignment?.billingModel === "percentage_v1"
-            ? "percentage_v1"
-            : "legacy_percentage"),
-        loadMovementId:
-          event.loadMovementId ??
-          assignment?.loadMovementId ??
-          event.assignmentId
-      }
-    })
-  }
-
-  if (billingAccountsWereMissing) {
-    const explicitLegacyOrganizationIds = new Set<string>()
-
-    for (const profile of candidate.hostBillingProfiles ?? []) {
-      explicitLegacyOrganizationIds.add(profile.organizationId)
-    }
-    for (const fee of candidate.platformFeeEvents ?? []) {
-      explicitLegacyOrganizationIds.add(fee.organizationId)
-    }
-    for (const assignment of candidate.assignments ?? []) {
-      if (assignment.billingModel === "legacy_percentage") {
-        const load = candidate.loadPostings?.find(
-          (posting) => posting.id === assignment.loadPostingId
-        )
-        if (load) {
-          explicitLegacyOrganizationIds.add(load.companyId)
-        }
-      }
-      const hostFee = assignment.termsSnapshot.hostFee
-      const collectionState =
-        hostFee && typeof hostFee === "object" && !Array.isArray(hostFee)
-          ? (hostFee as Record<string, unknown>).collectionState
-          : null
-
-      if (collectionState !== "accrues_monthly_in_arrears") {
-        continue
-      }
-      const load = candidate.loadPostings?.find(
-        (posting) => posting.id === assignment.loadPostingId
-      )
-      if (load) {
-        explicitLegacyOrganizationIds.add(load.companyId)
-      }
-    }
-
-    candidate.organizationBillingAccounts = Array.from(
-      explicitLegacyOrganizationIds
-    ).map((organizationId) => {
-      const organization = candidate.organizations?.find(
-        (entry) => entry.id === organizationId
-      )
-      const effectiveAt =
-        organization?.createdAt ?? "1970-01-01T00:00:00.000Z"
-
-      return organizationBillingAccountSchema.parse({
-        activationState: "legacy",
-        billingModel: "legacy_percentage",
-        createdAt: effectiveAt,
-        effectiveAt,
-        id: organizationBillingAccountId(organizationId),
-        organizationId,
-        percentageTermsSnapshot: null,
-        subscriptionId: null,
-        updatedAt: effectiveAt
-      })
-    })
-  }
-
-  if (Array.isArray(candidate.networkOverageInvoices)) {
-    candidate.networkOverageInvoices = candidate.networkOverageInvoices.map((invoice) => ({
-      ...invoice,
-      adjustmentAmountCents: invoice.adjustmentAmountCents ?? 0,
-      adjustmentIds: invoice.adjustmentIds ?? [],
-      amountDueCents: invoice.amountDueCents ?? invoice.subtotalCents,
-      creditCarryforwardCents: invoice.creditCarryforwardCents ?? 0,
-      collectionAttemptCount: invoice.collectionAttemptCount ?? 0,
-      lastCollectionAttemptAt: invoice.lastCollectionAttemptAt ?? null,
-      lastCollectionFailure: invoice.lastCollectionFailure ?? null,
-      providerAmountDueCents: invoice.providerAmountDueCents ?? null,
-      providerAmountPaidCents: invoice.providerAmountPaidCents ?? null,
-      providerAmountRemainingCents:
-        invoice.providerAmountRemainingCents ?? null,
-      usageSubtotalCents: invoice.usageSubtotalCents ?? invoice.subtotalCents
+    candidate.assignments = candidate.assignments.map((assignment) => ({
+      ...assignment,
+      // An assignment without a movement identity takes its truck-slot
+      // reservation, the strongest physical-load identity it carries, so a
+      // cancelled assignment and its replacement on the same reservation converge
+      // on one billable movement. Only fall back to the assignment when even that
+      // is unavailable.
+      loadMovementId:
+        assignment.loadMovementId ??
+        assignment.truckSlotId ??
+        assignment.id,
+      termsSnapshot: assignment.termsSnapshot ?? {}
     }))
-  }
-
-  if (Array.isArray(candidate.subscriptionBaseInvoices)) {
-    candidate.subscriptionBaseInvoices =
-      candidate.subscriptionBaseInvoices.map((invoice) => ({
-        ...invoice,
-        amountPaidCents:
-          invoice.amountPaidCents ??
-          Math.max(
-            0,
-            invoice.amountDueCents - invoice.amountRemainingCents
-          )
-      }))
-  }
-
-  if (Array.isArray(candidate.billingAdjustments)) {
-    candidate.billingAdjustments = candidate.billingAdjustments.map((adjustment) => ({
-      ...adjustment,
-      minimumChargeWriteoffCents:
-        adjustment.minimumChargeWriteoffCents ?? 0,
-      providerReference: adjustment.providerReference ?? null,
-      providerRevenueDeltaCents:
-        adjustment.providerRevenueDeltaCents ?? 0,
-      providerSettlementAmountCents:
-        adjustment.providerSettlementAmountCents ?? null,
-      providerSettlementAttemptCount:
-        adjustment.providerSettlementAttemptCount ?? 0,
-      providerSettlementFailure:
-        adjustment.providerSettlementFailure ?? null,
-      providerSettlementLastAttemptAt:
-        adjustment.providerSettlementLastAttemptAt ?? null,
-      providerSettlementRemainingCents:
-        adjustment.providerSettlementRemainingCents ?? null,
-      providerSettlementSettledAt:
-        adjustment.providerSettlementSettledAt ?? null,
-      providerSettlementState:
-        adjustment.providerSettlementState ?? "not_started",
-      settlementIntent: adjustment.settlementIntent ?? "unapplied"
-    }))
-  }
-
-  if (Array.isArray(candidate.networkUsageEvents)) {
-    candidate.networkUsageEvents = candidate.networkUsageEvents.map((event) => ({
-      ...event,
-      internalBillingTest:
-        event.internalBillingTest ?? event.planCode === "internal_billing_test"
-    }))
-  }
-
-  if (Array.isArray(candidate.billingPeriodSummaries)) {
-    candidate.billingPeriodSummaries = candidate.billingPeriodSummaries.map((summary) => ({
-      ...summary,
-      internalBillingTest:
-        summary.internalBillingTest ?? summary.planCode === "internal_billing_test",
-      overageMilestoneIntervalUnits:
-        summary.overageMilestoneIntervalUnits ?? 10
-    }))
-  }
-
-  if (Array.isArray(candidate.organizationSubscriptions)) {
-    candidate.organizationSubscriptions = candidate.organizationSubscriptions.map(
-      (subscription) => {
-        const pendingEffectiveAt = subscription.pendingPlanEffectiveAt ?? null
-        const pendingPlanSnapshot =
-          subscription.pendingPlanSnapshot ??
-          (
-            subscription.pendingPlanCode && pendingEffectiveAt
-              ? (candidate.billingPlanDefinitions ?? [])
-                  .filter(
-                    (plan) =>
-                      plan.code === subscription.pendingPlanCode &&
-                      Date.parse(plan.effectiveAt) <= Date.parse(pendingEffectiveAt)
-                  )
-                  .sort((left, right) => right.version - left.version)[0] ??
-                null
-              : null
-          )
-
-        return {
-          ...subscription,
-          activationAuthorizedAt:
-            subscription.activationAuthorizedAt ??
-            subscription.operationalActivatedAt ??
-            null,
-          activationAuthorizedByUserId:
-            subscription.activationAuthorizedByUserId ??
-            (
-              subscription.operationalActivatedAt
-                ? subscription.acceptedByUserId
-                : null
-            ),
-          cancelAtPeriodEnd:
-            subscription.planCode === "network_pilot"
-              ? true
-              : subscription.cancelAtPeriodEnd,
-          conversionGraceEndsAt: subscription.conversionGraceEndsAt ?? null,
-          convertedFromPlanCode: subscription.convertedFromPlanCode ?? null,
-          convertedFromSubscriptionId:
-            subscription.convertedFromSubscriptionId ?? null,
-          nonRenewalEffectiveAt:
-            subscription.nonRenewalEffectiveAt ?? null,
-          operationalActivatedAt: subscription.operationalActivatedAt ?? null,
-          operationalExpiredAt: subscription.operationalExpiredAt ?? null,
-          operatingMarketIds:
-            subscription.operatingMarketIds ??
-            (
-              subscription.planSnapshot.allowancePeriod !== "none"
-                ? ["historical_contract_scope_unrecorded"]
-                : []
-            ),
-          overageMilestoneIntervalUnitsSnapshot:
-            subscription.overageMilestoneIntervalUnitsSnapshot ?? 10,
-          paymentGraceDaysSnapshot:
-            subscription.paymentGraceDaysSnapshot ?? 7,
-          paymentGraceEndsAt:
-            subscription.graceState === "active"
-              ? subscription.paymentGraceEndsAt ??
-                new Date(
-                  Date.parse(subscription.updatedAt) + 7 * 24 * 60 * 60 * 1000
-                ).toISOString()
-              : subscription.paymentGraceEndsAt ?? null,
-          providerPaymentState:
-            subscription.providerPaymentState ??
-            subscription.paymentState ??
-            "none",
-          pendingOperatingMarketIds:
-            pendingPlanSnapshot
-              ? subscription.pendingOperatingMarketIds ??
-                subscription.operatingMarketIds ??
-                ["historical_contract_scope_unrecorded"]
-              : null,
-          pendingCustomTerms:
-            pendingPlanSnapshot?.customContract
-              ? subscription.pendingCustomTerms ?? {
-                  snapshotState: "historical_unrecorded"
-                }
-              : null,
-          pendingPlanSnapshot,
-          renewalBehavior:
-            subscription.planCode === "network_pilot"
-              ? "non_renewing"
-              : subscription.renewalBehavior,
-          stripeScheduleId: subscription.stripeScheduleId ?? null
-        }
-      }
-    )
   }
 
   // Route packs predate assignment-specific snapshots. A stored pack carries no
@@ -1112,58 +747,13 @@ export function auditStateSnapshot(value: Partial<LogLoadsDatabaseState>): Opera
     }
   }
 
-  // Cross-collection financial invariants cannot live in a row schema. Keep the
-  // rows visible for repair (withholding either side would hide financial
-  // history), but report conflicts on every snapshot and let both write paths
-  // refuse to create another claim.
+  // Cross-collection fee invariants cannot live in a row schema. Keep the rows
+  // visible for repair (withholding either one would hide a charge), but report
+  // conflicts on every snapshot; accrual and invoicing refuse to add another
+  // claim on a movement that already has one.
   const runtime = candidate as LogLoadsDatabaseState
   const assignmentsById = new Map(runtime.assignments.map((assignment) => [assignment.id, assignment]))
-  const activeUsageByMovement = new Map<string, { id: string; index: number }>()
   const activeFeeByMovement = new Map<string, { id: string; index: number }>()
-
-  runtime.networkUsageEvents.forEach((event, index) => {
-    if (event.status === "reversed") {
-      return
-    }
-
-    const prior = activeUsageByMovement.get(event.loadMovementId)
-
-    if (prior) {
-      defects.push({
-        collection: "networkUsageEvents",
-        detail: `physical movement ${event.loadMovementId} is already claimed by usage event ${prior.id}`,
-        kind: "billing_conflict",
-        rowId: event.id,
-        rowIndex: index,
-        withheld: false
-      })
-    } else {
-      activeUsageByMovement.set(event.loadMovementId, { id: event.id, index })
-    }
-
-    const assignment = assignmentsById.get(event.assignmentId)
-
-    if (
-      assignment &&
-      (
-        assignment.loadMovementId !== event.loadMovementId ||
-        assignment.capacitySource !== "logloads_network" ||
-        (
-          assignment.billingModel !== "subscription_v1" &&
-          assignment.billingModel !== "enterprise_custom"
-        )
-      )
-    ) {
-      defects.push({
-        collection: "networkUsageEvents",
-        detail: `usage event classification disagrees with committed assignment ${assignment.id}`,
-        kind: "billing_conflict",
-        rowId: event.id,
-        rowIndex: index,
-        withheld: false
-      })
-    }
-  })
 
   runtime.platformFeeEvents.forEach((event, index) => {
     if (event.status === "voided") {
@@ -1187,32 +777,13 @@ export function auditStateSnapshot(value: Partial<LogLoadsDatabaseState>): Opera
     }
 
     const assignment = assignmentsById.get(event.assignmentId)
-    if (
-      assignment &&
-      ((assignment.loadMovementId ?? assignment.id) !== movementId ||
-        (assignment.billingModel !== event.billingModel &&
-          !(event.billingModel === "legacy_percentage" &&
-            assignment.billingModel === null)))
-    ) {
+    if (assignment && (assignment.loadMovementId ?? assignment.id) !== movementId) {
       defects.push({
         collection: "platformFeeEvents",
-        detail: `fee event classification disagrees with committed assignment ${assignment.id}`,
+        detail: `fee event movement disagrees with committed assignment ${assignment.id}`,
         kind: "billing_conflict",
         rowId: event.id,
         rowIndex: index,
-        withheld: false
-      })
-    }
-
-    const usage = activeUsageByMovement.get(movementId)
-
-    if (usage) {
-      defects.push({
-        collection: "networkUsageEvents",
-        detail: `physical movement ${movementId} has legacy fee ${event.id} and Network usage ${usage.id}`,
-        kind: "billing_conflict",
-        rowId: usage.id,
-        rowIndex: usage.index,
         withheld: false
       })
     }

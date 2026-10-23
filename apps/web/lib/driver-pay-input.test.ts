@@ -21,7 +21,7 @@ describe("what the host typed, as cents", () => {
     // Number("19.99") * 100 is 1998.9999999999998, so a builder that multiplied
     // would either quote a fractional pay figure or depend on a Math.round
     // nobody wrote down. The pay a driver is promised, and the base the host is
-    // charged 5% of, cannot rest on that.
+    // charged 2% of, cannot rest on that.
     expect(Number("19.99") * 100).not.toBe(1999)
     expect(parseDriverPayCents("19.99")).toBe(1999)
 
@@ -85,11 +85,11 @@ describe("the three numbers a host is shown before publishing", () => {
     // The requirement in the task, asserted directly: the builder's fee IS
     // computePlatformFeeCents of the entered amount, not a second arithmetic.
     expect(quote!.platformFeeCents).toBe(computePlatformFeeCents(52_500, PLATFORM_FEE_BPS))
-    expect(quote!.platformFeeCents).toBe(2_625)
+    expect(quote!.platformFeeCents).toBe(1_050)
     // ON TOP: the host's total is pay PLUS the fee, and the driver's figure is
     // never reduced. A breakdown where the total equalled the pay would mean the
     // fee had been taken out of the driver's money.
-    expect(quote!.hostTotalCents).toBe(52_500 + 2_625)
+    expect(quote!.hostTotalCents).toBe(52_500 + 1_050)
     expect(quote!.hostTotalCents).toBeGreaterThan(quote!.driverPayCents)
   })
 
@@ -116,17 +116,17 @@ describe("what several truckloads come to if every one of them runs", () => {
 
     expect(outlook.truckloads).toBe(6)
     expect(outlook.driverPayCents).toBe(315_000)
-    expect(outlook.platformFeeCents).toBe(15_750)
-    expect(outlook.hostTotalCents).toBe(330_750)
+    expect(outlook.platformFeeCents).toBe(6_300)
+    expect(outlook.hostTotalCents).toBe(321_300)
   })
 
   it("bills as many roundings as there are truckloads, not one on the total", () => {
     // The ledger raises one fee event per completed assignment, so a host's bill
     // is the sum of per-truckload fees. Rating the summed pay instead would show
-    // 151c here and the invoice would then add up to 150c — a projection that
+    // 61c here and the invoice would then add up to 60c — a projection that
     // disagrees with the bill by construction.
-    expect(payOutlookForTruckloads(1_009, 3).platformFeeCents).toBe(150)
-    expect(computePlatformFeeCents(1_009 * 3, PLATFORM_FEE_BPS)).toBe(151)
+    expect(payOutlookForTruckloads(1_009, 3).platformFeeCents).toBe(60)
+    expect(computePlatformFeeCents(1_009 * 3, PLATFORM_FEE_BPS)).toBe(61)
   })
 
   it("keeps driver pay whole at every count", () => {

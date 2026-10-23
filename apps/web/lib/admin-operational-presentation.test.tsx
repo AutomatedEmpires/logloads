@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs"
 import * as React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it, vi } from "vitest"
@@ -18,11 +17,13 @@ vi.mock("@/lib/cockpit-actions", () => ({
 vi.stubGlobal("React", React)
 
 import type {
+  AdminBillingSnapshot,
   AdminDisputeRow,
   AdminNoticeRow,
   AdminReportsData
 } from "./admin-data"
 import {
+  AdminBillingPage,
   AdminDisputesPage,
   AdminNoticesPage,
   AdminReportsPage,
@@ -127,18 +128,53 @@ describe("admin contact inquiry presentation", () => {
   })
 })
 
-describe("admin billing hierarchy", () => {
-  it("keeps current percentage attention ahead of preserved subscription history", () => {
-    const source = readFileSync(
-      new URL("../components/v3/AdminPages.tsx", import.meta.url),
-      "utf8"
+describe("admin billing presentation", () => {
+  it("shows the host fee ledger and puts a below-minimum bill under fee attention", () => {
+    const billing: AdminBillingSnapshot = {
+      acceptedAgreementCount: 2,
+      accruedFeeLabel: "$10.00",
+      committedAssignmentCount: 3,
+      exceptions: [{
+        detail: "This bill totals $0.40, below Stripe's $0.50 minimum card charge, so it stays open and is never sent to Stripe.",
+        id: "invoice:invoice-1:below-card-minimum",
+        organizationName: "Summit Ridge Forestry",
+        severity: "warning",
+        title: "Invoice is below the card minimum",
+        updatedLabel: "Aug 1, 2026, 6:00 AM"
+      }],
+      feeEventCount: 4,
+      invoiceCount: 1,
+      outstandingInvoiceLabel: "$0.40"
+    }
+    const markup = renderToStaticMarkup(
+      React.createElement(AdminBillingPage, { account, billing })
     )
 
-    expect(source.indexOf('title="Percentage fee attention"')).toBeGreaterThan(-1)
-    expect(source.indexOf('title="Percentage fee attention"')).toBeLessThan(
-      source.indexOf('title="Historical subscription operations"')
+    expect(markup).toContain("Host fee ledger")
+    expect(markup).toContain("2% of the driver pay")
+    expect(markup).toContain('id="fee-exceptions"')
+    expect(markup).toContain("Fee attention")
+    expect(markup).toContain("Invoice is below the card minimum")
+    expect(markup).toContain('href="/api/admin/billing/export"')
+  })
+
+  it("says plainly when no fee record needs attention", () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(AdminBillingPage, {
+        account,
+        billing: {
+          acceptedAgreementCount: 0,
+          accruedFeeLabel: "$0.00",
+          committedAssignmentCount: 0,
+          exceptions: [],
+          feeEventCount: 0,
+          invoiceCount: 0,
+          outstandingInvoiceLabel: "$0.00"
+        }
+      })
     )
-    expect(source).toContain('id="current-fee-exceptions"')
-    expect(source).toContain("Normal monthly-arrears accrual and open invoices are not treated as failures")
+
+    expect(markup).toContain("No fee exceptions.")
+    expect(markup).toContain("0 exceptions")
   })
 })

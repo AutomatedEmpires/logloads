@@ -21,7 +21,7 @@ describe("pilot contact intent", () => {
 
   it("fails closed for invented form values and returns customer-facing labels", () => {
     expect(parseContactInterest("pilot_host")).toBe("pilot_host")
-    expect(parseContactInterest("subscription_pilot")).toBeNull()
+    expect(parseContactInterest("pilot_everything")).toBeNull()
     expect(contactInterestLabel("pilot_host")).toBe("Plan a host pilot")
   })
 })

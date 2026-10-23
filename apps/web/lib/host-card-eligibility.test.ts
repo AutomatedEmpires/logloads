@@ -2,10 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 
 vi.mock("server-only", () => ({}))
 
-import {
-  PERCENTAGE_V1_TERMS_VERSION,
-  PLATFORM_FEE_BPS
-} from "@logloads/contracts"
+import { HOST_FEE_TERMS_VERSION, PLATFORM_FEE_BPS } from "@logloads/contracts"
 
 import {
   hostCardSetupEligibility,
@@ -13,6 +10,7 @@ import {
 } from "./host-card-eligibility"
 
 const HOST = "33333333-3333-4333-8333-333333333331"
+const OTHER_HOST = "33333333-3333-4333-8333-333333333339"
 const INVOICE = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 
 function source(
@@ -20,114 +18,65 @@ function source(
 ): HostCardEligibilitySource {
   return {
     hostBillingProfiles: [],
+    hostFeeAgreements: [],
     hostInvoices: [],
-    organizationBillingAccounts: [],
-    organizationSubscriptions: [],
     platformFeeEvents: [],
     ...overrides
   }
 }
 
-function currentAgreement(termsVersion = PERCENTAGE_V1_TERMS_VERSION) {
+function agreement(
+  overrides: Partial<HostCardEligibilitySource["hostFeeAgreements"][number]> = {}
+) {
   return {
-    activationState: "percentage_active",
-    billingModel: "percentage_v1",
+    feeBps: PLATFORM_FEE_BPS,
     organizationId: HOST,
-    percentageTermsSnapshot: {
-      acceptedTermsVersion: termsVersion,
-      billingCadence: "monthly_in_arrears",
-      currency: "USD",
-      feeBps: PLATFORM_FEE_BPS
-    },
-    subscriptionId: null
+    termsVersion: HOST_FEE_TERMS_VERSION,
+    ...overrides
   }
 }
 
 describe("host card setup eligibility", () => {
-  it("requires the exact current agreement and this host's rollout admission", () => {
+  it("allows a host that accepted the current fee terms, and names its existing customer", () => {
     const state = source({
-      organizationBillingAccounts: [currentAgreement()]
+      hostBillingProfiles: [{ organizationId: HOST, stripeCustomerId: "cus_host" }],
+      hostFeeAgreements: [agreement()]
     })
 
-    expect(hostCardSetupEligibility(state, HOST, true)).toMatchObject({
+    expect(hostCardSetupEligibility(state, HOST)).toEqual({
       allowed: true,
-      basis: "accepted_percentage_v1"
+      basis: "accepted_fee_agreement",
+      existingCustomerId: "cus_host",
+      message: null,
+      profileCustomerId: "cus_host"
     })
-    expect(hostCardSetupEligibility(state, HOST, false)).toMatchObject({
+  })
+
+  it("refuses a host with no agreement, and does not borrow another host's", () => {
+    const refusal = {
       allowed: false,
-      basis: "agreement_required"
-    })
+      basis: "agreement_required",
+      message: expect.stringContaining("Accept the LogLoads fee terms")
+    }
+
+    expect(hostCardSetupEligibility(source(), HOST)).toEqual(refusal)
+    expect(
+      hostCardSetupEligibility(
+        source({ hostFeeAgreements: [agreement({ organizationId: OTHER_HOST })] }),
+        HOST
+      )
+    ).toEqual(refusal)
   })
 
-  it("refuses a stale or altered percentage agreement", () => {
-    const stale = source({
-      organizationBillingAccounts: [currentAgreement("percentage-v1-retired")]
-    })
-    const altered = source({
-      organizationBillingAccounts: [
-        {
-          ...currentAgreement(),
-          percentageTermsSnapshot: {
-            ...currentAgreement().percentageTermsSnapshot,
-            feeBps: PLATFORM_FEE_BPS - 1
-          }
-        }
-      ]
-    })
+  it("refuses an agreement on earlier terms or at a different rate", () => {
+    const stale = source({ hostFeeAgreements: [agreement({ termsVersion: "2026-01-01" })] })
+    const altered = source({ hostFeeAgreements: [agreement({ feeBps: PLATFORM_FEE_BPS - 1 })] })
 
-    expect(hostCardSetupEligibility(stale, HOST, true).allowed).toBe(false)
-    expect(hostCardSetupEligibility(altered, HOST, true).allowed).toBe(false)
+    expect(hostCardSetupEligibility(stale, HOST).allowed).toBe(false)
+    expect(hostCardSetupEligibility(altered, HOST).allowed).toBe(false)
   })
 
-  it("keeps an explicit frozen legacy percentage agreement serviceable", () => {
-    const state = source({
-      organizationBillingAccounts: [
-        {
-          activationState: "legacy",
-          billingModel: "legacy_percentage",
-          organizationId: HOST,
-          percentageTermsSnapshot: null,
-          subscriptionId: null
-        }
-      ]
-    })
-
-    expect(hostCardSetupEligibility(state, HOST, false)).toMatchObject({
-      allowed: true,
-      basis: "preserved_legacy_agreement"
-    })
-  })
-
-  it("keeps an already provider-bound subscription obligation serviceable", () => {
-    const state = source({
-      organizationBillingAccounts: [
-        {
-          activationState: "suspended",
-          billingModel: "subscription_v1",
-          organizationId: HOST,
-          percentageTermsSnapshot: null,
-          subscriptionId: "20202020-2020-4020-8020-202020202020"
-        }
-      ],
-      organizationSubscriptions: [
-        {
-          billingModel: "subscription_v1",
-          id: "20202020-2020-4020-8020-202020202020",
-          internalBillingTest: false,
-          organizationId: HOST,
-          stripeCustomerId: "cus_preserved",
-          stripeSubscriptionId: "sub_preserved"
-        }
-      ]
-    })
-
-    expect(hostCardSetupEligibility(state, HOST, false)).toMatchObject({
-      allowed: true,
-      basis: "preserved_subscription_agreement"
-    })
-  })
-
-  it("allows a concrete accrued fee or unsettled invoice without reopening enrollment", () => {
+  it("allows a concrete accrued fee or unsettled invoice without an agreement on file", () => {
     const accrued = source({
       platformFeeEvents: [
         { invoiceId: null, organizationId: HOST, status: "accrued" }
@@ -142,11 +91,11 @@ describe("host card setup eligibility", () => {
       ]
     })
 
-    expect(hostCardSetupEligibility(accrued, HOST, false)).toMatchObject({
+    expect(hostCardSetupEligibility(accrued, HOST)).toMatchObject({
       allowed: true,
       basis: "unsettled_obligation"
     })
-    expect(hostCardSetupEligibility(invoiced, HOST, false)).toMatchObject({
+    expect(hostCardSetupEligibility(invoiced, HOST)).toMatchObject({
       allowed: true,
       basis: "unsettled_obligation"
     })
@@ -163,52 +112,32 @@ describe("host card setup eligibility", () => {
       ]
     })
 
-    expect(hostCardSetupEligibility(state, HOST, false)).toMatchObject({
+    expect(hostCardSetupEligibility(state, HOST)).toMatchObject({
       allowed: false,
       basis: "agreement_required"
     })
   })
 
-  it("fails closed when the canonical document contains conflicting accounts", () => {
-    const state = source({
+  it("fails closed when the document holds two agreements or two profiles for one host", () => {
+    const twoAgreements = source({
+      hostFeeAgreements: [agreement(), agreement()],
       hostInvoices: [
         { id: INVOICE, organizationId: HOST, status: "open" }
+      ]
+    })
+    const twoProfiles = source({
+      hostBillingProfiles: [
+        { organizationId: HOST, stripeCustomerId: "cus_one" },
+        { organizationId: HOST, stripeCustomerId: "cus_two" }
       ],
-      organizationBillingAccounts: [currentAgreement(), currentAgreement()]
+      hostFeeAgreements: [agreement()]
     })
 
-    expect(hostCardSetupEligibility(state, HOST, true)).toMatchObject({
+    expect(hostCardSetupEligibility(twoAgreements, HOST)).toMatchObject({
       allowed: false,
       basis: "conflicting_billing_records"
     })
-  })
-
-  it("refuses a cross-wired preserved subscription customer", () => {
-    const state = source({
-      hostBillingProfiles: [
-        { organizationId: HOST, stripeCustomerId: "cus_profile" }
-      ],
-      organizationBillingAccounts: [
-        {
-          activationState: "active",
-          billingModel: "subscription_v1",
-          organizationId: HOST,
-          percentageTermsSnapshot: null,
-          subscriptionId: "20202020-2020-4020-8020-202020202020"
-        }
-      ],
-      organizationSubscriptions: [
-        {
-          billingModel: "subscription_v1",
-          id: "20202020-2020-4020-8020-202020202020",
-          organizationId: HOST,
-          stripeCustomerId: "cus_subscription",
-          stripeSubscriptionId: "sub_preserved"
-        }
-      ]
-    })
-
-    expect(hostCardSetupEligibility(state, HOST, false)).toMatchObject({
+    expect(hostCardSetupEligibility(twoProfiles, HOST)).toMatchObject({
       allowed: false,
       basis: "conflicting_billing_records"
     })

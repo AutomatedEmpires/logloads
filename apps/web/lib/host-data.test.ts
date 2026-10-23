@@ -51,13 +51,11 @@ describe("host publishing options", () => {
       name: ownedDispatcher.contact.name
     })
     expect(options.dispatcher?.id).not.toBe(sharedDispatcher.id)
-    expect(options.billingModel).toBe("percentage_v1")
-    expect(options.billingActivationState).toBe("percentage_active")
     expect(options.billingProfileStatus).toBe("attached")
-    expect(options.currentPercentageAgreementActive).toBe(true)
+    expect(options.feeAgreementAccepted).toBe(true)
   })
 
-  it("keeps an accepted current agreement distinct from a missing card", () => {
+  it("keeps accepted fee terms distinct from a missing card", () => {
     const hostOrganizationId = "33333333-3333-4333-8333-333333333332"
     const originalProfiles = services.state.hostBillingProfiles
 
@@ -72,27 +70,25 @@ describe("host publishing options", () => {
       )
 
       expect(options).toMatchObject({
-        billingActivationState: "percentage_active",
-        billingModel: "percentage_v1",
         billingProfileStatus: "none",
-        currentPercentageAgreementActive: true
+        feeAgreementAccepted: true
       })
     } finally {
       services.state.hostBillingProfiles = originalProfiles
     }
   })
 
-  it("does not project an attached card as current when the terms version is stale", () => {
+  it("does not project an attached card as ready when the accepted terms version is stale", () => {
     const hostOrganizationId = "33333333-3333-4333-8333-333333333332"
-    const account = services.state.organizationBillingAccounts.find(
+    const agreement = services.state.hostFeeAgreements.find(
       (candidate) => candidate.organizationId === hostOrganizationId
     )
 
-    expect(account?.percentageTermsSnapshot).toBeTruthy()
-    if (!account?.percentageTermsSnapshot) return
+    expect(agreement).toBeDefined()
+    if (!agreement) return
 
-    const originalTermsVersion = account.percentageTermsSnapshot.acceptedTermsVersion
-    account.percentageTermsSnapshot.acceptedTermsVersion = "percentage-v1-retired"
+    const originalTermsVersion = agreement.termsVersion
+    agreement.termsVersion = "2026-01-01"
 
     try {
       const options = getHostPublishingOptions(
@@ -102,10 +98,10 @@ describe("host publishing options", () => {
 
       expect(options).toMatchObject({
         billingProfileStatus: "attached",
-        currentPercentageAgreementActive: false
+        feeAgreementAccepted: false
       })
     } finally {
-      account.percentageTermsSnapshot.acceptedTermsVersion = originalTermsVersion
+      agreement.termsVersion = originalTermsVersion
     }
   })
 

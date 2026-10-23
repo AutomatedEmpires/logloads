@@ -12,12 +12,9 @@ function renderReadiness(overrides: Partial<ReadinessProps> = {}): string {
   vi.stubGlobal("React", React)
 
   const props: ReadinessProps = {
-    activationState: "percentage_active",
-    billingModel: "percentage_v1",
     billingProfileStatus: "none",
     canManageLandings: true,
     canPublish: true,
-    currentPercentageAgreementActive: true,
     facts: {
       activeLandingCount: 1,
       activeRouteCount: 1,
@@ -31,6 +28,7 @@ function renderReadiness(overrides: Partial<ReadinessProps> = {}): string {
     },
     title: "Prepare your first timber movement",
     welcome: true,
+    feeAgreementAccepted: true,
     welcomeSource: "created",
     workspaceName: "Summit Ridge Timber",
     ...overrides
@@ -44,27 +42,27 @@ afterEach(() => {
 })
 
 describe("Host first-run billing readiness", () => {
-  it("keeps an accepted agreement with no card in Billing", () => {
+  it("keeps accepted fee terms with no card in Billing", () => {
     const markup = renderReadiness()
 
     expect(markup).toContain('href="/host/billing"')
     expect(markup).toContain("Review host billing")
     expect(markup).toContain(
-      "The current 5% completed-load agreement is active. Attach a working payment method in Billing before publishing live work."
+      "The 2% host fee terms are accepted. Attach a working payment method in Billing before publishing live work."
     )
-    expect(markup).toContain("Pilot")
+    expect(markup).toContain("Accepting the fee terms and attaching a card is the final step.")
     expect(markup).not.toContain("Open command center")
-    expect(markup).not.toContain("Billing activation is complete for this workspace.")
+    expect(markup).not.toContain("Billing is ready for this workspace.")
   })
 
-  it("routes to Command only when the current agreement and card are ready", () => {
+  it("routes to Command only when the fee terms and card are ready", () => {
     const markup = renderReadiness({ billingProfileStatus: "attached" })
 
     expect(markup).toContain('href="/host/command"')
     expect(markup).toContain("Open command center")
-    expect(markup).toContain("Billing activation is complete for this workspace.")
+    expect(markup).toContain("Billing is ready for this workspace.")
     expect(markup).toContain(
-      "The current 5% completed-load agreement is active and a working payment method is attached."
+      "The 2% host fee terms are accepted and a working payment method is attached."
     )
     expect(markup).not.toContain("Review host billing")
   })
@@ -77,17 +75,16 @@ describe("Host first-run billing readiness", () => {
     expect(markup).not.toContain("Open command center")
   })
 
-  it("reports a suspension before suggesting payment-method work", () => {
+  it("asks a host that has not accepted the fee terms to accept them before anything else", () => {
     const markup = renderReadiness({
-      activationState: "suspended",
       billingProfileStatus: "attached",
-      currentPercentageAgreementActive: true
+      feeAgreementAccepted: false
     })
 
     expect(markup).toContain(
-      "Activation is suspended. Contact LogLoads to resolve the operating hold before publication resumes."
+      "Accept the 2% host fee terms in Billing and attach a card before publishing live work."
     )
-    expect(markup).not.toContain("Attach a working payment method")
+    expect(markup).toContain('href="/host/billing"')
     expect(markup).not.toContain("Open command center")
   })
 

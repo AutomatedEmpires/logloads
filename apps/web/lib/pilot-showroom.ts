@@ -48,7 +48,7 @@ export const pilotCaptureDisclosure =
   "Current-product capture from a disposable synthetic workspace. No private real-world data is shown."
 
 export const pilotTourBoundary =
-  "This public tour is read-only. It does not create an account, read or change operating state, send a message, upload a file, enroll an organization, or create a charge."
+  "This public tour is read-only. It does not create an account, read or change operating state, send a message, upload a file, accept fee terms, or create a charge."
 
 export const pilotLifecycle: readonly PilotLifecycleStage[] = [
   {
@@ -137,7 +137,7 @@ export const pilotExperienceLevels = [
     status: "Scheduled with the team"
   },
   {
-    body: "Run a bounded real operation only after the named organization, legal posture, data boundaries, participants, support plan, and commercial gates are separately approved.",
+    body: "Run a bounded real operation only after the named organization, legal posture, data boundaries, participants, and support plan are approved, and the host has accepted the 2% fee terms.",
     icon: "status.verified" as IconKey,
     label: "Approved live pilot",
     status: "Separate approval required"
@@ -173,12 +173,12 @@ export const pilotProgramPhases = [
 
 export const pilotLaunchGates = [
   {
-    body: "A dated counsel-approved operating posture covers the exact commodity, route, relationships, and LogLoads role before Network enrollment.",
+    body: "A dated counsel-approved operating posture covers the exact commodity, route, relationships, and LogLoads role before any live work.",
     icon: "status.verified" as IconKey,
     title: "Legal posture recorded"
   },
   {
-    body: "The exact pilot organization and participants are approved; wildcard enrollment is not accepted and production remains closed to everyone else.",
+    body: "The exact pilot organization and participants are named and approved before the pilot window opens.",
     icon: "nav.admin" as IconKey,
     title: "Cohort explicitly authorized"
   },
@@ -198,9 +198,9 @@ export const pilotLaunchGates = [
     title: "Money boundary accepted"
   },
   {
-    body: "Any 5% fee enrollment and collection are separately approved for the exact host after invoice, webhook, refund, support, and rollback evidence. A pilot does not silently activate charging.",
+    body: "The host accepts the 2% fee terms and attaches a card before publishing. LogLoads switches fee charging on deliberately, after invoice, webhook, refund, support, and rollback evidence; a pilot never starts charging silently.",
     icon: "ops.document" as IconKey,
-    title: "Commercial gates remain separate"
+    title: "Fee collection switched on deliberately"
   },
   {
     body: "Named people own launch, support, incident response, stop authority, fallback coordination, and the end-of-pilot decision.",
@@ -335,7 +335,7 @@ const hostSurfaces: readonly PilotSurface[] = [
   },
   {
     alt: "Synthetic host billing view explaining completed-load platform fee obligations",
-    description: "See the separate 5% host obligation after an authoritative completion while stated driver pay remains a direct host-to-driver obligation.",
+    description: "See the 2% host fee after an authoritative completion while stated driver pay remains a direct host-to-driver obligation.",
     group: "Workspace",
     height: 900,
     image: "/pilot/host-billing.jpg",
@@ -475,16 +475,6 @@ const fleetSurfaces: readonly PilotSurface[] = [
     slug: "fleet-workspace",
     title: "Workspace",
     width: 1440
-  },
-  {
-    alt: "Synthetic fleet billing page explaining free access and historical records",
-    description: "Confirm that fleet workspace access is free and understand preserved historical subscription records without opening new enrollment.",
-    group: "Workspace",
-    height: 900,
-    image: "/pilot/fleet-billing.jpg",
-    slug: "fleet-billing",
-    title: "Billing",
-    width: 1440
   }
 ]
 
@@ -608,7 +598,7 @@ export const pilotRoles: Record<PilotRole, PilotRoleSpec> = {
     ]
   },
   fleet: {
-    commercialTruth: "Fleet workspace access is free forever. No current subscription enrollment exists, and LogLoads never reduces driver pay.",
+    commercialTruth: "Fleet workspace access is free forever. Fleets pay LogLoads nothing for any load they haul, and LogLoads never reduces driver pay.",
     contactLabel: "Plan a fleet rehearsal",
     eyebrow: "Fleet experience",
     icon: "nav.fleet",
@@ -633,7 +623,7 @@ export const pilotRoles: Record<PilotRole, PilotRoleSpec> = {
     ]
   },
   host: {
-    commercialTruth: "There is no monthly minimum and no fee to post. For separately approved Network work, LogLoads charges the host 5% on top of stated driver pay only after an authoritative physical completion, invoiced monthly in arrears.",
+    commercialTruth: "There is no monthly fee, no minimum, and no fee to post. LogLoads charges the host 2% on top of stated driver pay only after an authoritative physical completion, invoiced monthly in arrears.",
     contactLabel: "Plan a host pilot",
     eyebrow: "Host experience",
     icon: "nav.landing",
@@ -643,7 +633,7 @@ export const pilotRoles: Record<PilotRole, PilotRoleSpec> = {
       "One to three real operating lanes with known timber, destinations, equipment, windows, and capacity",
       "Complete landing and route-pack rules that separate public summaries from assignment-only access",
       "A small approved fleet and driver cohort with a documented out-of-band fallback",
-      "Accepted completion, direct driver-pay, separate 5% fee, support, stop, and rollback responsibilities"
+      "Accepted completion, direct driver-pay, 2% host fee, support, stop, and rollback responsibilities"
     ],
     signupHref: "/sign-up?path=host",
     signupLabel: "Create a host workspace",

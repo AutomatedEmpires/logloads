@@ -21,7 +21,6 @@ export function hostPublishingOptionsForSurface(
     equipmentVocabulary: [],
     landings: [],
     rates: [],
-    routes: [],
-    subscriptionPlanCode: null
+    routes: []
   }
 }

@@ -25,7 +25,7 @@ import {
   removeOrganizationMemberAction,
   suspendOrganizationMemberAction
 } from "./cockpit-actions"
-import { buildTeamRosterView } from "./plans"
+import { buildTeamRosterView } from "./settings-data"
 
 const ACTOR_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"
 const CLIENT_ACTOR_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2"

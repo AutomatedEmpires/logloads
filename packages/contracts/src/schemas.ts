@@ -31,11 +31,6 @@ import {
   verificationStatusSchema
 } from "./enums"
 import { isValidTimeRange } from "./helpers/date-time"
-import {
-  billingModelSchema,
-  capacitySourceSchema,
-  subscriptionPlanCodeSchema
-} from "./subscription-billing"
 
 const uuidSchema = z.string().uuid()
 const timestampSchema = z.string().datetime()
@@ -353,7 +348,7 @@ export const assignmentBaseSchema = z.object({
   /**
    * Identity of the physical movement, independent of which driver assignment
    * ultimately completes it. A replacement assignment carries this id forward
-   * so one truckload can never become two usage units.
+   * so one truckload can never be billed twice.
    */
   loadMovementId: uuidSchema.optional().nullable().default(null),
   /**
@@ -370,15 +365,10 @@ export const assignmentBaseSchema = z.object({
   requestedAt: timestampSchema,
   assignedAt: optionalTimestampSchema,
   /**
-   * Commercial classification is empty before commitment and frozen together
-   * at acceptance. Historical rows without these fields remain readable and are
-   * normalized by the operating-state backfill.
+   * When the host's fee terms were frozen onto this assignment, at acceptance.
+   * Empty before then; the frozen rate itself lives in `termsSnapshot.hostFee`.
    */
-  billingModel: billingModelSchema.optional().nullable().default(null),
-  capacitySource: capacitySourceSchema.optional().nullable().default(null),
   billingCommittedAt: optionalTimestampSchema.default(null),
-  billingPlanCodeAtCommitment: subscriptionPlanCodeSchema.optional().nullable().default(null),
-  billingSubscriptionIdAtCommitment: uuidSchema.optional().nullable().default(null),
   completedAt: optionalTimestampSchema,
   cancelledAt: optionalTimestampSchema,
   /**
@@ -415,50 +405,11 @@ export const assignmentBaseSchema = z.object({
 })
 
 export const assignmentSchema = assignmentBaseSchema.superRefine((row, context) => {
-  const billingFields = [
-    row.billingModel,
-    row.capacitySource,
-    row.billingCommittedAt
-  ]
-  const hasBillingCommitment = billingFields.some(Boolean)
-
-  if (hasBillingCommitment && billingFields.some((value) => !value)) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Committed billing model, capacity source, and timestamp must be frozen together",
-      path: ["billingModel"]
-    })
-  }
-
-  if (hasBillingCommitment && !row.loadMovementId) {
+  if (row.billingCommittedAt && !row.loadMovementId) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       message: "A committed assignment must identify its physical movement",
       path: ["loadMovementId"]
-    })
-  }
-
-  if (
-    row.billingPlanCodeAtCommitment &&
-    row.billingModel !== "subscription_v1" &&
-    row.billingModel !== "enterprise_custom" &&
-    row.billingModel !== "dispatch_pro"
-  ) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Only a subscription assignment carries a plan code",
-      path: ["billingPlanCodeAtCommitment"]
-    })
-  }
-
-  if (
-    Boolean(row.billingPlanCodeAtCommitment) !==
-    Boolean(row.billingSubscriptionIdAtCommitment)
-  ) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "A frozen subscription plan must name the subscription that supplied it",
-      path: ["billingSubscriptionIdAtCommitment"]
     })
   }
 
@@ -656,8 +607,8 @@ export const auditEventSchema = z.object({
 export const platformFeeEventSchema = z
   .object({
     /**
-     * platformFeeEventId(assignmentId). Deterministic, so a second accrual for the
-     * same assignment computes an id that is already present.
+     * platformFeeEventId(loadMovementId). Deterministic, so a second accrual for
+     * the same truckload computes an id that is already present.
      */
     id: uuidSchema,
     /** The HOST organization being billed. Never a driver. */
@@ -667,11 +618,6 @@ export const platformFeeEventSchema = z
     /** Physical truck movement; replacement assignments share this identity. */
     loadMovementId: uuidSchema,
     truckSlotId: uuidSchema,
-    /** Frozen commercial classification; subscription rows never enter this ledger. */
-    billingModel: billingModelSchema.extract([
-      "legacy_percentage",
-      "percentage_v1"
-    ]),
     /**
      * The host-stated driver pay, FROZEN at accrual. Copied rather than referenced
      * so the charge can still be explained years later after the posting has been

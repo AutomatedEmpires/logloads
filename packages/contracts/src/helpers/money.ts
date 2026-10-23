@@ -19,7 +19,7 @@ export function formatMoney(value: MoneyValue): string {
 /**
  * The off-platform driver payment frozen into an accepted assignment.
  *
- * Legacy assignments may carry neither field, and a half-recorded amount without
+ * An assignment may carry neither field, and a half-recorded amount without
  * its currency is not a monetary promise the product can honestly display or
  * receipt. Callers therefore get the pair or null, never an invented fallback.
  */

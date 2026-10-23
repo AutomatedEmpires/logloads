@@ -1,4 +1,4 @@
-// LogLoads billing verification — inspect percentage-v1 state after a controlled test.
+// LogLoads billing verification — reconcile the 2% host fee ledger after a controlled test.
 //
 //   SUPABASE_URL=https://example.supabase.co \
 //   SUPABASE_SERVICE_ROLE_KEY=... \
@@ -11,7 +11,11 @@
 import {
   computePlatformFeeCents,
   FEE_BPS_SCALE,
-  frozenPlatformFeeBps
+  frozenPlatformFeeBps,
+  hostFeeAgreementId,
+  isCurrentHostFeeAgreement,
+  platformFeeEventId,
+  PLATFORM_FEE_CURRENCY
 } from "../packages/contracts/src/billing-model.ts"
 
 const url = process.env.SUPABASE_URL
@@ -86,8 +90,8 @@ if (orgFilter && selectedOrganizationIds.size === 0) {
   process.exit(1)
 }
 
-const accounts = (state.organizationBillingAccounts ?? []).filter((account) =>
-  organizationIsSelected(account.organizationId)
+const agreements = (state.hostFeeAgreements ?? []).filter((agreement) =>
+  organizationIsSelected(agreement.organizationId)
 )
 const assignments = (state.assignments ?? []).filter((assignment) => {
   const load = (state.loadPostings ?? []).find(
@@ -108,34 +112,6 @@ const fees = (state.platformFeeEvents ?? []).filter((fee) =>
 const invoices = (state.hostInvoices ?? []).filter((invoice) =>
   organizationIsSelected(invoice.organizationId)
 )
-const subscriptions = (state.organizationSubscriptions ?? []).filter(
-  (subscription) =>
-    subscription.planCode !== "internal_billing_test" &&
-    organizationIsSelected(subscription.organizationId)
-)
-const usage = (state.networkUsageEvents ?? []).filter((event) =>
-  organizationIsSelected(event.organizationId)
-)
-
-const currentAccounts = accounts.filter(
-  (account) =>
-    account.activationState === "percentage_active" &&
-    account.billingModel === "percentage_v1"
-)
-const malformedCurrentAccounts = currentAccounts.filter((account) => {
-  const terms = account.percentageTermsSnapshot
-
-  return !(
-    terms &&
-    terms.feeBps === 500 &&
-    terms.currency === "USD" &&
-    terms.billingCadence === "monthly_in_arrears" &&
-    terms.acceptedAt &&
-    terms.acceptedByUserId &&
-    terms.acceptedTermsVersion
-  )
-})
-
 const noDeliveryExceptions = new Set([
   "rejected_at_scale",
   "access_blocked",
@@ -144,11 +120,6 @@ const noDeliveryExceptions = new Set([
 ])
 
 const activeMovementFees = new Map()
-const activeMovementUsage = new Set(
-  usage
-    .filter((event) => event.status !== "reversed")
-    .map((event) => event.loadMovementId)
-)
 const defects = []
 const rowsById = (rows) => {
   const grouped = new Map()
@@ -182,12 +153,30 @@ for (const [id, matches] of allInvoicesById) {
   }
 }
 
+const agreementsByOrganization = new Map()
+
+for (const agreement of agreements) {
+  const matches = agreementsByOrganization.get(agreement.organizationId) ?? []
+  matches.push(agreement)
+  agreementsByOrganization.set(agreement.organizationId, matches)
+
+  if (agreement.id !== hostFeeAgreementId(agreement.organizationId)) {
+    defects.push(`fee agreement ${agreement.id} does not carry its organization's derived id`)
+  }
+  if (!agreement.acceptedAt || !agreement.acceptedByUserId) {
+    defects.push(`fee agreement ${agreement.id} does not record who accepted it and when`)
+  }
+}
+
+for (const [organizationId, matches] of agreementsByOrganization) {
+  if (matches.length > 1) {
+    defects.push(`organization ${organizationId} has ${matches.length} fee agreements`)
+  }
+}
+
 for (const fee of fees) {
   const assignment = assignmentById.get(fee.assignmentId)
-  const movementId =
-    fee.loadMovementId ?? assignment?.loadMovementId ?? fee.assignmentId
-  const billingModel =
-    fee.billingModel ?? assignment?.billingModel ?? "legacy_percentage"
+  const movementId = fee.loadMovementId
 
   const feeBasisIsBounded =
     Number.isSafeInteger(fee.driverPayCents) &&
@@ -215,30 +204,25 @@ for (const fee of fees) {
     defects.push(`fee ${fee.id} does not match the frozen integer calculation`)
   }
 
-  if (!["legacy_percentage", "percentage_v1"].includes(billingModel)) {
-    defects.push(`fee ${fee.id} carries non-percentage model ${billingModel}`)
+  if (!movementId || fee.id !== platformFeeEventId(movementId)) {
+    defects.push(`fee ${fee.id} is not the one fee derived from its physical movement`)
   }
 
   const load = assignment ? loadById.get(fee.loadPostingId) : null
   const frozenPay = assignment?.termsSnapshot
   const frozenRateBps = frozenPlatformFeeBps(frozenPay)
-  const modelMatches = assignment && (
-    assignment.billingModel === billingModel ||
-    (billingModel === "legacy_percentage" && assignment.billingModel == null)
-  )
   if (!assignment || !load) {
     defects.push(`fee ${fee.id} does not resolve to an assignment and load`)
   } else if (
     assignment.loadPostingId !== load.id ||
     load.companyId !== fee.organizationId ||
     (assignment.loadMovementId ?? assignment.id) !== movementId ||
-    assignment.truckSlotId !== fee.truckSlotId ||
-    !modelMatches
+    assignment.truckSlotId !== fee.truckSlotId
   ) {
-    defects.push(`fee ${fee.id} is cross-wired to its host, load, movement, slot, or model`)
+    defects.push(`fee ${fee.id} is cross-wired to its host, load, movement, or slot`)
   } else if (
     frozenPay.driverPayCents !== fee.driverPayCents ||
-    String(frozenPay.currency ?? "").toUpperCase() !== "USD" ||
+    String(frozenPay.currency ?? "").toUpperCase() !== PLATFORM_FEE_CURRENCY ||
     frozenRateBps !== fee.feeBps
   ) {
     defects.push(`fee ${fee.id} disagrees with the pay, currency, or rate frozen at acceptance`)
@@ -254,7 +238,7 @@ for (const fee of fees) {
   )
   if (confirmedTrips.length !== 1) {
     defects.push(`fee ${fee.id} does not resolve to exactly one confirmed physical delivery`)
-  } else if (billingModel === "percentage_v1") {
+  } else {
     const trip = confirmedTrips[0]
     const completionTime = Date.parse(trip.completedAt ?? "")
     const confirmationTime = Date.parse(trip.completionConfirmedAt ?? "")
@@ -266,15 +250,8 @@ for (const fee of fees) {
         : null
 
     if (!expectedTriggerAt || fee.occurredAt !== expectedTriggerAt) {
-      defects.push(`percentage fee ${fee.id} is not timestamped when physical completion and host confirmation are both true`)
+      defects.push(`fee ${fee.id} is not timestamped when physical completion and host confirmation are both true`)
     }
-  } else if (
-    !assignment?.driverPaymentReceivedAt ||
-    assignment.driverPaymentReceivedAmountCents == null ||
-    String(assignment.driverPaymentReceivedCurrency ?? "").toUpperCase() !== "USD" ||
-    fee.occurredAt !== assignment.driverPaymentReceivedAt
-  ) {
-    defects.push(`legacy fee ${fee.id} is not backed and timestamped by its driver receipt`)
   }
 
   if (fee.status === "accrued" && fee.invoiceId) {
@@ -298,22 +275,6 @@ for (const fee of fees) {
     } else {
       activeMovementFees.set(movementId, fee.id)
     }
-
-    if (activeMovementUsage.has(movementId)) {
-      defects.push(
-        `physical movement ${movementId} has both a percentage fee and subscription usage`
-      )
-    }
-  }
-}
-
-for (const account of malformedCurrentAccounts) {
-  defects.push(`percentage account ${account.id} has incomplete frozen terms`)
-}
-
-for (const account of currentAccounts) {
-  if (account.subscriptionId !== null) {
-    defects.push(`percentage account ${account.id} still points to a subscription`)
   }
 }
 
@@ -387,7 +348,7 @@ const outstandingInvoices = invoices.filter((invoice) =>
 )
 const cents = (amount) =>
   new Intl.NumberFormat("en-US", {
-    currency: "USD",
+    currency: PLATFORM_FEE_CURRENCY,
     style: "currency"
   }).format(amount / 100)
 const countBy = (values, key) =>
@@ -409,8 +370,11 @@ console.log(
     ? `Scope: ${selectedOrganizationIds.size} matching organization(s)`
     : `Scope: all ${organizations.size} organizations (names and provider ids redacted)`
 )
-console.log(`Billing accounts: ${accounts.length} ${JSON.stringify(countBy(accounts, "billingModel"))}`)
-console.log(`Current percentage agreements: ${currentAccounts.length}`)
+console.log(
+  `Fee agreements: ${agreements.length}; on the current terms=${
+    agreements.filter((agreement) => isCurrentHostFeeAgreement(agreement)).length
+  }`
+)
 console.log(`Assignments in scope: ${assignments.length}`)
 console.log(
   `Platform fees: ${fees.length} ${JSON.stringify(countBy(fees, "status"))}; billable=${cents(
@@ -425,21 +389,11 @@ console.log(
     )
   )}`
 )
-console.log(
-  `Historical commercial subscriptions: ${subscriptions.length}; provider-bound=${
-    subscriptions.filter(
-      (subscription) =>
-        subscription.stripeCustomerId && subscription.stripeSubscriptionId
-    ).length
-  }`
-)
-console.log(`Historical Network usage events: ${usage.length}`)
-
 if (defects.length > 0) {
   console.error(`RECONCILIATION REQUIRED: ${defects.length} billing defect(s).`)
   for (const defect of defects.slice(0, 25)) console.error(`- ${defect}`)
   if (defects.length > 25) console.error(`- ${defects.length - 25} more`)
   process.exitCode = 1
 } else {
-  console.log("OK: percentage accounts, movement claims, frozen fee basis, and reciprocal host invoices reconcile.")
+  console.log("OK: fee agreements, movement claims, frozen fee basis, and reciprocal host invoices reconcile.")
 }

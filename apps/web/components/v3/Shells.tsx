@@ -160,8 +160,7 @@ const desktopNavByRole: Record<ShellProps["role"], NavGroup[]> = {
     {
       label: "Workspace",
       items: [
-        { href: "/fleet/settings", icon: "truck.service", label: "Workspace" },
-        { href: "/fleet/billing", icon: "load.pay", label: "Billing" }
+        { href: "/fleet/settings", icon: "truck.service", label: "Workspace" }
       ]
     }
   ],
@@ -411,9 +410,9 @@ function PublicFooter() {
       </div>
       <div className="public-footer__legal">
         <p>
-          Drivers and fleets use LogLoads without a subscription. Hosts pay a 5%
-          platform fee on top of stated driver pay only when a load completes.
-          LogLoads does not carry freight or move transportation compensation.
+          Drivers and fleets use LogLoads free. Hosts pay a 2% fee on top of
+          stated driver pay only when a load completes. LogLoads does not carry
+          freight or move transportation compensation.
         </p>
         <p>&copy; 2026 LogLoads</p>
       </div>

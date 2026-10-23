@@ -1,19 +1,11 @@
 import "server-only"
 
 import {
-  enterpriseAgreementTermsSchema,
   formatMoney,
   invoiceSubtotalCents,
+  isCurrentHostFeeAgreement,
+  PLATFORM_FEE_CURRENCY,
   readFrozenDriverPay,
-  type BillingAdjustment,
-  type BillingPeriodSummary,
-  type NetworkOverageInvoice,
-  type NetworkUsageEvent,
-  type OrganizationBillingAccount,
-  type OrganizationSubscription,
-  type SubscriptionBaseInvoice,
-  type SubscriptionPlanDefinition,
-  type SubscriptionPlanCode,
   type SupportRequest,
   type VerificationStatus
 } from "@logloads/contracts"
@@ -22,6 +14,7 @@ import type {
   VerificationQueueDecisionContext
 } from "@logloads/services"
 
+import { STRIPE_MINIMUM_CHARGE_CENTS } from "./billing"
 import { services } from "./services"
 import { notificationVisibleToActor } from "./notification-access"
 import { requireCockpitActor } from "./session"
@@ -40,20 +33,6 @@ import { formatDateTime } from "./v3-shared"
 type PlatformState = typeof services.state
 
 const ACTIVE_LOAD_STATUSES = new Set(["open", "scheduled", "filled", "in_transit"])
-const ACTIVE_MRR_STATUSES = new Set<OrganizationSubscription["status"]>(["active", "non_renewing"])
-const BILLING_ATTENTION_PAYMENT_STATES = new Set<OrganizationSubscription["paymentState"]>([
-  "failed",
-  "past_due",
-  "requires_payment_method",
-  "uncollectible"
-])
-
-const PLAN_LABELS: Record<string, string> = {
-  driver_core: "Driver",
-  enterprise: "Enterprise",
-  fleet_operations: "Fleet Operations",
-  landing_operations: "Host Operations"
-}
 
 const ORG_TYPE_LABELS: Record<string, string> = {
   carrier: "Carrier",
@@ -129,15 +108,6 @@ export function adminNoticeState(
   }
 
   return !expiresAt || Date.parse(expiresAt) > now ? "active" : "ended"
-}
-
-function subscriptionNeedsBillingAttention(subscription: OrganizationSubscription): boolean {
-  return (
-    subscription.status === "incomplete" ||
-    subscription.status === "past_due" ||
-    subscription.graceState !== "none" ||
-    BILLING_ATTENTION_PAYMENT_STATES.has(subscription.paymentState)
-  )
 }
 
 // --- Shell account -----------------------------------------------------------
@@ -356,7 +326,7 @@ export function buildAdminCompletionExceptions(source: AdminCompletionSource): A
     })
 }
 
-export interface AdminCurrentFeeException {
+export interface AdminFeeException {
   detail: string
   id: string
   organizationName: string
@@ -365,7 +335,7 @@ export interface AdminCurrentFeeException {
   updatedLabel: string
 }
 
-type AdminCurrentFeeSource = Pick<
+type AdminFeeSource = Pick<
   PlatformState,
   "hostInvoices" | "organizations" | "platformFeeEvents"
 >
@@ -384,15 +354,17 @@ function invoiceIdsLinkedToFeeEvents(
   ])
 }
 
-/** Local percentage-v1 exceptions only; open monthly-arrears invoices and accrued fees are normal state. */
-export function buildAdminCurrentFeeExceptions(source: AdminCurrentFeeSource): AdminCurrentFeeException[] {
-  const exceptions = new Map<string, AdminCurrentFeeException>()
-  const currentEvents = source.platformFeeEvents.filter(
-    (event) => event.billingModel === "percentage_v1" && event.status !== "voided"
-  )
+/**
+ * Fee and invoice records that disagree, carry an uncollectible state, or are
+ * too small to charge. Open monthly-arrears invoices and accrued fees are normal
+ * state and are not reported. No live Stripe state is inferred.
+ */
+export function buildAdminFeeExceptions(source: AdminFeeSource): AdminFeeException[] {
+  const exceptions = new Map<string, AdminFeeException>()
+  const currentEvents = source.platformFeeEvents.filter((event) => event.status !== "voided")
   const currentInvoiceIds = invoiceIdsLinkedToFeeEvents(currentEvents, source.hostInvoices)
 
-  const push = (exception: AdminCurrentFeeException) => exceptions.set(exception.id, exception)
+  const push = (exception: AdminFeeException) => exceptions.set(exception.id, exception)
 
   for (const event of currentEvents) {
     if (event.status !== "invoiced") {
@@ -406,11 +378,11 @@ export function buildAdminCurrentFeeExceptions(source: AdminCurrentFeeSource): A
 
     if (!invoice) {
       push({
-        detail: "A current percentage fee is marked invoiced, but its local host invoice does not resolve.",
+        detail: "A fee is marked invoiced, but its local host invoice does not resolve.",
         id: `fee:${event.id}:invoice-missing`,
         organizationName: name,
         severity: "critical",
-        title: "Current fee invoice is missing",
+        title: "Fee invoice is missing",
         updatedLabel: formatDateTime(event.updatedAt)
       })
     } else if (!invoice.feeEventIds.includes(event.id)) {
@@ -419,7 +391,7 @@ export function buildAdminCurrentFeeExceptions(source: AdminCurrentFeeSource): A
         id: `fee:${event.id}:invoice-membership`,
         organizationName: name,
         severity: "critical",
-        title: "Current fee and invoice disagree",
+        title: "Fee and invoice disagree",
         updatedLabel: formatDateTime(event.updatedAt)
       })
     }
@@ -436,9 +408,6 @@ export function buildAdminCurrentFeeExceptions(source: AdminCurrentFeeSource): A
     const foreignLineCount = resolvedLines.filter(
       (line) => line.organizationId !== invoice.organizationId
     ).length
-    const legacyLineCount = resolvedLines.filter(
-      (line) => line.billingModel !== "percentage_v1"
-    ).length
     const nonInvoicedLiveLineCount = resolvedLines.filter(
       (line) =>
         line.status !== "voided" &&
@@ -452,7 +421,7 @@ export function buildAdminCurrentFeeExceptions(source: AdminCurrentFeeSource): A
         id: `invoice:${invoice.id}:missing-fee-lines`,
         organizationName: name,
         severity: "critical",
-        title: "Current invoice has missing fee lines",
+        title: "Invoice has missing fee lines",
         updatedLabel: formatDateTime(invoice.updatedAt)
       })
     }
@@ -463,18 +432,7 @@ export function buildAdminCurrentFeeExceptions(source: AdminCurrentFeeSource): A
         id: `invoice:${invoice.id}:foreign-fee-lines`,
         organizationName: name,
         severity: "critical",
-        title: "Current invoice crosses organizations",
-        updatedLabel: formatDateTime(invoice.updatedAt)
-      })
-    }
-
-    if (legacyLineCount > 0) {
-      push({
-        detail: `${legacyLineCount} fee ${legacyLineCount === 1 ? "line uses" : "lines use"} a preserved legacy billing model on an invoice referenced by current percentage-v1 work.`,
-        id: `invoice:${invoice.id}:legacy-fee-lines`,
-        organizationName: name,
-        severity: "critical",
-        title: "Current invoice mixes billing models",
+        title: "Invoice crosses organizations",
         updatedLabel: formatDateTime(invoice.updatedAt)
       })
     }
@@ -485,7 +443,7 @@ export function buildAdminCurrentFeeExceptions(source: AdminCurrentFeeSource): A
         id: `invoice:${invoice.id}:non-invoiced-fee-lines`,
         organizationName: name,
         severity: "critical",
-        title: "Current invoice has unfrozen fee lines",
+        title: "Invoice has unfrozen fee lines",
         updatedLabel: formatDateTime(invoice.updatedAt)
       })
     }
@@ -496,27 +454,42 @@ export function buildAdminCurrentFeeExceptions(source: AdminCurrentFeeSource): A
         id: `invoice:${invoice.id}:subtotal`,
         organizationName: name,
         severity: "critical",
-        title: "Current invoice subtotal disagrees",
+        title: "Invoice subtotal disagrees",
         updatedLabel: formatDateTime(invoice.updatedAt)
       })
     }
 
     if (invoice.status === "uncollectible") {
       push({
-        detail: "The current percentage invoice is locally marked uncollectible. No live provider state is inferred.",
+        detail: "The host invoice is locally marked uncollectible. No live provider state is inferred.",
         id: `invoice:${invoice.id}:uncollectible`,
         organizationName: name,
         severity: "critical",
-        title: "Current host invoice is uncollectible",
+        title: "Host invoice is uncollectible",
         updatedLabel: formatDateTime(invoice.updatedAt)
       })
     } else if (invoice.status === "void") {
       push({
-        detail: "A void host invoice is still referenced by a non-void current percentage fee event.",
+        detail: "A void host invoice is still referenced by a non-void fee event.",
         id: `invoice:${invoice.id}:void-link`,
         organizationName: name,
         severity: "critical",
-        title: "Voided invoice still holds a current fee",
+        title: "Voided invoice still holds a fee",
+        updatedLabel: formatDateTime(invoice.updatedAt)
+      })
+    } else if (
+      invoice.status === "open" &&
+      !invoice.stripeInvoiceId &&
+      calculatedSubtotalCents === invoice.subtotalCents &&
+      invoice.subtotalCents > 0 &&
+      invoice.subtotalCents < STRIPE_MINIMUM_CHARGE_CENTS
+    ) {
+      push({
+        detail: `This bill totals ${adminMoney(invoice.subtotalCents)}, below Stripe's ${adminMoney(STRIPE_MINIMUM_CHARGE_CENTS)} minimum card charge, so it stays open and is never sent to Stripe.`,
+        id: `invoice:${invoice.id}:below-card-minimum`,
+        organizationName: name,
+        severity: "warning",
+        title: "Invoice is below the card minimum",
         updatedLabel: formatDateTime(invoice.updatedAt)
       })
     } else if (invoice.status === "paid" && !invoice.stripeInvoiceId) {
@@ -525,7 +498,7 @@ export function buildAdminCurrentFeeExceptions(source: AdminCurrentFeeSource): A
         id: `invoice:${invoice.id}:paid-provider-evidence`,
         organizationName: name,
         severity: "critical",
-        title: "Paid current invoice lacks provider evidence",
+        title: "Paid invoice lacks provider evidence",
         updatedLabel: formatDateTime(invoice.updatedAt)
       })
     }
@@ -560,7 +533,7 @@ export async function getAdminOverview(): Promise<AdminOverview> {
   ).length
   const completionExceptionRows = buildAdminCompletionExceptions(state)
   const completionExceptions = completionExceptionRows.length
-  const currentFeeExceptions = buildAdminCurrentFeeExceptions(state).length
+  const feeExceptions = buildAdminFeeExceptions(state)
   const openReports = state.supportRequests.filter(
     (request) => request.status === "open" || request.status === "in_review"
   ).length
@@ -590,11 +563,15 @@ export async function getAdminOverview(): Promise<AdminOverview> {
       tone: completionQueueTone
     },
     {
-      count: currentFeeExceptions,
-      description: "Local percentage-v1 fee and invoice records that disagree or carry an uncollectible state.",
-      href: "/admin/billing#current-fee-exceptions",
-      label: "Current fee exceptions",
-      tone: currentFeeExceptions > 0 ? "critical" : "clear"
+      count: feeExceptions.length,
+      description: "Host fee and invoice records that disagree, are uncollectible, or are below the card minimum.",
+      href: "/admin/billing#fee-exceptions",
+      label: "Fee exceptions",
+      tone: feeExceptions.some((exception) => exception.severity === "critical")
+        ? "critical"
+        : feeExceptions.length > 0
+          ? "warning"
+          : "clear"
     },
     {
       count: pendingVerifications,
@@ -934,1730 +911,62 @@ export async function getAdminActivityHistory(): Promise<AdminActivityHistory> {
   }
 }
 
-// --- Subscription and legacy billing operations ----------------------------------
+// --- Host fee billing -----------------------------------------------------------
 
 export type AdminBillingSource = Pick<
   PlatformState,
-  | "assignments"
-  | "billingAdjustments"
-  | "billingPeriodSummaries"
-  | "billingPlanDefinitions"
-  | "entitlements"
-  | "hostInvoices"
-  | "networkOverageInvoices"
-  | "networkUsageEvents"
-  | "organizationBillingAccounts"
-  | "organizationSubscriptions"
-  | "organizations"
-  | "platformFeeEvents"
-  | "profiles"
-  | "subscriptionBaseInvoices"
+  "assignments" | "hostFeeAgreements" | "hostInvoices" | "organizations" | "platformFeeEvents"
 >
 
-export interface AdminBillingPlanMixRow {
-  activeCount: number
-  code: SubscriptionPlanCode
-  label: string
-  salesAssisted: boolean
-  totalCount: number
-  visibilityLabel: string
-}
-
-export interface AdminSubscriptionUsage {
-  includedUnits: number
-  overageAmountLabel: string | null
-  overageRateLabel: string | null
-  overageUnits: number | null
-  periodLabel: string
-  remainingUnits: number | null
-  stateLabel: string
-  usedUnits: number | null
-}
-
-export interface AdminPlanSnapshotDetails {
-  acceptedAtLabel: string
-  acceptedTermsVersion: string
-  allowanceLabel: string
-  catalogReferenceLabel: string
-  commitmentTermsLabel: string
-  definitionEffectiveLabel: string
-  definitionVersion: number
-  dispatchCapabilitiesLabel: string
-  overageRateLabel: string
-}
-
-export interface AdminEnterpriseAgreementDetails {
-  commitmentMonths: number
-  definedIntegrations: string[]
-  serviceSupportObligations: string
-}
-
-export interface AdminSubscriptionRow {
-  baseMonthlyLabel: string
-  billingModelLabel: string
-  commitmentLabel: string
-  enterpriseAgreement: AdminEnterpriseAgreementDetails | null
-  graceLabel: string
-  id: string
-  nextBillingLabel: string
-  organizationName: string
-  paymentState: OrganizationSubscription["paymentState"]
-  paymentStateLabel: string
-  pendingPlanLabel: string
-  pendingEnterpriseAgreement: AdminEnterpriseAgreementDetails | null
-  planCode: string
-  planLabel: string
-  planSnapshot: AdminPlanSnapshotDetails
-  providerReferenceLabel: string
-  renewalLabel: string
-  requiresAttention: boolean
-  salesAssisted: boolean
-  status: OrganizationSubscription["status"]
-  statusLabel: string
-  usage: AdminSubscriptionUsage | null
-}
-
-export interface AdminBillingAccountRow {
-  activationState: OrganizationBillingAccount["activationState"]
-  activationStateLabel: string
-  billingModelLabel: string
-  effectiveLabel: string
-  id: string
-  organizationName: string
-  subscriptionLabel: string
-}
-
-export interface AdminUsageLedgerRow {
-  assignmentId: string
-  completedLabel: string
-  id: string
-  invoiceLabel: string
-  loadMovementId: string
-  loadPostingId: string
-  organizationName: string
-  planLabel: string
-  reversalLabel: string
-  status: NetworkUsageEvent["status"]
-  statusLabel: string
-  summaryLabel: string
-}
-
-export interface AdminPeriodSummaryRow {
-  adjustmentAmountLabel: string
-  adjustmentCount: number
-  adjustmentUnitLabel: string
-  calculationLabel: string
-  id: string
-  includedUnits: number
-  invoiceCount: number
-  organizationName: string
-  overageAmountLabel: string
-  overageRateLabel: string
-  overageUnits: number
-  periodLabel: string
-  planLabel: string
-  status: BillingPeriodSummary["status"]
-  statusLabel: string
-  usageEventCount: number
-  usedUnits: number
-}
-
-export interface AdminOverageInvoiceRow {
-  calculationLabel: string
-  id: string
-  issuedLabel: string
-  organizationName: string
-  paidLabel: string
-  periodLabel: string
-  planLabel: string
-  providerReferenceLabel: string
-  providerSettlementLabel: string
-  quantity: number
-  sequence: number
-  status: NetworkOverageInvoice["status"]
-  statusLabel: string
-  subtotalLabel: string
-  unitAmountLabel: string
-  usageEventCount: number
-}
-
-export interface AdminBillingAdjustmentRow {
-  actorLabel: string
-  amountDeltaLabel: string
-  createdLabel: string
-  id: string
-  invoiceLabel: string
-  organizationName: string
-  providerReferenceLabel: string
-  providerRevenueDeltaLabel: string
-  providerSettlementLabel: string
-  reason: string
-  summaryLabel: string
-  type: BillingAdjustment["type"]
-  typeLabel: string
-  unitDeltaLabel: string
-  usageLabel: string
-}
-
-export interface AdminBillingWarning {
-  detail: string
-  id: string
-  organizationName: string
-  severity: "critical" | "warning"
-  title: string
-}
-
-export interface AdminLegacyEntitlementException {
-  id: string
-  organizationName: string
-  periodEndsLabel: string
-  planLabel: string
-  status: string
-  statusLabel: string
-}
-
 export interface AdminBillingSnapshot {
-  accounts: AdminBillingAccountRow[]
-  adjustments: AdminBillingAdjustmentRow[]
-  attention: AdminSubscriptionRow[]
-  commercialSubscriptionCount: number
-  internalTestCount: number
-  invoices: AdminOverageInvoiceRow[]
-  platformFeeLedger: {
-    currentAccruedFeeLabel: string
-    currentAssignmentCount: number
-    currentExceptionCount: number
-    currentExceptions: AdminCurrentFeeException[]
-    currentFeeEventCount: number
-    currentInvoiceCount: number
-    currentOrganizationCount: number
-    entitlementCount: number
-    entitlementExceptions: AdminLegacyEntitlementException[]
-    currentOutstandingInvoiceLabel: string
-    legacyAccruedFeeLabel: string
-    legacyAssignmentCount: number
-    legacyFeeEventCount: number
-    legacyInvoiceCount: number
-    legacyOrganizationCount: number
-    legacyOutstandingInvoiceLabel: string
-  }
-  metrics: {
-    activeArrLabel: string
-    activeMrrLabel: string
-    activeSubscriptionCount: number
-    billingFailureCount: number
-  }
-  operations: {
-    allowanceUtilizationLabel: string
-    billingFailureRateLabel: string
-    completedNetworkUnitCount: number
-    networkMovementCount: number
-    overageFrequencyLabel: string
-    paidBaseRevenueLabel: string
-    paidOverageRevenueLabel: string
-    privateMovementCount: number
-    revenuePerCompletedNetworkLoadLabel: string
-    totalSubscriptionRevenueLabel: string
-  }
-  periodSummaries: AdminPeriodSummaryRow[]
-  pilotConversions: {
-    convertedCount: number
-    cohortCount: number
-    rateLabel: string
-  }
-  planMix: AdminBillingPlanMixRow[]
-  reconciliationWarnings: AdminBillingWarning[]
-  subscriptions: AdminSubscriptionRow[]
-  unquantifiedMrrCount: number
-  usageLedger: AdminUsageLedgerRow[]
+  /** Organizations that accepted the current LogLoads fee terms. */
+  acceptedAgreementCount: number
+  /** Accepted assignments carrying frozen fee terms. */
+  committedAssignmentCount: number
+  /** Fees accrued and not yet on a bill. */
+  accruedFeeLabel: string
+  feeEventCount: number
+  invoiceCount: number
+  /** Fees on bills that are open or uncollectible. */
+  outstandingInvoiceLabel: string
+  exceptions: AdminFeeException[]
 }
 
 function adminMoney(amountCents: number): string {
-  return formatMoney({ amountCents, currency: "USD" })
-}
-
-function adminSignedMoney(amountCents: number): string {
-  return amountCents > 0 ? `+${adminMoney(amountCents)}` : adminMoney(amountCents)
-}
-
-function adminSignedCount(value: number): string {
-  return value > 0 ? `+${value}` : String(value)
-}
-
-function adminRatioLabel(numerator: number, denominator: number, unit: string): string {
-  if (denominator === 0) {
-    return `0 of 0 ${unit} (not enough data)`
-  }
-
-  return `${numerator} of ${denominator} ${unit} (${(
-    (numerator / denominator) *
-    100
-  ).toFixed(1)}%)`
-}
-
-function planIsInternal(
-  planCode: SubscriptionPlanCode,
-  planSnapshot?: SubscriptionPlanDefinition
-): boolean {
-  return planCode === "internal_billing_test" || Boolean(planSnapshot?.internalBillingTest)
-}
-
-function subscriptionIsInternal(
-  subscription: OrganizationSubscription
-): boolean {
-  return (
-    subscription.internalBillingTest ||
-    planIsInternal(subscription.planCode, subscription.planSnapshot)
-  )
-}
-
-function summaryIsInternal(summary: BillingPeriodSummary): boolean {
-  return (
-    summary.internalBillingTest ||
-    planIsInternal(summary.planCode, summary.planSnapshot)
-  )
-}
-
-function usageEventIsInternal(event: NetworkUsageEvent): boolean {
-  return event.internalBillingTest || planIsInternal(event.planCode)
-}
-
-function overageInvoiceIsInternal(invoice: NetworkOverageInvoice): boolean {
-  return invoice.internalBillingTest || planIsInternal(invoice.planCode)
-}
-
-function baseInvoiceIsInternal(invoice: SubscriptionBaseInvoice): boolean {
-  return invoice.internalBillingTest || planIsInternal(invoice.planCode)
-}
-
-function catalogReferenceLabel(plan: SubscriptionPlanDefinition): string {
-  if (plan.stripeProductId && plan.stripePriceId) {
-    return "Provider product and price references frozen"
-  }
-
-  if (plan.stripeProductId || plan.stripePriceId) {
-    return "Provider catalog reference incomplete"
-  }
-
-  return "No provider catalog references frozen"
-}
-
-function planAllowanceLabel(
-  plan: SubscriptionPlanDefinition,
-  includedUnits: number | null
-): string {
-  if (plan.allowancePeriod === "none") {
-    return "No Network allowance"
-  }
-
-  if (includedUnits === null) {
-    return "Custom Network allowance not recorded"
-  }
-
-  if (plan.allowancePeriod === "commitment") {
-    const windowLabel = plan.allowanceWindowDays
-      ? `${plan.allowanceWindowDays}-day commitment window`
-      : "commitment window"
-
-    return `${includedUnits} completed Network loads per ${windowLabel}`
-  }
-
-  return `${includedUnits} completed Network loads per billing period`
-}
-
-function planCommitmentTermsLabel(plan: SubscriptionPlanDefinition): string {
-  if (plan.commitmentMonths) {
-    return `${plan.commitmentMonths}-month minimum commitment`
-  }
-
-  return plan.customContract ? "Custom commitment terms" : "No minimum commitment recorded"
-}
-
-function buildPlanSnapshotDetails(
-  subscription: OrganizationSubscription,
-  enterpriseAgreement: AdminEnterpriseAgreementDetails | null
-): AdminPlanSnapshotDetails {
-  return {
-    acceptedAtLabel: formatDateTime(subscription.acceptedAt),
-    acceptedTermsVersion: subscription.acceptedTermsVersion,
-    allowanceLabel: planAllowanceLabel(
-      subscription.planSnapshot,
-      subscription.includedAllowanceSnapshot
-    ),
-    catalogReferenceLabel: catalogReferenceLabel(subscription.planSnapshot),
-    commitmentTermsLabel: enterpriseAgreement
-      ? `${enterpriseAgreement.commitmentMonths}-month minimum commitment`
-      : planCommitmentTermsLabel(subscription.planSnapshot),
-    definitionEffectiveLabel: formatDateTime(subscription.planSnapshot.effectiveAt),
-    definitionVersion: subscription.planSnapshot.version,
-    dispatchCapabilitiesLabel: subscription.includesDispatchProCapabilitiesSnapshot
-      ? "Dispatch Pro capabilities included"
-      : "Dispatch Pro capabilities not included",
-    overageRateLabel:
-      subscription.overageRateSnapshotCents === null
-        ? "No Network overage rate recorded"
-        : `${adminMoney(subscription.overageRateSnapshotCents)} per completed Network load`
-  }
-}
-
-function enterpriseAgreementDetails(
-  value: unknown
-): AdminEnterpriseAgreementDetails | null {
-  const parsed = enterpriseAgreementTermsSchema.safeParse(value)
-
-  if (!parsed.success) {
-    return null
-  }
-
-  return {
-    commitmentMonths: parsed.data.commitmentMonths,
-    definedIntegrations: [...parsed.data.definedIntegrations],
-    serviceSupportObligations: parsed.data.serviceSupportObligations
-  }
-}
-
-function subscriptionPlanLabel(
-  source: AdminBillingSource,
-  planCode: SubscriptionPlanCode
-): string {
-  return (
-    source.billingPlanDefinitions.find((definition) => definition.code === planCode)?.displayName ??
-    titleCase(planCode)
-  )
-}
-
-function subscriptionProviderReferenceLabel(subscription: OrganizationSubscription): string {
-  if (subscription.stripeCustomerId && subscription.stripeSubscriptionId) {
-    return "Provider references recorded"
-  }
-
-  if (subscription.stripeCustomerId || subscription.stripeSubscriptionId) {
-    return "Provider reference incomplete"
-  }
-
-  return "No provider reference recorded"
-}
-
-function subscriptionRenewalLabel(subscription: OrganizationSubscription): string {
-  if (subscription.cancelAtPeriodEnd || subscription.renewalBehavior === "non_renewing") {
-    return "Ends after the current term"
-  }
-
-  if (subscription.renewalBehavior === "automatic") {
-    return "Automatic renewal"
-  }
-
-  return "Manual renewal"
-}
-
-function subscriptionGraceLabel(subscription: OrganizationSubscription): string {
-  if (subscription.graceState === "active") {
-    return "Dunning grace active"
-  }
-
-  if (subscription.graceState === "expired") {
-    return "Dunning grace expired"
-  }
-
-  return "No dunning grace"
-}
-
-function subscriptionUsage(
-  source: AdminBillingSource,
-  subscription: OrganizationSubscription,
-  now: number
-): AdminSubscriptionUsage | null {
-  const includedUnits = subscription.includedAllowanceSnapshot
-
-  if (includedUnits === null || subscription.planSnapshot.allowancePeriod === "none") {
-    return null
-  }
-
-  const summaries = source.billingPeriodSummaries
-    .filter(
-      (summary) =>
-        summary.subscriptionId === subscription.id &&
-        !summaryIsInternal(summary)
-    )
-    .sort((left, right) => right.periodStart.localeCompare(left.periodStart))
-  const current =
-    summaries.find(
-      (summary) => Date.parse(summary.periodStart) <= now && now < Date.parse(summary.periodEnd)
-    ) ??
-    summaries.find((summary) => summary.status === "open" || summary.status === "invoicing") ??
-    summaries[0]
-  const overageRateLabel =
-    subscription.overageRateSnapshotCents === null
-      ? null
-      : `${adminMoney(subscription.overageRateSnapshotCents)} per completed Network load`
-
-  if (!current) {
-    return {
-      includedUnits,
-      overageAmountLabel: null,
-      overageRateLabel,
-      overageUnits: null,
-      periodLabel: "No canonical allowance period recorded",
-      remainingUnits: null,
-      stateLabel: "Usage period not initialized",
-      usedUnits: null
-    }
-  }
-
-  return {
-    includedUnits: current.includedUnits,
-    overageAmountLabel: adminMoney(current.overageAmountCents),
-    overageRateLabel,
-    overageUnits: current.overageUnits,
-    periodLabel: `${formatDateTime(current.periodStart)} to ${formatDateTime(current.periodEnd)}`,
-    remainingUnits: Math.max(0, current.includedUnits - current.usedUnits),
-    stateLabel: titleCase(current.status),
-    usedUnits: current.usedUnits
-  }
-}
-
-function buildAdminSubscriptionRow(
-  source: AdminBillingSource,
-  subscription: OrganizationSubscription,
-  now: number
-): AdminSubscriptionRow {
-  const enterpriseAgreement = enterpriseAgreementDetails(
-    subscription.customTerms
-  )
-  const pendingEnterpriseAgreement = enterpriseAgreementDetails(
-    subscription.pendingCustomTerms
-  )
-  const pendingPlanLabel = subscription.pendingPlanCode
-    ? `${subscriptionPlanLabel(source, subscription.pendingPlanCode)}${
-        subscription.pendingPlanEffectiveAt
-          ? ` on ${formatDateTime(subscription.pendingPlanEffectiveAt)}`
-          : " (effective date not recorded)"
-      }`
-    : "No plan change scheduled"
-  const commitmentLabel =
-    subscription.commitmentStart && subscription.commitmentEnd
-      ? `${formatDateTime(subscription.commitmentStart)} to ${formatDateTime(subscription.commitmentEnd)}`
-      : "No commitment window recorded"
-
-  return {
-    baseMonthlyLabel:
-      subscription.baseMonthlyPriceSnapshotCents === null
-        ? "Custom amount not recorded"
-        : `${adminMoney(subscription.baseMonthlyPriceSnapshotCents)} monthly`,
-    billingModelLabel: titleCase(subscription.billingModel),
-    commitmentLabel,
-    enterpriseAgreement,
-    graceLabel: subscriptionGraceLabel(subscription),
-    id: subscription.id,
-    nextBillingLabel: subscription.currentPeriodEnd
-      ? formatDateTime(subscription.currentPeriodEnd)
-      : "No billing boundary recorded",
-    organizationName: organizationName(source, subscription.organizationId),
-    paymentState: subscription.paymentState,
-    paymentStateLabel: titleCase(subscription.paymentState),
-    pendingEnterpriseAgreement,
-    pendingPlanLabel,
-    planCode: subscription.planCode,
-    planLabel: subscription.planSnapshot.displayName,
-    planSnapshot: buildPlanSnapshotDetails(
-      subscription,
-      enterpriseAgreement
-    ),
-    providerReferenceLabel: subscriptionProviderReferenceLabel(subscription),
-    renewalLabel: subscriptionRenewalLabel(subscription),
-    requiresAttention: subscriptionNeedsBillingAttention(subscription),
-    salesAssisted: subscription.planSnapshot.visibility === "sales_assisted",
-    status: subscription.status,
-    statusLabel: titleCase(subscription.status),
-    usage: subscriptionUsage(source, subscription, now)
-  }
-}
-
-function buildAdminBillingAccountRows(
-  source: AdminBillingSource,
-  internalSubscriptionIds: ReadonlySet<string>
-): AdminBillingAccountRow[] {
-  return source.organizationBillingAccounts
-    .filter(
-      (account) =>
-        !account.subscriptionId || !internalSubscriptionIds.has(account.subscriptionId)
-    )
-    .map((account) => {
-      const subscription = account.subscriptionId
-        ? source.organizationSubscriptions.find(
-            (candidate) => candidate.id === account.subscriptionId
-          )
-        : undefined
-      let subscriptionLabel = "No subscription pointer recorded"
-
-      if (account.billingModel === "legacy_percentage" && !account.subscriptionId) {
-        subscriptionLabel = "Legacy model; no subscription pointer"
-      } else if (account.billingModel === "percentage_v1" && !account.subscriptionId) {
-        subscriptionLabel = "Current percentage agreement; no subscription by design"
-      } else if (account.subscriptionId && !subscription) {
-        subscriptionLabel = "Subscription reference does not resolve locally"
-      } else if (subscription) {
-        subscriptionLabel = `${subscription.planSnapshot.displayName} · ${titleCase(
-          subscription.status
-        )}`
-      }
-
-      return {
-        activationState: account.activationState,
-        activationStateLabel: titleCase(account.activationState),
-        billingModelLabel: account.billingModel
-          ? titleCase(account.billingModel)
-          : "No billing model recorded",
-        effectiveLabel: formatDateTime(account.effectiveAt),
-        id: account.id,
-        organizationName: organizationName(source, account.organizationId),
-        subscriptionLabel
-      }
-    })
-    .sort((left, right) => left.organizationName.localeCompare(right.organizationName))
-}
-
-function buildAdminUsageLedgerRows(source: AdminBillingSource): AdminUsageLedgerRow[] {
-  return [...source.networkUsageEvents]
-    .filter((event) => !usageEventIsInternal(event))
-    .sort(
-      (left, right) =>
-        right.completionAt.localeCompare(left.completionAt) ||
-        right.id.localeCompare(left.id)
-    )
-    .map((event) => {
-      const summary = source.billingPeriodSummaries.find(
-        (candidate) => candidate.id === event.billingPeriodSummaryId
-      )
-      const invoice = event.invoiceId
-        ? source.networkOverageInvoices.find(
-            (candidate) => candidate.id === event.invoiceId
-          )
-        : undefined
-      const reversal = event.reversalAdjustmentId
-        ? source.billingAdjustments.find(
-            (candidate) => candidate.id === event.reversalAdjustmentId
-          )
-        : undefined
-
-      return {
-        assignmentId: event.assignmentId,
-        completedLabel: formatDateTime(event.completionAt),
-        id: event.id,
-        invoiceLabel: event.invoiceId
-          ? invoice
-            ? `Overage invoice ${invoice.sequence} · ${titleCase(invoice.status)}`
-            : "Invoice reference does not resolve locally"
-          : "Not invoiced",
-        loadMovementId: event.loadMovementId,
-        loadPostingId: event.loadPostingId,
-        organizationName: organizationName(source, event.organizationId),
-        planLabel:
-          summary?.planSnapshot.displayName ??
-          subscriptionPlanLabel(source, event.planCode),
-        reversalLabel: event.reversalAdjustmentId
-          ? reversal
-            ? `${titleCase(reversal.type)} recorded`
-            : "Reversal reference does not resolve locally"
-          : "No reversal",
-        status: event.status,
-        statusLabel: titleCase(event.status),
-        summaryLabel: summary
-          ? `${formatDateTime(summary.periodStart)} to ${formatDateTime(
-              summary.periodEnd
-            )} · ${titleCase(summary.status)}`
-          : "Period summary reference does not resolve locally"
-      }
-    })
-}
-
-function buildAdminPeriodSummaryRows(
-  source: AdminBillingSource
-): AdminPeriodSummaryRow[] {
-  return [...source.billingPeriodSummaries]
-    .filter(
-      (summary) => !summaryIsInternal(summary)
-    )
-    .sort(
-      (left, right) =>
-        right.periodStart.localeCompare(left.periodStart) ||
-        right.id.localeCompare(left.id)
-    )
-    .map((summary) => {
-      const adjustments = source.billingAdjustments.filter(
-        (adjustment) => adjustment.billingPeriodSummaryId === summary.id
-      )
-      const adjustmentAmountCents = adjustments.reduce(
-        (total, adjustment) => total + adjustment.amountDeltaCents,
-        0
-      )
-      const adjustmentUnits = adjustments.reduce(
-        (total, adjustment) => total + adjustment.unitDelta,
-        0
-      )
-
-      return {
-        adjustmentAmountLabel: adminSignedMoney(adjustmentAmountCents),
-        adjustmentCount: adjustments.length,
-        adjustmentUnitLabel: adminSignedCount(adjustmentUnits),
-        calculationLabel: `${summary.usedUnits} used − ${summary.includedUnits} included = ${summary.overageUnits} overage`,
-        id: summary.id,
-        includedUnits: summary.includedUnits,
-        invoiceCount: summary.invoiceIds.length,
-        organizationName: organizationName(source, summary.organizationId),
-        overageAmountLabel: adminMoney(summary.overageAmountCents),
-        overageRateLabel: `${adminMoney(
-          summary.overageUnitPriceCents
-        )} per completed Network load`,
-        overageUnits: summary.overageUnits,
-        periodLabel: `${formatDateTime(summary.periodStart)} to ${formatDateTime(
-          summary.periodEnd
-        )}`,
-        planLabel: summary.planSnapshot.displayName,
-        status: summary.status,
-        statusLabel: titleCase(summary.status),
-        usageEventCount: summary.usageEventIds.length,
-        usedUnits: summary.usedUnits
-      }
-    })
-}
-
-function buildAdminOverageInvoiceRows(
-  source: AdminBillingSource
-): AdminOverageInvoiceRow[] {
-  return [...source.networkOverageInvoices]
-    .filter(
-      (invoice) => !overageInvoiceIsInternal(invoice)
-    )
-    .sort(
-      (left, right) =>
-        right.periodStart.localeCompare(left.periodStart) ||
-        right.sequence - left.sequence
-    )
-    .map((invoice) => ({
-      calculationLabel: `${invoice.quantity} × ${adminMoney(
-        invoice.unitAmountCents
-      )} = ${adminMoney(invoice.usageSubtotalCents)}`,
-      id: invoice.id,
-      issuedLabel: invoice.issuedAt
-        ? formatDateTime(invoice.issuedAt)
-        : "Not issued",
-      organizationName: organizationName(source, invoice.organizationId),
-      paidLabel: invoice.paidAt ? formatDateTime(invoice.paidAt) : "Not paid",
-      periodLabel: `${formatDateTime(invoice.periodStart)} to ${formatDateTime(
-        invoice.periodEnd
-      )}`,
-      planLabel: subscriptionPlanLabel(source, invoice.planCode),
-      providerReferenceLabel: invoice.stripeInvoiceId
-        ? "Provider invoice reference recorded"
-        : "No provider invoice reference recorded",
-      providerSettlementLabel:
-        invoice.providerAmountDueCents === null
-          ? "Provider settlement facts not recorded"
-          : `${adminMoney(
-              invoice.providerAmountDueCents
-            )} due · ${adminMoney(
-              invoice.providerAmountPaidCents ?? 0
-            )} paid · ${adminMoney(
-              invoice.providerAmountRemainingCents ?? 0
-            )} remaining`,
-      quantity: invoice.quantity,
-      sequence: invoice.sequence,
-      status: invoice.status,
-      statusLabel: titleCase(invoice.status),
-      subtotalLabel: adminMoney(invoice.usageSubtotalCents),
-      unitAmountLabel: adminMoney(invoice.unitAmountCents),
-      usageEventCount: invoice.usageEventIds.length
-    }))
-}
-
-function buildAdminBillingAdjustmentRows(
-  source: AdminBillingSource,
-  internalSummaryIds: ReadonlySet<string>
-): AdminBillingAdjustmentRow[] {
-  return [...source.billingAdjustments]
-    .filter(
-      (adjustment) =>
-        !internalSummaryIds.has(adjustment.billingPeriodSummaryId)
-    )
-    .sort(
-      (left, right) =>
-        right.createdAt.localeCompare(left.createdAt) ||
-        right.id.localeCompare(left.id)
-    )
-    .map((adjustment) => {
-      const summary = source.billingPeriodSummaries.find(
-        (candidate) => candidate.id === adjustment.billingPeriodSummaryId
-      )
-      const invoice = adjustment.invoiceId
-        ? source.networkOverageInvoices.find(
-            (candidate) => candidate.id === adjustment.invoiceId
-          )
-        : undefined
-      const usage = adjustment.usageEventId
-        ? source.networkUsageEvents.find(
-            (candidate) => candidate.id === adjustment.usageEventId
-          )
-        : undefined
-
-      return {
-        actorLabel: actorName(source, adjustment.actorUserId),
-        amountDeltaLabel: adminSignedMoney(adjustment.amountDeltaCents),
-        createdLabel: formatDateTime(adjustment.createdAt),
-        id: adjustment.id,
-        invoiceLabel: adjustment.invoiceId
-          ? invoice
-            ? `Overage invoice ${invoice.sequence} · ${titleCase(invoice.status)}`
-            : "Invoice reference does not resolve locally"
-          : "No invoice linked",
-        organizationName: organizationName(source, adjustment.organizationId),
-        providerReferenceLabel: adjustment.providerReference
-          ? "Provider reference recorded"
-          : "No provider reference recorded",
-        providerRevenueDeltaLabel: adminSignedMoney(
-          adjustment.providerRevenueDeltaCents
-        ),
-        providerSettlementLabel:
-          adjustment.settlementIntent === "credit_note" ||
-          adjustment.settlementIntent === "supplemental_debit"
-            ? adjustment.providerSettlementAmountCents === null
-              ? `${titleCase(
-                  adjustment.providerSettlementState
-                )} · Provider amounts not reconciled`
-              : `${titleCase(adjustment.providerSettlementState)} · ${adminMoney(
-                  adjustment.providerSettlementAmountCents
-                )} issued · ${adminMoney(
-                  adjustment.providerSettlementRemainingCents ?? 0
-                )} remaining`
-            : "No separate provider settlement",
-        reason: adjustment.reason,
-        summaryLabel: summary
-          ? `${summary.planSnapshot.displayName} · ${formatDateTime(
-              summary.periodStart
-            )} to ${formatDateTime(summary.periodEnd)}`
-          : "Period summary reference does not resolve locally",
-        type: adjustment.type,
-        typeLabel: titleCase(adjustment.type),
-        unitDeltaLabel: adminSignedCount(adjustment.unitDelta),
-        usageLabel: adjustment.usageEventId
-          ? usage
-            ? `Usage ${usage.status} at ${formatDateTime(usage.completionAt)}`
-            : "Usage reference does not resolve locally"
-          : "No usage row linked"
-      }
-    })
-}
-
-function buildAdminBillingWarnings(
-  source: AdminBillingSource,
-  commercialSubscriptions: OrganizationSubscription[],
-  commercialSummaries: BillingPeriodSummary[],
-  commercialUsageEvents: NetworkUsageEvent[],
-  commercialInvoices: NetworkOverageInvoice[],
-  commercialAdjustments: BillingAdjustment[],
-  commercialAccounts: OrganizationBillingAccount[]
-): AdminBillingWarning[] {
-  const warnings: AdminBillingWarning[] = []
-  const push = (warning: AdminBillingWarning) => {
-    warnings.push(warning)
-  }
-  const subscriptionById = new Map(
-    commercialSubscriptions.map((subscription) => [subscription.id, subscription])
-  )
-  const summaryById = new Map(
-    commercialSummaries.map((summary) => [summary.id, summary])
-  )
-  const usageById = new Map(
-    commercialUsageEvents.map((event) => [event.id, event])
-  )
-  const invoiceById = new Map(
-    commercialInvoices.map((invoice) => [invoice.id, invoice])
-  )
-  const adjustmentById = new Map(
-    commercialAdjustments.map((adjustment) => [adjustment.id, adjustment])
-  )
-  const accountByOrganization = new Map(
-    commercialAccounts.map((account) => [account.organizationId, account])
-  )
-  const accountCountsByOrganization = new Map<string, number>()
-
-  for (const account of commercialAccounts) {
-    accountCountsByOrganization.set(
-      account.organizationId,
-      (accountCountsByOrganization.get(account.organizationId) ?? 0) + 1
-    )
-  }
-
-  for (const [organizationId, count] of accountCountsByOrganization) {
-    if (count > 1) {
-      push({
-        detail: `${count} local billing accounts claim authority for the same organization.`,
-        id: `organization:${organizationId}:duplicate-accounts`,
-        organizationName: organizationName(source, organizationId),
-        severity: "critical",
-        title: "Organization has conflicting billing accounts"
-      })
-    }
-  }
-
-  for (const plan of source.billingPlanDefinitions.filter(
-    (candidate) =>
-      candidate.active && !candidate.internalBillingTest && !candidate.customContract
-  )) {
-    const hasProduct = Boolean(plan.stripeProductId)
-    const hasPrice = Boolean(plan.stripePriceId)
-
-    if (hasProduct && hasPrice) {
-      continue
-    }
-
-    push({
-      detail:
-        hasProduct || hasPrice
-          ? `Local ${plan.displayName} version ${plan.version} stores only one of the provider product and price references. No live provider check was made.`
-          : `Local ${plan.displayName} version ${plan.version} stores no provider product or price references. No live provider check was made.`,
-      id: `plan:${plan.code}:${plan.version}:catalog-reference`,
-      organizationName: "Plan catalog",
-      severity: "warning",
-      title: "Provider catalog evidence incomplete"
-    })
-  }
-
-  for (const account of commercialAccounts) {
-    const subscription = account.subscriptionId
-      ? subscriptionById.get(account.subscriptionId)
-      : undefined
-    const name = organizationName(source, account.organizationId)
-
-    if (account.billingModel === "legacy_percentage") {
-      if (account.subscriptionId) {
-        push({
-          detail:
-            "A legacy billing account carries a subscription pointer. These models must remain isolated.",
-          id: `account:${account.id}:legacy-pointer`,
-          organizationName: name,
-          severity: "critical",
-          title: "Legacy account links to a subscription"
-        })
-      }
-      continue
-    }
-
-    if (account.billingModel === "percentage_v1") {
-      if (account.subscriptionId) {
-        push({
-          detail:
-            "A current percentage billing account carries a subscription pointer. Percentage-v1 has no subscription record.",
-          id: `account:${account.id}:percentage-subscription-pointer`,
-          organizationName: name,
-          severity: "critical",
-          title: "Current percentage account links to a subscription"
-        })
-      }
-      continue
-    }
-
-    if (!account.subscriptionId) {
-      push({
-        detail: `${titleCase(
-          account.activationState
-        )} ${
-          account.billingModel
-            ? titleCase(account.billingModel)
-            : "Unclassified billing"
-        } account has no subscription pointer.`,
-        id: `account:${account.id}:missing-subscription`,
-        organizationName: name,
-        severity:
-          account.activationState === "active" ||
-          account.activationState === "suspended"
-            ? "critical"
-            : "warning",
-        title: "Billing account is not linked"
-      })
-      continue
-    }
-
-    if (!subscription) {
-      push({
-        detail:
-          "The account's subscription pointer does not resolve to a commercial local subscription record.",
-        id: `account:${account.id}:orphan-subscription`,
-        organizationName: name,
-        severity: "critical",
-        title: "Billing account subscription is missing"
-      })
-      continue
-    }
-
-    if (
-      subscription.organizationId !== account.organizationId ||
-      subscription.billingModel !== account.billingModel
-    ) {
-      push({
-        detail:
-          "The linked subscription's organization or frozen billing model disagrees with the billing account.",
-        id: `account:${account.id}:subscription-mismatch`,
-        organizationName: name,
-        severity: "critical",
-        title: "Billing account and subscription disagree"
-      })
-    }
-
-    if (
-      account.activationState === "active" &&
-      !["active", "past_due", "non_renewing", "comped"].includes(
-        subscription.status
-      )
-    ) {
-      push({
-        detail: `The billing account is active while its linked subscription is ${titleCase(
-          subscription.status
-        )}.`,
-        id: `account:${account.id}:activation-status`,
-        organizationName: name,
-        severity: "warning",
-        title: "Activation and subscription status differ"
-      })
-    }
-  }
-
-  for (const subscription of commercialSubscriptions) {
-    const name = organizationName(source, subscription.organizationId)
-    const account = accountByOrganization.get(subscription.organizationId)
-    const shouldHaveProviderBinding = [
-      "active",
-      "incomplete",
-      "non_renewing",
-      "past_due"
-    ].includes(subscription.status)
-
-    if (
-      shouldHaveProviderBinding &&
-      (!subscription.stripeCustomerId || !subscription.stripeSubscriptionId)
-    ) {
-      push({
-        detail:
-          subscription.stripeCustomerId || subscription.stripeSubscriptionId
-            ? "Only one local provider customer/subscription reference is recorded. No live provider check was made."
-            : "No local provider customer or subscription reference is recorded. No live provider check was made.",
-        id: `subscription:${subscription.id}:provider-reference`,
-        organizationName: name,
-        severity: subscription.status === "incomplete" ? "warning" : "critical",
-        title: "Subscription provider evidence incomplete"
-      })
-    }
-
-    if (
-      ["active", "past_due", "non_renewing", "comped"].includes(
-        subscription.status
-      ) &&
-      (!account || account.subscriptionId !== subscription.id)
-    ) {
-      push({
-        detail: account
-          ? "The organization's billing account points to a different subscription."
-          : "No local billing account exists for this operating subscription.",
-        id: `subscription:${subscription.id}:account-link`,
-        organizationName: name,
-        severity: "critical",
-        title: "Operating subscription is not the account authority"
-      })
-    }
-  }
-
-  const providerSubscriptionOwners = new Map<string, OrganizationSubscription>()
-  const providerCustomerOwners = new Map<string, OrganizationSubscription>()
-
-  for (const subscription of commercialSubscriptions) {
-    if (subscription.stripeSubscriptionId) {
-      const prior = providerSubscriptionOwners.get(subscription.stripeSubscriptionId)
-
-      if (prior && prior.id !== subscription.id) {
-        push({
-          detail:
-            "Two local commercial subscriptions store the same provider subscription reference.",
-          id: `subscription:${subscription.id}:duplicate-provider-subscription`,
-          organizationName: organizationName(source, subscription.organizationId),
-          severity: "critical",
-          title: "Provider subscription reference is duplicated"
-        })
-      } else {
-        providerSubscriptionOwners.set(subscription.stripeSubscriptionId, subscription)
-      }
-    }
-
-    if (subscription.stripeCustomerId) {
-      const prior = providerCustomerOwners.get(subscription.stripeCustomerId)
-
-      if (prior && prior.organizationId !== subscription.organizationId) {
-        push({
-          detail:
-            "Two organizations store the same provider customer reference. No live provider check was made.",
-          id: `subscription:${subscription.id}:cross-organization-provider-customer`,
-          organizationName: organizationName(source, subscription.organizationId),
-          severity: "critical",
-          title: "Provider customer reference crosses organizations"
-        })
-      } else {
-        providerCustomerOwners.set(subscription.stripeCustomerId, subscription)
-      }
-    }
-  }
-
-  for (const event of commercialUsageEvents) {
-    const name = organizationName(source, event.organizationId)
-    const summary = summaryById.get(event.billingPeriodSummaryId)
-
-    if (!summary) {
-      push({
-        detail: "The usage event's period-summary reference does not resolve locally.",
-        id: `usage:${event.id}:summary`,
-        organizationName: name,
-        severity: "critical",
-        title: "Usage event is orphaned"
-      })
-    } else {
-      if (
-        event.status !== "reversed" &&
-        !summary.usageEventIds.includes(event.id)
-      ) {
-        push({
-          detail:
-            "The usage event points to a period summary that does not list it in the frozen usage references.",
-          id: `usage:${event.id}:summary-membership`,
-          organizationName: name,
-          severity: "critical",
-          title: "Usage and period summary disagree"
-        })
-      }
-
-      if (
-        summary.organizationId !== event.organizationId ||
-        summary.planCode !== event.planCode
-      ) {
-        push({
-          detail:
-            "The usage event's organization or frozen plan disagrees with its period summary.",
-          id: `usage:${event.id}:summary-commercial-terms`,
-          organizationName: name,
-          severity: "critical",
-          title: "Usage and period commercial terms disagree"
-        })
-      }
-    }
-
-    if (event.status === "invoiced") {
-      const invoice = event.invoiceId ? invoiceById.get(event.invoiceId) : undefined
-
-      if (!invoice || !invoice.usageEventIds.includes(event.id)) {
-        push({
-          detail:
-            "The invoiced usage row has no matching local overage invoice membership.",
-          id: `usage:${event.id}:invoice`,
-          organizationName: name,
-          severity: "critical",
-          title: "Invoiced usage is not reconciled"
-        })
-      }
-    }
-
-    if (
-      event.status === "reversed" &&
-      (!event.reversalAdjustmentId ||
-        !adjustmentById.has(event.reversalAdjustmentId))
-    ) {
-      push({
-        detail:
-          "The reversed usage row has no matching local adjustment record.",
-        id: `usage:${event.id}:reversal`,
-        organizationName: name,
-        severity: "critical",
-        title: "Usage reversal is not reconciled"
-      })
-    }
-  }
-
-  for (const summary of commercialSummaries) {
-    const name = organizationName(source, summary.organizationId)
-    const subscription = subscriptionById.get(summary.subscriptionId)
-
-    if (
-      !subscription ||
-      subscription.organizationId !== summary.organizationId ||
-      subscription.planCode !== summary.planCode
-    ) {
-      push({
-        detail:
-          "The period summary has no matching commercial subscription with the same organization and plan.",
-        id: `summary:${summary.id}:subscription`,
-        organizationName: name,
-        severity: "critical",
-        title: "Period summary and subscription disagree"
-      })
-    }
-
-    for (const invoiceId of summary.invoiceIds) {
-      const invoice = invoiceById.get(invoiceId)
-
-      if (!invoice || invoice.billingPeriodSummaryId !== summary.id) {
-        push({
-          detail:
-            "A period-summary invoice reference does not resolve back to this summary.",
-          id: `summary:${summary.id}:invoice:${invoiceId}`,
-          organizationName: name,
-          severity: "critical",
-          title: "Period summary invoice link is broken"
-        })
-      }
-    }
-
-    for (const usageId of summary.usageEventIds) {
-      const usage = usageById.get(usageId)
-
-      if (!usage || usage.billingPeriodSummaryId !== summary.id) {
-        push({
-          detail:
-            "A period-summary usage reference does not resolve back to this summary.",
-          id: `summary:${summary.id}:usage:${usageId}`,
-          organizationName: name,
-          severity: "critical",
-          title: "Period summary usage link is broken"
-        })
-      }
-    }
-  }
-
-  const providerInvoiceOwners = new Map<string, NetworkOverageInvoice>()
-
-  for (const invoice of commercialInvoices) {
-    const name = organizationName(source, invoice.organizationId)
-    const summary = summaryById.get(invoice.billingPeriodSummaryId)
-
-    if (!summary || !summary.invoiceIds.includes(invoice.id)) {
-      push({
-        detail:
-          "The overage invoice has no matching membership in its local period summary.",
-        id: `invoice:${invoice.id}:summary`,
-        organizationName: name,
-        severity: "critical",
-        title: "Overage invoice and period summary disagree"
-      })
-    } else if (
-      summary.organizationId !== invoice.organizationId ||
-      summary.planCode !== invoice.planCode ||
-      summary.periodStart !== invoice.periodStart ||
-      summary.periodEnd !== invoice.periodEnd
-    ) {
-      push({
-        detail:
-          "The overage invoice's organization, plan, or period disagrees with its period summary.",
-        id: `invoice:${invoice.id}:summary-commercial-terms`,
-        organizationName: name,
-        severity: "critical",
-        title: "Overage invoice commercial terms disagree"
-      })
-    }
-
-    if (
-      ["open", "paid", "uncollectible"].includes(invoice.status) &&
-      !invoice.stripeInvoiceId
-    ) {
-      push({
-        detail: `${titleCase(
-          invoice.status
-        )} local overage invoice has no provider invoice reference. No live provider check was made.`,
-        id: `invoice:${invoice.id}:provider-reference`,
-        organizationName: name,
-        severity: invoice.status === "paid" ? "critical" : "warning",
-        title: "Overage provider evidence incomplete"
-      })
-    }
-
-    if (invoice.stripeInvoiceId) {
-      const prior = providerInvoiceOwners.get(invoice.stripeInvoiceId)
-
-      if (prior && prior.id !== invoice.id) {
-        push({
-          detail:
-            "Two local overage invoices store the same provider invoice reference.",
-          id: `invoice:${invoice.id}:duplicate-provider-invoice`,
-          organizationName: name,
-          severity: "critical",
-          title: "Provider invoice reference is duplicated"
-        })
-      } else {
-        providerInvoiceOwners.set(invoice.stripeInvoiceId, invoice)
-      }
-    }
-
-    for (const usageId of invoice.usageEventIds) {
-      const usage = usageById.get(usageId)
-
-      if (!usage || usage.invoiceId !== invoice.id) {
-        push({
-          detail:
-            "An overage invoice usage reference does not resolve to a usage row bound back to this invoice.",
-          id: `invoice:${invoice.id}:usage:${usageId}`,
-          organizationName: name,
-          severity: "critical",
-          title: "Overage invoice usage link is broken"
-        })
-      }
-    }
-  }
-
-  for (const adjustment of commercialAdjustments) {
-    const name = organizationName(source, adjustment.organizationId)
-    const summary = summaryById.get(adjustment.billingPeriodSummaryId)
-
-    if (!summary) {
-      push({
-        detail: "The adjustment's period-summary reference does not resolve locally.",
-        id: `adjustment:${adjustment.id}:summary`,
-        organizationName: name,
-        severity: "critical",
-        title: "Billing adjustment is orphaned"
-      })
-    } else if (summary.organizationId !== adjustment.organizationId) {
-      push({
-        detail:
-          "The adjustment's organization disagrees with its period summary.",
-        id: `adjustment:${adjustment.id}:organization`,
-        organizationName: name,
-        severity: "critical",
-        title: "Billing adjustment organization disagrees"
-      })
-    }
-
-    if (adjustment.usageEventId && !usageById.has(adjustment.usageEventId)) {
-      push({
-        detail: "The adjustment's usage reference does not resolve locally.",
-        id: `adjustment:${adjustment.id}:usage`,
-        organizationName: name,
-        severity: "critical",
-        title: "Billing adjustment usage is missing"
-      })
-    }
-
-    if (adjustment.invoiceId && !invoiceById.has(adjustment.invoiceId)) {
-      push({
-        detail: "The adjustment's invoice reference does not resolve locally.",
-        id: `adjustment:${adjustment.id}:invoice`,
-        organizationName: name,
-        severity: "critical",
-        title: "Billing adjustment invoice is missing"
-      })
-    }
-  }
-
-  return warnings.sort(
-    (left, right) =>
-      Number(right.severity === "critical") -
-        Number(left.severity === "critical") ||
-      left.organizationName.localeCompare(right.organizationName) ||
-      left.title.localeCompare(right.title)
-  )
+  return formatMoney({ amountCents, currency: PLATFORM_FEE_CURRENCY })
 }
 
 /**
- * Provider-neutral billing read model. Every amount comes from a locally stored
- * agreement or period snapshot. A Stripe id is reported only as a reference
- * being present; this function never claims that the provider agrees with local
- * state and never calls a provider.
+ * The host fee ledger, from local records only: who accepted the fee terms, what
+ * accrued, what is billed and outstanding, and the records that need attention.
+ * It never calls a provider and never claims that Stripe agrees with local state.
  */
-export function buildAdminBillingSnapshot(
-  source: AdminBillingSource,
-  now = Date.now()
-): AdminBillingSnapshot {
-  const commercialSubscriptions = source.organizationSubscriptions.filter(
-    (subscription) => !subscriptionIsInternal(subscription)
-  )
-  const internalSubscriptionIds = new Set(
-    source.organizationSubscriptions
-      .filter(subscriptionIsInternal)
-      .map((subscription) => subscription.id)
-  )
-  const directlyInternalUsageEventIds = new Set(
-    source.networkUsageEvents
-      .filter(usageEventIsInternal)
-      .map((event) => event.id)
-  )
-  const summaryIdsWithInternalUsage = new Set(
-    source.networkUsageEvents
-      .filter(usageEventIsInternal)
-      .map((event) => event.billingPeriodSummaryId)
-  )
-  const internalSummaryIds = new Set(
-    source.billingPeriodSummaries
-      .filter(
-        (summary) =>
-          summaryIsInternal(summary) ||
-          internalSubscriptionIds.has(summary.subscriptionId) ||
-          summaryIdsWithInternalUsage.has(summary.id) ||
-          summary.usageEventIds.some((eventId) =>
-            directlyInternalUsageEventIds.has(eventId)
-          )
-      )
-      .map((summary) => summary.id)
-  )
-  const internalUsageEventIds = new Set(
-    source.networkUsageEvents
-      .filter(
-        (event) =>
-          usageEventIsInternal(event) ||
-          internalSummaryIds.has(event.billingPeriodSummaryId)
-      )
-      .map((event) => event.id)
-  )
-  const commercialSummaries = source.billingPeriodSummaries.filter(
-    (summary) => !internalSummaryIds.has(summary.id)
-  )
-  const commercialUsageEvents = source.networkUsageEvents.filter(
-    (event) => !internalUsageEventIds.has(event.id)
-  )
-  const commercialInvoices = source.networkOverageInvoices.filter(
-    (invoice) =>
-      !overageInvoiceIsInternal(invoice) &&
-      !internalSummaryIds.has(invoice.billingPeriodSummaryId) &&
-      !invoice.usageEventIds.some((eventId) =>
-        internalUsageEventIds.has(eventId)
-      )
-  )
-  const commercialBaseInvoices = source.subscriptionBaseInvoices.filter(
-    (invoice) =>
-      !baseInvoiceIsInternal(invoice) &&
-      !internalSubscriptionIds.has(invoice.subscriptionId)
-  )
-  const commercialPaidBaseInvoices = commercialBaseInvoices.filter(
-    (invoice) =>
-      invoice.status === "paid" &&
-      invoice.currency === "USD"
-  )
-  const commercialAdjustments = source.billingAdjustments.filter(
-    (adjustment) =>
-      !internalSummaryIds.has(adjustment.billingPeriodSummaryId)
-  )
-  const commercialAccounts = source.organizationBillingAccounts.filter(
-    (account) =>
-      !account.subscriptionId ||
-      !internalSubscriptionIds.has(account.subscriptionId)
-  )
-  const commercialSource: AdminBillingSource = {
-    ...source,
-    billingAdjustments: commercialAdjustments,
-    billingPeriodSummaries: commercialSummaries,
-    networkOverageInvoices: commercialInvoices,
-    networkUsageEvents: commercialUsageEvents,
-    organizationBillingAccounts: commercialAccounts,
-    organizationSubscriptions: commercialSubscriptions,
-    subscriptionBaseInvoices: commercialBaseInvoices
-  }
-  const internalTestCount =
-    source.organizationSubscriptions.length - commercialSubscriptions.length
-  const subscriptions = commercialSubscriptions
-    .map((subscription) =>
-      buildAdminSubscriptionRow(commercialSource, subscription, now)
-    )
-    .sort(
-      (left, right) =>
-        Number(right.requiresAttention) - Number(left.requiresAttention) ||
-        left.organizationName.localeCompare(right.organizationName)
-    )
-  const mrrSubscriptions = commercialSubscriptions.filter((subscription) =>
-    ACTIVE_MRR_STATUSES.has(subscription.status)
-  )
-  const activeMrrCents = mrrSubscriptions.reduce(
-    (total, subscription) => total + (subscription.baseMonthlyPriceSnapshotCents ?? 0),
-    0
-  )
-  const attention = subscriptions.filter(
-    (subscription) => subscription.requiresAttention
-  )
-  const planMixByCode = new Map<string, AdminBillingPlanMixRow>()
-
-  for (const subscription of commercialSubscriptions) {
-    const existing = planMixByCode.get(subscription.planCode)
-
-    if (existing) {
-      existing.totalCount += 1
-      existing.activeCount += Number(subscription.status === "active")
-      continue
-    }
-
-    planMixByCode.set(subscription.planCode, {
-      activeCount: Number(subscription.status === "active"),
-      code: subscription.planCode,
-      label: subscription.planSnapshot.displayName,
-      salesAssisted: subscription.planSnapshot.visibility === "sales_assisted",
-      totalCount: 1,
-      visibilityLabel: titleCase(subscription.planSnapshot.visibility)
-    })
-  }
-
-  const catalogOrder = new Map(
-    source.billingPlanDefinitions.map((definition, index) => [definition.code, index])
-  )
-  const entitlementExceptions = source.entitlements
-    .filter((entitlement) => entitlement.status === "past_due" || entitlement.status === "cancelled")
-    .map((entitlement) => ({
-      id: entitlement.id,
-      organizationName: organizationName(source, entitlement.organizationId),
-      periodEndsLabel: entitlement.currentPeriodEndsAt
-        ? formatDateTime(entitlement.currentPeriodEndsAt)
-        : "No period end recorded",
-      planLabel: PLAN_LABELS[entitlement.product] ?? titleCase(entitlement.product),
-      status: entitlement.status,
-      statusLabel: titleCase(entitlement.status)
-    }))
-    .sort((left, right) => left.organizationName.localeCompare(right.organizationName))
-  const activePlatformFeeEvents = source.platformFeeEvents.filter(
-    (event) => event.status !== "voided"
-  )
-  const currentFeeEvents = activePlatformFeeEvents.filter(
-    (event) => event.billingModel === "percentage_v1"
-  )
-  const legacyFeeEvents = activePlatformFeeEvents.filter(
-    (event) => event.billingModel === "legacy_percentage"
-  )
-  const currentExceptions = buildAdminCurrentFeeExceptions(source)
-  const currentInvoiceIds = invoiceIdsLinkedToFeeEvents(currentFeeEvents, source.hostInvoices)
-  const legacyInvoiceIds = invoiceIdsLinkedToFeeEvents(legacyFeeEvents, source.hostInvoices)
-  const currentInvoices = source.hostInvoices.filter((invoice) =>
-    currentInvoiceIds.has(invoice.id)
-  )
-  const legacyInvoices = source.hostInvoices.filter((invoice) =>
-    legacyInvoiceIds.has(invoice.id)
-  )
+export function buildAdminBillingSnapshot(source: AdminBillingSource): AdminBillingSnapshot {
+  const activeFees = source.platformFeeEvents.filter((event) => event.status !== "voided")
   const outstandingInvoiceIds = new Set(
     source.hostInvoices
-      .filter(
-        (invoice) =>
-          invoice.status === "open" || invoice.status === "uncollectible"
-      )
+      .filter((invoice) => invoice.status === "open" || invoice.status === "uncollectible")
       .map((invoice) => invoice.id)
-  )
-  const privateMovementIds = new Set<string>()
-  const networkMovementIds = new Set<string>()
-
-  for (const assignment of source.assignments) {
-    const internalAssignment =
-      assignment.billingPlanCodeAtCommitment === "internal_billing_test" ||
-      Boolean(
-        assignment.billingSubscriptionIdAtCommitment &&
-          internalSubscriptionIds.has(
-            assignment.billingSubscriptionIdAtCommitment
-          )
-      )
-
-    if (internalAssignment || !assignment.capacitySource) {
-      continue
-    }
-
-    const movementId = assignment.loadMovementId ?? assignment.id
-
-    if (assignment.capacitySource === "private_fleet") {
-      privateMovementIds.add(movementId)
-    } else {
-      networkMovementIds.add(movementId)
-    }
-  }
-
-  const allowanceUsedUnits = commercialSummaries.reduce(
-    (total, summary) => total + summary.usedUnits,
-    0
-  )
-  const allowanceIncludedUnits = commercialSummaries.reduce(
-    (total, summary) => total + summary.includedUnits,
-    0
-  )
-  const overagePeriodCount = commercialSummaries.filter(
-    (summary) => summary.overageUnits > 0
-  ).length
-  const completedNetworkUnitCount = commercialUsageEvents
-    .filter((event) => event.status !== "reversed")
-    .reduce((total, event) => total + event.unitCount, 0)
-  const paidBaseRevenueCents = commercialPaidBaseInvoices.reduce(
-    (total, invoice) => total + invoice.amountDueCents,
-    0
-  )
-  const paidOverageRevenueCents = commercialInvoices
-    .filter((invoice) => invoice.status === "paid")
-    .reduce(
-      (total, invoice) =>
-        total +
-        (invoice.providerAmountPaidCents ?? invoice.amountDueCents),
-      0
-    )
-  const providerAdjustmentRevenueCents = commercialAdjustments
-    .filter(
-      (adjustment) =>
-        (
-          adjustment.settlementIntent === "credit_note" ||
-          adjustment.settlementIntent === "supplemental_debit"
-        ) &&
-        Boolean(adjustment.providerReference) &&
-        adjustment.providerSettlementAmountCents !== null
-    )
-    .reduce(
-      (total, adjustment) =>
-        total + adjustment.providerRevenueDeltaCents,
-      0
-    )
-  const totalSubscriptionRevenueCents =
-    paidBaseRevenueCents +
-    paidOverageRevenueCents +
-    providerAdjustmentRevenueCents
-  const pilotCohort = commercialSubscriptions.filter(
-    (subscription) =>
-      subscription.planCode === "network_pilot" ||
-      subscription.convertedFromPlanCode === "network_pilot"
-  )
-  const convertedPilotCount = pilotCohort.filter(
-    (subscription) =>
-      subscription.convertedFromPlanCode === "network_pilot"
-  ).length
-  const accounts = buildAdminBillingAccountRows(
-    commercialSource,
-    internalSubscriptionIds
-  )
-  const usageLedger = buildAdminUsageLedgerRows(commercialSource)
-  const periodSummaries = buildAdminPeriodSummaryRows(commercialSource)
-  const invoices = buildAdminOverageInvoiceRows(commercialSource)
-  const adjustments = buildAdminBillingAdjustmentRows(
-    commercialSource,
-    internalSummaryIds
-  )
-  const reconciliationWarnings = buildAdminBillingWarnings(
-    source,
-    commercialSubscriptions,
-    commercialSummaries,
-    commercialUsageEvents,
-    commercialInvoices,
-    commercialAdjustments,
-    commercialAccounts
   )
 
   return {
-    accounts,
-    adjustments,
-    attention,
-    commercialSubscriptionCount: commercialSubscriptions.length,
-    internalTestCount,
-    invoices,
-    platformFeeLedger: {
-      currentAccruedFeeLabel: adminMoney(
-        currentFeeEvents
-          .filter((event) => event.status === "accrued")
-          .reduce((total, event) => total + event.feeCents, 0)
-      ),
-      currentAssignmentCount: source.assignments.filter(
-        (assignment) => assignment.billingModel === "percentage_v1"
-      ).length,
-      currentExceptionCount: currentExceptions.length,
-      currentExceptions,
-      currentFeeEventCount: currentFeeEvents.length,
-      currentInvoiceCount: currentInvoices.length,
-      currentOrganizationCount: source.organizationBillingAccounts.filter(
-        (account) => account.billingModel === "percentage_v1"
-      ).length,
-      currentOutstandingInvoiceLabel: adminMoney(
-        currentFeeEvents
-          .filter(
-            (event) =>
-              Boolean(event.invoiceId) &&
-              outstandingInvoiceIds.has(event.invoiceId!)
-          )
-          .reduce((total, event) => total + event.feeCents, 0)
-      ),
-      entitlementCount: source.entitlements.length,
-      entitlementExceptions,
-      legacyAccruedFeeLabel: adminMoney(
-        legacyFeeEvents
-          .filter((event) => event.status === "accrued")
-          .reduce((total, event) => total + event.feeCents, 0)
-      ),
-      legacyAssignmentCount: source.assignments.filter(
-        (assignment) => assignment.billingModel === "legacy_percentage"
-      ).length,
-      legacyFeeEventCount: legacyFeeEvents.length,
-      legacyInvoiceCount: legacyInvoices.length,
-      legacyOrganizationCount: source.organizationBillingAccounts.filter(
-        (account) => account.billingModel === "legacy_percentage"
-      ).length,
-      legacyOutstandingInvoiceLabel: adminMoney(
-        legacyFeeEvents
-          .filter(
-            (event) =>
-              Boolean(event.invoiceId) &&
-              outstandingInvoiceIds.has(event.invoiceId!)
-          )
-          .reduce((total, event) => total + event.feeCents, 0)
-      )
-    },
-    metrics: {
-      activeArrLabel: adminMoney(activeMrrCents * 12),
-      activeMrrLabel: adminMoney(activeMrrCents),
-      activeSubscriptionCount: commercialSubscriptions.filter(
-        (subscription) => subscription.status === "active"
-      ).length,
-      billingFailureCount: attention.length
-    },
-    operations: {
-      allowanceUtilizationLabel: adminRatioLabel(
-        allowanceUsedUnits,
-        allowanceIncludedUnits,
-        "included units"
-      ),
-      billingFailureRateLabel: adminRatioLabel(
-        attention.length,
-        commercialSubscriptions.length,
-        "subscriptions"
-      ),
-      completedNetworkUnitCount,
-      networkMovementCount: networkMovementIds.size,
-      overageFrequencyLabel: adminRatioLabel(
-        overagePeriodCount,
-        commercialSummaries.length,
-        "allowance periods"
-      ),
-      paidBaseRevenueLabel: adminMoney(paidBaseRevenueCents),
-      paidOverageRevenueLabel: adminMoney(paidOverageRevenueCents),
-      privateMovementCount: privateMovementIds.size,
-      revenuePerCompletedNetworkLoadLabel:
-        completedNetworkUnitCount === 0
-          ? "Not enough data"
-          : adminMoney(
-              Math.round(
-                totalSubscriptionRevenueCents / completedNetworkUnitCount
-              )
-            ),
-      totalSubscriptionRevenueLabel: adminMoney(
-        totalSubscriptionRevenueCents
-      )
-    },
-    periodSummaries,
-    pilotConversions: {
-      cohortCount: pilotCohort.length,
-      convertedCount: convertedPilotCount,
-      rateLabel: adminRatioLabel(
-        convertedPilotCount,
-        pilotCohort.length,
-        "Pilot agreements"
-      )
-    },
-    planMix: [...planMixByCode.values()].sort(
-      (left, right) =>
-        (catalogOrder.get(left.code) ?? Number.MAX_SAFE_INTEGER) -
-          (catalogOrder.get(right.code) ?? Number.MAX_SAFE_INTEGER) ||
-        left.label.localeCompare(right.label)
+    acceptedAgreementCount: source.hostFeeAgreements.filter(isCurrentHostFeeAgreement).length,
+    accruedFeeLabel: adminMoney(
+      invoiceSubtotalCents(activeFees.filter((event) => event.status === "accrued"))
     ),
-    reconciliationWarnings,
-    subscriptions,
-    unquantifiedMrrCount: mrrSubscriptions.filter(
-      (subscription) => subscription.baseMonthlyPriceSnapshotCents === null
+    committedAssignmentCount: source.assignments.filter((assignment) =>
+      Boolean(assignment.billingCommittedAt)
     ).length,
-    usageLedger
+    exceptions: buildAdminFeeExceptions(source),
+    feeEventCount: activeFees.length,
+    invoiceCount: source.hostInvoices.length,
+    outstandingInvoiceLabel: adminMoney(
+      invoiceSubtotalCents(
+        activeFees.filter(
+          (event) => Boolean(event.invoiceId) && outstandingInvoiceIds.has(event.invoiceId!)
+        )
+      )
+    )
   }
 }
 

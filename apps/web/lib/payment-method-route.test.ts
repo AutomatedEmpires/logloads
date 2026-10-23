@@ -18,11 +18,9 @@ const mocks = vi.hoisted(() => {
     hostCardOnFile: vi.fn(),
     hostCardSetupEligibility: vi.fn(),
     operatingStateAccess: vi.fn(),
-    percentageEnrollmentAllowed: vi.fn(),
     readState: vi.fn(),
     requireApiActor: vi.fn(),
     resolveStripeBilling: vi.fn(),
-    resolveSubscriptionStripe: vi.fn(),
     startHostCardSetup: vi.fn(),
     stripePublishableKey: vi.fn(),
     verifyExpectedStripeAccount: vi.fn()
@@ -55,14 +53,10 @@ vi.mock("@/lib/billing", () => ({
 vi.mock("@/lib/host-card-eligibility", () => ({
   hostCardSetupEligibility: mocks.hostCardSetupEligibility
 }))
-vi.mock("@/lib/percentage-enrollment", () => ({
-  percentageEnrollmentAllowed: mocks.percentageEnrollmentAllowed
-}))
 vi.mock("@/lib/services", () => ({
   readState: mocks.readState
 }))
-vi.mock("@/lib/subscription-stripe", () => ({
-  resolveSubscriptionStripe: mocks.resolveSubscriptionStripe,
+vi.mock("@/lib/stripe-account", () => ({
   verifyExpectedStripeAccount: mocks.verifyExpectedStripeAccount
 }))
 
@@ -97,14 +91,9 @@ describe("host payment method setup route", () => {
       async (read: (current: { state: typeof CANONICAL_STATE }) => unknown) =>
         read({ state: CANONICAL_STATE })
     )
-    mocks.percentageEnrollmentAllowed.mockReturnValue(false)
     mocks.resolveStripeBilling.mockReturnValue({
       ok: true,
       value: { name: "stripe-billing-port" }
-    })
-    mocks.resolveSubscriptionStripe.mockReturnValue({
-      ok: true,
-      port: { name: "stripe-account-port" }
     })
     mocks.verifyExpectedStripeAccount.mockResolvedValue(undefined)
     mocks.stripePublishableKey.mockReturnValue({
@@ -139,36 +128,30 @@ describe("host payment method setup route", () => {
     mocks.hostCardSetupEligibility.mockReturnValue({
       allowed: false,
       basis: "agreement_required",
-      message: "Accept the current billing agreement before adding a card."
+      message: "Accept the LogLoads fee terms before adding a payment card."
     })
 
     const response = await POST()
 
     expect(response.status).toBe(409)
     await expect(response.json()).resolves.toEqual({
-      error: "Accept the current billing agreement before adding a card."
+      error: "Accept the LogLoads fee terms before adding a payment card."
     })
-    expect(mocks.percentageEnrollmentAllowed).toHaveBeenCalledWith(
-      ORGANIZATION_ID
-    )
     expect(mocks.hostCardSetupEligibility).toHaveBeenCalledWith(
       CANONICAL_STATE,
-      ORGANIZATION_ID,
-      false
+      ORGANIZATION_ID
     )
     expect(mocks.resolveStripeBilling).not.toHaveBeenCalled()
-    expect(mocks.resolveSubscriptionStripe).not.toHaveBeenCalled()
     expect(mocks.verifyExpectedStripeAccount).not.toHaveBeenCalled()
     expect(mocks.stripePublishableKey).not.toHaveBeenCalled()
     expect(mocks.operatingStateAccess).not.toHaveBeenCalled()
     expect(mocks.startHostCardSetup).not.toHaveBeenCalled()
   })
 
-  it("passes the server-derived enrollment flag into eligible card setup", async () => {
-    mocks.percentageEnrollmentAllowed.mockReturnValue(true)
+  it("verifies the Stripe account before starting card setup for an eligible host", async () => {
     mocks.hostCardSetupEligibility.mockReturnValue({
       allowed: true,
-      basis: "accepted_percentage_v1",
+      basis: "accepted_fee_agreement",
       existingCustomerId: null,
       message: null,
       profileCustomerId: null
@@ -184,24 +167,59 @@ describe("host payment method setup route", () => {
         publishableKey: "pk_test_logloads"
       }
     })
-    expect(mocks.percentageEnrollmentAllowed).toHaveBeenCalledWith(
-      ORGANIZATION_ID
-    )
     expect(mocks.hostCardSetupEligibility).toHaveBeenCalledWith(
       CANONICAL_STATE,
-      ORGANIZATION_ID,
-      true
+      ORGANIZATION_ID
     )
     expect(mocks.verifyExpectedStripeAccount).toHaveBeenCalledWith(
-      { name: "stripe-account-port" },
+      { name: "stripe-billing-port" },
       process.env
     )
     expect(mocks.startHostCardSetup).toHaveBeenCalledWith({
       organization: ORGANIZATION,
-      percentageEnrollmentAllowed: true,
       port: { name: "stripe-billing-port" },
       publishableKey: "pk_test_logloads",
       state: { name: "operating-state" }
     })
+  })
+
+  it("fails closed before card setup when the Stripe account assertion fails", async () => {
+    mocks.hostCardSetupEligibility.mockReturnValue({
+      allowed: true,
+      basis: "accepted_fee_agreement",
+      existingCustomerId: null,
+      message: null,
+      profileCustomerId: null
+    })
+    mocks.verifyExpectedStripeAccount.mockRejectedValue(
+      new Error("actual acct_other expected acct_logloads")
+    )
+
+    const response = await POST()
+
+    expect(response.status).toBe(503)
+    expect(JSON.stringify(await response.json())).not.toContain("acct_other")
+    expect(mocks.startHostCardSetup).not.toHaveBeenCalled()
+  })
+
+  it("refuses a member without billing permission before any eligibility read", async () => {
+    mocks.requireApiActor.mockResolvedValue({
+      actor: {
+        memberships: [
+          {
+            membership: { role: "dispatcher" },
+            organization: ORGANIZATION
+          }
+        ]
+      },
+      actorUserId: ACTOR_ID,
+      organizationId: ORGANIZATION_ID
+    })
+
+    const response = await POST()
+
+    expect(response.status).toBe(403)
+    expect(mocks.hostCardSetupEligibility).not.toHaveBeenCalled()
+    expect(mocks.startHostCardSetup).not.toHaveBeenCalled()
   })
 })

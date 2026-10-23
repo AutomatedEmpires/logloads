@@ -4,7 +4,7 @@ import {
   computePlatformFeeCents,
   organizationMembershipSchema,
   organizationRoleCan,
-  percentageFeeEventId,
+  platformFeeEventId,
   PLATFORM_FEE_BPS
 } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
@@ -100,7 +100,6 @@ function forceSettleableState(
   live.status = "completed"
   held.status = "completed"
   held.completedAt = live.completedAt
-  held.billingModel = "percentage_v1"
   held.driverPaymentSentAt = null
   held.driverPaymentSentByUserId = null
   held.driverPaymentReceivedAt = null
@@ -113,9 +112,7 @@ function forceSettleableState(
     driverPayCents,
     hostFee: {
       collectionState: "accrues_monthly_in_arrears",
-      feeCents: null,
-      providerCollectionState: "feature_gated",
-      proposedRateBps: PLATFORM_FEE_BPS,
+      currency: "USD",
       rateBps: PLATFORM_FEE_BPS
     }
   }
@@ -163,17 +160,17 @@ describe("host completion confirmation raises the platform fee", () => {
     markSent(fixture)
     expect(fixture.services.state.platformFeeEvents).toHaveLength(1)
 
-    const receipt = confirmReceived(fixture)
+    expect(confirmReceived(fixture).changed).toBe(true)
     const events = fixture.services.state.platformFeeEvents
 
-    expect(receipt.platformFeeOutcome).toBe("not_applicable")
     expect(events).toHaveLength(1)
     expect(events[0]!.assignmentId).toBe(fixture.assignment.id)
     expect(events[0]!.organizationId).toBe(posting.companyId)
     expect(events[0]!.status).toBe("accrued")
     expect(events[0]!.driverPayCents).toBe(52_500)
     expect(events[0]!.feeCents).toBe(computePlatformFeeCents(52_500, PLATFORM_FEE_BPS))
-    expect(events[0]!.feeCents).toBe(2_625)
+    // 2% of $525.00, billed to the host on top of the driver's pay.
+    expect(events[0]!.feeCents).toBe(1_050)
   })
 
   it("keeps only the completed-haul payment receipt path open after organization lock", () => {
@@ -194,8 +191,7 @@ describe("host completion confirmation raises the platform fee", () => {
     expect(markSent(fixture)).toMatchObject({ changed: true })
     expect(confirmReceived(fixture)).toMatchObject({
       changed: true,
-      matchesExpected: true,
-      platformFeeOutcome: "not_applicable"
+      matchesExpected: true
     })
   })
 
@@ -217,8 +213,7 @@ describe("host completion confirmation raises the platform fee", () => {
 
     expect(confirmReceived(fixture)).toMatchObject({
       changed: true,
-      matchesExpected: true,
-      platformFeeOutcome: "not_applicable"
+      matchesExpected: true
     })
   })
 
@@ -352,7 +347,7 @@ describe("host completion confirmation raises the platform fee", () => {
     expect(fixture.services.state.platformFeeEvents).toHaveLength(1)
     expect(fixture.services.state.platformFeeEvents[0]).toMatchObject({
       assignmentId: fixture.assignment.id,
-      feeCents: 2_625,
+      feeCents: 1_050,
       occurredAt: completion.trip.completedAt
     })
     expect(
@@ -405,9 +400,7 @@ describe("host completion confirmation raises the platform fee", () => {
     expect(first.platformFeeOutcome).toBe("accrued")
     expect(second.outcome).toBe("already_accrued")
     expect(firstReceipt.changed).toBe(true)
-    expect(firstReceipt.platformFeeOutcome).toBe("not_applicable")
     expect(secondReceipt.changed).toBe(false)
-    expect(secondReceipt.platformFeeOutcome).toBe("not_applicable")
     expect(fixture.services.state.platformFeeEvents).toHaveLength(1)
     expect(fixture.services.state.platformFeeEvents[0]!.id).toBe(firstId)
   })
@@ -482,7 +475,7 @@ describe("host completion confirmation raises the platform fee", () => {
     expect(reconciled).toEqual([
       {
         assignmentId: fixture.assignment.id,
-        eventId: percentageFeeEventId(completed.loadMovementId ?? completed.id),
+        eventId: platformFeeEventId(completed.loadMovementId ?? completed.id),
         outcome: "accrued",
         reason: null
       }
@@ -567,10 +560,9 @@ describe("host completion confirmation raises the platform fee", () => {
     expect(() => markSent(fixture)).toThrow(/confirm the delivered record/i)
   })
 
-  it("still settles a legacy haul whose frozen pay is missing", () => {
+  it("still settles a haul whose frozen pay is missing", () => {
     const fixture = settleableHaul()
-    const { held } = forceSettleableState(fixture, null)
-    held.billingModel = "legacy_percentage"
+    forceSettleableState(fixture, null)
 
     expect(confirmDelivery(fixture).trip.completionStatus).toBe("confirmed")
     expect(fixture.services.state.platformFeeEvents).toHaveLength(0)
@@ -589,8 +581,7 @@ describe("host completion confirmation raises the platform fee", () => {
       .at(-1)
     const metadata = receipt?.metadata as Record<string, unknown> | undefined
 
-    expect(metadata?.platformFeeOutcome).toBe("not_applicable")
-    expect(metadata?.platformFeeEventId).toBeNull()
+    expect(metadata).not.toHaveProperty("platformFeeOutcome")
     expect(metadata).toMatchObject({
       amountCents: 52_500,
       currency: "USD",
@@ -631,7 +622,7 @@ describe("host completion confirmation raises the platform fee", () => {
     expect(fixture.services.state.platformFeeEvents[0]).toMatchObject({
       driverPayCents: 52_500,
       feeBps: PLATFORM_FEE_BPS,
-      feeCents: 2_625
+      feeCents: 1_050
     })
     expect(paymentAudit?.metadata).toMatchObject({
       amountCents: 50_000,

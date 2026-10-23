@@ -5,26 +5,17 @@ const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/
 const IMMUTABLE_HISTORY_TABLES = [
   "auditEvents",
-  "billingAdjustments",
-  "billingPeriodSummaries",
-  "billingPlanDefinitions",
-  "entitlements",
   "hostBillingProfiles",
+  "hostFeeAgreements",
   "hostInvoices",
-  "networkOverageInvoices",
-  "networkUsageEvents",
-  "organizationBillingAccounts",
-  "organizationSubscriptions",
-  "platformFeeEvents",
-  "subscriptionBaseInvoices"
+  "platformFeeEvents"
 ] as const satisfies readonly (keyof LogLoadsDatabaseState)[]
 
 /**
  * Move operational demo activity forward so a fresh bootstrap remains useful.
  *
- * Commercial agreements are legal/audit records, not demo scheduling data. Their
- * effective and acceptance timestamps must remain exactly as seeded or a current
- * agreement can be shifted into the future and incorrectly disable publishing.
+ * Fee agreements, the fee ledger and audit events are legal and financial
+ * records, not demo scheduling data, so their timestamps stay exactly as seeded.
  */
 export function shiftSeedDates(
   state: LogLoadsDatabaseState,

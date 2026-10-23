@@ -1,13 +1,6 @@
 export type NotificationRole = "driver" | "fleet" | "host" | "admin"
 
-const BILLING_ENTITY_TYPES = new Set([
-  "billing_adjustment",
-  "billing_period_summary",
-  "host_invoice",
-  "organization_billing_account",
-  "organization_subscription",
-  "subscription_base_invoice"
-])
+const BILLING_ENTITY_TYPES = new Set(["host_fee_agreement", "host_invoice"])
 
 /**
  * Resolves notification entities to the cockpit that owns the follow-up.
@@ -22,7 +15,6 @@ export function notificationHref(
   if (relatedEntityType && BILLING_ENTITY_TYPES.has(relatedEntityType)) {
     if (role === "admin") return "/admin/billing"
     if (role === "host") return "/host/billing"
-    if (role === "fleet") return "/fleet/billing"
     return "/workspace"
   }
 

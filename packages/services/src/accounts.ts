@@ -4,11 +4,8 @@ import {
   availabilityWindowSchema,
   dispatcherProfileSchema,
   driverProfileSchema,
-  entitlementSchema,
   equipmentCombinationSchema,
   loggingCompanySchema,
-  organizationBillingAccountId,
-  organizationBillingAccountSchema,
   organizationMembershipSchema,
   organizationSchema,
   trailerProfileSchema,
@@ -286,22 +283,6 @@ export function createAccount(state: LogLoadsDatabaseState, rawInput: unknown): 
         userId
       })
     )
-
-    // A host account is an operating identity, not acceptance of commercial
-    // terms. Explicit `unenrolled` prevents both dangerous defaults: silently
-    // reviving the legacy 5% model and silently granting a paid subscription.
-    state.organizationBillingAccounts.push(
-      organizationBillingAccountSchema.parse({
-        activationState: "unenrolled",
-        billingModel: null,
-        createdAt: now,
-        effectiveAt: now,
-        id: organizationBillingAccountId(organizationId),
-        organizationId,
-        subscriptionId: null,
-        updatedAt: now
-      })
-    )
   }
 
   let driverProfileId: string | null = null
@@ -404,31 +385,6 @@ export function createAccount(state: LogLoadsDatabaseState, rawInput: unknown): 
         trailerTypes: input.equipment.trailerType ? [input.equipment.trailerType] : [],
         truckProfileId: truckId,
         truckTypes: [input.equipment.truckType],
-        updatedAt: now
-      })
-    )
-  }
-
-  // Driver Core and Fleet Operations are free capability entitlements. A new
-  // HOST receives no landing_operations entitlement: host billing begins only
-  // after an explicit accepted percentage agreement.
-  if (input.path !== "host") {
-    const entitlementProduct =
-      input.path === "driver" ? "driver_core" : "fleet_operations"
-
-    state.entitlements.push(
-      entitlementSchema.parse({
-        activeLandingLimit: null,
-        activeTruckLimit: input.path === "fleet" ? null : 1,
-        createdAt: now,
-        currentPeriodEndsAt: null,
-        features: [],
-        id: randomUUID(),
-        organizationId,
-        product: entitlementProduct,
-        status: "active",
-        stripeCustomerId: null,
-        stripeSubscriptionId: null,
         updatedAt: now
       })
     )

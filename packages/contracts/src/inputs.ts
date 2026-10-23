@@ -64,11 +64,7 @@ export const createTruckSlotInputSchema = z.object({
 export const requestAssignmentInputSchema = assignmentBaseSchema.omit({
   assignedAt: true,
   billingCommittedAt: true,
-  billingModel: true,
-  billingPlanCodeAtCommitment: true,
-  billingSubscriptionIdAtCommitment: true,
   cancelledAt: true,
-  capacitySource: true,
   completedAt: true,
   createdAt: true,
   driverPaymentReceivedAmountCents: true,

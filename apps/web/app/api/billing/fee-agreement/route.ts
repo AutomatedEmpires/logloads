@@ -1,7 +1,4 @@
-import {
-  organizationRoleCan,
-  PERCENTAGE_V1_TERMS_VERSION
-} from "@logloads/contracts"
+import { organizationRoleCan, organizationTypeCanPublishLoads } from "@logloads/contracts"
 import { NextResponse } from "next/server"
 import { z } from "zod"
 
@@ -11,16 +8,20 @@ import {
   enforceApiRateLimit,
   requireApiActor
 } from "@/lib/api-actor"
-import { percentageEnrollmentAllowed } from "@/lib/percentage-enrollment"
 import { mutateState } from "@/lib/services"
 
+/**
+ * The browser says which terms version it showed. Everything else — the
+ * organization, the rate, the currency and the cadence — comes from the server.
+ */
 const acceptanceRequestSchema = z
   .object({
-    acceptPercentageTerms: z.literal(true)
+    acceptFeeTerms: z.literal(true),
+    termsVersion: z.string().trim().min(1).max(120)
   })
   .strict()
 
-const PERCENTAGE_AGREEMENT_BODY_LIMIT_BYTES = 1_024
+const FEE_AGREEMENT_BODY_LIMIT_BYTES = 1_024
 
 async function readBoundedJsonObject(
   request: Request
@@ -37,9 +38,9 @@ async function readBoundedJsonObject(
   if (
     contentLength !== null &&
     Number.isFinite(contentLength) &&
-    contentLength > PERCENTAGE_AGREEMENT_BODY_LIMIT_BYTES
+    contentLength > FEE_AGREEMENT_BODY_LIMIT_BYTES
   ) {
-    throw new ApiError("The percentage agreement request is too large", 413)
+    throw new ApiError("The fee agreement request is too large", 413)
   }
 
   const reader = request.body?.getReader()
@@ -56,9 +57,9 @@ async function readBoundedJsonObject(
 
       received += value.byteLength
 
-      if (received > PERCENTAGE_AGREEMENT_BODY_LIMIT_BYTES) {
+      if (received > FEE_AGREEMENT_BODY_LIMIT_BYTES) {
         await reader.cancel()
-        throw new ApiError("The percentage agreement request is too large", 413)
+        throw new ApiError("The fee agreement request is too large", 413)
       }
 
       chunks.push(value)
@@ -89,10 +90,10 @@ async function readBoundedJsonObject(
 }
 
 /**
- * Records an authorized host representative's acceptance of the current 5%
- * agreement. The active organization comes only from the authenticated actor;
- * the browser cannot choose an organization, fee, currency, cadence, model, or
- * terms version.
+ * Records an authorized host representative's acceptance of the LogLoads fee
+ * terms: 2% of stated driver pay, billed to the host on top of that pay on
+ * completed loads, invoiced monthly. The organization comes only from the
+ * authenticated actor; the service refuses a terms version that is not current.
  */
 export async function POST(request: Request) {
   try {
@@ -106,54 +107,36 @@ export async function POST(request: Request) {
       !organizationRoleCan(membership.membership.role, "manage_billing")
     ) {
       throw new ApiError(
-        "Only an organization owner, administrator, or billing manager can accept billing terms",
+        "Only an organization owner, administrator, or billing manager can accept the fee terms",
         403
       )
     }
 
-    if (
-      !["landing_source", "destination"].includes(
-        membership.organization.type
-      )
-    ) {
+    if (!organizationTypeCanPublishLoads(membership.organization.type)) {
       throw new ApiError(
-        "The host percentage agreement is only available to host organizations",
+        "Only an organization that publishes loads accepts the LogLoads host fee",
         403
       )
     }
 
-    if (!percentageEnrollmentAllowed(actor.organizationId)) {
-      throw new ApiError(
-        "Host billing activation is not yet enabled for this organization",
-        403
-      )
-    }
+    await enforceApiRateLimit("host-fee-agreement", actor.actorUserId, 5, 60_000)
 
-    await enforceApiRateLimit(
-      "percentage-billing-agreement",
-      actor.actorUserId,
-      5,
-      60_000
-    )
-
-    acceptanceRequestSchema.parse(await readBoundedJsonObject(request))
+    const body = acceptanceRequestSchema.parse(await readBoundedJsonObject(request))
 
     const accepted = await mutateState((draft) =>
-      draft.acceptPercentageBillingAgreement({
-        acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION,
+      draft.acceptHostFeeAgreement({
         actorUserId: actor.actorUserId,
-        organizationId: actor.organizationId
+        organizationId: actor.organizationId,
+        termsVersion: body.termsVersion
       })
     )
 
     return NextResponse.json(
       {
         agreement: {
-          activationState: accepted.account.activationState,
-          billingModel: accepted.account.billingModel,
-          termsVersion:
-            accepted.account.percentageTermsSnapshot?.acceptedTermsVersion ??
-            null
+          acceptedAt: accepted.agreement.acceptedAt,
+          feeBps: accepted.agreement.feeBps,
+          termsVersion: accepted.agreement.termsVersion
         },
         changed: accepted.changed
       },

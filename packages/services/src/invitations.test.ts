@@ -303,7 +303,6 @@ describe("accepting as a brand-new account", () => {
     })
 
     const organizationsBefore = services.state.organizations.length
-    const entitlementsBefore = services.state.entitlements.length
 
     const joined = services.acceptInvitationAsNewAccount({
       email: "NewDriver@NewRiver.example",
@@ -314,7 +313,6 @@ describe("accepting as a brand-new account", () => {
 
     expect(joined.organizationId).toBe(NEW_RIVER)
     expect(services.state.organizations).toHaveLength(organizationsBefore)
-    expect(services.state.entitlements).toHaveLength(entitlementsBefore)
 
     const profile = services.state.profiles.find((candidate) => candidate.id === joined.userId)
     expect(profile).toMatchObject({ email: "newdriver@newriver.example", role: "driver" })

@@ -55,17 +55,14 @@ beforeEach(() => {
   mocks.organizationRoleCan.mockReturnValue(true)
   mocks.getHostPublishingOptions.mockReturnValue({
     accessVocabulary: [{ label: "Steep", value: "steep" }],
-    billingActivationState: "unenrolled",
-    billingModel: null,
     billingProfileStatus: "none",
-    currentPercentageAgreementActive: false,
     dispatcher: { email: "private@example.com", id: "dispatcher-1", name: "Private", phone: "555-0100" },
     equipmentVocabulary: [{ label: "Self loader", value: "self_loader" }],
+    feeAgreementAccepted: false,
     landings: [{ id: "landing-1", label: "Private landing", roadCondition: "good" }],
     loadTypes: ["saw_logs"],
     rates: [{ detail: null, id: "rate-1", label: "$500/load" }],
-    routes: [{ id: "route-1", label: "Private route" }],
-    subscriptionPlanCode: null
+    routes: [{ id: "route-1", label: "Private route" }]
   })
 })
 

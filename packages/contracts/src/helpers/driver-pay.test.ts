@@ -33,11 +33,11 @@ describe("driverPayLabel", () => {
   })
 
   it("never subtracts a platform fee from driver pay", () => {
-    // The fee is charged to the host on top. If this ever rendered 95% of the
-    // stated figure, a driver reading $500 would be paid $475 — the exact
+    // The fee is charged to the host on top. If this ever rendered 98% of the
+    // stated figure, a driver reading $500 would be paid $490 — the exact
     // failure the custody guardrail exists to prevent.
     expect(driverPayLabel(50_000, perTon)).toBe("$500.00")
-    expect(driverPayLabel(50_000, perTon)).not.toBe("$475.00")
+    expect(driverPayLabel(50_000, perTon)).not.toBe("$490.00")
   })
 
   it("honours the rate card currency for the stated figure", () => {
@@ -55,7 +55,7 @@ describe("readFrozenDriverPay", () => {
     })
   })
 
-  it("does not invent missing legacy terms", () => {
+  it("does not invent missing frozen terms", () => {
     expect(readFrozenDriverPay({ currency: "USD" })).toBeNull()
     expect(readFrozenDriverPay({ driverPayCents: 52_500 })).toBeNull()
     expect(readFrozenDriverPay({ currency: "USD", driverPayCents: 0 })).toBeNull()

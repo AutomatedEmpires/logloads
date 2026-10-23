@@ -73,14 +73,10 @@ import { createLoadPosting, parsePublishModes, provisionLoadCapacity } from "./l
 import { organizationOperationallyAccessible } from "./organization-access"
 import {
   accruePlatformFee,
-  assignmentUsesPercentageBilling,
+  assignmentAccruesPlatformFee,
+  freezeHostFeeTerms,
   type AccruePlatformFeeResult
 } from "./platform-fees"
-import {
-  recordCompletedNetworkUsage,
-  resolveAssignmentBillingCommitment,
-  type RecordCompletedNetworkUsageResult
-} from "./subscription-billing"
 import { millUsableByOrganization } from "./destination-access"
 import {
   buildAssignmentRoutePack,
@@ -1454,16 +1450,13 @@ function finalizeCapacityAssignment(
     timestamp,
     selectedEquipment
   )
-  const billingCommitment = resolveAssignmentBillingCommitment(
-    state,
-    {
-      acceptanceSource: options.source,
-      assignmentId: assignment.id,
-      haulerOrganizationId: equipmentCombination.organizationId,
-      hostOrganizationId: load.companyId
-    },
-    timestamp
-  )
+  // The fee binds here, at acceptance: the host's current agreement is frozen
+  // onto the assignment, and the completed load is billed at exactly this rate.
+  // Refused before the first mutation below, like every other acceptance check.
+  const hostFee = freezeHostFeeTerms(state, {
+    hostOrganizationId: load.companyId,
+    termsSnapshot: assignment.termsSnapshot
+  })
   const offeredStatus = assignment.status === "requested"
     ? transitionAssignmentStatus("requested", "offered")
     : assignment.status
@@ -1471,11 +1464,7 @@ function finalizeCapacityAssignment(
   const acceptedAssignment = assignmentSchema.parse({
     ...assignment,
     assignedAt: timestamp,
-    billingCommittedAt: billingCommitment.committedAt,
-    billingModel: billingCommitment.billingModel,
-    billingPlanCodeAtCommitment: billingCommitment.planCode,
-    billingSubscriptionIdAtCommitment: billingCommitment.subscriptionId,
-    capacitySource: billingCommitment.capacitySource,
+    billingCommittedAt: timestamp,
     directOfferId: options.directOfferId ?? assignment.directOfferId ?? null,
     status: acceptedStatus,
     termsSnapshot: {
@@ -1493,40 +1482,11 @@ function finalizeCapacityAssignment(
       estimatedTonsPerLoad: load.estimatedTonsPerLoad ?? null,
       fuelSurchargeCents: rate.fuelSurchargeCents,
       haulerOrganizationId: equipmentCombination?.organizationId ?? null,
-      hostFee:
-        billingCommitment.billingModel === "legacy_percentage" ||
-        billingCommitment.billingModel === "percentage_v1"
-          ? {
-              billingModel: billingCommitment.billingModel,
-              collectionState: "accrues_monthly_in_arrears",
-              currency: billingCommitment.platformFeeCurrency,
-              feeCents: null,
-              providerCollectionState: "feature_gated",
-              rateBps: billingCommitment.platformFeeBps,
-              proposedRateBps: billingCommitment.platformFeeBps
-            }
-          : {
-              collectionState: "not_applicable_subscription_v1",
-              legacyOnly: true,
-              rateBps: null
-            },
+      hostFee,
       hostOrganizationId: load.companyId,
       loadPostingId: load.id,
       loadVersion: load.updatedAt,
       paymentMode: "off_platform",
-      subscriptionBilling: {
-        baseMonthlyPriceCents:
-          billingCommitment.baseMonthlyPriceSnapshotCents,
-        billingModel: billingCommitment.billingModel,
-        capacitySource: billingCommitment.capacitySource,
-        includedAllowance: billingCommitment.includedAllowanceSnapshot,
-        includesDispatchProCapabilities:
-          billingCommitment.includesDispatchProCapabilitiesSnapshot,
-        overageRateCents: billingCommitment.overageRateSnapshotCents,
-        planCode: billingCommitment.planCode,
-        planVersion: billingCommitment.planSnapshot?.version ?? null,
-        subscriptionId: billingCommitment.subscriptionId
-      },
       rateBasis: rate.rateType,
       rateId: rate.id
     },
@@ -1947,9 +1907,8 @@ interface PostingSourceOptions {
  * the dispatcher to route operational notifications, Route Packs carry its
  * contact, and loading slots carry the optional loader profile id.
  *
- * Retirement is checked for the same reason the allowance counts only active
- * landings: otherwise the control is decorative, and the picker would hide the
- * landing while the REST route happily posted work from it anyway.
+ * Retirement is checked because otherwise the control is decorative: the picker
+ * would hide the landing while the REST route happily posted work from it anyway.
  *
  * A foreign id is refused as not-found rather than as forbidden. Distinguishing
  * the two would answer "does this id exist?" for records the caller cannot see,
@@ -2487,7 +2446,7 @@ function accrueFeeAfterPhysicalCompletion(
   actorUserId: string,
   at: string
 ): void {
-  if (!assignmentUsesPercentageBilling(assignment)) {
+  if (!assignmentAccruesPlatformFee(assignment)) {
     return
   }
 
@@ -2524,7 +2483,6 @@ export function progressTripStatus(
   changed: boolean
   trip: TripV2
   event: TripEvent | null
-  usage: RecordCompletedNetworkUsageResult | null
 } {
   const context = getContextForInput(state, input)
   assertOrganizationAction(context, "progress_trip")
@@ -2549,19 +2507,13 @@ export function progressTripStatus(
   // authorization and participation have been proven, an exact completed
   // retry is a no-op: never double-count capacity or duplicate history.
   if (trip.status === "completed" && input.nextStatus === "completed") {
-    const timestamp = nowIso()
-    const usage = recordCompletedNetworkUsage(
-      state,
-      { actorUserId: context.actorUserId, assignmentId: assignment.id },
-      timestamp
-    )
     accrueFeeAfterPhysicalCompletion(
       state,
       assignment,
       context.actorUserId,
-      timestamp
+      nowIso()
     )
-    return { changed: false, event: null, trip, usage }
+    return { changed: false, event: null, trip }
   }
 
   // Cancelling a trip cancels the booking, so it demands the same authority
@@ -2682,15 +2634,6 @@ export function progressTripStatus(
     nextStatus
   })
 
-  const usage =
-    nextStatus === "completed"
-      ? recordCompletedNetworkUsage(
-          state,
-          { actorUserId: context.actorUserId, assignmentId: assignment.id },
-          timestamp
-        )
-      : null
-
   if (nextStatus === "completed") {
     accrueFeeAfterPhysicalCompletion(
       state,
@@ -2700,7 +2643,7 @@ export function progressTripStatus(
     )
   }
 
-  return { changed: true, event, trip: updatedTrip, usage }
+  return { changed: true, event, trip: updatedTrip }
 }
 
 /**
@@ -2851,7 +2794,6 @@ export function settleHaulCompletion(
     | "error"
     | "not_applicable"
   trip: TripV2
-  usage: RecordCompletedNetworkUsageResult | null
 } {
   const context = getContextForInput(state, input)
   assertOrganizationAction(context, "assign_capacity")
@@ -2895,10 +2837,7 @@ export function settleHaulCompletion(
   let platformFee: AccruePlatformFeeResult | null = null
   let platformFeeFailure: string | null = null
 
-  if (
-    input.decision === "confirm" &&
-    assignmentUsesPercentageBilling(assignment)
-  ) {
+  if (input.decision === "confirm" && assignmentAccruesPlatformFee(assignment)) {
     try {
       platformFee = accruePlatformFee(
         state,
@@ -2969,16 +2908,7 @@ export function settleHaulCompletion(
     )
   }
 
-  const usage =
-    input.decision === "confirm"
-      ? recordCompletedNetworkUsage(
-          state,
-          { actorUserId: context.actorUserId, assignmentId: assignment.id },
-          timestamp
-        )
-      : null
-
-  return { platformFee, platformFeeOutcome, trip: result.trip, usage }
+  return { platformFee, platformFeeOutcome, trip: result.trip }
 }
 
 export interface DriverPaymentActionInput {
@@ -3073,7 +3003,6 @@ export function confirmDriverPaymentReceived(
   assignment: Assignment
   changed: boolean
   matchesExpected: boolean
-  platformFeeOutcome: AccruePlatformFeeResult["outcome"] | "error" | "not_applicable"
   receivedPay: { amountCents: number; currency: string }
 } {
   const context = getResidualSettlementContext(state, input)
@@ -3153,19 +3082,15 @@ export function confirmDriverPaymentReceived(
       frozenDriverPay.currency === receivedPay.currency
   )
 
-  // Driver receipt is independent evidence. Percentage revenue was already
-  // frozen when the host confirmed the completed movement; this action neither
-  // creates nor reprices a fee.
-  const platformFeeOutcome = "not_applicable" as const
-
+  // Driver receipt is independent evidence. The LogLoads fee accrued when the
+  // host confirmed the completed movement; this action neither creates nor
+  // reprices a fee.
   if (changed) {
     insertAuditEvent(state, context.actorUserId, "assignment", assignment.id, "driver_payment_received", {
       amountCents: receivedPay.amountCents,
       currency: receivedPay.currency,
       loadPostingId: load.id,
-      matchesExpected,
-      platformFeeEventId: null,
-      platformFeeOutcome
+      matchesExpected
     })
 
     if (assignment.driverPaymentSentByUserId) {
@@ -3187,7 +3112,6 @@ export function confirmDriverPaymentReceived(
     assignment: updated,
     changed,
     matchesExpected,
-    platformFeeOutcome,
     receivedPay
   }
 }
@@ -4204,10 +4128,6 @@ export function listAttentionItems(
     }))
 
   return [...notices, ...lowCapacity]
-}
-
-export function listEntitlements(state: LogLoadsDatabaseState, organizationId = DEFAULT_ORGANIZATION_ID) {
-  return state.entitlements.filter((entitlement) => entitlement.organizationId === organizationId)
 }
 
 export function listPrivateNetworkRelationships(state: LogLoadsDatabaseState, organizationId = DEFAULT_ORGANIZATION_ID) {

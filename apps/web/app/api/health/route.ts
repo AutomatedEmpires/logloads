@@ -2,17 +2,16 @@ import { NextResponse } from "next/server"
 
 import { isDedicatedMediaConfigured } from "@/lib/media-config"
 import { platformFeeCollectionEnabled } from "@/lib/billing"
-import { percentageEnrollmentStatus } from "@/lib/percentage-enrollment"
 import { refreshState, services } from "@/lib/services"
 import { isClerkConfigured } from "@/lib/session"
-import { stripeRuntimeModeProblem } from "@/lib/subscription-stripe"
+import { stripeRuntimeModeProblem } from "@/lib/stripe-account"
 
 export const dynamic = "force-dynamic"
 
 /**
  * Liveness + readiness probe for the single-node runtime. Confirms the operating
  * engine responds and reports coarse readiness without publishing the individual
- * controls, catalog posture, enrollment population, or enrollment fingerprint.
+ * billing controls or any provider identifier.
  * Used by the container/host health check and post-deploy smoke.
  */
 export async function GET() {
@@ -39,21 +38,13 @@ export async function GET() {
   const providerModeAligned = stripeRuntimeModeProblem(process.env) === null
   const expectedProviderModeValid =
     expectedStripeMode === "live" || expectedStripeMode === "test"
-  const percentageBillingInfrastructureReady =
+  const billingConfigured =
     stripeSecretConfigured &&
     stripePublishableConfigured &&
     stripeWebhookConfigured &&
     providerAccountAssertionConfigured &&
     providerModeAligned &&
     expectedProviderModeValid
-  const percentageCollectionEnabled = platformFeeCollectionEnabled(process.env)
-  const percentageEnrollment = percentageEnrollmentStatus(process.env)
-  const percentageBillingReadiness =
-    percentageBillingInfrastructureReady && percentageEnrollment.scopeVerified
-    ? percentageCollectionEnabled
-      ? "collection_configured"
-      : "dark_configured"
-    : "misconfigured"
   const body = {
     app: "logloads",
     status: engineOk ? "ok" : "degraded",
@@ -63,14 +54,9 @@ export async function GET() {
     integrations: {
       auth: isClerkConfigured() ? "clerk" : "dev-session",
       canonicalState: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
-      billing: percentageBillingReadiness,
-      billingPercentageV1: {
-        collection: percentageCollectionEnabled
-          ? "enabled"
-          : "disabled",
-        enrollment: percentageEnrollment.enrollment,
-        readiness: percentageBillingReadiness,
-        scopeVerified: percentageEnrollment.scopeVerified
+      billing: {
+        collection: platformFeeCollectionEnabled(process.env) ? "enabled" : "disabled",
+        readiness: billingConfigured ? "configured" : "misconfigured"
       },
       credentialReview: Boolean(process.env.ANTHROPIC_API_KEY),
       email: Boolean(process.env.RESEND_API_KEY),

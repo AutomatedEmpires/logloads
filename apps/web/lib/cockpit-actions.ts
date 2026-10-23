@@ -51,33 +51,6 @@ export interface ActionResult {
 
 const OK: ActionResult = { error: null, ok: true }
 
-function captureNetworkUsageAnalytics(
-  actorUserId: string,
-  usage: ReturnType<typeof services.recordCompletedNetworkUsage> | null
-): void {
-  if (usage?.outcome !== "recorded" || usage.event.internalBillingTest) {
-    return
-  }
-
-  captureServerEvent("network_usage_recorded", actorUserId, {
-    billingPeriodSummaryId: usage.summary.id,
-    includedUnits: usage.summary.includedUnits,
-    organizationId: usage.event.organizationId,
-    overageUnits: usage.summary.overageUnits,
-    planCode: usage.event.planCode,
-    usedUnits: usage.summary.usedUnits
-  })
-
-  for (const threshold of usage.newlyEmittedThresholds) {
-    captureServerEvent("network_allowance_threshold_reached", actorUserId, {
-      billingPeriodSummaryId: usage.summary.id,
-      organizationId: usage.event.organizationId,
-      planCode: usage.event.planCode,
-      threshold
-    })
-  }
-}
-
 function failure(error: unknown): ActionResult {
   return { error: serializeError(error).error, ok: false }
 }
@@ -281,8 +254,6 @@ export async function progressTripAction(input: {
     if (result.changed) {
       captureServerEvent("trip_progressed", actor.profile.id, { tripId: input.tripId, nextStatus: input.nextStatus })
     }
-
-    captureNetworkUsageAnalytics(actor.profile.id, result.usage)
 
     return OK
   } catch (error) {
@@ -1446,7 +1417,7 @@ export async function settleHaulCompletionAction(input: {
   try {
     const actor = await requireActor()
 
-    const result = await commit(["/driver", "/fleet", "/host"], (draft) =>
+    await commit(["/driver", "/fleet", "/host"], (draft) =>
       draft.settleHaulCompletion({
         actorUserId: actor.profile.id,
         decision: input.decision,
@@ -1455,8 +1426,6 @@ export async function settleHaulCompletionAction(input: {
         tripId: input.tripId
       })
     )
-
-    captureNetworkUsageAnalytics(actor.profile.id, result.usage)
 
     // Event only — the dispute reason stays out of analytics.
     captureServerEvent(
@@ -1535,8 +1504,7 @@ export async function confirmDriverPaymentReceivedAction(input: {
       captureServerEvent("driver_payment_received", actor.profile.id, {
         amountCents,
         assignmentId: input.assignmentId,
-        currency,
-        platformFeeOutcome: result.platformFeeOutcome
+        currency
       })
     }
 

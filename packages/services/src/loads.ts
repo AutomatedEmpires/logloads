@@ -1,13 +1,11 @@
 import {
-  FEE_BPS_SCALE,
-  PERCENTAGE_V1_CUTOVER_AT,
-  PLATFORM_FEE_BPS,
   allocationModeSchema,
   createLoadPostingInputSchema,
-  isCurrentPercentageAgreement,
+  isCurrentHostFeeAgreement,
   loadPostingSchema,
   opportunityCapacitySchema,
   opportunityVisibilityModeSchema,
+  platformFeePercentLabel,
   transitionLoadPostingStatus,
   truckSlotSchema,
   updateLoadPostingInputSchema,
@@ -19,7 +17,6 @@ import {
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import {
-  assertCondition,
   assertFound,
   createUuid,
   DomainRefusalError,
@@ -116,16 +113,18 @@ function scheduleDates(entity: LoadPosting, fallbackDate: string): string[] {
 // ── The publish gate ──────────────────────────────────────────────────────────
 
 /**
- * The rate as a host reads it, derived from the constant they will be charged at.
- * A "5%" typed into a sentence is a claim about money that stops being true the
- * moment the constant moves, and these sentences are the first place a host meets
- * the fee.
+ * The rate as a host reads it, derived from the constant they will be charged at,
+ * so these sentences can never quote a rate the host is not charged.
  */
-const FEE_PERCENT_LABEL = `${(PLATFORM_FEE_BPS / FEE_BPS_SCALE) * 100}%`
+const FEE_PERCENT_LABEL = platformFeePercentLabel()
+
+const FEE_TERMS_REFUSAL = `This organization has not accepted the LogLoads fee terms, so this work cannot be published. LogLoads bills the host ${FEE_PERCENT_LABEL} of the driver pay it states on each load — on top of that pay, never out of it, and only once the load completes. Posting costs nothing. Accept the fee terms in Billing, then publish.`
+
+const DRIVER_PAY_REFUSAL = `State what this work pays a driver per truckload before publishing it. That figure is what a driver is promised, and it is the base LogLoads bills the host ${FEE_PERCENT_LABEL} on — on top of driver pay, never out of it.`
 
 /**
- * Whether a percentage-billed host in each card state may publish work, and
- * what to tell them when they may not. `null` means publishing is allowed.
+ * Whether a host in each card state may publish work, and what to tell them when
+ * they may not. `null` means publishing is allowed.
  *
  * An exhaustive record rather than a `status !== "attached"` check: adding a
  * state to `hostBillingProfileStatusSchema` will not compile until somebody
@@ -134,7 +133,7 @@ const FEE_PERCENT_LABEL = `${(PLATFORM_FEE_BPS / FEE_BPS_SCALE) * 100}%`
  * Each refusal names the requirement AND what to do about it, because a host
  * stopped at the last step of the builder by "not allowed" has been told
  * nothing. They also state the rule in full, since this is the moment a host
- * first meets the fee: charged on top of driver pay, monthly, on completed
+ * first meets the fee: billed on top of driver pay, monthly, on completed
  * truckloads only, and never taken out of what the driver is paid.
  *
  * The stored failure detail is deliberately not quoted here. It is a card
@@ -143,23 +142,19 @@ const FEE_PERCENT_LABEL = `${(PLATFORM_FEE_BPS / FEE_BPS_SCALE) * 100}%`
  */
 const BILLING_STATE_PUBLISH_REFUSAL: Record<HostBillingProfileStatus, string | null> = {
   attached: null,
-  failed: `The payment card on file for this organization was declined, so this work cannot be published. LogLoads bills the host ${FEE_PERCENT_LABEL} of stated driver pay monthly, and only on truckloads that complete. Attach a working card to this organization's billing profile, then publish.`,
-  none: `This organization has no payment card on file, so this work cannot be published. LogLoads charges the host ${FEE_PERCENT_LABEL} of stated driver pay — on top of that pay, billed monthly, and only on truckloads that actually complete. Posting costs nothing, and nothing is ever taken out of driver pay. Attach a card to this organization's billing profile, then publish.`
+  failed: `The payment card on file for this organization was declined, so this work cannot be published. LogLoads bills the host ${FEE_PERCENT_LABEL} of stated driver pay monthly, and only on truckloads that complete. Attach a working card in Billing, then publish.`,
+  none: `This organization has no payment card on file, so this work cannot be published. LogLoads bills the host ${FEE_PERCENT_LABEL} of stated driver pay — on top of that pay, billed monthly, and only on truckloads that actually complete. Posting costs nothing, and nothing is ever taken out of driver pay. Attach a card in Billing, then publish.`
 }
 
 /**
- * The operating promise, exact current percentage agreement, and collection
- * readiness that have to be true before work reaches the network.
+ * What has to be true before work reaches the network: the host accepted the
+ * current LogLoads fee terms, the work states what it pays a driver, and the host
+ * has exactly one card on file that the fee can be charged to.
  *
  * WHY IN THE SERVICE. Both a server action and `POST /api/loads` publish work,
  * and a field marked required in the builder guards neither: a bare REST body
  * would otherwise mint work that can never be billed. This is the only
  * chokepoint both callers pass through.
- *
- * Driver pay remains required in every model because it is the driver's accepted
- * operating promise. Percentage publication also requires one usable attached
- * card. Historical subscription records remain readable and collectible, but
- * after the percentage-v1 cutover they do not authorize new publication.
  *
  * WHY A DRAFT IS EXEMPT. A draft is not on the network and accrues nothing.
  * A draft becomes work through `provisionLoadCapacity`, which calls this, so a
@@ -169,98 +164,33 @@ const BILLING_STATE_PUBLISH_REFUSAL: Record<HostBillingProfileStatus, string | n
  * one JSONB document written under a compare-and-swap, so a check made outside
  * the mutation callback is a check a retry walks straight past.
  */
-export function assertHostCanPublish(
-  state: LogLoadsDatabaseState,
-  load: LoadPosting,
-  at = nowIso(),
-  visibilityMode?: OpportunityVisibilityMode
-): void {
-  const billingAccounts = state.organizationBillingAccounts.filter(
-    (account) =>
-      account.organizationId === load.companyId &&
-      Date.parse(account.effectiveAt) <= Date.parse(at)
+export function assertHostCanPublish(state: LogLoadsDatabaseState, load: LoadPosting): void {
+  const agreements = state.hostFeeAgreements.filter(
+    (agreement) => agreement.organizationId === load.companyId
   )
 
-  if (billingAccounts.length > 1) {
+  // AT MOST ONE, asserted rather than assumed: this document has no unique
+  // index, and with two agreements array order would decide which terms bind.
+  if (agreements.length > 1) {
     throw new Error(
-      `This organization has ${billingAccounts.length} billing accounts, so LogLoads cannot determine which commercial model applies. Publishing is blocked until that conflict is repaired.`
+      `This organization has ${agreements.length} fee agreements on file, so LogLoads cannot tell which terms apply. Publishing is blocked until that is resolved.`
     )
   }
-  const billingAccount = billingAccounts[0]
-  const usesLegacyPercentage =
-    billingAccount?.activationState === "legacy" &&
-    billingAccount.billingModel === "legacy_percentage"
-  const usesCurrentPercentage = isCurrentPercentageAgreement(billingAccount)
-  const usesPercentage = usesLegacyPercentage || usesCurrentPercentage
 
-  assertCondition(
-    Boolean(billingAccount),
-    "This organization has not accepted the LogLoads fee agreement. Accept it in Billing, then publish; posting itself is free."
-  )
-
-  assertCondition(
-    Date.parse(at) < Date.parse(PERCENTAGE_V1_CUTOVER_AT) ||
-      usesCurrentPercentage,
-    "This organization must accept the current LogLoads fee agreement before publishing new work. Historical subscription records remain available, but subscriptions no longer authorize new activity."
-  )
-
-  const effectiveVisibility =
-    visibilityMode ??
-    state.opportunityCapacities.find(
-      (capacity) => capacity.loadPostingId === load.id
-    )?.visibilityMode
-  if (!usesPercentage && billingAccount?.subscriptionId) {
-    const subscriptions = state.organizationSubscriptions.filter(
-      (subscription) => subscription.id === billingAccount.subscriptionId
-    )
-
-    assertCondition(
-      subscriptions.length === 1 &&
-        subscriptions[0]?.organizationId === load.companyId &&
-        subscriptions[0]?.billingModel === billingAccount.billingModel,
-      `This organization's subscription billing account is cross-wired or incomplete, so publication is blocked.`
-    )
-    if (subscriptions[0]?.planCode === "dispatch_pro") {
-      assertCondition(
-        effectiveVisibility === "private_network" ||
-          effectiveVisibility === "direct_offer",
-        "Dispatch Pro publishes only to private-network partners or direct offers. Choose a Network plan before publishing public or LogLoads Network work."
-      )
-    }
+  if (!isCurrentHostFeeAgreement(agreements[0])) {
+    throw new DomainRefusalError(FEE_TERMS_REFUSAL)
   }
-  if (billingAccount?.activationState === "suspended") {
-    assertCondition(
-      effectiveVisibility === "private_network" ||
-        effectiveVisibility === "direct_offer",
-      "New public or LogLoads Network publication is paused for this organization. Private-network and direct-offer capacity remain available."
-    )
-  }
-  assertCondition(
-    usesPercentage ||
-      billingAccount?.activationState === "active" ||
-      billingAccount?.activationState === "suspended",
-    "This organization has not accepted the LogLoads fee agreement yet. Accept it in Billing, then publish; posting itself is free."
-  )
 
-  assertCondition(
-    typeof load.driverPayCents === "number" && load.driverPayCents > 0,
-    usesPercentage
-      ? `State what this work pays a driver per truckload before publishing it. That figure is what a driver is promised, and it is the base LogLoads charges ${FEE_PERCENT_LABEL} on — on top of driver pay, never out of it.`
-      : "State what this work pays a driver per truckload before publishing it. Posting itself is free, but the driver's accepted operating promise must be explicit."
-  )
-
-  if (!usesPercentage) {
-    return
+  if (typeof load.driverPayCents !== "number" || load.driverPayCents <= 0) {
+    throw new DomainRefusalError(DRIVER_PAY_REFUSAL)
   }
 
   const profiles = state.hostBillingProfiles.filter((entry) => entry.organizationId === load.companyId)
 
-  // AT MOST ONE, asserted rather than assumed. This document has no unique index,
-  // so two profiles for one organization is a state the store itself cannot
-  // refuse — and with one attached and one not, `find` would let array order
-  // decide whether a host publishes work that gets billed to a card nobody has
-  // identified. Failing closed costs a posting; failing open bills the wrong card
-  // or nobody at all.
+  // AT MOST ONE, asserted rather than assumed. With one attached profile and one
+  // not, `find` would let array order decide whether a host publishes work that
+  // gets billed to a card nobody has identified. Failing closed costs a posting;
+  // failing open bills the wrong card or nobody at all.
   if (profiles.length > 1) {
     throw new Error(
       `This organization has ${profiles.length} billing profiles on file, so LogLoads cannot tell which card a completed truckload would be billed to. Publishing is blocked until that is resolved. Nothing has been charged and no work has been lost.`
@@ -323,7 +253,7 @@ export function provisionLoadCapacity(
   // Publishing is what makes work billable, so the gate lives here: this
   // function mints the capacity for a load created live AND for a draft opened
   // later, and there is no third route onto the network.
-  assertHostCanPublish(state, entity, timestamp, parsedVisibility)
+  assertHostCanPublish(state, entity)
   const dates = scheduleDates(entity, timestamp.slice(0, 10))
 
   if (dates.length === 0) {
@@ -408,12 +338,7 @@ export function createLoadPosting(
   // that call is what covers the draft-opened-later path, and the repeat costs a
   // lookup.
   if (modes) {
-    assertHostCanPublish(
-      state,
-      entity,
-      timestamp,
-      modes.visibilityMode
-    )
+    assertHostCanPublish(state, entity)
   }
 
   state.loadPostings.push(entity)
@@ -455,14 +380,7 @@ export function updateLoadPosting(
     (!LIVE_STATUSES.has(existing.status) && LIVE_STATUSES.has(updated.status)) ||
     (LIVE_STATUSES.has(existing.status) && moneyChanged)
   ) {
-    assertHostCanPublish(
-      state,
-      updated,
-      updated.updatedAt,
-      state.opportunityCapacities.find(
-        (capacity) => capacity.loadPostingId === updated.id
-      )?.visibilityMode
-    )
+    assertHostCanPublish(state, updated)
   }
 
   state.loadPostings = state.loadPostings.map((load) => (load.id === updated.id ? updated : load))

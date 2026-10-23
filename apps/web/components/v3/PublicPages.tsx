@@ -16,9 +16,11 @@ import { payHeadline, presentPay } from "@/lib/pay-display"
 import type { ResidualSettlementItem } from "@/lib/residual-settlement-data"
 
 import {
+  HOST_FEE_EXAMPLE,
+  HOST_FEE_PERCENT,
   legalPages,
   loadProductLabel,
-  pricingPlans,
+  pricingAudiences,
   publicLoadHref,
   publicSignUpCopy,
   slugify,
@@ -107,7 +109,7 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
           </div>
         </section>
         <section className="promise-strip" aria-label="LogLoads promise">
-          <div><strong>Drivers are free forever.</strong><span>No subscription. No fee hidden from your pay.</span></div>
+          <div><strong>Drivers are free forever.</strong><span>LogLoads charges drivers nothing. No fee hidden from your pay.</span></div>
           <div><strong>Know the match before you request.</strong><span>Truck, trailer, equipment, schedule, and capacity checked together.</span></div>
           <div><strong>One schedule. One next action.</strong><span>Requested, booked, moving, and completed work stays clear.</span></div>
         </section>
@@ -133,7 +135,7 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
           <div className="feature-grid">
             <article><span>Driver accounts</span><h3>Drivers &amp; owner-operators</h3><p>See available work, know whether it fits, request it, and follow the schedule from a phone.</p><Link className="text-link" href="/sign-up?path=driver">Create a driver profile</Link></article>
             <article><span>Free fleet dispatch</span><h3>Dispatchers &amp; fleets</h3><p>Keep trucks, drivers, requests, schedules, and exceptions in one operating view without reducing driver pay.</p><Link className="text-link" href="/sign-up?path=fleet">Set up dispatch</Link></article>
-            <article><span>5% per completed load</span><h3>Hosts</h3><p>Create a free operating workspace and prepare landing work. Live publication requires separate pilot approval; approved completed work creates the 5% fee on top of stated driver pay.</p><Link className="text-link" href="/pricing">See the exact math</Link></article>
+            <article><span>{HOST_FEE_PERCENT} per completed load</span><h3>Hosts</h3><p>Create a free operating workspace and prepare landing work. Each completed load bills the host {HOST_FEE_PERCENT} of the driver pay it stated, on top of that pay.</p><Link className="text-link" href="/pricing">See the exact math</Link></article>
           </div>
         </section>
         <section className="loads-preview">
@@ -324,20 +326,20 @@ export function StoryPage({ page }: { page: PublicStoryPage }) {
   )
 }
 
-type PricingPlan = (typeof pricingPlans)[number]
+type PricingAudience = (typeof pricingAudiences)[number]
 
 function PricingCard({
-  plan,
+  audience,
   variant
 }: {
-  plan: PricingPlan
+  audience: PricingAudience
   variant: "driver" | "fleet" | "host"
 }) {
   const isFree = variant !== "host"
   const badge = variant === "driver"
     ? <Badge tone="success">Always free</Badge>
     : variant === "fleet"
-      ? <Badge tone="success">No subscription</Badge>
+      ? <Badge tone="success">Always free</Badge>
       : <Badge tone="info">One host rate</Badge>
 
   return (
@@ -345,21 +347,14 @@ function PricingCard({
       className={`pricing-card pricing-card--${variant}${isFree ? " pricing-card--free" : ""}`}
     >
       <div className="pricing-card__topline">
-        <p className="pricing-card__audience">{plan.audience}</p>
+        <p className="pricing-card__audience">{audience.audience}</p>
         {badge}
       </div>
-      <h3>{plan.name}</h3>
-      <strong className="pricing-card__price">{plan.price}</strong>
-      <p className="pricing-card__summary">{plan.summary}</p>
-      {plan.included || plan.overage || plan.commitment ? (
-        <dl className="pricing-card__facts">
-          {plan.included ? <div><dt>Included</dt><dd>{plan.included}</dd></div> : null}
-          {plan.overage ? <div><dt>Additional usage</dt><dd>{plan.overage}</dd></div> : null}
-          {plan.commitment ? <div><dt>Commitment</dt><dd>{plan.commitment}</dd></div> : null}
-        </dl>
-      ) : null}
+      <h3>{audience.name}</h3>
+      <strong className="pricing-card__price">{audience.price}</strong>
+      <p className="pricing-card__summary">{audience.summary}</p>
       <ul className="pricing-card__features">
-        {plan.features.map((feature) => (
+        {audience.features.map((feature) => (
           <li key={feature}>
             <Icon aria-hidden name="status.assigned" size={17} />
             <span>{feature}</span>
@@ -369,23 +364,23 @@ function PricingCard({
       <div className="pricing-card__footer">
         <Link
           className={isFree ? "action-link" : "action-link action-link--secondary"}
-          href={plan.cta.href}
+          href={audience.cta.href}
         >
-          {plan.cta.label}
+          {audience.cta.label}
         </Link>
-        {plan.note ? <p className="pricing-card__note">{plan.note}</p> : null}
+        {audience.note ? <p className="pricing-card__note">{audience.note}</p> : null}
       </div>
     </article>
   )
 }
 
 export function PricingPage() {
-  const driverPlan = pricingPlans.find((plan) => plan.name === "Driver")
-  const fleetPlan = pricingPlans.find((plan) => plan.name === "Fleet Free")
-  const hostPlan = pricingPlans.find((plan) => plan.name === "Host")
+  const driver = pricingAudiences.find((audience) => audience.name === "Driver")
+  const fleet = pricingAudiences.find((audience) => audience.name === "Fleet")
+  const host = pricingAudiences.find((audience) => audience.name === "Host")
 
-  if (!driverPlan || !fleetPlan || !hostPlan || pricingPlans.length !== 3) {
-    throw new Error("The fixed public pricing catalog is incomplete.")
+  if (!driver || !fleet || !host || pricingAudiences.length !== 3) {
+    throw new Error("The public pricing page needs exactly the driver, fleet, and host cards.")
   }
 
   return (
@@ -393,15 +388,15 @@ export function PricingPage() {
       <main className="page-main pricing-page">
         <PageIntro
           eyebrow="Straightforward pricing"
-          title="Drivers and fleets stay free. Hosts pay 5% on top."
-          body="Drivers and fleet workspaces use LogLoads without a subscription. The host states what one load pays the driver and remains obligated to pay that amount in full, directly to the driver. When the load completes, LogLoads adds a platform fee equal to 5% of that stated pay to the host's cost."
+          title={`Drivers and fleets stay free. Hosts pay ${HOST_FEE_PERCENT} on top.`}
+          body={`Drivers and fleets pay LogLoads nothing. The host states what one load pays the driver and remains obligated to pay that amount in full, directly to the driver. When the load completes, LogLoads bills the host a platform fee equal to ${HOST_FEE_PERCENT} of that stated pay, on top of it.`}
         />
 
         <aside className="pricing-availability" role="note">
-          <Icon aria-hidden name="status.warning" size={24} />
+          <Icon aria-hidden name="load.pay" size={24} />
           <div>
-            <strong>Host pilot enrollment is not self-serve.</strong>
-            <p>Create a free workspace to prepare operating records. Live publication remains locked until LogLoads approves the exact pilot organization, its authorized representative accepts the current agreement, and Billing is ready.</p>
+            <strong>Creating a host workspace is free.</strong>
+            <p>Prepare landings, lanes, and drafts at no charge. Before publishing live work, an authorized host representative accepts the {HOST_FEE_PERCENT} host fee terms and attaches a card in Billing.</p>
             <Link className="text-link" href="/pilot">Explore the complete product before setup</Link>
           </div>
         </aside>
@@ -409,13 +404,13 @@ export function PricingPage() {
         <section aria-labelledby="pricing-start-title" className="pricing-lane pricing-lane--baseline">
           <div className="pricing-lane__intro">
             <p className="eyebrow">Three clear paths</p>
-            <h2 id="pricing-start-title">No software subscription. No monthly minimum. No tiers.</h2>
-            <p>Drivers and fleet workspaces use LogLoads for free. Posting, searching, requesting, and coordinating do not create a fee. A host fee is earned only when a load completes.</p>
+            <h2 id="pricing-start-title">One fee, paid by the host. No monthly fee. No minimum.</h2>
+            <p>Drivers and fleets use LogLoads for free. Posting, searching, requesting, and coordinating do not create a fee. A host fee is earned only when a load completes, whoever&apos;s trucks haul it.</p>
           </div>
           <div className="pricing-grid pricing-grid--baseline">
-            <PricingCard plan={driverPlan} variant="driver" />
-            <PricingCard plan={fleetPlan} variant="fleet" />
-            <PricingCard plan={hostPlan} variant="host" />
+            <PricingCard audience={driver} variant="driver" />
+            <PricingCard audience={fleet} variant="fleet" />
+            <PricingCard audience={host} variant="host" />
           </div>
         </section>
 
@@ -426,9 +421,9 @@ export function PricingPage() {
               <h2>The exact math.</h2>
             </div>
             <p>
-              If the host states that one load pays the driver $500, the driver
-              receives $500. The LogLoads fee is $25, so the host&apos;s total cost is
-              $525. Nothing comes out of the driver&apos;s pay.
+              If the host states that one load pays the driver {HOST_FEE_EXAMPLE.driverPay}, the driver
+              receives {HOST_FEE_EXAMPLE.driverPay}. The LogLoads fee is {HOST_FEE_EXAMPLE.fee}, so the host&apos;s total cost is
+              {" "}{HOST_FEE_EXAMPLE.hostTotal}. Nothing comes out of the driver&apos;s pay.
             </p>
           </article>
           <article className="pricing-explainer">
@@ -437,7 +432,7 @@ export function PricingPage() {
               <h2>What counts—and what does not.</h2>
             </div>
             <p>
-              One completed physical load creates one percentage fee. Drafts,
+              One completed physical load creates one {HOST_FEE_PERCENT} fee. Drafts,
               postings, searches, requests, unaccepted offers, cancellations before
               completion, and duplicates do not. Driver compensation remains payable
               directly by the host and is never reduced by a LogLoads charge.
@@ -458,8 +453,8 @@ export function LegalPage({ content }: { content: LegalPageContent }) {
         <aside className="legal-boundary-summary">
           <strong>Product boundary</strong>
           <p>
-            LogLoads coordinates timber hauling work. Hosts pay LogLoads a 5%
-            platform fee on top of the driver pay stated for each completed load.
+            LogLoads coordinates timber hauling work. Hosts pay LogLoads a {HOST_FEE_PERCENT}
+            {" "}platform fee on top of the driver pay stated for each completed load; drivers and fleets pay nothing.
             LogLoads does not carry freight or receive, escrow, deduct from, or
             distribute transportation compensation.
           </p>
@@ -789,7 +784,7 @@ export function OnboardingPage({
           title={title}
           body={
             mode === "host"
-              ? "Three short steps create your operating workspace. Creating an account does not charge you. Before publishing live work, an authorized host accepts the 5% completed-load agreement and attaches a card from Billing."
+              ? `Three short steps create your operating workspace. Creating an account does not charge you. Before publishing live work, an authorized host accepts the ${HOST_FEE_PERCENT} host fee terms and attaches a card from Billing.`
               : "Three short steps. Then LogLoads opens the right first screen for your work."
           }
         />
@@ -860,7 +855,7 @@ export function ContactPage({
         <PageIntro
           eyebrow="Contact"
           title="Talk with LogLoads."
-          body="Questions about preparing a host pilot workspace, the 5% completed-load fee, driver access, verification, integrations, or a season of timber to move? Send the context we need to help."
+          body={`Questions about preparing a host workspace, the ${HOST_FEE_PERCENT} completed-load fee, driver access, verification, integrations, or a season of timber to move? Send the context we need to help.`}
         />
         <div className="contact-layout">
           <ContactForm initialInterest={initialInterest} key={initialInterest} />
@@ -870,15 +865,15 @@ export function ContactPage({
               <p>Your operating region, roughly how many trucks or landings you run, and what you are trying to get done. It helps us give a useful first answer.</p>
             </section>
             <section>
-              <h2>Host pilot access</h2>
-              <p>Workspace creation is free. Live publication and Network enrollment require separate approval for the exact pilot organization. Creating an account does not activate billing.</p>
+              <h2>Host access</h2>
+              <p>Workspace creation is free. Live publication starts once an authorized host representative accepts the fee terms and attaches a card. Creating an account does not charge anything.</p>
             </section>
             <section>
               <h2>Simple host pricing</h2>
               <p>
-                There is no posting fee, subscription, monthly minimum, tier,
-                allowance, or overage. Hosts pay LogLoads 5% of the stated driver
-                pay for each completed load, added on top.
+                There is no posting fee, monthly fee, or minimum. Hosts pay
+                LogLoads {HOST_FEE_PERCENT} of the stated driver pay for each completed load,
+                added on top. Drivers and fleets pay nothing.
               </p>
             </section>
           </aside>

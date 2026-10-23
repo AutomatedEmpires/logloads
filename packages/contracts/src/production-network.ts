@@ -482,21 +482,6 @@ export const tripInspectionSchema = z.object({
   createdAt: timestampSchema
 })
 
-export const entitlementSchema = z.object({
-  id: uuidSchema,
-  organizationId: uuidSchema,
-  product: z.enum(["driver_core", "fleet_operations", "landing_operations", "enterprise"]),
-  status: z.enum(["trialing", "active", "past_due", "cancelled", "comped"]),
-  features: z.array(z.string()).default([]),
-  activeTruckLimit: z.number().int().positive().optional().nullable(),
-  activeLandingLimit: z.number().int().positive().optional().nullable(),
-  stripeCustomerId: z.string().optional().nullable(),
-  stripeSubscriptionId: z.string().optional().nullable(),
-  currentPeriodEndsAt: optionalTimestampSchema,
-  createdAt: timestampSchema,
-  updatedAt: timestampSchema
-})
-
 export const directOfferSchema = z.object({
   id: uuidSchema,
   loadPostingId: uuidSchema,
@@ -552,7 +537,6 @@ export type TripReview = z.infer<typeof tripReviewSchema>
 export type TripDocument = z.infer<typeof tripDocumentSchema>
 export type TripInspection = z.infer<typeof tripInspectionSchema>
 export type TripInspectionItem = z.infer<typeof tripInspectionItemSchema>
-export type Entitlement = z.infer<typeof entitlementSchema>
 export type DirectOffer = z.infer<typeof directOfferSchema>
 export type FutureAvailability = z.infer<typeof futureAvailabilitySchema>
 

@@ -1,24 +1,12 @@
 import "server-only"
 
 import {
-  isCurrentPercentageAgreement,
+  isCurrentHostFeeAgreement,
   type HostBillingProfile,
+  type HostFeeAgreement,
   type HostInvoice,
   type PlatformFeeEvent
 } from "@logloads/contracts"
-
-interface HostCardEligibilityAccount {
-  activationState?: string
-  billingModel: string | null
-  organizationId: string
-  percentageTermsSnapshot?: {
-    acceptedTermsVersion: string
-    billingCadence?: string
-    currency?: string
-    feeBps?: number
-  } | null
-  subscriptionId?: string | null
-}
 
 /**
  * The minimum canonical ledger needed to decide whether opening Stripe's card
@@ -29,16 +17,11 @@ export interface HostCardEligibilitySource {
     HostBillingProfile,
     "organizationId" | "stripeCustomerId"
   >[]
+  hostFeeAgreements: readonly Pick<
+    HostFeeAgreement,
+    "feeBps" | "organizationId" | "termsVersion"
+  >[]
   hostInvoices: readonly Pick<HostInvoice, "id" | "organizationId" | "status">[]
-  organizationBillingAccounts?: readonly HostCardEligibilityAccount[]
-  organizationSubscriptions?: readonly {
-    billingModel?: string
-    id: string
-    internalBillingTest?: boolean
-    organizationId: string
-    stripeCustomerId?: string | null
-    stripeSubscriptionId?: string | null
-  }[]
   platformFeeEvents: readonly Pick<
     PlatformFeeEvent,
     "invoiceId" | "organizationId" | "status"
@@ -48,11 +31,7 @@ export interface HostCardEligibilitySource {
 export type HostCardSetupEligibility =
   | {
       allowed: true
-      basis:
-        | "accepted_percentage_v1"
-        | "preserved_legacy_agreement"
-        | "preserved_subscription_agreement"
-        | "unsettled_obligation"
+      basis: "accepted_fee_agreement" | "unsettled_obligation"
       existingCustomerId: string | null
       message: null
       profileCustomerId: string | null
@@ -64,45 +43,28 @@ export type HostCardSetupEligibility =
     }
 
 const AGREEMENT_REQUIRED_MESSAGE =
-  "Payment method setup opens only after this workspace is approved for percentage billing and accepts the current agreement, or when a preserved obligation still requires collection."
-
-function preservedSubscriptionAgreement(
-  account: HostCardEligibilityAccount
-): boolean {
-  return (
-    typeof account.subscriptionId === "string" &&
-    account.subscriptionId.length > 0 &&
-    account.billingModel !== null &&
-    account.billingModel !== "legacy_percentage" &&
-    account.billingModel !== "percentage_v1" &&
-    account.percentageTermsSnapshot === null &&
-    (account.activationState === "configured_dark" ||
-      account.activationState === "active" ||
-      account.activationState === "suspended")
-  )
-}
+  "Accept the LogLoads fee terms before adding a payment card. The card is what the monthly 2% host fee is charged to."
 
 /**
- * Whether this host may transmit a new payment method to Stripe.
+ * Whether this host may send a new payment method to Stripe.
  *
- * New percentage activity requires both the exact accepted agreement and the
- * server-owned rollout allowlist. Frozen legacy agreements and unsettled ledger
- * obligations remain serviceable so tightening the new-enrollment gate cannot
- * strand money the parties already committed to.
+ * A card is collected for exactly two reasons: the host accepted the current fee
+ * terms, so the fee on its future loads will be charged to the card; or the host
+ * still owes fees or bills that need a card to be settled. Anything else would be
+ * collecting a card nothing can be charged to.
  */
 export function hostCardSetupEligibility(
   source: HostCardEligibilitySource,
-  organizationId: string,
-  percentageEnrollmentAllowed: boolean
+  organizationId: string
 ): HostCardSetupEligibility {
   const profiles = (source.hostBillingProfiles ?? []).filter(
     (profile) => profile.organizationId === organizationId
   )
-  const accounts = (source.organizationBillingAccounts ?? []).filter(
-    (account) => account.organizationId === organizationId
+  const agreements = source.hostFeeAgreements.filter(
+    (agreement) => agreement.organizationId === organizationId
   )
 
-  if (accounts.length > 1 || profiles.length > 1) {
+  if (agreements.length > 1 || profiles.length > 1) {
     return {
       allowed: false,
       basis: "conflicting_billing_records",
@@ -111,67 +73,13 @@ export function hostCardSetupEligibility(
     }
   }
 
-  const account = accounts[0]
   const profileCustomerId = profiles[0]?.stripeCustomerId ?? null
 
-  if (
-    account &&
-    percentageEnrollmentAllowed &&
-    isCurrentPercentageAgreement(account)
-  ) {
+  if (isCurrentHostFeeAgreement(agreements[0])) {
     return {
       allowed: true,
-      basis: "accepted_percentage_v1",
+      basis: "accepted_fee_agreement",
       existingCustomerId: profileCustomerId,
-      message: null,
-      profileCustomerId
-    }
-  }
-
-  if (
-    account?.activationState === "legacy" &&
-    account.billingModel === "legacy_percentage" &&
-    account.subscriptionId === null &&
-    account.percentageTermsSnapshot === null
-  ) {
-    return {
-      allowed: true,
-      basis: "preserved_legacy_agreement",
-      existingCustomerId: profileCustomerId,
-      message: null,
-      profileCustomerId
-    }
-  }
-
-  if (account && preservedSubscriptionAgreement(account)) {
-    const subscriptions = (source.organizationSubscriptions ?? []).filter(
-      (subscription) => subscription.id === account.subscriptionId
-    )
-    const subscription = subscriptions[0]
-
-    if (
-      subscriptions.length !== 1 ||
-      !subscription ||
-      subscription.internalBillingTest === true ||
-      subscription.organizationId !== organizationId ||
-      subscription.billingModel !== account.billingModel ||
-      !subscription.stripeCustomerId ||
-      !subscription.stripeSubscriptionId ||
-      (profileCustomerId !== null &&
-        profileCustomerId !== subscription.stripeCustomerId)
-    ) {
-      return {
-        allowed: false,
-        basis: "conflicting_billing_records",
-        message:
-          "Payment method setup is unavailable because this workspace's preserved billing record could not be verified. Contact LogLoads support before continuing."
-      }
-    }
-
-    return {
-      allowed: true,
-      basis: "preserved_subscription_agreement",
-      existingCustomerId: profileCustomerId ?? subscription.stripeCustomerId,
       message: null,
       profileCustomerId
     }

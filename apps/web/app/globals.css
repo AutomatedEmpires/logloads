@@ -1277,7 +1277,6 @@ dd { margin: 0; font-weight: 900; text-align: right; }
   .load-card-v3,
   .truck-card-v3,
   .admin-queue,
-  .plan-card,
   .thread-item,
   .dispatch-card,
   .choice-grid > *,
@@ -1320,8 +1319,7 @@ dd { margin: 0; font-weight: 900; text-align: right; }
   :focus-visible { outline: 3px solid Highlight; box-shadow: none; }
   [aria-current="page"],
   [aria-pressed="true"],
-  .radio-card:has(input:checked),
-  .plan-card--selectable:has(input:checked) { outline: 2px solid Highlight; }
+  .radio-card:has(input:checked) { outline: 2px solid Highlight; }
   .brand-mark { border: 2px solid CanvasText; }
   .first-run-panel,
   .first-run-panel__state { border-color: CanvasText; }
@@ -1356,9 +1354,6 @@ a.load-card-v3:hover,
   transform: translateY(-2px);
   box-shadow: var(--shadow-2);
 }
-
-.plan-card { box-shadow: var(--shadow-1); }
-.plan-card:hover { box-shadow: var(--shadow-2); }
 
 .quick-reply:hover { background: var(--pine); color: #fff; border-color: var(--pine); }
 .quick-reply:active { transform: scale(0.96); }

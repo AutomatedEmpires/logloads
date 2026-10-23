@@ -9,11 +9,9 @@ export function createInMemoryDatabase(seed: LogLoadsDatabaseState = seedDatabas
 
 /**
  * The document a real deployment starts from. It holds no organizations, people,
- * equipment, places, loads or history, only what the product needs to run:
- *
- * - the one unclaimed platform-admin profile, because `/admin/bootstrap` binds the
- *   founder to that exact record and refuses to create an admin from nothing; and
- * - the subscription plan catalog, which is product configuration, not sample data.
+ * equipment, places, loads or history, only what the product needs to run: the
+ * one unclaimed platform-admin profile, because `/admin/bootstrap` binds the
+ * founder to that exact record and refuses to create an admin from nothing.
  *
  * Every other collection is derived from the seed's keys and starts empty, so a
  * collection added later is empty here too. `seedDatabaseState` is the fictional
@@ -26,7 +24,6 @@ export function createLaunchDatabase(): LogLoadsDatabaseState {
 
   return deepClone({
     ...empty,
-    billingPlanDefinitions: seedDatabaseState.billingPlanDefinitions,
     profiles: seedDatabaseState.profiles.filter((profile) => profile.role === "admin")
   })
 }

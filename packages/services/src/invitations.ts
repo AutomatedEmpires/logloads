@@ -485,9 +485,8 @@ export function declineOrganizationInvitation(
 
 /**
  * A brand-new person joins THROUGH an invitation: profile + active membership
- * in the inviting organization — and deliberately NO new organization, no
- * entitlement, no dispatcher profile. The workspace they are joining already
- * has those.
+ * in the inviting organization — and deliberately NO new organization and no
+ * dispatcher profile. The workspace they are joining already has those.
  */
 export function acceptInvitationAsNewAccount(
   state: LogLoadsDatabaseState,

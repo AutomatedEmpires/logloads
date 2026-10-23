@@ -15,7 +15,7 @@ import {
   buildAdminBillingSnapshot,
   buildAdminCompletionExceptions,
   buildAdminContactInquiries,
-  buildAdminCurrentFeeExceptions
+  buildAdminFeeExceptions
 } from "./admin-data"
 
 const NOW = "2026-08-08T18:00:00.000Z"
@@ -345,8 +345,8 @@ describe("admin-only contact inquiry archive", () => {
   })
 })
 
-describe("current percentage fee attention", () => {
-  function currentFeeFixture(invoiceStatus: "open" | "paid" | "uncollectible") {
+describe("host fee attention", () => {
+  function feeFixture(invoiceStatus: "open" | "paid" | "uncollectible", driverPayCents = 52_500) {
     const state = createInMemoryDatabase()
     const organization = state.organizations.find((candidate) => candidate.type === "landing_source")
     const assignment = state.assignments[0]
@@ -361,11 +361,10 @@ describe("current percentage fee attention", () => {
     const invoiceId = "70000000-0000-4000-8000-000000000011"
     const event = platformFeeEventSchema.parse({
       assignmentId: assignment.id,
-      billingModel: "percentage_v1",
       createdAt: NOW,
-      driverPayCents: 52_500,
+      driverPayCents,
       feeBps: PLATFORM_FEE_BPS,
-      feeCents: computePlatformFeeCents(52_500, PLATFORM_FEE_BPS),
+      feeCents: computePlatformFeeCents(driverPayCents, PLATFORM_FEE_BPS),
       id: "60000000-0000-4000-8000-000000000011",
       invoiceId,
       loadMovementId: assignment.loadMovementId ?? assignment.id,
@@ -397,9 +396,10 @@ describe("current percentage fee attention", () => {
   }
 
   it("treats normal open monthly-arrears state as clear and uncollectible as an exception", () => {
-    const open = currentFeeFixture("open")
+    const open = feeFixture("open")
 
-    expect(buildAdminCurrentFeeExceptions({
+    expect(open.invoice.subtotalCents).toBe(1_050)
+    expect(buildAdminFeeExceptions({
       hostInvoices: [open.invoice],
       organizations: [open.organization],
       platformFeeEvents: [open.event]
@@ -410,28 +410,56 @@ describe("current percentage fee attention", () => {
       invoiceId: null,
       status: "accrued"
     })
-    expect(buildAdminCurrentFeeExceptions({
+    expect(buildAdminFeeExceptions({
       hostInvoices: [],
       organizations: [open.organization],
       platformFeeEvents: [accrued]
     })).toEqual([])
 
-    const failed = currentFeeFixture("uncollectible")
-    expect(buildAdminCurrentFeeExceptions({
+    const failed = feeFixture("uncollectible")
+    expect(buildAdminFeeExceptions({
       hostInvoices: [failed.invoice],
       organizations: [failed.organization],
       platformFeeEvents: [failed.event]
     })).toEqual([
       expect.objectContaining({
         severity: "critical",
-        title: "Current host invoice is uncollectible"
+        title: "Host invoice is uncollectible"
+      })
+    ])
+  })
+
+  it("warns about an open bill below Stripe's card minimum, and not about one at the minimum", () => {
+    // $20.00 of driver pay is a 40 cent fee.
+    const small = feeFixture("open", 2_000)
+
+    expect(small.invoice.subtotalCents).toBe(40)
+    expect(buildAdminFeeExceptions({
+      hostInvoices: [small.invoice],
+      organizations: [small.organization],
+      platformFeeEvents: [small.event]
+    })).toEqual([
+      expect.objectContaining({
+        detail: expect.stringContaining("$0.50 minimum card charge"),
+        id: `invoice:${small.invoice.id}:below-card-minimum`,
+        severity: "warning",
+        title: "Invoice is below the card minimum"
       })
     ])
 
+    // Negative control: $25.00 of driver pay is a 50 cent fee, which Stripe accepts.
+    const minimum = feeFixture("open", 2_500)
+
+    expect(minimum.invoice.subtotalCents).toBe(50)
+    expect(buildAdminFeeExceptions({
+      hostInvoices: [minimum.invoice],
+      organizations: [minimum.organization],
+      platformFeeEvents: [minimum.event]
+    })).toEqual([])
   })
 
-  it("flags missing, foreign, legacy, unfrozen, and arithmetically wrong invoice lines", () => {
-    const fixture = currentFeeFixture("open")
+  it("flags missing, foreign, unfrozen, and arithmetically wrong invoice lines", () => {
+    const fixture = feeFixture("open")
     const otherOrganization = fixture.state.organizations.find(
       (candidate) => candidate.id !== fixture.organization.id && candidate.type !== "platform"
     )
@@ -440,9 +468,8 @@ describe("current percentage fee attention", () => {
       throw new Error("Seed must contain a second operating organization")
     }
 
-    const legacyLine = platformFeeEventSchema.parse({
+    const foreignLine = platformFeeEventSchema.parse({
       ...fixture.event,
-      billingModel: "legacy_percentage",
       id: "60000000-0000-4000-8000-000000000012",
       invoiceId: null,
       organizationId: otherOrganization.id,
@@ -452,28 +479,29 @@ describe("current percentage fee attention", () => {
       ...fixture.invoice,
       feeEventIds: [
         fixture.event.id,
-        legacyLine.id,
+        foreignLine.id,
         "60000000-0000-4000-8000-000000000013"
       ],
       subtotalCents: 1
     })
-    const titles = buildAdminCurrentFeeExceptions({
+    const titles = buildAdminFeeExceptions({
       hostInvoices: [corruptInvoice],
       organizations: [fixture.organization, otherOrganization],
-      platformFeeEvents: [fixture.event, legacyLine]
+      platformFeeEvents: [fixture.event, foreignLine]
     }).map((exception) => exception.title)
 
     expect(titles).toEqual(expect.arrayContaining([
-      "Current invoice has missing fee lines",
-      "Current invoice crosses organizations",
-      "Current invoice mixes billing models",
-      "Current invoice has unfrozen fee lines",
-      "Current invoice subtotal disagrees"
+      "Invoice has missing fee lines",
+      "Invoice crosses organizations",
+      "Invoice has unfrozen fee lines",
+      "Invoice subtotal disagrees"
     ]))
+    // A one-cent subtotal is wrong arithmetic, not a small bill.
+    expect(titles).not.toContain("Invoice is below the card minimum")
   })
 
-  it("detects an invoice that points at an accrued current fee without a reverse link", () => {
-    const fixture = currentFeeFixture("open")
+  it("detects an invoice that points at an accrued fee without a reverse link", () => {
+    const fixture = feeFixture("open")
     const accrued = platformFeeEventSchema.parse({
       ...fixture.event,
       invoiceId: null,
@@ -485,43 +513,25 @@ describe("current percentage fee attention", () => {
       subtotalCents: accrued.feeCents
     })
 
-    expect(buildAdminCurrentFeeExceptions({
+    expect(buildAdminFeeExceptions({
       hostInvoices: [oneWayInvoice],
       organizations: [fixture.organization],
       platformFeeEvents: [accrued]
     })).toEqual([
       expect.objectContaining({
         severity: "critical",
-        title: "Current invoice has unfrozen fee lines"
+        title: "Invoice has unfrozen fee lines"
       })
     ])
 
     fixture.state.platformFeeEvents = [accrued]
     fixture.state.hostInvoices = [oneWayInvoice]
-    expect(
-      buildAdminBillingSnapshot(fixture.state, Date.parse(NOW))
-        .platformFeeLedger.currentInvoiceCount
-    ).toBe(1)
-  })
 
-  it("does not demand a subscription pointer from a valid percentage-v1 account", () => {
-    const state = createInMemoryDatabase()
-    const currentAccount = state.organizationBillingAccounts.find(
-      (account) => account.billingModel === "percentage_v1"
-    )
+    const snapshot = buildAdminBillingSnapshot(fixture.state)
 
-    if (!currentAccount) {
-      throw new Error("Seed must contain a current percentage account")
-    }
-
-    const snapshot = buildAdminBillingSnapshot(state, Date.parse(NOW))
-    const account = snapshot.accounts.find((candidate) => candidate.id === currentAccount.id)
-
-    expect(account?.subscriptionLabel).toBe("Current percentage agreement; no subscription by design")
-    expect(
-      snapshot.reconciliationWarnings.find(
-        (warning) => warning.organizationName === account?.organizationName && warning.title === "Billing account is not linked"
-      )
-    ).toBeUndefined()
+    expect(snapshot.invoiceCount).toBe(1)
+    expect(snapshot.exceptions.map((exception) => exception.title)).toEqual([
+      "Invoice has unfrozen fee lines"
+    ])
   })
 })

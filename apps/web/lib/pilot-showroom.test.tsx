@@ -56,8 +56,7 @@ const expectedSurfaces: Record<PilotRole, readonly string[]> = {
     "fleet-availability",
     "fleet-performance",
     "fleet-assistant",
-    "fleet-workspace",
-    "fleet-billing"
+    "fleet-workspace"
   ],
   host: [
     "host-command",
@@ -134,7 +133,7 @@ describe("pilot showroom product truth", () => {
     expect(isPilotRole("admin")).toBe(false)
     expect(getPilotRole("fleet")?.label).toBe("Fleet")
     expect(getPilotRole("unknown")).toBeNull()
-    expect(pilotSurfaceSlugs).toHaveLength(35)
+    expect(pilotSurfaceSlugs).toHaveLength(34)
     expect(getPilotSurface("driver-load-detail")?.role).toBe("driver")
     expect(getPilotSurface("fleet-opportunity-detail")?.role).toBe("fleet")
     expect(getPilotSurface("unknown")).toBeNull()
@@ -155,7 +154,7 @@ describe("pilot showroom product truth", () => {
     expect(pilotTourBoundary).toContain("read or change operating state")
     expect(pilotTourBoundary).toContain("send a message")
     expect(pilotTourBoundary).toContain("upload a file")
-    expect(pilotTourBoundary).toContain("enroll an organization")
+    expect(pilotTourBoundary).toContain("accept fee terms")
     expect(pilotTourBoundary).toContain("create a charge")
     expect(pilotCaptureDisclosure).toContain("disposable synthetic workspace")
     expect(pilotCaptureDisclosure).toContain("No private real-world data")
@@ -179,7 +178,7 @@ describe("pilot showroom rendering", () => {
     expect(markup).toContain("Public product tour")
     expect(markup).toContain("Assisted rehearsal")
     expect(markup).toContain("Approved live pilot")
-    expect(markup).toContain("5% on top of stated driver pay")
+    expect(markup).toContain("2% on top of stated driver pay")
     expect(markup).toContain('id="launch-readiness"')
     expect(markup).toContain("What success needs to prove.")
     expect(markup).not.toContain("Switch actor")

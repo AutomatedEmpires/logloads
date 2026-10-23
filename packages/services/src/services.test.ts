@@ -1,3 +1,4 @@
+import { HOST_FEE_TERMS_VERSION, PLATFORM_FEE_BPS } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
@@ -169,7 +170,6 @@ describe("logloads services", () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
     )
     expect(assignment.loadMovementId).not.toBe(assignment.id)
-    expect(assignment.billingModel).toBeNull()
     expect(assignment.billingCommittedAt).toBeNull()
   })
 
@@ -278,30 +278,25 @@ describe("logloads services", () => {
     expect(services.state.availabilityWindows.some((window) => window.driverProfileId === account.driverProfileId)).toBe(false)
   })
 
-  it("provisions fleet dispatch as a free capability while preserving initial equipment", () => {
+  it("provisions a fleet with its initial equipment and nothing to pay", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
 
     const account = services.createAccount({
       accountType: "small_fleet",
       availabilityPreset: "not_ready",
-      email: "fleet-free@example.com",
+      email: "cedar-fleet@example.com",
       equipment: {
         maxPayloadTons: 32,
         trailerType: "pole_trailer",
         truckType: "log_truck"
       },
-      fullName: "Fleet Free Owner",
-      organizationName: "Fleet Free Hauling",
+      fullName: "Cedar Fleet Owner",
+      organizationName: "Cedar Fleet Hauling",
       path: "fleet",
       phone: "555-9004",
       region: "Douglas County, OR"
     })
     const organizationId = account.memberships[0]?.organization.id
-    const entitlement = services.state.entitlements.find(
-      (candidate) =>
-        candidate.organizationId === organizationId &&
-        candidate.product === "fleet_operations"
-    )
     const truck = services.state.truckProfiles.find(
       (candidate) => candidate.companyId === organizationId
     )
@@ -312,15 +307,12 @@ describe("logloads services", () => {
       (candidate) => candidate.organizationId === organizationId
     )
 
-    expect(entitlement).toMatchObject({
-      activeLandingLimit: null,
-      activeTruckLimit: null,
-      currentPeriodEndsAt: null,
-      product: "fleet_operations",
-      status: "active",
-      stripeCustomerId: null,
-      stripeSubscriptionId: null
-    })
+    expect(
+      services.state.hostFeeAgreements.some((agreement) => agreement.organizationId === organizationId)
+    ).toBe(false)
+    expect(
+      services.state.hostBillingProfiles.some((profile) => profile.organizationId === organizationId)
+    ).toBe(false)
     expect(truck).toMatchObject({
       maxPayloadTons: 32,
       truckType: "log_truck",
@@ -341,7 +333,7 @@ describe("logloads services", () => {
     })
   })
 
-  it("starts a new host explicitly unenrolled with no silent legacy or paid entitlement", () => {
+  it("starts a new host without accepted fee terms, so it cannot publish until it accepts them", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const account = services.createAccount({
       accountType: "landing_operator",
@@ -355,19 +347,11 @@ describe("logloads services", () => {
       region: "Douglas County, OR"
     })
     const organizationId = account.memberships[0]?.organization.id
-    const entitlement = services.state.entitlements.find((candidate) =>
-      candidate.organizationId === organizationId && candidate.product === "landing_operations"
-    )
-    const billingAccount = services.state.organizationBillingAccounts.find(
-      (candidate) => candidate.organizationId === organizationId
-    )
 
-    expect(entitlement).toBeUndefined()
-    expect(billingAccount).toMatchObject({
-      activationState: "unenrolled",
-      billingModel: null,
-      subscriptionId: null
-    })
+    expect(organizationId).toBeDefined()
+    expect(
+      services.state.hostFeeAgreements.filter((agreement) => agreement.organizationId === organizationId)
+    ).toEqual([])
   })
 
   it("rejects an availability update for an unknown id", () => {
@@ -641,13 +625,12 @@ describe("logloads services", () => {
     expect(result.assignment.termsSnapshot).toMatchObject({
       hostFee: {
         collectionState: "accrues_monthly_in_arrears",
-        feeCents: null,
-        providerCollectionState: "feature_gated",
-        rateBps: 500,
-        proposedRateBps: 500
+        currency: "USD",
+        rateBps: PLATFORM_FEE_BPS
       },
       paymentMode: "off_platform"
     })
+    expect(result.assignment.billingCommittedAt).toBe(result.assignment.assignedAt)
     expect(result.trip.assignmentId).toBe(assignment.id)
     // The trip points at the snapshot minted for THIS assignment, not at the
     // host's mutable load-level source pack.
@@ -657,6 +640,41 @@ describe("logloads services", () => {
     expect(services.state.notifications.find((notification) =>
       notification.relatedEntityId === assignment.id && notification.userId === "22222222-2222-4222-8222-222222222221"
     )?.type).toBe("assignment_confirmed")
+  })
+
+  it("refuses to accept work for a host whose fee agreement is not current, and writes nothing", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const assignment = requestJune(services, {
+      actorUserId: "22222222-2222-4222-8222-222222222221",
+      organizationId: "33333333-3333-4333-8333-333333333331",
+      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+      truckSlotId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd4",
+      driverProfileId: "44444444-4444-4444-8444-444444444441",
+      truckProfileId: "77777777-7777-4777-8777-777777777771",
+      trailerProfileId: "88888888-8888-4888-8888-888888888881"
+    })
+    const agreement = services.state.hostFeeAgreements.find(
+      (candidate) => candidate.organizationId === "33333333-3333-4333-8333-333333333332"
+    )!
+    const approve = () => services.approveCapacityRequest({
+      actorUserId: "22222222-2222-4222-8222-222222222224",
+      organizationId: "33333333-3333-4333-8333-333333333332",
+      assignmentId: assignment.id
+    })
+
+    agreement.termsVersion = "2026-01-01"
+    const before = structuredClone(services.state)
+
+    expect(approve).toThrow(/Accept the current LogLoads fee terms/)
+    expect(services.state).toEqual(before)
+
+    // Negative control: the same approval goes through once the terms are current.
+    agreement.termsVersion = HOST_FEE_TERMS_VERSION
+    expect(approve().assignment.termsSnapshot.hostFee).toEqual({
+      collectionState: "accrues_monthly_in_arrears",
+      currency: "USD",
+      rateBps: PLATFORM_FEE_BPS
+    })
   })
 
   it("freezes requested pay and refuses approval after the host changes it", () => {

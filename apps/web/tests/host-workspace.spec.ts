@@ -19,9 +19,8 @@ async function signIn(page: Page, email: string) {
   })
 }
 
-// Unique per run so records from earlier runs can never collide by name. The
-// current 5% agreement has no landing tier or allowance; the stamp is identity,
-// not a workaround for scarce subscription capacity.
+// Unique per run so records from earlier runs can never collide by name. There
+// is no limit on active landings; the stamp is identity only.
 const STAMP = process.env.LOGLOADS_E2E_STAMP?.trim() || String(Date.now())
 const LANDING = `Cedar Spur ${STAMP}`
 const DESTINATION = `Juniper Mill ${STAMP}`

@@ -84,13 +84,13 @@ const COMPLETION_COPY: Record<OnboardingPath, {
     title: "Your driver profile opens in setup."
   },
   fleet: {
-    body: "There is no trial, checkout, subscription, or LogLoads truck limit. Assign or invite a driver and complete that driver's required credential review before the truck can request work.",
-    button: "Create Fleet Free workspace",
-    pending: "Creating Fleet Free workspace...",
-    title: "Fleet Free opens with your first unit on file."
+    body: "Fleets pay LogLoads nothing, and there is no LogLoads truck limit. Assign or invite a driver and complete that driver's required credential review before the truck can request work.",
+    button: "Create fleet workspace",
+    pending: "Creating fleet workspace...",
+    title: "Your fleet workspace opens with your first unit on file."
   },
   host: {
-    body: "Workspace creation is free and does not activate live publication. An authorized host can prepare a draft; pilot approval, the current 5% completed-load agreement, and a card are required before publishing.",
+    body: "Workspace creation is free and does not charge anything. An authorized host can prepare a draft; accepting the 2% host fee terms and attaching a card are required before publishing.",
     button: "Create host workspace",
     pending: "Creating host workspace...",
     title: "Start with one landing, its first lane, and the rate you pay."
@@ -324,7 +324,7 @@ export function OnboardingFlow({
           <p className="fieldset-note">
             {path === "driver"
               ? "Choose the truck and trailer you use most. You’ll file the exact equipment and credential records from your profile before taking work."
-              : "Choose the first unit to put on your board. Assign or invite a cleared driver from Fleet Free before requesting work."}
+              : "Choose the first unit to put on your board. Assign or invite a cleared driver from your fleet workspace before requesting work."}
           </p>
           <label>
             <span>Truck type</span>
@@ -375,9 +375,9 @@ export function OnboardingFlow({
           <legend tabIndex={-1}>Your workspace is ready to create</legend>
           <p className="fieldset-note">
             Next, set up the operating records your first timber movement needs.
-            Creating the workspace does not charge a card. Hosts accept the 5%
-            completed-load agreement and attach a payment method from Billing
-            before publishing live work; driver setup remains free.
+            Creating the workspace does not charge a card. Hosts accept the 2%
+            host fee terms and attach a payment method from Billing before
+            publishing live work; drivers and fleets pay nothing.
           </p>
           <div className="onboarding-ready">
             <strong>{completionCopy.title}</strong>

@@ -6,6 +6,7 @@ vi.mock("server-only", () => ({}))
 
 const mocks = vi.hoisted(() => ({
   getCockpitContext: vi.fn(),
+  getHostBillingView: vi.fn(() => ({ marker: "host-billing" })),
   organizationRoleCan: vi.fn()
 }))
 
@@ -19,27 +20,23 @@ vi.mock("@/components/v3", () => ({
   HostLiveBoard: () => null
 }))
 vi.mock("@/lib/host-billing-data", () => ({
-  getHostBillingView: vi.fn(() => ({}))
+  getHostBillingView: mocks.getHostBillingView
 }))
 vi.mock("@/lib/host-data", () => ({
   getHostPublishingOptions: vi.fn(() => ({
     accessVocabulary: [],
-    billingActivationState: "unenrolled",
-    billingModel: null,
     billingProfileStatus: "none",
-    currentPercentageAgreementActive: false,
     dispatcher: null,
     equipmentVocabulary: [],
+    feeAgreementAccepted: false,
     landings: [],
     loadTypes: [],
     rates: [],
-    routes: [],
-    subscriptionPlanCode: null
+    routes: []
   })),
   getHostWorkspaceSetup: vi.fn(() => ({
     activeLandingCount: 0,
     destinations: [],
-    landingLimit: null,
     mills: [],
     rates: []
   }))
@@ -47,12 +44,6 @@ vi.mock("@/lib/host-data", () => ({
 vi.mock("@/lib/v3", () => ({
   getCockpitContext: mocks.getCockpitContext,
   shellAccountFor: vi.fn(() => ({ userName: "Host" }))
-}))
-vi.mock("@/lib/plans", () => ({
-  getBillingView: vi.fn(() => ({}))
-}))
-vi.mock("@/lib/subscription-billing-data", () => ({
-  getHostSubscriptionBillingView: vi.fn(() => null)
 }))
 
 import BillingPage from "@/app/host/billing/page"
@@ -99,7 +90,8 @@ describe("host action permissions", () => {
       canManageLandings: false,
       canPublish: false
     })
-    expect(billing.props.canManageBilling).toBe(true)
+    expect(mocks.getHostBillingView).toHaveBeenCalledWith("host-1", { canManageBilling: true })
+    expect(billing.props.hostBilling).toEqual({ marker: "host-billing" })
   })
 
   it("gives dispatchers operating controls without host billing mutation", async () => {
@@ -108,7 +100,7 @@ describe("host action permissions", () => {
     const live = await LiveBoardPage()
     const carriers = await CarriersPage()
     const command = await CommandPage()
-    const billing = await BillingPage()
+    await BillingPage()
 
     expect(live.props).toMatchObject({
       canAssignCapacity: true,
@@ -124,6 +116,6 @@ describe("host action permissions", () => {
       canManageLandings: false,
       canPublish: true
     })
-    expect(billing.props.canManageBilling).toBe(false)
+    expect(mocks.getHostBillingView).toHaveBeenCalledWith("host-1", { canManageBilling: false })
   })
 })

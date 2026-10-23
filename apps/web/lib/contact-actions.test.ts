@@ -66,7 +66,7 @@ describe("contact pilot intent", () => {
   it("rejects invented non-empty intent before rate limits, writes, or email", async () => {
     const result = await submitContactInquiryAction(
       { error: null, ok: false },
-      contactForm("network_pilot_subscription")
+      contactForm("pilot_everything")
     )
 
     expect(result).toEqual({

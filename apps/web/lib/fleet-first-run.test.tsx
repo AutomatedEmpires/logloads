@@ -46,8 +46,8 @@ function activationNetwork(
   }
 }
 
-describe("Fleet Free first-run readiness", () => {
-  it("renders Fleet Free truth and field-sized setup actions before the carried continuation", () => {
+describe("fleet workspace first-run readiness", () => {
+  it("renders the free fleet workspace and field-sized setup actions before the carried continuation", () => {
     const html = renderToStaticMarkup(
       React.createElement(FleetFirstRunPanel, {
         continuationHref: "/fleet/opportunities",
@@ -60,8 +60,8 @@ describe("Fleet Free first-run readiness", () => {
     const trucksAction = html.indexOf('data-testid="fleet-first-run-trucks"')
     const continuation = html.indexOf('data-testid="fleet-first-run-continue"')
 
-    expect(html).toContain("Fleet Free is active")
-    expect(html).toContain("no checkout")
+    expect(html).toContain("Fleet workspace is active")
+    expect(html).toContain("fleets pay LogLoads nothing")
     expect(html).toContain('aria-labelledby="fleet-first-run-title"')
     expect(html).toContain(
       '<section aria-labelledby="fleet-first-run-readiness-title" class="first-run-panel__state">'
@@ -74,7 +74,7 @@ describe("Fleet Free first-run readiness", () => {
     expect(html).toContain(
       'class="action-link action-link--secondary" data-testid="fleet-first-run-continue"'
     )
-    expect(html).not.toMatch(/trial|subscription|upgrade/i)
+    expect(html).not.toMatch(/trial|upgrade|checkout/i)
   })
 
   it("keeps missing setup facts visible without inventing readiness", () => {

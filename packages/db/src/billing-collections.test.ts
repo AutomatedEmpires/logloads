@@ -1,5 +1,6 @@
 import {
   computePlatformFeeCents,
+  isCurrentHostFeeAgreement,
   platformFeeEventId,
   PLATFORM_FEE_BPS,
   type PlatformFeeEvent
@@ -9,7 +10,12 @@ import { describe, expect, it } from "vitest"
 import { auditStateSnapshot } from "./snapshot"
 import { createInMemoryDatabase } from "./store"
 
-const BILLING_COLLECTIONS = ["hostBillingProfiles", "platformFeeEvents", "hostInvoices"] as const
+const BILLING_COLLECTIONS = [
+  "hostFeeAgreements",
+  "hostBillingProfiles",
+  "platformFeeEvents",
+  "hostInvoices"
+] as const
 
 /** A fee that agrees with itself, built from rows the seed actually contains. */
 function accrualForCompletedSeedLoad(state: ReturnType<typeof createInMemoryDatabase>): PlatformFeeEvent {
@@ -21,18 +27,18 @@ function accrualForCompletedSeedLoad(state: ReturnType<typeof createInMemoryData
   }
 
   const driverPayCents = load.driverPayCents ?? 52_500
+  const loadMovementId = assignment.loadMovementId ?? assignment.id
 
   return {
     assignmentId: assignment.id,
-    billingModel: "legacy_percentage",
     createdAt: assignment.completedAt ?? load.updatedAt,
     driverPayCents,
     feeBps: PLATFORM_FEE_BPS,
     feeCents: computePlatformFeeCents(driverPayCents, PLATFORM_FEE_BPS),
-    id: platformFeeEventId(assignment.id),
+    id: platformFeeEventId(loadMovementId),
     invoiceId: null,
     loadPostingId: load.id,
-    loadMovementId: assignment.loadMovementId ?? assignment.id,
+    loadMovementId,
     occurredAt: assignment.completedAt ?? load.updatedAt,
     organizationId: load.companyId,
     status: "accrued",
@@ -43,17 +49,17 @@ function accrualForCompletedSeedLoad(state: ReturnType<typeof createInMemoryData
 }
 
 describe("platform fee billing collections", () => {
-  it("loads a canonical document written before billing existed", () => {
-    // The document in production predates these three collections, and a row
-    // validator puts a collection into REQUIRED_TABLES. Without the additive
-    // backfill the first read after deploy refuses the whole document and every
-    // request fails, so this is the deploy-safety test, not a formality.
-    const { hostBillingProfiles, hostInvoices, platformFeeEvents, ...legacy } =
+  it("loads a stored document that has none of the host-fee collections", () => {
+    // A row validator puts a collection into REQUIRED_TABLES. Without the additive
+    // backfill the first read of a document without these collections refuses the
+    // whole document and every request fails, so this is the deploy-safety test,
+    // not a formality.
+    const { hostBillingProfiles, hostFeeAgreements, hostInvoices, platformFeeEvents, ...stored } =
       createInMemoryDatabase()
 
-    expect([hostBillingProfiles, platformFeeEvents, hostInvoices]).toHaveLength(3)
+    expect([hostFeeAgreements, hostBillingProfiles, platformFeeEvents, hostInvoices]).toHaveLength(4)
 
-    const audit = auditStateSnapshot(legacy)
+    const audit = auditStateSnapshot(stored)
 
     expect(audit.missingCollections).toEqual([])
     expect(audit.state).not.toBeNull()
@@ -63,22 +69,43 @@ describe("platform fee billing collections", () => {
     }
   })
 
-  it("gives every host organization that posts loads a card on file", () => {
+  it("gives every organization that posts loads a current fee agreement and a card on file", () => {
     // Derived from the postings rather than listing organization ids, so a new
-    // seeded host cannot quietly arrive without the payment method that publishing
-    // requires.
+    // seeded host cannot quietly arrive without what publishing requires.
     const state = createInMemoryDatabase()
     const hostOrganizationIds = new Set(state.loadPostings.map((load) => load.companyId))
 
     expect(hostOrganizationIds.size).toBe(2)
 
     for (const organizationId of hostOrganizationIds) {
-      const profile = state.hostBillingProfiles.find(
+      const agreements = state.hostFeeAgreements.filter(
+        (candidate) => candidate.organizationId === organizationId
+      )
+      const profiles = state.hostBillingProfiles.filter(
         (candidate) => candidate.organizationId === organizationId
       )
 
-      expect(profile?.status, organizationId).toBe("attached")
-      expect(profile?.defaultPaymentMethodId, organizationId).toBeTruthy()
+      expect(agreements, organizationId).toHaveLength(1)
+      expect(isCurrentHostFeeAgreement(agreements[0]), organizationId).toBe(true)
+      expect(profiles, organizationId).toHaveLength(1)
+      expect(profiles[0]?.status, organizationId).toBe("attached")
+      expect(profiles[0]?.defaultPaymentMethodId, organizationId).toBeTruthy()
+    }
+  })
+
+  it("freezes the current fee terms onto every accepted seeded assignment", () => {
+    const state = createInMemoryDatabase()
+    const committed = state.assignments.filter((assignment) => assignment.assignedAt)
+
+    expect(committed.length).toBeGreaterThan(0)
+
+    for (const assignment of committed) {
+      expect(assignment.billingCommittedAt, assignment.id).toBe(assignment.assignedAt)
+      expect(assignment.termsSnapshot.hostFee, assignment.id).toEqual({
+        collectionState: "accrues_monthly_in_arrears",
+        currency: "USD",
+        rateBps: PLATFORM_FEE_BPS
+      })
     }
   })
 

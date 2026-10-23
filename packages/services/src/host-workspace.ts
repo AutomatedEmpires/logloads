@@ -11,7 +11,6 @@ import {
   rateTypeSchema,
   richLandingDetailsSchema,
   roadConditionSchema,
-  type Entitlement,
   type HaulRoute,
   type Landing,
   type Mill,
@@ -133,80 +132,6 @@ export type SetLandingActiveInput = z.input<typeof setLandingActiveInputSchema>
 export type CreateHaulRouteInput = z.input<typeof haulRouteInputSchema>
 export type CreateRateInput = z.input<typeof rateInputSchema>
 
-/** Statuses under which a plan is actually carrying the organization. */
-const PLAN_IS_LIVE: ReadonlyArray<Entitlement["status"]> = ["trialing", "active", "comped"]
-
-export function livePlansFor(state: LogLoadsDatabaseState, organizationId: string): Entitlement[] {
-  return state.entitlements.filter(
-    (entitlement) =>
-      entitlement.organizationId === organizationId &&
-      PLAN_IS_LIVE.includes(entitlement.status)
-  )
-}
-
-/**
- * How many active landings this organization's plan allows: a number, or null
- * for genuinely uncapped. The number was already advertised ("Up to 1 active
- * landings") while nothing enforced it, which cost nothing only because landings
- * could not be created at all.
- *
- * "An live plan states no cap" and "there is no live plan" are different
- * answers and must not collapse into the same one. Reading a missing limit as
- * null would mean a `past_due` or `cancelled` plan — which the Stripe webhook
- * sets — lifts the cap entirely, so a lapsed host could create landings without
- * end while a paying host is held to three. That is the advertised limit failing
- * open, which is worse than never having enforced it.
- */
-export function activeLandingLimitFor(
-  state: LogLoadsDatabaseState,
-  organizationId: string
-): number | null {
-  const now = Date.now()
-  const billingAccounts = state.organizationBillingAccounts.filter(
-    (account) =>
-      account.organizationId === organizationId &&
-      Date.parse(account.effectiveAt) <= now
-  )
-  const billingAccount = billingAccounts.length === 1 ? billingAccounts[0]! : null
-
-  // The approved model has no subscription tier or landing allowance. A
-  // percentage-v1 agreement therefore outranks any preserved historical
-  // entitlement row; those rows remain audit evidence, not current capacity.
-  // Exactly one already-effective account is required. A duplicate or queued
-  // future agreement must never be selected by array order and accidentally
-  // grant uncapped capacity before commercial reconciliation.
-  if (
-    billingAccount?.activationState === "percentage_active" &&
-    billingAccount.billingModel === "percentage_v1" &&
-    billingAccount.percentageTermsSnapshot !== null
-  ) {
-    return null
-  }
-
-  const plans = livePlansFor(state, organizationId)
-
-  if (plans.length === 0) {
-    // A brand-new, explicitly unenrolled host may prepare one real landing so
-    // sales-assisted activation does not require support staff to recreate its
-    // operating data. This is workspace setup only: it grants no entitlement,
-    // and the publication gate still blocks every live load until an operating
-    // plan is explicitly configured and activated.
-    if (billingAccount?.activationState === "unenrolled") {
-      return 1
-    }
-
-    return 0
-  }
-
-  // A live plan that states no cap is uncapped, and says so for the whole
-  // organization — a stated number alongside it cannot narrow what it granted.
-  if (plans.some((entitlement) => typeof entitlement.activeLandingLimit !== "number")) {
-    return null
-  }
-
-  return Math.max(...plans.map((entitlement) => entitlement.activeLandingLimit as number))
-}
-
 /**
  * An optional field an update did not mention keeps what it had. Only an
  * explicit `null` clears it — "I said nothing about this" and "remove this" are
@@ -214,13 +139,6 @@ export function activeLandingLimitFor(
  */
 function keepUnlessGiven<T>(given: T | null | undefined, existing: T | null): T | null {
   return given === undefined ? existing : given
-}
-
-/** The refusal, worded for which of the two reasons actually applies. */
-function landingAllowanceRefusal(limit: number): string {
-  return limit === 0
-    ? "Your plan does not cover any active landings. Check your billing to add one."
-    : `Your plan covers ${limit} active landing${limit === 1 ? "" : "s"}. Retire one, or talk to us about more.`
 }
 
 export function countActiveLandings(state: LogLoadsDatabaseState, organizationId: string): number {
@@ -233,13 +151,6 @@ export function createLanding(state: LogLoadsDatabaseState, rawInput: CreateLand
   const input = landingInputSchema.parse(rawInput)
   const context = getActiveOrganizationContext(state, input.actorUserId, input.organizationId)
   assertOrganizationAction(context, "manage_landing")
-
-  const limit = activeLandingLimitFor(state, input.organizationId)
-
-  assertCondition(
-    limit === null || countActiveLandings(state, input.organizationId) < limit,
-    landingAllowanceRefusal(limit ?? 0)
-  )
 
   const timestamp = nowIso()
   const landing = landingSchema.parse({
@@ -301,9 +212,6 @@ export function updateLanding(state: LogLoadsDatabaseState, rawInput: UpdateLand
 
   const existing = requireOwnLanding(state, input.landingId, input.organizationId)
 
-  // No allowance check: an edit cannot change whether the landing is active, so
-  // it never asks for capacity the organization does not already hold. Asking
-  // for capacity is `createLanding` and `setLandingActive`, and both check.
   const timestamp = nowIso()
   // `null` clears, `undefined` leaves alone. Collapsing the two with `?? null`
   // makes every optional field an erasure hazard: a caller that simply did not
@@ -432,17 +340,6 @@ export function setLandingActive(
   // reconstructing this landing's life would find transitions nobody made.
   if (input.isActive === existing.isActive) {
     return existing
-  }
-
-  // Restoring asks for plan capacity exactly as creating does; retiring returns
-  // it. Re-saving a landing that is already active asks for nothing.
-  if (input.isActive && !existing.isActive) {
-    const limit = activeLandingLimitFor(state, input.organizationId)
-
-    assertCondition(
-      limit === null || countActiveLandings(state, input.organizationId) < limit,
-      landingAllowanceRefusal(limit ?? 0)
-    )
   }
 
   const timestamp = nowIso()

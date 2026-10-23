@@ -33,46 +33,54 @@ import { z } from "zod"
 // ── The rate ──────────────────────────────────────────────────────────────────
 
 /**
- * The only currency grandfathered `legacy_percentage` work may accept, accrue,
- * or collect. LogLoads performs no FX conversion on those obligations.
- *
- * This policy belongs beside the legacy fee contract so every boundary shares
- * one decision instead of independently assuming that Stripe charges are USD.
+ * The only currency the platform fee is accrued, invoiced and collected in.
+ * LogLoads performs no FX conversion, so work stated in any other currency is
+ * refused at acceptance rather than billed at a guessed rate.
  */
-export const LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY = "USD"
+export const PLATFORM_FEE_CURRENCY = "USD"
 
 /**
- * Basis points per whole. 500 bps = 5%, 10_000 bps = 100%.
+ * Basis points per whole. 200 bps = 2%, 10_000 bps = 100%.
  *
- * Exported so the schema bound, the arithmetic guard and any future rate share one
+ * Exported so the schema bound, the arithmetic guard and the rate share one
  * definition instead of three hand-typed 10_000s.
  */
 export const FEE_BPS_SCALE = 10_000
 
 /**
- * The founder-decided platform fee: a flat 5% of stated driver pay, charged to the
- * host on top, on completed loads only. There is no monthly minimum and no charge
- * to post; drivers pay nothing, ever.
+ * The LogLoads fee: a flat 2% of stated driver pay, billed to the host on top of
+ * that pay, on completed loads only. There is no monthly minimum and no charge to
+ * post; drivers and fleets pay nothing.
  *
  * Flat rather than tiered on purpose: load *count* is a host-controlled field in
  * this product (a host decides how many slots a series has), so any count-based
  * tier is gameable by construction, and a graduated tier re-rates every other load
  * in a period the moment one load is voided.
  *
- * This constant is the CURRENT rate. It is never the rate of a load that already
- * happened — every accrual freezes its own `feeBps`, so changing this number
- * cannot re-rate history.
+ * This constant is the rate new work is accepted at. Every accepted assignment
+ * freezes its own `rateBps`, and every accrual freezes its own `feeBps`, so a
+ * completed load is always billed at the rate the host accepted for it.
  */
-export const PLATFORM_FEE_BPS = 500
+export const PLATFORM_FEE_BPS = 200
+
+/**
+ * The version of the host fee terms a host accepts before publishing. It is the
+ * date those terms took effect, and the public Terms page shows the same date.
+ */
+export const HOST_FEE_TERMS_VERSION = "2026-10-14"
+
+/** The fee as a whole-number percentage label, e.g. "2%". */
+export function platformFeePercentLabel(feeBps: number = PLATFORM_FEE_BPS): string {
+  return `${feeBps / 100}%`
+}
 
 /**
  * The fee rate an accepted assignment actually authorized.
  *
- * A number alone is not authority to accrue or collect money. Historical
- * snapshots can retain a proposed rate after collection was disabled, and the
- * canonical state is provider data that may be malformed. Every billing
- * boundary therefore shares this one fail-closed predicate: the collection
- * state must be authoritative and the rate must be an exact, bounded integer.
+ * A number alone is not authority to accrue or collect money: the canonical
+ * state is stored data that may be malformed. Every billing boundary therefore
+ * shares this one fail-closed predicate: the frozen `hostFee` terms must say the
+ * fee accrues monthly in arrears, and the rate must be an exact, bounded integer.
  */
 export function frozenPlatformFeeBps(termsSnapshot: unknown): number | null {
   if (
@@ -126,10 +134,8 @@ export const hostInvoiceStatusSchema = z.enum([
 ])
 
 /**
- * Whether a percentage-billed host has a usable card on file. `attached` gates
- * new percentage work whose frozen terms will accrue the fee. Historical
- * subscription records use their own provider state and remain serviceable for
- * reconciliation without authorizing post-cutover publication.
+ * Whether a host has a usable card on file. `attached` is one of the conditions
+ * for publishing work, because the fee on that work is charged to this card.
  */
 export const hostBillingProfileStatusSchema = z.enum(["none", "attached", "failed"])
 
@@ -162,8 +168,8 @@ function assertFeeBps(value: number): void {
  * plus one cent when the discarded remainder is half a cent or more. On an exact
  * half-cent the host pays the extra cent — stated here so nobody has to infer it,
  * and so the direction is a decision rather than an accident of whichever
- * language primitive got used. 5% of $525.00 is 2625c exactly; 5% of $99.99 is
- * 499.95c and bills as 500c.
+ * language primitive got used. 2% of $525.00 is 1050c exactly; 2% of $99.99 is
+ * 199.98c and bills as 200c.
  *
  * The arithmetic is integer-only. `remainder` and `scaled - remainder` are exact,
  * and an exact multiple of 10_000 divided by 10_000 is exact, so no float rounding
@@ -209,9 +215,9 @@ export interface HostChargeBreakdown {
  * invoice. `hostTotalCents` is an addition — there is deliberately no "net pay"
  * field for a surface to reach for, because no such number exists in this model.
  *
- * `feeBps` is required, with no default. A historical load must be explained with
- * the rate frozen on its own fee event; defaulting to the current rate here is
- * exactly how a surface would quietly re-rate last quarter's bill.
+ * `feeBps` is required, with no default. A completed load is explained with the
+ * rate frozen on its own fee event; defaulting to the current rate here is
+ * exactly how a surface would quietly re-rate a bill the host already received.
  */
 export function hostChargeBreakdown(driverPayCents: number, feeBps: number): HostChargeBreakdown {
   const platformFeeCents = computePlatformFeeCents(driverPayCents, feeBps)
@@ -310,18 +316,17 @@ const uuidSchema = z.string().uuid()
  * The namespace every platform-fee event id is derived under. FROZEN FOREVER.
  *
  * Changing this value re-mints the id of every fee that has ever accrued, which
- * would make the at-most-one check below pass for loads that were already billed
- * and charge every host a second time. There is no migration that fixes that
- * after the fact.
+ * would make the at-most-one check pass for loads that were already billed and
+ * charge every host a second time. There is no migration that fixes that after
+ * the fact.
  */
-const PLATFORM_FEE_EVENT_NAMESPACE = "8f8c4b3e-6a1d-4a2f-9b57-2c0d5e7a1b64"
+const PLATFORM_FEE_EVENT_NAMESPACE = "f0b0d70d-9530-4d29-b66d-0b227d1f08e8"
 
 /**
- * Namespace for percentage_v1 fee events, keyed by physical movement rather
- * than assignment. Frozen forever: changing it would make a completed movement
- * look unbilled and permit a second fee.
+ * The namespace every host fee agreement id is derived under. FROZEN FOREVER, so
+ * one organization can only ever hold one agreement row.
  */
-const PERCENTAGE_V1_FEE_EVENT_NAMESPACE = "f0b0d70d-9530-4d29-b66d-0b227d1f08e8"
+const HOST_FEE_AGREEMENT_NAMESPACE = "11de8a1d-a131-4180-8106-e8030e36f817"
 
 function rotateLeft(value: number, bits: number): number {
   return ((value << bits) | (value >>> (32 - bits))) >>> 0
@@ -505,9 +510,8 @@ export function deterministicUuidV5(namespaceUuid: string, name: string): string
 }
 
 /**
- * The id of the legacy_percentage fee accrued for one assignment. Same
- * assignment, same id, forever. Subscription-v1 usage has a separate
- * movement-derived id and must never call this helper.
+ * The id of the fee accrued for one physical movement. Same movement, same id,
+ * forever.
  *
  * THIS IS THE DOUBLE-BILLING DEFENCE. The operating state is a single JSONB
  * document: there is no unique index, no foreign key and no CHECK constraint
@@ -517,36 +521,71 @@ export function deterministicUuidV5(namespaceUuid: string, name: string): string
  * enough — a random id makes the assertion unable to recognise the duplicate, and
  * the assertion outside the mutation is defeated by a compare-and-swap retry.
  *
- * Keyed on the ASSIGNMENT because an assignment is exactly one truckload hauled by
- * one driver, which is the unit the fee is charged on. It is deliberately not
- * keyed on the truck slot: a slot in this product carries `capacity`, so several
- * assignments legitimately complete inside one slot, and slot-keying would bill
- * one fee for all of them.
+ * Keyed on the MOVEMENT because a movement is exactly one truckload, which is the
+ * unit the fee is charged on. A replacement assignment carries the movement id of
+ * the assignment it replaces, so it derives the same fee id and the truckload is
+ * billed once however many drivers were assigned to it. It is deliberately not
+ * keyed on the truck slot: a slot carries `capacity`, so several movements
+ * legitimately complete inside one slot.
  *
  * The input is lower-cased first, so a uuid written in upper case cannot mint a
  * second fee for a load that was already charged.
  */
-export function platformFeeEventId(assignmentId: string): string {
-  if (!uuidSchema.safeParse(assignmentId).success) {
-    throw new Error(`platformFeeEventId needs an assignment uuid, received ${JSON.stringify(assignmentId)}`)
-  }
-
-  return deterministicUuidV5(PLATFORM_FEE_EVENT_NAMESPACE, assignmentId.toLowerCase())
-}
-
-/**
- * The one percentage_v1 fee id for a physical movement. Replacement
- * assignments intentionally derive the same id.
- */
-export function percentageFeeEventId(loadMovementId: string): string {
+export function platformFeeEventId(loadMovementId: string): string {
   if (!uuidSchema.safeParse(loadMovementId).success) {
     throw new Error(
-      `percentageFeeEventId needs a movement uuid, received ${JSON.stringify(loadMovementId)}`
+      `platformFeeEventId needs a movement uuid, received ${JSON.stringify(loadMovementId)}`
     )
   }
 
-  return deterministicUuidV5(
-    PERCENTAGE_V1_FEE_EVENT_NAMESPACE,
-    loadMovementId.toLowerCase()
+  return deterministicUuidV5(PLATFORM_FEE_EVENT_NAMESPACE, loadMovementId.toLowerCase())
+}
+
+// ── The host fee agreement ────────────────────────────────────────────────────
+
+/**
+ * The one record that a host organization accepted the LogLoads fee terms.
+ *
+ * A host accepts once, before publishing. The row freezes the rate and terms
+ * version that were accepted; it does not move money. No row means the terms
+ * were never accepted.
+ */
+export const hostFeeAgreementSchema = z
+  .object({
+    /** hostFeeAgreementId(organizationId): one agreement per organization. */
+    id: uuidSchema,
+    organizationId: uuidSchema,
+    feeBps: z.number().int().min(0).max(FEE_BPS_SCALE),
+    termsVersion: z.string().trim().min(1).max(120),
+    acceptedAt: z.string().datetime(),
+    acceptedByUserId: uuidSchema,
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime()
+  })
+  .strict()
+
+export type HostFeeAgreement = z.infer<typeof hostFeeAgreementSchema>
+
+export function hostFeeAgreementId(organizationId: string): string {
+  if (!uuidSchema.safeParse(organizationId).success) {
+    throw new Error(
+      `hostFeeAgreementId needs an organization uuid, received ${JSON.stringify(organizationId)}`
+    )
+  }
+
+  return deterministicUuidV5(HOST_FEE_AGREEMENT_NAMESPACE, organizationId.toLowerCase())
+}
+
+/**
+ * Whether an agreement covers new work today: it was accepted at the current
+ * rate under the current terms version. An agreement at any other rate or
+ * version must be accepted again before the host publishes.
+ */
+export function isCurrentHostFeeAgreement(
+  agreement: Pick<HostFeeAgreement, "feeBps" | "termsVersion"> | null | undefined
+): boolean {
+  return (
+    agreement?.feeBps === PLATFORM_FEE_BPS &&
+    agreement.termsVersion === HOST_FEE_TERMS_VERSION
   )
 }

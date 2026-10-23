@@ -2,18 +2,16 @@ import type {
   Assignment,
   AuditEvent,
   AvailabilityWindow,
-  BillingAdjustment,
-  BillingPeriodSummary,
   CredentialReview,
   DestinationFacility,
   DirectOffer,
   DispatcherProfile,
   DriverCredential,
   DriverProfile,
-  Entitlement,
   EquipmentCombination,
   FutureAvailability,
   HaulRoute,
+  HostFeeAgreement,
   HostBillingProfile,
   HostInvoice,
   Landing,
@@ -24,23 +22,17 @@ import type {
   MessageThread,
   Mill,
   Notification,
-  NetworkOverageInvoice,
-  NetworkUsageEvent,
   OperationalNotice,
   OpportunityCapacity,
   Organization,
-  OrganizationBillingAccount,
   OrganizationInvitation,
   OrganizationMembership,
-  OrganizationSubscription,
   PlatformFeeEvent,
   PrivateNetworkRelationship,
   Rate,
   RichLandingDetails,
   RoutePack,
   SupportRequest,
-  SubscriptionBaseInvoice,
-  SubscriptionPlanDefinition,
   TrailerProfile,
   TripDocument,
   TripInspection,
@@ -94,31 +86,15 @@ export interface LogLoadsDatabaseState {
   tripInspections: TripInspection[]
   tripReviews: TripReview[]
   verificationRecords: VerificationRecord[]
-  entitlements: Entitlement[]
   /**
-   * Platform fee billing, in lifecycle order: whether the host can be charged,
-   * what each completed load accrued, and the monthly bill those accruals land on.
-   * Separate from `entitlements`, which is the Dispatch Pro software subscription —
-   * collapsing them would let a plan webhook mutate a per-load charge.
+   * The LogLoads host fee, in lifecycle order: which hosts accepted the fee
+   * terms, whether the host can be charged, what each completed load accrued,
+   * and the monthly bill those accruals land on.
    */
+  hostFeeAgreements: HostFeeAgreement[]
   hostBillingProfiles: HostBillingProfile[]
   platformFeeEvents: PlatformFeeEvent[]
   hostInvoices: HostInvoice[]
-  /**
-   * Subscription-v1 authority. Plan definitions are versioned commercial
-   * facts; accounts choose an effective model; subscriptions and period
-   * summaries freeze the provider relationship and rates; append-only usage and
-   * adjustments explain every overage invoice.
-   */
-  billingPlanDefinitions: SubscriptionPlanDefinition[]
-  organizationBillingAccounts: OrganizationBillingAccount[]
-  organizationSubscriptions: OrganizationSubscription[]
-  networkUsageEvents: NetworkUsageEvent[]
-  billingPeriodSummaries: BillingPeriodSummary[]
-  billingAdjustments: BillingAdjustment[]
-  networkOverageInvoices: NetworkOverageInvoice[]
-  /** Exact provider-confirmed recurring subscription invoice/dunning facts. */
-  subscriptionBaseInvoices: SubscriptionBaseInvoice[]
   operationalNotices: OperationalNotice[]
   notifications: Notification[]
   supportRequests: SupportRequest[]

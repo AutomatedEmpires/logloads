@@ -9,47 +9,35 @@ import {
   hostBillingProfileSchema,
   hostInvoiceSchema,
   invoiceSubtotalCents,
-  LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
+  PLATFORM_FEE_CURRENCY,
   readFrozenDriverPay,
   type HostBillingProfile,
   type HostBillingProfileStatus,
   type HostInvoice,
   type HostInvoiceStatus,
   type Organization,
-  type OrganizationType,
   type PlatformFeeEvent
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 import type { LogLoadsServices } from "@logloads/services"
 import Stripe from "stripe"
 
-import type { PlanProduct } from "./plans"
 import { hostCardSetupEligibility } from "./host-card-eligibility"
-import {
-  classifyStripeBillingObject,
-  stripePublishableModeProblem,
-  stripeRuntimeModeProblem,
-  STRIPE_API_VERSION,
-  STRIPE_MAX_NETWORK_RETRIES,
-  STRIPE_REQUEST_TIMEOUT_MS,
-  subscriptionStatusDecision,
-  type StripeBillingObjectClassification
-} from "./subscription-stripe"
+import { stripePublishableModeProblem, stripeRuntimeModeProblem } from "./stripe-account"
 
 /**
  * Everything LogLoads does with Stripe, and nothing else.
  *
- * WHAT IS CHARGED HERE. Current hosts owe the frozen percentage-v1 fee on top of
- * stated driver pay for completed physical deliveries. Historical percentage
- * obligations and retired subscription records remain explainable through the
- * same provider boundary, but no path here may create a new subscription. The
- * models keep distinct rows and markers so one movement cannot enter both.
+ * WHAT IS CHARGED HERE. The LogLoads host fee: 2% of the driver pay a host
+ * stated on each completed load, frozen when the host accepted the work, billed
+ * to the host on top of that pay, invoiced monthly in arrears and charged to the
+ * host's card on file.
  *
  * WHAT IS NEVER CHARGED HERE. Driver pay. LogLoads is non-custodial: driver money
  * moves host → driver directly and off-platform, and nothing in this file holds,
  * escrows, routes or pays it out. `StripeBillingPort` below is the COMPLETE list
  * of Stripe operations this product performs — there is no payout, no transfer,
- * and no third-party account routing in it, which is checkable by reading eleven
+ * and no third-party account routing in it, which is checkable by reading twelve
  * method names rather than by auditing every call site.
  *
  * WHY A PORT AT ALL. The Stripe environment is absent locally and in tests, and a
@@ -126,6 +114,22 @@ export function billingUnavailable(reason: BillingUnavailableReason): BillingUna
 
 // ── The Stripe port ───────────────────────────────────────────────────────────
 
+/**
+ * Stripe's SDK types are generated for one API version. Pinning both this value
+ * and the package version keeps provider object shapes from drifting underneath
+ * webhook and reconciliation code.
+ */
+const STRIPE_API_VERSION = "2026-06-24.dahlia" as const
+const STRIPE_MAX_NETWORK_RETRIES = 2
+const STRIPE_REQUEST_TIMEOUT_MS = 15_000
+
+/**
+ * The smallest amount Stripe will charge a USD card. A monthly bill below it
+ * stays open rather than being sent to Stripe, which would refuse it or move it
+ * onto the customer's balance.
+ */
+export const STRIPE_MINIMUM_CHARGE_CENTS = 50
+
 export interface StripeCustomerFacts {
   id: string
 }
@@ -158,30 +162,6 @@ export interface StripeProviderInvoiceFacts extends StripeInvoiceFacts {
   customerId: string | null
 }
 
-export interface StripeSubscriptionFacts {
-  billingCycleAnchor?: string
-  cancelAtPeriodEnd?: boolean
-  currentPeriodStartsAt?: string | null
-  id: string
-  livemode?: boolean
-  metadata?: Record<string, string>
-  priceId?: string | null
-  scheduleId?: string | null
-  status: string
-  stripeCustomerId?: string | null
-  testClockId?: string | null
-  currentPeriodEndsAt: string | null
-}
-
-export interface StripeCheckoutSessionFacts {
-  id: string
-  url: string | null
-}
-
-export interface StripePortalSessionFacts {
-  url: string
-}
-
 /**
  * One Stripe event, reduced to the fields LogLoads reads.
  *
@@ -201,21 +181,6 @@ export interface StripeBillingEvent {
 
 export interface StripeBillingPort {
   constructWebhookEvent(payload: string, signature: string): StripeBillingEvent
-  createBillingPortalSession(input: {
-    configurationId?: string
-    customerId: string
-    returnUrl: string
-  }): Promise<StripePortalSessionFacts>
-  createCheckoutSession(input: {
-    cancelUrl: string
-    customerId?: string
-    idempotencyKey?: string
-    metadata: Record<string, string>
-    organizationId: string
-    priceId: string
-    subscriptionMetadata?: Record<string, string>
-    successUrl: string
-  }): Promise<StripeCheckoutSessionFacts>
   createCustomer(input: {
     idempotencyKey: string
     metadata: Record<string, string>
@@ -257,40 +222,15 @@ export interface StripeBillingPort {
     paymentMethodId: string
     stripeInvoiceId: string
   }): Promise<StripeInvoiceFacts>
+  /** The account the secret key belongs to, for `verifyExpectedStripeAccount`. */
+  retrieveAccountId(): Promise<string>
   retrieveCustomerBalance(customerId: string): Promise<number>
   retrievePaymentMethod(paymentMethodId: string): Promise<StripePaymentMethodFacts>
-  retrieveSubscription(subscriptionId: string): Promise<StripeSubscriptionFacts>
   setDefaultPaymentMethod(input: { customerId: string; paymentMethodId: string }): Promise<void>
 }
 
-/** Stripe expects lower-case ISO codes for the canonical legacy currency. */
-const CHARGE_CURRENCY =
-  LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY.toLowerCase()
-
-function subscriptionPeriodEnd(subscription: Stripe.Subscription): string | null {
-  const periodEnd = subscription.items.data.reduce(
-    (latest, item) => Math.max(latest, item.current_period_end),
-    0
-  )
-
-  return periodEnd > 0 ? new Date(periodEnd * 1000).toISOString() : null
-}
-
-function subscriptionPeriodStart(subscription: Stripe.Subscription): string | null {
-  const periodStarts = subscription.items.data.map((item) => item.current_period_start)
-
-  if (periodStarts.length === 0 || new Set(periodStarts).size !== 1) {
-    return null
-  }
-
-  return new Date(periodStarts[0]! * 1000).toISOString()
-}
-
-function stripeObjectId(
-  value: string | { id: string } | null | undefined
-): string | null {
-  return typeof value === "string" ? value : value?.id ?? null
-}
+/** Stripe expects lower-case ISO currency codes. */
+const CHARGE_CURRENCY = PLATFORM_FEE_CURRENCY.toLowerCase()
 
 function invoiceFacts(invoice: Stripe.Invoice): StripeInvoiceFacts {
   return {
@@ -350,36 +290,6 @@ function buildStripePort(secretKey: string, webhookSecret: string | null): Strip
           (event.data.previous_attributes as Record<string, unknown> | undefined) ?? null,
         type: event.type
       }
-    },
-    async createBillingPortalSession(input) {
-      const session = await stripe.billingPortal.sessions.create({
-        configuration: input.configurationId,
-        customer: input.customerId,
-        return_url: input.returnUrl
-      })
-
-      return { url: session.url }
-    },
-    async createCheckoutSession(input) {
-      const params: Stripe.Checkout.SessionCreateParams = {
-        cancel_url: input.cancelUrl,
-        client_reference_id: input.organizationId,
-        customer: input.customerId,
-        line_items: [{ price: input.priceId, quantity: 1 }],
-        metadata: input.metadata,
-        mode: "subscription",
-        subscription_data: {
-          metadata: input.subscriptionMetadata ?? input.metadata
-        },
-        success_url: input.successUrl
-      }
-      const session = input.idempotencyKey
-        ? await stripe.checkout.sessions.create(params, {
-            idempotencyKey: input.idempotencyKey
-          })
-        : await stripe.checkout.sessions.create(params)
-
-      return { id: session.id, url: session.url }
     },
     async createCustomer(input) {
       const customer = await stripe.customers.create(
@@ -475,6 +385,14 @@ function buildStripePort(secretKey: string, webhookSecret: string | null): Strip
 
       return invoiceFacts(invoice)
     },
+    async retrieveAccountId() {
+      // The API key's own account, read for the tenancy assertion in
+      // stripe-account.ts. No connected account is created, read, or paid
+      // through it.
+      const account = await stripe["accounts"].retrieveCurrent()
+
+      return account.id
+    },
     async retrieveCustomerBalance(customerId) {
       const customer = await stripe.customers.retrieve(customerId)
 
@@ -491,26 +409,6 @@ function buildStripePort(secretKey: string, webhookSecret: string | null): Strip
         brand: method.card?.brand ?? null,
         id: method.id,
         last4: method.card?.last4 ?? null
-      }
-    },
-    async retrieveSubscription(subscriptionId) {
-      const subscription = await stripe.subscriptions.retrieve(subscriptionId)
-      const onlyItem =
-        subscription.items.data.length === 1 ? subscription.items.data[0] : undefined
-
-      return {
-        billingCycleAnchor: new Date(subscription.billing_cycle_anchor * 1000).toISOString(),
-        cancelAtPeriodEnd: subscription.cancel_at_period_end,
-        currentPeriodEndsAt: subscriptionPeriodEnd(subscription),
-        currentPeriodStartsAt: subscriptionPeriodStart(subscription),
-        id: subscription.id,
-        livemode: subscription.livemode,
-        metadata: { ...subscription.metadata },
-        priceId: onlyItem?.price.id ?? null,
-        scheduleId: stripeObjectId(subscription.schedule),
-        status: subscription.status,
-        stripeCustomerId: stripeObjectId(subscription.customer),
-        testClockId: stripeObjectId(subscription.test_clock)
       }
     },
     async setDefaultPaymentMethod(input) {
@@ -596,17 +494,10 @@ export function stripePublishableKey(env: BillingEnvironment = process.env): Bil
 // ── State access ──────────────────────────────────────────────────────────────
 
 /**
- * The mutation surface, derived from the real services type so it cannot drift.
- *
- * Everything a mutation callback may use, and nothing more: the raw state for the
- * fee-billing rows, plus the two existing subscription helpers. Deriving it with
- * `Pick` means a signature change in the services package breaks this file at
- * compile time instead of at runtime.
+ * The mutation surface, derived from the real services type so it cannot drift:
+ * the raw state that holds the fee-billing rows, and nothing more.
  */
-export type BillingDraft = Pick<
-  LogLoadsServices,
-  "applyBillingUpdate" | "findEntitlementByStripeSubscription" | "state"
->
+export type BillingDraft = Pick<LogLoadsServices, "state">
 
 /**
  * How billing reaches the operating state.
@@ -1010,7 +901,10 @@ export function findHostInvoiceByStripeId(
   return matches[0]
 }
 
-/** Every unsettled monthly bill, oldest first, including dark-launch backlog. */
+/**
+ * Every unsettled monthly bill, oldest first, including bills opened while
+ * collection was switched off.
+ */
 export function listOpenHostInvoices(state: LogLoadsDatabaseState): HostInvoice[] {
   return state.hostInvoices
     .filter((invoice) => invoice.status === "open")
@@ -1039,9 +933,9 @@ function writeHostInvoice(state: LogLoadsDatabaseState, candidate: HostInvoice):
  * was charged and our write was lost.
  *
  * It binds an id and nothing else. Which fees a bill is made of, and flipping them
- * to `invoiced`, belongs to `openInvoiceForPeriod` in the services package, which
- * closes the month; doing it again here would be a second implementation of what a
- * bill contains.
+ * to `invoiced`, belongs to `openClosedPeriodInvoices` in the services package,
+ * which closes the month; doing it again here would be a second implementation of
+ * what a bill contains.
  */
 export function markHostInvoiceIssued(
   state: LogLoadsDatabaseState,
@@ -1081,12 +975,9 @@ export function markHostInvoiceIssued(
 /**
  * Records that a monthly bill was paid, on behalf of Stripe rather than a member.
  *
- * WHY THIS IS NOT `markInvoicePaid` FROM THE SERVICES PACKAGE. That one requires an
- * `actorUserId` who is an active member of the host organization holding
- * `manage_billing`, which is right for a human pressing a button and impossible for
- * a provider callback: a webhook has no actor, and inventing one would put a person
- * on the record for something they did not do. So this is the system-level path,
- * and it is deliberately narrower — it can only mark paid, never write off.
+ * A provider callback has no actor, and inventing one would put a person on the
+ * record for something they did not do, so this path names nobody. It is
+ * deliberately narrow: it can only mark paid, never write off.
  *
  * Idempotent: a bill that is already paid keeps its original `paidAt`, so a
  * redelivered Stripe event cannot move the date money arrived. `issuedAt` is
@@ -1127,13 +1018,26 @@ export function markHostInvoicePaid(
 
 // ── Charging a monthly bill ───────────────────────────────────────────────────
 
-export interface HostInvoiceCharge {
-  alreadyCharged: boolean
-  invoiceId: string
-  status: HostInvoiceStatus
-  stripeInvoiceId: string
-  subtotalCents: number
-}
+export type HostInvoiceCharge =
+  | {
+      outcome: "charged"
+      alreadyCharged: boolean
+      invoiceId: string
+      status: HostInvoiceStatus
+      stripeInvoiceId: string
+      subtotalCents: number
+    }
+  /**
+   * The bill is smaller than Stripe's minimum card charge. Nothing was sent to
+   * Stripe and the bill stays open; it is reported, not charged.
+   */
+  | {
+      outcome: "below_card_minimum"
+      invoiceId: string
+      minimumChargeCents: number
+      status: "open"
+      subtotalCents: number
+    }
 
 export function platformFeeCollectionEnabled(
   environment: Readonly<Record<string, string | undefined>> = process.env
@@ -1193,6 +1097,7 @@ type HostInvoiceChargePlan =
       stripeInvoiceId: string
       subtotalCents: number
     }
+  | { kind: "below_card_minimum"; subtotalCents: number }
   | { kind: "refused"; message: string }
 
 type PaymentProfilePlan = Extract<
@@ -1266,7 +1171,7 @@ function hostPaymentProfileStillMatchesPlan(
   )
 }
 
-function legacyInvoiceCurrencyProblem(
+function invoiceCurrencyProblem(
   state: LogLoadsDatabaseState,
   invoice: HostInvoice
 ): string | null {
@@ -1276,7 +1181,7 @@ function legacyInvoiceCurrencyProblem(
     )
 
     if (!fee || fee.organizationId !== invoice.organizationId) {
-      return "This legacy bill cannot prove the source of every fee, so it cannot be charged"
+      return "This bill cannot prove the source of every fee, so it cannot be charged"
     }
 
     if (fee.status === "voided") {
@@ -1290,12 +1195,8 @@ function legacyInvoiceCurrencyProblem(
       ? readFrozenDriverPay(assignment.termsSnapshot)
       : null
 
-    if (
-      !frozenDriverPay ||
-      frozenDriverPay.currency !==
-        LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
-    ) {
-      return `Legacy platform fees can be charged only when every accepted load proves ${LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY}-denominated driver pay`
+    if (!frozenDriverPay || frozenDriverPay.currency !== PLATFORM_FEE_CURRENCY) {
+      return `The LogLoads fee can be charged only when every accepted load proves ${PLATFORM_FEE_CURRENCY}-denominated driver pay`
     }
   }
 
@@ -1351,25 +1252,18 @@ function hostInvoiceLedgerProblem(
     }
     const assignment = assignments[0]!
     const load = loads[0]!
-    const billingModelMatches =
-      assignment.billingModel === fee.billingModel ||
-      (fee.billingModel === "legacy_percentage" && assignment.billingModel === null)
     const frozenPay = readFrozenDriverPay(assignment.termsSnapshot)
     const frozenFeeBps = frozenPlatformFeeBps(assignment.termsSnapshot)
     if (
       assignment.loadPostingId !== load.id ||
       load.companyId !== fee.organizationId ||
       (assignment.loadMovementId ?? assignment.id) !== fee.loadMovementId ||
-      assignment.truckSlotId !== fee.truckSlotId ||
-      !billingModelMatches
+      assignment.truckSlotId !== fee.truckSlotId
     ) {
-      return `Fee ${feeEventId} is cross-wired to its host, load, movement, slot, or billing model`
+      return `Fee ${feeEventId} is cross-wired to its host, load, movement, or slot`
     }
-    if (
-      !frozenPay ||
-      frozenPay.currency !== LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
-    ) {
-      return `Fee ${feeEventId} cannot prove accepted ${LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY}-denominated driver pay`
+    if (!frozenPay || frozenPay.currency !== PLATFORM_FEE_CURRENCY) {
+      return `Fee ${feeEventId} cannot prove accepted ${PLATFORM_FEE_CURRENCY}-denominated driver pay`
     }
     if (
       frozenPay.amountCents !== fee.driverPayCents ||
@@ -1417,7 +1311,7 @@ export function planHostInvoiceCharge(
         return { kind: "refused", message: ledgerProblem }
       }
 
-      const currencyProblem = legacyInvoiceCurrencyProblem(state, invoice)
+      const currencyProblem = invoiceCurrencyProblem(state, invoice)
 
       if (currencyProblem) {
         return { kind: "refused", message: currencyProblem }
@@ -1481,7 +1375,7 @@ export function planHostInvoiceCharge(
     fees.push(fee)
   }
 
-  const currencyProblem = legacyInvoiceCurrencyProblem(state, invoice)
+  const currencyProblem = invoiceCurrencyProblem(state, invoice)
 
   if (currencyProblem) {
     return { kind: "refused", message: currencyProblem }
@@ -1502,6 +1396,12 @@ export function planHostInvoiceCharge(
     return { kind: "refused", message: "There is nothing to collect on this bill" }
   }
 
+  // Checked before the card: a bill this small is not sent to Stripe whatever
+  // card is on file, so the host's card state does not change the answer.
+  if (subtotalCents < STRIPE_MINIMUM_CHARGE_CENTS) {
+    return { kind: "below_card_minimum", subtotalCents }
+  }
+
   const profile = findHostBillingProfile(state, invoice.organizationId)
   const paymentProfile = planHostPaymentProfile(state, invoice.organizationId, {
     allowFailed: false
@@ -1518,9 +1418,8 @@ export function planHostInvoiceCharge(
   const period = billingPeriodLabel(invoice.periodStart)
 
   return {
-    // One invoice can contain work accepted under different frozen rates. The
-    // amount and ledger rows are authoritative; provider copy must not claim
-    // that every line was earned at today's headline rate.
+    // The amount comes from the ledger rows, each at the rate frozen when its
+    // load was accepted, so the provider copy names the period rather than a rate.
     description: `LogLoads platform fee — ${period} (completed loads only)`,
     kind: "charge",
     metadata: {
@@ -1534,7 +1433,7 @@ export function planHostInvoiceCharge(
   }
 }
 
-function legacyInvoiceSettlementProblem(
+function invoiceSettlementProblem(
   invoice: StripeInvoiceFacts,
   expectedTotalCents: number
 ): string | null {
@@ -1551,7 +1450,7 @@ function legacyInvoiceSettlementProblem(
     invoice.startingBalanceCents !== 0 ||
     invoice.endingBalanceCents !== 0
   ) {
-    return "Stripe invoice amount or customer-balance facts do not match the frozen legacy bill"
+    return "Stripe invoice amount or customer-balance facts do not match the LogLoads bill"
   }
 
   if (
@@ -1561,13 +1460,13 @@ function legacyInvoiceSettlementProblem(
       invoice.amountRemainingCents !== 0
     )
   ) {
-    return "Stripe marked the legacy bill paid without collecting its exact frozen total"
+    return "Stripe marked the bill paid without collecting its exact total"
   }
 
   return null
 }
 
-async function legacyCustomerBalanceProblem(
+async function customerBalanceProblem(
   port: Pick<StripeBillingPort, "retrieveCustomerBalance">,
   customerId: string
 ): Promise<string | null> {
@@ -1575,14 +1474,14 @@ async function legacyCustomerBalanceProblem(
 
   return Number.isSafeInteger(balanceCents) && balanceCents === 0
     ? null
-    : "Stripe customer balance must be exactly zero before legacy collection"
+    : "Stripe customer balance must be exactly zero before LogLoads collects a bill"
 }
 
 /**
  * Charges one monthly bill: an ad-hoc invoice item, finalized and paid.
  *
- * DELIBERATELY NOT A PRICE OR A SUBSCRIPTION. The amount is different every month
- * and is known only from the fee ledger, and a subscription would need an object
+ * DELIBERATELY AN AD-HOC ITEM, NOT A STRIPE PRICE. The amount is different every
+ * month and is known only from the fee ledger, and a price would need an object
  * created in the Stripe dashboard before a single host could be billed. An ad-hoc
  * item on a customer with a default card needs nothing provisioned.
  *
@@ -1590,6 +1489,9 @@ async function legacyCustomerBalanceProblem(
  * compare-and-swap mutation can be replayed, and a replayed network call is a
  * second charge. So the decision is read, Stripe is called once, and the result
  * is written with the store-once assertion in `markHostInvoiceIssued`.
+ *
+ * A bill below Stripe's minimum card charge is never sent to Stripe: it stays
+ * open and the result says so, rather than reading as a charge or a failure.
  */
 export async function chargeHostInvoice(input: {
   invoiceId: string
@@ -1604,8 +1506,19 @@ export async function chargeHostInvoice(input: {
     return billingRefused(plan.message)
   }
 
+  if (plan.kind === "below_card_minimum") {
+    return billingOk({
+      invoiceId: input.invoiceId,
+      minimumChargeCents: STRIPE_MINIMUM_CHARGE_CENTS,
+      outcome: "below_card_minimum",
+      status: "open",
+      subtotalCents: plan.subtotalCents
+    })
+  }
+
   if (plan.kind === "already_charged") {
     return billingOk({
+      outcome: "charged",
       alreadyCharged: true,
       invoiceId: input.invoiceId,
       status: plan.status,
@@ -1615,7 +1528,7 @@ export async function chargeHostInvoice(input: {
   }
 
   if (plan.kind === "retry_payment") {
-    const balanceProblem = await legacyCustomerBalanceProblem(
+    const balanceProblem = await customerBalanceProblem(
       input.port,
       plan.customerId
     )
@@ -1637,7 +1550,7 @@ export async function chargeHostInvoice(input: {
       paymentMethodId: plan.paymentMethodId,
       stripeInvoiceId: plan.stripeInvoiceId
     })
-    const settlementProblem = legacyInvoiceSettlementProblem(
+    const settlementProblem = invoiceSettlementProblem(
       paid,
       plan.subtotalCents
     )
@@ -1665,6 +1578,7 @@ export async function chargeHostInvoice(input: {
       }
 
       return billingOk({
+        outcome: "charged",
         alreadyCharged: true,
         invoiceId: input.invoiceId,
         status: settled.status,
@@ -1690,9 +1604,8 @@ export async function chargeHostInvoice(input: {
   if (recovered) {
     if (
       recovered.customerId !== plan.customerId ||
-      recovered.currency !==
-        LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY ||
-      legacyInvoiceSettlementProblem(
+      recovered.currency !== PLATFORM_FEE_CURRENCY ||
+      invoiceSettlementProblem(
         recovered,
         plan.subtotalCents
       )
@@ -1740,6 +1653,7 @@ export async function chargeHostInvoice(input: {
 
     if (recovered.paid) {
       return billingOk({
+        outcome: "charged",
         alreadyCharged: true,
         invoiceId: input.invoiceId,
         status: "paid",
@@ -1748,7 +1662,7 @@ export async function chargeHostInvoice(input: {
       })
     }
 
-    const balanceProblem = await legacyCustomerBalanceProblem(
+    const balanceProblem = await customerBalanceProblem(
       input.port,
       plan.customerId
     )
@@ -1765,7 +1679,7 @@ export async function chargeHostInvoice(input: {
       paymentMethodId: plan.paymentMethodId,
       stripeInvoiceId: recovered.id
     })
-    const settlementProblem = legacyInvoiceSettlementProblem(
+    const settlementProblem = invoiceSettlementProblem(
       paid,
       plan.subtotalCents
     )
@@ -1797,6 +1711,7 @@ export async function chargeHostInvoice(input: {
       }
 
       return billingOk({
+        outcome: "charged",
         alreadyCharged: true,
         invoiceId: input.invoiceId,
         status: settled.status,
@@ -1806,7 +1721,7 @@ export async function chargeHostInvoice(input: {
     })
   }
 
-  const balanceProblem = await legacyCustomerBalanceProblem(
+  const balanceProblem = await customerBalanceProblem(
     input.port,
     plan.customerId
   )
@@ -1835,7 +1750,7 @@ export async function chargeHostInvoice(input: {
     idempotencyKey: hostInvoiceIdempotencyKey(input.invoiceId, "finalize"),
     stripeInvoiceId: created.id
   })
-  const finalizationProblem = legacyInvoiceSettlementProblem(
+  const finalizationProblem = invoiceSettlementProblem(
     finalized,
     plan.subtotalCents
   )
@@ -1857,7 +1772,7 @@ export async function chargeHostInvoice(input: {
   )
 
   const prePaymentBalanceProblem =
-    await legacyCustomerBalanceProblem(input.port, plan.customerId)
+    await customerBalanceProblem(input.port, plan.customerId)
 
   if (prePaymentBalanceProblem) {
     return billingRefused(prePaymentBalanceProblem)
@@ -1868,7 +1783,7 @@ export async function chargeHostInvoice(input: {
     paymentMethodId: plan.paymentMethodId,
     stripeInvoiceId: created.id
   })
-  const settlementProblem = legacyInvoiceSettlementProblem(
+  const settlementProblem = invoiceSettlementProblem(
     paid,
     plan.subtotalCents
   )
@@ -1901,6 +1816,7 @@ export async function chargeHostInvoice(input: {
     }
 
     return billingOk({
+      outcome: "charged",
       alreadyCharged: false,
       invoiceId: input.invoiceId,
       status: settled.invoice.status,
@@ -1932,7 +1848,6 @@ export interface HostCardSetup {
 export async function startHostCardSetup(input: {
   now?: () => string
   organization: Pick<Organization, "displayName" | "id">
-  percentageEnrollmentAllowed: boolean
   port: StripeBillingPort
   publishableKey: string
   state: BillingStateAccess
@@ -1940,11 +1855,7 @@ export async function startHostCardSetup(input: {
   const now = input.now ?? nowIso
   const organizationId = input.organization.id
   const eligibility = await input.state.read((state) =>
-    hostCardSetupEligibility(
-      state,
-      organizationId,
-      input.percentageEnrollmentAllowed
-    )
+    hostCardSetupEligibility(state, organizationId)
   )
 
   if (!eligibility.allowed) {
@@ -2006,60 +1917,6 @@ export function hostCardOnFile(
   }
 }
 
-// ── Dispatch Pro checkout eligibility ─────────────────────────────────────────
-
-export type CheckoutPlan =
-  | { kind: "not_purchasable"; message: string }
-  | {
-      kind: "subscription"
-      organizationTypes: readonly OrganizationType[]
-      priceEnv: "STRIPE_PRICE_DISPATCH"
-      returnPath: string
-    }
-
-/**
- * What each plan does when a host presses a buy button.
- *
- * An exhaustive record over the products in the entitlement contract: adding a
- * product will not compile until somebody decides whether it can be bought and by
- * whom. It used to be a partial map with the other three cases written inline in
- * the action, which is how "any organization may buy Dispatch Pro" survived.
- */
-const CHECKOUT_PLANS: Record<PlanProduct, CheckoutPlan> = {
-  driver_core: {
-    kind: "not_purchasable",
-    message: "The Driver plan is free. There is nothing to purchase for this workspace."
-  },
-  enterprise: {
-    kind: "not_purchasable",
-    message:
-      "New Enterprise subscription enrollment is closed. Contact support only to reconcile a preserved obligation."
-  },
-  fleet_operations: {
-    kind: "subscription",
-    // Dispatch Pro is the cockpit for the trucks an organization dispatches, and
-    // these are the two organization types that have one. A host buying it would
-    // pay $499/mo for a workspace they cannot open.
-    organizationTypes: ["carrier", "fleet"],
-    priceEnv: "STRIPE_PRICE_DISPATCH",
-    returnPath: "/fleet/billing"
-  },
-  landing_operations: {
-    kind: "not_purchasable",
-    message:
-      "Hosts use the current 5% completed-load agreement in Host Billing. There is no posting fee, subscription, monthly minimum, tier, allowance, or overage charge. Historical obligations remain under their original accepted terms."
-  }
-}
-
-/**
- * What this product is, commercially. One record answers both the checkout and
- * the billing-portal question, so the two can never disagree about whether a
- * product has a Stripe subscription behind it.
- */
-export function checkoutPlanFor(product: PlanProduct): CheckoutPlan {
-  return CHECKOUT_PLANS[product]
-}
-
 // ── Webhook handling ──────────────────────────────────────────────────────────
 
 /**
@@ -2079,36 +1936,10 @@ export interface BillingEventResult {
   status: BillingEventStatus
 }
 
-export interface SubscriptionBillingEventHooks {
-  checkoutCompleted(input: {
-    event: StripeBillingEvent
-    subscription: StripeSubscriptionFacts
-  }): Promise<BillingEventResult>
-  invoicePayment(input: {
-    classification: Exclude<
-      StripeBillingObjectClassification,
-      { kind: "none" | "legacy" | "conflict" }
-    >
-    event: StripeBillingEvent
-    outcome: "failed" | "succeeded"
-    subscription: StripeSubscriptionFacts | null
-  }): Promise<BillingEventResult>
-  internalRefund?(input: {
-    classification: Extract<StripeBillingObjectClassification, { kind: "internal_smoke" }>
-    event: StripeBillingEvent
-  }): Promise<BillingEventResult>
-  subscriptionChanged(input: {
-    decision: NonNullable<ReturnType<typeof subscriptionStatusDecision>>
-    event: StripeBillingEvent
-    subscription: StripeSubscriptionFacts
-  }): Promise<BillingEventResult>
-}
-
 export interface BillingEventDeps {
   now?: () => string
   port: StripeBillingPort
   state: BillingStateAccess
-  subscriptionEvents?: SubscriptionBillingEventHooks
 }
 
 function eventResult(
@@ -2163,9 +1994,9 @@ const BILLING_EVENT_SOURCE = "billing_provider"
 /**
  * Whether this exact Stripe event was already applied.
  *
- * Keyed on `metadata.eventId`, the same field the subscription path has always
- * used, so one dedupe question has one answer no matter which handler wrote the
- * record. Stripe redelivers on any non-2xx, so this runs on every event — and it
+ * Keyed on `metadata.eventId`, so one dedupe question has one answer no matter
+ * which handler wrote the record. Stripe redelivers on any non-2xx, so this runs
+ * on every event — and it
  * runs inside the mutation, because two concurrent redeliveries that both read
  * "not applied yet" before either writes would otherwise both apply.
  */
@@ -2280,20 +2111,6 @@ export function recordBillingEvent(
       }
     })
   )
-}
-
-/**
- * The plan status a subscription in a given Stripe state maps to.
- *
- * A deletion is a cancellation regardless of what the object says, because the
- * event is the fact. Unknown or newly introduced provider states return null:
- * they must remain retryable instead of silently granting paid access.
- */
-export function entitlementStatusForSubscription(
-  eventType: string,
-  subscriptionStatus: string
-): "trialing" | "active" | "past_due" | "cancelled" | null {
-  return subscriptionStatusDecision(subscriptionStatus, eventType)?.entitlementStatus ?? null
 }
 
 /**
@@ -2448,8 +2265,7 @@ async function handlePaymentMethodDetached(
  *
  * `hostInvoiceId` metadata is written by `chargeHostInvoice`, so it resolves even
  * when our own write of `stripeInvoiceId` was lost — which is exactly the case
- * that needs healing. Dispatch Pro subscription invoices carry neither, which is
- * how they are told apart from a platform-fee bill.
+ * that needs healing. An invoice that carries neither is not a LogLoads bill.
  */
 function resolveHostInvoiceForEvent(
   state: LogLoadsDatabaseState,
@@ -2510,11 +2326,8 @@ function unboundHostInvoiceEventProblem(
     return "The Stripe invoice customer does not match the LogLoads bill"
   }
 
-  if (
-    currency?.toUpperCase() !==
-    LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
-  ) {
-    return `The Stripe invoice currency does not match the ${LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY} LogLoads bill`
+  if (currency?.toUpperCase() !== PLATFORM_FEE_CURRENCY) {
+    return `The Stripe invoice currency does not match the ${PLATFORM_FEE_CURRENCY} LogLoads bill`
   }
 
   if (!Number.isSafeInteger(total) || total !== invoice.subtotalCents) {
@@ -2524,7 +2337,7 @@ function unboundHostInvoiceEventProblem(
   return null
 }
 
-function legacyInvoiceEventSettlementProblem(
+function invoiceEventSettlementProblem(
   invoice: HostInvoice,
   event: StripeBillingEvent,
   outcome: "failed" | "succeeded"
@@ -2553,7 +2366,7 @@ function legacyInvoiceEventSettlementProblem(
     startingBalanceCents !== 0 ||
     endingBalanceCents !== 0
   ) {
-    return "Stripe legacy invoice amount or customer-balance facts do not match the frozen bill"
+    return "Stripe invoice amount or customer-balance facts do not match the LogLoads bill"
   }
 
   if (
@@ -2564,90 +2377,20 @@ function legacyInvoiceEventSettlementProblem(
       amountRemainingCents !== 0
     )
   ) {
-    return "Stripe reported legacy payment success without exact card collection"
+    return "Stripe reported payment success without exact card collection"
   }
 
   if (outcome === "failed" && status === "paid") {
-    return "Stripe reported legacy payment failure for a paid invoice"
+    return "Stripe reported payment failure for a paid invoice"
   }
 
   return null
-}
-
-async function handleNonLegacyInvoicePayment(
-  event: StripeBillingEvent,
-  deps: BillingEventDeps,
-  outcome: "failed" | "succeeded"
-): Promise<BillingEventResult | null> {
-  const classification = classifyStripeBillingObject(event.object)
-
-  if (classification.kind === "conflict") {
-    return eventResult(
-      event,
-      "unresolved",
-      `Stripe invoice carries conflicting billing markers: ${classification.markers.join(", ")}`
-    )
-  }
-
-  if (classification.kind === "none" || classification.kind === "legacy") {
-    return null
-  }
-
-  if (deps.subscriptionEvents) {
-    const subscription =
-      classification.kind === "subscription_base" && classification.stripeSubscriptionId
-        ? await deps.port.retrieveSubscription(classification.stripeSubscriptionId)
-        : null
-    const isNetworkBase =
-      classification.kind !== "subscription_base" ||
-      Boolean(classification.organizationSubscriptionId) ||
-      subscription?.metadata?.billingModel === "subscription_v1" ||
-      Boolean(subscription?.metadata?.organizationSubscriptionId)
-
-    if (!isNetworkBase) {
-      return eventResult(
-        event,
-        "ignored",
-        "Dispatch Pro base invoice is handled by subscription state"
-      )
-    }
-
-    return deps.subscriptionEvents.invoicePayment({
-      classification,
-      event,
-      outcome,
-      subscription
-    })
-  }
-
-  // A plain subscription reference is the existing Dispatch Pro invoice shape;
-  // its entitlement lifecycle is driven by subscription events. New Network and
-  // internal-test invoices carry an explicit canonical marker and may never be
-  // acknowledged before their ledger handler is available.
-  if (
-    classification.kind === "subscription_base" &&
-    !classification.organizationSubscriptionId
-  ) {
-    return eventResult(event, "ignored", "Dispatch Pro base invoice is handled by subscription state")
-  }
-
-  return eventResult(
-    event,
-    "unresolved",
-    "Subscription invoice handling is unavailable; Stripe should retry this event"
-  )
 }
 
 async function handleInvoicePaymentSucceeded(
   event: StripeBillingEvent,
   deps: BillingEventDeps
 ): Promise<BillingEventResult> {
-  const subscriptionResult = await handleNonLegacyInvoicePayment(event, deps, "succeeded")
-
-  if (subscriptionResult) {
-    return subscriptionResult
-  }
-
   return applyBillingEvent(deps, event, (draft, at) => {
     const resolved = resolveHostInvoiceForEvent(draft.state, event)
 
@@ -2670,7 +2413,7 @@ async function handleInvoicePaymentSucceeded(
     if (unboundProblem) {
       return eventResult(event, "unresolved", unboundProblem)
     }
-    const settlementProblem = legacyInvoiceEventSettlementProblem(
+    const settlementProblem = invoiceEventSettlementProblem(
       resolved.invoice,
       event,
       "succeeded"
@@ -2749,12 +2492,6 @@ async function handleInvoicePaymentFailed(
   event: StripeBillingEvent,
   deps: BillingEventDeps
 ): Promise<BillingEventResult> {
-  const subscriptionResult = await handleNonLegacyInvoicePayment(event, deps, "failed")
-
-  if (subscriptionResult) {
-    return subscriptionResult
-  }
-
   return applyBillingEvent(deps, event, (draft, at) => {
     const resolved = resolveHostInvoiceForEvent(draft.state, event)
 
@@ -2773,7 +2510,7 @@ async function handleInvoicePaymentFailed(
     if (unboundProblem) {
       return eventResult(event, "unresolved", unboundProblem)
     }
-    const settlementProblem = legacyInvoiceEventSettlementProblem(
+    const settlementProblem = invoiceEventSettlementProblem(
       resolved.invoice,
       event,
       "failed"
@@ -2844,208 +2581,6 @@ async function handleInvoicePaymentFailed(
   })
 }
 
-async function handleInternalRefund(
-  event: StripeBillingEvent,
-  deps: BillingEventDeps
-): Promise<BillingEventResult> {
-  const classification = classifyStripeBillingObject(event.object)
-
-  if (classification.kind === "conflict") {
-    return eventResult(
-      event,
-      "unresolved",
-      `Stripe refund carries conflicting billing markers: ${classification.markers.join(", ")}`
-    )
-  }
-
-  if (classification.kind !== "internal_smoke") {
-    return eventResult(event, "ignored", "Not a LogLoads internal billing verification refund")
-  }
-
-  if (!deps.subscriptionEvents?.internalRefund) {
-    return eventResult(
-      event,
-      "unresolved",
-      "Internal billing verification refund handling is unavailable"
-    )
-  }
-
-  return deps.subscriptionEvents.internalRefund({ classification, event })
-}
-
-async function handleCheckoutSessionCompleted(
-  event: StripeBillingEvent,
-  deps: BillingEventDeps
-): Promise<BillingEventResult> {
-  const organizationId = readMetadataValue(event.object, "organizationId")
-  const product = readMetadataValue(event.object, "product")
-  const organizationSubscriptionId = readMetadataValue(
-    event.object,
-    "organizationSubscriptionId"
-  )
-  const billingModel = readMetadataValue(event.object, "billingModel")
-
-  if (organizationSubscriptionId || billingModel === "subscription_v1") {
-    const subscriptionId = readReferenceId(event.object, "subscription")
-
-    if (!subscriptionId) {
-      return eventResult(
-        event,
-        "unresolved",
-        "A Network checkout named no Stripe subscription"
-      )
-    }
-
-    const subscription = await deps.port.retrieveSubscription(subscriptionId)
-
-    if (!subscriptionStatusDecision(subscription.status)) {
-      return eventResult(
-        event,
-        "unresolved",
-        `Stripe returned unknown subscription status ${subscription.status}`
-      )
-    }
-
-    if (!deps.subscriptionEvents) {
-      return eventResult(
-        event,
-        "unresolved",
-        "Network subscription checkout handling is unavailable"
-      )
-    }
-
-    return deps.subscriptionEvents.checkoutCompleted({ event, subscription })
-  }
-
-  if (product !== "fleet_operations") {
-    return eventResult(event, "ignored", "Not a Dispatch Pro checkout")
-  }
-
-  if (!organizationId) {
-    return eventResult(event, "unresolved", "A Dispatch Pro checkout named no organization")
-  }
-
-  const subscriptionId = readReferenceId(event.object, "subscription")
-  const customerId = readReferenceId(event.object, "customer")
-  const subscription = subscriptionId ? await deps.port.retrieveSubscription(subscriptionId) : null
-
-  return applyBillingEvent(deps, event, (draft) => {
-    const entitlement = draft.state.entitlements.find(
-      (candidate) =>
-        candidate.organizationId === organizationId && candidate.product === "fleet_operations"
-    )
-
-    if (!entitlement) {
-      // A charge with nothing to grant. Answering 200 here is what left a paying
-      // customer with no plan and no trace; a 5xx keeps it visible.
-      return eventResult(
-        event,
-        "unresolved",
-        `Organization ${organizationId} paid for Dispatch Pro but has no plan record`
-      )
-    }
-
-    // No recordBillingEvent here: applyBillingUpdate writes its own audit record
-    // carrying this eventId, and one dedupe key must have one writer.
-    draft.applyBillingUpdate({
-      currentPeriodEndsAt: subscription?.currentPeriodEndsAt ?? null,
-      eventId: event.id,
-      organizationId,
-      product: "fleet_operations",
-      status: "active",
-      stripeCustomerId: customerId,
-      stripeSubscriptionId: subscriptionId
-    })
-
-    return eventResult(event, "applied", "Dispatch Pro activated")
-  })
-}
-
-async function handleSubscriptionChanged(
-  event: StripeBillingEvent,
-  deps: BillingEventDeps
-): Promise<BillingEventResult> {
-  const subscriptionId = readString(event.object, "id")
-
-  if (!subscriptionId) {
-    return eventResult(event, "unresolved", "A subscription event had no subscription id")
-  }
-
-  const subscription = await deps.port.retrieveSubscription(subscriptionId)
-  const decision = subscriptionStatusDecision(subscription.status, event.type)
-  const isNetworkSubscription =
-    subscription.metadata?.billingModel === "subscription_v1" ||
-    Boolean(subscription.metadata?.organizationSubscriptionId)
-
-  if (!decision) {
-    return eventResult(
-      event,
-      "unresolved",
-      `Stripe returned unknown subscription status ${subscription.status}`
-    )
-  }
-
-  if (isNetworkSubscription) {
-    if (!deps.subscriptionEvents) {
-      return eventResult(
-        event,
-        "unresolved",
-        `Network subscription ${subscriptionId} has no lifecycle handler`
-      )
-    }
-
-    return deps.subscriptionEvents.subscriptionChanged({ decision, event, subscription })
-  }
-
-  const known = await deps.state.read((state) =>
-    state.entitlements.some((candidate) => candidate.stripeSubscriptionId === subscriptionId)
-  )
-
-  if (!known) {
-    // The old handler answered 200 here, which told Stripe to stop sending an
-    // event about a subscription somebody is paying for. A subscription LogLoads
-    // does not recognise is a reconciliation problem, so it stays retryable.
-    return eventResult(
-      event,
-      "unresolved",
-      `No plan record is linked to subscription ${subscriptionId}`
-    )
-  }
-
-  return applyBillingEvent(deps, event, (draft) => {
-    const entitlement = draft.findEntitlementByStripeSubscription(subscriptionId)
-
-    if (!entitlement) {
-      return eventResult(
-        event,
-        "unresolved",
-        `No plan record is linked to subscription ${subscriptionId}`
-      )
-    }
-
-    const entitlementStatus = entitlementStatusForSubscription(event.type, subscription.status)
-
-    if (!entitlementStatus) {
-      return eventResult(
-        event,
-        "unresolved",
-        `Stripe returned unknown subscription status ${subscription.status}`
-      )
-    }
-
-    draft.applyBillingUpdate({
-      currentPeriodEndsAt: subscription.currentPeriodEndsAt,
-      eventId: event.id,
-      organizationId: entitlement.organizationId,
-      product: entitlement.product,
-      status: entitlementStatus,
-      stripeSubscriptionId: subscriptionId
-    })
-
-    return eventResult(event, "applied", `Plan set to ${event.type}`)
-  })
-}
-
 /**
  * Every Stripe event LogLoads claims to handle.
  *
@@ -3056,15 +2591,9 @@ const BILLING_EVENT_HANDLERS: Record<
   string,
   (event: StripeBillingEvent, deps: BillingEventDeps) => Promise<BillingEventResult>
 > = {
-  "charge.refunded": handleInternalRefund,
-  "checkout.session.completed": handleCheckoutSessionCompleted,
-  "customer.subscription.created": handleSubscriptionChanged,
-  "customer.subscription.deleted": handleSubscriptionChanged,
-  "customer.subscription.updated": handleSubscriptionChanged,
   "invoice.payment_failed": handleInvoicePaymentFailed,
   "invoice.payment_succeeded": handleInvoicePaymentSucceeded,
   "payment_method.detached": handlePaymentMethodDetached,
-  "refund.updated": handleInternalRefund,
   "setup_intent.succeeded": handleSetupIntentSucceeded
 }
 

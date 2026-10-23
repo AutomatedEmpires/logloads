@@ -90,8 +90,7 @@ export const CAPTURE_PLANS = Object.freeze([
         "How your fleet is trusted"
       ],
       ["fleet-assistant", "/fleet/assistant", "Assistant"],
-      ["fleet-workspace", "/fleet/settings", "Workspace overview"],
-      ["fleet-billing", "/fleet/billing", "Billing"]
+      ["fleet-workspace", "/fleet/settings", "Workspace overview"]
     ]
   },
   {

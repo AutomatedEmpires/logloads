@@ -1,5 +1,5 @@
 import {
-  entitlementSchema,
+  HOST_FEE_TERMS_VERSION,
   hostBillingProfileSchema,
   organizationMembershipSchema,
   userSchema
@@ -81,40 +81,6 @@ function grantMembership(
   }))
 }
 
-/** Replaces the org's plan so the landing allowance is a known number. */
-function setLandingAllowance(services: LogLoadsServices, organizationId: string, limit: number | null) {
-  markBillingAccountLegacy(services, organizationId)
-  services.state.entitlements = services.state.entitlements.filter(
-    (entitlement) => entitlement.organizationId !== organizationId
-  )
-  services.state.entitlements.push(entitlementSchema.parse({
-    activeLandingLimit: limit,
-    activeTruckLimit: null,
-    createdAt: "2026-06-05T00:00:00.000Z",
-    currentPeriodEndsAt: null,
-    features: [],
-    id: "3f3f3f3f-3f3f-4f3f-8f3f-3f3f3f3f3f01",
-    organizationId,
-    product: "landing_operations",
-    status: "active",
-    stripeCustomerId: null,
-    stripeSubscriptionId: null,
-    updatedAt: "2026-06-05T00:00:00.000Z"
-  }))
-}
-
-/** Removes the current percentage grant when a test is isolating old plan behavior. */
-function markBillingAccountLegacy(services: LogLoadsServices, organizationId: string) {
-  const account = services.state.organizationBillingAccounts.find(
-    (candidate) => candidate.organizationId === organizationId
-  )
-
-  if (!account) throw new Error("Seed billing account missing")
-  account.activationState = "legacy"
-  account.billingModel = "legacy_percentage"
-  account.percentageTermsSnapshot = null
-}
-
 /**
  * Puts a card on file for an organization, which is what publishing now requires:
  * the platform fee is charged to the host, so work that cannot be billed cannot
@@ -145,7 +111,6 @@ function attachCard(services: LogLoadsServices, organizationId: string) {
 describe("creating a landing", () => {
   it("puts the landing on the host's own organization", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, null)
 
     const landing = services.createLanding(landingInput())
 
@@ -160,7 +125,6 @@ describe("creating a landing", () => {
 
   it("makes the landing publishable straight away", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, null)
 
     const landing = services.createLanding(landingInput())
 
@@ -175,7 +139,6 @@ describe("creating a landing", () => {
 
   it("refuses a dispatcher, who runs work rather than establishing sites", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, null)
 
     // Dana Dispatch is a real dispatcher in this org and may publish work from a
     // landing; she deliberately holds no manage_landing.
@@ -186,7 +149,6 @@ describe("creating a landing", () => {
 
   it("lets a landing manager establish one", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, null)
     const manager = "3c3c3c3c-3c3c-4c3c-8c3c-3c3c3c3c3c01"
 
     grantMembership(services, { index: 1, organizationId: HOST_ORG, role: "landing_manager", userId: manager })
@@ -196,7 +158,6 @@ describe("creating a landing", () => {
 
   it("refuses a viewer", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, null)
     const viewer = "3c3c3c3c-3c3c-4c3c-8c3c-3c3c3c3c3c02"
 
     grantMembership(services, { index: 2, organizationId: HOST_ORG, role: "viewer", userId: viewer })
@@ -208,7 +169,6 @@ describe("creating a landing", () => {
 
   it("refuses an actor who is not a member of the organization", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HAULER_ORG, null)
 
     expect(() =>
       services.createLanding(landingInput({ organizationId: HAULER_ORG }))
@@ -216,257 +176,37 @@ describe("creating a landing", () => {
   })
 })
 
-describe("the plan's landing allowance", () => {
-  it("binds, because the plan already advertises it", () => {
+describe("how many landings a host keeps", () => {
+  it("is not capped: a host may keep as many active landings as it operates", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    // The host plan grants one active landing and says so on the billing page.
-    // Nothing enforced it before, which cost nothing only because landings could
-    // not be created at all.
-    setLandingAllowance(services, HOST_ORG, 1)
     services.state.landings = services.state.landings.filter(
       (landing) => landing.companyId !== HOST_ORG
     )
 
-    services.createLanding(landingInput())
+    for (const name of ["First Spur", "Second Spur", "Third Spur", "Fourth Spur"]) {
+      services.createLanding(landingInput({ name }))
+    }
 
-    expect(() => services.createLanding(landingInput({ name: "Second Spur" })))
-      .toThrow(/plan covers 1 active landing/)
-    expect(services.countActiveLandings(HOST_ORG)).toBe(1)
+    expect(services.countActiveLandings(HOST_ORG)).toBe(4)
   })
 
-  it("counts only active landings, so retiring one frees the slot", () => {
+  it("restores a retired landing without asking for capacity", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, 1)
-    services.state.landings = services.state.landings.filter(
-      (landing) => landing.companyId !== HOST_ORG
-    )
-
-    const first = services.createLanding(landingInput())
-
-    services.setLandingActive({
-      actorUserId: HOST_OWNER,
-      isActive: false,
-      landingId: first.id,
-      organizationId: HOST_ORG
-    })
-
-    expect(services.countActiveLandings(HOST_ORG)).toBe(0)
-    expect(services.createLanding(landingInput({ name: "Second Spur" })).isActive).toBe(true)
-  })
-
-  it("does not charge an edit against the allowance it already holds", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, 1)
-    services.state.landings = services.state.landings.filter(
-      (landing) => landing.companyId !== HOST_ORG
-    )
-
-    const landing = services.createLanding(landingInput())
-
-    // The org is at its limit. Renaming the landing it already has is not a
-    // request for capacity, so it must not be refused as one.
-    const renamed = services.updateLanding({
-      ...landingInput({ name: "Blue River Spur North" }),
-      landingId: landing.id
-    })
-
-    expect(renamed.name).toBe("Blue River Spur North")
-  })
-
-  it("treats a reactivation as the request for capacity it is", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, 1)
-    services.state.landings = services.state.landings.filter(
-      (landing) => landing.companyId !== HOST_ORG
-    )
-
     const retired = services.createLanding(landingInput())
+
     services.setLandingActive({ actorUserId: HOST_OWNER, isActive: false, landingId: retired.id, organizationId: HOST_ORG })
     services.createLanding(landingInput({ name: "Second Spur" }))
 
-    // The slot is spoken for now, so switching the old one back on must refuse
-    // rather than quietly put the org over its plan.
-    expect(() =>
+    expect(
       services.setLandingActive({ actorUserId: HOST_OWNER, isActive: true, landingId: retired.id, organizationId: HOST_ORG })
-    ).toThrow(/plan covers 1 active landing/)
-  })
-
-  it("leaves an organization whose live plan states no cap unmetered", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, null)
-
-    services.createLanding(landingInput())
-    services.createLanding(landingInput({ name: "Second Spur" }))
-
-    expect(services.activeLandingLimitFor(HOST_ORG)).toBeNull()
-  })
-
-  it("treats an accepted percentage agreement as uncapped without a subscription entitlement", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    services.state.entitlements = services.state.entitlements.filter(
-      (entitlement) => entitlement.organizationId !== HOST_ORG
-    )
-    services.state.landings = services.state.landings.filter(
-      (landing) => landing.companyId !== HOST_ORG
-    )
-
-    expect(services.activeLandingLimitFor(HOST_ORG)).toBeNull()
-    services.createLanding(landingInput())
-    services.createLanding(landingInput({ name: "Second Percentage Spur" }))
-    expect(services.countActiveLandings(HOST_ORG)).toBe(2)
-  })
-
-  it("lets the current percentage agreement outrank a preserved historical landing cap", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    const account = services.state.organizationBillingAccounts.find(
-      (candidate) => candidate.organizationId === HOST_ORG
-    )
-    const percentageTermsSnapshot = structuredClone(account?.percentageTermsSnapshot ?? null)
-
-    expect(percentageTermsSnapshot).not.toBeNull()
-    setLandingAllowance(services, HOST_ORG, 1)
-    if (!account || !percentageTermsSnapshot) return
-
-    account.activationState = "percentage_active"
-    account.billingModel = "percentage_v1"
-    account.percentageTermsSnapshot = percentageTermsSnapshot
-    services.state.landings = services.state.landings.filter(
-      (landing) => landing.companyId !== HOST_ORG
-    )
-
-    expect(services.activeLandingLimitFor(HOST_ORG)).toBeNull()
-    services.createLanding(landingInput())
-    services.createLanding(landingInput({ name: "Second current-model landing" }))
-    expect(services.countActiveLandings(HOST_ORG)).toBe(2)
-  })
-
-  it("does not choose an uncapped percentage account by array order when billing accounts conflict", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    const account = services.state.organizationBillingAccounts.find(
-      (candidate) => candidate.organizationId === HOST_ORG
-    )
-    const percentageTermsSnapshot = structuredClone(account?.percentageTermsSnapshot ?? null)
-
-    expect(account).toBeDefined()
-    expect(percentageTermsSnapshot).not.toBeNull()
-    setLandingAllowance(services, HOST_ORG, 1)
-    if (!account || !percentageTermsSnapshot) return
-
-    account.activationState = "percentage_active"
-    account.billingModel = "percentage_v1"
-    account.percentageTermsSnapshot = percentageTermsSnapshot
-    services.state.organizationBillingAccounts.push({
-      ...structuredClone(account),
-      activationState: "legacy",
-      billingModel: "legacy_percentage",
-      id: "4f4f4f4f-4f4f-4f4f-8f4f-4f4f4f4f4f01",
-      percentageTermsSnapshot: null
-    })
-
-    // Publishing already blocks this corrupt state. Workspace capacity must do
-    // the same, never granting unlimited setup because `.find()` saw the
-    // percentage row first.
-    expect(services.activeLandingLimitFor(HOST_ORG)).toBe(1)
-  })
-
-  it("does not activate percentage capacity before the agreement becomes effective", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    const account = services.state.organizationBillingAccounts.find(
-      (candidate) => candidate.organizationId === HOST_ORG
-    )
-
-    expect(account).toBeDefined()
-    if (!account) return
-
-    account.effectiveAt = "2100-01-01T00:00:00.000Z"
-    services.state.entitlements = services.state.entitlements.filter(
-      (entitlement) => entitlement.organizationId !== HOST_ORG
-    )
-
-    expect(services.activeLandingLimitFor(HOST_ORG)).toBe(0)
-  })
-
-  it("does not grant uncapped landings to a percentage account without accepted terms", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    services.state.entitlements = services.state.entitlements.filter(
-      (entitlement) => entitlement.organizationId !== HOST_ORG
-    )
-    services.state.organizationBillingAccounts =
-      services.state.organizationBillingAccounts.map((account) =>
-        account.organizationId === HOST_ORG
-          ? { ...account, percentageTermsSnapshot: null }
-          : account
-      )
-
-    expect(services.activeLandingLimitFor(HOST_ORG)).toBe(0)
-    expect(() => services.createLanding(landingInput())).toThrow(
-      /does not cover any active landings/
-    )
-  })
-
-  it("does not read a lapsed plan as an unlimited one", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    markBillingAccountLegacy(services, HOST_ORG)
-    setLandingAllowance(services, HOST_ORG, 3)
-    services.state.landings = services.state.landings.filter(
-      (landing) => landing.companyId !== HOST_ORG
-    )
-
-    // "A live plan states no cap" and "there is no live plan" are different
-    // answers. Collapsing them means the Stripe webhook writing `cancelled`
-    // LIFTS the cap — a lapsed host creating landings without end while a
-    // paying one is held to three. The advertised limit failing open is worse
-    // than never having enforced it.
-    for (const status of ["past_due", "cancelled"] as const) {
-      services.state.entitlements = services.state.entitlements.map((entitlement) =>
-        entitlement.organizationId === HOST_ORG ? { ...entitlement, status } : entitlement
-      )
-
-      expect(services.activeLandingLimitFor(HOST_ORG)).toBe(0)
-      expect(() => services.createLanding(landingInput({ name: `Lapsed ${status}` })))
-        .toThrow(/does not cover any active landings/)
-    }
-  })
-
-  it("refuses an organization carrying no plan at all", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    markBillingAccountLegacy(services, HOST_ORG)
-    services.state.entitlements = services.state.entitlements.filter(
-      (entitlement) => entitlement.organizationId !== HOST_ORG
-    )
-
-    expect(services.activeLandingLimitFor(HOST_ORG)).toBe(0)
-    expect(() => services.createLanding(landingInput())).toThrow(/does not cover any active landings/)
-  })
-
-  it("lets a live uncapped plan beat a capped one rather than the reverse", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, 1)
-    services.state.entitlements.push(entitlementSchema.parse({
-      activeLandingLimit: null,
-      activeTruckLimit: null,
-      createdAt: "2026-06-05T00:00:00.000Z",
-      currentPeriodEndsAt: null,
-      features: [],
-      id: "3f3f3f3f-3f3f-4f3f-8f3f-3f3f3f3f3f02",
-      organizationId: HOST_ORG,
-      product: "enterprise",
-      status: "active",
-      stripeCustomerId: null,
-      stripeSubscriptionId: null,
-      updatedAt: "2026-06-05T00:00:00.000Z"
-    }))
-
-    // A plan that granted no cap said so for the whole organization; a stated
-    // number sitting beside it cannot take back what the other one gave.
-    expect(services.activeLandingLimitFor(HOST_ORG)).toBeNull()
+        .isActive
+    ).toBe(true)
   })
 })
 
 describe("retiring a landing", () => {
   it("stops work being published from it, rather than only hiding the picker", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, null)
     const landing = services.createLanding(landingInput())
     const route = services.createHaulRoute({
       actorUserId: HOST_OWNER,
@@ -528,7 +268,6 @@ describe("retiring a landing", () => {
 
   it("stops a draft written before the retirement from being published after it", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, null)
     const landing = services.createLanding(landingInput())
     const route = services.createHaulRoute({
       actorUserId: HOST_OWNER,
@@ -636,7 +375,6 @@ describe("retiring a landing", () => {
 describe("retiring without rewriting", () => {
   it("changes only whether work happens there", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, null)
     const landing = services.createLanding(landingInput())
 
     // Someone renames it after this page was rendered.
@@ -660,7 +398,6 @@ describe("retiring without rewriting", () => {
 
   it("keeps an edit from touching whether the landing is active at all", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, null)
     const landing = services.createLanding(landingInput())
 
     services.setLandingActive({
@@ -682,7 +419,6 @@ describe("retiring without rewriting", () => {
 
   it("records nothing when the landing is already in that state", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, null)
     const landing = services.createLanding(landingInput())
 
     const unchanged = services.setLandingActive({
@@ -720,7 +456,6 @@ describe("retiring without rewriting", () => {
 describe("editing a landing", () => {
   it("keeps optional fields an update never mentioned", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, null)
     const landing = services.createLanding(landingInput({
       accessNotes: "Turn at the second gate.",
       roadCondition: "muddy"
@@ -756,7 +491,6 @@ describe("editing a landing", () => {
 
   it("refuses to touch another organization's landing", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, null)
     const foreign = services.state.landings.find((landing) => landing.companyId === HAULER_ORG)
       ?? services.state.landings.find((landing) => landing.companyId !== HOST_ORG)
 
@@ -773,7 +507,6 @@ describe("editing a landing", () => {
 describe("maintaining a landing driver briefing", () => {
   it("stamps ownership and assignment-only visibility, then audits the verification", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, null)
     const landing = services.createLanding(landingInput())
 
     const details = services.upsertLandingDetails(landingDetailsInput(landing.id))
@@ -792,7 +525,6 @@ describe("maintaining a landing driver briefing", () => {
 
   it("updates the one briefing without changing its identity or creation time", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, null)
     const landing = services.createLanding(landingInput())
     const original = services.upsertLandingDetails(landingDetailsInput(landing.id))
 
@@ -813,7 +545,6 @@ describe("maintaining a landing driver briefing", () => {
 
   it("deduplicates repeated list facts and refuses conflicting stored rows", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, null)
     const landing = services.createLanding(landingInput())
     const original = services.upsertLandingDetails(landingDetailsInput(landing.id, {
       // The limit is on unique facts, not repeated lines pasted by a user.
@@ -835,7 +566,6 @@ describe("maintaining a landing driver briefing", () => {
 
   it("lets a landing manager verify details but refuses a dispatcher", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, null)
     const landing = services.createLanding(landingInput())
     const manager = "3c3c3c3c-3c3c-4c3c-8c3c-3c3c3c3c3c04"
 
@@ -849,7 +579,6 @@ describe("maintaining a landing driver briefing", () => {
 
   it("refuses another organization's landing or an already cross-wired briefing", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, null)
     const foreignLanding = services.state.landings.find((landing) => landing.companyId !== HOST_ORG)
 
     expect(foreignLanding).toBeDefined()
@@ -872,7 +601,6 @@ describe("maintaining a landing driver briefing", () => {
 describe("creating a haul route", () => {
   it("records the lane from the host's landing to the destination", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, null)
     const landing = services.createLanding(landingInput())
 
     const route = services.createHaulRoute({
@@ -892,7 +620,6 @@ describe("creating a haul route", () => {
 
   it("is open to a dispatcher, who publishes the work it carries", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, null)
     const landing = services.createLanding(landingInput())
 
     // A route is the plumbing a posting needs. Every role that may publish must
@@ -933,7 +660,6 @@ describe("creating a haul route", () => {
 
   it("refuses a destination that does not exist", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, null)
     const landing = services.createLanding(landingInput())
 
     expect(() =>
@@ -970,7 +696,6 @@ describe("creating a destination", () => {
 
   it("records an organization destination that is immediately usable in a lane", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    setLandingAllowance(services, HOST_ORG, null)
     const landing = services.createLanding(landingInput())
 
     const mill = services.createMill(millInput())
@@ -1275,7 +1000,7 @@ describe("host onboarding", () => {
     expect(dispatcher?.contact.phone).toBe("555-9100")
   })
 
-  it("lets a new host prepare owned records but blocks live work until explicit plan activation", () => {
+  it("lets a new host prepare owned records and publish once it accepts the fee terms and attaches a card", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
 
     // This is the whole point of the slice, so it is asserted rather than
@@ -1363,33 +1088,35 @@ describe("host onboarding", () => {
       weatherNotes: null
     }
 
-    // Workspace setup is free, but no legacy fee or paid plan is invented for a
-    // new host. A card reference alone cannot silently enroll it either.
+    // Workspace setup is free, but a new host has not accepted the fee terms, so
+    // nothing it publishes could be billed. A card alone does not change that.
     expect(() => services.createLoadPostingWithPolicy(posting)).toThrow(
-      /accept the current LogLoads fee agreement/
+      /has not accepted the LogLoads fee terms/
     )
     expect(services.state.loadPostings.some((load) => load.title === posting.title)).toBe(false)
 
     attachCard(services, organizationId)
 
     expect(() => services.createLoadPostingWithPolicy(posting)).toThrow(
-      /accept the current LogLoads fee agreement/
+      /has not accepted the LogLoads fee terms/
     )
-    expect(
-      services.state.organizationBillingAccounts.find(
-        (account) => account.organizationId === organizationId
-      )
-    ).toMatchObject({
-      activationState: "unenrolled",
-      billingModel: null,
-      subscriptionId: null
-    })
     expect(services.state.truckSlots.some(
       (slot) =>
         services.state.loadPostings.some(
           (load) => load.id === slot.loadPostingId && load.title === posting.title
         )
     )).toBe(false)
+
+    // The owner accepts the terms; the same posting now goes live.
+    services.acceptHostFeeAgreement({
+      actorUserId,
+      organizationId,
+      termsVersion: HOST_FEE_TERMS_VERSION
+    })
+
+    const published = services.createLoadPostingWithPolicy(posting)
+
+    expect(services.state.truckSlots.some((slot) => slot.loadPostingId === published.id)).toBe(true)
   })
 
   it("does not invent a dispatch contact for a driver", () => {

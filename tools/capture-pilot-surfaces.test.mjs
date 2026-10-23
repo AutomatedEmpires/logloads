@@ -18,16 +18,16 @@ import {
   suppressNextDevIndicator
 } from "./capture-pilot-surfaces.mjs"
 
-test("pilot capture contract contains 35 unique synthetic role surfaces", () => {
+test("pilot capture contract contains 34 unique synthetic role surfaces", () => {
   const filenames = expectedPilotFilenames()
   const routes = CAPTURE_PLANS.flatMap((plan) =>
     plan.surfaces.map(([, route]) => route)
   )
 
-  assert.equal(filenames.length, 35)
-  assert.equal(new Set(filenames).size, 35)
-  assert.equal(new Set(routes).size, 35)
-  assert.equal(expectedVerifiedResumeFilenames().length, 33)
+  assert.equal(filenames.length, 34)
+  assert.equal(new Set(filenames).size, 34)
+  assert.equal(new Set(routes).size, 34)
+  assert.equal(expectedVerifiedResumeFilenames().length, 32)
   assert.deepEqual(
     filenames.filter(
       (filename) => !expectedVerifiedResumeFilenames().includes(filename)
@@ -38,7 +38,7 @@ test("pilot capture contract contains 35 unique synthetic role surfaces", () => 
     CAPTURE_PLANS.map((plan) => [plan.role, plan.email, plan.surfaces.length]),
     [
       ["host", "cole@summit.example", 12],
-      ["fleet", "dispatch@northpine.example", 14],
+      ["fleet", "dispatch@northpine.example", 13],
       ["driver", "hank@northpine.example", 9]
     ]
   )
@@ -67,19 +67,19 @@ test("pilot capture publication requires the complete in-memory gallery", () => 
     expectedPilotFilenames().map((filename) => [filename, Buffer.from(filename)])
   )
 
-  assert.equal(assertCompletePilotCaptureSet(complete).length, 35)
+  assert.equal(assertCompletePilotCaptureSet(complete).length, 34)
 
   complete.delete("driver-map.jpg")
   assert.throws(
     () => assertCompletePilotCaptureSet(complete),
-    /incomplete pilot gallery.*35.*34/
+    /incomplete pilot gallery.*34.*33/
   )
 
   complete.set("driver-map.jpg", Buffer.from("driver-map.jpg"))
   complete.set("unexpected.jpg", Buffer.from("unexpected.jpg"))
   assert.throws(
     () => assertCompletePilotCaptureSet(complete),
-    /incomplete pilot gallery.*35.*36/
+    /incomplete pilot gallery.*34.*35/
   )
 })
 

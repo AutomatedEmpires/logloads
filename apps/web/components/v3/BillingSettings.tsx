@@ -13,14 +13,14 @@ import {
 } from "@/lib/billing-card-confirmation"
 import type {
   HostBillingView,
+  HostFeeAgreementView,
   HostFeeLineView,
   HostFeeTotalsView,
   HostInvoiceView
 } from "@/lib/host-billing-data"
-import type { BillingView, SettingsView } from "@/lib/plans"
-import type { HostSubscriptionBillingView } from "@/lib/subscription-billing-data"
+import type { SettingsView } from "@/lib/settings-data"
 import type { VerificationRecordView } from "@/lib/verification-data"
-import { AppShell, EmptyState, SectionHeader, type ShellAccount } from "./Shells"
+import { AppShell, SectionHeader, type ShellAccount } from "./Shells"
 import {
   InviteMemberForm,
   RevokeInvitationButton,
@@ -42,11 +42,6 @@ const ORG_VERIFICATION_OPTIONS: Record<CockpitRole, VerificationTypeOption[]> = 
     { value: "facility_control", label: "Facility control", hint: "Evidence you control the landing or mill you post from." },
     { value: "landing_authorization", label: "Landing authorization", hint: "Authorization to move wood from this landing." }
   ]
-}
-
-export interface CheckoutNotice {
-  message: string
-  tone: "success" | "info"
 }
 
 interface CardSetup {
@@ -148,7 +143,7 @@ function CardSetupForm({ onAttached }: { onAttached: () => void }) {
       <button className="advance-button" disabled={!stripe || !elements || pending} type="submit">
         {pending ? "Attaching card…" : "Attach card"}
       </button>
-      {notice ? <p className="plan-action__notice" role="status">{notice}</p> : null}
+      {notice ? <p className="card-action__notice" role="status">{notice}</p> : null}
     </form>
   )
 }
@@ -180,7 +175,7 @@ function HostCardControl({
 
   if (!setupAllowed) {
     return (
-      <div className="plan-action">
+      <div className="card-action">
         <p className="fee-next-step" role="note">
           <Icon aria-hidden name="status.lock" size={16} />
           <strong>
@@ -190,14 +185,14 @@ function HostCardControl({
         </p>
         <p className="settings-meaning">
           No card is needed to create a workspace or prepare draft work. LogLoads
-          will never ask for one before the applicable billing agreement is in force.
+          asks for one only once the fee terms are accepted.
         </p>
       </div>
     )
   }
 
   return (
-    <div className="plan-action">
+    <div className="card-action">
       <button
         className="action-link"
         disabled={pending}
@@ -232,7 +227,7 @@ function HostCardControl({
         Card details go directly to Stripe. LogLoads stores Stripe&apos;s opaque card reference,
         brand, and last four digits — never the card number.
       </p>
-      {notice ? <p className="plan-action__notice" role="status">{notice}</p> : null}
+      {notice ? <p className="card-action__notice" role="status">{notice}</p> : null}
     </div>
   )
 }
@@ -380,339 +375,28 @@ function InvoiceCard({ invoice }: { invoice: HostInvoiceView }) {
   )
 }
 
-function OrganizationSubscriptionSections({
-  canManageBilling,
-  subscription
+function FeeAgreementControl({
+  agreement,
+  rateLabel
 }: {
-  canManageBilling: boolean
-  subscription: HostSubscriptionBillingView
+  agreement: HostFeeAgreementView
+  rateLabel: string
 }) {
-  return (
-    <>
-      <section
-        aria-label={subscription.sectionLabel}
-        className="settings-panel subscription-overview"
-      >
-        <header className="subscription-overview__header">
-          <div>
-            <p className="eyebrow">{subscription.sectionLabel}</p>
-            <h2>{subscription.planName}</h2>
-            <div className="pay-state">
-              <Badge tone={subscription.statusTone}>
-                {subscription.statusLabel}
-              </Badge>
-              <Badge tone={subscription.activationTone}>
-                {subscription.activationLabel}
-              </Badge>
-            </div>
-          </div>
-          <div className="subscription-overview__price">
-            <span>Recorded base price</span>
-            <strong>{subscription.basePriceLabel}</strong>
-            <small>{subscription.networkAllowanceLabel}</small>
-          </div>
-        </header>
-
-        <p className="subscription-overview__summary">
-          {subscription.statusDetail}
-        </p>
-        <div
-          className={`subscription-overview__activation subscription-overview__activation--${subscription.activationTone}`}
-        >
-          <Icon
-            aria-hidden
-            name={
-              subscription.activationTone === "success"
-                ? "status.assigned"
-                : "status.lock"
-            }
-            size={20}
-          />
-          <div>
-            <strong>{subscription.activationLabel}</strong>
-            <p>{subscription.activationDetail}</p>
-          </div>
-        </div>
-
-        <div className="subscription-overview__body">
-          <dl className="subscription-overview__facts">
-            <div>
-              <dt>Recorded overage</dt>
-              <dd>{subscription.overageRateLabel}</dd>
-            </div>
-            <div>
-              <dt>Recorded capabilities</dt>
-              <dd>
-                {subscription.includesDispatchProCapabilities
-                  ? "The preserved snapshot included dispatch capabilities"
-                  : "Defined by the preserved agreement"}
-              </dd>
-            </div>
-            <div>
-              <dt>Provider reconciliation</dt>
-              <dd>{subscription.collectionLabel}</dd>
-            </div>
-            {subscription.commitmentLabel ? (
-              <div>
-                <dt>Recorded term</dt>
-                <dd>{subscription.commitmentLabel}</dd>
-              </div>
-            ) : null}
-            {subscription.renewalLabel ? (
-              <div>
-                <dt>Recorded renewal</dt>
-                <dd>{subscription.renewalLabel}</dd>
-              </div>
-            ) : null}
-            {subscription.pendingPlanLabel ? (
-              <div>
-                <dt>Recorded schedule</dt>
-                <dd>{subscription.pendingPlanLabel}</dd>
-              </div>
-            ) : null}
-            {subscription.paymentLabel ? (
-              <div>
-                <dt>Recorded payment state</dt>
-                <dd>
-                  <Badge tone={subscription.paymentTone ?? "neutral"}>
-                    {subscription.paymentLabel}
-                  </Badge>
-                </dd>
-              </div>
-            ) : null}
-          </dl>
-
-          <aside className="subscription-overview__balance">
-            <span>Outstanding balance</span>
-            <strong>{subscription.outstandingAmountLabel}</strong>
-            <small>
-              Across {subscription.outstandingInvoiceCount} invoice
-              {subscription.outstandingInvoiceCount === 1 ? "" : "s"}
-            </small>
-          </aside>
-        </div>
-
-        {subscription.paymentDetail ? (
-          <p className="subscription-overview__note">
-            <Icon aria-hidden name="load.pay" size={18} />
-            <span>{subscription.paymentDetail}</span>
-          </p>
-        ) : null}
-        {subscription.latestBaseInvoice ? (
-          <article className="subscription-invoice-preview">
-            <div>
-              <span>Latest base invoice</span>
-              <strong>{subscription.latestBaseInvoice.amountDueLabel}</strong>
-            </div>
-            <p>
-              {subscription.latestBaseInvoice.statusLabel} ·{" "}
-              {subscription.latestBaseInvoice.amountRemainingLabel} remaining
-              {subscription.latestBaseInvoice.dueOnLabel
-                ? ` · due ${subscription.latestBaseInvoice.dueOnLabel}`
-                : ""}
-            </p>
-            {subscription.latestBaseInvoice.hostedInvoiceUrl ? (
-              <a
-                className="text-link"
-                href={subscription.latestBaseInvoice.hostedInvoiceUrl}
-                rel="noreferrer"
-                target="_blank"
-              >
-                View invoice
-              </a>
-            ) : null}
-          </article>
-        ) : null}
-        {subscription.integrityNotices.map((notice) => (
-          <p className="fee-alert" key={notice} role="alert">
-            <Icon aria-hidden name="status.warning" size={16} />
-            <span>{notice}</span>
-          </p>
-        ))}
-        {subscription.subscriptionId && subscription.canOpenPortal ? (
-          canManageBilling ? (
-            <SubscriptionBillingAction
-              kind="portal"
-              subscriptionId={subscription.subscriptionId}
-            />
-          ) : (
-            <p className="subscription-overview__note">
-              <Icon aria-hidden name="status.lock" size={18} />
-              <span>An owner, administrator, or billing manager can open provider payment details.</span>
-            </p>
-          )
-        ) : null}
-      </section>
-
-      {subscription.allowance ? (
-        <section
-          aria-label="Recorded Network usage"
-          className="usage-panel usage-panel--network"
-        >
-          <SectionHeader
-            eyebrow="Historical usage"
-            title={subscription.allowance.periodLabel}
-          />
-          <article className="subscription-allowance">
-            <div className="subscription-allowance__headline">
-              <div>
-                <span>Completed in this recorded period</span>
-                <strong>
-                  {subscription.allowance.usedUnits}
-                  <small> / {subscription.allowance.includedUnits}</small>
-                </strong>
-              </div>
-              <span
-                className={`usage-row__detail usage-row__detail--${
-                  subscription.allowance.overageUnits > 0
-                    ? "critical"
-                    : subscription.allowance.percent >= 90
-                      ? "warning"
-                      : "success"
-                }`}
-              >
-                {subscription.allowance.detail}
-              </span>
-            </div>
-            <div
-              aria-label={`Completed Network movements: ${subscription.allowance.detail}`}
-              className="usage-meter"
-              role="img"
-            >
-              <span
-                className={`usage-meter__fill usage-meter__fill--${
-                  subscription.allowance.overageUnits > 0
-                    ? "critical"
-                    : subscription.allowance.percent >= 90
-                      ? "warning"
-                      : "success"
-                }`}
-                style={{ width: `${subscription.allowance.percent}%` }}
-              />
-            </div>
-          </article>
-          <dl className="subscription-usage-grid">
-            <div>
-              <dt>Recorded included remainder</dt>
-              <dd>{subscription.allowance.remainingUnits}</dd>
-            </div>
-            <div>
-              <dt>Recorded overage</dt>
-              <dd>
-                {subscription.allowance.overageUnits} units ·{" "}
-                {subscription.allowance.overageAmountLabel}
-              </dd>
-            </div>
-            <div>
-              <dt>Recorded window end</dt>
-              <dd>{subscription.allowance.closesOnLabel}</dd>
-            </div>
-          </dl>
-          {subscription.latestOverageInvoice ? (
-            <article className="subscription-invoice-preview">
-              <div>
-                <span>Latest usage invoice</span>
-                <strong>
-                  {subscription.latestOverageInvoice.amountLabel}
-                </strong>
-              </div>
-              <p>
-                {subscription.latestOverageInvoice.quantity} units ·{" "}
-                {subscription.latestOverageInvoice.statusLabel}
-                {subscription.latestOverageInvoice.issuedOnLabel
-                  ? ` · issued ${subscription.latestOverageInvoice.issuedOnLabel}`
-                  : ""}
-              </p>
-            </article>
-          ) : null}
-        </section>
-      ) : null}
-    </>
-  )
-}
-
-function SubscriptionBillingAction({
-  subscriptionId
-}: {
-  kind: "portal"
-  subscriptionId: string
-}) {
-  const [pending, setPending] = useState(false)
-  const [notice, setNotice] = useState<string | null>(null)
-
-  return (
-    <div className="plan-action">
-      <button
-        className="action-link"
-        disabled={pending}
-        onClick={async () => {
-          setPending(true)
-          setNotice(null)
-
-          try {
-            const response = await fetch("/api/billing/subscription-portal", {
-              body: JSON.stringify({ organizationSubscriptionId: subscriptionId }),
-              headers: { "Content-Type": "application/json" },
-              method: "POST"
-            })
-            const result = await readJson<{ error?: string; url?: string }>(
-              response
-            )
-
-            if (!response.ok || !result?.url) {
-              throw new Error(
-                result?.error ??
-                  "Subscription billing is unavailable right now."
-              )
-            }
-
-            window.location.assign(result.url)
-          } catch (error) {
-            setNotice(
-              error instanceof Error
-                ? error.message
-                : "Subscription billing is unavailable right now."
-            )
-          } finally {
-            setPending(false)
-          }
-        }}
-        type="button"
-      >
-        {pending ? "Opening secure billing…" : "Manage payment details"}
-      </button>
-      <p className="settings-meaning">
-        Payment details and provider invoice history open in the controlled
-        Stripe billing portal. New enrollment, plan changes, and restarts are
-        closed; this control cannot alter the preserved subscription record.
-      </p>
-      {notice ? (
-        <p className="plan-action__notice" role="alert">
-          <Icon aria-hidden name="status.warning" size={16} />
-          <span>{notice}</span>
-        </p>
-      ) : null}
-    </div>
-  )
-}
-
-function PercentageAgreementControl() {
   const [accepted, setAccepted] = useState(false)
   const [pending, setPending] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
   return (
-    <div className="plan-action">
+    <div className="card-action">
       <label className="settings-meaning">
         <input
           checked={accepted}
           onChange={(event) => setAccepted(event.target.checked)}
           type="checkbox"
         />{" "}
-        I am authorized to accept the current <Link href="/terms">LogLoads Terms</Link>. I
-        understand that each completed load carries a 5% LogLoads fee added on top
-        of the driver pay I state; there is no posting fee, subscription, monthly
-        minimum, tier, allowance, or overage charge.
+        I am authorized to accept the <Link href="/terms">LogLoads Terms</Link> for this
+        organization. I understand that each completed load carries a {rateLabel} LogLoads fee,
+        added on top of the driver pay I state and billed to this organization monthly.
       </label>
       <button
         className="action-link"
@@ -722,40 +406,39 @@ function PercentageAgreementControl() {
           setNotice(null)
 
           try {
-            const response = await fetch("/api/billing/percentage-agreement", {
-              body: JSON.stringify({ acceptPercentageTerms: true }),
+            const response = await fetch("/api/billing/fee-agreement", {
+              body: JSON.stringify({
+                acceptFeeTerms: true,
+                termsVersion: agreement.termsVersion
+              }),
               headers: { "Content-Type": "application/json" },
               method: "POST"
             })
             const result = await readJson<{ error?: string }>(response)
 
             if (!response.ok) {
-              throw new Error(
-                result?.error ?? "The percentage agreement could not be accepted."
-              )
+              throw new Error(result?.error ?? "The fee terms could not be accepted.")
             }
 
-            setNotice("Agreement accepted. Refreshing billing…")
+            setNotice("Fee terms accepted. Refreshing billing…")
             window.location.reload()
           } catch (error) {
             setNotice(
-              error instanceof Error
-                ? error.message
-                : "The percentage agreement could not be accepted."
+              error instanceof Error ? error.message : "The fee terms could not be accepted."
             )
             setPending(false)
           }
         }}
         type="button"
       >
-        {pending ? "Accepting agreement…" : "Accept 5% host agreement"}
+        {pending ? "Accepting fee terms…" : `Accept the ${rateLabel} host fee`}
       </button>
       <p className="settings-meaning">
-        Acceptance does not charge a card. Add a payment method separately before
-        publishing live work.
+        Accepting charges nothing. Add a payment card separately before publishing
+        live work.
       </p>
       {notice ? (
-        <p className="plan-action__notice" role={pending ? "status" : "alert"}>
+        <p className="card-action__notice" role={pending ? "status" : "alert"}>
           <Icon aria-hidden name={pending ? "status.assigned" : "status.warning"} size={16} />
           <span>{notice}</span>
         </p>
@@ -770,48 +453,33 @@ function PercentageAgreementControl() {
  * in this file, so a figure on this page cannot disagree with the bill.
  */
 function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
-  const { currentPeriod, fee, invoices, paymentMethod, percentageAgreement } = hostBilling
-  const hasPercentageActivity =
-    currentPeriod.lines.length > 0 ||
-    currentPeriod.voidedLines.length > 0 ||
-    invoices.length > 0
+  const { currentPeriod, fee, feeAgreement, invoices, paymentMethod } = hostBilling
 
   return (
     <>
-      <section className="settings-panel" aria-label="Current host pricing">
+      <section className="settings-panel" aria-label="Host fee">
           <SectionHeader
-            eyebrow="Host pricing"
+            eyebrow="Host fee"
             title={`${fee.rateLabel} of stated driver pay, added on top`}
           />
-          {percentageAgreement.state === "active" ? (
+          {feeAgreement.accepted ? (
             <p className="fee-alert" role="status">
               <Icon aria-hidden name="status.assigned" size={16} />
               <span>
-                Current percentage agreement active
-                {percentageAgreement.acceptedOnLabel
-                  ? ` · accepted ${percentageAgreement.acceptedOnLabel}`
-                  : ""}
+                Fee terms accepted
+                {feeAgreement.acceptedOnLabel ? ` · ${feeAgreement.acceptedOnLabel}` : ""}
               </span>
             </p>
-          ) : percentageAgreement.state === "legacy" ? (
-            <p className="fee-alert" role="note">
-              <Icon aria-hidden name="ops.notice" size={16} />
-              <span>
-                {percentageAgreement.canAccept
-                  ? "Previously committed percentage terms remain readable and collectible and will not be rewritten. Accept the current agreement below to use percentage_v1 for new work."
-                  : "Previously committed percentage terms remain readable and collectible and will not be rewritten. Current agreement enrollment is not open for this workspace."}
-              </span>
+          ) : (
+            <p className="fee-next-step" role="note">
+              <Icon aria-hidden name="status.lock" size={16} />
+              <strong>
+                {feeAgreement.canAccept
+                  ? "Accept the fee terms below before publishing live work."
+                  : "An owner, administrator, or billing manager must accept the fee terms before this workspace publishes live work."}
+              </strong>
             </p>
-          ) : percentageAgreement.state === "historical_subscription" ? (
-            <p className="fee-alert" role="note">
-              <Icon aria-hidden name="ops.notice" size={16} />
-              <span>
-                {percentageAgreement.canAccept
-                  ? "This workspace's terminal subscription remains preserved as history. Accept the current percentage agreement below to activate percentage_v1 for new work; the old record will not be rewritten."
-                  : "This workspace's historical subscription remains preserved as history. Current percentage enrollment requires both a terminal record and inclusion in the controlled rollout."}
-              </span>
-            </p>
-          ) : null}
+          )}
           <p className="fee-headline">{fee.headline}</p>
           {/* Named as an example in visible text, not only in the label: three
               money figures with no lead-in read as this host's own money. */}
@@ -849,7 +517,9 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
               </li>
             ))}
           </ul>
-          {percentageAgreement.canAccept ? <PercentageAgreementControl /> : null}
+          {feeAgreement.canAccept ? (
+            <FeeAgreementControl agreement={feeAgreement} rateLabel={fee.rateLabel} />
+          ) : null}
         </section>
 
       <section className="settings-panel" aria-label="Payment method">
@@ -929,8 +599,8 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
             ) : null}
           </section>
 
-          <section className="settings-panel" aria-label="Platform fee invoices">
-            <SectionHeader eyebrow="Invoices" title="Monthly platform-fee charges" />
+          <section className="settings-panel" aria-label="LogLoads fee invoices">
+            <SectionHeader eyebrow="Invoices" title="Monthly LogLoads fee charges" />
             {invoices.length === 0 ? (
               <p className="settings-meaning">
                 No bill has been raised yet. Your first one covers {currentPeriod.periodLabel} and is charged
@@ -944,88 +614,24 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
               </div>
             )}
           </section>
-      {!hasPercentageActivity ? (
-        <p className="settings-meaning">
-          Your billing history begins after the first completed load under an
-          accepted percentage agreement.
-        </p>
-      ) : null}
     </>
   )
 }
 
-/**
- * The current percentage ledger remains host-only. Historical subscription
- * records can appear in either operating cockpit when an accepted provider
- * obligation exists. The discriminated props keep a fleet from ever receiving
- * the host's percentage statement.
- */
-export type BillingPageProps = {
+export interface BillingPageProps {
   account: ShellAccount
-  billing: BillingView
-  canManageBilling: boolean
-  checkoutNotice?: CheckoutNotice | null
-} & (
-  | {
-      role: "fleet"
-      hostBilling?: never
-      hostSubscriptionBilling: HostSubscriptionBillingView | null
-    }
-  | {
-      role: "host"
-      hostBilling: HostBillingView
-      hostSubscriptionBilling: HostSubscriptionBillingView | null
-    }
-)
+  hostBilling: HostBillingView
+}
 
-export function BillingPage({
-  account,
-  billing,
-  canManageBilling,
-  checkoutNotice,
-  hostBilling,
-  hostSubscriptionBilling,
-  role
-}: BillingPageProps) {
-  const hasCanonicalSubscription = Boolean(
-    hostSubscriptionBilling?.subscriptionId
-  )
-  const capabilityPlans = role === "fleet"
-    ? [
-        ...billing.plans.filter((plan) => plan.recordMode === "current"),
-        ...(hasCanonicalSubscription
-          ? []
-          : billing.plans.filter((plan) => plan.recordMode === "historical"))
-      ]
-    : []
-  const addUsageHref = role === "fleet" ? "/fleet/trucks" : "/host/landings"
-  const addUsageLabel = role === "fleet" ? "Go to trucks" : "Go to landings"
-  const addUsageBody = role === "fleet"
-    ? "Add your first truck and this section shows the equipment configured for this account."
-    : "Add your first landing and this section shows the operating locations configured for this account."
-  const workspaceUsageBody = role === "fleet"
-    ? "This tracks trucks configured in your workspace. It is separate from completed Network movement usage."
-    : "This tracks landing locations configured in your workspace. It is separate from completed-load platform fees."
-
+/** The host's money: fee terms, card on file, this month's fees and its bills. */
+export function BillingPage({ account, hostBilling }: BillingPageProps) {
   return (
-    <AppShell
-      account={account}
-      kicker={role === "host" ? "Host economics" : "Access & billing history"}
-      role={role}
-      title="Billing"
-    >
+    <AppShell account={account} kicker="Host economics" role="host" title="Billing">
       <div className="billing-page">
-        {checkoutNotice ? (
-          <p className={`billing-banner billing-banner--${checkoutNotice.tone}`} role="status">
-            <Icon aria-hidden name={checkoutNotice.tone === "success" ? "status.assigned" : "ops.notice"} size={18} />
-            <span>{checkoutNotice.message}</span>
-          </p>
-        ) : null}
-
         {/* First thing on the page when it is true, because it stops the host
             working. The consequence is worded once in the read model, so this
             banner and the payment-method panel cannot disagree about it. */}
-        {hostBilling?.paymentMethod.blocksPublishing ? (
+        {hostBilling.paymentMethod.blocksPublishing ? (
           <p className="billing-banner billing-banner--blocked" role="note">
             <Icon aria-hidden name="status.lock" size={18} />
             <span>
@@ -1034,147 +640,7 @@ export function BillingPage({
           </p>
         ) : null}
 
-        {hostBilling ? <HostMoneySections hostBilling={hostBilling} /> : null}
-
-        {hostSubscriptionBilling?.subscriptionId ? (
-          <p className="billing-banner billing-banner--info" role="note">
-            <Icon aria-hidden name="ops.notice" size={18} />
-            <span>
-              Historical subscription record. New subscription enrollment, plan
-              conversion, tier changes, and overage enrollment are closed. Portal
-              access remains available only for payment details and provider invoice
-              history tied to an existing obligation.
-            </span>
-          </p>
-        ) : null}
-
-        {hasCanonicalSubscription && hostSubscriptionBilling ? (
-          <OrganizationSubscriptionSections
-            canManageBilling={canManageBilling}
-            subscription={hostSubscriptionBilling}
-          />
-        ) : null}
-
-        {role === "fleet" ? (
-          capabilityPlans.length === 0 ? (
-            hostSubscriptionBilling ? null : (
-              <EmptyState
-                actionHref="/pricing"
-                actionLabel="View pricing"
-                body="Fleet dispatch is free. Refresh this page or contact support if the included access record is missing."
-                title="Fleet Free access is unavailable"
-              />
-            )
-          ) : (
-            <section
-              aria-label="Access and billing history"
-              className="plan-cards"
-              id="billing-plan"
-            >
-              {capabilityPlans.map((plan) => (
-                <article className="plan-card plan-card--current" key={plan.id}>
-                  <header className="plan-card__head">
-                    <div>
-                      <p className="eyebrow">
-                        {plan.recordMode === "current"
-                          ? "Current access"
-                          : "Historical record"}
-                      </p>
-                      <h2>{plan.name}</h2>
-                      <p className="plan-card__summary">{plan.summary}</p>
-                    </div>
-                    <strong className="plan-card__price">
-                      {plan.priceLine}
-                    </strong>
-                  </header>
-                  <div className="plan-card__status">
-                    <Badge tone={plan.statusTone}>{plan.statusLine}</Badge>
-                    {plan.statusDetail ? <p>{plan.statusDetail}</p> : null}
-                  </div>
-                  <div className="plan-card__body">
-                    <h3>
-                      {plan.recordMode === "current"
-                        ? "What Fleet Free includes"
-                        : "What this record included"}
-                    </h3>
-                    <ul>
-                      {plan.features.map((feature) => (
-                        <li key={feature}>
-                          <Icon
-                            aria-hidden
-                            name="status.assigned"
-                            size={16}
-                          />
-                          <span>{feature}</span>
-                        </li>
-                      ))}
-                    </ul>
-                    {plan.limitLines.length > 0 ? (
-                      <p className="plan-card__limits">
-                        {plan.limitLines.join(" · ")}
-                      </p>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
-            </section>
-          )
-        ) : null}
-
-        {!hasCanonicalSubscription && hostSubscriptionBilling ? (
-          <OrganizationSubscriptionSections
-            canManageBilling={canManageBilling}
-            subscription={hostSubscriptionBilling}
-          />
-        ) : null}
-
-        <section
-          aria-label="Workspace capacity"
-          className="usage-panel usage-panel--workspace"
-          id="billing-workspace-usage"
-        >
-          <SectionHeader
-            eyebrow="Operational setup"
-            title="Workspace capacity"
-          />
-          <p className="usage-panel__intro">{workspaceUsageBody}</p>
-          {billing.usage.length === 0 ? (
-            <EmptyState
-              actionHref={addUsageHref}
-              actionLabel={addUsageLabel}
-              body={addUsageBody}
-              title="Nothing to measure yet"
-            />
-          ) : (
-            <div className="usage-list">
-              {billing.usage.map((row) => (
-                <article className="usage-row" key={row.id}>
-                  <div className="usage-row__top">
-                    <strong>{row.label}</strong>
-                    <span
-                      className={`usage-row__detail usage-row__detail--${row.tone}`}
-                    >
-                      {row.detail}
-                    </span>
-                  </div>
-                  {row.percent !== null ? (
-                    <div
-                      aria-label={`${row.label}: ${row.detail}`}
-                      className="usage-meter"
-                      role="img"
-                    >
-                      <span
-                        className={`usage-meter__fill usage-meter__fill--${row.tone}`}
-                        style={{ width: `${row.percent}%` }}
-                      />
-                    </div>
-                  ) : null}
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-
+        <HostMoneySections hostBilling={hostBilling} />
       </div>
     </AppShell>
   )
@@ -1195,8 +661,6 @@ export function SettingsPage({
   settings: SettingsView
   verifications: VerificationRecordView[]
 }) {
-  const billingHref = role === "fleet" ? "/fleet/billing" : "/host/billing"
-
   return (
     <AppShell account={account} kicker="Organization" role={role} title="Workspace overview">
       <div className="settings-stack">
@@ -1303,33 +767,6 @@ export function SettingsPage({
           </div>
         </section>
 
-        <section className="settings-panel" aria-label="Access and billing history">
-          <SectionHeader
-            action={<Link className="action-link action-link--secondary" href={billingHref}>Open billing</Link>}
-            eyebrow="Access"
-            title="Access & billing history"
-          />
-          {settings.planSummaries.length === 0 ? (
-            <EmptyState
-              actionHref={billingHref}
-              actionLabel="Open billing"
-              body={role === "fleet" ? "Fleet Free includes dispatch, drivers, equipment, and private partner work without a subscription." : "Review and accept the current 5% completed-load agreement in Billing before publishing live work. There is no subscription, monthly minimum, tier, allowance, or posting fee."}
-              title="No billing record on this workspace yet"
-            />
-          ) : (
-            <ul className="plan-summary-list">
-              {settings.planSummaries.map((plan) => (
-                <li key={plan.id}>
-                  <div>
-                    <strong>{plan.name}</strong>
-                    <span>{plan.priceLine}</span>
-                  </div>
-                  <Badge tone={plan.statusTone}>{plan.statusLine}</Badge>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
       </div>
     </AppShell>
   )

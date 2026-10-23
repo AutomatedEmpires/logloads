@@ -1080,7 +1080,7 @@ export function DriverPaymentReceiptControl({
   if (!expectedPayLabel) {
     return (
       <p className="action-note" role="status">
-        This legacy assignment has no frozen driver-pay amount and currency in
+        This assignment has no frozen driver-pay amount and currency in
         LogLoads. Confirm the amount directly with the host; receipt recording is
         unavailable until support repairs the accepted terms.
       </p>
@@ -1092,7 +1092,7 @@ export function DriverPaymentReceiptControl({
     const recorded = feedback?.text ??
       (receivedPayLabel
         ? `You recorded ${receivedPayLabel} received.`
-        : `You confirmed receipt of ${expectedPayLabel}; this legacy receipt did not preserve the actual amount.`)
+        : `You confirmed receipt of ${expectedPayLabel}; that receipt did not record the actual amount.`)
 
     return (
       <>

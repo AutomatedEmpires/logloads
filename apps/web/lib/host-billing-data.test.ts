@@ -5,12 +5,16 @@ vi.mock("server-only", () => ({}))
 import {
   computePlatformFeeCents,
   hostBillingProfileSchema,
+  HOST_FEE_TERMS_VERSION,
+  hostFeeAgreementId,
+  hostFeeAgreementSchema,
   hostInvoiceSchema,
   invoicePeriodFor,
   PLATFORM_FEE_BPS,
   platformFeeEventId,
   platformFeeEventSchema,
   type HostBillingProfile,
+  type HostFeeAgreement,
   type HostInvoice,
   type PlatformFeeEvent
 } from "@logloads/contracts"
@@ -63,7 +67,6 @@ function feeEvent(fixture: FeeFixture): PlatformFeeEvent {
 
   return platformFeeEventSchema.parse({
     assignmentId: fixture.assignmentId,
-    billingModel: "legacy_percentage",
     createdAt: occurredAt,
     driverPayCents: fixture.driverPayCents,
     feeBps,
@@ -101,6 +104,20 @@ function billingProfile(overrides: Partial<HostBillingProfile> = {}): HostBillin
   })
 }
 
+function feeAgreement(overrides: Partial<HostFeeAgreement> = {}): HostFeeAgreement {
+  return hostFeeAgreementSchema.parse({
+    acceptedAt: "2026-06-01T00:00:00.000Z",
+    acceptedByUserId: "44444444-4444-4444-8444-444444444441",
+    createdAt: "2026-06-01T00:00:00.000Z",
+    feeBps: PLATFORM_FEE_BPS,
+    id: hostFeeAgreementId(HOST),
+    organizationId: HOST,
+    termsVersion: HOST_FEE_TERMS_VERSION,
+    updatedAt: "2026-06-01T00:00:00.000Z",
+    ...overrides
+  })
+}
+
 function invoice(overrides: Partial<HostInvoice> = {}): HostInvoice {
   return hostInvoiceSchema.parse({
     createdAt: "2026-07-01T00:00:00.000Z",
@@ -122,19 +139,11 @@ function invoice(overrides: Partial<HostInvoice> = {}): HostInvoice {
 function source(overrides: Partial<HostBillingSource> = {}): HostBillingSource {
   return {
     hostBillingProfiles: [billingProfile()],
+    hostFeeAgreements: [feeAgreement()],
     hostInvoices: [],
     loadPostings: [
       { id: LOAD_ONE, title: "Doug fir sawlogs — Ridge 4" },
       { id: LOAD_TWO, title: "Pulpwood — Beaver Creek" }
-    ],
-    organizationBillingAccounts: [
-      {
-        activationState: "legacy",
-        billingModel: "legacy_percentage",
-        organizationId: HOST,
-        percentageTermsSnapshot: null,
-        subscriptionId: null
-      }
     ],
     platformFeeEvents: [],
     ...overrides
@@ -167,26 +176,26 @@ describe("accrued fees, itemised by load", () => {
     expect(first?.loadTitle).toBe("Doug fir sawlogs — Ridge 4")
     expect(first?.completedOnLabel).toBe("Jul 4, 2026")
     expect(first?.driverPayLabel).toBe("$525.00")
-    expect(first?.platformFeeLabel).toBe("$26.25")
-    expect(first?.hostTotalLabel).toBe("$551.25")
-    expect(first?.rateLabel).toBe("5%")
+    expect(first?.platformFeeLabel).toBe("$10.50")
+    expect(first?.hostTotalLabel).toBe("$535.50")
+    expect(first?.rateLabel).toBe("2%")
 
-    // 5% of $999.99 is 4999.95 hundredths of a cent and bills as $50.00.
+    // 2% of $999.99 is 1999.98 cents and bills as $20.00.
     expect(second?.loadTitle).toBe("Pulpwood — Beaver Creek")
     expect(second?.driverPayLabel).toBe("$999.99")
-    expect(second?.platformFeeLabel).toBe("$50.00")
-    expect(second?.hostTotalLabel).toBe("$1,049.99")
+    expect(second?.platformFeeLabel).toBe("$20.00")
+    expect(second?.hostTotalLabel).toBe("$1,019.99")
 
-    // $26.25 + $50.00 in fees, on top of $1,524.99 the host owes its drivers.
+    // $10.50 + $20.00 in fees, on top of $1,524.99 the host owes its drivers.
     expect(view.currentPeriod.totals).toMatchObject({
       driverPayCents: 152_499,
-      hostTotalCents: 160_124,
-      platformFeeCents: 7_625,
+      hostTotalCents: 155_549,
+      platformFeeCents: 3_050,
       truckloadCount: 2
     })
-    expect(view.currentPeriod.totals.platformFeeLabel).toBe("$76.25")
+    expect(view.currentPeriod.totals.platformFeeLabel).toBe("$30.50")
     expect(view.currentPeriod.totals.driverPayLabel).toBe("$1,524.99")
-    expect(view.currentPeriod.totals.hostTotalLabel).toBe("$1,601.24")
+    expect(view.currentPeriod.totals.hostTotalLabel).toBe("$1,555.49")
     expect(view.hasBillingHistory).toBe(true)
   })
 
@@ -211,7 +220,7 @@ describe("accrued fees, itemised by load", () => {
       expect(line.hostTotalCents).toBeGreaterThan(line.driverPayCents)
     }
 
-    // The stated pay survives untouched: $525 stated is $525 shown, not $498.75.
+    // The stated pay survives untouched: $525 stated is $525 shown, not $514.50.
     expect(view.currentPeriod.lines.map((line) => line.driverPayCents)).toEqual([52_500, 41_000])
     expect(view.currentPeriod.totals.hostTotalCents).toBe(
       view.currentPeriod.totals.driverPayCents + view.currentPeriod.totals.platformFeeCents
@@ -219,16 +228,16 @@ describe("accrued fees, itemised by load", () => {
   })
 
   it("sums the frozen per-load fees instead of re-rating the month's pay total", () => {
-    // Two loads at $10.10 each. Each fee rounds half-up to 51c, so the month is
-    // 102c. Re-rating the $20.20 aggregate gives exactly 101c — a total a cent
+    // Two loads at $10.25 each. Each fee rounds half-up to 21c, so the month is
+    // 42c. Re-rating the $20.50 aggregate gives exactly 41c — a total a cent
     // short of the two lines printed directly beneath it.
     const view = buildHostBillingView(
       source({
         platformFeeEvents: [
-          feeEvent({ assignmentId: "dddddddd-dddd-4ddd-8ddd-dddddddddd01", driverPayCents: 1_010 }),
+          feeEvent({ assignmentId: "dddddddd-dddd-4ddd-8ddd-dddddddddd01", driverPayCents: 1_025 }),
           feeEvent({
             assignmentId: "dddddddd-dddd-4ddd-8ddd-dddddddddd02",
-            driverPayCents: 1_010,
+            driverPayCents: 1_025,
             occurredAt: "2026-07-07T15:00:00.000Z"
           })
         ]
@@ -237,17 +246,17 @@ describe("accrued fees, itemised by load", () => {
       NOW
     )
 
-    expect(view.currentPeriod.totals.platformFeeCents).toBe(102)
-    expect(computePlatformFeeCents(2_020, PLATFORM_FEE_BPS)).toBe(101)
+    expect(view.currentPeriod.totals.platformFeeCents).toBe(42)
+    expect(computePlatformFeeCents(2_050, PLATFORM_FEE_BPS)).toBe(41)
     expect(view.currentPeriod.totals.platformFeeCents).not.toBe(
-      computePlatformFeeCents(2_020, PLATFORM_FEE_BPS)
+      computePlatformFeeCents(2_050, PLATFORM_FEE_BPS)
     )
     expect(
       view.currentPeriod.lines.reduce((sum, line) => sum + line.platformFeeCents, 0)
     ).toBe(view.currentPeriod.totals.platformFeeCents)
   })
 
-  it("charges a historical load at the rate frozen on it, not at today's rate", () => {
+  it("charges a load at the rate frozen on it, not at today's rate", () => {
     const view = buildHostBillingView(
       source({
         platformFeeEvents: [
@@ -264,8 +273,8 @@ describe("accrued fees, itemised by load", () => {
 
     expect(view.currentPeriod.lines[0]?.rateLabel).toBe("3%")
     expect(view.currentPeriod.lines[0]?.platformFeeCents).toBe(3_000)
-    // The current rate would have billed $50.00 for the same haul.
-    expect(computePlatformFeeCents(100_000, PLATFORM_FEE_BPS)).toBe(5_000)
+    // The current rate would have billed $20.00 for the same haul.
+    expect(computePlatformFeeCents(100_000, PLATFORM_FEE_BPS)).toBe(2_000)
   })
 
   it("still shows a charge whose load posting is gone", () => {
@@ -282,7 +291,7 @@ describe("accrued fees, itemised by load", () => {
 
     expect(view.currentPeriod.lines).toHaveLength(1)
     expect(view.currentPeriod.lines[0]?.loadTitle).toBe("Load no longer on this workspace")
-    expect(view.currentPeriod.totals.platformFeeCents).toBe(2_625)
+    expect(view.currentPeriod.totals.platformFeeCents).toBe(1_050)
   })
 
   it("counts only the fees that fall inside the month being shown", () => {
@@ -336,7 +345,7 @@ describe("withdrawn fees", () => {
       NOW
     )
 
-    expect(view.currentPeriod.totals.platformFeeCents).toBe(2_625)
+    expect(view.currentPeriod.totals.platformFeeCents).toBe(1_050)
     expect(view.currentPeriod.totals.driverPayCents).toBe(52_500)
     expect(view.currentPeriod.totals.truckloadCount).toBe(1)
     expect(view.currentPeriod.lines.map((line) => line.id)).toEqual([kept.id])
@@ -345,7 +354,7 @@ describe("withdrawn fees", () => {
     // it was taken back, with the reason.
     expect(view.currentPeriod.voidedLines).toHaveLength(1)
     expect(view.currentPeriod.voidedLines[0]?.voidReason).toBe("Load was never hauled; slot released")
-    expect(view.currentPeriod.voidedLines[0]?.platformFeeCents).toBe(4_000)
+    expect(view.currentPeriod.voidedLines[0]?.platformFeeCents).toBe(1_600)
   })
 
   it("negative control: the same fee re-flagged as accrued does land on the total", () => {
@@ -356,9 +365,9 @@ describe("withdrawn fees", () => {
       NOW
     )
 
-    // 2_625 + 4_000 — proving the voided amount was real money that the void
+    // 1_050 + 1_600 — proving the voided amount was real money that the void
     // rule excluded, not an amount that was zero all along.
-    expect(view.currentPeriod.totals.platformFeeCents).toBe(6_625)
+    expect(view.currentPeriod.totals.platformFeeCents).toBe(2_650)
     expect(view.currentPeriod.totals.truckloadCount).toBe(2)
     expect(view.currentPeriod.voidedLines).toHaveLength(0)
   })
@@ -411,6 +420,8 @@ describe("the card on file, and what its state costs the host", () => {
     expect(view.paymentMethod.cardLine).toBeNull()
     expect(view.paymentMethod.consequence).toMatch(/cannot publish/i)
     expect(view.paymentMethod.nextStep).toMatch(/attach a card/i)
+    // The host accepted the fee terms, so a billing manager may attach a card now.
+    expect(view.paymentMethod.setupAllowed).toBe(true)
     // A host with no card is not charged for having no card.
     expect(view.paymentMethod.consequence).toMatch(/no monthly fee/i)
   })
@@ -450,35 +461,15 @@ describe("the card on file, and what its state costs the host", () => {
     expect(view.paymentMethod.failureLine).toBeNull()
   })
 
-  it("does not turn a missing card into a universal subscription publishing block", () => {
-    const view = buildHostBillingView(
-      source({
-        hostBillingProfiles: [],
-        organizationBillingAccounts: [
-          { billingModel: "subscription_v1", organizationId: HOST }
-        ]
-      }),
-      HOST,
-      NOW
-    )
-
-    expect(view.paymentMethod.status).toBe("none")
-    expect(view.paymentMethod.blocksPublishing).toBe(false)
-    expect(view.paymentMethod.consequence).toMatch(/creating a workspace or draft does not require one/i)
-    expect(view.paymentMethod.consequence).toMatch(/approved percentage agreement/i)
-    expect(view.paymentMethod.setupAllowed).toBe(false)
-    expect(view.paymentMethod.nextStep).toBeNull()
-  })
-
-  it("shows card controls only to a billing manager with an eligible obligation", () => {
+  it("shows card controls only to a billing manager whose host accepted the fee terms", () => {
     const manager = buildHostBillingView(source(), HOST, NOW, {
       canManageBilling: true
     })
     const viewer = buildHostBillingView(source(), HOST, NOW)
-    const unenrolledManager = buildHostBillingView(
+    const managerWithoutAgreement = buildHostBillingView(
       source({
         hostBillingProfiles: [],
-        organizationBillingAccounts: []
+        hostFeeAgreements: []
       }),
       HOST,
       NOW,
@@ -489,9 +480,9 @@ describe("the card on file, and what its state costs the host", () => {
     expect(manager.paymentMethod.setupUnavailableReason).toBeNull()
     expect(viewer.paymentMethod.setupAllowed).toBe(false)
     expect(viewer.paymentMethod.setupUnavailableReason).toMatch(/owner, administrator, or billing manager/i)
-    expect(unenrolledManager.paymentMethod.setupAllowed).toBe(false)
-    expect(unenrolledManager.paymentMethod.setupUnavailableReason).toMatch(
-      /approved for percentage billing/i
+    expect(managerWithoutAgreement.paymentMethod.setupAllowed).toBe(false)
+    expect(managerWithoutAgreement.paymentMethod.setupUnavailableReason).toMatch(
+      /accept the LogLoads fee terms/i
     )
   })
 
@@ -536,7 +527,7 @@ describe("bills already raised", () => {
   it("itemises what the last bill covered and reconciles it against the amount billed", () => {
     const view = buildHostBillingView(
       source({
-        hostInvoices: [invoice({ feeEventIds: [june.id, alsoJune.id], subtotalCents: 4_675 })],
+        hostInvoices: [invoice({ feeEventIds: [june.id, alsoJune.id], subtotalCents: 1_870 })],
         platformFeeEvents: [june, alsoJune]
       }),
       HOST,
@@ -547,14 +538,14 @@ describe("bills already raised", () => {
     expect(last?.periodLabel).toBe("June 2026")
     expect(last?.statusLabel).toBe("Paid")
     expect(last?.settled).toBe(true)
-    expect(last?.billedLabel).toBe("$46.75")
+    expect(last?.billedLabel).toBe("$18.70")
     expect(last?.paidOnLabel).toBe("Jul 2, 2026")
     expect(last?.lines.map((line) => line.loadTitle)).toEqual([
       "Doug fir sawlogs — Ridge 4",
       "Pulpwood — Beaver Creek"
     ])
-    expect(last?.lines.map((line) => line.platformFeeLabel)).toEqual(["$26.25", "$20.50"])
-    // 2_625 + 2_050 == the 4_675 stored on the bill.
+    expect(last?.lines.map((line) => line.platformFeeLabel)).toEqual(["$10.50", "$8.20"])
+    // 1_050 + 820 == the 1_870 stored on the bill.
     expect(last?.totals.platformFeeCents).toBe(last?.billedCents)
     expect(last?.reconciliationNote).toBeNull()
 
@@ -569,7 +560,7 @@ describe("bills already raised", () => {
     // when a bill stops being explainable.
     const view = buildHostBillingView(
       source({
-        hostInvoices: [invoice({ feeEventIds: [june.id, alsoJune.id], subtotalCents: 4_675 })],
+        hostInvoices: [invoice({ feeEventIds: [june.id, alsoJune.id], subtotalCents: 1_870 })],
         platformFeeEvents: [june]
       }),
       HOST,
@@ -578,11 +569,11 @@ describe("bills already raised", () => {
 
     const last = view.lastInvoice
     expect(last?.lines).toHaveLength(1)
-    expect(last?.billedLabel).toBe("$46.75")
+    expect(last?.billedLabel).toBe("$18.70")
     // The billed figure is never quietly restated to match what can be shown.
-    expect(last?.billedCents).toBe(4_675)
-    expect(last?.reconciliationNote).toMatch(/\$26\.25 of the \$46\.75 billed/)
-    expect(last?.reconciliationNote).toMatch(/\$20\.50/)
+    expect(last?.billedCents).toBe(1_870)
+    expect(last?.reconciliationNote).toMatch(/\$10\.50 of the \$18\.70 billed/)
+    expect(last?.reconciliationNote).toMatch(/\$8\.20/)
   })
 
   it("keeps a withdrawn invoice row out of the billable lines and totals", () => {
@@ -597,16 +588,16 @@ describe("bills already raised", () => {
     })
     const view = buildHostBillingView(
       source({
-        hostInvoices: [invoice({ feeEventIds: [june.id, withdrawn.id], subtotalCents: 2_625 })],
+        hostInvoices: [invoice({ feeEventIds: [june.id, withdrawn.id], subtotalCents: 1_050 })],
         platformFeeEvents: [june, withdrawn]
       }),
       HOST,
       NOW
     )
 
-    expect(view.lastInvoice?.lines.map((line) => line.platformFeeCents)).toEqual([2_625])
+    expect(view.lastInvoice?.lines.map((line) => line.platformFeeCents)).toEqual([1_050])
     expect(view.lastInvoice?.totals.driverPayCents).toBe(52_500)
-    expect(view.lastInvoice?.totals.platformFeeCents).toBe(2_625)
+    expect(view.lastInvoice?.totals.platformFeeCents).toBe(1_050)
     expect(view.lastInvoice?.reconciliationNote).toBeNull()
   })
 
@@ -615,17 +606,17 @@ describe("bills already raised", () => {
     // not a missing line, so it must not be reported as something to itemise.
     const view = buildHostBillingView(
       source({
-        hostInvoices: [invoice({ feeEventIds: [june.id, alsoJune.id], subtotalCents: 2_625 })],
+        hostInvoices: [invoice({ feeEventIds: [june.id, alsoJune.id], subtotalCents: 1_050 })],
         platformFeeEvents: [june, alsoJune]
       }),
       HOST,
       NOW
     )
 
-    expect(view.lastInvoice?.billedCents).toBe(2_625)
-    expect(view.lastInvoice?.totals.platformFeeCents).toBe(4_675)
+    expect(view.lastInvoice?.billedCents).toBe(1_050)
+    expect(view.lastInvoice?.totals.platformFeeCents).toBe(1_870)
     expect(view.lastInvoice?.reconciliationNote).toMatch(
-      /add up to \$46\.75, which is more than the \$26\.25 billed/
+      /add up to \$18\.70, which is more than the \$10\.50 billed/
     )
     expect(view.lastInvoice?.reconciliationNote).not.toMatch(/itemise the remaining/)
   })
@@ -641,7 +632,7 @@ describe("bills already raised", () => {
             periodStart: "2026-05-01T00:00:00.000Z",
             subtotalCents: 1_000
           }),
-          invoice({ subtotalCents: 4_675 })
+          invoice({ subtotalCents: 1_870 })
         ]
       }),
       HOST,
@@ -708,201 +699,105 @@ describe("what exactly the host is charged", () => {
   it("explains the fee with a worked example produced by the billing arithmetic", () => {
     const view = buildHostBillingView(source(), HOST, NOW)
 
-    expect(view.fee.rateLabel).toBe("5%")
+    expect(view.fee.rateLabel).toBe("2%")
     expect(view.fee.example).toEqual({
       driverPayLabel: "$500.00",
-      hostTotalLabel: "$525.00",
-      platformFeeLabel: "$25.00"
+      hostTotalLabel: "$510.00",
+      platformFeeLabel: "$10.00"
     })
     expect(view.fee.headline).toMatch(/on top/i)
     expect(view.fee.headline).toMatch(/completed/i)
 
     const points = view.fee.points.join(" ")
-    // The four claims a host must not have to ask about.
+    // The claims a host must not have to ask about.
     expect(points).toMatch(/no monthly fee/i)
     expect(points).toMatch(/nothing is deducted from driver pay/i)
     expect(points).toMatch(/holds no funds and settles no freight/i)
-    expect(points).toMatch(/drivers pay nothing/i)
+    expect(points).toMatch(/drivers and fleets pay nothing/i)
+    expect(points).toMatch(/whoever's trucks haul it/i)
+    expect(points).toMatch(/invoiced once a month/i)
   })
 
   it("derives the rate label from the rate rather than from a typed string", () => {
-    expect(feeRateLabel(PLATFORM_FEE_BPS)).toBe("5%")
+    expect(feeRateLabel(PLATFORM_FEE_BPS)).toBe("2%")
     expect(feeRateLabel(0)).toBe("0%")
-    expect(feeRateLabel(250)).toBe("2.5%")
-    expect(feeRateLabel(525)).toBe("5.25%")
+    expect(feeRateLabel(120)).toBe("1.2%")
+    expect(feeRateLabel(333)).toBe("3.33%")
     expect(feeRateLabel(10_000)).toBe("100%")
   })
 })
 
-describe("percentage agreement state", () => {
-  it("presents an accepted percentage_v1 agreement as active and immutable", () => {
+describe("fee agreement state", () => {
+  it("presents an accepted agreement on the current terms as accepted", () => {
     const view = buildHostBillingView(
       source({
-        organizationBillingAccounts: [
-          {
-            activationState: "percentage_active",
-            billingModel: "percentage_v1",
-            organizationId: HOST,
-            percentageTermsSnapshot: {
-              acceptedAt: "2026-08-03T00:00:00.000Z",
-              acceptedTermsVersion: "percentage-v1-2026-08-03"
-            }
-          }
-        ]
+        hostFeeAgreements: [feeAgreement({ acceptedAt: "2026-08-03T00:00:00.000Z" })]
       }),
       HOST,
-      NOW
+      NOW,
+      { canManageBilling: true }
     )
 
-    expect(view.percentageAgreement).toEqual({
+    expect(view.feeAgreement).toEqual({
+      accepted: true,
       acceptedOnLabel: "Aug 3, 2026",
       canAccept: false,
-      state: "active",
-      termsVersion: "percentage-v1-2026-08-03"
+      termsVersion: HOST_FEE_TERMS_VERSION
     })
   })
 
-  it("offers current terms to an allowlisted legacy account without rewriting its history", () => {
-    const view = buildHostBillingView(source(), HOST, NOW, {
-      canManageBilling: true,
-      percentageEnrollmentAllowed: true
+  it("offers the current terms to a billing manager whose host has not accepted them", () => {
+    const view = buildHostBillingView(source({ hostFeeAgreements: [] }), HOST, NOW, {
+      canManageBilling: true
     })
 
-    expect(view.percentageAgreement).toEqual({
+    expect(view.feeAgreement).toEqual({
+      accepted: false,
       acceptedOnLabel: null,
       canAccept: true,
-      state: "legacy",
-      termsVersion: null
+      termsVersion: HOST_FEE_TERMS_VERSION
     })
   })
 
-  it("does not self-convert a historical subscription record", () => {
+  it.each([
+    { label: "an earlier terms version", overrides: { termsVersion: "2026-01-01" } },
+    { label: "a different rate", overrides: { feeBps: PLATFORM_FEE_BPS + 100 } }
+  ])("asks again for acceptance when the agreement on file has $label", ({ overrides }) => {
+    const view = buildHostBillingView(
+      source({ hostFeeAgreements: [feeAgreement(overrides)] }),
+      HOST,
+      NOW,
+      { canManageBilling: true }
+    )
+
+    expect(view.feeAgreement).toMatchObject({
+      accepted: false,
+      acceptedOnLabel: null,
+      canAccept: true
+    })
+  })
+
+  it("does not read another host's agreement as this host's", () => {
     const view = buildHostBillingView(
       source({
-        organizationBillingAccounts: [
-          {
-            activationState: "subscription_active",
-            billingModel: "subscription_v1",
-            organizationId: HOST
-          }
+        hostFeeAgreements: [
+          feeAgreement({ id: hostFeeAgreementId(OTHER_HOST), organizationId: OTHER_HOST })
         ]
       }),
       HOST,
       NOW,
-      { canManageBilling: true, percentageEnrollmentAllowed: true }
+      { canManageBilling: true }
     )
 
-    expect(view.percentageAgreement).toMatchObject({
-      canAccept: false,
-      state: "historical_subscription"
-    })
-  })
-
-  it("offers percentage_v1 acceptance once the linked subscription is terminal", () => {
-    const view = buildHostBillingView(
-      source({
-        organizationBillingAccounts: [
-          {
-            activationState: "active",
-            billingModel: "subscription_v1",
-            organizationId: HOST,
-            subscriptionId: "20202020-2020-4020-8020-202020202020"
-          }
-        ],
-        organizationSubscriptions: [
-          {
-            id: "20202020-2020-4020-8020-202020202020",
-            organizationId: HOST,
-            status: "cancelled"
-          }
-        ]
-      }),
-      HOST,
-      NOW,
-      { canManageBilling: true, percentageEnrollmentAllowed: true }
-    )
-
-    expect(view.percentageAgreement).toMatchObject({
-      canAccept: true,
-      state: "historical_subscription"
-    })
-  })
-
-  it("keeps acceptance hidden until every commercial subscription is terminal", () => {
-    const view = buildHostBillingView(
-      source({
-        organizationBillingAccounts: [
-          {
-            activationState: "active",
-            billingModel: "subscription_v1",
-            organizationId: HOST,
-            subscriptionId: "20202020-2020-4020-8020-202020202020"
-          }
-        ],
-        organizationSubscriptions: [
-          {
-            id: "20202020-2020-4020-8020-202020202020",
-            organizationId: HOST,
-            status: "cancelled"
-          },
-          {
-            id: "30303030-3030-4030-8030-303030303030",
-            organizationId: HOST,
-            status: "past_due"
-          }
-        ]
-      }),
-      HOST,
-      NOW,
-      { canManageBilling: true, percentageEnrollmentAllowed: true }
-    )
-
-    expect(view.percentageAgreement).toMatchObject({
-      canAccept: false,
-      state: "historical_subscription"
-    })
-  })
-
-  it("does not let an internal billing test block commercial acceptance", () => {
-    const view = buildHostBillingView(
-      source({
-        organizationSubscriptions: [
-          {
-            id: "30303030-3030-4030-8030-303030303030",
-            internalBillingTest: true,
-            organizationId: HOST,
-            status: "active"
-          }
-        ]
-      }),
-      HOST,
-      NOW,
-      { canManageBilling: true, percentageEnrollmentAllowed: true }
-    )
-
-    expect(view.percentageAgreement).toMatchObject({
-      canAccept: true,
-      state: "legacy"
-    })
-  })
-
-  it("keeps the agreement control hidden when this host is outside the rollout", () => {
-    const view = buildHostBillingView(source(), HOST, NOW, { canManageBilling: true })
-
-    expect(view.percentageAgreement).toMatchObject({
-      canAccept: false,
-      state: "legacy"
-    })
+    expect(view.feeAgreement.accepted).toBe(false)
   })
 
   it("keeps the agreement control hidden from a member without billing permission", () => {
-    const view = buildHostBillingView(source(), HOST, NOW, {
-      percentageEnrollmentAllowed: true
-    })
+    const view = buildHostBillingView(source({ hostFeeAgreements: [] }), HOST, NOW)
 
-    expect(view.percentageAgreement).toMatchObject({
-      canAccept: false,
-      state: "legacy"
+    expect(view.feeAgreement).toMatchObject({
+      accepted: false,
+      canAccept: false
     })
   })
 })
@@ -919,6 +814,7 @@ describe("the live wiring", () => {
     expect(view.paymentMethod.cardLine).toMatch(/ending \d{4}$/)
     expect(view.hasBillingHistory).toBe(false)
     expect(view.currentPeriod.totals.platformFeeCents).toBe(0)
-    expect(view.fee.rateLabel).toBe("5%")
+    expect(view.fee.rateLabel).toBe("2%")
+    expect(view.feeAgreement.accepted).toBe(true)
   })
 })

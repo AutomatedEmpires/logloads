@@ -271,7 +271,7 @@ test("admin command keeps commercial and operating exceptions truthful", async (
 
   await expect(page.getByRole("heading", { name: "Admin" })).toBeVisible()
   await expect(page.getByRole("link", { name: /Completion and payment/ })).toBeVisible()
-  await expect(page.getByRole("link", { name: /Current fee exceptions/ })).toBeVisible()
+  await expect(page.getByRole("link", { name: /Fee exceptions/ })).toBeVisible()
   await expect(page.getByRole("link", { name: /Support and contact/ })).toBeVisible()
 
   if ((page.viewportSize()?.width ?? 1280) <= 760) {
@@ -297,8 +297,8 @@ test("admin command keeps commercial and operating exceptions truthful", async (
   await expect(page.getByText(/These are unresolved records, not historical cancellations/)).toBeVisible()
 
   await page.goto("/admin/billing")
-  await expect(page.getByRole("heading", { name: "Percentage fee attention" })).toBeVisible()
-  await expect(page.getByText(/Current host revenue is the 5% platform fee/)).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Fee attention" })).toBeVisible()
+  await expect(page.getByText(/LogLoads bills each host 2% of the driver pay it stated/)).toBeVisible()
 
   await page.goto("/admin/reports")
   await expect(page.getByRole("heading", { name: "Feedback" })).toBeVisible()
@@ -455,7 +455,7 @@ test("fleet dispatch and driver roster expose one truthful next action per unit"
   })
 })
 
-test("fleet onboarding opens a Fleet Free activation handoff", async ({ page }, testInfo) => {
+test("fleet onboarding opens a free fleet workspace handoff", async ({ page }, testInfo) => {
   const pageErrors = watchPageErrors(page)
 
   await page.goto("/onboarding/fleet?next=%2Ffleet%2Fopportunities")
@@ -471,13 +471,13 @@ test("fleet onboarding opens a Fleet Free activation handoff", async ({ page }, 
   await page.getByLabel("Operating region").fill("Test Valley")
   await page.getByRole("button", { name: "Continue" }).click()
 
-  await expect(page.getByText("Fleet Free opens with your first unit on file.")).toBeVisible()
-  await page.getByRole("button", { name: "Create Fleet Free workspace" }).click()
+  await expect(page.getByText("Your fleet workspace opens with your first unit on file.")).toBeVisible()
+  await page.getByRole("button", { name: "Create fleet workspace" }).click()
   await page.waitForURL(/\/fleet\/command\?welcome=1/, { timeout: 30_000 })
   await expect(page.getByRole("heading", { name: "Command", exact: true })).toBeVisible()
 
   const firstRun = page.getByTestId("fleet-first-run")
-  await expect(firstRun.getByText("Fleet Free is active", { exact: true })).toBeVisible()
+  await expect(firstRun.getByText("Fleet workspace is active", { exact: true })).toBeVisible()
   await expect(
     firstRun.getByRole("heading", { name: "Build the operating picture before you put a truck on work." })
   ).toBeVisible()
@@ -561,8 +561,8 @@ test("host onboarding opens a mobile first-movement launchpad", async ({ page },
   await expect(readiness.getByText("Add a lane", { exact: true })).toBeVisible()
   await expect(readiness.getByText("Add a pay rate", { exact: true })).toBeVisible()
   await expect(readiness.getByText("Prepare a draft", { exact: true })).toBeVisible()
-  await expect(readiness.getByText("Host billing activation", { exact: true })).toBeVisible()
-  await expect(readiness.getByText(/accept the current 5% agreement and attach a card/i)).toBeVisible()
+  await expect(readiness.getByText("Accept the fee terms and attach a card", { exact: true })).toBeVisible()
+  await expect(readiness.getByText(/accept the 2% host fee terms in billing and attach a card/i).first()).toBeVisible()
   await expect(readiness.getByText(/workspace setup itself does not charge you/i)).toBeVisible()
   const hostContinuation = readiness.getByRole("button", {
     name: "Continue to the host work you opened"
@@ -654,8 +654,7 @@ test("fleet mobile frame keeps command, dispatch, work, and trips one thumb away
     "Availability",
     "Performance",
     "Assistant",
-    "Workspace",
-    "Billing"
+    "Workspace"
   ])
   await page.keyboard.press("Escape")
   await expect(moreTrigger).toBeFocused()

@@ -29,9 +29,8 @@ function movementIdForAssignmentRequest(
       .map((assignment) => assignment.loadMovementId)
       .filter((movementId): movementId is string => Boolean(movementId))
   )
-  const settledMovementIds = new Set([
-    ...state.networkUsageEvents.map((event) => event.loadMovementId),
-    ...state.platformFeeEvents
+  const settledMovementIds = new Set(
+    state.platformFeeEvents
       .filter((event) => event.status !== "voided")
       .flatMap((event) =>
         slotAssignments
@@ -39,7 +38,7 @@ function movementIdForAssignmentRequest(
           .map((assignment) => assignment.loadMovementId)
           .filter((movementId): movementId is string => Boolean(movementId))
       )
-  ])
+  )
   const reusable = [...slotAssignments]
     .filter(
       (assignment) =>
@@ -105,11 +104,7 @@ export function requestAssignment(state: LogLoadsDatabaseState, input: unknown):
     ...parsed,
     assignedAt: null,
     billingCommittedAt: null,
-    billingModel: null,
-    billingPlanCodeAtCommitment: null,
-    billingSubscriptionIdAtCommitment: null,
     cancelledAt: null,
-    capacitySource: null,
     completedAt: null,
     createdAt: timestamp,
     id: assignmentId,

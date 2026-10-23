@@ -396,14 +396,6 @@ export interface NetworkView {
       viewable: boolean
     }>
   }>
-  entitlements: Array<{
-    id: string
-    product: string
-    status: string
-    features: string[]
-    limitLabel: string
-    currentPeriodEndsAt: string | null
-  }>
   futureAvailability: Array<{
     id: string
     equipmentLabel: string
@@ -1208,7 +1200,6 @@ export function buildNetworkView(
       currentDriver: null,
       currentEquipment: null,
       directOffers: [],
-      entitlements: [],
       futureAvailability: [],
       loads,
       messages: [],
@@ -1493,19 +1484,6 @@ export function buildNetworkView(
       }
     })
 
-  const entitlements = services.listEntitlements(activeOrganization.id).map((entitlement) => ({
-    currentPeriodEndsAt: entitlement.currentPeriodEndsAt ?? null,
-    features: entitlement.features,
-    id: entitlement.id,
-    limitLabel: entitlement.activeTruckLimit
-      ? `${entitlement.activeTruckLimit} active trucks`
-      : entitlement.activeLandingLimit
-        ? `${entitlement.activeLandingLimit} active landings`
-        : "custom limit",
-    product: entitlement.product,
-    status: entitlement.status
-  }))
-
   const futureAvailability = services.listFutureAvailabilityForOrganization(activeOrganization.id).map((availability) => {
     const combination = requireRecord(
       state.equipmentCombinations.find((item) => item.id === availability.equipmentCombinationId),
@@ -1631,7 +1609,6 @@ export function buildNetworkView(
       }
       : null,
     directOffers,
-    entitlements,
     futureAvailability,
     loads,
     messages,

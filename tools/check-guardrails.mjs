@@ -30,17 +30,6 @@ const textExtensions = new Set([
   ".yaml"
 ])
 
-const commercialCustomerSurfaces = new Set([
-  "apps/web/app/pricing/page.tsx",
-  "apps/web/components/v3/BillingSettings.tsx",
-  "apps/web/components/v3/PublicPages.tsx",
-  "apps/web/components/v3/Shells.tsx",
-  "apps/web/lib/billing-actions.ts",
-  "apps/web/lib/plans.ts",
-  "apps/web/lib/subscription-billing-data.ts",
-  "apps/web/lib/v3-shared.ts"
-])
-
 const checks = [
   {
     message: "Use @logloads/contracts; @logloads/core is retired.",
@@ -83,8 +72,8 @@ const checks = [
   {
     // transfer_data and application_fee_amount are banned permanently, not as a
     // posture: they route driver pay through the platform balance (custody) or
-    // silently deduct the platform cut from the driver ($500 posted, $475 paid
-    // at the decided 5%).
+    // silently deduct the platform cut from the driver ($500 posted, $490 paid
+    // if the 2% host fee were taken out of driver pay instead of added on top).
     // Stripe's own tutorials default to both, so a plausible-looking custodial
     // integration would otherwise pass review. Connect itself stays out until a
     // counsel-gated direct-charges design. See AGENTS.md section 7.
@@ -105,21 +94,6 @@ const checks = [
     message: "Internal architecture vocabulary is banned from product copy (say what it does for the user).",
     pattern: /operating graph|compatibility engine|purpose-limited|audit trail|network trucks/gi,
     include: (file) => file.startsWith("apps/web/") && !file.startsWith("apps/web/tests/")
-  },
-  {
-    message: "Raw entitlement vocabulary must not render; use plan/feature language in the UI.",
-    pattern: /[">]\s*Entitlements?\b/g,
-    include: (file) => file.startsWith("apps/web/") && file.endsWith(".tsx")
-  },
-  {
-    message: "Customer surfaces must not revive retired subscription sales, paid fleet access, or checkout language.",
-    pattern: /\$499\/mo|Dispatch Pro is \$499 per month|Start subscription|Restart subscription|checkout is temporarily unavailable|Current trial access|active for new Network commitments|Network enrollment is sales-assisted|Enrollment and collection are enabled for this canary organization/gi,
-    include: (file) => commercialCustomerSurfaces.has(file)
-  },
-  {
-    message: "The customer subscription projection is historical-only and must not evaluate checkout or new-money authorization.",
-    pattern: /canStartCheckout|subscriptionNewMoneyAllowed/g,
-    include: (file) => file === "apps/web/lib/subscription-billing-data.ts"
   },
   {
     message: "Numeric match scores are banned; show fit labels with reasons.",

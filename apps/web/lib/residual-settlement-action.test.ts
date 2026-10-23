@@ -56,7 +56,6 @@ beforeEach(() => {
   mocks.confirmDriverPaymentReceived.mockReturnValue({
     changed: true,
     matchesExpected: true,
-    platformFeeOutcome: "not_applicable",
     receivedPay: { amountCents: 52_500, currency: "USD" }
   })
   mocks.mutateState.mockImplementation(async (mutation: (draft: {

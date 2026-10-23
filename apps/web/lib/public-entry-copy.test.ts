@@ -2,8 +2,14 @@ import { readFileSync } from "node:fs"
 
 import { describe, expect, it } from "vitest"
 
+import { HOST_FEE_TERMS_VERSION } from "@logloads/contracts"
+
 import {
-  pricingPlans,
+  HOST_FEE_EXAMPLE,
+  HOST_FEE_PERCENT,
+  HOST_FEE_TERMS_EFFECTIVE_DATE,
+  legalPages,
+  pricingAudiences,
   publicSignUpCopy,
   storyPages
 } from "./v3-shared"
@@ -38,7 +44,7 @@ describe("public role entry copy", () => {
   })
 
   it("keeps the driver path on pricing and empty-board conversion", () => {
-    expect(pricingPlans.find((plan) => plan.name === "Driver")?.cta).toEqual({
+    expect(pricingAudiences.find((audience) => audience.name === "Driver")?.cta).toEqual({
       href: "/sign-up?path=driver",
       label: "Create driver profile"
     })
@@ -46,17 +52,44 @@ describe("public role entry copy", () => {
     expect(signUpPageSource).toContain("intent={intent}")
   })
 
-  it("keeps host enrollment visibly gated instead of promising immediate publication", () => {
+  it("keeps host publication visibly gated on the fee terms and a card", () => {
     const hostStory = storyPages["for-landings"]
-    const publicCopy = `${JSON.stringify(hostStory)} ${publicPagesSource}`
+    const hostCopy = `${JSON.stringify(hostStory)} ${publicSignUpCopy("host").body}`
 
     expect(hostStory?.cta).toEqual({
       href: "/sign-up?path=host",
       label: "Create a host workspace"
     })
-    expect(publicCopy).toContain("separate pilot approval")
-    expect(publicCopy).not.toContain("publish work in minutes")
-    expect(publicCopy).not.toContain("Publish your first load")
+    expect(hostCopy).toContain("accepting the 2% host fee terms")
+    expect(hostCopy).toContain("attach a card in Billing")
+    expect(`${hostCopy} ${publicPagesSource}`).not.toContain("publish work in minutes")
+    expect(`${hostCopy} ${publicPagesSource}`).not.toContain("Publish your first load")
+  })
+
+  it("quotes one host fee: 2% on top of driver pay, with drivers and fleets free", () => {
+    expect(HOST_FEE_PERCENT).toBe("2%")
+    expect(HOST_FEE_EXAMPLE).toEqual({ driverPay: "$500", fee: "$10", hostTotal: "$510" })
+    expect(pricingAudiences.map((audience) => [audience.name, audience.price])).toEqual([
+      ["Driver", "Free"],
+      ["Fleet", "Free"],
+      ["Host", "2% per completed load"]
+    ])
+    expect(pricingAudiences.find((audience) => audience.name === "Host")?.note).toContain(
+      "$500 driver pay + $10 LogLoads fee = $510 total host cost"
+    )
+  })
+
+  it("dates the Terms on the fee terms version a host accepts", () => {
+    expect(HOST_FEE_TERMS_VERSION).toBe("2026-10-14")
+    expect(HOST_FEE_TERMS_EFFECTIVE_DATE).toBe("October 14, 2026")
+    expect(legalPages.terms?.effectiveDate).toBe(HOST_FEE_TERMS_EFFECTIVE_DATE)
+
+    const feeSection = legalPages.terms?.sections.find(
+      (section) => section.title === "Host platform fee"
+    )
+
+    expect(feeSection?.body).toContain("2% of the driver pay")
+    expect(feeSection?.body).toContain("Drivers and fleets pay LogLoads nothing")
   })
 
   it("limits live trip visibility to assigned participants", () => {

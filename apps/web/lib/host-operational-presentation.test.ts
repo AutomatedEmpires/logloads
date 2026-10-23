@@ -281,22 +281,18 @@ describe("host operating presentation", () => {
         } as unknown as NetworkView,
         options: {
           accessVocabulary: [],
-          billingActivationState: "percentage_active",
-          billingModel: "percentage_v1",
           billingProfileStatus: "attached",
-          currentPercentageAgreementActive: true,
           dispatcher: null,
           equipmentVocabulary: [],
+          feeAgreementAccepted: true,
           landings: [],
           loadTypes: [],
           rates: [],
-          routes: [],
-          subscriptionPlanCode: null
+          routes: []
         },
         setup: {
           activeLandingCount: 0,
           destinations: [],
-          landingLimit: null,
           mills: [],
           rates: []
         }

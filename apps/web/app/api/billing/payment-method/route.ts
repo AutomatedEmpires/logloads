@@ -1,4 +1,4 @@
-import { organizationRoleCan } from "@logloads/contracts"
+import { organizationRoleCan, organizationTypeCanPublishLoads } from "@logloads/contracts"
 import { NextResponse } from "next/server"
 
 import { ApiError, apiErrorResponse, enforceApiRateLimit, requireApiActor } from "@/lib/api-actor"
@@ -10,12 +10,8 @@ import {
 	stripePublishableKey
 } from "@/lib/billing"
 import { hostCardSetupEligibility } from "@/lib/host-card-eligibility"
-import { percentageEnrollmentAllowed } from "@/lib/percentage-enrollment"
 import { readState } from "@/lib/services"
-import {
-	resolveSubscriptionStripe,
-	verifyExpectedStripeAccount
-} from "@/lib/subscription-stripe"
+import { verifyExpectedStripeAccount } from "@/lib/stripe-account"
 
 /**
  * The host's card on file, and the flow that attaches one.
@@ -25,9 +21,8 @@ import {
  * LogLoads only ever learns an id, a brand and four digits. There is deliberately
  * no field on this route that could carry a card number.
  *
- * The card funds LogLoads platform-fee invoices under the current percentage
- * agreement and preserved historical obligations. It never receives, deducts,
- * or moves carrier or driver transportation compensation.
+ * The card pays the host's monthly LogLoads fee invoices. It never receives,
+ * deducts, or moves carrier or driver transportation compensation.
  */
 
 async function requireBillingManager() {
@@ -40,8 +35,8 @@ async function requireBillingManager() {
 		throw new ApiError("Only an organization owner, administrator, or billing manager can manage billing", 403)
 	}
 
-	if (!["landing_source", "destination"].includes(membership.organization.type)) {
-		throw new ApiError("Card billing is only available to host organizations", 403)
+	if (!organizationTypeCanPublishLoads(membership.organization.type)) {
+		throw new ApiError("Card billing is only available to organizations that publish loads", 403)
 	}
 
 	return { ...actor, organization: membership.organization }
@@ -69,13 +64,8 @@ export async function POST() {
 		// tighter than the shared actor budget.
 		await enforceApiRateLimit("billing-card-setup", actorUserId, 10, 60_000)
 
-		const enrollmentAllowed = percentageEnrollmentAllowed(organization.id)
 		const eligibility = await readState((current) =>
-			hostCardSetupEligibility(
-				current.state,
-				organization.id,
-				enrollmentAllowed
-			)
+			hostCardSetupEligibility(current.state, organization.id)
 		)
 
 		if (!eligibility.allowed) {
@@ -88,16 +78,8 @@ export async function POST() {
 			throw new ApiError(billing.message, 503, { "Retry-After": "5" })
 		}
 
-		const subscriptionStripe = resolveSubscriptionStripe(process.env)
-
-		if (!subscriptionStripe.ok) {
-			throw new ApiError("Stripe billing is not configured", 503, {
-				"Retry-After": "5"
-			})
-		}
-
 		try {
-			await verifyExpectedStripeAccount(subscriptionStripe.port, process.env)
+			await verifyExpectedStripeAccount(billing.value, process.env)
 		} catch {
 			throw new ApiError("Stripe billing account verification failed", 503, {
 				"Retry-After": "5"
@@ -111,7 +93,6 @@ export async function POST() {
 
 		const setup = await startHostCardSetup({
 			organization,
-			percentageEnrollmentAllowed: enrollmentAllowed,
 			port: billing.value,
 			publishableKey: publishableKey.value,
 			state: operatingStateAccess()

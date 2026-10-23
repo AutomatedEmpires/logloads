@@ -28,7 +28,6 @@ export const pilotSurfaceSlugs = [
   "fleet-performance",
   "fleet-assistant",
   "fleet-workspace",
-  "fleet-billing",
   "driver-map",
   "driver-loads",
   "driver-load-detail",

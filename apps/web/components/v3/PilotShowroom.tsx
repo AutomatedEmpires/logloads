@@ -173,7 +173,7 @@ function ExperienceLevels() {
         <h2 id="pilot-levels-title">Tour first. Rehearse second. Go live only when ready.</h2>
         <p>
           A product tour is not a live pilot, and a pilot does not silently
-          authorize enrollment, provider mutation, or fee collection.
+          accept fee terms, change provider records, or start fee collection.
         </p>
       </div>
       <ol className="pilot-levels__grid">

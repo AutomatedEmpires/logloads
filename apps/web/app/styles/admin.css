@@ -81,7 +81,7 @@
 .admin-exception-row--warning { border-left-color: var(--amber); }
 .admin-exception-summary,
 .admin-registry-summary { max-width: 880px; }
-#current-fee-exceptions,
+#fee-exceptions,
 #contact-inquiries,
 .admin-inquiry-row { scroll-margin-top: 84px; }
 .admin-inquiry-row:target {
@@ -91,10 +91,6 @@
 .admin-inquiry-row__body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-.admin-legacy-panel {
-  border-style: dashed;
-  background: var(--paper);
 }
 
 /* --- Progressive history --------------------------------------------------- */
