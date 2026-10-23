@@ -211,7 +211,8 @@ describe("operational attention projection", () => {
       throw new Error("Expected a foreign load with capacity")
     }
 
-    capacity.visibilityMode = "direct_offer"
+    capacity.visibilityMode = "private_network"
+    services.state.privateNetworkRelationships = []
     capacity.remainingTruckloads = 0
     capacity.completedTruckloads = 0
     capacity.totalTruckloads = Math.max(1, capacity.totalTruckloads)

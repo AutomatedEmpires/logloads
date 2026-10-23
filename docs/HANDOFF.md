@@ -99,12 +99,8 @@ driver pay, and fee collection and enrollment are dark until separately authoriz
    and add an equipment-edit path so existing trucks can set it. The
    `/driver/profile` showcase (`components/v3/DriverProfileShowcase.tsx`, view in
    `lib/driver-profile-showcase.ts`) will pick it up in the truck row.
-6. **Seed-only allocation modes.** `open_claim` and `dispatcher_assignment` exist only
-   in schema and seed. Publishing always writes `request_approval`, and nothing lets
-   a dispatcher assign directly. Remove them, or build the path when a criterion
-   needs it.
-7. **`vitest` 3 → 4.** Dev-only major upgrade (Dependabot #94).
-8. **Operational proof still owed** (`AGENTS.md` §11): an authenticated production
+6. **`vitest` 3 → 4.** Dev-only major upgrade (Dependabot #94).
+7. **Operational proof still owed** (`AGENTS.md` §11): an authenticated production
    request → approval → trip → message loop, and forced cold-start recovery.
 
 Dependabot #95, #96 and #97 (next, sharp, image-size) are superseded by the
@@ -141,7 +137,7 @@ git push origin --delete claude/scheduling-conflict-guard claude/series-fixture-
 
 ```text
 packages/contracts   Zod schemas, enums, permissions (role/action matrix), state machines, billing model
-packages/db          operating_state repository (CAS), seed data, snapshot upgrade, migration contract tests
+packages/db          operating_state repository (CAS), seed data, snapshot validation, schema contract tests
 packages/services    every business transition + authorization; root index is the public API
 packages/ui          primitives + semantic Phosphor icon registry
 apps/web             Next.js 15 App Router: app/{driver,fleet,host,admin,…}, components/v3, lib/*
@@ -156,10 +152,12 @@ ops/                 machine-readable production env contract
 - Everything lives in one JSONB row, `public.operating_state` (`id='primary'`).
   `mutateState()` replays a mutation on version conflict, so mutations must be
   deterministic.
-- `upgradeStateSnapshot` casts; it doesn't Zod-parse. Schema defaults never reach
-  stored documents. For a new field on an existing collection, backfill on read
-  (`{ ...row, field: row.field ?? default }`). A new required collection trips
-  `REQUIRED_TABLES` and fails production closed.
+- `parseStateSnapshot` validates every stored row against its contract but keeps
+  the stored row, not the parser output, so schema defaults never reach a stored
+  document. Every collection is required: a document missing one is refused and
+  production fails closed. A change that adds a collection or a required field
+  must write it into the stored document; the launch document and the seed get
+  every collection from the seed's keys.
 - The relational tables are a dormant mirror. The app writes with the service role,
   so RLS is inert today, but it must be correct before that path is activated.
 
@@ -171,8 +169,6 @@ ops/                 machine-readable production env contract
   `ORGANIZATION_ROLE_ACTIONS`.
 - Separation of duties compares **actors**, not organizations. One seed dispatcher
   belongs to two organizations.
-- Anything assignment-scoped needs a fallback for pre-feature (legacy) records.
-  Fresh-seed tests never exercise the legacy shapes production holds.
 
 **Discipline**
 - Derive UI option lists from the domain enum (`schema.options`); never hand-copy them.

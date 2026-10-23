@@ -10,8 +10,6 @@ import { describe, expect, it } from "vitest"
 import { auditStateSnapshot } from "./snapshot"
 import { createInMemoryDatabase } from "./store"
 
-const CREDENTIAL_COLLECTIONS = ["driverCredentials", "credentialReviews"] as const
-
 /** The instant the seeded bench is written around. */
 const BENCH_NOW = "2026-06-05T12:00:00.000Z"
 
@@ -41,43 +39,6 @@ function vaultOf(
 }
 
 describe("driver credential collections", () => {
-  it("loads a canonical document written before the vault existed", () => {
-    // A row validator puts a collection into REQUIRED_TABLES, and the document in
-    // production predates both of these. Without the additive backfill the first
-    // read after deploy refuses the WHOLE document and every request fails. This is
-    // the deploy-safety test, not a formality.
-    const { credentialReviews, driverCredentials, ...legacy } = createInMemoryDatabase()
-
-    expect([driverCredentials, credentialReviews]).toHaveLength(2)
-
-    const audit = auditStateSnapshot(legacy)
-
-    expect(audit.missingCollections).toEqual([])
-    expect(audit.state).not.toBeNull()
-
-    for (const collection of CREDENTIAL_COLLECTIONS) {
-      expect(audit.state?.[collection], collection).toEqual([])
-    }
-  })
-
-  it("backfills an empty vault, never an approved one", () => {
-    // The consequence is deliberate: after deploy every existing driver holds
-    // nothing and is blocked until they submit. Backfilling approvals to keep the
-    // platform moving would fabricate a claim about real people's insurance.
-    const { driverCredentials, ...legacy } = createInMemoryDatabase()
-
-    expect(driverCredentials.length).toBeGreaterThan(0)
-
-    const restored = auditStateSnapshot(legacy).state?.driverCredentials ?? []
-
-    expect(restored).toEqual([])
-    expect(credentialGateFor(restored, BENCH_NOW)).toEqual({
-      expiring: [],
-      missing: [...MANDATORY_CREDENTIAL_KINDS],
-      satisfied: false
-    })
-  })
-
   it("clears exactly one seeded driver, and it is the one the journeys sign in as", () => {
     const state = createInMemoryDatabase()
     const cleared = state.driverProfiles.filter(

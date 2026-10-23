@@ -44,16 +44,10 @@ const supabaseMedia: MediaReference = {
   bytes: 68,
   format: "png",
   height: 1,
-  provider: "supabase",
   publicId: "logloads/trip-documents/trip-1/uploads/photo-1",
   uploadedAt: "2026-07-21T12:00:00.000Z",
   version: 1,
   width: 1
-}
-
-const legacyCloudinaryMedia: MediaReference = {
-  ...supabaseMedia,
-  provider: "cloudinary"
 }
 
 const PNG_BYTES = Buffer.from(
@@ -64,15 +58,6 @@ const PNG_BYTES = Buffer.from(
 function stubMediaEnvironment(
   overrides: Record<string, string | undefined> = {}
 ) {
-  for (const name of Object.keys(process.env)) {
-    if (
-      name.startsWith("CLOUDINARY_") ||
-      name.startsWith("LOGLOADS_CLOUDINARY_")
-    ) {
-      vi.stubEnv(name, undefined)
-    }
-  }
-
   for (const [name, value] of Object.entries({
     ...configuredMediaEnvironment,
     ...overrides
@@ -303,18 +288,6 @@ describe("Supabase signed uploads", () => {
     })
     expect(supabaseAdapter.createSignedUploadUrl).not.toHaveBeenCalled()
   })
-
-  it("fails before provider access when retired Cloudinary configuration exists", async () => {
-    vi.stubEnv("CLOUDINARY_URL", "cloudinary://retired")
-
-    await expect(
-      signedUpload({ publicIdPrefix: "logloads/trip-documents/t1" })
-    ).rejects.toMatchObject({
-      message: "File uploads are not activated for this environment",
-      status: 503
-    })
-    expect(supabaseAdapter.createClient).not.toHaveBeenCalled()
-  })
 })
 
 describe("Supabase read-back and delivery", () => {
@@ -327,7 +300,6 @@ describe("Supabase read-back and delivery", () => {
       bytes: PNG_BYTES.byteLength,
       format: "png",
       height: 1,
-      provider: "supabase",
       publicId: "logloads/trip-documents/trip-1/uploads/photo-1",
       uploadedAt: "2026-07-21T12:00:00.000Z",
       width: 1
@@ -375,22 +347,6 @@ describe("Supabase read-back and delivery", () => {
       supabaseMedia.publicId,
       300
     )
-  })
-
-  it("keeps legacy Cloudinary records parseable but never calls a provider", async () => {
-    await expect(
-      signedDeliveryUrl(legacyCloudinaryMedia)
-    ).rejects.toMatchObject({
-      message: "This legacy file is not available",
-      status: 404
-    })
-    await expect(
-      signedDocumentUrl(legacyCloudinaryMedia)
-    ).rejects.toMatchObject({
-      message: "This legacy file is not available",
-      status: 404
-    })
-    expect(supabaseAdapter.createClient).not.toHaveBeenCalled()
   })
 })
 

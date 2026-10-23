@@ -10,7 +10,7 @@ import { createInMemoryDatabase } from "@logloads/db"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
-import { createLoadPosting, provisionLoadCapacity, updateLoadPosting } from "./loads"
+import { createLoadPosting, provisionLoadCapacity } from "./loads"
 
 const HOST_ORG = "33333333-3333-4333-8333-333333333332"
 
@@ -113,7 +113,7 @@ const INVALID_AGREEMENT_CASES: Array<{
 describe("publishing a load makes it requestable", () => {
   it("creates an opportunity-capacity ledger and a requestable loading slot for a live load", () => {
     const state = createInMemoryDatabase()
-    const load = createLoadPosting(state, { ...BASE_LOAD, status: "open", visibility: "open_network" })
+    const load = createLoadPosting(state, { ...BASE_LOAD, status: "open", visibilityMode: "open_network" })
 
     const capacity = state.opportunityCapacities.find((entry) => entry.loadPostingId === load.id)
     expect(capacity).toBeDefined()
@@ -132,7 +132,7 @@ describe("publishing a load makes it requestable", () => {
 
   it("honors the requested visibility mode", () => {
     const state = createInMemoryDatabase()
-    const load = createLoadPosting(state, { ...BASE_LOAD, status: "open", visibility: "private_network" })
+    const load = createLoadPosting(state, { ...BASE_LOAD, status: "open", visibilityMode: "private_network" })
 
     expect(state.opportunityCapacities.find((entry) => entry.loadPostingId === load.id)?.visibilityMode).toBe("private_network")
   })
@@ -265,9 +265,9 @@ describe("what a published load pays the driver", () => {
     expect(draft.driverPayCents).toBeNull()
 
     // provisionLoadCapacity is the function openDraftLoadPosting publishes
-    // through, so a draft written before the figure existed is stopped when it
-    // reaches the network rather than when it was saved.
-    expect(() => provisionLoadCapacity(state, draft, "open_network", "request_approval")).toThrow(
+    // through, so a draft without the figure is stopped when it reaches the
+    // network rather than when it was saved.
+    expect(() => provisionLoadCapacity(state, draft, "open_network")).toThrow(
       /pays a driver per truckload/
     )
     expect(state.truckSlots.some((slot) => slot.loadPostingId === draft.id)).toBe(false)
@@ -477,40 +477,10 @@ describe("a host may not publish work they cannot be billed for", () => {
     // openDraftLoadPosting mints capacity through this function, so the gate has
     // to hold here as well as on the create path — otherwise "save a draft first"
     // is a way around it.
-    expect(() => provisionLoadCapacity(state, draft, "open_network", "request_approval")).toThrow(
+    expect(() => provisionLoadCapacity(state, draft, "open_network")).toThrow(
       /no payment card on file/
     )
     expect(state.truckSlots.some((slot) => slot.loadPostingId === draft.id)).toBe(false)
     expect(state.opportunityCapacities.some((entry) => entry.loadPostingId === draft.id)).toBe(false)
-  })
-
-  it("refuses an edit that moves a draft onto the network with no card", () => {
-    const state = createInMemoryDatabase()
-    const draft = createLoadPosting(state, { ...BASE_LOAD, status: "draft" })
-
-    removeCard(state)
-
-    // updateLoadPosting can set a status, so it is a third door onto the network.
-    // It mints no capacity, so it is not how the product publishes — it is closed
-    // here so it cannot become the way around the gate.
-    expect(() => updateLoadPosting(state, { id: draft.id, status: "open" })).toThrow(
-      /no payment card on file/
-    )
-    expect(state.loadPostings.find((load) => load.id === draft.id)?.status).toBe("draft")
-  })
-
-  it("lets an ordinary edit of already-published work through", () => {
-    // The negative control for the edit gate: it fires on the move onto the
-    // network, not on every save, so a host with a declined card can still fix
-    // the weather note on work that is already live.
-    const state = createInMemoryDatabase()
-    const load = createLoadPosting(state, { ...BASE_LOAD, status: "open" })
-
-    removeCard(state)
-
-    const updated = updateLoadPosting(state, { id: load.id, weatherNotes: "Fog through 09:00" })
-
-    expect(updated.weatherNotes).toBe("Fog through 09:00")
-    expect(updated.status).toBe("open")
   })
 })

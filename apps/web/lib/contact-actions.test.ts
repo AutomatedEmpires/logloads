@@ -79,15 +79,16 @@ describe("contact pilot intent", () => {
     expect(mocks.deliverEmail).not.toHaveBeenCalled()
   })
 
-  it("keeps legacy contact submissions without the new field general", async () => {
+  it("refuses a submission that names no intent", async () => {
     const result = await submitContactInquiryAction(
       { error: null, ok: false },
       contactForm()
     )
 
-    expect(result.ok).toBe(true)
-    expect(mocks.createNotification).toHaveBeenCalledWith(expect.objectContaining({
-      body: expect.stringContaining("Interest: General question")
-    }))
+    expect(result).toEqual({
+      error: "Choose what you want to explore so we can route your request.",
+      ok: false
+    })
+    expect(mocks.createNotification).not.toHaveBeenCalled()
   })
 })

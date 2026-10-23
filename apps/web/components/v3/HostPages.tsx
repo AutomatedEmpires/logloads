@@ -149,17 +149,14 @@ type HostNotice = NetworkView["notices"][number]
 const HOST_LIVE_LOAD_STATUSES = new Set<NetworkLoadView["status"]>([
   "open",
   "scheduled",
-  "filled",
-  "in_transit"
+  "filled"
 ])
 
 const HOST_SCHEDULE_PRIORITY: Record<NetworkLoadView["status"], number> = {
-  archived: 7,
   cancelled: 6,
   completed: 5,
   draft: 4,
   filled: 1,
-  in_transit: 0,
   open: 3,
   scheduled: 2
 }
@@ -586,7 +583,7 @@ function statusTone(status: string): "success" | "warning" | "critical" | "info"
   if (status === "open") return "success"
   if (status === "draft") return "warning"
   if (status === "cancelled") return "critical"
-  if (status === "completed" || status === "archived") return "neutral"
+  if (status === "completed") return "neutral"
 
   return "info"
 }
@@ -1129,13 +1126,9 @@ function HostTripCard({
           {trip.documents.map((document) => (
             <li key={document.id}>
               <Icon aria-hidden name="ops.document" size={14} />
-              {document.viewable ? (
-                <a href={`/api/trip-documents/asset?documentId=${document.id}`} rel="noreferrer" target="_blank">
-                  {document.filename}
-                </a>
-              ) : (
-                <span>{document.filename}</span>
-              )}
+              <a href={`/api/trip-documents/asset?documentId=${document.id}`} rel="noreferrer" target="_blank">
+                {document.filename}
+              </a>
               <em>{document.type}</em>
             </li>
           ))}
@@ -1737,7 +1730,7 @@ export function HostSchedule({ account, network }: HostPageProps) {
                 {active.map((load) => (
                   <Link
                     className="trip-row host-schedule-row"
-                    href={load.status === "in_transit" ? "/host/live-board" : "/host/opportunities#live-work"}
+                    href="/host/opportunities#live-work"
                     key={load.id}
                   >
                     <div>

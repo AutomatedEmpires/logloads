@@ -1,15 +1,12 @@
 import type { AssignmentStatus, LoadStatus, TruckSlotStatus } from "./enums"
 
 const loadPostingTransitions: Record<LoadStatus, LoadStatus[]> = {
-  archived: [],
-  cancelled: ["archived"],
-  completed: ["archived"],
+  cancelled: [],
+  completed: [],
   draft: ["open", "cancelled"],
   // filled -> open: a cancellation or decline returns committed capacity.
-  // filled -> completed: the final truckload delivered (mirrors the v2
-  // opportunity machine, which never required passing through in_transit).
-  filled: ["open", "in_transit", "completed", "cancelled"],
-  in_transit: ["completed", "cancelled"],
+  // filled -> completed: the final truckload delivered.
+  filled: ["open", "completed", "cancelled"],
   open: ["scheduled", "filled", "cancelled"],
   scheduled: ["filled", "cancelled"]
 }

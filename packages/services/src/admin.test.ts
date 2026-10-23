@@ -847,7 +847,7 @@ describe("organization suspension work protection", () => {
       id: randomUUID(),
       legalName: "Destination Safety Fixture LLC",
       slug: `destination-safety-${randomUUID()}`,
-      type: "destination" as const,
+      type: "landing_source" as const,
       verificationStatus: "verified" as const
     }
     state.organizations.push(destination)

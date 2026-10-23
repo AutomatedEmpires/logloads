@@ -10,7 +10,7 @@ import {
 
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
-import { routePackIsSafeToRead } from "./route-packs"
+import { findAssignmentRoutePack, routePackIsSafeToRead } from "./route-packs"
 import { assertCondition, assertFound, nowIso } from "./utils"
 
 /** Documents a driver may offer as proof a haul was delivered. */
@@ -68,39 +68,19 @@ export function hasCompletionEvidence(state: LogLoadsDatabaseState, tripId: stri
 /**
  * What the host asked the driver to come away with, as it was written into the
  * Route Pack the driver accepted — not as the destination record reads today.
- * The requirement a driver was given is the requirement they are held to.
- *
- * Falls back to the host's load-level source the same way getRoutePackForAssignment
- * does, so the gate reads whichever pack the driver is actually looking at. A
- * haul booked before packs carried snapshots has no recorded requirement and so
- * no gate — the host establishes one by re-issuing the pack, which mints a
- * snapshot. Inventing a requirement from today's destination record would hold
- * a driver to something they were never told.
+ * The requirement a driver was given is the requirement they are held to, so
+ * inventing one from today's destination record would hold a driver to
+ * something they were never told.
  */
 export function requiredCompletionEvidence(state: LogLoadsDatabaseState, trip: TripV2): string[] {
   const load = state.loadPostings.find((candidate) => candidate.id === trip.loadPostingId)
+  const pack = findAssignmentRoutePack(state, trip.assignmentId)
 
-  if (!load) {
+  if (!load || !pack || !routePackIsSafeToRead(state, load, pack)) {
     return []
   }
 
-  const assignmentPack = state.routePacks
-    .filter(
-      (candidate) =>
-        candidate.assignmentId === trip.assignmentId &&
-        !candidate.supersededAt &&
-        routePackIsSafeToRead(state, load, candidate)
-    )
-    .sort((left, right) => right.version - left.version)[0]
-  const pack = assignmentPack ??
-    state.routePacks.find(
-      (candidate) =>
-        candidate.loadPostingId === trip.loadPostingId &&
-        !candidate.assignmentId &&
-        routePackIsSafeToRead(state, load, candidate)
-    )
-
-  return pack?.snapshot?.completionEvidence ?? []
+  return pack.snapshot.completionEvidence
 }
 
 export interface SubmitHaulCompletionInput {

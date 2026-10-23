@@ -1,9 +1,7 @@
 export const ORGANIZATION_TYPES = [
   "carrier",
   "fleet",
-  "landing_source",
-  "destination",
-  "platform"
+  "landing_source"
 ] as const
 
 export type OrganizationType = (typeof ORGANIZATION_TYPES)[number]
@@ -119,23 +117,9 @@ export function organizationRoleCan(role: OrganizationRole, action: Organization
 export const INVITABLE_ROLES_BY_ORGANIZATION_TYPE = {
   carrier: ["admin", "dispatcher", "fleet_manager", "driver"],
   fleet: ["admin", "dispatcher", "fleet_manager", "driver"],
-  landing_source: ["admin", "dispatcher", "landing_manager", "destination_manager", "billing"],
-  destination: ["admin", "dispatcher", "landing_manager", "destination_manager", "billing"],
-  platform: []
+  landing_source: ["admin", "dispatcher", "landing_manager", "destination_manager", "billing"]
 } as const satisfies Record<OrganizationType, readonly OrganizationRole[]>
 
 export function invitableRolesForOrganizationType(type: OrganizationType): readonly OrganizationRole[] {
   return INVITABLE_ROLES_BY_ORGANIZATION_TYPE[type]
-}
-
-/**
- * Whether members of an organization of this type can publish loads: some role
- * the organization can hold carries `publish_load`. An organization that can
- * publish is a host for the work it publishes, so this is also who may accept
- * the LogLoads host fee terms and keep a card on file for them.
- */
-export function organizationTypeCanPublishLoads(type: OrganizationType): boolean {
-  return INVITABLE_ROLES_BY_ORGANIZATION_TYPE[type].some((role) =>
-    organizationRoleCan(role, "publish_load")
-  )
 }

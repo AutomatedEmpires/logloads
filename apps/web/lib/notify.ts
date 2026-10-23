@@ -18,12 +18,9 @@ export async function deliverEmail(email: OutboundEmail): Promise<boolean> {
     return false
   }
 
-  const from = process.env.RESEND_FROM?.trim()
-    || process.env.LOGLOADS_EMAIL_FROM?.trim()
-    || "LogLoads <notifications@logloads.com>"
+  const from = process.env.RESEND_FROM?.trim() || "LogLoads <notifications@logloads.com>"
   const replyTo = process.env.RESEND_REPLY_TO?.trim()
     || process.env.SUPPORT_EMAIL?.trim()
-    || process.env.LOGLOADS_EMAIL_REPLY_TO?.trim()
     || "support@logloads.com"
 
   try {

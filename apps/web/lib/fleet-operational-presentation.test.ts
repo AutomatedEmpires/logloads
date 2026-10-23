@@ -182,7 +182,7 @@ describe("fleet live exception truth", () => {
     const load = (
       status: NetworkLoadView["assignments"][number]["status"],
       warnings = ["Road restricted"],
-      loadStatus: NetworkLoadView["status"] = "in_transit"
+      loadStatus: NetworkLoadView["status"] = "filled"
     ): Pick<NetworkLoadView, "assignments" | "status" | "warnings"> => ({
       assignments: [assignment(status)],
       status: loadStatus,
@@ -198,7 +198,7 @@ describe("fleet live exception truth", () => {
     }
     expect(loadHasCurrentFleetWarning(load("accepted", []))).toBe(false)
     expect(loadHasCurrentFleetWarning(load("accepted", ["Old warning"], "completed"))).toBe(false)
-    expect(loadHasCurrentFleetWarning(load("accepted", ["Old warning"], "archived"))).toBe(false)
+    expect(loadHasCurrentFleetWarning(load("accepted", ["Old warning"], "cancelled"))).toBe(false)
   })
 })
 

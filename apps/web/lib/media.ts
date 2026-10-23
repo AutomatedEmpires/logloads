@@ -268,7 +268,6 @@ export async function verifiedMediaReference(publicId: string): Promise<MediaRef
     bytes: bytes.byteLength,
     format: format as MediaReference["format"],
     height: dimensions.height,
-    provider: "supabase",
     publicId,
     uploadedAt,
     version: Math.max(1, Math.floor(Date.parse(uploadedAt) / 1000)),
@@ -277,10 +276,6 @@ export async function verifiedMediaReference(publicId: string): Promise<MediaRef
 }
 
 export async function signedDeliveryUrl(photo: MediaReference): Promise<string> {
-  if (photo.provider !== "supabase") {
-    throw new ApiError("This legacy file is not available", 404)
-  }
-
   const { client, config } = supabaseStorage()
   const { data, error } = await client.storage
     .from(config.bucket)
@@ -300,10 +295,6 @@ export async function signedDeliveryUrl(photo: MediaReference): Promise<string> 
  * small. A derivative that dropped a digit would still look like a document.
  */
 export async function signedDocumentUrl(media: MediaReference): Promise<string> {
-  if (media.provider !== "supabase") {
-    throw new ApiError("This legacy file is not available", 404)
-  }
-
   const { client, config } = supabaseStorage()
   const { data, error } = await client.storage
     .from(config.bucket)

@@ -77,7 +77,6 @@ const MAYA_REFUSED_INSURANCE = "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c106"
 const MAYA_TRUCK_A = "77777777-7777-4777-8777-777777777772"
 const MAYA_TRUCK_B = "77777777-7777-4777-8777-777777777775"
 const HANK_TRUCK = "77777777-7777-4777-8777-777777777771"
-const HANK_TRAILER = "88888888-8888-4888-8888-888888888881"
 
 const PLATFORM_ADMIN_USER = "11111111-1111-4111-8111-111111111111"
 /** An active member of Maya's outfit who holds manage_drivers. */
@@ -167,7 +166,6 @@ function credentialDocument(
     bytes: 412_000,
     format: "jpg",
     height: 1_754,
-    provider: "supabase",
     publicId:
       `${credentialDocumentPublicIdPrefix(driverProfileId, kind, equipmentProfileId)}` +
       `/uploads/${randomUUID()}`,
@@ -1848,34 +1846,6 @@ describe("driverCredentialGate", () => {
 
     expect(gate.satisfied).toBe(false)
     expect(gate.missing).toEqual(["trailer"])
-  })
-
-  it("never lets historical unbound equipment evidence clear a selected rig", () => {
-    const state = freshState()
-
-    state.driverCredentials = state.driverCredentials.map((credential) => {
-      if (credential.driverProfileId !== HANK_DRIVER) {
-        return credential
-      }
-
-      if (credential.kind === "truck") {
-        return driverCredentialSchema.parse({ ...credential, truckProfileId: null })
-      }
-
-      if (credential.kind === "trailer") {
-        return driverCredentialSchema.parse({ ...credential, trailerProfileId: null })
-      }
-
-      return credential
-    })
-
-    const gate = driverCredentialGate(state, HANK_DRIVER, AT, {
-      trailerProfileId: HANK_TRAILER,
-      truckProfileId: HANK_TRUCK
-    })
-
-    expect(gate.satisfied).toBe(false)
-    expect(gate.missing).toEqual(["truck", "trailer"])
   })
 
   it("stops clearing a driver the instant a credential lapses, with nothing written in between", () => {

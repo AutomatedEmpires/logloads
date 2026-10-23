@@ -32,14 +32,12 @@ import { formatDateTime } from "./v3-shared"
 
 type PlatformState = typeof services.state
 
-const ACTIVE_LOAD_STATUSES = new Set(["open", "scheduled", "filled", "in_transit"])
+const ACTIVE_LOAD_STATUSES = new Set(["open", "scheduled", "filled"])
 
 const ORG_TYPE_LABELS: Record<string, string> = {
   carrier: "Carrier",
-  destination: "Destination",
   fleet: "Fleet",
-  landing_source: "Landing source",
-  platform: "Platform"
+  landing_source: "Landing source"
 }
 
 const VERIFICATION_SOURCE_LABELS: Record<string, string> = {
@@ -50,7 +48,6 @@ const VERIFICATION_SOURCE_LABELS: Record<string, string> = {
 }
 
 const VISIBILITY_LABELS: Record<string, string> = {
-  direct_offer: "Direct offer",
   open_network: "Open network",
   private_network: "Partner load",
   verified_network: "Verified network"
@@ -526,7 +523,7 @@ export async function getAdminOverview(): Promise<AdminOverview> {
 
   const pendingVerifications = state.verificationRecords.filter((record) => record.status === "pending").length
   const pendingOrganizations = state.organizations.filter(
-    (organization) => organization.type !== "platform" && !organization.archivedAt && organization.verificationStatus === "pending"
+    (organization) => !organization.archivedAt && organization.verificationStatus === "pending"
   ).length
   const criticalNotices = state.operationalNotices.filter(
     (notice) => notice.severity === "critical" && adminNoticeState(notice.effectiveAt, notice.expiresAt, now) === "active"
@@ -606,9 +603,7 @@ export async function getAdminOverview(): Promise<AdminOverview> {
   const stats = [
     {
       label: "Organizations",
-      value: state.organizations.filter(
-        (organization) => organization.type !== "platform" && !organization.archivedAt
-      ).length
+      value: state.organizations.filter((organization) => !organization.archivedAt).length
     },
     { label: "Open loads", value: state.loadPostings.filter((load) => load.status === "open").length },
     { label: "Active trips", value: state.tripsV2.filter((trip) => trip.status !== "completed" && trip.status !== "cancelled").length },
@@ -677,7 +672,7 @@ export async function getAdminOrganizations(): Promise<AdminOrganizationRow[]> {
   const state = services.state
 
   return state.organizations
-    .filter((organization) => organization.type !== "platform" && !organization.archivedAt)
+    .filter((organization) => !organization.archivedAt)
     .map((organization) => ({
       activeLoads: state.loadPostings.filter(
         (load) => load.companyId === organization.id && ACTIVE_LOAD_STATUSES.has(load.status)
@@ -979,7 +974,6 @@ export async function getAdminBilling(): Promise<AdminBillingSnapshot> {
 // --- Load posting moderation view ------------------------------------------------
 
 export interface AdminOpportunityRow {
-  allocationLabel: string
   createdLabel: string
   id: string
   lane: string
@@ -992,12 +986,10 @@ export interface AdminOpportunityRow {
 }
 
 const LOAD_STATUS_WEIGHT: Record<string, number> = {
-  archived: 7,
   cancelled: 6,
   completed: 5,
   draft: 4,
   filled: 2,
-  in_transit: 3,
   open: 0,
   scheduled: 1
 }
@@ -1019,7 +1011,6 @@ export async function getAdminOpportunities(): Promise<AdminOpportunityRow[]> {
       const mill = state.mills.find((candidate) => candidate.id === load.dropoffMillId)
 
       return {
-        allocationLabel: capacity ? titleCase(capacity.allocationMode) : "Not published",
         createdLabel: formatDateTime(load.createdAt),
         id: load.id,
         lane: `${landing ? `${landing.city}, ${landing.state}` : "Unknown landing"} to ${mill?.name ?? "unknown destination"}`,

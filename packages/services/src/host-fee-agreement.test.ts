@@ -145,7 +145,7 @@ describe("host fee agreement acceptance", () => {
     ).toBe(true)
   })
 
-  it("lets any organization type that publishes loads accept, including a fleet", () => {
+  it("lets a fleet that publishes its own loads accept", () => {
     const services = servicesWithoutAgreements()
 
     expect(
@@ -154,21 +154,6 @@ describe("host fee agreement acceptance", () => {
         ACCEPTED_AT
       ).agreement.organizationId
     ).toBe(FLEET)
-  })
-
-  it("refuses an organization type that cannot publish loads", () => {
-    const services = servicesWithoutAgreements()
-    const organization = services.state.organizations.find((candidate) => candidate.id === FLEET)!
-
-    organization.type = "platform"
-
-    expect(() =>
-      services.acceptHostFeeAgreement(
-        { actorUserId: FLEET_OWNER, organizationId: FLEET, termsVersion: HOST_FEE_TERMS_VERSION },
-        ACCEPTED_AT
-      )
-    ).toThrow(/Only an organization that publishes loads/)
-    expect(services.state.hostFeeAgreements).toEqual([])
   })
 
   it.each(["pending", "verified"] as const)(

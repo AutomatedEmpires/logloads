@@ -17,10 +17,10 @@ export function formatMoney(value: MoneyValue): string {
 }
 
 /**
- * The off-platform driver payment frozen into an accepted assignment.
+ * The off-platform driver payment frozen into an assignment's terms.
  *
- * An assignment may carry neither field, and a half-recorded amount without
- * its currency is not a monetary promise the product can honestly display or
+ * The terms are an untyped record, and a half-recorded amount without its
+ * currency is not a monetary promise the product can honestly display or
  * receipt. Callers therefore get the pair or null, never an invented fallback.
  */
 export function readFrozenDriverPay(
@@ -43,25 +43,19 @@ export function readFrozenDriverPay(
 }
 
 /**
- * What this load pays the driver, as one sentence.
- *
- * A host-stated `driverPayCents` is the authoritative answer and wins outright:
- * it is a commitment about this load. The company rate card is a price list, so
- * it can only ever produce an estimate ("$62 per ton"), and it is used solely
- * as the fallback for loads posted before hosts stated a figure.
+ * What this load pays the driver, as one sentence: the host-stated figure, a
+ * commitment about this load. Only a draft can lack one, and it says so rather
+ * than quoting the company rate card, which is a price list, not a promise.
  *
  * The platform fee is charged to the host on top of this number. Nothing here
  * may ever subtract a fee from it — a driver reading "$500" must be paid $500.
  */
-export function driverPayLabel(
-  driverPayCents: number | null | undefined,
-  rate: { baseRate: MoneyValue; rateType: RateType }
-): string {
+export function driverPayLabel(driverPayCents: number | null | undefined, currency: string): string {
   if (typeof driverPayCents === "number" && driverPayCents > 0) {
-    return formatMoney({ amountCents: driverPayCents, currency: rate.baseRate.currency })
+    return formatMoney({ amountCents: driverPayCents, currency })
   }
 
-  return formatRateLabel(rate.baseRate, rate.rateType)
+  return "Driver pay not stated"
 }
 
 export function formatRateLabel(value: MoneyValue, rateType: RateType): string {

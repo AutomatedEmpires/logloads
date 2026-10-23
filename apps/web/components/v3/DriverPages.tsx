@@ -9,7 +9,6 @@ import type { CredentialVaultView } from "@/lib/credential-data"
 import type { DriverProfileShowcaseView } from "@/lib/driver-profile-showcase"
 import type { NetworkLoadView, NetworkView } from "@/lib/network"
 import type { VerificationRecordView } from "@/lib/verification-data"
-import { payHeadline, presentPay } from "@/lib/pay-display"
 import { formatHuman, pluralize, tripStatusLabel } from "@/lib/v3-shared"
 import { LocalTime, RelationshipGrid } from "./Common"
 import { CredentialVault } from "./CredentialVault"
@@ -373,13 +372,9 @@ function TripCard({ mediaReady, network, trip }: { mediaReady: boolean; network:
           {trip.documents.map((document) => (
             <li key={document.id}>
               <Icon aria-hidden name="ops.document" size={14} />
-              {document.viewable ? (
-                <a href={`/api/trip-documents/asset?documentId=${document.id}`} rel="noreferrer" target="_blank">
-                  {document.filename}
-                </a>
-              ) : (
-                <span>{document.filename}</span>
-              )}
+              <a href={`/api/trip-documents/asset?documentId=${document.id}`} rel="noreferrer" target="_blank">
+                {document.filename}
+              </a>
               <em>{document.type}</em>
             </li>
           ))}
@@ -482,7 +477,7 @@ function RequestedHaulCard({ load }: { load: NetworkLoadView }) {
       <header>
         <div>
           <span className="card-kicker">{load.landing.city} to {load.destination.name}</span>
-          <strong>{payHeadline(load)}</strong>
+          <strong>{load.payLabel}</strong>
         </div>
         <Badge tone={presentation.tone}>{presentation.badge}</Badge>
       </header>
@@ -512,7 +507,7 @@ function DecisionHaulCard({ load }: { load: NetworkLoadView }) {
       <header>
         <div>
           <span className="card-kicker">{load.landing.city} to {load.destination.name}</span>
-          <strong>{payHeadline(load)}</strong>
+          <strong>{load.payLabel}</strong>
         </div>
         <Badge tone="info">Not selected</Badge>
       </header>
@@ -1262,8 +1257,7 @@ export function DriverLoadDetail({ account, loadId, network }: DriverPageProps &
               <p className="eyebrow">{load.landing.city} to {load.destination.name} · {load.sourceName}</p>
               <h1>{load.title}</h1>
               <div className="load-decision-lead">
-                <strong>{payHeadline(load)}</strong>
-                {presentPay(load).estimateNote ? <span>{presentPay(load).estimateNote}</span> : null}
+                <strong>{load.payLabel}</strong>
                 <span>{load.scheduleLabel}</span>
                 <span>{load.route.distanceMiles.toFixed(0)} miles</span>
                 <span>{load.capacity.remaining} of {load.capacity.total} hauls open</span>

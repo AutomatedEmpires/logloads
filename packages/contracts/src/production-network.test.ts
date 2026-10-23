@@ -72,7 +72,6 @@ describe("production operating network contracts", () => {
       id: "11111111-1111-4111-8111-111111111111",
       loadPostingId: "22222222-2222-4222-8222-222222222222",
       visibilityMode: "private_network",
-      allocationMode: "request_approval",
       totalTruckloads: 4,
       committedTruckloads: 2,
       completedTruckloads: 1,
@@ -90,7 +89,6 @@ describe("production operating network contracts", () => {
       id: "11111111-1111-4111-8111-111111111111",
       loadPostingId: "22222222-2222-4222-8222-222222222222",
       visibilityMode: "open_network",
-      allocationMode: "open_claim",
       totalTruckloads: 2,
       committedTruckloads: 1,
       completedTruckloads: 2,
@@ -104,14 +102,15 @@ describe("production operating network contracts", () => {
   })
 
   it("validates assignment-scoped route packs", () => {
-    const result = routePackSchema.safeParse({
+    const pack = {
       id: "33333333-3333-4333-8333-333333333333",
       loadPostingId: "22222222-2222-4222-8222-222222222222",
+      assignmentId: "77777777-7777-4777-8777-777777777777",
+      version: 1,
       landingId: "44444444-4444-4444-8444-444444444444",
       destinationId: "55555555-5555-4555-8555-555555555555",
       haulRouteId: "66666666-6666-4666-8666-666666666666",
-      visibility: "assigned_only",
-      cacheableOffline: true,
+      cacheableOffline: false,
       calculatedRouteSummary: "Use operator entrance pin, not public map pin.",
       localInstructions: [
         {
@@ -123,12 +122,21 @@ describe("production operating network contracts", () => {
         }
       ],
       currentRoadCondition: "restricted",
+      snapshot: {
+        capturedAt: timestamp,
+        destinationName: "Cascade Mill",
+        driverName: "Hank Hauler",
+        hostOrganizationName: "Summit Ridge Timber",
+        originName: "Blue River Landing"
+      },
       lastVerifiedAt: timestamp,
       createdAt: timestamp,
       updatedAt: timestamp
-    })
+    }
 
-    expect(result.success).toBe(true)
+    expect(routePackSchema.safeParse(pack).success).toBe(true)
+    expect(routePackSchema.safeParse({ ...pack, assignmentId: null }).success).toBe(false)
+    expect(routePackSchema.safeParse({ ...pack, snapshot: null }).success).toBe(false)
   })
 
   it("enforces trip lifecycle ordering", () => {
@@ -136,7 +144,7 @@ describe("production operating network contracts", () => {
     expect(() => transitionTripStatus("assigned", "completed")).toThrow(/Invalid trip transition/)
   })
 
-  it("stores new Supabase trip documents and still parses legacy provider metadata", () => {
+  it("stores a trip document only with the asset read back from storage", () => {
     const baseDocument = {
       auditMetadata: {},
       contentType: "image/jpeg",
@@ -153,46 +161,25 @@ describe("production operating network contracts", () => {
       bytes: 248_137,
       format: "jpg",
       height: 1_600,
-      provider: "supabase",
       publicId: baseDocument.storageKey,
       uploadedAt: timestamp,
       version: 1_700_000_000,
       width: 1_200
     } as const
 
-    expect(
-      tripDocumentSchema.parse({
-        ...baseDocument,
-        media,
-        storageProvider: "supabase"
-      }).storageProvider
-    ).toBe("supabase")
-    expect(
-      tripDocumentSchema.parse({
-        ...baseDocument,
-        media: null,
-        storageProvider: "cloudinary"
-      }).storageProvider
-    ).toBe("cloudinary")
-    expect(
-      tripDocumentSchema.parse({
-        ...baseDocument,
-        media: null,
-        storageProvider: "external"
-      }).storageProvider
-    ).toBe("external")
+    expect(tripDocumentSchema.parse({ ...baseDocument, media }).media).toEqual(media)
+    expect(tripDocumentSchema.safeParse({ ...baseDocument, media: null }).success).toBe(false)
   })
 
-  it("validates purpose-limited trip location state", () => {
+  it("validates a trip record", () => {
     const result = tripSchemaV2.safeParse({
       id: "77777777-7777-4777-8777-777777777777",
       assignmentId: "88888888-8888-4888-8888-888888888888",
       loadPostingId: "99999999-9999-4999-8999-999999999999",
-      routePackId: null,
+      routePackId: "33333333-3333-4333-8333-333333333333",
       driverProfileId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       equipmentCombinationId: null,
       status: "assigned",
-      locationVisibility: "active_trip_participants",
       locationSharingStartedAt: null,
       locationSharingEndsAt: null,
       lastSyncedAt: timestamp,

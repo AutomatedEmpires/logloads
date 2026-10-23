@@ -163,14 +163,13 @@ function billingContext(
   const actorUserId = input.actorUserId
   const organizationId = input.organizationId
 
-  assertCondition(
-    typeof actorUserId === "string" && actorUserId.length > 0,
-    "actorUserId is required for a platform fee action"
-  )
-  assertCondition(
-    typeof organizationId === "string" && organizationId.length > 0,
-    "organizationId is required for a platform fee action"
-  )
+  if (typeof actorUserId !== "string" || actorUserId.length === 0) {
+    throw new Error("actorUserId is required for a platform fee action")
+  }
+
+  if (typeof organizationId !== "string" || organizationId.length === 0) {
+    throw new Error("organizationId is required for a platform fee action")
+  }
 
   // getActiveOrganizationContext refuses anyone who is not an ACTIVE member of
   // this organization, which is the membership half of the rule; the action

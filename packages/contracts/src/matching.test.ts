@@ -68,7 +68,6 @@ const availability: AvailabilityWindow = {
 
 const load: LoadPosting = {
   accessRequirements: ["radio"],
-  archivedAt: null,
   campaignEndDate: null,
   campaignStartDate: null,
   cancellationReason: null,

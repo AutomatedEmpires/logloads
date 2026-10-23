@@ -415,7 +415,7 @@ export function DriverPaymentControl({
 }: {
   assignmentId: string
   driverName: string
-  expectedPayLabel: string | null
+  expectedPayLabel: string
   matchesExpected: boolean | null
   receivedPayLabel: string | null
   status: "not_sent" | "sent" | "received"
@@ -424,31 +424,18 @@ export function DriverPaymentControl({
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null)
   const [pending, startTransition] = useTransition()
 
-  if (!expectedPayLabel) {
-    return (
-      <p className="host-builder-note" role="status">
-        This assignment has no frozen driver-pay amount and currency. Agree
-        the payment off-platform and ask support to repair the accepted terms
-        before recording a receipt.
-      </p>
-    )
-  }
-
   if (status === "received" || feedback?.ok) {
     if (!feedback?.ok && matchesExpected === false) {
       return (
         <p className="host-form-feedback host-form-feedback--error" role="alert">
-          {driverName} recorded {receivedPayLabel ?? "a different amount"} received, not the accepted {expectedPayLabel}. The discrepancy remains on this haul until you resolve it directly.
+          {driverName} recorded {receivedPayLabel} received, not the accepted {expectedPayLabel}. The discrepancy remains on this haul until you resolve it directly.
         </p>
       )
     }
 
     return (
       <p className="host-form-feedback host-form-feedback--success" role="status">
-        {feedback?.text ??
-          (receivedPayLabel
-            ? `${driverName} recorded receipt of ${receivedPayLabel}.`
-            : `${driverName} confirmed receipt of ${expectedPayLabel}; that receipt did not record the actual amount.`)}
+        {feedback?.text ?? `${driverName} recorded receipt of ${receivedPayLabel}.`}
       </p>
     )
   }
@@ -875,7 +862,6 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
       try {
       const result = await createLoadPostingAction({
         accessRequirements: [...access],
-        allocationMode: "request_approval",
         campaignEndDate: scheduleKind === "campaign" ? campaignEnd : null,
         campaignStartDate: scheduleKind === "one_off" ? null : campaignStart,
         dailyTruckCountNeeded: truckloadCount,

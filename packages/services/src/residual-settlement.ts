@@ -12,7 +12,7 @@ type DriverPaymentStatus = "not_sent" | "received" | "sent"
 interface ResidualSettlementBase {
   assignmentId: string
   completedAt: string | null
-  expectedPayLabel: string | null
+  expectedPayLabel: string
   loadTitle: string
   status: DriverPaymentStatus
 }
@@ -25,8 +25,8 @@ export interface ResidualHostPayment extends ResidualSettlementBase {
 }
 
 export interface ResidualDriverReceipt extends ResidualSettlementBase {
-  expectedPayAmountCents: number | null
-  expectedPayCurrency: string | null
+  expectedPayAmountCents: number
+  expectedPayCurrency: string
   hostName: string
   kind: "driver_receipt"
   matchesExpected: boolean | null
@@ -91,12 +91,12 @@ export function residualSettlementItemsForOrganization(
     const driver = state.driverProfiles.find(
       (candidate) => candidate.id === assignment.driverProfileId
     )
+    const frozenPay = readFrozenDriverPay(assignment.termsSnapshot)
 
-    if (!load || !driver) {
+    if (!load || !driver || !frozenPay) {
       continue
     }
 
-    const frozenPay = readFrozenDriverPay(assignment.termsSnapshot)
     const receivedPay =
       assignment.driverPaymentReceivedAmountCents !== null &&
       assignment.driverPaymentReceivedCurrency
@@ -105,7 +105,7 @@ export function residualSettlementItemsForOrganization(
             currency: assignment.driverPaymentReceivedCurrency
           }
         : null
-    const matchesExpected = frozenPay && receivedPay
+    const matchesExpected = receivedPay
       ? frozenPay.amountCents === receivedPay.amountCents &&
         frozenPay.currency === receivedPay.currency
       : null
@@ -125,7 +125,7 @@ export function residualSettlementItemsForOrganization(
         assignmentId: assignment.id,
         completedAt: trip.completedAt ?? null,
         driverName: driverUser?.fullName ?? "Assigned driver",
-        expectedPayLabel: frozenPay ? formatMoney(frozenPay) : null,
+        expectedPayLabel: formatMoney(frozenPay),
         kind: "host_payment",
         loadTitle: load.title,
         matchesExpected,
@@ -147,9 +147,9 @@ export function residualSettlementItemsForOrganization(
       items.push({
         assignmentId: assignment.id,
         completedAt: trip.completedAt ?? null,
-        expectedPayAmountCents: frozenPay?.amountCents ?? null,
-        expectedPayCurrency: frozenPay?.currency ?? null,
-        expectedPayLabel: frozenPay ? formatMoney(frozenPay) : null,
+        expectedPayAmountCents: frozenPay.amountCents,
+        expectedPayCurrency: frozenPay.currency,
+        expectedPayLabel: formatMoney(frozenPay),
         hostName: host?.displayName ?? "Posting organization",
         kind: "driver_receipt",
         loadTitle: load.title,

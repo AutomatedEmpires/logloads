@@ -10,7 +10,6 @@ import {
 } from "@logloads/services"
 
 import type { NetworkLoadView, NetworkView } from "./network"
-import { isViewableMediaReference } from "./media-reference"
 import { services } from "./services"
 import { getCockpitContext, shellAccountFor, type ShellAccount } from "./v3"
 import { formatDateTime, formatHuman, shortLane, tripStatusLabel } from "./v3-shared"
@@ -292,11 +291,8 @@ export async function getFleetCockpitData(): Promise<FleetCockpitData> {
       hasFeaturedTruckPhoto: Boolean(
         driver.featureTruckPhoto &&
         equipment?.status !== "inactive" &&
-        isViewableMediaReference(
-          equipment
-            ? state.truckProfiles.find((truck) => truck.id === equipment.truckProfileId)?.photo
-            : null
-        )
+        equipment &&
+        state.truckProfiles.find((truck) => truck.id === equipment.truckProfileId)?.photo
       ),
       homeBase: driver.homeBase,
       id: driver.id,

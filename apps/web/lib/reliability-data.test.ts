@@ -11,10 +11,9 @@ import {
 describe("admin reliability organization presentation", () => {
   it.each([
     ["landing_source", "Host"],
-    ["destination", "Host"],
     ["carrier", "Carrier"],
     ["fleet", "Carrier"]
-  ])("labels active %s organizations by their operating side", (type, expected) => {
+  ] as const)("labels active %s organizations by their operating side", (type, expected) => {
     expect(adminReliabilitySubtitleForOrganization({
       archivedAt: null,
       type,
@@ -22,12 +21,7 @@ describe("admin reliability organization presentation", () => {
     })).toBe(expected)
   })
 
-  it("excludes platform, archived, and unknown organizations from the network table", () => {
-    expect(adminReliabilitySubtitleForOrganization({
-      archivedAt: null,
-      type: "platform",
-      verificationStatus: "verified"
-    })).toBeNull()
+  it("excludes archived organizations from the network table", () => {
     expect(
       adminReliabilitySubtitleForOrganization({
         archivedAt: "2026-08-08T00:00:00.000Z",
@@ -35,14 +29,9 @@ describe("admin reliability organization presentation", () => {
         verificationStatus: "verified"
       })
     ).toBeNull()
-    expect(adminReliabilitySubtitleForOrganization({
-      archivedAt: null,
-      type: "future_type",
-      verificationStatus: "verified"
-    })).toBeNull()
   })
 
-  it.each(["rejected", "suspended"])(
+  it.each(["rejected", "suspended"] as const)(
     "excludes %s organizations from the operating network table",
     (verificationStatus) => {
       expect(adminReliabilitySubtitleForOrganization({

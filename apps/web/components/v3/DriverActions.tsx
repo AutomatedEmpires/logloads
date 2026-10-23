@@ -325,29 +325,12 @@ export function RequestCapacityPanel({ load }: { load: NetworkLoadView }) {
     return (
       <div className="request-panel">
         <Badge tone="warning">Request sent</Badge>
-        <strong>
-          {load.allocationMode === "request_approval"
-            ? "The host is deciding."
-            : "The host is confirming your haul."}
-        </strong>
+        <strong>The host is deciding.</strong>
         <p>We will notify you when the decision is made. Track this request in Schedule.</p>
         <div className="request-links">
           <Link className="action-link" href="/driver/schedule">View Schedule</Link>
           <Link className="action-link action-link--secondary" href="/driver/loads">Find another load</Link>
         </div>
-      </div>
-    )
-  }
-
-  if (load.allocationMode !== "request_approval") {
-    const directOffer = load.allocationMode === "direct_offer"
-
-    return (
-      <div className="request-panel">
-        <Badge tone="info">{directOffer ? "Invite only" : "Dispatch assigned"}</Badge>
-        <strong>{directOffer ? "The host sends this haul directly." : "A dispatcher assigns this haul."}</strong>
-        <p>This load is visible for planning, but it is not open for driver requests.</p>
-        <Link className="action-link action-link--secondary" href="/driver/loads">Find requestable loads</Link>
       </div>
     )
   }
@@ -1058,9 +1041,9 @@ export function DriverPaymentReceiptControl({
   status
 }: {
   assignmentId: string
-  expectedPayAmountCents: number | null
-  expectedPayCurrency: string | null
-  expectedPayLabel: string | null
+  expectedPayAmountCents: number
+  expectedPayCurrency: string
+  expectedPayLabel: string
   matchesExpected: boolean | null
   receivedPayLabel: string | null
   status: NetworkView["trips"][number]["driverPayment"]["status"]
@@ -1071,28 +1054,13 @@ export function DriverPaymentReceiptControl({
     ok: boolean
     text: string
   } | null>(null)
-  const [receivedAmount, setReceivedAmount] = useState(
-    expectedPayAmountCents === null ? "" : (expectedPayAmountCents / 100).toFixed(2)
-  )
-  const [receivedCurrency, setReceivedCurrency] = useState(expectedPayCurrency ?? "USD")
+  const [receivedAmount, setReceivedAmount] = useState((expectedPayAmountCents / 100).toFixed(2))
+  const [receivedCurrency, setReceivedCurrency] = useState(expectedPayCurrency)
   const [pending, startTransition] = useTransition()
-
-  if (!expectedPayLabel) {
-    return (
-      <p className="action-note" role="status">
-        This assignment has no frozen driver-pay amount and currency in
-        LogLoads. Confirm the amount directly with the host; receipt recording is
-        unavailable until support repairs the accepted terms.
-      </p>
-    )
-  }
 
   if (status === "received" || feedback?.ok) {
     const effectiveMatchesExpected = feedback?.ok ? feedback.matchesExpected : matchesExpected
-    const recorded = feedback?.text ??
-      (receivedPayLabel
-        ? `You recorded ${receivedPayLabel} received.`
-        : `You confirmed receipt of ${expectedPayLabel}; that receipt did not record the actual amount.`)
+    const recorded = feedback?.text ?? `You recorded ${receivedPayLabel} received.`
 
     return (
       <>

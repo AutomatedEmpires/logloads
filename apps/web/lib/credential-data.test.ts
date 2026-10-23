@@ -77,7 +77,6 @@ function document(slug: string) {
     bytes: 486_000,
     format: "jpg" as const,
     height: 1_754,
-    provider: "supabase" as const,
     publicId: `logloads/driver-credentials/${slug}`,
     uploadedAt: SUBMITTED,
     version: 1,
@@ -295,7 +294,7 @@ describe("the gate-satisfied vault", () => {
     expect(vault.headline).toBe("You can't accept loads yet.")
   })
 
-  it("never claims a rig is cleared when legacy unit numbers are ambiguous", () => {
+  it("never claims a rig is cleared when stored unit numbers are ambiguous", () => {
     const vault = vaultFor(clearedVault(), {}, [
       {
         combinationId: COMBINATION,
@@ -313,23 +312,6 @@ describe("the gate-satisfied vault", () => {
       satisfied: false
     })
     expect(vault.blockedNotice).toContain("unique truck and trailer unit numbers")
-  })
-
-  it("never counts legacy unbound equipment evidence for an assigned rig", () => {
-    const credentials = clearedVault().map((entry) =>
-      entry.kind === "truck"
-        ? { ...entry, truckProfileId: null }
-        : entry.kind === "trailer"
-          ? { ...entry, trailerProfileId: null }
-          : entry
-    )
-    const vault = vaultFor(credentials)
-
-    expect(vault.satisfied).toBe(false)
-    expect(vault.equipmentReadiness[0]?.missingLabels).toEqual([
-      "Truck photo",
-      "Trailer photo"
-    ])
   })
 })
 

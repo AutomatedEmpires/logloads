@@ -153,7 +153,7 @@ interface RowReference {
  * is reported and never withheld: a missing entry costs coverage, a wrong entry
  * costs log noise, and neither can take the document down or hide a row.
  * `polymorphic` and ambiguous ids (relatedEntityId, subjectId, companyId, which
- * spans the retired companies table and organizations) are left out rather than
+ * names both a companies row and an organization) are left out rather than
  * guessed at.
  */
 const ROW_REFERENCES: Partial<Record<LogLoadsTableName, readonly RowReference[]>> = {
@@ -394,173 +394,6 @@ function publishReport(report: OperatingStateReport): void {
   reportDefects(report)
 }
 
-/**
- * Additive normalization for snapshots written before a field existed. Schema v2
- * introduced the tripReviews collection. supportRequests is additive and
- * schema-v2-compatible (its SQL migration applies the same backfill).
- * tripInspections is additive and RUNTIME-ONLY — no SQL migration exists for it;
- * this guard is the only backfill. The four host-fee collections and the two
- * driver-credential collections are additive and RUNTIME-ONLY on the same terms.
- * Old and new deployments can overlap during rollout and rollback.
- */
-function backfillStateSnapshot(
-  value: Partial<LogLoadsDatabaseState>
-): Partial<LogLoadsDatabaseState> {
-  const candidate: Partial<LogLoadsDatabaseState> = { ...value }
-
-  // This must happen before the required-collection check. The SQL migration
-  // applies the same additive backfill, while this runtime guard keeps code-first
-  // deploys and local snapshots safe without advancing the persisted schema
-  // version.
-  if (candidate.supportRequests === undefined) {
-    candidate.supportRequests = []
-  }
-
-  if (candidate.tripReviews === undefined) {
-    candidate.tripReviews = []
-  }
-
-  if (candidate.tripInspections === undefined) {
-    candidate.tripInspections = []
-  }
-
-  // The host fee. These four are in REQUIRED_TABLES the moment they have a row
-  // validator, so without this guard a stored document that predates any of them
-  // would be refused on its first read and every request would fail. Empty is
-  // also the only honest default: an absent agreement collection means no host
-  // has accepted the fee terms, and an absent ledger means nothing accrued, never
-  // that a bill was lost.
-  if (candidate.hostFeeAgreements === undefined) {
-    candidate.hostFeeAgreements = []
-  }
-
-  if (candidate.hostBillingProfiles === undefined) {
-    candidate.hostBillingProfiles = []
-  }
-
-  if (candidate.platformFeeEvents === undefined) {
-    candidate.platformFeeEvents = []
-  }
-
-  if (candidate.hostInvoices === undefined) {
-    candidate.hostInvoices = []
-  }
-
-  // The driver credential vault. Additive and RUNTIME-ONLY on the same terms: a
-  // row validator puts a collection into REQUIRED_TABLES, and the canonical
-  // document in production predates both of these, so without this guard the very
-  // first read after deploy would refuse the whole document and every request
-  // would fail.
-  //
-  // Empty is also the only honest default. An absent vault means nobody has
-  // submitted anything — never that a credential was approved. The consequence is
-  // deliberate and load-bearing: on the first read after deploy every existing
-  // driver holds nothing, and is therefore blocked from accepting a load until
-  // they submit and are approved. Backfilling approvals to keep the platform
-  // moving would fabricate a safety claim about real people's insurance.
-  //
-  // No FIELD-level normalization is needed for these two, unlike routePacks or
-  // tripsV2 below: rows are kept by identity rather than by parser output, so a
-  // stored row missing a field would keep missing it — but a brand-new collection
-  // has no older writer, so every row present was written by a build that already
-  // had every field. A field ADDED to either collection later will need an entry
-  // here for exactly that reason.
-  if (candidate.driverCredentials === undefined) {
-    candidate.driverCredentials = []
-  }
-
-  if (candidate.credentialReviews === undefined) {
-    candidate.credentialReviews = []
-  }
-
-  // Equipment evidence predating exact-rig binding stays readable but unbound.
-  // The acceptance gate counts only an exact profile match, so null is a safe
-  // historical value and never silently clears a different truck or trailer.
-  if (Array.isArray(candidate.driverCredentials)) {
-    candidate.driverCredentials = candidate.driverCredentials.map((credential) => ({
-      ...credential,
-      trailerProfileId: credential.trailerProfileId ?? null,
-      truckProfileId: credential.truckProfileId ?? null
-    }))
-  }
-
-  // Driver profiles predate the featured-rig flag; absent means not featured.
-  if (Array.isArray(candidate.driverProfiles)) {
-    candidate.driverProfiles = candidate.driverProfiles.map((profile) => ({
-      ...profile,
-      featureTruckPhoto: profile.featureTruckPhoto ?? false
-    }))
-  }
-
-  if (Array.isArray(candidate.assignments)) {
-    candidate.assignments = candidate.assignments.map((assignment) => ({
-      ...assignment,
-      // An assignment without a movement identity takes its truck-slot
-      // reservation, the strongest physical-load identity it carries, so a
-      // cancelled assignment and its replacement on the same reservation converge
-      // on one billable movement. Only fall back to the assignment when even that
-      // is unavailable.
-      loadMovementId:
-        assignment.loadMovementId ??
-        assignment.truckSlotId ??
-        assignment.id,
-      termsSnapshot: assignment.termsSnapshot ?? {}
-    }))
-  }
-
-  // Route packs predate assignment-specific snapshots. A stored pack carries no
-  // assignmentId, so it is a load-level source the host maintains — normalize it
-  // here rather than leaving undefined fields for every reader to guess at.
-  // Defaults come first so a pack that already has these keeps its own values.
-  if (Array.isArray(candidate.routePacks)) {
-    candidate.routePacks = candidate.routePacks.map((pack) => ({
-      ...pack,
-      assignmentId: pack.assignmentId ?? null,
-      snapshot: pack.snapshot ?? null,
-      supersededAt: pack.supersededAt ?? null,
-      version: pack.version ?? 1
-    }))
-  }
-
-  // Trips predate completion tracking. A stored trip has no completionStatus,
-  // and "pending" is the honest reading: nobody has said what came off the
-  // truck. A trip already marked completed is left pending too — the delivery
-  // happened, the accounting of it never did, and inventing agreement here
-  // would fabricate a host confirmation that no one gave.
-  if (Array.isArray(candidate.tripsV2)) {
-    candidate.tripsV2 = candidate.tripsV2.map((trip) => ({
-      ...trip,
-      completionConfirmedAt: trip.completionConfirmedAt ?? null,
-      completionConfirmedByUserId: trip.completionConfirmedByUserId ?? null,
-      completionDisputeReason: trip.completionDisputeReason ?? null,
-      completionStatus: trip.completionStatus ?? "pending",
-      completionSubmittedAt: trip.completionSubmittedAt ?? null,
-      completionSubmittedByUserId: trip.completionSubmittedByUserId ?? null,
-      deliveredQuantity: trip.deliveredQuantity ?? null,
-      haulException: trip.haulException ?? null
-    }))
-  }
-
-  // Landing safety rules and destination completion evidence are newer than the
-  // documents that hold them. The contract types them as arrays, so a stored row
-  // without them would hand every reader an undefined the types deny.
-  if (Array.isArray(candidate.richLandingDetails)) {
-    candidate.richLandingDetails = candidate.richLandingDetails.map((details) => ({
-      ...details,
-      safetyRequirements: details.safetyRequirements ?? []
-    }))
-  }
-
-  if (Array.isArray(candidate.destinationFacilities)) {
-    candidate.destinationFacilities = candidate.destinationFacilities.map((facility) => ({
-      ...facility,
-      completionEvidence: facility.completionEvidence ?? []
-    }))
-  }
-
-  return candidate
-}
-
 function rowIdOf(row: unknown): string | null {
   if (!row || typeof row !== "object") {
     return null
@@ -607,7 +440,7 @@ function summarizeIssues(issues: ReadonlyArray<RowIssue>): string {
  * it.
  */
 export function auditStateSnapshot(value: Partial<LogLoadsDatabaseState>): OperatingStateAudit {
-  const candidate = backfillStateSnapshot(value)
+  const candidate: Partial<LogLoadsDatabaseState> = { ...value }
   const missingCollections = REQUIRED_TABLES.filter((table) => !Array.isArray(candidate[table]))
 
   if (missingCollections.length > 0) {
@@ -658,8 +491,7 @@ export function auditStateSnapshot(value: Partial<LogLoadsDatabaseState>): Opera
       if (verdict.success) {
         // The stored row, not the parser's output. Zod output would drop every
         // field this build has not declared, and the next compare-and-swap would
-        // persist the stripped document — the rollout data loss PR #69 fixed for
-        // whole collections, one field at a time.
+        // persist the stripped document.
         kept.push(row)
         keptIndexes.push(index)
         continue
@@ -793,9 +625,9 @@ export function auditStateSnapshot(value: Partial<LogLoadsDatabaseState>): Opera
 }
 
 /**
- * Normalize and validate a stored document for runtime use. Returns null when a
- * required collection is missing or is not an array — the one condition that
- * refuses the whole document.
+ * Validate a stored document for runtime use. Returns null when a required
+ * collection is missing or is not an array — the one condition that refuses the
+ * whole document.
  *
  * A returned state carries only rows their contract accepted, plus rows a strict
  * contract rejected solely for holding keys this build does not declare. It does
@@ -803,7 +635,7 @@ export function auditStateSnapshot(value: Partial<LogLoadsDatabaseState>): Opera
  * erase them: any write path must go through `auditStateSnapshot` and hand
  * `withheldRows` to `updateRemoteOperatingState`.
  */
-export function upgradeStateSnapshot(
+export function parseStateSnapshot(
   value: Partial<LogLoadsDatabaseState>
 ): LogLoadsDatabaseState | null {
   const audit = auditStateSnapshot(value)
@@ -819,7 +651,7 @@ export function loadStateSnapshot(filePath: string): LogLoadsDatabaseState | nul
   }
 
   try {
-    return upgradeStateSnapshot(
+    return parseStateSnapshot(
       JSON.parse(readFileSync(filePath, "utf8")) as Partial<LogLoadsDatabaseState>
     )
   } catch {
@@ -883,30 +715,27 @@ function parseRemoteRow(value: unknown): RemoteRowOutcome {
     state?: Partial<LogLoadsDatabaseState>
     version?: unknown
   }
-  const schemaVersion = row.schema_version === undefined ? 1 : Number(row.schema_version)
-  const version = row.version === undefined ? 0 : Number(row.version)
+  const schemaVersion = Number(row.schema_version)
+  const version = Number(row.version)
 
   // A snapshot written by a NEWER deployment is accepted, provided every
   // required collection is present. The version number adds nothing to that.
   //
   // Why: `main` auto-deploys, so old and new instances serve traffic at the same
-  // time during every rollout. Refusing a higher schema version made the newer
-  // instance's first write break every older instance still running — the whole
-  // fleet returning "operating state is invalid" until the rollout finished.
+  // time during every rollout. Refusing a higher schema version would make the
+  // newer instance's first write break every older instance still running — the
+  // whole fleet returning "operating state is invalid" until the rollout finished.
   //
   // What survives an older instance writing back, precisely: the STATE document
-  // does, including collections this build has never heard of, because the
-  // backfill spreads the row it was given, rows are kept by identity rather than
+  // does, including collections this build has never heard of, because the audit
+  // copies the document it was given, rows are kept by identity rather than
   // reparsed, and the CAS writes that whole draft back. The `schema_version`
   // LABEL does not — `updateRemoteOperatingState` always stamps it with this
   // build's own constant, so during a rollout the row's version can go 3 → 2 → 3
-  // while the data itself is never lost. That is safe only because every backfill
-  // keys on whether a field is present, never on the version number; nothing may
-  // be built on this label being monotonic.
+  // while the data itself is never lost. Nothing may be built on this label being
+  // monotonic.
   //
-  // A version BELOW 1 is still refused: that is a malformed row, not a future
-  // one. This does not authorise a version bump — nothing in this program bumps
-  // it — it makes one survivable when it eventually happens.
+  // A version BELOW 1 is refused: that is a malformed row, not a future one.
   if (!Number.isSafeInteger(schemaVersion) || schemaVersion < 1) {
     return { ok: false, reason: `schema_version ${String(row.schema_version)} is not a stored version` }
   }
@@ -925,8 +754,8 @@ function parseRemoteRow(value: unknown): RemoteRowOutcome {
 
   if (!audit.state) {
     // Named, not counted: REQUIRED_TABLES is the type's collection list, so this
-    // is what a deploy that adds a collection without a backfill looks like from
-    // production, and the collection name is the whole diagnosis.
+    // is what a deploy that adds a collection the stored document lacks looks
+    // like from production, and the collection name is the whole diagnosis.
     return {
       ok: false,
       reason: `collections missing or not an array: ${audit.missingCollections.join(", ")}`
@@ -1200,12 +1029,4 @@ export async function mutateRemoteOperatingState<T>(
   }
 
   throw new OperatingStateConflictError(maxAttempts)
-}
-
-/** Backward-compatible state-only read for tooling that does not need metadata. */
-export async function loadRemoteSnapshot(
-  config: RemoteSnapshotConfig,
-  timeoutMs = 8000
-): Promise<LogLoadsDatabaseState | null> {
-  return (await loadRemoteOperatingState(config, timeoutMs))?.state ?? null
 }

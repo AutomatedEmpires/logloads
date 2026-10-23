@@ -48,7 +48,7 @@ function organizationCockpitFor(
     return "fleet"
   }
 
-  if ((orgType === "landing_source" || orgType === "destination") && HOST_ROLES.has(role)) {
+  if (orgType === "landing_source" && HOST_ROLES.has(role)) {
     return "host"
   }
 

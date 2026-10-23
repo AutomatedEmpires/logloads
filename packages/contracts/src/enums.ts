@@ -32,10 +32,8 @@ export const loadStatusSchema = z.enum([
   "open",
   "scheduled",
   "filled",
-  "in_transit",
   "completed",
-  "cancelled",
-  "archived"
+  "cancelled"
 ])
 
 export const truckSlotStatusSchema = z.enum([

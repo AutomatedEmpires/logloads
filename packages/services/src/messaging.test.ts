@@ -5,7 +5,6 @@ import {
   assignmentSchema,
   driverProfileSchema,
   loadPostingSchema,
-  messageThreadSchema,
   opportunityCapacitySchema,
   organizationMembershipSchema,
   organizationSchema,
@@ -273,7 +272,6 @@ function pushLoad(
 
   state.opportunityCapacities.push(
     opportunityCapacitySchema.parse({
-      allocationMode: "request_approval",
       committedTruckloads: 0,
       completedTruckloads: 0,
       createdAt: NOW,
@@ -800,44 +798,6 @@ describe("createThread on the legitimate operating path", () => {
     expect(state).toEqual(afterFirst)
   })
 
-  it("adopts a first subject transactionally for a pre-existing empty thread", () => {
-    const state = operatingState()
-    const original = createThreadInWorkspace(state, {
-      assignmentId: HOST_ASSIGNMENT,
-      body: "Placeholder opening.",
-      creatorUserId: DRIVER_USER,
-      initialMessageId: "18181818-1818-4818-8818-181818181818",
-      loadPostingId: HOST_LOAD,
-      organizationId: ORG_CARRIER,
-      participantUserIds: [HOST_DISPATCHER_USER],
-      subject: "Original placeholder"
-    })
-
-    state.messageEvents.length = 0
-    state.notifications.length = 0
-    original.thread.lastMessageAt = null
-    original.thread.updatedAt = original.thread.createdAt
-
-    const input = {
-      assignmentId: HOST_ASSIGNMENT,
-      body: "Use the east gate.",
-      creatorUserId: DRIVER_USER,
-      initialMessageId: "19191919-1919-4919-8919-191919191919",
-      loadPostingId: HOST_LOAD,
-      organizationId: ORG_CARRIER,
-      participantUserIds: [HOST_DISPATCHER_USER],
-      subject: "Gate access"
-    }
-    const first = createThreadInWorkspace(state, input)
-    const afterFirst = structuredClone(state)
-    const retry = createThreadInWorkspace(state, input)
-
-    expect(first.messageCreated).toBe(true)
-    expect(first.thread.subject).toBe("Gate access")
-    expect(retry).toEqual({ messageCreated: false, thread: original.thread })
-    expect(state).toEqual(afterFirst)
-  })
-
   it("refuses conflicting opening-message reuse without leaving a partial thread", () => {
     const state = operatingState()
     const initialMessageId = "13131313-1313-4313-8313-131313131313"
@@ -1079,39 +1039,6 @@ describe("organization-level messaging lock", () => {
       body: "Unrelated workspace must not be a bypass.",
       threadId: thread.id
     })).toThrow(/Conversation not found/)
-    expect(state).toEqual(before)
-  })
-
-  it("preserves a historical contextless thread but refuses every read and write", () => {
-    const state = operatingState()
-    const thread = messageThreadSchema.parse({
-      archivedAt: null,
-      assignmentId: null,
-      createdAt: NOW,
-      id: "90909090-9090-4090-8090-909090909090",
-      lastMessageAt: null,
-      loadPostingId: null,
-      participantUserIds: [HOST_DISPATCHER_USER, HOST_LANDING_MANAGER_USER],
-      subject: "Shared workspace operations",
-      updatedAt: NOW
-    })
-    state.messageThreads.push(thread)
-    const before = structuredClone(state)
-
-    expect(listThreadsForUser(state, HOST_DISPATCHER_USER)).toEqual([])
-    expect(() => listThreadMessages(state, thread.id, HOST_DISPATCHER_USER)).toThrow(
-      /Conversation not found/
-    )
-    expect(() => postMessage(state, {
-      authorUserId: HOST_DISPATCHER_USER,
-      body: "A current membership must not rebind historical private text.",
-      threadId: thread.id
-    })).toThrow(/Conversation not found/)
-    expect(() => markThreadRead(state, {
-      threadId: thread.id,
-      userId: HOST_DISPATCHER_USER
-    })).toThrow(/Conversation not found/)
-    expect(unreadThreadCounts(state, HOST_DISPATCHER_USER)).toEqual({})
     expect(state).toEqual(before)
   })
 

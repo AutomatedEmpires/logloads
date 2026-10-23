@@ -632,8 +632,7 @@ describe("logloads services", () => {
     })
     expect(result.assignment.billingCommittedAt).toBe(result.assignment.assignedAt)
     expect(result.trip.assignmentId).toBe(assignment.id)
-    // The trip points at the snapshot minted for THIS assignment, not at the
-    // host's mutable load-level source pack.
+    // The trip points at the snapshot minted for THIS assignment.
     const mintedPack = services.state.routePacks.find((pack) => pack.assignmentId === assignment.id)
     expect(mintedPack).toBeDefined()
     expect(result.trip.routePackId).toBe(mintedPack?.id)
@@ -877,13 +876,12 @@ describe("logloads services", () => {
       assignmentId: assignment.id
     })).toThrow(/unlocks after the host accepts/)
 
-    // Before approval there is no assignment snapshot yet, so the host sees
-    // its own load-level source pack.
-    expect(services.getRoutePackForAssignment({
+    // The pack is minted at approval, so before it there is none, for anyone.
+    expect(() => services.getRoutePackForAssignment({
       actorUserId: "22222222-2222-4222-8222-222222222224",
       organizationId: "33333333-3333-4333-8333-333333333332",
       assignmentId: assignment.id
-    }).routePack.id).toBe("23232323-2323-4323-8323-232323232313")
+    })).toThrow(/was not found/)
 
     services.approveCapacityRequest({
       actorUserId: "22222222-2222-4222-8222-222222222224",
@@ -891,7 +889,7 @@ describe("logloads services", () => {
       organizationId: "33333333-3333-4333-8333-333333333332"
     })
 
-    // Approval mints the driver's own snapshot of that source.
+    // Approval mints the driver's own snapshot.
     const unlocked = services.getRoutePackForAssignment({
       actorUserId: "22222222-2222-4222-8222-222222222221",
       organizationId: "33333333-3333-4333-8333-333333333331",
@@ -900,7 +898,6 @@ describe("logloads services", () => {
 
     expect(unlocked.assignmentId).toBe(assignment.id)
     expect(unlocked.version).toBe(1)
-    expect(unlocked.id).not.toBe("23232323-2323-4323-8323-232323232313")
   })
 
   it("rejects impossible trip transitions", () => {

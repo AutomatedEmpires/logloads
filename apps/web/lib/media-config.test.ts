@@ -35,16 +35,6 @@ describe("Supabase media configuration", () => {
     })
   })
 
-  it("accepts the legacy anon-key name as a compatibility alias", () => {
-    expect(
-      dedicatedSupabaseMediaConfiguration({
-        ...activeEnvironment,
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon-test-key",
-        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: undefined
-      })?.anonKey
-    ).toBe("anon-test-key")
-  })
-
   it.each([
     ["storage selector", "LOGLOADS_MEDIA_STORAGE"],
     ["bucket", "LOGLOADS_MEDIA_BUCKET"],
@@ -90,38 +80,12 @@ describe("Supabase media configuration", () => {
     ).toBeNull()
   })
 
-  it.each([
-    "CLOUDINARY_CLOUD_NAME",
-    "CLOUDINARY_API_KEY",
-    "CLOUDINARY_API_SECRET",
-    "CLOUDINARY_URL",
-    "LOGLOADS_CLOUDINARY_TENANCY",
-    "LOGLOADS_CLOUDINARY_EXPECTED_CLOUD"
-  ])("refuses stale retired-provider configuration in %s", (name) => {
-    expect(
-      dedicatedSupabaseMediaConfiguration({
-        ...activeEnvironment,
-        [name]: "stale-value"
-      })
-    ).toBeNull()
-  })
-
-  it("ignores blank retired-provider values", () => {
-    expect(
-      dedicatedSupabaseMediaConfiguration({
-        ...activeEnvironment,
-        CLOUDINARY_URL: "  ",
-        LOGLOADS_CLOUDINARY_TENANCY: "\t"
-      })
-    ).not.toBeNull()
-  })
-
-  it("reports activation only for the complete uncontaminated configuration", () => {
+  it("reports activation only for the complete configuration", () => {
     expect(isDedicatedMediaConfigured(activeEnvironment)).toBe(true)
     expect(
       isDedicatedMediaConfigured({
         ...activeEnvironment,
-        CLOUDINARY_CLOUD_NAME: "retired-provider"
+        LOGLOADS_MEDIA_STORAGE: undefined
       })
     ).toBe(false)
   })

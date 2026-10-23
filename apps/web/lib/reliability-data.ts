@@ -1,6 +1,6 @@
 import "server-only"
 
-import { formatRate, rateTone, reputationLabel, reputationTone } from "@logloads/contracts"
+import { formatRate, rateTone, reputationLabel, reputationTone, type Organization } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { services } from "./services"
@@ -45,11 +45,9 @@ function ratingStatValue(avgRating: number | null): string {
   return avgRating === null ? "—" : avgRating.toFixed(1)
 }
 
-export function adminReliabilitySubtitleForOrganization(organization: {
-  archivedAt?: string | null
-  type: string
-  verificationStatus: string
-}): "Carrier" | "Host" | null {
+export function adminReliabilitySubtitleForOrganization(
+  organization: Pick<Organization, "archivedAt" | "type" | "verificationStatus">
+): "Carrier" | "Host" | null {
   if (
     organization.archivedAt ||
     !["pending", "verified"].includes(organization.verificationStatus)
@@ -57,15 +55,7 @@ export function adminReliabilitySubtitleForOrganization(organization: {
     return null
   }
 
-  if (organization.type === "landing_source" || organization.type === "destination") {
-    return "Host"
-  }
-
-  if (organization.type === "carrier" || organization.type === "fleet") {
-    return "Carrier"
-  }
-
-  return null
+  return organization.type === "landing_source" ? "Host" : "Carrier"
 }
 
 export function completedCarrierOrganizationIds(

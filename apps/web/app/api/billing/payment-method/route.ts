@@ -1,4 +1,4 @@
-import { organizationRoleCan, organizationTypeCanPublishLoads } from "@logloads/contracts"
+import { organizationRoleCan } from "@logloads/contracts"
 import { NextResponse } from "next/server"
 
 import { ApiError, apiErrorResponse, enforceApiRateLimit, requireApiActor } from "@/lib/api-actor"
@@ -33,10 +33,6 @@ async function requireBillingManager() {
 
 	if (!membership || !organizationRoleCan(membership.membership.role, "manage_billing")) {
 		throw new ApiError("Only an organization owner, administrator, or billing manager can manage billing", 403)
-	}
-
-	if (!organizationTypeCanPublishLoads(membership.organization.type)) {
-		throw new ApiError("Card billing is only available to organizations that publish loads", 403)
 	}
 
 	return { ...actor, organization: membership.organization }

@@ -74,7 +74,7 @@ import {
   listPendingInvitationsForOrganization,
   revokeOrganizationInvitation
 } from "./invitations"
-import { createLoadPosting, getLoadById, listOpenLoads, updateLoadPosting } from "./loads"
+import { createLoadPosting, getLoadById, listOpenLoads } from "./loads"
 import {
   changeOrganizationMemberRole,
   reactivateOrganizationMember,
@@ -89,8 +89,6 @@ import {
 } from "./notifications"
 import { claimFounderPlatformAdmin } from "./platform-admin"
 import {
-  DEFAULT_ACTOR_USER_ID,
-  DEFAULT_ORGANIZATION_ID,
   approveCapacityRequest,
   attachTripDocument,
   cancelAssignmentWithPolicy,
@@ -165,8 +163,6 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
 
   return {
     state,
-    DEFAULT_ACTOR_USER_ID,
-    DEFAULT_ORGANIZATION_ID,
     resolveRestrictedOrganizationAccess: (
       input: Parameters<typeof resolveRestrictedOrganizationAccess>[1]
     ) => resolveRestrictedOrganizationAccess(state, input),
@@ -363,7 +359,7 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     ) => declineDirectOffer(state, input, options),
     createTruckSlot: (input: unknown, context: Parameters<typeof createTruckSlot>[2]) =>
       createTruckSlot(state, input, context),
-    getActiveOrganizationContext: (actorUserId?: string, organizationId?: string) => getActiveOrganizationContext(state, actorUserId, organizationId),
+    getActiveOrganizationContext: (actorUserId: string, organizationId: string) => getActiveOrganizationContext(state, actorUserId, organizationId),
     getLoadById: (loadId: string) => getLoadById(state, loadId),
     getOrganizationMemberships: (actorUserId: string) => getOrganizationMemberships(state, actorUserId),
     getRouteById: (routeId: string) => getRouteById(state, routeId),
@@ -388,7 +384,7 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     listAttentionItems: (input: Parameters<typeof listAttentionItems>[1]) =>
       listAttentionItems(state, input),
     listDriverAvailability: (driverProfileId?: string) => listDriverAvailability(state, driverProfileId),
-    listFutureAvailabilityForOrganization: (organizationId?: string) => listFutureAvailabilityForOrganization(state, organizationId),
+    listFutureAvailabilityForOrganization: (organizationId: string) => listFutureAvailabilityForOrganization(state, organizationId),
     listNotificationsForUser: (userId: string) => listNotificationsForUser(state, userId),
     operationalNoticeVisibleToActor: (
       input: Parameters<typeof operationalNoticeVisibleToActor>[1]
@@ -406,11 +402,11 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     }) => markAllNotificationsRead(state, input.userId, {
       platformAdminAuthorized: input.platformAdminAuthorized
     }),
-    listPrivateNetworkRelationships: (organizationId?: string) => listPrivateNetworkRelationships(state, organizationId),
+    listPrivateNetworkRelationships: (organizationId: string) => listPrivateNetworkRelationships(state, organizationId),
     isLoadRequestableAt: (load: Parameters<typeof isLoadRequestableAt>[1], at?: string) => isLoadRequestableAt(state, load, at),
-    listRequestableLoadsForOrganization: (organizationId?: string, at?: string) => listRequestableLoadsForOrganization(state, organizationId, at),
+    listRequestableLoadsForOrganization: (organizationId: string, at?: string) => listRequestableLoadsForOrganization(state, organizationId, at),
     listOpenLoads: () => listOpenLoads(state),
-    listVisibleLoadsForOrganization: (organizationId?: string, at?: string) =>
+    listVisibleLoadsForOrganization: (organizationId: string, at?: string) =>
       listVisibleLoadsForOrganization(state, organizationId, at),
     listRoutes: () => listRoutes(state),
     listTruckSlotsForDate: (date: string) => listTruckSlotsForDate(state, date),
@@ -434,7 +430,6 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
       getFeaturedTruckPhotoReference(state, input),
     setFeaturedTruckPhoto: (input: Parameters<typeof setFeaturedTruckPhoto>[1]) => setFeaturedTruckPhoto(state, input),
     updateDriverEconomics: (input: Parameters<typeof updateDriverEconomics>[1]) => updateDriverEconomics(state, input),
-    updateLoadPosting: (input: unknown) => updateLoadPosting(state, input),
     upsertAvailabilityWindow: (input: unknown) => upsertAvailabilityWindow(state, input)
   }
 }

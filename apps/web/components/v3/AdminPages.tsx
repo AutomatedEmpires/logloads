@@ -68,7 +68,7 @@ function loadStatusTone(status: string): "success" | "warning" | "critical" | "i
     return "critical"
   }
 
-  if (status === "scheduled" || status === "filled" || status === "in_transit") {
+  if (status === "scheduled" || status === "filled") {
     return "info"
   }
 
@@ -89,7 +89,7 @@ export function getAdminNoticeBuckets(notices: AdminNoticeRow[]) {
   }
 }
 
-const CURRENT_OPPORTUNITY_STATUSES = new Set(["open", "scheduled", "filled", "in_transit"])
+const CURRENT_OPPORTUNITY_STATUSES = new Set(["open", "scheduled", "filled"])
 
 export function getAdminOpportunityBuckets(loads: AdminOpportunityRow[]) {
   return {
@@ -166,7 +166,7 @@ function OpportunityRows({ loads }: { loads: AdminOpportunityRow[] }) {
               {load.organizationName} · {load.lane}
             </p>
             <span className="admin-row__when">
-              {load.allocationLabel} · {load.truckloadsPerDay} {load.truckloadsPerDay === 1 ? "truck" : "trucks"}/day · Posted {load.createdLabel}
+              {load.truckloadsPerDay} {load.truckloadsPerDay === 1 ? "truck" : "trucks"}/day · Posted {load.createdLabel}
             </span>
           </div>
         </article>

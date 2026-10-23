@@ -340,16 +340,6 @@ describe("direct-offer lifecycle", () => {
     }, { at: AT })).toThrow(/terms changed/)
     expect(services.state).toEqual(beforeClaim)
 
-    const legacy = directOfferServices()
-    const legacyOffer = legacy.state.directOffers.find((candidate) => candidate.id === OFFER_ID)
-
-    if (!legacyOffer) throw new Error("Legacy direct-offer fixture is missing")
-    delete legacyOffer.termsSnapshot.driverPayCents
-    const beforeLegacyClaim = structuredClone(legacy.state)
-
-    expect(() => legacy.claimDirectOffer(claimInput(), { at: AT })).toThrow(/terms changed/)
-    expect(legacy.state).toEqual(beforeLegacyClaim)
-
     const unstated = directOfferServices()
     const unstatedLoad = unstated.state.loadPostings.find((candidate) => candidate.id === LOAD_ID)
 
@@ -445,7 +435,11 @@ describe("direct-offer lifecycle", () => {
     const expiredServices = directOfferServices()
     const capacity = expiredServices.state.opportunityCapacities.find((item) => item.loadPostingId === LOAD_ID)
     if (!capacity) throw new Error("Test capacity is missing")
-    capacity.visibilityMode = "direct_offer"
+    // Partner work with the relationship paused: only the live offer grants sight.
+    capacity.visibilityMode = "private_network"
+    for (const relationship of expiredServices.state.privateNetworkRelationships) {
+      relationship.status = "paused"
+    }
 
     expect(expiredServices.listVisibleLoadsForOrganization(TARGET_ORGANIZATION_ID, AT).some((load) => load.id === LOAD_ID)).toBe(true)
     expect(

@@ -1,4 +1,4 @@
-import { organizationRoleCan, organizationTypeCanPublishLoads } from "@logloads/contracts"
+import { organizationRoleCan } from "@logloads/contracts"
 import { NextResponse } from "next/server"
 import { z } from "zod"
 
@@ -108,13 +108,6 @@ export async function POST(request: Request) {
     ) {
       throw new ApiError(
         "Only an organization owner, administrator, or billing manager can accept the fee terms",
-        403
-      )
-    }
-
-    if (!organizationTypeCanPublishLoads(membership.organization.type)) {
-      throw new ApiError(
-        "Only an organization that publishes loads accepts the LogLoads host fee",
         403
       )
     }

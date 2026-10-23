@@ -45,7 +45,7 @@ export function describeDocument(document) {
  * change if bytes were lost are compared. A malformed collection is always drift:
  * even when an empty array is replaced with an object of the same serialized byte
  * length, restoring it would write a state document the application cannot read.
- * `schemaVersion` can legitimately be null, so it remains informational.
+ * `schemaVersion` is a label, so it remains informational.
  */
 export function summaryDrift(recorded, recomputed) {
   const drift = ["bytes", "collections", "rows", "sha256", "version"].filter(

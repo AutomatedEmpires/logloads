@@ -32,7 +32,6 @@ import {
   richLandingDetailsSchema,
   routePackSchema,
   trailerProfileSchema,
-  tripDocumentSchema,
   tripEventSchema,
   tripReviewSchema,
   tripSchemaV2,
@@ -75,7 +74,6 @@ import {
   type RichLandingDetails,
   type RoutePack,
   type TrailerProfile,
-  type TripDocument,
   type TripEvent,
   type TripReview,
   type TripV2,
@@ -374,8 +372,8 @@ export const seedDriverProfiles: DriverProfile[] = parseMany(driverProfileSchema
 /**
  * A synthetic stored-document reference for the seeded vault.
  *
- * It resolves to nothing. A media reference names a provider and a public id but
- * no project, so this points at no media object at all. Same posture as the
+ * It resolves to nothing. A media reference names a public id but no project,
+ * so this points at no media object at all. Same posture as the
  * synthetic Stripe ids further down: an obviously fake reference to an object a
  * provider would hold, never real bytes.
  *
@@ -384,7 +382,6 @@ export const seedDriverProfiles: DriverProfile[] = parseMany(driverProfileSchema
  * the bench has to satisfy it the same way a real driver would.
  */
 const syntheticCredentialDocument = (slug: string, uploadedAt: string) => ({
-  provider: "supabase" as const,
   publicId: `logloads/driver-credentials/${slug}`,
   version: 1,
   format: "jpg" as const,
@@ -1193,10 +1190,6 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
     campaignEndDate: null,
     recurringSchedule: null,
     dailyTruckCountNeeded: 3,
-    // One of two loads carrying a host-stated figure (the other is the two-day
-    // series at the end of this list). The remaining seeded loads still fall
-    // back to their rate card, so the bench shows both sides of the migration
-    // at once rather than only the finished state.
     driverPayCents: 52_500,
     estimatedTonsPerLoad: 28,
     equipmentRequirements: ["pole-trailer"],
@@ -1214,7 +1207,6 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
       email: "loader@northpine.example"
     },
     cancellationReason: null,
-    archivedAt: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
   },
@@ -1240,6 +1232,7 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
       untilDate: "2026-06-20"
     },
     dailyTruckCountNeeded: 2,
+    driverPayCents: 48_000,
     estimatedTonsPerLoad: 30,
     equipmentRequirements: ["chip-box"],
     accessRequirements: ["west-gate"],
@@ -1256,7 +1249,6 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
       email: "loader@northpine.example"
     },
     cancellationReason: null,
-    archivedAt: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
   },
@@ -1291,7 +1283,6 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
     },
     loaderContact: null,
     cancellationReason: null,
-    archivedAt: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
   },
@@ -1313,6 +1304,7 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
     campaignEndDate: null,
     recurringSchedule: null,
     dailyTruckCountNeeded: 1,
+    driverPayCents: 45_000,
     estimatedTonsPerLoad: 27,
     equipmentRequirements: ["bunk-trailer"],
     accessRequirements: ["bridge-control"],
@@ -1325,7 +1317,6 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
     },
     loaderContact: null,
     cancellationReason: null,
-    archivedAt: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
   },
@@ -1347,6 +1338,7 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
     campaignEndDate: null,
     recurringSchedule: null,
     dailyTruckCountNeeded: 1,
+    driverPayCents: 52_500,
     estimatedTonsPerLoad: 24,
     equipmentRequirements: ["pole-trailer"],
     accessRequirements: ["radio"],
@@ -1363,7 +1355,6 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
       email: "loader@northpine.example"
     },
     cancellationReason: "Landing access closed after storm.",
-    archivedAt: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
   },
@@ -1397,7 +1388,6 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
     },
     loaderContact: null,
     cancellationReason: null,
-    archivedAt: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
   },
@@ -1419,6 +1409,7 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
     campaignEndDate: null,
     recurringSchedule: null,
     dailyTruckCountNeeded: 1,
+    driverPayCents: 62_500,
     estimatedTonsPerLoad: 29,
     equipmentRequirements: ["chains"],
     accessRequirements: ["snow-kit"],
@@ -1431,7 +1422,6 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
     },
     loaderContact: null,
     cancellationReason: null,
-    archivedAt: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.assigned
   },
@@ -1466,7 +1456,6 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
     },
     loaderContact: null,
     cancellationReason: null,
-    archivedAt: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
   },
@@ -1488,6 +1477,7 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
     campaignEndDate: null,
     recurringSchedule: null,
     dailyTruckCountNeeded: 1,
+    driverPayCents: 52_500,
     estimatedTonsPerLoad: 29,
     equipmentRequirements: ["chains"],
     accessRequirements: ["snow-kit"],
@@ -1500,7 +1490,6 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
     },
     loaderContact: null,
     cancellationReason: null,
-    archivedAt: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
   },
@@ -1554,7 +1543,6 @@ export const seedLoadPostings: LoadPosting[] = parseMany(loadPostingSchema, [
     },
     loaderContact: null,
     cancellationReason: null,
-    archivedAt: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
   }
@@ -2025,7 +2013,7 @@ export const seedOrganizationMemberships: OrganizationMembership[] = parseMany(o
     id: "16161616-1616-4616-8616-161616161614",
     organizationId: "33333333-3333-4333-8333-333333333331",
     userId: "22222222-2222-4222-8222-222222222225",
-    role: "landing_manager",
+    role: "fleet_manager",
     status: "active",
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
@@ -2229,7 +2217,6 @@ export const seedRichLandingDetails: RichLandingDetails[] = parseMany(richLandin
     publicApproximateArea: "Oakridge, OR - Cascade Foothills",
     entranceLat: 43.7463,
     entranceLng: -122.4628,
-    exactLocationVisibility: "assigned_only",
     privateRoadNotes: "Consumer map pins are offset; use the timber road entrance after the bridge.",
     gateInstructions: "Gate code rotates daily and is visible only after assignment acceptance.",
     loadingEquipment: ["heel-boom loader", "landing radio channel 4"],
@@ -2248,7 +2235,6 @@ export const seedRichLandingDetails: RichLandingDetails[] = parseMany(richLandin
     publicApproximateArea: "Blue River, OR - upper corridor",
     entranceLat: 44.1919,
     entranceLng: -122.0925,
-    exactLocationVisibility: "private_network",
     privateRoadNotes: "High-grade switchback after mile 18; chains required when restricted.",
     gateInstructions: "Summit dispatcher confirms gate status during morning check-in.",
     loadingEquipment: ["shovel loader", "portable scale pad"],
@@ -2310,7 +2296,6 @@ export const seedOpportunityCapacities: OpportunityCapacity[] = parseMany(opport
     id: "21212121-2121-4121-8121-212121212111",
     loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
     visibilityMode: "open_network",
-    allocationMode: "request_approval",
     totalTruckloads: 3,
     committedTruckloads: 1,
     completedTruckloads: 0,
@@ -2323,7 +2308,6 @@ export const seedOpportunityCapacities: OpportunityCapacity[] = parseMany(opport
     id: "21212121-2121-4121-8121-212121212112",
     loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc2",
     visibilityMode: "verified_network",
-    allocationMode: "dispatcher_assignment",
     totalTruckloads: 2,
     committedTruckloads: 1,
     completedTruckloads: 1,
@@ -2336,7 +2320,6 @@ export const seedOpportunityCapacities: OpportunityCapacity[] = parseMany(opport
     id: "21212121-2121-4121-8121-212121212113",
     loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
     visibilityMode: "private_network",
-    allocationMode: "request_approval",
     totalTruckloads: 4,
     committedTruckloads: 3,
     completedTruckloads: 2,
@@ -2348,8 +2331,7 @@ export const seedOpportunityCapacities: OpportunityCapacity[] = parseMany(opport
   {
     id: "21212121-2121-4121-8121-212121212114",
     loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc4",
-    visibilityMode: "direct_offer",
-    allocationMode: "direct_offer",
+    visibilityMode: "private_network",
     totalTruckloads: 1,
     committedTruckloads: 1,
     completedTruckloads: 0,
@@ -2362,7 +2344,6 @@ export const seedOpportunityCapacities: OpportunityCapacity[] = parseMany(opport
     id: "21212121-2121-4121-8121-212121212115",
     loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc5",
     visibilityMode: "open_network",
-    allocationMode: "request_approval",
     totalTruckloads: 1,
     committedTruckloads: 0,
     completedTruckloads: 0,
@@ -2372,23 +2353,9 @@ export const seedOpportunityCapacities: OpportunityCapacity[] = parseMany(opport
     updatedAt: timestamps.updated
   },
   {
-    id: "21212121-2121-4121-8121-212121212116",
-    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc6",
-    visibilityMode: "private_network",
-    allocationMode: "dispatcher_assignment",
-    totalTruckloads: 2,
-    committedTruckloads: 0,
-    completedTruckloads: 0,
-    remainingTruckloads: 2,
-    acceptedTermsSnapshot: {},
-    createdAt: timestamps.created,
-    updatedAt: timestamps.updated
-  },
-  {
     id: "21212121-2121-4121-8121-212121212117",
     loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc7",
     visibilityMode: "private_network",
-    allocationMode: "dispatcher_assignment",
     totalTruckloads: 1,
     committedTruckloads: 1,
     completedTruckloads: 0,
@@ -2400,8 +2367,7 @@ export const seedOpportunityCapacities: OpportunityCapacity[] = parseMany(opport
   {
     id: "21212121-2121-4121-8121-212121212118",
     loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc8",
-    visibilityMode: "direct_offer",
-    allocationMode: "direct_offer",
+    visibilityMode: "private_network",
     totalTruckloads: 2,
     committedTruckloads: 1,
     completedTruckloads: 1,
@@ -2413,8 +2379,7 @@ export const seedOpportunityCapacities: OpportunityCapacity[] = parseMany(opport
   {
     id: "21212121-2121-4121-8121-212121212119",
     loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc9",
-    visibilityMode: "direct_offer",
-    allocationMode: "direct_offer",
+    visibilityMode: "private_network",
     totalTruckloads: 1,
     committedTruckloads: 0,
     completedTruckloads: 0,
@@ -2425,152 +2390,18 @@ export const seedOpportunityCapacities: OpportunityCapacity[] = parseMany(opport
   },
   // The two-day series ledger, nothing worked yet: 6 = 3 trucks x 2 days, which
   // is both `provisionLoadCapacity`'s arithmetic and the sum of the two slots'
-  // capacity. `request_approval` because a driver must be able to ASK for a run
-  // — a direct_offer posting never offers a picker. An empty terms snapshot is
-  // what a real publish writes; the driver-facing figure is the host's stated
-  // pay on the posting, not this rate card.
+  // capacity. An empty terms snapshot is what a real publish writes; the
+  // driver-facing figure is the host's stated pay on the posting, not this rate
+  // card.
   {
     id: "21212121-2121-4121-8121-212121212120",
     loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccd1",
     visibilityMode: "private_network",
-    allocationMode: "request_approval",
     totalTruckloads: 6,
     committedTruckloads: 0,
     completedTruckloads: 0,
     remainingTruckloads: 6,
     acceptedTermsSnapshot: {},
-    createdAt: timestamps.created,
-    updatedAt: timestamps.updated
-  }
-])
-
-export const seedRoutePacks: RoutePack[] = parseMany(routePackSchema, [
-  {
-    id: "23232323-2323-4323-8323-232323232311",
-    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
-    landingId: "66666666-6666-4666-8666-666666666661",
-    destinationId: "99999999-9999-4999-8999-999999999991",
-    haulRouteId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
-    visibility: "assigned_only",
-    cacheableOffline: true,
-    calculatedRouteSummary: "Highway 58 to Oak timber road, then operator entrance pin after the bridge.",
-    localInstructions: [
-      {
-        source: "operator_provided",
-        severity: "critical",
-        title: "Use bridge entrance, not consumer pin",
-        detail: "Consumer navigation points trucks to a closed spur. Enter at the bridge pin and call loader before crossing.",
-        verifiedAt: timestamps.updated
-      },
-      {
-        source: "facility_verified",
-        severity: "standard",
-        title: "Cascade Mill gate 2",
-        detail: "Check in at gate 2 and wait for the scale light before entering the yard.",
-        verifiedAt: timestamps.updated
-      }
-    ],
-    currentRoadCondition: "good",
-    lastVerifiedAt: timestamps.updated,
-    createdAt: timestamps.created,
-    updatedAt: timestamps.updated
-  },
-  {
-    id: "23232323-2323-4323-8323-232323232312",
-    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc2",
-    landingId: "66666666-6666-4666-8666-666666666661",
-    destinationId: "99999999-9999-4999-8999-999999999992",
-    haulRouteId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
-    visibility: "organization",
-    cacheableOffline: true,
-    calculatedRouteSummary: "Oak Landing to River Pulp west chip gate via Highway 58.",
-    localInstructions: [
-      {
-        source: "facility_verified",
-        severity: "critical",
-        title: "West entrance only",
-        detail: "Chip vans must use the west entrance and call the unload desk before entering.",
-        verifiedAt: timestamps.updated
-      }
-    ],
-    currentRoadCondition: "wet",
-    lastVerifiedAt: timestamps.updated,
-    createdAt: timestamps.created,
-    updatedAt: timestamps.updated
-  },
-  {
-    id: "23232323-2323-4323-8323-232323232313",
-    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
-    landingId: "66666666-6666-4666-8666-666666666662",
-    destinationId: "99999999-9999-4999-8999-999999999991",
-    haulRouteId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
-    visibility: "private_network",
-    cacheableOffline: true,
-    calculatedRouteSummary: "Blue River lower hold point to Cascade Mill; high-grade restriction after mile 18.",
-    localInstructions: [
-      {
-        source: "operator_provided",
-        severity: "critical",
-        title: "Chains required above mile 18",
-        detail: "Dispatch will pause requests if snow begins above 3000 feet.",
-        verifiedAt: timestamps.updated
-      },
-      {
-        source: "driver_reported",
-        severity: "standard",
-        title: "Bridge control delay",
-        detail: "Expect alternating one-lane control at the county bridge.",
-        verifiedAt: "2026-06-05T15:30:00.000Z"
-      }
-    ],
-    currentRoadCondition: "restricted",
-    lastVerifiedAt: timestamps.updated,
-    createdAt: timestamps.created,
-    updatedAt: timestamps.updated
-  },
-  {
-    id: "23232323-2323-4323-8323-232323232314",
-    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc7",
-    landingId: "66666666-6666-4666-8666-666666666662",
-    destinationId: "99999999-9999-4999-8999-999999999991",
-    haulRouteId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
-    visibility: "assigned_only",
-    cacheableOffline: true,
-    calculatedRouteSummary: "Blue River lower hold point to Cascade Mill; high-grade restriction after mile 18.",
-    localInstructions: [
-      {
-        source: "operator_provided",
-        severity: "critical",
-        title: "Chains required above mile 18",
-        detail: "Dispatch will pause the run if snow begins above 3000 feet.",
-        verifiedAt: timestamps.updated
-      }
-    ],
-    currentRoadCondition: "restricted",
-    lastVerifiedAt: timestamps.updated,
-    createdAt: timestamps.created,
-    updatedAt: timestamps.updated
-  },
-  {
-    id: "23232323-2323-4323-8323-232323232315",
-    loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc8",
-    landingId: "66666666-6666-4666-8666-666666666662",
-    destinationId: "99999999-9999-4999-8999-999999999991",
-    haulRouteId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
-    visibility: "assigned_only",
-    cacheableOffline: true,
-    calculatedRouteSummary: "Blue River lower hold point to Cascade Mill; high-grade restriction after mile 18.",
-    localInstructions: [
-      {
-        source: "operator_provided",
-        severity: "critical",
-        title: "Chains required above mile 18",
-        detail: "Dispatch pauses the partner block if snow begins above 3000 feet.",
-        verifiedAt: timestamps.updated
-      }
-    ],
-    currentRoadCondition: "restricted",
-    lastVerifiedAt: timestamps.updated,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
   }
@@ -2585,7 +2416,6 @@ export const seedTripsV2: TripV2[] = parseMany(tripSchemaV2, [
     driverProfileId: "44444444-4444-4444-8444-444444444441",
     equipmentCombinationId: "18181818-1818-4818-8818-181818181811",
     status: "assigned",
-    locationVisibility: "active_trip_participants",
     locationSharingStartedAt: null,
     locationSharingEndsAt: null,
     lastSyncedAt: timestamps.assigned,
@@ -2601,7 +2431,6 @@ export const seedTripsV2: TripV2[] = parseMany(tripSchemaV2, [
     driverProfileId: "44444444-4444-4444-8444-444444444442",
     equipmentCombinationId: "18181818-1818-4818-8818-181818181812",
     status: "completed",
-    locationVisibility: "never_public",
     locationSharingStartedAt: "2026-06-05T13:05:00.000Z",
     locationSharingEndsAt: timestamps.completed,
     lastSyncedAt: timestamps.completed,
@@ -2617,7 +2446,6 @@ export const seedTripsV2: TripV2[] = parseMany(tripSchemaV2, [
     driverProfileId: "44444444-4444-4444-8444-444444444445",
     equipmentCombinationId: "18181818-1818-4818-8818-181818181814",
     status: "en_route_to_landing",
-    locationVisibility: "active_trip_participants",
     locationSharingStartedAt: "2026-06-05T13:15:00.000Z",
     locationSharingEndsAt: null,
     lastSyncedAt: "2026-06-05T13:20:00.000Z",
@@ -2695,17 +2523,6 @@ export const seedTripEvents: TripEvent[] = parseMany(tripEventSchema, [
     createdAt: "2026-06-05T15:45:00.000Z"
   },
   {
-    id: "25252525-2525-4525-8525-252525252517",
-    tripId: "24242424-2424-4424-8424-242424242412",
-    type: "ticket_uploaded",
-    actorUserId: "22222222-2222-4222-8222-222222222222",
-    source: "driver",
-    occurredAt: timestamps.completed,
-    note: "Scale ticket uploaded and linked to completed haul.",
-    metadata: { documentId: "26262626-2626-4626-8626-262626262611" },
-    createdAt: timestamps.completed
-  },
-  {
     id: "25252525-2525-4525-8525-252525252518",
     tripId: "24242424-2424-4424-8424-242424242412",
     type: "completed",
@@ -2740,46 +2557,9 @@ export const seedTripEvents: TripEvent[] = parseMany(tripEventSchema, [
   }
 ])
 
-export const seedTripDocuments: TripDocument[] = parseMany(tripDocumentSchema, [
-  // These provider labels predate stored `media` references. They remain as
-  // explicit legacy metadata fixtures: neither row claims downloadable bytes.
-  {
-    id: "26262626-2626-4626-8626-262626262611",
-    tripId: "24242424-2424-4424-8424-242424242412",
-    type: "scale_ticket",
-    storageProvider: "cloudinary",
-    storageKey: "logloads/demo/river-pulp-scale-ff2.pdf",
-    filename: "river-pulp-scale-ticket-0605.pdf",
-    contentType: "application/pdf",
-    uploadedByUserId: "22222222-2222-4222-8222-222222222222",
-    uploadedAt: timestamps.completed,
-    processingStatus: "ready",
-    auditMetadata: { grossTons: 30.4, source: "driver_upload" }
-  },
-  {
-    id: "26262626-2626-4626-8626-262626262612",
-    tripId: "24242424-2424-4424-8424-242424242415",
-    type: "photo",
-    storageProvider: "cloudinary",
-    storageKey: "logloads/demo/provider-disabled-photo.jpg",
-    filename: "oak-landing-condition.jpg",
-    contentType: "image/jpeg",
-    uploadedByUserId: "22222222-2222-4222-8222-222222222228",
-    uploadedAt: "2026-06-05T13:18:00.000Z",
-    processingStatus: "failed",
-    media: null,
-    auditMetadata: {
-      demoScenario: "provider-free-failure",
-      failureCode: "upload_not_completed",
-      synthetic: true
-    }
-  }
-])
-
 // Cross-org completed hauls: North Pine's maya (44…442) hauled two truckloads of
 // Summit Ridge's high-grade campaign (ccc…3, company 332). These give both orgs a
-// genuine two-sided track record. Slots are "filled" so they add no open capacity
-// (existing recommendation/requestability behavior is unchanged).
+// genuine two-sided track record. Slots are "filled" so they add no open capacity.
 export const seedCrossOrgTruckSlots: TruckSlot[] = parseMany(truckSlotSchema, [
   {
     id: "dddddddd-dddd-4ddd-8ddd-ddddddddaaa1",
@@ -2902,11 +2682,10 @@ export const seedCrossOrgTrips: TripV2[] = parseMany(tripSchemaV2, [
     id: "24242424-2424-4424-8424-242424242413",
     assignmentId: "ffffffff-ffff-4fff-8fff-ffffffffaaa1",
     loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
-    routePackId: null,
+    routePackId: "23232323-2323-4323-8323-232323232313",
     driverProfileId: "44444444-4444-4444-8444-444444444442",
     equipmentCombinationId: null,
     status: "completed",
-    locationVisibility: "never_public",
     locationSharingStartedAt: null,
     locationSharingEndsAt: null,
     lastSyncedAt: "2026-06-06T18:00:00.000Z",
@@ -2918,11 +2697,10 @@ export const seedCrossOrgTrips: TripV2[] = parseMany(tripSchemaV2, [
     id: "24242424-2424-4424-8424-242424242414",
     assignmentId: "ffffffff-ffff-4fff-8fff-ffffffffaaa2",
     loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
-    routePackId: null,
+    routePackId: "23232323-2323-4323-8323-232323232316",
     driverProfileId: "44444444-4444-4444-8444-444444444442",
     equipmentCombinationId: null,
     status: "completed",
-    locationVisibility: "never_public",
     locationSharingStartedAt: null,
     locationSharingEndsAt: null,
     lastSyncedAt: "2026-06-07T18:00:00.000Z",
@@ -2938,7 +2716,6 @@ export const seedCrossOrgTrips: TripV2[] = parseMany(tripSchemaV2, [
     driverProfileId: "44444444-4444-4444-8444-444444444442",
     equipmentCombinationId: "18181818-1818-4818-8818-181818181815",
     status: "completed",
-    locationVisibility: "never_public",
     locationSharingStartedAt: null,
     locationSharingEndsAt: null,
     lastSyncedAt: "2026-06-06T18:00:00.000Z",
@@ -2947,6 +2724,166 @@ export const seedCrossOrgTrips: TripV2[] = parseMany(tripSchemaV2, [
     completedAt: "2026-06-06T18:00:00.000Z"
   }
 ])
+
+/**
+ * Finds the one seeded record a derived row is built from. A miss is a broken
+ * seed, so it fails at module load rather than shipping a half-built row.
+ */
+function seedRecord<T>(rows: readonly T[], matches: (row: T) => boolean, label: string): T {
+  const row = rows.find(matches)
+
+  if (!row) {
+    throw new Error(`The seed has no ${label}`)
+  }
+
+  return row
+}
+
+type SeedInstruction = RoutePack["localInstructions"][number]
+
+/** An instruction only when its source says something, as approval writes it. */
+function seedInstruction(
+  source: SeedInstruction["source"],
+  severity: SeedInstruction["severity"],
+  title: string,
+  detail: string | null | undefined,
+  verifiedAt: string | null = null
+): SeedInstruction[] {
+  const text = detail?.trim()
+
+  return text ? [{ detail: text, severity, source, title, verifiedAt }] : []
+}
+
+const SEED_HAZARD_ROAD_CONDITIONS = new Set(["icy", "snow", "muddy", "restricted", "closed"])
+
+/**
+ * The Route Pack host approval issued for a seeded assignment: resolved from
+ * the seeded load, people, equipment and places exactly as
+ * `buildAssignmentRoutePack` resolves them at approval.
+ */
+function seedRoutePack(id: string, assignmentId: string): RoutePack {
+  const assignment = seedRecord(
+    [...seedAssignments, ...seedCrossOrgAssignments],
+    (row) => row.id === assignmentId,
+    `assignment ${assignmentId}`
+  )
+  const load = seedRecord(seedLoadPostings, (row) => row.id === assignment.loadPostingId, "load")
+  const landing = seedRecord(seedLandings, (row) => row.id === load.pickupLandingId, "landing")
+  const mill = seedRecord(seedMills, (row) => row.id === load.dropoffMillId, "mill")
+  const route = seedRecord(seedHaulRoutes, (row) => row.id === load.routeId, "haul route")
+  const rate = seedRecord(seedRates, (row) => row.id === load.rateId, "rate")
+  const host = seedRecord(seedOrganizations, (row) => row.id === load.companyId, "host")
+  const dispatcher = seedRecord(
+    seedDispatcherProfiles,
+    (row) => row.id === load.dispatcherProfileId,
+    "dispatcher"
+  )
+  const slot = seedRecord(
+    [...seedTruckSlots, ...seedCrossOrgTruckSlots],
+    (row) => row.id === assignment.truckSlotId,
+    "truck slot"
+  )
+  const driver = seedRecord(seedDriverProfiles, (row) => row.id === assignment.driverProfileId, "driver")
+  const driverUser = seedRecord(seedProfiles, (row) => row.id === driver.userId, "driver profile")
+  const truck = seedRecord(seedTruckProfiles, (row) => row.id === assignment.truckProfileId, "truck")
+  const combination = seedEquipmentCombinations.find(
+    (row) =>
+      row.truckProfileId === assignment.truckProfileId &&
+      row.assignedDriverProfileId === assignment.driverProfileId
+  )
+  const details = seedRichLandingDetails.find(
+    (row) => row.landingId === landing.id && row.controlledByOrganizationId === load.companyId
+  )
+  const facility = seedDestinationFacilities.find(
+    (row) => row.millId === mill.id && row.recordStatus === "verified"
+  )
+  const detailsVerifiedAt = details?.lastVerifiedAt ?? null
+  const facilityVerifiedAt = facility?.lastVerifiedAt ?? null
+
+  return routePackSchema.parse({
+    assignmentId,
+    cacheableOffline: false,
+    calculatedRouteSummary: `${landing.name} to ${mill.name} — ${route.routeName}, ${route.estimatedDistanceMiles.toFixed(0)} mi, about ${route.estimatedRunTimeMinutes} min.`,
+    createdAt: timestamps.assigned,
+    currentRoadCondition: route.roadCondition,
+    destinationId: mill.id,
+    haulRouteId: route.id,
+    id,
+    landingId: landing.id,
+    lastVerifiedAt: timestamps.assigned,
+    loadPostingId: load.id,
+    localInstructions: [
+      ...seedInstruction("operator_provided", "critical", "Gate access", details?.gateInstructions, detailsVerifiedAt),
+      ...seedInstruction("operator_provided", "critical", "Private road", details?.privateRoadNotes, detailsVerifiedAt),
+      ...seedInstruction("operator_provided", "standard", "Staging", details?.stagingInstructions, detailsVerifiedAt),
+      ...seedInstruction("operator_provided", "standard", "Landing access", landing.accessNotes),
+      ...(details?.turnaroundConstraints ?? []).flatMap((constraint) =>
+        seedInstruction("operator_provided", "standard", "Turnaround", constraint, detailsVerifiedAt)
+      ),
+      ...(details?.safetyRequirements ?? []).flatMap((requirement) =>
+        seedInstruction("operator_provided", "critical", "Safety and PPE", requirement, detailsVerifiedAt)
+      ),
+      ...seedInstruction("operator_provided", "standard", "Communication", details?.communicationInstructions, detailsVerifiedAt),
+      ...seedInstruction("facility_verified", "critical", "Check in", facility?.checkInProcess, facilityVerifiedAt),
+      ...seedInstruction("facility_verified", "critical", "Scale and ticket", facility?.scaleProcess, facilityVerifiedAt),
+      ...seedInstruction("facility_verified", "standard", "Unloading", facility?.unloadingInstructions, facilityVerifiedAt),
+      ...(facility && facility.currentStatus !== "open"
+        ? seedInstruction(
+            "facility_verified",
+            "critical",
+            `Destination ${facility.currentStatus}`,
+            facility.currentNotice ?? `The destination is ${facility.currentStatus}.`,
+            facilityVerifiedAt
+          )
+        : []),
+      ...(SEED_HAZARD_ROAD_CONDITIONS.has(route.roadCondition)
+        ? seedInstruction("calculated_route", "critical", "Road condition", `The route is reported ${route.roadCondition.replaceAll("_", " ")}.`)
+        : []),
+      ...seedInstruction("calculated_route", "standard", "Route notes", route.roadNotes),
+      ...seedInstruction("operator_provided", "standard", "Weather", load.weatherNotes ?? route.weatherNotes)
+    ],
+    snapshot: {
+      capturedAt: timestamps.assigned,
+      completionEvidence: facility?.completionEvidence ?? [],
+      contactEmail: dispatcher.contact.email ?? null,
+      contactName: dispatcher.contact.name,
+      contactPhone: dispatcher.contact.phone,
+      destinationContact: mill.contact,
+      destinationName: mill.name,
+      destinationReceivingHours: facility?.receivingHours ?? null,
+      driverName: driverUser.fullName,
+      driverPhone: driverUser.phone,
+      equipmentLabel: combination?.label ?? null,
+      equipmentRequirements: load.equipmentRequirements,
+      equipmentUnitNumber: truck.unitNumber,
+      estimatedTonsPerLoad: load.estimatedTonsPerLoad ?? null,
+      haulWindowEndAt: slot.endAt,
+      haulWindowStartAt: slot.startAt,
+      hostOrganizationName: host.displayName,
+      hostVerificationStatus: host.verificationStatus,
+      materialType: load.loadType,
+      originArea: details?.publicApproximateArea ?? `${landing.city}, ${landing.state}`,
+      originEntranceLat: details?.entranceLat ?? landing.coordinates.lat,
+      originEntranceLng: details?.entranceLng ?? landing.coordinates.lng,
+      originName: landing.name,
+      rateSummary: `${(rate.baseRate.amountCents / 100).toFixed(2)} ${rate.baseRate.currency} ${rate.rateType.replaceAll("_", " ")}`,
+      routeDistanceMiles: route.estimatedDistanceMiles,
+      routeRunTimeMinutes: route.estimatedRunTimeMinutes
+    },
+    supersededAt: null,
+    updatedAt: timestamps.assigned,
+    version: 1
+  })
+}
+
+export const seedRoutePacks: RoutePack[] = [
+  seedRoutePack("23232323-2323-4323-8323-232323232311", "ffffffff-ffff-4fff-8fff-fffffffffff1"),
+  seedRoutePack("23232323-2323-4323-8323-232323232312", "ffffffff-ffff-4fff-8fff-fffffffffff2"),
+  seedRoutePack("23232323-2323-4323-8323-232323232313", "ffffffff-ffff-4fff-8fff-ffffffffaaa1"),
+  seedRoutePack("23232323-2323-4323-8323-232323232316", "ffffffff-ffff-4fff-8fff-ffffffffaaa2"),
+  seedRoutePack("23232323-2323-4323-8323-232323232314", "ffffffff-ffff-4fff-8fff-fffffffffff5"),
+  seedRoutePack("23232323-2323-4323-8323-232323232315", "ffffffff-ffff-4fff-8fff-ffffffffaaa3")
+]
 
 // Two-sided reviews on the cross-org hauls. Trip …413 is reviewed both ways;
 // trip …414 keeps its hauler_rates_host side open so it can be exercised live.
@@ -3064,6 +3001,26 @@ export const seedVerificationRecords: VerificationRecord[] = parseMany(verificat
   }
 ])
 
+/**
+ * The terms a Summit Ridge direct offer freezes when it is sent: the high-grade
+ * campaign's rate card, lane and stated driver pay at the posting's version.
+ */
+const summitHighGradeOfferTerms = (loadPostingId: string) => ({
+  baseRateCents: 210000,
+  capacityReservation: "none_until_truck_claimed",
+  currency: "USD",
+  driverPayCents: 52_500,
+  estimatedDistanceMiles: 67.8,
+  estimatedTonsPerLoad: 29,
+  fuelSurchargeCents: 15000,
+  hostOrganizationId: "33333333-3333-4333-8333-333333333332",
+  loadPostingId,
+  loadVersion: timestamps.updated,
+  paymentMode: "off_platform",
+  rateBasis: "flat_rate",
+  rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3"
+})
+
 export const seedDirectOffers: DirectOffer[] = parseMany(directOfferSchema, [
   {
     id: "29292929-2929-4929-8929-292929292911",
@@ -3072,21 +3029,7 @@ export const seedDirectOffers: DirectOffer[] = parseMany(directOfferSchema, [
     offeredToOrganizationId: "33333333-3333-4333-8333-333333333331",
     status: "sent",
     offeredTruckloads: 1,
-    termsSnapshot: {
-      baseRateCents: 210000,
-      capacityReservation: "none_until_truck_claimed",
-      currency: "USD",
-      driverPayCents: 52_500,
-      estimatedDistanceMiles: 67.8,
-      estimatedTonsPerLoad: 29,
-      fuelSurchargeCents: 15000,
-      hostOrganizationId: "33333333-3333-4333-8333-333333333332",
-      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
-      loadVersion: timestamps.updated,
-      paymentMode: "off_platform",
-      rateBasis: "flat_rate",
-      rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3"
-    },
+    termsSnapshot: summitHighGradeOfferTerms("cccccccc-cccc-4ccc-8ccc-ccccccccccc3"),
     expiresAt: "2026-06-06T20:00:00.000Z",
     respondedAt: null,
     createdAt: timestamps.created,
@@ -3099,21 +3042,7 @@ export const seedDirectOffers: DirectOffer[] = parseMany(directOfferSchema, [
     offeredToOrganizationId: "33333333-3333-4333-8333-333333333331",
     status: "sent",
     offeredTruckloads: 2,
-    termsSnapshot: {
-      baseRateCents: 210000,
-      capacityReservation: "none_until_truck_claimed",
-      currency: "USD",
-      driverPayCents: 52_500,
-      estimatedDistanceMiles: 67.8,
-      estimatedTonsPerLoad: 29,
-      fuelSurchargeCents: 15000,
-      hostOrganizationId: "33333333-3333-4333-8333-333333333332",
-      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc8",
-      loadVersion: timestamps.updated,
-      paymentMode: "off_platform",
-      rateBasis: "flat_rate",
-      rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3"
-    },
+    termsSnapshot: summitHighGradeOfferTerms("cccccccc-cccc-4ccc-8ccc-ccccccccccc8"),
     expiresAt: "2026-06-06T23:00:00.000Z",
     respondedAt: timestamps.assigned,
     createdAt: timestamps.created,
@@ -3126,13 +3055,7 @@ export const seedDirectOffers: DirectOffer[] = parseMany(directOfferSchema, [
     offeredToOrganizationId: "33333333-3333-4333-8333-333333333331",
     status: "declined",
     offeredTruckloads: 1,
-    termsSnapshot: {
-      baseRateCents: 210000,
-      currency: "USD",
-      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc9",
-      paymentMode: "off_platform",
-      rateBasis: "flat_rate"
-    },
+    termsSnapshot: summitHighGradeOfferTerms("cccccccc-cccc-4ccc-8ccc-ccccccccccc9"),
     expiresAt: "2026-06-07T20:00:00.000Z",
     respondedAt: "2026-06-05T15:00:00.000Z",
     createdAt: timestamps.created,
@@ -3145,13 +3068,7 @@ export const seedDirectOffers: DirectOffer[] = parseMany(directOfferSchema, [
     offeredToOrganizationId: "33333333-3333-4333-8333-333333333331",
     status: "revoked",
     offeredTruckloads: 1,
-    termsSnapshot: {
-      baseRateCents: 210000,
-      currency: "USD",
-      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc9",
-      paymentMode: "off_platform",
-      rateBasis: "flat_rate"
-    },
+    termsSnapshot: summitHighGradeOfferTerms("cccccccc-cccc-4ccc-8ccc-ccccccccccc9"),
     expiresAt: "2026-06-08T20:00:00.000Z",
     respondedAt: null,
     createdAt: timestamps.created,
@@ -3164,13 +3081,7 @@ export const seedDirectOffers: DirectOffer[] = parseMany(directOfferSchema, [
     offeredToOrganizationId: "33333333-3333-4333-8333-333333333331",
     status: "expired",
     offeredTruckloads: 1,
-    termsSnapshot: {
-      baseRateCents: 210000,
-      currency: "USD",
-      loadPostingId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc9",
-      paymentMode: "off_platform",
-      rateBasis: "flat_rate"
-    },
+    termsSnapshot: summitHighGradeOfferTerms("cccccccc-cccc-4ccc-8ccc-ccccccccccc9"),
     expiresAt: "2026-06-05T10:00:00.000Z",
     respondedAt: null,
     createdAt: timestamps.created,
@@ -3310,13 +3221,21 @@ export const seedHostFeeAgreements: HostFeeAgreement[] = parseMany(hostFeeAgreem
 ])
 
 /**
- * Freezes the host fee onto every seeded assignment that was accepted, exactly as
- * host approval does: the movement identity, the commitment time, and the 2%
- * terms. The seeded assignments carry no frozen driver pay, so no fee is derived
- * from them and the ledger stays empty.
+ * Freezes terms onto every seeded assignment the way the request and approval
+ * paths do: the driver pay the load stated when it was requested, and, once the
+ * host accepted, the movement identity, the commitment time, and the 2% fee
+ * terms. Fees accrue only when a host confirms a completion, so the ledger
+ * stays empty.
  */
-function freezeSeedAssignmentBilling(assignment: Assignment): Assignment {
+function freezeSeedAssignmentTerms(assignment: Assignment): Assignment {
+  const load = seedRecord(seedLoadPostings, (row) => row.id === assignment.loadPostingId, "load")
+  const rate = seedRecord(seedRates, (row) => row.id === load.rateId, "rate")
   const committed = Boolean(assignment.assignedAt)
+  const termsSnapshot = {
+    ...assignment.termsSnapshot,
+    currency: rate.baseRate.currency,
+    driverPayCents: load.driverPayCents
+  }
 
   return assignmentSchema.parse({
     ...assignment,
@@ -3324,14 +3243,14 @@ function freezeSeedAssignmentBilling(assignment: Assignment): Assignment {
     loadMovementId: assignment.id,
     termsSnapshot: committed
       ? {
-          ...assignment.termsSnapshot,
+          ...termsSnapshot,
           hostFee: {
             collectionState: "accrues_monthly_in_arrears",
             currency: PLATFORM_FEE_CURRENCY,
             rateBps: PLATFORM_FEE_BPS
           }
         }
-      : assignment.termsSnapshot
+      : termsSnapshot
   })
 }
 
@@ -3362,11 +3281,11 @@ export const seedDatabaseState: LogLoadsDatabaseState = {
   truckSlots: [...seedTruckSlots, ...seedCrossOrgTruckSlots],
   availabilityWindows: seedAvailabilityWindows,
   futureAvailability: seedFutureAvailability,
-  assignments: [...seedAssignments, ...seedCrossOrgAssignments].map(freezeSeedAssignmentBilling),
+  assignments: [...seedAssignments, ...seedCrossOrgAssignments].map(freezeSeedAssignmentTerms),
   directOffers: seedDirectOffers,
   tripsV2: [...seedTripsV2, ...seedCrossOrgTrips],
   tripEvents: seedTripEvents,
-  tripDocuments: seedTripDocuments,
+  tripDocuments: [],
   tripInspections: [],
   tripReviews: seedTripReviews,
   verificationRecords: seedVerificationRecords,

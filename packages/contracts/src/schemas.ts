@@ -31,6 +31,7 @@ import {
   verificationStatusSchema
 } from "./enums"
 import { isValidTimeRange } from "./helpers/date-time"
+import { readFrozenDriverPay } from "./helpers/money"
 
 const uuidSchema = z.string().uuid()
 const timestampSchema = z.string().datetime()
@@ -56,7 +57,6 @@ export const coordinatesSchema = z.object({
 })
 
 export const mediaReferenceSchema = z.object({
-  provider: z.enum(["cloudinary", "supabase"]),
   publicId: z.string().min(1),
   version: z.number().int().positive(),
   format: z.enum(["jpg", "jpeg", "png", "webp"]),
@@ -280,10 +280,7 @@ export const loadPostingSchema = z.object({
    * about one load. The platform fee is charged to the host ON TOP of this
    * number and is never deducted from it.
    *
-   * Optional only for the migration: loads posted before this field existed
-   * keep falling back to their rate-derived label, because backfilling an
-   * estimate into a field that means "the host said so" would manufacture a
-   * commitment nobody made. Newly posted loads carry a real number.
+   * Optional only on a draft: publishing refuses work without it.
    */
   driverPayCents: z.number().int().positive().optional().nullable(),
   estimatedTonsPerLoad: z.number().positive().optional().nullable(),
@@ -294,7 +291,6 @@ export const loadPostingSchema = z.object({
   dispatcherContact: contactSchema,
   loaderContact: contactSchema.optional().nullable(),
   cancellationReason: z.string().optional().nullable(),
-  archivedAt: optionalTimestampSchema,
   createdAt: timestampSchema,
   updatedAt: timestampSchema
 })
@@ -384,9 +380,7 @@ export const assignmentBaseSchema = z.object({
    * What the driver says actually arrived. This is deliberately separate from
    * the host-stated amount frozen in termsSnapshot: a short payment must remain
    * visible rather than being rewritten into agreement by the receipt click.
-   *
-   * Nullable for assignments whose receipt predates amount-aware confirmation.
-   * New write paths always persist both fields together.
+   * Null until the driver confirms receipt; set together with the currency.
    */
   driverPaymentReceivedAmountCents: z.number().int().nonnegative().optional().nullable().default(null),
   driverPaymentReceivedCurrency: z
@@ -410,6 +404,14 @@ export const assignmentSchema = assignmentBaseSchema.superRefine((row, context) 
       code: z.ZodIssueCode.custom,
       message: "A committed assignment must identify its physical movement",
       path: ["loadMovementId"]
+    })
+  }
+
+  if (row.billingCommittedAt && !readFrozenDriverPay(row.termsSnapshot)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "A committed assignment must carry the driver pay it was accepted at",
+      path: ["termsSnapshot"]
     })
   }
 
@@ -444,14 +446,11 @@ export const assignmentSchema = assignmentBaseSchema.superRefine((row, context) 
     })
   }
 
-  if (
-    (row.driverPaymentReceivedAmountCents !== null || row.driverPaymentReceivedCurrency) &&
-    !row.driverPaymentReceivedAt
-  ) {
+  if (Boolean(row.driverPaymentReceivedAt) !== (row.driverPaymentReceivedAmountCents !== null)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "A received payment amount requires a recorded receipt",
-      path: ["driverPaymentReceivedAt"]
+      message: "A recorded receipt and the amount received are written together",
+      path: [row.driverPaymentReceivedAt ? "driverPaymentReceivedAmountCents" : "driverPaymentReceivedAt"]
     })
   }
 
@@ -840,17 +839,15 @@ export const driverCredentialSchema = z
     kind: credentialKindSchema,
     status: credentialStatusSchema,
     /**
-     * Equipment evidence is bound to the exact profile photographed. Historical
-     * unbound rows remain readable through null, but acceptance never counts
-     * them for a selected truck or trailer.
+     * Equipment evidence names the exact truck or trailer it photographs; null
+     * for every other kind.
      */
     truckProfileId: uuidSchema.optional().nullable().default(null),
     trailerProfileId: uuidSchema.optional().nullable().default(null),
     /**
-     * The stored document, as the server read it back from the media provider
-     * after upload. null until bytes actually exist — a credential record can be
-     * created the moment a driver starts, and media in this product is
-     * deliberately fail-closed until LogLoads has a media account of its own.
+     * The stored document, as the server read it back from storage after
+     * upload. null until bytes actually exist — a credential record can be
+     * created the moment a driver starts.
      *
      * This is the field `credentialIsValidAt` requires: a record can name an
      * issuer and a policy number and reference nothing at all.

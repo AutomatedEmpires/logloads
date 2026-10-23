@@ -48,16 +48,8 @@ export const invitationStatusSchema = z.enum([
 
 export const opportunityVisibilityModeSchema = z.enum([
   "private_network",
-  "direct_offer",
   "verified_network",
   "open_network"
-])
-
-export const allocationModeSchema = z.enum([
-  "open_claim",
-  "request_approval",
-  "direct_offer",
-  "dispatcher_assignment"
 ])
 
 export const equipmentCombinationStatusSchema = z.enum([
@@ -146,7 +138,6 @@ export const richLandingDetailsSchema = z.object({
   publicApproximateArea: z.string().min(1),
   entranceLat: z.number().min(-90).max(90),
   entranceLng: z.number().min(-180).max(180),
-  exactLocationVisibility: z.enum(["assigned_only", "private_network", "organization", "public"]),
   privateRoadNotes: z.string().optional().nullable(),
   gateInstructions: z.string().optional().nullable(),
   loadingEquipment: z.array(z.string()).default([]),
@@ -186,7 +177,6 @@ export const opportunityCapacitySchema = z.object({
   id: uuidSchema,
   loadPostingId: uuidSchema,
   visibilityMode: opportunityVisibilityModeSchema,
-  allocationMode: allocationModeSchema,
   totalTruckloads: z.number().int().positive(),
   committedTruckloads: z.number().int().min(0),
   completedTruckloads: z.number().int().min(0),
@@ -250,27 +240,25 @@ export const routePackSnapshotSchema = z.object({
   completionEvidence: z.array(z.string()).default([])
 })
 
+/**
+ * The briefing minted for one assignment when the host approved that haul. A
+ * re-issue supersedes it with the next version; earlier versions are retained.
+ */
 export const routePackSchema = z.object({
   id: uuidSchema,
   loadPostingId: uuidSchema,
-  /**
-   * null = the load-level source a host maintains. Set = an assignment-specific
-   * snapshot minted when the host approved that haul. Only the latter is shown
-   * to a driver as their route pack.
-   */
-  assignmentId: uuidSchema.optional().nullable().default(null),
-  version: z.number().int().positive().default(1),
+  assignmentId: uuidSchema,
+  version: z.number().int().positive(),
   /** Set when a newer version replaced this one; the row itself is retained. */
   supersededAt: optionalTimestampSchema,
   landingId: uuidSchema,
   destinationId: uuidSchema,
   haulRouteId: uuidSchema,
-  visibility: z.enum(["assigned_only", "private_network", "organization"]),
   cacheableOffline: z.boolean().default(true),
   calculatedRouteSummary: z.string().min(1),
   localInstructions: z.array(routePackInstructionSchema).default([]),
   currentRoadCondition: roadConditionSchema,
-  snapshot: routePackSnapshotSchema.optional().nullable().default(null),
+  snapshot: routePackSnapshotSchema,
   lastVerifiedAt: timestampSchema,
   createdAt: timestampSchema,
   updatedAt: timestampSchema
@@ -319,13 +307,6 @@ export const tripEventTypeV2Schema = z.enum([
   "cancelled"
 ])
 
-export const locationVisibilitySchema = z.enum([
-  "driver_private",
-  "organization",
-  "active_trip_participants",
-  "never_public"
-])
-
 /** What actually came off the truck, in the unit the scale reported it. */
 export const deliveredQuantitySchema = z.object({
   value: z.number().nonnegative(),
@@ -361,11 +342,10 @@ export const tripSchemaV2 = z.object({
   id: uuidSchema,
   assignmentId: uuidSchema,
   loadPostingId: uuidSchema,
-  routePackId: uuidSchema.optional().nullable(),
+  routePackId: uuidSchema,
   driverProfileId: uuidSchema,
   equipmentCombinationId: uuidSchema.optional().nullable(),
   status: tripStatusV2Schema,
-  locationVisibility: locationVisibilitySchema,
   locationSharingStartedAt: optionalTimestampSchema,
   locationSharingEndsAt: optionalTimestampSchema,
   lastSyncedAt: optionalTimestampSchema,
@@ -420,21 +400,14 @@ export const tripDocumentSchema = z.object({
   id: uuidSchema,
   tripId: uuidSchema,
   type: z.enum(["scale_ticket", "load_slip", "delivery_record", "photo", "other"]),
-  storageProvider: z.enum(["cloudinary", "supabase", "external"]),
   storageKey: z.string().min(1),
   filename: z.string().min(1),
   contentType: z.string().min(1),
   uploadedByUserId: uuidSchema,
   uploadedAt: timestampSchema,
   processingStatus: z.enum(["uploaded", "processing", "ready", "failed"]),
-  /**
-   * The stored asset, as the server read it back from the provider after upload
-   * — the only field here that proves bytes exist. `storageKey` is a name and
-   * `storageProvider` is a label; a record can carry both and reference nothing.
-   * Optional because records written before uploads were wired do exactly that,
-   * and they stay readable. Only a document with `media` can be delivered.
-   */
-  media: mediaReferenceSchema.optional().nullable(),
+  /** The stored asset, as the server read it back from storage after upload. */
+  media: mediaReferenceSchema,
   auditMetadata: z.record(z.unknown()).default({})
 })
 
@@ -513,7 +486,6 @@ export type OrganizationCapability = z.infer<typeof organizationCapabilitySchema
 export type NetworkRelationshipStatus = z.infer<typeof networkRelationshipStatusSchema>
 export type InvitationStatus = z.infer<typeof invitationStatusSchema>
 export type OpportunityVisibilityMode = z.infer<typeof opportunityVisibilityModeSchema>
-export type AllocationMode = z.infer<typeof allocationModeSchema>
 export type EquipmentCombinationStatus = z.infer<typeof equipmentCombinationStatusSchema>
 export type VerificationRecord = z.infer<typeof verificationRecordSchema>
 export type OrganizationInvitation = z.infer<typeof organizationInvitationSchema>
@@ -530,7 +502,6 @@ export type HaulException = z.infer<typeof haulExceptionSchema>
 export type HaulCompletionStatus = z.infer<typeof haulCompletionStatusSchema>
 export type TripStatusV2 = z.infer<typeof tripStatusV2Schema>
 export type TripEventTypeV2 = z.infer<typeof tripEventTypeV2Schema>
-export type LocationVisibility = z.infer<typeof locationVisibilitySchema>
 export type TripV2 = z.infer<typeof tripSchemaV2>
 export type TripEvent = z.infer<typeof tripEventSchema>
 export type TripReview = z.infer<typeof tripReviewSchema>
@@ -585,12 +556,10 @@ export function selectDriverEquipmentCombination(
 }
 
 const opportunityTransitions: Record<z.infer<typeof loadStatusSchema>, z.infer<typeof loadStatusSchema>[]> = {
-  archived: [],
-  cancelled: ["archived"],
-  completed: ["archived"],
+  cancelled: [],
+  completed: [],
   draft: ["scheduled", "open", "cancelled"],
-  filled: ["in_transit", "completed", "cancelled"],
-  in_transit: ["completed", "cancelled"],
+  filled: ["completed", "cancelled"],
   open: ["scheduled", "filled", "cancelled"],
   scheduled: ["open", "filled", "cancelled"]
 }

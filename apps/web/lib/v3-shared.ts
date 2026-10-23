@@ -179,10 +179,6 @@ export function visibilityLabel(load: Pick<NetworkLoadView, "visibilityMode">): 
     return "Partner load"
   }
 
-  if (load.visibilityMode === "direct_offer") {
-    return "Direct offer"
-  }
-
   if (load.visibilityMode === "verified_network") {
     return "Verified network"
   }

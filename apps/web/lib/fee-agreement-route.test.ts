@@ -135,7 +135,7 @@ describe("host fee agreement route", () => {
     }
   )
 
-  it.each(["landing_source", "destination", "fleet", "carrier"])(
+  it.each(["landing_source", "fleet", "carrier"])(
     "lets a %s organization, which can publish loads, accept",
     async (type) => {
       mocks.requireApiActor.mockResolvedValue(actor("owner", type))
@@ -143,13 +143,6 @@ describe("host fee agreement route", () => {
       expect((await POST(request(ACCEPTANCE))).status).toBe(200)
     }
   )
-
-  it("refuses an organization type that cannot publish loads", async () => {
-    mocks.requireApiActor.mockResolvedValue(actor("owner", "platform"))
-
-    expect((await POST(request(ACCEPTANCE))).status).toBe(403)
-    expect(mocks.acceptHostFeeAgreement).not.toHaveBeenCalled()
-  })
 
   it("rejects client-selected commercial terms", async () => {
     const response = await POST(request({ ...ACCEPTANCE, feeBps: 1 }))

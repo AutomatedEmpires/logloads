@@ -9,7 +9,7 @@ const DISPATCHER_USER_ID = "22222222-2222-4222-8222-222222222224"
 const HANK_USER_ID = "22222222-2222-4222-8222-222222222221"
 const MAYA_USER_ID = "22222222-2222-4222-8222-222222222222"
 const COLE_USER_ID = "22222222-2222-4222-8222-222222222223"
-const LANDING_MANAGER_USER_ID = "22222222-2222-4222-8222-222222222225"
+const LOADER_USER_ID = "22222222-2222-4222-8222-222222222225"
 
 const HANK_DRIVER_ID = "44444444-4444-4444-8444-444444444441"
 const MAYA_DRIVER_ID = "44444444-4444-4444-8444-444444444442"
@@ -128,7 +128,7 @@ describe("equipment mutation authorization", () => {
     expect(audit).toMatchObject({ action: "equipment_added", actorUserId: DISPATCHER_USER_ID })
   })
 
-  it("rejects normalized duplicate unit numbers and malformed legacy duplicates without partial writes", () => {
+  it("rejects normalized duplicate unit numbers and stored duplicates without partial writes", () => {
     const services = createLogLoadsServices()
     const beforeConflict = structuredClone(services.state)
 
@@ -242,14 +242,32 @@ describe("equipment mutation authorization", () => {
 
   it("requires manage_trucks for manager equipment operations", () => {
     const services = createLogLoadsServices()
+    const loaderMembership = services.state.organizationMemberships.find(
+      (membership) => membership.userId === LOADER_USER_ID
+    )
+
+    if (!loaderMembership) {
+      throw new Error("Loader membership fixture missing")
+    }
+
+    // A landing manager at the host runs landings, not trucks.
+    services.state.organizationMemberships.push({
+      ...loaderMembership,
+      id: "16161616-1616-4616-8616-16161616162a",
+      organizationId: SUMMIT_ORG_ID,
+      role: "landing_manager"
+    })
     const before = structuredClone(services.state)
 
     expect(() => services.addEquipmentCombination(addInput({
-      actorUserId: LANDING_MANAGER_USER_ID,
-      assignedDriverProfileId: null
+      actorUserId: LOADER_USER_ID,
+      assignedDriverProfileId: null,
+      organizationId: SUMMIT_ORG_ID
     }))).toThrow(/cannot manage trucks/)
     expect(() => services.updateEquipmentStatus(statusInput({
-      actorUserId: LANDING_MANAGER_USER_ID
+      actorUserId: LOADER_USER_ID,
+      combinationId: COLE_EQUIPMENT_ID,
+      organizationId: SUMMIT_ORG_ID
     }))).toThrow(/cannot manage trucks/)
     expect(services.state).toEqual(before)
   })

@@ -32,9 +32,9 @@ function resolveOwnedDispatcher(state: LogLoadsDatabaseState, load: LoadPosting)
 }
 
 /**
- * A non-throwing boundary for read paths. Legacy documents can predate the
- * publication guard, so callers that list or serve work must be able to omit
- * malformed records without turning discovery into an exception surface.
+ * A non-throwing boundary for read paths. A posting's sources can be edited or
+ * retired after publication, so callers that list or serve work must be able to
+ * omit incoherent records without turning discovery into an exception surface.
  */
 export function loadPostingHasOwnedCoherentSources(
   state: LogLoadsDatabaseState,
@@ -76,7 +76,7 @@ export function loadPostingHasOwnedCoherentSources(
 /**
  * A stored Route Pack is safe to serve only while both the current posting and
  * the pack's own source identifiers remain inside the posting organization.
- * This blocks pre-guard snapshots without rewriting or deleting history.
+ * This blocks an incoherent pack without rewriting or deleting history.
  */
 export function routePackIsSafeToRead(
   state: LogLoadsDatabaseState,
@@ -114,9 +114,9 @@ const HAZARD_ROAD_CONDITIONS = new Set(["icy", "snow", "muddy", "restricted", "c
 
 /**
  * Resolves everything a driver needs for an accepted haul into one pack, from
- * the load, route, landing, destination, and the host's own source pack. This
- * runs once, at approval, and the result is stored — a later edit to the load
- * cannot rewrite instructions the driver already committed to.
+ * the load, route, landing, and destination. This runs at approval, and the
+ * result is stored — a later edit to the load cannot rewrite instructions the
+ * driver already committed to.
  *
  * Missing optional details degrade honestly: an absent rich landing-detail or
  * destination-facility record contributes no instructions rather than
@@ -135,10 +135,10 @@ export function buildAssignmentRoutePack(
       millUsableByOrganization(current, load.companyId)
   ) ?? null
 
-  // Approval normally validates these before calling the builder, but accepted
-  // legacy assignments and direct regeneration calls can predate that boundary.
-  // Never snapshot another organization's route/rate facts or an incoherent
-  // lane even when the stored posting itself is malformed.
+  // Approval validates these before calling the builder, but a re-issue reads
+  // the posting as it stands now. Never snapshot another organization's
+  // route/rate facts or an incoherent lane even when the stored posting itself
+  // is malformed.
   if (
     rate === null ||
     destination === null ||
@@ -162,9 +162,9 @@ export function buildAssignmentRoutePack(
           current.controlledByOrganizationId === load.companyId
       )
     : []
-  // The SQL mirror has a unique landing_id constraint, but legacy/corrupt
-  // operating-state documents can still contain duplicates. Ambiguity is not
-  // authority: omit the private briefing rather than pick whichever came first.
+  // The operating-state document has no unique index on landingId, so a stored
+  // document can contain duplicates. Ambiguity is not authority: omit the
+  // private briefing rather than pick whichever came first.
   const landingDetails = matchingLandingDetails.length === 1 ? matchingLandingDetails[0]! : null
   const matchingFacilities = state.destinationFacilities.filter(
     (current) => current.millId === destination.id
@@ -189,23 +189,8 @@ export function buildAssignmentRoutePack(
   ) ?? null
   const host = state.organizations.find((current) => current.id === load.companyId) ?? null
   const hostCompany = state.companies.find((current) => current.id === load.companyId) ?? null
-  // The host's load-level pack is the source a host maintains; its operator
-  // instructions carry into every assignment snapshot taken from this load.
-  const sourcePack = state.routePacks.find(
-    (pack) =>
-      pack.loadPostingId === load.id &&
-      !pack.assignmentId &&
-      routePackIsSafeToRead(state, load, pack)
-  ) ?? null
 
   const instructions = [
-    // Facility facts are re-derived from the current, version-covered facility
-    // record below. Never inherit an older load-level `facility_verified`
-    // claim: its provenance can have become suggested, ambiguous, or stale
-    // since the host authored that source pack.
-    ...(sourcePack?.localInstructions.filter(
-      (entry) => entry.source !== "facility_verified"
-    ) ?? []),
     instruction("operator_provided", "critical", "Gate access", landingDetails?.gateInstructions, landingDetails?.lastVerifiedAt),
     instruction("operator_provided", "critical", "Private road", landingDetails?.privateRoadNotes, landingDetails?.lastVerifiedAt),
     instruction("operator_provided", "standard", "Staging", landingDetails?.stagingInstructions, landingDetails?.lastVerifiedAt),
@@ -234,8 +219,8 @@ export function buildAssignmentRoutePack(
     instruction("operator_provided", "standard", "Weather", load.weatherNotes ?? route.weatherNotes)
   ].filter((entry): entry is RoutePackInstruction => entry !== null)
 
-  // Legacy stored postings may carry a dispatcher id from another organization.
-  // Never copy that profile's contact into an assignment-gated Route Pack.
+  // A stored posting may carry a dispatcher id from another organization. Never
+  // copy that profile's contact into an assignment-gated Route Pack.
   const dispatcher = resolveOwnedDispatcher(state, load)
 
   const snapshot: RoutePackSnapshot = {
@@ -274,8 +259,7 @@ export function buildAssignmentRoutePack(
     // Nothing serves these packs offline yet; claiming otherwise would strand a
     // driver who trusted it in a dead zone.
     cacheableOffline: false,
-    calculatedRouteSummary: sourcePack?.calculatedRouteSummary ??
-      `${landing?.name ?? "Landing"} to ${destination?.name ?? "destination"} — ${route.routeName}, ${route.estimatedDistanceMiles.toFixed(0)} mi, about ${route.estimatedRunTimeMinutes} min.`,
+    calculatedRouteSummary: `${landing?.name ?? "Landing"} to ${destination?.name ?? "destination"} — ${route.routeName}, ${route.estimatedDistanceMiles.toFixed(0)} mi, about ${route.estimatedRunTimeMinutes} min.`,
     createdAt: timestamp,
     currentRoadCondition: route.roadCondition,
     destinationId: load.dropoffMillId,
@@ -288,8 +272,7 @@ export function buildAssignmentRoutePack(
     snapshot,
     supersededAt: null,
     updatedAt: timestamp,
-    version,
-    visibility: "assigned_only"
+    version
   })
 }
 
@@ -318,32 +301,18 @@ export function listAssignmentRoutePackVersions(
 
 /**
  * Re-resolves the pack from current sources and, when the operational content
- * actually changed, supersedes the old version with a new one. The prior
+ * actually changed, supersedes the current version with a new one. The prior
  * version is kept: it is the record of what governed the haul until now.
  *
  * Returns null when nothing material changed, so a host saving an unrelated
  * edit does not bump the version or alarm the driver over noise.
- *
- * `previous` is null when the assignment had no snapshot at all — a haul booked
- * before packs were minted per assignment. That is a backfill, not a change:
- * the driver was already reading these instructions from the load-level source,
- * so v1 pins them rather than announcing news.
  */
 export function regenerateAssignmentRoutePack(
   state: LogLoadsDatabaseState,
+  current: RoutePack,
   sources: RoutePackSources,
   timestamp = nowIso()
-): { pack: RoutePack; previous: RoutePack | null } | null {
-  const current = findAssignmentRoutePack(state, sources.assignment.id)
-
-  if (!current) {
-    const first = buildAssignmentRoutePack(state, sources, 1, timestamp)
-
-    state.routePacks.push(first)
-
-    return { pack: first, previous: null }
-  }
-
+): { pack: RoutePack; previous: RoutePack } | null {
   const candidate = buildAssignmentRoutePack(state, sources, current.version + 1, timestamp)
 
   if (!isMaterialChange(current, candidate)) {
@@ -374,7 +343,7 @@ export function isMaterialChange(current: RoutePack, candidate: RoutePack): bool
         source: entry.source,
         title: entry.title
       })),
-      snapshot: pack.snapshot ? { ...pack.snapshot, capturedAt: null } : null
+      snapshot: { ...pack.snapshot, capturedAt: null }
     })
 
   return comparable(current) !== comparable(candidate)

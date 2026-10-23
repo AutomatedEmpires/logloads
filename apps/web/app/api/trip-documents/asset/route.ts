@@ -31,13 +31,6 @@ export async function GET(request: NextRequest) {
     // holds `assign_capacity` and need not hold `progress_trip`.
     tripDocumentTarget(services.state, actor, organizationId, document.tripId, "read")
 
-    // Records written before uploads were wired name a file that was never
-    // stored. They stay on the haul's history as the account of what was
-    // claimed; there is simply nothing to hand back.
-    if (!document.media) {
-      throw new ApiError("This record has no stored file", 404)
-    }
-
     // Signed outside the fetch-specific try/catch (still inside the route's
     // outer try, whose apiErrorResponse turns the gate's refusal into the 503):
     // building the URL needs the private Supabase media configuration, and its

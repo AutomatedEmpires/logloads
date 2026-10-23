@@ -143,28 +143,6 @@ describe("billing notification email delivery", () => {
     expect(firstKey?.length).toBeLessThanOrEqual(256)
   })
 
-  it("keeps the established legacy sender and reply-to fallbacks", async () => {
-    const request = vi.fn(async () => resendSuccess())
-    vi.stubGlobal("fetch", request)
-
-    const result = await deliverClaimedBillingNotificationEmail(
-      claimedNotification,
-      {
-        LOGLOADS_EMAIL_FROM: " LogLoads <legacy@logloads.com> ",
-        LOGLOADS_EMAIL_REPLY_TO: " legacy-replies@logloads.com ",
-        RESEND_API_KEY: "re_test"
-      }
-    )
-
-    expect(result.outcome).toBe("delivered")
-    expect(requestBody(request)).toEqual(
-      expect.objectContaining({
-        from: "LogLoads <legacy@logloads.com>",
-        reply_to: "legacy-replies@logloads.com"
-      })
-    )
-  })
-
   it("refuses invalid claimed notification data before issuing a request", async () => {
     const request = vi.fn(async () => resendSuccess())
     vi.stubGlobal("fetch", request)

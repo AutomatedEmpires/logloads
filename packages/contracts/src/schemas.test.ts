@@ -46,7 +46,6 @@ describe("schema validation", () => {
         email: "lee@example.com"
       },
       cancellationReason: null,
-      archivedAt: null,
       createdAt: baseTimestamp,
       updatedAt: baseTimestamp
     })
@@ -152,13 +151,17 @@ describe("schema validation", () => {
     const receiver = "77777777-7777-4777-8777-777777777777"
 
     expect(assignmentSchema.safeParse(assignment).success).toBe(true)
+    const received = { driverPaymentReceivedAmountCents: 52_500, driverPaymentReceivedCurrency: "USD" }
+
     expect(assignmentSchema.safeParse({
       ...assignment,
+      ...received,
       driverPaymentReceivedAt: "2026-06-05T11:59:00.000Z",
       driverPaymentReceivedByUserId: receiver
     }).success).toBe(false)
     expect(assignmentSchema.safeParse({
       ...assignment,
+      ...received,
       driverPaymentReceivedAt: "2026-06-05T12:01:00.000Z",
       driverPaymentReceivedByUserId: null
     }).success).toBe(false)
@@ -169,11 +172,18 @@ describe("schema validation", () => {
     }).success).toBe(false)
     expect(assignmentSchema.safeParse({
       ...assignment,
+      ...received,
       driverPaymentReceivedAt: "2026-06-05T12:01:00.000Z",
       driverPaymentReceivedByUserId: assignment.driverPaymentSentByUserId
     }).success).toBe(false)
     expect(assignmentSchema.safeParse({
       ...assignment,
+      driverPaymentReceivedAt: "2026-06-05T12:01:00.000Z",
+      driverPaymentReceivedByUserId: receiver
+    }).success).toBe(false)
+    expect(assignmentSchema.safeParse({
+      ...assignment,
+      ...received,
       driverPaymentReceivedAt: "2026-06-05T12:01:00.000Z",
       driverPaymentReceivedByUserId: receiver
     }).success).toBe(true)

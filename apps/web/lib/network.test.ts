@@ -344,60 +344,6 @@ describe("site truth projection", () => {
   })
 })
 
-describe("trip document deliverability", () => {
-  function projectDocument(provider: "cloudinary" | "supabase") {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    const legacy = services.state.tripDocuments[0]
-
-    if (!legacy) throw new Error("the fixture has no pre-existing trip document")
-
-    legacy.media = {
-      bytes: 2_048,
-      format: "jpg",
-      height: 900,
-      provider,
-      publicId: legacy.storageKey,
-      uploadedAt: "2026-06-05T11:00:00.000Z",
-      version: 1,
-      width: 1_200
-    }
-    legacy.storageProvider = provider
-
-    const trip = services.state.tripsV2.find((candidate) => candidate.id === legacy.tripId)
-    const driver = services.state.driverProfiles.find((candidate) => candidate.id === trip?.driverProfileId)
-
-    if (!trip || !driver) throw new Error("the legacy trip document fixture is incomplete")
-
-    const view = buildNetworkView(
-      services.state,
-      { actorUserId: driver.userId, kind: "actor", organizationId: driver.companyId },
-      new Date("2026-06-05T12:00:00.000Z")
-    )
-    const document = view.trips
-      .find((candidate) => candidate.id === trip.id)
-      ?.documents.find((candidate) => candidate.id === legacy.id)
-
-    return { document, stored: legacy }
-  }
-
-  it("keeps legacy Cloudinary bytes as metadata without a broken download", () => {
-    const { document, stored } = projectDocument("cloudinary")
-
-    expect(stored.media?.provider).toBe("cloudinary")
-    expect(stored.storageKey.length).toBeGreaterThan(0)
-    expect(document).toBeDefined()
-    expect(document?.viewable).toBe(false)
-  })
-
-  it("offers a download only for current Supabase-backed bytes", () => {
-    const { document, stored } = projectDocument("supabase")
-
-    expect(stored.media?.provider).toBe("supabase")
-    expect(stored.storageProvider).toBe("supabase")
-    expect(document?.viewable).toBe(true)
-  })
-})
-
 describe("workspace activity authority", () => {
   it("does not turn a global profile admin flag into organization audit access", () => {
     const { services, viewer } = networkFixture()
@@ -868,42 +814,6 @@ describe("driver network access", () => {
     expect(view.trips.some((trip) => trip.id === orphan.id)).toBe(false)
   })
 
-  it("does not invent an expected payment for a legacy assignment", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    const driverUser = services.state.profiles.find(
-      (profile) => profile.email === "hank@northpine.example"
-    )
-    const driver = services.state.driverProfiles.find(
-      (profile) => profile.userId === driverUser?.id
-    )
-    const trip = services.state.tripsV2.find(
-      (candidate) => candidate.driverProfileId === driver?.id
-    )
-    const assignment = services.state.assignments.find(
-      (candidate) => candidate.id === trip?.assignmentId
-    )
-
-    if (!driverUser || !driver?.companyId || !trip || !assignment) {
-      throw new Error("the legacy-payment fixture is incomplete")
-    }
-
-    assignment.termsSnapshot = {
-      ...assignment.termsSnapshot,
-      currency: undefined,
-      driverPayCents: undefined
-    }
-
-    const view = buildNetworkView(
-      services.state,
-      { actorUserId: driverUser.id, kind: "actor", organizationId: driver.companyId },
-      new Date("2026-06-05T12:00:00.000Z")
-    )
-
-    expect(
-      view.trips.find((candidate) => candidate.id === trip.id)?.driverPayment.expectedPayLabel
-    ).toBeNull()
-  })
-
   it("formats a frozen non-USD payment in its accepted currency", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const driverUser = services.state.profiles.find(
@@ -1174,19 +1084,17 @@ describe("driver network access", () => {
     expect(current?.viewerDecision).toBeNull()
   })
 
-  it("shows a driver the host's source pack when their haul predates assignment snapshots", () => {
+  it("shows a booked driver the same Route Pack the server hands over", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    // A seeded accepted assignment: exactly the state of every in-flight haul
-    // at deploy — the host published a pack, but not a per-assignment snapshot.
-    const legacyAssignmentId = "ffffffff-ffff-4fff-8fff-fffffffffff1"
-    const legacy = services.state.assignments.find((candidate) => candidate.id === legacyAssignmentId)
-    const driver = services.state.driverProfiles.find((candidate) => candidate.id === legacy?.driverProfileId)
+    const bookedAssignmentId = "ffffffff-ffff-4fff-8fff-fffffffffff1"
+    const booked = services.state.assignments.find((candidate) => candidate.id === bookedAssignmentId)
+    const driver = services.state.driverProfiles.find((candidate) => candidate.id === booked?.driverProfileId)
     const membership = services.state.organizationMemberships.find((candidate) =>
       candidate.userId === driver?.userId && candidate.status === "active"
     )
 
-    expect(legacy && driver && membership).toBeTruthy()
-    if (!legacy || !driver || !membership) return
+    expect(booked && driver && membership).toBeTruthy()
+    if (!booked || !driver || !membership) return
 
     const viewer = {
       actorUserId: driver.userId,
@@ -1194,11 +1102,11 @@ describe("driver network access", () => {
       organizationId: membership.organizationId
     }
     const view = buildNetworkView(services.state, viewer, new Date("2026-06-05T12:00:00.000Z")).loads.find(
-      (load) => load.id === legacy.loadPostingId
+      (load) => load.id === booked.loadPostingId
     )
     const served = services.getRoutePackForAssignment({
       actorUserId: driver.userId,
-      assignmentId: legacyAssignmentId,
+      assignmentId: bookedAssignmentId,
       organizationId: membership.organizationId
     }).routePack
 
@@ -1240,7 +1148,7 @@ describe("driver network access", () => {
     expect(view?.routePack?.id).not.toBe(mintedForViewer.id)
   })
 
-  it("never serves a pre-guard Route Pack whose stored source ids cross organizations", () => {
+  it("never serves a Route Pack whose stored source ids cross organizations", () => {
     const { request, services, sourceContext, viewer } = networkFixture()
     const assignment = request()
 
@@ -1377,7 +1285,11 @@ describe("direct-offer network views", () => {
     )
     expect(unrelated.directOffers).toEqual([])
 
-    capacity.visibilityMode = "direct_offer"
+    // Partner work with the relationship paused: only the offer grants sight.
+    capacity.visibilityMode = "private_network"
+    for (const relationship of services.state.privateNetworkRelationships) {
+      relationship.status = "paused"
+    }
     const expired = buildNetworkView(services.state, targetViewer, new Date("2026-06-07T12:00:00.000Z"))
 
     expect(expired.directOffers.find((offer) => offer.id === "29292929-2929-4929-8929-292929292915"))

@@ -105,7 +105,7 @@ describe("host publishing options", () => {
     }
   })
 
-  it("does not expose a foreign destination through a corrupt legacy lane", () => {
+  it("does not expose a foreign destination through a corrupt lane", () => {
     const hostOrganizationId = "33333333-3333-4333-8333-333333333332"
     const foreignOrganizationId = "33333333-3333-4333-8333-333333333331"
     const route = services.state.haulRoutes.find(
@@ -324,7 +324,6 @@ describe("host landing records", () => {
 
     expect(summary?.details).toBeNull()
     expect(manageable?.details?.gateInstructions).toBeTruthy()
-    expect(manageable?.accessPolicy).toBe("assigned_only")
     expect(manageable?.accessPolicyLine).toMatch(/only to drivers after you approve/)
   })
 

@@ -9,7 +9,7 @@ import {
   OPERATING_STATE_SCHEMA_VERSION,
   setOperatingStateDefectReporter,
   updateRemoteOperatingState,
-  upgradeStateSnapshot,
+  parseStateSnapshot,
   type OperatingStateReport,
   type RemoteSnapshotConfig
 } from "./snapshot"
@@ -211,111 +211,11 @@ describe("canonical operating state", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
-  it("upgrades a legacy mirror without dropping existing data", async () => {
-    const legacy = createInMemoryDatabase() as Partial<LogLoadsDatabaseState>
-    const originalProfiles = legacy.profiles?.length ?? 0
-
-    delete legacy.tripReviews
-    // Stored documents predate pre-trip inspections and support requests the
-    // same way; an absent collection means none have happened, not corrupt
-    // state.
-    delete legacy.tripInspections
-    delete legacy.supportRequests
-
-    expect(upgradeStateSnapshot(legacy)).toMatchObject({
-      profiles: expect.arrayContaining([expect.any(Object)]),
-      supportRequests: [],
-      tripInspections: [],
-      tripReviews: []
-    })
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json([{ id: "primary", state: legacy }]))
-    )
-
-    const snapshot = await loadRemoteOperatingState(config)
-
-    expect(snapshot?.schemaVersion).toBe(1)
-    expect(snapshot?.version).toBe(0)
-    expect(snapshot?.state.tripReviews).toEqual([])
-    expect(snapshot?.state.supportRequests).toEqual([])
-    expect(snapshot?.state.profiles).toHaveLength(originalProfiles)
-  })
-
-  it("normalizes route packs stored before assignment snapshots existed", () => {
-    const legacy = createInMemoryDatabase() as Partial<LogLoadsDatabaseState>
-
-    // A document written before packs were per-assignment: no assignmentId,
-    // no version, no snapshot. Readers must not receive undefined for fields
-    // the contract types as present.
-    legacy.routePacks = (legacy.routePacks ?? []).map((pack) => {
-      const stored: Record<string, unknown> = { ...pack }
-
-      delete stored.assignmentId
-      delete stored.version
-      delete stored.snapshot
-      delete stored.supersededAt
-
-      return stored as (typeof pack)
-    })
-
-    const upgraded = upgradeStateSnapshot(legacy)
-    const first = upgraded?.routePacks[0]
-
-    expect(upgraded?.routePacks.length).toBeGreaterThan(0)
-    // No assignmentId means it is the host's load-level source, version 1.
-    expect(first?.assignmentId).toBeNull()
-    expect(first?.version).toBe(1)
-    expect(first?.snapshot).toBeNull()
-    expect(first?.supersededAt).toBeNull()
-    // Existing operational content is untouched.
-    expect(first?.calculatedRouteSummary).toBeTruthy()
-  })
-
-  it("keeps an assignment pack's own version and snapshot on upgrade", () => {
-    const legacy = createInMemoryDatabase() as Partial<LogLoadsDatabaseState>
-    const [pack] = legacy.routePacks ?? []
-
-    expect(pack).toBeDefined()
-    if (!pack) return
-
-    legacy.routePacks = [{ ...pack, assignmentId: "ffffffff-ffff-4fff-8fff-fffffffffff1", version: 3 }]
-
-    const upgraded = upgradeStateSnapshot(legacy)
-
-    expect(upgraded?.routePacks[0]?.assignmentId).toBe("ffffffff-ffff-4fff-8fff-fffffffffff1")
-    expect(upgraded?.routePacks[0]?.version).toBe(3)
-  })
-
-  it("backfills landing safety and destination completion evidence", () => {
-    const legacy = createInMemoryDatabase() as Partial<LogLoadsDatabaseState>
-
-    legacy.richLandingDetails = (legacy.richLandingDetails ?? []).map((details) => {
-      const stored: Record<string, unknown> = { ...details }
-      delete stored.safetyRequirements
-      return stored as (typeof details)
-    })
-    legacy.destinationFacilities = (legacy.destinationFacilities ?? []).map((facility) => {
-      const stored: Record<string, unknown> = { ...facility }
-      delete stored.completionEvidence
-      return stored as (typeof facility)
-    })
-
-    const upgraded = upgradeStateSnapshot(legacy)
-
-    expect(upgraded?.richLandingDetails[0]?.safetyRequirements).toEqual([])
-    expect(upgraded?.destinationFacilities[0]?.completionEvidence).toEqual([])
-  })
-
-  // This replaces "fails closed on a future snapshot schema", which asserted the
-  // opposite and is deliberately reversed. `main` auto-deploys, so old and new
-  // instances serve traffic simultaneously during every rollout; refusing a
-  // higher schema version meant the newer instance's first write took the whole
+  // `main` auto-deploys, so old and new instances serve traffic simultaneously
+  // during every rollout; refusing a higher schema version would take the whole
   // older fleet down with "operating state is invalid" until the rollout
   // finished. Validity is decided by whether every required table is there, not
-  // by a number. Nothing in this program bumps the version — this only makes the
-  // eventual bump survivable.
+  // by a number.
   it("accepts a snapshot written by a newer deployment when every required table validates", async () => {
     vi.stubGlobal(
       "fetch",
@@ -337,11 +237,10 @@ describe("canonical operating state", () => {
     expect(snapshot?.state.loadPostings.length).toBeGreaterThan(0)
   })
 
-  // Strengthened from asserting only the generic message. REQUIRED_TABLES is the
-  // collection list of LogLoadsDatabaseState, so this is exactly what a deploy
-  // that adds a collection without a backfill looks like from production: every
-  // request fails and the database reports nothing. The name of the collection is
-  // the whole diagnosis, so the error has to carry it.
+  // REQUIRED_TABLES is the collection list of LogLoadsDatabaseState, so this is
+  // exactly what a deploy that adds a collection the stored document lacks looks
+  // like from production: every request fails. The name of the collection is the
+  // whole diagnosis, so the error has to carry it.
   it("names the missing collection when a required table is absent, whatever the version claims", async () => {
     // The version is not the gate; the tables are. A document that happens to
     // carry a plausible version number must never become runtime state.
@@ -385,7 +284,7 @@ describe("canonical operating state", () => {
     )
   })
 
-  it("still fails closed on a schema version below the first one", async () => {
+  it("fails closed on a schema version below the first one", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
@@ -397,6 +296,17 @@ describe("canonical operating state", () => {
 
     await expect(loadRemoteOperatingState(config)).rejects.toThrow(
       "Canonical operating state is invalid"
+    )
+  })
+
+  it("fails closed on a row without its version columns", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json([{ id: "primary", state: createInMemoryDatabase() }]))
+    )
+
+    await expect(loadRemoteOperatingState(config)).rejects.toThrow(
+      "Canonical operating state is invalid: schema_version undefined is not a stored version"
     )
   })
 
@@ -648,8 +558,8 @@ describe("stored row validation", () => {
 
     rowsOf(stored, "truckSlots")[0]!.reservedCount = -1
 
-    expect(upgradeStateSnapshot(stored)).not.toBeNull()
-    expect(upgradeStateSnapshot(structuredClone(stored))).not.toBeNull()
+    expect(parseStateSnapshot(stored)).not.toBeNull()
+    expect(parseStateSnapshot(structuredClone(stored))).not.toBeNull()
 
     // Read once per request against one document: an unfiltered reporter would
     // repeat this line until it was worthless.
@@ -664,7 +574,7 @@ describe("stored row validation", () => {
 
     delete incomplete.tripEvents
 
-    expect(upgradeStateSnapshot(incomplete)).toBeNull()
+    expect(parseStateSnapshot(incomplete)).toBeNull()
     expect(reports).toMatchObject([{ missingCollections: ["tripEvents"] }])
   })
 })
@@ -675,9 +585,9 @@ describe("forward compatibility of stored rows", () => {
 
     fieldsOf(forward.loadPostings[1]).settlementTermsVersion = 3
 
-    const upgraded = upgradeStateSnapshot(forward)
+    const parsed = parseStateSnapshot(forward)
 
-    expect(fieldsOf(upgraded?.loadPostings[1]).settlementTermsVersion).toBe(3)
+    expect(fieldsOf(parsed?.loadPostings[1]).settlementTermsVersion).toBe(3)
     expect(reports).toEqual([])
   })
 
@@ -685,8 +595,7 @@ describe("forward compatibility of stored rows", () => {
   // the only one rebuilt, so it is the only place where handing back parser
   // output instead of the stored row would show. Rows are kept by identity —
   // parsed output would strip every field this build has not declared, and the
-  // next compare-and-swap would persist the stripped document. That is the
-  // rollout data loss PR #69 fixed for whole collections, one field at a time.
+  // next compare-and-swap would persist the stripped document.
   it("keeps unknown fields on the surviving rows of a collection that lost one", () => {
     const forward = createInMemoryDatabase()
     const postings = rowsOf(forward, "loadPostings")
@@ -706,9 +615,9 @@ describe("forward compatibility of stored rows", () => {
 
     forward.settlementBatches = [{ id: "9f1d4c2a-0000-4000-8000-000000000001" }]
 
-    const upgraded = upgradeStateSnapshot(forward as Partial<LogLoadsDatabaseState>)
+    const parsed = parseStateSnapshot(forward as Partial<LogLoadsDatabaseState>)
 
-    expect((upgraded as unknown as Record<string, unknown>).settlementBatches).toHaveLength(1)
+    expect((parsed as unknown as Record<string, unknown>).settlementBatches).toHaveLength(1)
   })
 
   it("keeps a row a strict contract rejects only for carrying unknown keys", () => {

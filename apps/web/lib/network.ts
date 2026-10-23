@@ -37,7 +37,6 @@ import {
 } from "@logloads/services"
 
 import { estimateLoadEconomics, type LoadEconomicsEstimate } from "./economics"
-import { isViewableMediaReference } from "./media-reference"
 
 export type OrgReputationView = {
   label: string
@@ -137,7 +136,6 @@ export interface NetworkLoadView {
   sourceReputation: OrgReputationView
   status: LoadStatus
   visibilityMode: OpportunityVisibilityMode
-  allocationMode: string
   loadType: string
   scheduleLabel: string
   cadenceLabel: string
@@ -151,7 +149,6 @@ export interface NetworkLoadView {
   destination: NetworkPoint
   landingDetails: {
     publicApproximateArea: string
-    exactLocationVisibility: string
     privateRoadNotes: string | null
     gateInstructions: string | null
     loadingEquipment: string[]
@@ -179,12 +176,11 @@ export interface NetworkLoadView {
   routePack: {
     id: string
     version: number
-    visibility: string
     cacheableOffline: boolean
     calculatedRouteSummary: string
     currentRoadCondition: RoadCondition
     lastVerifiedAt: string
-    snapshot: RoutePackSnapshot | null
+    snapshot: RoutePackSnapshot
     instructions: Array<{
       title: string
       detail: string
@@ -351,8 +347,7 @@ export interface NetworkView {
     driverName: string
     driverProfileId: string
     status: TripStatusV2
-    locationVisibility: string
-    routePackId: string | null
+    routePackId: string
     lastSyncedAt: string | null
     completedAt: string | null
     completion: {
@@ -366,9 +361,9 @@ export interface NetworkView {
       hasEvidence: boolean
     }
     driverPayment: {
-      expectedPayAmountCents: number | null
-      expectedPayCurrency: string | null
-      expectedPayLabel: string | null
+      expectedPayAmountCents: number
+      expectedPayCurrency: string
+      expectedPayLabel: string
       matchesExpected: boolean | null
       receivedPayLabel: string | null
       receivedAt: string | null
@@ -392,8 +387,6 @@ export interface NetworkView {
       type: string
       filename: string
       processingStatus: string
-      /** Whether a stored file backs this record and can be delivered. */
-      viewable: boolean
     }>
   }>
   futureAvailability: Array<{
@@ -746,15 +739,6 @@ export function buildNetworkView(
       ? destinationFacilityCandidate
       : null
     const route = requireRecord(state.haulRoutes.find((item) => item.id === load.routeId), `route ${load.routeId}`)
-    // Route packs are per-assignment snapshots now, so "a pack for this load"
-    // could belong to a different driver. Resolved below against the viewer's
-    // own assignment; the host falls back to its load-level source pack.
-    const sourceRoutePack = state.routePacks.find(
-      (item) =>
-        item.loadPostingId === load.id &&
-        !item.assignmentId &&
-        routePackIsSafeToRead(state, load, item)
-    ) ?? null
     const rate = requireRecord(state.rates.find((item) => item.id === load.rateId), `rate ${load.rateId}`)
     const capacity = state.opportunityCapacities.find((item) => item.loadPostingId === load.id) ?? null
     const slots = state.truckSlots.filter((slot) => slot.loadPostingId === load.id)
@@ -827,13 +811,6 @@ export function buildNetworkView(
           )
           .sort((left, right) => right.version - left.version)[0] ?? null
       : null
-    // Mirrors getRoutePackForAssignment: whoever may open the pack falls back to
-    // the host's load-level source when no assignment snapshot exists — every
-    // haul booked before packs were minted per assignment is in that state, and
-    // showing them nothing would claim the host published no briefing when it
-    // did. A viewer without access still gets null, so a driver never sees a
-    // pack belonging to someone else's assignment.
-    const routePack = viewerRoutePack ?? (unlocked ? sourceRoutePack : null)
     const issuedInstruction = (title: string) =>
       viewerRoutePack?.localInstructions.find((instruction) => instruction.title === title)?.detail ?? null
     const effectiveGateInstructions = viewerRoutePack
@@ -846,7 +823,7 @@ export function buildNetworkView(
       ? effectivePrivateRoadNotes ?? issuedInstruction("Landing access")
       : effectivePrivateRoadNotes ?? landing.accessNotes ?? null
     const issuedEntrance =
-      viewerRoutePack?.snapshot?.originEntranceLat != null &&
+      viewerRoutePack?.snapshot.originEntranceLat != null &&
       viewerRoutePack.snapshot.originEntranceLng != null
         ? {
             lat: viewerRoutePack.snapshot.originEntranceLat,
@@ -880,11 +857,9 @@ export function buildNetworkView(
         ? "filled"
         : futureOpenSlots.length === 0
           ? "expired"
-          : (capacity?.allocationMode ?? "request_approval") !== "request_approval"
+          : !discoveryAvailable
             ? "not_requestable"
-            : !discoveryAvailable
-              ? "not_requestable"
-              : "available"
+            : "available"
     const viewerCanRequest = Boolean(
       currentUser &&
       activeOrganization &&
@@ -968,7 +943,6 @@ export function buildNetworkView(
       driver: currentDriverProfile,
       landing,
       load,
-      rate,
       route,
       truck: currentTruck
     })
@@ -976,7 +950,6 @@ export function buildNetworkView(
     const view: NetworkLoadView = {
       access,
       accessRequirements: load.accessRequirements,
-      allocationMode: capacity?.allocationMode ?? "request_approval",
       assignments: assignmentViews,
       capacity: {
         committed: capacity?.committedTruckloads ?? slots.reduce((sum, slot) => sum + slot.reservedCount, 0),
@@ -1001,7 +974,7 @@ export function buildNetworkView(
             effectiveGateInstructions ? `Gate: ${effectiveGateInstructions}` : null,
             effectiveLandingAccess ? `Landing access: ${effectiveLandingAccess}` : null,
             destinationFacility?.checkInProcess ? `Destination check-in: ${destinationFacility.checkInProcess}` : destination.accessNotes ? `Destination: ${destination.accessNotes}` : null,
-            routePack?.calculatedRouteSummary ? `Route pack: ${routePack.calculatedRouteSummary}` : route.roadNotes ? `Local route: ${route.roadNotes}` : null
+            viewerRoutePack?.calculatedRouteSummary ? `Route pack: ${viewerRoutePack.calculatedRouteSummary}` : route.roadNotes ? `Local route: ${route.roadNotes}` : null
           ].filter((value): value is string => Boolean(value))
         : [],
       destination: pointFromSite(
@@ -1038,7 +1011,6 @@ export function buildNetworkView(
       ),
       landingDetails: landingDetails
         ? {
-            exactLocationVisibility: "assigned_only",
             gateInstructions: unlocked ? effectiveGateInstructions : null,
             lastVerifiedAt: landingDetails.lastVerifiedAt,
             loadingEquipment: landingDetails.loadingEquipment,
@@ -1048,11 +1020,9 @@ export function buildNetworkView(
           }
         : null,
       loadType: load.loadType.replaceAll("_", " "),
-      // A host-stated figure outranks the rate card: it is what this load pays
-      // this driver, not what the company charges per ton. Loads posted before
-      // driverPayCents existed keep their derived label rather than having a
-      // commitment invented for them.
-      payLabel: driverPayLabel(load.driverPayCents, rate),
+      // The host-stated figure: what this load pays this driver, not what the
+      // company charges per ton.
+      payLabel: driverPayLabel(load.driverPayCents, rate.baseRate.currency),
       reference: publicReference(load.id),
       route: {
         condition: route.roadCondition,
@@ -1063,23 +1033,22 @@ export function buildNetworkView(
         runTimeMinutes: route.estimatedRunTimeMinutes,
         weatherNotes: route.weatherNotes ?? null
       },
-      routePack: routePack && unlocked
+      routePack: viewerRoutePack && unlocked
         ? {
-            cacheableOffline: routePack.cacheableOffline,
-            calculatedRouteSummary: routePack.calculatedRouteSummary,
-            currentRoadCondition: routePack.currentRoadCondition,
-            id: routePack.id,
-            instructions: routePack.localInstructions.map((instruction) => ({
+            cacheableOffline: viewerRoutePack.cacheableOffline,
+            calculatedRouteSummary: viewerRoutePack.calculatedRouteSummary,
+            currentRoadCondition: viewerRoutePack.currentRoadCondition,
+            id: viewerRoutePack.id,
+            instructions: viewerRoutePack.localInstructions.map((instruction) => ({
               detail: instruction.detail,
               severity: instruction.severity,
               source: instruction.source,
               title: instruction.title,
               verifiedAt: instruction.verifiedAt ?? null
             })),
-            lastVerifiedAt: routePack.lastVerifiedAt,
-            snapshot: routePack.snapshot ?? null,
-            version: routePack.version,
-            visibility: routePack.visibility
+            lastVerifiedAt: viewerRoutePack.lastVerifiedAt,
+            snapshot: viewerRoutePack.snapshot,
+            version: viewerRoutePack.version
           }
         : null,
       scheduleLabel: formatDateRange(load),
@@ -1144,12 +1113,10 @@ export function buildNetworkView(
   })
 
   const statusWeight: Record<LoadStatus, number> = {
-    archived: 6,
     cancelled: 5,
     completed: 4,
     draft: 3,
     filled: 2,
-    in_transit: 1,
     open: 0,
     scheduled: 1
   }
@@ -1336,7 +1303,10 @@ export function buildNetworkView(
         `trip assignment ${trip.assignmentId}`
       )
       const driver = state.driverProfiles.find((profile) => profile.id === trip.driverProfileId)
-      const frozenDriverPay = readFrozenDriverPay(assignment.termsSnapshot)
+      const frozenDriverPay = requireRecord(
+        readFrozenDriverPay(assignment.termsSnapshot),
+        `frozen driver pay on assignment ${assignment.id}`
+      )
       const driverUser = driver ? state.profiles.find((profile) => profile.id === driver.userId) : undefined
       const events = state.tripEvents
         .filter((event) => event.tripId === trip.id)
@@ -1348,16 +1318,13 @@ export function buildNetworkView(
           source: event.source,
           type: event.type.replaceAll("_", " ")
         }))
-      // A document is viewable only when current Supabase-backed bytes exist.
-      // Historical provider names and keys remain metadata, never broken links.
       const documents = state.tripDocuments
         .filter((document) => document.tripId === trip.id)
         .map((document) => ({
           filename: document.filename,
           id: document.id,
           processingStatus: document.processingStatus,
-          type: document.type.replaceAll("_", " "),
-          viewable: isViewableMediaReference(document.media)
+          type: document.type.replaceAll("_", " ")
         }))
 
       // The live pre-trip record, if one exists. Superseded records are kept
@@ -1394,25 +1361,9 @@ export function buildNetworkView(
       }
 
       // The proof this haul owes comes from the Route Pack the driver accepted,
-      // not from the destination record as it reads today. Mirrors the service:
-      // fall back to the host's load-level source, so the page shows the same
-      // requirement the gate enforces.
-      const assignmentPack = state.routePacks
-        .filter(
-          (pack) =>
-            pack.assignmentId === trip.assignmentId &&
-            !pack.supersededAt &&
-            routePackIsSafeToRead(state, load, pack)
-        )
-        .sort((left, right) => right.version - left.version)[0]
-      const evidencePack = assignmentPack ??
-        state.routePacks.find(
-          (pack) =>
-            pack.loadPostingId === trip.loadPostingId &&
-            !pack.assignmentId &&
-            routePackIsSafeToRead(state, load, pack)
-        )
-      const requiredEvidence = evidencePack?.snapshot?.completionEvidence ?? []
+      // not from the destination record as it reads today — the same
+      // requirement the completion gate enforces.
+      const requiredEvidence = services.requiredCompletionEvidence(trip)
       const hasEvidence = state.tripDocuments.some(
         (document) =>
           document.tripId === trip.id &&
@@ -1442,14 +1393,13 @@ export function buildNetworkView(
         },
         documents,
         driverPayment: {
-          expectedPayAmountCents: frozenDriverPay?.amountCents ?? null,
-          expectedPayCurrency: frozenDriverPay?.currency ?? null,
-          expectedPayLabel: frozenDriverPay ? formatMoney(frozenDriverPay) : null,
-          matchesExpected:
-            frozenDriverPay && receivedPay
-              ? frozenDriverPay.amountCents === receivedPay.amountCents &&
-                frozenDriverPay.currency === receivedPay.currency
-              : null,
+          expectedPayAmountCents: frozenDriverPay.amountCents,
+          expectedPayCurrency: frozenDriverPay.currency,
+          expectedPayLabel: formatMoney(frozenDriverPay),
+          matchesExpected: receivedPay
+            ? frozenDriverPay.amountCents === receivedPay.amountCents &&
+              frozenDriverPay.currency === receivedPay.currency
+            : null,
           receivedPayLabel: receivedPay ? formatMoney(receivedPay) : null,
           receivedAt: assignment.driverPaymentReceivedAt ?? null,
           sentAt: assignment.driverPaymentSentAt ?? null,
@@ -1477,9 +1427,8 @@ export function buildNetworkView(
         lastSyncedAt: trip.lastSyncedAt ?? null,
         loadPostingId: trip.loadPostingId,
         loadTitle: load.title,
-        locationVisibility: trip.locationVisibility.replaceAll("_", " "),
         reviewable,
-        routePackId: trip.routePackId ?? null,
+        routePackId: trip.routePackId,
         status: trip.status
       }
     })
@@ -1528,7 +1477,7 @@ export function buildNetworkView(
       return {
         acceptedTruckloads,
         actionable: directOfferIsClaimable(state, offer, atIso) &&
-          Boolean(load && !load.archivedAt && ["open", "scheduled"].includes(load.status)) &&
+          Boolean(load && ["open", "scheduled"].includes(load.status)) &&
           Boolean(capacity && capacity.remainingTruckloads > 0) &&
           relationshipActive,
         counterpartName: counterpart?.displayName ?? "Partner organization",
@@ -1587,10 +1536,8 @@ export function buildNetworkView(
     currentDriver: currentDriverProfile
       ? {
           id: currentDriverProfile.id,
-          featureTruckPhoto: currentDriverProfile.featureTruckPhoto ?? false,
-          hasProfilePhoto: isViewableMediaReference(
-            currentDriverProfile.profilePhoto
-          ),
+          featureTruckPhoto: currentDriverProfile.featureTruckPhoto,
+          hasProfilePhoto: Boolean(currentDriverProfile.profilePhoto),
           name: currentUser.fullName,
           preferredFuelPriceCentsPerGallon: currentDriverProfile.preferredFuelPriceCentsPerGallon ?? null,
           trailerId: currentTrailer?.id ?? null,
@@ -1601,8 +1548,8 @@ export function buildNetworkView(
       ? {
           combinationId: currentCombination.id,
           fuelEconomyMpg: currentTruck.fuelEconomyMpg ?? null,
-          hasTrailerPhoto: isViewableMediaReference(currentTrailer?.photo),
-          hasTruckPhoto: isViewableMediaReference(currentTruck.photo),
+          hasTrailerPhoto: Boolean(currentTrailer?.photo),
+          hasTruckPhoto: Boolean(currentTruck.photo),
           label: currentCombination.label,
           trailerId: currentTrailer?.id ?? null,
           truckId: currentTruck.id

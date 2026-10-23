@@ -71,9 +71,7 @@ function resolveBillingNotificationEmailConfig(
   environment: BillingNotificationEmailEnvironment
 ): BillingNotificationEmailConfig | null {
   const apiKey = environment.RESEND_API_KEY?.trim()
-  const from =
-    environment.RESEND_FROM?.trim() ||
-    environment.LOGLOADS_EMAIL_FROM?.trim()
+  const from = environment.RESEND_FROM?.trim()
 
   if (!apiKey || !from) {
     return null
@@ -85,7 +83,6 @@ function resolveBillingNotificationEmailConfig(
     replyTo:
       environment.RESEND_REPLY_TO?.trim() ||
       environment.SUPPORT_EMAIL?.trim() ||
-      environment.LOGLOADS_EMAIL_REPLY_TO?.trim() ||
       "support@logloads.com"
   }
 }

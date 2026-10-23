@@ -187,8 +187,7 @@ function billableHaul(
       driverProfileId: assignment.driverProfileId,
       equipmentCombinationId: null,
       id: randomUUID(),
-      locationVisibility: "never_public",
-      routePackId: null
+      routePackId: randomUUID()
     }),
     assignmentId: assignment.id,
     completedAt: confirmedAt,

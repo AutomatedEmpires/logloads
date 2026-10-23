@@ -611,8 +611,7 @@ describe("separation of duties", () => {
       reason: "Load pulled."
     })).toThrow(/delivery is already recorded/i)
 
-    // ...but records cancelled before that rule existed are still in the
-    // canonical state, and settlement must keep refusing them.
+    // ...and settlement refuses a cancelled record whatever it holds.
     services.state.tripsV2 = services.state.tripsV2.map((current) =>
       current.id === trip.id ? { ...current, status: "cancelled" } : current
     )
@@ -717,30 +716,12 @@ describe("completion evidence gate", () => {
     })).toThrow(/Attach the proof this haul needs/)
   })
 
-  it("reads the requirement from whichever pack the driver is actually looking at", () => {
+  it("reads the requirement from the pack the driver accepted", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const { trip } = bookHaul(services)
     const live = services.state.tripsV2.find((current) => current.id === trip.id)!
 
     // The assignment's own snapshot is the requirement.
-    expect(services.requiredCompletionEvidence(live).length).toBeGreaterThan(0)
-
-    // A haul booked before packs carried snapshots reads the host's load-level
-    // source, which records no requirement — so no gate applies. Holding a
-    // driver to something they were never told would be inventing a rule.
-    services.state.routePacks = services.state.routePacks.map((pack) =>
-      pack.assignmentId === trip.assignmentId ? { ...pack, assignmentId: null, snapshot: null } : pack
-    )
-
-    expect(services.requiredCompletionEvidence(live)).toEqual([])
-
-    // The host establishes one by re-issuing the pack, which mints a snapshot.
-    services.refreshRoutePackForAssignment({
-      actorUserId: HOST_OWNER,
-      assignmentId: trip.assignmentId,
-      organizationId: HOST_ORG
-    })
-
     expect(services.requiredCompletionEvidence(live).length).toBeGreaterThan(0)
 
     const currentPack = services.state.routePacks.find(
@@ -750,7 +731,8 @@ describe("completion evidence gate", () => {
     expect(currentPack).toBeDefined()
     if (!currentPack) return
 
-    // A pre-guard foreign pack is not an authoritative completion contract.
+    // A pack whose sources left the posting organization is not an
+    // authoritative completion contract.
     currentPack.landingId = "66666666-6666-4666-8666-666666666661"
     expect(services.requiredCompletionEvidence(live)).toEqual([])
   })

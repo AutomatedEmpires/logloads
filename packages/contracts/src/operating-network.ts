@@ -18,9 +18,7 @@ const optionalTimestampSchema = timestampSchema.optional().nullable()
 export const organizationTypeSchema = z.enum([
   "carrier",
   "fleet",
-  "landing_source",
-  "destination",
-  "platform"
+  "landing_source"
 ])
 
 export const organizationRoleSchema = z.enum([

@@ -41,7 +41,6 @@ vi.mock("@/lib/services", () => ({ services: { state: {} } }))
 import { GET } from "../app/api/media/asset/route"
 
 const storedMedia: MediaReference = {
-  provider: "supabase",
   publicId: "logloads/test/profile/uploads/photo-1",
   version: 1,
   format: "jpg",

@@ -188,7 +188,6 @@ export interface HostLandingRecord {
   area: string
   roadCondition: string
   accessNotes: string | null
-  accessPolicy: string
   accessPolicyLine: string
   loadingEquipment: string[]
   turnaroundConstraints: string[]
@@ -340,16 +339,9 @@ export function getHostWorkspaceSetup(
   }
 }
 
-const DEFAULT_ACCESS_LINE =
+/** Exact site facts reach the owning host and drivers on approved assignments. */
+const ACCESS_POLICY_LINE =
   "Exact entrance, gate, and staging details go only to drivers after you approve their assignment."
-
-const ACCESS_POLICY_LINES: Record<string, string> = {
-  assigned_only: DEFAULT_ACCESS_LINE,
-  organization: "Exact entrance and gate details stay inside your own organization.",
-  private_network:
-    "Exact entrance and gate details are shared with your private network partners and approved drivers.",
-  public: "Entrance details are visible to any signed-in hauler viewing work at this landing."
-}
 
 export function getHostLandingRecords(
   organizationId: string,
@@ -371,15 +363,10 @@ export function getHostLandingRecords(
           entry.controlledByOrganizationId === organizationId
       )
       const details = matchingDetails.length === 1 ? matchingDetails[0]! : null
-      // Exact site facts currently have one implemented disclosure rule:
-      // owning host or approved assignment. A broader value on a legacy row
-      // must not become a promise the readers deliberately do not honor.
-      const policy = "assigned_only"
 
       return {
         accessNotes: landing.accessNotes ?? null,
-        accessPolicy: policy,
-        accessPolicyLine: ACCESS_POLICY_LINES[policy] ?? DEFAULT_ACCESS_LINE,
+        accessPolicyLine: ACCESS_POLICY_LINE,
         area: details?.publicApproximateArea ?? `${landing.city}, ${landing.state}`,
         contactName: landing.contact.name,
         details: canManageLandings

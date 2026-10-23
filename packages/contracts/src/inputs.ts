@@ -19,9 +19,9 @@ const timestampSchema = z.string().datetime()
  *
  * A create call is the one write no state machine can guard: there is no prior
  * status to transition from, so whatever the payload says becomes the record's
- * status. Admitting the whole enum let a client post a load already "completed"
- * or "in_transit" and a slot already "completed" — the platform fee is charged
- * on completed loads, so a load that can be born completed is a fabricable
+ * status. Admitting the whole enum would let a client post a load already
+ * "completed" and a slot already "completed" — the platform fee is charged on
+ * completed loads, so a load that can be born completed is a fabricable
  * billable event. Every later change goes through state-machines.ts.
  */
 export const initialLoadStatusSchema = loadStatusSchema.extract(["draft", "open", "scheduled"])
@@ -29,7 +29,6 @@ export const initialTruckSlotStatusSchema = truckSlotStatusSchema.extract(["open
 
 export const createLoadPostingInputSchema = loadPostingSchema
   .omit({
-    archivedAt: true,
     cancellationReason: true,
     createdAt: true,
     id: true,
@@ -38,16 +37,6 @@ export const createLoadPostingInputSchema = loadPostingSchema
   .extend({
     status: initialLoadStatusSchema
   })
-
-/**
- * Updates keep the full status range on purpose: updateLoadPosting() runs every
- * change through transitionLoadPostingStatus, so the machine — not the payload —
- * decides which move is legal from the load's current status.
- */
-export const updateLoadPostingInputSchema = createLoadPostingInputSchema.partial().extend({
-  id: z.string().uuid(),
-  status: loadStatusSchema.optional()
-})
 
 export const createTruckSlotInputSchema = z.object({
   loadPostingId: uuidSchema,
@@ -123,7 +112,6 @@ export const upsertAvailabilityWindowInputSchema = z.object({
 export type InitialLoadStatus = z.infer<typeof initialLoadStatusSchema>
 export type InitialTruckSlotStatus = z.infer<typeof initialTruckSlotStatusSchema>
 export type CreateLoadPostingInput = z.infer<typeof createLoadPostingInputSchema>
-export type UpdateLoadPostingInput = z.infer<typeof updateLoadPostingInputSchema>
 export type CreateTruckSlotInput = z.infer<typeof createTruckSlotInputSchema>
 export type RequestAssignmentInput = z.infer<typeof requestAssignmentInputSchema>
 export type CreateNotificationInput = z.infer<typeof createNotificationInputSchema>

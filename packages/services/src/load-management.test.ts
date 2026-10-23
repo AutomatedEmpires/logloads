@@ -13,7 +13,6 @@ const HOST_ORG = "33333333-3333-4333-8333-333333333332"
 const HAULER_DRIVER_ACTOR = "22222222-2222-4222-8222-222222222221"
 const HOST_OWNER = "22222222-2222-4222-8222-222222222223"
 const HOST_DISPATCHER = "22222222-2222-4222-8222-222222222224"
-const HAULER_LANDING_MANAGER = "22222222-2222-4222-8222-222222222225"
 const DRIVER_PROFILE = "44444444-4444-4444-8444-444444444441"
 const TRUCK_PROFILE = "77777777-7777-4777-8777-777777777771"
 const TRAILER_PROFILE = "88888888-8888-4888-8888-888888888881"
@@ -332,8 +331,6 @@ describe("load publishing authority", () => {
     // Coercing an unknown reach would silently publish to the whole network.
     expect(() => publishAsOwner(services, "open", { visibilityMode: "partners-only" }))
       .toThrow(/Unknown visibility mode/)
-    expect(() => publishAsOwner(services, "open", { allocationMode: "whoever-shows-up" }))
-      .toThrow(/Unknown allocation mode/)
 
     const draft = publishAsOwner(services, "draft")
 
@@ -356,7 +353,7 @@ describe("load publishing authority", () => {
     const draft = publishAsOwner(services, "draft")
 
     expect(() => services.openDraftLoadPosting({
-      actorUserId: HAULER_LANDING_MANAGER,
+      actorUserId: HOST_DISPATCHER,
       loadPostingId: draft.id,
       organizationId: HAULER_ORG
     })).toThrow(/Only the posting organization/)
@@ -566,7 +563,7 @@ describe("posting source ownership and lane coherence", () => {
     expect(stored.status).toBe("draft")
   })
 
-  it("rejects a malformed legacy open posting before a request mutates capacity or assignment state", () => {
+  it("rejects a malformed open posting before a request mutates capacity or assignment state", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const load = publishAsOwner(services)
     const slot = slotFor(services, load.id)
@@ -580,8 +577,8 @@ describe("posting source ownership and lane coherence", () => {
       slotStatus: slot.status
     }
 
-    // Simulate an already-open pre-guard posting pointing at another host's
-    // private landing. The request path must not rely only on publish-time checks.
+    // A stored open posting pointing at another host's private landing. The
+    // request path must not rely only on publish-time checks.
     load.pickupLandingId = "66666666-6666-4666-8666-666666666661"
 
     expect(services.isLoadRequestableAt(load, WINDOW)).toBe(false)
@@ -602,7 +599,7 @@ describe("posting source ownership and lane coherence", () => {
     }).toEqual(before)
   })
 
-  it("revalidates a pending legacy request before approval mints terms, a trip, or a Route Pack", () => {
+  it("revalidates a pending request before approval mints terms, a trip, or a Route Pack", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const load = publishAsOwner(services)
     const slot = slotFor(services, load.id)
@@ -697,7 +694,7 @@ describe("closing published work", () => {
     })).toThrow(/booked hauls/)
 
     expect(() => services.closeLoadPosting({
-      actorUserId: HAULER_LANDING_MANAGER,
+      actorUserId: HOST_DISPATCHER,
       loadPostingId: load.id,
       organizationId: HAULER_ORG
     })).toThrow(/Only the posting organization/)

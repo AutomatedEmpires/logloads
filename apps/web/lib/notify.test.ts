@@ -5,8 +5,6 @@ vi.mock("server-only", () => ({}))
 import { deliverEmail } from "./notify"
 
 const emailEnvironmentVariables = [
-  "LOGLOADS_EMAIL_FROM",
-  "LOGLOADS_EMAIL_REPLY_TO",
   "RESEND_API_KEY",
   "RESEND_FROM",
   "RESEND_REPLY_TO",
@@ -56,52 +54,32 @@ describe("deliverEmail", () => {
     )
   })
 
-  it("prefers canonical Resend identities over legacy LogLoads variables", async () => {
+  it("uses the configured Resend identities, trimmed", async () => {
     const request = successfulRequest()
     vi.stubEnv("RESEND_API_KEY", "test-api-key")
-    vi.stubEnv("RESEND_FROM", "  LogLoads <notifications@logloads.com>  ")
-    vi.stubEnv("RESEND_REPLY_TO", "  support@logloads.com  ")
-    vi.stubEnv("LOGLOADS_EMAIL_FROM", "LogLoads <legacy@logloads.com>")
-    vi.stubEnv("LOGLOADS_EMAIL_REPLY_TO", "legacy-replies@logloads.com")
+    vi.stubEnv("RESEND_FROM", "  LogLoads <dispatch@logloads.com>  ")
+    vi.stubEnv("RESEND_REPLY_TO", "  replies@logloads.com  ")
     vi.stubGlobal("fetch", request)
 
     await deliverEmail({ subject: "Test", text: "Test", to: "operator@example.com" })
 
     expect(requestBody(request)).toEqual(
       expect.objectContaining({
-        from: "LogLoads <notifications@logloads.com>",
-        reply_to: "support@logloads.com"
+        from: "LogLoads <dispatch@logloads.com>",
+        reply_to: "replies@logloads.com"
       })
     )
   })
 
-  it("uses the canonical support identity before the legacy reply-to variable", async () => {
+  it("replies to the support identity when no reply-to is configured", async () => {
     const request = successfulRequest()
     vi.stubEnv("RESEND_API_KEY", "test-api-key")
-    vi.stubEnv("SUPPORT_EMAIL", "  support@logloads.com  ")
-    vi.stubEnv("LOGLOADS_EMAIL_REPLY_TO", "legacy-replies@logloads.com")
+    vi.stubEnv("SUPPORT_EMAIL", "  help@logloads.com  ")
     vi.stubGlobal("fetch", request)
 
     await deliverEmail({ subject: "Test", text: "Test", to: "operator@example.com" })
 
-    expect(requestBody(request).reply_to).toBe("support@logloads.com")
-  })
-
-  it("keeps legacy identity variables as fallbacks", async () => {
-    const request = successfulRequest()
-    vi.stubEnv("RESEND_API_KEY", "test-api-key")
-    vi.stubEnv("LOGLOADS_EMAIL_FROM", "  LogLoads <legacy@logloads.com>  ")
-    vi.stubEnv("LOGLOADS_EMAIL_REPLY_TO", "  legacy-replies@logloads.com  ")
-    vi.stubGlobal("fetch", request)
-
-    await deliverEmail({ subject: "Test", text: "Test", to: "operator@example.com" })
-
-    expect(requestBody(request)).toEqual(
-      expect.objectContaining({
-        from: "LogLoads <legacy@logloads.com>",
-        reply_to: "legacy-replies@logloads.com"
-      })
-    )
+    expect(requestBody(request).reply_to).toBe("help@logloads.com")
   })
 
   it("returns false without issuing a request when the API key is absent", async () => {

@@ -134,7 +134,6 @@ describe("fleet driver presentation rig", () => {
             bytes: 500_000,
             format: "jpg",
             height: 900,
-            provider: "supabase",
             publicId: "logloads/test/truck/current-unit-9",
             uploadedAt: "2026-08-08T12:00:00.000Z",
             version: 1,

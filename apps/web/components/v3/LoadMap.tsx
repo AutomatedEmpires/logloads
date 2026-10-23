@@ -6,7 +6,6 @@ import { useEffect, useMemo, useState } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
 import type { NetworkLoadView } from "@/lib/network"
-import { payHeadline, presentPay } from "@/lib/pay-display"
 import { fitLabel, fitTone, formatDateTime, formatHuman, humanizeTag, loadProductLabel, publicLoadHref, shortLane, visibilityLabel } from "@/lib/v3-shared"
 import { ReputationChip } from "./Reputation"
 import { EmptyState, SectionHeader } from "./Shells"
@@ -26,19 +25,15 @@ export function LoadCard({ href, load, publicMode = false }: { href?: string; lo
     : load.viewerAssignment?.status === "accepted"
       ? { label: "You're booked", tone: "success" as const }
       : { label: fitLabel(load), tone: fitTone(load) }
-  const cardPay = presentPay(load)
   const content = (
     <>
       <span className="load-card-v3__head">
         <span className="card-kicker">{loadProductLabel(load)}</span>
         <Badge tone={status.tone}>{status.label}</Badge>
       </span>
-      <strong className="load-card-v3__pay">{cardPay.headline}</strong>
-      {cardPay.estimateNote ? (
-        <span className="load-card-v3__rate-terms">{cardPay.estimateNote}</span>
-      ) : null}
-      {cardPay.afterFuel ? (
-        <span className="load-card-v3__economics">Est. after fuel {cardPay.afterFuel}</span>
+      <strong className="load-card-v3__pay">{load.payLabel}</strong>
+      {load.economics.afterFuelLabel ? (
+        <span className="load-card-v3__economics">Est. after fuel {load.economics.afterFuelLabel}</span>
       ) : null}
       <span className="load-card-v3__title">{load.title}</span>
       <span className="lane-line">
@@ -187,7 +182,7 @@ export function LoadDiscovery({ loads, publicMode = false }: { loads: NetworkLoa
               >
                 <span className="card-kicker">{loadProductLabel(load)}</span>
                 <strong>{shortLane(load)}</strong>
-                <span className="load-meta">{load.scheduleLabel} · {payHeadline(load)}</span>
+                <span className="load-meta">{load.scheduleLabel} · {load.payLabel}</span>
                 <Badge tone={publicMode ? (load.capacity.remaining > 0 ? "success" : "info") : fitTone(load)}>
                   {publicMode ? (load.capacity.remaining > 0 ? `${load.capacity.remaining} open` : "Filled") : fitLabel(load)}
                 </Badge>
@@ -259,7 +254,6 @@ export function DecisionPanel({ load, publicMode = false }: { load: NetworkLoadV
 
 export function EconomicsPanel({ load }: { load: NetworkLoadView }) {
   const estimate = load.economics
-  const panelPay = presentPay(load)
   const deadhead = estimate.deadheadMiles === null
     ? "Not included — add a home location to calculate it"
     : `${estimate.deadheadMiles.toFixed(0)} road miles from home base`
@@ -270,12 +264,11 @@ export function EconomicsPanel({ load }: { load: NetworkLoadView }) {
         <p className="eyebrow">Your estimate</p>
         <h2>{estimate.afterFuelLabel ? `${estimate.afterFuelLabel} after estimated fuel` : "Fuel estimate"}</h2>
         <p>This is what the load pays you, less estimated diesel — not profit. Maintenance, insurance, labor, taxes, and return miles are not deducted.</p>
-        {panelPay.estimateNote ? <p className="economics-panel__basis">{panelPay.estimateNote}</p> : null}
       </div>
       <dl>
         <div>
-          <dt>{estimate.payBasis === "host_stated" ? "This load pays you" : "Estimated gross"}</dt>
-          <dd>{panelPay.headline}</dd>
+          <dt>This load pays you</dt>
+          <dd>{load.payLabel}</dd>
         </div>
         <div><dt>Trip miles</dt><dd>{estimate.tripMiles.toFixed(0)}</dd></div>
         <div><dt>Deadhead</dt><dd>{deadhead}</dd></div>
@@ -476,48 +469,46 @@ export function RoutePackPreview({ load, locked = false }: { load: NetworkLoadVi
   return (
     <section className="route-pack-preview">
       <SectionHeader
-        eyebrow={snapshot ? `Route Pack · version ${pack.version}` : "Route Pack"}
+        eyebrow={`Route Pack · version ${pack.version}`}
         title="Operational briefing for this move."
       />
 
-      {snapshot ? (
-        <dl className="route-pack-facts">
-          <div>
-            <dt>Haul window</dt>
-            <dd>{snapshot.haulWindowStartAt ? formatDateTime(snapshot.haulWindowStartAt) : "Not stated"}</dd>
-          </div>
-          <div>
-            <dt>Contact</dt>
-            <dd>
-              {snapshot.contactPhone ? (
-                <a href={`tel:${snapshot.contactPhone}`}>{snapshot.contactName ?? "Dispatch"} · {snapshot.contactPhone}</a>
-              ) : (
-                snapshot.contactName ?? "Not stated"
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt>Load out</dt>
-            <dd>{snapshot.originName}{snapshot.originArea ? ` · ${snapshot.originArea}` : ""}</dd>
-          </div>
-          <div>
-            <dt>Deliver to</dt>
-            <dd>{snapshot.destinationName}{snapshot.destinationReceivingHours ? ` · ${snapshot.destinationReceivingHours}` : ""}</dd>
-          </div>
-          <div>
-            <dt>Destination check-in</dt>
-            <dd>
-              {snapshot.destinationContact?.phone ? (
-                <a href={`tel:${snapshot.destinationContact.phone}`}>
-                  {snapshot.destinationContact.name} · {snapshot.destinationContact.phone}
-                </a>
-              ) : (
-                snapshot.destinationContact?.name ?? "Not stated"
-              )}
-            </dd>
-          </div>
-        </dl>
-      ) : null}
+      <dl className="route-pack-facts">
+        <div>
+          <dt>Haul window</dt>
+          <dd>{snapshot.haulWindowStartAt ? formatDateTime(snapshot.haulWindowStartAt) : "Not stated"}</dd>
+        </div>
+        <div>
+          <dt>Contact</dt>
+          <dd>
+            {snapshot.contactPhone ? (
+              <a href={`tel:${snapshot.contactPhone}`}>{snapshot.contactName ?? "Dispatch"} · {snapshot.contactPhone}</a>
+            ) : (
+              snapshot.contactName ?? "Not stated"
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>Load out</dt>
+          <dd>{snapshot.originName}{snapshot.originArea ? ` · ${snapshot.originArea}` : ""}</dd>
+        </div>
+        <div>
+          <dt>Deliver to</dt>
+          <dd>{snapshot.destinationName}{snapshot.destinationReceivingHours ? ` · ${snapshot.destinationReceivingHours}` : ""}</dd>
+        </div>
+        <div>
+          <dt>Destination check-in</dt>
+          <dd>
+            {snapshot.destinationContact?.phone ? (
+              <a href={`tel:${snapshot.destinationContact.phone}`}>
+                {snapshot.destinationContact.name} · {snapshot.destinationContact.phone}
+              </a>
+            ) : (
+              snapshot.destinationContact?.name ?? "Not stated"
+            )}
+          </dd>
+        </div>
+      </dl>
 
       <RouteDirections load={load} />
 
@@ -538,12 +529,7 @@ export function RoutePackPreview({ load, locked = false }: { load: NetworkLoadVi
       <div className="briefing-grid">
         <article>
           <h3>Bring back</h3>
-          {!snapshot ? (
-            // No snapshot means this pack predates the field — the requirement
-            // was never captured either way. Saying the host stated nothing
-            // would be inventing a fact from a gap in our own record.
-            <p>This briefing was issued before completion requirements were recorded. Confirm what proof is needed with the host.</p>
-          ) : snapshot.completionEvidence.length > 0 ? (
+          {snapshot.completionEvidence.length > 0 ? (
             <ul className="route-pack-evidence">
               {snapshot.completionEvidence.map((evidence) => <li key={evidence}>{evidence}</li>)}
             </ul>
@@ -556,8 +542,8 @@ export function RoutePackPreview({ load, locked = false }: { load: NetworkLoadVi
           <p>{pack.calculatedRouteSummary}</p>
           <p className="briefing-note">
             Road condition: {formatHuman(pack.currentRoadCondition)}
-            {snapshot?.routeDistanceMiles != null ? ` · ${snapshot.routeDistanceMiles.toFixed(0)} mi` : ""}
-            {snapshot?.routeRunTimeMinutes != null ? ` · about ${snapshot.routeRunTimeMinutes} min` : ""}
+            {snapshot.routeDistanceMiles != null ? ` · ${snapshot.routeDistanceMiles.toFixed(0)} mi` : ""}
+            {snapshot.routeRunTimeMinutes != null ? ` · about ${snapshot.routeRunTimeMinutes} min` : ""}
           </p>
         </article>
         <article>
@@ -581,17 +567,13 @@ export function RoutePackPreview({ load, locked = false }: { load: NetworkLoadVi
       ) : null}
 
       <p className="route-pack-footnote">
-        {snapshot
-          ? `Issued for your assignment ${formatDateTime(snapshot.capturedAt)}. These are the instructions that govern this haul; you will be told if they change.`
-          : `Verified ${formatDateTime(pack.lastVerifiedAt)}`}
+        Issued for your assignment {formatDateTime(snapshot.capturedAt)}. These are the instructions that govern this haul; you will be told if they change.
       </p>
     </section>
   )
 }
 
 export function OperationSections({ load, publicMode = false }: { load: NetworkLoadView; publicMode?: boolean }) {
-  const detailPay = presentPay(load)
-
   return (
     <section className="operation-sections">
       <article>
@@ -601,7 +583,7 @@ export function OperationSections({ load, publicMode = false }: { load: NetworkL
           <div><dt>Window</dt><dd>{load.scheduleLabel}</dd></div>
           <div>
             <dt>Pay</dt>
-            <dd>{detailPay.estimateNote ? `${detailPay.headline} · ${detailPay.estimateNote}` : detailPay.headline}</dd>
+            <dd>{load.payLabel}</dd>
           </div>
           <div><dt>Capacity</dt><dd>{load.capacity.remaining} remaining</dd></div>
         </dl>

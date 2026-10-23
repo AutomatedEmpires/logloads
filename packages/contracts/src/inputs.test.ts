@@ -5,8 +5,7 @@ import {
   createLoadPostingInputSchema,
   createTruckSlotInputSchema,
   initialLoadStatusSchema,
-  initialTruckSlotStatusSchema,
-  updateLoadPostingInputSchema
+  initialTruckSlotStatusSchema
 } from "./inputs"
 import { stateMachines } from "./state-machines"
 
@@ -63,7 +62,7 @@ describe("create-time status is a lifecycle entry point, not a client choice", (
 
   it("refuses every load status that is not an entry point", () => {
     expect(REFUSED_LOAD_STATUSES).toEqual(
-      expect.arrayContaining(["archived", "cancelled", "completed", "filled", "in_transit"])
+      expect.arrayContaining(["cancelled", "completed", "filled"])
     )
 
     for (const status of REFUSED_LOAD_STATUSES) {
@@ -104,15 +103,5 @@ describe("create-time status is a lifecycle entry point, not a client choice", (
     }
 
     expect(createTruckSlotInputSchema.safeParse(slotInput("open")).success).toBe(true)
-  })
-
-  it("leaves updates able to name any status, because the machine gates them", () => {
-    // The create restriction must not leak into updates: updateLoadPosting()
-    // validates every change with transitionLoadPostingStatus, and a load that
-    // could never reach `completed` could never be billed.
-    const parsed = updateLoadPostingInputSchema.safeParse({ id: uuid("9"), status: "completed" })
-
-    expect(parsed.success).toBe(true)
-    expect(parsed.data?.status).toBe("completed")
   })
 })

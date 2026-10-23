@@ -84,7 +84,7 @@ required for ongoing Clerk-backed platform-admin authority.
 | Current percentage enrollment | `LOGLOADS_PERCENTAGE_ENROLLMENT`, the exact `LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS`, and its private `LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256` assertion; all default dark and none authorizes collection |
 | Collection switches | `LOGLOADS_FEE_COLLECTION` is the sole current provider-charge gate for `percentage_v1` and preserved legacy fee invoices; `LOGLOADS_SUBSCRIPTION_COLLECTION`, `LOGLOADS_SUBSCRIPTION_ALLOWED_ORGANIZATION_IDS`, and `LOGLOADS_DISPATCH_SELF_SERVE` are disabled historical controls only |
 | Credential review | `ANTHROPIC_API_KEY`; optional pinned override `CREDENTIAL_REVIEW_MODEL` |
-| Private media | `LOGLOADS_MEDIA_STORAGE=supabase`, `LOGLOADS_MEDIA_BUCKET`, `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF`, and preferred `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (or supported compatibility alias `NEXT_PUBLIC_SUPABASE_ANON_KEY`; the preferred name wins if both exist) |
+| Private media | `LOGLOADS_MEDIA_STORAGE=supabase`, `LOGLOADS_MEDIA_BUCKET`, `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF`, and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` |
 | Email | `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_REPLY_TO`, `SUPPORT_EMAIL`, `LOGLOADS_CONTACT_EMAIL` |
 | Analytics | `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` |
 | Errors | `SENTRY_DSN` |
@@ -165,16 +165,12 @@ Price ids, customer ids, or webhook material.
 Private media is active only when `LOGLOADS_MEDIA_STORAGE` is exactly `supabase`;
 the configured Supabase URL is HTTPS on `*.supabase.co`; its project reference
 exactly matches `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF`; the server-only service
-role and either the preferred browser publishable key or its compatibility alias
-are present; and the bucket name is valid. The production bucket is private,
+role and the browser publishable key are present; and the bucket name is valid. The production bucket is private,
 limited to 10,000,000 bytes, and accepts JPEG, PNG, and WebP.
 
-The preferred browser credential name is
-`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; `NEXT_PUBLIC_SUPABASE_ANON_KEY` remains
-a compatibility alias and does not need to be configured alongside it. If both
-exist, the publishable-key value is authoritative. The service-role key remains
-server-only. Whichever browser key is used must belong to the same project named
-by `SUPABASE_URL`.
+The browser credential is `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. The service-role
+key remains server-only. The browser key must belong to the same project named by
+`SUPABASE_URL`.
 
 The browser receives a short-lived token for one generated object path, uploads
 directly to that private bucket with upsert disabled, and then the server reads
@@ -190,14 +186,9 @@ reach `completed` while media is unavailable. Before production cutover, verify
 the exact deployment SHA, `integrations.media=true`, and a synthetic signed
 upload → server read-back → authenticated delivery round trip.
 
-Cloudinary has no active adapter, dependency, environment contract, or fallback
-in LogLoads. Historical `provider: "cloudinary"` media references and
-`storageProvider: "cloudinary"` trip-document metadata remain parseable only so
-retained snapshots do not become structurally unreadable. Their filename, type,
-and workflow metadata remains readable, but current upload, verification, and
-delivery paths neither create nor activate those provider values; a forced
-legacy-object delivery fails unavailable. Every `CLOUDINARY_*` and
-`LOGLOADS_CLOUDINARY_*` variable must remain unset in LogLoads environments.
+Supabase Storage is the only media store; stored media references carry no
+provider field. Every `CLOUDINARY_*` and `LOGLOADS_CLOUDINARY_*` variable must
+remain unset in LogLoads environments.
 
 ## Must not be set in production
 
@@ -210,9 +201,7 @@ legacy-object delivery fails unavailable. Every `CLOUDINARY_*` and
 `DATABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_PROJECT_REF` remain
 tooling/integration placeholders; runtime canonical state does not read them.
 
-`LOGLOADS_EMAIL_FROM` and `LOGLOADS_EMAIL_REPLY_TO` remain supported compatibility
-fallbacks. Production uses the scoped `RESEND_FROM` and `RESEND_REPLY_TO` names.
-When current fee collection is enabled, billing-email delivery runs only when
+Outbound email identities are `RESEND_FROM` and `RESEND_REPLY_TO`. When current fee collection is enabled, billing-email delivery runs only when
 both `RESEND_API_KEY` and a From identity are configured. Canonical billing
 notifications remain queued when delivery is disabled. The cron worker
 revalidates the related billing entity, active profile, and active

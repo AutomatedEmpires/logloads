@@ -281,7 +281,6 @@ export function upsertLandingDetails(
     createdAt: existing?.createdAt ?? timestamp,
     entranceLat: input.entranceLat,
     entranceLng: input.entranceLng,
-    exactLocationVisibility: "assigned_only",
     gateInstructions: input.gateInstructions,
     id: existing?.id ?? createUuid(),
     landingId: input.landingId,

@@ -955,7 +955,7 @@ describe("credential reviewer: what goes to the provider", () => {
     })
     // The image is passed as bytes and never as a URL: a delivery URL that
     // leaks is a leaked licence.
-    expect(JSON.stringify(body)).not.toContain("cloudinary")
+    expect(JSON.stringify(body)).not.toContain("/storage/")
     expect(body.output_config.format.schema.properties).toHaveProperty("decision")
   })
 

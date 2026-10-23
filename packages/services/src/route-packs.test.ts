@@ -3,6 +3,7 @@ import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
 import { createLogLoadsServices, type LogLoadsServices } from "./index"
+import { buildAssignmentRoutePack, isMaterialChange } from "./route-packs"
 import { recordPassingPreTripInspection, stubTripDocumentMedia } from "./test-helpers"
 
 const HAULER_ORG = "33333333-3333-4333-8333-333333333331"
@@ -113,7 +114,6 @@ describe("route pack generation", () => {
     expect(packs).toHaveLength(1)
     expect(packs[0]?.version).toBe(1)
     expect(packs[0]?.loadPostingId).toBe(load.id)
-    expect(packs[0]?.visibility).toBe("assigned_only")
     // Nothing serves these offline yet; the pack must not claim otherwise.
     expect(packs[0]?.cacheableOffline).toBe(false)
     expect(trip.routePackId).toBe(packs[0]?.id)
@@ -193,52 +193,6 @@ describe("route pack generation", () => {
     }
   })
 
-  it("does not inherit a legacy facility-verified claim from the load-level source pack", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    const { load, slot } = publishRuntimeLoad(services)
-    const template = services.state.routePacks.find((pack) => !pack.assignmentId)
-    const facility = services.state.destinationFacilities.find(
-      (candidate) => candidate.millId === load.dropoffMillId
-    )
-
-    expect(template).toBeDefined()
-    expect(facility).toBeDefined()
-    if (!template || !facility) return
-
-    facility.recordStatus = "community_suggested"
-    services.state.routePacks.push({
-      ...structuredClone(template),
-      assignmentId: null,
-      destinationId: load.dropoffMillId,
-      haulRouteId: load.routeId,
-      id: "5a5a5a5a-5a5a-4a5a-8a5a-5a5a5a5a5a01",
-      landingId: load.pickupLandingId,
-      loadPostingId: load.id,
-      localInstructions: [{
-        detail: "LEGACY VERIFIED SCALE CLAIM",
-        severity: "critical",
-        source: "facility_verified",
-        title: "Legacy scale claim",
-        verifiedAt: facility.lastVerifiedAt
-      }]
-    })
-
-    const assignment = requestRuntimeLoad(services, load.id, slot.id)
-    services.approveCapacityRequest({
-      actorUserId: HOST_OWNER,
-      assignmentId: assignment.id,
-      organizationId: HOST_ORG
-    })
-
-    const routePack = driverPack(services, assignment.id).routePack
-    expect(routePack.localInstructions.some(
-      (entry) => entry.detail === "LEGACY VERIFIED SCALE CLAIM"
-    )).toBe(false)
-    expect(routePack.localInstructions.some(
-      (entry) => entry.source === "facility_verified"
-    )).toBe(false)
-  })
-
   it("captures a host-authored landing briefing when the haul is approved", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
 
@@ -273,7 +227,7 @@ describe("route pack generation", () => {
     ]))
   })
 
-  it("rejects a request for a legacy posting whose dispatcher belongs to another organization", () => {
+  it("rejects a request for a posting whose dispatcher belongs to another organization", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const { load, slot } = publishRuntimeLoad(services)
     const foreignDispatcher = services.state.dispatcherProfiles.find(
@@ -287,9 +241,8 @@ describe("route pack generation", () => {
       (notification) => notification.userId === foreignDispatcher.userId
     ).length
 
-    // Simulate a stored pre-guard posting. New publications cannot create this
-    // state, but readers and notification paths must remain safe until old data
-    // is repaired.
+    // Publishing refuses this state; a hand-edited stored posting must still
+    // keep readers and notification paths safe.
     load.dispatcherProfileId = foreignDispatcher.id
     load.dispatcherContact = foreignDispatcher.contact
 
@@ -301,7 +254,7 @@ describe("route pack generation", () => {
     expect(services.state.assignments.some((assignment) => assignment.loadPostingId === load.id)).toBe(false)
   })
 
-  it("scrubs a foreign dispatcher when an accepted legacy Route Pack is regenerated", () => {
+  it("scrubs a foreign dispatcher when an accepted Route Pack is regenerated", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const { assignment, load } = bookRuntimeHaul(services)
     const stored = services.state.loadPostings.find((candidate) => candidate.id === load.id)
@@ -328,7 +281,7 @@ describe("route pack generation", () => {
     expect(refreshed.routePack.snapshot?.contactPhone).toBeNull()
   })
 
-  it("refuses to regenerate an accepted legacy Route Pack from a foreign route", () => {
+  it("refuses to regenerate an accepted Route Pack from a foreign route", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const { assignment, load } = bookRuntimeHaul(services)
     const stored = services.state.loadPostings.find((candidate) => candidate.id === load.id)
@@ -390,40 +343,6 @@ describe("route pack generation", () => {
     expect(services.state.routePacks.filter(
       (pack) => pack.assignmentId === assignment.id
     )).toEqual(before)
-  })
-
-  it("does not launder foreign load-level instructions into a new assignment pack", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    const { load, slot } = publishRuntimeLoad(services)
-    const foreignSource = services.state.routePacks.find(
-      (pack) => !pack.assignmentId && pack.landingId !== load.pickupLandingId
-    )
-
-    expect(foreignSource).toBeDefined()
-    if (!foreignSource) return
-
-    // Simulate a pre-guard source pack cross-wired to this load while retaining
-    // another organization's landing and route identifiers.
-    foreignSource.loadPostingId = load.id
-    foreignSource.localInstructions = [{
-      detail: "FOREIGN PRIVATE ROAD SECRET",
-      severity: "critical",
-      source: "operator_provided",
-      title: "Foreign instruction",
-      verifiedAt: null
-    }]
-
-    const assignment = requestRuntimeLoad(services, load.id, slot.id)
-    services.approveCapacityRequest({
-      actorUserId: HOST_OWNER,
-      assignmentId: assignment.id,
-      organizationId: HOST_ORG
-    })
-
-    const routePack = driverPack(services, assignment.id).routePack
-    expect(routePack.localInstructions.some(
-      (instruction) => instruction.detail === "FOREIGN PRIVATE ROAD SECRET"
-    )).toBe(false)
   })
 
   it("treats a completion-evidence change as material even though it is not an instruction", () => {
@@ -560,7 +479,7 @@ describe("route pack generation", () => {
 })
 
 describe("route pack access", () => {
-  it("refuses current and historical access to a pre-existing pack with foreign source ids", () => {
+  it("refuses current and historical access to a stored pack with foreign source ids", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const { assignment } = bookRuntimeHaul(services)
     const stored = services.state.routePacks.find((pack) => pack.assignmentId === assignment.id)
@@ -568,7 +487,7 @@ describe("route pack access", () => {
     expect(stored).toBeDefined()
     if (!stored) return
 
-    // Simulate a pack persisted before the ownership guard existed. Keeping the
+    // A stored pack whose sources left the posting organization. Keeping the
     // bytes for audit history must not make those private details readable.
     stored.landingId = "66666666-6666-4666-8666-666666666661"
 
@@ -939,80 +858,17 @@ describe("route pack material updates", () => {
     })
   })
 
-  it("issues a first snapshot for a haul booked before packs were per-assignment", () => {
+  it("issues the pack at acceptance, so a requested haul has none to re-issue", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    // ffffffff-...fff1 is a seeded accepted assignment: exactly the state every
-    // in-flight haul is in at deploy — no assignment pack, only the host's
-    // load-level source.
-    const legacyAssignmentId = "ffffffff-ffff-4fff-8fff-fffffffffff1"
-    const legacy = services.state.assignments.find((candidate) => candidate.id === legacyAssignmentId)
+    const { load, slot } = publishRuntimeLoad(services)
+    const assignment = requestRuntimeLoad(services, load.id, slot.id)
 
-    expect(legacy).toBeDefined()
-    if (!legacy) return
-
-    const load = services.state.loadPostings.find((candidate) => candidate.id === legacy.loadPostingId)
-    const hostOrgId = load?.companyId
-
-    expect(hostOrgId).toBeTruthy()
-    if (!hostOrgId) return
-
-    expect(services.state.routePacks.some((pack) => pack.assignmentId === legacyAssignmentId)).toBe(false)
-
-    // The host's Re-issue control must repair this, not throw.
-    const hostMember = services.state.organizationMemberships.find((membership) =>
-      membership.organizationId === hostOrgId &&
-      membership.status === "active" &&
-      ["owner", "admin", "dispatcher", "landing_manager"].includes(membership.role)
-    )
-
-    expect(hostMember).toBeDefined()
-    if (!hostMember) return
-
-    const refreshed = services.refreshRoutePackForAssignment({
-      actorUserId: hostMember.userId,
-      assignmentId: legacyAssignmentId,
-      organizationId: hostOrgId
-    })
-
-    expect(refreshed.routePack.version).toBe(1)
-    expect(refreshed.routePack.assignmentId).toBe(legacyAssignmentId)
-    // Pinning what the driver already read is not a change: no false alarm.
-    expect(refreshed.changed).toBe(false)
-    expect(services.state.notifications.some((notification) =>
-      notification.title === "Route Pack updated" && notification.relatedEntityId === legacyAssignmentId
-    )).toBe(false)
-    expect(services.state.auditEvents.some((event) =>
-      event.action === "route_pack_issued" && event.entityId === refreshed.routePack.id
-    )).toBe(true)
-  })
-
-  it("serves the host's load-level source to a driver whose haul predates snapshots", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    const legacyAssignmentId = "ffffffff-ffff-4fff-8fff-fffffffffff1"
-    const legacy = services.state.assignments.find((candidate) => candidate.id === legacyAssignmentId)
-
-    expect(legacy).toBeDefined()
-    if (!legacy) return
-
-    const driver = services.state.driverProfiles.find((candidate) => candidate.id === legacy.driverProfileId)
-    const membership = services.state.organizationMemberships.find((candidate) =>
-      candidate.userId === driver?.userId && candidate.status === "active"
-    )
-
-    expect(driver).toBeDefined()
-    expect(membership).toBeDefined()
-    if (!driver || !membership) return
-
-    // No assignment snapshot exists, so the host's source pack is served rather
-    // than claiming the host published no briefing.
-    const { routePack } = services.getRoutePackForAssignment({
-      actorUserId: driver.userId,
-      assignmentId: legacyAssignmentId,
-      organizationId: membership.organizationId
-    })
-
-    expect(routePack.assignmentId).toBeNull()
-    expect(routePack.localInstructions.length).toBeGreaterThan(0)
+    expect(() => services.refreshRoutePackForAssignment({
+      actorUserId: HOST_OWNER,
+      assignmentId: assignment.id,
+      organizationId: HOST_ORG
+    })).toThrow(/issued when the host accepts the haul/)
+    expect(services.state.routePacks.some((pack) => pack.assignmentId === assignment.id)).toBe(false)
   })
 
   it("only lets the posting organization update the pack", () => {
@@ -1025,5 +881,29 @@ describe("route pack material updates", () => {
       assignmentId: assignment.id,
       organizationId: HAULER_ORG
     })).toThrow(/cannot publish load/)
+  })
+})
+
+describe("seeded route packs", () => {
+  it("hold exactly what approval issues, so re-issuing one changes nothing", () => {
+    const state = createInMemoryDatabase()
+
+    expect(state.routePacks.length).toBeGreaterThan(0)
+
+    for (const pack of state.routePacks) {
+      const assignment = state.assignments.find((candidate) => candidate.id === pack.assignmentId)
+      const load = state.loadPostings.find((candidate) => candidate.id === assignment?.loadPostingId)
+      const rate = state.rates.find((candidate) => candidate.id === load?.rateId) ?? null
+      const route = state.haulRoutes.find((candidate) => candidate.id === load?.routeId)
+      const slot = state.truckSlots.find((candidate) => candidate.id === assignment?.truckSlotId) ?? null
+
+      if (!assignment || !load || !route) {
+        throw new Error(`Seeded pack ${pack.id} names sources the seed does not hold`)
+      }
+
+      const issued = buildAssignmentRoutePack(state, { assignment, load, rate, route, slot }, pack.version, pack.createdAt)
+
+      expect(isMaterialChange(pack, issued), pack.id).toBe(false)
+    }
   })
 })

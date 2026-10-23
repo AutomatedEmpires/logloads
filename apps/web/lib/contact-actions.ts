@@ -22,8 +22,7 @@ export async function submitContactInquiryAction(
   const email = String(formData.get("email") ?? "").trim().slice(0, 200)
   const organization = String(formData.get("organization") ?? "").trim().slice(0, 200)
   const message = String(formData.get("message") ?? "").trim().slice(0, 4000)
-  const rawInterest = String(formData.get("interest") ?? "").trim()
-  const interest = parseContactInterest(rawInterest) ?? (rawInterest ? null : "general")
+  const interest = parseContactInterest(formData.get("interest"))
 
   if (!name || !email || !message) {
     return { error: "Add your name, email, and a short message so we can follow up.", ok: false }

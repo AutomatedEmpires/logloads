@@ -139,7 +139,6 @@ describe("attaching trip documents", () => {
     })
 
     expect(document.media).toEqual(media)
-    expect(document.storageProvider).toBe("supabase")
     // The key is the asset's own id — it cannot name a file that was not stored.
     expect(document.storageKey).toBe(media.publicId)
     expect(document.contentType).toBe("image/jpeg")
@@ -167,27 +166,6 @@ describe("attaching trip documents", () => {
     ).toThrow(/does not belong to this trip/)
 
     expect(services.listTripDocuments(second.id)).toHaveLength(0)
-  })
-
-  it("refuses to file a new document on a retired provider", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    const { trip } = bookHaul(services)
-    // Legacy 'cloudinary' stays parseable so old snapshots remain readable —
-    // that read compatibility must not become a write path for new records.
-    const media = { ...stubTripDocumentMedia(trip.id), provider: "cloudinary" as const }
-
-    expect(() =>
-      services.attachTripDocument({
-        actorUserId: HAULER_DRIVER_ACTOR,
-        filename: "scale-ticket.jpg",
-        media,
-        organizationId: HAULER_ORG,
-        tripId: trip.id,
-        type: "scale_ticket"
-      })
-    ).toThrow(/Supabase media storage/)
-
-    expect(services.listTripDocuments(trip.id)).toHaveLength(0)
   })
 
   it("prevents a driver from signing or attaching proof to a coworker's haul", () => {
@@ -584,20 +562,5 @@ describe("uploaded proof and the evidence gate", () => {
     })
 
     expect(closed.trip.status).toBe("completed")
-  })
-
-  it("keeps records written before uploads existed on the haul's history", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    const legacy = services.state.tripDocuments[0]
-
-    if (!legacy) throw new Error("fixture has no pre-existing trip document")
-
-    // A document from before uploads were wired names a provider and a key for a
-    // file nobody ever stored. It stays listed as the account of what was
-    // claimed, and `media` is what tells a reader there is nothing to serve.
-    // That the *view* refuses to offer it as a download is asserted where
-    // `viewable` is actually computed — see apps/web/lib/network.test.ts.
-    expect(legacy.media ?? null).toBeNull()
-    expect(services.listTripDocuments(legacy.tripId)).toContainEqual(legacy)
   })
 })

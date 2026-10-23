@@ -1,27 +1,18 @@
 import {
-  allocationModeSchema,
   createLoadPostingInputSchema,
   isCurrentHostFeeAgreement,
   loadPostingSchema,
   opportunityCapacitySchema,
   opportunityVisibilityModeSchema,
   platformFeePercentLabel,
-  transitionLoadPostingStatus,
   truckSlotSchema,
-  updateLoadPostingInputSchema,
-  type AllocationMode,
   type HostBillingProfileStatus,
   type LoadPosting,
   type OpportunityVisibilityMode
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
-import {
-  assertFound,
-  createUuid,
-  DomainRefusalError,
-  nowIso
-} from "./utils"
+import { createUuid, DomainRefusalError, nowIso } from "./utils"
 
 export function listOpenLoads(state: LogLoadsDatabaseState): LoadPosting[] {
   return state.loadPostings.filter((load) => load.status === "open")
@@ -207,49 +198,37 @@ export function assertHostCanPublish(state: LogLoadsDatabaseState, load: LoadPos
   }
 }
 
-export interface PublishModes {
-  visibilityMode: OpportunityVisibilityMode
-  allocationMode: AllocationMode
-}
-
 /**
- * Validates reach and allocation strictly: an unrecognized value is refused,
- * never coerced, because coercing visibility would silently widen a load to
- * the whole network. Callers pass an explicit default when the publisher
- * chose nothing. Call this BEFORE mutating state so a bad value cannot leave
- * a half-published load behind.
+ * Validates reach strictly: an unrecognized value is refused, never coerced,
+ * because coercing visibility would silently widen a load to the whole network.
+ * Callers pass an explicit default when the publisher chose nothing. Call this
+ * BEFORE mutating state so a bad value cannot leave a half-published load
+ * behind.
  */
-export function parsePublishModes(visibilityMode: string, allocationMode: string): PublishModes {
+export function parseVisibilityMode(visibilityMode: string): OpportunityVisibilityMode {
   const visibility = opportunityVisibilityModeSchema.safeParse(visibilityMode)
-  const allocation = allocationModeSchema.safeParse(allocationMode)
 
   if (!visibility.success) {
     throw new DomainRefusalError(`Unknown visibility mode: ${visibilityMode}`)
   }
 
-  if (!allocation.success) {
-    throw new DomainRefusalError(`Unknown allocation mode: ${allocationMode}`)
-  }
-
-  return { allocationMode: allocation.data, visibilityMode: visibility.data }
+  return visibility.data
 }
 
 /**
  * Mints the capacity that makes a live load requestable: an opportunity-
  * capacity ledger plus one loading slot per scheduled day. Used at publish
  * time — both when a load is created live and when a draft is opened later.
+ * Drivers ask for that capacity and the host approves each request; no
+ * publisher input changes how it is allocated.
  */
 export function provisionLoadCapacity(
   state: LogLoadsDatabaseState,
   entity: LoadPosting,
   visibilityMode: string,
-  allocationMode: string,
   timestamp = nowIso()
 ): void {
-  const { allocationMode: parsedAllocation, visibilityMode: parsedVisibility } = parsePublishModes(
-    visibilityMode,
-    allocationMode
-  )
+  const parsedVisibility = parseVisibilityMode(visibilityMode)
   // Publishing is what makes work billable, so the gate lives here: this
   // function mints the capacity for a load created live AND for a draft opened
   // later, and there is no third route onto the network.
@@ -266,7 +245,6 @@ export function provisionLoadCapacity(
   state.opportunityCapacities.push(
     opportunityCapacitySchema.parse({
       acceptedTermsSnapshot: {},
-      allocationMode: parsedAllocation,
       committedTruckloads: 0,
       completedTruckloads: 0,
       createdAt: timestamp,
@@ -306,8 +284,8 @@ export function provisionLoadCapacity(
  * Publishes a load AND, for live loads, the capacity that makes it requestable:
  * an opportunity-capacity ledger plus a loading slot. Without this a freshly
  * posted load has no requestable slot and haulers cannot request it — the core
- * marketplace loop. Visibility/allocation are read from the input (a load posting
- * carries neither field itself); both default sensibly.
+ * marketplace loop. Visibility is read from the input (a load posting does not
+ * carry it) and defaults to the open network.
  */
 export function createLoadPosting(
   state: LogLoadsDatabaseState,
@@ -315,13 +293,11 @@ export function createLoadPosting(
 ): LoadPosting {
   const parsed = createLoadPostingInputSchema.parse(input)
   const raw = (input && typeof input === "object" ? input : {}) as Record<string, unknown>
-  const visibilityMode = String(raw.visibilityMode ?? raw.visibility ?? "open_network")
-  const allocationMode = String(raw.allocationMode ?? "request_approval")
+  const visibilityMode = String(raw.visibilityMode ?? "open_network")
 
   const timestamp = nowIso()
   const entity = loadPostingSchema.parse({
     ...parsed,
-    archivedAt: null,
     cancellationReason: null,
     createdAt: timestamp,
     id: createUuid(),
@@ -331,59 +307,21 @@ export function createLoadPosting(
   // Validate reach before touching state: a refused mode must not leave an
   // orphan posting behind. A draft carries no reach, so nothing to validate —
   // it is chosen when the draft is published.
-  const modes = LIVE_STATUSES.has(entity.status) ? parsePublishModes(visibilityMode, allocationMode) : null
+  const visibility = LIVE_STATUSES.has(entity.status) ? parseVisibilityMode(visibilityMode) : null
 
   // Same reason, for the same reach: work that may not be published must not be
   // left behind as a posting. provisionLoadCapacity checks this again below —
   // that call is what covers the draft-opened-later path, and the repeat costs a
   // lookup.
-  if (modes) {
+  if (visibility) {
     assertHostCanPublish(state, entity)
   }
 
   state.loadPostings.push(entity)
 
-  if (modes) {
-    provisionLoadCapacity(state, entity, modes.visibilityMode, modes.allocationMode, timestamp)
+  if (visibility) {
+    provisionLoadCapacity(state, entity, visibility, timestamp)
   }
 
   return entity
-}
-
-export function updateLoadPosting(
-  state: LogLoadsDatabaseState,
-  input: unknown
-): LoadPosting {
-  const parsed = updateLoadPostingInputSchema.parse(input)
-  const existing = assertFound(getLoadById(state, parsed.id), `Load posting ${parsed.id} was not found`)
-
-  const nextStatus = parsed.status && parsed.status !== existing.status
-    ? transitionLoadPostingStatus(existing.status, parsed.status)
-    : existing.status
-
-  const updated = loadPostingSchema.parse({
-    ...existing,
-    ...parsed,
-    status: nextStatus,
-    updatedAt: nowIso()
-  })
-
-  // An edit that moves work from off the network to on it is a publish, and the
-  // money gate cannot depend on which entry point a caller reached for. This
-  // path mints no capacity, so it is not how the product publishes — it is
-  // closed here so it cannot become a way around the gate.
-  const moneyChanged =
-    Object.prototype.hasOwnProperty.call(parsed, "driverPayCents") &&
-    parsed.driverPayCents !== existing.driverPayCents
-
-  if (
-    (!LIVE_STATUSES.has(existing.status) && LIVE_STATUSES.has(updated.status)) ||
-    (LIVE_STATUSES.has(existing.status) && moneyChanged)
-  ) {
-    assertHostCanPublish(state, updated)
-  }
-
-  state.loadPostings = state.loadPostings.map((load) => (load.id === updated.id ? updated : load))
-
-  return updated
 }

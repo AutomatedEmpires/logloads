@@ -1,4 +1,4 @@
-import { evaluateLoadCompatibility } from "@logloads/contracts"
+import { evaluateLoadCompatibility, readFrozenDriverPay } from "@logloads/contracts"
 import { describe, expect, it } from "vitest"
 
 import { createInMemoryDatabase } from "./index"
@@ -98,7 +98,6 @@ describe("founder demo operating states", () => {
     expect(slots).toHaveLength(2)
     expect(slotCapacity).toBe(load.dailyTruckCountNeeded * slots.length)
     expect(capacity).toMatchObject({
-      allocationMode: "request_approval",
       committedTruckloads: 0,
       completedTruckloads: 0,
       remainingTruckloads: 6,
@@ -207,17 +206,38 @@ describe("founder demo operating states", () => {
     )
   })
 
-  it("provides deterministic empty and failed-document recovery states without media bytes", () => {
+  it("provides a deterministic empty organization", () => {
     const state = createInMemoryDatabase()
     const emptyOrganizationId = "33333333-3333-4333-8333-333333333334"
-    const failedDocument = state.tripDocuments.find((document) => document.processingStatus === "failed")
 
     expect(state.organizationMemberships.some((membership) =>
       membership.organizationId === emptyOrganizationId && membership.role === "owner"
     )).toBe(true)
     expect(state.loadPostings.some((load) => load.companyId === emptyOrganizationId)).toBe(false)
     expect(state.equipmentCombinations.some((equipment) => equipment.organizationId === emptyOrganizationId)).toBe(false)
-    expect(failedDocument).toMatchObject({ media: null, processingStatus: "failed" })
-    expect(failedDocument?.auditMetadata).toMatchObject({ synthetic: true })
+  })
+
+  it("holds only records the product writes", () => {
+    const state = createInMemoryDatabase()
+
+    // Publishing states pay and mints capacity; a draft has neither.
+    for (const load of state.loadPostings) {
+      const published = load.status !== "draft"
+
+      expect(Boolean(load.driverPayCents), load.id).toBe(published)
+      expect(state.opportunityCapacities.some((capacity) => capacity.loadPostingId === load.id), load.id)
+        .toBe(published)
+    }
+
+    // A request freezes the stated pay it was made against.
+    for (const assignment of state.assignments) {
+      expect(readFrozenDriverPay(assignment.termsSnapshot), assignment.id).not.toBeNull()
+    }
+
+    // Approval mints the trip and that assignment's own Route Pack together.
+    for (const trip of state.tripsV2) {
+      expect(state.routePacks.find((pack) => pack.id === trip.routePackId)?.assignmentId, trip.id)
+        .toBe(trip.assignmentId)
+    }
   })
 })

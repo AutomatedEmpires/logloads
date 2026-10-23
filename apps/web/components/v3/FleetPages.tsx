@@ -52,8 +52,7 @@ const CURRENT_COMMITMENT_ASSIGNMENT_STATUSES = new Set<
 const CURRENT_COMMITMENT_LOAD_STATUSES = new Set<NetworkLoadView["status"]>([
   "open",
   "scheduled",
-  "filled",
-  "in_transit"
+  "filled"
 ])
 
 const STALL_THRESHOLD_MS = 8 * 60 * 60 * 1000
@@ -1184,19 +1183,14 @@ export function FleetTrips({ account, network }: FleetShellProps) {
                       <li>
                         <span className="fleet-trip-timeline__time">Documents</span>
                         {/* A dispatcher chasing a disputed figure needs the
-                            ticket itself, not its filename. Records with no
-                            stored file stay listed, unlinked. */}
+                            ticket itself, not its filename. */}
                         <span className="fleet-trip-timeline__note">
                           {trip.documents.map((document, index) => (
                             <Fragment key={document.id}>
                               {index > 0 ? ", " : null}
-                              {document.viewable ? (
-                                <a href={`/api/trip-documents/asset?documentId=${document.id}`} rel="noreferrer" target="_blank">
-                                  {document.filename}
-                                </a>
-                              ) : (
-                                document.filename
-                              )}
+                              <a href={`/api/trip-documents/asset?documentId=${document.id}`} rel="noreferrer" target="_blank">
+                                {document.filename}
+                              </a>
                             </Fragment>
                           ))}
                         </span>
@@ -1223,7 +1217,7 @@ export function FleetOpportunities({ account, network }: FleetShellProps) {
     const normalized = query.trim().toLowerCase()
     const matchesQuery = normalized.length === 0 ||
       [load.title, load.landing.city, load.destination.name, load.sourceName].some((value) => value.toLowerCase().includes(normalized))
-    const matchesPartner = !partnerOnly || load.visibilityMode === "private_network" || load.visibilityMode === "direct_offer"
+    const matchesPartner = !partnerOnly || load.visibilityMode === "private_network"
 
     return matchesQuery && matchesPartner
   })
@@ -1547,7 +1541,7 @@ export function FleetOpportunityDetail({
 
 export function FleetNetwork({ account, network }: FleetShellProps) {
   const partnerLoads = network.loads.filter((load) =>
-    (load.visibilityMode === "private_network" || load.visibilityMode === "direct_offer") && load.status === "open"
+    load.visibilityMode === "private_network" && load.status === "open"
   )
 
   return (

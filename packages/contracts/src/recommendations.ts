@@ -9,7 +9,7 @@ import type { CompatibilityResult } from "./matching"
 
 export type RecommendationBand = "top_pick" | "strong" | "worth_review" | "stretch" | "not_recommended"
 
-export type RecommendationVisibility = "private_network" | "verified_network" | "direct_offer" | "open_network"
+export type RecommendationVisibility = "private_network" | "verified_network" | "open_network"
 
 export interface RecommendationSignals {
   compatibility: CompatibilityResult
@@ -95,10 +95,6 @@ function visibilityReason(visibility: RecommendationVisibility): string | null {
     return "Partner work you're trusted for"
   }
 
-  if (visibility === "direct_offer") {
-    return "Sent to you directly"
-  }
-
   if (visibility === "verified_network") {
     return "Verified regional work"
   }
@@ -138,7 +134,7 @@ export function recommendLoad(signals: RecommendationSignals): Recommendation {
   }
 
   // Trust and freshness.
-  if (visibility === "private_network" || visibility === "direct_offer") {
+  if (visibility === "private_network") {
     sortKey += 8
   } else if (visibility === "verified_network") {
     sortKey += 4

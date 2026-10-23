@@ -5,7 +5,6 @@ import {
   hostFeeAgreementSchema,
   isCurrentHostFeeAgreement,
   organizationRoleCan,
-  organizationTypeCanPublishLoads,
   platformFeePercentLabel,
   PLATFORM_FEE_BPS,
   type HostFeeAgreement
@@ -87,10 +86,6 @@ export function acceptHostFeeAgreement(
   assertDomainCondition(
     organizationOperationallyAccessible(organization),
     "This organization cannot accept the fee terms while its workspace is locked"
-  )
-  assertDomainCondition(
-    organizationTypeCanPublishLoads(organization.type),
-    "Only an organization that publishes loads accepts the LogLoads host fee"
   )
 
   const existing = state.hostFeeAgreements.filter(

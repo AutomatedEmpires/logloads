@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest"
 import {
   ORGANIZATION_ROLES,
   organizationRoleCan,
-  organizationTypeCanPublishLoads,
   type OrganizationRole
 } from "./permissions"
 
@@ -60,18 +59,5 @@ describe("organization permissions", () => {
   it("lets owners and organization admins manage billing", () => {
     expect(organizationRoleCan("owner", "manage_billing")).toBe(true)
     expect(organizationRoleCan("admin", "manage_billing")).toBe(true)
-  })
-})
-
-describe("organizationTypeCanPublishLoads", () => {
-  it("is true for every organization type whose roles include a publishing role", () => {
-    expect(organizationTypeCanPublishLoads("landing_source")).toBe(true)
-    expect(organizationTypeCanPublishLoads("destination")).toBe(true)
-    expect(organizationTypeCanPublishLoads("fleet")).toBe(true)
-    expect(organizationTypeCanPublishLoads("carrier")).toBe(true)
-  })
-
-  it("is false for the platform organization, which holds no publishing role", () => {
-    expect(organizationTypeCanPublishLoads("platform")).toBe(false)
   })
 })

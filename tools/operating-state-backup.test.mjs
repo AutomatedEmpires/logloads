@@ -83,13 +83,3 @@ test("refuses a malformed collection even when its recorded summary also names i
 
   assert.deepEqual(summaryDrift(malformed, malformed), ["nonArrayCollections"])
 })
-
-test("does not treat a null schema version as drift", () => {
-  // A pre-versioning document legitimately carries no schema_version; that must
-  // not be mistaken for corruption and block a restore.
-  const left = describeDocument({ state: { profiles: [] }, version: 1 })
-  const right = describeDocument({ state: { profiles: [] }, version: 1 })
-
-  assert.equal(left.schemaVersion, null)
-  assert.deepEqual(summaryDrift(left, right), [])
-})

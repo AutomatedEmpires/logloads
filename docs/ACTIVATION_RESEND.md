@@ -18,10 +18,10 @@ the domain-scoped key for pre-production verification.
 - `deliverEmail({ to, subject, text })` POSTs to `https://api.resend.com/emails` with a
   8s timeout; returns `false` (never throws) on any failure. No retry (fire-and-forget).
 - `isEmailDeliveryEnabled()` gates callers on `RESEND_API_KEY`.
-- **From identity:** `RESEND_FROM`, then legacy `LOGLOADS_EMAIL_FROM`, then the safe
-  default `LogLoads <notifications@logloads.com>`.
-- **Support/reply identity:** `RESEND_REPLY_TO`, then `SUPPORT_EMAIL`, then legacy
-  `LOGLOADS_EMAIL_REPLY_TO`, then the safe default `support@logloads.com`.
+- **From identity:** `RESEND_FROM`, then the safe default
+  `LogLoads <notifications@logloads.com>`.
+- **Support/reply identity:** `RESEND_REPLY_TO`, then `SUPPORT_EMAIL`, then the safe
+  default `support@logloads.com`.
 - **Current email-triggering event:** contact-form inquiries
   (`apps/web/lib/contact-actions.ts`) → emails `LOGLOADS_CONTACT_EMAIL`
   (default `support@logloads.com`) AND writes an in-app notification to the
@@ -41,9 +41,6 @@ the domain-scoped key for pre-production verification.
    SUPPORT_EMAIL="support@logloads.com"
    LOGLOADS_CONTACT_EMAIL="support@logloads.com"
    ```
-
-   `LOGLOADS_EMAIL_FROM` and `LOGLOADS_EMAIL_REPLY_TO` remain compatibility fallbacks,
-   not the canonical controls.
 
 ## Activation path
 `merge the identity fix` → `confirm domain-scoped key + canonical identities` →

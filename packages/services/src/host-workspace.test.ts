@@ -505,7 +505,7 @@ describe("editing a landing", () => {
 })
 
 describe("maintaining a landing driver briefing", () => {
-  it("stamps ownership and assignment-only visibility, then audits the verification", () => {
+  it("stamps ownership, then audits the verification", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const landing = services.createLanding(landingInput())
 
@@ -513,7 +513,6 @@ describe("maintaining a landing driver briefing", () => {
 
     expect(details.landingId).toBe(landing.id)
     expect(details.controlledByOrganizationId).toBe(HOST_ORG)
-    expect(details.exactLocationVisibility).toBe("assigned_only")
     expect(details.gateInstructions).toBe("Use the day code from dispatch.")
     expect(details.lastVerifiedAt).toBe(details.updatedAt)
     expect(services.state.auditEvents).toContainEqual(expect.objectContaining({

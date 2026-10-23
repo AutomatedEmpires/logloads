@@ -170,15 +170,6 @@ function userCanOperateThread(
     return false
   }
 
-  // The legacy schema has no durable organization authority for contextless
-  // threads. Reconstructing one from today's memberships would let a later,
-  // unrelated shared workspace become the key to historical private messages.
-  // Keep those rows intact but fail closed until an explicit authority field can
-  // be persisted and backfilled under a separately reviewed migration.
-  if (!thread.assignmentId && !thread.loadPostingId) {
-    return false
-  }
-
   return threadOrganizationIds(state, thread).has(organizationId)
 }
 
@@ -187,7 +178,7 @@ function userHasOperationalThreadAccess(
   userId: string,
   thread: MessageThread
 ): boolean {
-  if (thread.archivedAt || (!thread.assignmentId && !thread.loadPostingId)) {
+  if (thread.archivedAt) {
     return false
   }
 
@@ -206,13 +197,9 @@ function threadContextLabel(state: LogLoadsDatabaseState, thread: MessageThread)
     return load ? `Assignment - ${load.title}` : "Assignment"
   }
 
-  if (thread.loadPostingId) {
-    const load = state.loadPostings.find((candidate) => candidate.id === thread.loadPostingId)
+  const load = state.loadPostings.find((candidate) => candidate.id === thread.loadPostingId)
 
-    return load ? `Load - ${load.title}` : "Load"
-  }
-
-  return "Working relationship"
+  return load ? `Load - ${load.title}` : "Load"
 }
 
 export function listThreadsForUser(
@@ -779,24 +766,13 @@ export function createThread(
   const messageCount = state.messageEvents.length
   const notificationCount = state.notifications.length
   const previousLastMessageAt = thread.lastMessageAt
-  const previousSubject = thread.subject
   const previousUpdatedAt = thread.updatedAt
-  const existingThreadWasEmpty = Boolean(existing) && !state.messageEvents.some(
-    (event) => event.threadId === thread.id
-  )
 
   if (!existing) {
     state.messageThreads.push(thread)
   }
 
   try {
-    // A legacy/pre-created empty thread has no opening event that can prove
-    // which subject accompanied this submission. Adopt the first submitted
-    // subject transactionally so its exact retry has a durable receipt.
-    if (existingThreadWasEmpty) {
-      thread.subject = input.subject
-    }
-
     const submission = postMessage(state, {
       authorUserId: input.creatorUserId,
       body: input.body,
@@ -810,7 +786,6 @@ export function createThread(
     state.messageEvents.length = messageCount
     state.notifications.length = notificationCount
     thread.lastMessageAt = previousLastMessageAt
-    thread.subject = previousSubject
     thread.updatedAt = previousUpdatedAt
 
     if (!existing) {

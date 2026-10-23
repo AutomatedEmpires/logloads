@@ -71,27 +71,22 @@ describe("host operating presentation", () => {
       load("open", "open"),
       load("scheduled", "scheduled"),
       load("filled", "filled"),
-      load("moving", "in_transit"),
       load("completed", "completed"),
-      load("cancelled", "cancelled"),
-      load("archived", "archived")
+      load("cancelled", "cancelled")
     ]
     const presentation = hostWorkPresentation(loads)
 
     expect(presentation.live.map((entry) => entry.id)).toEqual([
       "open",
       "scheduled",
-      "filled",
-      "moving"
+      "filled"
     ])
     expect(presentation.drafts.map((entry) => entry.id)).toEqual(["draft"])
     expect(presentation.history.map((entry) => entry.id)).toEqual([
       "completed",
-      "cancelled",
-      "archived"
+      "cancelled"
     ])
     expect(hostSchedulePresentation(loads).map((entry) => entry.id)).toEqual([
-      "moving",
       "filled",
       "scheduled",
       "open"

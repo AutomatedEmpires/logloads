@@ -69,7 +69,7 @@ import {
   hasCompletionEvidence,
   requiredCompletionEvidence
 } from "./haul-completion"
-import { createLoadPosting, parsePublishModes, provisionLoadCapacity } from "./loads"
+import { createLoadPosting, parseVisibilityMode, provisionLoadCapacity } from "./loads"
 import { organizationOperationallyAccessible } from "./organization-access"
 import {
   accruePlatformFee,
@@ -94,9 +94,6 @@ import {
   DomainRefusalError,
   nowIso
 } from "./utils"
-
-export const DEFAULT_ACTOR_USER_ID = "22222222-2222-4222-8222-222222222221"
-export const DEFAULT_ORGANIZATION_ID = "33333333-3333-4333-8333-333333333331"
 
 const activeAssignmentStatuses = new Set<AssignmentStatus>([
   "requested",
@@ -251,7 +248,7 @@ export interface ActiveOrganizationContext {
 }
 
 export interface CapacityRequestInput {
-  actorUserId?: string
+  actorUserId: string
   organizationId?: string
   loadPostingId: string
   truckSlotId: string
@@ -277,7 +274,7 @@ interface InternalCapacityRequestOptions extends CapacityRequestOptions {
 }
 
 export interface ApproveCapacityRequestInput {
-  actorUserId?: string
+  actorUserId: string
   organizationId?: string
   assignmentId: string
 }
@@ -291,7 +288,7 @@ export interface CancelAssignmentWithPolicyInput extends ApproveCapacityRequestI
 }
 
 export interface ProgressTripStatusInput {
-  actorUserId?: string
+  actorUserId: string
   organizationId?: string
   tripId: string
   nextStatus: TripStatusV2
@@ -301,13 +298,13 @@ export interface ProgressTripStatusInput {
 }
 
 export interface RoutePackAccessInput {
-  actorUserId?: string
+  actorUserId: string
   organizationId?: string
   assignmentId: string
 }
 
 export interface AttachTripDocumentInput {
-  actorUserId?: string
+  actorUserId: string
   organizationId?: string
   tripId: string
   type: TripDocument["type"]
@@ -345,7 +342,7 @@ const TRIP_DOCUMENT_ACTIONS: Record<TripDocumentAccess, OrganizationAction> = {
 }
 
 export interface CreateOperationalNoticeInput {
-  actorUserId?: string
+  actorUserId: string
   organizationId?: string
   relatedLoadId?: string | null
   relatedLandingId?: string | null
@@ -358,7 +355,7 @@ export interface CreateOperationalNoticeInput {
 }
 
 export interface CreateDirectOfferInput {
-  actorUserId?: string
+  actorUserId: string
   organizationId?: string
   loadPostingId: string
   offeredToOrganizationId: string
@@ -372,7 +369,7 @@ export interface DirectOfferMutationOptions {
 }
 
 export interface DirectOfferResponseInput {
-  actorUserId?: string
+  actorUserId: string
   organizationId?: string
   directOfferId: string
 }
@@ -383,7 +380,7 @@ export interface ClaimDirectOfferInput extends DirectOfferResponseInput {
 }
 
 export interface PublishFutureAvailabilityInput {
-  actorUserId?: string
+  actorUserId: string
   organizationId?: string
   equipmentCombinationId: string
   startsAt: string
@@ -404,20 +401,6 @@ export interface AttentionItem {
 function requireText(value: unknown, label: string): string {
   assertCondition(typeof value === "string" && value.length > 0, `${label} is required`)
   return value as string
-}
-
-function getActorUserId(actorUserId?: string): string {
-  return actorUserId ?? DEFAULT_ACTOR_USER_ID
-}
-
-function getOrganizationId(state: LogLoadsDatabaseState, actorUserId: string, organizationId?: string): string {
-  if (organizationId) {
-    return organizationId
-  }
-
-  const membership = getOrganizationMemberships(state, actorUserId)[0]
-
-  return membership?.organizationId ?? DEFAULT_ORGANIZATION_ID
 }
 
 export function getOrganizationMemberships(
@@ -462,8 +445,8 @@ export function getOrganizationMemberships(
 
 export function getActiveOrganizationContext(
   state: LogLoadsDatabaseState,
-  actorUserId = DEFAULT_ACTOR_USER_ID,
-  organizationId = DEFAULT_ORGANIZATION_ID
+  actorUserId: string,
+  organizationId: string
 ): ActiveOrganizationContext {
   assertFound(
     state.profiles.find((profile) => profile.id === actorUserId && profile.isActive),
@@ -505,14 +488,20 @@ export function assertOrganizationAction(
   )
 }
 
+/**
+ * The actor's context in the organization the input names, or in their only
+ * organization when it names none.
+ */
 function getContextForInput(
   state: LogLoadsDatabaseState,
-  input: { actorUserId?: string; organizationId?: string }
+  input: { actorUserId: string; organizationId?: string }
 ): ActiveOrganizationContext {
-  const actorUserId = getActorUserId(input.actorUserId)
-  const organizationId = getOrganizationId(state, actorUserId, input.organizationId)
+  const organizationId = input.organizationId ?? assertFound(
+    getOrganizationMemberships(state, input.actorUserId)[0]?.organizationId,
+    `User ${input.actorUserId} is not an active member of any organization`
+  )
 
-  return getActiveOrganizationContext(state, actorUserId, organizationId)
+  return getActiveOrganizationContext(state, input.actorUserId, organizationId)
 }
 
 /**
@@ -525,9 +514,9 @@ function getContextForInput(
  */
 function getResidualSettlementContext(
   state: LogLoadsDatabaseState,
-  input: { actorUserId?: string; organizationId?: string }
+  input: { actorUserId: string; organizationId?: string }
 ): ActiveOrganizationContext {
-  const actorUserId = getActorUserId(input.actorUserId)
+  const actorUserId = input.actorUserId
   assertFound(
     state.profiles.find((profile) => profile.id === actorUserId && profile.isActive),
     `User ${actorUserId} is not active`
@@ -685,20 +674,15 @@ export function isLoadVisibleToOrganization(
     return organization?.verificationStatus === "verified"
   }
 
-  if (capacity.visibilityMode === "direct_offer") {
-    return hasDirectOffer(state, load.id, organizationId, at)
-  }
-
   return activeRelationshipExists(state, load.companyId, organizationId) || hasDirectOffer(state, load.id, organizationId, at)
 }
 
 export function listVisibleLoadsForOrganization(
   state: LogLoadsDatabaseState,
-  organizationId = DEFAULT_ORGANIZATION_ID,
+  organizationId: string,
   at = nowIso()
 ): LoadPosting[] {
   return state.loadPostings.filter((load) =>
-    load.status !== "archived" &&
     loadPostingHasOwnedCoherentSources(state, load) &&
     isLoadVisibleToOrganization(state, load, organizationId, at)
   )
@@ -706,8 +690,8 @@ export function listVisibleLoadsForOrganization(
 
 /**
  * A load belongs on a live discovery surface only while a driver can still
- * acquire a future slot. Historical, filled, invite-only, and dispatch-assigned
- * work stays in the operating record but never masquerades as available work.
+ * acquire a future slot. Historical and filled work stays in the operating
+ * record but never masquerades as available work.
  */
 export function isLoadRequestableAt(
   state: LogLoadsDatabaseState,
@@ -722,7 +706,7 @@ export function isLoadRequestableAt(
     return false
   }
 
-  if (load.archivedAt || !["open", "scheduled"].includes(load.status)) {
+  if (!["open", "scheduled"].includes(load.status)) {
     return false
   }
 
@@ -732,7 +716,7 @@ export function isLoadRequestableAt(
 
   const capacity = getOpportunityCapacity(state, load.id)
 
-  if (capacity && (capacity.remainingTruckloads <= 0 || capacity.allocationMode !== "request_approval")) {
+  if (capacity && capacity.remainingTruckloads <= 0) {
     return false
   }
 
@@ -748,7 +732,7 @@ export function isLoadRequestableAt(
 
 export function listRequestableLoadsForOrganization(
   state: LogLoadsDatabaseState,
-  organizationId = DEFAULT_ORGANIZATION_ID,
+  organizationId: string,
   at = nowIso()
 ): LoadPosting[] {
   return listVisibleLoadsForOrganization(state, organizationId, at).filter((load) =>
@@ -967,9 +951,9 @@ function assertAssignedDriverForDriverRole(
 }
 
 /**
- * Stored postings predate source ownership enforcement. Fail closed when an
- * old posting points at another organization's dispatcher so later workflow
- * events cannot route notifications across the organization boundary.
+ * The posting's dispatcher, only while that profile belongs to the posting
+ * organization, so workflow events cannot route notifications across the
+ * organization boundary.
  */
 function findPostingDispatcher(state: LogLoadsDatabaseState, load: LoadPosting) {
   return state.dispatcherProfiles.find(
@@ -1208,10 +1192,10 @@ function requestCapacityWithPolicyInternal(
     `Load posting ${load.id} is not visible to organization ${context.organizationId}`
   )
 
-  // Open postings may predate the publication guard. Re-check the immutable
-  // ownership/lane boundary before a request creates an assignment or consumes
-  // capacity. A landing retired after publication is a separate operating-state
-  // concern; do not misreport it as a legacy ownership defect here.
+  // Re-check the ownership/lane boundary before a request creates an assignment
+  // or consumes capacity: a route or rate can be edited after publication. A
+  // landing retired after publication is a separate operating-state concern and
+  // does not refuse the request.
   const postingSources = assertPostingSourcesAreUsable(state, load.companyId, {
     dispatcherProfileId: load.dispatcherProfileId,
     dropoffMillId: load.dropoffMillId,
@@ -1235,12 +1219,6 @@ function requestCapacityWithPolicyInternal(
 
   const capacity = getOpportunityCapacity(state, parsed.loadPostingId)
   assertCondition(!capacity || capacity.remainingTruckloads > 0, "No opportunity capacity remains for this load")
-  assertCondition(
-    !capacity ||
-      capacity.allocationMode === "request_approval" ||
-      (Boolean(options.directOfferId) && capacity.allocationMode === "direct_offer"),
-    "This load is not accepting driver requests"
-  )
 
   // The write path re-checks what discovery checks: a slot whose loading
   // window has passed must reject the request even when called directly.
@@ -1383,9 +1361,8 @@ function finalizeCapacityAssignment(
     "Only a requested or offered assignment can be approved"
   )
 
-  // A request may itself predate this guard, or its stored posting may have
-  // been corrupted after request time. Re-check before terms, Route Pack, trip,
-  // slot, assignment, or audit state is minted.
+  // The posting's sources can change between request and approval. Re-check
+  // before terms, Route Pack, trip, slot, assignment, or audit state is minted.
   const postingSources = assertPostingSourcesAreUsable(state, load.companyId, {
     dispatcherProfileId: load.dispatcherProfileId,
     dropoffMillId: load.dropoffMillId,
@@ -1519,8 +1496,7 @@ function finalizeCapacityAssignment(
     loadPostingId: acceptedAssignment.loadPostingId,
     locationSharingEndsAt: null,
     locationSharingStartedAt: null,
-    locationVisibility: "active_trip_participants",
-    routePackId: routePack?.id ?? null,
+    routePackId: routePack.id,
     status: "assigned",
     updatedAt: timestamp
   })
@@ -1873,7 +1849,7 @@ export function cancelAssignmentWithPolicy(
 }
 
 export interface CreateLoadPostingWithPolicyInput {
-  actorUserId?: string
+  actorUserId: string
   organizationId?: string
   [key: string]: unknown
 }
@@ -2038,11 +2014,10 @@ export function createLoadPostingWithPolicy(
 }
 
 export interface OpenDraftLoadPostingInput {
-  actorUserId?: string
+  actorUserId: string
   organizationId?: string
   loadPostingId: string
   visibilityMode?: string
-  allocationMode?: string
 }
 
 /**
@@ -2080,10 +2055,7 @@ export function openDraftLoadPosting(state: LogLoadsDatabaseState, input: OpenDr
 
   // Validate the reach before touching the load: a refused mode must not leave
   // the work flipped to open with no capacity behind it.
-  const modes = parsePublishModes(
-    input.visibilityMode ?? "open_network",
-    input.allocationMode ?? "request_approval"
-  )
+  const visibilityMode = parseVisibilityMode(input.visibilityMode ?? "open_network")
 
   const timestamp = nowIso()
   const updated = loadPostingSchema.parse({
@@ -2096,7 +2068,7 @@ export function openDraftLoadPosting(state: LogLoadsDatabaseState, input: OpenDr
   })
 
   state.loadPostings = state.loadPostings.map((current) => (current.id === load.id ? updated : current))
-  provisionLoadCapacity(state, updated, modes.visibilityMode, modes.allocationMode, timestamp)
+  provisionLoadCapacity(state, updated, visibilityMode, timestamp)
 
   insertAuditEvent(state, context.actorUserId, "load_posting", load.id, "load_published", {
     organizationId: context.organizationId,
@@ -2108,7 +2080,7 @@ export function openDraftLoadPosting(state: LogLoadsDatabaseState, input: OpenDr
 }
 
 export interface CloseLoadPostingInput {
-  actorUserId?: string
+  actorUserId: string
   organizationId?: string
   loadPostingId: string
   reason?: string | null
@@ -2210,7 +2182,7 @@ export function closeLoadPosting(state: LogLoadsDatabaseState, input: CloseLoadP
 }
 
 export interface RecordPreTripInspectionInput {
-  actorUserId?: string
+  actorUserId: string
   organizationId?: string
   tripId: string
   items: Array<{ key: string; status: "pass" | "fail"; note?: string | null }>
@@ -2653,7 +2625,7 @@ export function progressTripStatus(
  * teammate of the assigned driver has no operational need for it.
  */
 export interface SubmitCompletionInput {
-  actorUserId?: string
+  actorUserId: string
   organizationId?: string
   tripId: string
   deliveredQuantity?: DeliveredQuantity | null
@@ -2773,7 +2745,7 @@ export function submitHaulCompletion(
 }
 
 export interface SettleCompletionInput {
-  actorUserId?: string
+  actorUserId: string
   organizationId?: string
   tripId: string
   reason?: string | null
@@ -2912,7 +2884,7 @@ export function settleHaulCompletion(
 }
 
 export interface DriverPaymentActionInput {
-  actorUserId?: string
+  actorUserId: string
   assignmentId: string
   organizationId?: string
 }
@@ -3158,11 +3130,8 @@ export function getRoutePackForAssignment(
     "The Route Pack unlocks after the host accepts the haul"
   )
 
-  // Prefer the assignment's own snapshot; fall back to the host's load-level
-  // source for hauls booked before packs were minted per assignment.
   const routePack = assertFound(
-    findAssignmentRoutePack(state, assignment.id) ??
-      state.routePacks.find((pack) => pack.loadPostingId === assignment.loadPostingId && !pack.assignmentId),
+    findAssignmentRoutePack(state, assignment.id),
     `Route pack for assignment ${assignment.id} was not found`
   )
   assertCondition(
@@ -3209,7 +3178,7 @@ export function listRoutePackVersionsForAssignment(
 }
 
 export interface RefreshRoutePackInput {
-  actorUserId?: string
+  actorUserId: string
   organizationId?: string
   assignmentId: string
 }
@@ -3244,6 +3213,10 @@ export function refreshRoutePackForAssignment(
     `Route Pack updates apply to an active haul, and this one is ${assignment.status}`
   )
 
+  const current = assertFound(
+    findAssignmentRoutePack(state, assignment.id),
+    "The Route Pack is issued when the host accepts the haul"
+  )
   const route = assertFound(
     state.haulRoutes.find((candidate) => candidate.id === load.routeId),
     `Route ${load.routeId} was not found`
@@ -3252,28 +3225,10 @@ export function refreshRoutePackForAssignment(
   const rate = state.rates.find((candidate) => candidate.id === load.rateId) ?? null
   const timestamp = nowIso()
 
-  const result = regenerateAssignmentRoutePack(state, { assignment, load, rate, route, slot }, timestamp)
+  const result = regenerateAssignmentRoutePack(state, current, { assignment, load, rate, route, slot }, timestamp)
 
   if (!result) {
-    return {
-      changed: false,
-      routePack: assertFound(
-        findAssignmentRoutePack(state, assignment.id),
-        `Route pack for assignment ${assignment.id} was not found`
-      )
-    }
-  }
-
-  // A first snapshot for a haul booked before packs were per-assignment pins
-  // what the driver was already reading. Recorded, but not announced as a
-  // change — nothing changed for them.
-  if (!result.previous) {
-    insertAuditEvent(state, context.actorUserId, "route_pack", result.pack.id, "route_pack_issued", {
-      assignmentId: assignment.id,
-      version: result.pack.version
-    })
-
-    return { changed: false, routePack: result.pack }
+    return { changed: false, routePack: current }
   }
 
   insertAuditEvent(state, context.actorUserId, "route_pack", result.pack.id, "route_pack_updated", {
@@ -3324,7 +3279,7 @@ export function tripDocumentPublicIdPrefix(tripId: string): string {
  */
 export function getTripDocumentTarget(
   state: LogLoadsDatabaseState,
-  input: { actorUserId?: string; organizationId?: string; tripId: string },
+  input: { actorUserId: string; organizationId?: string; tripId: string },
   access: TripDocumentAccess
 ): TripDocumentTarget {
   const context = getContextForInput(state, input)
@@ -3412,13 +3367,6 @@ export function attachTripDocument(state: LogLoadsDatabaseState, input: AttachTr
     return existing
   }
 
-  // Legacy provider literals stay parseable so older stored snapshots remain
-  // readable, but a NEW document must ride the active provider only.
-  assertCondition(
-    media.provider === "supabase",
-    "Trip documents must use LogLoads' Supabase media storage"
-  )
-
   const document = tripDocumentSchema.parse({
     // Deliberately not caller-supplied. The asset's own facts live on `media`;
     // an open metadata bag on the input would be a way back in for exactly the
@@ -3432,7 +3380,6 @@ export function attachTripDocument(state: LogLoadsDatabaseState, input: AttachTr
     // stored and readable now — not queued for someone to confirm later.
     processingStatus: "ready",
     storageKey: media.publicId,
-    storageProvider: media.provider,
     tripId: target.tripId,
     type: input.type,
     uploadedAt: media.uploadedAt,
@@ -3454,7 +3401,6 @@ export function attachTripDocument(state: LogLoadsDatabaseState, input: AttachTr
 
   return document
 }
-
 
 export function createOperationalNotice(state: LogLoadsDatabaseState, input: CreateOperationalNoticeInput): OperationalNotice {
   const context = getContextForInput(state, input)
@@ -3598,7 +3544,7 @@ function createDirectOfferMutation(
   )
 
   assertCondition(load.companyId === context.organizationId, "Only the source organization can send a direct offer")
-  assertCondition(!load.archivedAt && ["open", "scheduled"].includes(load.status), "Direct offers require open work")
+  assertCondition(["open", "scheduled"].includes(load.status), "Direct offers require open work")
   assertCondition(
     typeof load.driverPayCents === "number" && load.driverPayCents > 0,
     "Direct offers require stated driver pay; update the load before sending an offer"
@@ -3631,10 +3577,6 @@ function createDirectOfferMutation(
     `Opportunity capacity for load posting ${load.id} was not found`
   )
 
-  assertCondition(
-    ["request_approval", "direct_offer"].includes(capacity.allocationMode),
-    "This load does not accept direct offers"
-  )
   assertCondition(capacity.remainingTruckloads > 0, "No opportunity capacity remains for this load")
   assertCondition(
     input.offeredTruckloads <= capacity.remainingTruckloads,
@@ -3758,7 +3700,7 @@ function claimDirectOfferMutation(
     "The organization that sent this direct offer is no longer active"
   )
   assertCondition(load.companyId === offer.offeredByOrganizationId, "Direct offer source no longer owns this load")
-  assertCondition(!load.archivedAt && ["open", "scheduled"].includes(load.status), "This load is no longer accepting trucks")
+  assertCondition(["open", "scheduled"].includes(load.status), "This load is no longer accepting trucks")
   assertCondition(
     typeof load.driverPayCents === "number" && load.driverPayCents > 0,
     "This direct offer has no stated driver pay; ask the host to update the load and send a new offer"
@@ -4072,9 +4014,9 @@ export function publishFutureAvailability(
 
 export function listAttentionItems(
   state: LogLoadsDatabaseState,
-  input: { actorUserId: string; organizationId?: string }
+  input: { actorUserId: string; organizationId: string }
 ): AttentionItem[] {
-  const organizationId = input.organizationId ?? DEFAULT_ORGANIZATION_ID
+  const organizationId = input.organizationId
   const organization = state.organizations.find((candidate) => candidate.id === organizationId)
   const actor = state.profiles.find(
     (profile) => profile.id === input.actorUserId && profile.isActive
@@ -4130,7 +4072,7 @@ export function listAttentionItems(
   return [...notices, ...lowCapacity]
 }
 
-export function listPrivateNetworkRelationships(state: LogLoadsDatabaseState, organizationId = DEFAULT_ORGANIZATION_ID) {
+export function listPrivateNetworkRelationships(state: LogLoadsDatabaseState, organizationId: string) {
   const viewer = state.organizations.find((organization) => organization.id === organizationId)
 
   if (!organizationOperationallyAccessible(viewer)) {
@@ -4156,7 +4098,7 @@ export function listPrivateNetworkRelationships(state: LogLoadsDatabaseState, or
   })
 }
 
-export function listFutureAvailabilityForOrganization(state: LogLoadsDatabaseState, organizationId = DEFAULT_ORGANIZATION_ID) {
+export function listFutureAvailabilityForOrganization(state: LogLoadsDatabaseState, organizationId: string) {
   const viewer = state.organizations.find(
     (organization) => organization.id === organizationId
   )

@@ -12,7 +12,6 @@ import {
   type ContactInterest
 } from "@/lib/contact-intent"
 import type { NetworkLoadView } from "@/lib/network"
-import { payHeadline, presentPay } from "@/lib/pay-display"
 import type { ResidualSettlementItem } from "@/lib/residual-settlement-data"
 
 import {
@@ -52,7 +51,6 @@ const driverFlow: Array<{ step: string; question: string; body: string }> = [
 export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
   const openLoads = loads.filter((load) => load.discovery.available && load.discovery.reason === "available")
   const featuredLoad = openLoads[0] ?? null
-  const heroPay = featuredLoad ? presentPay(featuredLoad) : null
 
   return (
     <PublicShell>
@@ -79,20 +77,17 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
                 <Link className="hero-tertiary" href="/for-fleets">Run fleet dispatch <span aria-hidden>→</span></Link>
               </div>
             </div>
-            {featuredLoad && heroPay ? (
+            {featuredLoad ? (
               <div className="hero-load-preview" aria-label="Available load preview">
                 <div className="hero-load-preview__head"><span>Available near {featuredLoad.landing.city}</span><Badge tone="success">Open</Badge></div>
-                <strong>{heroPay.headline}</strong>
-                {heroPay.estimateNote ? (
-                  <span className="hero-load-preview__rate-terms">{heroPay.estimateNote}</span>
-                ) : null}
+                <strong>{featuredLoad.payLabel}</strong>
                 <h2>{featuredLoad.title}</h2>
                 <p>{featuredLoad.landing.city} to {featuredLoad.destination.name}</p>
                 <dl>
                   <div><dt>When</dt><dd>{featuredLoad.scheduleLabel}</dd></div>
                   <div><dt>Trip</dt><dd>{featuredLoad.route.distanceMiles.toFixed(0)} miles</dd></div>
                   <div><dt>Est. fuel</dt><dd>{featuredLoad.economics.fuelCostLabel}</dd></div>
-                  <div><dt>After fuel</dt><dd>{heroPay.afterFuel ?? "See rate"}</dd></div>
+                  <div><dt>After fuel</dt><dd>{featuredLoad.economics.afterFuelLabel ?? "See rate"}</dd></div>
                   <div><dt>Available</dt><dd>{featuredLoad.capacity.remaining} of {featuredLoad.capacity.total}</dd></div>
                 </dl>
                 <Link className="action-link" href={publicLoadHref(featuredLoad)}>View load details</Link>
@@ -198,7 +193,7 @@ export function PublicLoadDetail({ load }: { load: NetworkLoadView }) {
           <p className="eyebrow">{visibilityLabel(load)}</p>
           <h1>{load.title}</h1>
           <p className="lead">{loadProductLabel(load)} from {load.landing.city}, {load.landing.state} to {load.destination.name}.</p>
-          <div className="fact-row"><span>{load.scheduleLabel}</span><span>{payHeadline(load)}</span><span>{load.capacity.remaining} of {load.capacity.total} loads open</span></div>
+          <div className="fact-row"><span>{load.scheduleLabel}</span><span>{load.payLabel}</span><span>{load.capacity.remaining} of {load.capacity.total} loads open</span></div>
           <EconomicsPanel load={load} />
           <WeatherWidget loadId={load.id} />
           <DecisionPanel load={load} publicMode />

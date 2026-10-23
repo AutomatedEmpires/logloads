@@ -461,7 +461,7 @@ describe("host fee attention", () => {
   it("flags missing, foreign, unfrozen, and arithmetically wrong invoice lines", () => {
     const fixture = feeFixture("open")
     const otherOrganization = fixture.state.organizations.find(
-      (candidate) => candidate.id !== fixture.organization.id && candidate.type !== "platform"
+      (candidate) => candidate.id !== fixture.organization.id
     )
 
     if (!otherOrganization) {

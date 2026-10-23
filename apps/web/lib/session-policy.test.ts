@@ -102,20 +102,20 @@ describe("membership-driven cockpit routing", () => {
     expect(cockpitForMembership("carrier", "driver")).toBe("driver")
     expect(cockpitForMembership("fleet", "dispatcher")).toBe("fleet")
     expect(cockpitForMembership("landing_source", "landing_manager")).toBe("host")
-    expect(cockpitForMembership("destination", "billing")).toBe("host")
+    expect(cockpitForMembership("landing_source", "billing")).toBe("host")
     expect(homePathForMembership("landing_source", "landing_manager")).toBe("/host/command")
-    expect(homePathForMembership("destination", "billing")).toBe("/host/command")
+    expect(homePathForMembership("landing_source", "billing")).toBe("/host/command")
     expect(homePathForMembership("fleet", "dispatcher")).toBe("/fleet/command")
     expect(homePathForMembership("carrier", "driver")).toBe("/driver/map")
     expect(homePathForMembership("fleet", "landing_manager")).toBe("/")
   })
 
-  it("recovers an incompatible legacy landing-manager membership without a redirect loop", () => {
+  it("opens the fleet cockpit for the landing loader who manages North Pine's trucks", () => {
     const lee = actorFor("loader@northpine.example")
 
-    expect(canAccessCockpit(lee, "fleet")).toBe(false)
+    expect(canAccessCockpit(lee, "fleet")).toBe(true)
     expect(canAccessCockpit(lee, "host")).toBe(false)
-    expect(homePathFor(lee)).toBe("/access-restricted")
+    expect(homePathFor(lee)).toBe("/fleet/command")
   })
 
   it("never revives Driver from a historical profile after membership revocation", () => {

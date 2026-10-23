@@ -35,7 +35,6 @@ export function stubTripDocumentMedia(
     bytes: 248_137,
     format: "jpg",
     height: 1600,
-    provider: "supabase",
     publicId: `${tripDocumentPublicIdPrefix(tripId)}/uploads/9f1c4b2e-3d5a-4c7e-8b9f-1a2b3c4d5e6f`,
     uploadedAt: new Date().toISOString(),
     version: 1_700_000_000,

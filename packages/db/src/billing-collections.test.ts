@@ -10,13 +10,6 @@ import { describe, expect, it } from "vitest"
 import { auditStateSnapshot } from "./snapshot"
 import { createInMemoryDatabase } from "./store"
 
-const BILLING_COLLECTIONS = [
-  "hostFeeAgreements",
-  "hostBillingProfiles",
-  "platformFeeEvents",
-  "hostInvoices"
-] as const
-
 /** A fee that agrees with itself, built from rows the seed actually contains. */
 function accrualForCompletedSeedLoad(state: ReturnType<typeof createInMemoryDatabase>): PlatformFeeEvent {
   const assignment = state.assignments.find((candidate) => candidate.status === "completed")
@@ -49,26 +42,6 @@ function accrualForCompletedSeedLoad(state: ReturnType<typeof createInMemoryData
 }
 
 describe("platform fee billing collections", () => {
-  it("loads a stored document that has none of the host-fee collections", () => {
-    // A row validator puts a collection into REQUIRED_TABLES. Without the additive
-    // backfill the first read of a document without these collections refuses the
-    // whole document and every request fails, so this is the deploy-safety test,
-    // not a formality.
-    const { hostBillingProfiles, hostFeeAgreements, hostInvoices, platformFeeEvents, ...stored } =
-      createInMemoryDatabase()
-
-    expect([hostFeeAgreements, hostBillingProfiles, platformFeeEvents, hostInvoices]).toHaveLength(4)
-
-    const audit = auditStateSnapshot(stored)
-
-    expect(audit.missingCollections).toEqual([])
-    expect(audit.state).not.toBeNull()
-
-    for (const collection of BILLING_COLLECTIONS) {
-      expect(audit.state?.[collection], collection).toEqual([])
-    }
-  })
-
   it("gives every organization that posts loads a current fee agreement and a card on file", () => {
     // Derived from the postings rather than listing organization ids, so a new
     // seeded host cannot quietly arrive without what publishing requires.
