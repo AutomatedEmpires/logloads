@@ -20,7 +20,7 @@
     "@logloads/db": "workspace:*",
     "@logloads/services": "workspace:*",
     "@logloads/ui": "workspace:*",
-    "@sentry/nextjs": "^10.63.0",
+    "@sentry/nextjs": "^10.75.2",
     "@stripe/react-stripe-js": "^6.8.0",
     "@stripe/stripe-js": "^9.12.0",
     "@supabase/supabase-js": "^2.110.9",
