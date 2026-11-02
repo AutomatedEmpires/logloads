@@ -41,7 +41,12 @@ async function expectHealthyPage(page: Page, clientErrors: string[]) {
   expect(clientErrors, "the rendered page emitted browser errors").toEqual([])
 }
 
-test("public pricing states the single 5% completed-load model", async ({
+// The retired 5% completed-load host fee (and any price at all) must not
+// appear on public pages until new pricing and terms are approved (#108).
+const RETIRED_OR_UNAPPROVED_PRICE_CLAIM =
+  /\d\s?%|per completed load|completed-load fee|\$\s?\d/i
+
+test("public pricing makes no price claim for landing organizations", async ({
   page
 }) => {
   const clientErrors = captureClientErrors(page)
@@ -51,14 +56,15 @@ test("public pricing states the single 5% completed-load model", async ({
 
   await expect(
     page.getByRole("heading", {
-      name: "Drivers and fleets stay free. Hosts pay 5% on top."
+      name: "Pricing for landing organizations is not published yet."
     })
   ).toBeVisible()
   await expect(
     page.getByRole("heading", {
-      name: "No software subscription. No monthly minimum. No tiers."
+      name: "Three ways to use the load board."
     })
   ).toBeVisible()
+  await expect(page.getByText("Nothing is for sale yet.")).toBeVisible()
 
   const cards = page.locator(".pricing-card")
   await expect(cards).toHaveCount(3)
@@ -74,23 +80,24 @@ test("public pricing states the single 5% completed-load model", async ({
   ).toHaveAttribute("href", "/sign-up?path=fleet")
 
   const host = pricingCard(page, "Host")
-  await expect(host).toContainText("5% per completed load")
-  await expect(host).toContainText("No charge to post")
-  await expect(host).toContainText("No subscription or monthly minimum")
-  await expect(host).toContainText("$500 driver pay + $25 LogLoads fee = $525")
+  await expect(host).toContainText("Not yet published")
+  await expect(host).toContainText(
+    "Pricing for landing organizations will be published before any paid feature is offered."
+  )
+  await expect(
+    host.getByRole("link", { name: "Create host workspace" })
+  ).toHaveAttribute("href", "/sign-up?path=host")
 
   await expect(
     page.getByText(
-      "If the host states that one load pays the driver $500, the driver receives $500. The LogLoads fee is $25, so the host's total cost is $525.",
+      "Prices and terms for landing organizations will be published before any paid feature is offered.",
       { exact: false }
     )
   ).toBeVisible()
-  await expect(
-    page.getByText(
-      "Drafts, postings, searches, requests, unaccepted offers, cancellations before completion, and duplicates do not.",
-      { exact: false }
-    )
-  ).toBeVisible()
+  await expect(page.locator("body")).not.toContainText(
+    RETIRED_OR_UNAPPROVED_PRICE_CLAIM
+  )
+  await expect(page.locator("body")).not.toContainText(/platform fee/i)
 
   for (const retiredPlan of [
     "Dispatch Pro",
@@ -108,7 +115,7 @@ test("public pricing states the single 5% completed-load model", async ({
   await expect(page).toHaveTitle(/Pricing.*Free for drivers and fleets.*LogLoads/)
   await expect(
     page.getByText(
-      "Drivers and fleets use LogLoads without a subscription. Hosts pay a 5% platform fee on top of stated driver pay only when a load completes.",
+      "LogLoads is a timber-hauling load board that connects businesses needing log trucks with hauling businesses.",
       { exact: false }
     )
   ).toBeVisible()
@@ -116,7 +123,7 @@ test("public pricing states the single 5% completed-load model", async ({
   await expectHealthyPage(page, clientErrors)
 })
 
-test("public terms bind the 5% fee without changing driver pay", async ({
+test("public terms keep the product boundary without the retired fee summary", async ({
   page
 }) => {
   const clientErrors = captureClientErrors(page)
@@ -124,12 +131,11 @@ test("public terms bind the 5% fee without changing driver pay", async ({
   await page.goto("/terms")
   await page.waitForLoadState("domcontentloaded")
 
-  await expect(
-    page.getByText(
-      "Hosts pay LogLoads a 5% platform fee on top of the driver pay stated for each completed load.",
-      { exact: false }
-    )
-  ).toBeVisible()
+  const boundary = page.locator(".legal-boundary-summary")
+  await expect(boundary).toContainText(
+    "LogLoads does not carry freight or receive, escrow, deduct from, or distribute transportation compensation."
+  )
+  await expect(boundary).not.toContainText(RETIRED_OR_UNAPPROVED_PRICE_CLAIM)
   await expect(page.getByText("Effective August 3, 2026")).toBeVisible()
   await expect(page.getByText(/monthly in arrears/i).first()).toBeVisible()
   await expect(page.getByText(/never deducted from driver pay/i).first()).toBeVisible()

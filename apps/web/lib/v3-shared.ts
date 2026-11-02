@@ -59,7 +59,7 @@ const SIGN_UP_COPY_BY_INTENT: Record<PublicSignUpIntent, PublicSignUpCopy> = {
     title: "Set up dispatch for your fleet."
   },
   host: {
-    body: "Create a free workspace to prepare landings and timber work. Live publication still requires separate pilot approval, the current 5% agreement, and a card in Billing.",
+    body: "Create a free workspace to prepare landings and timber work. Live publication still requires separate pilot approval.",
     eyebrow: "Host workspace",
     intentLabel: "Host workspace",
     title: "Prepare your timber operation."
@@ -270,26 +270,21 @@ export const pricingPlans: PricingPlan[] = [
   {
     name: "Fleet Free",
     price: "Free",
-    audience: "Fleets and dispatch teams",
-    summary: "Run dispatch, equipment, drivers, and private partner work without a LogLoads subscription.",
-    included: "Dispatch board, truck planning, driver seats, and private partner work",
-    overage: "None",
+    audience: "Hauling businesses and fleets",
+    summary: "Keep trucks, drivers, equipment, and availability in one place and find work that fits your fleet, without a LogLoads subscription.",
+    included: "Truck and equipment records, driver seats, availability, and private partner work",
     commitment: "No subscription, trial clock, or LogLoads truck limit",
-    features: ["Dispatch board", "Truck and equipment planning", "Driver seats", "Private partner work"],
-    cta: { href: "/sign-up?path=fleet", label: "Create fleet workspace" },
-    note: "Hosts—not fleets or drivers—owe the 5% platform fee when host-posted work completes."
+    features: ["Truck and equipment records", "Driver seats", "Availability", "Private partner work"],
+    cta: { href: "/sign-up?path=fleet", label: "Create fleet workspace" }
   },
   {
     name: "Host",
-    price: "5% per completed load",
+    price: "Not yet published",
     audience: "Landings, mills, and timber operations",
-    summary: "State what the load pays the driver. LogLoads adds a 5% platform fee to the host's cost when the load completes.",
-    included: "Posting, matching, coordination, and load records",
-    overage: "None",
-    commitment: "No subscription or monthly minimum",
-    features: ["No charge to post", "No tiers or allowances", "Itemized monthly fee invoices", "Driver pay remains direct and whole"],
+    summary: "Prepare landings and post the hauling work you need trucks for. Pricing for landing organizations will be published before any paid feature is offered.",
+    features: ["Landing and work setup", "Choose who sees each posting", "Review requests from drivers and fleets", "Driver pay remains direct and whole"],
     cta: { href: "/sign-up?path=host", label: "Create host workspace" },
-    note: "Workspace setup is free. Live publication requires separate pilot approval; creating an account does not activate billing. Example after approval: $500 driver pay + $25 LogLoads fee = $525 total host cost."
+    note: "Workspace setup is free. Live publication requires separate pilot approval; creating an account does not activate billing."
   }
 ]
 

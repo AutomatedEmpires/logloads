@@ -133,7 +133,7 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
           <div className="feature-grid">
             <article><span>Driver accounts</span><h3>Drivers &amp; owner-operators</h3><p>See available work, know whether it fits, request it, and follow the schedule from a phone.</p><Link className="text-link" href="/sign-up?path=driver">Create a driver profile</Link></article>
             <article><span>Free fleet dispatch</span><h3>Dispatchers &amp; fleets</h3><p>Keep trucks, drivers, requests, schedules, and exceptions in one operating view without reducing driver pay.</p><Link className="text-link" href="/sign-up?path=fleet">Set up dispatch</Link></article>
-            <article><span>5% per completed load</span><h3>Hosts</h3><p>Create a free operating workspace and prepare landing work. Live publication requires separate pilot approval; approved completed work creates the 5% fee on top of stated driver pay.</p><Link className="text-link" href="/pricing">See the exact math</Link></article>
+            <article><span>Post hauling work</span><h3>Hosts</h3><p>Prepare your landings and the hauling work you need trucks for. Live publication requires separate pilot approval. Pricing for landing organizations has not been published.</p><Link className="text-link" href="/pricing">About pricing</Link></article>
           </div>
         </section>
         <section className="loads-preview">
@@ -338,7 +338,7 @@ function PricingCard({
     ? <Badge tone="success">Always free</Badge>
     : variant === "fleet"
       ? <Badge tone="success">No subscription</Badge>
-      : <Badge tone="info">One host rate</Badge>
+      : <Badge tone="info">Pilot access</Badge>
 
   return (
     <article
@@ -392,25 +392,25 @@ export function PricingPage() {
     <PublicShell>
       <main className="page-main pricing-page">
         <PageIntro
-          eyebrow="Straightforward pricing"
-          title="Drivers and fleets stay free. Hosts pay 5% on top."
-          body="Drivers and fleet workspaces use LogLoads without a subscription. The host states what one load pays the driver and remains obligated to pay that amount in full, directly to the driver. When the load completes, LogLoads adds a platform fee equal to 5% of that stated pay to the host's cost."
+          eyebrow="Pricing"
+          title="Pricing for landing organizations is not published yet."
+          body="LogLoads is a timber-hauling load board: businesses that need log trucks post their hauling work, and hauling businesses find work that fits their trucks. Drivers and hauling businesses use LogLoads free. Pricing for landing organizations will be published before any paid feature is offered."
         />
 
         <aside className="pricing-availability" role="note">
           <Icon aria-hidden name="status.warning" size={24} />
           <div>
-            <strong>Host pilot enrollment is not self-serve.</strong>
-            <p>Create a free workspace to prepare operating records. Live publication remains locked until LogLoads approves the exact pilot organization, its authorized representative accepts the current agreement, and Billing is ready.</p>
+            <strong>Nothing is for sale yet.</strong>
+            <p>No plan, upgrade, or paid feature can be purchased today. Live publication remains limited to separately approved pilot organizations, and creating an account does not activate billing.</p>
             <Link className="text-link" href="/pilot">Explore the complete product before setup</Link>
           </div>
         </aside>
 
         <section aria-labelledby="pricing-start-title" className="pricing-lane pricing-lane--baseline">
           <div className="pricing-lane__intro">
-            <p className="eyebrow">Three clear paths</p>
-            <h2 id="pricing-start-title">No software subscription. No monthly minimum. No tiers.</h2>
-            <p>Drivers and fleet workspaces use LogLoads for free. Posting, searching, requesting, and coordinating do not create a fee. A host fee is earned only when a load completes.</p>
+            <p className="eyebrow">Who uses LogLoads</p>
+            <h2 id="pricing-start-title">Three ways to use the load board.</h2>
+            <p>Drivers and hauling businesses find work that fits their trucks and keep their equipment current. Landing organizations prepare and post the hauling work they need trucks for.</p>
           </div>
           <div className="pricing-grid pricing-grid--baseline">
             <PricingCard plan={driverPlan} variant="driver" />
@@ -419,28 +419,27 @@ export function PricingPage() {
           </div>
         </section>
 
-        <section aria-label="How host billing works" className="pricing-explainers">
+        <section aria-label="How pricing works today" className="pricing-explainers">
           <article className="pricing-explainer">
             <div className="pricing-explainer__heading">
               <Icon aria-hidden name="load.pay" size={24} />
-              <h2>The exact math.</h2>
+              <h2>Driver pay stays between host and hauler.</h2>
             </div>
             <p>
-              If the host states that one load pays the driver $500, the driver
-              receives $500. The LogLoads fee is $25, so the host&apos;s total cost is
-              $525. Nothing comes out of the driver&apos;s pay.
+              The host and the hauler agree on driver pay, and the host pays it
+              directly. LogLoads does not carry freight or receive, hold, deduct
+              from, or distribute transportation compensation.
             </p>
           </article>
           <article className="pricing-explainer">
             <div className="pricing-explainer__heading">
               <Icon aria-hidden name="ops.audit" size={24} />
-              <h2>What counts—and what does not.</h2>
+              <h2>Prices come before purchases.</h2>
             </div>
             <p>
-              One completed physical load creates one percentage fee. Drafts,
-              postings, searches, requests, unaccepted offers, cancellations before
-              completion, and duplicates do not. Driver compensation remains payable
-              directly by the host and is never reduced by a LogLoads charge.
+              Prices and terms for landing organizations will be published before
+              any paid feature is offered. Until then, nothing on LogLoads can be
+              purchased.
             </p>
           </article>
         </section>
@@ -458,8 +457,7 @@ export function LegalPage({ content }: { content: LegalPageContent }) {
         <aside className="legal-boundary-summary">
           <strong>Product boundary</strong>
           <p>
-            LogLoads coordinates timber hauling work. Hosts pay LogLoads a 5%
-            platform fee on top of the driver pay stated for each completed load.
+            LogLoads coordinates timber hauling work.
             LogLoads does not carry freight or receive, escrow, deduct from, or
             distribute transportation compensation.
           </p>
@@ -789,7 +787,7 @@ export function OnboardingPage({
           title={title}
           body={
             mode === "host"
-              ? "Three short steps create your operating workspace. Creating an account does not charge you. Before publishing live work, an authorized host accepts the 5% completed-load agreement and attaches a card from Billing."
+              ? "Three short steps create your operating workspace. Creating an account does not charge you. Publishing live work requires separate pilot approval."
               : "Three short steps. Then LogLoads opens the right first screen for your work."
           }
         />
@@ -860,7 +858,7 @@ export function ContactPage({
         <PageIntro
           eyebrow="Contact"
           title="Talk with LogLoads."
-          body="Questions about preparing a host pilot workspace, the 5% completed-load fee, driver access, verification, integrations, or a season of timber to move? Send the context we need to help."
+          body="Questions about preparing a host pilot workspace, driver access, verification, integrations, or a season of timber to move? Send the context we need to help."
         />
         <div className="contact-layout">
           <ContactForm initialInterest={initialInterest} key={initialInterest} />
@@ -874,11 +872,10 @@ export function ContactPage({
               <p>Workspace creation is free. Live publication and Network enrollment require separate approval for the exact pilot organization. Creating an account does not activate billing.</p>
             </section>
             <section>
-              <h2>Simple host pricing</h2>
+              <h2>Pricing</h2>
               <p>
-                There is no posting fee, subscription, monthly minimum, tier,
-                allowance, or overage. Hosts pay LogLoads 5% of the stated driver
-                pay for each completed load, added on top.
+                Pricing for landing organizations has not been published. Nothing
+                on LogLoads is offered for sale today.
               </p>
             </section>
           </aside>
