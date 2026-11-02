@@ -774,16 +774,28 @@ create policy interests_hauler_edit on marketplace.expressions_of_interest for u
   with check (hauler_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff', 'driver']))
               and status not in ('withdrawn', 'declined'));
 
+-- The "landing desk with a live inquiry from this hauler" clause lives in a SECURITY DEFINER helper.
+-- Written inline it made hauler_profiles_read query expressions_of_interest while
+-- interests_hauler_insert queries hauler_profiles, and PostgreSQL rejected every direct inquiry insert
+-- with 42P17 (infinite recursion detected in policy for relation "expressions_of_interest").
+-- Same access rule; the helper reads expressions_of_interest without re-entering its policies.
+create or replace function marketplace.has_live_inquiry_from_hauler(p_hauler_org uuid)
+returns boolean language sql stable security definer
+set search_path = pg_catalog, extensions, pg_temp
+as $$
+  select exists (
+    select 1 from marketplace.expressions_of_interest e
+    where e.hauler_org_id = p_hauler_org
+      and e.status <> 'withdrawn'
+      and e.job_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff'], true))
+  )
+$$;
+
 drop policy if exists hauler_profiles_read on marketplace.hauler_profiles;
 create policy hauler_profiles_read on marketplace.hauler_profiles for select to authenticated
   using (org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff', 'driver']))
          or (is_public and marketplace.current_user_has_landing_access())
-         or exists (
-           select 1 from marketplace.expressions_of_interest e
-           where e.hauler_org_id = hauler_profiles.org_id
-             and e.status <> 'withdrawn'
-             and e.job_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff'], true))
-         )
+         or marketplace.has_live_inquiry_from_hauler(org_id)
          or marketplace.is_platform_admin());
 
 drop policy if exists eoi_equipment_read on marketplace.expression_of_interest_equipment;
@@ -2456,6 +2468,7 @@ grant update (paired_trailer_code, operational_status, unit_count) on marketplac
 grant insert (id, interest_id, author_side, body) on marketplace.interest_messages to authenticated;
 
 revoke all on function
+  marketplace.has_live_inquiry_from_hauler(uuid),
   marketplace.quantize_public_coordinate(double precision, double precision, double precision, text),
   marketplace.make_public_point(double precision, double precision),
   marketplace.tg_eoi_equipment_consistency(),
@@ -2485,6 +2498,7 @@ grant execute on function
   to anon, authenticated;
 
 grant execute on function
+  marketplace.has_live_inquiry_from_hauler(uuid),
   marketplace.get_viewer_marketplace_access(uuid),
   marketplace.list_authoring_landings(uuid),
   marketplace.list_hauler_equipment_options(uuid),

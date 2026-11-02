@@ -152,7 +152,7 @@ begin
   select count(*) into v_funcs
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'marketplace';
-  perform pg_temp.assert_true(v_funcs = case when pg_temp.aligned() then 62 else 44 end, format('expected %s functions in marketplace, found %s', case when pg_temp.aligned() then 62 else 44 end, v_funcs));
+  perform pg_temp.assert_true(v_funcs = case when pg_temp.aligned() then 63 else 44 end, format('expected %s functions in marketplace, found %s', case when pg_temp.aligned() then 63 else 44 end, v_funcs));
 
   -- No function in `marketplace` may be executable by PUBLIC.
   select count(*) into v_pub_exec
