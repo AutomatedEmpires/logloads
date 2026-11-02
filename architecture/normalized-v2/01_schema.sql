@@ -58,12 +58,15 @@ begin
             hint = 'Install PostGIS in schema "extensions" yourself, or run against a guarded disposable database. Nothing was changed.';
   end if;
 
-  -- User objects (not members of any extension) that a CASCADE would destroy: columns of PostGIS
-  -- types (or arrays/domains of them), functions taking or returning them, and views built on
-  -- PostGIS functions.
+  -- User objects (not members of any extension) that a CASCADE would destroy: columns of PostGIS-family
+  -- types (geometry, geography, topogeometry, raster, or arrays/domains of them), functions taking or
+  -- returning them, and any constraint, default, policy, trigger, index or view rule that depends on a
+  -- PostGIS-family object, resolved to the relation it belongs to (extension-owned relations excluded).
   with members as (
     select d.classid, d.objid from pg_depend d
-    where d.refclassid = 'pg_extension'::regclass and d.refobjid = v_postgis and d.deptype = 'e'
+    where d.refclassid = 'pg_extension'::regclass and d.deptype = 'e'
+      and d.refobjid in (select x.oid from pg_extension x
+                         where x.extname in ('postgis', 'postgis_topology', 'postgis_raster', 'postgis_sfcgal', 'postgis_tiger_geocoder'))
   ), ext_members as (
     select d.classid, d.objid from pg_depend d
     where d.refclassid = 'pg_extension'::regclass and d.deptype = 'e'
@@ -90,12 +93,22 @@ begin
       and (p.prorettype in (select typ from postgis_types)
            or exists (select 1 from unnest(p.proargtypes::oid[]) u(t) where u.t in (select typ from postgis_types)))
     union all
-    select format('view %s', r.ev_class::regclass)
+    select pg_describe_object(d.classid, d.objid, 0)
     from pg_depend d
-    join pg_rewrite r on d.classid = 'pg_rewrite'::regclass and d.objid = r.oid
-    where d.refclassid = 'pg_proc'::regclass
-      and d.refobjid in (select m.objid from members m where m.classid = 'pg_proc'::regclass)
-      and not exists (select 1 from ext_members e where e.classid = 'pg_class'::regclass and e.objid = r.ev_class)
+    cross join lateral (
+      select case d.classid
+        when 'pg_constraint'::regclass then (select c.conrelid from pg_constraint c where c.oid = d.objid)
+        when 'pg_attrdef'::regclass    then (select a.adrelid from pg_attrdef a where a.oid = d.objid)
+        when 'pg_policy'::regclass     then (select p.polrelid from pg_policy p where p.oid = d.objid)
+        when 'pg_trigger'::regclass    then (select t.tgrelid from pg_trigger t where t.oid = d.objid)
+        when 'pg_rewrite'::regclass    then (select r.ev_class from pg_rewrite r where r.oid = d.objid)
+        when 'pg_class'::regclass      then (select i.indrelid from pg_index i where i.indexrelid = d.objid)
+      end as owner_rel
+    ) o
+    where d.deptype in ('n', 'a')
+      and (d.refclassid, d.refobjid) in (select m.classid, m.objid from members m)
+      and o.owner_rel is not null and o.owner_rel <> 0
+      and not exists (select 1 from ext_members e where e.classid = 'pg_class'::regclass and e.objid = o.owner_rel)
   ) s;
   if v_dependents is not null then
     raise exception 'refusing to drop PostGIS: objects outside its extensions depend on it (%)', left(v_dependents, 400)
