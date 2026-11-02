@@ -697,6 +697,35 @@ end
 $$;
 
 -- -----------------------------------------------------------------------------
+-- S5 (found on the Supabase stack). 02 runs `grant execute on all functions in schema extensions to public,
+-- anon, authenticated, service_role`. On plain PostgreSQL the migration role owns those functions and PUBLIC
+-- can execute them anyway, so it changes nothing. On Supabase the extension functions belong to the platform
+-- (supabase_admin) and the migration role holds grant option, so the statement re-opened functions an
+-- extension deliberately restricts (e.g. pg_stat_statements_reset) to anon and authenticated. Undo exactly
+-- that footprint: EXECUTE grants made by the migration role on functions it does not own. The platform's own
+-- grants (grantor = owner) are untouched.
+-- -----------------------------------------------------------------------------
+do $$
+declare r record;
+begin
+  for r in
+    select distinct p.oid::regprocedure as fn,
+           case when a.grantee = 0 then 'public' else quote_ident(pg_get_userbyid(a.grantee)) end as grantee
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    cross join lateral aclexplode(p.proacl) a
+    where n.nspname = 'extensions'
+      and p.proowner <> (select oid from pg_roles where rolname = current_user)
+      and a.grantor = (select oid from pg_roles where rolname = current_user)
+      and a.privilege_type = 'EXECUTE'
+      and (a.grantee = 0 or pg_get_userbyid(a.grantee) in ('anon', 'authenticated', 'service_role'))
+  loop
+    execute format('revoke execute on function %s from %s', r.fn, r.grantee);
+  end loop;
+end
+$$;
+
+-- -----------------------------------------------------------------------------
 -- Privileges. New functions are not executable by PUBLIC; user-facing RPCs go to authenticated only.
 -- (CREATE OR REPLACE keeps the existing grants of redefined functions.)
 -- -----------------------------------------------------------------------------

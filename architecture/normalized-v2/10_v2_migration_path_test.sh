@@ -107,9 +107,14 @@ expect_eq "no confirmer invented" "$(q "select coalesce(last_confirmed_by::text,
   "$(q "select case when '${BEFORE}' = 'null' then 'null' else coalesce(last_confirmed_by::text, 'null') end from marketplace.job_postings where id = '${JOB}'::uuid;")"
 expect_eq "E6: re-snap kept the hauler's own confirmation time" "$(q "select last_confirmed_at::text from marketplace.hauler_profiles where org_id = '${HAUL}'::uuid;")" "$HAUL_CONFIRMED"
 expect_eq "E6: re-snap kept the availability report time" "$(q "select reported_at::text from marketplace.availability_reports where org_id = '${HAUL}'::uuid;")" "$REPORTED"
-expect_eq "E6: service centre and report area re-snapped to the 0.10-degree grid" \
-  "$(q "select round(extensions.st_y(h.service_center::extensions.geometry)::numeric, 6) || ' ' || round(extensions.st_x(a.area_center::extensions.geometry)::numeric, 6)
-        from marketplace.hauler_profiles h join marketplace.availability_reports a on a.org_id = h.org_id where h.org_id = '${HAUL}'::uuid;")" "44.500000 -122.700000"
+# (The baseline already snapped these to its own coarser grid; 06 re-snaps that value, so assert grid
+# membership rather than a hand-computed point.)
+expect_eq "E6: service centre and report area lie on the 0.10-degree grid" \
+  "$(q "select bool_and(abs(v * 10 - round(v * 10)) < 1e-9)::text from (
+          select extensions.st_y(h.service_center::extensions.geometry) from marketplace.hauler_profiles h where h.org_id = '${HAUL}'::uuid
+          union all select extensions.st_x(h.service_center::extensions.geometry) from marketplace.hauler_profiles h where h.org_id = '${HAUL}'::uuid
+          union all select extensions.st_y(a.area_center::extensions.geometry) from marketplace.availability_reports a where a.org_id = '${HAUL}'::uuid
+          union all select extensions.st_x(a.area_center::extensions.geometry) from marketplace.availability_reports a where a.org_id = '${HAUL}'::uuid) s(v);")" "true"
 
 echo "[4/5] Applying 11_v2_founder_decisions.sql and 12_v2_billing_events.sql on top of existing data..."
 psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 -f "$SCRIPT_DIR/11_v2_founder_decisions.sql" >/dev/null
