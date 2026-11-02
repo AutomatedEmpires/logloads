@@ -1,79 +1,104 @@
-# LogLoads — Agent Workflow and File Ownership
+# LogLoads — Agent Coordination
 
-> **Status:** CURRENT quick reference, revised 2026-11-01.
->
-> **Authority:**
-> - [`AGENTS.md`](../AGENTS.md) — working protocol, hard stops, handoff format.
-> - [`DECISIONS.md`](./DECISIONS.md) and the Blueprint — product and commercial decisions.
-> - The UX spec — screens and interactions.
->
-> This document makes no product decisions. For review gates, see
-> [`REVIEW_CHECKLIST.md`](./REVIEW_CHECKLIST.md).
+> **Status:** APPROVED process, revised 2026-11-02.
+> - **Source of truth for tasks:** GitHub Issues in `AutomatedEmpires/logloads`, tracked on
+>   [Project Board #10](https://github.com/users/AutomatedEmpires/projects/10).
+> - No Markdown file keeps task status. This one defines the process only.
+> - Product authority is unchanged: [`README.md`](./README.md) §1.
 
-## Before editing
+## 1. Before any work
 
-1. Check `git status -sb`, the branch, HEAD, open PRs, untracked files, and which agent owns what. Untracked
-   files may be another agent's unfinished work.
-2. Read the smallest relevant source, plus — where they apply:
-   - [`product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md`](./product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md);
-   - [`product/LOGLOADS_UX_FUNCTIONAL_SPEC_v1.0.md`](./product/LOGLOADS_UX_FUNCTIONAL_SPEC_v1.0.md);
-   - [`product/TRANSITION_PLAN.md`](./product/TRANSITION_PLAN.md).
-3. Confirm no other agent is writing the same files.
-4. Define a small user outcome, with checks and boundaries:
-   - no dispatch;
-   - no per-haul fees;
-   - no new billing without approval.
+1. Open the board. Find **your** issue, or ask the coordinator (Claude Agent 2) to create one. **No work starts
+   without an issue.**
+2. Read the issue's owned files and prohibited overlap.
+3. Run `git status`, and check the branch and HEAD. Untracked files may belong to another agent: never stage,
+   reset, clean, stash or rebase over them.
+4. Read the smallest relevant source, plus the authority documents the issue cites.
 
-## Lanes (current coordination)
+## 2. Every task issue contains
 
-| Lane | Owns | Must not |
-|---|---|---|
-| Claude Session 1 — application integrator | `apps/`, `packages/`, `supabase/`, `.github/workflows/`, V2 slice, CI, Git integration onto `work/logloads-repair` | Stage Gemini's or Codex's unfinished files |
-| Claude Session 2 — documentation | `docs/` only, on its own branch/worktree | Touch code, workflows, `architecture/normalized-v2/`, env files, or production |
-| Gemini — normalized database | `architecture/normalized-v2/` | Edit existing migrations, touch live Supabase, or run shared Git operations |
-| Codex — assigned tests / review | Its assigned regression tests and artifacts | Refactor source unapproved, or touch production |
+These fields come from the template at `.github/ISSUE_TEMPLATE/agent_task.yml`:
 
-A newer, explicit assignment can change these lanes.
+- **Agent owner** — exactly one.
+- **Objective** — the outcome, not a list of activities.
+- **Priority**.
+- **Branch / worktree**.
+- **Owned files**.
+- **Prohibited overlap**.
+- **Acceptance criteria**, including the evidence required for Done.
+- **Dependencies** — linked issues or PRs.
+- **Out of scope**.
 
-## Where things live
+## 3. Board fields
 
-| Path | Contents |
+| Field | Values |
 |---|---|
-| `packages/contracts` | Shared domain contracts, membership rules, authorization semantics |
-| `packages/services` | Business rules, authorization, idempotency, transitions |
-| `packages/db`, `supabase/` | The deployed pilot storage and reviewed migrations. Do not copy prototype SQL here before CI execution and explicit integration approval. |
-| `architecture/normalized-v2/` | Gemini's non-active SQL prototype, until accepted |
-| `apps/web` | Thin route handlers, server actions, UI, data adapters |
-| `docs/` | Truthful CURRENT / TARGET / HISTORICAL descriptions. Historical records live in [`archive/`](./archive/README.md). |
+| **Status** | Backlog → Ready → In Progress → Blocked → In Review → Done |
+| **Priority** | P0 (production risk or blocker) · P1 (current milestone) · P2 (later) |
+| **Agent Owner** | Claude Agent 1 (integration / PostgreSQL CI) · Claude Agent 2 (docs / coordination) · Codex (V2 frontend) · Gemini (normalized schema) · Claude Security Auditor · Claude QA (Playwright) · Claude Product (public copy) · Founder |
 
-When a contract changes, update [`BACKEND_ARCHITECTURE.md`](./BACKEND_ARCHITECTURE.md),
-[`DATA_MODEL.md`](./DATA_MODEL.md), and [`API_CONTRACTS.md`](./API_CONTRACTS.md) in the same change, or hand
-the update to the documentation lane explicitly.
+Lane labels describe the subject of an issue. Status and priority are **never** expressed as labels:
 
-## Verification and publishing
+`lane:database` · `lane:v2-frontend` · `lane:docs` · `lane:security` · `lane:qa` · `lane:product-copy` ·
+`lane:integration` · `lane:coordination`
 
-- Run targeted typecheck, unit, and security checks, `pnpm guardrails`, and proportionate build or browser
-  coverage.
-- `pnpm validate` includes `pnpm db:assert`, which **skips locally** without the Supabase CLI and Docker.
-  Report the skip; do not call it green.
-- Run destructive resets only on disposable stacks.
-- For UI changes, reproduce mobile, keyboard, and redaction behavior.
+All agent issues also carry `agent-task`.
 
-Each lane commits only its own files. The handoff reports the items in [`AGENTS.md`](../AGENTS.md) §12:
+## 4. How status moves
 
-- branch and HEAD;
-- changed paths;
-- commands with real pass/fail/skip results;
-- provider or data mutations, or **none**;
-- PR status;
-- other agents' uncommitted files left untouched;
-- risks and rollback.
+| Move | Who may make it | Required |
+|---|---|---|
+| → Ready | Coordinator or founder | Issue fields complete; dependencies known |
+| → In Progress | Owner | A first comment naming the branch and worktree |
+| → Blocked | Owner | A comment stating the blocker and who can clear it |
+| → In Review | Owner | A PR link, commit SHA, and exact commands with pass/fail/skip results |
+| → **Done** | **A reviewer other than the owner** (founder, integration owner or coordinator) | Every acceptance criterion met, **with evidence linked**: run URL, SHA, test output. "Agent says done" is not evidence. |
 
-Never do any of the following without separately scoped authorization:
+There is no separate VERIFIED column. Done **means** verified. If a claim is only partly verified, the issue
+stays In Review and the remainder is recorded as UNVERIFIED.
 
-- merge to `main`;
-- deploy;
-- change production state;
-- send campaigns;
-- rotate credentials;
-- activate payments.
+## 5. Comments are the handoff
+
+Post a comment whenever one of these happens:
+
+- you start;
+- you hit a blocker;
+- you push or open a PR;
+- tests run;
+- you hand off.
+
+Use this shape:
+
+```text
+STATE: In Progress | Blocked | In Review
+DID: <one or two lines>
+EVIDENCE: <SHA> · <PR URL> · <run URL> · <command → result>
+NEXT / BLOCKER: <what, who>
+BOUNDARIES: data/money/email/deploy/provider impact — or "none"
+```
+
+- A new session resumes from the issue thread, never from private conversation history.
+- Never post secrets, tokens, backup contents or private landing data.
+
+## 6. Coordination rules
+
+- One owner per file at a time. Need another lane's file? Comment on that lane's issue; do not edit it.
+- A defect found outside your lane becomes a **new issue** with exact evidence (path, line, SHA). Do not fix it.
+- Hard stops still apply ([`../AGENTS.md`](../AGENTS.md)): no merge to `main`, no deploy, no production data or
+  provider change, no live billing or email, without explicit founder authorization.
+- The coordinator triages new issues weekly, closes duplicates, and keeps the board fields filled in. The
+  coordinator does not do other lanes' work.
+
+## 7. Where things live
+
+| Path | Owner lane |
+|---|---|
+| `packages/contracts`, `packages/services`, `packages/db`, `supabase/`, `.github/workflows/` | Integration (Claude Agent 1), unless an issue assigns otherwise |
+| `architecture/normalized-v2/` | Gemini (schema) and Claude Agent 1 (CI fixes on the CI branch) |
+| `apps/web/app/v2`, `apps/web/lib/marketplace-v2` | Codex (V2 frontend publishing) |
+| `apps/web/app/pricing`, `apps/web/app/terms` | Claude Product |
+| `apps/web/tests/*.spec.ts`, Playwright configuration | Claude QA |
+| `docs/` (except `product/` content), issue templates, coordination | Claude Agent 2 |
+
+When a code change alters a documented behavior, update the matching document in the same PR, or open a
+`lane:docs` issue.

@@ -1,12 +1,12 @@
 # LogLoads — Resend Email Activation and Delivery Policy
 
 > **Status:** Revised 2026-11-01.
-> - §1–§3 are CURRENT: the existing, key-gated email integration in code at `15892b7`.
+> - §1–§3 are IMPLEMENTED: the existing, key-gated email integration in code at `15892b7`.
 > - §4 is TARGET.
 >
 > This document authorizes no campaign, broadcast, production key, or DNS change.
 
-## 1. What the code does today (CURRENT)
+## 1. What the code does today (IMPLEMENTED)
 
 Outbound email lives in `apps/web/lib/notify.ts`. It **fails open honestly**: without `RESEND_API_KEY`,
 delivery is skipped and the in-app record remains the source of truth. The code never reports a false
@@ -29,7 +29,7 @@ success.
 An in-app notification, an API `200`, or `integrations.email=true` is not proof of delivery. Check Resend's
 delivery events.
 
-## 2. Sender configuration (CURRENT)
+## 2. Sender configuration (IMPLEMENTED)
 
 - `RESEND_API_KEY` — a server secret with **Sending** access restricted to the verified `logloads.com`
   domain. Never substitute a shared, cross-account, or unrestricted key.
@@ -48,7 +48,7 @@ delivery events.
 Never put a raw key, a personal address, a private landing contact, or a recipient list into code, logs, test
 reports, or Git.
 
-## 3. Controlled activation and test (CURRENT pilot path)
+## 3. Controlled activation and test (IMPLEMENTED pilot path)
 
 1. Confirm domain ownership, DKIM/SPF, sending-key scope, and the recipient identities.
 2. Keep the production `RESEND_API_KEY` absent until the founder explicitly authorizes it. Development and

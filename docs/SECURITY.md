@@ -1,19 +1,22 @@
 # LogLoads — Security Posture
 
-> **Status:** Revised 2026-11-01. This document separates **historical evidence**, **controls present in
-> code today**, **target architecture**, and **verification still owed**.
+> **Status:** Last verified 2026-11-02. This document separates **historical evidence**, **implemented
+> controls**, **target architecture**, and **unverified requirements**. The labels are defined in
+> [`README.md`](./README.md) §2.
 >
 > **There is no blanket "SECURITY VERIFIED" status.** The July 2026 verification applied to one live Supabase
-> project and the schema of that date. It does not extend to later code, to the V2 preview, or to the
-> normalized-v2 schema. The normalized-v2 schema has never been executed against PostgreSQL.
+> project and the schema of that date. It does not extend to later code or to the V2 preview.
+>
+> The normalized-v2 baseline (`01`–`05`) is **VERIFIED in CI on disposable PostgreSQL 17**
+> ([`CI.md`](./CI.md) §3). That proves the SQL-level behavior with simulated claims. It says **nothing** about
+> live Supabase or real Clerk tokens (§4).
 >
 > The full original security record is preserved verbatim at
 > [`archive/security/SECURITY_RECORD_2026-08-05.md`](./archive/security/SECURITY_RECORD_2026-08-05.md):
 > first verified 2026-07-08, last revised 2026-08-05.
 
-Labels used below: **HISTORICAL** = observed at a past date, not re-verified. **CURRENT (code)** = present
-in the repository at commit `4c9518e`; this review did not verify the deployed production configuration.
-**TARGET** = designed, not active. **OWED** = verification that has not happened.
+In this document, **IMPLEMENTED (code)** means present in the repository at `4c9518e`. This review did not
+inspect the deployed production configuration.
 
 ## 1. Historical findings and verification evidence — July 2026 (HISTORICAL)
 
@@ -62,7 +65,7 @@ RLS-enabled, plus the PostGIS `spatial_ref_sys` exception. The per-table list is
   `20260808230214_admin_manage_billing_permission.sql` revoked further relational grants. Their live
   application status is not recorded here.
 
-## 2. Current pilot canonical-state controls — CURRENT (code)
+## 2. Current pilot canonical-state controls — IMPLEMENTED (code)
 
 The deployed pilot keeps nearly all business data in one JSON document. **RLS does not protect application
 reads or writes of that document,** because the server uses the service-role key, which bypasses RLS. Tenant
@@ -100,7 +103,7 @@ as the legacy code is reachable.
   protect **historical** obligations only. They must not be repurposed to activate the new model
   ([`ACTIVATION_STRIPE.md`](./ACTIVATION_STRIPE.md)).
 
-## 3. Current V2 preview controls — CURRENT (code, development preview)
+## 3. Current V2 preview controls — IMPLEMENTED (code, development preview)
 
 The `/v2` load-board preview (`apps/web/app/v2`, `apps/web/lib/marketplace-v2`) runs on the same pilot
 store and inherits §2. In addition:
@@ -141,10 +144,12 @@ store and inherits §2. In addition:
   unlocks nothing in V2. The pilot's assignment-triggered disclosure is legacy behavior and is not carried
   into V2.
 
-## 4. TARGET — normalized-v2 RLS and Clerk authentication (not active)
+## 4. Normalized-v2 RLS and Clerk authentication (TARGET; SQL baseline VERIFIED)
 
-The prototype lives under `architecture/normalized-v2/`. It is owned by Gemini and, at this revision, exists only
-as uncommitted files in the primary checkout. It designs:
+The schema is owned by Gemini. Its validated copy is on branch `test/normalized-v2-postgres17-ci` at
+`ec4bb66`, which includes Claude Agent 1's fixes, for example the `job_postings` read policy that blocked
+`INSERT … RETURNING`. It is not merged, not connected to the application, and not applied to any hosted
+project. It designs:
 
 - a `marketplace` schema of 32 tables, with RLS on every table and anon-readable public projections
   implemented as RLS policies, not views;
@@ -163,11 +168,20 @@ RS256 signature against Clerk's JWKS, issuer, and expiry — happens at Supabase
 third-party auth integration (layer 1). Only an end-to-end test that sends real Clerk tokens through a
 configured Supabase project proves layer 1. A passing SQL suite never does.
 
+**What the CI baseline does verify** (layer 2 only, on disposable PostgreSQL 17):
+
+- DDL execution;
+- grants and RLS denials for simulated anon, authenticated and service roles;
+- claim inspection;
+- the four multi-session invitation and entitlement races.
+
+Evidence: [`CI.md`](./CI.md) §3. Gemini's `06`/`07` alignment layer is **UNVERIFIED**.
+
 **Service-role bypass still applies.** If the application reaches normalized tables with the service-role
 key, RLS protects nothing on that path. A target design must either carry the verified user token to
 PostgREST or keep explicit service-layer authorization. The choice is open (TRANSITION_PLAN, "Identity").
 
-## 5. Verification still owed (OWED)
+## 5. Unverified requirements (UNVERIFIED unless marked)
 
 Do not claim the corresponding security property until the evidence exists. Record each result with its date,
 SHA, environment, and command output.
@@ -177,13 +191,13 @@ SHA, environment, and command output.
 | 1 | Re-run the anon/authenticated denial probes and the advisor review against the **current** production project, read-only. Record the date. | Pilot |
 | 2 | Confirm that migrations `20260713053327`, `20260726090000`, and `20260808230214` are applied live, and that the ledger matches the repository. | Pilot |
 | 3 | Exact-SHA multi-instance rate-limit proof and simulated store outage → `503` | Pilot |
-| 4 | Execute `01`–`03` DDL plus `04_tests.sql` and `05_concurrency_test.sh` on a disposable PostgreSQL 17/PostGIS in CI, with logs ([`RUNNERS.md`](./RUNNERS.md)) | Normalized-v2 |
+| 4 | ~~Execute `01`–`05` on a disposable PostgreSQL 17/PostGIS in CI~~ — **VERIFIED** at `ec4bb66` ([`CI.md`](./CI.md) §3). Still open: the same proof for `06`/`07`, and integration of the CI branch. | Normalized-v2 |
 | 5 | Configure Supabase third-party auth for a **development** Clerk instance. Prove that forged, expired, wrong-issuer, and wrong-audience tokens are rejected at the gateway, and that valid tokens resolve to the right `app_users` row. | Normalized-v2 |
 | 6 | Cross-tenant denial matrix: anon, authenticated stranger, member of another org, removed member, multi-org user switching context, platform admin without a support reason | Normalized-v2 and V2 adapter |
 | 7 | `SECURITY DEFINER` review: owners, `search_path`, grants, and exposure through the Data API | Normalized-v2 |
 | 8 | Parity between the `marketplace-permissions.ts` capability sets (added in `4c9518e`, unit-tested) and the normalized RLS role sets, proven on an executed database. Rate limits on publish/reconfirm before persistence is enabled. | V2 and normalized-v2 |
 | 9 | Audited private-detail disclosure and revocation, with tests proving interest alone discloses nothing | V2 |
-| 10 | Invitation quota races (final credit, double failure callback, reaper versus callback, duplicate cycle webhook) under real concurrent sessions | Normalized-v2 |
+| 10 | Invitation quota races (final credit, double failure callback, reaper versus callback, duplicate cycle webhook) under real concurrent sessions. **VERIFIED at the SQL level** by stage 5 ([`CI.md`](./CI.md) §3). Still open: the same behavior through the application and real webhooks. | Normalized-v2 |
 | 11 | Migration rehearsal on synthetic data, with historical financial records preserved read-only | Cutover |
 
 ## 6. Handling rules

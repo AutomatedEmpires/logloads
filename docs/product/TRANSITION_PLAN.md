@@ -1,5 +1,8 @@
 # LogLoads transition plan — pilot cockpits → Blueprint v1.0 load board
 
+> **Status:** APPROVED engineering sequence (TARGET work). Status notes were last updated 2026-11-02; see the
+> addendum at the end.
+
 Authority: [`LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md`](./LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md) and `docs/DECISIONS.md` (2026-11-01).
 This plan sequences engineering work. It does not authorize deploys, production migrations, live billing, or
 retirement of financial records — each of those still needs explicit approval.
@@ -53,7 +56,7 @@ in canonical state and in Stripe) and explicit authorization.
 | Step | Work | Depends on | Can start | Gate to finish |
 |---|---|---|---|---|
 | 0 | Blueprint in repo; decision entry; **membership rules contract** (`packages/contracts/src/membership.ts`) | — | **Done in this change** | Unit tests encode §3, §6, §7, §8 numbers |
-| 1 | Relational schema alignment: map the prototype's tables to §12.2 entities and to existing `operating_state` collections (ids preserved, quarantine for invalid rows) | Prototype files present: `01_schema.sql`, `02_access.sql`, `03_entitlements.sql`, `04_tests.sql`, `05_concurrency_test.ps1` (statically checked; **not yet executed against PostgreSQL**) | **In progress by the prototype owner** — see "Schema prototype alignment" | Mapping reviewed; no competing schema |
+| 1 | Relational schema alignment: map the prototype's tables to §12.2 entities and to existing `operating_state` collections (ids preserved, quarantine for invalid rows) | Prototype files present: `01_schema.sql`, `02_access.sql`, `03_entitlements.sql`, `04_tests.sql`, `05_concurrency_test.ps1` (`01`–`05` **verified on disposable PostgreSQL 17 at `ec4bb66`** on `test/normalized-v2-postgres17-ci`, not yet merged — see [`../CI.md`](../CI.md) §3; `06`/`07` unverified) | **In progress by the prototype owner** — see "Schema prototype alignment" | Mapping reviewed; no competing schema |
 | 2 | Phase A foundation: local/preview migrations, RLS with trusted Clerk claims, read adapters, shadow sync + parity checks | 1 | After 1 | Cross-tenant denial tests; reproducible local setup; no production data touched |
 | 3 | Phase B free marketplace on the new model, behind a flag next to the pilot: job posting v2 (create/publish/reconfirm), public search + filters, hauler business profile with equipment + timestamped availability, express interest + replies | 2 (2a: contracts-only UI work may start on the JSON store if the prototype is delayed) | **2a implemented** behind the flag (see "Step 3 slice"); full step after 2 | Real data only; mobile/low-bandwidth; private-location protection |
 | 4 | Phase C paid membership: entitlement enforcement from step 0 contracts (landings, seats), Stripe test-mode products, checkout disclosures | 2, published terms | After 2 | Accurate entitlements; reconciliation; counsel review before live sale |
@@ -153,8 +156,12 @@ plus the observed state of the primary checkout. They do not change sequencing o
 
 - The "Location of the schema prototype (blocks step 1)" open decision is answered: `architecture/normalized-v2/`.
   The step 1 row already says so.
-- Those files are still **untracked** in the primary checkout, so links to them do not resolve on any branch yet.
-  The intended CI job is described in [`../RUNNERS.md`](../RUNNERS.md) §3.
+- *Updated 2026-11-02:* `01`–`05` are committed on `test/normalized-v2-postgres17-ci`, with CI fixes. At
+  `ec4bb66` they are **VERIFIED** on disposable PostgreSQL 17 ([`../CI.md`](../CI.md) §3).
+- Still open:
+  - that branch is not merged into `work/logloads-repair`;
+  - Gemini's `06`/`07` alignment layer is unverified;
+  - nothing is connected to the application.
 
 ### CARTO allowance
 
@@ -169,5 +176,6 @@ public tier versus this account's entitlement.
 
 ### Historical contracts referenced above
 
-`docs/SUBSCRIPTION_BILLING_V1.md` now carries a superseded notice. The pre-November handoffs, marketplace
-specification, Stripe runbook, pilot contract, and security record are under [`../archive/`](../archive/README.md).
+`docs/SUBSCRIPTION_BILLING_V1.md` carries a superseded notice. The security record and the `percentage_v1`
+Stripe runbook remain in `docs/archive/` as evidence. The handoffs, marketplace specification and old pilot contract
+are recoverable from tag `archive/docs-history-20261102` ([`../archive/README.md`](../archive/README.md)).

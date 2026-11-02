@@ -18,9 +18,9 @@
 >   Basic/Pro/Regional.
 > - **Do not rewrite history.** Never substitute Basic/Pro/Regional prices into these records, reclassify old
 >   obligations as new-model revenue, or double-bill them.
-> - Related historical evidence is under [`archive/`](./archive/README.md). The
->   `docs/HANDOFF-2026-07-27.md` and `docs/marketplace-*.md` paths named in the dependency map below are now
->   redirect stubs to their archived originals.
+> - Related historical evidence is indexed in [`archive/README.md`](./archive/README.md). The
+>   `docs/HANDOFF-2026-07-27.md` and `docs/marketplace-*.md` documents named in the dependency map below are
+>   no longer in the tree. Recover them from tag `archive/docs-history-20261102` (archive index §2).
 
 ---
 

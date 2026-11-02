@@ -1,14 +1,14 @@
 # LogLoads — Observability and Marketplace Event Taxonomy
 
 > **Status:** Revised 2026-11-01.
-> - §1–§2 describe the existing instrumentation, CURRENT in code at `15892b7`.
+> - §1–§2 describe the existing instrumentation, IMPLEMENTED in code at `15892b7`.
 > - §3 is the proposed V2 taxonomy (TARGET). **No V2 event is emitted today** — the `/v2` code calls no
 >   analytics function.
 >
 > Production health on 2026-08-05 reported analytics and error tracking as configured. That is a
 > **historical** observation: it proves environment presence then, not event delivery now.
 
-## 1. PostHog (CURRENT)
+## 1. PostHog (IMPLEMENTED)
 
 PostHog is env-gated (`NEXT_PUBLIC_POSTHOG_KEY` / `_HOST`) and inert without a key. Two capture sides:
 
@@ -52,7 +52,7 @@ document was a partial inventory.
 - **Do not extend the dispatch, trip, payment, or billing events, and do not use them as V2 success metrics.**
   They measure the superseded product.
 
-## 2. Sentry (CURRENT)
+## 2. Sentry (IMPLEMENTED)
 
 `apps/web/instrumentation.ts` initializes `@sentry/nextjs` **only** when `SENTRY_DSN` is set and the runtime
 is `nodejs`. `onRequestError` forwards server errors. Without a DSN, Sentry is never imported.

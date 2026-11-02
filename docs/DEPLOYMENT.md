@@ -7,7 +7,7 @@
 > approval must come before any merge. The pre-revision text is retrievable with
 > `git show 15892b7:docs/DEPLOYMENT.md`.
 
-## 1. Present runtime (CURRENT)
+## 1. Present runtime (IMPLEMENTED)
 
 | Property | Value |
 |---|---|
@@ -37,7 +37,7 @@ wrong.
 
 ## 2. Environment responsibilities
 
-| Category | Variables (CURRENT) | Target / change requirement |
+| Category | Variables (IMPLEMENTED) | Target / change requirement |
 |---|---|---|
 | Application | `NEXT_PUBLIC_APP_URL=https://logloads.com`, `LOGLOADS_SESSION_SECRET` | No dev-login switch in production |
 | Supabase | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (server-only) | Normalized integration needs reviewed grants, claims, and RLS |
@@ -54,7 +54,7 @@ together. Documentation does not change runtime validation.
 `LOGLOADS_ALLOW_STATE_BOOTSTRAP=true` is a one-time provisioning switch. Use it only after proving
 `operating_state` is intentionally empty, then remove it. The established project should never need it.
 
-## 3. Pilot migration ledger (CURRENT)
+## 3. Pilot migration ledger (IMPLEMENTED)
 
 Apply `supabase/migrations/*.sql` in filename order. At `15892b7` there are 11 files:
 
@@ -72,7 +72,7 @@ Apply `supabase/migrations/*.sql` in filename order. At `15892b7` there are 11 f
 | `20260726090000_revoke_public_relational_grants.sql` | |
 | `20260808230214_admin_manage_billing_permission.sql` | |
 
-CI applies the full ledger from empty on PostgreSQL 17 ([`RUNNERS.md`](./RUNNERS.md)). **Whether every file
+CI applies the full ledger from empty on PostgreSQL 17 ([`CI.md`](./CI.md)). **Whether every file
 is applied to the live project is not recorded in the repository.** Verify read-only before any cutover
 ([`SECURITY.md`](./SECURITY.md) §5).
 
@@ -98,10 +98,13 @@ is set. Do not set `LOGLOADS_MARKETPLACE_V2` on a hosted Preview until all of th
 
 ## 5. Normalized database cutover — NOT approved
 
-1. **Execute** `01`–`03` and the tests `04`/`05` on a disposable PostgreSQL 17/PostGIS in CI
-   ([`RUNNERS.md`](./RUNNERS.md) §3). Include separate-session entitlement races, authenticated and anonymous
-   RLS denials, and verified Clerk tokens through a configured Supabase project
-   ([`SECURITY.md`](./SECURITY.md) §4–§5).
+1. **Execute the schema and tests in CI.**
+   - `01`–`05` on a disposable PostgreSQL 17/PostGIS: **VERIFIED** at `ec4bb66` ([`CI.md`](./CI.md) §3).
+   - Still required:
+     - the same proof for Gemini's `06`/`07` layer;
+     - merging the CI branch;
+     - verified Clerk tokens through a configured **development** Supabase project
+       ([`SECURITY.md`](./SECURITY.md) §4–§5).
 2. Reconcile the schema with `MarketplaceV2Port` and the native job, inquiry, membership, equipment, and
    public/private separation.
 3. Prove a synthetic migration from the current JSON snapshot. Keep stable IDs, quarantine invalid rows, and
@@ -121,7 +124,7 @@ is set. Do not set `LOGLOADS_MARKETPLACE_V2` on a hosted Preview until all of th
 `pnpm db:check` runs `supabase db reset --local`. Never point it at a populated or production-equivalent
 stack. A local skip is not SQL validation.
 
-## 6. Pilot cutover gates, rollback, and provenance (CURRENT procedure)
+## 6. Pilot cutover gates, rollback, and provenance (IMPLEMENTED procedure)
 
 Before deploying a change that touches canonical-state handling:
 
