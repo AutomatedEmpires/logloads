@@ -137,7 +137,7 @@ set local role authenticated;"
 echo "[0/9] Building the disposable aligned schema (01 -> 02 -> 03 -> 06 -> 11 -> 12)..."
 psql_exec "drop schema if exists marketplace cascade;"
 for f in 01_schema.sql 02_access.sql 03_entitlements.sql 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql; do
-  psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 -f "$SCRIPT_DIR/$f" >/dev/null
+  psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$SCRIPT_DIR/$f" >/dev/null  # one transaction per file (M1)
 done
 [[ "$(psql_scalar "select to_regclass('marketplace.job_publication_attestations') is not null and to_regclass('marketplace.billing_provider_events') is not null;")" == "t" ]] \
   || fail "aligned schema missing: attestation or billing event ledger not created"
