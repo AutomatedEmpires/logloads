@@ -8,7 +8,7 @@ Design work for the V2 load board, tracked in #116. It turns the approved UX spe
 | [02_EXPERIENCE_DESIGN.md](./02_EXPERIENCE_DESIGN.md) | Principles, information architecture, Journey A (hauler) and Journey B (landing operator) layouts for mobile and desktop, profiles, design system, component plan |
 | [03_IMPLEMENTATION_TICKETS.md](./03_IMPLEMENTATION_TICKETS.md) | Fifteen tickets with owned files and acceptance criteria, each mirrored as a GitHub issue |
 | [04_EVALUATION_PLAN.md](./04_EVALUATION_PLAN.md) | How to test the prototype with real logging and hauling businesses |
-| [05_VISUAL_DIRECTIONS.md](./05_VISUAL_DIRECTIONS.md) | Stage A visual directions awaiting the founder's choice |
+| [05_VISUAL_DIRECTIONS.md](./05_VISUAL_DIRECTIONS.md) | Stage A directions (Direction 1 chosen) and the Stage A.2 Modern Industrial refinement |
 | [evidence/](./evidence) | Screenshots of the V2 preview at `4c9518e` (seeded fictional data) |
 
 **Clickable prototype:** [LogLoads V2 Prototype](https://claude.ai/artifact/NGaBSQVwgYD5FHfBmLUwNL) (private until the owner shares it; also linked from #116). It is a static design sketch with fictional businesses; it does not touch the application.
@@ -29,7 +29,7 @@ Already decided (2026-11-01). They are applied in these documents and in both pr
 
 Still needed:
 
-1. **Stage A visual direction.** See [05_VISUAL_DIRECTIONS.md](./05_VISUAL_DIRECTIONS.md).
+1. **Stage A.2 treatment:** Premium, Minimal or the recommended hybrid. Direction 1 is chosen; see [05_VISUAL_DIRECTIONS.md](./05_VISUAL_DIRECTIONS.md).
 2. **C5/C6 — status words.** Approve the mapping in `02 §6.6`, including how "Filled" is shown.
 3. **C4 — landing-scoped staff** on the Basic plan.
 4. **C8–C10:** start timing ("Ongoing"), the product taxonomy, and contact-route defaults.

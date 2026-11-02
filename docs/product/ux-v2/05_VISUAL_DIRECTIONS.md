@@ -1,6 +1,8 @@
 # Stage A: visual directions
 
-> **Status:** CONCEPTS awaiting the founder's choice, 2026-11-02. Tracking: #116.
+> **Status (updated 2026-11-02):** the founder selected **Direction 1, Modern Industrial**. Trade Board and Field Showcase are discontinued as standalone directions. The refinement is in review as **Stage A.2**: [LogLoads Modern Industrial](https://claude.ai/artifact/Mx44BuFm5v92iftrCypV38), with Premium and Minimal variations on Find Work at 1440 and 390 px, a hauling business profile and a landing-operator job workspace, plus the recommended tokens. It is private until shared. The rest of this file records the original Stage A comparison.
+>
+> Tracking: #116.
 > **Review page:** [LogLoads Visual Directions](https://claude.ai/artifact/LQE4h6FSgvLYumphbYB28D). Private until shared.
 > **Why:** the founder kept the functional direction of the first prototype but did not approve its visual design. That design is now superseded: its fixed 1120 × 700 desktop canvas, beige-heavy palette and dashboard patterns are not carried forward.
 
@@ -30,11 +32,11 @@ The pages are fluid layouts built with container queries, so the same markup is 
 
 | Item | State |
 |---|---|
-| V2-DEC-01: 0.10° public precision; "near {town}, within about 4 mi" copy | **Decided**; shown in all three directions |
+| V2-DEC-01: 0.10° public precision; "near {town}, approximate area" copy (no distance promise) | **Decided**; shown in all three directions |
 | V2-DEC-02: rate with basis, or Negotiable with an explanation | **Decided**; see the poles job |
 | V2-DEC-03: attestation at publish; "Confirmed …" means attested or reconfirmed | **Decided**; freshness copy follows it |
 | Fact order on a listing (pay and basis → title → business → area → equipment → start and duration → demand → confirmation) | Founder brief §5; applied in all three |
-| Choice of direction, palette, type and composition | **Awaiting the founder** |
+| Choice of direction | **Decided: Direction 1** (founder, 2026-11-02). The Premium or Minimal treatment is awaiting approval in Stage A.2. |
 | Founder's reference palette | Exploration input. Secondary text was darkened from `#65746D` to `#5F6E67` for AA on the page colour. `#B68A4C` (3.1:1) is used for non-text marks only, and sponsored text uses `#7F5A24`. |
 
 All text colour pairs in the three directions were measured at 4.5:1 or better against their backgrounds.
