@@ -125,3 +125,7 @@ Input mapping for `publishJob`: `payAmount` (dollars) → `p_pay_amount_cents` (
 * **F3** Re-activating a paused V2 job keeps its last confirmation (shown with its age) rather than requiring a fresh attestation — confirm.
 * **F4** Drafts must state truck demand; should fully incomplete drafts be allowed?
 * **F5** (from Phase 1) A mid-cycle plan change consumes a founding-discount cycle.
+
+## Phase 3 update
+
+Founder decisions F1–F5, R4 (billing ordering), the Supabase local-stack verification, E6/E7/S5 and the updated risk register are in `PHASE3_REVIEW.md`; the adapter interface contract (H1–H3, F3, F4) is in `INTERFACE_CONTRACT_H1_H3.md`. The risk table above is superseded by `PHASE3_REVIEW.md` §5.
