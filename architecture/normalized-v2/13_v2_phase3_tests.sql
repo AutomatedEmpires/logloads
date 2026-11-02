@@ -90,7 +90,7 @@ declare
   c_iss constant text := 'https://clerk.logloads.test';
   u_land uuid; u_haul uuid; u_drv uuid; u_admin uuid; u_bill uuid;
   o_land uuid; o_haul uuid; o_bare uuid; o_bill uuid; o_bill2 uuid;
-  o_bill3 uuid; o_bill4 uuid; o_bill5 uuid; o_bill6 uuid; o_bill7 uuid; o_bill8 uuid; o_bill9 uuid; o_bill10 uuid;
+  o_bill3 uuid; o_bill4 uuid; o_bill5 uuid; o_bill6 uuid; o_bill7 uuid; o_bill8 uuid; o_bill9 uuid; o_bill10 uuid; o_e3 uuid; o_e4 uuid; o_e5 uuid;
   l_land uuid; l_bill uuid;
   j_a uuid; j_b uuid; j_legacy uuid; v_draft uuid; v_draft2 uuid;
   v_n bigint; v_n2 bigint; v_ts timestamptz; v_ts2 timestamptz; v_seq bigint;
@@ -752,6 +752,93 @@ begin
     and ((marketplace.org_entitled_plan(o_bill10)).code = 'regional'),
     'H1(e): when the customer cancels that one and keeps the other, the other is replayed (entitled)');
   perform pg_temp.as_jwt('authenticated', 'p3_admin');
+  perform pg_temp.as_jwt('authenticated', 'p3_admin');
+
+  -- -------------------------------------------------------------------------
+  -- E-3: a manually administered subscription is never overwritten by a routine provider event.
+  -- E-4: a failed event is retried only with its original payload.
+  -- E-5: different-payload duplicates are audited; Stripe statuses without an internal state are recorded.
+  -- -------------------------------------------------------------------------
+  perform pg_temp.as_jwt('authenticated', 'p3_bill');
+  o_e3 := marketplace.create_organization('E3 Manual Subscription', 'e3-manual', 'OR', false);
+  o_e4 := marketplace.create_organization('E4 Payload Discipline', 'e4-payload', 'OR', false);
+  o_e5 := marketplace.create_organization('E5 Provider Statuses', 'e5-statuses', 'OR', false);
+  perform pg_temp.as_jwt('service_role');
+
+  -- E-3
+  perform marketplace.open_subscription_cycle(o_e3, 'pro', 'active', t0, t0 + interval '30 days', null, null, false, 7, false);
+  v_out := pg_temp.evt('e3_01', 'customer.subscription.deleted', t0 + interval '1 day', o_e3, 'sub_e3_x', 'basic', 'canceled',
+                       t0, t0 + interval '30 days');
+  perform pg_temp.ok(v_out = 'ignored_superseded', 'E-3: a cancel of an unrelated provider subscription does not cancel the manual subscription');
+  v_out := pg_temp.evt('e3_02', 'customer.subscription.created', t0 + interval '2 days', o_e3, 'sub_e3_y', 'basic', 'active',
+                       t0 + interval '2 days', t0 + interval '32 days', 'subscription_create');
+  perform pg_temp.ok(v_out = 'deferred_conflict', 'E-3: a routine provider event does not take over the manual subscription');
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok((select s.status = 'active' and p.code = 'pro' and s.provider_subscription_ref is null and s.provider_sync_required
+                      from marketplace.organization_subscriptions s join marketplace.subscription_plans p on p.id = s.plan_id
+                      where s.org_id = o_e3 and s.status <> 'canceled'),
+    'E-3: ... the manual subscription is unchanged and flagged for reconciliation');
+  perform pg_temp.as_jwt('service_role');
+  v_out := pg_temp.evt('e3_03', 'logloads.reconciliation', t0 + interval '3 days', o_e3, 'sub_e3_y', 'basic', 'active',
+                       t0 + interval '2 days', t0 + interval '32 days', null, false, null, true);
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok(v_out = 'applied'
+    and (select s.provider_subscription_ref = 'sub_e3_y' and p.code = 'basic'
+         from marketplace.organization_subscriptions s join marketplace.subscription_plans p on p.id = s.plan_id
+         where s.org_id = o_e3 and s.status <> 'canceled'),
+    'E-3: a reconciliation snapshot lets the provider subscription take over');
+
+  -- E-4
+  perform pg_temp.as_jwt('service_role');
+  v_out := pg_temp.evt('e4_01', 'customer.subscription.created', t0, o_e4, 'sub_e4', 'platinum', 'active',
+                       t0, t0 + interval '30 days', 'subscription_create');
+  perform pg_temp.ok(v_out = 'failed', 'E-4 setup: an event that cannot be applied is recorded as failed');
+  v_out := pg_temp.evt('e4_01', 'customer.subscription.created', t0, o_e4, 'sub_e4', 'basic', 'active',
+                       t0, t0 + interval '30 days', 'subscription_create', false, 'a different payload');
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok(v_out = 'rejected'
+    and not exists (select 1 from marketplace.organization_subscriptions where org_id = o_e4)
+    and (select outcome = 'failed' and payload_conflict from marketplace.billing_provider_events where provider_event_id = 'e4_01'),
+    'E-4: a failed event redelivered with a different payload is not applied (it stays failed and is flagged)');
+  perform pg_temp.as_jwt('service_role');
+  v_out := pg_temp.evt('e4_01', 'customer.subscription.created', t0, o_e4, 'sub_e4', 'platinum', 'active',
+                       t0, t0 + interval '30 days', 'subscription_create');
+  perform pg_temp.ok(v_out = 'failed', 'E-4: ... and is still retried with its original payload');
+
+  -- E-5: different-payload duplicate is audited.
+  v_out := pg_temp.evt('e5_01', 'customer.subscription.created', t0, o_e5, 'sub_e5', 'basic', 'incomplete',
+                       t0, t0 + interval '30 days', 'subscription_create');
+  perform pg_temp.ok(v_out = 'applied', 'E-5 setup: an incomplete first event applies');
+  v_out := pg_temp.evt('e5_01', 'customer.subscription.created', t0, o_e5, 'sub_e5', 'basic', 'incomplete',
+                       t0, t0 + interval '30 days', 'subscription_create', false, 'tampered');
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok(v_out = 'duplicate'
+    and exists (select 1 from marketplace.audit_events a join marketplace.billing_provider_events e on e.id = a.entity_id
+                where a.action = 'billing.payload_conflict' and e.provider_event_id = 'e5_01'),
+    'E-5: a duplicate with a different payload is audited');
+
+  -- E-5: incomplete_expired is recorded with the provider's status and is terminal.
+  perform pg_temp.as_jwt('service_role');
+  v_out := pg_temp.evt('e5_02', 'customer.subscription.updated', t0 + interval '1 day', o_e5, 'sub_e5', 'basic', 'incomplete_expired',
+                       t0, t0 + interval '30 days');
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok(v_out = 'applied'
+    and (select status = 'canceled' from marketplace.organization_subscriptions where provider_subscription_ref = 'sub_e5')
+    and (select subscription_status = 'incomplete_expired' from marketplace.billing_provider_events where provider_event_id = 'e5_02'),
+    'E-5: incomplete_expired is recorded as such and ends the subscription (no longer refused with no record)');
+  perform pg_temp.as_jwt('service_role');
+  v_out := pg_temp.evt('e5_03', 'customer.subscription.created', t0 + interval '2 days', o_e5, 'sub_e5_b', 'pro', 'active',
+                       t0 + interval '2 days', t0 + interval '32 days', 'subscription_create');
+  perform pg_temp.ok(v_out = 'applied', 'E-5: an expired incomplete subscription does not block a new one');
+
+  -- E-5: unpaid / paused are recorded and flagged, not applied (F7 pending).
+  v_out := pg_temp.evt('e5_04', 'customer.subscription.updated', t0 + interval '3 days', o_e5, 'sub_e5_b', 'pro', 'unpaid',
+                       t0 + interval '2 days', t0 + interval '32 days');
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok(v_out = 'rejected'
+    and (select status = 'active' and provider_sync_required from marketplace.organization_subscriptions where provider_subscription_ref = 'sub_e5_b')
+    and (select subscription_status = 'unpaid' and outcome = 'rejected' from marketplace.billing_provider_events where provider_event_id = 'e5_04'),
+    'E-5: an unpaid status is recorded and flagged for reconciliation, not applied');
   perform pg_temp.as_jwt('authenticated', 'p3_admin');
 
   raise notice 'ALL PHASE 3 POLICY (F1-F5) AND BILLING-ORDERING TESTS PASSED.';

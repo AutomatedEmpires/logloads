@@ -98,7 +98,8 @@ create table if not exists marketplace.billing_provider_events (
   org_id                     uuid not null references marketplace.organizations (id),
   plan_code                  text not null,
   subscription_status        text not null
-                             check (subscription_status in ('incomplete', 'trialing', 'active', 'past_due', 'canceled')),
+                             check (subscription_status in ('incomplete', 'trialing', 'active', 'past_due', 'canceled',
+                                                            'incomplete_expired', 'unpaid', 'paused')),
   period_start               timestamptz not null,
   period_end                 timestamptz not null,
   cancel_at_period_end       boolean not null default false,
@@ -457,7 +458,7 @@ begin
   where e.org_id = p_org_id and e.outcome = 'deferred_conflict'
     and exists (select 1 from marketplace.billing_provider_events c
                 where c.provider = e.provider and c.provider_subscription_ref = e.provider_subscription_ref
-                  and c.subscription_status = 'canceled');
+                  and c.subscription_status in ('canceled', 'incomplete_expired'));
   get diagnostics v_marked = row_count;
   if v_marked > 0 then
     perform marketplace.write_audit('billing.deferred_terminal', 'organizations', p_org_id, p_org_id,
@@ -602,6 +603,7 @@ declare
   v_evt_id  uuid;
   v_apply   boolean := false;
   v_replay  text;
+  v_raw_status text := p_status;
 begin
   -- Input contract: malformed input is a handler bug and is refused outright (nothing recorded).
   if p_provider is distinct from 'stripe' then
@@ -616,8 +618,14 @@ begin
      or p_period_start is null or p_period_end is null or p_period_end <= p_period_start then
     raise exception 'event creation time, organization, plan and a valid billing period are required' using errcode = '22023';
   end if;
-  if p_status is null or p_status not in ('incomplete', 'trialing', 'active', 'past_due', 'canceled') then
+  if p_status is null or p_status not in ('incomplete', 'trialing', 'active', 'past_due', 'canceled',
+                                          'incomplete_expired', 'unpaid', 'paused') then
     raise exception 'unknown subscription status: %', p_status using errcode = '22023';
+  end if;
+  -- E-5: an incomplete subscription that expired can never become live, exactly like a cancellation. The
+  -- ledger keeps the provider's own status (v_raw_status).
+  if p_status = 'incomplete_expired' then
+    p_status := 'canceled';
   end if;
   if p_payload_sha256 is null or p_payload_sha256 !~ '^[0-9a-f]{64}$' then
     raise exception 'a lowercase hex SHA-256 digest of the raw event payload is required' using errcode = '22023';
@@ -644,6 +652,21 @@ begin
         last_delivery_at = clock_timestamp(),
         payload_conflict = e.payload_conflict or e.payload_sha256 <> p_payload_sha256
     where e.id = v_evt.id;
+    if v_evt.payload_sha256 <> p_payload_sha256 then
+      -- E-5: provider event ids are immutable; a different payload under a known id is recorded.
+      perform marketplace.write_audit(
+        'billing.payload_conflict', 'billing_provider_events', v_evt.id, v_evt.org_id,
+        'a delivery carried a different payload for a known provider event id; it was not applied',
+        jsonb_build_object('provider_event_id', p_provider_event_id, 'recorded_outcome', v_evt.outcome));
+    end if;
+    if v_evt.outcome = 'failed' and v_evt.payload_sha256 <> p_payload_sha256 then
+      -- E-4: a failed event is retried only with the payload it was first recorded with.
+      return query select
+        'rejected'::text,
+        'a failed event was redelivered with a different payload and was not applied; it stays retryable with its original payload'::text,
+        v_evt.subscription_id, v_evt.id;
+      return;
+    end if;
     if v_evt.outcome <> 'failed' then
       return query select
         'duplicate'::text,
@@ -661,7 +684,14 @@ begin
   where s.provider_subscription_ref = p_provider_subscription_ref
   for update;
 
-  if found and v_sub.org_id <> p_org_id then
+  if p_status in ('unpaid', 'paused') then
+    v_result := 'rejected';
+    v_reason := 'provider status ' || p_status || ' has no approved entitlement mapping yet (founder decision F7); recorded and flagged for reconciliation';
+    if found and v_sub.org_id = p_org_id then
+      v_sub_id := v_sub.id;
+      update marketplace.organization_subscriptions s set provider_sync_required = true where s.id = v_sub.id;
+    end if;
+  elsif found and v_sub.org_id <> p_org_id then
     v_result := 'rejected';
     v_reason := 'provider subscription belongs to a different organization';
   elsif found and v_sub.status = 'canceled' then
@@ -707,6 +737,20 @@ begin
       else
         v_result := 'deferred_conflict';
         v_reason := 'organization already has a different live provider subscription; reconcile before applying';
+        update marketplace.organization_subscriptions s set provider_sync_required = true where s.id = v_live.id;
+      end if;
+    elsif found then
+      -- E-3: the live subscription is manually administered (no provider reference).
+      v_sub_id := v_live.id;
+      if p_status = 'canceled' then
+        v_result := 'ignored_superseded';
+        v_reason := 'cancellation of a provider subscription the organization is not using (its live subscription is manually administered)';
+      elsif coalesce(p_is_reconciliation, false) then
+        v_apply := true;
+        v_reason := 'reconciliation snapshot: the provider subscription takes over from the manually administered one';
+      else
+        v_result := 'deferred_conflict';
+        v_reason := 'the live subscription is manually administered; a provider subscription replaces it only through a reconciliation snapshot';
         update marketplace.organization_subscriptions s set provider_sync_required = true where s.id = v_live.id;
       end if;
     else
@@ -763,13 +807,13 @@ begin
       is_reconciliation, payload_sha256, outcome, outcome_reason, subscription_id
     ) values (
       p_provider, p_provider_event_id, btrim(p_event_type), p_provider_created_at, p_provider_subscription_ref, p_provider_customer_ref,
-      p_org_id, p_plan_code, p_status, p_period_start, p_period_end, coalesce(p_cancel_at_period_end, false), p_billing_reason,
+      p_org_id, p_plan_code, v_raw_status, p_period_start, p_period_end, coalesce(p_cancel_at_period_end, false), p_billing_reason,
       coalesce(p_is_reconciliation, false), p_payload_sha256, v_result, v_reason, v_sub_id
     ) returning id into v_evt_id;
   else
     update marketplace.billing_provider_events e
     set event_type = btrim(p_event_type), provider_created_at = p_provider_created_at,
-        provider_customer_ref = p_provider_customer_ref, plan_code = p_plan_code, subscription_status = p_status,
+        provider_customer_ref = p_provider_customer_ref, plan_code = p_plan_code, subscription_status = v_raw_status,
         period_start = p_period_start, period_end = p_period_end,
         cancel_at_period_end = coalesce(p_cancel_at_period_end, false), billing_reason = p_billing_reason,
         is_reconciliation = coalesce(p_is_reconciliation, false), payload_sha256 = p_payload_sha256,
@@ -783,7 +827,7 @@ begin
       'provider_event_id', p_provider_event_id,
       'event_type', btrim(p_event_type),
       'provider_created_at', p_provider_created_at,
-      'status', p_status,
+      'status', v_raw_status,
       'plan', p_plan_code,
       'period_start', p_period_start,
       'billing_reason', p_billing_reason,
