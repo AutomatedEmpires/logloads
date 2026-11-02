@@ -7,7 +7,7 @@ import MapboxMap, {
   NavigationControl as MapboxNavigationControl,
   Source as MapboxSource,
   type MapRef as MapboxMapRef
-} from "react-map-gl"
+} from "react-map-gl/mapbox"
 import MaplibreMap, {
   Layer as MaplibreLayer,
   Marker as MaplibreMarker,
@@ -20,6 +20,7 @@ import "maplibre-gl/dist/maplibre-gl.css"
 import "mapbox-gl/dist/mapbox-gl.css"
 
 import { MAPBOX_STYLE, selectMapRuntime, type MapRuntime } from "@/lib/map-runtime"
+import { loadMaplibre } from "@/lib/maplibre-worker"
 import type { NetworkLoadView } from "@/lib/network"
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ""
@@ -216,6 +217,7 @@ function MaplibreRealMap({ loads, mapStyle, onPick, selectedLoadId }: InnerMapPr
       initialViewState={bounds
         ? { bounds, fitBoundsOptions: { maxZoom: FIT_MAX_ZOOM, padding: FIT_PADDING } }
         : { latitude: 44.5, longitude: -70.5, zoom: 6 }}
+      mapLib={loadMaplibre()}
       mapStyle={mapStyle}
       ref={mapRef}
       style={{ height: "100%", width: "100%" }}
