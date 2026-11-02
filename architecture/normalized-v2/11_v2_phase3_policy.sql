@@ -21,6 +21,32 @@
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
+-- 0. Migration-order guard (D-1/D-2): requires 06, refuses a repeat. Runs before any change.
+--    Apply exactly once, in one transaction: psql -v ON_ERROR_STOP=1 --single-transaction -f 11_v2_phase3_policy.sql
+-- -----------------------------------------------------------------------------
+do $$
+begin
+  perform pg_advisory_xact_lock(hashtextextended('marketplace.schema_migrations', 0));
+  -- Two statements: PL/pgSQL plans each condition whole, so the ledger is referenced only once it exists.
+  if to_regclass('marketplace.schema_migrations') is null then
+    raise exception 'migration 11 requires migration 06 to be applied first' using errcode = '55000';
+  end if;
+  if not exists (select 1 from marketplace.schema_migrations where version = '06') then
+    raise exception 'migration 11 requires migration 06 to be applied first' using errcode = '55000';
+  end if;
+  if exists (select 1 from marketplace.schema_migrations where version = '11') then
+    raise exception 'migration 11 is already applied (%); re-running it is refused and nothing was changed',
+      (select applied_at from marketplace.schema_migrations where version = '11')
+      using errcode = '55000', hint = 'Migrations are forward-only.';
+  end if;
+  if to_regclass('marketplace.job_moderation_holds') is not null then
+    raise exception 'migration 11 appears to be applied already (marketplace.job_moderation_holds exists) but is not recorded; refusing to re-run'
+      using errcode = '55000';
+  end if;
+end
+$$;
+
+-- -----------------------------------------------------------------------------
 -- F1. Private by default; explicit, recorded consent to public discovery.
 -- -----------------------------------------------------------------------------
 alter table marketplace.hauler_profiles
@@ -746,3 +772,7 @@ grant execute on function
   marketplace.reactivate_job_posting(uuid, boolean),
   marketplace.admin_release_job_moderation_hold(uuid, text)
   to authenticated;
+-- -----------------------------------------------------------------------------
+-- Record this migration (D-1/D-2).
+-- -----------------------------------------------------------------------------
+insert into marketplace.schema_migrations (version, name) values ('11', '11_v2_phase3_policy');

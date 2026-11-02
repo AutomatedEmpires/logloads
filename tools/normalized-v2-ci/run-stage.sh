@@ -48,9 +48,21 @@ run_sql() {
   return "$rc"
 }
 
+# Migration files are applied exactly as an operator must apply them: one transaction per file, so a failure
+# leaves nothing behind (each file's migration-ledger guard refuses repeats and wrong order before changing anything).
+run_migration() {
+  local file="$1"
+  echo "== psql -X -v ON_ERROR_STOP=1 --single-transaction -f $file" | tee "$LOG"
+  local started=$SECONDS
+  psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -v ON_ERROR_STOP=1 -v VERBOSITY=verbose --single-transaction -f "$file" 2>&1 | tee -a "$LOG"
+  local rc=${PIPESTATUS[0]}
+  echo "== exit $rc after $((SECONDS - started))s" | tee -a "$LOG"
+  return "$rc"
+}
+
 case "$STAGE" in
   1)
-    run_sql "$DIR/01_schema.sql"
+    run_migration "$DIR/01_schema.sql"
     check "postgis installed in schema extensions" "select exists (select 1 from pg_extension e join pg_namespace n on n.oid = e.extnamespace where e.extname = 'postgis' and n.nspname = 'extensions');"
     check "btree_gist installed in schema extensions" "select exists (select 1 from pg_extension e join pg_namespace n on n.oid = e.extnamespace where e.extname = 'btree_gist' and n.nspname = 'extensions');"
     check "no postgis-dependent extension left outside extensions" "select not exists (select 1 from pg_extension where extname in ('postgis_topology','postgis_tiger_geocoder','postgis_raster','postgis_sfcgal'));"
@@ -69,7 +81,7 @@ case "$STAGE" in
     } | tee -a "$LOG" | tee -a "$SUMMARY"
     ;;
   2)
-    run_sql "$DIR/02_access.sql"
+    run_migration "$DIR/02_access.sql"
     check "RLS enabled on every marketplace table" "select bool_and(c.relrowsecurity) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'marketplace' and c.relkind in ('r','p');"
     check "no table privileges granted to PUBLIC" "select not exists (select 1 from information_schema.role_table_grants where table_schema = 'marketplace' and grantee = 'PUBLIC');"
     check "anon holds no write privileges" "select not exists (select 1 from information_schema.role_table_grants where table_schema = 'marketplace' and grantee = 'anon' and privilege_type in ('INSERT','UPDATE','DELETE','TRUNCATE'));"
@@ -84,7 +96,7 @@ case "$STAGE" in
     } | tee -a "$LOG" | tee -a "$SUMMARY"
     ;;
   3)
-    run_sql "$DIR/03_entitlements.sql"
+    run_migration "$DIR/03_entitlements.sql"
     check "open_subscription_cycle exists" "select exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and p.proname = 'open_subscription_cycle');"
     check "RLS still enabled on every marketplace table" "select bool_and(c.relrowsecurity) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'marketplace' and c.relkind in ('r','p');"
     ;;
@@ -106,12 +118,13 @@ case "$STAGE" in
     { echo "### Stage 5 concurrency"; echo '```'; grep -E "^\[|PASS|RACE|overlap|skew" "$LOG" || true; echo '```'; } >> "$SUMMARY"
     ;;
   6)
-    run_sql "$DIR/06_v2_contract_alignment.sql"
+    run_migration "$DIR/06_v2_contract_alignment.sql"
     check "RLS enabled on every marketplace table" "select bool_and(c.relrowsecurity) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'marketplace' and c.relkind in ('r','p');"
     check "no marketplace function executable by PUBLIC" "select not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and has_function_privilege('public', p.oid, 'EXECUTE'));"
     check "every SECURITY DEFINER function pins search_path" "select not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and p.prosecdef and not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) cfg where cfg like 'search_path=%'));"
+    check "D-1/D-2: the migration ledger records 06" "select exists (select 1 from marketplace.schema_migrations where version = '06');"
     check "E7: superseded baseline pay / published_at checks were dropped" "select not exists (select 1 from pg_constraint c where c.conrelid = 'marketplace.job_postings'::regclass and c.contype = 'c' and c.conname not in ('job_postings_compensation_chk', 'job_postings_attestation_chk') and (regexp_replace(lower(pg_get_constraintdef(c.oid)), '[()]|::text', '', 'g') like '%pay_unit is null and pay_amount_cents is null%' or regexp_replace(lower(pg_get_constraintdef(c.oid)), '[()]|::text', '', 'g') like '%status = ''draft'' or published_at is not null%'));"
-    check "attestation and legacy-import ledgers carry no client grants" "select not exists (select 1 from information_schema.role_table_grants where table_schema = 'marketplace' and table_name in ('job_publication_attestations','legacy_job_imports') and grantee in ('PUBLIC','anon','authenticated','service_role'));"
+    check "attestation and legacy-import ledgers carry no client grants" "select not exists (select 1 from information_schema.role_table_grants where table_schema = 'marketplace' and table_name in ('job_publication_attestations','legacy_job_imports','schema_migrations') and grantee in ('PUBLIC','anon','authenticated','service_role'));"
     check "anon holds no write privileges" "select not exists (select 1 from information_schema.role_table_grants where table_schema = 'marketplace' and grantee = 'anon' and privilege_type in ('INSERT','UPDATE','DELETE','TRUNCATE'));"
     # Comment-proof: no marketplace function may read a session setting except the JWT claims and the
     # built-in role GUC (which a client cannot set to a role it is not a member of).
@@ -166,8 +179,8 @@ case "$STAGE" in
     grep -q "MIGRATION PATH TEST PASSED" "$LOG" || { echo "STAGE 10: test did not report completion" >&2; exit 1; }
     ;;
   11)
-    run_sql "$DIR/11_v2_phase3_policy.sql"
-    aligned_privilege_checks "'job_publication_attestations','legacy_job_imports','job_moderation_holds'"
+    run_migration "$DIR/11_v2_phase3_policy.sql"
+    aligned_privilege_checks "'job_publication_attestations','legacy_job_imports','job_moderation_holds','schema_migrations'"
     check "F1: no public hauler profile without recorded consent" "select not exists (select 1 from marketplace.hauler_profiles where is_public and public_listing_consent_at is null);"
     check "F1: consent columns are not client-writable" "select not has_column_privilege('authenticated', 'marketplace.hauler_profiles', 'public_listing_consent_at', 'UPDATE') and not has_column_privilege('authenticated', 'marketplace.hauler_profiles', 'public_listing_consent_by', 'INSERT');"
     check "S5: no EXECUTE grant by the migration role on extension functions it does not own" "select not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace cross join lateral aclexplode(p.proacl) a where n.nspname = 'extensions' and p.proowner <> (select oid from pg_roles where rolname = current_user) and a.grantor = (select oid from pg_roles where rolname = current_user) and a.privilege_type = 'EXECUTE' and (a.grantee = 0 or pg_get_userbyid(a.grantee) in ('anon','authenticated','service_role')));"
@@ -175,10 +188,12 @@ case "$STAGE" in
     check "F3: reactivate_job_posting executable by authenticated only" "select has_function_privilege('authenticated', 'marketplace.reactivate_job_posting(uuid, boolean)', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.reactivate_job_posting(uuid, boolean)', 'EXECUTE') and not has_function_privilege('service_role', 'marketplace.reactivate_job_posting(uuid, boolean)', 'EXECUTE');"
     ;;
   12)
-    run_sql "$DIR/12_v2_billing_events.sql"
-    aligned_privilege_checks "'job_publication_attestations','legacy_job_imports','job_moderation_holds','billing_provider_events'"
+    run_migration "$DIR/12_v2_billing_events.sql"
+    aligned_privilege_checks "'job_publication_attestations','legacy_job_imports','job_moderation_holds','billing_provider_events','schema_migrations'"
     check "R4: apply_billing_provider_event executable by service_role only" "select has_function_privilege('service_role', p.oid, 'EXECUTE') and not has_function_privilege('authenticated', p.oid, 'EXECUTE') and not has_function_privilege('anon', p.oid, 'EXECUTE') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and p.proname = 'apply_billing_provider_event';"
     check "R4: the subscription-cycle core is not executable by any API role" "select not has_function_privilege('service_role', p.oid, 'EXECUTE') and not has_function_privilege('authenticated', p.oid, 'EXECUTE') and not has_function_privilege('anon', p.oid, 'EXECUTE') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and p.proname = 'apply_subscription_cycle';"
+    check "E-1: the deferred-replay core is not executable by any API role" "select not has_function_privilege('service_role', 'marketplace.replay_deferred_billing_event(uuid)', 'EXECUTE') and not has_function_privilege('authenticated', 'marketplace.replay_deferred_billing_event(uuid)', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.replay_deferred_billing_event(uuid)', 'EXECUTE');"
+    check "D-1/D-2: the migration ledger records 06, 11, 12 in order" "select string_agg(version, ',' order by applied_at, version) = '06,11,12' from marketplace.schema_migrations;"
     check "R4: one apply_billing_provider_event and one open_subscription_cycle (no stray overloads)" "select count(*) filter (where p.proname = 'apply_billing_provider_event') = 1 and count(*) filter (where p.proname = 'open_subscription_cycle') = 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace';"
     {
       echo "### Stage 12 Phase 3 inventory"

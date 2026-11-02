@@ -24,7 +24,75 @@
 --                previews, and content edits never stamp or refresh
 --                `last_confirmed_at`. Direct table INSERT/UPDATE cannot bypass
 --                attestation or spoof confirmation timestamps.
+--
+-- APPLY EXACTLY ONCE, in one transaction: `psql -v ON_ERROR_STOP=1 --single-transaction -f 06_...`.
+-- The migration ledger (`marketplace.schema_migrations`, created here) records 06, 11 and 12; each
+-- refuses to run again or out of order (D-1/D-2), before changing anything.
 -- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- 0. Migration-order guard and pre-flight (D-1, D-2, D-4). Runs before any change.
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_issues text;
+begin
+  -- One migrator at a time (held to the end of the transaction under --single-transaction).
+  perform pg_advisory_xact_lock(hashtextextended('marketplace.schema_migrations', 0));
+
+  if to_regclass('marketplace.job_postings') is null
+     or to_regprocedure('marketplace.open_subscription_cycle(uuid, text, text, timestamptz, timestamptz, text, text, boolean, integer, boolean)') is null then
+    raise exception 'migration 06 requires the 01 -> 02 -> 03 baseline' using errcode = '55000';
+  end if;
+  if to_regclass('marketplace.schema_migrations') is not null then
+    if exists (select 1 from marketplace.schema_migrations where version = '06') then
+      raise exception 'migration 06 is already applied (%); re-running it is refused and nothing was changed',
+        (select applied_at from marketplace.schema_migrations where version = '06')
+        using errcode = '55000',
+              hint = 'Migrations are forward-only. Re-running 06 would mark V2 jobs as legacy imports and revert 11/12.';
+    end if;
+  end if;
+  -- A database migrated before the ledger existed: 06's own tables are present but unrecorded.
+  if to_regclass('marketplace.job_publication_attestations') is not null
+     or to_regclass('marketplace.legacy_job_imports') is not null then
+    raise exception 'migration 06 appears to be applied already (its tables exist) but is not recorded; refusing to re-run'
+      using errcode = '55000',
+            hint = 'Record it deliberately in marketplace.schema_migrations after verifying the schema. Nothing was changed.';
+  end if;
+
+  -- Pre-flight (D-4): baseline states 06 cannot represent are refused here, before any change.
+  select string_agg(x, '; ') into v_issues from (
+    select format('%s non-draft job(s) without published_at', count(*)) as x
+    from marketplace.job_postings where status <> 'draft' and published_at is null having count(*) > 0
+    union all
+    select format('%s landing point(s) outside geographic bounds', count(*))
+    from marketplace.landings
+    where public_point is not null
+      and (abs(extensions.st_y(public_point::extensions.geometry)) > 90 or abs(extensions.st_x(public_point::extensions.geometry)) > 180)
+    having count(*) > 0
+  ) s;
+  if v_issues is not null then
+    raise exception 'migration 06 pre-flight refused unsupported baseline data: %', v_issues using errcode = '23514';
+  end if;
+
+  -- Supported legacy states 06 migrates (reported, not refused).
+  raise notice '06 pre-flight: % non-draft job(s) become audited legacy imports (% without stated pay); % draft(s) carry pre-V2 publication/confirmation timestamps (audited, then cleared); % superseded inquiry row(s); % message(s) over 2000 characters (kept)',
+    (select count(*) from marketplace.job_postings where status <> 'draft'),
+    (select count(*) from marketplace.job_postings where status <> 'draft' and pay_unit is null),
+    (select count(*) from marketplace.job_postings where status = 'draft' and (published_at is not null or last_confirmed_at is not null)),
+    (select count(*) - count(distinct (job_id, hauler_org_id)) from marketplace.expressions_of_interest),
+    (select count(*) from marketplace.interest_messages where char_length(btrim(body)) > 2000);
+end
+$$;
+
+create table if not exists marketplace.schema_migrations (
+  version    text primary key check (version ~ '^[0-9]{2}$'),
+  name       text not null check (char_length(name) between 3 and 120),
+  applied_at timestamptz not null default clock_timestamp(),
+  applied_by text not null default current_user
+);
+alter table marketplace.schema_migrations enable row level security;
+revoke all on marketplace.schema_migrations from public, anon, authenticated, service_role;
 
 -- -----------------------------------------------------------------------------
 -- 1. Known Gap 1 & V2-DEC-02 / V2-DEC-03 table columns and constraints on
@@ -75,7 +143,8 @@ alter table marketplace.legacy_job_imports enable row level security;
 
 -- Pre-existing non-draft rows predate V2-DEC-03: nobody attested their availability. They are
 -- recorded as audited legacy imports and keep exactly the confirmation they had (often none).
--- Confirmation is never fabricated from published_at/created_at.
+-- Confirmation is never fabricated from published_at/created_at. The guard in section 0 makes this
+-- run once, on pre-V2 rows only (D-1).
 insert into marketplace.legacy_job_imports (job_id, org_id, imported_by, reason)
 select j.id, j.org_id, null, 'Pre-V2 baseline row: availability never explicitly attested'
 from marketplace.job_postings j
@@ -83,10 +152,42 @@ where j.status <> 'draft'
   and not j.is_legacy_import
 on conflict (job_id) do nothing;
 
+-- These are migration writes, not user edits: the baseline job_guard (which rejects active rows without
+-- stated pay — the very rows being migrated, D-4d) and set_updated_at (which would present the migration
+-- as a content change, D-6) are suspended for exactly these statements.
+alter table marketplace.job_postings disable trigger job_guard;
+alter table marketplace.job_postings disable trigger set_updated_at;
+
 update marketplace.job_postings j
 set is_legacy_import = true
 where j.status <> 'draft'
   and not j.is_legacy_import;
+
+-- D-4c: V2 drafts never carry publication or confirmation (V2-DEC-03), but a baseline draft can (a
+-- posting returned to draft, or a client-written last_confirmed_at). The exact values are preserved in
+-- the append-only audit log, then cleared, so the draft can still be edited and published under V2.
+do $$
+declare r record;
+begin
+  for r in
+    select j.id, j.org_id, j.published_at, j.last_confirmed_at
+    from marketplace.job_postings j
+    where j.status = 'draft' and (j.published_at is not null or j.last_confirmed_at is not null)
+  loop
+    perform marketplace.write_audit(
+      'job.migration_draft_timestamps_cleared', 'job_postings', r.id, r.org_id,
+      'Pre-V2 draft carried publication/confirmation timestamps that V2 drafts cannot hold',
+      jsonb_build_object('migration', '06_v2_contract_alignment',
+                         'published_at', r.published_at, 'last_confirmed_at', r.last_confirmed_at));
+  end loop;
+end
+$$;
+update marketplace.job_postings j
+set published_at = null, last_confirmed_at = null
+where j.status = 'draft' and (j.published_at is not null or j.last_confirmed_at is not null);
+
+alter table marketplace.job_postings enable trigger set_updated_at;
+alter table marketplace.job_postings enable trigger job_guard;
 
 -- Drop the baseline anonymous check constraint on `job_postings` that allowed
 -- unquoted active jobs (`pay_unit is null and pay_amount_cents is null`) on any status,
@@ -212,14 +313,44 @@ create index if not exists eoi_equipment_interest_idx
 
 alter table marketplace.expression_of_interest_equipment enable row level security;
 
+-- V2 keeps ONE inquiry thread per (job, hauling business); a withdrawn thread is renewed rather than
+-- duplicated. The baseline allowed a new row after a withdrawal, so existing data can hold several rows
+-- for one pair (D-4a). Nothing is deleted: the extra rows (all withdrawn, by the baseline's live-row
+-- index) point at the thread V2 keeps — the live row, else the most recent — and the uniqueness rule
+-- covers every row that is not superseded. `superseded_by` has no client grant.
+alter table marketplace.expressions_of_interest
+  add column if not exists superseded_by uuid references marketplace.expressions_of_interest (id);
+alter table marketplace.expressions_of_interest
+  drop constraint if exists expressions_of_interest_superseded_chk,
+  add constraint expressions_of_interest_superseded_chk
+    check (superseded_by is null or (superseded_by <> id and status = 'withdrawn'));
+
+alter table marketplace.expressions_of_interest disable trigger set_updated_at;
+with ranked as (
+  select e.id,
+         first_value(e.id) over w as keep_id,
+         row_number() over w as rn
+  from marketplace.expressions_of_interest e
+  window w as (partition by e.job_id, e.hauler_org_id
+               order by (e.status <> 'withdrawn') desc, e.created_at desc, e.id desc)
+)
+update marketplace.expressions_of_interest e
+set superseded_by = r.keep_id
+from ranked r
+where e.id = r.id and r.rn > 1 and e.superseded_by is null;
+alter table marketplace.expressions_of_interest enable trigger set_updated_at;
+
 drop index if exists marketplace.expressions_of_interest_live_uq;
 create unique index if not exists expressions_of_interest_job_hauler_uq
-  on marketplace.expressions_of_interest (job_id, hauler_org_id);
+  on marketplace.expressions_of_interest (job_id, hauler_org_id)
+  where superseded_by is null;
 
+-- V2 tightens replies to 2000 characters. Baseline messages up to 4000 characters are history and are
+-- kept unchanged (D-4b): the rule is enforced on every new or edited message (NOT VALID).
 alter table marketplace.interest_messages
   drop constraint if exists interest_messages_body_check,
   add constraint interest_messages_body_check
-    check (char_length(btrim(body)) between 1 and 2000);
+    check (char_length(btrim(body)) between 1 and 2000) not valid;
 
 create or replace function marketplace.tg_eoi_equipment_consistency()
 returns trigger language plpgsql security definer
@@ -350,29 +481,41 @@ $$;
 -- Re-snap any existing points to the fixed 0.10-degree grid and add a CHECK
 -- constraint on `landings.public_point` so an unquantized coordinate can never
 -- be stored on `marketplace.landings`.
+-- A re-snap is a migration write, not an edit: set_updated_at is suspended so last-modified times are
+-- kept (D-6), and only rows whose point actually moves are written.
+alter table marketplace.landings disable trigger set_updated_at;
 update marketplace.landings
 set public_point = marketplace.approximate_point(public_point)
-where public_point is not null;
+where public_point is not null
+  and not extensions.st_equals(public_point::extensions.geometry, marketplace.approximate_point(public_point)::extensions.geometry);
+alter table marketplace.landings enable trigger set_updated_at;
 
 -- The hauler-profile and availability guard triggers stamp last_confirmed_at / reported_at = now() on
 -- every update ("every edit is a fresh self-report"). A migration re-snap is not a hauler's
 -- confirmation or report, so those triggers are suspended for exactly these statements; the snap they
 -- would also apply is performed explicitly by approximate_point() here.
 alter table marketplace.hauler_profiles disable trigger hauler_profile_guard;
+alter table marketplace.hauler_profiles disable trigger set_updated_at;
 update marketplace.hauler_profiles
 set service_center = marketplace.approximate_point(service_center)
-where service_center is not null;
+where service_center is not null
+  and not extensions.st_equals(service_center::extensions.geometry, marketplace.approximate_point(service_center)::extensions.geometry);
+alter table marketplace.hauler_profiles enable trigger set_updated_at;
 alter table marketplace.hauler_profiles enable trigger hauler_profile_guard;
 
 alter table marketplace.availability_reports disable trigger availability_guard;
 update marketplace.availability_reports
 set area_center = marketplace.approximate_point(area_center)
-where area_center is not null;
+where area_center is not null
+  and not extensions.st_equals(area_center::extensions.geometry, marketplace.approximate_point(area_center)::extensions.geometry);
 alter table marketplace.availability_reports enable trigger availability_guard;
 
+alter table marketplace.job_boosts disable trigger set_updated_at;
 update marketplace.job_boosts
 set center_point = marketplace.approximate_point(center_point)
-where center_point is not null;
+where center_point is not null
+  and not extensions.st_equals(center_point::extensions.geometry, marketplace.approximate_point(center_point)::extensions.geometry);
+alter table marketplace.job_boosts enable trigger set_updated_at;
 
 alter table marketplace.landings
   drop constraint if exists landings_public_point_quantized_chk,
@@ -2056,6 +2199,7 @@ begin
   select * into v_existing
   from marketplace.expressions_of_interest e
   where e.job_id = p_job_id and e.hauler_org_id = p_hauler_org_id
+    and e.superseded_by is null
   for update;
 
   if found then
@@ -2557,3 +2701,9 @@ grant execute on function
   marketplace.post_hauler_interest_reply(uuid, uuid, text),
   marketplace.list_marketplace_interests(uuid, text, uuid)
   to authenticated;
+
+-- -----------------------------------------------------------------------------
+-- 9. Record this migration (D-1/D-2). The primary key also makes a second, unguarded application fail
+--    inside its transaction.
+-- -----------------------------------------------------------------------------
+insert into marketplace.schema_migrations (version, name) values ('06', '06_v2_contract_alignment');

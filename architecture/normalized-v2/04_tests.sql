@@ -145,10 +145,10 @@ declare
   v_pub_exec integer;
 begin
   select count(*) into v_tables from pg_tables where schemaname = 'marketplace';
-  -- Exact inventory per schema level: baseline 32; + 06 alignment 35; + 11/12 Phase 3 (moderation holds,
-  -- billing provider event ledger) 37.
-  perform pg_temp.assert_true(v_tables = case when pg_temp.phase3() then 37 when pg_temp.aligned() then 35 else 32 end,
-    format('expected %s tables in marketplace, found %s', case when pg_temp.phase3() then 37 when pg_temp.aligned() then 35 else 32 end, v_tables));
+  -- Exact inventory per schema level: baseline 32; + 06 alignment 36 (incl. the schema_migrations ledger);
+  -- + 11/12 Phase 3 (moderation holds, billing provider event ledger) 38.
+  perform pg_temp.assert_true(v_tables = case when pg_temp.phase3() then 38 when pg_temp.aligned() then 36 else 32 end,
+    format('expected %s tables in marketplace, found %s', case when pg_temp.phase3() then 38 when pg_temp.aligned() then 36 else 32 end, v_tables));
 
   select count(*) into v_views from pg_views where schemaname = 'marketplace';
   perform pg_temp.assert_true(v_views = 0, format('expected 0 views in marketplace, found %s', v_views));
@@ -159,9 +159,9 @@ begin
   select count(*) into v_funcs
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'marketplace';
-  -- Functions: baseline 44; + 06 63; + 11/12 71 (5 in 11, 3 in 12; the rest redefine existing ones).
-  perform pg_temp.assert_true(v_funcs = case when pg_temp.phase3() then 71 when pg_temp.aligned() then 63 else 44 end,
-    format('expected %s functions in marketplace, found %s', case when pg_temp.phase3() then 71 when pg_temp.aligned() then 63 else 44 end, v_funcs));
+  -- Functions: baseline 44; + 06 63; + 11/12 72 (5 in 11, 4 in 12; the rest redefine existing ones).
+  perform pg_temp.assert_true(v_funcs = case when pg_temp.phase3() then 72 when pg_temp.aligned() then 63 else 44 end,
+    format('expected %s functions in marketplace, found %s', case when pg_temp.phase3() then 72 when pg_temp.aligned() then 63 else 44 end, v_funcs));
 
   -- No function in `marketplace` may be executable by PUBLIC.
   select count(*) into v_pub_exec

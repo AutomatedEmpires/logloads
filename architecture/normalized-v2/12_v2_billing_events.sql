@@ -34,6 +34,32 @@
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
+-- 0. Migration-order guard (D-1/D-2): requires 11, refuses a repeat. Runs before any change.
+--    Apply exactly once, in one transaction: psql -v ON_ERROR_STOP=1 --single-transaction -f 12_v2_billing_events.sql
+-- -----------------------------------------------------------------------------
+do $$
+begin
+  perform pg_advisory_xact_lock(hashtextextended('marketplace.schema_migrations', 0));
+  -- Two statements: PL/pgSQL plans each condition whole, so the ledger is referenced only once it exists.
+  if to_regclass('marketplace.schema_migrations') is null then
+    raise exception 'migration 12 requires migration 11 to be applied first' using errcode = '55000';
+  end if;
+  if not exists (select 1 from marketplace.schema_migrations where version = '11') then
+    raise exception 'migration 12 requires migration 11 to be applied first' using errcode = '55000';
+  end if;
+  if exists (select 1 from marketplace.schema_migrations where version = '12') then
+    raise exception 'migration 12 is already applied (%); re-running it is refused and nothing was changed',
+      (select applied_at from marketplace.schema_migrations where version = '12')
+      using errcode = '55000', hint = 'Migrations are forward-only.';
+  end if;
+  if to_regclass('marketplace.billing_provider_events') is not null then
+    raise exception 'migration 12 appears to be applied already (marketplace.billing_provider_events exists) but is not recorded; refusing to re-run'
+      using errcode = '55000';
+  end if;
+end
+$$;
+
+-- -----------------------------------------------------------------------------
 -- Provider event ledger (ungranted; written only by apply_billing_provider_event).
 -- -----------------------------------------------------------------------------
 create table if not exists marketplace.billing_provider_events (
@@ -108,6 +134,7 @@ declare
   v_is_new_period   boolean := false;
   v_is_split        boolean := false;
   v_counts_cycle    boolean := false;
+  v_alloc_start     timestamptz := p_period_start;
 begin
   perform 1 from marketplace.organizations where id = p_org_id for update;
   select * into v_plan from marketplace.subscription_plans
@@ -205,30 +232,50 @@ begin
   end if;
 
   if marketplace.subscription_is_entitling(p_status, p_period_end, v_grace_ends_at) then
+    -- E-1: a replacement provider subscription can start before a period of the organization's previous
+    -- (now canceled) subscription. That period cannot be truncated to this start (it would end before it
+    -- begins) and invitation records reference it, so this subscription's allowance period begins where
+    -- the previous one ends. Only the org's other subscriptions are considered: one is live at a time.
+    select greatest(p_period_start, coalesce(max(ep.period_end), p_period_start))
+    into v_alloc_start
+    from marketplace.entitlement_periods ep
+    where ep.org_id = p_org_id
+      and ep.subscription_id <> v_sub_id
+      and ep.period_start >= p_period_start
+      and ep.period_start < p_period_end;
+  end if;
+
+  if marketplace.subscription_is_entitling(p_status, p_period_end, v_grace_ends_at) and v_alloc_start >= p_period_end then
+    -- No room before this billing period ends: no invitation allowance this cycle (fail closed), recorded.
+    perform marketplace.write_audit(
+      'subscription.period_overlap_skipped', 'organization_subscriptions', v_sub_id, p_org_id,
+      'an earlier subscription''s period covers this billing period; no invitation allowance until the next cycle',
+      jsonb_build_object('period_start', p_period_start, 'period_end', p_period_end, 'blocked_until', v_alloc_start));
+  elsif marketplace.subscription_is_entitling(p_status, p_period_end, v_grace_ends_at) then
     v_is_split := exists (
       select 1 from marketplace.entitlement_periods ep
       where ep.subscription_id = v_sub_id
-        and ep.period_start < p_period_start
-        and ep.period_end > p_period_start
+        and ep.period_start < v_alloc_start
+        and ep.period_end > v_alloc_start
     );
 
     -- Truncate any earlier overlapping period for this org so mid-cycle plan upgrades
     -- or timestamp adjustments across separate transactions never violate the GiST exclusion constraint.
     update marketplace.entitlement_periods
-    set period_end = p_period_start
+    set period_end = v_alloc_start
     where org_id = p_org_id
-      and period_start < p_period_start
-      and period_end > p_period_start;
+      and period_start < v_alloc_start
+      and period_end > v_alloc_start;
 
     v_is_new_period := not exists (
       select 1 from marketplace.entitlement_periods
-      where subscription_id = v_sub_id and period_start = p_period_start
+      where subscription_id = v_sub_id and period_start = v_alloc_start
     );
 
     insert into marketplace.entitlement_periods
       (org_id, subscription_id, plan_id, period_start, period_end, invitation_allowance, invitations_committed)
     values
-      (p_org_id, v_sub_id, v_plan.id, p_period_start, p_period_end, v_plan.monthly_invitations, 0)
+      (p_org_id, v_sub_id, v_plan.id, v_alloc_start, p_period_end, v_plan.monthly_invitations, 0)
     on conflict (subscription_id, period_start) do update
       set plan_id = excluded.plan_id,
           period_end = excluded.period_end,
@@ -293,6 +340,102 @@ as $$
 $$;
 
 -- -----------------------------------------------------------------------------
+-- E-1. Deferred replacement replay (internal; no API role may execute it).
+-- A replacement provider subscription whose first event arrives while the previous one is still live is
+-- recorded as deferred_conflict. Once the organization has no live subscription (the previous one was
+-- canceled), the latest deferred snapshot of that replacement is applied from the ledger, exactly once:
+-- the ledger row becomes 'applied' and older deferred snapshots of the same subscription 'ignored_stale'.
+-- Several different pending replacements are never guessed between; they wait for reconciliation.
+-- The caller holds the organization row lock, which every billing write takes, so no other event for
+-- this organization can interleave.
+-- -----------------------------------------------------------------------------
+create or replace function marketplace.replay_deferred_billing_event(p_org_id uuid)
+returns text
+language plpgsql security definer
+set search_path = pg_catalog, extensions, pg_temp
+as $$
+declare
+  v_refs   integer;
+  v_evt    marketplace.billing_provider_events;
+  v_sub_id uuid;
+  v_reason text := 'replayed after the organization''s previous provider subscription ended';
+begin
+  if exists (select 1 from marketplace.organization_subscriptions s where s.org_id = p_org_id and s.status <> 'canceled') then
+    return null;
+  end if;
+
+  select count(distinct e.provider_subscription_ref) into v_refs
+  from marketplace.billing_provider_events e
+  where e.org_id = p_org_id and e.outcome = 'deferred_conflict'
+    and not exists (select 1 from marketplace.organization_subscriptions s
+                    where s.provider_subscription_ref = e.provider_subscription_ref);
+  if v_refs = 0 then
+    return null;
+  elsif v_refs > 1 then
+    perform marketplace.write_audit(
+      'billing.deferred_replay_ambiguous', 'organizations', p_org_id, p_org_id,
+      'several different deferred provider subscriptions are pending; submit a reconciliation snapshot',
+      jsonb_build_object('pending_subscriptions', v_refs));
+    return 'deferred replay skipped: ' || v_refs || ' different provider subscriptions are pending reconciliation';
+  end if;
+
+  select * into v_evt
+  from marketplace.billing_provider_events e
+  where e.org_id = p_org_id and e.outcome = 'deferred_conflict'
+    and not exists (select 1 from marketplace.organization_subscriptions s
+                    where s.provider_subscription_ref = e.provider_subscription_ref)
+  order by e.provider_created_at desc, e.received_at desc, e.id desc
+  limit 1
+  for update;
+
+  begin
+    v_sub_id := marketplace.apply_subscription_cycle(
+      p_org_id, v_evt.plan_code, v_evt.subscription_status, v_evt.period_start, v_evt.period_end,
+      v_evt.provider_customer_ref, v_evt.provider_subscription_ref, v_evt.cancel_at_period_end,
+      null,
+      true, -- external provider event: preserve members and landings (03 policy)
+      v_evt.billing_reason);
+    update marketplace.organization_subscriptions s
+    set last_provider_event_id = v_evt.provider_event_id,
+        last_provider_event_at = v_evt.provider_created_at,
+        provider_sync_required = false
+    where s.id = v_sub_id;
+  exception when others then
+    if sqlstate like '40%' or sqlstate in ('55P03', '57014') then
+      raise;
+    end if;
+    perform marketplace.write_audit(
+      'billing.deferred_replay_failed', 'billing_provider_events', v_evt.id, p_org_id,
+      left('replay failed (' || sqlstate || '): ' || sqlerrm, 500),
+      jsonb_build_object('provider_event_id', v_evt.provider_event_id));
+    return left('deferred replay of ' || v_evt.provider_event_id || ' failed (' || sqlstate || ')', 200);
+  end;
+
+  update marketplace.billing_provider_events e
+  set outcome = 'applied', outcome_reason = v_reason, subscription_id = v_sub_id, processed_at = clock_timestamp()
+  where e.id = v_evt.id;
+  update marketplace.billing_provider_events e
+  set outcome = 'ignored_stale',
+      outcome_reason = 'superseded by the replay of a later deferred event for the same provider subscription',
+      processed_at = clock_timestamp()
+  where e.org_id = p_org_id
+    and e.provider_subscription_ref = v_evt.provider_subscription_ref
+    and e.outcome = 'deferred_conflict'
+    and e.id <> v_evt.id;
+
+  perform marketplace.write_audit(
+    'billing.deferred_replayed', 'billing_provider_events', v_evt.id, p_org_id, v_reason,
+    jsonb_build_object(
+      'provider_event_id', v_evt.provider_event_id,
+      'provider_subscription_ref', v_evt.provider_subscription_ref,
+      'status', v_evt.subscription_status,
+      'plan', v_evt.plan_code,
+      'period_start', v_evt.period_start));
+  return left('replayed deferred event ' || v_evt.provider_event_id, 200);
+end
+$$;
+
+-- -----------------------------------------------------------------------------
 -- R4. The webhook entry point (service_role only). The handler passes the provider event id, type and
 -- creation time, and the SUBSCRIPTION SNAPSHOT carried by (or fetched for) the event.
 -- -----------------------------------------------------------------------------
@@ -327,6 +470,7 @@ declare
   v_sub_id  uuid;
   v_evt_id  uuid;
   v_apply   boolean := false;
+  v_replay  text;
 begin
   -- Input contract: malformed input is a handler bug and is refused outright (nothing recorded).
   if p_provider is distinct from 'stripe' then
@@ -465,6 +609,15 @@ begin
     end;
   end if;
 
+  -- E-1: when this event leaves the organization without a live subscription, a replacement that was
+  -- deferred while the previous one was live is applied now instead of waiting for its next delivery.
+  if v_result = 'applied' then
+    v_replay := marketplace.replay_deferred_billing_event(p_org_id);
+    if v_replay is not null then
+      v_reason := left(v_reason || '; ' || v_replay, 500);
+    end if;
+  end if;
+
   if v_evt_id is null then
     insert into marketplace.billing_provider_events (
       provider, provider_event_id, event_type, provider_created_at, provider_subscription_ref, provider_customer_ref,
@@ -532,6 +685,7 @@ $$;
 -- -----------------------------------------------------------------------------
 revoke all on function
   marketplace.apply_subscription_cycle(uuid, text, text, timestamptz, timestamptz, text, text, boolean, integer, boolean, text),
+  marketplace.replay_deferred_billing_event(uuid),
   marketplace.apply_billing_provider_event(text, text, text, timestamptz, uuid, text, text, text, text, timestamptz, timestamptz, boolean, text, text, boolean),
   marketplace.admin_list_billing_provider_events(uuid, integer)
   from public, anon, authenticated, service_role;
@@ -543,3 +697,7 @@ grant execute on function
 grant execute on function
   marketplace.admin_list_billing_provider_events(uuid, integer)
   to authenticated;
+-- -----------------------------------------------------------------------------
+-- Record this migration (D-1/D-2).
+-- -----------------------------------------------------------------------------
+insert into marketplace.schema_migrations (version, name) values ('12', '12_v2_billing_events');

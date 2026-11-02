@@ -90,6 +90,7 @@ declare
   c_iss constant text := 'https://clerk.logloads.test';
   u_land uuid; u_haul uuid; u_drv uuid; u_admin uuid; u_bill uuid;
   o_land uuid; o_haul uuid; o_bare uuid; o_bill uuid; o_bill2 uuid;
+  o_bill3 uuid; o_bill4 uuid; o_bill5 uuid;
   l_land uuid; l_bill uuid;
   j_a uuid; j_b uuid; j_legacy uuid; v_draft uuid; v_draft2 uuid;
   v_n bigint; v_n2 bigint; v_ts timestamptz; v_ts2 timestamptz; v_seq bigint;
@@ -524,6 +525,93 @@ begin
   perform pg_temp.as_jwt('authenticated', 'p3_admin');
   perform pg_temp.ok((select count(*) from marketplace.admin_list_billing_provider_events(o_bill)) >= 15,
     'R4: a billing/support admin can review received events and their outcomes');
+
+  -- -------------------------------------------------------------------------
+  -- E-1: a replacement subscription deferred while the previous one was live is replayed when the
+  -- previous one is canceled, exactly once; it never fails on the entitlement-period exclusion.
+  -- -------------------------------------------------------------------------
+  perform pg_temp.as_jwt('authenticated', 'p3_bill');
+  o_bill3 := marketplace.create_organization('E1 Replacement Timber', 'e1-replacement', 'OR', false);
+  o_bill4 := marketplace.create_organization('E1 Overlap Timber', 'e1-overlap', 'OR', false);
+  o_bill5 := marketplace.create_organization('E1 Ambiguous Timber', 'e1-ambiguous', 'OR', false);
+  perform pg_temp.as_jwt('service_role');
+
+  -- Common case: the replacement starts inside the previous subscription's period.
+  v_out := pg_temp.evt('e1_01', 'customer.subscription.created', t0, o_bill3, 'sub_e1_a', 'basic', 'active',
+                       t0, t0 + interval '30 days', 'subscription_create');
+  perform pg_temp.ok(v_out = 'applied', 'E-1: the first subscription applies');
+  v_out := pg_temp.evt('e1_02', 'customer.subscription.created', t0 + interval '10 days', o_bill3, 'sub_e1_b', 'pro', 'active',
+                       t0 + interval '10 days', t0 + interval '40 days', 'subscription_create');
+  perform pg_temp.ok(v_out = 'deferred_conflict', 'E-1: a replacement arriving while the first is live is deferred');
+  v_out := pg_temp.evt('e1_03', 'customer.subscription.deleted', t0 + interval '11 days', o_bill3, 'sub_e1_a', 'basic', 'canceled',
+                       t0, t0 + interval '30 days');
+  perform pg_temp.ok(v_out = 'applied', 'E-1: canceling the first subscription applies');
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok((select status = 'active' and plan_id = (select id from marketplace.subscription_plans where code = 'pro')
+                             and last_provider_event_id = 'e1_02' and not provider_sync_required
+                      from marketplace.organization_subscriptions where provider_subscription_ref = 'sub_e1_b')
+    and ((marketplace.org_entitled_plan(o_bill3)).code = 'pro'),
+    'E-1: the deferred replacement was applied when the first subscription ended (entitled to its plan)');
+  perform pg_temp.ok((select outcome = 'applied' and outcome_reason ~ 'replayed' and subscription_id is not null
+                      from marketplace.billing_provider_events where provider_event_id = 'e1_02')
+    and (select outcome_reason ~ 'replayed deferred event e1_02' from marketplace.billing_provider_events where provider_event_id = 'e1_03')
+    and (select count(*) = 1 from marketplace.audit_events where org_id = o_bill3 and action = 'billing.deferred_replayed'),
+    'E-1: the ledger records the replay once, on the deferred event, and the cancellation names it');
+  perform pg_temp.ok((select count(*) = 2 from marketplace.entitlement_periods where org_id = o_bill3)
+    and not exists (select 1 from marketplace.entitlement_periods a join marketplace.entitlement_periods b
+                    on a.org_id = b.org_id and a.id < b.id
+                    and tstzrange(a.period_start, a.period_end, '[)') && tstzrange(b.period_start, b.period_end, '[)')
+                    where a.org_id = o_bill3),
+    'E-1: one allowance period per subscription, without overlap');
+  perform pg_temp.as_jwt('service_role');
+  v_out := pg_temp.evt('e1_02', 'customer.subscription.created', t0 + interval '10 days', o_bill3, 'sub_e1_b', 'pro', 'active',
+                       t0 + interval '10 days', t0 + interval '40 days', 'subscription_create');
+  perform pg_temp.ok(v_out = 'duplicate', 'E-1: a redelivery of the replayed event is a duplicate, not a second application');
+  v_out := pg_temp.evt('e1_04', 'customer.subscription.updated', t0 + interval '12 days', o_bill3, 'sub_e1_b', 'pro', 'active',
+                       t0 + interval '10 days', t0 + interval '40 days', null, true);
+  perform pg_temp.ok(v_out = 'applied', 'E-1: later events of the replacement are ordered normally');
+
+  -- Overlap case: the replacement's billing period starts before the previous subscription's period.
+  v_out := pg_temp.evt('e1_11', 'customer.subscription.created', t0 + interval '5 days', o_bill4, 'sub_e1_c', 'basic', 'active',
+                       t0 + interval '5 days', t0 + interval '35 days', 'subscription_create');
+  perform pg_temp.ok(v_out = 'applied', 'E-1: the previous subscription applies');
+  v_out := pg_temp.evt('e1_12', 'customer.subscription.created', t0 + interval '6 days', o_bill4, 'sub_e1_d', 'pro', 'active',
+                       t0, t0 + interval '30 days', 'subscription_create');
+  perform pg_temp.ok(v_out = 'deferred_conflict', 'E-1: an earlier-period replacement is deferred while the previous one is live');
+  v_out := pg_temp.evt('e1_13', 'customer.subscription.deleted', t0 + interval '7 days', o_bill4, 'sub_e1_c', 'basic', 'canceled',
+                       t0 + interval '5 days', t0 + interval '35 days');
+  perform pg_temp.ok(v_out = 'applied', 'E-1: canceling the previous subscription applies (the replay cannot fail it)');
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok((select status = 'active' from marketplace.organization_subscriptions where provider_subscription_ref = 'sub_e1_d')
+    and (select outcome = 'applied' from marketplace.billing_provider_events where provider_event_id = 'e1_12')
+    and exists (select 1 from marketplace.audit_events where org_id = o_bill4 and action = 'subscription.period_overlap_skipped'),
+    'E-1: the replacement is live; with no room for an allowance period this cycle, that is recorded instead of failing');
+  perform pg_temp.as_jwt('service_role');
+  v_out := pg_temp.evt('e1_14', 'invoice.paid', t0 + interval '30 days', o_bill4, 'sub_e1_d', 'pro', 'active',
+                       t0 + interval '30 days', t0 + interval '60 days', 'subscription_cycle');
+  perform pg_temp.ok(v_out = 'applied', 'E-1: the replacement''s renewal applies (no permanent exclusion failure)');
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok(exists (select 1 from marketplace.entitlement_periods ep join marketplace.organization_subscriptions s on s.id = ep.subscription_id
+                             where s.provider_subscription_ref = 'sub_e1_d' and ep.period_start = t0 + interval '30 days'),
+    'E-1: the renewal opened the replacement''s allowance period');
+
+  -- Ambiguity is never guessed: two different pending replacements wait for reconciliation.
+  perform pg_temp.as_jwt('service_role');
+  v_out := pg_temp.evt('e1_21', 'customer.subscription.created', t0, o_bill5, 'sub_e1_e', 'basic', 'active',
+                       t0, t0 + interval '30 days', 'subscription_create');
+  v_out := pg_temp.evt('e1_22', 'customer.subscription.created', t0 + interval '2 days', o_bill5, 'sub_e1_f', 'pro', 'active',
+                       t0 + interval '2 days', t0 + interval '32 days', 'subscription_create');
+  v_out := pg_temp.evt('e1_23', 'customer.subscription.created', t0 + interval '3 days', o_bill5, 'sub_e1_g', 'regional', 'active',
+                       t0 + interval '3 days', t0 + interval '33 days', 'subscription_create');
+  v_out := pg_temp.evt('e1_24', 'customer.subscription.deleted', t0 + interval '4 days', o_bill5, 'sub_e1_e', 'basic', 'canceled',
+                       t0, t0 + interval '30 days');
+  perform pg_temp.ok(v_out = 'applied', 'E-1: the cancellation applies');
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok(not exists (select 1 from marketplace.organization_subscriptions where provider_subscription_ref in ('sub_e1_f', 'sub_e1_g'))
+    and (select count(*) = 2 from marketplace.billing_provider_events where org_id = o_bill5 and outcome = 'deferred_conflict')
+    and exists (select 1 from marketplace.audit_events where org_id = o_bill5 and action = 'billing.deferred_replay_ambiguous'),
+    'E-1: two different pending replacements are left deferred for reconciliation, and that is recorded');
+  perform pg_temp.as_jwt('authenticated', 'p3_admin');
 
   raise notice 'ALL PHASE 3 POLICY (F1-F5) AND BILLING-ORDERING TESTS PASSED.';
 end

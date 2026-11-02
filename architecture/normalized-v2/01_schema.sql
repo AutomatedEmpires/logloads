@@ -20,20 +20,92 @@ create schema if not exists extensions;
 --      disposable test DB where `postgis` was pre-created outside `extensions`,
 --      re-create it in `extensions` so `extensions.geography` and `extensions.st_*`
 --      resolve identically to Supabase.
+--      D-5: dropping PostGIS is destructive (CASCADE removes every geometry column,
+--      function and view built on it), so it is REFUSED unless BOTH hold:
+--        a. the database is stamped disposable: its comment starts with
+--           `logloads-ci-disposable:` (tools/normalized-v2-ci/guard.sh), or the session
+--           sets `logloads.confirm_postgis_relocation` to `drop-postgis-in-<database name>`;
+--        b. nothing outside PostGIS's own extensions depends on it (no user column,
+--           function, view or other object would be cascaded away).
+--      Any other database stops here with nothing changed.
 --   2. Bootstrap Supabase's `anon`, `authenticated`, and `service_role` roles with
 --      `nologin noinherit nobypassrls` and grant them to `current_user` so
 --      `SET LOCAL ROLE` works in any disposable PostgreSQL 17 environment.
 do $$
+declare
+  v_postgis    oid;
+  v_schema     text;
+  v_marked     boolean;
+  v_confirmed  boolean;
+  v_dependents text;
 begin
-  if exists (
-    select 1 from pg_extension e
-    join pg_namespace n on n.oid = e.extnamespace
-    where e.extname = 'postgis' and n.nspname <> 'extensions'
-  ) then
-    execute 'drop extension if exists postgis_tiger_geocoder cascade';
-    execute 'drop extension if exists postgis_topology cascade';
-    execute 'drop extension postgis cascade';
+  select e.oid, n.nspname into v_postgis, v_schema
+  from pg_extension e
+  join pg_namespace n on n.oid = e.extnamespace
+  where e.extname = 'postgis';
+
+  if v_postgis is null or v_schema = 'extensions' then
+    return;
   end if;
+
+  v_marked := coalesce(shobj_description((select d.oid from pg_database d where d.datname = current_database()), 'pg_database'), '')
+              like 'logloads-ci-disposable:%';
+  v_confirmed := coalesce(current_setting('logloads.confirm_postgis_relocation', true), '')
+                 = 'drop-postgis-in-' || current_database();
+  if not (v_marked or v_confirmed) then
+    raise exception 'refusing to drop PostGIS: it is installed in schema "%" and this database is not stamped disposable', v_schema
+      using errcode = '55000',
+            hint = 'Install PostGIS in schema "extensions" yourself, or run against a guarded disposable database. Nothing was changed.';
+  end if;
+
+  -- User objects (not members of any extension) that a CASCADE would destroy: columns of PostGIS
+  -- types (or arrays/domains of them), functions taking or returning them, and views built on
+  -- PostGIS functions.
+  with members as (
+    select d.classid, d.objid from pg_depend d
+    where d.refclassid = 'pg_extension'::regclass and d.refobjid = v_postgis and d.deptype = 'e'
+  ), ext_members as (
+    select d.classid, d.objid from pg_depend d
+    where d.refclassid = 'pg_extension'::regclass and d.deptype = 'e'
+  ), postgis_types as (
+    select m.objid as typ from members m where m.classid = 'pg_type'::regclass
+  )
+  select string_agg(s.x, '; ' order by s.x)
+  into v_dependents
+  from (
+    select format('column %s.%I', a.attrelid::regclass, a.attname) as x
+    from pg_attribute a
+    join pg_class c on c.oid = a.attrelid
+    join pg_type t on t.oid = a.atttypid
+    where a.attnum > 0 and not a.attisdropped
+      and c.relkind in ('r', 'p', 'v', 'm', 'f')
+      and (t.oid in (select typ from postgis_types)
+           or t.typelem in (select typ from postgis_types)
+           or t.typbasetype in (select typ from postgis_types))
+      and not exists (select 1 from ext_members e where e.classid = 'pg_class'::regclass and e.objid = c.oid)
+    union all
+    select format('function %s', p.oid::regprocedure)
+    from pg_proc p
+    where not exists (select 1 from ext_members e where e.classid = 'pg_proc'::regclass and e.objid = p.oid)
+      and (p.prorettype in (select typ from postgis_types)
+           or exists (select 1 from unnest(p.proargtypes::oid[]) u(t) where u.t in (select typ from postgis_types)))
+    union all
+    select format('view %s', r.ev_class::regclass)
+    from pg_depend d
+    join pg_rewrite r on d.classid = 'pg_rewrite'::regclass and d.objid = r.oid
+    where d.refclassid = 'pg_proc'::regclass
+      and d.refobjid in (select m.objid from members m where m.classid = 'pg_proc'::regclass)
+      and not exists (select 1 from ext_members e where e.classid = 'pg_class'::regclass and e.objid = r.ev_class)
+  ) s;
+  if v_dependents is not null then
+    raise exception 'refusing to drop PostGIS: objects outside its extensions depend on it (%)', left(v_dependents, 400)
+      using errcode = '2BP01',
+            hint = 'Nothing was changed. PostGIS is only relocated in an empty disposable database.';
+  end if;
+
+  execute 'drop extension if exists postgis_tiger_geocoder cascade';
+  execute 'drop extension if exists postgis_topology cascade';
+  execute 'drop extension postgis cascade';
 end
 $$;
 
