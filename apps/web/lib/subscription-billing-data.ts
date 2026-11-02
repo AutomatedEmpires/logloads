@@ -1,7 +1,6 @@
 import "server-only"
 
 import {
-  formatMoney,
   type BillingAdjustment,
   type BillingPeriodSummary,
   type NetworkOverageInvoice,
@@ -13,9 +12,8 @@ import {
 } from "@logloads/contracts"
 import type { BadgeProps } from "@logloads/ui"
 
+import { formatBillingDay as formatDay, formatBillingMoney as money } from "./billing-format"
 import { services } from "./services"
-
-const BILLING_CURRENCY = "USD"
 
 export type SubscriptionBillingTone = NonNullable<BadgeProps["tone"]>
 
@@ -174,19 +172,6 @@ export interface HostSubscriptionBillingView {
   statusLabel: string
   statusTone: SubscriptionBillingTone
   subscriptionId: string | null
-}
-
-function money(amountCents: number): string {
-  return formatMoney({ amountCents, currency: BILLING_CURRENCY })
-}
-
-function formatDay(instant: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    day: "numeric",
-    month: "short",
-    timeZone: "UTC",
-    year: "numeric"
-  }).format(new Date(instant))
 }
 
 function formatPeriod(start: string, end: string): string {

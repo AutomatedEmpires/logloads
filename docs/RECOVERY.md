@@ -59,11 +59,11 @@ The flag is required because this replaces the entire live document. The tool:
 2. **takes a pre-restore snapshot of whatever is currently live** — the thing most
    likely to be needed immediately after a restore is what was there a moment
    before it,
-3. writes the document unconditionally by id, deliberately *not* participating in
-   the application's compare-and-swap (an operator overriding state is not a
-   competing writer; the safety copy above is what makes that safe),
-4. re-reads and refuses to report success unless the restored row count matches
-   the file.
+3. writes the document with the application's compare-and-swap against the live
+   version it just snapshotted (`PATCH ...&version=eq.<live>`), and stops without
+   writing if another live write changed the document in between,
+4. re-reads through the application's read path and refuses to report success
+   unless the complete restored document matches the file.
 
 ## Rehearsed, on 2026-07-26
 

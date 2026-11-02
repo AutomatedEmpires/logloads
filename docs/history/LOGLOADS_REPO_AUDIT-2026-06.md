@@ -1,5 +1,10 @@
 # LogLoads Repo Audit
 
+> **SUPERSEDED — historical record (moved from the repository root on 2026-11-01).**
+> This June 2026 audit predates the product reconstruction. Its local paths
+> (`/home/jackson/...`, WSL) and its description of `main` as an empty shell are
+> no longer true. Current authority: `README.md`, `AGENTS.md`, `docs/DECISIONS.md`.
+
 ## 1. Executive Summary
 - LogLoads exists locally at `/home/jackson/automatedempires/ventures/logloads` and is connected to `git@github.com:AutomatedEmpires/logloads.git`.
 - The default branch `main` is currently an empty shell with a single tracked file: `README.md`.
@@ -35,7 +40,7 @@
 - Local and GitHub aligned: yes
 - Safe to pull: yes, but unnecessary because local already matched `origin/main`
 - Recommended next Git action: do not pull blindly; review PR #1 (`chore/scaffold-foundation-20260604`) and merge only after adding/fixing CI-safe linting
-- Note after this audit was written: local working tree contains this audit file and `LOGLOADS_NEXT_STEPS.md`
+- Note after this audit was written: local working tree contains this audit file and `LOGLOADS_NEXT_STEPS.md` (now `docs/history/LOGLOADS_NEXT_STEPS-2026-06.md`)
 
 ## 3. Tech Stack
 

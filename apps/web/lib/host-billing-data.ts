@@ -2,7 +2,6 @@ import "server-only"
 
 import {
   FEE_BPS_SCALE,
-  formatMoney,
   hostBillingProfileStatusSchema,
   hostChargeBreakdown,
   hostInvoiceStatusSchema,
@@ -20,6 +19,7 @@ import type { BadgeProps } from "@logloads/ui"
 
 import { percentageEnrollmentAllowed as currentPercentageEnrollmentAllowed } from "./percentage-enrollment"
 import { hostCardSetupEligibility, type HostCardSetupEligibility } from "./host-card-eligibility"
+import { formatBillingDay as formatDay, formatBillingMoney as money } from "./billing-format"
 import { services } from "./services"
 
 /**
@@ -59,24 +59,12 @@ import { services } from "./services"
 export type HostBillingTone = NonNullable<BadgeProps["tone"]>
 
 /**
- * LogLoads bills its own fee in US dollars. The fee ledger stores no currency
- * because there is only one: the figure a host states is dollars, and the card
- * charged monthly is charged in dollars. Naming it once here keeps every money
- * label on these surfaces formatted the same way.
- */
-const BILLING_CURRENCY = "USD"
-
-/**
  * `FEE_BPS_SCALE` basis points is the whole, and a whole is 100 percent, so one
  * percent is this many basis points. Derived rather than typed as `100`, so
  * changing the basis-point scale cannot leave these labels quietly announcing a
  * rate nobody charges.
  */
 const BPS_PER_PERCENT = FEE_BPS_SCALE / 100
-
-function money(amountCents: number): string {
-  return formatMoney({ amountCents, currency: BILLING_CURRENCY })
-}
 
 /**
  * A rate as a percentage, for reading only.
@@ -92,20 +80,6 @@ export function feeRateLabel(feeBps: number): string {
 
 /** The current rate, worded once so no string on these surfaces hand-types it. */
 const CURRENT_RATE_LABEL = feeRateLabel(PLATFORM_FEE_BPS)
-
-/**
- * UTC, because a billing period is a UTC calendar month. A local-midnight
- * boundary would move a completed load into a different month for a reader in
- * Oregon than for the same host's bookkeeper in Maine.
- */
-function formatDay(instant: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    day: "numeric",
-    month: "short",
-    timeZone: "UTC",
-    year: "numeric"
-  }).format(new Date(instant))
-}
 
 function formatMonth(instant: string): string {
   return new Intl.DateTimeFormat("en-US", {

@@ -1,5 +1,9 @@
 # LogLoads Next Steps
 
+> **SUPERSEDED — historical record (moved from the repository root on 2026-11-01).**
+> This is the June 2026 scaffold checklist. Do not plan work from it; use
+> `docs/DECISIONS.md` and the current issues instead.
+
 ## Foundation Progress
 - Completed on scaffold branch `chore/scaffold-foundation-20260604`:
   - Added a committed ESLint config for `apps/web`
