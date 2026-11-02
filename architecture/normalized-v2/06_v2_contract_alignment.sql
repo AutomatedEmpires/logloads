@@ -823,6 +823,7 @@ returns table (
 language plpgsql stable security definer
 set search_path = pg_catalog, extensions, pg_temp
 as $$
+#variable_conflict use_column
 declare
   v_user         uuid := marketplace.current_user_id();
   v_org          marketplace.organizations;
@@ -890,6 +891,7 @@ returns table (
 language plpgsql stable security definer
 set search_path = pg_catalog, extensions, pg_temp
 as $$
+#variable_conflict use_column
 declare
   v_caps text[];
 begin
@@ -918,6 +920,7 @@ returns table (
 language plpgsql stable security definer
 set search_path = pg_catalog, extensions, pg_temp
 as $$
+#variable_conflict use_column
 declare
   v_caps text[];
 begin
@@ -1911,6 +1914,7 @@ create or replace function marketplace.submit_expression_of_interest(
 language plpgsql security definer
 set search_path = pg_catalog, extensions, pg_temp
 as $$
+#variable_conflict use_column
 declare
   v_user            uuid := marketplace.current_user_id();
   v_caps            text[];
@@ -2357,6 +2361,7 @@ create or replace function marketplace.list_marketplace_interests(
 language plpgsql stable security definer
 set search_path = pg_catalog, extensions, pg_temp
 as $$
+#variable_conflict use_column
 declare
   v_caps text[];
 begin
