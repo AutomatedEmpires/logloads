@@ -1,3 +1,4 @@
+import { TERMS_2026_08_03_PATH } from "./legal-archive"
 import type { NetworkLoadView, NetworkView } from "./network"
 
 export interface PublicStoryPage {
@@ -17,11 +18,26 @@ export interface PublicStoryPage {
   attribution?: string
 }
 
+/** A dated notice that a legal page changed, shown above its sections. */
+export interface LegalChangeNotice {
+  date: string
+  /** ISO form of `date`, for the `<time>` element. */
+  dateTime: string
+  body: string
+  /** Where the replaced text can still be read. */
+  link: {
+    lead: string
+    href: string
+    label: string
+  }
+}
+
 export interface LegalPageContent {
   slug: string
   title: string
   intro: string
   effectiveDate: string
+  changeNotice?: LegalChangeNotice
   sections: Array<{
     title: string
     body: string
@@ -381,6 +397,16 @@ export const legalPages: Record<string, LegalPageContent> = {
     title: "Terms of Service",
     intro: "These Terms of Service govern your use of LogLoads. By creating an account or using the service, you agree to them.",
     effectiveDate: "August 3, 2026",
+    changeNotice: {
+      date: "November 2, 2026",
+      dateTime: "2026-11-02",
+      body: "The “Host platform fee” and “Agreement and payment method” sections were removed from these Terms because the per-load fee model was retired.",
+      link: {
+        lead: "For agreements accepted under the earlier version, read the",
+        href: TERMS_2026_08_03_PATH,
+        label: "archived Terms of Service effective August 3, 2026"
+      }
+    },
     sections: [
       { title: "What LogLoads is", body: "LogLoads provides software for discovering, coordinating, and recording timber hauling work. LogLoads does not carry freight or receive, escrow, deduct from, or distribute transportation compensation.", points: ["Participants remain responsible for their own regulatory compliance", "Assignments record the coordination terms both sides accepted", "The legally identified carrier, owner-operator, or private-fleet payee is paid directly by the host"] },
       { title: "Your responsibilities", body: "You are responsible for the accuracy of what you publish and for operating safely and lawfully: weight compliance, cargo securement, insurance, permits, operating authority, and road use.", points: ["Do not publish capacity or work that does not exist", "Do not misuse access instructions released to you", "Keep your equipment, insurance, and account details current"] },

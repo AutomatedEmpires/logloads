@@ -11,6 +11,7 @@ import {
   CONTACT_INTEREST_OPTIONS,
   type ContactInterest
 } from "@/lib/contact-intent"
+import type { ArchivedLegalVersion } from "@/lib/legal-archive"
 import type { NetworkLoadView } from "@/lib/network"
 import { payHeadline, presentPay } from "@/lib/pay-display"
 import type { ResidualSettlementItem } from "@/lib/residual-settlement-data"
@@ -448,12 +449,35 @@ export function PricingPage() {
   )
 }
 
+function LegalSections({ content }: { content: LegalPageContent }) {
+  return (
+    <>
+      <nav aria-label="On this page" className="legal-toc">
+        <strong>On this page</strong>
+        <ul>{content.sections.map((section) => <li key={section.title}><a href={`#${slugify(section.title)}`}>{section.title}</a></li>)}</ul>
+      </nav>
+      {content.sections.map((section) => <section id={slugify(section.title)} key={section.title}><h2>{section.title}</h2><p>{section.body}</p><ul>{section.points.map((point) => <li key={point}>{point}</li>)}</ul></section>)}
+    </>
+  )
+}
+
 export function LegalPage({ content }: { content: LegalPageContent }) {
+  const notice = content.changeNotice
+
   return (
     <PublicShell>
       <main className="page-main legal-page">
         <PageIntro eyebrow="Legal" title={content.title} body={content.intro} />
         <p className="legal-effective">Effective {content.effectiveDate}</p>
+        {notice ? (
+          <aside aria-label="Change notice" className="legal-notice">
+            <strong>Change notice · <time dateTime={notice.dateTime}>{notice.date}</time></strong>
+            <p>
+              {notice.body} {notice.link.lead}{" "}
+              <Link href={notice.link.href}>{notice.link.label}</Link>.
+            </p>
+          </aside>
+        ) : null}
         <aside className="legal-boundary-summary">
           <strong>Product boundary</strong>
           <p>
@@ -462,11 +486,46 @@ export function LegalPage({ content }: { content: LegalPageContent }) {
             distribute transportation compensation.
           </p>
         </aside>
-        <nav aria-label="On this page" className="legal-toc">
-          <strong>On this page</strong>
-          <ul>{content.sections.map((section) => <li key={section.title}><a href={`#${slugify(section.title)}`}>{section.title}</a></li>)}</ul>
-        </nav>
-        {content.sections.map((section) => <section id={slugify(section.title)} key={section.title}><h2>{section.title}</h2><p>{section.body}</p><ul>{section.points.map((point) => <li key={point}>{point}</li>)}</ul></section>)}
+        <LegalSections content={content} />
+      </main>
+    </PublicShell>
+  )
+}
+
+/**
+ * A superseded legal version, rendered from its archived record so the text
+ * people accepted stays readable (LE-13). The archived text, including the
+ * boundary summary shown with it, comes only from the record; nothing here
+ * paraphrases it.
+ */
+export function ArchivedLegalPage({ archive }: { archive: ArchivedLegalVersion }) {
+  const { content } = archive
+
+  return (
+    <PublicShell>
+      <main className="page-main legal-page legal-page--archived">
+        <PageIntro
+          body={`The text below is the LogLoads ${content.title} effective ${content.effectiveDate}, published unchanged.`}
+          eyebrow="Legal · Archived version"
+          title={`${content.title} — archived version effective ${content.effectiveDate}`}
+        />
+        <aside aria-label="Archived version" className="legal-notice">
+          <strong>Superseded — kept for agreements accepted under this version</strong>
+          <p>
+            The current {content.title} replaced this version on{" "}
+            <time dateTime={archive.supersededOnIso}>{archive.supersededOn}</time>.
+            Host agreements recorded as version {archive.agreementVersions.join(", ")} refer
+            to this text.{" "}
+            <Link href={`/${content.slug}`}>Read the current {content.title}</Link>.
+          </p>
+        </aside>
+        <p className="legal-effective">Effective {content.effectiveDate}</p>
+        <p className="legal-archived-intro">{content.intro}</p>
+        <aside className="legal-boundary-summary">
+          <strong>Product boundary</strong>
+          <p>{archive.boundarySummary}</p>
+        </aside>
+        <LegalSections content={content} />
       </main>
     </PublicShell>
   )

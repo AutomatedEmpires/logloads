@@ -114,7 +114,7 @@ describe("public role entry copy", () => {
     )
   })
 
-  it("keeps the retired host fee sections out of the Terms of Service", () => {
+  it("keeps the retired host fee sections out of the Terms of Service but links their archive", () => {
     const terms = legalPages["terms"]
     const sectionTitles = terms?.sections.map((section) => section.title)
 
@@ -123,6 +123,12 @@ describe("public role entry copy", () => {
     expect(sectionTitles).not.toContain("Agreement and payment method")
     expect(JSON.stringify(terms)).not.toMatch(RETIRED_OR_UNAPPROVED_PRICE_CLAIM)
     expect(JSON.stringify(terms)).not.toMatch(/monthly in arrears|percentage agreement/i)
+    // The removed text stays readable for agreements accepted under it (LE-13).
+    expect(terms?.changeNotice).toMatchObject({
+      date: "November 2, 2026",
+      dateTime: "2026-11-02",
+      link: { href: "/terms/2026-08-03" }
+    })
   })
 
   it("limits live trip visibility to assigned participants", () => {

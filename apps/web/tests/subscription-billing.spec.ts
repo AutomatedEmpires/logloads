@@ -140,7 +140,7 @@ test("public terms no longer describe the retired 5% host fee", async ({
       { exact: false }
     ).first()
   ).toBeVisible()
-  await expect(page.getByText("Effective August 3, 2026")).toBeVisible()
+  await expect(page.locator(".legal-effective")).toHaveText("Effective August 3, 2026")
   for (const retiredSection of ["Host platform fee", "Agreement and payment method"]) {
     await expect(
       page.getByRole("heading", { exact: true, name: retiredSection })
@@ -150,6 +150,70 @@ test("public terms no longer describe the retired 5% host fee", async ({
     RETIRED_OR_UNAPPROVED_PRICE_CLAIM
   )
   await expect(page.locator("body")).not.toContainText(/monthly in arrears/i)
+
+  // LE-13: the removal is announced, and the removed text stays one click away.
+  const changeNotice = page.locator(".legal-notice")
+  await expect(changeNotice).toContainText("Change notice · November 2, 2026")
+  await expect(changeNotice).toContainText(
+    "sections were removed from these Terms because the per-load fee model was retired."
+  )
+  await expect(
+    changeNotice.getByRole("link", {
+      exact: true,
+      name: "archived Terms of Service effective August 3, 2026"
+    })
+  ).toHaveAttribute("href", "/terms/2026-08-03")
+
+  await expectHealthyPage(page, clientErrors)
+})
+
+test("the August 3, 2026 Terms stay readable, unchanged, for agreements accepted under them", async ({
+  page
+}) => {
+  const clientErrors = captureClientErrors(page)
+
+  await page.goto("/terms/2026-08-03")
+  await page.waitForLoadState("domcontentloaded")
+
+  await expect(
+    page.getByRole("heading", {
+      level: 1,
+      name: "Terms of Service — archived version effective August 3, 2026"
+    })
+  ).toBeVisible()
+  await expect(page.locator(".legal-notice")).toContainText(
+    "Superseded — kept for agreements accepted under this version"
+  )
+  await expect(page.locator(".legal-effective")).toHaveText("Effective August 3, 2026")
+  for (const section of [
+    "What LogLoads is",
+    "Host platform fee",
+    "Agreement and payment method",
+    "Independent businesses and limits on liability"
+  ]) {
+    await expect(
+      page.getByRole("heading", { exact: true, name: section })
+    ).toBeVisible()
+  }
+  await expect(
+    page.getByText(
+      "For each completed load, the host owes LogLoads a platform fee equal to 5% of the driver pay the host stated for that load.",
+      { exact: false }
+    ).first()
+  ).toBeVisible()
+  await expect(
+    page.getByText(
+      "A $500 load means $500 paid directly to the driver plus a $25 LogLoads fee",
+      { exact: true }
+    )
+  ).toBeVisible()
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute(
+    "content",
+    /noindex/
+  )
+  await expect(
+    page.getByRole("link", { exact: true, name: "Read the current Terms of Service" })
+  ).toHaveAttribute("href", "/terms")
 
   await expectHealthyPage(page, clientErrors)
 })
