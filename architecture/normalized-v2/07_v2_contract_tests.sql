@@ -373,7 +373,7 @@ begin
   returning id into v_landing_null_pt;
 
   perform pg_temp.assert_true(
-    marketplace.approximate_point(null) is null
+    marketplace.make_public_point(null, null) is null -- granted public constructor (approximate_point is internal, ungranted)
     and exists (select 1 from marketplace.landings where id = v_landing_null_pt and public_point is null),
     'V2-DEC-01 (d): Nullable public coordinates preserved when no publishable location exists'
   );
