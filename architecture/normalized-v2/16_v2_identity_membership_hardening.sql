@@ -293,6 +293,61 @@ revoke all on function marketplace.can_view_user_qualifications(uuid) from publi
 grant execute on function marketplace.can_view_user_qualifications(uuid) to authenticated;
 
 -- -----------------------------------------------------------------------------
+-- LE-09 (A-1, decision under the founder's delegation): every enabled identity issuer pins an audience,
+-- so a token minted for another application on the same issuer never resolves a LogLoads user.
+-- -----------------------------------------------------------------------------
+alter table marketplace.trusted_identity_issuers
+  add constraint trusted_identity_issuers_audience_pinned_chk
+    check (not enabled or expected_audience is not null);
+
+-- -----------------------------------------------------------------------------
+-- LE-05 (C-1/C-3): a moderation hold also blocks publishing substantially identical content - the same
+-- organization, the same landing and the same normalized title - while the hold is active. The owner sees
+-- the hold's reason (never the moderator's identity, LE-06); a correction goes through a moderator release.
+-- -----------------------------------------------------------------------------
+create or replace function marketplace.normalize_listing_title(p_title text)
+returns text language sql immutable
+set search_path = pg_catalog, pg_temp
+as $$
+  select lower(regexp_replace(btrim(coalesce(p_title, '')), '[[:space:]]+', ' ', 'g'))
+$$;
+
+create or replace function marketplace.tg_job_hold_duplicate_guard()
+returns trigger language plpgsql security definer
+set search_path = pg_catalog, extensions, pg_temp
+as $$
+declare
+  v_reason text;
+begin
+  if new.status = 'active' and (tg_op = 'INSERT' or old.status <> 'active') then
+    select h.reason into v_reason
+    from marketplace.job_moderation_holds h
+    join marketplace.job_postings j on j.id = h.job_id
+    where h.org_id = new.org_id
+      and j.id <> new.id
+      and j.landing_id = new.landing_id
+      and marketplace.normalize_listing_title(j.title) = marketplace.normalize_listing_title(new.title)
+    limit 1;
+    if found then
+      raise exception 'This posting repeats a job that is on a moderation hold (reason: %). Ask LogLoads to review the hold instead of posting it again.', v_reason
+        using errcode = '23514';
+    end if;
+  end if;
+  return new;
+end
+$$;
+
+drop trigger if exists job_hold_duplicate_guard on marketplace.job_postings;
+create trigger job_hold_duplicate_guard
+  before insert or update on marketplace.job_postings
+  for each row execute function marketplace.tg_job_hold_duplicate_guard();
+
+revoke all on function
+  marketplace.normalize_listing_title(text),
+  marketplace.tg_job_hold_duplicate_guard()
+  from public, anon, authenticated, service_role;
+
+-- -----------------------------------------------------------------------------
 -- Record this migration.
 -- -----------------------------------------------------------------------------
 insert into marketplace.schema_migrations (version, name) values ('16', '16_v2_identity_membership_hardening');

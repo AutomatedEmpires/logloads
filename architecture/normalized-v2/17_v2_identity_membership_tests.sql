@@ -61,6 +61,7 @@ declare
   u_own uuid; u_inv uuid; u_inv2 uuid; u_land uuid; u_haul uuid; u_a uuid; u_b uuid; u_d uuid;
   o_haul uuid; o_land uuid; o_priv uuid;
   m_inv uuid; v_q uuid;
+  u_mod uuid; u_post uuid; o_post uuid; l_one uuid; l_two uuid; j_held uuid;
 begin
   perform pg_temp.as_jwt('service_role');
   u_own  := marketplace.sync_verified_identity(c_iss, 's16_owner', 'S16 Owner',     'owner@s16.test', true);
@@ -169,6 +170,63 @@ begin
   perform pg_temp.as_jwt('authenticated', 's16_inv2');
   perform pg_temp.ok(not exists (select 1 from marketplace.user_qualifications where id = v_q),
     'B-2: consent opens qualifications to landing desks only, not to every user');
+
+  -- -------------------------------------------------------------------------
+  -- LE-09 (A-1): an enabled identity issuer must pin an audience
+  -- -------------------------------------------------------------------------
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.fails($q$insert into marketplace.trusted_identity_issuers (issuer, label, expected_audience, enabled)
+      values ('https://unpinned.example.test', 'Unpinned', null, true)$q$,
+    '23514', 'trusted_identity_issuers_audience_pinned_chk', 'A-1: an enabled issuer without an audience is refused');
+  insert into marketplace.trusted_identity_issuers (issuer, label, expected_audience, enabled)
+  values ('https://disabled.example.test', 'Disabled', null, false);
+  perform pg_temp.ok(exists (select 1 from marketplace.trusted_identity_issuers where issuer = 'https://disabled.example.test'),
+    'A-1: a disabled issuer may omit the audience');
+
+  -- -------------------------------------------------------------------------
+  -- LE-05 (C-1): a held job cannot be republished as an identical new posting
+  -- -------------------------------------------------------------------------
+  perform pg_temp.as_jwt('service_role');
+  u_mod  := marketplace.sync_verified_identity(c_iss, 's16_mod',  'S16 Moderator', 'mod@s16.test',  true);
+  u_post := marketplace.sync_verified_identity(c_iss, 's16_post', 'S16 Poster',    'post@s16.test', true);
+  perform pg_temp.as_jwt('harness');
+  insert into marketplace.platform_admins (user_id, admin_role, note) values (u_mod, 'moderator', 'suite 17');
+  perform pg_temp.as_jwt('authenticated', 's16_post');
+  o_post := marketplace.create_organization('S16 Posting Co', 's16-posting', 'OR', false);
+  perform pg_temp.as_jwt('service_role');
+  perform marketplace.open_subscription_cycle(o_post, 'pro', 'active', now() - interval '1 hour', now() + interval '29 days', 'cus_s16p', 'sub_s16p', false, 7, false);
+  perform pg_temp.as_jwt('authenticated', 's16_post');
+  insert into marketplace.landings (org_id, name, status, public_area_label, public_point, state_code)
+  values (o_post, 'S16 North Landing', 'active', 'Near Sisters, OR', marketplace.make_public_point(-121.5, 44.3), 'OR')
+  returning id into l_one;
+  insert into marketplace.landings (org_id, name, status, public_area_label, public_point, state_code)
+  values (o_post, 'S16 South Landing', 'active', 'Near Bend, OR', marketplace.make_public_point(-121.3, 44.1), 'OR')
+  returning id into l_two;
+  j_held := marketplace.publish_job_posting(
+    l_one, 'Spruce Haul to Mill', array['log_truck'], 3, 'Spruce sawlogs', 'Suite 17 haul.', 'per_ton', 525, null,
+    3, current_date + 10, 8, 3.0, 9, 30.0, 'Bend Mill, OR', 28, null, null, array['ppe'], true);
+  perform pg_temp.as_jwt('authenticated', 's16_mod');
+  perform marketplace.admin_moderate_job_posting(j_held, 'paused', 'Reported misleading pay');
+  perform pg_temp.as_jwt('authenticated', 's16_post');
+  perform pg_temp.fails(format($q$select marketplace.publish_job_posting(
+      %L, '  spruce   HAUL to mill ', array['log_truck'], 3, 'Spruce sawlogs', 'Same job again.', 'per_ton', 525, null,
+      3, current_date + 10, 8, 3.0, 9, 30.0, 'Bend Mill, OR', 28, null, null, array['ppe'], true)$q$, l_one),
+    '23514', 'moderation hold \(reason: Reported misleading pay\)', 'C-1: the held job cannot be republished as an identical new posting (the owner sees the reason)');
+  perform pg_temp.ok(marketplace.publish_job_posting(
+      l_two, 'Spruce Haul to Mill', array['log_truck'], 3, 'Spruce sawlogs', 'Other landing.', 'per_ton', 525, null,
+      3, current_date + 10, 8, 3.0, 9, 30.0, 'Bend Mill, OR', 28, null, null, array['ppe'], true) is not null,
+    'C-1: the same title at a different landing is not blocked');
+  perform pg_temp.ok(marketplace.publish_job_posting(
+      l_one, 'Fir Haul to Mill', array['log_truck'], 3, 'Fir sawlogs', 'Different job.', 'per_ton', 525, null,
+      3, current_date + 10, 8, 3.0, 9, 30.0, 'Bend Mill, OR', 28, null, null, array['ppe'], true) is not null,
+    'C-1: a different posting at the same landing is not blocked');
+  perform pg_temp.as_jwt('authenticated', 's16_mod');
+  perform marketplace.admin_release_job_moderation_hold(j_held, 'Pay corrected after review');
+  perform pg_temp.as_jwt('authenticated', 's16_post');
+  perform pg_temp.ok(marketplace.publish_job_posting(
+      l_one, 'Spruce Haul to Mill', array['log_truck'], 3, 'Spruce sawlogs', 'Corrected repost.', 'per_ton', 600, null,
+      3, current_date + 10, 8, 3.0, 9, 30.0, 'Bend Mill, OR', 28, null, null, array['ppe'], true) is not null,
+    'C-1: after a moderator releases the hold, the corrected posting can be published');
 
   raise notice 'ALL IDENTITY, MEMBERSHIP AND QUALIFICATION (B-1, B-2, B-5) TESTS PASSED.';
 end
