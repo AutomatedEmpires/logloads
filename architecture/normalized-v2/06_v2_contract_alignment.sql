@@ -103,9 +103,12 @@ begin
     where n.nspname = 'marketplace'
       and t.relname = 'job_postings'
       and c.contype = 'c'
+      and c.conname not in ('job_postings_compensation_chk', 'job_postings_attestation_chk')
+      -- pg_get_constraintdef() adds parentheses and ::text casts; compare without them (E7: the original
+      -- patterns never matched, so the superseded baseline checks were silently kept).
       and (
-        pg_get_constraintdef(c.oid) ilike '%pay_unit is null and pay_amount_cents is null%'
-        or pg_get_constraintdef(c.oid) ilike '%status = ''draft'' or published_at is not null%'
+        regexp_replace(lower(pg_get_constraintdef(c.oid)), '[()]|::text', '', 'g') like '%pay_unit is null and pay_amount_cents is null%'
+        or regexp_replace(lower(pg_get_constraintdef(c.oid)), '[()]|::text', '', 'g') like '%status = ''draft'' or published_at is not null%'
       )
   loop
     execute format('alter table marketplace.job_postings drop constraint %I', v_con.conname);
