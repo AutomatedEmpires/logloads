@@ -9,7 +9,7 @@ import { availabilityLabel, equipmentOfferLabel, formatDay, interestStatusLabel 
 import { respondToInterestAction } from "@/lib/marketplace-v2/actions"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
-import { requireAuthenticatedActor } from "@/lib/session"
+import { resolveV2Actor, withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
@@ -82,19 +82,22 @@ function InquiryCard({ interest }: { interest: MarketplaceInterestView }) {
 export default async function LandingInboxPage({ searchParams }: { searchParams: SearchParams }) {
   if (!marketplaceV2Enabled()) notFound()
 
-  const actor = await requireAuthenticatedActor("/v2/landing/inquiries")
+  const resolved = await resolveV2Actor("/v2/landing/inquiries")
   const query = await searchParams
-  const workspace = actor.activeOrganization
+  const actor = resolved.ok ? resolved.actor : null
+  const workspace = actor && !actor.workspaceSelectionInvalid ? actor.activeOrganization : null
   let interests: MarketplaceInterestView[] = []
   let refusal: string | null = null
 
-  if (!workspace || actor.workspaceSelectionInvalid) {
-    refusal = "Choose the landing organization's workspace to review its inquiries."
+  if (!resolved.ok) {
+    refusal = resolved.refusal
+  } else if (!actor || !workspace) {
+    refusal = withBusinessSwitchNote("No landing business is selected for your account.")
   } else {
     try {
       interests = await pilotMarketplaceV2.listLandingInterests({ organizationId: workspace.id, userId: actor.profile.id })
     } catch {
-      refusal = "Your role in this workspace cannot review hauler inquiries."
+      refusal = withBusinessSwitchNote("Your role in this business cannot review hauler inquiries.")
     }
   }
 
@@ -106,7 +109,7 @@ export default async function LandingInboxPage({ searchParams }: { searchParams:
       <p className="v2-muted">Interest received on your organization’s jobs. Replies are unlimited; nothing here assigns trucks or records a hire.</p>
       {error ? <p className="v2-banner v2-banner--error" role="alert">{error}</p> : null}
       {refusal ? (
-        <p className="v2-banner">{refusal} <Link href="/workspace">Choose workspace</Link></p>
+        <p className="v2-banner">{refusal}</p>
       ) : (
         QUEUES.map((queue) => {
           const rows = interests.filter((interest) => landingInterestQueue(interest.status) === queue.key)
