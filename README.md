@@ -36,8 +36,8 @@ no commission.
 - **Database:** Supabase Postgres with PostGIS. The versioned `operating_state` row is the running store.
   - The normalized V2 schema is **under integration verification**. It is verified in CI on disposable PostgreSQL
     17.
-  - It is not verified on Supabase, not connected to the app, and not authorized for production
-    ([`docs/CI.md`](./docs/CI.md) §3).
+  - It also passes on a local Supabase stack. It is not verified on a hosted Supabase project or with real Clerk
+    tokens, not connected to the app, and not authorized for production ([`docs/CI.md`](./docs/CI.md) §3).
 - **Maps:** MapLibre with **CARTO Basemaps** (preferred). Legacy Mapbox is used only when no CARTO key is set.
 - **Services:** Doppler, Vercel, private Supabase Storage, PostHog, Sentry, Resend.
 - **Icons:** Phosphor, through the `@logloads/ui` icon registry (`<Icon name="domain.action" />`).

@@ -52,7 +52,12 @@ and is not merged.
   4. `04_tests.sql`
   5. `05_concurrency_test.sh`
 - **Alignment track** (on PR #123): `06_v2_contract_alignment.sql`, `07_v2_contract_tests.sql`,
-  `08_v2_contract_concurrency_test.sh`, `09_v2_integration_audit_tests.sql`, `10_v2_migration_path_test.sh`.
+  `08_v2_contract_concurrency_test.sh`, `09_v2_integration_audit_tests.sql`, `10_v2_migration_path_test.sh`, and
+  from `67b4777` onwards `11_v2_founder_decisions.sql` and `12_v2_billing_events.sql`.
+
+  The comments in stages 11–12 label rules F1–F5 and "V2-DEC-01/02" as founder decisions. **None of these is
+  recorded in `DECISIONS.md` yet** (#114). A passing stage proves only that the SQL behaves as written. It does not
+  approve the policy.
 
 ### Evidence register
 
@@ -62,7 +67,7 @@ lower level never implies a higher one.
 | Level | Status | Evidence |
 |---|---|---|
 | **1. PostgreSQL 17 verification** (disposable CI databases, simulated JWT claims) | **VERIFIED** — see the run table below | Actions runs |
-| **2. Supabase-specific verification** (real Clerk tokens through Supabase third-party auth; project settings, grants and Data API exposure on a real Supabase project) | **UNVERIFIED.** A **local** Supabase-stack CI job was added to PR #123 at `24313c0`. Its first run failed before testing anything, on a Docker registry pull limit (`toomanyrequests: Rate exceeded`; runs `41495377310` and `41495385914`). A local stack is a step towards this level; it does not prove it. Real-token verification needs the founder's development provider setup. | #112, #104 |
+| **2. Supabase-specific verification** (real Clerk tokens through Supabase third-party auth; project settings, grants and Data API exposure on a real Supabase project) | **PARTIAL.** A **local** Supabase stack — database, auth, PostgREST and the API gateway, started by the pinned Supabase CLI — passed on 2 fresh stacks at `67b4777` (PR #123; runs `41506515086` push and `41506523544` PR). Its first attempt at `24313c0` had failed on a Docker registry pull limit.<br>Still **UNVERIFIED**: a **hosted** Supabase project's settings, and **real Clerk-signed tokens** through third-party auth. Those need the founder's development provider setup. | #112, #104 |
 | **3. Application integration** (normalized `MarketplaceV2Port` adapter; persistent publish → discover → interest → respond loop) | **UNVERIFIED** — adapter not built | #139, #140 |
 | **4. Staging readiness** (isolated hosted preview, migration rehearsal on synthetic data, backup and restore, rollback) | **UNVERIFIED** | `DEPLOYMENT.md` §4–§5, #113 |
 | **5. Production authorization** (migration, activation, billing) | **NOT AUTHORIZED** | `DECISIONS.md`; founder only |
@@ -72,7 +77,7 @@ lower level never implies a higher one.
 | Item | Status | Evidence |
 |---|---|---|
 | Baseline `01`–`05` at `ec4bb6623cbdfd7b78b51f9bc5fec50144cdc328` | **VERIFIED.** All five stages passed in 12 fresh-database jobs across 4 runs: `41407713008`, `41407871065` and `41407882803` (all at `174b8ec`), then `41407969571` (at `ec4bb66`), on 2026-11-02. | [Run 41407969571](https://github.com/AutomatedEmpires/logloads/actions/runs/41407969571) |
-| Baseline + V2 contract alignment `06`–`10`, **latest verified head `5d7d4de01da50ef68ec6936049a0ca0ce02ad04e`** (draft PR #123 → `test/normalized-v2-postgres17-ci`) | **VERIFIED in CI; not yet reviewed or merged.** Gemini authored 06/07; Claude Agent 1 integrated it and added stages 08–10.<br>Each run has 6 jobs: 3 baseline jobs (stages 1–5) and 3 alignment jobs (stages 1–3, 6, 4 against the aligned schema, then 7, 9, 8, 10), each on a fresh PostgreSQL 17 database. All passed.<br>At `5d7d4de`: runs `41487047295` (push) and `41487061492` (PR), 12 of 12 jobs green. The same suite also passed earlier at `510b05a` and `fab4b0a`; the five commits before `510b05a` failed. | [Run 41487061492](https://github.com/AutomatedEmpires/logloads/actions/runs/41487061492) |
+| Baseline + V2 contract alignment `06`–`12`, **latest verified head `67b47775207f3bbee200002b4e5b9bb7e880b27f`** (draft PR #123 → `test/normalized-v2-postgres17-ci`) | **VERIFIED in CI; not yet reviewed or merged.** Gemini authored 06/07. Claude Agent 1 integrated them and added stages 08–12.<br>At `67b4777` each run has **8 jobs**: 3 baseline (stages 1–5), 3 alignment (including stages 6, 11 and 12) and 2 local Supabase stacks. Runs `41506515086` (push) and `41506523544` (PR): **16 of 16 jobs green**.<br>Earlier green heads: `5d7d4de` (12/12), `fab4b0a` and `510b05a`. `24313c0` was red, on the registry pull limit only. | [Run 41506523544](https://github.com/AutomatedEmpires/logloads/actions/runs/41506523544) |
 
 **What the baseline proves:**
 

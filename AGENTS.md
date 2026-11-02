@@ -139,7 +139,7 @@ The normalized schema under **`architecture/normalized-v2/`** covers PostGIS, Cl
 | Stage | Status |
 |---|---|
 | **1. PostgreSQL 17 execution in CI** | VERIFIED: the baseline and the contract-alignment stages, on disposable databases |
-| **2. Supabase-specific behaviour** — real Clerk tokens, project settings | UNVERIFIED |
+| **2. Supabase-specific behaviour** — real Clerk tokens, project settings | PARTIAL: a local Supabase stack passes in CI; a hosted project and real Clerk tokens are UNVERIFIED |
 | **3. Application integration** — a normalized adapter | UNVERIFIED; not built |
 | **4. Staging readiness** | UNVERIFIED |
 | **5. Production** | NOT AUTHORIZED |
