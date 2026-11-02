@@ -41,14 +41,21 @@ case "$MODE" in
     # a schema before exposing it, so the stack starts with an EMPTY marketplace schema (the guard verifies it
     # holds no objects); 01_schema.sql then populates it with `create schema if not exists`.
     mkdir -p supabase/migrations
-    printf '%s
-' '-- CI stack bootstrap: empty schema so PostgREST can expose it. Populated by 01_schema.sql.'       'create schema if not exists marketplace;' > supabase/migrations/00000000000000_empty_marketplace_schema.sql
+    cat > supabase/migrations/00000000000000_empty_marketplace_schema.sql <<'SQL'
+-- CI stack bootstrap: empty schema so PostgREST can expose it. Populated by 01_schema.sql.
+create schema if not exists marketplace;
+SQL
 
-    supabase start -x gotrue,realtime,storage-api,imgproxy,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+    # Auth (gotrue) stays: the CLI only reports the API keys and JWT secret when it runs, as a real project would.
+    supabase start -x realtime,storage-api,imgproxy,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
 
     STATUS_JSON="$(supabase status -o json 2>/dev/null)"
     get() { printf '%s' "$STATUS_JSON" | jq -r --arg k "$1" '.[$k] // empty'; }
     API_URL="$(get API_URL)"; ANON="$(get ANON_KEY)"; SERVICE="$(get SERVICE_ROLE_KEY)"; JWT_SECRET="$(get JWT_SECRET)"
+    # Fallback: the secret PostgREST itself verifies JWTs with (its container environment).
+    if [[ -z "$JWT_SECRET" ]]; then
+      JWT_SECRET="$(docker inspect "supabase_rest_${PROJECT_ID}" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^PGRST_JWT_SECRET=//p' | head -1)"
+    fi
     for v in "$ANON" "$SERVICE" "$JWT_SECRET"; do [[ -n "$v" ]] && echo "::add-mask::$v"; done
     echo "status keys reported by the CLI: $(printf '%s' "$STATUS_JSON" | jq -r 'keys | join(", ")')"
     [[ "$API_URL" =~ ^http://127\.0\.0\.1:[0-9]+$ ]] || { echo "unexpected API URL shape" >&2; exit 1; }
