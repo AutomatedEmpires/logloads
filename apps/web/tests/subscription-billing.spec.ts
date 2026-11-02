@@ -123,7 +123,7 @@ test("public pricing makes no price claim for landing organizations", async ({
   await expectHealthyPage(page, clientErrors)
 })
 
-test("public terms keep the product boundary without the retired fee summary", async ({
+test("public terms no longer describe the retired 5% host fee", async ({
   page
 }) => {
   const clientErrors = captureClientErrors(page)
@@ -131,14 +131,25 @@ test("public terms keep the product boundary without the retired fee summary", a
   await page.goto("/terms")
   await page.waitForLoadState("domcontentloaded")
 
-  const boundary = page.locator(".legal-boundary-summary")
-  await expect(boundary).toContainText(
-    "LogLoads does not carry freight or receive, escrow, deduct from, or distribute transportation compensation."
-  )
-  await expect(boundary).not.toContainText(RETIRED_OR_UNAPPROVED_PRICE_CLAIM)
+  await expect(
+    page.getByRole("heading", { exact: true, name: "What LogLoads is" })
+  ).toBeVisible()
+  await expect(
+    page.getByText(
+      "LogLoads does not carry freight or receive, escrow, deduct from, or distribute transportation compensation.",
+      { exact: false }
+    ).first()
+  ).toBeVisible()
   await expect(page.getByText("Effective August 3, 2026")).toBeVisible()
-  await expect(page.getByText(/monthly in arrears/i).first()).toBeVisible()
-  await expect(page.getByText(/never deducted from driver pay/i).first()).toBeVisible()
+  for (const retiredSection of ["Host platform fee", "Agreement and payment method"]) {
+    await expect(
+      page.getByRole("heading", { exact: true, name: retiredSection })
+    ).toHaveCount(0)
+  }
+  await expect(page.locator("body")).not.toContainText(
+    RETIRED_OR_UNAPPROVED_PRICE_CLAIM
+  )
+  await expect(page.locator("body")).not.toContainText(/monthly in arrears/i)
 
   await expectHealthyPage(page, clientErrors)
 })

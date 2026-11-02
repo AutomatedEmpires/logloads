@@ -8,6 +8,7 @@ import {
   pilotSuccessCriteria
 } from "./pilot-showroom"
 import {
+  legalPages,
   pricingPlans,
   publicSignUpCopy,
   storyPages
@@ -111,6 +112,17 @@ describe("public role entry copy", () => {
     expect(hostPlan?.summary).toContain(
       "Pricing for landing organizations will be published before any paid feature is offered."
     )
+  })
+
+  it("keeps the retired host fee sections out of the Terms of Service", () => {
+    const terms = legalPages["terms"]
+    const sectionTitles = terms?.sections.map((section) => section.title)
+
+    expect(sectionTitles).toContain("What LogLoads is")
+    expect(sectionTitles).not.toContain("Host platform fee")
+    expect(sectionTitles).not.toContain("Agreement and payment method")
+    expect(JSON.stringify(terms)).not.toMatch(RETIRED_OR_UNAPPROVED_PRICE_CLAIM)
+    expect(JSON.stringify(terms)).not.toMatch(/monthly in arrears|percentage agreement/i)
   })
 
   it("limits live trip visibility to assigned participants", () => {
