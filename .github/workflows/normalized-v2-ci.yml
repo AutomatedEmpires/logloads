@@ -271,3 +271,80 @@ jobs:
           name: normalized-v2-alignment-logs-${{ matrix.iteration }}
           path: ${{ runner.temp }}/normalized-v2-ci/logs/
           retention-days: 7
+
+  supabase-local-stack:
+    # Disposable Supabase local stack (Supabase CLI + its pinned PostgreSQL 17 image) started inside this
+    # job. Exercises the real Supabase roles (authenticator, anon, authenticated, service_role with
+    # BYPASSRLS), supautils, PostgREST JWT verification and a non-superuser migration role. No hosted
+    # Supabase project, access token or credential is used; the stack's generated local keys are masked.
+    name: Supabase local stack (PostgreSQL 17, fresh stack ${{ matrix.iteration }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        iteration: [1]
+
+    env:
+      LOGLOADS_DISPOSABLE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      LOGLOADS_DISPOSABLE_DB_NAME: postgres
+      LOGLOADS_DB_ENV: supabase-local-ci
+      LOGLOADS_CI_ITERATION: ${{ matrix.iteration }}
+      LOGLOADS_SUPABASE_PROJECT_ID: logloads-ci
+      SUPABASE_CLI_VERSION: 2.121.0
+      SUPABASE_CLI_SHA256: 4b481189efbdc57cf2d37bdee5f1a0d29574314398564b32a6dfb76c0fcf275f
+      SUPABASE_TELEMETRY_DISABLED: "1"
+      DO_NOT_TRACK: "1"
+      PGCONNECT_TIMEOUT: "10"
+      PGOPTIONS: "-c lock_timeout=30s -c statement_timeout=300s -c idle_in_transaction_session_timeout=120s"
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install PostgreSQL 17 client
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common >/dev/null
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+          sudo apt-get install -y -qq postgresql-client-17 >/dev/null
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Install Supabase CLI (pinned release, checksum-verified)
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          tgz="supabase_${SUPABASE_CLI_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$tgz" "https://github.com/supabase/cli/releases/download/v${SUPABASE_CLI_VERSION}/${tgz}"
+          echo "${SUPABASE_CLI_SHA256}  $RUNNER_TEMP/$tgz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/supabase-cli"
+          tar -xzf "$RUNNER_TEMP/$tgz" -C "$RUNNER_TEMP/supabase-cli" supabase
+          echo "$RUNNER_TEMP/supabase-cli" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/supabase-cli/supabase" --version
+
+      - name: Start a disposable Supabase local stack (database, PostgREST, API gateway only)
+        timeout-minutes: 12
+        run: bash tools/normalized-v2-ci/supabase-stack.sh start
+
+      - name: Supabase environment evidence (read-only)
+        run: bash tools/normalized-v2-ci/supabase-probe.sh
+
+      - name: "Exploration: dry-run 01, 02, 03, 06 as postgres inside one rolled-back transaction"
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          D=architecture/normalized-v2
+          { echo 'begin;'; cat $D/01_schema.sql $D/02_access.sql $D/03_entitlements.sql $D/06_v2_contract_alignment.sql; echo 'rollback;'; }             | psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=verbose 2>&1 | grep -E 'ERROR|LOCATION|CONTEXT|STATEMENT' | head -20
+          echo "dry-run exit: ${PIPESTATUS[1]}"
+
+      - name: Stop the Supabase local stack
+        if: always()
+        run: bash tools/normalized-v2-ci/supabase-stack.sh stop
