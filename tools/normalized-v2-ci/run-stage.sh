@@ -27,6 +27,16 @@ check() { # check <description> <sql returning 't'>
   echo "  check ok: $1" | tee -a "$LOG"
 }
 
+# Privilege invariants every aligned migration stage must leave behind. $1: quoted list of ungranted ledgers.
+aligned_privilege_checks() {
+  check "RLS enabled on every marketplace table" "select bool_and(c.relrowsecurity) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'marketplace' and c.relkind in ('r','p');"
+  check "no marketplace function executable by PUBLIC" "select not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and has_function_privilege('public', p.oid, 'EXECUTE'));"
+  check "every SECURITY DEFINER function pins search_path" "select not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and p.prosecdef and not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) cfg where cfg like 'search_path=%'));"
+  check "ledgers ($1) carry no client grants" "select not exists (select 1 from information_schema.role_table_grants where table_schema = 'marketplace' and table_name in ($1) and grantee in ('PUBLIC','anon','authenticated','service_role'));"
+  check "anon holds no write privileges" "select not exists (select 1 from information_schema.role_table_grants where table_schema = 'marketplace' and grantee = 'anon' and privilege_type in ('INSERT','UPDATE','DELETE','TRUNCATE'));"
+  check "no marketplace function reads an application session setting (only request.jwt.claims / role)" "select not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and p.prosrc ~* 'current_setting[[:space:]]*[(][[:space:]]*''(?!(request[.]jwt[.]claims|role)'')');"
+}
+
 run_sql() {
   local file="$1"
   echo "== psql -X -v ON_ERROR_STOP=1 -f $file" | tee "$LOG"
@@ -153,6 +163,61 @@ case "$STAGE" in
     set -e
     [[ "$rc" == "0" ]] || exit "$rc"
     grep -q "MIGRATION PATH TEST PASSED" "$LOG" || { echo "STAGE 10: test did not report completion" >&2; exit 1; }
+    ;;
+  11)
+    run_sql "$DIR/11_v2_founder_decisions.sql"
+    aligned_privilege_checks "'job_publication_attestations','legacy_job_imports','job_moderation_holds'"
+    check "F1: no public hauler profile without recorded consent" "select not exists (select 1 from marketplace.hauler_profiles where is_public and public_listing_consent_at is null);"
+    check "F1: consent columns are not client-writable" "select not has_column_privilege('authenticated', 'marketplace.hauler_profiles', 'public_listing_consent_at', 'UPDATE') and not has_column_privilege('authenticated', 'marketplace.hauler_profiles', 'public_listing_consent_by', 'INSERT');"
+    check "F3: reactivate_job_posting executable by authenticated only" "select has_function_privilege('authenticated', 'marketplace.reactivate_job_posting(uuid, boolean)', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.reactivate_job_posting(uuid, boolean)', 'EXECUTE') and not has_function_privilege('service_role', 'marketplace.reactivate_job_posting(uuid, boolean)', 'EXECUTE');"
+    ;;
+  12)
+    run_sql "$DIR/12_v2_billing_events.sql"
+    aligned_privilege_checks "'job_publication_attestations','legacy_job_imports','job_moderation_holds','billing_provider_events'"
+    check "R4: apply_billing_provider_event executable by service_role only" "select has_function_privilege('service_role', p.oid, 'EXECUTE') and not has_function_privilege('authenticated', p.oid, 'EXECUTE') and not has_function_privilege('anon', p.oid, 'EXECUTE') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and p.proname = 'apply_billing_provider_event';"
+    check "R4: the subscription-cycle core is not executable by any API role" "select not has_function_privilege('service_role', p.oid, 'EXECUTE') and not has_function_privilege('authenticated', p.oid, 'EXECUTE') and not has_function_privilege('anon', p.oid, 'EXECUTE') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and p.proname = 'apply_subscription_cycle';"
+    check "R4: one apply_billing_provider_event and one open_subscription_cycle (no stray overloads)" "select count(*) filter (where p.proname = 'apply_billing_provider_event') = 1 and count(*) filter (where p.proname = 'open_subscription_cycle') = 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace';"
+    {
+      echo "### Stage 12 Phase 3 inventory"
+      echo '```'
+      q "select 'tables=' || count(*) from pg_tables where schemaname = 'marketplace';"
+      q "select 'functions=' || count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace';"
+      q "select 'security_definer_functions=' || count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and p.prosecdef;"
+      q "select 'policies=' || count(*) from pg_policies where schemaname = 'marketplace';"
+      q "select 'function owners: ' || string_agg(distinct pg_get_userbyid(p.proowner), ', ') || ' (superuser: ' || bool_or(r.rolsuper)::text || ', bypassrls: ' || bool_or(r.rolbypassrls)::text || ')' from pg_proc p join pg_namespace n on n.oid = p.pronamespace join pg_roles r on r.oid = p.proowner where n.nspname = 'marketplace';"
+      q "select 'functions executable by anon: ' || coalesce(string_agg(p.proname, ', ' order by p.proname), '(none)') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and has_function_privilege('anon', p.oid, 'EXECUTE');"
+      q "select 'functions executable by service_role: ' || coalesce(string_agg(p.proname, ', ' order by p.proname), '(none)') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and has_function_privilege('service_role', p.oid, 'EXECUTE');"
+      echo '```'
+    } | tee -a "$LOG" | tee -a "$SUMMARY"
+    ;;
+  13)
+    run_sql "$DIR/13_v2_phase3_tests.sql"
+    grep -q "ALL PHASE 3 FOUNDER-DECISION AND BILLING-ORDERING TESTS PASSED" "$LOG" || { echo "STAGE 13: suite did not reach its final PASS notice" >&2; exit 1; }
+    check "suite rolled back (no test organizations left)" "select count(*) = 0 from marketplace.organizations;"
+    PASSES="$(grep -cE "NOTICE:  00000: PASS: " "$LOG" || true)"
+    echo "  executed assertions reporting PASS: $PASSES" | tee -a "$LOG" | tee -a "$SUMMARY"
+    [[ "$PASSES" -ge 80 ]] || { echo "STAGE 13: only $PASSES PASS notices; expected at least 80" >&2; exit 1; }
+    ;;
+  14)
+    [[ "${LOGLOADS_DB_ENV:-}" == "supabase-local-ci" ]] || { echo "stage 14 runs only on the Supabase local stack" >&2; exit 2; }
+    echo "== bash $DIR/14_supabase_api_tests.sh" | tee "$LOG"
+    set +e
+    timeout --kill-after=30s 300s bash "$DIR/14_supabase_api_tests.sh" 2>&1 | tee -a "$LOG"
+    rc=${PIPESTATUS[0]}
+    set -e
+    [[ "$rc" == "0" ]] || exit "$rc"
+    grep -q "ALL SUPABASE API TESTS PASSED" "$LOG" || { echo "STAGE 14: suite did not report completion" >&2; exit 1; }
+    { echo "### Stage 14 Supabase API (PostgREST + JWT)"; echo '```'; grep -E "^  (PASS|ok)" "$LOG" || true; echo '```'; } >> "$SUMMARY"
+    ;;
+  15)
+    echo "== bash $DIR/15_migration_drill.sh" | tee "$LOG"
+    set +e
+    timeout --kill-after=30s 420s bash "$DIR/15_migration_drill.sh" 2>&1 | tee -a "$LOG"
+    rc=${PIPESTATUS[0]}
+    set -e
+    [[ "$rc" == "0" ]] || exit "$rc"
+    grep -q "MIGRATION DRILL PASSED" "$LOG" || { echo "STAGE 15: drill did not report completion" >&2; exit 1; }
+    { echo "### Stage 15 migration sequencing / rollback / recovery drill"; echo '```'; grep -E "^\[|^  ok" "$LOG" || true; echo '```'; } >> "$SUMMARY"
     ;;
   *) echo "unknown stage $STAGE" >&2; exit 2 ;;
 esac

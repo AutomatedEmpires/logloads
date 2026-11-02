@@ -1,10 +1,12 @@
 name: Normalized V2 Database CI
 
-# Validates the non-active normalized-v2 prototype (architecture/normalized-v2/) on a disposable,
-# GitHub-hosted PostgreSQL 17 + PostGIS service. No production, staging, Supabase or Vercel
-# credentials are used or needed. Three matrix legs = three freshly initialized databases per job.
-# Job 1 (baseline) is the verified 01..05 suite, unchanged. Job 2 applies 06 on top of 01..03 and
-# runs 04, 07 and the aligned-schema concurrency suite 08 against that integrated schema.
+# Validates the non-active normalized-v2 prototype (architecture/normalized-v2/) on disposable databases
+# created inside each job. No production, staging, hosted-Supabase or Vercel credentials are used or needed.
+#   Job 1 (baseline): the verified 01..05 suite on PostgreSQL 17 + PostGIS, unchanged. 3 fresh databases.
+#   Job 2 (alignment): 01, 02, 03, 06, 11, 12, then 04, 07, 09, 13, 08, 10, 15 on PostgreSQL 17 + PostGIS.
+#   Job 3 (Supabase): the same chain and suites, plus PostgREST/JWT API tests (14), on a Supabase CLI
+#   local stack started inside the job (real authenticator / anon / authenticated / service_role roles,
+#   non-superuser migration role, Supabase's PostgreSQL 17 image).
 
 on:
   push:
@@ -145,7 +147,7 @@ jobs:
   postgres17-contract-alignment:
     name: PostgreSQL 17 + V2 contract alignment (fresh database ${{ matrix.iteration }})
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -234,6 +236,14 @@ jobs:
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 6
 
+      - name: "Stage 11: 11_v2_founder_decisions.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 11
+
+      - name: "Stage 12: 12_v2_billing_events.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 12
+
       - name: "Stage 4: 04_tests.sql on the aligned schema"
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 4
@@ -246,6 +256,10 @@ jobs:
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 9
 
+      - name: "Stage 13: 13_v2_phase3_tests.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 13
+
       - name: "Stage 8: 08_v2_contract_concurrency_test.sh"
         timeout-minutes: 12
         run: bash tools/normalized-v2-ci/run-stage.sh 8
@@ -253,6 +267,10 @@ jobs:
       - name: "Stage 10: 10_v2_migration_path_test.sh"
         timeout-minutes: 6
         run: bash tools/normalized-v2-ci/run-stage.sh 10
+
+      - name: "Stage 15: 15_migration_drill.sh"
+        timeout-minutes: 8
+        run: bash tools/normalized-v2-ci/run-stage.sh 15
 
       - name: Collect database server log
         if: failure()
@@ -279,11 +297,11 @@ jobs:
     # Supabase project, access token or credential is used; the stack's generated local keys are masked.
     name: Supabase local stack (PostgreSQL 17, fresh stack ${{ matrix.iteration }})
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        iteration: [1]
+        iteration: [1, 2]
 
     env:
       LOGLOADS_DISPOSABLE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
@@ -330,20 +348,90 @@ jobs:
           echo "$RUNNER_TEMP/supabase-cli" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/supabase-cli/supabase" --version
 
-      - name: Start a disposable Supabase local stack (database, PostgREST, API gateway only)
+      - name: Start a disposable Supabase local stack (database, auth, PostgREST, API gateway)
         timeout-minutes: 12
         run: bash tools/normalized-v2-ci/supabase-stack.sh start
 
       - name: Supabase environment evidence (read-only)
         run: bash tools/normalized-v2-ci/supabase-probe.sh
 
-      - name: "Exploration: dry-run 01, 02, 03, 06 as postgres inside one rolled-back transaction"
-        continue-on-error: true
+      - name: Guard and provision the disposable Supabase database
+        run: bash tools/normalized-v2-ci/guard.sh provision
+
+      - name: "Stage 1: 01_schema.sql (as the non-superuser postgres role)"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 1
+
+      - name: "Stage 2: 02_access.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 2
+
+      - name: "Stage 3: 03_entitlements.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 3
+
+      - name: "Stage 6: 06_v2_contract_alignment.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 6
+
+      - name: "Stage 11: 11_v2_founder_decisions.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 11
+
+      - name: "Stage 12: 12_v2_billing_events.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 12
+
+      - name: "Stage 4: 04_tests.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 4
+
+      - name: "Stage 7: 07_v2_contract_tests.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 7
+
+      - name: "Stage 9: 09_v2_integration_audit_tests.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 9
+
+      - name: "Stage 13: 13_v2_phase3_tests.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 13
+
+      - name: "Stage 14: 14_supabase_api_tests.sh (PostgREST + JWT, real Supabase roles)"
+        timeout-minutes: 6
+        run: bash tools/normalized-v2-ci/run-stage.sh 14
+
+      - name: "Stage 8: 08_v2_contract_concurrency_test.sh"
+        timeout-minutes: 12
+        run: bash tools/normalized-v2-ci/run-stage.sh 8
+
+      - name: "Stage 10: 10_v2_migration_path_test.sh"
+        timeout-minutes: 6
+        run: bash tools/normalized-v2-ci/run-stage.sh 10
+
+      - name: "Stage 15: 15_migration_drill.sh"
+        timeout-minutes: 8
+        run: bash tools/normalized-v2-ci/run-stage.sh 15
+
+      - name: Collect Supabase container logs
+        if: failure()
         run: |
-          set -uo pipefail
-          D=architecture/normalized-v2
-          { echo 'begin;'; cat $D/01_schema.sql $D/02_access.sql $D/03_entitlements.sql $D/06_v2_contract_alignment.sql; echo 'rollback;'; }             | psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=verbose 2>&1 | grep -E 'ERROR|LOCATION|CONTEXT|STATEMENT' | head -20
-          echo "dry-run exit: ${PIPESTATUS[1]}"
+          set +e
+          mkdir -p "$RUNNER_TEMP/normalized-v2-ci/logs"
+          for c in db rest kong auth; do
+            docker logs "supabase_${c}_${LOGLOADS_SUPABASE_PROJECT_ID}" > "$RUNNER_TEMP/normalized-v2-ci/logs/supabase-${c}.log" 2>&1
+          done
+          tail -n 60 "$RUNNER_TEMP/normalized-v2-ci/logs/supabase-db.log"
+          tail -n 30 "$RUNNER_TEMP/normalized-v2-ci/logs/supabase-rest.log"
+
+      - name: Upload stage logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: normalized-v2-supabase-logs-${{ matrix.iteration }}
+          path: ${{ runner.temp }}/normalized-v2-ci/logs/
+          retention-days: 7
 
       - name: Stop the Supabase local stack
         if: always()
