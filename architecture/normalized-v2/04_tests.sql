@@ -325,6 +325,7 @@ begin
   perform pg_temp.as_jwt('authenticated', v_issuer, 'user_dual');
   update marketplace.hauler_profiles
   set headline = '8-truck log fleet',
+      is_public = true, -- explicit opt-in (06 creates hauler profiles private; baseline default is public)
       service_center = extensions.st_GeogFromText('SRID=4326;POINT(-122.6765 45.5231)'),
       service_radius_miles = 120,
       operating_states = array['OR', 'WA'],
@@ -350,6 +351,7 @@ begin
   perform pg_temp.as_jwt('authenticated', v_issuer, 'user_drv2');
   update marketplace.hauler_profiles
   set headline = 'Owner-operator log truck',
+      is_public = true, -- explicit opt-in (06 creates hauler profiles private; baseline default is public)
       service_center = extensions.st_GeogFromText('SRID=4326;POINT(-122.6800 45.5200)'),
       service_radius_miles = 100,
       operating_states = array['OR'],
