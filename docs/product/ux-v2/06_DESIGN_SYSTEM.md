@@ -2,7 +2,7 @@
 
 > **Status:** FINAL visual direction (founder, 2026-11-02): the light-surface Modern Industrial hybrid. This spec and its source files are ready for implementation tickets; nothing here is merged into the application.
 > **Review page:** [LogLoads Design System](https://claude.ai/artifact/5udk9bepMpvESg9GfRhJsy), private until shared. It shows six screens built from the files in [`design-system/`](./design-system).
-> **Owner:** Claude Agent 3 (UX), tracked in #116. Implementation tickets: DS-01 to DS-05 (see §10).
+> **Owner:** Claude Agent 3 (UX), tracked in #116. Implementation tickets: #144–#148 (DS-01 to DS-05, §10).
 
 ## 1. What is decided
 
@@ -201,11 +201,11 @@ Automated accessibility scanning (`@axe-core/playwright`) would be a new dev dep
 
 | ID | Title | Proposed owner | Depends on |
 |---|---|---|---|
-| DS-01 | Tokens and theme layer in `packages/ui`, with contrast and purity tests | Codex (V2 frontend), pending a `packages/ui` ownership grant | — |
-| DS-02 | Layout foundations: `AppShell` through `DetailPanel` | Codex (V2 frontend) | DS-01; supersedes the shell part of #124 |
-| DS-03 | Primitives and states: Button refactor, Tabs, FormField, NumberStepper, SegmentedControl, Dialog, Empty, Loading and Error | Codex (V2 frontend) | DS-01; supersedes #134 (UX-11) |
-| DS-04 | Marketplace components (§6), each replacing its V2 markup | Codex (V2 frontend) | DS-02, DS-03, #105 for job-authoring files |
-| DS-05 | Responsive, keyboard and token regression suite (§9) | Claude QA | DS-01; DS-02 for page tests |
+| DS-01 (#144) | Tokens and theme layer in `packages/ui`, with contrast and purity tests | Codex (V2 frontend), pending a `packages/ui` ownership grant | — |
+| DS-02 (#145) | Layout foundations: `AppShell` through `DetailPanel` | Codex (V2 frontend) | DS-01; supersedes the shell part of #124 |
+| DS-03 (#146) | Primitives and states: Button refactor, Tabs, FormField, NumberStepper, SegmentedControl, Dialog, Empty, Loading and Error | Codex (V2 frontend) | DS-01; supersedes #134 (UX-11) |
+| DS-04 (#147) | Marketplace components (§6), each replacing its V2 markup | Codex (V2 frontend) | DS-02, DS-03, #105 for job-authoring files |
+| DS-05 (#148) | Responsive, keyboard and token regression suite (§9) | Claude QA | DS-01; DS-02 for page tests |
 
 Rules for every ticket: an isolated branch; no edits to `architecture/normalized-v2/`, SQL or legacy v3 components; one page migrated per PR, behind the V2 flag; screenshots at 1440 and 390 attached.
 
