@@ -372,6 +372,9 @@ select marketplace.admin_grant_founding_promotion(
 commit;
 "
 
+# Billing workers receive the org id from the webhook payload; service_role has no table grants,
+# so the harness resolves it up front instead of sub-selecting inside the worker transaction.
+CONC_ORG_ID="$(psql_scalar "select id from marketplace.organizations where slug = 'conc-timber';")"
 NEXT_START="$(psql_scalar "select (now() + interval '30 days')::timestamptz::text;")"
 NEXT_END="$(psql_scalar "select (now() + interval '60 days')::timestamptz::text;")"
 BARRIER="$(psql_scalar "select (clock_timestamp() + interval '1200 milliseconds')::text;")"
@@ -382,7 +385,7 @@ select pg_sleep_until('${BARRIER}'::timestamptz);
 select set_config('request.jwt.claims', '{\"role\":\"service_role\"}', true);
 set local role service_role;
 select marketplace.open_subscription_cycle(
-  (select id from marketplace.organizations where slug = 'conc-timber'),
+  '${CONC_ORG_ID}'::uuid,
   'basic', 'active', '${NEXT_START}'::timestamptz, '${NEXT_END}'::timestamptz,
   'cus_conc', 'sub_conc', false, 7, false
 );
