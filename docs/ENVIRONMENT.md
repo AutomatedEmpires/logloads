@@ -1,10 +1,13 @@
 # LogLoads Environment
 
 ## Local development
-- Use Node `24.16.0` from `.nvmrc` and pnpm `10.12.4`.
-- Run `corepack enable` once per shell.
-- Install with `pnpm install`.
-- Run the full local gate with `pnpm validate`.
+- Supported workflow: a native Windows 11 checkout edited in Cursor (macOS/Linux work the same way). WSL is not required.
+- Use Node `24.16.0` from `.nvmrc` (fnm or nvm) and pnpm `10.12.4` via `corepack enable`. Non-interactive shells may not load fnm's shell hook; confirm `node -v` prints `v24.16.0` before running checks.
+- Install with `pnpm install --frozen-lockfile`.
+- One-time: `pnpm setup:local` creates or completes the git-ignored `apps/web/.env.local` with `NEXT_PUBLIC_APP_URL=http://localhost:3002` and freshly generated local-only `LOGLOADS_SESSION_SECRET` and `LOGLOADS_RATE_LIMIT_HMAC_SECRET`. It never overwrites values, never prints secrets, refuses CI/Vercel, and adds no provider keys.
+- Why both are needed locally: seeded development sign-in stays off unless `NEXT_PUBLIC_APP_URL` is a loopback URL, and rate-limited routes (sign-in, contact, onboarding, weather) refuse to run without `LOGLOADS_RATE_LIMIT_HMAC_SECRET` in every environment. Production behaviour is unchanged.
+- `pnpm dev` and `pnpm --filter @logloads/web dev:webpack` bind `127.0.0.1:3002` only. Never run `next build` into `apps/web/.next` while a dev server uses it; build from a separate git worktree.
+- Run the full local gate with `pnpm validate` (its database step needs the local Supabase CLI and Docker).
 
 ## Local Supabase
 - Dedicated local Postgres URL: `postgresql://postgres:postgres@localhost:55322/postgres`

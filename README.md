@@ -42,12 +42,17 @@ preserved historical subscription contract.
 
 ## Getting started
 
+Windows 11 (PowerShell or Git Bash) and macOS/Linux use the same steps:
+
 ```bash
-nvm use            # Node 24.16.0
-corepack enable
-pnpm install
-pnpm dev           # http://localhost:3002 (doppler run -- pnpm dev once secrets exist)
+fnm use            # or `nvm use` — Node 24.16.0 from .nvmrc
+corepack enable    # pnpm 10.12.4 from package.json "packageManager"
+pnpm install --frozen-lockfile
+pnpm setup:local   # one time: writes git-ignored apps/web/.env.local with local-only secrets
+pnpm dev           # http://localhost:3002 (bound to 127.0.0.1 only)
 ```
+
+`pnpm setup:local` never overwrites existing values, never prints secrets, refuses to run on CI/Vercel, and adds no provider credentials, so local development uses the JSON store and seeded sign-in rather than any hosted project. Do not run `next build` while `pnpm dev` is using `apps/web/.next`; build from a separate git worktree.
 
 Local sign-in (no Clerk keys): use the email of a seeded account — `hank@northpine.example` (driver), `dispatch@northpine.example` (fleet), `cole@summit.example` (host), `admin@logloads.example` (admin) — or create a real account through `/onboarding`. When using only the local JSON fallback, delete `apps/web/.data/logloads-state.json` to reset it; never delete a canonical Supabase row as a development reset.
 

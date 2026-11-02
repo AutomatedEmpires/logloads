@@ -7,9 +7,9 @@ coverage/
 *.log
 *.tsbuildinfo
 
-# env — values live in Doppler; never commit a real .env
-.env
-.env.*
+# env — values live in Doppler; never commit a real .env.
+# Covers .env, .env.local, apps/web/.env.local, .env.production, .envrc, ...
+.env*
 !.env.example
 
 .DS_Store
@@ -26,4 +26,3 @@ apps/web/.artifacts/
 # document, including driver names, contact details and (once the credential
 # vault ships) licence and insurance data. A backup must never enter git.
 backups/
-.env*

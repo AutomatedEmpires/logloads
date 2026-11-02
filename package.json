@@ -39,6 +39,7 @@
     "demo:capture-pilot": "node tools/capture-pilot-surfaces.mjs",
     "dev": "pnpm --filter @logloads/web dev",
     "guardrails": "node tools/check-guardrails.mjs",
+    "setup:local": "node tools/setup-local-env.mjs",
     "lint": "turbo run lint && pnpm lint:workflows",
     "lint:workflows": "npx --yes github-actionlint@1.7.12",
     "test": "turbo run test --concurrency=1 && pnpm test:tools",

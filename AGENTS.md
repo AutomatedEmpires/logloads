@@ -1,16 +1,20 @@
-<!-- ae-control-plane v1 (2026-07-16). Machine operating contract; product docs follow below. -->
-# Operating contract — Automated Empires control plane
+<!-- Local operating contract, updated 2026-11-01 for the Windows/Cursor workflow (supersedes the 2026-07-16 ae-control-plane WSL block). Product docs follow below. -->
+# Operating contract — local workflow
 
-- **Canonical clone (the ONLY writable copy):** WSL `Ubuntu-24.04-Recovered` → `/home/jackson/automatedempires/ventures/logloads`.
-  Never clone this repository anywhere else on the machine. Parallel work uses controlled
-  worktrees: `ae start logloads -t <task> -a <agent> --worktree`.
-- **Sessions:** acquire the single-writer lease first (`ae start logloads -t <task> -a <agent>`);
-  end with `ae finish logloads`. Work counts as done ONLY when pushed and remote-SHA-verified.
+- **Working copy:** the native Windows 11 checkout opened in Cursor is the supported development
+  environment. The former WSL `Ubuntu-24.04-Recovered` clone and the `ae start` / `ae finish` lease
+  commands are retired for this repository; do not reintroduce WSL-only steps. Parallel work uses
+  `git worktree` checkouts, one writer per branch.
+- **Toolchain:** Node 24.16.0 (`.nvmrc`, via fnm or nvm) and pnpm 10.12.4 (Corepack). One-time
+  `pnpm install --frozen-lockfile` then `pnpm setup:local`; see `docs/ENVIRONMENT.md`.
+- **Local servers:** `pnpm dev` binds `127.0.0.1:3002` only. Never build into `apps/web/.next` while a dev
+  server is using it; run production builds from a separate worktree.
+- **Done means pushed:** work counts as done ONLY when pushed and remote-SHA-verified.
 - **Deploys:** merging `main` auto-deploys production via Vercel.
 - **Validate before merge:** `pnpm typecheck && pnpm guardrails` (CI must be green; squash merges).
 - **Providers (fixed — never swap or cross-wire):** db=supabase, private-media=supabase-storage, auth=clerk.
 - **LOCKED:** Follow the in-repo operating contract (merged PR #23)
-- Full policy: `github.com/AutomatedEmpires/ae-control` → `POLICY.md`. Briefing: `ae info logloads`.
+- Portfolio policy: `github.com/AutomatedEmpires/ae-control` → `POLICY.md` (its `ae` CLI lease workflow is retired here).
 
 ---
 
