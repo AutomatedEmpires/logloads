@@ -658,7 +658,7 @@ export const organizationSubscriptionSchema = z
       .optional(),
     acceptedByUserId: uuidSchema,
     acceptedAt: timestampSchema,
-    customTerms: z.record(z.unknown()).default({}),
+    customTerms: z.record(z.string(), z.unknown()).default({}),
     internalBillingTest: z.boolean(),
     createdAt: timestampSchema,
     updatedAt: timestampSchema
@@ -1087,7 +1087,7 @@ export const networkUsageEventSchema = z
     status: networkUsageEventStatusSchema,
     invoiceId: uuidSchema.nullable(),
     reversalAdjustmentId: uuidSchema.nullable(),
-    auditMetadata: z.record(z.unknown()).default({}),
+    auditMetadata: z.record(z.string(), z.unknown()).default({}),
     createdAt: timestampSchema,
     updatedAt: timestampSchema
   })

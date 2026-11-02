@@ -409,7 +409,7 @@ export const assignmentBaseSchema = z.object({
     .default(null),
   cancellationReason: z.string().optional().nullable(),
   dispatcherNotes: z.string().optional().nullable(),
-  termsSnapshot: z.record(z.unknown()).default({}),
+  termsSnapshot: z.record(z.string(), z.unknown()).default({}),
   createdAt: timestampSchema,
   updatedAt: timestampSchema
 })
@@ -631,7 +631,7 @@ export const auditEventSchema = z.object({
   entityType: z.string().min(1),
   entityId: uuidSchema,
   action: z.string().min(1),
-  metadata: z.record(z.unknown()).default({}),
+  metadata: z.record(z.string(), z.unknown()).default({}),
   createdAt: timestampSchema
 })
 
@@ -1028,7 +1028,7 @@ export const credentialExtractionSchema = z
     unitNumber: nullableTextSchema(60),
     plateNumber: nullableTextSchema(60)
   })
-  .default({})
+  .prefault({})
 
 /**
  * One decision, kept forever.

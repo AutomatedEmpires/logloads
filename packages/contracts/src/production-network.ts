@@ -191,7 +191,7 @@ export const opportunityCapacitySchema = z.object({
   committedTruckloads: z.number().int().min(0),
   completedTruckloads: z.number().int().min(0),
   remainingTruckloads: z.number().int().min(0),
-  acceptedTermsSnapshot: z.record(z.unknown()).default({}),
+  acceptedTermsSnapshot: z.record(z.string(), z.unknown()).default({}),
   createdAt: timestampSchema,
   updatedAt: timestampSchema
 })
@@ -390,7 +390,7 @@ export const tripEventSchema = z.object({
   source: z.enum(["driver", "dispatcher", "landing", "destination", "system"]),
   occurredAt: timestampSchema,
   note: z.string().optional().nullable(),
-  metadata: z.record(z.unknown()).default({}),
+  metadata: z.record(z.string(), z.unknown()).default({}),
   createdAt: timestampSchema
 })
 
@@ -435,7 +435,7 @@ export const tripDocumentSchema = z.object({
    * and they stay readable. Only a document with `media` can be delivered.
    */
   media: mediaReferenceSchema.optional().nullable(),
-  auditMetadata: z.record(z.unknown()).default({})
+  auditMetadata: z.record(z.string(), z.unknown()).default({})
 })
 
 /**
@@ -504,7 +504,7 @@ export const directOfferSchema = z.object({
   offeredToOrganizationId: uuidSchema,
   status: z.enum(["draft", "sent", "accepted", "declined", "expired", "revoked"]),
   offeredTruckloads: z.number().int().positive(),
-  termsSnapshot: z.record(z.unknown()).default({}),
+  termsSnapshot: z.record(z.string(), z.unknown()).default({}),
   expiresAt: timestampSchema,
   respondedAt: optionalTimestampSchema,
   createdAt: timestampSchema,
