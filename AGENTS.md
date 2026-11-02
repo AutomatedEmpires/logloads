@@ -24,6 +24,12 @@ This contract binds human and automated contributors. Read it before changing th
 
 ## 1. Venture thesis, user, and destination
 
+> **Current product authority (2026-11-01):** `docs/product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md` — LogLoads is a
+> timber-hauling load board (free haulers; Basic/Pro/Regional landing subscriptions; targeted invitations; job boosts;
+> no per-load or percentage fees; no dispatch or settlement). Where this contract describes cockpits, dispatch, route
+> packs, trip state or percentage fees, it describes the pilot implementation being replaced. Follow
+> `docs/product/TRANSITION_PLAN.md` for sequencing; the safety, provider, data and legal boundaries below still apply.
+
 **Thesis:** forestry hauling loses time and trust when loads, truck capacity, route access, assignments, and exceptions are coordinated across calls, texts, spreadsheets, and private knowledge. LogLoads can become the field-first operating network that makes that work visible to the right participant at the right time.
 
 Primary daily users are drivers, fleet coordinators, and landing/host operators. Under the current commercial model the paying customer is the host organization; driver and fleet workspace access is free. Historical fleet subscriptions remain explainable but cannot be newly sold. The product destination is one mobile-first network with distinct Driver, Fleet, Host, and Admin cockpits around the loop **Plan → Publish → Match → Commit → Coordinate → Haul → Confirm → Repeat**.
@@ -132,7 +138,9 @@ not claim LogLoads is the shipper, broker, carrier, dispatcher, employer,
 insurer, payment custodian, or guarantor. A dated counsel-approved operating
 posture is required before real Network enrollment.
 
-**Operating model — founder-decided 2026-08-01 (`percentage_v1`). Supersedes the 2026-07-28 subscription-v1 decision for new commercial activity.**
+**New commercial direction — 2026-11-01 Blueprint v1.0 (see §1 note and `docs/DECISIONS.md`).** The `percentage_v1` rules below are no longer the model for new product work, but they remain binding for historical/frozen obligations and for the existing gated code paths until those paths are retired by a separately authorized change. Every collection and enrollment gate stays `disabled`; creating any new percentage, subscription or boost obligation still requires explicit live-money authorization.
+
+**Historical operating model — founder-decided 2026-08-01 (`percentage_v1`). Superseded the 2026-07-28 subscription-v1 decision for new commercial activity.**
 
 - **Load value is the flat driver pay the host states.** The driver sees exactly that number. It replaces the rate card as the figure any driver-facing surface shows. Rate entities remain a company price-card, not per-load driver pay.
 - **LogLoads charges the host an additional 5% platform fee.** For $1,000 of stated driver pay, the driver's direct host-to-driver obligation remains $1,000 and the host's separate LogLoads obligation is $50. The fee is never deducted from driver pay.

@@ -2,6 +2,41 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-11-01 — LogLoads becomes a timber-hauling load board (Blueprint v1.0)
+
+- **Authority.** The founder adopted the *LogLoads Product, Membership & Monetization
+  Blueprint v1.0* (verbatim copy: `docs/product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md`).
+  It governs all new product and commercial work. Changes require a new blueprint
+  version, not silent edits.
+- **What LogLoads is now.** A specialized load board: landing organizations advertise
+  long-lived hauling opportunities and discover self-reported truck capacity; haulers
+  and hauling companies find work, maintain equipment/availability, and express
+  interest free forever. LogLoads does not dispatch, settle freight, track individual
+  loads, or charge per load, per truck hired, or as a percentage of haul value.
+- **Commercial model for new activity.** Landing subscriptions Basic $149 / Pro $299 /
+  Regional $499 per month (active landings 1/3/unlimited; seats 2/5/10; targeted
+  invitations 3/10/30 per cycle, no rollover); optional single-job boosts $99/7 days,
+  $149/14 days, $199/28 days (~100-mile radius, labelled Sponsored, no auto-renewal);
+  founding offer 50% off for 6 cycles for the first 10 qualifying landing organizations
+  per launched state. Extra invitation packs are deferred.
+- **Superseded for new development:** the 2026-08-01 `percentage_v1` host fee, the
+  dispatch / transportation-management direction (route packs, trip state, slots,
+  completion settlement as product goals), and every earlier subscription catalog.
+- **Still binding (historical obligations).** `percentage_v1`, `legacy_percentage` and
+  `subscription_v1` records, frozen assignment terms, invoices, webhooks, reconciliation,
+  idempotency and guardrails stay intact and parseable until a separately authorized,
+  evidence-backed retirement. All collection and enrollment gates stay `disabled`.
+  No new percentage, subscription or boost obligation may be created by current code.
+- **Activation gates (not implied by this decision).** No plan, invitation or boost is
+  purchasable until Stripe products, published terms (proration, cancellation, taxes,
+  refunds), entitlement enforcement, financial reconciliation and a qualified
+  transportation-law review of advertising/introductions/invitations exist (§14–§15).
+- **Persistence direction.** Normalized, tenant-isolated Supabase/Postgres replaces the
+  single-row `operating_state` document over time (§12). The relational schema is to be
+  coordinated with the separately prepared schema prototype; no competing design is
+  created here, and no production data is migrated without backups and authorization.
+- **Implementation sequence:** `docs/product/TRANSITION_PLAN.md`.
+
 ## 2026-08-09 — The Pilot Center explains the real product without granting a demo identity
 
 - **Public exploration is an editorial product surface, not a cockpit.** `/pilot`

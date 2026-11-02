@@ -11,9 +11,21 @@ Plan → Publish → Match → Commit → Coordinate → Haul → Confirm → Re
 
 Hosts publish timber movement with capacity, schedule, and visibility control (private network first, open network when needed). Drivers and fleets see work that fits their actual equipment, request capacity, and — once committed — unlock Route Packs, exact access, live trip state, and document history. Sensitive operational detail (gate instructions, private roads, exact coordinates) stays redacted server-side until assignment.
 
-## Commercial authority
+## Product and commercial authority
 
-The founder's newest decision is `percentage_v1` (2026-08-01): LogLoads bills
+**Current: [LogLoads Product, Membership & Monetization Blueprint v1.0](./docs/product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md) (2026-11-01).**
+LogLoads is becoming a specialized timber-hauling load board: landing organizations
+advertise long-lived hauling opportunities and find self-reported truck capacity;
+haulers find work free forever. Landing plans are Basic $149 / Pro $299 / Regional
+$499 per month with 3 / 10 / 30 targeted invitations per cycle, plus optional
+$99 / $149 / $199 job boosts. There are no per-load, per-truck or percentage fees.
+The transition is in progress — see [`docs/product/TRANSITION_PLAN.md`](./docs/product/TRANSITION_PLAN.md).
+Nothing in the new model is purchasable yet, and the running app still contains the
+pilot's dispatch-oriented cockpits described below until they are replaced.
+
+### Historical commercial models (preserved for existing obligations)
+
+Until 2026-11-01 the newest decision was `percentage_v1` (2026-08-01): LogLoads billed
 the host a separate platform fee equal to **5% of the host-stated driver pay**
 after a load completes. The driver remains owed the full stated amount directly
 by the host; LogLoads never receives, deducts, escrows, or distributes driver
