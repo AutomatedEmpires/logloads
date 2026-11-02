@@ -51,7 +51,7 @@ case "$STAGE" in
       echo '```'
       q "select 'postgres ' || current_setting('server_version') || ' | ' || extensions.postgis_lib_version() || ' (postgis lib) | btree_gist ' || (select extversion from pg_extension where extname='btree_gist');"
       q "select 'tables=' || count(*) from pg_tables where schemaname = 'marketplace';"
-      q "select contype || '=' || count(*) from pg_constraint c join pg_namespace n on n.oid = c.connamespace where n.nspname = 'marketplace' group by contype order by contype;"
+      q "select contype::text || '=' || count(*) from pg_constraint c join pg_namespace n on n.oid = c.connamespace where n.nspname = 'marketplace' group by contype order by contype;"
       q "select 'indexes=' || count(*) from pg_indexes where schemaname = 'marketplace';"
       q "select 'functions=' || count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace';"
       q "select 'triggers=' || count(*) from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'marketplace' and not t.tgisinternal;"
