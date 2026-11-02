@@ -29,7 +29,7 @@ Added by integration: `08_v2_contract_concurrency_test.sh`, `09_v2_integration_a
 | E2 | Inquiry audit actions (`marketplace_interest_*`) violate `audit_events_action_check` ⇒ submit/update/renew/viewed/replied/declined all failed with **23514** | run 41478917784 | `b7ba0e3` |
 | E3 | `submit_expression_of_interest` OUT column `interest_id` ambiguous with table columns (**42702**) ⇒ every changed-terms resubmission or renewal failed | run 41480889887 | `59ae8a8` |
 | E4 | Boost auto-stop set status `'expired'` (not a `job_boosts` status) and shortened `ends_at` (violates the fixed-duration CHECK) ⇒ filling/pausing a boosted job failed | run 41481702859 | `10f5f28` |
-| E5 | 02's `UPDATE (last_confirmed_at)` grant never revoked; 07's own V2-DEC-03 (e2) failed | run 41480100552 | `55f6b56` (C8) |
+| E5 | 02's `UPDATE (last_confirmed_at)` grant never revoked; 07's own V2-DEC-03 (e2) failed | run 41480100552 | `2dd63a2` (C8) |
 
 ## 4. Defects found by code review (fixed, each with a regression)
 
@@ -41,6 +41,7 @@ Added by integration: `08_v2_contract_concurrency_test.sh`, `09_v2_integration_a
 | C4 | Legacy import authorized by deny-list; recorded the org creator as importer and confirmer | 09 |
 | C5 | Public discovery RPCs (SECURITY DEFINER, anon) exposed paused/closed/**moderated** jobs beyond RLS; `get_marketplace_job` only searched the first 200 rows | 09 (205-job case) |
 | C6 | `respond_to_interest` accepted `replied` without a message (TS contract requires one) | 09 |
+| C8 | Authenticated could still write `last_confirmed_at` directly (02 grant not revoked) — same as E5 | 09, 07 |
 | C7 | Same draft published twice concurrently could raise a raw unique violation | 08 A5 |
 | C9 | `last_confirmed_by` (a user id) readable by anon | grants |
 | S1 | Concurrent identical first inquiries collided on the unique index (23505) | 08 A2 |
