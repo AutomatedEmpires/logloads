@@ -709,7 +709,9 @@ end
 $$;
 
 -- When a job posting leaves `status = 'active'` (`closed`, `filled`, `expired`, `paused`),
--- mark any active boost on that job `expired` so inactive jobs do not run boosts.
+-- end any active boost on that job so inactive jobs do not run boosts. 'ended' is the job_boosts
+-- terminal status ('expired' is not allowed), and the purchased window is left intact: job_boosts
+-- requires ends_at = starts_at + duration_days * 24h, and sponsorship/exclusion key on status = 'active'.
 create or replace function marketplace.tg_job_after_status()
 returns trigger language plpgsql security definer
 set search_path = pg_catalog, extensions, pg_temp
@@ -717,7 +719,7 @@ as $$
 begin
   if old.status = 'active' and new.status in ('paused', 'filled', 'closed', 'expired') then
     update marketplace.job_boosts
-    set status = 'expired', ends_at = least(ends_at, now())
+    set status = 'ended'
     where job_id = new.id and status = 'active';
   end if;
   return null;

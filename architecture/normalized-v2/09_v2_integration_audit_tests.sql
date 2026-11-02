@@ -352,7 +352,8 @@ begin
   perform pg_temp.as_jwt('authenticated', 'a9_land');
   perform marketplace.set_job_posting_status(j1, 'filled');
   perform pg_temp.as_jwt('harness');
-  perform pg_temp.ok((select status from marketplace.job_boosts where id = v_boost) = 'expired', 'GAP-09: filling a job expires its active boost');
+  perform pg_temp.ok((select status = 'ended' and ends_at = starts_at + duration_days * interval '24 hours' from marketplace.job_boosts where id = v_boost),
+    'GAP-09: filling a job ends its active boost and keeps the purchased window intact');
 
   raise notice 'ALL V2 INTEGRATION AUDIT TESTS PASSED.';
 end

@@ -1156,7 +1156,7 @@ begin
   perform marketplace.set_job_posting_status(v_job_1, 'filled');
 
   perform pg_temp.assert_true(
-    exists (select 1 from marketplace.job_boosts where id = v_boost_id and status = 'expired'),
+    exists (select 1 from marketplace.job_boosts where id = v_boost_id and status = 'ended'), -- 'expired' is not a job_boosts status
     'Boost 4m: Transitioning job to filled automatically expires active job_boosts row'
   );
 
