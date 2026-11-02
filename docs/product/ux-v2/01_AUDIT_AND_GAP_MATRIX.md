@@ -33,6 +33,8 @@ Screenshots are in [`evidence/`](./evidence). They show seeded, fictional develo
 
 ### 1.3 Conflicts inside the specification (both versions; founder decision needed)
 
+> **Update 2026-11-02:** C1 is decided (V2-DEC-02). C4, C5/C6 and C8–C10 are decided as UX-DEC-01 to UX-DEC-05 in [08_UX_DECISIONS.md](./08_UX_DECISIONS.md). C2 and C3 follow the recommended defaults below. UX-DEC-02 drops the "start window" shown in some `02` wireframes.
+
 | # | Topic | Conflict | Recommended default (PROPOSED) |
 |---|---|---|---|
 | C1 | **Pay disclosure** · **DECIDED 2026-11-01 (V2-DEC-02)**: a positive rate with a basis, or Negotiable with a note of 3+ characters | §4.5 lists "payment amount/rate basis or transparent negotiable status" as **required**. §8.21 marks the advertised pay amount as **Recommended** and pay basis as "Required if rate present". The draft schema allows no pay at all (`marketplace-job-draft.ts:68-77`). | Require one of two states: an amount with a basis, or Negotiable with a note. Remove "Not stated" for new postings. Pay transparency is the product's stated differentiator (§8.4). |

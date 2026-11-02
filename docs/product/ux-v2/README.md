@@ -11,6 +11,7 @@ Design work for the V2 load board, tracked in #116. It turns the approved UX spe
 | [05_VISUAL_DIRECTIONS.md](./05_VISUAL_DIRECTIONS.md) | Stage A directions (Direction 1 chosen) and the Stage A.2 Modern Industrial refinement |
 | [06_DESIGN_SYSTEM.md](./06_DESIGN_SYSTEM.md) | **Final** light-surface Modern Industrial hybrid: architecture, tokens, layouts, components, accessibility, tests and DS tickets |
 | [design-system/](./design-system) | Token, component and prototype source for the final system |
+| [08_UX_DECISIONS.md](./08_UX_DECISIONS.md) | Delegated UX decisions UX-DEC-01 to 07, with justification (closes C4–C10) |
 | [07_ADOPTION_REVIEW.md](./07_ADOPTION_REVIEW.md) | Production review gates for the handoff at `9728c25`: semantic rows, scoped themes, dialog focus return, self-hosted fonts, truthful verification |
 | [evidence/](./evidence) | Screenshots of the V2 preview at `4c9518e` (seeded fictional data) |
 
@@ -32,7 +33,6 @@ Already decided. The visual direction is the light-surface Modern Industrial hyb
 
 Still needed:
 
-1. **C5/C6 — status words.** Approve the mapping in `02 §6.6`, including how "Filled" is shown.
-2. **C4 — landing-scoped staff** on the Basic plan.
-3. **C8–C10:** start timing ("Ongoing"), the product taxonomy, and contact-route defaults.
-4. **Spec v1.1** to fix the formatting defects F1–F5, without changing requirements.
+C4, C5/C6 and C8–C10 are now decided under delegated ownership (2026-11-02): see [08_UX_DECISIONS.md](./08_UX_DECISIONS.md).
+
+- **Spec v1.1** to fix the formatting defects F1–F5, without changing requirements.
