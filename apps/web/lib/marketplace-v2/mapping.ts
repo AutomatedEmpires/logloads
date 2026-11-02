@@ -1,0 +1,121 @@
+import {
+  marketplaceJobAcceptsInterest,
+  type LoadPosting,
+  type MarketplaceInterest,
+  type MarketplaceInterestView,
+  type MarketplaceJobDetailView,
+  type MarketplaceJobStatus,
+  type RoadCondition
+} from "@logloads/contracts"
+import type { LogLoadsDatabaseState } from "@logloads/db"
+
+import type { NetworkLoadView } from "../network"
+
+/**
+ * Pure mapping from the pilot's redacted public network view to the V2 read model. Only fields that
+ * the public view already exposes, plus public-safe poster statements from the load posting (stated
+ * pay, dates, estimates, last update), are used. Exact coordinates, gate/route notes and contacts are
+ * never read here.
+ */
+
+const PRODUCT_LABELS: Record<string, string> = {
+  biomass: "Biomass",
+  chips: "Chips",
+  mixed: "Mixed products",
+  other: "Other timber",
+  pulpwood: "Pulpwood",
+  saw_logs: "Saw logs"
+}
+
+/** Labels for `roadConditionSchema` (poster-reported; not a LogLoads inspection). */
+const ROAD_CONDITION_LABELS: Record<RoadCondition, string> = {
+  closed: "Road reported closed",
+  good: "Roads reported in good condition",
+  icy: "Icy road conditions reported",
+  muddy: "Muddy road conditions reported",
+  restricted: "Road restrictions reported",
+  snow: "Snow on haul roads reported",
+  wet: "Wet road conditions reported"
+}
+
+export function humanizeProduct(loadType: string): string {
+  return PRODUCT_LABELS[loadType] ?? loadType.replace(/_/g, " ")
+}
+
+export function toJobDetailView(
+  view: NetworkLoadView,
+  load: LoadPosting,
+  posterVerified: boolean,
+  status: MarketplaceJobStatus
+): MarketplaceJobDetailView {
+  const startsOn = load.scheduleType === "one_off" ? load.loadDate ?? null : load.campaignStartDate ?? null
+  const endsOn = load.scheduleType === "one_off" ? load.loadDate ?? null : load.campaignEndDate ?? null
+  const origin = view.landing
+  const destination = view.destination
+  const roadSummary = ROAD_CONDITION_LABELS[view.route.condition]
+
+  return {
+    acceptingInterest: marketplaceJobAcceptsInterest(status),
+    destinationLabel: destination ? [destination.name, [destination.city, destination.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ") : null,
+    endsOn,
+    equipment: [...view.equipment],
+    estimatedDailyLoads: null,
+    estimatedTonsPerLoad: load.estimatedTonsPerLoad ?? null,
+    haulDistance: view.route.distanceMiles > 0 ? { basis: "poster_route_estimate", miles: view.route.distanceMiles } : null,
+    id: load.id,
+    lastConfirmedAt: load.updatedAt,
+    origin: {
+      approximatePoint: origin.approximate ? { lat: origin.lat, lng: origin.lng } : null,
+      label: [origin.city, origin.state].filter(Boolean).join(", ") || "Location shared on request",
+      stateCode: origin.state || null
+    },
+    pay: load.driverPayCents ? { amountCents: load.driverPayCents, unit: "per_load" } : { amountCents: null, unit: null },
+    posterName: view.sourceName,
+    posterOrganizationId: load.companyId,
+    posterVerified,
+    product: humanizeProduct(load.loadType),
+    publicAccessRequirements: [...view.accessRequirements],
+    publicRoadNotes: [roadSummary, view.route.weatherNotes].filter(Boolean).join(". ") || null,
+    scheduleNote: load.scheduleType === "one_off" ? null : view.scheduleLabel || null,
+    slug: load.id,
+    sponsored: false,
+    startsOn,
+    status,
+    title: view.title,
+    trucksRequested: load.dailyTruckCountNeeded ? { count: load.dailyTruckCountNeeded, per: "day" } : null
+  }
+}
+
+export function toInterestView(
+  state: LogLoadsDatabaseState,
+  interest: MarketplaceInterest,
+  jobStatus: (load: LoadPosting) => MarketplaceJobStatus
+): MarketplaceInterestView {
+  const organization = (id: string) => state.organizations.find((candidate) => candidate.id === id)
+  const personName = (id: string) => state.profiles.find((profile) => profile.id === id)?.fullName ?? "LogLoads member"
+  const load = state.loadPostings.find((candidate) => candidate.id === interest.loadPostingId)
+  const status = load ? jobStatus(load) : "closed"
+  const hauler = organization(interest.haulerOrganizationId)
+
+  return {
+    availableFrom: interest.availableFrom,
+    contactPreference: interest.contactPreference,
+    createdAt: interest.createdAt,
+    haulerOrganization: { id: interest.haulerOrganizationId, name: hauler?.displayName ?? "Hauling business", type: hauler?.type ?? "unknown" },
+    id: interest.id,
+    job: {
+      acceptingInterest: marketplaceJobAcceptsInterest(status),
+      id: interest.loadPostingId,
+      slug: interest.loadPostingId,
+      status,
+      title: load?.title ?? "Job no longer listed"
+    },
+    landingOrganization: { id: interest.jobOrganizationId, name: organization(interest.jobOrganizationId)?.displayName ?? "Landing organization" },
+    message: interest.message,
+    replies: interest.replies.map((reply) => ({ ...reply, authorName: personName(reply.authorUserId) })),
+    status: interest.status,
+    submittedBy: { name: personName(interest.submittedByUserId), userId: interest.submittedByUserId },
+    trucksOffered: interest.trucksOffered,
+    updatedAt: interest.updatedAt
+  }
+}

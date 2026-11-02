@@ -1,6 +1,7 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server"
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server"
 
+import { marketplaceV2Enabled } from "./lib/marketplace-v2/flag"
 import { isKnownPilotPath } from "./lib/pilot-route-contract"
 
 export const protectedRoutePatterns = [
@@ -17,6 +18,7 @@ export const privateIndexingRoutePatterns = [
   "/onboarding(.*)",
   "/sign-in(.*)",
   "/sign-up(.*)",
+  "/v2(.*)",
   "/workspace(.*)"
 ]
 
@@ -68,6 +70,25 @@ function rejectUnknownPilotPath(request: NextRequest): NextResponse | null {
   })
 }
 
+/**
+ * Marketplace V2 is a development preview. When its flag is off, every /v2 path is a plain 404 before
+ * any layout or page renders (App Router renders layouts and pages in parallel, so a layout-level
+ * notFound() alone would not stop page data from being produced).
+ */
+export function rejectDisabledMarketplaceV2(request: NextRequest): NextResponse | null {
+  const { pathname } = request.nextUrl
+
+  if ((pathname !== "/v2" && !pathname.startsWith("/v2/")) || marketplaceV2Enabled()) return null
+
+  return new NextResponse("Not found", {
+    status: 404,
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "X-Robots-Tag": "noindex, nofollow"
+    }
+  })
+}
+
 export function protectFromIndexing(request: NextRequest, response: NextResponse): NextResponse {
   if (isPrivateIndexingRoute(request) || isPilotCaptureAssetRoute(request)) {
     response.headers.set("X-Robots-Tag", "noindex, nofollow")
@@ -97,6 +118,10 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
   const pilotNotFound = rejectUnknownPilotPath(request)
 
   if (pilotNotFound) return pilotNotFound
+
+  const marketplaceV2NotFound = rejectDisabledMarketplaceV2(request)
+
+  if (marketplaceV2NotFound) return marketplaceV2NotFound
 
   if (clerkConfigured) {
     return withClerk(request, event)

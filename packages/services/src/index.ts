@@ -41,6 +41,15 @@ import {
 } from "./driver-profile"
 import { activeDriverProfileForOrganization } from "./driver-access"
 import {
+  expressMarketplaceInterest,
+  listMarketplaceInterestsForHauler,
+  listMarketplaceInterestsForLanding,
+  postHaulerInterestReply,
+  respondToMarketplaceInterest,
+  withdrawMarketplaceInterest,
+  type MarketplaceActor
+} from "./marketplace-interest"
+import {
   createThread,
   listThreadMessages,
   listThreadsForUser,
@@ -432,6 +441,13 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
       at?: Parameters<typeof acceptPercentageBillingAgreement>[2]
     ) => acceptPercentageBillingAgreement(state, input, at),
     createThread: (input: unknown) => createThread(state, input),
+    // Marketplace V2 expressions of interest (load-board model; no assignment, trip or fee).
+    expressMarketplaceInterest: (actor: MarketplaceActor, input: unknown) => expressMarketplaceInterest(state, actor, input),
+    withdrawMarketplaceInterest: (actor: MarketplaceActor, interestId: string) => withdrawMarketplaceInterest(state, actor, interestId),
+    respondToMarketplaceInterest: (actor: MarketplaceActor, input: unknown) => respondToMarketplaceInterest(state, actor, input),
+    postHaulerInterestReply: (actor: MarketplaceActor, input: unknown) => postHaulerInterestReply(state, actor, input),
+    listMarketplaceInterestsForHauler: (actor: MarketplaceActor) => listMarketplaceInterestsForHauler(state, actor),
+    listMarketplaceInterestsForLanding: (actor: MarketplaceActor) => listMarketplaceInterestsForLanding(state, actor),
     createSupportRequest: (
       input: Parameters<typeof createSupportRequest>[1],
       now?: Parameters<typeof createSupportRequest>[2]
@@ -682,6 +698,7 @@ export { loadPostingHasOwnedCoherentSources, routePackIsSafeToRead } from "./rou
 export { destinationFacilityVerificationAt, millUsableByOrganization } from "./destination-access"
 export { directOfferClaimCount, directOfferIsClaimable, effectiveDirectOfferStatus } from "./operating-network"
 export { DomainRefusalError } from "./utils"
+export { marketplaceJobStatus, type MarketplaceActor } from "./marketplace-interest"
 export {
   organizationOperationallyAccessible,
   resolveRestrictedOrganizationAccess

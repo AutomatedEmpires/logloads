@@ -39,6 +39,7 @@ import type {
   RichLandingDetails,
   RoutePack,
   SupportRequest,
+  MarketplaceInterest,
   SubscriptionBaseInvoice,
   SubscriptionPlanDefinition,
   TrailerProfile,
@@ -122,6 +123,8 @@ export interface LogLoadsDatabaseState {
   operationalNotices: OperationalNotice[]
   notifications: Notification[]
   supportRequests: SupportRequest[]
+  /** Marketplace V2 expressions of interest (load-board model; runtime-only additive collection). */
+  marketplaceInterests: MarketplaceInterest[]
   messageThreads: MessageThread[]
   messageEvents: MessageEvent[]
   auditEvents: AuditEvent[]

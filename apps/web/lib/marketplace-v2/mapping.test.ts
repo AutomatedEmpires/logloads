@@ -1,0 +1,97 @@
+import { createInMemoryDatabase } from "@logloads/db"
+import { marketplaceJobStatus } from "@logloads/services"
+import { describe, expect, it } from "vitest"
+
+import { buildNetworkView } from "../network"
+import { marketplaceV2Enabled } from "./flag"
+import { toInterestView, toJobDetailView } from "./mapping"
+
+// Seed fixtures are dated June 2026; pin the clock inside that window.
+const AT = new Date("2026-06-05T18:00:00.000Z")
+
+function publicJobs() {
+  const state = createInMemoryDatabase()
+  const view = buildNetworkView(state, { kind: "public" }, AT)
+  const jobs = view.loads.flatMap((networkLoad) => {
+    const load = state.loadPostings.find((candidate) => candidate.id === networkLoad.id)
+    return load ? [toJobDetailView(networkLoad, load, false, marketplaceJobStatus(load, AT.toISOString()))] : []
+  })
+
+  return { jobs, state }
+}
+
+describe("Marketplace V2 public job mapping", () => {
+  it("produces real seeded jobs only and never fabricates pay", () => {
+    const { jobs, state } = publicJobs()
+
+    expect(jobs.length).toBeGreaterThan(0)
+    for (const job of jobs) {
+      const load = state.loadPostings.find((candidate) => candidate.id === job.id)
+      expect(load).toBeDefined()
+      expect(job.pay).toEqual(load?.driverPayCents ? { amountCents: load.driverPayCents, unit: "per_load" } : { amountCents: null, unit: null })
+      expect(job.estimatedDailyLoads).toBeNull()
+      expect(job.posterOrganizationId).toBe(load?.companyId)
+    }
+  })
+
+  it("exposes only approximate (~2 km grid) coordinates and no private access or contact data", () => {
+    const { jobs, state } = publicJobs()
+    const serialized = JSON.stringify(jobs)
+    const secrets = [
+      ...state.richLandingDetails.flatMap((detail) => [detail.gateInstructions, detail.privateRoadNotes, detail.stagingInstructions, detail.communicationInstructions]),
+      ...state.haulRoutes.map((route) => route.roadNotes),
+      ...state.landings.map((landing) => landing.accessNotes),
+      ...state.richLandingDetails.flatMap((detail) => [String(detail.entranceLat), String(detail.entranceLng)])
+    ].filter((value): value is string => typeof value === "string" && value.trim().length > 6)
+
+    expect(secrets.length).toBeGreaterThan(0)
+    for (const secret of secrets) {
+      expect(serialized).not.toContain(secret)
+    }
+
+    for (const job of jobs) {
+      if (job.origin.approximatePoint) {
+        expect(Math.round(job.origin.approximatePoint.lat * 50) / 50).toBeCloseTo(job.origin.approximatePoint.lat, 10)
+        expect(Math.round(job.origin.approximatePoint.lng * 50) / 50).toBeCloseTo(job.origin.approximatePoint.lng, 10)
+      }
+    }
+  })
+
+  it("marks only active jobs as accepting interest", () => {
+    const { jobs } = publicJobs()
+
+    for (const job of jobs) {
+      expect(job.acceptingInterest).toBe(job.status === "active")
+    }
+    expect(jobs.some((job) => job.status === "active")).toBe(true)
+  })
+
+  it("builds inquiry views with names but no contact details", () => {
+    const { state } = publicJobs()
+    const job = state.loadPostings.find((candidate) => candidate.title === "Oak saw-log morning run")
+    const hauler = state.organizations.find((organization) => organization.displayName === "New River Hauling")
+    const submitter = state.profiles.find((profile) => profile.email === "emptyfleet@logloads.example")
+
+    if (!job || !hauler || !submitter) throw new Error("seed fixture missing")
+
+    const view = toInterestView(state, {
+      availableFrom: null, contactPreference: "phone", createdAt: AT.toISOString(), haulerOrganizationId: hauler.id,
+      id: "aaaaaaaa-0000-4000-8000-000000000009", jobOrganizationId: job.companyId, loadPostingId: job.id, message: null,
+      replies: [], respondedAt: null, status: "submitted", submittedByUserId: submitter.id, trucksOffered: 2,
+      updatedAt: AT.toISOString(), withdrawnAt: null
+    }, (load) => marketplaceJobStatus(load, AT.toISOString()))
+
+    expect(view).toMatchObject({ haulerOrganization: { name: "New River Hauling" }, job: { acceptingInterest: true, title: job.title }, trucksOffered: 2 })
+    expect(JSON.stringify(view)).not.toContain(submitter.phone)
+  })
+})
+
+describe("Marketplace V2 flag", () => {
+  it("is off unless explicitly enabled, and never on a hosted production deployment", () => {
+    expect(marketplaceV2Enabled({})).toBe(false)
+    expect(marketplaceV2Enabled({ LOGLOADS_MARKETPLACE_V2: "true" })).toBe(false)
+    expect(marketplaceV2Enabled({ LOGLOADS_MARKETPLACE_V2: "enabled" })).toBe(true)
+    expect(marketplaceV2Enabled({ LOGLOADS_MARKETPLACE_V2: "enabled", VERCEL_ENV: "preview" })).toBe(true)
+    expect(marketplaceV2Enabled({ LOGLOADS_MARKETPLACE_V2: "enabled", VERCEL_ENV: "production" })).toBe(false)
+  })
+})

@@ -87,6 +87,23 @@ Items to settle with the prototype owner before step 2:
 - **Identity:** the prototype trusts Clerk via allowlisted JWT issuers and `identity_links`; the app currently resolves
   identity server-side with the service role. Step 2 decides how requests carry the Clerk JWT to PostgREST.
 
+### Step 3 slice on the pilot store (2026-11-01)
+
+The first marketplace loop runs behind `LOGLOADS_MARKETPLACE_V2=enabled` (development only, `/v2`): a landing's published
+posting appears in a text-first discovery list with an optional map; a hauler business expresses nonbinding interest;
+the landing reviews, replies or declines; the hauler sees the reply. Boundary for the normalized adapter:
+
+- Contracts: `packages/contracts/src/marketplace-v2.ts` (job card/detail and interest views, statuses mirroring
+  `expressions_of_interest`, input schemas, freshness and queue rules).
+- Rules: `packages/services/src/marketplace-interest.ts` (hauler/landing authority, one live interest per job and
+  hauler business, replay-safe replies, audit events). Persistence is the additive `marketplaceInterests` collection.
+- Port: `apps/web/lib/marketplace-v2/port.ts`; the pilot adapter is `pilot-adapter.ts`. A normalized adapter implements
+  the same port against `search_job_postings` / `respond_to_interest` without changing the pages.
+
+Gaps for the prototype owner: `job_postings` has no estimated daily loads/volume field (the spec requires "estimated daily
+volume"); the pilot has none either, so the UI says "not stated". Pilot pay is only a per-load amount. The interest form
+does not yet carry an equipment selection (needs the hauler equipment profile).
+
 ### Parallel tracks (independent of the schema)
 
 - **Security:** MapLibre 6 (worker loading fixed before landing), Zod 4 (only after a read-only production ID scan proves

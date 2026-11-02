@@ -24,6 +24,7 @@ import {
   loadPostingSchema,
   loaderProfileSchema,
   loggingCompanySchema,
+  marketplaceInterestSchema,
   messageEventSchema,
   messageThreadSchema,
   millSchema,
@@ -117,6 +118,7 @@ const ROW_VALIDATORS: Record<LogLoadsTableName, RowValidator> = {
   landings: landingSchema,
   loadPostings: loadPostingSchema,
   loaderProfiles: loaderProfileSchema,
+  marketplaceInterests: marketplaceInterestSchema,
   messageEvents: messageEventSchema,
   messageThreads: messageThreadSchema,
   mills: millSchema,
@@ -229,6 +231,12 @@ const ROW_REFERENCES: Partial<Record<LogLoadsTableName, readonly RowReference[]>
     { field: "routeId", target: "haulRoutes" }
   ],
   loaderProfiles: [{ field: "userId", target: "profiles" }],
+  marketplaceInterests: [
+    { field: "haulerOrganizationId", target: "organizations" },
+    { field: "jobOrganizationId", target: "organizations" },
+    { field: "loadPostingId", target: "loadPostings" },
+    { field: "submittedByUserId", target: "profiles" }
+  ],
   messageEvents: [{ field: "threadId", target: "messageThreads" }],
   networkOverageInvoices: [
     { field: "billingPeriodSummaryId", target: "billingPeriodSummaries" },
@@ -464,6 +472,12 @@ function backfillStateSnapshot(
 
   if (candidate.tripInspections === undefined) {
     candidate.tripInspections = []
+  }
+
+  // Marketplace V2 expressions of interest: additive and RUNTIME-ONLY (no SQL
+  // migration; the normalized-v2 prototype owns the relational design).
+  if (candidate.marketplaceInterests === undefined) {
+    candidate.marketplaceInterests = []
   }
 
   // Platform fee billing. These three are in REQUIRED_TABLES the moment they have a

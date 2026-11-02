@@ -3427,6 +3427,7 @@ export const seedDatabaseState: LogLoadsDatabaseState = {
   operationalNotices: seedOperationalNotices,
   notifications: seedNotifications,
   supportRequests: [],
+  marketplaceInterests: [],
   messageThreads: seedMessageThreads,
   messageEvents: seedMessageEvents,
   auditEvents: seedAuditEvents
