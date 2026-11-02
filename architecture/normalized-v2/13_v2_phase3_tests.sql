@@ -644,6 +644,8 @@ begin
     and (select outcome = 'ignored_terminal' from marketplace.billing_provider_events where provider_event_id = 'h1_02')
     and (marketplace.org_entitled_plan(o_bill6)).id is null,
     'H1: a replacement the provider canceled is not brought back (its deferred event is terminal; no entitlement)');
+  perform pg_temp.ok(exists (select 1 from marketplace.audit_events where org_id = o_bill6 and action = 'billing.deferred_terminal'),
+    'H1: closing a canceled replacement''s deferred events is audited');
   perform pg_temp.as_jwt('service_role');
   v_out := pg_temp.evt('h1_05', 'customer.subscription.created', t0 + interval '8 days', o_bill6, 'sub_h1_t', 'pro', 'active',
                        t0 + interval '8 days', t0 + interval '38 days', 'subscription_create');
@@ -662,17 +664,18 @@ begin
                        t0 + interval '3 days', t0 + interval '33 days', null, false, null, true);
   perform pg_temp.ok(v_out = 'applied', 'H1: reconciliation applies one of the two pending replacements');
   perform pg_temp.as_jwt('harness');
-  perform pg_temp.ok((select outcome = 'ignored_superseded' from marketplace.billing_provider_events where provider_event_id = 'h1_12')
-    and (select outcome = 'ignored_stale' from marketplace.billing_provider_events where provider_event_id = 'h1_13'),
-    'H1: the other replacement is superseded; the applied one''s older deferred snapshot is stale');
+  perform pg_temp.ok((select outcome = 'deferred_conflict' from marketplace.billing_provider_events where provider_event_id = 'h1_12')
+    and (select outcome = 'ignored_stale' from marketplace.billing_provider_events where provider_event_id = 'h1_13')
+    and (select provider_sync_required from marketplace.organization_subscriptions where provider_subscription_ref = 'sub_h1_c'),
+    'H1: reconciling one subscription is no evidence about the other: it stays pending and the live one is flagged');
   perform pg_temp.as_jwt('service_role');
   v_out := pg_temp.evt('h1_16', 'customer.subscription.deleted', t0 + interval '6 days', o_bill7, 'sub_h1_c', 'regional', 'canceled',
                        t0 + interval '3 days', t0 + interval '33 days');
   perform pg_temp.as_jwt('harness');
   perform pg_temp.ok(v_out = 'applied'
-    and not exists (select 1 from marketplace.organization_subscriptions where provider_subscription_ref = 'sub_h1_b')
-    and (marketplace.org_entitled_plan(o_bill7)).id is null,
-    'H1: when the reconciled subscription ends, the superseded one is not replayed');
+    and (select status = 'active' from marketplace.organization_subscriptions where provider_subscription_ref = 'sub_h1_b')
+    and ((marketplace.org_entitled_plan(o_bill7)).code = 'pro'),
+    'H1: when the reconciled subscription ends, the still-pending one (current period, no cancel) is replayed');
 
   -- (c) An 'incomplete' replacement is not replayed (it may be abandoned); its own next event applies it.
   perform pg_temp.as_jwt('service_role');
@@ -715,6 +718,8 @@ begin
     and (select outcome = 'ignored_stale' from marketplace.billing_provider_events where provider_event_id = 'h1_35')
     and not exists (select 1 from marketplace.organization_subscriptions where provider_subscription_ref = 'sub_h1_x'),
     'H1: the latest snapshot is replayed, older ones are stale, and a snapshot whose period ended is never applied');
+  perform pg_temp.ok(exists (select 1 from marketplace.audit_events where org_id = o_bill9 and action = 'billing.deferred_expired'),
+    'H1: closing an expired deferred snapshot is audited');
   perform pg_temp.ok((select metadata ->> 'billing_reason' = 'subscription_create'
                       from marketplace.audit_events
                       where org_id = o_bill9 and action = 'subscription.cycle_opened'

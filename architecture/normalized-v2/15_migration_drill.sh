@@ -340,6 +340,13 @@ if [[ "${LOGLOADS_DB_ENV:-}" == "ci-disposable" ]]; then
   fi
   grep -q "plain_sites_x_idx" "$TMP/d5d.log" || fail "D-5/M2: unexpected failure with a dependent index: $(head -c 300 "$TMP/d5d.log")"
   ok "stamped database with a PostGIS expression index on plain columns: 01 refused and named it (M2)"
+  printf '%s\n' "drop index public.plain_sites_x_idx; create function public.first_point(g geometry[]) returns integer language sql immutable as 'select 1';" \
+    | psql "$PROBE_URL" -X -q -v ON_ERROR_STOP=1 >/dev/null
+  if psql "$PROBE_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$SCRIPT_DIR/01_schema.sql" >/dev/null 2>"$TMP/d5e.log"; then
+    fail "D-5/M2: 01 dropped PostGIS although a function takes geometry[]"
+  fi
+  grep -q "first_point" "$TMP/d5e.log" || fail "D-5/M2: unexpected failure with an array-typed function: $(head -c 300 "$TMP/d5e.log")"
+  ok "stamped database with a function over geometry[]: 01 refused and named it (M2)"
   x "drop database ${PROBE};"
 fi
 echo "MIGRATION DRILL PASSED."
