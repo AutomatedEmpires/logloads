@@ -95,6 +95,46 @@ case "$STAGE" in
     grep -q "ALL 4 MULTI-SESSION CONCURRENCY TESTS PASSED" "$LOG" || { echo "STAGE 5: runner did not report completion" >&2; exit 1; }
     { echo "### Stage 5 concurrency"; echo '```'; grep -E "^\[|PASS|RACE|overlap|skew" "$LOG" || true; echo '```'; } >> "$SUMMARY"
     ;;
+  6)
+    run_sql "$DIR/06_v2_contract_alignment.sql"
+    check "RLS enabled on every marketplace table" "select bool_and(c.relrowsecurity) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'marketplace' and c.relkind in ('r','p');"
+    check "no marketplace function executable by PUBLIC" "select not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and has_function_privilege('public', p.oid, 'EXECUTE'));"
+    check "every SECURITY DEFINER function pins search_path" "select not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and p.prosecdef and not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) cfg where cfg like 'search_path=%'));"
+    check "attestation and legacy-import ledgers carry no client grants" "select not exists (select 1 from information_schema.role_table_grants where table_schema = 'marketplace' and table_name in ('job_publication_attestations','legacy_job_imports') and grantee in ('PUBLIC','anon','authenticated','service_role'));"
+    check "anon holds no write privileges" "select not exists (select 1 from information_schema.role_table_grants where table_schema = 'marketplace' and grantee = 'anon' and privilege_type in ('INSERT','UPDATE','DELETE','TRUNCATE'));"
+    check "no session-setting bypass remains in marketplace functions" "select not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and (p.prosrc ilike '%allow_unquoted_active_jobs%' or p.prosrc ilike '%public_coord_grid_degrees%'));"
+    {
+      echo "### Stage 6 alignment inventory"
+      echo '```'
+      q "select 'tables=' || count(*) from pg_tables where schemaname = 'marketplace';"
+      q "select 'functions=' || count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace';"
+      q "select 'security_definer_functions=' || count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and p.prosecdef;"
+      q "select 'policies=' || count(*) from pg_policies where schemaname = 'marketplace';"
+      q "select 'functions executable by anon: ' || coalesce(string_agg(p.proname, ', ' order by p.proname), '(none)') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and has_function_privilege('anon', p.oid, 'EXECUTE');"
+      q "select 'functions executable by service_role: ' || coalesce(string_agg(p.proname, ', ' order by p.proname), '(none)') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and has_function_privilege('service_role', p.oid, 'EXECUTE');"
+      echo '```'
+    } | tee -a "$LOG" | tee -a "$SUMMARY"
+    ;;
+  7)
+    run_sql "$DIR/07_v2_contract_tests.sql"
+    grep -q "ALL V2 CONTRACT ALIGNMENT & FOUNDER DECISION (V2-DEC-01..03) TESTS PASSED" "$LOG" || { echo "STAGE 7: suite did not reach its final PASS notice" >&2; exit 1; }
+    check "suite rolled back (no test organizations left)" "select count(*) = 0 from marketplace.organizations;"
+    PASSES="$(grep -cE "NOTICE:  00000: PASS: " "$LOG" || true)"
+    echo "  executed assertions reporting PASS: $PASSES" | tee -a "$LOG" | tee -a "$SUMMARY"
+    [[ "$PASSES" -ge "${LOGLOADS_MIN_STAGE7_ASSERTIONS:-50}" ]] || { echo "STAGE 7: only $PASSES PASS notices; expected at least ${LOGLOADS_MIN_STAGE7_ASSERTIONS:-50}" >&2; exit 1; }
+    ;;
+  8)
+    echo "== bash $DIR/08_v2_contract_concurrency_test.sh" | tee "$LOG"
+    started=$SECONDS
+    set +e
+    timeout --kill-after=30s 600s bash "$DIR/08_v2_contract_concurrency_test.sh" 2>&1 | tee -a "$LOG"
+    rc=${PIPESTATUS[0]}
+    set -e
+    echo "== exit $rc after $((SECONDS - started))s" | tee -a "$LOG"
+    [[ "$rc" == "0" ]] || exit "$rc"
+    grep -q "ALL ALIGNED-SCHEMA CONCURRENCY TESTS PASSED" "$LOG" || { echo "STAGE 8: runner did not report completion" >&2; exit 1; }
+    { echo "### Stage 8 aligned-schema concurrency"; echo '```'; grep -E "^\[|PASS|overlap|skew" "$LOG" || true; echo '```'; } >> "$SUMMARY"
+    ;;
   *) echo "unknown stage $STAGE" >&2; exit 2 ;;
 esac
 

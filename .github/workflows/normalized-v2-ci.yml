@@ -2,11 +2,13 @@ name: Normalized V2 Database CI
 
 # Validates the non-active normalized-v2 prototype (architecture/normalized-v2/) on a disposable,
 # GitHub-hosted PostgreSQL 17 + PostGIS service. No production, staging, Supabase or Vercel
-# credentials are used or needed. Three matrix legs = three freshly initialized databases per run.
+# credentials are used or needed. Three matrix legs = three freshly initialized databases per job.
+# Job 1 (baseline) is the verified 01..05 suite, unchanged. Job 2 applies 06 on top of 01..03 and
+# runs 04, 07 and the aligned-schema concurrency suite 08 against that integrated schema.
 
 on:
   push:
-    branches: [test/normalized-v2-postgres17-ci]
+    branches: [test/normalized-v2-postgres17-ci, test/normalized-v2-contract-alignment]
     paths:
       - architecture/normalized-v2/**
       - tools/normalized-v2-ci/**
@@ -137,5 +139,128 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: normalized-v2-ci-logs-${{ matrix.iteration }}
+          path: ${{ runner.temp }}/normalized-v2-ci/logs/
+          retention-days: 7
+
+  postgres17-contract-alignment:
+    name: PostgreSQL 17 + V2 contract alignment (fresh database ${{ matrix.iteration }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        iteration: [1, 2, 3]
+
+    services:
+      postgres:
+        # postgis/postgis:17-3.5 (PostgreSQL 17, PostGIS 3.5), pinned by index digest for reproducibility.
+        image: postgis/postgis:17-3.5@sha256:01a6a70e41e6c4467c8f55f6063555ed72db2d6662cd0d571040d42eadaeb6f6
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres # CI-only credential for a throwaway service container.
+          POSTGRES_DB: logloads_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres -d logloads_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+
+    env:
+      LOGLOADS_DISPOSABLE_DB_URL: postgresql://postgres:postgres@127.0.0.1:5432/logloads_test
+      LOGLOADS_DB_ENV: ci-disposable
+      LOGLOADS_CI_ITERATION: ${{ matrix.iteration }}
+      PGCONNECT_TIMEOUT: "10"
+      # Bound every statement and lock wait so a deadlock or stuck session cannot hang CI.
+      PGOPTIONS: "-c lock_timeout=30s -c statement_timeout=300s -c idle_in_transaction_session_timeout=120s"
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install PostgreSQL 17 client
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common >/dev/null
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+          sudo apt-get install -y -qq postgresql-client-17 >/dev/null
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Wait for the service to finish initialization
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          psql --version
+          # The PostGIS image runs init scripts on a socket-only server, then restarts on TCP.
+          # Require three consecutive successful TCP queries before continuing.
+          ok=0
+          for attempt in $(seq 1 60); do
+            if psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -t -A -c "select 1" >/dev/null 2>&1; then
+              ok=$((ok + 1)); [[ $ok -ge 3 ]] && break
+            else
+              ok=0
+            fi
+            sleep 2
+          done
+          [[ $ok -ge 3 ]] || { echo "database service never became stable" >&2; exit 1; }
+          psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -t -A -c "select version();"
+          psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -t -A -c "select extname || ' ' || extversion || ' in ' || extnamespace::regnamespace from pg_extension order by 1;"
+
+      - name: Guard and provision disposable database
+        run: bash tools/normalized-v2-ci/guard.sh provision
+
+      - name: "Stage 1: 01_schema.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 1
+
+      - name: "Stage 2: 02_access.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 2
+
+      - name: "Stage 3: 03_entitlements.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 3
+
+      - name: "Stage 6: 06_v2_contract_alignment.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 6
+
+      - name: "Stage 4: 04_tests.sql on the aligned schema"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 4
+
+      - name: "Stage 7: 07_v2_contract_tests.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 7
+
+      - name: "Stage 8: 08_v2_contract_concurrency_test.sh"
+        if: hashFiles('architecture/normalized-v2/08_v2_contract_concurrency_test.sh') != ''
+        timeout-minutes: 12
+        run: bash tools/normalized-v2-ci/run-stage.sh 8
+
+      - name: Collect database server log
+        if: failure()
+        run: |
+          set +e
+          cid="$(docker ps -q --filter "ancestor=postgis/postgis:17-3.5@sha256:01a6a70e41e6c4467c8f55f6063555ed72db2d6662cd0d571040d42eadaeb6f6" | head -1)"
+          [[ -z "$cid" ]] && cid="$(docker ps -q | head -1)"
+          mkdir -p "$RUNNER_TEMP/normalized-v2-ci/logs"
+          docker logs "$cid" > "$RUNNER_TEMP/normalized-v2-ci/logs/postgres-server.log" 2>&1
+          tail -n 80 "$RUNNER_TEMP/normalized-v2-ci/logs/postgres-server.log"
+
+      - name: Upload stage logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: normalized-v2-alignment-logs-${{ matrix.iteration }}
           path: ${{ runner.temp }}/normalized-v2-ci/logs/
           retention-days: 7
