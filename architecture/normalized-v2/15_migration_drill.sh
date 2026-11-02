@@ -190,6 +190,13 @@ fi
 grep -q "must be applied in one transaction" "$TMP/autocommit.log" || fail "M1: unexpected autocommit failure: $(head -c 300 "$TMP/autocommit.log")"
 [[ "$(fp)" == "$FP0" ]] || { show_diff "$TMP/rows0.txt" "after an autocommit attempt"; fail "M1: an autocommit run of 06 changed something"; }
 ok "06 run without --single-transaction is refused before any change (M1)"
+# Third review: a psql WITHOUT ON_ERROR_STOP carries on after an error; the refusal makes the session
+# read-only first, so the rest of the file cannot write either.
+psql "$DB_URL" -X -q -f "$SCRIPT_DIR/06_v2_contract_alignment.sql" >/dev/null 2>"$TMP/plain.log" || true
+grep -q "must be applied in one transaction" "$TMP/plain.log" || fail "M1: plain psql run gave no refusal: $(head -c 300 "$TMP/plain.log")"
+grep -q "read-only transaction" "$TMP/plain.log" || fail "M1: later statements of a plain psql run were not blocked as read-only"
+[[ "$(fp)" == "$FP0" ]] || { show_diff "$TMP/rows0.txt" "after a plain psql run"; fail "M1: a plain psql run of 06 (no ON_ERROR_STOP) changed something"; }
+ok "06 run by a plain psql without ON_ERROR_STOP changes nothing either (session made read-only)"
 
 echo "[4/7] Rollback: a failure after the last statement of 06 -> 11 -> 12 leaves nothing behind..."
 { cat "$SCRIPT_DIR/06_v2_contract_alignment.sql" "$SCRIPT_DIR/11_v2_phase3_policy.sql" "$SCRIPT_DIR/12_v2_billing_events.sql" "$SCRIPT_DIR/16_v2_identity_membership_hardening.sql"
@@ -328,6 +335,13 @@ if [[ "${LOGLOADS_DB_ENV:-}" == "ci-disposable" ]]; then
   [[ "$(printf '%s\n' "select count(*) from pg_constraint where conname = 'plain_sites_on_earth';" | psql "$PROBE_URL" -X -q -t -A)" == "1" ]] \
     || fail "D-5/M2: the dependent constraint did not survive"
   ok "stamped database with a PostGIS-backed CHECK on plain columns: 01 refused and named it (M2)"
+  printf '%s\n' "alter table public.plain_sites drop constraint plain_sites_on_earth; create index plain_sites_x_idx on public.plain_sites ((st_x(st_makepoint(lon, lat))));" \
+    | psql "$PROBE_URL" -X -q -v ON_ERROR_STOP=1 >/dev/null
+  if psql "$PROBE_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$SCRIPT_DIR/01_schema.sql" >/dev/null 2>"$TMP/d5d.log"; then
+    fail "D-5/M2: 01 dropped PostGIS although an expression index depends on it"
+  fi
+  grep -q "plain_sites_x_idx" "$TMP/d5d.log" || fail "D-5/M2: unexpected failure with a dependent index: $(head -c 300 "$TMP/d5d.log")"
+  ok "stamped database with a PostGIS expression index on plain columns: 01 refused and named it (M2)"
   x "drop database ${PROBE};"
 fi
 echo "MIGRATION DRILL PASSED."

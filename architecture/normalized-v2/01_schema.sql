@@ -81,17 +81,35 @@ begin
     join pg_class c on c.oid = a.attrelid
     join pg_type t on t.oid = a.atttypid
     where a.attnum > 0 and not a.attisdropped
-      and c.relkind in ('r', 'p', 'v', 'm', 'f')
+      and c.relkind in ('r', 'p', 'v', 'm', 'f', 'c')
       and (t.oid in (select typ from postgis_types)
            or t.typelem in (select typ from postgis_types)
            or t.typbasetype in (select typ from postgis_types))
-      and not exists (select 1 from ext_members e where e.classid = 'pg_class'::regclass and e.objid = c.oid)
+      -- An extension's composite types are members through their pg_type row, its tables through pg_class.
+      and not exists (select 1 from ext_members e
+                      where (e.classid = 'pg_class'::regclass and e.objid = c.oid)
+                         or (e.classid = 'pg_type'::regclass and e.objid = c.reltype))
     union all
     select format('function %s', p.oid::regprocedure)
     from pg_proc p
     where not exists (select 1 from ext_members e where e.classid = 'pg_proc'::regclass and e.objid = p.oid)
-      and (p.prorettype in (select typ from postgis_types)
-           or exists (select 1 from unnest(p.proargtypes::oid[]) u(t) where u.t in (select typ from postgis_types)))
+      and exists (
+        select 1 from pg_type t
+        where t.oid = any (array[p.prorettype] || p.proargtypes::oid[])
+          and (t.oid in (select typ from postgis_types) or t.typelem in (select typ from postgis_types)
+               or t.typbasetype in (select typ from postgis_types)))
+    union all
+    select format('domain constraint %s on %s', c.conname, c.contypid::regtype)
+    from pg_depend d
+    join pg_constraint c on d.classid = 'pg_constraint'::regclass and d.objid = c.oid and c.contypid <> 0
+    where (d.refclassid, d.refobjid) in (select m.classid, m.objid from members m)
+      and not exists (select 1 from ext_members e where e.classid = 'pg_type'::regclass and e.objid = c.contypid)
+    union all
+    select format('extension %s (requires PostGIS)', x.extname)
+    from pg_depend d
+    join pg_extension x on d.classid = 'pg_extension'::regclass and d.objid = x.oid
+    where d.refclassid = 'pg_extension'::regclass and d.refobjid = v_postgis and d.deptype = 'n'
+      and x.extname not in ('postgis_topology', 'postgis_raster', 'postgis_sfcgal', 'postgis_tiger_geocoder')
     union all
     select pg_describe_object(d.classid, d.objid, 0)
     from pg_depend d
