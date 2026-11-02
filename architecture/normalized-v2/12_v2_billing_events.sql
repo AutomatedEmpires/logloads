@@ -1,7 +1,12 @@
 -- =============================================================================
 -- LogLoads normalized-v2 — 12 billing webhook ordering (R4) and founding-discount cycles (F5)
 --
--- NON-ACTIVE PROTOTYPE. Not an approved migration. Applied after 11_v2_founder_decisions.sql.
+-- APPROVAL STATUS (see PHASE3_REVIEW.md §2). R4 was directed for implementation; its specific ordering rules
+-- (cancellation terminal, forward-only periods, ties deferred to reconciliation) are engineering choices, not
+-- ratified founder policy. F5 follows Blueprint v1.0 §8.1 ("first six paid billing cycles") and is not
+-- separately ratified.
+--
+-- NON-ACTIVE PROTOTYPE. Not an approved migration. Applied after 11_v2_phase3_policy.sql.
 -- Run order: 01 -> 02 -> 03 -> 06 -> 11 -> 12. Changes no historical financial record: it only adds
 -- columns, a ledger table and functions, and redefines how future subscription events are applied.
 --

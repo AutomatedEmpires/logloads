@@ -128,4 +128,4 @@ Input mapping for `publishJob`: `payAmount` (dollars) → `p_pay_amount_cents` (
 
 ## Phase 3 update
 
-Founder decisions F1–F5, R4 (billing ordering), the Supabase local-stack verification, E6/E7/S5 and the updated risk register are in `PHASE3_REVIEW.md`; the adapter interface contract (H1–H3, F3, F4) is in `INTERFACE_CONTRACT_H1_H3.md`. The risk table above is superseded by `PHASE3_REVIEW.md` §5.
+Phase 3 policy items F1–F5 (implemented as directed; approval status in `PHASE3_REVIEW.md` §2 — only V2-DEC-01..03 are recorded founder approvals), R4 (billing ordering), the Supabase local-stack verification, E6/E7/S5 and the updated risk register are in `PHASE3_REVIEW.md`; the adapter interface contract (H1–H3, F3, F4) is in `INTERFACE_CONTRACT_H1_H3.md`. The risk table above is superseded by `PHASE3_REVIEW.md` §5.

@@ -1,8 +1,13 @@
 -- =============================================================================
--- LogLoads normalized-v2 — 11 founder decisions F1–F4 (Phase 3)
+-- LogLoads normalized-v2 — 11 Phase 3 policy items F1–F4 and moderation holds
 --
 -- NON-ACTIVE PROTOTYPE. Not an approved migration. Applied after 06_v2_contract_alignment.sql.
 -- Run order: 01 -> 02 -> 03 -> 06 -> 11 -> 12.
+--
+-- APPROVAL STATUS (see PHASE3_REVIEW.md §2). Only V2-DEC-01..03 (2026-11-01) and Blueprint v1.0 are recorded
+-- founder approvals. F1, F2, F3 and the moderation hold are implemented AS DIRECTED by the Phase 3 directive
+-- and are NOT ratified founder policy; F4 is supported by approved V2-DEC-02 ("incomplete drafts may be saved
+-- only as status = 'draft'"). Each item is isolated here so it can be changed if the founder rules otherwise.
 --
 --   F1  Hauler profiles are private by default; public discovery requires explicit, recorded consent
 --       by an owner or manager of the hauling business. Profiles that are public without recorded
@@ -39,7 +44,7 @@ begin
     perform marketplace.write_audit(
       'hauler.public_listing_withdrawn', 'hauler_profiles', r.org_id, r.org_id,
       'F1: public by the pre-V2 default, with no recorded consent to public discovery',
-      jsonb_build_object('migration', '11_v2_founder_decisions'));
+      jsonb_build_object('migration', '11_v2_phase3_policy'));
   end loop;
 end
 $$;

@@ -35,7 +35,7 @@ $$;
 create function pg_temp.aligned() returns boolean language sql stable as $$
   select to_regclass('marketplace.job_publication_attestations') is not null
 $$;
--- Phase 3 (11_v2_founder_decisions.sql + 12_v2_billing_events.sql) applied on top of the aligned schema.
+-- Phase 3 (11_v2_phase3_policy.sql + 12_v2_billing_events.sql) applied on top of the aligned schema.
 create function pg_temp.phase3() returns boolean language sql stable as $$
   select to_regclass('marketplace.billing_provider_events') is not null
 $$;

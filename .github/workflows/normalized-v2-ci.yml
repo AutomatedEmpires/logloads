@@ -236,7 +236,7 @@ jobs:
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 6
 
-      - name: "Stage 11: 11_v2_founder_decisions.sql"
+      - name: "Stage 11: 11_v2_phase3_policy.sql"
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 11
 
@@ -374,7 +374,7 @@ jobs:
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 6
 
-      - name: "Stage 11: 11_v2_founder_decisions.sql"
+      - name: "Stage 11: 11_v2_phase3_policy.sql"
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 11
 

@@ -3,7 +3,7 @@
 --
 -- NON-ACTIVE PROTOTYPE TEST SUITE. Disposable PostgreSQL only. Run after
 -- 01 -> 02 -> 03 -> 06 -> 11 -> 12 (and 04, 07). Wraps everything in BEGIN ... ROLLBACK.
--- Phase 3 founder decisions changed two expectations here, each noted where it applies:
+-- Phase 3 policy items (as directed, not yet ratified; see PHASE3_REVIEW.md §2) changed two expectations here:
 -- F3 (re-activation needs a fresh attestation) and F2 (legacy postings need pay before reconfirmation).
 --
 -- Written by the integration owner, independently of 07. Every negative test requires the

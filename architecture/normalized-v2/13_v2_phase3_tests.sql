@@ -1,5 +1,5 @@
 -- =============================================================================
--- LogLoads normalized-v2 — 13 Phase 3 regression suite: founder decisions F1–F5, moderation holds,
+-- LogLoads normalized-v2 — 13 Phase 3 regression suite: policy items F1–F5 (as directed; see PHASE3_REVIEW.md §2), moderation holds,
 -- and billing webhook ordering (R4).
 --
 -- NON-ACTIVE PROTOTYPE TEST SUITE. Disposable PostgreSQL only. Run after
@@ -525,7 +525,7 @@ begin
   perform pg_temp.ok((select count(*) from marketplace.admin_list_billing_provider_events(o_bill)) >= 15,
     'R4: a billing/support admin can review received events and their outcomes');
 
-  raise notice 'ALL PHASE 3 FOUNDER-DECISION AND BILLING-ORDERING TESTS PASSED.';
+  raise notice 'ALL PHASE 3 POLICY (F1-F5) AND BILLING-ORDERING TESTS PASSED.';
 end
 $$;
 

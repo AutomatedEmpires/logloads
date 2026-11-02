@@ -1,4 +1,4 @@
-# Normalized V2 — Phase 3 review: founder decisions, billing ordering, Supabase verification
+# Normalized V2 — Phase 3 review: directed policy items, billing ordering, Supabase verification
 
 **Branch / PR:** `test/normalized-v2-contract-alignment`, draft PR #123 (base `test/normalized-v2-postgres17-ci`). Phase 1 and Phase 2 history unchanged.
 **Scope:** database only (`architecture/normalized-v2/`, `tools/normalized-v2-ci/`, `.github/workflows/normalized-v2-ci.yml`). No application, contract, `supabase/` or production file was touched. Interface changes for the adapter are in `INTERFACE_CONTRACT_H1_H3.md`.
@@ -10,7 +10,7 @@
 | File | Purpose |
 |---|---|
 | `06_v2_contract_alignment.sql` | Phase 2, plus **E6** fix (below) |
-| `11_v2_founder_decisions.sql` | F1–F4, moderation holds |
+| `11_v2_phase3_policy.sql` | F1–F4 (as directed), moderation holds |
 | `12_v2_billing_events.sql` | R4 provider-event ledger and ordering, F5 |
 | `13_v2_phase3_tests.sql` | Phase 3 regression suite (88 PASS notices) |
 | `08_v2_contract_concurrency_test.sh` | + races A6, A7, A8 |
@@ -18,19 +18,23 @@
 | `14_supabase_api_tests.sh` | PostgREST + JWT tests on the Supabase local stack |
 | `15_migration_drill.sh` | atomic apply, injected-failure rollback, re-run, backup/restore |
 
-## 2. Founder decisions
+## 2. Approval status and implementation
 
-| Decision | Implementation | Evidence |
-|---|---|---|
-| **F1** private by default; public discovery needs explicit consent | `hauler_profiles.is_public` default `false`; consent (`public_listing_consent_at/by`) recorded by a trigger from an **active owner or manager** only, never client-writable; CHECK: public ⇒ consent; withdrawal clears it; both audited. Pre-V2 profiles public only by the old default are made private and audited, without refreshing their confirmation. | 13 (9 checks), 10, stage-11 checks |
-| **F2** legacy postings need valid pay before reconfirmation can restore them | `reconfirm_job_posting` and `reactivate_job_posting` refuse a legacy posting without V2-DEC-02 pay; once attested under V2, a legacy posting is held to V2-DEC-02 (pay cannot be removed). | 13, 09 |
-| **F3** re-activation needs a fresh attestation | Only `reactivate_job_posting(p_job_id, p_attest_available => true)` moves paused/filled/closed/expired → active. The guard trigger requires an attestation written **in the same transaction and after the posting left active** (the stamp is cleared on deactivation), so neither `set_job_posting_status` nor a direct UPDATE can do it. | 13, 09, 08 A8, 14 |
-| **F4** incomplete drafts allowed; publication enforces | Truck-demand CHECK applies to non-drafts only; `save_job_posting_draft` no longer invents `trucks_requested = 1`; publication (RPC and CHECK) still requires demand, equipment and pay. | 13 |
-| **F5** keep remaining founding discount on mid-cycle changes | A discount cycle is consumed only when a genuinely new paid billing cycle opens: provider billing reason `subscription_create`/`subscription_cycle`, or — for direct worker calls — a period that does not start inside the open period. Plan changes never consume one. | 13 (event and direct paths), 08 A7 |
+**Recorded founder approvals** (the only ones found in the repository): **V2-DEC-01, V2-DEC-02, V2-DEC-03**, approved 2026-11-01 (`GAP_AUDIT_V2_CONTRACTS.md` §1), and the commercial rules of **Product Blueprint v1.0**. A search of `main`, the docs branches (`docs/lean-authoritative-knowledge`, `docs/reconciliation-2026-11-01`), `docs/DECISIONS.md` and the reconciliation drafts found **no founder approval record for F1–F5**. Their only source is the Phase 3 directive. They are therefore implemented **as directed and are not described here as decided policy**; each lives in 11 or 12 so it can be changed without touching 01–06.
 
-**Blueprint v1.0 check.** F5 matches §8.1 ("50% off … for their first six paid billing cycles"): a plan change is not a paid billing cycle. No commercial behaviour was changed beyond the approved decisions. Not decided here (Blueprint §6.2 and §16.2 leave proration unapproved): how a mid-cycle plan change affects the cycle's **invitation** allowance — see founder question F6.
+| Item | Approval status | Implementation (as directed) | Evidence |
+|---|---|---|---|
+| **F1** hauler profiles private by default; public discovery needs explicit consent | **Directed — not ratified.** Blueprint v1.0 lists a "Basic public hauler directory" but sets no default visibility or consent rule; this is new policy and narrows directory reach. | `is_public` default `false`; consent (`public_listing_consent_at/by`) recorded by a trigger from an active owner/manager only, never client-writable; CHECK public ⇒ consent; withdrawal clears it; audited. Pre-V2 profiles public only by the old default are made private and audited. | 13, 10, stage-11 checks |
+| **F2** legacy postings need valid pay before reconfirmation / re-activation | **Directed — not ratified.** Extends approved V2-DEC-02, which only preserves unquoted legacy records through an audited import. | `reconfirm_job_posting` / `reactivate_job_posting` refuse a legacy posting without V2-DEC-02 pay; an attested legacy posting cannot drop its pay. | 13, 09 |
+| **F3** re-activation needs a fresh attestation | **Directed — not ratified.** Extends approved V2-DEC-03, which covers initial publication only. | Only `reactivate_job_posting(p_job_id, p_attest_available => true)` moves paused/filled/closed/expired → active; the guard requires an attestation written in the same transaction after the posting left active. | 13, 09, 08 A8, 14 |
+| **F4** incomplete drafts; publication enforces completeness | **Supported by approved V2-DEC-02** ("Incomplete drafts may be saved only as `status = 'draft'`"). The specific relaxation of truck demand is from the directive. | Truck-demand CHECK applies to non-drafts only; no invented truck count; publication still requires demand, equipment and pay. | 13 |
+| **F5** plan changes do not consume founding-discount cycles | **Consistent with Blueprint v1.0 §8.1** ("50% off … for their first six paid billing cycles"); the interpretation that a plan change is not a paid billing cycle is not separately ratified. | A cycle is consumed only by billing reason `subscription_create` / `subscription_cycle`, or, on the direct worker path, a period that does not start inside the open one. | 13, 08 A7 |
+| **R4** webhook ordering | **Directed for implementation.** The rules chosen — cancellation terminal, forward-only periods, ties deferred to reconciliation, `failed` retried — are engineering choices, not ratified policy (§3). | 12 | 13, 08 A6/A7, 14 |
+| **Moderation hold** | **Engineering fix — policy not ratified.** Blueprint §10.6 requires auditable, proportionate admin actions but says nothing on whether an owner may restore a moderated posting. | Moderation writes an ungranted hold; re-activation refused until a moderator releases it. | 13 |
 
-**Additional defect fixed — moderation could be undone by the owner.** `admin_moderate_job_posting` (03) only set the status, so the owner could immediately restore a moderated posting. Moderation now writes an ungranted hold; re-activation is refused (`42501`) until a moderator releases it (`admin_release_job_moderation_hold`, audited).
+Not decided anywhere (no change made): invitation allowance on mid-cycle plan changes (Blueprint §6.2 / §16.2 leave proration unapproved) — question F6.
+
+**Why the moderation hold exists (engineering finding).** `admin_moderate_job_posting` (03) only set the status, so the owner could immediately restore a moderated posting. Moderation now writes an ungranted hold; re-activation is refused (`42501`) until a moderator releases it (`admin_release_job_moderation_hold`, audited).
 
 **E7 (06 defect, fixed in 06).** 06's loop that drops the superseded baseline pay and `published_at` checks compared `pg_get_constraintdef()` text (which carries parentheses and `::text` casts) against plain patterns, so nothing was dropped. No access impact — the stricter V2 constraints also applied — but errors named the old constraint and 06 did not do what it states. Stage 6 now asserts they are gone.
 
@@ -114,9 +118,12 @@ CI job `supabase-local-stack` starts a Supabase CLI local stack **inside the job
 | OPTIONAL | **R11** Drop 02's blanket `extensions` grant at the source when migrations are consolidated (S5 currently corrects it in 11) | Open |
 | DEFERRED | GAP-11 saved searches, GAP-12 invitation packs; an audited admin tool to force a subscription period correction | — |
 
-Resolved in this phase: F1–F5, R4 (database), E6, E7, S5, owner-reversible moderation.
+Fixed this phase (engineering): E6, E7, S5, owner-reversible moderation (hold mechanism; policy pending). Implemented as directed, pending ratification: F1–F3, R4 ordering rules. Supported by existing approvals: F4 (V2-DEC-02), F5 (Blueprint §8.1).
 
 ## 6. Founder questions (not decided here)
+
+**Ratification needed** for items implemented as directed: F1 (default visibility and consent rule), F2, F3, the moderation-hold rule, and the R4 ordering rules (in particular: is cancellation always final, and should exact-tie events wait for a reconciliation fetch?). F4 and F5 need confirmation only that the readings of V2-DEC-02 and Blueprint §8.1 are the intended ones.
+
 
 * **F2a** Active legacy postings without pay stay visible until they are paused or expire (F2 as worded governs restoring them). Hide them immediately instead?
 * **F6** Invitation allowance on a mid-cycle plan change: when the provider keeps the billing period (normal Stripe behaviour) the cycle's used invitations carry over under the new plan's allowance; a split period starts a fresh allowance. Proration is unapproved (Blueprint §6.2, §16.2) — choose one rule.

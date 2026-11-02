@@ -166,7 +166,7 @@ case "$STAGE" in
     grep -q "MIGRATION PATH TEST PASSED" "$LOG" || { echo "STAGE 10: test did not report completion" >&2; exit 1; }
     ;;
   11)
-    run_sql "$DIR/11_v2_founder_decisions.sql"
+    run_sql "$DIR/11_v2_phase3_policy.sql"
     aligned_privilege_checks "'job_publication_attestations','legacy_job_imports','job_moderation_holds'"
     check "F1: no public hauler profile without recorded consent" "select not exists (select 1 from marketplace.hauler_profiles where is_public and public_listing_consent_at is null);"
     check "F1: consent columns are not client-writable" "select not has_column_privilege('authenticated', 'marketplace.hauler_profiles', 'public_listing_consent_at', 'UPDATE') and not has_column_privilege('authenticated', 'marketplace.hauler_profiles', 'public_listing_consent_by', 'INSERT');"
@@ -195,7 +195,7 @@ case "$STAGE" in
     ;;
   13)
     run_sql "$DIR/13_v2_phase3_tests.sql"
-    grep -q "ALL PHASE 3 FOUNDER-DECISION AND BILLING-ORDERING TESTS PASSED" "$LOG" || { echo "STAGE 13: suite did not reach its final PASS notice" >&2; exit 1; }
+    grep -q "ALL PHASE 3 POLICY (F1-F5) AND BILLING-ORDERING TESTS PASSED" "$LOG" || { echo "STAGE 13: suite did not reach its final PASS notice" >&2; exit 1; }
     check "suite rolled back (no test organizations left)" "select count(*) = 0 from marketplace.organizations;"
     PASSES="$(grep -cE "NOTICE:  00000: PASS: " "$LOG" || true)"
     echo "  executed assertions reporting PASS: $PASSES" | tee -a "$LOG" | tee -a "$SUMMARY"

@@ -2,6 +2,7 @@
 
 **For:** Codex / Agent 2 (owners of `apps/web/lib/marketplace-v2/*`, `packages/contracts/src/marketplace-*.ts`, V2 UI and server actions).
 **From:** Agent 1 (database). Nothing in those files was changed by Agent 1; this document is the handoff.
+**Approval status:** H1 and H3 follow approved V2-DEC-02/03 and the existing TS contract; H2 follows approved V2-DEC-01. The F3 (re-activation) and F4 (draft) behaviour below is implemented **as directed and not yet ratified by the founder** (`PHASE3_REVIEW.md` §2): build to it, but expect it may change.
 **Database side:** `architecture/normalized-v2/06`, `11`, `12` on PR #123. Verified on PostgreSQL 17 and on a Supabase local stack (CI job `supabase-local-stack`).
 
 ## 0. How every call is made
@@ -56,7 +57,7 @@ Returns the job id (uuid). An identical active job at the same landing returns t
 
 **Reconfirm** (`reconfirmJob(viewer, jobId)` → `reconfirm_job_posting(p_job_id)`) is unchanged: the call itself is the attestation. It is refused for a legacy posting without pay (F2, `23514`).
 
-## F3. Re-activation is its own attested operation (new port method)
+## F3. Re-activation is its own attested operation (new port method) — as directed, pending ratification
 
 The database no longer lets a status change put a paused, filled, closed or expired posting back on the marketplace. Add:
 

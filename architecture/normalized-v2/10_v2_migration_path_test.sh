@@ -116,8 +116,8 @@ expect_eq "E6: service centre and report area lie on the 0.10-degree grid" \
           union all select extensions.st_y(a.area_center::extensions.geometry) from marketplace.availability_reports a where a.org_id = '${HAUL}'::uuid
           union all select extensions.st_x(a.area_center::extensions.geometry) from marketplace.availability_reports a where a.org_id = '${HAUL}'::uuid) s(v);")" "true"
 
-echo "[4/5] Applying 11_v2_founder_decisions.sql and 12_v2_billing_events.sql on top of existing data..."
-psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 -f "$SCRIPT_DIR/11_v2_founder_decisions.sql" >/dev/null
+echo "[4/5] Applying 11_v2_phase3_policy.sql and 12_v2_billing_events.sql on top of existing data..."
+psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 -f "$SCRIPT_DIR/11_v2_phase3_policy.sql" >/dev/null
 psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 -f "$SCRIPT_DIR/12_v2_billing_events.sql" >/dev/null
 
 echo "[5/5] Asserting 11 and 12 fabricated nothing and existing data still works..."

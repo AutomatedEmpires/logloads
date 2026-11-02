@@ -91,7 +91,7 @@ fp() {
 }
 
 echo "[1/6] Sequencing: no file controls its own transaction or uses non-transactional DDL..."
-for f in 01_schema.sql 02_access.sql 03_entitlements.sql 06_v2_contract_alignment.sql 11_v2_founder_decisions.sql 12_v2_billing_events.sql; do
+for f in 01_schema.sql 02_access.sql 03_entitlements.sql 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql; do
   # (PL/pgSQL block ends are `end;` / `end if;` and its `begin` carries no semicolon, so they do not match.)
   ! grep -Eiq '^[[:space:]]*(begin|commit|rollback|start[[:space:]]+transaction)[[:space:]]*;' "$SCRIPT_DIR/$f" \
     || fail "$f contains transaction control and cannot be applied atomically"
@@ -141,7 +141,7 @@ pg_dump "$DB_URL" --schema=marketplace --format=custom --file="$TMP/pre_v2.dump"
 ok "pre-migration backup written ($(wc -c < "$TMP/pre_v2.dump") bytes)"
 
 echo "[4/6] Rollback: a failure after the last statement of 06 -> 11 -> 12 leaves nothing behind..."
-{ cat "$SCRIPT_DIR/06_v2_contract_alignment.sql" "$SCRIPT_DIR/11_v2_founder_decisions.sql" "$SCRIPT_DIR/12_v2_billing_events.sql"
+{ cat "$SCRIPT_DIR/06_v2_contract_alignment.sql" "$SCRIPT_DIR/11_v2_phase3_policy.sql" "$SCRIPT_DIR/12_v2_billing_events.sql"
   echo "select 1 / 0; -- injected failure"; } > "$TMP/batch_with_failure.sql"
 if psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$TMP/batch_with_failure.sql" >/dev/null 2>"$TMP/err.log"; then
   fail "the injected failure did not abort the batch"
@@ -157,12 +157,12 @@ if psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$TMP/06_with
 ok "a failure at the end of 06 alone also rolls back completely"
 
 echo "[5/6] Forward: 06, 11, 12 each in one transaction; re-runs never leave partial state..."
-for f in 06_v2_contract_alignment.sql 11_v2_founder_decisions.sql 12_v2_billing_events.sql; do apply1 "$SCRIPT_DIR/$f"; done
+for f in 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql; do apply1 "$SCRIPT_DIR/$f"; done
 FP1="$(fp)"
 [[ "$FP1" != "$FP0" ]] || fail "forward migration changed nothing"
 [[ "$(q "select bool_and(c.relrowsecurity) from pg_class c where c.relnamespace = 'marketplace'::regnamespace and c.relkind in ('r','p');")" == "t" ]] || fail "RLS missing after forward migration"
 ok "06, 11, 12 applied atomically; RLS on every table"
-for f in 06_v2_contract_alignment.sql 11_v2_founder_decisions.sql 12_v2_billing_events.sql; do
+for f in 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql; do
   if apply1 "$SCRIPT_DIR/$f" 2>"$TMP/rerun.log"; then
     RESULT="idempotent (re-applied cleanly)"
   else
@@ -185,7 +185,7 @@ if [[ "$(fp)" != "$FP0" ]]; then
   fail "restoring the backup did not reproduce the pre-migration schema and data"
 fi
 ok "backup restored to exactly the pre-migration fingerprint"
-for f in 06_v2_contract_alignment.sql 11_v2_founder_decisions.sql 12_v2_billing_events.sql; do apply1 "$SCRIPT_DIR/$f"; done
+for f in 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql; do apply1 "$SCRIPT_DIR/$f"; done
 [[ "$(q "select count(*) from marketplace.job_postings where title = 'Drill Active Job' and is_legacy_import;")" == "1" ]] || fail "forward migration after restore lost data"
 ok "forward migration after restore succeeded; existing data carried through"
 x "drop schema if exists marketplace cascade;"
