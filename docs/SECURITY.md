@@ -141,8 +141,8 @@ store and inherits §2. In addition:
   rounds public coordinates to 0.02°). `mapping.ts` maps only approximate points and never maps access notes,
   exact coordinates, or contacts into V2 views.
 
-  **Open finding (#141):** the 0.02° grid is finer than the 0.10° public precision in the normalized SQL (06), which
-  its comments label "V2-DEC-01". That decision is not yet in `DECISIONS.md`, so the founder must confirm it (#114).
+  **Open finding (#141):** the 0.02° grid is finer than the approved 0.10° public precision (**V2-DEC-01**,
+  `DECISIONS.md` 2026-11-02). The pilot path's implementation is tracked in #141 (Codex, after #105).
 - **Not yet present:** an explicit, audited private-detail disclosure action. Expressing interest alone
   unlocks nothing in V2. The pilot's assignment-triggered disclosure is legacy behavior and is not carried
   into V2.

@@ -2,6 +2,72 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-11-02 — Recorded approvals: V2 visual direction, `packages/ui` grant, V2-DEC-01/02/03
+
+This entry consolidates approvals that already exist in GitHub, with their sources. It approves nothing new. Where
+the founder's original statement is not in the repository, the source line says so.
+
+- **V2 visual direction — APPROVED for implementation.**
+  - **What:** the light-surface "Modern Industrial" hybrid at commit `2b09192` on `docs/product/v2-ux-spec`, with
+    `docs/product/ux-v2/06_DESIGN_SYSTEM.md` and its `design-system/` source.
+  - **Visual details:**
+    - white navigation and page/company headers on a light neutral background;
+    - **forest green** for primary actions and selected states;
+    - **rounded** controls, sections and dialogs: 8 / 12 / 16 px;
+    - restrained timber accents;
+    - IBM Plex typography.
+  - **Requirements that remain binding:**
+    - legible pay and basis;
+    - truthful availability;
+    - explicit verification scope;
+    - public/private separation.
+  - **Required implementation corrections:**
+    - semantic lists, with no nested interactive listbox;
+    - theme tokens scoped away from legacy pages;
+    - self-hosted fonts with system fallbacks;
+    - verification that names its actual scope.
+  - **Source:** founder direction, recorded by the reviewing agent on #116 (comment of 2026-11-02 19:35 UTC).
+- **`packages/ui` ownership grant.**
+  - **Who:** the existing Codex implementation owner, **limited to the files described in #144–#147**.
+  - **Order:** #144 may begin now. #145 and #146 follow the token foundation, each with separate file ownership. #147
+    migrates one V2 page per PR, coordinating the job-authoring files with #105.
+  - **#148** stays with Claude QA. The optional dev dependency `@axe-core/playwright` is approved for #148. **No paid
+    service or runtime framework is approved.**
+  - **Source:** the same #116 comment.
+- **V2-DEC-01 / V2-DEC-02 / V2-DEC-03 — APPROVED.**
+  - **V2-DEC-01:** public landing precision is **0.10°**. Implementation is #141.
+  - **V2-DEC-02:** pay disclosure — an amount with its basis, or Negotiable with supporting detail. This is the
+    same rule as C1 in the entry below.
+  - **V2-DEC-03:** an explicit publish attestation, with server-generated confirmation. This matches the
+    attestation rule in the entry below. Only the checkbox wording is still open.
+  - **Source:** the founder-directed review on PR #123 (comment of 2026-11-02 19:43 UTC) states that these "already
+    have explicit founder approval". The SQL comments in `06_v2_contract_alignment.sql` date V2-DEC-01 to
+    2026-11-01. **The founder's original statements are not in the repository.**
+- **Explicitly NOT approved by passing tests:** SQL behaviour is not founder approval.
+  - F1–F4 (`11_v2_founder_decisions.sql`) and F5 (`12_v2_billing_events.sql`) are **recommendations**, pending
+    reconciliation in the #114 register. F5 appears consistent with six paid billing cycles, but its provider-event
+    mapping still needs review.
+  - **F2a** (active legacy jobs missing pay), **F6** (mid-cycle invitation allowance) and **F7** (meaning of a paused
+    subscription) remain **open**.
+  - Integration tests must keep these behaviours isolated and clearly provisional.
+  - **Source:** the same PR #123 comment.
+- **Bounded adapter work authorized.** The CI evidence at `67b4777` is sufficient to start bounded
+  `MarketplaceV2Port` adapter development against disposable databases (#139), **using the verified user-token path,
+  not service-role access**.
+  - `supportsPublishing` stays `false` until the integrated flow is proven.
+  - This is not an independent line-by-line security approval of the SQL.
+  - Real Clerk/JWKS and hosted-project verification remain gates (#112).
+  - Billing is not ready end to end. The application webhook handler for R4 is not implemented.
+  - **Source:** the same PR #123 comment.
+
+None of the above authorizes any of the following:
+
+- a merge to `main`;
+- a deployment;
+- a production database change;
+- SQL changes outside their owners' lanes;
+- billing activation.
+
 ## 2026-11-02 — GitHub Issues are the task tracker; Project Board #10 deferred
 
 - **Project Board #10 is deferred and optional.** The required `project` token scope could not be granted to the

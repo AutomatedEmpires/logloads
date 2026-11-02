@@ -28,14 +28,20 @@
 **Locally**, `pnpm db:check` and `pnpm db:assert` print a skip and exit 0 when the Supabase CLI or Docker is
 missing. A local skip is **not** a pass.
 
-**Known failing gate (#107).** `extended-validation` has failed on every PR since 2026-09-09.
+### Application E2E gate (`extended-validation`) — separate from database verification
 
-- The last green run was 2026-08-10 on `main` @ `40f4416`.
-- Each failure is 2 failed / 118 passed / 22 skipped: `tests/posting.spec.ts:69`, on both mobile and desktop.
-- **Cause, identified by code trace:** the test hardcodes a recurring window of 2026-08-03 → 2026-08-28. Once
-  that window passed, the load's discovery reason became `expired`, and the driver board shows only `available`
-  loads.
-- The fix belongs to QA. Until it lands, no PR has a fully green required-check set.
+`extended-validation` is the **application** gate: a production build plus Playwright against the pilot app. Its
+result says nothing about the normalized-v2 SQL, which has its own workflow (§3), and the reverse is also true.
+A PR can be green in one and red in the other.
+
+| Failure | Status | Evidence |
+|---|---|---|
+| `posting.spec.ts:69`, mobile and desktop (#107) | **Fix ready, not merged.** The test hardcoded a recurring window of 2026-08-03 → 2026-08-28. Once that window expired, the load stopped appearing on the driver board. Failing on every PR since 2026-09-09; last green 2026-08-10 on `main` @ `40f4416`. | **PR #143** @ `a50b325`: run [41504359311](https://github.com/AutomatedEmpires/logloads/actions/runs/41504359311) green on both attempts — 119 passed, 1 flaky; then 120 passed, 0 flaky. |
+| `invitations.spec.ts:113`, mobile (#149) | **Open, intermittent.** "Casey Crew" was not visible in the team list within 5 s. It passed on retry in #143's attempt 1, but **failed outright** in PR #123's run 41506524217. | #149 |
+
+Until #143 merges into `work/logloads-repair`, **every PR's `extended-validation` fails** for reasons unrelated to
+its own diff. That includes the docs PRs #100, #115 and #142, and the database PR #123. Read each PR's status
+per workflow, never as one combined colour.
 
 ## 3. Normalized V2 database CI
 
@@ -55,9 +61,20 @@ and is not merged.
   `08_v2_contract_concurrency_test.sh`, `09_v2_integration_audit_tests.sql`, `10_v2_migration_path_test.sh`, and
   from `67b4777` onwards `11_v2_founder_decisions.sql` and `12_v2_billing_events.sql`.
 
-  The comments in stages 11–12 label rules F1–F5 and "V2-DEC-01/02" as founder decisions. **None of these is
-  recorded in `DECISIONS.md` yet** (#114). A passing stage proves only that the SQL behaves as written. It does not
-  approve the policy.
+  **Policy status of these stages** (`DECISIONS.md` 2026-11-02, "Recorded approvals"):
+  - **Approved:** V2-DEC-01, V2-DEC-02 and V2-DEC-03.
+  - **Recommendations only:** F1–F5, pending #114.
+  - **Open:** F2a, F6 and F7.
+
+  A passing stage proves only that the SQL behaves as written. It never approves the policy.
+
+**PR #123 status, read per workflow.** At `67b4777`:
+- the Normalized V2 Database CI is **green**, 16 of 16 jobs;
+- the PR's combined status is `UNSTABLE`, **only** because the application gate `extended-validation` failed
+  (run 41506524217): 117 passed / 3 failed / 22 skipped, on `posting.spec` ×2 (#107) and `invitations.spec` (#149).
+
+Those are application test failures, not database failures. The PR stays a draft for its own reasons: F1–F5
+decisions, an independent review, and a green set of required checks.
 
 ### Evidence register
 
