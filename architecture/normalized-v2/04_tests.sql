@@ -465,6 +465,15 @@ begin
   values (v_org_land_b, v_landing_b1, 'Private Draft Job B', 'draft')
   returning id into v_job_b1;
 
+  -- Regression: the owning desk sees its own draft (the INSERT ... RETURNING above depends on it) ...
+  select count(*) into v_count from marketplace.job_postings where id = v_job_b1;
+  perform pg_temp.assert_true(v_count = 1, 'owning landing desk must see its own draft job');
+
+  -- ... while the rival landing org A and anon cannot.
+  perform pg_temp.as_jwt('authenticated', v_issuer, 'user_land_a');
+  select count(*) into v_count from marketplace.job_postings where id = v_job_b1;
+  perform pg_temp.assert_true(v_count = 0, 'rival landing org must not see another org''s draft job');
+
   perform pg_temp.as_jwt('anon');
   select count(*) into v_count from marketplace.job_postings where id = v_job_b1;
   perform pg_temp.assert_true(v_count = 0, 'anon must not see draft job postings');

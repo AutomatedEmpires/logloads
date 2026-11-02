@@ -666,8 +666,14 @@ create policy landing_private_update on marketplace.landing_private_details for 
 
 create policy job_postings_public on marketplace.job_postings for select to anon
   using (marketplace.job_is_publicly_visible(id));
+-- The owning desk clause is evaluated on the row's own org_id first. can_read_job_posting(id)
+-- re-queries job_postings by id, and a STABLE function cannot see a row inserted by the same
+-- statement, so `INSERT ... RETURNING` (PostgREST return=representation) by the owner failed the
+-- SELECT check. Same access set: this clause is identical to the owner clause inside
+-- can_read_job_posting; every other read path still goes through the function.
 create policy job_postings_read on marketplace.job_postings for select to authenticated
-  using (marketplace.can_read_job_posting(id));
+  using (org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff'], true))
+         or marketplace.can_read_job_posting(id));
 create policy job_postings_insert on marketplace.job_postings for insert to authenticated
   with check (org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff'], true)));
 create policy job_postings_update on marketplace.job_postings for update to authenticated
