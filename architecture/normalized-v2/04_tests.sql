@@ -18,6 +18,17 @@
 
 begin;
 
+-- Test-harness fixture lookup: delivery rows are deliberately unreadable to the sending landing
+-- and to service_role (no table grants; workers receive delivery ids from provider callbacks).
+-- SECURITY DEFINER runs as the harness owner, so the caller's role and JWT context are unchanged.
+create function pg_temp.fixture_delivery_id(p_invitation uuid)
+returns uuid
+language sql
+security definer
+as $$
+  select id from marketplace.invitation_deliveries where invitation_id = p_invitation order by channel, id limit 1
+$$;
+
 -- Helper used only inside this rolled-back transaction to switch caller context.
 create function pg_temp.as_jwt(
   p_role text,
@@ -531,7 +542,11 @@ begin
   end;
 
   -- Simulate failed delivery on `v_inv_1` -> quota unit must be refunded (`invitations_committed` back to 0).
-  select id into v_del_id from marketplace.invitation_deliveries where invitation_id = v_inv_1 limit 1;
+  -- The sending landing must not see the recipient's delivery rows (recipient user + channel are private).
+  select count(*) into v_count from marketplace.invitation_deliveries where invitation_id = v_inv_1;
+  perform pg_temp.assert_true(v_count = 0, 'sending landing must not see recipient invitation_deliveries');
+  v_del_id := pg_temp.fixture_delivery_id(v_inv_1);
+  perform pg_temp.assert_true(v_del_id is not null, 'reservation must queue at least one delivery');
   perform pg_temp.as_jwt('service_role');
   perform marketplace.resolve_invitation_delivery(v_del_id, 'failed', null, 'smtp_temp_failure');
   -- Calling resolve_invitation_delivery a second time with 'bounced' must be idempotent (never double-refund).
@@ -558,10 +573,10 @@ begin
   v_inv_1 := marketplace.reserve_targeted_invitation(v_job_a1, v_org_haul_1, 'Delivered invite 1');
   v_inv_2 := marketplace.reserve_targeted_invitation(v_job_a1, v_org_haul_2, 'Delivered invite 2');
 
-  select id into v_del_id from marketplace.invitation_deliveries where invitation_id = v_inv_1 limit 1;
+  v_del_id := pg_temp.fixture_delivery_id(v_inv_1);
   perform pg_temp.as_jwt('service_role');
   perform marketplace.resolve_invitation_delivery(v_del_id, 'delivered', 'msg_1', 'ok');
-  select id into v_del_id from marketplace.invitation_deliveries where invitation_id = v_inv_2 limit 1;
+  v_del_id := pg_temp.fixture_delivery_id(v_inv_2);
   perform marketplace.resolve_invitation_delivery(v_del_id, 'delivered', 'msg_2', 'ok');
 
   -- Consume the 3rd Basic allowance unit on a second active job at the same landing, then verify 4th is rejected.
