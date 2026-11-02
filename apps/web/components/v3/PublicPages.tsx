@@ -62,7 +62,7 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
               fill
               priority
               sizes="100vw"
-              src="/brand/logloads-hero.png"
+              src="/brand/logloads-hero.jpg"
             />
           </div>
           <div className="home-hero__body">
@@ -477,7 +477,7 @@ export function LegalPage({ content }: { content: LegalPageContent }) {
 function AuthStory() {
   return (
     <aside aria-label="LogLoads field coordination" className="auth-story">
-      <Image alt="" fill sizes="(max-width: 760px) 100vw, 42vw" src="/brand/logloads-hero.png" />
+      <Image alt="" fill sizes="(max-width: 760px) 100vw, 42vw" src="/brand/logloads-hero.jpg" />
       <div className="auth-story__content">
         <BrandMark priority size={80} />
         <p className="eyebrow">Built for timber operations</p>
