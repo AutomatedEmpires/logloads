@@ -43,21 +43,24 @@ FOREIGN="$(q "select coalesce(string_agg(format('%I.%I', n.nspname, c.relname), 
 command -v pg_dump >/dev/null && command -v pg_restore >/dev/null || fail "pg_dump / pg_restore not on PATH"
 
 # Catalog fingerprint of the marketplace schema (names, definitions, function bodies, policies, triggers,
-# grants — ACL entries sorted so replay order does not matter) and a data fingerprint.
+# grants) and a data fingerprint. Two dump/restore artefacts that are semantically identical are normalised:
+# a NULL ACL is compared as its documented default (acldefault: owner holds all, nobody else anything), and
+# CHECK expressions are compared without parentheses (the deparser regroups AND chains). ACL entries are
+# sorted so replay order does not matter.
 CATALOG_SQL="select md5(string_agg(x, '|' order by x)) from (
   select 'rel:' || c.relname || ':' || c.relkind::text || ':' || c.relrowsecurity::text || ':' ||
-         coalesce((select string_agg(a, ',' order by a) from unnest(c.relacl::text[]) a), '')
+         coalesce((select string_agg(a, ',' order by a) from unnest(coalesce(c.relacl, acldefault(case when c.relkind = 'S' then 's'::"char" else 'r'::"char" end, c.relowner))::text[]) a), '')
   from pg_class c where c.relnamespace = 'marketplace'::regnamespace and c.relkind in ('r','p','v','S','i')
   union all
   select 'col:' || table_name || '.' || column_name || ':' || data_type || ':' || is_nullable || ':' || coalesce(column_default, '')
   from information_schema.columns where table_schema = 'marketplace'
   union all
-  select 'con:' || cl.relname || ':' || co.conname || ':' || pg_get_constraintdef(co.oid)
+  select 'con:' || cl.relname || ':' || co.conname || ':' || regexp_replace(pg_get_constraintdef(co.oid), '[()]', '', 'g')
   from pg_constraint co join pg_class cl on cl.oid = co.conrelid where co.connamespace = 'marketplace'::regnamespace
   union all
   select 'fn:' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || '):' || md5(p.prosrc) || ':' || p.prosecdef::text || ':' ||
          coalesce(array_to_string(p.proconfig, ','), '') || ':' ||
-         coalesce((select string_agg(a, ',' order by a) from unnest(p.proacl::text[]) a), '')
+         coalesce((select string_agg(a, ',' order by a) from unnest(coalesce(p.proacl, acldefault('f'::"char", p.proowner))::text[]) a), '')
   from pg_proc p where p.pronamespace = 'marketplace'::regnamespace
   union all
   select 'pol:' || tablename || '.' || policyname || ':' || cmd || ':' || coalesce(qual, '') || ':' || coalesce(with_check, '')
