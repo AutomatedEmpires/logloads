@@ -35,12 +35,15 @@ These fields come from the template at `.github/ISSUE_TEMPLATE/agent_task.yml`:
 |---|---|
 | **Status** | Backlog → Ready → In Progress → Blocked → In Review → Done |
 | **Priority** | P0 (production risk or blocker) · P1 (current milestone) · P2 (later) |
-| **Agent Owner** | Claude Agent 1 (integration / PostgreSQL CI) · Claude Agent 2 (docs / coordination) · Codex (V2 frontend) · Gemini (normalized schema) · Claude Security Auditor · Claude QA (Playwright) · Claude Product (public copy) · Founder |
+| **Agent Owner** | Claude Agent 1 (database integration) · Claude Agent 2 (docs / coordination) · Claude Agent 3 — UX · Codex (V2 frontend) · Gemini (SQL author, standby) · Claude Security Auditor · Claude QA (Playwright) · Claude Product (public copy) · Claude Research (market validation) · Claude Adapter (normalized adapter) · Founder |
+
+A single-select field holds one owner. On a shared issue the board shows the primary owner, and the issue body
+names the collaborators.
 
 Lane labels describe the subject of an issue. Status and priority are **never** expressed as labels:
 
 `lane:database` · `lane:v2-frontend` · `lane:docs` · `lane:security` · `lane:qa` · `lane:product-copy` ·
-`lane:integration` · `lane:coordination`
+`lane:integration` · `lane:coordination` · `lane:research`
 
 All agent issues also carry `agent-task`.
 
@@ -98,7 +101,12 @@ BOUNDARIES: data/money/email/deploy/provider impact — or "none"
 | `apps/web/app/v2`, `apps/web/lib/marketplace-v2` | Codex (V2 frontend publishing) |
 | `apps/web/app/pricing`, `apps/web/app/terms` | Claude Product |
 | `apps/web/tests/*.spec.ts`, Playwright configuration | Claude QA |
+| `docs/product/ux-v2/**` (V2 UX specification and design tickets) | Claude Agent 3 — UX |
 | `docs/` (except `product/` content), issue templates, coordination | Claude Agent 2 |
+| `README.md`, `AGENTS.md`, `CLAUDE.md`, `.env.example`, `ops/` | **Unassigned.** Awaiting a founder ownership grant (#109, #111). Nobody edits them until then. |
+
+**Gemini** authors SQL only when an issue asks it to, by proposing changes in that issue. **Claude Agent 1** is
+the single editor of `architecture/normalized-v2/`, so two agents never edit the same SQL at once.
 
 When a code change alters a documented behavior, update the matching document in the same PR, or open a
 `lane:docs` issue.

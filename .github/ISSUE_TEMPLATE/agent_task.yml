@@ -15,13 +15,16 @@ body:
     attributes:
       label: Agent owner
       options:
-        - Claude Agent 1 (integration / PostgreSQL CI)
+        - Claude Agent 1 (database integration)
         - Claude Agent 2 (docs / coordination)
+        - Claude Agent 3 — UX
         - Codex (V2 frontend)
-        - Gemini (normalized schema)
+        - Gemini (SQL author, standby)
         - Claude Security Auditor
         - Claude QA (Playwright)
         - Claude Product (public copy)
+        - Claude Research (market validation)
+        - Claude Adapter (normalized adapter)
         - Founder
     validations:
       required: true
