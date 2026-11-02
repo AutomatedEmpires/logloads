@@ -2,12 +2,12 @@ import Link from "next/link"
 
 import { postingFreshness, type MarketplaceJobCardView } from "@logloads/contracts"
 
-import { distanceLabel, JOB_STATUS_LABELS, payLabel, scheduleLabel, trucksLabel, volumeLabel } from "./format"
+import { distanceLabel, JOB_STATUS_LABELS, payLabel, scheduleLabel, trucksSummary, volumeSummary } from "./format"
 
 export function JobCard({ job, now }: { job: MarketplaceJobCardView; now: string }) {
-  const freshness = postingFreshness(job.lastConfirmedAt, now)
+  const freshness = postingFreshness(job, now)
   const distance = distanceLabel(job)
-  const volume = volumeLabel(job)
+  const volume = volumeSummary(job)
 
   return (
     <article className="v2-card" aria-labelledby={`job-${job.id}`}>
@@ -27,7 +27,7 @@ export function JobCard({ job, now }: { job: MarketplaceJobCardView; now: string
         {job.destinationLabel ? <div><dt>To</dt><dd>{job.destinationLabel}</dd></div> : null}
         {distance ? <div><dt>Haul</dt><dd>{distance}</dd></div> : null}
         <div><dt>When</dt><dd>{scheduleLabel(job)}</dd></div>
-        <div><dt>Trucks</dt><dd>{trucksLabel(job)}</dd></div>
+        <div><dt>Trucks</dt><dd>{trucksSummary(job)}</dd></div>
         {volume ? <div><dt>Volume</dt><dd>{volume}</dd></div> : null}
       </dl>
       <ul className="v2-chips" aria-label="Equipment required">

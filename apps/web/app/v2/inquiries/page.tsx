@@ -5,7 +5,7 @@ import { notFound } from "next/navigation"
 
 import type { MarketplaceInterestView } from "@logloads/contracts"
 
-import { formatDay, interestStatusLabel } from "@/components/v2/format"
+import { availabilityLabel, equipmentOfferLabel, formatDay, interestStatusLabel } from "@/components/v2/format"
 import { haulerReplyAction, withdrawInterestAction } from "@/lib/marketplace-v2/actions"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
@@ -63,7 +63,9 @@ export default async function MyInquiriesPage({ searchParams }: { searchParams: 
                 </header>
                 <p><span className={`v2-status v2-status--interest-${interest.status}`}>{interestStatusLabel(interest.status)}</span></p>
                 <dl className="v2-facts">
-                  <div><dt>Offered</dt><dd>{interest.trucksOffered} truck{interest.trucksOffered === 1 ? "" : "s"}{interest.availableFrom ? ` from ${formatDay(interest.availableFrom)}` : ""}</dd></div>
+                  <div><dt>You offered</dt><dd>{interest.trucksOffered} truck{interest.trucksOffered === 1 ? "" : "s"} <span className="v2-muted">(self-reported)</span></dd></div>
+                  {equipmentOfferLabel(interest.equipment) ? <div><dt>Equipment</dt><dd>{equipmentOfferLabel(interest.equipment)}</dd></div> : null}
+                  {availabilityLabel(interest) ? <div><dt>Available</dt><dd>{availabilityLabel(interest)}</dd></div> : null}
                   <div><dt>Sent</dt><dd>{formatDay(interest.createdAt)} by {interest.submittedBy.name}</dd></div>
                   {interest.message ? <div><dt>Your note</dt><dd>{interest.message}</dd></div> : null}
                 </dl>

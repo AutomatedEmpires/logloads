@@ -28,9 +28,31 @@ describe("Marketplace V2 public job mapping", () => {
     for (const job of jobs) {
       const load = state.loadPostings.find((candidate) => candidate.id === job.id)
       expect(load).toBeDefined()
-      expect(job.pay).toEqual(load?.driverPayCents ? { amountCents: load.driverPayCents, unit: "per_load" } : { amountCents: null, unit: null })
+      expect(job.pay).toEqual(load?.driverPayCents ? { amountCents: load.driverPayCents, note: null, unit: "per_load" } : { amountCents: null, note: null, unit: null })
       expect(job.estimatedDailyLoads).toBeNull()
+      expect(job.estimatedLoadsPerTruckPerDay).toBeNull()
       expect(job.posterOrganizationId).toBe(load?.companyId)
+    }
+  })
+
+  it("never presents a pilot edit as an availability confirmation", () => {
+    const { jobs, state } = publicJobs()
+
+    for (const job of jobs) {
+      const load = state.loadPostings.find((candidate) => candidate.id === job.id)
+      expect(job.lastConfirmedAt).toBeNull()
+      expect(job.lastModifiedAt).toBe(load?.updatedAt)
+      expect(job.expiresAt).toBeNull()
+    }
+  })
+
+  it("keeps trucks per day separate from an unknown job total", () => {
+    const { jobs, state } = publicJobs()
+
+    for (const job of jobs) {
+      const load = state.loadPostings.find((candidate) => candidate.id === job.id)
+      // Pilot capacity counts truckloads, not trucks: the job's total truck count is unknown.
+      expect(job.trucks).toEqual({ perDay: load?.dailyTruckCountNeeded ?? null, total: null })
     }
   })
 
@@ -75,13 +97,19 @@ describe("Marketplace V2 public job mapping", () => {
     if (!job || !hauler || !submitter) throw new Error("seed fixture missing")
 
     const view = toInterestView(state, {
-      availableFrom: null, contactPreference: "phone", createdAt: AT.toISOString(), haulerOrganizationId: hauler.id,
+      availableFrom: null, availableUntil: null, contactPreference: "phone", createdAt: AT.toISOString(),
+      equipment: [{ configurationKey: "log_truck|pole_trailer", count: 2, label: "Log truck + Pole trailer" }], haulerOrganizationId: hauler.id,
       id: "aaaaaaaa-0000-4000-8000-000000000009", jobOrganizationId: job.companyId, loadPostingId: job.id, message: null,
       replies: [], respondedAt: null, status: "submitted", submittedByUserId: submitter.id, trucksOffered: 2,
       updatedAt: AT.toISOString(), withdrawnAt: null
     }, (load) => marketplaceJobStatus(load, AT.toISOString()))
 
-    expect(view).toMatchObject({ haulerOrganization: { name: "New River Hauling" }, job: { acceptingInterest: true, title: job.title }, trucksOffered: 2 })
+    expect(view).toMatchObject({
+      equipment: [{ count: 2, label: "Log truck + Pole trailer" }],
+      haulerOrganization: { name: "New River Hauling" },
+      job: { acceptingInterest: true, title: job.title },
+      trucksOffered: 2
+    })
     expect(JSON.stringify(view)).not.toContain(submitter.phone)
   })
 })

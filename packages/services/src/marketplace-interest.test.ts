@@ -146,8 +146,8 @@ describe("landing reviews and responds", () => {
     expect(listMarketplaceInterestsForLanding(state, otherLanding)).toEqual([])
     expect(() => withdrawMarketplaceInterest(state, publisherDriver, interest.id, AT)).toThrow("Inquiry not found")
     expect(() => postHaulerInterestReply(state, publisherDriver, { body: "hi", interestId: interest.id, replyId: REPLY_1 }, AT)).toThrow("Inquiry not found")
-    // An owner may also publish jobs; its inbox contains only inquiries on its own jobs.
-    expect(listMarketplaceInterestsForLanding(state, hauler)).toEqual([])
+    // New River operates no landing, so even its owner holds no landing seat and has no landing inbox.
+    expect(() => listMarketplaceInterestsForLanding(state, hauler)).toThrow("Inquiry not found")
     expect(() => listMarketplaceInterestsForLanding(state, publisherDriver)).toThrow("Inquiry not found")
     expect(interest.status).toBe("submitted")
     expect(landing.organizationId).toBe(interest.jobOrganizationId)

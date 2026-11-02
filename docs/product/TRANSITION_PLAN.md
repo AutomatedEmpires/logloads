@@ -53,9 +53,9 @@ in canonical state and in Stripe) and explicit authorization.
 | Step | Work | Depends on | Can start | Gate to finish |
 |---|---|---|---|---|
 | 0 | Blueprint in repo; decision entry; **membership rules contract** (`packages/contracts/src/membership.ts`) | — | **Done in this change** | Unit tests encode §3, §6, §7, §8 numbers |
-| 1 | Relational schema alignment: map the prototype's tables to §12.2 entities and to existing `operating_state` collections (ids preserved, quarantine for invalid rows) | Prototype complete (`01_schema.sql` present; `02_access.sql`, `03_entitlements.sql` pending) | **In progress by the prototype owner** — see "Schema prototype alignment" | Mapping reviewed; no competing schema |
+| 1 | Relational schema alignment: map the prototype's tables to §12.2 entities and to existing `operating_state` collections (ids preserved, quarantine for invalid rows) | Prototype files present: `01_schema.sql`, `02_access.sql`, `03_entitlements.sql`, `04_tests.sql`, `05_concurrency_test.ps1` (statically checked; **not yet executed against PostgreSQL**) | **In progress by the prototype owner** — see "Schema prototype alignment" | Mapping reviewed; no competing schema |
 | 2 | Phase A foundation: local/preview migrations, RLS with trusted Clerk claims, read adapters, shadow sync + parity checks | 1 | After 1 | Cross-tenant denial tests; reproducible local setup; no production data touched |
-| 3 | Phase B free marketplace on the new model, behind a flag next to the pilot: job posting v2 (create/publish/reconfirm), public search + filters, hauler business profile with equipment + timestamped availability, express interest + replies | 2 (2a: contracts-only UI work may start on the JSON store if the prototype is delayed) | After 2 | Real data only; mobile/low-bandwidth; private-location protection |
+| 3 | Phase B free marketplace on the new model, behind a flag next to the pilot: job posting v2 (create/publish/reconfirm), public search + filters, hauler business profile with equipment + timestamped availability, express interest + replies | 2 (2a: contracts-only UI work may start on the JSON store if the prototype is delayed) | **2a implemented** behind the flag (see "Step 3 slice"); full step after 2 | Real data only; mobile/low-bandwidth; private-location protection |
 | 4 | Phase C paid membership: entitlement enforcement from step 0 contracts (landings, seats), Stripe test-mode products, checkout disclosures | 2, published terms | After 2 | Accurate entitlements; reconciliation; counsel review before live sale |
 | 5 | Phase D proactive recruiting: consent, targeted invitations (allowance, dedupe, eligible-audience count), alerts, saved search | 3, 4 | After 4 | No overspend; delivery validation; low-density handling |
 | 6 | Phase E boosts: 7/14/28-day purchases, ~100-mile targeting, Sponsored labelling, measured analytics | 3, 4 | After 4 | Real audience; no guarantees; caps per view |
@@ -87,29 +87,50 @@ Items to settle with the prototype owner before step 2:
 - **Identity:** the prototype trusts Clerk via allowlisted JWT issuers and `identity_links`; the app currently resolves
   identity server-side with the service role. Step 2 decides how requests carry the Clerk JWT to PostgREST.
 
-### Step 3 slice on the pilot store (2026-11-01)
+### Step 3 slice on the pilot store (implemented and hardened 2026-11-01)
 
-The first marketplace loop runs behind `LOGLOADS_MARKETPLACE_V2=enabled` (development only, `/v2`): a landing's published
-posting appears in a text-first discovery list with an optional map; a hauler business expresses nonbinding interest;
-the landing reviews, replies or declines; the hauler sees the reply. Boundary for the normalized adapter:
+**Status: implemented** behind `LOGLOADS_MARKETPLACE_V2=enabled` (development only, `/v2`; never on `VERCEL_ENV=production`).
+A landing's posting appears in a text-first discovery list with an optional CARTO map; a hauling business expresses
+nonbinding interest (optionally per equipment configuration from its own profile, self-reported); the landing reviews,
+replies or declines; the hauler sees the reply. **PostgreSQL integration remains unverified** — everything here runs on
+the pilot `operating_state` document.
 
-- Contracts: `packages/contracts/src/marketplace-v2.ts` (job card/detail and interest views, statuses mirroring
-  `expressions_of_interest`, input schemas, freshness and queue rules).
-- Rules: `packages/services/src/marketplace-interest.ts` (hauler/landing authority, one live interest per job and
-  hauler business, replay-safe replies, audit events). Persistence is the additive `marketplaceInterests` collection.
-- Port: `apps/web/lib/marketplace-v2/port.ts`; the pilot adapter is `pilot-adapter.ts`. A normalized adapter implements
-  the same port against `search_job_postings` / `respond_to_interest` without changing the pages.
+Boundary for the normalized adapter:
 
-Gaps for the prototype owner: `job_postings` has no estimated daily loads/volume field (the spec requires "estimated daily
-volume"); the pilot has none either, so the UI says "not stated". Pilot pay is only a per-load amount. The interest form
-does not yet carry an equipment selection (needs the hauler equipment profile).
+- Contracts: `packages/contracts/src/marketplace-v2.ts` (views, statuses mirroring `expressions_of_interest`, pay units
+  and equipment codes mirroring `job_postings.pay_unit` and the seeded `equipment_types`), `marketplace-job-draft.ts`
+  (authoring draft mirroring `job_postings` columns and CHECKs, incl. `contains_sensitive_access_pattern`), and
+  `marketplace-permissions.ts` (capabilities restating the RLS role sets — no second role system).
+- Rules: `packages/services/src/marketplace-interest.ts` (capability checks, one live interest per job and hauler
+  business, equipment resolved against the hauler's own profile, replay-safe replies, audit events);
+  `marketplace-access.ts` translates pilot roles into normalized memberships (side-limited; deleted at cutover).
+  Interest persistence is the additive `marketplaceInterests` collection.
+- Port: `apps/web/lib/marketplace-v2/port.ts`; `pilot-adapter.ts` implements discovery and inquiries. **Native job
+  publishing and reconfirmation are UI + validation + preview only** (`supportsPublishing: false`): they are not
+  forced into legacy load/slot records and no second JSON job model was created; they persist once a normalized adapter
+  implements `publishJob` / `reconfirmJob` against `job_postings`.
+
+Data semantics: pilot `updatedAt` is shown only as "last edited"; the pilot has no confirmation action, so no pilot job
+is ever labelled confirmed (`lastConfirmedAt` null). Pilot pay is a per-load amount; pilot capacity counts truckloads,
+so "trucks for the job" is unknown and only "trucks per day" is shown.
+
+Items for the prototype owner:
+
+- `job_postings` has `trucks_requested` (total) and `est_daily_loads` (whole job) but no **trucks per day** or **loads per
+  truck per day** column; the V2 contract carries both as optional poster estimates.
+- No table for the **equipment configurations offered in an interest** (`expressions_of_interest` has only
+  `trucks_offered`); the V2 contract snapshots configuration, label and count per line.
+- Public point snapping is 0.1° in `approximate_point`; the pilot public view snaps to 0.02°. Pick one for V2.
+- Interest insert requires a public `hauler_profiles` row; the pilot treats any carrier/fleet organization as a hauler.
 
 ### Parallel tracks (independent of the schema)
 
 - **Security:** MapLibre 6 (worker loading fixed before landing), Zod 4 (only after a read-only production ID scan proves
   validation compatibility), security headers, Sentry scrubbing, health endpoint minimization.
-- **Maps:** CARTO API key from the existing entitlement (separate dev/prod keys) once credentials are available; free
-  commercial limit 1M tile requests/month from 2026-12-01; keep OSM + CARTO attribution.
+- **Maps:** CARTO Basemaps on MapLibre is integrated as the preferred basemap (`NEXT_PUBLIC_CARTO_BASEMAP_KEY`;
+  authenticated style/tile/glyph/sprite requests, OSM + CARTO attribution, lazy loading, text fallback). The account
+  owner reports an entitlement of **5 million basemap requests per month**; confirm scope, origin restrictions and
+  usage in the CARTO dashboard, and use separate development and production keys. No production variable is set.
 - **Environment discipline:** per-batch storage log (`logloads-audit/storage-check.sh`); builds in temporary worktrees,
   deleted after use.
 

@@ -14,8 +14,16 @@ import type { NetworkLoadView } from "../network"
 /**
  * Pure mapping from the pilot's redacted public network view to the V2 read model. Only fields that
  * the public view already exposes, plus public-safe poster statements from the load posting (stated
- * pay, dates, estimates, last update), are used. Exact coordinates, gate/route notes and contacts are
+ * pay, dates, estimates, last edit), are used. Exact coordinates, gate/route notes and contacts are
  * never read here.
+ *
+ * Pilot semantics, kept honest:
+ * - `updatedAt` is only an edit time (`lastModifiedAt`). The pilot has no "still available" action, so
+ *   `lastConfirmedAt` is always null and no listing is presented as confirmed.
+ * - `dailyTruckCountNeeded` is trucks per working day. The pilot's capacity counts truckloads, not
+ *   trucks, so the total trucks for the job is unknown (null) rather than guessed.
+ * - Pilot pay is the driver pay per load the host stated; there is no other basis and no pay note.
+ * - The pilot records no loads-per-day or loads-per-truck estimates; those stay null.
  */
 
 const PRODUCT_LABELS: Record<string, string> = {
@@ -60,16 +68,21 @@ export function toJobDetailView(
     endsOn,
     equipment: [...view.equipment],
     estimatedDailyLoads: null,
+    estimatedLoadsPerTruckPerDay: null,
     estimatedTonsPerLoad: load.estimatedTonsPerLoad ?? null,
+    expiresAt: null,
     haulDistance: view.route.distanceMiles > 0 ? { basis: "poster_route_estimate", miles: view.route.distanceMiles } : null,
     id: load.id,
-    lastConfirmedAt: load.updatedAt,
+    lastConfirmedAt: null,
+    lastModifiedAt: load.updatedAt,
     origin: {
       approximatePoint: origin.approximate ? { lat: origin.lat, lng: origin.lng } : null,
       label: [origin.city, origin.state].filter(Boolean).join(", ") || "Location shared on request",
       stateCode: origin.state || null
     },
-    pay: load.driverPayCents ? { amountCents: load.driverPayCents, unit: "per_load" } : { amountCents: null, unit: null },
+    pay: load.driverPayCents
+      ? { amountCents: load.driverPayCents, note: null, unit: "per_load" }
+      : { amountCents: null, note: null, unit: null },
     posterName: view.sourceName,
     posterOrganizationId: load.companyId,
     posterVerified,
@@ -82,7 +95,7 @@ export function toJobDetailView(
     startsOn,
     status,
     title: view.title,
-    trucksRequested: load.dailyTruckCountNeeded ? { count: load.dailyTruckCountNeeded, per: "day" } : null
+    trucks: { perDay: load.dailyTruckCountNeeded || null, total: null }
   }
 }
 
@@ -99,8 +112,10 @@ export function toInterestView(
 
   return {
     availableFrom: interest.availableFrom,
+    availableUntil: interest.availableUntil ?? null,
     contactPreference: interest.contactPreference,
     createdAt: interest.createdAt,
+    equipment: interest.equipment ?? [],
     haulerOrganization: { id: interest.haulerOrganizationId, name: hauler?.displayName ?? "Hauling business", type: hauler?.type ?? "unknown" },
     id: interest.id,
     job: {

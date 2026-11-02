@@ -5,7 +5,7 @@ import { notFound } from "next/navigation"
 
 import { landingInterestQueue, type LandingInterestQueue, type MarketplaceInterestView } from "@logloads/contracts"
 
-import { formatDay, interestStatusLabel } from "@/components/v2/format"
+import { availabilityLabel, equipmentOfferLabel, formatDay, interestStatusLabel } from "@/components/v2/format"
 import { respondToInterestAction } from "@/lib/marketplace-v2/actions"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
@@ -32,7 +32,9 @@ function InquiryCard({ interest }: { interest: MarketplaceInterestView }) {
       </header>
       <p><span className={`v2-status v2-status--interest-${interest.status}`}>{interestStatusLabel(interest.status)}</span></p>
       <dl className="v2-facts">
-        <div><dt>Offers</dt><dd>{interest.trucksOffered} truck{interest.trucksOffered === 1 ? "" : "s"}{interest.availableFrom ? ` from ${formatDay(interest.availableFrom)}` : ""}</dd></div>
+        <div><dt>Offers</dt><dd>{interest.trucksOffered} truck{interest.trucksOffered === 1 ? "" : "s"} <span className="v2-muted">(self-reported by the hauler; not verified)</span></dd></div>
+        {equipmentOfferLabel(interest.equipment) ? <div><dt>Equipment</dt><dd>{equipmentOfferLabel(interest.equipment)}</dd></div> : null}
+        {availabilityLabel(interest) ? <div><dt>Available</dt><dd>{availabilityLabel(interest)}</dd></div> : null}
         <div><dt>Sent by</dt><dd>{interest.submittedBy.name} · {formatDay(interest.createdAt)}</dd></div>
         <div><dt>Contact</dt><dd>{CONTACT_LABELS[interest.contactPreference]}</dd></div>
         {interest.message ? <div><dt>Note</dt><dd>{interest.message}</dd></div> : null}

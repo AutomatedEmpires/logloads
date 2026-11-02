@@ -49,6 +49,7 @@ import {
   withdrawMarketplaceInterest,
   type MarketplaceActor
 } from "./marketplace-interest"
+import { marketplaceAuthoringLandings, marketplaceHaulerEquipment, marketplaceViewerAccess } from "./marketplace-access"
 import {
   createThread,
   listThreadMessages,
@@ -448,6 +449,9 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     postHaulerInterestReply: (actor: MarketplaceActor, input: unknown) => postHaulerInterestReply(state, actor, input),
     listMarketplaceInterestsForHauler: (actor: MarketplaceActor) => listMarketplaceInterestsForHauler(state, actor),
     listMarketplaceInterestsForLanding: (actor: MarketplaceActor) => listMarketplaceInterestsForLanding(state, actor),
+    marketplaceViewerAccess: (actor: MarketplaceActor) => marketplaceViewerAccess(state, actor),
+    marketplaceHaulerEquipment: (actor: MarketplaceActor) => marketplaceHaulerEquipment(state, actor),
+    marketplaceAuthoringLandings: (actor: MarketplaceActor) => marketplaceAuthoringLandings(state, actor),
     createSupportRequest: (
       input: Parameters<typeof createSupportRequest>[1],
       now?: Parameters<typeof createSupportRequest>[2]
@@ -699,6 +703,7 @@ export { destinationFacilityVerificationAt, millUsableByOrganization } from "./d
 export { directOfferClaimCount, directOfferIsClaimable, effectiveDirectOfferStatus } from "./operating-network"
 export { DomainRefusalError } from "./utils"
 export { marketplaceJobStatus, type MarketplaceActor } from "./marketplace-interest"
+export { pilotMarketplaceMembership, type MarketplaceViewerAccess } from "./marketplace-access"
 export {
   organizationOperationallyAccessible,
   resolveRestrictedOrganizationAccess

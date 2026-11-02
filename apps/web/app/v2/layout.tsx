@@ -27,6 +27,7 @@ export default function MarketplaceV2Layout({ children }: { children: ReactNode 
           <Link href="/v2/work">Find work</Link>
           <Link href="/v2/inquiries">My inquiries</Link>
           <Link href="/v2/landing/inquiries">Landing inbox</Link>
+          <Link href="/v2/landing/jobs">Post jobs</Link>
         </nav>
       </header>
       <p className="v2-preview" role="note">
