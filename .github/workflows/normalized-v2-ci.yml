@@ -89,7 +89,7 @@ jobs:
           # The PostGIS image runs init scripts on a socket-only server, then restarts on TCP.
           # Require three consecutive successful TCP queries before continuing.
           ok=0
-          for attempt in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             if psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -t -A -c "select 1" >/dev/null 2>&1; then
               ok=$((ok + 1)); [[ $ok -ge 3 ]] && break
             else
@@ -203,7 +203,7 @@ jobs:
           # The PostGIS image runs init scripts on a socket-only server, then restarts on TCP.
           # Require three consecutive successful TCP queries before continuing.
           ok=0
-          for attempt in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             if psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -t -A -c "select 1" >/dev/null 2>&1; then
               ok=$((ok + 1)); [[ $ok -ge 3 ]] && break
             else
