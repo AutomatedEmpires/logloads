@@ -1145,6 +1145,8 @@ begin
     v_job_1, 'quick', v_u_landing_owner, 'pi_v2_test_boost_1', now() - interval '1 hour'
   );
 
+  -- service_role has no table grants by design; read the boost as the owning landing desk.
+  perform pg_temp.as_jwt('authenticated', v_issuer, 'user_v2_landing_owner');
   perform pg_temp.assert_true(
     exists (select 1 from marketplace.job_boosts where id = v_boost_id and status = 'active'),
     'Boost 4l: Sponsored boost is active on active job'
