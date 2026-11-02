@@ -1,6 +1,6 @@
 # LogLoads design system: implementation specification
 
-> **Status:** FINAL visual direction (founder, 2026-11-02): the light-surface Modern Industrial hybrid. This spec and its source files are ready for implementation tickets; nothing here is merged into the application.
+> **Status:** APPROVED for implementation (founder, 2026-11-02, recorded on #116): the light-surface Modern Industrial hybrid with forest green, rounded corners (controls 8 px, sections 12 px, dialogs 16 px), white headers and restrained timber. Revised the same day for the founder's required corrections (§2, §6, §7, §9). Nothing here is merged into the application; the Codex implementation owner holds scoped `packages/ui` ownership for #144–#147.
 > **Review page:** [LogLoads Design System](https://claude.ai/artifact/5udk9bepMpvESg9GfRhJsy), private until shared. It shows six screens built from the files in [`design-system/`](./design-system).
 > **Owner:** Claude Agent 3 (UX), tracked in #116. Implementation tickets: #144–#148 (DS-01 to DS-05, §10).
 
@@ -24,7 +24,9 @@ tokens.css  ──►  primitives  ──►  layout  ──►  marketplace  �
  properties)     Dialog, States    ContentGrid  ProfileHeader …    capabilities on the server
 ```
 
-- **Tokens** are global CSS custom properties, the convention the app already uses (`apps/web/app/globals.css:1-35`). They live in one file, `packages/ui/src/tokens/tokens.css`, imported once by the V2 layout.
+- **Tokens** are CSS custom properties, the convention the app already uses (`apps/web/app/globals.css:1-35`), in one file: `packages/ui/src/tokens/tokens.css`, imported once by `apps/web/app/v2/layout.tsx`.
+- **Theme isolation.** Every token is defined on `:where(.ll-theme)`, never on `:root`. `AppShell` renders `class="ll-theme ll-app"`. A `Dialog`, popover or toast that is portalled outside the shell carries `ll-theme` on its own root. Legacy pages never render `.ll-theme`, so the V2 tokens and component modules cannot change them (verified in the reference: `--ll-color-action` is empty on `body` and set inside the shell).
+- **Fonts are self-hosted.** Load IBM Plex Sans (400, 500, 600, 700), Plex Sans Condensed (600, 700) and Plex Mono (500, 600) with `next/font/google` in `app/v2/layout.tsx`, as the root layout already does for Inter and Archivo. Next downloads them at build time and serves them from the app, so browsers make no requests to Google. Use `display: "swap"`, `subsets: ["latin"]`, and expose them as `--ll-font-sans-face`, `--ll-font-display-face` and `--ll-font-mono-face` on the V2 root; `tokens.css` falls back to system fonts, so text and controls stay usable on weak connections before the fonts arrive. Preload only Plex Sans 400 and 600. (The review artifact uses the Google Fonts CDN because the artifact host allows nothing else; that is prototype-only.)
 - **Component styles** are **CSS Modules**, one per component. They are built into Next.js and add no new dependency. They scope class names, which removes the collision risk with the ~9,000 lines of legacy global CSS that `/v2` inherits (audit P1-11). The reference `components.css` uses `ll-` class names that map one-to-one to the modules.
 - **No new UI framework.** Tailwind or a component library would duplicate the existing token system and add a second styling convention. The current `packages/ui` (Button, Badge and the Phosphor icon registry) is extended, not replaced.
 - **Data stays out of components.** Pages call the `MarketplaceV2Port` and pass contract view models (`MarketplaceJobCardView`, `MarketplaceJobDetailView`, `MarketplaceInterestView`) down. Entitlements, roles and plan limits are resolved on the server and arrive as booleans or ready-made labels.
@@ -116,18 +118,18 @@ All six screens were rendered at all five widths in Edge with no horizontal page
 | `Button` | primary, secondary, ghost, danger × sm 36 / md 44 / lg 48; `iconOnly` needs a `label` | **Refactor** `packages/ui/src/Button.tsx` (adds size and danger; moves styling from `globals.css:92-111` to a module) |
 | `Tabs` | page (underline) and segmented | **New**; replaces ad hoc `.v2-*` tabs |
 | `FormField`, `NumberStepper`, `SegmentedControl` | Field wires `aria-describedby` and `aria-invalid`; stepper clamps to `max` | **New**. `JobDraftForm`'s local `Field` (Codex) adopts `FormField` later. |
-| `Dialog` | default, wide; becomes a bottom sheet below `md` | **New** (native `<dialog>`) |
+| `Dialog` | default, wide; becomes a bottom sheet below `md`. Native `<dialog>` with `showModal()`; its root carries `ll-theme`; focus moves inside on open and returns to the opener (or `returnFocusRef`) on close or Escape. | **New** |
 | `EmptyState`, `LoadingState`, `ErrorState` | Empty explains the active constraints; Loading uses skeleton rows; Error keeps the filters | **Retire** v3 `EmptyState` (`components/v3/Shells.tsx:231`) after migration |
 | `PayFigure` | sm, md, lg; `kind` rate or negotiable. Negotiable shows the poster's note (V2-DEC-02). | **Wraps** `formatMarketplacePay` (contracts) |
 | `EquipmentRequirement` | Optional `fit`; labels via `marketplaceEquipmentLabel` (fixes raw codes, P1-3) | **New** |
 | `AvailabilityStatus` | confirmed, aging, stale, unconfirmed, unknown. "Confirmed" only reflects attestation or reconfirmation (V2-DEC-03). | **Wraps** `postingFreshness` (contracts) |
-| `VerificationIndicator` | Renders only with a real scope | **New** |
+| `VerificationIndicator` | Renders only with a real scope, and the visible label **names** it ("Business identity verified · Oct 2026"), never a generic "Verified". Prototype verification marks are fictional and stay prototype-only. | **New** |
 | `SponsoredIndicator` | One wording, mono label, timber text | **New** |
-| `JobResultRow` | **One component**: comfortable and compact (density inherited), hauler and poster contexts. Area copy is "near {town}" with no distance promise (V2-DEC-01). | **Replaces** `components/v2/JobCard.tsx` |
+| `JobResultRow` | **One component**: comfortable and compact (density inherited), hauler and poster contexts. A semantic `<li>` whose **title link** (`href=/v2/work/[id]`, `aria-controls` the DetailPanel, `aria-current` when selected) is the single selection and navigation target; its stretched `::after` makes the row clickable. Save is an independent button above it. **No `role="listbox"`/`option` and no nested interactives.** Area copy is "near {town}" with no distance promise (V2-DEC-01). | **Replaces** `components/v2/JobCard.tsx` |
 | `JobDetail` | Used by `DetailPanel` and the mobile `Dialog`, and by the job editor's preview (UX-05) | **Extracts** facts from `app/v2/work/[jobId]/page.tsx` and `preview/page.tsx` (fixes P1-8) |
 | `CompanyProfileHeader` | Initials fallback or real logo; 2–4 figures; no colour band | **New** |
 | `EquipmentCapacity`, `OperatingRegion` | Unknown capacity shows dashed marks and "not recently confirmed", never zero | **New** |
-| `InquiryRow`, `ConversationThread`, `MessageComposer` | Turn state on the row; messages aligned by side; quick replies only fill the draft | **Replace** markup in `app/v2/inquiries` and `app/v2/landing/inquiries` |
+| `InquiryRow`, `ConversationThread`, `MessageComposer` | Same row pattern as `JobResultRow` (name link + `aria-current`); turn state on the row; messages aligned by side; quick replies only fill the draft | **Replace** markup in `app/v2/inquiries` and `app/v2/landing/inquiries` |
 | `EquipmentAvailabilityRow` | available now, from a date, not available, unknown; count ≤ units | **Adapts** v3 `AvailabilityQuickSet` (`DriverActions.tsx:553`) |
 | `AppShell` and layout set | See §4 | **Replaces** `app/v2/layout.tsx` chrome; v3 `AppShell` and its nav data stay legacy-only |
 | `MapView` | Unchanged behaviour; restyled with tokens | **Reuse** `components/v2/JobMap.tsx` |
@@ -138,7 +140,8 @@ All six screens were rendered at all five widths in Edge with no horizontal page
 
 - WCAG 2.2 AA. Contrast is enforced by test (§9). Targets are at least 24 px, controls 44 px by default, and compact controls at least 36 px.
 - A visible focus ring (`--ll-focus-color`, 3 px, 2 px offset) that is distinct from selection green. `forced-colors` maps it to `Highlight`.
-- Lists of jobs and inquiries use `role="listbox"` and `option` with `aria-selected`, and Enter or Space selects. `DetailPanel` and `Dialog` return focus to the opener; Escape closes.
+- Lists of jobs and inquiries are semantic lists. Each row exposes one link (its title or business name) plus independent buttons, so the tab order is link, then actions, row by row, and Enter follows native link behaviour. The selected row is marked with `aria-current="true"` on its link and `data-selected` for styling. Do not use `listbox`/`option` around interactive content; if a fully keyboard-navigable grid is ever needed, implement the complete ARIA grid pattern instead.
+- `DetailPanel` and `Dialog` return focus to the control that opened them. Escape closes dialogs. Verified in the reference: after the interest dialog focus returns to "I'm interested", and after the mobile sheet to the row link.
 - Every form control has a label. Hints and errors are referenced by `aria-describedby`; errors set `aria-invalid` and are announced.
 - Status is never colour-only: every dot has text. Sponsored is a word, not a tint alone.
 - `prefers-reduced-motion` sets durations to 0. No animation is required to understand anything.
@@ -192,16 +195,19 @@ return (
 | Interest flow | Playwright | The trucks stepper respects capacity hints; double submit is ignored; nothing claims "booked" or "hired" |
 | Equipment | Playwright | The available count can't exceed units; unknown never renders as "0 available" |
 | Conversation | Playwright | Sent text is escaped; empty messages can't be sent; quick replies fill the draft without sending |
-| Keyboard | Playwright | Tab order through nav, search, filters, rows and panel; a visible focus ring on each |
+| Keyboard | Playwright | Tab order through nav, search, filters, rows and panel (row link → Save → next row); a visible focus ring on each; no interactive element nested inside another |
+| Focus return | Playwright | DetailPanel close, interest Dialog and mobile job sheet return focus to their opener; Escape closes |
+| Theme isolation | Playwright | On legacy routes (`/`, `/fleet/trucks`) `--ll-color-action` is unset and screenshots are unchanged; a portalled Dialog resolves V2 tokens |
+| Fonts | Playwright | A production build makes no requests to `fonts.googleapis.com` or `fonts.gstatic.com`; text renders in the fallback stack when font files are blocked |
 | Visual baselines (optional) | Playwright `toHaveScreenshot` (built in, no new dependency) | 1440 and 390 for the six screens, with fonts self-hosted to avoid flakiness |
 
-Automated accessibility scanning (`@axe-core/playwright`) would be a new dev dependency; it is proposed in DS-05 for approval, not assumed.
+Automated accessibility scanning with `@axe-core/playwright` is **approved** for #148 (founder, 2026-11-02) as a development dependency only. Run it on every V2 page and fail on serious or critical violations, including nested-interactive and ARIA-role findings.
 
 ## 10. Implementation tickets
 
 | ID | Title | Proposed owner | Depends on |
 |---|---|---|---|
-| DS-01 (#144) | Tokens and theme layer in `packages/ui`, with contrast and purity tests | Codex (V2 frontend), pending a `packages/ui` ownership grant | — |
+| DS-01 (#144) | Tokens and theme layer in `packages/ui`, scoped to `.ll-theme`, self-hosted fonts, with contrast and purity tests | Codex (V2 frontend), with `packages/ui` ownership granted (founder, 2026-11-02) | — |
 | DS-02 (#145) | Layout foundations: `AppShell` through `DetailPanel` | Codex (V2 frontend) | DS-01; supersedes the shell part of #124 |
 | DS-03 (#146) | Primitives and states: Button refactor, Tabs, FormField, NumberStepper, SegmentedControl, Dialog, Empty, Loading and Error | Codex (V2 frontend) | DS-01; supersedes #134 (UX-11) |
 | DS-04 (#147) | Marketplace components (§6), each replacing its V2 markup | Codex (V2 frontend) | DS-02, DS-03, #105 for job-authoring files |

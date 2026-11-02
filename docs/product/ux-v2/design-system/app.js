@@ -60,7 +60,7 @@
   C.ErrorState = ({ title, body, actions = "" }) => `<div class="ll-state" data-kind="error" role="alert"><h3 class="ll-state__title">${esc(title)}</h3><p class="ll-state__body">${esc(body)}</p>${actions ? `<div class="ll-page-actions">${actions}</div>` : ""}</div>`;
   C.LoadingState = ({ rows = 4 }) => `<div aria-busy="true" aria-label="Loading jobs">${Array.from({ length: rows }, () => `<div class="ll-job-row" style="cursor:default"><div class="ll-job-row__pay"><span class="ll-skeleton" style="width:72px;height:24px"></span></div><div class="ll-job-row__main" style="display:grid;gap:8px"><span class="ll-skeleton" style="width:60%"></span><span class="ll-skeleton" style="width:35%"></span></div></div>`).join("")}<span class="ll-sr">Loading jobs</span></div>`;
   C.Dialog = ({ title, body, foot = "", size = "default" }) =>
-    `<div class="ll-dialog-backdrop" data-act="close-dialog"><div class="ll-dialog" data-size="${size}" role="dialog" aria-modal="true" aria-labelledby="dlg-title" data-stop>
+    `<div class="ll-dialog-backdrop" data-act="close-dialog"><div class="ll-theme ll-dialog" data-size="${size}" role="dialog" aria-modal="true" aria-labelledby="dlg-title" data-stop>
       <div class="ll-dialog__head"><h2 class="ll-dialog__title" id="dlg-title">${esc(title)}</h2>${C.Button({ label: "Close", variant: "ghost", size: "sm", icon: IC.close, iconOnly: true, act: "close-dialog" })}</div>
       <div class="ll-dialog__body">${body}</div>${foot ? `<div class="ll-dialog__foot">${foot}</div>` : ""}</div></div>`;
 
@@ -69,17 +69,17 @@
   C.EquipmentRequirement = ({ codes, fits }) =>
     `<div class="ll-equip"><span>${codes.map((c) => esc(F.equipment(c))).join(", ")}</span>${fits === undefined ? "" : fits ? `<small class="ll-equip__fit" data-fit="yes">${IC.check}Fits your trucks</small>` : `<small class="ll-equip__fit" data-fit="no">Not in your setups</small>`}</div>`;
   C.AvailabilityStatus = ({ state, label }) => `<span class="ll-availability" data-state="${state}">${esc(label)}</span>`;
-  C.VerificationIndicator = ({ scope }) => scope ? `<span class="ll-verified" title="${esc(scope)}">${IC.seal}Identity verified</span>` : "";
+  C.VerificationIndicator = ({ scope }) => scope ? `<span class="ll-verified">${IC.seal}${esc(scope)}</span>` : ""; // scope names exactly what was checked
   C.SponsoredIndicator = () => `<span class="ll-sponsored">Sponsored</span>`;
 
   C.JobResultRow = ({ job, selected = false, context = "hauler" }) => {
     const fits = context === "hauler" ? F.fits(job) : undefined;
-    return `<li class="ll-job-row" role="option" tabindex="0" aria-selected="${selected}" data-sel="${job.id}" data-context="${context}" ${job.sponsored ? "data-sponsored" : ""} aria-label="${esc(job.title)}">
+    return `<li class="ll-job-row" ${selected ? "data-selected" : ""} data-context="${context}" ${job.sponsored ? "data-sponsored" : ""}>
       <div class="ll-job-row__pay">${C.PayFigure({ pay: job.pay })}</div>
-      <div class="ll-job-row__main">${job.sponsored ? C.SponsoredIndicator() : ""}<h3 class="ll-job-row__title">${esc(job.title)}</h3>
+      <div class="ll-job-row__main">${job.sponsored ? C.SponsoredIndicator() : ""}<h3 class="ll-job-row__title"><a class="ll-row-link" href="/v2/work/${job.id}" data-sel="${job.id}" ${selected ? 'aria-current="true"' : ""} aria-controls="job-detail">${esc(job.title)}</a></h3>
         <p class="ll-job-row__biz">${context === "poster" ? esc(job.landing) : esc(job.poster.name)}${context === "hauler" ? C.VerificationIndicator({ scope: job.poster.verified }) : ""}</p></div>
       <div class="ll-job-row__fresh">${C.AvailabilityStatus({ state: job.freshness, label: F.freshness(job) })}</div>
-      <div class="ll-job-row__end">${context === "hauler" ? C.Button({ label: "Save job", variant: "secondary", size: "sm", icon: IC.bm, iconOnly: true, attrs: 'data-stop' }) : ""}</div>
+      <div class="ll-job-row__end">${context === "hauler" ? C.Button({ label: `Save ${job.title}`, variant: "secondary", size: "sm", icon: IC.bm, iconOnly: true, act: "save" }) : ""}</div>
       <dl class="ll-facts ll-job-row__facts">
         <div><dt class="ll-label">Area</dt><dd>Near ${esc(job.origin.label)}${context === "hauler" ? `<small>About ${job.origin.milesFromViewer} mi from you</small>` : "<small>Approximate area</small>"}</dd></div>
         <div><dt class="ll-label">Truck and trailer</dt><dd>${C.EquipmentRequirement({ codes: job.equipment, fits })}</dd></div>
@@ -89,7 +89,7 @@
   };
   C.JobResultList = ({ jobs, selectedId, context = "hauler", density = "comfortable", foot = "" }) =>
     `<div class="ll-results" data-density="${density}"><div class="ll-results__head ll-label" aria-hidden="true"><span>Pay</span><span>Job</span><span>Area</span><span>Truck and trailer</span><span>Start</span><span>Confirmed</span></div>
-      <ul class="ll-results__list" role="listbox" aria-label="Jobs">${jobs.map((j) => C.JobResultRow({ job: j, selected: j.id === selectedId, context })).join("")}</ul>${foot ? `<p class="ll-results__foot">${foot}</p>` : ""}</div>`;
+      <ul class="ll-results__list" aria-label="Jobs">${jobs.map((j) => C.JobResultRow({ job: j, selected: j.id === selectedId, context })).join("")}</ul>${foot ? `<p class="ll-results__foot">${foot}</p>` : ""}</div>`;
 
   C.JobDetail = ({ job, closable = false }) =>
     `<div class="ll-job-detail__head">
@@ -151,7 +151,7 @@
       <button type="button" class="ll-filter ll-show-below-lg">${IC.sliders}<b>Filters · ${filters.filter((f) => f.active).length}</b></button>
       ${filters.map((f) => `<button type="button" class="ll-filter ${f.wideOnly ? "ll-hide-below-lg" : ""}" ${f.active ? "data-active" : ""}><small>${esc(f.label)}</small> <b>${esc(f.value)}</b>${IC.chev}</button>`).join("")}
       <button type="button" class="ll-filter ll-hide-below-lg">${IC.sliders}More filters</button>${clear ? '<button type="button" class="ll-filterbar__clear ll-hide-below-lg">Clear all</button>' : ""}</div></nav>`;
-  C.DetailPanel = ({ label, children }) => `<aside class="ll-detail-panel" aria-label="${esc(label)}">${children}</aside>`;
+  C.DetailPanel = ({ label, children }) => `<aside class="ll-detail-panel" id="job-detail" aria-label="${esc(label)}" tabindex="-1">${children}</aside>`;
 
   C.CompanyProfileHeader = ({ biz, actions, note }) =>
     `<section class="ll-company"><div class="ll-container ll-company__inner">
@@ -173,8 +173,8 @@
     `<div class="ll-region"><svg viewBox="0 0 104 104" aria-hidden="true"><rect x="1" y="1" width="102" height="102" rx="10" fill="var(--ll-color-surface-sunken)"/><path d="M6 66 C28 58 42 74 62 62 S90 52 98 58" stroke="var(--ll-color-border-strong)" stroke-width="2" fill="none"/><circle cx="52" cy="52" r="38" fill="none" stroke="var(--ll-color-brand)" stroke-width="1.5" stroke-dasharray="4 3"/><circle cx="52" cy="52" r="4" fill="var(--ll-color-text)"/></svg>
       <ul><li>Home base: <b>${esc(region.home)}</b></li><li>${esc(region.counties.join(", "))} counties</li><li>Up to ${region.radiusMiles} miles</li></ul></div>`;
   C.InquiryRow = ({ inq, selected }) =>
-    `<li class="ll-inquiry-row" role="option" tabindex="0" aria-selected="${selected}" data-inq="${inq.id}">
-      <div class="ll-inquiry-row__top"><span class="ll-inquiry-row__name">${esc(inq.name)}</span><span class="ll-inquiry-row__time">${esc(inq.time)}</span></div>
+    `<li class="ll-inquiry-row" ${selected ? "data-selected" : ""}>
+      <div class="ll-inquiry-row__top"><a class="ll-row-link ll-inquiry-row__name" href="#conversation" data-inq="${inq.id}" ${selected ? 'aria-current="true"' : ""}>${esc(inq.name)}</a><span class="ll-inquiry-row__time">${esc(inq.time)}</span></div>
       <div class="ll-inquiry-row__offer">${inq.offer.map(([o, m]) => m ? `<div>${esc(o)} <span class="ll-equip__fit">${IC.check}matches</span></div>` : `<div style="color:var(--ll-color-text-muted)">${esc(o)} · not requested</div>`).join("")}</div>
       <div class="ll-inquiry-row__state" data-state="${inq.state}">${inq.state === "new" ? "New" : inq.state === "seen" ? "Seen · not answered" : "You replied · waiting for the hauler"} · from ${esc(inq.from)}</div></li>`;
   C.ConversationThread = ({ inq, sent }) =>
@@ -188,6 +188,7 @@
       <div class="ll-composer__foot"><span>Replies are free and unlimited. Nothing here books a truck.</span>${C.Button({ label: "Decline", variant: "danger", size: "sm" })}</div></div>`;
 
   /* ================= Store ================= */
+  let returnFocus = null; // selector of the control that opened the dialog
   const S = { screen: "find", w: 1440, density: "comfortable", panel: true, sel: "oak", state: "loaded", dialog: null, interestSent: false, photos: true,
     inq: "rh", drafts: {}, sent: {}, theme: "forest", corners: "standard",
     eq: JSON.parse(JSON.stringify(D.business.equipment)), confirmed: false, radius: 120 };
@@ -270,8 +271,8 @@
           actions: C.Button({ label: "Reconfirm availability", variant: "secondary", act: "reconfirm" }) + C.Button({ label: "Edit listing", variant: "secondary" }) + C.Button({ label: "Pause", variant: "ghost" }),
           tabs: C.Tabs({ label: "Job sections", current: "interest", items: [["interest", "Interest", 3], ["listing", "Listing as haulers see it"], ["activity", "Activity"]] }) })
         + C.PageContainer({ children: C.ContentGrid({ layout: "split",
-          main: `<ul class="ll-inquiries" role="listbox" aria-label="Hauling businesses interested in this job">${D.inquiries.map((x) => C.InquiryRow({ inq: x, selected: x.id === q.id })).join("")}</ul>`,
-          aside: `<section class="ll-conv" aria-label="Conversation with ${esc(q.name)}"><div class="ll-conv__head"><div style="display:flex;justify-content:space-between;gap:var(--ll-space-3);flex-wrap:wrap;align-items:flex-start"><div><h2 class="ll-conv__title">${esc(q.name)}</h2><p class="ll-conv__sub">${esc(q.kind)}${q.verified ? C.VerificationIndicator({ scope: "Business identity" }) : ""}</p></div>${C.Button({ label: "View profile", variant: "secondary", size: "sm", act: "go", attrs: 'data-go="profile"' })}</div>
+          main: `<ul class="ll-inquiries" aria-label="Hauling businesses interested in this job">${D.inquiries.map((x) => C.InquiryRow({ inq: x, selected: x.id === q.id })).join("")}</ul>`,
+          aside: `<section class="ll-conv" id="conversation" tabindex="-1" aria-label="Conversation with ${esc(q.name)}"><div class="ll-conv__head"><div style="display:flex;justify-content:space-between;gap:var(--ll-space-3);flex-wrap:wrap;align-items:flex-start"><div><h2 class="ll-conv__title">${esc(q.name)}</h2><p class="ll-conv__sub">${esc(q.kind)}${q.verified ? C.VerificationIndicator({ scope: "Business identity verified" }) : ""}</p></div>${C.Button({ label: "View profile", variant: "secondary", size: "sm", act: "go", attrs: 'data-go="profile"' })}</div>
               <dl class="ll-facts" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))"><div><dt class="ll-label">Offers</dt><dd>${esc(q.offer.map(([o]) => o).join(", "))}<small>Self-reported by the hauler</small></dd></div><div><dt class="ll-label">Available</dt><dd>From ${esc(q.from)}<small>${esc(q.updated)}</small></dd></div><div><dt class="ll-label">Prefers</dt><dd>LogLoads messages<small>Phone shared only if they choose</small></dd></div></dl></div>
             ${C.ConversationThread({ inq: q, sent: S.sent[q.id] ?? [] })}${C.MessageComposer({ to: q.name, draft, quick: ["Can you start on Nov 10?", "Please confirm your trailer type", "We'll be in touch"] })}</section>` }) }) });
   };
@@ -316,9 +317,11 @@
     document.getElementById("ctl-photos").hidden = S.screen !== "profile";
     const vars = { ...THEMES[S.theme], ...CORNERS[S.corners] };
     const y = window.scrollY;
-    vp.innerHTML = `<div class="ll-app" style="${Object.entries(vars).map(([k, v]) => `${k}:${v}`).join(";")}">${pages[S.screen]()}</div>`;
+    vp.innerHTML = `<div class="ll-theme ll-app" style="${Object.entries(vars).map(([k, v]) => `${k}:${v}`).join(";")}">${pages[S.screen]()}</div>`;
     document.getElementById("cap-l").textContent = SCREENS.find((s) => s[0] === screenId)[1];
-    requestAnimationFrame(() => { fit(); if (keep) window.scrollTo(0, y); const d = vp.querySelector(".ll-dialog"); if (d && keep === "dialog") d.querySelector("button, input, textarea")?.focus(); });
+    requestAnimationFrame(() => { fit(); if (keep) window.scrollTo(0, y); const d = vp.querySelector(".ll-dialog");
+      if (d && keep === "dialog") d.querySelector("input, textarea, [data-act='send-interest'], button")?.focus();
+      if (!d && returnFocus) { vp.querySelector(returnFocus)?.focus(); returnFocus = null; } });
   }
   document.addEventListener("click", (e) => {
     const k = e.target.closest("[data-k]");
@@ -339,7 +342,7 @@
       if (act === "close-dialog" && a.classList.contains("ll-dialog-backdrop") && e.target !== a) return;
       if (act === "density") S.density = a.dataset.v;
       else if (act === "toggle-panel") S.panel = !S.panel;
-      else if (act === "open-interest") { S.dialog = { kind: "interest", job: a.dataset.job }; S.interestSent = false; render("dialog"); return; }
+      else if (act === "open-interest") { returnFocus = `[data-act="open-interest"][data-job="${a.dataset.job}"]`; S.dialog = { kind: "interest", job: a.dataset.job }; S.interestSent = false; render("dialog"); return; }
       else if (act === "close-dialog") { S.dialog = null; S.interestSent = false; }
       else if (act === "send-interest") S.interestSent = true;
       else if (act === "offer") S.offer = Math.max(1, (S.offer ?? 2) + Number(a.dataset.d));
@@ -354,13 +357,12 @@
       render(act === "send-interest" || act === "offer" ? "dialog" : true); return;
     }
     const row = e.target.closest("[data-sel]");
-    if (row) { S.sel = row.dataset.sel; const w = S.w === "fit" ? stage.clientWidth : S.w; if (S.screen === "find" && w < 1200) { S.dialog = { kind: "detail", job: S.sel }; render("dialog"); return; } S.panel = true; render(true); return; }
-    const iq = e.target.closest("[data-inq]"); if (iq) { S.inq = iq.dataset.inq; render(true); return; }
+    if (row) { e.preventDefault(); S.sel = row.dataset.sel; const w = S.w === "fit" ? stage.clientWidth : S.w; if (S.screen === "find" && w < 1200) { returnFocus = `[data-sel="${S.sel}"]`; S.dialog = { kind: "detail", job: S.sel }; render("dialog"); return; } S.panel = true; render(true); vp.querySelector(`[data-sel="${S.sel}"]`)?.focus(); return; }
+    const iq = e.target.closest("[data-inq]"); if (iq) { e.preventDefault(); S.inq = iq.dataset.inq; render(true); vp.querySelector(`[data-inq="${S.inq}"]`)?.focus(); return; }
     if (e.target.closest("a, button")) e.preventDefault();
   });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && S.dialog) { S.dialog = null; render(true); return; }
-    if ((e.key === "Enter" || e.key === " ") && e.target.matches?.("#vp [data-sel], #vp [data-inq]")) { e.preventDefault(); e.target.click(); }
+    if (e.key === "Escape" && S.dialog) { S.dialog = null; S.interestSent = false; render(true); }
   });
   new ResizeObserver(fit).observe(stage); new ResizeObserver(fit).observe(vp);
   if (document.fonts?.ready) document.fonts.ready.then(fit);

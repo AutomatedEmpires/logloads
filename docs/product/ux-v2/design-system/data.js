@@ -12,7 +12,7 @@ window.LL_DATA = {
     landing: { id: "cf", name: "Cedar Fork Logging", initials: "CF", role: "Manager", kind: "Landing operator", plan: "Pro" }
   },
   jobs: [
-    { id: "oak", title: "Oak saw logs to Springfield", poster: { name: "Cedar Fork Logging", verified: "Business identity · Oct 2026" },
+    { id: "oak", title: "Oak saw logs to Springfield", poster: { name: "Cedar Fork Logging", verified: "Business identity verified · Oct 2026" },
       pay: { amountCents: 52500, unit: "per_load", note: null }, product: "Saw logs", tonsPerLoad: 28,
       origin: { label: "Oakridge, OR", milesFromViewer: 41 }, destination: "Springfield mill", haulDistance: { miles: 54, basis: "poster_route_estimate" },
       equipment: ["log_pole"], startsOn: "Nov 10", duration: "About 3 weeks", trucks: { total: null, perDay: 3 },
@@ -24,7 +24,7 @@ window.LL_DATA = {
       equipment: ["log_bunk"], startsOn: "From Nov 6", duration: "Ongoing", trucks: { total: 4, perDay: null },
       lastConfirmedAt: "yesterday", freshness: "confirmed", sponsored: true, status: "active", interest: { total: 0, new: 0 }, landing: "Fall Creek",
       road: "Paved to the landing.", hours: "Two shifts" },
-    { id: "fir", title: "Douglas-fir long logs, Blue River unit", poster: { name: "McKenzie Ridge Logging", verified: "Business identity · Sep 2026" },
+    { id: "fir", title: "Douglas-fir long logs, Blue River unit", poster: { name: "McKenzie Ridge Logging", verified: "Business identity verified · Sep 2026" },
       pay: { amountCents: 61000, unit: "per_load", note: null }, product: "Saw logs", tonsPerLoad: 30,
       origin: { label: "Blue River, OR", milesFromViewer: 58 }, destination: "Springfield mill", haulDistance: { miles: 47, basis: "poster_route_estimate" },
       equipment: ["self_loader"], startsOn: "Nov 12", duration: "About 10 days", trucks: { total: null, perDay: 5 },

@@ -7,13 +7,17 @@
  *   2. Semantic   --ll-*      meaning ("action", "surface", "text-muted"). Change these to re-theme everything.
  *   3. Component  --ll-c-*    per-component dimensions that derive from semantic tokens.
  *
+ * Scope: every token is defined on .ll-theme, which AppShell (and any portalled Dialog or popover root)
+ * carries. Nothing is defined on :root, so legacy pages that never render .ll-theme are unaffected.
+ * :where() keeps specificity at zero, so a nested theme or a test can override any token.
+ *
  * Density is a scoped override: [data-density="compact"] on any ancestor.
  * Breakpoints cannot be CSS variables inside media/container queries; they live in tokens.ts and are
  * written literally in component CSS with a comment naming the token (bp-sm 600, bp-md 768, bp-lg 960,
  * bp-xl 1200, bp-2xl 1400).
  */
 
-:root {
+:where(.ll-theme) {
   /* ---------- 1. Primitives ---------- */
   --ll-p-neutral-0: #ffffff;
   --ll-p-neutral-25: #fafbfa;
@@ -99,9 +103,11 @@
   --ll-target-touch: 44px;              /* default control height */
 
   /* ---------- 2. Semantic: typography ---------- */
-  --ll-font-sans: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --ll-font-display: "IBM Plex Sans Condensed", "IBM Plex Sans", "Arial Narrow", sans-serif;
-  --ll-font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  /* Self-hosted via next/font in app/v2/layout.tsx, which sets --ll-font-*-face on the V2 root.
+     The fallbacks keep text and controls usable before (or without) the web fonts. */
+  --ll-font-sans: var(--ll-font-sans-face, "IBM Plex Sans"), "Segoe UI", system-ui, -apple-system, sans-serif;
+  --ll-font-display: var(--ll-font-display-face, "IBM Plex Sans Condensed"), var(--ll-font-sans-face, "IBM Plex Sans"), "Arial Narrow", sans-serif;
+  --ll-font-mono: var(--ll-font-mono-face, "IBM Plex Mono"), ui-monospace, "SFMono-Regular", Consolas, monospace;
 
   --ll-text-2xs: 0.6875rem; /* 11px  mono labels */
   --ll-text-xs: 0.75rem;    /* 12px  */
@@ -189,7 +195,7 @@
 }
 
 /* Density override. Applies to any subtree, e.g. <div data-density="compact">. */
-[data-density="compact"] {
+:where(.ll-theme) [data-density="compact"], :where(.ll-theme)[data-density="compact"] {
   --ll-c-row-py: 12px;
   --ll-c-row-px: var(--ll-space-4);
   --ll-c-row-gap: var(--ll-space-1);
@@ -197,9 +203,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root { --ll-duration-fast: 0ms; --ll-duration-base: 0ms; }
+  :where(.ll-theme) { --ll-duration-fast: 0ms; --ll-duration-base: 0ms; }
 }
 
 @media (forced-colors: active) {
-  :root { --ll-focus-color: Highlight; --ll-color-selected-indicator: Highlight; }
+  :where(.ll-theme) { --ll-focus-color: Highlight; --ll-color-selected-indicator: Highlight; }
 }

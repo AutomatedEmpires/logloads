@@ -7,6 +7,7 @@
  */
 
 /* ================= AppShell ================= */
+/* AppShell root carries both classes: class="ll-theme ll-app". */
 .ll-app { container: ll-app / inline-size; min-height: 100%; background: var(--ll-color-page); color: var(--ll-color-text);
   font-family: var(--ll-font-sans); font-size: var(--ll-text-base); line-height: var(--ll-leading-normal); }
 .ll-app *, .ll-app *::before, .ll-app *::after { box-sizing: border-box; }
@@ -221,8 +222,18 @@ textarea.ll-input { height: auto; min-height: 72px; padding: 10px 12px; resize: 
 .ll-job-row:last-child { border-bottom: 0; }
 .ll-job-row:hover { background: var(--ll-color-surface-subtle); }
 .ll-job-row[data-sponsored] { background: var(--ll-color-sponsored-bg); }
-.ll-job-row[aria-selected="true"] { background: var(--ll-color-selected-bg); }
-.ll-job-row[aria-selected="true"]::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--ll-color-selected-indicator); }
+.ll-job-row[data-selected] { background: var(--ll-color-selected-bg); }
+.ll-job-row[data-selected]::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--ll-color-selected-indicator); }
+/* One link per row (the title) is the selection and navigation target. Its ::after stretches over the row
+   so the whole row is clickable, while Save stays an independent button above it. No nested interactives. */
+.ll-row-link { color: inherit; text-decoration: none; }
+.ll-row-link::after { content: ""; position: absolute; inset: 0; z-index: 0; }
+.ll-row-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.ll-job-row__end .ll-btn, .ll-inquiry-row .ll-btn { position: relative; z-index: 1; }
+@supports selector(:has(*)) {
+  .ll-row-link:focus-visible { outline: none; }
+  .ll-job-row:has(.ll-row-link:focus-visible), .ll-inquiry-row:has(.ll-row-link:focus-visible) { outline: var(--ll-focus-width) solid var(--ll-focus-color); outline-offset: calc(-1 * var(--ll-focus-width)); }
+}
 .ll-job-row__pay { grid-area: pay; }
 .ll-job-row__main { grid-area: main; min-width: 0; }
 .ll-job-row__title { font-size: var(--ll-text-lg); font-weight: var(--ll-weight-semibold); line-height: var(--ll-leading-snug); }
@@ -347,8 +358,8 @@ textarea.ll-input { height: auto; min-height: 72px; padding: 10px 12px; resize: 
 .ll-inquiry-row { position: relative; display: grid; gap: 4px; padding: var(--ll-space-4) var(--ll-space-5); border-bottom: 1px solid var(--ll-color-border); cursor: pointer; }
 .ll-inquiry-row:last-child { border-bottom: 0; }
 .ll-inquiry-row:hover { background: var(--ll-color-surface-subtle); }
-.ll-inquiry-row[aria-selected="true"] { background: var(--ll-color-selected-bg); }
-.ll-inquiry-row[aria-selected="true"]::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--ll-color-selected-indicator); }
+.ll-inquiry-row[data-selected] { background: var(--ll-color-selected-bg); }
+.ll-inquiry-row[data-selected]::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--ll-color-selected-indicator); }
 .ll-inquiry-row__top { display: flex; justify-content: space-between; gap: var(--ll-space-2); align-items: baseline; }
 .ll-inquiry-row__name { font-weight: var(--ll-weight-semibold); }
 .ll-inquiry-row__time { font-size: var(--ll-text-sm); color: var(--ll-color-text-muted); white-space: nowrap; }

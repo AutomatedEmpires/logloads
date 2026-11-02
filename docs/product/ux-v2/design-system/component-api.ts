@@ -9,6 +9,9 @@
  *  - Variants are closed string unions. A new variant is a reviewed change to this file, not a page override.
  *  - Every interactive component forwards ref, accepts `className` only for layout placement, and spreads
  *    remaining DOM props, so tests and analytics can target it.
+ *  - Lists of jobs and inquiries are semantic <ul>/<li>. Each row has one link (its title) as the selection and
+ *    navigation target, plus independent buttons. No role="listbox"/"option" around interactive content.
+ *  - AppShell, Dialog and any portalled popover root carry the `ll-theme` class, so tokens apply only inside V2.
  */
 import type { ReactNode } from "react"
 import type {
@@ -78,7 +81,8 @@ export interface TabsProps { variant?: "page" | "segmented"; items: Array<{ id: 
 export interface FormFieldProps { id: string; label: string; hint?: string; error?: string; optional?: boolean; children: ReactNode } // wires aria-describedby and aria-invalid
 export interface NumberStepperProps { label: string; value: number | null; min?: number; max?: number; onChange: (next: number) => void; name?: string }
 export interface SegmentedControlProps<T extends string> { label: string; options: Array<{ value: T; label: string }>; value: T | null; onChange: (value: T) => void }
-export interface DialogProps { title: string; open: boolean; onClose: () => void; size?: "default" | "wide"; footer?: ReactNode; children: ReactNode } // native <dialog>; sheet below bp-md
+/** Native <dialog> opened with showModal(). Its root carries `ll-theme`. On close, focus returns to `returnFocusRef` (or the opener). */
+export interface DialogProps { title: string; open: boolean; onClose: () => void; size?: "default" | "wide"; footer?: ReactNode; returnFocusRef?: { current: HTMLElement | null }; children: ReactNode }
 export interface EmptyStateProps { title: string; body: string; actions?: ReactNode }
 export interface LoadingStateProps { kind: "rows" | "detail" | "profile"; rows?: number; label: string }
 export interface ErrorStateProps { title: string; body: string; retry?: () => void }
@@ -88,7 +92,8 @@ export interface ErrorStateProps { title: string; body: string; retry?: () => vo
 export interface PayFigureProps { pay: MarketplaceJobCardView["pay"]; size?: Size }
 export interface EquipmentRequirementProps { codes: string[]; fit?: "fits" | "not_in_setups" } // fit omitted outside the hauler context
 export interface AvailabilityStatusProps { state: FreshnessState; label: string } // label from shared formatter; never "live"
-export interface VerificationIndicatorProps { scope: string | null; reviewedOn?: string } // null renders nothing
+/** `scope` is the visible label and must name exactly what LogLoads checked, e.g. "Business identity verified". Never a generic "Verified". null renders nothing. */
+export interface VerificationIndicatorProps { scope: string | null; reviewedOn?: string }
 export interface SponsoredIndicatorProps { /* no props: one wording everywhere */ }
 
 /**
@@ -104,8 +109,10 @@ export interface JobResultRowProps {
   fit?: "fits" | "not_in_setups"        // computed by the page from the viewer's own equipment
   distanceMiles?: number | null          // approximate, from the public 0.10° point (V2-DEC-01)
   interest?: { total: number; new: number } // poster context only
-  onSelect: (jobId: string) => void
+  href: string                          // the title link; works without JavaScript (/v2/work/[id])
+  onSelect?: (jobId: string) => void     // progressive enhancement: open the DetailPanel instead of navigating
   onSave?: (jobId: string) => void
+  detailId?: string                      // id of the DetailPanel the title link controls (aria-controls)
 }
 export interface JobResultListProps { label: string; children: ReactNode; footnote?: ReactNode } // renders the compact header row
 export interface JobDetailProps {
@@ -126,7 +133,7 @@ export interface CompanyProfileHeaderProps {
 }
 export interface EquipmentCapacityProps { units: number; available: number | null; state: "known" | "unknown" }
 export interface OperatingRegionProps { homeBase: string; areas: string[]; radiusMiles: number | null }
-export interface InquiryRowProps { interest: MarketplaceInterestView; selected: boolean; onSelect: (id: string) => void }
+export interface InquiryRowProps { interest: MarketplaceInterestView; selected: boolean; href: string; onSelect?: (id: string) => void } // selected → aria-current="true" on the link
 export interface ConversationThreadProps { interest: MarketplaceInterestView; viewerSide: "landing" | "hauler" }
 export interface MessageComposerProps {
   recipientName: string
