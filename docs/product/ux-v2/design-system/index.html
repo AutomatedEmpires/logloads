@@ -1,0 +1,86 @@
+<title>LogLoads Design System</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="components.css">
+<style>
+/* Review harness only. The product is styled entirely by tokens.css + components.css. */
+:root { --h-bg: #eceeed; --h-surface: #ffffff; --h-ink: #18211d; --h-muted: #56625c; --h-line: #d4dbd7; --h-accent: #1c6448; --h-on: #ffffff; --h-chip: #f2f4f3; --h-focus: #9a6420; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --h-bg: #111513; --h-surface: #1a201d; --h-ink: #e6ebe8; --h-muted: #a0aca6; --h-line: #2e3833; --h-accent: #7cc4a6; --h-on: #0c1d16; --h-chip: #232b27; --h-focus: #e0a64a; color-scheme: dark } }
+:root[data-theme="dark"] { --h-bg: #111513; --h-surface: #1a201d; --h-ink: #e6ebe8; --h-muted: #a0aca6; --h-line: #2e3833; --h-accent: #7cc4a6; --h-on: #0c1d16; --h-chip: #232b27; --h-focus: #e0a64a; color-scheme: dark }
+body { margin: 0; background: var(--h-bg); color: var(--h-ink); font: 15px/1.5 "IBM Plex Sans", system-ui, sans-serif; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--h-bg); }
+.h-wrap { max-width: 1560px; margin: 0 auto; padding-block: 22px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 16px; }
+.h-wrap :focus-visible { outline: 3px solid var(--h-focus); outline-offset: 2px; }
+.h-intro h1 { margin: 0; font-family: "IBM Plex Sans Condensed", sans-serif; font-size: 30px; font-weight: 600; line-height: 1.1; letter-spacing: -.01em; }
+.h-intro p { margin: 6px 0 0; color: var(--h-muted); max-width: 84ch; }
+.h-eyebrow { margin: 0 0 6px !important; font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+.h-controls { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; padding: 12px 16px; background: var(--h-surface); border: 1px solid var(--h-line); border-radius: 12px; }
+.h-ctl { display: grid; gap: 5px; }
+.h-ctl > span { font-size: 11.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--h-muted); }
+.h-seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.h-seg button { font: inherit; font-size: 13.5px; font-weight: 500; color: var(--h-ink); background: var(--h-chip); border: 1px solid var(--h-line); border-radius: 8px; padding: 5px 11px; min-height: 34px; cursor: pointer; }
+.h-seg button[aria-pressed="true"] { background: var(--h-accent); color: var(--h-on); border-color: var(--h-accent); font-weight: 600; }
+.h-dev { border-left: 1px dashed var(--h-line); padding-left: 20px; display: flex; gap: 12px 20px; flex-wrap: wrap; }
+.h-note { margin: 0; font-size: 12.5px; color: var(--h-muted); max-width: 60ch; }
+.h-stage-wrap { background: var(--h-surface); border: 1px solid var(--h-line); border-radius: 12px; padding: 12px; }
+.h-cap { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin: 0 2px 10px; font-size: 13px; color: var(--h-muted); }
+.h-stage { position: relative; overflow: hidden; border-radius: 8px; border: 1px solid var(--h-line); background: var(--h-bg); }
+.h-vp { transform-origin: 0 0; position: absolute; left: 0; top: 0; }
+.h-cards { display: grid; gap: 16px; grid-template-columns: 1fr; }
+@media (min-width: 1020px) { .h-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.h-card { background: var(--h-surface); border: 1px solid var(--h-line); border-radius: 12px; padding: 18px 20px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.h-card h2 { margin: 0; font-family: "IBM Plex Sans Condensed", sans-serif; font-size: 20px; font-weight: 600; }
+.h-card p, .h-card li { margin: 0; font-size: 14px; }
+.h-card ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.h-card code { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; }
+</style>
+
+<div class="h-wrap">
+  <header class="h-intro">
+    <p class="h-eyebrow">Final direction · Modern Industrial hybrid · light surfaces · #116</p>
+    <h1>LogLoads design system and six key screens</h1>
+    <p>One system across the hauler, fleet and landing workspaces. Every screen is composed from the same layout and marketplace components and styled only by <code>tokens.css</code> and <code>components.css</code>, which are separate files published with this page. The developer check below rewrites a few semantic tokens to show that one change reaches every page. It is a review tool, not a user feature.</p>
+  </header>
+
+  <div class="h-controls" role="group" aria-label="Review controls">
+    <div class="h-ctl"><span id="l-screen">Screen</span><div class="h-seg" role="group" aria-labelledby="l-screen" id="c-screen"></div></div>
+    <div class="h-ctl"><span id="l-w">Width (kept when you switch screens)</span><div class="h-seg" role="group" aria-labelledby="l-w" id="c-w"></div></div>
+    <div class="h-ctl" id="ctl-state"><span id="l-state">Results state · simulated</span><div class="h-seg" role="group" aria-labelledby="l-state" id="c-state"></div></div>
+    <div class="h-ctl" id="ctl-photos"><span id="l-photos">Business photos</span><div class="h-seg" role="group" aria-labelledby="l-photos" id="c-photos"></div></div>
+    <div class="h-dev">
+      <div class="h-ctl"><span id="l-theme">Developer check · action colour</span><div class="h-seg" role="group" aria-labelledby="l-theme" id="c-theme"></div></div>
+      <div class="h-ctl"><span id="l-corners">Developer check · corners</span><div class="h-seg" role="group" aria-labelledby="l-corners" id="c-corners"></div></div>
+    </div>
+    <p class="h-note">Simulated: sending interest or messages, confirming availability and reconfirming a job change only this page. Nothing is published, sent or saved. Row selection, density, the details panel and dialogs work as they would in the product.</p>
+  </div>
+
+  <section class="h-stage-wrap" aria-label="Product preview">
+    <p class="h-cap"><span id="cap-l"></span><span id="cap-r"></span></p>
+    <div class="h-stage" id="stage"><div class="h-vp" id="vp"></div></div>
+  </section>
+
+  <div class="h-cards">
+    <section class="h-card"><h2>What changed</h2><ul>
+      <li>No dark bands. Navigation, page headers and the company header are white; the page behind sections is a very light grey.</li>
+      <li>Green marks only primary actions, the active page, selected items, the verified tick and positive status.</li>
+      <li>Timber appears only as the brand mark's pith, the company monogram ring and sponsored labels.</li>
+      <li>Sections are one level deep: a white surface or an open rule, never cards inside cards.</li>
+      <li>The width you pick stays when you switch screens.</li></ul></section>
+    <section class="h-card"><h2>How it's built</h2><ul>
+      <li><code>tokens.css</code>: primitive, semantic and component tokens, plus a <code>data-density</code> override.</li>
+      <li><code>components.css</code>: one block per component, using semantic tokens only (checked: no hex values or primitives).</li>
+      <li><code>data.js</code>: prototype content shaped like the existing contracts view models.</li>
+      <li><code>app.js</code>: components as functions of props; pages only compose them. Comfortable and compact are one JobResultRow.</li></ul></section>
+    <section class="h-card"><h2>Screens</h2><ul>
+      <li>Find work at 1440 px with the details panel, and on a 390 px phone, where a job opens as a sheet.</li>
+      <li>A hauler business profile, as a landing operator sees it.</li>
+      <li>Equipment and availability management, with a "what landings see" preview.</li>
+      <li>A landing workspace overview that reuses JobResultRow in its poster context.</li>
+      <li>An inquiry and conversation workspace for one job.</li></ul></section>
+  </div>
+</div>
+<script src="data.js"></script>
+<script src="app.js"></script>

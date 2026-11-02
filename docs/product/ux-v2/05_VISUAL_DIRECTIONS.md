@@ -1,6 +1,8 @@
 # Stage A: visual directions
 
-> **Status (updated 2026-11-02):** the founder selected **Direction 1, Modern Industrial**. Trade Board and Field Showcase are discontinued as standalone directions. The refinement is in review as **Stage A.2**: [LogLoads Modern Industrial](https://claude.ai/artifact/Mx44BuFm5v92iftrCypV38), with Premium and Minimal variations on Find Work at 1440 and 390 px, a hauling business profile and a landing-operator job workspace, plus the recommended tokens. It is private until shared. The rest of this file records the original Stage A comparison.
+> **Superseded (2026-11-02):** the final direction is the **light-surface Modern Industrial hybrid**, specified in [06_DESIGN_SYSTEM.md](./06_DESIGN_SYSTEM.md). Dark header, search and profile bands were rejected. The history below is kept for reference.
+>
+> Earlier status: the founder selected **Direction 1, Modern Industrial**. Trade Board and Field Showcase are discontinued as standalone directions. The refinement is in review as **Stage A.2**: [LogLoads Modern Industrial](https://claude.ai/artifact/Mx44BuFm5v92iftrCypV38), with Premium and Minimal variations on Find Work at 1440 and 390 px, a hauling business profile and a landing-operator job workspace, plus the recommended tokens. It is private until shared. The rest of this file records the original Stage A comparison.
 >
 > Tracking: #116.
 > **Review page:** [LogLoads Visual Directions](https://claude.ai/artifact/LQE4h6FSgvLYumphbYB28D). Private until shared.

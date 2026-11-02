@@ -1,0 +1,205 @@
+/*
+ * LogLoads design tokens — Modern Industrial (light-surface hybrid)
+ * Source of truth for colour, type, space, layout, radius, elevation, density, motion and states.
+ *
+ * Three layers. Components consume ONLY layer 2 (semantic) and layer 3 (component) tokens:
+ *   1. Primitive  --ll-p-*    raw palette and scales. Never referenced by components directly.
+ *   2. Semantic   --ll-*      meaning ("action", "surface", "text-muted"). Change these to re-theme everything.
+ *   3. Component  --ll-c-*    per-component dimensions that derive from semantic tokens.
+ *
+ * Density is a scoped override: [data-density="compact"] on any ancestor.
+ * Breakpoints cannot be CSS variables inside media/container queries; they live in tokens.ts and are
+ * written literally in component CSS with a comment naming the token (bp-sm 600, bp-md 768, bp-lg 960,
+ * bp-xl 1200, bp-2xl 1400).
+ */
+
+:root {
+  /* ---------- 1. Primitives ---------- */
+  --ll-p-neutral-0: #ffffff;
+  --ll-p-neutral-25: #fafbfa;
+  --ll-p-neutral-50: #f6f7f6;
+  --ll-p-neutral-100: #eef1ef;
+  --ll-p-neutral-150: #e5e9e6;
+  --ll-p-neutral-200: #dce2de;
+  --ll-p-neutral-300: #c8d0cb;
+  --ll-p-neutral-400: #868f8a;
+  --ll-p-neutral-500: #5b6862;
+  --ll-p-neutral-700: #34413b;
+  --ll-p-neutral-900: #16201c;
+  --ll-p-neutral-950: #0e1512;
+
+  --ll-p-forest-50: #eef5f1;
+  --ll-p-forest-100: #dcebe3;
+  --ll-p-forest-600: #2f7a5b;
+  --ll-p-forest-700: #1c6448;
+  --ll-p-forest-800: #16533b;
+  --ll-p-forest-900: #103d2c;
+
+  --ll-p-timber-50: #fbf6ee;
+  --ll-p-timber-300: #d9bc8c;
+  --ll-p-timber-500: #b68a4c;
+  --ll-p-timber-700: #7f5a24;
+  --ll-p-timber-800: #6b4a1b;
+
+  --ll-p-amber-50: #fbf1df;
+  --ll-p-amber-700: #8a5a12;
+  --ll-p-red-50: #fbedeb;
+  --ll-p-red-700: #9b2f25;
+
+  /* ---------- 2. Semantic: colour ---------- */
+  --ll-color-page: var(--ll-p-neutral-50);            /* app background behind sections */
+  --ll-color-surface: var(--ll-p-neutral-0);          /* nav, page header, sections, panels */
+  --ll-color-surface-subtle: var(--ll-p-neutral-25);  /* hover, footers inside surfaces */
+  --ll-color-surface-sunken: var(--ll-p-neutral-100); /* wells, placeholders, inactive controls */
+  --ll-color-border: var(--ll-p-neutral-150);         /* hairlines between rows and sections */
+  --ll-color-border-strong: var(--ll-p-neutral-300);  /* decorative outlines: dashed placeholders, dividers in controls */
+  --ll-color-control-border: var(--ll-p-neutral-400); /* boundaries of inputs and buttons: 3.3:1 on surface (WCAG 1.4.11) */
+  --ll-color-rule: var(--ll-p-neutral-900);           /* the single dark rule that opens a list */
+
+  --ll-color-text: var(--ll-p-neutral-900);
+  --ll-color-text-secondary: var(--ll-p-neutral-700);
+  --ll-color-text-muted: var(--ll-p-neutral-500);     /* labels and sources only; 5.8:1 on surface */
+  --ll-color-text-inverse: var(--ll-p-neutral-0);
+
+  --ll-color-brand: var(--ll-p-forest-700);           /* mark, wordmark accents */
+  --ll-color-brand-pith: var(--ll-p-timber-500);      /* centre of the end-grain mark */
+  --ll-color-action: var(--ll-p-forest-700);          /* primary buttons and links that act */
+  --ll-color-action-hover: var(--ll-p-forest-800);
+  --ll-color-on-action: var(--ll-p-neutral-0);
+  --ll-color-action-subtle: var(--ll-p-forest-50);
+  --ll-color-action-subtle-border: var(--ll-p-forest-100);
+  --ll-color-backdrop: rgba(14, 21, 18, 0.42);
+  --ll-color-caption-bg: rgba(255, 255, 255, 0.92);
+
+  --ll-color-selected-bg: #f2f7f4;                    /* selected row / item */
+  --ll-color-selected-indicator: var(--ll-p-forest-700);
+  --ll-color-nav-active: var(--ll-p-forest-700);      /* underline of the active nav item */
+
+  --ll-color-accent: var(--ll-p-timber-500);          /* non-text only (3.1:1): monogram ring, pith */
+  --ll-color-sponsored-bg: var(--ll-p-timber-50);
+  --ll-color-sponsored-text: var(--ll-p-timber-700);  /* 6.2:1 on surface, 5.8:1 on sponsored-bg */
+
+  --ll-color-status-positive: var(--ll-p-forest-700);
+  --ll-color-status-positive-bg: var(--ll-p-forest-50);
+  --ll-color-status-warning: var(--ll-p-amber-700);
+  --ll-color-status-warning-bg: var(--ll-p-amber-50);
+  --ll-color-status-critical: var(--ll-p-red-700);
+  --ll-color-status-critical-bg: var(--ll-p-red-50);
+  --ll-color-status-neutral: var(--ll-p-neutral-700);
+  --ll-color-status-neutral-bg: var(--ll-p-neutral-100);
+
+  /* ---------- 2. Semantic: interaction and accessibility states ---------- */
+  --ll-focus-color: #9a6420;            /* timber-dark focus ring: ≥3:1 on every surface, distinct from selection green */
+  --ll-focus-width: 3px;
+  --ll-focus-offset: 2px;
+  --ll-hover-overlay: rgba(14, 21, 18, 0.03);
+  --ll-pressed-overlay: rgba(14, 21, 18, 0.06);
+  --ll-disabled-opacity: 0.5;
+  --ll-target-min: 24px;                /* WCAG 2.2 2.5.8 minimum */
+  --ll-target-touch: 44px;              /* default control height */
+
+  /* ---------- 2. Semantic: typography ---------- */
+  --ll-font-sans: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --ll-font-display: "IBM Plex Sans Condensed", "IBM Plex Sans", "Arial Narrow", sans-serif;
+  --ll-font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+
+  --ll-text-2xs: 0.6875rem; /* 11px  mono labels */
+  --ll-text-xs: 0.75rem;    /* 12px  */
+  --ll-text-sm: 0.8125rem;  /* 13px  sources, meta */
+  --ll-text-md: 0.875rem;   /* 14px  secondary body */
+  --ll-text-base: 0.9375rem;/* 15px  body */
+  --ll-text-lg: 1.0625rem;  /* 17px  row titles */
+  --ll-text-xl: 1.3125rem;  /* 21px  section and panel titles */
+  --ll-text-2xl: 1.75rem;   /* 28px  page titles, row pay */
+  --ll-text-3xl: 2.25rem;   /* 36px  detail pay */
+  --ll-text-4xl: 2.75rem;   /* 44px  company name (desktop) */
+
+  --ll-weight-regular: 400;
+  --ll-weight-medium: 500;
+  --ll-weight-semibold: 600;
+  --ll-weight-bold: 700;
+
+  --ll-leading-tight: 1.1;
+  --ll-leading-snug: 1.3;
+  --ll-leading-normal: 1.5;
+  --ll-leading-relaxed: 1.6;
+  --ll-tracking-label: 0.07em;
+  --ll-tracking-display: -0.012em;
+
+  /* ---------- 2. Semantic: space ---------- */
+  --ll-space-1: 4px;
+  --ll-space-2: 8px;
+  --ll-space-3: 12px;
+  --ll-space-4: 16px;
+  --ll-space-5: 24px;
+  --ll-space-6: 32px;
+  --ll-space-7: 48px;
+  --ll-space-8: 64px;
+
+  /* ---------- 2. Semantic: layout ---------- */
+  --ll-container-max: 1376px;
+  --ll-container-narrow: 880px;
+  --ll-gutter: var(--ll-space-4);       /* raised to 24 at bp-md and 32 at bp-xl by PageContainer */
+  --ll-nav-height: 64px;
+  --ll-nav-height-compact: 56px;
+  --ll-panel-width: 400px;              /* DetailPanel at bp-xl */
+  --ll-panel-width-wide: 432px;         /* DetailPanel at bp-2xl */
+  --ll-aside-width: 360px;              /* ContentGrid "main-aside" */
+  --ll-list-width: 420px;               /* ContentGrid "list-detail" for inbox-style pages */
+
+  /* ---------- 2. Semantic: radius and elevation ---------- */
+  --ll-radius-xs: 4px;
+  --ll-radius-sm: 6px;
+  --ll-radius-md: 8px;
+  --ll-radius-lg: 12px;
+  --ll-radius-xl: 16px;
+  --ll-radius-pill: 999px;
+
+  --ll-shadow-none: none;
+  --ll-shadow-sm: 0 1px 2px rgba(14, 21, 18, 0.05);
+  --ll-shadow-md: 0 1px 2px rgba(14, 21, 18, 0.05), 0 8px 24px rgba(14, 21, 18, 0.06);
+  --ll-shadow-lg: 0 18px 48px rgba(14, 21, 18, 0.18);
+
+  --ll-z-sticky: 20;
+  --ll-z-nav: 30;
+  --ll-z-sheet: 40;
+  --ll-z-dialog: 50;
+
+  /* ---------- 2. Semantic: motion ---------- */
+  --ll-duration-fast: 120ms;
+  --ll-duration-base: 180ms;
+  --ll-ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ---------- 3. Component tokens ---------- */
+  --ll-c-button-h-sm: 36px;
+  --ll-c-button-h-md: 44px;
+  --ll-c-button-h-lg: 48px;
+  --ll-c-button-radius: var(--ll-radius-md);
+  --ll-c-field-h: 44px;
+  --ll-c-field-radius: var(--ll-radius-md);
+  --ll-c-section-radius: var(--ll-radius-lg);
+  --ll-c-section-pad: var(--ll-space-5);
+  --ll-c-pay-col: 132px;
+
+  /* density: comfortable (default) */
+  --ll-c-row-py: 20px;
+  --ll-c-row-px: var(--ll-space-5);
+  --ll-c-row-gap: var(--ll-space-2);
+  --ll-c-control-h: var(--ll-c-button-h-md);
+}
+
+/* Density override. Applies to any subtree, e.g. <div data-density="compact">. */
+[data-density="compact"] {
+  --ll-c-row-py: 12px;
+  --ll-c-row-px: var(--ll-space-4);
+  --ll-c-row-gap: var(--ll-space-1);
+  --ll-c-control-h: var(--ll-c-button-h-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --ll-duration-fast: 0ms; --ll-duration-base: 0ms; }
+}
+
+@media (forced-colors: active) {
+  :root { --ll-focus-color: Highlight; --ll-color-selected-indicator: Highlight; }
+}
