@@ -713,7 +713,7 @@ function PercentageAgreementControl() {
           onChange={(event) => setAccepted(event.target.checked)}
           type="checkbox"
         />{" "}
-        I am authorized to accept the current <Link href={TERMS_2026_08_03_PATH}>LogLoads Terms</Link>. I
+        I am authorized to accept the <Link href={TERMS_2026_08_03_PATH}>LogLoads Terms effective August 3, 2026</Link>. I
         understand that each completed load carries a 5% LogLoads fee added on top
         of the driver pay I state; there is no posting fee, subscription, monthly
         minimum, tier, allowance, or overage charge.

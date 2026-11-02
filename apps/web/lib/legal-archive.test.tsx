@@ -182,7 +182,7 @@ describe("Terms of Service archived for agreements accepted under them (LE-13)",
     )
 
     expect(html).toContain(
-      'I am authorized to accept the current <a href="/terms/2026-08-03">LogLoads Terms</a>.'
+      'I am authorized to accept the <a href="/terms/2026-08-03">LogLoads Terms effective August 3, 2026</a>.'
     )
     expect(html).not.toContain('href="/terms"')
   })
