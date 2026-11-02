@@ -55,7 +55,7 @@ migrations, or deployments.**
 |---|---|---|
 | Persistence | **IMPLEMENTED:** one JSON row, `public.operating_state` | [`ARCHITECTURE.md`](./ARCHITECTURE.md) §2 |
 | Normalized schema `01`–`05` | **VERIFIED** on disposable PostgreSQL 17 + PostGIS, on branch `test/normalized-v2-postgres17-ci`. Not merged. Not connected to the app. | [`CI.md`](./CI.md) §3 |
-| Gemini's `06`/`07` alignment layer | **UNVERIFIED:** its CI runs have not passed | [`CI.md`](./CI.md) §3 |
+| V2 contract alignment `06`–`10` (Gemini's 06/07 plus Claude Agent 1's stages) | **VERIFIED in CI** at `fab4b0a`. It sits on draft PR #123, which is not reviewed, not merged, and not connected to the app. | [`CI.md`](./CI.md) §3 |
 | Clerk → Supabase identity | **UNVERIFIED:** no real-token test exists | [`SECURITY.md`](./SECURITY.md) §4 |
 | V2 load board `/v2` | **IMPLEMENTED** behind a flag. Discovery and interest work; job authoring is preview-only and nothing is saved. | [`ARCHITECTURE.md`](./ARCHITECTURE.md) §3 |
 | New billing (Basic/Pro/Regional, boosts) | **APPROVED, TARGET:** no code, no Stripe products | [`ACTIVATION_STRIPE.md`](./ACTIVATION_STRIPE.md) |

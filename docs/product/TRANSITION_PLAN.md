@@ -160,7 +160,7 @@ plus the observed state of the primary checkout. They do not change sequencing o
   `ec4bb66` they are **VERIFIED** on disposable PostgreSQL 17 ([`../CI.md`](../CI.md) §3).
 - Still open:
   - that branch is not merged into `work/logloads-repair`;
-  - Gemini's `06`/`07` alignment layer is unverified;
+  - the `06`–`10` alignment is VERIFIED in CI at `fab4b0a` but sits on draft PR #123, which is unreviewed;
   - nothing is connected to the application.
 
 ### CARTO allowance

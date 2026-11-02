@@ -175,7 +175,8 @@ configured Supabase project proves layer 1. A passing SQL suite never does.
 - claim inspection;
 - the four multi-session invitation and entitlement races.
 
-Evidence: [`CI.md`](./CI.md) §3. Gemini's `06`/`07` alignment layer is **UNVERIFIED**.
+Evidence: [`CI.md`](./CI.md) §3. The `06`–`10` alignment stages are **VERIFIED in CI** on draft PR #123, which
+is still unreviewed. The same layer-2-only limit applies to them.
 
 **Service-role bypass still applies.** If the application reaches normalized tables with the service-role
 key, RLS protects nothing on that path. A target design must either carry the verified user token to
@@ -191,7 +192,7 @@ SHA, environment, and command output.
 | 1 | Re-run the anon/authenticated denial probes and the advisor review against the **current** production project, read-only. Record the date. | Pilot |
 | 2 | Confirm that migrations `20260713053327`, `20260726090000`, and `20260808230214` are applied live, and that the ledger matches the repository. | Pilot |
 | 3 | Exact-SHA multi-instance rate-limit proof and simulated store outage → `503` | Pilot |
-| 4 | ~~Execute `01`–`05` on a disposable PostgreSQL 17/PostGIS in CI~~ — **VERIFIED** at `ec4bb66` ([`CI.md`](./CI.md) §3). Still open: the same proof for `06`/`07`, and integration of the CI branch. | Normalized-v2 |
+| 4 | ~~Execute `01`–`05` on a disposable PostgreSQL 17/PostGIS in CI~~ — **VERIFIED** at `ec4bb66` ([`CI.md`](./CI.md) §3). `06`–`10` are VERIFIED in CI at `fab4b0a` (draft PR #123). Still open: review and merge of PR #123, and integration of the CI branch. | Normalized-v2 |
 | 5 | Configure Supabase third-party auth for a **development** Clerk instance. Prove that forged, expired, wrong-issuer, and wrong-audience tokens are rejected at the gateway, and that valid tokens resolve to the right `app_users` row. | Normalized-v2 |
 | 6 | Cross-tenant denial matrix: anon, authenticated stranger, member of another org, removed member, multi-org user switching context, platform admin without a support reason | Normalized-v2 and V2 adapter |
 | 7 | `SECURITY DEFINER` review: owners, `search_path`, grants, and exposure through the Data API | Normalized-v2 |

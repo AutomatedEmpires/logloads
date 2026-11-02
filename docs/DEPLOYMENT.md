@@ -100,9 +100,9 @@ is set. Do not set `LOGLOADS_MARKETPLACE_V2` on a hosted Preview until all of th
 
 1. **Execute the schema and tests in CI.**
    - `01`–`05` on a disposable PostgreSQL 17/PostGIS: **VERIFIED** at `ec4bb66` ([`CI.md`](./CI.md) §3).
+   - `06`–`10` alignment: **VERIFIED in CI** at `fab4b0a` on draft PR #123 ([`CI.md`](./CI.md) §3).
    - Still required:
-     - the same proof for Gemini's `06`/`07` layer;
-     - merging the CI branch;
+     - review and merge of PR #123, and merge of the CI branch;
      - verified Clerk tokens through a configured **development** Supabase project
        ([`SECURITY.md`](./SECURITY.md) §4–§5).
 2. Reconcile the schema with `MarketplaceV2Port` and the native job, inquiry, membership, equipment, and

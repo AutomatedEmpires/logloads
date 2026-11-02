@@ -48,7 +48,7 @@ and is not merged.
 | Item | Status | Evidence |
 |---|---|---|
 | Baseline `01`–`05` at `ec4bb6623cbdfd7b78b51f9bc5fec50144cdc328` | **VERIFIED.** All five stages passed in 12 fresh-database jobs across 4 runs: `41407713008`, `41407871065` and `41407882803` (all at `174b8ec`), then `41407969571` (at `ec4bb66`), on 2026-11-02. | [Run 41407969571](https://github.com/AutomatedEmpires/logloads/actions/runs/41407969571) |
-| Gemini's `06`/`07` alignment layer (branch `test/normalized-v2-contract-alignment`) | **UNVERIFIED.** As of 2026-11-02 16:15 UTC no run on this branch has passed; work is ongoing. Record its first green run here, with URL and SHA. | [Actions history for the branch](https://github.com/AutomatedEmpires/logloads/actions/workflows/normalized-v2-ci.yml?query=branch%3Atest%2Fnormalized-v2-contract-alignment) |
+| V2 contract alignment `06`–`10` at `fab4b0a` (draft PR #123 → `test/normalized-v2-postgres17-ci`) | **VERIFIED in CI; not yet reviewed or merged.** Gemini authored 06/07. Claude Agent 1 integrated it and added stages 08–10. In each alignment job, stages 01–03, then 06, then 04 against the aligned schema, then 07, 09, 08 and 10 passed on 3 fresh PostgreSQL 17 databases. The 01–05 baseline jobs passed in the same runs. Runs: `41484609926` (push) and `41484619242` (PR), 2026-11-02. Earlier commits on the branch failed. The same suite also passed at `510b05a`. | [Run 41484619242](https://github.com/AutomatedEmpires/logloads/actions/runs/41484619242) |
 
 **What the baseline proves:**
 
@@ -62,8 +62,10 @@ and is not merged.
 - that Supabase verifies real Clerk-signed tokens;
 - that live Supabase project settings are correct;
 - that the application works against this schema;
-- migration correctness;
+- migration correctness on real data. Stage 10 tests a synthetic migration path only;
 - production readiness.
+
+These limits apply equally to the alignment stages.
 
 ## 4. Rules for reporting results
 
@@ -78,8 +80,7 @@ and is not merged.
 
 These items are tracked as GitHub issues ([`AGENT_WORKFLOW.md`](./AGENT_WORKFLOW.md)):
 
-- Integrate the normalized-v2 CI branch.
-- Verify `06`/`07`.
+- Review and merge draft PR #123, then integrate the CI branch into `work/logloads-repair`.
 - Add a real Clerk token test.
 - Implement a documentation-check script (spec in the docs-check issue).
 - Add contract-drift tests between `membership.ts` and the seed rows.
