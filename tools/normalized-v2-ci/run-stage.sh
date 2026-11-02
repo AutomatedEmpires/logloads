@@ -102,8 +102,9 @@ case "$STAGE" in
     check "every SECURITY DEFINER function pins search_path" "select not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and p.prosecdef and not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) cfg where cfg like 'search_path=%'));"
     check "attestation and legacy-import ledgers carry no client grants" "select not exists (select 1 from information_schema.role_table_grants where table_schema = 'marketplace' and table_name in ('job_publication_attestations','legacy_job_imports') and grantee in ('PUBLIC','anon','authenticated','service_role'));"
     check "anon holds no write privileges" "select not exists (select 1 from information_schema.role_table_grants where table_schema = 'marketplace' and grantee = 'anon' and privilege_type in ('INSERT','UPDATE','DELETE','TRUNCATE'));"
-    # Comment-proof: no marketplace function may read any session setting except the JWT claims.
-    check "no marketplace function reads a session setting other than request.jwt.claims" "select not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and p.prosrc ~* 'current_setting[[:space:]]*[(][[:space:]]*''(?!request[.]jwt[.]claims'')');"
+    # Comment-proof: no marketplace function may read a session setting except the JWT claims and the
+    # built-in role GUC (which a client cannot set to a role it is not a member of).
+    check "no marketplace function reads an application session setting (only request.jwt.claims / role)" "select not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and p.prosrc ~* 'current_setting[[:space:]]*[(][[:space:]]*''(?!(request[.]jwt[.]claims|role)'')');"
     q "select 'functions reading session settings: ' || coalesce(string_agg(distinct p.proname, ', '), '(none besides request.jwt.claims)') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and p.prosrc ~* 'current_setting';" | tee -a "$LOG"
     {
       echo "### Stage 6 alignment inventory"
