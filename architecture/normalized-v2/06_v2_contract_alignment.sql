@@ -2085,7 +2085,7 @@ begin
     from jsonb_array_elements(v_resolved_lines) e;
 
     perform marketplace.write_audit(
-      case when v_renewed then 'marketplace_interest_renewed' else 'marketplace_interest_updated' end,
+      case when v_renewed then 'interest.renewed' else 'interest.updated' end,
       'expressions_of_interest', v_existing.id, p_hauler_org_id,
       null, jsonb_build_object('job_id', p_job_id, 'trucks_offered', v_trucks));
 
@@ -2113,7 +2113,7 @@ begin
   from jsonb_array_elements(v_resolved_lines) e;
 
   perform marketplace.write_audit(
-    'marketplace_interest_submitted', 'expressions_of_interest', v_id, p_hauler_org_id,
+    'interest.submitted', 'expressions_of_interest', v_id, p_hauler_org_id,
     null, jsonb_build_object('job_id', p_job_id, 'job_org_id', v_job.org_id, 'trucks_offered', v_trucks));
 
   return query select v_id, true;
@@ -2165,7 +2165,7 @@ begin
             when p_share_private_details is false then null
             else private_details_shared_by end
       where id = p_interest_id;
-      perform marketplace.write_audit('marketplace_interest_viewed', 'expressions_of_interest', p_interest_id, v_row.job_org_id);
+      perform marketplace.write_audit('interest.viewed', 'expressions_of_interest', p_interest_id, v_row.job_org_id);
     elsif p_share_private_details is not null then
       update marketplace.expressions_of_interest
       set private_details_shared_at = case when p_share_private_details then coalesce(private_details_shared_at, now()) else null end,
@@ -2215,7 +2215,7 @@ begin
           else private_details_shared_by end
     where id = p_interest_id;
 
-    perform marketplace.write_audit('marketplace_interest_replied', 'expressions_of_interest', p_interest_id, v_row.job_org_id);
+    perform marketplace.write_audit('interest.replied', 'expressions_of_interest', p_interest_id, v_row.job_org_id);
   else
     if v_row.status = 'declined' then
       return;
@@ -2233,7 +2233,7 @@ begin
         private_details_shared_by = case when p_share_private_details is false then null else private_details_shared_by end
     where id = p_interest_id;
 
-    perform marketplace.write_audit('marketplace_interest_declined', 'expressions_of_interest', p_interest_id, v_row.job_org_id);
+    perform marketplace.write_audit('interest.declined', 'expressions_of_interest', p_interest_id, v_row.job_org_id);
   end if;
 
   if p_share_private_details is not null then
