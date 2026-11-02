@@ -1,6 +1,32 @@
 # Evaluating the V2 prototype with real businesses
 
 > **Status:** PROPOSED plan, 2026-11-02 (ticket UX-15). No sessions have run. Nothing in this folder is user-validated.
+> **Update 2026-11-02 (UX-DEC-07):** sessions run as a 15-minute segment inside the #119 discovery interviews, using the final review page ([LogLoads Design System](https://claude.ai/artifact/5udk9bepMpvESg9GfRhJsy), shared by the founder before sessions). The script below replaces the longer task list further down for that segment.
+
+## 15-minute segment script (for #119 interviewers)
+
+Say first: "This is a design sketch with made-up businesses. Nothing you click is saved or sent. Please think aloud; there are no wrong answers."
+
+**Haulers** (390 px phone view; the reviewer picks "Find work · mobile" and "Hauler setup"):
+
+| # | Task (read aloud) | Watch for | Record |
+|---|---|---|---|
+| H1 | "Set up so you can look for work for your trucks." (Hauler setup; stop after the trucks step) | Do they trust the private panel? Do they hesitate at availability? | Completed or assisted, time, quote |
+| H2 | "Find a job you might take this week. Which one, and why?" | What they read first; whether pay basis and "approximate area" are understood | First fact mentioned; misreadings |
+| H3 | "Is this job worth a call? Tell the landing you're interested." | Missing facts they ask for; whether "nonbinding" is clear | Facts asked for; taps to send |
+
+**Landing operators** (1440 px desktop view; "Job editor", "Landing workspace", "Inquiry and conversation"):
+
+| # | Task (read aloud) | Watch for | Record |
+|---|---|---|---|
+| L1 | "Post the next job you need trucks for." (Job editor, through review) | Fields that don't fit how they describe work (product list, "Ongoing", required rate) | Fields skipped or questioned; reaction to the three confirmations |
+| L2 | "What needs your attention this morning?" (Landing workspace) | Whether attention items and plan usage are read correctly | What they would do first |
+| L3 | "Which hauler would you reply to first? Reply." (Inquiry and conversation) | Whether "matches" and "self-reported" are trusted | Choice and reason; quote |
+
+**Close with three questions:** What was missing? What wouldn't you trust? What would you never fill in?
+
+**Analysis rule:** report counts per task and direct quotes, with participant type only (no names). A task with fewer than three sessions is "not yet tested". Proposed changes must cite the observation that caused them.
+
 
 ## Purpose
 
