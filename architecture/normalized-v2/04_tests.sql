@@ -567,7 +567,12 @@ begin
   returning id into v_interest_1;
 
   perform pg_temp.as_jwt('authenticated', v_issuer, 'user_land_a');
-  perform marketplace.respond_to_interest(v_interest_1, 'replied', true);
+  if pg_temp.aligned() then
+    -- 06: a landing reply carries a message (and an idempotent reply id).
+    perform marketplace.respond_to_interest(v_interest_1, 'replied', true, gen_random_uuid(), 'Approved - gate details shared.');
+  else
+    perform marketplace.respond_to_interest(v_interest_1, 'replied', true);
+  end if;
 
   perform pg_temp.as_jwt('authenticated', v_issuer, 'user_drv2');
   select count(*) into v_count from marketplace.landing_private_details where landing_id = v_landing_a1;

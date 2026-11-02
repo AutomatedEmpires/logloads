@@ -73,29 +73,20 @@ create table if not exists marketplace.legacy_job_imports (
 );
 alter table marketplace.legacy_job_imports enable row level security;
 
--- Backfill attestation records for any pre-existing active rows created by
--- baseline setup before enforcing the new V2 table constraints.
-insert into marketplace.job_publication_attestations (
-  job_id, org_id, attested_by, attested_at, reconfirmed_at, reconfirmed_by
-)
-select
-  j.id,
-  j.org_id,
-  j.created_by,
-  coalesce(j.published_at, j.created_at, clock_timestamp()),
-  coalesce(j.last_confirmed_at, j.published_at, j.created_at, clock_timestamp()),
-  coalesce(j.last_confirmed_by, j.created_by)
+-- Pre-existing non-draft rows predate V2-DEC-03: nobody attested their availability. They are
+-- recorded as audited legacy imports and keep exactly the confirmation they had (often none).
+-- Confirmation is never fabricated from published_at/created_at.
+insert into marketplace.legacy_job_imports (job_id, org_id, imported_by, reason)
+select j.id, j.org_id, null, 'Pre-V2 baseline row: availability never explicitly attested'
 from marketplace.job_postings j
 where j.status <> 'draft'
   and not j.is_legacy_import
 on conflict (job_id) do nothing;
 
 update marketplace.job_postings j
-set last_confirmed_by = coalesce(j.last_confirmed_by, j.created_by),
-    last_confirmed_at = coalesce(j.last_confirmed_at, j.published_at, j.created_at)
+set is_legacy_import = true
 where j.status <> 'draft'
-  and not j.is_legacy_import
-  and (j.last_confirmed_by is null or j.last_confirmed_at is null);
+  and not j.is_legacy_import;
 
 -- Drop the baseline anonymous check constraint on `job_postings` that allowed
 -- unquoted active jobs (`pay_unit is null and pay_amount_cents is null`) on any status,
@@ -600,6 +591,13 @@ begin
     end if;
   end if;
 
+  -- A legacy (unattested, possibly unquoted) posting cannot be put back into service directly:
+  -- re-activation would bypass V2-DEC-02 and V2-DEC-03 for an ordinary landing user.
+  if new.is_legacy_import and tg_op = 'UPDATE' and new.status = 'active' and old.status <> 'active' then
+    raise exception 'Legacy job postings cannot be re-activated; publish a new posting with stated pay and an availability attestation'
+      using errcode = '23514';
+  end if;
+
   -- Draft semantics (`V2-DEC-02` & `V2-DEC-03`):
   --   * Drafts never have `published_at`, `last_confirmed_at`, or `last_confirmed_by`.
   --   * Once published (`old.status <> 'draft'`), a job cannot be reverted back to `'draft'`.
@@ -638,13 +636,14 @@ begin
     end if;
   end if;
 
-  -- Explicit availability attestation enforcement (`V2-DEC-03`):
-  if not new.is_legacy_import then
-    select * into v_att
-    from marketplace.job_publication_attestations a
-    where a.job_id = new.id and a.org_id = new.org_id;
+  -- Explicit availability attestation enforcement (`V2-DEC-03`). The ledger is read for legacy rows
+  -- too, so an explicit reconfirmation of a legacy posting is reflected on the row.
+  select * into v_att
+  from marketplace.job_publication_attestations a
+  where a.job_id = new.id and a.org_id = new.org_id;
 
-    if not found then
+  if not new.is_legacy_import then
+    if v_att.job_id is null then
       raise exception 'Active job postings require explicit availability attestation via marketplace.publish_job_posting (p_attest_available = true)'
         using errcode = '23514';
     end if;
@@ -696,7 +695,7 @@ begin
     -- from the ungranted `job_publication_attestations` ledger so ordinary edits never
     -- refresh confirmation and direct UPDATEs cannot spoof `last_confirmed_at`.
     new.published_at := old.published_at;
-    if not new.is_legacy_import then
+    if not new.is_legacy_import or v_att.job_id is not null then
       new.last_confirmed_at := v_att.reconfirmed_at;
       new.last_confirmed_by := v_att.reconfirmed_by;
     else
@@ -1236,6 +1235,15 @@ begin
 
   v_job_id := coalesce(p_draft_job_id, gen_random_uuid());
 
+  if p_draft_job_id is not null then
+    perform 1 from marketplace.job_postings
+    where id = p_draft_job_id and org_id = v_landing.org_id and status = 'draft'
+    for update;
+    if not found then
+      raise exception 'Draft job posting not found or already published' using errcode = 'P0002';
+    end if;
+  end if;
+
   -- Record the verified availability attestation in the ungranted ledger table
   -- before inserting/activating the job row.
   insert into marketplace.job_publication_attestations (
@@ -1425,8 +1433,11 @@ declare
   v_job_id     uuid := gen_random_uuid();
   v_uniq_equip text[];
 begin
+  -- Allow-list: a platform superadmin, or a direct privileged migration login (no SET ROLE in effect and
+  -- not one of the API roles). Everything else is refused.
   if not marketplace.is_platform_admin(array['superadmin'])
-     and current_setting('role', true) in ('anon', 'authenticated', 'service_role') then
+     and not (coalesce(current_setting('role', true), 'none') = 'none'
+              and session_user::text not in ('anon', 'authenticated', 'service_role', 'authenticator')) then
     raise exception 'Only a platform superadmin or privileged migration session may import legacy unquoted jobs'
       using errcode = '42501';
   end if;
@@ -1440,10 +1451,8 @@ begin
     raise exception 'Invalid legacy job status: %', p_status using errcode = '22023';
   end if;
 
-  if v_actor is null then
-    select created_by into v_actor from marketplace.organizations where id = p_org_id;
-  end if;
-
+  -- imported_by is the real actor (NULL for a migration login). created_by must be a user, so a
+  -- migration login records the organization's creator only as the owner of record.
   insert into marketplace.legacy_job_imports (job_id, org_id, imported_by, reason)
   values (v_job_id, p_org_id, v_actor, btrim(p_migration_reason));
 
@@ -1464,9 +1473,9 @@ begin
     p_status,
     coalesce(p_published_at, clock_timestamp()),
     p_last_confirmed_at,
-    case when p_last_confirmed_at is not null then v_actor else null end,
+    null, -- the historical confirmer is unknown; never attribute it to the importer or org creator
     true,
-    v_actor
+    coalesce(v_actor, (select o.created_by from marketplace.organizations o where o.id = p_org_id))
   );
 
   select array_agg(distinct btrim(c) order by btrim(c))
@@ -1553,7 +1562,8 @@ create or replace function marketplace.list_marketplace_jobs(
   p_point extensions.geography default null,
   p_radius_miles integer default null,
   p_max_sponsored integer default 2,
-  p_limit integer default 100
+  p_limit integer default 100,
+  p_job_id uuid default null
 ) returns table (
   job_id uuid,
   slug text,
@@ -1674,6 +1684,11 @@ as $$
       where jpe.job_id = j.id
     ) eq on true
     where j.status <> 'draft'
+      -- Same visibility as job_postings RLS: anonymous callers see only publicly visible jobs; paused,
+      -- filled, closed (including moderated) or expired jobs only to the owning desk, haulers with an
+      -- inquiry, invitation recipients and platform admins.
+      and marketplace.can_read_job_posting(j.id)
+      and (p_job_id is null or j.id = p_job_id)
       and (l.status = 'active' or (not coalesce(p_accepting_only, true) and l.status <> 'archived'))
       and (p_org_id is null or j.org_id = p_org_id)
       and (not coalesce(p_accepting_only, true)
@@ -1786,9 +1801,7 @@ language sql stable security definer
 set search_path = pg_catalog, extensions, pg_temp
 as $$
   select *
-  from marketplace.list_marketplace_jobs(null, null, null, false, null, null, null, 2, 200) j
-  where j.job_id = p_job_id
-  limit 1
+  from marketplace.list_marketplace_jobs(null, null, null, false, null, null, null, 2, 1, p_job_id) j
 $$;
 
 -- Also update `marketplace.search_job_postings` from `03_entitlements.sql` so it
@@ -1947,7 +1960,8 @@ begin
     raise exception 'You cannot express interest in your own organization''s job' using errcode = '23514';
   end if;
 
-  if v_job.status <> 'active' or v_landing.status <> 'active' or (v_job.expires_at is not null and v_job.expires_at <= now()) then
+  -- Same test as the RLS insert policy: active job, active landing, active posting organization.
+  if not marketplace.job_is_publicly_visible(p_job_id) then
     raise exception 'This job is no longer accepting interest' using errcode = '23514';
   end if;
 
@@ -2017,6 +2031,10 @@ begin
   if v_trucks > 500 then
     raise exception 'Offer at most 500 trucks' using errcode = '23514';
   end if;
+
+  -- Serialize submissions for one (job, hauler organization): two concurrent first submissions
+  -- otherwise both miss the existing row and the second fails on the unique index (23505).
+  perform pg_advisory_xact_lock(hashtextextended('marketplace.interest:' || p_job_id::text || ':' || p_hauler_org_id::text, 0));
 
   select * into v_existing
   from marketplace.expressions_of_interest e
@@ -2192,6 +2210,9 @@ begin
   if p_status = 'replied' then
     if v_row.status = 'declined' then
       raise exception 'This inquiry is closed' using errcode = '23514';
+    end if;
+    if v_clean_body is null then
+      raise exception 'A reply needs a message' using errcode = '23514';
     end if;
     if v_clean_body is not null then
       select count(*) into v_msg_count from marketplace.interest_messages where interest_id = p_interest_id;
@@ -2447,8 +2468,14 @@ grant delete on marketplace.expression_of_interest_equipment to authenticated;
 -- are NEVER granted for INSERT or UPDATE to `authenticated` or `anon`.
 grant select (
   trucks_per_day, duration_days, est_loads_per_truck_per_day,
-  schedule_note, public_access_requirements, updated_at, last_confirmed_by, is_legacy_import
+  schedule_note, public_access_requirements, updated_at, is_legacy_import
 ) on marketplace.job_postings to anon, authenticated;
+-- The confirming user's id is not public: readable by authenticated callers (still row-filtered by RLS) only.
+grant select (last_confirmed_by) on marketplace.job_postings to authenticated;
+
+-- V2-DEC-03: 02_access.sql granted UPDATE (last_confirmed_at) for the superseded auto-stamping design.
+-- Confirmation is now written only by publish_job_posting / reconfirm_job_posting (SECURITY DEFINER).
+revoke update (last_confirmed_at) on marketplace.job_postings from authenticated;
 
 grant insert (
   trucks_per_day, duration_days, est_loads_per_truck_per_day,
@@ -2482,7 +2509,7 @@ revoke all on function
   marketplace.reconfirm_job_posting(uuid),
   marketplace.admin_import_legacy_job_posting(uuid, uuid, text, text[], text, text, integer, integer, text, text, text, bigint, text, integer, numeric, text, integer, timestamptz, timestamptz),
   marketplace.set_job_posting_status(uuid, text),
-  marketplace.list_marketplace_jobs(text, text, text, boolean, uuid, extensions.geography, integer, integer, integer),
+  marketplace.list_marketplace_jobs(text, text, text, boolean, uuid, extensions.geography, integer, integer, integer, uuid),
   marketplace.get_marketplace_job(uuid),
   marketplace.submit_expression_of_interest(uuid, uuid, integer, jsonb, date, date, text, text),
   marketplace.respond_to_interest(uuid, text, boolean, uuid, text),
@@ -2493,7 +2520,7 @@ revoke all on function
 grant execute on function
   marketplace.quantize_public_coordinate(double precision, double precision, double precision, text),
   marketplace.make_public_point(double precision, double precision),
-  marketplace.list_marketplace_jobs(text, text, text, boolean, uuid, extensions.geography, integer, integer, integer),
+  marketplace.list_marketplace_jobs(text, text, text, boolean, uuid, extensions.geography, integer, integer, integer, uuid),
   marketplace.get_marketplace_job(uuid)
   to anon, authenticated;
 
