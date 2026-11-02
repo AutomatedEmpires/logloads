@@ -95,9 +95,16 @@ begin
     where not exists (select 1 from ext_members e where e.classid = 'pg_proc'::regclass and e.objid = p.oid)
       and exists (
         select 1 from pg_type t
-        where t.oid = any (array[p.prorettype] || p.proargtypes::oid[])
+        where t.oid = any (array[p.prorettype] || coalesce(p.proallargtypes, p.proargtypes::oid[]))
           and (t.oid in (select typ from postgis_types) or t.typelem in (select typ from postgis_types)
                or t.typbasetype in (select typ from postgis_types)))
+    union all
+    -- SQL-standard (BEGIN ATOMIC) bodies record their dependencies on PostGIS functions.
+    select format('function %s', d.objid::regprocedure)
+    from pg_depend d
+    where d.classid = 'pg_proc'::regclass and d.deptype = 'n'
+      and (d.refclassid, d.refobjid) in (select m.classid, m.objid from members m)
+      and not exists (select 1 from ext_members e where e.classid = 'pg_proc'::regclass and e.objid = d.objid)
     union all
     select format('domain constraint %s on %s', c.conname, c.contypid::regtype)
     from pg_depend d

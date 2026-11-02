@@ -61,10 +61,17 @@ begin
   end if;
 end
 $$;
+-- The refusal itself needs no session state (a transaction pooler may run this statement on another
+-- backend): it re-checks the transaction. NEVER run migrations through a transaction-mode pooler; there,
+-- the read-only safeguard above can stay on a pooled backend (failing writes closed) until it is recycled.
 do $$
 begin
+  if coalesce(current_setting('logloads.migration_xact', true), '') <> txid_current()::text then
+    raise exception 'migration 11 must be applied in one transaction (psql --single-transaction); nothing was changed'
+      using errcode = '25P01', hint = 'This session (or pooled backend) was made read-only to stop the rest of the file.';
+  end if;
   if coalesce(current_setting('logloads.migration_refused', true), '') <> '' then
-    raise exception 'migration % must be applied in one transaction (psql --single-transaction); nothing was changed and this session is now read-only',
+    raise exception 'migration 11 refused: this session was made read-only by an earlier non-atomic attempt (migration %); reconnect and apply it with psql --single-transaction',
       current_setting('logloads.migration_refused')
       using errcode = '25P01';
   end if;
