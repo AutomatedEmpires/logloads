@@ -90,7 +90,7 @@ declare
   c_iss constant text := 'https://clerk.logloads.test';
   u_land uuid; u_haul uuid; u_drv uuid; u_admin uuid; u_bill uuid;
   o_land uuid; o_haul uuid; o_bare uuid; o_bill uuid; o_bill2 uuid;
-  o_bill3 uuid; o_bill4 uuid; o_bill5 uuid; o_bill6 uuid; o_bill7 uuid; o_bill8 uuid; o_bill9 uuid; o_bill10 uuid; o_e3 uuid; o_e4 uuid; o_e5 uuid;
+  o_bill3 uuid; o_bill4 uuid; o_bill5 uuid; o_bill6 uuid; o_bill7 uuid; o_bill8 uuid; o_bill9 uuid; o_bill10 uuid; o_e2 uuid; o_e3 uuid; o_e4 uuid; o_e5 uuid;
   l_land uuid; l_bill uuid;
   j_a uuid; j_b uuid; j_legacy uuid; v_draft uuid; v_draft2 uuid;
   v_n bigint; v_n2 bigint; v_ts timestamptz; v_ts2 timestamptz; v_seq bigint;
@@ -350,9 +350,15 @@ begin
                        t0, t0 + interval '30 days', 'subscription_create');
   perform pg_temp.ok(v_out = 'applied', 'R4: the first event for a provider subscription applies');
   perform pg_temp.as_jwt('harness');
-  perform pg_temp.ok((select cycles_applied from marketplace.promotion_redemptions where org_id = o_bill) = 1
+  perform pg_temp.ok((select cycles_applied from marketplace.promotion_redemptions where org_id = o_bill) = 0
     and (select (marketplace.org_entitled_plan(o_bill)).code) = 'basic',
-    'R4/F5: the created subscription entitles Basic and consumes discount cycle 1');
+    'R4/F5 (LE-02): the created subscription entitles Basic; creation alone consumes no discount cycle');
+  perform pg_temp.as_jwt('service_role');
+  v_out := pg_temp.evt('evt_p3_01p', 'invoice.paid', t0 + interval '2 seconds', o_bill, 'sub_b1', 'basic', 'active',
+                       t0, t0 + interval '30 days', 'subscription_create');
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok(v_out = 'applied' and (select cycles_applied from marketplace.promotion_redemptions where org_id = o_bill) = 1,
+    'R4/F5 (LE-02): the first invoice.paid consumes discount cycle 1');
   v_n := pg_temp.n('entitlement_periods');
 
   perform pg_temp.as_jwt('service_role');
@@ -461,6 +467,8 @@ begin
   v_out := pg_temp.evt('evt_p3_12', 'customer.subscription.created', t0 + interval '70 days', o_bill, 'sub_b1_new', 'basic', 'active',
                        t0 + interval '70 days', t0 + interval '100 days', 'subscription_create');
   perform pg_temp.ok(v_out = 'applied', 'R4: a resubscription (new provider subscription) applies');
+  v_out := pg_temp.evt('evt_p3_12p', 'invoice.paid', t0 + interval '70 days' + interval '1 second', o_bill, 'sub_b1_new', 'basic', 'active',
+                       t0 + interval '70 days', t0 + interval '100 days', 'subscription_create');
   perform pg_temp.as_jwt('harness');
   perform pg_temp.ok((select cycles_applied from marketplace.promotion_redemptions where org_id = o_bill) = 3,
     'F5: the resubscription''s first paid cycle consumes the next discount cycle (3 of 6)');
@@ -840,10 +848,58 @@ begin
   v_out := pg_temp.evt('e5_04', 'customer.subscription.updated', t0 + interval '3 days', o_e5, 'sub_e5_b', 'pro', 'unpaid',
                        t0 + interval '2 days', t0 + interval '32 days');
   perform pg_temp.as_jwt('harness');
-  perform pg_temp.ok(v_out = 'rejected'
-    and (select status = 'active' and provider_sync_required from marketplace.organization_subscriptions where provider_subscription_ref = 'sub_e5_b')
-    and (select subscription_status = 'unpaid' and outcome = 'rejected' from marketplace.billing_provider_events where provider_event_id = 'e5_04'),
-    'E-5: an unpaid status is recorded and flagged for reconciliation, not applied');
+  perform pg_temp.ok(v_out = 'applied'
+    and (select status = 'unpaid' from marketplace.organization_subscriptions where provider_subscription_ref = 'sub_e5_b')
+    and (marketplace.org_entitled_plan(o_e5)).id is null
+    and (select subscription_status = 'unpaid' from marketplace.billing_provider_events where provider_event_id = 'e5_04'),
+    'E-5/F7 (LE-04): unpaid is recorded and applied as a non-entitling status');
+  perform pg_temp.as_jwt('service_role');
+  v_out := pg_temp.evt('e5_05', 'customer.subscription.updated', t0 + interval '4 days', o_e5, 'sub_e5_b', 'pro', 'paused',
+                       t0 + interval '2 days', t0 + interval '32 days');
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok(v_out = 'applied' and (select status = 'paused' from marketplace.organization_subscriptions where provider_subscription_ref = 'sub_e5_b')
+    and (marketplace.org_entitled_plan(o_e5)).id is null,
+    'F7 (LE-04): paused is applied and suspends the paid entitlement');
+  perform pg_temp.as_jwt('service_role');
+  v_out := pg_temp.evt('e5_06', 'invoice.paid', t0 + interval '5 days', o_e5, 'sub_e5_b', 'pro', 'active',
+                       t0 + interval '2 days', t0 + interval '32 days');
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok(v_out = 'applied' and ((marketplace.org_entitled_plan(o_e5)).code = 'pro'),
+    'F7 (LE-04): payment restores the entitlement');
+
+  -- -------------------------------------------------------------------------
+  -- E-2 / F5 (LE-02): a founding-discount cycle is consumed once per billing period, on payment evidence.
+  -- -------------------------------------------------------------------------
+  perform pg_temp.as_jwt('authenticated', 'p3_bill');
+  o_e2 := marketplace.create_organization('E2 Paid Cycles', 'e2-paid-cycles', 'OR', false);
+  perform pg_temp.as_jwt('authenticated', 'p3_admin');
+  perform marketplace.admin_set_org_verification(o_e2, 'verified', 'OR SOS registry check');
+  perform marketplace.admin_grant_founding_promotion('founding_or_p3', o_e2, 'Founding OR cohort');
+  perform pg_temp.as_jwt('service_role');
+  v_out := pg_temp.evt('e2_01', 'customer.subscription.created', t0, o_e2, 'sub_e2', 'basic', 'active',
+                       t0, t0 + interval '30 days', 'subscription_create');
+  v_out := pg_temp.evt('e2_02', 'customer.subscription.updated', t0 + interval '30 days', o_e2, 'sub_e2', 'basic', 'active',
+                       t0 + interval '30 days', t0 + interval '60 days', 'subscription_cycle');
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok((select cycles_applied from marketplace.promotion_redemptions where org_id = o_e2) = 0,
+    'E-2: neither creation nor an unpaid renewal consumes a discount cycle');
+  perform pg_temp.as_jwt('service_role');
+  v_out := pg_temp.evt('e2_03', 'invoice.payment_failed', t0 + interval '31 days', o_e2, 'sub_e2', 'basic', 'past_due',
+                       t0 + interval '30 days', t0 + interval '60 days');
+  v_out := pg_temp.evt('e2_04', 'invoice.paid', t0 + interval '33 days', o_e2, 'sub_e2', 'basic', 'active',
+                       t0 + interval '30 days', t0 + interval '60 days');
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok((select cycles_applied from marketplace.promotion_redemptions where org_id = o_e2) = 1,
+    'E-2: a period that started past_due counts once it is paid');
+  perform pg_temp.as_jwt('service_role');
+  v_out := pg_temp.evt('e2_05', 'invoice.paid', t0 + interval '34 days', o_e2, 'sub_e2', 'basic', 'active',
+                       t0 + interval '30 days', t0 + interval '60 days');
+  v_out := pg_temp.evt('e2_06', 'invoice.payment_succeeded', t0 + interval '29 days', o_e2, 'sub_e2', 'basic', 'active',
+                       t0, t0 + interval '30 days');
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok(v_out = 'ignored_stale'
+    and (select cycles_applied = 2 and cardinality(counted_period_ends) = 2 from marketplace.promotion_redemptions where org_id = o_e2),
+    'E-2: a second payment event for a counted period does not count again; a late payment for the earlier period still counts');
   perform pg_temp.as_jwt('authenticated', 'p3_admin');
 
   raise notice 'ALL PHASE 3 POLICY (F1-F5) AND BILLING-ORDERING TESTS PASSED.';

@@ -132,6 +132,18 @@ create index if not exists billing_provider_events_org_idx
   on marketplace.billing_provider_events (org_id, received_at desc);
 alter table marketplace.billing_provider_events enable row level security;
 
+-- LE-04 (F7): Stripe 'paused' and 'unpaid' are real subscription states and are not entitling
+-- (subscription_is_entitling allows only trialing/active and past_due within grace).
+alter table marketplace.organization_subscriptions
+  drop constraint if exists organization_subscriptions_status_check,
+  add constraint organization_subscriptions_status_check
+    check (status in ('incomplete', 'trialing', 'active', 'past_due', 'canceled', 'paused', 'unpaid'));
+
+-- LE-02 (F5): the billing periods (by period end) for which a founding-discount cycle was consumed, so a
+-- period is counted exactly once whatever the delivery order or redelivery.
+alter table marketplace.promotion_redemptions
+  add column if not exists counted_period_ends timestamptz[] not null default '{}';
+
 -- Ordering state per provider subscription.
 alter table marketplace.organization_subscriptions
   add column if not exists last_provider_event_id text,
@@ -148,7 +160,8 @@ create or replace function marketplace.apply_subscription_cycle(
   p_cancel_at_period_end boolean default false,
   p_grace_days integer default null,
   p_allow_over_limit boolean default false,
-  p_billing_reason text default null
+  p_billing_reason text default null,
+  p_count_cycle_on_open boolean default true
 ) returns uuid
 language plpgsql security definer
 set search_path = pg_catalog, extensions, pg_temp
@@ -317,15 +330,19 @@ begin
 
     -- F5: a founding-discount cycle is consumed only by a genuinely new paid billing cycle — never by a
     -- plan change (a split of the open period, or a provider event whose billing reason is a plan update).
-    v_counts_cycle := v_is_new_period and v_promo_id is not null and p_status = 'active'
+    -- LE-02: on the provider path a cycle is counted on payment evidence (apply_billing_provider_event); a
+    -- direct manual cycle is the administrator's own assertion that the period is paid.
+    v_counts_cycle := coalesce(p_count_cycle_on_open, true) and v_is_new_period and v_promo_id is not null and p_status = 'active'
                       and not v_is_split
                       and (p_billing_reason is null or p_billing_reason in ('subscription_create', 'subscription_cycle'));
     if v_counts_cycle then
       update marketplace.promotion_redemptions pr
       set cycles_applied = pr.cycles_applied + 1,
-          status = case when pr.cycles_applied + 1 >= p.billing_cycles then 'exhausted' else 'applied' end
+          status = case when pr.cycles_applied + 1 >= p.billing_cycles then 'exhausted' else 'applied' end,
+          counted_period_ends = pr.counted_period_ends || p_period_end
       from marketplace.promotions p
-      where pr.id = v_promo_id and p.id = pr.promotion_id;
+      where pr.id = v_promo_id and p.id = pr.promotion_id
+        and not (p_period_end = any (pr.counted_period_ends));
     end if;
   else
     -- Only when a subscription ceases to be entitling altogether (e.g. canceled
@@ -413,7 +430,7 @@ begin
       v_sub_id := marketplace.apply_subscription_cycle(
         p_org_id, v_newer.plan_code, v_newer.subscription_status, v_newer.period_start, v_newer.period_end,
         v_newer.provider_customer_ref, v_newer.provider_subscription_ref, v_newer.cancel_at_period_end,
-        null, true, v_newer.billing_reason);
+        null, true, v_newer.billing_reason, false);
       update marketplace.organization_subscriptions s
       set last_provider_event_id = v_newer.provider_event_id,
           last_provider_event_at = v_newer.provider_created_at
@@ -561,7 +578,8 @@ begin
       v_evt.provider_customer_ref, v_evt.provider_subscription_ref, v_evt.cancel_at_period_end,
       null,
       true, -- external provider event: preserve members and landings (03 policy)
-      v_billing_reason);
+      v_billing_reason,
+      false); -- LE-02: counted on payment evidence, not on opening
     update marketplace.organization_subscriptions s
     set last_provider_event_id = v_evt.provider_event_id,
         last_provider_event_at = v_evt.provider_created_at,
@@ -642,6 +660,7 @@ declare
   v_apply   boolean := false;
   v_replay  text;
   v_raw_status text := p_status;
+  v_counted integer := 0;
 begin
   -- Input contract: malformed input is a handler bug and is refused outright (nothing recorded).
   if p_provider is distinct from 'stripe' then
@@ -722,14 +741,7 @@ begin
   where s.provider_subscription_ref = p_provider_subscription_ref
   for update;
 
-  if p_status in ('unpaid', 'paused') then
-    v_result := 'rejected';
-    v_reason := 'provider status ' || p_status || ' has no approved entitlement mapping yet (founder decision F7); recorded and flagged for reconciliation';
-    if found and v_sub.org_id = p_org_id then
-      v_sub_id := v_sub.id;
-      update marketplace.organization_subscriptions s set provider_sync_required = true where s.id = v_sub.id;
-    end if;
-  elsif found and v_sub.org_id <> p_org_id then
+  if found and v_sub.org_id <> p_org_id then
     v_result := 'rejected';
     v_reason := 'provider subscription belongs to a different organization';
   elsif found and v_sub.status = 'canceled' then
@@ -805,7 +817,8 @@ begin
         p_provider_customer_ref, p_provider_subscription_ref, coalesce(p_cancel_at_period_end, false),
         null,
         true, -- external provider event: preserve members and landings, record any conflict (03 policy)
-        p_billing_reason);
+        p_billing_reason,
+        false); -- LE-02: counted on payment evidence below, not on opening
       update marketplace.organization_subscriptions s
       set last_provider_event_id = p_provider_event_id,
           last_provider_event_at = greatest(coalesce(s.last_provider_event_at, p_provider_created_at), p_provider_created_at),
@@ -839,6 +852,22 @@ begin
     end if;
   end if;
 
+  -- LE-02 (F5): a founding-discount cycle is consumed once per billing period, when payment evidence for that
+  -- period arrives on an active subscription, whatever the delivery order (a late invoice.paid still counts;
+  -- a canceled subscription's does not).
+  if p_event_type in ('invoice.paid', 'invoice.payment_succeeded') and p_status = 'active'
+     and v_result in ('applied', 'ignored_stale', 'ignored_no_change') then
+    update marketplace.promotion_redemptions pr
+    set cycles_applied = pr.cycles_applied + 1,
+        status = case when pr.cycles_applied + 1 >= p.billing_cycles then 'exhausted' else 'applied' end,
+        counted_period_ends = pr.counted_period_ends || p_period_end
+    from marketplace.promotions p
+    where pr.org_id = p_org_id and p.id = pr.promotion_id
+      and pr.status in ('granted', 'applied') and pr.cycles_applied < p.billing_cycles
+      and not (p_period_end = any (pr.counted_period_ends));
+    get diagnostics v_counted = row_count;
+  end if;
+
   if v_evt_id is null then
     insert into marketplace.billing_provider_events (
       provider, provider_event_id, event_type, provider_created_at, provider_subscription_ref, provider_customer_ref,
@@ -870,7 +899,8 @@ begin
       'plan', p_plan_code,
       'period_start', p_period_start,
       'billing_reason', p_billing_reason,
-      'reconciliation', coalesce(p_is_reconciliation, false)));
+      'reconciliation', coalesce(p_is_reconciliation, false),
+      'counted_discount_cycle', v_counted > 0));
 
   return query select v_result, v_reason, v_sub_id, v_evt_id;
 end
@@ -905,7 +935,7 @@ $$;
 -- Privileges.
 -- -----------------------------------------------------------------------------
 revoke all on function
-  marketplace.apply_subscription_cycle(uuid, text, text, timestamptz, timestamptz, text, text, boolean, integer, boolean, text),
+  marketplace.apply_subscription_cycle(uuid, text, text, timestamptz, timestamptz, text, text, boolean, integer, boolean, text, boolean),
   marketplace.replay_deferred_billing_event(uuid),
   marketplace.supersede_deferred_billing_events(uuid, text, timestamptz),
   marketplace.apply_billing_provider_event(text, text, text, timestamptz, uuid, text, text, text, text, timestamptz, timestamptz, boolean, text, text, boolean),
