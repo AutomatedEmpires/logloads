@@ -82,6 +82,20 @@ begin
     (select count(*) from marketplace.job_postings where status = 'draft' and (published_at is not null or last_confirmed_at is not null)),
     (select count(*) - count(distinct (job_id, hauler_org_id)) from marketplace.expressions_of_interest),
     (select count(*) from marketplace.interest_messages where char_length(btrim(body)) > 2000);
+  -- M1: remember this transaction; the next statement refuses if it is not the same one.
+  perform set_config('logloads.migration_xact', txid_current()::text, true);
+end
+$$;
+
+-- M1: a migration file must run as ONE transaction (psql --single-transaction). In autocommit mode the
+-- guard above committed on its own, so its transaction-local marker is gone and this stops the file
+-- before anything changes; inside one transaction (or a batch of files in one) the marker matches.
+do $$
+begin
+  if coalesce(current_setting('logloads.migration_xact', true), '') <> txid_current()::text then
+    raise exception 'migration 06 must be applied in one transaction (psql --single-transaction); nothing was changed'
+      using errcode = '25P01';
+  end if;
 end
 $$;
 

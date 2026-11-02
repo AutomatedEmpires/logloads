@@ -30,7 +30,17 @@ DB_URL="${LOGLOADS_DISPOSABLE_DB_URL:-}"
 [[ "$DB_URL" =~ ^postgres(ql)?://([^@/]+@)?(127\.0\.0\.1|localhost)(:[0-9]+)?/[A-Za-z0-9_]+$ ]] \
   || { echo "ERROR: Refusing to run: LOGLOADS_DISPOSABLE_DB_URL must be a local URL with a plain database name." >&2; exit 1; }
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d)"
+SCRATCH_DBS=()
+cleanup() {
+  local db
+  for db in "${SCRATCH_DBS[@]}"; do
+    printf '%s\n' "drop database if exists ${db};" | psql "$DB_URL" -X -q >/dev/null 2>&1 || true
+  done
+  rm -rf "$TMP"
+}
+trap cleanup EXIT
+RUN_TAG="${GITHUB_RUN_ID:-local$$}_${LOGLOADS_CI_ITERATION:-0}"
 TARGET_URL="$DB_URL"
 q() { printf '%s\n' "$1" | psql "$TARGET_URL" -X -q -t -A -v ON_ERROR_STOP=1; }
 x() { printf '%s\n' "$1" | psql "$TARGET_URL" -X -q -v ON_ERROR_STOP=1 >/dev/null; }
@@ -56,15 +66,22 @@ FOREIGN="$(q "select coalesce(string_agg(format('%I.%I', n.nspname, c.relname), 
 [[ -z "$FOREIGN" ]] || fail "Refusing to run: foreign tables present: $FOREIGN"
 [[ "$(q "select coalesce(shobj_description(oid, 'pg_database'), '') from pg_database where datname = current_database();")" == logloads-ci-disposable:* ]] \
   || fail "Refusing to run: database is not stamped as a CI disposable database."
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+  bash "$SCRIPT_DIR/../../tools/normalized-v2-ci/guard.sh" verify >/dev/null \
+    || fail "Refusing to run: the per-run disposable guard did not verify this cluster."
+fi
 command -v pg_dump >/dev/null && command -v pg_restore >/dev/null || fail "pg_dump / pg_restore not on PATH"
 
 CATALOG_SQL="select md5(string_agg(x, '|' order by x)) from (
-  select 'rel:' || c.relname || ':' || c.relkind::text || ':' || c.relrowsecurity::text || ':' || pg_get_userbyid(c.relowner) || ':' ||
+  select 'rel:' || c.relname || ':' || c.relkind::text || ':' || c.relrowsecurity::text || ':' || c.relforcerowsecurity::text || ':' || pg_get_userbyid(c.relowner) || ':' ||
          coalesce((select string_agg(a, ',' order by a) from unnest(coalesce(c.relacl, acldefault(case when c.relkind = 'S' then 's'::\"char\" else 'r'::\"char\" end, c.relowner))::text[]) a), '')
   from pg_class c where c.relnamespace = 'marketplace'::regnamespace and c.relkind in ('r','p','v','S','i')
   union all
-  select 'col:' || table_name || '.' || column_name || ':' || data_type || ':' || is_nullable || ':' || coalesce(column_default, '')
-  from information_schema.columns where table_schema = 'marketplace'
+  select 'col:' || c.relname || '.' || a.attname || ':' || format_type(a.atttypid, a.atttypmod) || ':' || a.attnotnull::text || ':' ||
+         coalesce(pg_get_expr(d.adbin, d.adrelid), '') || ':' || a.attgenerated::text
+  from pg_attribute a join pg_class c on c.oid = a.attrelid
+  left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+  where c.relnamespace = 'marketplace'::regnamespace and c.relkind in ('r','p','v') and a.attnum > 0 and not a.attisdropped
   union all
   select 'colacl:' || c.relname || '.' || a.attname || ':' || (select string_agg(g, ',' order by g) from unnest(a.attacl::text[]) g)
   from pg_attribute a join pg_class c on c.oid = a.attrelid
@@ -77,13 +94,14 @@ CATALOG_SQL="select md5(string_agg(x, '|' order by x)) from (
   union all
   select 'fn:' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || '):' || md5(p.prosrc) || ':' || p.prosecdef::text || ':' ||
          coalesce(array_to_string(p.proconfig, ','), '') || ':' || pg_get_userbyid(p.proowner) || ':' ||
+         p.provolatile::text || p.proisstrict::text || ':' || pg_get_function_result(p.oid) || ':' ||
          coalesce((select string_agg(a, ',' order by a) from unnest(coalesce(p.proacl, acldefault('f'::\"char\", p.proowner))::text[]) a), '')
   from pg_proc p where p.pronamespace = 'marketplace'::regnamespace
   union all
-  select 'pol:' || tablename || '.' || policyname || ':' || cmd || ':' || array_to_string(roles, ',') || ':' || coalesce(qual, '') || ':' || coalesce(with_check, '')
+  select 'pol:' || tablename || '.' || policyname || ':' || permissive || ':' || cmd || ':' || array_to_string(roles, ',') || ':' || coalesce(qual, '') || ':' || coalesce(with_check, '')
   from pg_policies where schemaname = 'marketplace'
   union all
-  select 'trg:' || c.relname || ':' || t.tgname || ':' || t.tgenabled::text
+  select 'trg:' || c.relname || ':' || t.tgname || ':' || t.tgenabled::text || ':' || pg_get_triggerdef(t.oid)
   from pg_trigger t join pg_class c on c.oid = t.tgrelid where c.relnamespace = 'marketplace'::regnamespace and not t.tgisinternal
 ) s(x);"
 # One entry per marketplace table: the md5 of all of its rows (or 'empty').
@@ -166,6 +184,12 @@ refused "$SCRIPT_DIR/12_v2_billing_events.sql" "requires migration 11"
 refused "$SCRIPT_DIR/16_v2_identity_membership_hardening.sql" "requires migration 12"
 [[ "$(fp)" == "$FP0" ]] || { show_diff "$TMP/rows0.txt" "after refused out-of-order runs"; fail "a refused out-of-order migration changed something"; }
 ok "11, 12 and 16 before 06 are refused; nothing changed"
+if psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 -f "$SCRIPT_DIR/06_v2_contract_alignment.sql" >/dev/null 2>"$TMP/autocommit.log"; then
+  fail "M1: 06 applied in autocommit mode"
+fi
+grep -q "must be applied in one transaction" "$TMP/autocommit.log" || fail "M1: unexpected autocommit failure: $(head -c 300 "$TMP/autocommit.log")"
+[[ "$(fp)" == "$FP0" ]] || { show_diff "$TMP/rows0.txt" "after an autocommit attempt"; fail "M1: an autocommit run of 06 changed something"; }
+ok "06 run without --single-transaction is refused before any change (M1)"
 
 echo "[4/7] Rollback: a failure after the last statement of 06 -> 11 -> 12 leaves nothing behind..."
 { cat "$SCRIPT_DIR/06_v2_contract_alignment.sql" "$SCRIPT_DIR/11_v2_phase3_policy.sql" "$SCRIPT_DIR/12_v2_billing_events.sql" "$SCRIPT_DIR/16_v2_identity_membership_hardening.sql"
@@ -236,33 +260,43 @@ ok "backup restored in place to exactly the pre-migration fingerprint"
 if [[ "${LOGLOADS_DB_ENV:-}" == "ci-disposable" ]]; then
   # D-7: a recovery point must work without the original database. A brand-new database in this guarded
   # disposable cluster gets only what an operator provisions (the extensions schema), then the dump.
-  FRESH="logloads_drill_restore_${GITHUB_RUN_ID:-local}_${LOGLOADS_CI_ITERATION:-0}"
+  FRESH="logloads_drill_restore_${RUN_TAG}"
   [[ "$FRESH" =~ ^[A-Za-z0-9_]+$ ]] || fail "unexpected fresh database name"
   x "create database ${FRESH} template template0;"
+  SCRATCH_DBS+=("$FRESH")
   FRESH_URL="${DB_URL%/*}/${FRESH}"
   printf '%s\n' "create schema extensions; create extension postgis with schema extensions; create extension btree_gist with schema extensions;" \
     | psql "$FRESH_URL" -X -q -v ON_ERROR_STOP=1 >/dev/null
   pg_restore --dbname="$FRESH_URL" --single-transaction --exit-on-error "$TMP/pre_v2.dump"
   TARGET_URL="$FRESH_URL"
   FRESH_FP="$(fp)"
-  TARGET_URL="$DB_URL"
-  x "drop database ${FRESH};"
   [[ "$FRESH_FP" == "$FP0" ]] || fail "restoring the backup into a fresh database did not reproduce the pre-migration fingerprint"
   ok "backup restored into a brand-new database to exactly the pre-migration fingerprint"
+  for f in 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql 16_v2_identity_membership_hardening.sql; do
+    psql "$FRESH_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$SCRIPT_DIR/$f" >/dev/null
+  done
+  [[ "$(q "select count(*) from marketplace.job_postings where title = 'Drill Active Job' and is_legacy_import;")" == "1" \
+     && "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" == "06,11,12,16" ]] \
+    || fail "the forward migration did not apply cleanly on the freshly restored database"
+  TARGET_URL="$DB_URL"
+  x "drop database ${FRESH};"
+  ok "the freshly restored database also migrates forward (legacy data carried, ledger 06,11,12,16)"
+  ok "not covered by this drill (operator prerequisites): cluster roles, database settings, restoring into another cluster"
 else
   ok "fresh-database restore runs on the plain PostgreSQL target (this target cannot create databases with PostGIS)"
 fi
 for f in 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql 16_v2_identity_membership_hardening.sql; do apply1 "$SCRIPT_DIR/$f"; done
 [[ "$(q "select count(*) from marketplace.job_postings where title = 'Drill Active Job' and is_legacy_import;")" == "1" ]] || fail "forward migration after restore lost data"
-[[ "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" == "06,11,12,16" ]] || fail "ledger did not reconcile after restore"
-ok "forward migration after restore succeeded; existing data carried through; the ledger reconciles"
+[[ "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" == "06,11,12,16" ]] || fail "ledger after the forward migration is not 06,11,12,16"
+ok "forward migration after restore succeeded; existing data carried through; the ledger records the re-applied migrations"
 x "drop schema if exists marketplace cascade;"
 
 if [[ "${LOGLOADS_DB_ENV:-}" == "ci-disposable" ]]; then
   echo "[D-5] 01 never drops PostGIS on a database that is not stamped disposable, or that has dependents..."
-  PROBE="logloads_d5_probe_${GITHUB_RUN_ID:-local}_${LOGLOADS_CI_ITERATION:-0}"
+  PROBE="logloads_d5_probe_${RUN_TAG}"
   [[ "$PROBE" =~ ^[A-Za-z0-9_]+$ ]] || fail "unexpected probe database name"
   x "create database ${PROBE} template template0;"
+  SCRATCH_DBS+=("$PROBE")
   PROBE_URL="${DB_URL%/*}/${PROBE}"
   printf '%s\n' "create extension postgis; create table public.user_sites (id integer primary key, site geometry); insert into public.user_sites values (1, 'SRID=4326;POINT(-122.7 44.4)');" \
     | psql "$PROBE_URL" -X -q -v ON_ERROR_STOP=1 >/dev/null
@@ -284,6 +318,16 @@ if [[ "${LOGLOADS_DB_ENV:-}" == "ci-disposable" ]]; then
     || fail "D-5: unexpected failure with a dependent column: $(head -c 300 "$TMP/d5b.log")"
   probe_intact "stamped, with a dependent column"
   ok "stamped database with a dependent column: 01 refused and named it; nothing dropped"
+  # M2: a CHECK built on PostGIS functions over plain numeric columns is a dependent too.
+  printf '%s\n' "drop table public.user_sites; create table public.plain_sites (lon double precision, lat double precision, constraint plain_sites_on_earth check (st_x(st_makepoint(lon, lat)) between -180 and 180));" \
+    | psql "$PROBE_URL" -X -q -v ON_ERROR_STOP=1 >/dev/null
+  if psql "$PROBE_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$SCRIPT_DIR/01_schema.sql" >/dev/null 2>"$TMP/d5c.log"; then
+    fail "D-5/M2: 01 dropped PostGIS although a CHECK constraint depends on it"
+  fi
+  grep -q "plain_sites_on_earth" "$TMP/d5c.log" || fail "D-5/M2: unexpected failure with a dependent constraint: $(head -c 300 "$TMP/d5c.log")"
+  [[ "$(printf '%s\n' "select count(*) from pg_constraint where conname = 'plain_sites_on_earth';" | psql "$PROBE_URL" -X -q -t -A)" == "1" ]] \
+    || fail "D-5/M2: the dependent constraint did not survive"
+  ok "stamped database with a PostGIS-backed CHECK on plain columns: 01 refused and named it (M2)"
   x "drop database ${PROBE};"
 fi
 echo "MIGRATION DRILL PASSED."

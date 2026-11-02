@@ -28,6 +28,14 @@ q() { printf '%s\n' "$1" | psql "$DB_URL" -X -q -t -A -v ON_ERROR_STOP=1; }
 x() { printf '%s\n' "$1" | psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 >/dev/null; }
 apply1() { psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$1" >/dev/null; }
 fail() { echo "ERROR: $*" >&2; exit 1; }
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+# md5 of every row of every marketplace table, one entry per table.
+all_data() {
+  local parts
+  parts="$(q "select string_agg(format('select %L || '':'' || coalesce((select md5(string_agg(t::text, ''|'' order by t::text)) from marketplace.%I t), ''empty'')', c.relname, c.relname), ' union all ')
+              from pg_class c where c.relnamespace = 'marketplace'::regnamespace and c.relkind in ('r','p');")"
+  q "select md5(string_agg(x, '|' order by x)) from (${parts}) s(x);"
+}
 expect_eq() { [[ "$2" == "$3" ]] || fail "$1: expected '$3', got '$2'"; echo "  ok: $1"; }
 
 [[ "$(q "select current_database();")" == "${LOGLOADS_DISPOSABLE_DB_NAME:-logloads_test}" ]] || fail "Refusing to run: unexpected database."
@@ -44,6 +52,10 @@ FOREIGN="$(q "select coalesce(string_agg(format('%I.%I', n.nspname, c.relname), 
 # disposable database must be stamped deliberately (comment on database ... is 'logloads-ci-disposable:local').
 MARK="$(q "select coalesce(shobj_description(oid, 'pg_database'), '') from pg_database where datname = current_database();")"
 [[ "$MARK" == logloads-ci-disposable:* ]] || fail "Refusing to run: database is not stamped as a CI disposable database."
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+  bash "$SCRIPT_DIR/../../tools/normalized-v2-ci/guard.sh" verify >/dev/null \
+    || fail "Refusing to run: the per-run disposable guard did not verify this cluster."
+fi
 
 echo "[1/6] Building the baseline schema (01 -> 02 -> 03, each atomic) with pre-V2 data..."
 x "drop schema if exists marketplace cascade;"
@@ -147,6 +159,7 @@ HAUL="$(q "select id from marketplace.organizations where slug = 'mig-hauling';"
 BEFORE="$(q "select coalesce(last_confirmed_at::text, 'null') from marketplace.job_postings where id = '${JOB}'::uuid;")"
 UNQUOTED_BEFORE="$(q "select coalesce(last_confirmed_at::text, 'null') from marketplace.job_postings where id = '${UNQUOTED}'::uuid;")"
 DRAFT_PUBLISHED="$(q "select published_at::text from marketplace.job_postings where id = '${DRAFT}'::uuid;")"
+DRAFT_CONFIRMED="$(q "select last_confirmed_at::text from marketplace.job_postings where id = '${DRAFT}'::uuid;")"
 HAUL_CONFIRMED="$(q "select last_confirmed_at::text from marketplace.hauler_profiles where org_id = '${HAUL}'::uuid;")"
 REPORTED="$(q "select reported_at::text from marketplace.availability_reports where org_id = '${HAUL}'::uuid;")"
 MODIFIED="$(q "select string_agg(t || ':' || updated_at::text, ',' order by t) from (
@@ -178,7 +191,8 @@ expect_eq "D-4c: the draft keeps no publication or confirmation time" \
   "$(q "select coalesce(published_at::text, 'null') || ' ' || coalesce(last_confirmed_at::text, 'null') || ' ' || is_legacy_import::text from marketplace.job_postings where id = '${DRAFT}'::uuid;")" "null null false"
 expect_eq "D-4c: ... and the audit log holds exactly the values it carried" \
   "$(q "select count(*) from marketplace.audit_events where action = 'job.migration_draft_timestamps_cleared' and entity_id = '${DRAFT}'::uuid
-        and (metadata ->> 'published_at')::timestamptz = '${DRAFT_PUBLISHED}'::timestamptz and metadata ? 'last_confirmed_at';")" "1"
+        and (metadata ->> 'published_at')::timestamptz = '${DRAFT_PUBLISHED}'::timestamptz
+        and (metadata ->> 'last_confirmed_at')::timestamptz = '${DRAFT_CONFIRMED}'::timestamptz;")" "1"
 expect_eq "D-4a: every inquiry row is kept" "$(q "select count(*) from marketplace.expressions_of_interest;")" "4"
 expect_eq "D-4a: the withdrawn row points at the live re-submission it preceded" \
   "$(q "select count(*) from marketplace.expressions_of_interest w join marketplace.expressions_of_interest k on k.id = w.superseded_by
@@ -191,6 +205,12 @@ expect_eq "D-4a: one thread per (job, hauler) is enforced on every row that is n
         and indexdef ~* 'unique' and indexdef ~* 'superseded_by is null';")" "1"
 expect_eq "D-4b: the 3000-character baseline reply is kept unchanged" \
   "$(q "select count(*) from marketplace.interest_messages where char_length(body) = 3000;")" "1"
+if x "insert into marketplace.interest_messages (interest_id, author_user_id, author_side, body)
+      select e.id, e.submitted_by, 'hauler', repeat('n', 2001) from marketplace.expressions_of_interest e where e.status = 'submitted';" 2>"$TMP/long.log"; then
+  fail "D-4b: a new 2001-character reply was accepted"
+fi
+grep -q "interest_messages_body_check" "$TMP/long.log" || fail "D-4b: unexpected failure for a long reply: $(head -c 300 "$TMP/long.log")"
+echo "  ok: D-4b: a new reply over 2000 characters is refused"
 expect_eq "D-4b: the 2000-character rule is enforced on new replies (not validated against history)" \
   "$(q "select convalidated::text from pg_constraint where conname = 'interest_messages_body_check';")" "false"
 expect_eq "E6: re-snap kept the hauler's own confirmation time" "$(q "select last_confirmed_at::text from marketplace.hauler_profiles where org_id = '${HAUL}'::uuid;")" "$HAUL_CONFIRMED"
@@ -212,12 +232,12 @@ expect_eq "E6: landing, service centre and report area lie on the 0.10-degree gr
 expect_eq "06 is recorded in the migration ledger" "$(q "select string_agg(version, ',' order by version) from marketplace.schema_migrations;")" "06"
 
 echo "[4/6] Re-running 06 and running 12 before 11 are refused without changing anything (D-1/D-2)..."
-STATE="$(q "select md5(string_agg(t::text, '|' order by t::text)) from marketplace.job_postings t;")"
-if apply1 "$SCRIPT_DIR/06_v2_contract_alignment.sql" 2>/tmp/rerun06.log; then fail "re-running 06 was not refused"; fi
-grep -q "already applied" /tmp/rerun06.log || fail "re-running 06 failed for an unexpected reason: $(head -c 300 /tmp/rerun06.log)"
-if apply1 "$SCRIPT_DIR/12_v2_billing_events.sql" 2>/tmp/early12.log; then fail "12 applied before 11"; fi
-grep -q "requires migration 11" /tmp/early12.log || fail "12 before 11 failed for an unexpected reason: $(head -c 300 /tmp/early12.log)"
-expect_eq "jobs unchanged by the refused runs" "$(q "select md5(string_agg(t::text, '|' order by t::text)) from marketplace.job_postings t;")" "$STATE"
+STATE="$(all_data)"
+if apply1 "$SCRIPT_DIR/06_v2_contract_alignment.sql" 2>"$TMP/rerun06.log"; then fail "re-running 06 was not refused"; fi
+grep -q "already applied" "$TMP/rerun06.log" || fail "re-running 06 failed for an unexpected reason: $(head -c 300 "$TMP/rerun06.log")"
+if apply1 "$SCRIPT_DIR/12_v2_billing_events.sql" 2>"$TMP/early12.log"; then fail "12 applied before 11"; fi
+grep -q "requires migration 11" "$TMP/early12.log" || fail "12 before 11 failed for an unexpected reason: $(head -c 300 "$TMP/early12.log")"
+expect_eq "every table unchanged by the refused runs" "$(all_data)" "$STATE"
 expect_eq "ledger unchanged by the refused runs" "$(q "select string_agg(version, ',' order by version) from marketplace.schema_migrations;")" "06"
 
 echo "[5/6] Applying 11_v2_phase3_policy.sql, 12_v2_billing_events.sql and 16_v2_identity_membership_hardening.sql (each one transaction) on top of existing data..."

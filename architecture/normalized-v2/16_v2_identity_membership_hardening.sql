@@ -41,6 +41,18 @@ begin
     raise exception 'migration 16 appears to be applied already (organization_memberships.accepted_at exists) but is not recorded; refusing to re-run'
       using errcode = '55000';
   end if;
+  -- M1: remember this transaction; the next statement refuses if it is not the same one.
+  perform set_config('logloads.migration_xact', txid_current()::text, true);
+end
+$$;
+
+-- M1: a migration file must run as ONE transaction (psql --single-transaction); see 06.
+do $$
+begin
+  if coalesce(current_setting('logloads.migration_xact', true), '') <> txid_current()::text then
+    raise exception 'migration 16 must be applied in one transaction (psql --single-transaction); nothing was changed'
+      using errcode = '25P01';
+  end if;
 end
 $$;
 
