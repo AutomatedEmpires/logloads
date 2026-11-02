@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
 
-import { postingFreshness } from "@logloads/contracts"
+import { MARKETPLACE_AVAILABILITY_ATTESTATION, postingFreshness } from "@logloads/contracts"
 
 import { formatDay, JOB_STATUS_LABELS, payLabel } from "@/components/v2/format"
 import { reconfirmJobAction } from "@/lib/marketplace-v2/actions"
@@ -77,6 +77,11 @@ export default async function LandingJobsPage({ searchParams }: { searchParams: 
                   {job.acceptingInterest ? (
                     <form action={reconfirmJobAction} className="v2-actions">
                       <input name="jobId" type="hidden" value={job.id} />
+                      {/* The explicit attestation: never pre-ticked. Editing a job never confirms it. */}
+                      <label className="v2-check">
+                        <input name={MARKETPLACE_AVAILABILITY_ATTESTATION.field} required type="checkbox" value={MARKETPLACE_AVAILABILITY_ATTESTATION.value} />
+                        <span>{MARKETPLACE_AVAILABILITY_ATTESTATION.label}</span>
+                      </label>
                       <button className="v2-button--quiet" disabled={!pilotMarketplaceV2.supportsPublishing} type="submit">
                         Confirm still available
                       </button>
