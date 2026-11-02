@@ -242,10 +242,17 @@ jobs:
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 7
 
+      - name: "Stage 9: 09_v2_integration_audit_tests.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 9
+
       - name: "Stage 8: 08_v2_contract_concurrency_test.sh"
-        if: hashFiles('architecture/normalized-v2/08_v2_contract_concurrency_test.sh') != ''
         timeout-minutes: 12
         run: bash tools/normalized-v2-ci/run-stage.sh 8
+
+      - name: "Stage 10: 10_v2_migration_path_test.sh"
+        timeout-minutes: 6
+        run: bash tools/normalized-v2-ci/run-stage.sh 10
 
       - name: Collect database server log
         if: failure()

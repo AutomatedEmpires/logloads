@@ -138,6 +138,22 @@ case "$STAGE" in
     grep -q "ALL ALIGNED-SCHEMA CONCURRENCY TESTS PASSED" "$LOG" || { echo "STAGE 8: runner did not report completion" >&2; exit 1; }
     { echo "### Stage 8 aligned-schema concurrency"; echo '```'; grep -E "^\[|PASS|overlap|skew" "$LOG" || true; echo '```'; } >> "$SUMMARY"
     ;;
+  9)
+    run_sql "$DIR/09_v2_integration_audit_tests.sql"
+    grep -q "ALL V2 INTEGRATION AUDIT TESTS PASSED" "$LOG" || { echo "STAGE 9: suite did not reach its final PASS notice" >&2; exit 1; }
+    check "suite rolled back (no test organizations left)" "select count(*) = 0 from marketplace.organizations;"
+    PASSES="$(grep -cE "NOTICE:  00000: PASS: " "$LOG" || true)"
+    echo "  executed assertions reporting PASS: $PASSES" | tee -a "$LOG" | tee -a "$SUMMARY"
+    ;;
+  10)
+    echo "== bash $DIR/10_v2_migration_path_test.sh" | tee "$LOG"
+    set +e
+    timeout --kill-after=30s 300s bash "$DIR/10_v2_migration_path_test.sh" 2>&1 | tee -a "$LOG"
+    rc=${PIPESTATUS[0]}
+    set -e
+    [[ "$rc" == "0" ]] || exit "$rc"
+    grep -q "MIGRATION PATH TEST PASSED" "$LOG" || { echo "STAGE 10: test did not report completion" >&2; exit 1; }
+    ;;
   *) echo "unknown stage $STAGE" >&2; exit 2 ;;
 esac
 
