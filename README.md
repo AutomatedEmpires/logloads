@@ -11,9 +11,9 @@ no commission.
   [Product, Membership & Monetization Blueprint v1.0](./docs/product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md)
   (2026-11-01). Dated founder decisions are in [`docs/DECISIONS.md`](./docs/DECISIONS.md). The documentation map,
   current-state summary and status vocabulary are in [`docs/README.md`](./docs/README.md).
-- **Work coordination:** GitHub Issues tracked on
-  [Project Board #10](https://github.com/users/AutomatedEmpires/projects/10). Process:
-  [`docs/AGENT_WORKFLOW.md`](./docs/AGENT_WORKFLOW.md). Rules for agents: [`AGENTS.md`](./AGENTS.md).
+- **Work coordination:** GitHub Issues labelled `agent-task` are the task tracker, with pull requests as the
+  evidence. Process: [`docs/AGENT_WORKFLOW.md`](./docs/AGENT_WORKFLOW.md). Rules for agents:
+  [`AGENTS.md`](./AGENTS.md).
 
 ## Commercial model
 

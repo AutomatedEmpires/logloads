@@ -62,7 +62,7 @@ lower level never implies a higher one.
 | Level | Status | Evidence |
 |---|---|---|
 | **1. PostgreSQL 17 verification** (disposable CI databases, simulated JWT claims) | **VERIFIED** — see the run table below | Actions runs |
-| **2. Supabase-specific verification** (real Clerk tokens through Supabase third-party auth; project settings, grants and Data API exposure on a real Supabase project) | **UNVERIFIED** — not started; blocked on founder provider setup | #112 |
+| **2. Supabase-specific verification** (real Clerk tokens through Supabase third-party auth; project settings, grants and Data API exposure on a real Supabase project) | **UNVERIFIED.** A **local** Supabase-stack CI job was added to PR #123 at `24313c0`. Its first run failed before testing anything, on a Docker registry pull limit (`toomanyrequests: Rate exceeded`; runs `41495377310` and `41495385914`). A local stack is a step towards this level; it does not prove it. Real-token verification needs the founder's development provider setup. | #112, #104 |
 | **3. Application integration** (normalized `MarketplaceV2Port` adapter; persistent publish → discover → interest → respond loop) | **UNVERIFIED** — adapter not built | #139, #140 |
 | **4. Staging readiness** (isolated hosted preview, migration rehearsal on synthetic data, backup and restore, rollback) | **UNVERIFIED** | `DEPLOYMENT.md` §4–§5, #113 |
 | **5. Production authorization** (migration, activation, billing) | **NOT AUTHORIZED** | `DECISIONS.md`; founder only |

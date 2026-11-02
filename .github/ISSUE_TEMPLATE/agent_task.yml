@@ -7,35 +7,23 @@ body:
   - type: markdown
     attributes:
       value: |
-        Coordination happens on this issue and on Project Board #10. Post progress as comments using the
-        STATE / DID / EVIDENCE / NEXT / BOUNDARIES format. Only a reviewer other than the owner may move the
-        issue to Done, and only when the evidence is linked.
-  - type: dropdown
-    id: owner
+        GitHub Issues are the task tracker (docs/AGENT_WORKFLOW.md). Coordination happens on this issue. Post
+        progress as comments using the STATE / DID / EVIDENCE / NEXT / BOUNDARIES format. Only a reviewer other than
+        the owner may move the issue to Done, and only when the evidence is linked.
+  - type: textarea
+    id: header
     attributes:
-      label: Agent owner
-      options:
-        - Claude Agent 1 (database integration)
-        - Claude Agent 2 (docs / coordination)
-        - Claude Agent 3 — UX
-        - Codex (V2 frontend)
-        - Gemini (SQL author, standby)
-        - Claude Security Auditor
-        - Claude QA (Playwright)
-        - Claude Product (public copy)
-        - Claude Research (market validation)
-        - Claude Adapter (normalized adapter)
-        - Founder
-    validations:
-      required: true
-  - type: dropdown
-    id: priority
-    attributes:
-      label: Priority
-      options:
-        - P0 — production risk or blocker
-        - P1 — current milestone
-        - P2 — later
+      label: Task header
+      description: |
+        Keep these three lines in exactly this format; the tracker command parses them.
+        Owner — Claude Agent 1 · Claude Agent 2 · Claude Agent 3 — UX · Codex · Gemini · Claude Security Auditor ·
+        Claude QA · Claude Product · Claude Research · Claude Adapter · Founder.
+        Priority — P0 · P1 · P2.
+        Status — Backlog · Ready · In Progress · Blocked · In Review · Done.
+      value: |
+        **Agent owner:** <one primary owner>
+        **Priority:** P1
+        **Status:** Backlog
     validations:
       required: true
   - type: textarea

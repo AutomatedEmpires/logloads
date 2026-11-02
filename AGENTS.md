@@ -18,8 +18,9 @@ Read this document before editing the repository. Work in small, independently v
 
 ### Before any work: the coordination system
 
-- **Find your issue first.** Every active task has a GitHub Issue tracked on [Project Board #10](https://github.com/users/AutomatedEmpires/projects/10). No issue, no work.
-- The process is in `docs/AGENT_WORKFLOW.md`: issue fields, statuses, the handoff comment format, and the Done gate.
+- **Find your issue first.** GitHub Issues labelled `agent-task` are the **authoritative task tracker**. Each issue's header states its owner, priority and status. No issue, no work.
+- Project Board #10 is optional and deferred (founder decision, 2026-11-02). Do not configure it or troubleshoot access to it.
+- The process is in `docs/AGENT_WORKFLOW.md`: the tracker command, issue fields, statuses, the handoff comment format, and the Done gate.
 - **Issues are the persistent communication channel between agents.** Post progress, blockers, commit SHAs, PR URLs, and test results on the issue, never only in a private chat.
 - **PRs and CI runs are the implementation evidence.** An issue reaches Done only when a reviewer other than the owner confirms the linked evidence.
 - The documentation map and the status vocabulary (APPROVED / IMPLEMENTED / VERIFIED / TARGET / HISTORICAL / UNVERIFIED) are in `docs/README.md`. Verification evidence is recorded in `docs/CI.md` §3.

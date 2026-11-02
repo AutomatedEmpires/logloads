@@ -3,7 +3,8 @@
 Read `AGENTS.md` first. This file is a short execution reminder for Claude-specific or generic LLM runs.
 
 ## Before any work
-- Find your issue on Project Board #10 and follow `docs/AGENT_WORKFLOW.md`. No issue, no work.
+- Find your `agent-task` GitHub issue (the tracker command is in `docs/AGENT_WORKFLOW.md` §1). No issue, no work.
+  Report progress and blockers on the issue, and submit work as a PR that links it. Project Board #10 is deferred.
 - Work on your own branch in your own Git worktree. Check `git status` and the branch first. Never stage, reset or
   clean another agent's files.
 - Product authority: `docs/README.md` §1. Never change pricing, plans or scope without a new dated decision.

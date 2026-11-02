@@ -2,6 +2,30 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-11-02 — GitHub Issues are the task tracker; Project Board #10 deferred
+
+- **Project Board #10 is deferred and optional.** The required `project` token scope could not be granted to the
+  agent environment. No agent spends time on board authentication, field setup or item import. Issue #101 is
+  closed as Not Planned, and its setup plan is retained there for a possible revival through a new dated decision.
+- **GitHub Issues labelled `agent-task`, together with their pull requests, are the authoritative source of task
+  state.** Each issue maintains, in its header:
+  - a primary owner;
+  - a priority: P0, P1 or P2;
+  - a status: Backlog, Ready, In Progress, Blocked, In Review or Done.
+
+  The body holds the dependencies, the acceptance criteria, and the branch, commit, PR and test evidence
+  (`docs/AGENT_WORKFLOW.md`).
+- Existing labels are reused, and status and priority are not duplicated as labels. No new external
+  project-management platform is introduced.
+- **The Blueprint remains authoritative for product requirements.**
+- **Current priorities:**
+  - **P0:**
+    - QA #107 (the expired-date Playwright test);
+    - sequential integration of the documentation PRs #100 → #115 → #142;
+    - database and application integration: Supabase verification, Codex's publishing checks and attestation,
+      the security review, and adapter readiness.
+  - **P1:** the UX decision register, and Agent 3's revised desktop-first design specification.
+
 ## 2026-11-02 — Founder direction: root-document ownership, evidence retention, pay disclosure, attestation
 
 Recorded from the founder's Phase 3/4 coordination directive to Claude Agent 2. It changes no pricing, plan, or

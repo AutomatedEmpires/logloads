@@ -12,8 +12,8 @@ LogLoads is a timber-hauling **load board**:
 LogLoads does not dispatch, track loads, broker freight, handle freight payments, or charge per load or by
 percentage.
 
-**Tasks, owners and status** live on GitHub Issues and Project Board #10, not in these files
-([`AGENT_WORKFLOW.md`](./AGENT_WORKFLOW.md)).
+**Tasks, owners and status** live in GitHub Issues (label `agent-task`), not in these files. Project Board #10 is
+deferred ([`AGENT_WORKFLOW.md`](./AGENT_WORKFLOW.md)).
 
 ## 1. Authority, in order
 
