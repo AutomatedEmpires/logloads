@@ -37,6 +37,13 @@ case "$MODE" in
     grep -nE '^(project_id|major_version|schemas|extra_search_path|max_rows) ' "$CFG" || true
     grep -nE '^\[(db|api|studio|inbucket|storage|realtime|edge_runtime|analytics)\]' -A1 "$CFG" | grep -E 'enabled|\[' || true
 
+    # PostgREST refuses to become healthy while an exposed schema is missing. A real project must also create
+    # a schema before exposing it, so the stack starts with an EMPTY marketplace schema (the guard verifies it
+    # holds no objects); 01_schema.sql then populates it with `create schema if not exists`.
+    mkdir -p supabase/migrations
+    printf '%s
+' '-- CI stack bootstrap: empty schema so PostgREST can expose it. Populated by 01_schema.sql.'       'create schema if not exists marketplace;' > supabase/migrations/00000000000000_empty_marketplace_schema.sql
+
     supabase start -x gotrue,realtime,storage-api,imgproxy,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
 
     STATUS_JSON="$(supabase status -o json 2>/dev/null)"

@@ -29,6 +29,12 @@ q "select pg_get_userbyid(m.member) || ' -> ' || pg_get_userbyid(m.roleid) || ' 
 echo "== role-level settings"
 q "select coalesce(pg_get_userbyid(setrole), '*') || ': ' || array_to_string(setconfig, ', ') from pg_db_role_setting order by 1;" || true
 
+echo "== default privileges (pg_default_acl) — grants new objects would receive automatically"
+q "select pg_get_userbyid(d.defaclrole) || ' in ' || coalesce(d.defaclnamespace::regnamespace::text, '(all schemas)') || ' on ' ||
+          case d.defaclobjtype when 'r' then 'tables' when 'f' then 'functions' when 'S' then 'sequences' when 'T' then 'types' when 'n' then 'schemas' else d.defaclobjtype::text end
+          || ': ' || array_to_string(d.defaclacl, ' ')
+   from pg_default_acl d order by 1;"
+
 echo "== extensions (installed)"
 q "select extname || ' ' || extversion || ' in ' || extnamespace::regnamespace from pg_extension order by 1;"
 echo "== extensions (available, relevant)"
