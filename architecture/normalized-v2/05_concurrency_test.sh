@@ -356,17 +356,20 @@ insert into marketplace.promotions
   (code, program, state_code, percent_off, billing_cycles, max_redemptions, starts_at, status)
 values ('founding_or_conc', 'founding_landing', 'OR', 50.00, 6, 10, now() - interval '1 day', 'active');
 
+-- One transaction: transaction-local JWT claims (set_config(..., true)) and SET LOCAL ROLE
+-- must stay in effect for both admin calls.
+begin;
 select set_config('request.jwt.claims', jsonb_build_object(
   'role', 'authenticated', 'iss', 'https://clerk.logloads.test', 'sub', 'conc_admin',
   'aud', 'logloads-app', 'exp', extract(epoch from now())::bigint + 3600)::text, true);
-set role authenticated;
+set local role authenticated;
 select marketplace.admin_set_org_verification(
   (select id from marketplace.organizations where slug = 'conc-timber'), 'verified', 'Concurrency test verification'
 );
 select marketplace.admin_grant_founding_promotion(
   'founding_or_conc', (select id from marketplace.organizations where slug = 'conc-timber'), 'Concurrency promo grant'
 );
-reset role;
+commit;
 "
 
 NEXT_START="$(psql_scalar "select (now() + interval '30 days')::timestamptz::text;")"
