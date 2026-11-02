@@ -1,214 +1,244 @@
 # LogLoads — Production Environment Contract
 
-Machine-readable source: [`ops/production-env-contract.json`](../ops/production-env-contract.json).
-Values live in Doppler and Vercel. Never commit values; the Supabase service-role
-key and all secret/key values remain server-only.
+> **Status:** Revised 2026-11-01 for the load-board decision. This is the human-readable companion to
+> [`ops/production-env-contract.json`](../ops/production-env-contract.json), which is the machine-readable
+> source. It does not change code or runtime validation. Local setup and provider guidance live in
+> [`ENVIRONMENT.md`](./ENVIRONMENT.md).
+>
+> Values live in Doppler and Vercel. Never commit values. The Supabase service-role key and all secrets stay
+> server-only.
+>
+> *What changed in this revision:*
+> - The `percentage_v1` billing rules are reclassified as **historical**.
+> - The required rate-limit HMAC secret is recorded.
+> - The V2 preview flag is added.
+>
+> The technical fail-closed rules are unchanged from `15892b7`.
 
-## Required to boot and serve production
-
-| Variable | Secret | Absent behavior |
-|---|---|---|
-| `NEXT_PUBLIC_APP_URL` | no | production Stripe checkout/portal creation fails closed |
-| `LOGLOADS_SESSION_SECRET` | yes | session signing fails closed |
-| `SUPABASE_URL` | no | canonical-state reads fail closed |
-| `SUPABASE_SERVICE_ROLE_KEY` | yes | canonical-state reads fail closed |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | no | real public auth is unavailable |
-| `CLERK_SECRET_KEY` | yes | server session verification is unavailable |
-
-`LOGLOADS_STATE_FILE` is a non-production convenience only. It is neither required
-nor authoritative on Vercel.
-
-## Required to accept real hauling work
+## 1. Required to boot and serve production
 
 | Variable | Secret | Absent behavior |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | yes | every submitted driver credential stays pending, so no driver can accept any load |
+| `NEXT_PUBLIC_APP_URL` | no | Production Stripe checkout/portal creation fails closed |
+| `LOGLOADS_SESSION_SECRET` | yes | Session signing fails closed |
+| `SUPABASE_URL` | no | Canonical-state reads fail closed |
+| `SUPABASE_SERVICE_ROLE_KEY` | yes | Canonical-state reads fail closed |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | no | Real public auth is unavailable |
+| `CLERK_SECRET_KEY` | yes | Server session verification is unavailable |
+| `LOGLOADS_RATE_LIMIT_HMAC_SECRET` | yes | `requestClientKey()` throws (`apps/web/lib/rate-limit-client-key.ts`), so rate-limited routes fail. Listed as `required: true` in the JSON contract. |
 
-Credential review is a binding safety gate, not an optional assistant feature.
-`CREDENTIAL_REVIEW_MODEL` may override the pinned `claude-opus-5` default, but
-changing the model requires a controlled re-verification of structured output,
-document reading, latency, and refusal behavior. `/api/health` reports
-`integrations.credentialReview=false` while the provider key is absent.
+- The distributed store (`rate-limit-config.ts`) falls back to the service-role key for **its own** key
+  material. That fallback does **not** remove the caller-key requirement, so do not treat it as permission to
+  omit the dedicated secret.
+- `LOGLOADS_RATE_LIMIT_KEY_PREFIX` namespaces buckets per environment.
+- `LOGLOADS_STATE_FILE` is a non-production convenience. It is neither required nor authoritative on Vercel.
 
-## Controlled bootstrap
+## 2. Credential review (legacy pilot gate)
+
+| Variable | Secret | Absent behavior |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | yes | Every submitted driver credential stays pending, so no driver can accept a pilot load |
+
+This gate belongs to the **legacy pilot's** assignment eligibility. It is not a requirement for browsing V2
+jobs or expressing interest.
+
+- `CREDENTIAL_REVIEW_MODEL` may override the pinned `claude-opus-5` default. Changing the model needs a
+  controlled re-verification of structured output, document reading, latency, and refusal behavior.
+- `/api/health` reports `integrations.credentialReview=false` while the key is absent.
+- Before removing the key, inspect the fail-closed behavior of any legacy screen that is still active.
+
+## 3. Controlled bootstrap
 
 ### Canonical state
 
-`LOGLOADS_ALLOW_STATE_BOOTSTRAP=true` permits creation of the singleton canonical
-row if it is absent. It must be used only after an operator proves the table is
-intentionally empty, and removed immediately afterward. Without it, production
-fails closed rather than silently replacing missing production data with seed data.
+`LOGLOADS_ALLOW_STATE_BOOTSTRAP=true` permits creating the singleton canonical row when it is absent. Use it
+only after an operator proves the table is intentionally empty, and remove it immediately afterwards. Without
+it, production fails closed instead of silently replacing missing data with seed data.
 
 ### Founder platform access
 
-Clerk-backed platform administration has a persistent identity scope and a
-separate temporary claim gate:
+The step-by-step procedure is in [`ACTIVATION_CLERK.md`](./ACTIVATION_CLERK.md) §3.
 
-- `LOGLOADS_PLATFORM_ADMIN_CLERK_IDS` must canonicalize to exactly one real
-  Clerk `user_...` id. The seeded `clerk-admin-1` placeholder, a wildcard,
-  multiple identities, or any malformed entry fails closed.
-- `LOGLOADS_PLATFORM_ADMIN_EXPECTED_SCOPE_SHA256` must be the exact lowercase
-  SHA-256 of `logloads-platform-admin-scope-v1`, one newline, and that exact
-  Clerk user id. The digest is compared byte-for-byte; padding or uppercase is
-  invalid.
-- `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP=enabled` and a strict future
-  `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP_EXPIRES_AT` permit that identity, with a
-  verified Clerk primary email, to claim the fixed seed admin at
-  `/admin/bootstrap`.
+- `LOGLOADS_PLATFORM_ADMIN_CLERK_IDS` must canonicalize to exactly one real Clerk `user_...` ID. The seeded
+  `clerk-admin-1` placeholder, a wildcard, multiple IDs, or a malformed entry fails closed.
+- `LOGLOADS_PLATFORM_ADMIN_EXPECTED_SCOPE_SHA256` is the exact lowercase SHA-256 of
+  `logloads-platform-admin-scope-v1`, one newline, and that ID. It is compared byte-for-byte.
+- `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP=enabled`, together with a strict future
+  `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP_EXPIRES_AT`, permits a one-time claim at `/admin/bootstrap`.
 
-The claim runs inside the canonical compare-and-swap mutation, creates no user
-or second admin, and records one scope-fingerprinted audit event. Immediately
-after a verified claim, set the bootstrap gate back to `disabled` and remove its
-expiry. Keep the exact persistent identity and digest configured: they remain
-required for ongoing Clerk-backed platform-admin authority.
+After a verified claim, set the gate to `disabled` and remove the expiry. Keep the persistent ID and digest:
+they remain required for ongoing admin authority.
 
-## Feature-gated
+## 4. Feature-gated variables
 
 | Group | Variables |
 |---|---|
-| Billing provider | `STRIPE_SECRET_KEY`, `LOGLOADS_STRIPE_EXPECTED_LIVEMODE`, `LOGLOADS_STRIPE_EXPECTED_ACCOUNT_ID`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PUBLISHABLE_KEY` or `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` |
-| Historical Dispatch Pro catalog | `STRIPE_PRICE_DISPATCH` (read-only reconciliation; no new enrollment) |
+| Marketplace V2 preview | `LOGLOADS_MARKETPLACE_V2`. Exactly `enabled` turns on `/v2`, which is always off when `VERCEL_ENV=production`. **Must be unset in Production.** Do not set it on hosted Preview without an approved, isolated preview ([`DEPLOYMENT.md`](./DEPLOYMENT.md) §4). Not yet listed in the JSON contract or `.env.example`. |
+| Maps | `NEXT_PUBLIC_CARTO_BASEMAP_KEY` — preferred: authenticated CARTO Basemaps on MapLibre. Browser-visible; restrict it by origin. The legacy `NEXT_PUBLIC_MAPBOX_TOKEN` is used only when no CARTO key is set; keyless CARTO when neither is. |
+| Billing provider | `STRIPE_SECRET_KEY`, `LOGLOADS_STRIPE_EXPECTED_LIVEMODE`, `LOGLOADS_STRIPE_EXPECTED_ACCOUNT_ID`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PUBLISHABLE_KEY` or `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` |
+| Historical Dispatch Pro catalog | `STRIPE_PRICE_DISPATCH` — read-only reconciliation, no new enrollment |
 | Historical Network recurring catalog | `STRIPE_PRICE_NETWORK_PILOT`, `STRIPE_PRICE_NETWORK_25`, `STRIPE_PRICE_NETWORK_50`, `STRIPE_PRICE_NETWORK_100` |
 | Historical Network overage catalog | `STRIPE_PRICE_NETWORK_PILOT_OVERAGE`, `STRIPE_PRICE_NETWORK_25_OVERAGE`, `STRIPE_PRICE_NETWORK_50_OVERAGE`, `STRIPE_PRICE_NETWORK_100_OVERAGE` |
 | Internal billing verification | `STRIPE_PRICE_INTERNAL_BILLING_TEST`, `LOGLOADS_INTERNAL_BILLING_SMOKE`, `LOGLOADS_INTERNAL_BILLING_SMOKE_ALLOWED_USER_IDS`, `LOGLOADS_INTERNAL_BILLING_SMOKE_ALLOWED_ORGANIZATION_IDS` |
-| Founder platform access | Persistent `LOGLOADS_PLATFORM_ADMIN_CLERK_IDS` plus `LOGLOADS_PLATFORM_ADMIN_EXPECTED_SCOPE_SHA256`; temporary claim-only `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP` and `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP_EXPIRES_AT` |
-| Current percentage enrollment | `LOGLOADS_PERCENTAGE_ENROLLMENT`, the exact `LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS`, and its private `LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256` assertion; all default dark and none authorizes collection |
-| Collection switches | `LOGLOADS_FEE_COLLECTION` is the sole current provider-charge gate for `percentage_v1` and preserved legacy fee invoices; `LOGLOADS_SUBSCRIPTION_COLLECTION`, `LOGLOADS_SUBSCRIPTION_ALLOWED_ORGANIZATION_IDS`, and `LOGLOADS_DISPATCH_SELF_SERVE` are disabled historical controls only |
-| Credential review | `ANTHROPIC_API_KEY`; optional pinned override `CREDENTIAL_REVIEW_MODEL` |
-| Private media | `LOGLOADS_MEDIA_STORAGE=supabase`, `LOGLOADS_MEDIA_BUCKET`, `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF`, and preferred `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (or supported compatibility alias `NEXT_PUBLIC_SUPABASE_ANON_KEY`; the preferred name wins if both exist) |
+| Founder platform access | Persistent `LOGLOADS_PLATFORM_ADMIN_CLERK_IDS` and `LOGLOADS_PLATFORM_ADMIN_EXPECTED_SCOPE_SHA256`; temporary, claim-only `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP` and `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP_EXPIRES_AT` |
+| Historical percentage enrollment | `LOGLOADS_PERCENTAGE_ENROLLMENT`, `LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS`, `LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256` — **disabled / blank** |
+| Historical collection switches | `LOGLOADS_FEE_COLLECTION`, `LOGLOADS_SUBSCRIPTION_COLLECTION`, `LOGLOADS_SUBSCRIPTION_ALLOWED_ORGANIZATION_IDS`, `LOGLOADS_DISPATCH_SELF_SERVE` — **disabled / blank** |
+| Credential review | `ANTHROPIC_API_KEY`; optional pinned override `CREDENTIAL_REVIEW_MODEL` (§2) |
+| Private media | `LOGLOADS_MEDIA_STORAGE=supabase`, `LOGLOADS_MEDIA_BUCKET`, `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF`, and the preferred `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — or the compatibility alias `NEXT_PUBLIC_SUPABASE_ANON_KEY`; the preferred name wins when both exist |
 | Email | `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_REPLY_TO`, `SUPPORT_EMAIL`, `LOGLOADS_CONTACT_EMAIL` |
 | Analytics | `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` |
 | Errors | `SENTRY_DSN` |
-| Maps | `NEXT_PUBLIC_CARTO_BASEMAP_KEY` (preferred: authenticated CARTO Basemaps on MapLibre; browser-visible, restrict by origin); legacy `NEXT_PUBLIC_MAPBOX_TOKEN` is used only when no CARTO key is set; keyless CARTO when neither is set |
 
-## Billing activation boundaries
+## 5. Commercial gates — historical, dark for all new activity
 
-The founder's current model is `percentage_v1`. `LOGLOADS_FEE_COLLECTION` is
-the sole current commercial collection gate and defaults to `disabled`. When it
-is absent, invalid, or disabled, the app may maintain canonical percentage fee,
-invoice, and reconciliation records, but it must create no provider charge.
-Provider credentials, webhooks, deployed code, accepted terms, or historical
-catalog objects do not turn the switch on.
+**Current model.** Blueprint v1.0 is the current commercial model:
 
-New host agreement acceptance has a separate, fail-closed boundary. It requires
-`LOGLOADS_PERCENTAGE_ENROLLMENT=enabled` and the authenticated host's exact
-organization id in `LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS`. The SHA-256
-of the sorted, normalized exact scope must also match
-`LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256`; a missing, malformed,
-or drifting assertion refuses every agreement. The wildcard `*` is not
-recognized. Keep the gate disabled, allowlist blank, and expected assertion
-blank until a dated counsel-approved operating posture and exact pilot
-authorization exist. Enrollment does not enable provider collection, and the
-collection switch does not enroll an organization.
+| Plan | Price |
+|---|---|
+| Basic | $149 |
+| Pro | $299 |
+| Regional | $499 |
 
-`LOGLOADS_SUBSCRIPTION_COLLECTION` and `LOGLOADS_DISPATCH_SELF_SERVE` are
-historical safety gates and must remain `disabled` for new activity.
-`LOGLOADS_SUBSCRIPTION_ALLOWED_ORGANIZATION_IDS` remains empty; the former `*`
-general-availability sentinel is not valid under the current decision. These
-disabled controls do not discard signed reconciliation for an obligation that
-was accepted and created while the 2026-07-28 subscription-v1 decision governed,
-but they may not create a new customer, Checkout, subscription, plan change,
-usage event, overage, or charge.
+Plus boosts and the founding offer. It is **not implemented by any variable in this document** and is not
+active. Its activation will need new, separately reviewed variables and a new Stripe catalog
+([`ACTIVATION_STRIPE.md`](./ACTIVATION_STRIPE.md)). **Never repurpose the gates below to activate it.**
 
-`LOGLOADS_STRIPE_EXPECTED_LIVEMODE` is mandatory and independent of key
-presence. Production must set it to `live`; controlled local and test runtimes
-set it to `test`. Secret and publishable key prefixes, signed event `livemode`,
-catalog objects, portal/card operations, legacy invoices, subscription invoices,
-and the internal smoke must agree with that assertion or fail closed.
+**The `percentage_v1` model (2026-08-01 to 2026-11-01) is historical.** So are `legacy_percentage` and
+`subscription_v1`. The gates that governed them stay `disabled`, and their allowlists and assertions stay
+blank. They still protect existing records:
 
-`LOGLOADS_STRIPE_EXPECTED_ACCOUNT_ID` is a server-side tenancy assertion, not a
-display value. Checkout, subscription webhooks, scheduled usage collection, the
-catalog provisioner, and the lifecycle verifier call Stripe's account endpoint
-and fail closed unless the authenticated account is the configured LogLoads
-account. Error responses and tool output never include either account id.
+- **`LOGLOADS_FEE_COLLECTION`.** When it is absent, invalid, or disabled, the app may maintain historical
+  fee, invoice, and reconciliation records but creates no provider charge. It applies to `percentage_v1`
+  invoices and to invoices preserved from frozen `legacy_percentage` assignments, and the billing-model
+  snapshot keeps those ledgers distinct. Provider credentials, webhooks, deployed code, accepted terms, and
+  catalog objects never switch it on.
+- **Percentage enrollment.** Enrollment requires `LOGLOADS_PERCENTAGE_ENROLLMENT=enabled`, the exact
+  organization ID in the allowlist, and a matching SHA-256 scope assertion. A wildcard `*` is not recognized.
+  Enrollment does not enable collection, and collection does not enroll anyone. **Do not enroll anyone:** the
+  model is superseded.
+- **Subscription gates.** `LOGLOADS_SUBSCRIPTION_COLLECTION` and `LOGLOADS_DISPATCH_SELF_SERVE` stay
+  `disabled`, and `LOGLOADS_SUBSCRIPTION_ALLOWED_ORGANIZATION_IDS` stays empty. These closed gates keep signed
+  reconciliation for obligations accepted under the 2026-07-28 decision. They never create a customer,
+  Checkout session, subscription, usage, overage, or charge.
+- **One obligation per movement.** A physical movement produced at most one obligation: one `percentage_v1`,
+  one preserved `legacy_percentage`, or one historical `subscription_v1`. No new obligation may be created.
 
-`LOGLOADS_FEE_COLLECTION` applies to current `percentage_v1` invoices and to
-preserved invoices created from frozen `legacy_percentage` assignments. The
-billing-model snapshot must keep those ledgers distinct. A physical movement may
-produce one `percentage_v1`, one preserved `legacy_percentage`, or one historical
-subscription-v1 obligation, never more than one.
+### Stripe mode and tenancy
 
-The internal verification path is a one-off $1 provider invoice, not a
-subscription or public entitlement. It requires all of:
+`LOGLOADS_STRIPE_EXPECTED_LIVEMODE` is mandatory and independent of whether a key is present: `live` in
+production, `test` in controlled runtimes. All of the following must agree with it or fail closed:
+
+- key prefixes;
+- signed event `livemode`;
+- catalog objects;
+- portal and card operations;
+- invoices;
+- the smoke check.
+
+`LOGLOADS_STRIPE_EXPECTED_ACCOUNT_ID` is a server-side tenancy assertion. These callers check
+`GET /v1/account` against it and fail closed on a mismatch:
+
+- Checkout;
+- webhooks;
+- scheduled collection;
+- the catalog provisioner;
+- the lifecycle verifier.
+
+No error or tool output includes either account ID.
+
+### Internal $1 smoke
+
+A one-off provider invoice, never a subscription. It requires all of:
 
 - `LOGLOADS_INTERNAL_BILLING_SMOKE=enabled`;
-- the authenticated platform owner's canonical user id in
-  `LOGLOADS_INTERNAL_BILLING_SMOKE_ALLOWED_USER_IDS`;
-- the exact controlled internal organization id in
-  `LOGLOADS_INTERNAL_BILLING_SMOKE_ALLOWED_ORGANIZATION_IDS`;
-- `STRIPE_PRICE_INTERNAL_BILLING_TEST` bound to the hidden one-time Price;
-- an unused canonical smoke record and explicit confirmation phrase.
+- the owner's canonical user ID in the user allowlist;
+- the exact internal organization ID in the organization allowlist;
+- `STRIPE_PRICE_INTERNAL_BILLING_TEST`;
+- an unused smoke record;
+- an explicit confirmation phrase.
 
-Leave the smoke switch and both allowlists unset outside one founder-authorized
-run. Internal billing tests are tagged and excluded from commercial MRR and ARR.
+Leave all of these unset outside one founder-authorized run. Internal tests are excluded from commercial
+metrics.
 
-Every historical catalog variable contains only a pre-created `price_...`
-identifier. Ordinary customer requests never create Products or Prices and never
-substitute an inline amount. The catalog is retained for prior-obligation
-reconciliation only and is not a commercial menu under `percentage_v1`.
+### Historical catalog variables
 
-The public health route reports only coarse billing readiness, current gate
-state, and a boolean that says whether the private expected enrollment-scope
-assertion matches. It does not publish the organization count, scope digest,
-historical catalog posture, smoke controls, provider-account posture, keys,
-Price ids, customer ids, or webhook material.
+Every historical catalog variable holds only a pre-created `price_...` ID. Requests never create Products or
+Prices. The catalog exists only to reconcile prior obligations.
 
-Private media is active only when `LOGLOADS_MEDIA_STORAGE` is exactly `supabase`;
-the configured Supabase URL is HTTPS on `*.supabase.co`; its project reference
-exactly matches `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF`; the server-only service
-role and either the preferred browser publishable key or its compatibility alias
-are present; and the bucket name is valid. The production bucket is private,
-limited to 10,000,000 bytes, and accepts JPEG, PNG, and WebP.
+### Health route
 
-The preferred browser credential name is
-`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; `NEXT_PUBLIC_SUPABASE_ANON_KEY` remains
-a compatibility alias and does not need to be configured alongside it. If both
-exist, the publishable-key value is authoritative. The service-role key remains
-server-only. Whichever browser key is used must belong to the same project named
-by `SUPABASE_URL`.
+The public health route reports only:
 
-The browser receives a short-lived token for one generated object path, uploads
-directly to that private bucket with upsert disabled, and then the server reads
-the object back and validates its byte count, image type, and dimensions before
-committing the credential, equipment photo, or trip document. Authenticated
-delivery uses five-minute signed URLs after application authorization. If any
-part of the configuration is missing or mismatched, `/api/health` reports
-`integrations.media=false` and every media path fails closed with a retryable
-unavailable response.
+- coarse billing readiness;
+- gate state;
+- a boolean for the enrollment-scope match.
 
-Trip documents are delivery proof, so a Route Pack that requires one cannot
-reach `completed` while media is unavailable. Before production cutover, verify
-the exact deployment SHA, `integrations.media=true`, and a synthetic signed
-upload → server read-back → authenticated delivery round trip.
+It never reveals keys, price or customer IDs, digests, or webhook material.
 
-Cloudinary has no active adapter, dependency, environment contract, or fallback
-in LogLoads. Historical `provider: "cloudinary"` media references and
-`storageProvider: "cloudinary"` trip-document metadata remain parseable only so
-retained snapshots do not become structurally unreadable. Their filename, type,
-and workflow metadata remains readable, but current upload, verification, and
-delivery paths neither create nor activate those provider values; a forced
-legacy-object delivery fails unavailable. Every `CLOUDINARY_*` and
-`LOGLOADS_CLOUDINARY_*` variable must remain unset in LogLoads environments.
+## 6. Private media rules
 
-## Must not be set in production
+Private media is active only when all of the following hold:
+
+- `LOGLOADS_MEDIA_STORAGE` is exactly `supabase`;
+- `SUPABASE_URL` is HTTPS on `*.supabase.co`;
+- its project reference equals `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF`;
+- the service-role key and a browser key from the same project are present;
+- the bucket name is valid.
+
+The production bucket is private, limited to 10,000,000 bytes, and accepts JPEG, PNG, and WebP.
+
+**Upload and delivery path:**
+
+1. The browser gets a short-lived token for one generated object path and uploads with upsert disabled.
+2. The server reads the object back and validates its size, type, and dimensions before committing.
+3. Delivery uses five-minute signed URLs, issued after authorization.
+
+If any part of the configuration is wrong, `/api/health` reports `integrations.media=false` and every media
+path fails closed with a retryable unavailable response.
+
+Legacy pilot route packs that require a trip document cannot reach `completed` while media is unavailable.
+
+**Cloudinary.** Cloudinary has no active adapter, dependency, or fallback. Historical
+`provider: "cloudinary"` references stay parseable only so retained snapshots remain readable; forced legacy
+delivery fails unavailable. Every `CLOUDINARY_*` and `LOGLOADS_CLOUDINARY_*` variable must stay unset.
+
+## 7. Must not be set in production
 
 - `LOGLOADS_ENABLE_DEV_LOGIN` — credential-free development sign-in.
-- Any `CLOUDINARY_*` or `LOGLOADS_CLOUDINARY_*` variable — Cloudinary is not a
-  LogLoads production provider.
-- `SUPABASE_ANON_KEY` as an operating-state credential — `operating_state` is
-  explicitly service-role only.
+- `LOGLOADS_RATE_LIMIT_TEST_MODE` — the local Playwright bypass.
+- `LOGLOADS_MARKETPLACE_V2` — the code ignores it in production anyway. Keep it unset so intent is clear.
+- Any `CLOUDINARY_*` or `LOGLOADS_CLOUDINARY_*` variable.
+- `SUPABASE_ANON_KEY` as an operating-state credential. `operating_state` is service-role only.
 
-`DATABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_PROJECT_REF` remain
-tooling/integration placeholders; runtime canonical state does not read them.
+`DATABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_PROJECT_REF` are tooling and integration placeholders.
+Runtime canonical state does not read them.
 
-`LOGLOADS_EMAIL_FROM` and `LOGLOADS_EMAIL_REPLY_TO` remain supported compatibility
-fallbacks. Production uses the scoped `RESEND_FROM` and `RESEND_REPLY_TO` names.
-When current fee collection is enabled, billing-email delivery runs only when
-both `RESEND_API_KEY` and a From identity are configured. Canonical billing
-notifications remain queued when delivery is disabled. The cron worker
-revalidates the related billing entity, active profile, and active
-`manage_billing` membership before every send, then retries failed or stale
-claims up to five times with the notification ID as the provider idempotency
-key. Host-invoice notifications follow `LOGLOADS_FEE_COLLECTION`; preserved
-subscription notifications remain separately gated by the historical
-subscription-collection switch and are not released by fee collection alone.
+`.env.example` also lists `NEXT_PUBLIC_MAP_PROVIDER`, `NOTIFICATION_PROVIDER`,
+`NEXT_PUBLIC_NOTIFICATION_PROVIDER`, and `VERCEL_TOKEN`. No application or tool code reads any of them at
+`15892b7`. Reconcile them in `.env.example` separately; that is a configuration change.
+
+## 8. Email identity
+
+- `LOGLOADS_EMAIL_FROM` and `LOGLOADS_EMAIL_REPLY_TO` are supported compatibility fallbacks. Production uses
+  `RESEND_FROM` and `RESEND_REPLY_TO`.
+- Historical billing notifications form an outbox. Queued rows are sent only when the matching historical
+  collection gate is enabled **and** Resend is configured, so with the gates disabled they stay queued.
+- Before every send, the cron worker revalidates:
+  - the billing entity;
+  - the active profile;
+  - the `manage_billing` membership.
+
+  It retries failed or stale claims up to five times, using the notification ID as the idempotency key.
+
+## 9. Reconciliation rule
+
+Any environment-variable change must be reconciled across all of these together:
+
+- the `process.env` readers;
+- `.env.example`;
+- `ops/production-env-contract.json`;
+- this document and [`ENVIRONMENT.md`](./ENVIRONMENT.md);
+- Vercel/Doppler ownership.
+
+Verify the secret classification, the absent and fail-closed behavior, and log redaction. Documentation
+alone never proves a variable is implemented.
