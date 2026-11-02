@@ -398,3 +398,31 @@ textarea.ll-input { height: auto; min-height: 72px; padding: 10px 12px; resize: 
 .ll-meter { height: 6px; border-radius: 3px; background: var(--ll-color-surface-sunken); overflow: hidden; }
 .ll-meter i { display: block; height: 100%; background: var(--ll-color-text-secondary); border-radius: 3px; }
 .ll-proto { font-size: var(--ll-text-xs); text-align: center; padding: 5px 12px; background: var(--ll-color-surface-sunken); color: var(--ll-color-text-secondary); border-bottom: 1px solid var(--ll-color-border); }
+
+/* ================= Forms: StepIndicator, ChoiceCard, Checkbox, VisibilityPanel, FormActions ================= */
+.ll-form { display: grid; gap: var(--ll-space-5); }
+.ll-form-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--ll-space-4); }
+@container ll-app (min-width: 600px) { .ll-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.ll-fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: var(--ll-space-2); min-width: 0; }
+.ll-fieldset > legend { padding: 0; margin-bottom: var(--ll-space-2); }
+.ll-steps { list-style: none; margin: 0 0 var(--ll-space-2); padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--ll-space-2); }
+.ll-steps li { display: grid; gap: 6px; padding-top: var(--ll-space-2); border-top: 3px solid var(--ll-color-border); font-size: var(--ll-text-sm); color: var(--ll-color-text-muted); }
+.ll-steps li[data-state="done"] { border-top-color: var(--ll-color-text-secondary); color: var(--ll-color-text-secondary); }
+.ll-steps li[data-state="current"] { border-top-color: var(--ll-color-action); color: var(--ll-color-text); font-weight: var(--ll-weight-semibold); }
+.ll-steps__n { font-family: var(--ll-font-mono); font-size: var(--ll-text-2xs); letter-spacing: var(--ll-tracking-label); }
+@container ll-app (max-width: 599px) { .ll-steps__label { display: none; } .ll-steps li[data-state="current"] .ll-steps__label { display: inline; } .ll-steps { grid-auto-columns: auto; grid-template-columns: none; } .ll-steps li[data-state="current"] { flex: 1; } }
+.ll-choice { display: flex; gap: var(--ll-space-3); align-items: flex-start; padding: var(--ll-space-4); border: 1px solid var(--ll-color-control-border); border-radius: var(--ll-radius-lg); background: var(--ll-color-surface); cursor: pointer; }
+.ll-choice:hover { background: var(--ll-color-surface-subtle); }
+.ll-choice input { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--ll-color-action); flex: none; }
+.ll-choice b { display: block; font-weight: var(--ll-weight-semibold); }
+.ll-choice small { display: block; font-size: var(--ll-text-md); color: var(--ll-color-text-secondary); }
+.ll-choice:has(input:checked) { border-color: var(--ll-color-selected-indicator); background: var(--ll-color-selected-bg); box-shadow: inset 0 0 0 1px var(--ll-color-selected-indicator); }
+.ll-check { display: flex; gap: var(--ll-space-3); align-items: flex-start; min-height: var(--ll-target-touch); padding: 10px 0; cursor: pointer; }
+.ll-check input { width: 20px; height: 20px; margin: 1px 0 0; accent-color: var(--ll-color-action); flex: none; }
+.ll-check small { display: block; font-size: var(--ll-text-sm); color: var(--ll-color-text-muted); }
+.ll-visibility { border: 1px solid var(--ll-color-border); border-radius: var(--ll-c-section-radius); background: var(--ll-color-surface); overflow: hidden; }
+.ll-visibility[data-audience="private"] { background: var(--ll-color-surface-subtle); border-style: dashed; border-color: var(--ll-color-border-strong); }
+.ll-visibility__head { display: flex; align-items: center; gap: var(--ll-space-2); padding: var(--ll-space-3) var(--ll-c-section-pad); border-bottom: 1px solid var(--ll-color-border); font-family: var(--ll-font-mono); font-size: var(--ll-text-2xs); font-weight: var(--ll-weight-semibold); letter-spacing: var(--ll-tracking-label); text-transform: uppercase; color: var(--ll-color-text-secondary); }
+.ll-visibility__body { padding: var(--ll-c-section-pad); display: grid; gap: var(--ll-space-4); }
+.ll-form-actions { display: flex; justify-content: space-between; gap: var(--ll-space-3); flex-wrap: wrap; padding-top: var(--ll-space-4); border-top: 1px solid var(--ll-color-border); }
+@container ll-app (max-width: 599px) { .ll-form-actions { position: sticky; bottom: 56px; background: var(--ll-color-surface); padding-bottom: var(--ll-space-3); z-index: var(--ll-z-sticky); } }

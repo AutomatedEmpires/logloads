@@ -104,7 +104,7 @@ export interface SponsoredIndicatorProps { /* no props: one wording everywhere *
  */
 export interface JobResultRowProps {
   job: MarketplaceJobCardView
-  context: "hauler" | "poster"
+  context: "hauler" | "poster" | "preview" // preview: the job editor's live card (no fit, no save, no distance)
   selected?: boolean
   fit?: "fits" | "not_in_setups"        // computed by the page from the viewer's own equipment
   distanceMiles?: number | null          // approximate, from the public 0.10° point (V2-DEC-01)
@@ -143,6 +143,24 @@ export interface MessageComposerProps {
   quickReplies?: string[]                // inserted into the draft, never sent automatically
   secondaryAction?: ReactNode            // e.g. Decline (danger, confirmed in a Dialog)
   sending?: boolean
+}
+/* ============================== Forms (job editor, setup, landing form) ============================== */
+export interface StepIndicatorProps { steps: string[]; current: number } // <ol> with aria-current="step"; labels collapse to the current step below bp-sm
+export interface ChoiceCardProps { name: string; value: string; checked: boolean; title: string; description: string; onChange: (value: string) => void } // native radio inside a label
+export interface CheckboxProps { id: string; label: string; checked: boolean; hint?: string; onChange: (checked: boolean) => void } // native checkbox inside a label
+/** Public and private field groups. `audience` sets the heading and styling; server-side redaction is still required. */
+export interface VisibilityPanelProps { audience: "public" | "private"; title: string; children: ReactNode }
+export interface FormActionsProps { secondary?: ReactNode; primary: ReactNode } // sticky above the bottom tabs below bp-sm
+/** Job editor steps. Validation runs per step on client and server; the first invalid field receives focus. Publish needs all attestations (V2-DEC-03). */
+export interface JobEditorProps {
+  step: 0 | 1 | 2 | 3
+  draft: Record<string, string>              // field values, keyed by name
+  errors: Record<string, string>             // keyed by field id, rendered via FormField.error
+  landings: Array<{ id: string; label: string; recruiting: boolean }>
+  products: readonly string[]                // UX-DEC-03 controlled list, from contracts
+  attestations: [boolean, boolean, boolean]  // V2-DEC-03
+  onStep: (next: number) => void
+  onPublish: () => void                      // aria-disabled until all three are true
 }
 export interface EquipmentAvailabilityRowProps {
   label: string; spec?: string; units: number

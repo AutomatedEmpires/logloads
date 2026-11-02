@@ -187,11 +187,35 @@
       <div class="ll-composer__box"><textarea class="ll-input" id="composer" aria-label="Reply to ${esc(to)}">${esc(draft)}</textarea>${C.Button({ label: "Send", act: "send" })}</div>
       <div class="ll-composer__foot"><span>Replies are free and unlimited. Nothing here books a truck.</span>${C.Button({ label: "Decline", variant: "danger", size: "sm" })}</div></div>`;
 
+  /* ---------- Form composition components (job editor, setup, landing form) ---------- */
+  C.StepIndicator = ({ steps, current }) =>
+    `<ol class="ll-steps" aria-label="Progress">${steps.map((s, i) => `<li data-state="${i < current ? "done" : i === current ? "current" : "todo"}" ${i === current ? 'aria-current="step"' : ""}><span class="ll-steps__n" aria-hidden="true">${i < current ? "✓" : i + 1}</span><span class="ll-steps__label">${esc(s)}<span class="ll-sr">${i < current ? " (done)" : i === current ? " (current)" : ""}</span></span></li>`).join("")}</ol>`;
+  C.ChoiceCard = ({ name, value, checked, title, body, act }) =>
+    `<label class="ll-choice"><input type="radio" name="${name}" value="${value}" ${checked ? "checked" : ""} data-act="${act}" data-v="${value}"><span><b>${esc(title)}</b><small>${esc(body)}</small></span></label>`;
+  C.Checkbox = ({ id, label, checked, act, hint = "" }) =>
+    `<label class="ll-check" for="${id}"><input type="checkbox" id="${id}" ${checked ? "checked" : ""} data-act="${act}"><span>${esc(label)}${hint ? `<small>${esc(hint)}</small>` : ""}</span></label>`;
+  C.VisibilityPanel = ({ audience, title, children }) =>
+    `<section class="ll-visibility" data-audience="${audience}" aria-label="${esc(title)}"><h3 class="ll-visibility__head">${audience === "public" ? EYE : LOCK}${esc(title)}</h3><div class="ll-visibility__body">${children}</div></section>`;
+  C.FormActions = ({ secondary = "", primary = "" }) => `<div class="ll-form-actions"><div class="ll-page-actions">${secondary}</div><div class="ll-page-actions">${primary}</div></div>`;
+  C.Input = ({ id, value = "", type = "text", invalid = false, describedBy = "", attrs = "" }) =>
+    `<input class="ll-input" id="${id}" type="${type}" value="${esc(value)}" ${invalid ? 'aria-invalid="true"' : ""} ${describedBy ? `aria-describedby="${describedBy}"` : ""} data-field="${id}" ${attrs}>`;
+  C.FieldError = ({ id, text }) => text ? `<span class="ll-field__error" id="${id}-err" role="alert">${esc(text)}</span>` : "";
+  const EYE = '<svg class="ll-i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M1 8s2.6-5 7-5 7 5 7 5-2.6 5-7 5-7-5-7-5Z"/><circle cx="8" cy="8" r="2"/></svg>';
+  const LOCK = '<svg class="ll-i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>';
+  const PRODUCTS = ["Saw logs", "Pulpwood", "Poles and pilings", "Chips", "Hog fuel and biomass", "Hardwood logs", "Other"];
+  const BASES = [["per_load", "per load"], ["per_ton", "per ton"], ["per_hour", "per hour"], ["per_mile", "per loaded mile"], ["per_day", "per day"]];
+  const select = (id, options, value, attrs = "") => `<select class="ll-input" id="${id}" data-field="${id}" ${attrs}>${options.map(([v, l, dis]) => `<option value="${esc(v)}" ${String(v) === String(value) ? "selected" : ""} ${dis ? "disabled" : ""}>${esc(l)}</option>`).join("")}</select>`;
+
   /* ================= Store ================= */
   let returnFocus = null; // selector of the control that opened the dialog
   const S = { screen: "find", w: 1440, density: "comfortable", panel: true, sel: "oak", state: "loaded", dialog: null, interestSent: false, photos: true,
     inq: "rh", drafts: {}, sent: {}, theme: "forest", corners: "standard",
-    eq: JSON.parse(JSON.stringify(D.business.equipment)), confirmed: false, radius: 120 };
+    eq: JSON.parse(JSON.stringify(D.business.equipment)), confirmed: false, radius: 120,
+    f: { "ed-title": "Oak saw logs to Springfield", "ed-landing": "hills", "ed-product": "Saw logs", "ed-dest": "Springfield mill", "ed-miles": "54", "ed-amount": "525", "ed-basis": "per_load", "ed-start": "2026-11-10", "ed-days": "21", "ed-trucks": "6", "ed-perday": "3", "ed-tons": "28", "ed-road": "Gravel for the last 6 miles. CB channel 7.",
+      "su-name": "Ridgeline Hauling", "su-home": "Sweet Home, OR", "su-home2": "Sweet Home, OR", "su-about": "Two-truck family outfit. Long logs and poles.", "st-name": "Hills Creek Unit 5", "st-area": "Oakridge, OR", "st-hours": "5 a.m. to 3 p.m." },
+    ed: { step: 0, payMode: "rate", endMode: "days", eq: { log_pole: true, log_bunk: false, self_loader: false, chip_van: false, lowboy: false }, attest: [false, false, false], errors: {}, published: false },
+    su: { step: 0, btype: "company", contact: "in_app", trucks: { log_pole: 2, log_bunk: 0, self_loader: 0, chip_van: 0, lowboy: 0 }, radius: 100, avail: "now", availCount: 2, alerts: { jobs: true, inv: false }, errors: {}, done: false },
+    site: { recruit: true, errors: {}, saved: false } };
 
   /* ================= Pages ================= */
   const pages = {};
@@ -277,6 +301,145 @@
             ${C.ConversationThread({ inq: q, sent: S.sent[q.id] ?? [] })}${C.MessageComposer({ to: q.name, draft, quick: ["Can you start on Nov 10?", "Please confirm your trailer type", "We'll be in touch"] })}</section>` }) }) });
   };
 
+  /* ---------- Shared form helpers ---------- */
+  const val = (id) => S.f[id] ?? "";
+  const SENSITIVE = /(gate|lock|combo|code)\s*[:#]?\s*\d{3,}|\b\d{4,}\b|-?\d{1,3}\.\d{3,}/i; // mirrors the contracts sensitive-access rule in spirit
+  const fieldIds = (errors) => Object.keys(errors);
+  function focusFirstError(errors) { const first = fieldIds(errors)[0]; if (first) requestAnimationFrame(() => requestAnimationFrame(() => document.getElementById(first)?.focus())); }
+  const errText = (errs, id) => errs?.[id] ?? "";
+  const field = (id, label, control, { hint = "", optional = false, errs = null } = {}) =>
+    `<div class="ll-field"><label class="ll-field__label" for="${id}">${esc(label)}${optional ? " <em>(optional)</em>" : ""}</label>${hint ? `<span class="ll-field__hint" id="${id}-hint">${esc(hint)}</span>` : ""}${control}${C.FieldError({ id, text: errText(errs, id) })}</div>`;
+  const inp = (id, errs, attrs = "", type = "text") => C.Input({ id, value: val(id), type, invalid: Boolean(errText(errs, id)), describedBy: [errText(errs, id) ? `${id}-err` : "", attrs.includes("hint") ? `${id}-hint` : ""].filter(Boolean).join(" "), attrs: attrs.replace("hint", "") });
+
+  /* ---------- Job editor (UX-05 / #128) ---------- */
+  const ED_STEPS = ["Basics", "Pay and schedule", "Equipment and volume", "Review and publish"];
+  const LANDINGS = [["hills", "Hills Creek Unit 4 · near Oakridge, OR"], ["brice", "Brice Creek · near Cottage Grove, OR"], ["layng", "Layng Creek · paused, reactivate to post", true]];
+  function validateEditor(step) {
+    const e = {};
+    if (step === 0) {
+      if (val("ed-title").trim().length < 3) e["ed-title"] = "Give the job a short title (3+ characters).";
+      if (!val("ed-product")) e["ed-product"] = "Choose the product.";
+      if (val("ed-product") === "Other" && val("ed-other").trim().length < 3) e["ed-other"] = "Describe the product.";
+    }
+    if (step === 1) {
+      if (S.ed.payMode === "rate") { if (!(Number(val("ed-amount")) > 0)) e["ed-amount"] = "Enter a rate above $0."; }
+      else if (val("ed-note").trim().length < 3) e["ed-note"] = "Explain how negotiable pay is set.";
+      if (!val("ed-start")) e["ed-start"] = "Choose the start date.";
+      if (S.ed.endMode === "date" && (!val("ed-end") || val("ed-end") < val("ed-start"))) e["ed-end"] = "Choose an end date on or after the start.";
+      if (S.ed.endMode === "days" && !(Number(val("ed-days")) >= 1 && Number(val("ed-days")) <= 365)) e["ed-days"] = "Enter 1 to 365 days.";
+      if (!(Number(val("ed-trucks")) >= 1)) e["ed-trucks"] = "Enter how many trucks the job needs.";
+    }
+    if (step === 2) {
+      if (!Object.values(S.ed.eq).some(Boolean)) e["ed-eq-log_pole"] = "Choose at least one truck and trailer setup.";
+      if (SENSITIVE.test(val("ed-road"))) e["ed-road"] = "This looks like a gate code or coordinates. Keep those private and share them with a hauler in a message.";
+    }
+    return e;
+  }
+  function editorJob() {
+    const rate = S.ed.payMode === "rate";
+    const days = S.ed.endMode === "days" ? Number(val("ed-days")) : null;
+    const landing = LANDINGS.find((l) => l[0] === val("ed-landing")) ?? LANDINGS[0];
+    return { id: "draft", title: val("ed-title") || "Untitled job", poster: { name: "Cedar Fork Logging", verified: null },
+      pay: rate ? { amountCents: Math.round(Number(val("ed-amount") || 0) * 100), unit: val("ed-basis") || "per_load", note: null } : { amountCents: null, unit: "negotiable", note: val("ed-note") || "Explain how pay is set" },
+      product: val("ed-product") === "Other" ? val("ed-other") : val("ed-product"), tonsPerLoad: Number(val("ed-tons")) || null,
+      origin: { label: landing[1].split("near ")[1]?.replace(/, OR$/, ", OR") ?? "Oakridge, OR", milesFromViewer: null }, destination: val("ed-dest") || null,
+      haulDistance: Number(val("ed-miles")) ? { miles: Number(val("ed-miles")), basis: "poster_route_estimate" } : null,
+      equipment: Object.entries(S.ed.eq).filter(([, on]) => on).map(([k]) => k), startsOn: val("ed-start") ? new Date(val("ed-start") + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "Start not set",
+      duration: S.ed.endMode === "ongoing" ? "Ongoing" : days ? `About ${days} day${days === 1 ? "" : "s"}` : val("ed-end") ? `Until ${new Date(val("ed-end") + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : "End not set",
+      trucks: { total: Number(val("ed-trucks")) || 1, perDay: Number(val("ed-perday")) || null }, lastConfirmedAt: "when you publish", freshness: "confirmed", sponsored: false, hours: "Not stated", road: val("ed-road") || "No public road notes" };
+  }
+  pages.editor = () => {
+    const step = S.ed.step, errs = S.ed.errors, job = editorJob(), landing = LANDINGS.find((l) => l[0] === val("ed-landing")) ?? LANDINGS[0];
+    const stepBody = [
+      () => field("ed-landing", "Landing", select("ed-landing", LANDINGS, val("ed-landing")), { hint: "Only recruiting landings can post jobs." })
+        + field("ed-title", "Title", inp("ed-title", errs, 'maxlength="140" hint'), { hint: "Haulers see this first, for example “Oak saw logs to Springfield”.", errs })
+        + field("ed-product", "Product", select("ed-product", [["", "Choose a product"], ...PRODUCTS.map((p) => [p, p])], val("ed-product"), errText(errs, "ed-product") ? 'aria-invalid="true" aria-describedby="ed-product-err"' : ""), { errs })
+        + (val("ed-product") === "Other" ? field("ed-other", "Describe the product", inp("ed-other", errs, 'maxlength="120"'), { errs }) : "")
+        + `<div class="ll-form-grid">${field("ed-dest", "Destination", inp("ed-dest", errs, 'hint'), { optional: true, hint: "Mill or yard and town. Public." })}${field("ed-miles", "One-way miles", inp("ed-miles", errs, 'inputmode="numeric" hint'), { optional: true, hint: "Your estimate. Shown as one." })}</div>`,
+      () => `<div class="ll-field"><span class="ll-field__label" id="paymode-l">Pay</span><span class="ll-field__hint">Every published job states a rate with its basis, or explains negotiable pay.</span>${C.Segmented({ label: "Pay type", options: [["rate", "Set rate"], ["negotiable", "Negotiable"]], value: S.ed.payMode, act: "ed-paymode" })}</div>`
+        + (S.ed.payMode === "rate"
+          ? `<div class="ll-form-grid">${field("ed-amount", "Rate ($)", inp("ed-amount", errs, 'inputmode="decimal"'), { errs })}${field("ed-basis", "Paid", select("ed-basis", BASES, val("ed-basis") || "per_load"))}</div>`
+          : field("ed-note", "How negotiable pay is set", `<textarea class="ll-input" id="ed-note" data-field="ed-note" ${errText(errs, "ed-note") ? 'aria-invalid="true" aria-describedby="ed-note-err"' : ""}>${esc(val("ed-note"))}</textarea>`, { errs, hint: "Haulers see this in place of a rate. No phone numbers." }))
+        + `<div class="ll-form-grid">${field("ed-start", "Work starts", inp("ed-start", errs, "", "date"), { errs })}<div class="ll-field"><span class="ll-field__label">Work ends</span>${C.Segmented({ label: "How the job ends", options: [["date", "On a date"], ["days", "After a number of days"], ["ongoing", "Ongoing"]], value: S.ed.endMode, act: "ed-endmode" })}</div></div>`
+        + (S.ed.endMode === "date" ? field("ed-end", "End date", inp("ed-end", errs, "", "date"), { errs }) : S.ed.endMode === "days" ? field("ed-days", "Number of working days", inp("ed-days", errs, 'inputmode="numeric"'), { errs }) : `<p class="ll-field__hint">Listed as “Ongoing from ${esc(job.startsOn)}”. You'll be reminded to reconfirm while it stays open.</p>`)
+        + `<div class="ll-form-grid">${field("ed-trucks", "Trucks needed for the job", inp("ed-trucks", errs, 'inputmode="numeric"'), { errs })}${field("ed-perday", "Trucks per day", inp("ed-perday", errs, 'inputmode="numeric"'), { optional: true })}</div>`,
+      () => `<fieldset class="ll-fieldset"><legend class="ll-field__label">Truck and trailer</legend>${Object.entries(D.equipmentTypes).map(([k, l]) => C.Checkbox({ id: `ed-eq-${k}`, label: l, checked: S.ed.eq[k], act: `ed-eq:${k}` })).join("")}${C.FieldError({ id: "ed-eq-log_pole", text: errText(errs, "ed-eq-log_pole") })}</fieldset>`
+        + `<div class="ll-form-grid">${field("ed-tons", "Tons per load", inp("ed-tons", errs, 'inputmode="decimal" hint'), { optional: true, hint: "Shown as your estimate." })}${field("ed-loads", "Loads per day, whole job", inp("ed-loads", errs, 'inputmode="numeric" hint'), { optional: true, hint: "Shown as your estimate." })}</div>`
+        + field("ed-road", "Public road notes", `<textarea class="ll-input" id="ed-road" data-field="ed-road" aria-describedby="ed-road-hint${errText(errs, "ed-road") ? " ed-road-err" : ""}" ${errText(errs, "ed-road") ? 'aria-invalid="true"' : ""}>${esc(val("ed-road"))}</textarea>`, { optional: true, errs, hint: "Conditions only. Never gate codes, combinations or coordinates." }),
+      () => S.ed.published
+        ? `<div class="ll-state" style="padding:var(--ll-space-5) 0"><h3 class="ll-state__title">Published (simulated)</h3><p class="ll-state__body">In the live product, the server records “Confirmed by Cedar Fork Logging” with the publish time. Edits never change that date. Nothing was published from this page.</p><div class="ll-page-actions">${C.Button({ label: "Go to overview", act: "go", attrs: 'data-go="overview"' })}${C.Button({ label: "Start another job", variant: "secondary", act: "ed-reset" })}</div></div>`
+        : `<div class="ll-section__desc" style="margin:0">How haulers will see it in search:</div>${C.JobResultList({ jobs: [job], selectedId: null, context: "preview" })}
+          <div class="ll-visibility" data-audience="private"><h3 class="ll-visibility__head">${LOCK}Not shown to haulers</h3><div class="ll-visibility__body"><p class="ll-field__hint">The exact location, gate and access instructions and the site contact for ${esc(landing[1].split(" · ")[0])}. Share them in a message with a hauler you choose.</p></div></div>
+          <fieldset class="ll-fieldset"><legend class="ll-field__label">Before you publish</legend>
+            ${C.Checkbox({ id: "ed-attest-0", label: `This is a real job at ${landing[1].split(" · ")[0]}, which is recruiting now.`, checked: S.ed.attest[0], act: "ed-attest:0" })}
+            ${C.Checkbox({ id: "ed-attest-1", label: "Pay, equipment and dates are accurate today.", checked: S.ed.attest[1], act: "ed-attest:1" })}
+            ${C.Checkbox({ id: "ed-attest-2", label: "We'll update or pause it when we no longer need trucks.", checked: S.ed.attest[2], act: "ed-attest:2" })}</fieldset>
+          <p class="ll-field__hint">Publishing records your availability confirmation on the server. Contact is through LogLoads messages; phone and email aren't shown on listings.</p>`
+    ][step]();
+    const allAttested = S.ed.attest.every(Boolean);
+    return C.AppShell({ context: "landing", active: "jobs",
+      children: C.PageHeader({ crumb: '<a href="#">Jobs</a> / New job', title: "Post a job", description: '<span style="font-size:var(--ll-text-sm);color:var(--ll-color-text-muted)">Draft saved as you go (simulated). Job posts are unlimited at recruiting landings.</span>' })
+        + C.PageContainer({ children: C.ContentGrid({ layout: "main-aside",
+          main: `<section class="ll-section" data-variant="surface" aria-label="Job editor">${C.StepIndicator({ steps: ED_STEPS, current: step })}<div class="ll-form" id="ed-step">${stepBody}</div>
+            ${S.ed.published ? "" : C.FormActions({ secondary: step > 0 ? C.Button({ label: "Back", variant: "secondary", act: "ed-back" }) : C.Button({ label: "Cancel", variant: "ghost" }),
+              primary: C.Button({ label: "Save draft", variant: "ghost" }) + (step < 3 ? C.Button({ label: `Next: ${ED_STEPS[step + 1].toLowerCase()}`, act: "ed-next" }) : C.Button({ label: "Publish job", act: "ed-publish", attrs: allAttested ? "" : 'aria-disabled="true" aria-describedby="publish-why"' }) + (allAttested ? "" : '<span class="ll-sr" id="publish-why">Check all three statements to publish.</span>')) })}</section>`,
+          aside: C.Section({ title: "Live preview", description: "Updates as you type. Haulers see exactly this card.", children: `<div id="ed-preview">${C.JobResultList({ jobs: [job], selectedId: null, context: "preview" })}</div>` })
+            + C.Section({ title: "What's required", children: `<ul class="ll-checklist">${[["Title, landing and product", step > 0], ["Rate with its basis, or negotiable with an explanation", step > 1], ["Start date, and an end or “Ongoing”", step > 1], ["At least one truck and trailer setup", step > 2], ["Your three confirmations", allAttested]].map(([t, ok]) => `<li ${ok ? "data-ok" : ""}>${ok ? IC.check : IC.dash}<span>${esc(t)}</span></li>`).join("")}</ul>` }) }) }) });
+  };
+
+  /* ---------- Hauler setup (UX-02 / #125) ---------- */
+  pages.setup = () => {
+    const join = S.su.btype === "join";
+    const steps = join ? ["Who's hauling", "Join your company"] : ["Who's hauling", "Your business", "Your trucks", "Area and availability"];
+    const st = S.su.step, errs = S.su.errors;
+    const total = Object.values(S.su.trucks).reduce((a, b) => a + b, 0);
+    const body = S.su.done
+      ? `<div class="ll-state" style="padding:var(--ll-space-5) 0"><h3 class="ll-state__title">You're set up (simulated)</h3><p class="ll-state__body">Ridgeline Hauling's free profile would now be live, with ${total} truck${total === 1 ? "" : "s"} listed. Nothing was saved from this page.</p><div class="ll-page-actions">${C.Button({ label: "Find work", act: "go", attrs: 'data-go="find"' })}</div></div>`
+      : [
+        () => `<fieldset class="ll-fieldset"><legend class="ll-field__label">This only changes what we ask next. Every hauler gets the same free tools.</legend>
+            ${C.ChoiceCard({ name: "btype", value: "me", checked: S.su.btype === "me", title: "Just me", body: "I own and run my own truck or trucks.", act: "su-btype" })}
+            ${C.ChoiceCard({ name: "btype", value: "company", checked: S.su.btype === "company", title: "A hauling company", body: "Several trucks, or office staff who help find work.", act: "su-btype" })}
+            ${C.ChoiceCard({ name: "btype", value: "join", checked: join, title: "I work for a hauling company", body: "Join with an invitation. No truck questions.", act: "su-btype" })}</fieldset>`,
+        () => join
+          ? field("su-code", "Invitation code or link", inp("su-code", errs, 'hint'), { hint: "Your company sends this from its Team page.", errs })
+          : C.VisibilityPanel({ audience: "public", title: "Seen by landing operators", children: field("su-name", "Business name", inp("su-name", errs), { errs }) + field("su-home", "Home base", inp("su-home", errs, 'hint'), { hint: "Town or ZIP only. Never a street address.", errs }) + field("su-about", "About", `<textarea class="ll-input" id="su-about" data-field="su-about">${esc(val("su-about"))}</textarea>`, { optional: true }) })
+            + C.VisibilityPanel({ audience: "private", title: "Private · only you and your team", children: field("su-phone", "Mobile phone", inp("su-phone", errs, 'inputmode="tel"'), { optional: true })
+              + `<fieldset class="ll-fieldset"><legend class="ll-field__label">First contact from landings</legend>${C.ChoiceCard({ name: "contact", value: "in_app", checked: S.su.contact === "in_app", title: "LogLoads messages", body: "Recommended. Your number stays private.", act: "su-contact" })}${C.ChoiceCard({ name: "contact", value: "phone", checked: S.su.contact === "phone", title: "Phone, after I send interest", body: "Shared only with landings you contact.", act: "su-contact" })}</fieldset>` }),
+        () => `<p class="ll-field__hint">Count each truck-and-trailer setup you can put on a job. You can add photos later.</p><div class="ll-eq-list">${Object.entries(D.equipmentTypes).map(([k, l]) => `<div class="ll-eq"><div><span class="ll-eq__name">${esc(l)}</span></div><span></span>${C.NumberStepper({ label: `${l} count`, value: S.su.trucks[k], min: 0, max: 99, act: "su-truck", key: k })}</div>`).join("")}</div>${C.FieldError({ id: "su-trucks", text: errText(errs, "su-trucks") })}`,
+        () => field("su-home2", "Take work from", inp("su-home2", errs), { errs })
+          + `<div class="ll-field"><span class="ll-field__label">Up to</span>${C.Segmented({ label: "Service radius", options: [[50, "50 mi"], [100, "100 mi"], [150, "150 mi"], [250, "250+ mi"]], value: S.su.radius, act: "su-radius" })}</div>`
+          + `<div class="ll-field"><span class="ll-field__label">Are your trucks available?</span>${C.Segmented({ label: "Availability", options: [["now", "Available now"], ["from", "From a date"], ["no", "Not available"]], value: S.su.avail, act: "su-avail" })}</div>`
+          + (S.su.avail === "no" ? "" : `<div class="ll-avail-row__line"><span>Trucks available</span>${C.NumberStepper({ label: "Trucks available", value: Math.min(S.su.availCount, total), min: 0, max: total, act: "su-availcount", key: "a" })}<span class="ll-field__hint">of ${total} you listed</span></div>`)
+          + `<p class="ll-field__hint">Self-reported. Landings see “Updated today by the hauler”. No GPS, ever.</p>`
+          + `<fieldset class="ll-fieldset"><legend class="ll-field__label">Notify me</legend>${C.Checkbox({ id: "su-alert-jobs", label: "New jobs that fit my trucks", checked: S.su.alerts.jobs, act: "su-alert:jobs" })}${C.Checkbox({ id: "su-alert-inv", label: "Invitations from landing operators", checked: S.su.alerts.inv, act: "su-alert:inv", hint: "Off unless you turn it on. You can mute any sender." })}</fieldset>`
+      ][st]();
+    return `<div class="ll-proto">Prototype content. Nothing here is saved.</div>
+      <header class="ll-nav"><div class="ll-container ll-nav__inner"><a class="ll-brand" href="#" aria-label="LogLoads home">${MARK}<span class="ll-brand__word"><b>Log</b><span>Loads</span></span></a><span style="margin-left:auto">${C.Button({ label: "Finish later", variant: "ghost", size: "sm" })}</span></div></header>
+      <main id="main">${C.PageHeader({ title: "Set up your hauling business", description: "Free for haulers. About three minutes. Every step after the first can be skipped and finished later." })}
+      ${C.PageContainer({ width: "narrow", children: `<div class="ll-grid"><section class="ll-section" data-variant="surface" aria-label="Setup">${S.su.done ? "" : C.StepIndicator({ steps, current: st })}<div class="ll-form">${body}</div>
+        ${S.su.done ? "" : C.FormActions({ secondary: st > 0 ? C.Button({ label: "Back", variant: "secondary", act: "su-back" }) : "", primary: (st > 0 && !join ? C.Button({ label: "Skip for now", variant: "ghost", act: "su-skip" }) : "") + C.Button({ label: st === steps.length - 1 ? "Finish" : "Continue", act: "su-next" }) })}</section></div>` })}</main>`;
+  };
+
+  /* ---------- Add a landing (UX-04 / #127) ---------- */
+  pages.site = () => {
+    const errs = S.site.errors;
+    return C.AppShell({ context: "landing", active: "landings",
+      children: C.PageHeader({ crumb: '<a href="#">Landings</a> / New landing', title: "Add a landing", description: "A landing is a real place you recruit trucks for. Save it once and reuse it for every job." })
+        + C.PageContainer({ children: C.ContentGrid({ layout: "main-aside",
+          main: (S.site.saved ? `<div class="ll-section" data-variant="surface"><div class="ll-state" style="padding:0"><h3 class="ll-state__title">Landing saved (simulated)</h3><p class="ll-state__body">${esc(val("st-name"))} ${S.site.recruit ? "is recruiting and counts as 3 of 3 active landings on Pro" : "is saved but not recruiting, so it doesn't count toward your plan"}. Nothing was saved from this page.</p><div class="ll-page-actions">${C.Button({ label: "Post a job here", act: "go", attrs: 'data-go="editor"' })}</div></div></div>` :
+            C.VisibilityPanel({ audience: "public", title: "Seen by haulers", children: field("st-name", "Landing name", inp("st-name", errs), { errs })
+                + field("st-area", "Nearest town", inp("st-area", errs, 'hint'), { hint: "Haulers see an approximate area on the 0.1° public grid, never your exact site.", errs })
+                + `<div class="ll-form-grid">${field("st-hours", "Typical hours", inp("st-hours", errs), { optional: true })}${field("st-roadtype", "Road surface", select("st-roadtype", [["gravel", "Gravel"], ["paved", "Paved"], ["dirt", "Dirt / seasonal"]], val("st-roadtype") || "gravel"), { optional: true })}</div>`
+                + field("st-road", "Public road notes", `<textarea class="ll-input" id="st-road" data-field="st-road" aria-describedby="st-road-hint${errText(errs, "st-road") ? " st-road-err" : ""}" ${errText(errs, "st-road") ? 'aria-invalid="true"' : ""}>${esc(val("st-road"))}</textarea>`, { optional: true, errs, hint: "Conditions only. Never gate codes, combinations or coordinates." }) })
+            + C.VisibilityPanel({ audience: "private", title: "Private · your team only", children: `<div class="ll-field"><span class="ll-field__label">Exact location <em>(optional)</em></span><span class="ll-field__hint">Saving works without it. Never published.</span>${C.Button({ label: "Drop a pin (simulated)", variant: "secondary", size: "sm" })}</div>`
+                + field("st-gate", "Gate and access instructions", `<textarea class="ll-input" id="st-gate" data-field="st-gate">${esc(val("st-gate"))}</textarea>`, { optional: true, hint: "Shared with a hauler only when you choose, one conversation at a time." })
+                + `<div class="ll-form-grid">${field("st-cname", "Site contact", inp("st-cname", errs), { optional: true })}${field("st-cphone", "Contact phone", inp("st-cphone", errs, 'inputmode="tel"'), { optional: true })}</div>` })
+            + `<section class="ll-section" data-variant="surface" aria-label="Recruiting status">${C.Checkbox({ id: "st-recruit", label: "Recruiting now", checked: S.site.recruit, act: "st-recruit", hint: S.site.recruit ? "Counts as an active landing: this would be 3 of 3 on your Pro plan." : "Saved landings don't count toward your plan." })}
+              ${C.FormActions({ secondary: C.Button({ label: "Cancel", variant: "ghost" }), primary: C.Button({ label: "Save landing", act: "st-save" }) })}</section>`),
+          aside: C.Section({ title: "Who sees what", children: `<ul class="ll-checklist"><li data-ok>${IC.check}<span>Haulers see the name, the approximate area, hours and public road notes.</span></li><li data-ok>${IC.check}<span>Your team sees everything on this page.</span></li><li>${IC.dash}<span>Exact location, gate instructions and the site contact are never on a listing or a map.</span></li></ul>` })
+            + C.Section({ title: "Your plan", children: `<div class="ll-usage"><div class="ll-usage__row"><div><span>Active landings</span><b class="ll-num">2 of 3</b></div><span class="ll-meter" aria-hidden="true"><i style="width:66%"></i></span></div></div><p class="ll-field__hint">Paused and saved landings never count. Job posts at recruiting landings are unlimited.</p>` }) }) }) });
+  };
+
   function dialogFor() {
     if (!S.dialog) return "";
     const job = D.jobs.find((j) => j.id === S.dialog.job) ?? D.jobs[0];
@@ -294,7 +457,7 @@
     return `<svg viewBox="0 0 400 300" preserveAspectRatio="none" aria-hidden="true"><rect width="400" height="300" fill="${t[0]}"/><path d="M0 ${300 * h} C90 ${300 * h - 50} 160 ${300 * h + 10} 240 ${300 * h - 35} S350 ${300 * h - 45} 400 ${300 * h - 20} V300 H0Z" fill="${t[1]}"/><path d="M0 ${300 * h + 50} C110 ${300 * h + 15} 200 ${300 * h + 65} 290 ${300 * h + 30} S370 ${300 * h + 25} 400 ${300 * h + 40} V300 H0Z" fill="${t[2]}"/>${Array.from({ length: 12 }, (_, i) => `<path d="M${20 + i * 32 + seed * 5} ${300 * h - 8 - ((i * 17 + seed * 7) % 26)} l9 -26 l9 26 z" fill="${t[3]}"/>`).join("")}</svg>`; };
 
   /* ================= Review harness (not product UI) ================= */
-  const SCREENS = [["find-desktop", "Find work · desktop", "find", 1440], ["find-mobile", "Find work · mobile", "find", 390], ["profile", "Hauler business profile", "profile"], ["equipment", "Equipment and availability", "equipment"], ["overview", "Landing workspace", "overview"], ["inquiry", "Inquiry and conversation", "inquiry"]];
+  const SCREENS = [["find-desktop", "Find work · desktop", "find", 1440], ["find-mobile", "Find work · mobile", "find", 390], ["profile", "Hauler business profile", "profile"], ["equipment", "Equipment and availability", "equipment"], ["overview", "Landing workspace", "overview"], ["inquiry", "Inquiry and conversation", "inquiry"], ["editor", "Job editor", "editor"], ["setup", "Hauler setup", "setup"], ["site", "Add a landing", "site"]];
   const THEMES = { forest: {}, spruce: { "--ll-color-action": "#1d5c6b", "--ll-color-action-hover": "#174b58", "--ll-color-brand": "#1d5c6b", "--ll-color-nav-active": "#1d5c6b", "--ll-color-selected-indicator": "#1d5c6b", "--ll-color-status-positive": "#1d5c6b", "--ll-color-action-subtle": "#eaf3f5", "--ll-color-action-subtle-border": "#cfe2e7", "--ll-color-selected-bg": "#f0f6f7" }, charcoal: { "--ll-color-action": "#262f2b", "--ll-color-action-hover": "#151a18", "--ll-color-nav-active": "#262f2b", "--ll-color-selected-indicator": "#262f2b" } };
   const CORNERS = { standard: {}, square: { "--ll-radius-md": "3px", "--ll-radius-lg": "4px", "--ll-radius-xl": "6px", "--ll-c-section-radius": "4px", "--ll-c-button-radius": "3px", "--ll-c-field-radius": "3px" } };
   const stage = document.getElementById("stage"), vp = document.getElementById("vp");
@@ -317,11 +480,13 @@
     document.getElementById("ctl-photos").hidden = S.screen !== "profile";
     const vars = { ...THEMES[S.theme], ...CORNERS[S.corners] };
     const y = window.scrollY;
+    const fid = vp.contains(document.activeElement) && document.activeElement.id ? document.activeElement.id : null;
     vp.innerHTML = `<div class="ll-theme ll-app" style="${Object.entries(vars).map(([k, v]) => `${k}:${v}`).join(";")}">${pages[S.screen]()}</div>`;
     document.getElementById("cap-l").textContent = SCREENS.find((s) => s[0] === screenId)[1];
     requestAnimationFrame(() => { fit(); if (keep) window.scrollTo(0, y); const d = vp.querySelector(".ll-dialog");
       if (d && keep === "dialog") d.querySelector("input, textarea, [data-act='send-interest'], button")?.focus();
-      if (!d && returnFocus) { vp.querySelector(returnFocus)?.focus(); returnFocus = null; } });
+      if (!d && returnFocus) { vp.querySelector(returnFocus)?.focus(); returnFocus = null; }
+      else if (!d && fid && keep !== "dialog") document.getElementById(fid)?.focus({ preventScroll: true }); });
   }
   document.addEventListener("click", (e) => {
     const k = e.target.closest("[data-k]");
@@ -353,7 +518,36 @@
       else if (act === "quick") S.drafts[S.inq] = a.dataset.v;
       else if (act === "send") { const t = (document.getElementById("composer")?.value ?? "").trim(); if (t) { (S.sent[S.inq] ??= []).push(t); S.drafts[S.inq] = ""; } }
       else if (act === "reconfirm") S.reconfirmed = true;
-      else if (act === "go") { const target = a.dataset.go; S.screen = target; screenId = target; S.dialog = null; }
+      else if (act === "ed-next") { const errs = validateEditor(S.ed.step); S.ed.errors = errs; if (Object.keys(errs).length) { render(true); focusFirstError(errs); return; } S.ed.step += 1; render(true); requestAnimationFrame(() => requestAnimationFrame(() => document.querySelector("#ed-step input, #ed-step select, #ed-step textarea, #ed-step a")?.focus())); return; }
+      else if (act === "ed-back") { S.ed.step = Math.max(0, S.ed.step - 1); S.ed.errors = {}; }
+      else if (act === "ed-paymode") S.ed.payMode = a.dataset.v;
+      else if (act === "ed-endmode") S.ed.endMode = a.dataset.v;
+      else if (act.startsWith("ed-eq:")) S.ed.eq[act.slice(6)] = !S.ed.eq[act.slice(6)];
+      else if (act.startsWith("ed-attest:")) { const i = Number(act.slice(10)); S.ed.attest[i] = !S.ed.attest[i]; }
+      else if (act === "ed-publish") { if (!S.ed.attest.every(Boolean)) { const i = S.ed.attest.findIndex((x) => !x); render(true); requestAnimationFrame(() => document.getElementById(`ed-attest-${i}`)?.focus()); return; } S.ed.published = true; }
+      else if (act === "ed-reset") { S.ed = { ...S.ed, step: 0, attest: [false, false, false], errors: {}, published: false }; }
+      else if (act === "su-btype") { S.su.btype = a.dataset.v; S.su.step = 0; }
+      else if (act === "su-contact") S.su.contact = a.dataset.v;
+      else if (act === "su-truck") { const k2 = a.dataset.k; S.su.trucks[k2] = Math.max(0, Math.min(99, S.su.trucks[k2] + Number(a.dataset.d))); }
+      else if (act === "su-radius") S.su.radius = Number(a.dataset.v);
+      else if (act === "su-avail") S.su.avail = a.dataset.v;
+      else if (act === "su-availcount") { const total = Object.values(S.su.trucks).reduce((x, y) => x + y, 0); S.su.availCount = Math.max(0, Math.min(total, Math.min(S.su.availCount, total) + Number(a.dataset.d))); }
+      else if (act.startsWith("su-alert:")) { const k2 = act.slice(9); S.su.alerts[k2] = !S.su.alerts[k2]; }
+      else if (act === "su-back") { S.su.step = Math.max(0, S.su.step - 1); S.su.errors = {}; }
+      else if (act === "su-next" || act === "su-skip") {
+        const join = S.su.btype === "join", last = join ? 1 : 3, e2 = {};
+        if (act === "su-next") {
+          if (join && S.su.step === 1 && val("su-code").trim().length < 4) e2["su-code"] = "Enter the code or link from your company.";
+          if (!join && S.su.step === 1) { if (val("su-name").trim().length < 2) e2["su-name"] = "Enter your business name."; if (!val("su-home").trim()) e2["su-home"] = "Enter a town or ZIP."; }
+          if (!join && S.su.step === 2 && Object.values(S.su.trucks).every((x) => x === 0)) e2["su-trucks"] = "Add at least one truck, or skip this step for now.";
+        }
+        S.su.errors = e2;
+        if (Object.keys(e2).length) { render(true); focusFirstError(e2); return; }
+        if (S.su.step >= last) S.su.done = true; else S.su.step += 1;
+      }
+      else if (act === "st-recruit") S.site.recruit = !S.site.recruit;
+      else if (act === "st-save") { const e2 = {}; if (val("st-name").trim().length < 3) e2["st-name"] = "Give the landing a name."; if (!val("st-area").trim()) e2["st-area"] = "Enter the nearest town."; if (SENSITIVE.test(val("st-road"))) e2["st-road"] = "This looks like a gate code or coordinates. Put access details in the private section."; S.site.errors = e2; if (Object.keys(e2).length) { render(true); focusFirstError(e2); return; } S.site.saved = true; }
+      else if (act === "go") { const target = a.dataset.go; S.screen = target; screenId = target === "find" ? (S.w === 390 ? "find-mobile" : "find-desktop") : target; S.dialog = null; }
       render(act === "send-interest" || act === "offer" ? "dialog" : true); return;
     }
     const row = e.target.closest("[data-sel]");
@@ -364,6 +558,8 @@
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && S.dialog) { S.dialog = null; S.interestSent = false; render(true); }
   });
+  document.addEventListener("input", (e) => { const fEl = e.target.closest?.("#vp [data-field]"); if (!fEl) return; S.f[fEl.dataset.field] = fEl.value; const pv = document.getElementById("ed-preview"); if (pv && S.screen === "editor") pv.innerHTML = C.JobResultList({ jobs: [editorJob()], selectedId: null, context: "preview" }); });
+  document.addEventListener("change", (e) => { const fEl = e.target.closest?.("#vp select[data-field]"); if (!fEl) return; S.f[fEl.dataset.field] = fEl.value; render(true); });
   new ResizeObserver(fit).observe(stage); new ResizeObserver(fit).observe(vp);
   if (document.fonts?.ready) document.fonts.ready.then(fit);
   render();

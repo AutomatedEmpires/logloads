@@ -12,4 +12,4 @@ Reference source for the final Modern Industrial hybrid. The spec is [`../06_DES
 | `app.js` | Prototype components and pages, composition reference | Not shipped |
 | `index.html` | Review harness; open it locally next to the files above | Not shipped |
 
-Change a token in `tokens.css` and every screen in `index.html` follows; the harness's "Developer check" demonstrates this. Nothing in this folder is imported by the application.
+The harness covers nine screens: the six key screens plus the job editor, hauler setup and add-a-landing form. Change a token in `tokens.css` and every screen in `index.html` follows; the harness's "Developer check" demonstrates this. Nothing in this folder is imported by the application.

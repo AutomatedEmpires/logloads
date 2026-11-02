@@ -87,7 +87,7 @@ Breakpoints cannot be custom properties inside container queries, so they live i
 | `FilterBar` | One row of filter buttons with the active value shown; scrolls horizontally on phones |
 | `DetailPanel` | Beside lists at `xl` and up, collapsible. Below `xl` the same `JobDetail` opens in a `Dialog` sheet. |
 
-### Page compositions (the six screens)
+### Page compositions
 
 | Screen | Workspace | Composition |
 |---|---|---|
@@ -96,6 +96,9 @@ Breakpoints cannot be custom properties inside container queries, so they live i
 | Equipment and availability | Hauler | `PageHeader` (meta and actions) → `ContentGrid main-aside`: `EquipmentAvailabilityRow` list and aside (public preview, service area) |
 | Landing workspace overview | Landing | `PageHeader` → `ContentGrid main-aside`: needs-attention list and `Section flush(JobResultList context="poster")`, aside with plan usage and landings |
 | Inquiry and conversation | Landing | `PageHeader` (meta, reconfirm, tabs) → `ContentGrid split`: `InquiryRow` list + `ConversationThread` + `MessageComposer` |
+| Job editor (#128) | Landing | `PageHeader` → `ContentGrid main-aside`: Section with `StepIndicator`, the step's `FormField`s and `FormActions`; aside with a live `JobResultRow context="preview"` and a required-items checklist. Step 4 shows the preview, the private "Not shown to haulers" panel and three attestation `Checkbox`es (V2-DEC-03). Rules: UX-DEC-02 timing, UX-DEC-03 product, UX-DEC-04 contact, V2-DEC-02 pay. |
+| Hauler setup (#125) | Pre-workspace | Minimal shell (brand plus "Finish later") → narrow `PageContainer`: `StepIndicator`, `ChoiceCard`s for business type (joining skips the truck questions), public and private `VisibilityPanel`s, truck `NumberStepper`s, availability and alert opt-ins (invitations default off) |
+| Add a landing (#127) | Landing | `PageHeader` → `ContentGrid main-aside`: public and private `VisibilityPanel`s, a recruiting `Checkbox` showing the plan count, and `FormActions`; aside with "Who sees what" and plan usage |
 
 Fleet uses the hauler compositions, with more `EquipmentAvailabilityRow`s and a Team section. The organization and platform admin workspaces use the same shell, `PageHeader`, `Section` and list components; they don't get a separate system.
 
@@ -109,7 +112,7 @@ Fleet uses the hauler compositions, with more `EquipmentAvailabilityRow`s and a 
 | **768** | Bottom tabs | Composite search; 2×2 facts | Figures 2 × 2 | Controls under labels | List, then conversation |
 | **390** | Bottom tabs | Search summary; scrolling filter row; job opens as a full sheet | Stacked; gallery 2 up | Stacked | Stacked |
 
-All six screens were rendered at all five widths in Edge with no horizontal page overflow. The review page keeps the chosen width when you switch screens, which fixes the earlier 390 → 1440 reset.
+All nine screens (the six key screens plus the job editor, hauler setup and add-a-landing form) were rendered at all five widths in Edge with no horizontal page overflow (reference prototype evidence only). The review page keeps the chosen width when you switch screens, which fixes the earlier 390 → 1440 reset.
 
 ## 6. Component inventory
 
@@ -130,6 +133,7 @@ All six screens were rendered at all five widths in Edge with no horizontal page
 | `CompanyProfileHeader` | Initials fallback or real logo; 2–4 figures; no colour band | **New** |
 | `EquipmentCapacity`, `OperatingRegion` | Unknown capacity shows dashed marks and "not recently confirmed", never zero | **New** |
 | `InquiryRow`, `ConversationThread`, `MessageComposer` | Same row pattern as `JobResultRow` (name link + `aria-current`); turn state on the row; messages aligned by side; quick replies only fill the draft | **Replace** markup in `app/v2/inquiries` and `app/v2/landing/inquiries` |
+| `StepIndicator`, `ChoiceCard`, `Checkbox`, `VisibilityPanel`, `FormActions` | Native radio and checkbox inputs inside labels; errors come through `FormField`, with focus on the first invalid field; `VisibilityPanel` labels the audience but never replaces server redaction | **New**; `ChoiceCard` replaces v3 `.radio-card` |
 | `EquipmentAvailabilityRow` | available now, from a date, not available, unknown; count ≤ units | **Adapts** v3 `AvailabilityQuickSet` (`DriverActions.tsx:553`) |
 | `AppShell` and layout set | See §4 | **Replaces** `app/v2/layout.tsx` chrome; v3 `AppShell` and its nav data stay legacy-only |
 | `MapView` | Unchanged behaviour; restyled with tokens | **Reuse** `components/v2/JobMap.tsx` |
