@@ -39,6 +39,10 @@ $$;
 create function pg_temp.phase3() returns boolean language sql stable as $$
   select to_regclass('marketplace.billing_provider_events') is not null
 $$;
+-- 16 (identity, membership and qualification hardening) applied on top of Phase 3.
+create function pg_temp.hardened() returns boolean language sql stable as $$
+  select to_regprocedure('marketplace.can_view_user_qualifications(uuid)') is not null
+$$;
 
 -- Runs p_sql and requires failure with SQLSTATE p_state AND a constraint name or message matching
 -- p_reason (case-insensitive regex), so a negative test cannot pass because an unrelated rule fired.
@@ -159,9 +163,9 @@ begin
   select count(*) into v_funcs
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'marketplace';
-  -- Functions: baseline 44; + 06 63; + 11/12 72 (5 in 11, 4 in 12; the rest redefine existing ones).
-  perform pg_temp.assert_true(v_funcs = case when pg_temp.phase3() then 72 when pg_temp.aligned() then 63 else 44 end,
-    format('expected %s functions in marketplace, found %s', case when pg_temp.phase3() then 72 when pg_temp.aligned() then 63 else 44 end, v_funcs));
+  -- Functions: baseline 44; + 06 63; + 11/12 72 (5 in 11, 4 in 12); + 16 73 (the rest redefine existing ones).
+  perform pg_temp.assert_true(v_funcs = case when pg_temp.hardened() then 73 when pg_temp.phase3() then 72 when pg_temp.aligned() then 63 else 44 end,
+    format('expected %s functions in marketplace, found %s', case when pg_temp.hardened() then 73 when pg_temp.phase3() then 72 when pg_temp.aligned() then 63 else 44 end, v_funcs));
 
   -- No function in `marketplace` may be executable by PUBLIC.
   select count(*) into v_pub_exec

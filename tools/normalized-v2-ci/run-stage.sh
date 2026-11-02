@@ -208,6 +208,22 @@ case "$STAGE" in
       echo '```'
     } | tee -a "$LOG" | tee -a "$SUMMARY"
     ;;
+  16)
+    run_migration "$DIR/16_v2_identity_membership_hardening.sql"
+    aligned_privilege_checks "'job_publication_attestations','legacy_job_imports','job_moderation_holds','billing_provider_events','schema_migrations'"
+    check "D-1/D-2: the migration ledger records 06, 11, 12, 16 in order" "select string_agg(version, ',' order by applied_at, version) = '06,11,12,16' from marketplace.schema_migrations;"
+    check "B-1: every active membership carries an acceptance" "select not exists (select 1 from marketplace.organization_memberships where status = 'active' and accepted_at is null);"
+    check "B-1: accepted_at is not client-writable" "select not has_column_privilege('authenticated', 'marketplace.organization_memberships', 'accepted_at', 'UPDATE') and not has_column_privilege('authenticated', 'marketplace.organization_memberships', 'accepted_at', 'INSERT');"
+    check "B-2: can_view_user_qualifications executable by authenticated only" "select has_function_privilege('authenticated', 'marketplace.can_view_user_qualifications(uuid)', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.can_view_user_qualifications(uuid)', 'EXECUTE') and not has_function_privilege('service_role', 'marketplace.can_view_user_qualifications(uuid)', 'EXECUTE');"
+    ;;
+  17)
+    run_sql "$DIR/17_v2_identity_membership_tests.sql"
+    grep -q "ALL IDENTITY, MEMBERSHIP AND QUALIFICATION (B-1, B-2, B-5) TESTS PASSED" "$LOG" || { echo "STAGE 17: suite did not reach its final PASS notice" >&2; exit 1; }
+    check "suite rolled back (no test organizations left)" "select count(*) = 0 from marketplace.organizations;"
+    PASSES="$(grep -cE "NOTICE:  00000: PASS: " "$LOG" || true)"
+    echo "  executed assertions reporting PASS: $PASSES" | tee -a "$LOG" | tee -a "$SUMMARY"
+    [[ "$PASSES" -ge 18 ]] || { echo "STAGE 17: only $PASSES PASS notices; expected at least 18" >&2; exit 1; }
+    ;;
   13)
     run_sql "$DIR/13_v2_phase3_tests.sql"
     grep -q "ALL PHASE 3 POLICY (F1-F5) AND BILLING-ORDERING TESTS PASSED" "$LOG" || { echo "STAGE 13: suite did not reach its final PASS notice" >&2; exit 1; }

@@ -220,9 +220,11 @@ grep -q "requires migration 11" /tmp/early12.log || fail "12 before 11 failed fo
 expect_eq "jobs unchanged by the refused runs" "$(q "select md5(string_agg(t::text, '|' order by t::text)) from marketplace.job_postings t;")" "$STATE"
 expect_eq "ledger unchanged by the refused runs" "$(q "select string_agg(version, ',' order by version) from marketplace.schema_migrations;")" "06"
 
-echo "[5/6] Applying 11_v2_phase3_policy.sql and 12_v2_billing_events.sql (each one transaction) on top of existing data..."
+echo "[5/6] Applying 11_v2_phase3_policy.sql, 12_v2_billing_events.sql and 16_v2_identity_membership_hardening.sql (each one transaction) on top of existing data..."
 apply1 "$SCRIPT_DIR/11_v2_phase3_policy.sql"
 apply1 "$SCRIPT_DIR/12_v2_billing_events.sql"
+MEMBERS_MODIFIED="$(q "select string_agg(id::text || ':' || updated_at::text, ',' order by id) from marketplace.organization_memberships;")"
+apply1 "$SCRIPT_DIR/16_v2_identity_membership_hardening.sql"
 
 echo "[6/6] Asserting 11 and 12 fabricated nothing and existing data still works..."
 expect_eq "F1: a profile public only by the pre-V2 default is now private" \
@@ -246,6 +248,8 @@ select r.result from marketplace.apply_billing_provider_event('stripe', 'evt_mig
 commit;" | grep -E '^[a-z_]+$' | head -1)"
 expect_eq "R4: a provider event for the migrated subscription applies" "$EVENT_RESULT" "applied"
 expect_eq "R4: ... and changes the plan" "$(q "select p.code from marketplace.organization_subscriptions s join marketplace.subscription_plans p on p.id = s.plan_id where s.provider_subscription_ref = 'sub_m';")" "pro"
-expect_eq "the ledger records 06, 11 and 12 in order" "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" "06,11,12"
+expect_eq "B-1: 16 records every existing active membership as accepted" "$(q "select count(*) from marketplace.organization_memberships where status = 'active' and accepted_at is null;")" "0"
+expect_eq "B-1: ... without changing any membership's last-modified time" "$(q "select string_agg(id::text || ':' || updated_at::text, ',' order by id) from marketplace.organization_memberships;")" "$MEMBERS_MODIFIED"
+expect_eq "the ledger records 06, 11, 12 and 16 in order" "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" "06,11,12,16"
 x "drop schema if exists marketplace cascade;"
 echo "MIGRATION PATH TEST PASSED."
