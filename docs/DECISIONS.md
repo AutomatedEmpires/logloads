@@ -2,6 +2,36 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-11-02 — Founder direction: root-document ownership, evidence retention, pay disclosure, attestation
+
+Recorded from the founder's Phase 3/4 coordination directive to Claude Agent 2. It changes no pricing, plan, or
+product scope.
+
+- **Root-document ownership.** Claude Agent 2 owns `README.md`, `AGENTS.md`, `CLAUDE.md`, and the
+  documentation side of the environment contracts and examples, in coordination with the application and security
+  owners.
+  - The uncommitted revised `AGENTS.md` is preserved and reconciled, not overwritten.
+  - Environment files that affect deployed configuration or runtime behaviour are changed only by proposal to their
+    implementation owner.
+- **Historical evidence stays active.** It stays in the tree until legacy obligations are reconciled. This covers
+  the security record, the `percentage_v1` Stripe runbook, and `SUBSCRIPTION_BILLING_V1.md`.
+  - Legacy billing obligations are **unverified**, not presumed zero.
+  - No evidence file, archive tag (`archive/docs-history-20261102`), Stripe record, or legacy migration may be
+    deleted or rewritten.
+  - A retention period is still to be decided.
+- **Pay disclosure (resolves UX decision C1).** Every new load posting must disclose pay — an amount with its
+  basis — or be marked Negotiable with supporting detail.
+- **Publication attestation.** The poster's attestation at publication may establish the initial, server-generated
+  availability confirmation (`lastConfirmedAt`). The exact attestation wording is still to be approved.
+- **CARTO.** The reported basemap allowance requires account verification before anyone relies on it.
+- **Still open; agents must not decide them:**
+  - the final UX choices: C4, C5/C6, C8–C10, the attestation wording, and Spec v1.1;
+  - the market-validation thresholds;
+  - the retention period;
+  - the definition of a "launched state".
+
+  Each needs documented founder approval (#114).
+
 ## 2026-11-01 — LogLoads becomes a timber-hauling load board (Blueprint v1.0)
 
 - **Authority.** The founder adopted the *LogLoads Product, Membership & Monetization

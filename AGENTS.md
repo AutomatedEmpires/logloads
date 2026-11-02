@@ -16,13 +16,21 @@ Read this document before editing the repository. Work in small, independently v
 
 ## 0. Source of authority and local workflow
 
+### Before any work: the coordination system
+
+- **Find your issue first.** Every active task has a GitHub Issue tracked on [Project Board #10](https://github.com/users/AutomatedEmpires/projects/10). No issue, no work.
+- The process is in `docs/AGENT_WORKFLOW.md`: issue fields, statuses, the handoff comment format, and the Done gate.
+- **Issues are the persistent communication channel between agents.** Post progress, blockers, commit SHAs, PR URLs, and test results on the issue, never only in a private chat.
+- **PRs and CI runs are the implementation evidence.** An issue reaches Done only when a reviewer other than the owner confirms the linked evidence.
+- The documentation map and the status vocabulary (APPROVED / IMPLEMENTED / VERIFIED / TARGET / HISTORICAL / UNVERIFIED) are in `docs/README.md`. Verification evidence is recorded in `docs/CI.md` §3.
+
 ### Product and technical authority
 
 Use these sources in the following order for their respective purposes:
 
 1. **The founder's latest explicit, dated decision** — governs approved product scope, pricing, and commercialization. Record changes in `docs/DECISIONS.md`; do not unilaterally change the business model.
 2. **`docs/product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md`** — authoritative November 1 commercial and product specification, including plan limits, invitations, boosts, and marketplace boundaries. The source is *LogLoads Product and Monetization Blueprint v1.0*.
-3. **`LogLoads_User_Experience_and_Functional_Product_Specification_v1.0.docx`** — the founder-supplied detailed UX and functional specification. Its screen definitions, interaction flows, and priorities govern experience design, but its *recommended* enhancements are not all automatically approved implementation tasks. If the document is not present in the repository, obtain the supplied copy; do not invent or assume a repository path.
+3. **`docs/product/LOGLOADS_UX_FUNCTIONAL_SPEC_v1.0.md`** — the founder-supplied UX and functional specification. It is a verbatim conversion of `LogLoads_User_Experience_and_Functional_Product_Specification_v1.0.docx`, and its source hash is recorded in the file header. Its screen definitions, interaction flows, and priorities govern experience design. Its *recommended* enhancements are not automatically approved implementation tasks. Changes are made only by a new version.
 4. **`docs/product/TRANSITION_PLAN.md`** — sequencing and retain/adapt/retire mapping. It is an implementation plan, not authority to execute destructive migrations, activate live billing, or override product decisions.
 5. **This `AGENTS.md`** — agent permissions, technical boundaries, collaboration, validation, and reporting.
 6. **Other repository documentation, decisions, PRs, and historical records** — useful for understanding the existing system, but may describe superseded pilot functionality.
@@ -35,7 +43,7 @@ Security controls, legal requirements, production restrictions, and preserved hi
 - **Toolchain:** Node.js **24.16.0** (`.nvmrc`, managed by fnm or equivalent); pnpm **10.12.4** via Corepack. In Windows PowerShell, use `pnpm.cmd` if execution policy blocks `pnpm.ps1`.
 - **Setup:** `pnpm install --frozen-lockfile`, then `pnpm setup:local`, subject to `docs/ENVIRONMENT.md`. Local secrets belong in ignored environment files. Confirm that the selected Node version is active in each agent shell before troubleshooting tooling.
 - **Development server:** `pnpm dev` must listen on **`127.0.0.1:3002` only**. Never expose seeded development authentication to LAN or public interfaces. Do not run a production build into `apps/web/.next` while an active dev server uses that directory; use an isolated build location/worktree or stop the server with the owner's knowledge.
-- **Parallel agents:** Separate file ownership is required. Different Git worktrees are optional when isolation is genuinely needed; they are not mandatory for every small task. Avoid duplicate dependency installations and build caches on the 512 GB laptop.
+- **Parallel agents:** Each concurrently active agent works on **its own branch in its own Git worktree**, and edits only the files its issue owns. Never edit, stage, reset, or clean another agent's worktree or untracked files. Avoid duplicate dependency installations and build caches on the 512 GB laptop. Remove a finished worktree only after its branch is pushed and its owner agrees.
 - **Deployment:** The existing `main` deployment path may trigger Vercel production automatically. Never merge, push to `main`, or deploy without explicit authorization.
 - **Portfolio references:** `github.com/AutomatedEmpires/ae-control` and its `POLICY.md` may contain useful portfolio standards, but the old WSL/`ae` leasing workflow is not active for this checkout. Do not import contradictory instructions from older policy documents.
 
@@ -62,26 +70,22 @@ The application helps participants find each other and make informed decisions. 
 
 **One login may belong to multiple organizations.** A person may manage a landing business and a separate hauling business, switching organization context deliberately. A person, hauling business, fleet, physical landing, and individual truck are distinct entities. Organization roles do not confer platform-admin powers.
 
-### 1.3 The approved revenue model
+### 1.3 The approved revenue model (definition: Blueprint §3–§8)
 
 **Haulers and fleets remain free forever.** No required hauler subscription, per-load charge, per-truck-hired charge, percentage of pay, or freight-payment processing.
 
-| Landing subscription | Basic | Pro | Regional |
-|---|---:|---:|---:|
-| Price per billing month | **$149** | **$299** | **$499** |
-| Concurrently active landing locations | **1** | **3** | **Unlimited** |
-| Named human team members, including owner | **2** | **5** | **10** |
-| Targeted invitations per billing cycle | **3** | **10** | **30** |
-| Invitation rollover | **None** | **None** | **None** |
-| Genuine job postings at eligible landings | Unlimited | Unlimited | Unlimited |
-| Inbound hauler inquiries and replies | Unlimited | Unlimited | Unlimited |
-| Truck positions requested in a posting | Unlimited | Unlimited | Unlimited |
-| Advanced searches / saved searches / availability alerts | — | Included | Included |
-| Multi-landing inquiry workspace | — | Included | Included |
-| Regional capacity overview / advanced team coordination | — | — | Included |
-| Optional listing boosts | Available | Available | Available |
+The paid side is a set of landing subscriptions:
 
-**Positioning:** Basic = **Advertise**; Pro = **Recruit**; Regional = **Coordinate recruiting across operations**. Plan differences must reflect valuable platform capabilities, never suppress essential safety, pay, job, or contact information.
+- **Basic, Pro, Regional:** $149 / $299 / $499 per month.
+- **Active landings:** 1 / 3 / unlimited.
+- **Team members, including the owner:** 2 / 5 / 10.
+- **Targeted invitations:** 3 / 10 / 30 per billing cycle, with no rollover.
+- **Optional one-job boosts:** $99 / $149 / $199.
+- **Founding offer:** 50% off for 6 cycles, for the first 10 qualifying landings per launched state.
+
+The **authoritative definitions** are the Blueprint (`docs/product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md`). In code, the numbers live only in `packages/contracts/src/membership.ts`. Do not restate plan tables elsewhere. **None of this is purchasable yet** (§7.5).
+
+Plan differences must reflect valuable platform capabilities. They must never suppress essential safety, pay, job, or contact information.
 
 **Active landing rule:** Count active, real recruiting locations, not archived/saved locations, destinations, individual routes, listings, or truck quantities. Unlimited does not authorize spam, duplicates, fictitious locations, or misuse.
 
@@ -91,7 +95,7 @@ The application helps participants find each other and make informed decisions. 
 
 An invitation is a **proactive, job-specific notice** to one distinct eligible, opted-in hauling business. It is **not** a hired truck, a completed load, a freight assignment, or a guarantee of a response.
 
-- Monthly included allowance: **3 Basic / 10 Pro / 30 Regional**. No rollover, carryover, or automatic paid overage.
+- Allowances per §1.3. No rollover, carryover, or automatic paid overage.
 - Ordinary inbound expressions of interest, replies, profile views, and organic discovery **never** consume invitations.
 - Target only hauler businesses with appropriate notification consent and equipment/geographic fit. Self-reported availability is not inferred from login activity or device location.
 - Deduplicate appropriately. Prevent simultaneous sends from overspending the same allowance. Define and test reservation, success/failure reconciliation, retry, cooldown, and expiry behavior before activation.
@@ -101,19 +105,13 @@ An invitation is a **proactive, job-specific notice** to one distinct eligible, 
 
 ### 1.5 Paid job boosts
 
-Boosts promote **one legitimate job posting** as clearly marked **Sponsored** content, without guaranteeing impressions, applicants, or booked trucks.
-
-| Boost | Duration | One-time proposed price |
-|---|---:|---:|
-| Quick | 7 consecutive days | **$99** |
-| Extended | 14 consecutive days | **$149** |
-| Campaign | 28 consecutive days | **$199** |
+Boosts promote **one legitimate job posting** as clearly marked **Sponsored** content, without guaranteeing impressions, applicants, or booked trucks. The durations and prices are in Blueprint §7.1: 7, 14 or 28 consecutive days.
 
 The intended promotion radius is approximately **100 miles from the job's public landing area**, subject to relevant filters and privacy rules. Show clearly labeled placement in eligible job results, discovery, and map views, with measured performance when available. A boost does not automatically send targeted invitations, alter their allowance, or create freight-related fees. Do not allow misleading sponsored dominance or sell exposure where meaningful local audience cannot be supported. Boosts are not automatically recurring products.
 
 ### 1.6 Founding-member program
 
-- First **10 qualifying landing organizations per launched state**: **50% off the selected subscription for the first six billing cycles**. Eligibility and verification must be enforced; duplicate business accounts cannot consume multiple grants.
+- The landing-operator offer is defined in Blueprint §8.1. Eligibility and verification must be enforced, and duplicate business accounts cannot consume multiple grants. The definition of a "launched state" is still an open founder decision (#114).
 - Haulers are **free forever**; the first 1,000 qualifying early haulers may receive recognition/early feature participation rather than a fake six-month free offer.
 - Founding promotions require accurate public terms and controlled activation. They are **not automatically live** because the schema, documentation, or test product exists.
 
@@ -135,9 +133,19 @@ That is **legacy implementation reality**, not the new target. Service-role acce
 
 Move toward normalized Supabase PostgreSQL tables and secure tenant isolation, using a carefully reviewed schema and application adapter. Preserve stable IDs where feasible, validate data mappings, and quarantine malformed historical records rather than silently dropping or rewriting them.
 
-The prototype under **`architecture/normalized-v2/`** is owned by Gemini. It may include PostGIS, Clerk identity mapping, membership grants, private landing details, entitlement logic, and audit functions. As last reported, it was **statically checked, not executed against PostgreSQL**. It is not an active migration, a verified RLS boundary, or permission to touch production.
+The normalized schema under **`architecture/normalized-v2/`** covers PostGIS, Clerk identity mapping, membership grants, private landing details, entitlement logic, and audit functions. Gemini authored it, and Claude Agent 1 is its single editor and verifier. Its status is in `docs/CI.md` §3, the only evidence register; never quote test counts elsewhere:
 
-Before adoption, prove actual DDL execution, grants, `SECURITY DEFINER` safety, trusted JWT verification, cross-tenant denials, concurrency behavior, and application compatibility in a disposable permitted environment.
+| Stage | Status |
+|---|---|
+| **1. PostgreSQL 17 execution in CI** | VERIFIED: the baseline and the contract-alignment stages, on disposable databases |
+| **2. Supabase-specific behaviour** — real Clerk tokens, project settings | UNVERIFIED |
+| **3. Application integration** — a normalized adapter | UNVERIFIED; not built |
+| **4. Staging readiness** | UNVERIFIED |
+| **5. Production** | NOT AUTHORIZED |
+
+The schema is still under integration verification. It is not an active migration, not a verified live RLS boundary, and not permission to touch any hosted project.
+
+Before adoption, prove trusted JWT verification through Supabase, cross-tenant denials on the real request path, and application compatibility in a disposable, permitted environment.
 
 ### 2.3 Repository module boundaries
 
@@ -167,15 +175,16 @@ Within the assigned ownership lane, agents may perform reversible, non-destructi
 
 ### 3.1 Concurrent agent file ownership
 
-The default collaboration plan is:
+The current lanes and path owners are defined once, in `docs/AGENT_WORKFLOW.md` §3 and §7. Each issue's "Owned files" and "Prohibited overlap" fields govern the task in front of you. In summary:
 
-| Agent / lane | Primary responsibility | Exclusions |
-|---|---|---|
-| **Claude Code — application integrator** | Existing app, V2 marketplace vertical slice, UI, service adapters, dev environment, documentation, controlled Git integration | Do not edit or stage Gemini/Codex unfinished files |
-| **Gemini — normalized database** | `architecture/normalized-v2/`, SQL prototype validation, permissions and entitlement tests in its assigned lane | No existing migrations, live Supabase changes, app dependencies, or shared Git operations |
-| **Codex — independently scoped regression tests / review** | Assigned tenant-isolation and security regression tests, isolated artifacts | No unapproved source refactors, production actions, or agent-owned files |
+- **Claude Agent 1** — database integration; the single editor of `architecture/normalized-v2/`.
+- **Claude Agent 2** — documentation, the root files and coordination.
+- **Claude Agent 3** — V2 UX design.
+- **Codex** — V2 frontend implementation.
+- **Gemini** — SQL author, on standby.
+- Security Auditor, QA, Product (public copy), Research, and Adapter agents, as each issue assigns.
 
-The table describes **current coordination**, not permanent permissions. A specific newer assignment may adjust ownership. Before editing, inspect `git status`, current branch, untracked files, and active agent ownership. Do not assume a clean checkout. Untracked files may be critical work from another agent.
+Ownership is **current coordination**, not a permanent permission. A specific newer assignment may adjust ownership. Before editing, inspect `git status`, current branch, untracked files, and active agent ownership. Do not assume a clean checkout. Untracked files may be critical work from another agent.
 
 ### 3.2 Resource discipline
 
@@ -291,7 +300,7 @@ The intended stack is:
 - **Database/geospatial:** Supabase PostgreSQL/PostGIS, normalized tenant-isolated target; legacy `operating_state` remains until controlled replacement.
 - **Private media:** Supabase Storage. Cloudinary is not the default active private-media provider.
 - **Identity:** Clerk; app memberships and server-side permissions determine authorization. Supabase RLS requires a *verified* Clerk-to-Supabase trust path, not arbitrary JWT text or client-provided organization IDs.
-- **Maps:** **MapLibre GL JS renderer + CARTO Basemaps** as the preferred basemap provider; PostGIS performs spatial filtering. The founder reports an existing CARTO basemap key with a **5-million-request/month entitlement**; confirm exact account scope, restrictions, terms, and consumption before relying on it commercially. Legacy Mapbox code may remain during migration but is not the preferred new basemap implementation.
+- **Maps:** **MapLibre GL JS renderer + CARTO Basemaps** as the preferred basemap provider; PostGIS performs spatial filtering. It is implemented in `apps/web/lib/map-runtime.ts` and `carto-basemap.ts`, through `NEXT_PUBLIC_CARTO_BASEMAP_KEY`. The founder reports a CARTO allowance of **5 million requests/month**. This allowance **requires account verification**, covering scope, restrictions, terms and consumption, before anyone relies on it commercially (#114). Legacy Mapbox code is used only when no CARTO key is set, and is not the preferred implementation.
 - **Weather:** Existing weather integration; show source and timestamp, use graceful failure, and avoid fetching weather for every search-result card.
 - **Monitoring and communications:** PostHog, Sentry, Resend, subject to consent, data minimization, and appropriate configuration.
 - **Billing for new model:** Stripe subscriptions and one-time boosts **after explicit activation**; historical billing integrations remain disabled/read-only as needed for valid old records.
@@ -364,8 +373,9 @@ LogLoads serves real users operating on phones, sometimes on weak rural connecti
 Before work, record the branch, HEAD, working tree, acceptance criteria, and file owner. Inspect both tracked and untracked files to avoid interfering with concurrent agents.
 
 - **No direct push to `main`. No production merge or deploy without explicit founder approval.**
-- The current integration branch is **`work/logloads-repair`**. Claude may commit/push there only within the founder's current authorization and must confirm the expected remote SHA; do not stage files owned by Gemini or Codex.
-- Separate scope branches such as `agent/<scope>-<slug>`, `feat/<lane>/<slug>`, `fix/<lane>/<slug>`, and `docs/<lane>/<slug>` are suitable for independently owned work. Do not create extra branches/worktrees merely for bookkeeping if the current assignment explicitly uses the shared checkout.
+- The current integration branch is **`work/logloads-repair`**. Work reaches it **only through a reviewed PR** from the owner's own branch. No agent merges a PR, its own or another's, without explicit founder authorization, even when CI is green.
+- Use scope branches such as `feat/<lane>/<slug>`, `fix/<lane>/<slug>`, `docs/<lane>/<slug>` and `test/<lane>/<slug>`, each in its own worktree (§0).
+- Merge stacked PRs with **merge commits**. Squash or rebase merges break the PRs stacked on top.
 - One coherent change set per owner. Never overwrite, `git clean` away, reset, stash, rebase over, or delete somebody else's in-progress work without coordination.
 - No force pushes, history rewrites, bypassed checks, self-merges, unauthorized branch deletion, or accidental commits of secrets/build outputs.
 - A completed **local deliverable** may be handed off without a push if the assignment forbids Git operations (for example Gemini's SQL prototype). Call it *uncommitted* until integrated. Work requiring a pushed artifact is complete only after confirming the remote commit SHA.
@@ -389,6 +399,8 @@ pnpm test:e2e
 pnpm db:check
 git diff --check
 ```
+
+`pnpm db:check` and `pnpm db:assert` **reset the local Supabase database**. Without the Supabase CLI and Docker they skip and exit 0, and a local skip is not a pass. Normalized-v2 SQL runs only in CI (`docs/CI.md`). Record test evidence on the issue, and record schema-level evidence in `docs/CI.md` §3.
 
 Do not run every command indiscriminately on every small edit. Choose proportionate verification; `pnpm validate` and full builds can be costly. Use an isolated production-build directory/worktree when a dev server is running. Never silently skip a required check or present static inspection as execution.
 
@@ -452,7 +464,7 @@ This contract replaces the previous AGENTS.md's *active-product* directives requ
 - Mapbox as preferred new basemap provider, with MapLibre/CARTO only as an incidental fallback.
 - Map-first rendering that blocks a fast, readable load list.
 - Automatic release of private landing details on an obsolete *assignment* event.
-- Mandatory extra Git worktrees for every small parallel agent task.
+- Mandatory extra Git worktrees for every small task. Concurrently active agents still use separate worktrees (§0).
 
 The former functionality may remain in the **legacy codebase and preserved history** until carefully retired. It is not a development mandate.
 

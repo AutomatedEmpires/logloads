@@ -71,7 +71,7 @@ That branch is not merged into `work/logloads-repair`.
 | Claim | Status |
 |---|---|
 | `01`–`03` DDL applies cleanly; the `04` integration/RLS suite and `05` multi-session concurrency races pass on fresh PostgreSQL 17 + PostGIS | **VERIFIED** — [`CI.md`](./CI.md) §3 |
-| Contract alignment `06`–`10` (Gemini's 06/07; Claude Agent 1's 08 concurrency, 09 integration audit and 10 synthetic migration path) | **VERIFIED in CI** at `fab4b0a`, on draft PR #123 (unreviewed) — [`CI.md`](./CI.md) §3 |
+| Contract alignment `06`–`10` (Gemini's 06/07; Claude Agent 1's 08 concurrency, 09 integration audit and 10 synthetic migration path) | **VERIFIED in CI** on draft PR #123 (unreviewed); latest verified head in — [`CI.md`](./CI.md) §3 |
 | Real Clerk tokens verified by Supabase third-party auth | **UNVERIFIED** — the SQL tests use simulated claims ([`SECURITY.md`](./SECURITY.md) §4) |
 | Connected to the application | **No.** No normalized adapter implements the port. |
 | Applied to any hosted Supabase project | **No, and not authorized** |
