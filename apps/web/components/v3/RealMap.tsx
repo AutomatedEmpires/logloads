@@ -19,11 +19,14 @@ import MaplibreMap, {
 import "maplibre-gl/dist/maplibre-gl.css"
 import "mapbox-gl/dist/mapbox-gl.css"
 
+import { readCartoBasemapKey } from "@/lib/carto-basemap"
 import { MAPBOX_STYLE, selectMapRuntime, type MapRuntime } from "@/lib/map-runtime"
 import { loadMaplibre } from "@/lib/maplibre-worker"
+import { useCartoBasemap } from "@/lib/use-carto-basemap"
 import type { NetworkLoadView } from "@/lib/network"
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ""
+const CARTO_KEY = readCartoBasemapKey(process.env.NEXT_PUBLIC_CARTO_BASEMAP_KEY)
 const FIT_PADDING = { bottom: 150, left: 56, right: 56, top: 56 }
 const FIT_MAX_ZOOM = 11
 
@@ -197,11 +200,14 @@ function MapboxRealMap({ loads, onPick, selectedLoadId }: InnerMapProps) {
   )
 }
 
-function MaplibreRealMap({ loads, mapStyle, onPick, selectedLoadId }: InnerMapProps & {
+function MaplibreRealMap({ cartoKey, loads, mapStyle, onPick, selectedLoadId }: InnerMapProps & {
+  cartoKey: string | null
   mapStyle: Extract<MapRuntime, { provider: "maplibre" | "offline-demo" }>["mapStyle"]
 }) {
   const mapRef = useRef<MaplibreMapRef>(null)
   const bounds = useMemo(() => boundsForLoads(loads), [loads])
+  // cartoKey is null for the offline demo style: no CARTO attribution, no key, no network basemap.
+  const { failed, mapProps } = useCartoBasemap(cartoKey ?? "", cartoKey !== null)
 
   useEffect(() => {
     if (bounds) {
@@ -212,8 +218,13 @@ function MaplibreRealMap({ loads, mapStyle, onPick, selectedLoadId }: InnerMapPr
   const selected = loads.find((load) => load.id === selectedLoadId)
   const markers = buildMarkerSpecs(loads, selectedLoadId, onPick)
 
+  if (failed) {
+    return <p className="map-loading" role="status">The map could not load right now. Every load is still listed.</p>
+  }
+
   return (
     <MaplibreMap
+      {...mapProps}
       initialViewState={bounds
         ? { bounds, fitBoundsOptions: { maxZoom: FIT_MAX_ZOOM, padding: FIT_PADDING } }
         : { latitude: 44.5, longitude: -70.5, zoom: 6 }}
@@ -247,7 +258,7 @@ export function RealMap({ loads, onSelect, selectedLoadId }: RealMapProps) {
   }
 
   const demoMode = document.documentElement.dataset.demoMode === "true"
-  const runtime = selectMapRuntime(demoMode, MAPBOX_TOKEN)
+  const runtime = selectMapRuntime(demoMode, MAPBOX_TOKEN, CARTO_KEY)
 
   return (
     <div className="real-map" data-provider={runtime.provider}>
@@ -256,7 +267,7 @@ export function RealMap({ loads, onSelect, selectedLoadId }: RealMapProps) {
       ) : null}
       {runtime.provider === "mapbox"
         ? <MapboxRealMap loads={loads} onPick={handlePick} selectedLoadId={selectedLoadId} />
-        : <MaplibreRealMap loads={loads} mapStyle={runtime.mapStyle} onPick={handlePick} selectedLoadId={selectedLoadId} />}
+        : <MaplibreRealMap cartoKey={runtime.provider === "maplibre" ? runtime.cartoKey : null} loads={loads} mapStyle={runtime.mapStyle} onPick={handlePick} selectedLoadId={selectedLoadId} />}
     </div>
   )
 }

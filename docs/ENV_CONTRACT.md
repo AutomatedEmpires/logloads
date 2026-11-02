@@ -79,7 +79,7 @@ required for ongoing Clerk-backed platform-admin authority.
 | Email | `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_REPLY_TO`, `SUPPORT_EMAIL`, `LOGLOADS_CONTACT_EMAIL` |
 | Analytics | `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` |
 | Errors | `SENTRY_DSN` |
-| Maps | `NEXT_PUBLIC_MAPBOX_TOKEN` (keyless MapLibre fallback when absent) |
+| Maps | `NEXT_PUBLIC_CARTO_BASEMAP_KEY` (preferred: authenticated CARTO Basemaps on MapLibre; browser-visible, restrict by origin); legacy `NEXT_PUBLIC_MAPBOX_TOKEN` is used only when no CARTO key is set; keyless CARTO when neither is set |
 
 ## Billing activation boundaries
 
