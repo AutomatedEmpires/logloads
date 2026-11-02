@@ -73,13 +73,15 @@ fail() {
 TARGET_DB="$(psql_scalar "select current_database();")"
 [[ "$TARGET_DB" == "${LOGLOADS_DISPOSABLE_DB_NAME:-logloads_test}" ]] \
   || { echo "ERROR: Refusing to run: connected database '$TARGET_DB' is not the expected disposable database." >&2; exit 1; }
+# PostGIS's own reference table (spatial_ref_sys) may live in public or extensions.
 FOREIGN_TABLES="$(psql_scalar "
-select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
+select coalesce(string_agg(format('%I.%I', n.nspname, c.relname), ', '), '')
+from pg_class c join pg_namespace n on n.oid = c.relnamespace
 where c.relkind in ('r','p')
   and n.nspname not in ('pg_catalog','information_schema','pg_toast','marketplace','topology','tiger','tiger_data')
-  and not (n.nspname = 'public' and c.relname = 'spatial_ref_sys');")"
-[[ "$FOREIGN_TABLES" == "0" ]] \
-  || { echo "ERROR: Refusing to run: database contains $FOREIGN_TABLES table(s) outside the disposable marketplace schema." >&2; exit 1; }
+  and not (n.nspname in ('public', 'extensions') and c.relname = 'spatial_ref_sys');")"
+[[ -z "$FOREIGN_TABLES" ]] \
+  || { echo "ERROR: Refusing to run: database contains table(s) outside the disposable marketplace schema: $FOREIGN_TABLES" >&2; exit 1; }
 DB_MARKER="$(psql_scalar "select coalesce(shobj_description(oid, 'pg_database'), '') from pg_database where datname = current_database();")"
 if [[ "$DB_MARKER" != logloads-ci-disposable:* && "${LOGLOADS_LOCAL_DISPOSABLE_CONFIRM:-}" != "drop-marketplace-schema" ]]; then
   echo "ERROR: Refusing to run: database is not stamped as a CI disposable database. For a local disposable database set LOGLOADS_LOCAL_DISPOSABLE_CONFIRM=drop-marketplace-schema." >&2
