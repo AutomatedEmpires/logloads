@@ -255,4 +255,33 @@ for f in 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_even
 [[ "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" == "06,11,12" ]] || fail "ledger did not reconcile after restore"
 ok "forward migration after restore succeeded; existing data carried through; the ledger reconciles"
 x "drop schema if exists marketplace cascade;"
+
+if [[ "${LOGLOADS_DB_ENV:-}" == "ci-disposable" ]]; then
+  echo "[D-5] 01 never drops PostGIS on a database that is not stamped disposable, or that has dependents..."
+  PROBE="logloads_d5_probe_${GITHUB_RUN_ID:-local}_${LOGLOADS_CI_ITERATION:-0}"
+  [[ "$PROBE" =~ ^[A-Za-z0-9_]+$ ]] || fail "unexpected probe database name"
+  x "create database ${PROBE} template template0;"
+  PROBE_URL="${DB_URL%/*}/${PROBE}"
+  printf '%s\n' "create extension postgis; create table public.user_sites (id integer primary key, site geometry); insert into public.user_sites values (1, 'SRID=4326;POINT(-122.7 44.4)');" \
+    | psql "$PROBE_URL" -X -q -v ON_ERROR_STOP=1 >/dev/null
+  probe_intact() {
+    [[ "$(printf '%s\n' "select n.nspname || ':' || (select count(*) from public.user_sites) from pg_extension e join pg_namespace n on n.oid = e.extnamespace where e.extname = 'postgis';" \
+          | psql "$PROBE_URL" -X -q -t -A -v ON_ERROR_STOP=1)" == "public:1" ]] || fail "D-5: PostGIS or the user's geometry data did not survive ($1)"
+  }
+  if psql "$PROBE_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$SCRIPT_DIR/01_schema.sql" >/dev/null 2>"$TMP/d5a.log"; then
+    fail "D-5: 01 ran on an unstamped database with PostGIS outside extensions"
+  fi
+  grep -q "not stamped disposable" "$TMP/d5a.log" || fail "D-5: unexpected failure on the unstamped database: $(head -c 300 "$TMP/d5a.log")"
+  probe_intact "unstamped"
+  ok "unstamped database: 01 refused; PostGIS and the user's geometry column untouched"
+  printf '%s\n' "comment on database ${PROBE} is 'logloads-ci-disposable:d5-probe';" | psql "$PROBE_URL" -X -q -v ON_ERROR_STOP=1 >/dev/null
+  if psql "$PROBE_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$SCRIPT_DIR/01_schema.sql" >/dev/null 2>"$TMP/d5b.log"; then
+    fail "D-5: 01 dropped PostGIS although a user column depends on it"
+  fi
+  grep -q "depend on it" "$TMP/d5b.log" && grep -q "user_sites" "$TMP/d5b.log" \
+    || fail "D-5: unexpected failure with a dependent column: $(head -c 300 "$TMP/d5b.log")"
+  probe_intact "stamped, with a dependent column"
+  ok "stamped database with a dependent column: 01 refused and named it; nothing dropped"
+  x "drop database ${PROBE};"
+fi
 echo "MIGRATION DRILL PASSED."
