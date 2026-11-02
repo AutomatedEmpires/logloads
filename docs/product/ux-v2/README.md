@@ -11,6 +11,7 @@ Design work for the V2 load board, tracked in #116. It turns the approved UX spe
 | [05_VISUAL_DIRECTIONS.md](./05_VISUAL_DIRECTIONS.md) | Stage A directions (Direction 1 chosen) and the Stage A.2 Modern Industrial refinement |
 | [06_DESIGN_SYSTEM.md](./06_DESIGN_SYSTEM.md) | **Final** light-surface Modern Industrial hybrid: architecture, tokens, layouts, components, accessibility, tests and DS tickets |
 | [design-system/](./design-system) | Token, component and prototype source for the final system |
+| [07_ADOPTION_REVIEW.md](./07_ADOPTION_REVIEW.md) | Production review gates for the handoff at `9728c25`: semantic rows, scoped themes, dialog focus return, self-hosted fonts, truthful verification |
 | [evidence/](./evidence) | Screenshots of the V2 preview at `4c9518e` (seeded fictional data) |
 
 **Clickable prototype:** [LogLoads V2 Prototype](https://claude.ai/artifact/NGaBSQVwgYD5FHfBmLUwNL) (private until the owner shares it; also linked from #116). It is a static design sketch with fictional businesses; it does not touch the application.
