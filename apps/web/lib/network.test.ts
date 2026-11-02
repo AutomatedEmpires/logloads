@@ -1,3 +1,4 @@
+import { haversineMiles, SCHEDULING_BUFFER_DEFAULTS } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import { createLogLoadsServices } from "@logloads/services"
 import { describe, expect, it } from "vitest"
@@ -1502,5 +1503,134 @@ describe("public coordinate precision (V2-DEC-01)", () => {
     expect(accepted?.landing).toMatchObject({ approximate: false, lat: details.entranceLat, lng: details.entranceLng })
     expect(owner?.landing).toMatchObject({ approximate: false, lat: details.entranceLat, lng: details.entranceLng })
     expect(accepted?.landing.lat).not.toBe(publicPoint.lat)
+  })
+})
+
+describe("locked-load estimates are measured from the public point (LE-14, #158)", () => {
+  const AT = new Date("2026-06-05T12:00:00.000Z")
+  // Home bases a driver could save around the seeded Blue River landing
+  // (44.1926, -122.0898; public cell 44.2, -122.1): one inside the landing's
+  // own cell, one on the cell's far corner, and others on every side, near and far.
+  const HOME_BASES = [
+    { lat: 44.19, lng: -122.09 },
+    { lat: 44.249, lng: -122.051 },
+    { lat: 44.0, lng: -122.3 },
+    { lat: 44.6, lng: -121.8 },
+    { lat: 43.7, lng: -122.9 },
+    { lat: 45.52, lng: -122.68 }
+  ]
+
+  function estimateFixture() {
+    const fixture = networkFixture()
+    const { load, services, viewer } = fixture
+    const state = services.state
+    const driver = state.driverProfiles.find((profile) => profile.userId === viewer.actorUserId)
+    const landing = state.landings.find((site) => site.id === load.pickupLandingId)
+    const capacity = state.opportunityCapacities.find((item) => item.loadPostingId === load.id)
+
+    if (!driver || !landing || !capacity) throw new Error("The estimate fixture is incomplete")
+
+    // List the load on the open network so the locked driver can see it at all.
+    capacity.visibilityMode = "open_network"
+
+    const viewAt = (home: { lat: number; lng: number }) => {
+      driver.homeBaseCoordinates = home
+      const view = buildNetworkView(state, viewer, AT).loads.find((item) => item.id === load.id)
+
+      if (!view) throw new Error("The driver cannot see the fixture load")
+      return view
+    }
+
+    return { ...fixture, landing, viewAt }
+  }
+
+  function roadMiles(from: { lat: number; lng: number }, to: { lat: number; lng: number }): number {
+    return haversineMiles(from, to) * SCHEDULING_BUFFER_DEFAULTS.roadCircuityFactor
+  }
+
+  function publicPointOf(point: { lat: number; lng: number }) {
+    return { lat: approximateCoordinate(point.lat), lng: approximateCoordinate(point.lng) }
+  }
+
+  it("measures deadhead, total miles, gallons and fuel cost from the 0.1° point for a locked driver", () => {
+    const { landing, request, viewAt } = estimateFixture()
+    const publicPoint = publicPointOf(landing.coordinates)
+
+    // The exact landing must sit off the public grid, or this test proves nothing.
+    expect(publicPoint).toEqual({ lat: 44.2, lng: -122.1 })
+    expect(publicPoint).not.toEqual(landing.coordinates)
+
+    const check = (stage: string) => {
+      for (const home of HOME_BASES) {
+        const view = viewAt(home)
+        const { economics } = view
+        const label = `${stage} @ ${home.lat},${home.lng}`
+        const expectedDeadhead = roadMiles(home, publicPoint)
+
+        expect(view.access, label).toEqual({ reason: "locked", unlocked: false })
+        expect(view.landing, label).toMatchObject({ approximate: true, ...publicPoint })
+        expect(economics.deadheadMiles, label).toBe(expectedDeadhead)
+        expect(economics.totalMiles, label).toBe(economics.tripMiles + expectedDeadhead)
+        expect(economics.gallons, label).toBe(economics.totalMiles / economics.fuelEconomyMpg)
+        expect(economics.fuelCostCents, label).toBe(Math.round(economics.gallons * economics.fuelPriceCentsPerGallon))
+        if (economics.grossCents !== null) {
+          expect(economics.afterFuelCents, label).toBe(economics.grossCents - economics.fuelCostCents)
+        }
+        // The control: measured to the exact landing, the figure would differ.
+        expect(economics.deadheadMiles, label).not.toBe(roadMiles(home, landing.coordinates))
+      }
+    }
+
+    check("before requesting")
+    request()
+    check("request pending")
+  })
+
+  it("returns identical estimates for every exact landing inside the same public cell", () => {
+    const { landing, viewAt } = estimateFixture()
+    // Exact landings spread across the 44.2, -122.1 cell, corner to corner. If any
+    // estimate differed between them, moving the home base could tell them apart.
+    const exactLandings = [
+      { lat: 44.1926, lng: -122.0898 },
+      { lat: 44.1501, lng: -122.1499 },
+      { lat: 44.2499, lng: -122.0501 },
+      { lat: 44.2, lng: -122.1 },
+      { lat: 44.1777, lng: -122.1333 }
+    ]
+
+    for (const exact of exactLandings) {
+      expect(publicPointOf(exact)).toEqual({ lat: 44.2, lng: -122.1 })
+    }
+
+    const responses = exactLandings.map((exact) => {
+      landing.coordinates = exact
+      return HOME_BASES.map((home) => {
+        const view = viewAt(home)
+        return JSON.stringify({ economics: view.economics, landing: view.landing })
+      })
+    })
+
+    for (const [index, response] of responses.entries()) {
+      expect(response, `exact landing ${exactLandings[index]?.lat},${exactLandings[index]?.lng}`).toEqual(responses[0])
+    }
+  })
+
+  it("keeps exact estimates for an approved driver, who already has the exact landing", () => {
+    const { landing, request, services, sourceContext, viewAt } = estimateFixture()
+    const publicPoint = publicPointOf(landing.coordinates)
+    const assignment = request()
+
+    services.approveCapacityRequest({ ...sourceContext, assignmentId: assignment.id })
+
+    for (const home of HOME_BASES) {
+      const view = viewAt(home)
+      const label = `approved @ ${home.lat},${home.lng}`
+      const expectedDeadhead = roadMiles(home, landing.coordinates)
+
+      expect(view.access, label).toEqual({ reason: "assigned", unlocked: true })
+      expect(view.economics.deadheadMiles, label).toBe(expectedDeadhead)
+      expect(view.economics.totalMiles, label).toBe(view.economics.tripMiles + expectedDeadhead)
+      expect(view.economics.deadheadMiles, label).not.toBe(roadMiles(home, publicPoint))
+    }
   })
 })

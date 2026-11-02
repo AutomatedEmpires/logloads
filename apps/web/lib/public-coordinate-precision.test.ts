@@ -1,3 +1,4 @@
+import { haversineMiles, SCHEDULING_BUFFER_DEFAULTS } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import { createLogLoadsServices } from "@logloads/services"
 import { NextRequest } from "next/server"
@@ -195,5 +196,85 @@ describe("public API coordinate precision (V2-DEC-01)", () => {
     expect(assignedResponse.status).toBe(200)
     expect(assigned.landing).toMatchObject({ approximate: false, lat: details.entranceLat, lng: details.entranceLng })
     expect(assignedBody).toContain(String(details.entranceLat))
+  })
+})
+
+describe("signed-in estimates in the load detail response (LE-14, #158)", () => {
+  type EstimateBody = {
+    load: {
+      access: { unlocked: boolean }
+      economics: { deadheadMiles: number | null; totalMiles: number; tripMiles: number }
+      landing: { approximate: boolean; lat: number; lng: number }
+    }
+  }
+  // Around the seeded Blue River landing (44.1926, -122.0898; public point 44.2, -122.1).
+  const HOME_BASES = [
+    { lat: 44.19, lng: -122.09 },
+    { lat: 44.0, lng: -122.3 },
+    { lat: 44.6, lng: -121.8 },
+    { lat: 45.52, lng: -122.68 }
+  ]
+  const BLUE_RIVER_PUBLIC = { lat: 44.2, lng: -122.1 }
+  const roadMiles = (from: { lat: number; lng: number }, to: { lat: number; lng: number }) =>
+    haversineMiles(from, to) * SCHEDULING_BUFFER_DEFAULTS.roadCircuityFactor
+
+  it("measures a locked driver's deadhead from the public point, and an approved driver's from the exact landing", async () => {
+    const services = runtime.current
+    const state = services.state
+    const driverUser = seeded(state.profiles.find((profile) => profile.email === "hank@northpine.example"), "driver user")
+    const driver = seeded(state.driverProfiles.find((profile) => profile.userId === driverUser.id), "driver profile")
+    const equipment = seeded(state.equipmentCombinations.find((item) => item.assignedDriverProfileId === driver.id), "driver equipment")
+    const privateLoad = seeded(state.loadPostings.find((posting) => posting.title === "Blue River high-grade campaign"), "private load")
+    const privateLanding = seeded(state.landings.find((site) => site.id === privateLoad.pickupLandingId), "private landing")
+    const slot = seeded(state.truckSlots.find((item) => item.loadPostingId === privateLoad.id && item.reservedCount < item.capacity), "open slot")
+    const capacity = seeded(state.opportunityCapacities.find((item) => item.loadPostingId === privateLoad.id), "capacity")
+    const host = seeded(state.organizationMemberships.find((membership) =>
+      membership.organizationId === privateLoad.companyId &&
+      membership.status === "active" &&
+      ["owner", "admin", "dispatcher", "fleet_manager"].includes(membership.role)
+    ), "host staff")
+
+    capacity.visibilityMode = "open_network"
+    runtime.getSessionActor.mockResolvedValue({ activeOrganization: { id: equipment.organizationId }, profile: { id: driverUser.id } })
+
+    // Locked: the signed-in driver has not been approved for this load yet.
+    expect(privateLanding.coordinates).not.toEqual(BLUE_RIVER_PUBLIC)
+    for (const home of HOME_BASES) {
+      driver.homeBaseCoordinates = home
+      const response = await loadRequest(privateLoad.id)
+      const body = await response.text()
+      const { load } = JSON.parse(body) as EstimateBody
+      const label = `locked @ ${home.lat},${home.lng}`
+
+      expect(response.status, label).toBe(200)
+      expect(load.access.unlocked, label).toBe(false)
+      expect(load.landing, label).toMatchObject({ approximate: true, ...BLUE_RIVER_PUBLIC })
+      expect(load.economics.deadheadMiles, label).toBe(roadMiles(home, BLUE_RIVER_PUBLIC))
+      expect(load.economics.totalMiles, label).toBe(load.economics.tripMiles + roadMiles(home, BLUE_RIVER_PUBLIC))
+      expect(load.economics.deadheadMiles, label).not.toBe(roadMiles(home, privateLanding.coordinates))
+      expectPublicPrecision(body)
+    }
+
+    // Approved: the same route, the driver now holds the exact landing, so the estimate uses it.
+    vi.useRealTimers()
+    const assignment = services.requestCapacityWithPolicy({
+      actorUserId: driverUser.id,
+      driverProfileId: driver.id,
+      loadPostingId: privateLoad.id,
+      organizationId: equipment.organizationId,
+      trailerProfileId: equipment.trailerProfileId,
+      truckProfileId: equipment.truckProfileId,
+      truckSlotId: slot.id
+    }, { at: AT.toISOString() })
+    services.approveCapacityRequest({ actorUserId: host.userId, assignmentId: assignment.id, organizationId: privateLoad.companyId })
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(AT)
+
+    const home = { lat: 44.0, lng: -122.3 }
+    driver.homeBaseCoordinates = home
+    const { load } = JSON.parse(await (await loadRequest(privateLoad.id)).text()) as EstimateBody
+
+    expect(load.access.unlocked).toBe(true)
+    expect(load.economics.deadheadMiles).toBe(roadMiles(home, privateLanding.coordinates))
   })
 })
