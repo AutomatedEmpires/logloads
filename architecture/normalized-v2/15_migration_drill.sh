@@ -49,7 +49,7 @@ command -v pg_dump >/dev/null && command -v pg_restore >/dev/null || fail "pg_du
 # sorted so replay order does not matter.
 CATALOG_SQL="select md5(string_agg(x, '|' order by x)) from (
   select 'rel:' || c.relname || ':' || c.relkind::text || ':' || c.relrowsecurity::text || ':' ||
-         coalesce((select string_agg(a, ',' order by a) from unnest(coalesce(c.relacl, acldefault(case when c.relkind = 'S' then 's'::"char" else 'r'::"char" end, c.relowner))::text[]) a), '')
+         coalesce((select string_agg(a, ',' order by a) from unnest(coalesce(c.relacl, acldefault(case when c.relkind = 'S' then 's'::\"char\" else 'r'::\"char\" end, c.relowner))::text[]) a), '')
   from pg_class c where c.relnamespace = 'marketplace'::regnamespace and c.relkind in ('r','p','v','S','i')
   union all
   select 'col:' || table_name || '.' || column_name || ':' || data_type || ':' || is_nullable || ':' || coalesce(column_default, '')
@@ -60,7 +60,7 @@ CATALOG_SQL="select md5(string_agg(x, '|' order by x)) from (
   union all
   select 'fn:' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || '):' || md5(p.prosrc) || ':' || p.prosecdef::text || ':' ||
          coalesce(array_to_string(p.proconfig, ','), '') || ':' ||
-         coalesce((select string_agg(a, ',' order by a) from unnest(coalesce(p.proacl, acldefault('f'::"char", p.proowner))::text[]) a), '')
+         coalesce((select string_agg(a, ',' order by a) from unnest(coalesce(p.proacl, acldefault('f'::\"char\", p.proowner))::text[]) a), '')
   from pg_proc p where p.pronamespace = 'marketplace'::regnamespace
   union all
   select 'pol:' || tablename || '.' || policyname || ':' || cmd || ':' || coalesce(qual, '') || ':' || coalesce(with_check, '')
