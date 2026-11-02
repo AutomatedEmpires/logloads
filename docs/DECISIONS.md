@@ -2,6 +2,27 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-11-02 — Founder grant: Claude Agent 2 takes ownership of unstaffed integration blockers
+
+- **Grant.** The founder authorized Claude Agent 2 to "take ownership of what's needed" and to justify each
+  decision. Agent 2 reads this as authority over **unstaffed** work that blocks integration. It is **not**:
+  - authority to take over lanes that have an active owner;
+  - authority to merge;
+  - authority to deploy.
+
+  The AGENTS.md hard stops and the need for explicit merge approval are unchanged.
+- **Taken:**
+  - **#149** (invitations E2E flake), as PR #151. The QA lane has no active session, the flake failed PR #123
+    outright, and it would keep every PR's application gate unreliable after #143. Test-only.
+  - **#111, ops side** (`ops/production-env-contract.json`), as PR #152. No implementation owner is active. It is a
+    manifest only, with no runtime readers, and is verifiable with dependency-free tool tests.
+- **Declined, with reasons:**
+  - **#108** (public `/pricing` and `/terms`). The 5% model runs through the whole legacy public site, including
+    the Terms legal text. Fixing it is a product and legal wording decision, so it is **escalated to the founder**
+    with options in #108. Agent 2 implements option A once the wording is approved.
+  - **#105, #139, #144–#147, #103/#104.** These have active owners (Codex, Claude Agent 1); taking them would
+    create overlapping writers.
+
 ## 2026-11-02 — Recorded approvals: V2 visual direction, `packages/ui` grant, V2-DEC-01/02/03
 
 This entry consolidates approvals that already exist in GitHub, with their sources. It approves nothing new. Where
