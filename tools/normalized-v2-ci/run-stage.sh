@@ -56,7 +56,7 @@ case "$STAGE" in
       q "select 'functions=' || count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace';"
       q "select 'triggers=' || count(*) from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'marketplace' and not t.tgisinternal;"
       echo '```'
-    } | tee -a "$LOG" >> "$SUMMARY"
+    } | tee -a "$LOG" | tee -a "$SUMMARY"
     ;;
   2)
     run_sql "$DIR/02_access.sql"
@@ -71,7 +71,7 @@ case "$STAGE" in
       q "select 'security_definer_without_search_path=' || count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and p.prosecdef and not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) cfg where cfg like 'search_path=%');"
       q "select rolname || ' bypassrls=' || rolbypassrls || ' login=' || rolcanlogin from pg_roles where rolname in ('anon','authenticated','service_role') order by 1;"
       echo '```'
-    } | tee -a "$LOG" >> "$SUMMARY"
+    } | tee -a "$LOG" | tee -a "$SUMMARY"
     ;;
   3)
     run_sql "$DIR/03_entitlements.sql"
