@@ -197,8 +197,18 @@ begin
   perform set_config('request.jwt.claims', jsonb_build_object('iss', v_issuer, 'sub', 'user_land_a', 'aud', 'logloads-app', 'exp', extract(epoch from now())::bigint + 3600)::text, true);
   perform pg_temp.assert_true(marketplace.current_user_id() is null, 'token missing role claim must resolve NULL');
 
+  -- Anonymous callers carry no identity. 02_access.sql grants EXECUTE on current_user_id() to
+  -- `authenticated` only, so the `anon` role is denied outright (no anon-facing policy calls it).
   perform pg_temp.as_jwt('anon');
-  perform pg_temp.assert_true(marketplace.current_user_id() is null, 'anon role must resolve NULL');
+  begin
+    perform marketplace.current_user_id();
+    raise exception 'expected anon to be denied EXECUTE on marketplace.current_user_id()';
+  exception when insufficient_privilege then null;
+  end;
+  -- The resolver itself must also refuse an anon-role claim, even with a valid issuer and a real subject.
+  execute 'set local role authenticated';
+  perform set_config('request.jwt.claims', jsonb_build_object('role', 'anon', 'iss', v_issuer, 'sub', 'user_land_a', 'aud', 'logloads-app', 'exp', extract(epoch from now())::bigint + 3600)::text, true);
+  perform pg_temp.assert_true(marketplace.current_user_id() is null, 'anon role claim must resolve NULL');
 
   -- Valid Clerk token resolves exact app_users.id.
   perform pg_temp.as_jwt('authenticated', v_issuer, 'user_land_a');
