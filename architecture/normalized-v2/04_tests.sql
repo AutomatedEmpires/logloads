@@ -147,7 +147,7 @@ begin
   perform pg_temp.assert_true(v_views = 0, format('expected 0 views in marketplace, found %s', v_views));
 
   select count(*) into v_rls from pg_tables where schemaname = 'marketplace' and rowsecurity;
-  perform pg_temp.assert_true(v_rls = 32, 'every marketplace table must have RLS enabled');
+  perform pg_temp.assert_true(v_rls = v_tables, format('every marketplace table must have RLS enabled (%s of %s)', v_rls, v_tables));
 
   select count(*) into v_funcs
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
