@@ -351,13 +351,21 @@ update marketplace.landings
 set public_point = marketplace.approximate_point(public_point)
 where public_point is not null;
 
+-- The hauler-profile and availability guard triggers stamp last_confirmed_at / reported_at = now() on
+-- every update ("every edit is a fresh self-report"). A migration re-snap is not a hauler's
+-- confirmation or report, so those triggers are suspended for exactly these statements; the snap they
+-- would also apply is performed explicitly by approximate_point() here.
+alter table marketplace.hauler_profiles disable trigger hauler_profile_guard;
 update marketplace.hauler_profiles
 set service_center = marketplace.approximate_point(service_center)
 where service_center is not null;
+alter table marketplace.hauler_profiles enable trigger hauler_profile_guard;
 
+alter table marketplace.availability_reports disable trigger availability_guard;
 update marketplace.availability_reports
 set area_center = marketplace.approximate_point(area_center)
 where area_center is not null;
+alter table marketplace.availability_reports enable trigger availability_guard;
 
 update marketplace.job_boosts
 set center_point = marketplace.approximate_point(center_point)
