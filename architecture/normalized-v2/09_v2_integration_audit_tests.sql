@@ -276,12 +276,14 @@ begin
   -- Legacy imports (C2, C3, C4)
   -- -------------------------------------------------------------------------
   perform pg_temp.as_jwt('authenticated', 'a9_land');
-  perform pg_temp.fails(format($q$select marketplace.admin_import_legacy_job_posting(%L, %L, 'Sneaky import', array['log_truck'], 'Not an admin')$q$, o_land, l_land),
+  perform pg_temp.fails(format($q$select marketplace.admin_import_legacy_job_posting(%L, %L, 'Sneaky import', array['log_truck'], 'Not an admin', p_trucks_per_day => 1)$q$, o_land, l_land),
     '42501', 'superadmin', 'C4: an ordinary landing user cannot import legacy jobs');
   perform pg_temp.as_jwt('authenticated', 'a9_admin');
+  -- Pilot listings know trucks per day but not a job-wide total (GAP-01).
   j_legacy := marketplace.admin_import_legacy_job_posting(o_land, l_land, 'Pilot legacy haul', array['log_truck'], 'Pilot migration batch 1',
-    p_last_confirmed_at => now() - interval '20 days');
-  j_legacy2 := marketplace.admin_import_legacy_job_posting(o_land, l_land, 'Pilot legacy haul 2', array['log_truck'], 'Pilot migration batch 1');
+    p_trucks_per_day => 2, p_last_confirmed_at => now() - interval '20 days');
+  j_legacy2 := marketplace.admin_import_legacy_job_posting(o_land, l_land, 'Pilot legacy haul 2', array['log_truck'], 'Pilot migration batch 1',
+    p_trucks_per_day => 3);
   perform pg_temp.as_jwt('harness');
   perform pg_temp.ok((select imported_by = u_admin from marketplace.legacy_job_imports where job_id = j_legacy)
     and (select last_confirmed_by is null and pay_unit is null from marketplace.job_postings where id = j_legacy),
