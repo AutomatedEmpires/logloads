@@ -50,7 +50,18 @@ $$;
 do $$
 begin
   if coalesce(current_setting('logloads.migration_xact', true), '') <> txid_current()::text then
-    raise exception 'migration 16 must be applied in one transaction (psql --single-transaction); nothing was changed'
+    -- Without ON_ERROR_STOP psql would carry on statement by statement after a refusal, so the rest of
+    -- this session is made read-only first (every later write fails), then the next statement refuses.
+    perform set_config('default_transaction_read_only', 'on', false);
+    perform set_config('logloads.migration_refused', '16', false);
+  end if;
+end
+$$;
+do $$
+begin
+  if coalesce(current_setting('logloads.migration_refused', true), '') <> '' then
+    raise exception 'migration % must be applied in one transaction (psql --single-transaction); nothing was changed and this session is now read-only',
+      current_setting('logloads.migration_refused')
       using errcode = '25P01';
   end if;
 end
