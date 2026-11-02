@@ -3,11 +3,13 @@ import { spawn } from "node:child_process"
 import { once } from "node:events"
 import { createServer } from "node:http"
 import { test } from "node:test"
+import { fileURLToPath } from "node:url"
 
-const verifier = new URL("./verify-billing.mjs", import.meta.url)
+// fileURLToPath, not URL.pathname: on Windows .pathname is "/C:/..." and Node resolves it as "C:\C:\...".
+const verifier = fileURLToPath(new URL("./verify-billing.mjs", import.meta.url))
 
 async function runVerifier(environment) {
-  const child = spawn(process.execPath, [verifier.pathname], {
+  const child = spawn(process.execPath, [verifier], {
     env: {
       ...process.env,
       SUPABASE_SERVICE_ROLE_KEY: "synthetic-service-role-key",

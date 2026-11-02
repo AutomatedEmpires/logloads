@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
 
@@ -41,9 +42,13 @@ test("founder demo clears every provider and creates a local-only runtime", () =
 })
 
 test("cleanup guard accepts only the exact temporary demo namespace", () => {
-  assert.match(assertDisposableDemoDirectory(join("/tmp", "logloads-founder-demo-safe")), /logloads-founder-demo-safe$/)
-  assert.throws(() => assertDisposableDemoDirectory("/tmp"), /Refusing/)
-  assert.throws(() => assertDisposableDemoDirectory(join("/tmp", "other-demo")), /Refusing/)
+  // The guard anchors on os.tmpdir() (C:\Users\...\Temp on Windows, $TMPDIR or /tmp elsewhere),
+  // so the fixtures must too; a literal "/tmp" only matched on POSIX hosts with TMPDIR unset.
+  const temp = tmpdir()
+  assert.match(assertDisposableDemoDirectory(join(temp, "logloads-founder-demo-safe")), /logloads-founder-demo-safe$/)
+  assert.throws(() => assertDisposableDemoDirectory(temp), /Refusing/)
+  assert.throws(() => assertDisposableDemoDirectory(join(temp, "other-demo")), /Refusing/)
+  assert.throws(() => assertDisposableDemoDirectory(join(temp, "nested", "logloads-founder-demo-safe")), /Refusing/)
 })
 
 function shutdownHarness() {
