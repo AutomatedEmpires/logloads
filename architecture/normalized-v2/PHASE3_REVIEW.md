@@ -3,6 +3,8 @@
 **Branch / PR:** `test/normalized-v2-contract-alignment`, draft PR #123 (base `test/normalized-v2-postgres17-ci`). Phase 1 and Phase 2 history unchanged.
 **Scope:** database only (`architecture/normalized-v2/`, `tools/normalized-v2-ci/`, `.github/workflows/normalized-v2-ci.yml`). No application, contract, `supabase/` or production file was touched. Interface changes for the adapter are in `INTERFACE_CONTRACT_H1_H3.md`.
 
+> **Superseded in part.** An independent review (`INDEPENDENT_REVIEW_FINDINGS.md`) disproved several claims below — notably that re-running 06 is idempotent, that the drill fingerprint is byte-exact, and that the moderation hold cannot be evaded. That document's §1 lists the corrections; the readiness verdict in §7 is revised.
+
 ## 1. Migration chain and files
 
 `01 → 02 → 03 → 06 → 11 → 12` (forward-only; each file applies in one transaction — proven by `15`).
@@ -133,6 +135,6 @@ Fixed this phase (engineering): E6, E7, S5, owner-reversible moderation (hold me
 
 | Category | Verdict | Basis |
 |---|---|---|
-| **Adapter integration** (building the real V2 adapter against this schema) | **READY FOR INTEGRATION WORK** — not for go-live | Schema, RPCs and security verified on PostgreSQL 17 and on a Supabase local stack with real roles and PostgREST. Go-live blocked by R1 (H1 attestation in the port) and R2 (real Clerk tokens). |
+| **Adapter integration** (building the real V2 adapter against this schema) | **NOT READY** (revised after independent review — see `INDEPENDENT_REVIEW_FINDINGS.md`) | Verified High defects: re-running 06 corrupts data and reverts 11 (D-1, D-2), 06 aborts on valid baseline data (D-4), a replacement subscription can be lost (E-1), and moderation can be evaded by republishing (C-1). Fix and re-verify first; R1 and R2 still block go-live. |
 | **Staging** | **NOT READY** | Requires an isolated hosted Supabase branch with a Clerk development instance (R2, R3 remainder, R9), the webhook handler (R4), and the adapter changes (R1, R5, R8). |
 | **Production** | **NOT READY — NOT AUTHORIZED** | No production run, credentials or deployment were used or are authorized. Disposable-database results alone are not evidence of production readiness. |
