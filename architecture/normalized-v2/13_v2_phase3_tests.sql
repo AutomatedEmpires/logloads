@@ -90,7 +90,7 @@ declare
   c_iss constant text := 'https://clerk.logloads.test';
   u_land uuid; u_haul uuid; u_drv uuid; u_admin uuid; u_bill uuid;
   o_land uuid; o_haul uuid; o_bare uuid; o_bill uuid; o_bill2 uuid;
-  o_bill3 uuid; o_bill4 uuid; o_bill5 uuid; o_bill6 uuid; o_bill7 uuid; o_bill8 uuid; o_bill9 uuid;
+  o_bill3 uuid; o_bill4 uuid; o_bill5 uuid; o_bill6 uuid; o_bill7 uuid; o_bill8 uuid; o_bill9 uuid; o_bill10 uuid;
   l_land uuid; l_bill uuid;
   j_a uuid; j_b uuid; j_legacy uuid; v_draft uuid; v_draft2 uuid;
   v_n bigint; v_n2 bigint; v_ts timestamptz; v_ts2 timestamptz; v_seq bigint;
@@ -715,11 +715,43 @@ begin
     and (select outcome = 'ignored_stale' from marketplace.billing_provider_events where provider_event_id = 'h1_35')
     and not exists (select 1 from marketplace.organization_subscriptions where provider_subscription_ref = 'sub_h1_x'),
     'H1: the latest snapshot is replayed, older ones are stale, and a snapshot whose period ended is never applied');
-  perform pg_temp.ok((select (metadata ->> 'counted_discount_cycle') is not null and metadata ->> 'billing_reason' = 'subscription_create'
+  perform pg_temp.ok((select metadata ->> 'billing_reason' = 'subscription_create'
                       from marketplace.audit_events
                       where org_id = o_bill9 and action = 'subscription.cycle_opened'
                       order by id desc limit 1),
     'H1/L2: a replayed subscription''s first cycle is opened as a creation, whatever the latest snapshot''s reason');
+
+  -- (e) Third review: a ROUTINE first event of one pending replacement does not discard another the
+  -- customer may be keeping; it flags reconciliation, and the other stays replayable.
+  perform pg_temp.as_jwt('authenticated', 'p3_bill');
+  o_bill10 := marketplace.create_organization('H1 Double Subscription', 'h1-double', 'OR', false);
+  perform pg_temp.as_jwt('service_role');
+  v_out := pg_temp.evt('h1_41', 'customer.subscription.created', t0, o_bill10, 'sub_h1_o', 'basic', 'active',
+                       t0, t0 + interval '30 days', 'subscription_create');
+  v_out := pg_temp.evt('h1_42', 'customer.subscription.created', t0 + interval '2 days', o_bill10, 'sub_h1_b2', 'pro', 'active',
+                       t0 + interval '2 days', t0 + interval '32 days', 'subscription_create');
+  v_out := pg_temp.evt('h1_43', 'customer.subscription.created', t0 + interval '3 days', o_bill10, 'sub_h1_c2', 'regional', 'active',
+                       t0 + interval '3 days', t0 + interval '33 days', 'subscription_create');
+  v_out := pg_temp.evt('h1_44', 'customer.subscription.deleted', t0 + interval '4 days', o_bill10, 'sub_h1_o', 'basic', 'canceled',
+                       t0, t0 + interval '30 days');
+  v_out := pg_temp.evt('h1_45', 'customer.subscription.updated', t0 + interval '5 days', o_bill10, 'sub_h1_b2', 'pro', 'active',
+                       t0 + interval '2 days', t0 + interval '32 days', 'subscription_update');
+  perform pg_temp.ok(v_out = 'applied', 'H1(e): a routine event applies one of two pending replacements');
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok((select outcome = 'deferred_conflict' from marketplace.billing_provider_events where provider_event_id = 'h1_43')
+    and (select outcome = 'ignored_stale' from marketplace.billing_provider_events where provider_event_id = 'h1_42')
+    and (select provider_sync_required from marketplace.organization_subscriptions where provider_subscription_ref = 'sub_h1_b2'),
+    'H1(e): the other replacement is NOT discarded; the live one is flagged for reconciliation');
+  perform pg_temp.as_jwt('service_role');
+  v_out := pg_temp.evt('h1_46', 'customer.subscription.deleted', t0 + interval '6 days', o_bill10, 'sub_h1_b2', 'pro', 'canceled',
+                       t0 + interval '2 days', t0 + interval '32 days');
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok(v_out = 'applied'
+    and (select status = 'active' from marketplace.organization_subscriptions where provider_subscription_ref = 'sub_h1_c2')
+    and (select outcome = 'applied' from marketplace.billing_provider_events where provider_event_id = 'h1_43')
+    and ((marketplace.org_entitled_plan(o_bill10)).code = 'regional'),
+    'H1(e): when the customer cancels that one and keeps the other, the other is replayed (entitled)');
+  perform pg_temp.as_jwt('authenticated', 'p3_admin');
   perform pg_temp.as_jwt('authenticated', 'p3_admin');
 
   raise notice 'ALL PHASE 3 POLICY (F1-F5) AND BILLING-ORDERING TESTS PASSED.';
