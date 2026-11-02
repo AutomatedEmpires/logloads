@@ -236,7 +236,7 @@ begin
   -- A hauler-only owner who self-grants a landing seat still cannot publish without a landing and plan.
   perform pg_temp.as_jwt('authenticated', 'a9_solo');
   update marketplace.organization_memberships set landing_workspace_seat = true where org_id = o_solo and user_id = u_solo;
-  perform pg_temp.ok(not ('job.publish' = any ((select capabilities from marketplace.get_viewer_marketplace_access(o_solo)))),
+  perform pg_temp.ok(not exists (select 1 from marketplace.get_viewer_marketplace_access(o_solo) a where 'job.publish' = any (a.capabilities)),
     'a self-granted seat on a hauler-only org confers no job.publish capability');
 
   -- -------------------------------------------------------------------------
