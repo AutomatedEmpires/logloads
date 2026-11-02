@@ -146,7 +146,7 @@ new_barrier() {
 }
 
 marker() { grep -oE "^$2 [0-9.]+" <<<"$1" | head -1 | cut -d' ' -f2 || true; }
-sqlstate_of() { grep -oE "ERROR:  [0-9A-Z]{5}:" <<<"$1" | head -1 | grep -oE "[0-9A-Z]{5}" || true; }
+sqlstate_of() { sed -nE 's/^.*ERROR:  ([0-9A-Z]{5}): .*$/\1/p' <<<"$1" | head -1; }
 
 # Both workers passed the barrier, and at least one transaction was still open (had not reached
 # COMMIT) when the later worker started: the two transactions genuinely overlapped in time.
