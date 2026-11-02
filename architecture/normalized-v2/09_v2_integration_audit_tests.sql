@@ -2,7 +2,9 @@
 -- LogLoads normalized-v2 — 09 independent integration-audit regression suite
 --
 -- NON-ACTIVE PROTOTYPE TEST SUITE. Disposable PostgreSQL only. Run after
--- 01 -> 02 -> 03 -> 06 (and 04, 07). Wraps everything in BEGIN ... ROLLBACK.
+-- 01 -> 02 -> 03 -> 06 -> 11 -> 12 (and 04, 07). Wraps everything in BEGIN ... ROLLBACK.
+-- Phase 3 founder decisions changed two expectations here, each noted where it applies:
+-- F3 (re-activation needs a fresh attestation) and F2 (legacy postings need pay before reconfirmation).
 --
 -- Written by the integration owner, independently of 07. Every negative test requires the
 -- expected SQLSTATE AND a matching constraint name or message, and checks that nothing was
@@ -264,7 +266,7 @@ begin
 
   -- getJob must not depend on a page of 200 results (C5).
   perform pg_temp.as_jwt('authenticated', 'a9_land');
-  perform marketplace.set_job_posting_status(j1, 'active');
+  perform marketplace.reactivate_job_posting(j1, true); -- F3: re-activation carries a fresh attestation
   for v_n in 1..205 loop
     perform marketplace.publish_job_posting(p_landing_id => l_land, p_title => 'Bulk run ' || v_n, p_equipment_codes => array['log_truck'],
       p_trucks_requested => 1, p_pay_unit => 'per_load', p_pay_amount_cents => 30000 + v_n, p_attest_available => true);
@@ -291,10 +293,18 @@ begin
 
   perform pg_temp.as_jwt('authenticated', 'a9_land');
   perform marketplace.set_job_posting_status(j_legacy, 'paused');
-  perform pg_temp.fails(format('select marketplace.set_job_posting_status(%L, %L)', j_legacy, 'active'), '23514', 'legacy',
+  -- C2 (now enforced through F3/F2): no plain status change or direct UPDATE re-activates it, and the
+  -- attested path refuses it while it has no pay.
+  perform pg_temp.fails(format('select marketplace.set_job_posting_status(%L, %L)', j_legacy, 'active'), '23514', 'fresh availability attestation',
     'C2: a paused unquoted legacy job cannot be re-activated via set_job_posting_status');
-  perform pg_temp.fails(format($q$update marketplace.job_postings set status = 'active' where id = %L$q$, j_legacy), '23514', 'legacy',
+  perform pg_temp.fails(format($q$update marketplace.job_postings set status = 'active' where id = %L$q$, j_legacy), '23514', 'fresh availability attestation',
     'C2: ... nor by a direct UPDATE');
+  perform pg_temp.fails(format('select marketplace.reactivate_job_posting(%L, true)', j_legacy), '23514', 'add pay',
+    'C2/F2: ... nor through attested re-activation while it states no pay');
+  -- F2: a legacy job states pay before it can be reconfirmed; C3 then checks the confirmation is recorded.
+  perform pg_temp.fails(format('select marketplace.reconfirm_job_posting(%L)', j_legacy2), '23514', 'add pay',
+    'F2: an unpriced legacy job cannot be reconfirmed');
+  update marketplace.job_postings set pay_unit = 'per_ton', pay_amount_cents = 8800 where id = j_legacy2;
   v_ts := marketplace.reconfirm_job_posting(j_legacy2);
   perform pg_temp.as_jwt('harness');
   perform pg_temp.ok((select last_confirmed_at = v_ts and last_confirmed_by = u_land from marketplace.job_postings where id = j_legacy2),

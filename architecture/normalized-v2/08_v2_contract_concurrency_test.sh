@@ -3,8 +3,8 @@
 # LogLoads normalized-v2 — 08 aligned-schema multi-session concurrency suite (Linux/CI)
 #
 # NON-ACTIVE PROTOTYPE TEST HARNESS. Do not run against production.
-# Builds its own disposable aligned schema (01 -> 02 -> 03 -> 06) so the objects under test are the
-# 06_v2_contract_alignment.sql ones (05 tests the baseline only). Same target safety as 05: a localhost
+# Builds its own disposable aligned schema (01 -> 02 -> 03 -> 06 -> 11 -> 12) so the objects under test are
+# the aligned ones (05 tests the baseline only). Same target safety as 05: a localhost
 # URL alone is not proof; the database must be the expected disposable one, hold no foreign tables,
 # and carry the CI marker (or LOGLOADS_LOCAL_DISPOSABLE_CONFIRM=drop-marketplace-schema locally).
 #
@@ -16,6 +16,12 @@
 #   A4  the same landing reply (same reply id) sent twice      -> exactly one message
 #   A5  the same draft published twice concurrently            -> one success, clean P0002 loser,
 #                                                               one attestation, draft fully promoted
+#   A8  the same paused job re-activated twice concurrently     -> one attested re-activation, clean
+#                                                               23514 loser, confirmation_seq + 1 (F3)
+#   A6  the same provider webhook delivered twice concurrently  -> applied once, duplicate once, one
+#                                                               ledger row with delivery_count 2 (R4)
+#   A7  renewals for periods N+1 and N+2 delivered concurrently -> final state is N+2 whatever the order;
+#                                                               each applied renewal opened one period (R4)
 # Every race proves overlap (T_START after the barrier, T_END before COMMIT), rejects deadlocks and
 # timeouts, checks SQLSTATEs and asserts the persisted state.
 # =============================================================================
@@ -45,13 +51,19 @@ fail() {
 }
 
 # --- Target safety (identical rules to 05) -----------------------------------
+# On the Supabase CLI local stack (guarded and stamped by tools/normalized-v2-ci/guard.sh) the platform's own
+# schemas hold tables; they are not ours and are never touched.
+SUPABASE_PLATFORM_SCHEMAS=""
+if [[ "${LOGLOADS_DB_ENV:-}" == "supabase-local-ci" ]]; then
+  SUPABASE_PLATFORM_SCHEMAS=",'auth','storage','realtime','_realtime','vault','graphql','graphql_public','extensions','pgbouncer','supabase_functions','supabase_migrations'"
+fi
 [[ "$(psql_scalar "select current_database();")" == "${LOGLOADS_DISPOSABLE_DB_NAME:-logloads_test}" ]] \
   || { echo "ERROR: Refusing to run: unexpected database." >&2; exit 1; }
 FOREIGN_TABLES="$(psql_scalar "
 select coalesce(string_agg(format('%I.%I', n.nspname, c.relname), ', '), '')
 from pg_class c join pg_namespace n on n.oid = c.relnamespace
 where c.relkind in ('r','p')
-  and n.nspname not in ('pg_catalog','information_schema','pg_toast','marketplace','topology','tiger','tiger_data')
+  and n.nspname not in ('pg_catalog','information_schema','pg_toast','marketplace','topology','tiger','tiger_data'${SUPABASE_PLATFORM_SCHEMAS})
   and not (n.nspname in ('public', 'extensions') and c.relname = 'spatial_ref_sys');")"
 [[ -z "$FOREIGN_TABLES" ]] || { echo "ERROR: Refusing to run: foreign tables present: $FOREIGN_TABLES" >&2; exit 1; }
 DB_MARKER="$(psql_scalar "select coalesce(shobj_description(oid, 'pg_database'), '') from pg_database where datname = current_database();")"
@@ -122,13 +134,13 @@ set local role authenticated;"
 }
 
 # --- Build the aligned schema and a committed fixture ------------------------
-echo "[0/6] Building the disposable aligned schema (01 -> 02 -> 03 -> 06)..."
+echo "[0/9] Building the disposable aligned schema (01 -> 02 -> 03 -> 06 -> 11 -> 12)..."
 psql_exec "drop schema if exists marketplace cascade;"
-for f in 01_schema.sql 02_access.sql 03_entitlements.sql 06_v2_contract_alignment.sql; do
+for f in 01_schema.sql 02_access.sql 03_entitlements.sql 06_v2_contract_alignment.sql 11_v2_founder_decisions.sql 12_v2_billing_events.sql; do
   psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 -f "$SCRIPT_DIR/$f" >/dev/null
 done
-[[ "$(psql_scalar "select to_regclass('marketplace.job_publication_attestations') is not null;")" == "t" ]] \
-  || fail "aligned schema missing: job_publication_attestations not created"
+[[ "$(psql_scalar "select to_regclass('marketplace.job_publication_attestations') is not null and to_regclass('marketplace.billing_provider_events') is not null;")" == "t" ]] \
+  || fail "aligned schema missing: attestation or billing event ledger not created"
 
 psql_exec "
 insert into marketplace.trusted_identity_issuers (issuer, label, expected_audience, enabled)
@@ -182,7 +194,7 @@ PUBLISH_CALL="select 'RESULT ' || marketplace.publish_job_posting(
 # =============================================================================
 # A1: identical concurrent publications
 # =============================================================================
-echo "[1/6] A1: two sessions publish the identical job at the same landing..."
+echo "[1/9] A1: two sessions publish the identical job at the same landing..."
 new_barrier
 A1="$(worker_sql "$BARRIER" "$(claims_for v2c_land_owner)
 ${PUBLISH_CALL}")"
@@ -200,7 +212,7 @@ echo "  PASS: one active job, one attestation, one audit event; both sessions go
 # =============================================================================
 # A2: identical concurrent first inquiries
 # =============================================================================
-echo "[2/6] A2: two sessions submit the same first inquiry for the same hauler and job..."
+echo "[2/9] A2: two sessions submit the same first inquiry for the same hauler and job..."
 new_barrier
 A2="$(worker_sql "$BARRIER" "$(claims_for v2c_haul_owner)
 select 'RESULT ' || s.interest_id || ' ' || s.created from marketplace.submit_expression_of_interest(
@@ -222,7 +234,7 @@ echo "  PASS: one inquiry, created once, equipment consistent (2 x log_truck)."
 # =============================================================================
 # A3: concurrent reconfirmations
 # =============================================================================
-echo "[3/6] A3: two sessions reconfirm the same job concurrently..."
+echo "[3/9] A3: two sessions reconfirm the same job concurrently..."
 BEFORE="$(psql_scalar "select confirmation_seq || ' ' || extract(epoch from reconfirmed_at) from marketplace.job_publication_attestations where job_id = '${JOB_ID}'::uuid;")"
 MODIFIED_BEFORE="$(psql_scalar "select updated_at from marketplace.job_postings where id = '${JOB_ID}'::uuid;")"
 new_barrier
@@ -241,7 +253,7 @@ echo "  PASS: both reconfirmations recorded (seq +2), confirmation advanced, las
 # =============================================================================
 # A4: the same landing reply sent twice concurrently
 # =============================================================================
-echo "[4/6] A4: the landing sends the same reply (same reply id) from two sessions..."
+echo "[4/9] A4: the landing sends the same reply (same reply id) from two sessions..."
 REPLY_ID="$(psql_scalar "select gen_random_uuid();")"
 new_barrier
 A4="$(worker_sql "$BARRIER" "$(claims_for v2c_land_owner)
@@ -257,7 +269,7 @@ echo "  PASS: exactly one message for the reply id; inquiry 'replied'."
 # =============================================================================
 # A5: the same draft published twice concurrently
 # =============================================================================
-echo "[5/6] A5: two sessions publish the same saved draft..."
+echo "[5/9] A5: two sessions publish the same saved draft..."
 DRAFT_ID="$(psql_scalar "
 begin;
 $(claims_for v2c_land_owner)
@@ -283,6 +295,89 @@ expect_eq "A5 attestation rows for the draft" "$(psql_scalar "select count(*) fr
 assert_overlap "A5"
 echo "  PASS: one publication of the draft (loser P0002), one attestation, draft fully promoted."
 
-echo "[6/6] Cleaning up disposable marketplace schema..."
+# =============================================================================
+# A8: the same paused job re-activated twice concurrently (F3)
+# =============================================================================
+echo "[6/9] A8: two sessions re-activate the same paused job with an attestation..."
+psql_exec "
+begin;
+$(claims_for v2c_land_owner)
+select marketplace.set_job_posting_status('${JOB_ID}'::uuid, 'paused');
+commit;"
+SEQ_BEFORE="$(psql_scalar "select confirmation_seq from marketplace.job_publication_attestations where job_id = '${JOB_ID}'::uuid;")"
+new_barrier
+A8="$(worker_sql "$BARRIER" "$(claims_for v2c_land_owner)
+select 'RESULT ' || marketplace.reactivate_job_posting('${JOB_ID}'::uuid, true);")"
+run_parallel_psql "$A8" "$A8"
+A8_OK=0
+[[ $PARALLEL_RC_A -eq 0 ]] && A8_OK=$((A8_OK + 1)); [[ $PARALLEL_RC_B -eq 0 ]] && A8_OK=$((A8_OK + 1))
+expect_eq "A8 successful re-activations" "$A8_OK" "1"
+if [[ $PARALLEL_RC_A -ne 0 ]]; then A8_LOSER="$PARALLEL_OUT_A"; else A8_LOSER="$PARALLEL_OUT_B"; fi
+expect_eq "A8 losing session SQLSTATE" "$(sqlstate_of "$A8_LOSER")" "23514"
+grep -q "already active" <<<"$A8_LOSER" || fail "A8: the losing session failed for an unexpected reason"
+expect_eq "A8 job status" "$(psql_scalar "select status from marketplace.job_postings where id = '${JOB_ID}'::uuid;")" "active"
+expect_eq "A8 confirmation_seq advanced once" "$(psql_scalar "select confirmation_seq from marketplace.job_publication_attestations where job_id = '${JOB_ID}'::uuid;")" "$(( SEQ_BEFORE + 1 ))"
+expect_eq "A8 re-activation audit events" "$(psql_scalar "select count(*) from marketplace.audit_events where entity_id = '${JOB_ID}'::uuid and action = 'job_posting.reactivated';")" "1"
+assert_overlap "A8"
+echo "  PASS: one attested re-activation (loser 23514 'already active'), confirmation_seq +1."
+
+# --- Billing fixture: the landing org's live subscription (opened by the worker RPC above) ---------
+SUB_REF="sub_v2c"
+P1_START="$(psql_scalar "select current_period_start from marketplace.organization_subscriptions where provider_subscription_ref = '${SUB_REF}';")"
+P1_END="$(psql_scalar "select current_period_end from marketplace.organization_subscriptions where provider_subscription_ref = '${SUB_REF}';")"
+[[ -n "$P1_START" && -n "$P1_END" ]] || fail "billing fixture: subscription not found"
+DIGEST_A="$(printf 'a%.0s' $(seq 1 64))"
+event_call() { # event_call <event id> <type> <created> <status> <period start> <period end> <billing reason>
+  printf '%s' "select 'RESULT ' || r.result from marketplace.apply_billing_provider_event(
+  'stripe', '$1', '$2', '$3'::timestamptz, '${LAND_ORG}'::uuid, '${SUB_REF}', 'cus_v2c', 'basic', '$4',
+  '$5'::timestamptz, '$6'::timestamptz, false, '$7', '${DIGEST_A}', false) r;"
+}
+SERVICE_CLAIMS="select set_config('request.jwt.claims', '{\"role\":\"service_role\"}', true);
+set local role service_role;"
+
+# =============================================================================
+# A6: the same provider webhook delivered twice concurrently (R4)
+# =============================================================================
+echo "[7/9] A6: the same provider event is delivered by two sessions at once..."
+new_barrier
+A6="$(worker_sql "$BARRIER" "${SERVICE_CLAIMS}
+$(event_call evt_conc_dup customer.subscription.updated "${P1_START}" active "${P1_START}" "${P1_END}" subscription_update)")"
+run_parallel_psql "$A6" "$A6"
+[[ $PARALLEL_RC_A -eq 0 && $PARALLEL_RC_B -eq 0 ]] || fail "A6: both deliveries must succeed (loser SQLSTATE $(sqlstate_of "$PARALLEL_OUT_A$PARALLEL_OUT_B"))"
+expect_eq "A6 outcomes" "$(printf '%s\n%s\n' "$(result_line "$PARALLEL_OUT_A")" "$(result_line "$PARALLEL_OUT_B")" | sort | tr '\n' ',')" "applied,duplicate,"
+expect_eq "A6 ledger rows / delivery count" "$(psql_scalar "select count(*) || '/' || max(delivery_count) from marketplace.billing_provider_events where provider_event_id = 'evt_conc_dup';")" "1/2"
+expect_eq "A6 audit events for the delivery" "$(psql_scalar "select count(*) from marketplace.audit_events a join marketplace.billing_provider_events e on e.id = a.entity_id where e.provider_event_id = 'evt_conc_dup';")" "1"
+assert_overlap "A6"
+echo "  PASS: applied once, duplicate once; one ledger row with delivery_count 2 and one audit event."
+
+# =============================================================================
+# A7: renewals for two consecutive later periods delivered concurrently (R4)
+# =============================================================================
+echo "[8/9] A7: renewals for periods N+1 and N+2 arrive concurrently, in either order..."
+P2_START="$P1_END"
+P2_END="$(psql_scalar "select ('${P1_END}'::timestamptz + interval '30 days')::text;")"
+P3_END="$(psql_scalar "select ('${P1_END}'::timestamptz + interval '60 days')::text;")"
+new_barrier
+A7_A="$(worker_sql "$BARRIER" "${SERVICE_CLAIMS}
+$(event_call evt_conc_p2 invoice.paid "${P2_START}" active "${P2_START}" "${P2_END}" subscription_cycle)")"
+A7_B="$(worker_sql "$BARRIER" "${SERVICE_CLAIMS}
+$(event_call evt_conc_p3 invoice.paid "${P2_END}" active "${P2_END}" "${P3_END}" subscription_cycle)")"
+run_parallel_psql "$A7_A" "$A7_B"
+[[ $PARALLEL_RC_A -eq 0 && $PARALLEL_RC_B -eq 0 ]] || fail "A7: both deliveries must be processed (SQLSTATE $(sqlstate_of "$PARALLEL_OUT_A$PARALLEL_OUT_B"))"
+OUT_P2="$(result_line "$PARALLEL_OUT_A")"; OUT_P3="$(result_line "$PARALLEL_OUT_B")"
+expect_eq "A7 the later renewal is applied" "$OUT_P3" "applied"
+[[ "$OUT_P2" == "applied" || "$OUT_P2" == "ignored_stale" ]] || fail "A7: unexpected outcome for the N+1 renewal: $OUT_P2"
+expect_eq "A7 final billing period is N+2" "$(psql_scalar "select current_period_start = '${P2_END}'::timestamptz from marketplace.organization_subscriptions where provider_subscription_ref = '${SUB_REF}';")" "t"
+APPLIED=1; [[ "$OUT_P2" == "applied" ]] && APPLIED=2
+expect_eq "A7 entitlement periods opened by the applied renewals" "$(psql_scalar "select count(*) from marketplace.entitlement_periods where org_id = '${LAND_ORG}'::uuid and period_start in ('${P2_START}'::timestamptz, '${P2_END}'::timestamptz);")" "$APPLIED"
+expect_eq "A7 overlapping entitlement periods" "$(psql_scalar "
+select count(*) from marketplace.entitlement_periods a join marketplace.entitlement_periods b
+  on a.org_id = b.org_id and a.id < b.id
+ and tstzrange(a.period_start, a.period_end, '[)') && tstzrange(b.period_start, b.period_end, '[)')
+where a.org_id = '${LAND_ORG}'::uuid;")" "0"
+assert_overlap "A7"
+echo "  PASS: final period N+2 (N+1 renewal ${OUT_P2}); ${APPLIED} period(s) opened, no overlaps."
+
+echo "[9/9] Cleaning up disposable marketplace schema..."
 psql_exec "drop schema if exists marketplace cascade;"
 echo "ALL ALIGNED-SCHEMA CONCURRENCY TESTS PASSED."
