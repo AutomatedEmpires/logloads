@@ -29,6 +29,64 @@ as $$
   select id from marketplace.invitation_deliveries where invitation_id = p_invitation order by channel, id limit 1
 $$;
 
+-- Schema mode: 06_v2_contract_alignment.sql adds the attestation ledger. On the aligned schema,
+-- active jobs can only be created through publish_job_posting (V2-DEC-03), so this suite creates
+-- them through that RPC there, and by direct INSERT on the baseline schema.
+create function pg_temp.aligned() returns boolean language sql stable as $$
+  select to_regclass('marketplace.job_publication_attestations') is not null
+$$;
+
+-- Runs p_sql and requires failure with SQLSTATE p_state AND a constraint name or message matching
+-- p_reason (case-insensitive regex), so a negative test cannot pass because an unrelated rule fired.
+create function pg_temp.expect_failure(p_sql text, p_state text, p_reason text, p_label text) returns void
+language plpgsql as $$
+declare
+  v_state text; v_msg text; v_constraint text;
+begin
+  begin
+    execute p_sql;
+  exception when others then
+    get stacked diagnostics v_state = returned_sqlstate, v_msg = message_text, v_constraint = constraint_name;
+    if v_state = p_state and (coalesce(v_constraint, '') ~* p_reason or v_msg ~* p_reason) then
+      return;
+    end if;
+    raise exception 'TEST ASSERTION FAILED: % (expected % matching /%/, got % constraint=% message=%)',
+      p_label, p_state, p_reason, v_state, coalesce(v_constraint, '-'), v_msg;
+  end;
+  raise exception 'TEST ASSERTION FAILED: % (expected failure %, statement succeeded)', p_label, p_state;
+end
+$$;
+
+-- Creates an active job as the current caller. Baseline: direct INSERT (+ equipment row).
+-- Aligned: publish_job_posting with explicit availability attestation.
+create function pg_temp.create_active_job(
+  p_org uuid, p_landing uuid, p_title text, p_pay_cents bigint, p_pay_unit text, p_trucks integer,
+  p_description text default null, p_product text default null, p_destination text default null,
+  p_miles integer default null, p_starts date default null, p_ends date default null
+) returns uuid language plpgsql as $$
+declare v_id uuid;
+begin
+  if pg_temp.aligned() then
+    v_id := marketplace.publish_job_posting(
+      p_landing_id => p_landing, p_title => p_title, p_equipment_codes => array['log_truck'],
+      p_trucks_requested => p_trucks, p_product => p_product, p_description => p_description,
+      p_pay_unit => p_pay_unit, p_pay_amount_cents => p_pay_cents,
+      p_work_starts_on => p_starts,
+      p_duration_days => case when p_starts is not null and p_ends is not null then (p_ends - p_starts) + 1 end,
+      p_destination_label => p_destination, p_est_one_way_miles => p_miles, p_attest_available => true);
+  else
+    insert into marketplace.job_postings
+      (org_id, landing_id, title, description, product, destination_label, est_one_way_miles,
+       pay_amount_cents, pay_unit, trucks_requested, work_starts_on, work_ends_on, status)
+    values (p_org, p_landing, p_title, p_description, p_product, p_destination, p_miles,
+            p_pay_cents, p_pay_unit, p_trucks, p_starts, p_ends, 'active')
+    returning id into v_id;
+    insert into marketplace.job_posting_equipment (job_id, equipment_code) values (v_id, 'log_truck');
+  end if;
+  return v_id;
+end
+$$;
+
 -- Helper used only inside this rolled-back transaction to switch caller context.
 create function pg_temp.as_jwt(
   p_role text,
@@ -83,7 +141,7 @@ declare
   v_pub_exec integer;
 begin
   select count(*) into v_tables from pg_tables where schemaname = 'marketplace';
-  perform pg_temp.assert_true(v_tables = 32, format('expected 32 tables in marketplace, found %s', v_tables));
+  perform pg_temp.assert_true(v_tables = case when pg_temp.aligned() then 35 else 32 end, format('expected %s tables in marketplace, found %s', case when pg_temp.aligned() then 35 else 32 end, v_tables));
 
   select count(*) into v_views from pg_views where schemaname = 'marketplace';
   perform pg_temp.assert_true(v_views = 0, format('expected 0 views in marketplace, found %s', v_views));
@@ -94,7 +152,7 @@ begin
   select count(*) into v_funcs
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'marketplace';
-  perform pg_temp.assert_true(v_funcs = 44, format('expected 44 functions in marketplace, found %s', v_funcs));
+  perform pg_temp.assert_true(v_funcs = case when pg_temp.aligned() then 62 else 44 end, format('expected %s functions in marketplace, found %s', case when pg_temp.aligned() then 62 else 44 end, v_funcs));
 
   -- No function in `marketplace` may be executable by PUBLIC.
   select count(*) into v_pub_exec
@@ -410,28 +468,38 @@ begin
     extensions.st_GeogFromText('SRID=4326;POINT(-122.7000 44.4000)')
   ) into v_dist_m
   from marketplace.landings where id = v_landing_a1;
-  perform pg_temp.assert_true(v_dist_m > 4000, format('public_point must be obfuscated (>4km shift), got %s m', v_dist_m));
+  if pg_temp.aligned() then
+    -- V2-DEC-01: nearest 0.10-degree grid point; (-122.7000, 44.4000) is already on the grid.
+    perform pg_temp.assert_true(v_dist_m < 1, format('V2-DEC-01: on-grid input must stay on the 0.10-degree grid point, moved %s m', v_dist_m));
+  else
+    perform pg_temp.assert_true(v_dist_m > 4000, format('public_point must be obfuscated (>4km shift), got %s m', v_dist_m));
+  end if;
 
   -- Public text guard: pasting exact coordinates or gate codes into public job fields fails.
-  begin
-    insert into marketplace.job_postings
+  if pg_temp.aligned() then
+    perform pg_temp.expect_failure(format($q$select marketplace.publish_job_posting(p_landing_id => %L, p_title => 'Sawlog Haul',
+      p_equipment_codes => array['log_truck'], p_trucks_requested => 10, p_pay_unit => 'per_ton', p_pay_amount_cents => 12500,
+      p_description => 'Gate code 4829 at 44.40123, -122.70456', p_attest_available => true)$q$, v_landing_a1),
+      '23514', 'description', 'public job description with gate code / exact coords must be rejected by the description check');
+  else
+    perform pg_temp.expect_failure(format($q$insert into marketplace.job_postings
       (org_id, landing_id, title, description, pay_amount_cents, pay_unit, trucks_requested, status)
-    values
-      (v_org_land_a, v_landing_a1, 'Sawlog Haul', 'Gate code 4829 at 44.40123, -122.70456', 12500, 'per_ton', 10, 'active');
-    raise exception 'expected public job description with gate code / exact coords to be rejected';
-  exception when check_violation then null;
-  end;
+      values (%L, %L, 'Sawlog Haul', 'Gate code 4829 at 44.40123, -122.70456', 12500, 'per_ton', 10, 'active')$q$, v_org_land_a, v_landing_a1),
+      '23514', 'description', 'public job description with gate code / exact coords must be rejected by the description check');
+  end if;
 
   -- Pay transparency guard (Item 9): publishing an active job with NULL pay_unit / pay_amount_cents
   -- is blocked by default until founder sign-off on Blueprint §5.2 vs UX Spec §5.1.3.
-  begin
-    insert into marketplace.job_postings
+  if pg_temp.aligned() then
+    perform pg_temp.expect_failure(format($q$select marketplace.publish_job_posting(p_landing_id => %L, p_title => 'Unquoted Active Job',
+      p_equipment_codes => array['log_truck'], p_trucks_requested => 4, p_description => 'Steady haul.', p_attest_available => true)$q$, v_landing_a1),
+      '23514', 'pay', 'active job without stated pay or negotiable basis must be rejected by the pay rule');
+  else
+    perform pg_temp.expect_failure(format($q$insert into marketplace.job_postings
       (org_id, landing_id, title, description, trucks_requested, status)
-    values
-      (v_org_land_a, v_landing_a1, 'Unquoted Active Job', 'Steady haul.', 4, 'active');
-    raise exception 'expected active job without stated pay or negotiable basis to be rejected';
-  exception when check_violation then null;
-  end;
+      values (%L, %L, 'Unquoted Active Job', 'Steady haul.', 4, 'active')$q$, v_org_land_a, v_landing_a1),
+      '23514', 'pay', 'active job without stated pay or negotiable basis must be rejected by the pay rule');
+  end if;
 
   -- Store sensitive gate/access details in `landing_private_details`.
   insert into marketplace.landing_private_details
@@ -444,17 +512,10 @@ begin
 
   -- Publish a valid active job posting requesting 50 trucks (unlimited/unmetered)
   -- and containing legitimate business contact information (office phone & email).
-  insert into marketplace.job_postings
-    (org_id, landing_id, title, description, product, destination_label, est_one_way_miles,
-     pay_amount_cents, pay_unit, trucks_requested, work_starts_on, work_ends_on, status)
-  values (
-    v_org_land_a, v_landing_a1, 'Santiam Doug-Fir Sawlogs',
+  v_job_a1 := pg_temp.create_active_job(
+    v_org_land_a, v_landing_a1, 'Santiam Doug-Fir Sawlogs', 8500, 'per_ton', 50,
     'Steady 8-month haul, well-rocked mainline. Call office at (541) 555-0199 or dispatch@cascadetimber.test.',
-    'Doug-fir sawlogs', 'Sweet Home Mill', 38, 8500, 'per_ton', 50, current_date, current_date + 240, 'active'
-  ) returning id into v_job_a1;
-
-  insert into marketplace.job_posting_equipment (job_id, equipment_code)
-  values (v_job_a1, 'log_truck');
+    'Doug-fir sawlogs', 'Sweet Home Mill', 38, current_date, current_date + 240);
 
   -- Composite FK integrity check: rival org B cannot attach a job to org A's landing.
   perform pg_temp.as_jwt('authenticated', v_issuer, 'user_land_b');
@@ -581,11 +642,7 @@ begin
 
   -- Consume the 3rd Basic allowance unit on a second active job at the same landing, then verify 4th is rejected.
   perform pg_temp.as_jwt('authenticated', v_issuer, 'user_land_a');
-  insert into marketplace.job_postings
-    (org_id, landing_id, title, pay_amount_cents, pay_unit, trucks_requested, status)
-  values
-    (v_org_land_a, v_landing_a1, 'Pulpwood Clean-Up Haul', 6500, 'per_ton', 5, 'active')
-  returning id into v_job_b1;
+  v_job_b1 := pg_temp.create_active_job(v_org_land_a, v_landing_a1, 'Pulpwood Clean-Up Haul', 6500, 'per_ton', 5);
 
   v_inv_3 := marketplace.reserve_targeted_invitation(v_job_b1, v_org_haul_1, '3rd and final Basic invite');
 
@@ -697,13 +754,9 @@ begin
   ), 'get_org_entitlement_state must report seat_conflict and landing_conflict accurately');
 
   -- While conflicted, publishing a new job or sending a targeted invitation is blocked.
-  begin
-    insert into marketplace.job_postings
-      (org_id, landing_id, title, pay_amount_cents, pay_unit, trucks_requested, status)
-    values (v_org_land_a, v_landing_a1, 'Blocked While Conflicted', 8000, 'per_ton', 2, 'active');
-    raise exception 'expected publishing while in seat/landing conflict to fail';
-  exception when check_violation then null;
-  end;
+  perform pg_temp.expect_failure(format('select pg_temp.create_active_job(%L, %L, %L, 8000, %L, 2)',
+      v_org_land_a, v_landing_a1, 'Blocked While Conflicted', 'per_ton'),
+    '23514', 'exceeds plan|conflict', 'publishing while in seat/landing conflict must be rejected by the conflict rule');
 
   -- Owner explicitly resolves excess seat (converts `v_u_staff` back to fleet-only) and deactivates 2nd landing.
   update marketplace.organization_memberships set landing_workspace_seat = false
