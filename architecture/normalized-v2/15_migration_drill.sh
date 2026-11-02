@@ -74,6 +74,11 @@ DATA_SQL="select md5(string_agg(x, '|' order by x)) from (
   union all select 'audit:' || count(*) from marketplace.audit_events
 ) s(x);"
 # Fails loudly if either half cannot be computed, so a comparison can never pass vacuously.
+# The same entries, one per line, so a mismatch can be shown precisely.
+rows() {
+  q "$(sed -e 's/^select md5(string_agg(x, .|. order by x)) from (/select x from (/' -e 's/^) s(x);$/) s(x) order by x;/' <<<"$CATALOG_SQL")"
+  q "$(sed -e 's/^select md5(string_agg(x, .|. order by x)) from (/select x from (/' -e 's/^) s(x);$/) s(x) order by x;/' <<<"$DATA_SQL")"
+}
 fp() {
   local c d
   c="$(q "$CATALOG_SQL")" || fail "catalog fingerprint query failed"
@@ -124,6 +129,7 @@ begin
 end
 \$\$;"
 FP0="$(fp)"
+rows > "$TMP/rows0.txt"
 ok "pre-V2 fingerprint recorded (${FP0:0:12}…)"
 
 echo "[3/6] Backup before migrating (pg_dump of the marketplace schema)..."
@@ -169,7 +175,12 @@ done
 echo "[6/6] Recovery: restore the pre-migration backup, then migrate forward again..."
 x "drop schema marketplace cascade;"
 pg_restore --dbname="$DB_URL" --single-transaction --exit-on-error "$TMP/pre_v2.dump"
-[[ "$(fp)" == "$FP0" ]] || fail "restoring the backup did not reproduce the pre-migration schema and data"
+if [[ "$(fp)" != "$FP0" ]]; then
+  rows > "$TMP/rows_restored.txt"
+  echo "  entries that differ after restore (< before, > restored):"
+  diff "$TMP/rows0.txt" "$TMP/rows_restored.txt" | grep -E '^[<>]' | cut -c1-220 | head -40
+  fail "restoring the backup did not reproduce the pre-migration schema and data"
+fi
 ok "backup restored to exactly the pre-migration fingerprint"
 for f in 06_v2_contract_alignment.sql 11_v2_founder_decisions.sql 12_v2_billing_events.sql; do apply1 "$SCRIPT_DIR/$f"; done
 [[ "$(q "select count(*) from marketplace.job_postings where title = 'Drill Active Job' and is_legacy_import;")" == "1" ]] || fail "forward migration after restore lost data"
