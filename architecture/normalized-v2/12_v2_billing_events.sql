@@ -74,10 +74,17 @@ begin
   end if;
 end
 $$;
+-- The refusal itself needs no session state (a transaction pooler may run this statement on another
+-- backend): it re-checks the transaction. NEVER run migrations through a transaction-mode pooler; there,
+-- the read-only safeguard above can stay on a pooled backend (failing writes closed) until it is recycled.
 do $$
 begin
+  if coalesce(current_setting('logloads.migration_xact', true), '') <> txid_current()::text then
+    raise exception 'migration 12 must be applied in one transaction (psql --single-transaction); nothing was changed'
+      using errcode = '25P01', hint = 'This session (or pooled backend) was made read-only to stop the rest of the file.';
+  end if;
   if coalesce(current_setting('logloads.migration_refused', true), '') <> '' then
-    raise exception 'migration % must be applied in one transaction (psql --single-transaction); nothing was changed and this session is now read-only',
+    raise exception 'migration 12 refused: this session was made read-only by an earlier non-atomic attempt (migration %); reconnect and apply it with psql --single-transaction',
       current_setting('logloads.migration_refused')
       using errcode = '25P01';
   end if;
@@ -365,59 +372,87 @@ as $$
 $$;
 
 -- -----------------------------------------------------------------------------
--- H1 (second and third review). When a provider subscription goes live for an organization:
---   * its own deferred snapshots that are not newer than the applied event are stale (newer ones stay
---     deferred, and the subscription is flagged for a reconciliation snapshot);
---   * other subscriptions' deferred events are superseded ONLY on authoritative evidence (a reconciliation
---     snapshot fetched from the provider). A routine first event never discards them: the customer may be
---     keeping that other subscription. It flags the live one for reconciliation instead, and an entitling
---     pending replacement stays replayable if the live one ends.
+-- H1 (fourth review). When a provider subscription is applied for the first time, its OWN deferred
+-- snapshots are resolved in order: older ones are stale; the latest newer one is applied (so a delayed
+-- older event that went live first does not strand the subscription on an old period); same-timestamp
+-- ones stay deferred and the subscription is flagged for reconciliation. Deferred events of OTHER
+-- provider subscriptions are never discarded here: an event of one subscription is no evidence about
+-- another. Old leftovers expire with their period and canceled ones are terminal (see the replay).
 -- Internal; no API role may execute it.
 -- -----------------------------------------------------------------------------
 create or replace function marketplace.supersede_deferred_billing_events(
-  p_org_id uuid, p_live_ref text, p_applied_at timestamptz, p_authoritative boolean
+  p_org_id uuid, p_live_ref text, p_applied_at timestamptz
 ) returns integer
 language plpgsql security definer
 set search_path = pg_catalog, extensions, pg_temp
 as $$
 declare
-  v_stale   integer;
-  v_other   integer := 0;
-  v_pending boolean;
+  v_stale integer;
+  v_newer marketplace.billing_provider_events;
+  v_sub_id uuid;
+  v_applied integer := 0;
 begin
   update marketplace.billing_provider_events e
   set outcome = 'ignored_stale',
-      outcome_reason = 'an event of this provider subscription at least as recent was applied',
+      outcome_reason = 'an event of this provider subscription created later was applied',
       processed_at = clock_timestamp()
   where e.org_id = p_org_id and e.outcome = 'deferred_conflict' and e.provider_subscription_ref = p_live_ref
-    and e.provider_created_at <= p_applied_at;
+    and e.provider_created_at < p_applied_at;
   get diagnostics v_stale = row_count;
 
-  if coalesce(p_authoritative, false) then
-    update marketplace.billing_provider_events e
-    set outcome = 'ignored_superseded',
-        outcome_reason = left('superseded by a reconciliation snapshot of provider subscription ' || p_live_ref, 500),
-        processed_at = clock_timestamp()
-    where e.org_id = p_org_id and e.outcome = 'deferred_conflict' and e.provider_subscription_ref <> p_live_ref;
-    get diagnostics v_other = row_count;
+  select * into v_newer
+  from marketplace.billing_provider_events e
+  where e.org_id = p_org_id and e.outcome = 'deferred_conflict' and e.provider_subscription_ref = p_live_ref
+    and e.provider_created_at > p_applied_at
+  order by e.provider_created_at desc, e.received_at desc, e.id desc
+  limit 1
+  for update;
+  if found then
+    begin
+      v_sub_id := marketplace.apply_subscription_cycle(
+        p_org_id, v_newer.plan_code, v_newer.subscription_status, v_newer.period_start, v_newer.period_end,
+        v_newer.provider_customer_ref, v_newer.provider_subscription_ref, v_newer.cancel_at_period_end,
+        null, true, v_newer.billing_reason);
+      update marketplace.organization_subscriptions s
+      set last_provider_event_id = v_newer.provider_event_id,
+          last_provider_event_at = v_newer.provider_created_at
+      where s.id = v_sub_id;
+      update marketplace.billing_provider_events e
+      set outcome = 'applied',
+          outcome_reason = 'applied in order after an older event of this provider subscription went live first',
+          subscription_id = v_sub_id, processed_at = clock_timestamp()
+      where e.id = v_newer.id;
+      update marketplace.billing_provider_events e
+      set outcome = 'ignored_stale',
+          outcome_reason = 'an event of this provider subscription created later was applied',
+          processed_at = clock_timestamp()
+      where e.org_id = p_org_id and e.outcome = 'deferred_conflict' and e.provider_subscription_ref = p_live_ref
+        and e.provider_created_at < v_newer.provider_created_at;
+      v_applied := 1;
+    exception when others then
+      if sqlstate like '40%' or sqlstate in ('55P03', '57014') then
+        raise;
+      end if;
+      perform marketplace.write_audit(
+        'billing.deferred_apply_failed', 'billing_provider_events', v_newer.id, p_org_id,
+        left('applying a newer deferred snapshot failed (' || sqlstate || '): ' || sqlerrm, 500), '{}'::jsonb);
+    end;
   end if;
 
-  v_pending := exists (select 1 from marketplace.billing_provider_events e
-                       where e.org_id = p_org_id and e.outcome = 'deferred_conflict');
-  if v_pending then
-    update marketplace.organization_subscriptions s
-    set provider_sync_required = true
-    where s.provider_subscription_ref = p_live_ref and s.org_id = p_org_id;
-  end if;
+  -- Anything still deferred for this organization (same-timestamp snapshots of this subscription, or
+  -- other subscriptions) needs a reconciliation snapshot.
+  update marketplace.organization_subscriptions s
+  set provider_sync_required = exists (select 1 from marketplace.billing_provider_events e
+                                       where e.org_id = p_org_id and e.outcome = 'deferred_conflict')
+  where s.provider_subscription_ref = p_live_ref and s.org_id = p_org_id;
 
-  if v_stale > 0 or v_other > 0 or v_pending then
+  if v_stale > 0 or v_applied > 0 then
     perform marketplace.write_audit(
       'billing.deferred_resolved', 'organizations', p_org_id, p_org_id,
-      'deferred provider events re-marked when a provider subscription went live',
-      jsonb_build_object('live_subscription', p_live_ref, 'stale', v_stale, 'superseded', v_other,
-                         'authoritative', coalesce(p_authoritative, false), 'still_pending', v_pending));
+      'deferred snapshots of a provider subscription were resolved when it went live',
+      jsonb_build_object('live_subscription', p_live_ref, 'stale', v_stale, 'newer_applied', v_applied));
   end if;
-  return v_stale + v_other;
+  return v_stale + v_applied;
 end
 $$;
 
@@ -514,9 +549,10 @@ begin
   where l.subscription_status in ('trialing', 'active', 'past_due');
   perform 1 from marketplace.billing_provider_events e where e.id = v_evt.id for update;
 
-  -- The replay is this subscription's first application: the period it opens is new to LogLoads, so it is
-  -- opened as a creation (F5) unless the snapshot itself is a renewal (which also counts as a new cycle).
-  v_billing_reason := case when v_evt.billing_reason = 'subscription_cycle' then 'subscription_cycle' else 'subscription_create' end;
+  -- The replay is this subscription's first application, so a plan-change (or reason-less) snapshot opens
+  -- its period as a creation (F5); a renewal, manual or threshold reason is kept as the provider sent it.
+  v_billing_reason := case when v_evt.billing_reason is null or v_evt.billing_reason = 'subscription_update'
+                           then 'subscription_create' else v_evt.billing_reason end;
 
   begin
     v_sub_id := marketplace.apply_subscription_cycle(
@@ -528,7 +564,9 @@ begin
     update marketplace.organization_subscriptions s
     set last_provider_event_id = v_evt.provider_event_id,
         last_provider_event_at = v_evt.provider_created_at,
-        provider_sync_required = false
+        provider_sync_required = exists (select 1 from marketplace.billing_provider_events o
+                                         where o.org_id = p_org_id and o.outcome = 'deferred_conflict'
+                                           and o.provider_subscription_ref <> v_evt.provider_subscription_ref)
     where s.id = v_sub_id;
   exception when others then
     if sqlstate like '40%' or sqlstate in ('55P03', '57014') then
@@ -552,7 +590,7 @@ begin
     and e.provider_subscription_ref = v_evt.provider_subscription_ref
     and e.outcome = 'deferred_conflict'
     and e.id <> v_evt.id;
-  perform marketplace.supersede_deferred_billing_events(p_org_id, v_evt.provider_subscription_ref, v_evt.provider_created_at, false);
+  perform marketplace.supersede_deferred_billing_events(p_org_id, v_evt.provider_subscription_ref, v_evt.provider_created_at);
 
   perform marketplace.write_audit(
     'billing.deferred_replayed', 'billing_provider_events', v_evt.id, p_org_id, v_reason,
@@ -727,7 +765,10 @@ begin
       update marketplace.organization_subscriptions s
       set last_provider_event_id = p_provider_event_id,
           last_provider_event_at = greatest(coalesce(s.last_provider_event_at, p_provider_created_at), p_provider_created_at),
-          provider_sync_required = false
+          -- Still flagged while another provider subscription has deferred events for this organization.
+          provider_sync_required = exists (select 1 from marketplace.billing_provider_events o
+                                           where o.org_id = p_org_id and o.outcome = 'deferred_conflict'
+                                             and o.provider_subscription_ref <> p_provider_subscription_ref)
       where s.id = v_sub_id;
       v_result := 'applied';
     exception when others then
@@ -740,11 +781,9 @@ begin
     end;
   end if;
 
-  -- H1: a provider subscription applied for the first time resolves its own older deferred snapshots; it
-  -- supersedes other subscriptions' deferred events only when it is a reconciliation snapshot.
+  -- H1: a provider subscription applied for the first time resolves its own deferred snapshots in order.
   if v_result = 'applied' and v_sub.id is null and p_status <> 'canceled' then
-    perform marketplace.supersede_deferred_billing_events(
-      p_org_id, p_provider_subscription_ref, p_provider_created_at, coalesce(p_is_reconciliation, false));
+    perform marketplace.supersede_deferred_billing_events(p_org_id, p_provider_subscription_ref, p_provider_created_at);
   end if;
 
   -- E-1: when this event leaves the organization without a live subscription, a replacement that was
@@ -824,7 +863,7 @@ $$;
 revoke all on function
   marketplace.apply_subscription_cycle(uuid, text, text, timestamptz, timestamptz, text, text, boolean, integer, boolean, text),
   marketplace.replay_deferred_billing_event(uuid),
-  marketplace.supersede_deferred_billing_events(uuid, text, timestamptz, boolean),
+  marketplace.supersede_deferred_billing_events(uuid, text, timestamptz),
   marketplace.apply_billing_provider_event(text, text, text, timestamptz, uuid, text, text, text, text, timestamptz, timestamptz, boolean, text, text, boolean),
   marketplace.admin_list_billing_provider_events(uuid, integer)
   from public, anon, authenticated, service_role;
