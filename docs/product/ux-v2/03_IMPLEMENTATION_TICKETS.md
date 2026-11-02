@@ -8,21 +8,21 @@
 
 | ID | Priority | Title | Proposed owner | Depends on | Issue |
 |---|---|---|---|---|---|
-| UX-01 | P0 | V2 app shell: context-aware navigation and business switcher | Codex (V2 frontend) + Claude Agent 1 for `lib/session.ts` | — | #117 |
-| UX-02 | P0 | Hauler setup and business profile (A1–A3, profile) | Codex (V2 frontend) | UX-01, UX-11, persistence decision | #118 |
-| UX-03 | P0 | My trucks: equipment presets, availability, fleet capacity board | Codex (V2 frontend) | UX-02 | #119 |
-| UX-04 | P0 | Landing organization setup, plan display and landing (site) management | Codex (V2 frontend) | UX-01, UX-11, persistence decision | #120 |
-| UX-05 | P0 | Job editor: required fields, four steps, shared preview, publish attestation | Codex (V2 frontend) | #105, founder decisions C1/C8–C10 | #121 |
-| UX-06 | P1 | Find work: mobile-first list, filter sheet, location and radius, taxonomy labels | Codex (V2 frontend) | UX-11 | #122 |
-| UX-07 | P1 | Job detail: decision summary, sticky interest bar, share and report | Codex (V2 frontend) | UX-11 | #123 |
-| UX-08 | P1 | Interest sheet prefilled from profile and availability | Codex (V2 frontend) | UX-03, UX-07 | #124 |
-| UX-09 | P1 | Inquiry conversations for haulers and landings | Codex (V2 frontend) | UX-11, UX-12 | #125 |
-| UX-10 | P1 | Landing overview with allowances and attention list | Codex (V2 frontend) | UX-04 | #126 |
-| UX-11 | P1 | Shared V2 component set and CSS isolation | Codex (V2 frontend) | — | #127 |
-| UX-12 | P1 | Status vocabulary: one mapping for interests and jobs | Founder decision, then Codex | — | #128 |
-| UX-13 | P2 | Map usability: target size, clustering, pin preview | Codex (V2 frontend) | UX-06 | #129 |
-| UX-14 | P2 | Production performance budget for V2 discovery and detail | Claude QA | — | #130 |
-| UX-15 | P2 | Evaluate the prototype with real logging and hauling businesses | Founder + Claude Product | Prototype | #131 |
+| UX-01 | P0 | V2 app shell: context-aware navigation and business switcher | Codex (V2 frontend) + Claude Agent 1 for `lib/session.ts` | — | #124 |
+| UX-02 | P0 | Hauler setup and business profile (A1–A3, profile) | Codex (V2 frontend) | UX-01, UX-11, persistence decision | #125 |
+| UX-03 | P0 | My trucks: equipment presets, availability, fleet capacity board | Codex (V2 frontend) | UX-02 | #126 |
+| UX-04 | P0 | Landing organization setup, plan display and landing (site) management | Codex (V2 frontend) | UX-01, UX-11, persistence decision | #127 |
+| UX-05 | P0 | Job editor: required fields, four steps, shared preview, publish attestation | Codex (V2 frontend) | #105, founder decisions C1/C8–C10 | #128 |
+| UX-06 | P1 | Find work: mobile-first list, filter sheet, location and radius, taxonomy labels | Codex (V2 frontend) | UX-11 | #129 |
+| UX-07 | P1 | Job detail: decision summary, sticky interest bar, share and report | Codex (V2 frontend) | UX-11 | #130 |
+| UX-08 | P1 | Interest sheet prefilled from profile and availability | Codex (V2 frontend) | UX-03, UX-07 | #131 |
+| UX-09 | P1 | Inquiry conversations for haulers and landings | Codex (V2 frontend) | UX-11, UX-12 | #132 |
+| UX-10 | P1 | Landing overview with allowances and attention list | Codex (V2 frontend) | UX-04 | #133 |
+| UX-11 | P1 | Shared V2 component set and CSS isolation | Codex (V2 frontend) | — | #134 |
+| UX-12 | P1 | Status vocabulary: one mapping for interests and jobs | Founder decision, then Codex | — | #135 |
+| UX-13 | P2 | Map usability: target size, clustering, pin preview | Codex (V2 frontend) | UX-06 | #136 |
+| UX-14 | P2 | Production performance budget for V2 discovery and detail | Claude QA | — | #137 |
+| UX-15 | P2 | Evaluate the prototype with real logging and hauling businesses | Founder + Claude Product | Prototype | #138 |
 
 Out of scope for these tickets (later phases in spec §13.1): Find Trucks, targeted invitations, boosts, team management, billing activation, saved searches and alerts, admin.
 
