@@ -45,7 +45,7 @@ command -v pg_dump >/dev/null && command -v pg_restore >/dev/null || fail "pg_du
 # Catalog fingerprint of the marketplace schema (names, definitions, function bodies, policies, triggers,
 # grants — ACL entries sorted so replay order does not matter) and a data fingerprint.
 CATALOG_SQL="select md5(string_agg(x, '|' order by x)) from (
-  select 'rel:' || c.relname || ':' || c.relkind || ':' || c.relrowsecurity || ':' ||
+  select 'rel:' || c.relname || ':' || c.relkind::text || ':' || c.relrowsecurity::text || ':' ||
          coalesce((select string_agg(a, ',' order by a) from unnest(c.relacl::text[]) a), '')
   from pg_class c where c.relnamespace = 'marketplace'::regnamespace and c.relkind in ('r','p','v','S','i')
   union all
@@ -55,7 +55,7 @@ CATALOG_SQL="select md5(string_agg(x, '|' order by x)) from (
   select 'con:' || cl.relname || ':' || co.conname || ':' || pg_get_constraintdef(co.oid)
   from pg_constraint co join pg_class cl on cl.oid = co.conrelid where co.connamespace = 'marketplace'::regnamespace
   union all
-  select 'fn:' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || '):' || md5(p.prosrc) || ':' || p.prosecdef || ':' ||
+  select 'fn:' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || '):' || md5(p.prosrc) || ':' || p.prosecdef::text || ':' ||
          coalesce(array_to_string(p.proconfig, ','), '') || ':' ||
          coalesce((select string_agg(a, ',' order by a) from unnest(p.proacl::text[]) a), '')
   from pg_proc p where p.pronamespace = 'marketplace'::regnamespace
@@ -63,7 +63,7 @@ CATALOG_SQL="select md5(string_agg(x, '|' order by x)) from (
   select 'pol:' || tablename || '.' || policyname || ':' || cmd || ':' || coalesce(qual, '') || ':' || coalesce(with_check, '')
   from pg_policies where schemaname = 'marketplace'
   union all
-  select 'trg:' || c.relname || ':' || t.tgname || ':' || t.tgenabled
+  select 'trg:' || c.relname || ':' || t.tgname || ':' || t.tgenabled::text
   from pg_trigger t join pg_class c on c.oid = t.tgrelid where c.relnamespace = 'marketplace'::regnamespace and not t.tgisinternal
 ) s(x);"
 DATA_SQL="select md5(string_agg(x, '|' order by x)) from (
@@ -73,7 +73,14 @@ DATA_SQL="select md5(string_agg(x, '|' order by x)) from (
   union all select 'hauler:' || org_id || ':' || is_public || ':' || last_confirmed_at from marketplace.hauler_profiles
   union all select 'audit:' || count(*) from marketplace.audit_events
 ) s(x);"
-fp() { printf '%s %s' "$(q "$CATALOG_SQL")" "$(q "$DATA_SQL")"; }
+# Fails loudly if either half cannot be computed, so a comparison can never pass vacuously.
+fp() {
+  local c d
+  c="$(q "$CATALOG_SQL")" || fail "catalog fingerprint query failed"
+  d="$(q "$DATA_SQL")" || fail "data fingerprint query failed"
+  [[ "$c" =~ ^[0-9a-f]{32}$ && "$d" =~ ^[0-9a-f]{32}$ ]] || fail "fingerprint incomplete (catalog='$c' data='$d')"
+  printf '%s %s' "$c" "$d"
+}
 
 echo "[1/6] Sequencing: no file controls its own transaction or uses non-transactional DDL..."
 for f in 01_schema.sql 02_access.sql 03_entitlements.sql 06_v2_contract_alignment.sql 11_v2_founder_decisions.sql 12_v2_billing_events.sql; do
@@ -152,7 +159,7 @@ for f in 06_v2_contract_alignment.sql 11_v2_founder_decisions.sql 12_v2_billing_
   else
     RESULT="refused atomically: $(grep -m1 -oE 'ERROR: .{0,90}' "$TMP/rerun.log" || echo error)"
   fi
-  CATALOG_NOW="$(q "$CATALOG_SQL")"; DATA_NOW="$(q "$DATA_SQL")"
+  NOW_FP="$(fp)"; CATALOG_NOW="${NOW_FP%% *}"; DATA_NOW="${NOW_FP#* }"
   [[ "$DATA_NOW" == "${FP1#* }" ]] || fail "re-running $f changed data"
   if [[ "$RESULT" == refused* ]]; then [[ "$CATALOG_NOW $DATA_NOW" == "$FP1" ]] || fail "a refused re-run of $f left partial schema changes"; fi
   FP1="$CATALOG_NOW $DATA_NOW"
