@@ -95,6 +95,11 @@ if [[ "$MODE" == "provision" ]]; then
     [[ "$(q "select count(*) from pg_namespace where nspname = 'marketplace';")" == "0" ]] || fail "marketplace schema already exists"
   fi
   EXISTING="$(q "select coalesce(shobj_description(oid, 'pg_database'), '') from pg_database where datname = current_database();")"
+  # initdb gives the `postgres` database PostgreSQL's stock comment; on the Supabase stack that exact text (and
+  # nothing else) is replaced by the marker. Any other comment means the database was used before: refuse.
+  if [[ "$TARGET" == "supabase-local-ci" && "$EXISTING" == "default administrative connection database" ]]; then
+    EXISTING=""
+  fi
   [[ -z "$EXISTING" ]] || fail "database already carries a comment/marker"
   q "comment on database ${EXPECTED_DB} is '${MARKER}';" >/dev/null
   mkdir -p "$STATE_DIR"

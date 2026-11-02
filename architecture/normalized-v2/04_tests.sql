@@ -35,6 +35,10 @@ $$;
 create function pg_temp.aligned() returns boolean language sql stable as $$
   select to_regclass('marketplace.job_publication_attestations') is not null
 $$;
+-- Phase 3 (11_v2_founder_decisions.sql + 12_v2_billing_events.sql) applied on top of the aligned schema.
+create function pg_temp.phase3() returns boolean language sql stable as $$
+  select to_regclass('marketplace.billing_provider_events') is not null
+$$;
 
 -- Runs p_sql and requires failure with SQLSTATE p_state AND a constraint name or message matching
 -- p_reason (case-insensitive regex), so a negative test cannot pass because an unrelated rule fired.
@@ -141,7 +145,10 @@ declare
   v_pub_exec integer;
 begin
   select count(*) into v_tables from pg_tables where schemaname = 'marketplace';
-  perform pg_temp.assert_true(v_tables = case when pg_temp.aligned() then 35 else 32 end, format('expected %s tables in marketplace, found %s', case when pg_temp.aligned() then 35 else 32 end, v_tables));
+  -- Exact inventory per schema level: baseline 32; + 06 alignment 35; + 11/12 Phase 3 (moderation holds,
+  -- billing provider event ledger) 37.
+  perform pg_temp.assert_true(v_tables = case when pg_temp.phase3() then 37 when pg_temp.aligned() then 35 else 32 end,
+    format('expected %s tables in marketplace, found %s', case when pg_temp.phase3() then 37 when pg_temp.aligned() then 35 else 32 end, v_tables));
 
   select count(*) into v_views from pg_views where schemaname = 'marketplace';
   perform pg_temp.assert_true(v_views = 0, format('expected 0 views in marketplace, found %s', v_views));
@@ -152,7 +159,9 @@ begin
   select count(*) into v_funcs
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'marketplace';
-  perform pg_temp.assert_true(v_funcs = case when pg_temp.aligned() then 63 else 44 end, format('expected %s functions in marketplace, found %s', case when pg_temp.aligned() then 63 else 44 end, v_funcs));
+  -- Functions: baseline 44; + 06 63; + 11/12 71 (5 in 11, 3 in 12; the rest redefine existing ones).
+  perform pg_temp.assert_true(v_funcs = case when pg_temp.phase3() then 71 when pg_temp.aligned() then 63 else 44 end,
+    format('expected %s functions in marketplace, found %s', case when pg_temp.phase3() then 71 when pg_temp.aligned() then 63 else 44 end, v_funcs));
 
   -- No function in `marketplace` may be executable by PUBLIC.
   select count(*) into v_pub_exec
