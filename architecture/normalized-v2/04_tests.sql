@@ -526,15 +526,15 @@ begin
 
   begin
     insert into marketplace.job_postings
-      (org_id, landing_id, title, pay_amount_cents, pay_unit, status)
-    values (v_org_land_b, v_landing_a1, 'Cross-tenant FK spoof', 9000, 'per_ton', 'draft');
+      (org_id, landing_id, title, pay_amount_cents, pay_unit, trucks_requested, status)
+    values (v_org_land_b, v_landing_a1, 'Cross-tenant FK spoof', 9000, 'per_ton', 1, 'draft');
     raise exception 'expected composite FK (landing_id, org_id) to reject cross-tenant landing reference';
   exception when foreign_key_violation then null;
   end;
 
   -- Draft job in rival org B is invisible to org A and `anon`.
-  insert into marketplace.job_postings (org_id, landing_id, title, status)
-  values (v_org_land_b, v_landing_b1, 'Private Draft Job B', 'draft')
+  insert into marketplace.job_postings (org_id, landing_id, title, trucks_requested, status)
+  values (v_org_land_b, v_landing_b1, 'Private Draft Job B', 1, 'draft')
   returning id into v_job_b1;
 
   -- Regression: the owning desk sees its own draft (the INSERT ... RETURNING above depends on it) ...
