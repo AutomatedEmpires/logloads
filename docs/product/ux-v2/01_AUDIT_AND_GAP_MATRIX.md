@@ -35,7 +35,7 @@ Screenshots are in [`evidence/`](./evidence). They show seeded, fictional develo
 
 | # | Topic | Conflict | Recommended default (PROPOSED) |
 |---|---|---|---|
-| C1 | **Pay disclosure** | §4.5 lists "payment amount/rate basis or transparent negotiable status" as **required**. §8.21 marks the advertised pay amount as **Recommended** and pay basis as "Required if rate present". The draft schema allows no pay at all (`marketplace-job-draft.ts:68-77`). | Require one of two states: an amount with a basis, or Negotiable with a note. Remove "Not stated" for new postings. Pay transparency is the product's stated differentiator (§8.4). |
+| C1 | **Pay disclosure** · **DECIDED 2026-11-01 (V2-DEC-02)**: a positive rate with a basis, or Negotiable with a note of 3+ characters | §4.5 lists "payment amount/rate basis or transparent negotiable status" as **required**. §8.21 marks the advertised pay amount as **Recommended** and pay basis as "Required if rate present". The draft schema allows no pay at all (`marketplace-job-draft.ts:68-77`). | Require one of two states: an amount with a basis, or Negotiable with a note. Remove "Not stated" for new postings. Pay transparency is the product's stated differentiator (§8.4). |
 | C2 | Saved jobs | §5.9 marks saved jobs **MVP**; §10.1 marks the watchlist **NEXT**. | Treat a simple save/unsave as MVP and bulk cleanup as NEXT. |
 | C3 | Templates | §4.13 marks reusable templates **MVP** (Pro/Regional); §10.12 marks them **NEXT**. | NEXT. Templates do not block the first slice. |
 | C4 | Landing-scoped staff | §4.1 says "Foreman sees only assigned landings" with no tier. §4.7 and §10.18 limit staff assignment to **Pro/Regional**. | Basic: two seats with organization-wide access. Pro and up: landing scoping. |
@@ -46,7 +46,7 @@ Screenshots are in [`evidence/`](./evidence). They show seeded, fictional develo
 | C9 | Product type | §4.5 and §8.21: required, from a controlled taxonomy. The draft has free text and makes it optional (`marketplace-job-draft.ts:51`). | Required: a controlled list (saw logs, pulpwood, poles, chips, biomass, other with text). |
 | C10 | Contact route | §4.5 and §8.21: poster contact method required and scoped. There is no field in the draft. | Required at organization level, with an optional per-job override. |
 
-The brief for this work also asks for an explicit **availability attestation** before publishing (Journey B). The specification has no attestation step at publish; it has reconfirmation (§4.5, §10.3, §10.11). A publish-time attestation is consistent with it: it is an explicit poster confirmation, so it may set `lastConfirmedAt`. This should be confirmed by the founder, because the current code deliberately never treats an edit as a confirmation.
+The brief for this work also asks for an explicit **availability attestation** before publishing (Journey B). The specification has no attestation step at publish; it has reconfirmation (§4.5, §10.3, §10.11). A publish-time attestation is consistent with it: it is an explicit poster confirmation, so it may set `lastConfirmedAt`. **Decided 2026-11-01 (V2-DEC-03):** publishing requires an explicit availability attestation, and the server records the initial confirmation. Drafts, previews and edits never set or refresh `last_confirmed_at`.
 
 ### 1.4 Marking used for scope
 
@@ -88,7 +88,7 @@ V2 depends on these **non-V2** routes:
 These are deliberate, correct decisions. The redesign must not regress them.
 
 1. **Honest data semantics.** "Not stated" instead of guesses (`components/v2/format.ts:11`). Estimates are labelled "poster estimate" (`format.ts:59-62`). Trucks for the job and trucks per day are never merged (`format.ts:41-48`). An edit is never treated as a confirmation (`postingFreshness`, `marketplace-v2.ts:342-355`).
-2. **Privacy by default.** The public location is approximate and snapped to about 2 km (`JobMap.tsx:20-26`). The form warns about gate codes and coordinates, and the schema rejects sensitive access text (`marketplace-job-draft.ts:33,50`).
+2. **Privacy by default.** The public location is approximate (`JobMap.tsx:20-26`). **Correction:** founder decision V2-DEC-01 fixes public precision at 0.10°, but the pilot path rounds to 0.02°, about 2 km (`apps/web/lib/network.ts:533-535`). That gap is filed as #141. The form warns about gate codes and coordinates, and the schema rejects sensitive access text (`marketplace-job-draft.ts:33,50`).
 3. **Non-dispatch copy.** "Free and nonbinding. Not a contract or an assignment" (`work/[jobId]/page.tsx:204`). "Replies are unlimited; nothing here assigns trucks or records a hire" (`landing/inquiries/page.tsx:106`).
 4. **Works without JavaScript.** All pages are server-rendered. Forms are GET forms or server actions. The map loads only on request and lazily (`JobMapLoader.tsx`), and it falls back to text when it fails (`JobMap.tsx:37-39`). This is the right foundation for weak rural signal.
 5. **Identity from the session only.** Capabilities are gated (`viewer.ts`, `job.publish`, `interest.express`).

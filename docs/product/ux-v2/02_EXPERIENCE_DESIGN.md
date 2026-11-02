@@ -367,8 +367,8 @@ Under every card: "Unlimited job posts, inquiries and replies." Below all three,
 │ ┌ SEEN BY HAULERS ──────────┐│
 │ │ Name [Hills Creek Unit 4] ││
 │ │ Area [Oakridge, OR]       ││
-│ │ [map: shaded ~2 km circle]││
-│ │ "Haulers see this circle, not your pin." ││
+│ │ [map: shaded approx. area]││
+│ │ "Haulers see an approximate area, not your pin." ││
 │ │ Typical hours [5 a.m.–3 p.m.] ││
 │ │ Public road notes [Gravel last 6 mi] ││
 │ └───────────────────────────┘│
@@ -398,7 +398,7 @@ Step 1  Basics & location
   Destination  [Cascade Mill, Springfield] · about [54] mi one way (your estimate)
 
 Step 2  Pay & scope
-  Pay          ( $ [525] ) per (load ▾)    or   ( ) Negotiable → note required   ← required (C1)
+  Pay          ( $ [525] ) per (load ▾)    or   ( ) Negotiable → note required   ← required (V2-DEC-02)
   Pay note     [Fuel surcharge included above $5/gal] (optional)
   Starts       (•) On [Nov 3]  ( ) Between [ ] and [ ]  ( ) Ongoing            ← required (C8)
   Runs for     [1] days   or  [x] Until further notice
@@ -432,7 +432,7 @@ Step 3  Equipment & volume
 ```
 
 - The preview renders the **same** `JobCard` and `JobSummary` components that discovery uses (fixes P1-8).
-- The three attestations are the explicit availability attestation in the brief. Checking them and publishing sets the first `lastConfirmedAt`. This needs the founder decision noted in [01 §1.3](./01_AUDIT_AND_GAP_MATRIX.md#13-conflicts-inside-the-specification-both-versions-founder-decision-needed).
+- The three attestations implement **V2-DEC-03** (decided 2026-11-01): publishing requires an explicit availability attestation, and the server records the initial confirmation.
 - While publishing is not persisted (#105), the button is replaced by "Publishing isn't saved in this preview. Your draft is kept." The checkboxes still work.
 
 ### B8 — Overview (landing home)

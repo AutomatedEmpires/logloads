@@ -107,7 +107,7 @@ Out of scope for these tickets (later phases in spec §13.1): Find Trucks, targe
 **Acceptance criteria.**
 1. Plan cards show exactly $149/$299/$499, 1/3/unlimited landings, 2/5/10 members and 3/10/30 invitations, read from `packages/contracts`, never typed into the page.
 2. While billing is inactive the flow says "Billing isn't active yet" and offers no checkout.
-3. The landing form has a **Seen by haulers** panel (name, approximate area with a ~2 km circle, hours, public road notes) and a **Private · your team only** panel (exact location, gate and access instructions, site contact).
+3. The landing form has a **Seen by haulers** panel (name, an approximate area at the V2-DEC-01 precision of 0.10°, hours, public road notes) and a **Private · your team only** panel (exact location, gate and access instructions, site contact).
 4. Public API responses and page HTML for a landing never contain the private fields. Add a test that asserts their absence.
 5. The active toggle shows "n of N active landings". At the cap it offers "Pause another landing" or "See plans" and never activates over the cap (server-enforced).
 6. A missing exact location does not block saving.
@@ -121,13 +121,13 @@ Out of scope for these tickets (later phases in spec §13.1): Find Trucks, targe
 
 **Evidence.** `packages/contracts/src/marketplace-job-draft.ts:51-60,68-77` allows no pay, optional free-text product, an optional start with no "ongoing", and no contact route. `preview/page.tsx:85-101` duplicates the detail markup. The draft travels in the URL (`JobDraftForm.tsx:51`).
 
-**Coordination.** These are Codex's active job-authoring files (#105). This ticket is for the owner to schedule. Founder decisions C1, C8, C9 and C10 in [01 §1.3](./01_AUDIT_AND_GAP_MATRIX.md#13-conflicts-inside-the-specification-both-versions-founder-decision-needed) come first.
+**Coordination.** These are Codex's active job-authoring files (#105). This ticket is for the owner to schedule. Pay disclosure (V2-DEC-02) and the publish attestation (V2-DEC-03) are **decided**; implement them as specified. C8, C9 and C10 in [01 §1.3](./01_AUDIT_AND_GAP_MATRIX.md#13-conflicts-inside-the-specification-both-versions-founder-decision-needed) are still open. Do not overlap Codex's active publishing work (#105).
 
 **Owned files.** `packages/contracts/src/marketplace-job-draft.ts`, `apps/web/components/v2/JobDraftForm.tsx`, `apps/web/app/v2/landing/jobs/**`, `apps/web/lib/marketplace-v2/draft-params.ts`.
 
 **Acceptance criteria.**
 1. Four steps with a progress indicator: Basics & location; Pay & scope; Equipment & volume; Review & publish (spec §4.5).
-2. Required, subject to the founder decisions: pay as an amount with a basis, or Negotiable with a note; product from a controlled list; start as a date, a range or Ongoing; a contact route (organization default with an optional override).
+2. Required: pay as an amount with a basis, or Negotiable with a note of 3+ characters (V2-DEC-02, decided). Subject to open decisions C8–C10: product from a controlled list; start as a date, a range or Ongoing; a contact route (organization default with an optional override).
 3. Equipment is grouped by truck, trailer and attachment.
 4. The review step renders the real `JobCard` and `JobSummary` components, plus a "Not shown to haulers" list.
 5. Three attestation checkboxes enable **Publish job**. Publishing records `lastConfirmedAt` and who attested. An edit alone still never counts as a confirmation.

@@ -53,7 +53,7 @@ For each task: completed (yes, with help, no), time, the point of hesitation, an
 
 1. Is the seven-fact job summary (pay and basis, equipment, area, destination and miles, start and duration, trucks, freshness) enough to decide?
 2. Do haulers understand "self-reported" and "confirmed by the poster 2 days ago"?
-3. Do landing operators accept the required pay disclosure (founder decision C1)?
+3. Do landing operators accept the required pay disclosure (decided as V2-DEC-02), and is it clear to them?
 4. Does the public/private split for landings and profiles feel safe?
 5. Is the one-tap interest with prefilled trucks and dates accurate enough for landings?
 6. Do fleet owners keep a capacity board current, and how often?
