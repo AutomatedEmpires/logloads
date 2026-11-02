@@ -53,7 +53,7 @@ in canonical state and in Stripe) and explicit authorization.
 | Step | Work | Depends on | Can start | Gate to finish |
 |---|---|---|---|---|
 | 0 | Blueprint in repo; decision entry; **membership rules contract** (`packages/contracts/src/membership.ts`) | — | **Done in this change** | Unit tests encode §3, §6, §7, §8 numbers |
-| 1 | Relational schema alignment: map the prototype's tables to §12.2 entities and to existing `operating_state` collections (ids preserved, quarantine for invalid rows) | Schema prototype location | **Blocked** — prototype not found in this repository or workspace | Mapping reviewed; no competing schema |
+| 1 | Relational schema alignment: map the prototype's tables to §12.2 entities and to existing `operating_state` collections (ids preserved, quarantine for invalid rows) | Prototype complete (`01_schema.sql` present; `02_access.sql`, `03_entitlements.sql` pending) | **In progress by the prototype owner** — see "Schema prototype alignment" | Mapping reviewed; no competing schema |
 | 2 | Phase A foundation: local/preview migrations, RLS with trusted Clerk claims, read adapters, shadow sync + parity checks | 1 | After 1 | Cross-tenant denial tests; reproducible local setup; no production data touched |
 | 3 | Phase B free marketplace on the new model, behind a flag next to the pilot: job posting v2 (create/publish/reconfirm), public search + filters, hauler business profile with equipment + timestamped availability, express interest + replies | 2 (2a: contracts-only UI work may start on the JSON store if the prototype is delayed) | After 2 | Real data only; mobile/low-bandwidth; private-location protection |
 | 4 | Phase C paid membership: entitlement enforcement from step 0 contracts (landings, seats), Stripe test-mode products, checkout disclosures | 2, published terms | After 2 | Accurate entitlements; reconciliation; counsel review before live sale |
@@ -61,6 +61,31 @@ in canonical state and in Stripe) and explicit authorization.
 | 6 | Phase E boosts: 7/14/28-day purchases, ~100-mile targeting, Sponsored labelling, measured analytics | 3, 4 | After 4 | Real audience; no guarantees; caps per view |
 | 7 | Phase F founder rollout: per-state cohorts (10 orgs), 50% for 6 cycles, founding hauler badge (first 1,000) | 4 | After 4 | Eligibility controls; correct six-cycle discount; transparent renewal |
 | R | Retirement track: switch surfaces to the new flows, then hide pilot dispatch screens behind flags, then (authorized) remove code | 3 for each surface | Per surface | Records preserved; production proof for financial modules |
+
+### Schema prototype alignment
+
+The normalized-v2 prototype lives at `architecture/normalized-v2/` (non-active, `marketplace` schema, not a migration;
+owned by its separate author — do not edit it from this track). It already matches the blueprint on: one organization
+model for landing and hauling businesses, owner/manager/staff/driver roles (drivers never consume a paid seat), public vs
+private landing details, long-lived job postings with unmetered `trucks_requested`, unlimited expressions of interest,
+self-reported timestamped availability, per-cycle `entitlement_periods` (new row per cycle = no rollover), targeted
+invitations with consent and delivery attempts, 24-hour-unit boosts with frozen terms and a 100-mile default, generic
+promotions for the founding offer, abuse reports and an append-only audit log.
+
+The step 0 contract (`packages/contracts/src/membership.ts`) is aligned to it: plan/boost/promotion numbers are the
+blueprint baseline used to seed and verify the prototype's versioned rows (runtime reads the active rows); reserved +
+delivered invitations count against the allowance; `Number.POSITIVE_INFINITY` as the dedupe window reproduces the
+prototype's one-live-invitation-per-job-and-recipient rule.
+
+Items to settle with the prototype owner before step 2:
+
+- **Dedupe semantics:** the prototype forbids re-inviting the same business to the same job for the job's life (unless
+  the invitation failed); Blueprint §6.3 speaks of a "defined deduplication window". Pick one rule.
+- **Recipient frequency:** the prototype adds `max_invitations_per_week` per hauler (default 5); confirm the default.
+- **Mapping:** `operating_state` collections → `marketplace` tables (organizations, memberships, equipment, landings,
+  postings, interest threads); historical billing/trip collections stay in the legacy store (not mapped).
+- **Identity:** the prototype trusts Clerk via allowlisted JWT issuers and `identity_links`; the app currently resolves
+  identity server-side with the service role. Step 2 decides how requests carry the Clerk JWT to PostgREST.
 
 ### Parallel tracks (independent of the schema)
 

@@ -17,14 +17,14 @@ import {
   planIncludesFeature,
   remainingTargetedInvitations,
   sendableTargetedInvitations,
-  type DeliveredTargetedInvitation
+  type CommittedTargetedInvitation
 } from "./membership"
 
 const cycle = { endsAt: "2026-12-01T00:00:00.000Z", startsAt: "2026-11-01T00:00:00.000Z" }
 const WEEK = 7 * 24 * 60 * 60 * 1000
 const recipient = { matchesCriteria: true, optedIn: true, organizationId: "hauler-1" }
-const delivered = (recipientOrganizationId: string, jobPostingId: string, deliveredAt: string): DeliveredTargetedInvitation =>
-  ({ deliveredAt, jobPostingId, recipientOrganizationId })
+const delivered = (recipientOrganizationId: string, jobPostingId: string, committedAt: string): CommittedTargetedInvitation =>
+  ({ committedAt, jobPostingId, recipientOrganizationId })
 
 describe("Blueprint v1.0 landing plans (§3.1)", () => {
   it("matches the adopted commercial matrix exactly", () => {
@@ -113,6 +113,14 @@ describe("targeted invitations (§6)", () => {
       .toEqual({ allowed: true, remainingAfterSend: 8 })
     expect(evaluateTargetedInvitation({ ...input, dedupeWindowMs: WEEK, jobPostingId: "job-2" }))
       .toEqual({ allowed: true, remainingAfterSend: 8 })
+  })
+
+  it("supports the schema prototype's rule of one live invitation per job and recipient", () => {
+    const deliveries = [delivered("hauler-1", "job-1", "2026-11-02T00:00:00.000Z")]
+    const input = { cycle, deliveries, jobPostingId: "job-1", now: "2026-11-29T00:00:00.000Z", planCode: "regional" as const, recipient }
+
+    expect(evaluateTargetedInvitation({ ...input, dedupeWindowMs: Number.POSITIVE_INFINITY }))
+      .toEqual({ allowed: false, reason: "duplicate_recipient_and_job", remaining: 29 })
   })
 
   it("refuses when the allowance is exhausted or the send falls outside the cycle", () => {

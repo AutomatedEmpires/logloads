@@ -7,6 +7,13 @@ import { z } from "zod"
  * Pure, provider-free rules only: no persistence, no Stripe, no UI. Nothing here makes a
  * plan, invitation or boost purchasable; activation is gated separately (Blueprint §14).
  * Settings the blueprint leaves open (§16.2) are required parameters, never invented defaults.
+ *
+ * Relationship to the normalized-v2 schema prototype (architecture/normalized-v2): the prototype
+ * stores plan prices and limits as versioned rows (`subscription_plans`, `boost_products`,
+ * `promotions`). These constants are the Blueprint v1.0 baseline used to seed and verify those
+ * rows; runtime enforcement should read the active rows. Invitation semantics follow the
+ * prototype: reserved and delivered invitations count against the allowance, failed or
+ * suppressed ones are released.
  */
 export const MEMBERSHIP_BLUEPRINT_VERSION = "blueprint-v1.0-2026-11-01"
 
@@ -113,11 +120,15 @@ export interface BillingCycleWindow {
   endsAt: string
 }
 
-export interface DeliveredTargetedInvitation {
+/**
+ * An invitation that currently counts against the allowance: `reserved` (delivery in progress)
+ * or `delivered`. Failed or suppressed invitations are released and must not be passed in (§6.3).
+ */
+export interface CommittedTargetedInvitation {
   recipientOrganizationId: string
   jobPostingId: string
-  /** Only invitations that met the delivery condition are recorded; failed deliveries never debit (§6.3). */
-  deliveredAt: string
+  /** When the invitation was reserved against the cycle's allowance. */
+  committedAt: string
 }
 
 export interface TargetedInvitationRecipient {
@@ -146,20 +157,20 @@ function instant(value: string, label: string): number {
   return parsed
 }
 
-/** Invitations delivered inside the current cycle. Earlier cycles never roll over or carry balances (§6.2). */
-export function invitationsUsedInCycle(deliveries: readonly DeliveredTargetedInvitation[], cycle: BillingCycleWindow): number {
+/** Invitations committed inside the current cycle. Earlier cycles never roll over or carry balances (§6.2). */
+export function invitationsUsedInCycle(deliveries: readonly CommittedTargetedInvitation[], cycle: BillingCycleWindow): number {
   const start = instant(cycle.startsAt, "cycle.startsAt")
   const end = instant(cycle.endsAt, "cycle.endsAt")
 
   return deliveries.filter((delivery) => {
-    const at = instant(delivery.deliveredAt, "deliveredAt")
+    const at = instant(delivery.committedAt, "committedAt")
     return at >= start && at < end
   }).length
 }
 
 export function remainingTargetedInvitations(
   code: LandingPlanCode,
-  deliveries: readonly DeliveredTargetedInvitation[],
+  deliveries: readonly CommittedTargetedInvitation[],
   cycle: BillingCycleWindow
 ): number {
   return Math.max(0, landingPlan(code).targetedInvitationsPerCycle - invitationsUsedInCycle(deliveries, cycle))
@@ -179,18 +190,21 @@ export function sendableTargetedInvitations(remaining: number, eligibleOptedInAu
 /**
  * Decides whether one invitation may be sent. The dedupe window is required because the blueprint
  * leaves it to be decided (§16.2); repeat sends of the same job to the same recipient inside it are
- * refused rather than debited (§6.3).
+ * refused rather than debited (§6.3). `Number.POSITIVE_INFINITY` reproduces the prototype's rule of
+ * one live invitation per job and recipient for the life of the job.
  */
 export function evaluateTargetedInvitation(input: {
   planCode: LandingPlanCode
   cycle: BillingCycleWindow
   now: string
-  deliveries: readonly DeliveredTargetedInvitation[]
+  deliveries: readonly CommittedTargetedInvitation[]
   recipient: TargetedInvitationRecipient
   jobPostingId: string
   dedupeWindowMs: number
 }): TargetedInvitationDecision {
-  assertCount(input.dedupeWindowMs, "dedupeWindowMs")
+  if (input.dedupeWindowMs !== Number.POSITIVE_INFINITY) {
+    assertCount(input.dedupeWindowMs, "dedupeWindowMs")
+  }
   const now = instant(input.now, "now")
   const remaining = remainingTargetedInvitations(input.planCode, input.deliveries, input.cycle)
 
@@ -209,7 +223,7 @@ export function evaluateTargetedInvitation(input: {
   const duplicate = input.deliveries.some((delivery) =>
     delivery.recipientOrganizationId === input.recipient.organizationId &&
     delivery.jobPostingId === input.jobPostingId &&
-    now - instant(delivery.deliveredAt, "deliveredAt") < input.dedupeWindowMs
+    now - instant(delivery.committedAt, "committedAt") < input.dedupeWindowMs
   )
 
   if (duplicate) {
