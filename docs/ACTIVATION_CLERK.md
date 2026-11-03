@@ -1,8 +1,10 @@
 # LogLoads — Clerk Identity Activation and Normalized-V2 Authorization
 
-> **Status:** Last verified 2026-11-02.
+> **Status:** Last verified 2026-11-03.
 > - §1–§3 are IMPLEMENTED: they describe the existing pilot integration in code at `4c9518e`.
 > - §4 is TARGET.
+> - The earlier Clerk application was deleted for the fresh start. Creating the new one, step by step, is
+>   [`INTEGRATIONS.md`](./INTEGRATIONS.md) §3; `pnpm integrations:check` verifies the keys without printing them.
 >
 > Do not activate a new environment, run the founder-admin claim, or migrate identities just by following
 > this document. Each needs explicit, scoped authorization. Verify the live provider state first, read-only.
@@ -33,12 +35,17 @@ public hosted preview. Never mix one Clerk instance's keys with another environm
 1. Use a dedicated **LogLoads** Clerk application, with separate development and production instances.
 2. Clerk Organizations, Clerk roles, and a `user.created` webhook are **not required**. Profiles are
    provisioned at onboarding.
-3. Redirects: `NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in`, `NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up`, and both
-   fallback redirect URLs set to `/onboarding`. Already-provisioned users are sent home automatically.
-4. Register `logloads.com` and any approved preview origins. Developer origins must not give hosted
-   environments an identity shortcut.
+3. Redirects: `NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in`, `NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up`,
+   `NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/onboarding` and
+   `NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/onboarding`, stored in Doppler. `@clerk/nextjs` reads them;
+   LogLoads code does not (its own sign-in and sign-up pages pass `forceRedirectUrl`, and the middleware
+   redirects to `/sign-in`). Already-provisioned users are sent home automatically.
+4. Origins: the development instance accepts any origin, so local and Preview need no entry. Register
+   `logloads.com` on the production instance only, with the DNS records Clerk lists. Never add a developer or
+   preview origin to the production instance: it must not give hosted environments an identity shortcut.
 5. Store `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (browser-visible) and `CLERK_SECRET_KEY` (server-only) through
-   the approved Doppler-to-host path.
+   the approved Doppler-to-host path: development-instance keys (`pk_test_`, `sk_test_`) in `dev` and `stg`,
+   production-instance keys (`pk_live_`, `sk_live_`) only in `prd`. The readiness check refuses any other pairing.
 6. Test: new user, sign-out and sign-in, removed membership, multi-organization switching, and direct-URL
    access without authorization.
 
@@ -52,7 +59,8 @@ identity. **Running it is a production operation and needs the founder's explici
 2. Set `LOGLOADS_PLATFORM_ADMIN_CLERK_IDS` to that one ID. A second ID, a wildcard, the seed placeholder, or
    any alternate syntax is invalid and fails closed.
 3. Compute the lowercase SHA-256 of `logloads-platform-admin-scope-v1`, one newline, and the exact user ID
-   (no trailing newline). Store it as `LOGLOADS_PLATFORM_ADMIN_EXPECTED_SCOPE_SHA256`.
+   (no trailing newline). Store it as `LOGLOADS_PLATFORM_ADMIN_EXPECTED_SCOPE_SHA256`. `pnpm integrations:check`
+   recomputes it from the stored ID and reports a mismatch without printing either value.
 4. Set `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP=enabled`, and set `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP_EXPIRES_AT` to
    a short-lived future ISO instant. Deploy without printing either value.
 5. Signed in as that identity, open `/admin/bootstrap` and choose **Claim founder access** once. The route
