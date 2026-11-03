@@ -60,7 +60,8 @@ export default defineConfig({
   expect: { timeout: serverMode === "dev" ? 30_000 : 10_000 },
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
-  // One server and, in CI, one shared state row; the suite is read-only but stays serial like the pilot suite.
+  // One server and, in CI, one shared state row, so the suite stays serial like the pilot suite. Its only writes are
+  // New River Hauling's inquiry and replies (see design-system.spec.ts), and the cases rely on file order.
   workers: 1,
   use: {
     baseURL,
