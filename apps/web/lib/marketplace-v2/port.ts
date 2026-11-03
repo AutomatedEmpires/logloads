@@ -11,10 +11,11 @@ import type {
 } from "@logloads/contracts"
 
 /**
- * The only data boundary the V2 screens use. Today it is implemented by `pilot-adapter.ts` over the
- * versioned `operating_state` document and the existing service layer; once the normalized-v2 schema
- * is validated, a second adapter implements the same port over its tables and RPCs
- * (`search_job_postings`, `respond_to_interest`, `job_postings` insert/update, ...) without changing the UI.
+ * The only data boundary the V2 screens use. Two adapters implement it:
+ *
+ * - `pilot-adapter.ts` over the versioned `operating_state` document and the existing service layer (the default);
+ * - `normalized-adapter.ts` over the `marketplace` schema's functions (architecture/normalized-v2), selected only
+ *   by `LOGLOADS_MARKETPLACE_V2_ADAPTER=normalized` outside production (`adapter.ts`).
  *
  * `viewer` is always resolved from the server session by the caller, never from request input.
  */
@@ -33,6 +34,40 @@ export class MarketplaceOperationUnavailableError extends Error {
   constructor(operation: string) {
     super(`${operation} is not available until the normalized marketplace store is connected`)
     this.name = "MarketplaceOperationUnavailableError"
+  }
+}
+
+/**
+ * A business rule or access refusal from the marketplace store. Its message is written for the person using the
+ * page and may be shown; it never carries another organization's data. `code` is the store's reason code
+ * (a SQLSTATE such as `23514`, `42501` or `P0002`) when there is one.
+ */
+export class MarketplaceRefusalError extends Error {
+  readonly code: string | null
+
+  constructor(message: string, code: string | null = null) {
+    super(message)
+    this.name = "MarketplaceRefusalError"
+    this.code = code
+  }
+}
+
+/** The marketplace store failed for a reason the person cannot fix (unavailable, timed out, unexpected data). */
+export class MarketplaceStoreError extends Error {
+  readonly code: string | null
+
+  constructor(message = "The marketplace could not complete this request. Try again in a moment.", code: string | null = null) {
+    super(message)
+    this.name = "MarketplaceStoreError"
+    this.code = code
+  }
+}
+
+/** The selected adapter is missing or has unsafe configuration. Fails closed; never falls back to another store. */
+export class MarketplaceAdapterConfigurationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "MarketplaceAdapterConfigurationError"
   }
 }
 

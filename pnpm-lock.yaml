@@ -92,6 +92,9 @@ importers:
       next:
         specifier: ^15.5.28
         version: 15.5.28(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(@types/node@22.19.19)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      postgres:
+        specifier: 3.4.9
+        version: 3.4.9
       posthog-js:
         specifier: ^1.396.5
         version: 1.396.7
@@ -2983,6 +2986,10 @@ packages:
   postcss@8.5.23:
     resolution: {integrity: sha512-g50586zr4bZmwFiTlflMu8E0bDTb5I5gertgwAKmsdUlTQIhZtunzUlD1WSzwcVWPoAVpsrA6vlfCD7oXvRwgg==}
     engines: {node: ^10 || ^12 || >=14}
+
+  postgres@3.4.9:
+    resolution: {integrity: sha512-GD3qdB0x1z9xgFI6cdRD6xu2Sp2WCOEoe3mtnyB5Ee0XrrL5Pe+e4CCnJrRMnL1zYtRDZmQQVbvOttLnKDLnaw==}
+    engines: {node: '>=12'}
 
   posthog-js@1.396.7:
     resolution: {integrity: sha512-4sYlupOL0uaPg0F6HFBivjwyJFz7H4rk49c0XaSKeLBpSmp614fRf89kHg+QloyskKf3OSUqo9wsg23eTDtXFQ==}
@@ -6538,6 +6545,8 @@ snapshots:
       nanoid: 3.3.18
       picocolors: 1.1.1
       source-map-js: 1.2.2
+
+  postgres@3.4.9: {}
 
   posthog-js@1.396.7:
     dependencies:
