@@ -145,7 +145,8 @@ describe("Marketplace V2 never links to a legacy cockpit", () => {
       "app/v2/landing/inquiries/page.tsx",
       "app/v2/landing/jobs/page.tsx",
       "app/v2/landing/jobs/new/page.tsx",
-      "components/v2/JobCard.tsx",
+      "app/v2/landing/jobs/preview/page.tsx",
+      "components/v2/JobEditor.tsx",
       "lib/marketplace-v2/actions.ts",
       "lib/marketplace-v2/viewer.ts"
     ]))

@@ -1,14 +1,26 @@
-import Link from "next/link"
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
 
-import { JobDraftForm } from "@/components/v2/JobDraftForm"
-import { draftPublishingIssues, draftValuesFromQuery, hasDraftValues } from "@/lib/marketplace-v2/draft-params"
+import { Button, EmptyState } from "@logloads/ui/primitives"
+
+import { EditorNotice, JobEditorAside, JobEditorLayout, JobEditorStepForm, RestoredNotice, StepIssuesNotice } from "@/components/v2/JobEditor"
+import { draftQueryString, draftValuesFromQuery } from "@/lib/marketplace-v2/draft-params"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
+import { jobEditorChecklist, jobEditorPreview, REVIEW_JOB_PATH, resolveJobEditorScreen } from "@/lib/marketplace-v2/job-editor"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
 import { resolveV2Viewer, withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
+function one(value: string | string[] | undefined): string {
+  return (Array.isArray(value) ? value[0] : value) ?? ""
+}
+
+/**
+ * Steps 1–3 of the job editor (UX 02 §B4–B6, #128). Each step is a GET form back to this page carrying the whole
+ * draft. The page validates the step being left, on the server, and shows the next one, or the first step that
+ * fails with focus on its first invalid field. When steps 1–3 pass, the review step takes over. A refused
+ * publish (`publishJobAction`) also returns here, to the step that needs fixing.
+ */
 export default async function NewJobPage({ searchParams }: { searchParams: SearchParams }) {
   if (!marketplaceV2Enabled()) notFound()
 
@@ -16,37 +28,55 @@ export default async function NewJobPage({ searchParams }: { searchParams: Searc
 
   if (!resolved.ok || !resolved.access.capabilities.includes("job.publish")) {
     return (
-      <>
-        <h1>Post a job</h1>
-        <p className="v2-banner">
-          {resolved.ok ? withBusinessSwitchNote("Your role in this business cannot post jobs.") : resolved.refusal}
-        </p>
-      </>
+      <JobEditorLayout organizationName={resolved.ok ? resolved.access.organizationName : "LogLoads"}>
+        <EditorNotice>{resolved.ok ? withBusinessSwitchNote("Your role in this business cannot post jobs.") : resolved.refusal}</EditorNotice>
+      </JobEditorLayout>
     )
   }
 
+  const { access, viewer } = resolved
   const query = await searchParams
   const values = draftValuesFromQuery(query)
-  const landings = await pilotMarketplaceV2.authoringLandings(resolved.viewer)
-  // Coming back from the preview (or a refused publish) with a draft: show everything that stands
-  // between it and publishing inline, including a landing that is not the organization's own. A blank
-  // form shows none.
-  const issues = hasDraftValues(values) ? draftPublishingIssues(values, landings) : []
+  const landings = await pilotMarketplaceV2.authoringLandings(viewer)
+
+  if (landings.length === 0) {
+    return (
+      <JobEditorLayout organizationName={access.organizationName}>
+        <EmptyState
+          actions={<Button href="/v2/landing/jobs" label="Back to your job postings" size="sm" variant="secondary" />}
+          body="A job is posted from one of your business's landings. Add or reactivate a landing first."
+          title="No active landings"
+        />
+      </JobEditorLayout>
+    )
+  }
+
+  const screen = resolveJobEditorScreen(query, values, landings)
+  const restored = one(query.restored) === "1"
+
+  if (screen.kind === "review") {
+    redirect(`${REVIEW_JOB_PATH}?${[draftQueryString(values), restored ? "restored=1" : ""].filter(Boolean).join("&")}`)
+  }
+
+  const error = one(query.error)
+  const now = new Date().toISOString()
+  const preview = jobEditorPreview(values, landings, { now, posterName: access.organizationName, posterOrganizationId: viewer.organizationId })
 
   return (
-    <>
-      <p><Link href="/v2/landing/jobs">← Your job postings</Link></p>
-      <h1>Post a job</h1>
-      <p className="v2-muted">{resolved.access.organizationName}. Haulers see the preview exactly as shown next; private access details are never part of a posting.</p>
-      {issues.length > 0 ? <p className="v2-banner v2-banner--error" role="alert">Check the highlighted fields.</p> : null}
-      {landings.length === 0 ? (
-        <section className="v2-empty">
-          <h2>No active landings</h2>
-          <p>A job is posted from one of your organization’s landings. Add or reactivate a landing first.</p>
-        </section>
-      ) : (
-        <JobDraftForm issues={issues} landings={landings} values={values} />
-      )}
-    </>
+    <JobEditorLayout
+      aside={<JobEditorAside checklist={jobEditorChecklist(values, landings)} now={now} preview={{ job: preview?.job ?? null }} values={values} />}
+      organizationName={access.organizationName}
+    >
+      {error ? <EditorNotice tone="critical">{error}</EditorNotice> : <StepIssuesNotice count={screen.issues.length} />}
+      {restored ? <RestoredNotice /> : null}
+      <JobEditorStepForm
+        issues={screen.issues}
+        landings={landings}
+        restorable={Object.keys(query).length === 0}
+        scope={viewer.organizationId}
+        step={screen.step}
+        values={values}
+      />
+    </JobEditorLayout>
   )
 }

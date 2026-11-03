@@ -6,9 +6,10 @@ import {
 } from "@logloads/contracts"
 
 /**
- * The V2 authoring form round-trips its draft through the URL (GET form → preview → edit), so no draft
- * is stored anywhere until a real publish exists. Job text is public by design and sensitive access
- * patterns are rejected by validation, so nothing private is placed in the URL.
+ * The V2 job editor round-trips its draft through the URL (one GET form per step, then the review), so no
+ * draft is stored on the server until a real publish exists; `job-draft-storage.ts` keeps a copy in the
+ * browser tab. Job text is public by design and sensitive access patterns are rejected by validation, so
+ * nothing private is placed in the URL.
  *
  * The publish attestations are deliberately NOT draft fields: they are ticked on the preview for one
  * publish request and never carried into an edit link or a redirect, so an edit is never a confirmation.
@@ -117,4 +118,20 @@ export function draftQueryString(values: DraftFormValues): string {
   }
 
   return params.toString()
+}
+
+/**
+ * The same link (path and non-draft parameters such as `step`) carrying `values` as its draft instead. Used to
+ * keep unsubmitted edits when the poster follows a Back or edit link with JavaScript available.
+ */
+export function withDraftQuery(href: string, values: DraftFormValues): string {
+  const url = new URL(href, "http://draft.invalid")
+  const params = new URLSearchParams(url.search)
+
+  for (const name of [...DRAFT_TEXT_FIELDS, "equipment"]) {
+    params.delete(name)
+  }
+
+  const query = [params.toString(), draftQueryString(values)].filter(Boolean).join("&")
+  return `${url.pathname}${query ? `?${query}` : ""}`
 }
