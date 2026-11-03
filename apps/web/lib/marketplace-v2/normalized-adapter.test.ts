@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs"
+
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("server-only", () => ({}))
@@ -250,5 +252,16 @@ describe("normalized adapter: publishing and reconfirmation", () => {
   it("refuses a reconfirmation without its own attestation", async () => {
     await expect(adapter().reconfirmJob(landingViewer, JOB, publishAttestation)).rejects.toThrow("availability confirmation")
     expect(recorded).toEqual([])
+  })
+})
+
+describe("normalized adapter: no path to the pilot store", () => {
+  it("imports nothing that reads or writes operating_state, loads, slots or the pilot services", () => {
+    for (const file of ["normalized-adapter.ts", "normalized-db.ts", "normalized-mapping.ts"]) {
+      const source = readFileSync(new URL(`./${file}`, import.meta.url), "utf8")
+      const imports = [...source.matchAll(/from\s+["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)/g)].map((match) => match[1] ?? match[2])
+
+      expect(imports.filter((target) => /services|@logloads\/db|pilot-adapter|\.\/mapping$|network|session/.test(target ?? ""))).toEqual([])
+    }
   })
 })
