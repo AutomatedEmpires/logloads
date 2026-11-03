@@ -1,32 +1,44 @@
-import Link from "next/link"
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
 
-import { marketplaceJobPublicationIssues, marketplacePublishAttestations, previewMarketplaceJob } from "@logloads/contracts"
+import { MARKETPLACE_PUBLISH_ATTESTATION_FIELDS, marketplacePublishAttestations, PUBLISH_ATTESTATION_REQUIRED } from "@logloads/contracts"
+import { JobDetail } from "@logloads/ui/marketplace"
+import { Button, FormActions, VisibilityPanel } from "@logloads/ui/primitives"
 
-import { JobCard } from "@/components/v2/JobCard"
+import { FormCheckbox } from "@/components/v2/FormCheckbox"
 import {
-  distanceLabel,
-  durationLabel,
-  estimateLabel,
-  payLabel,
-  scheduleLabel,
-  trucksPerDayLabel,
-  trucksTotalLabel
-} from "@/components/v2/format"
+  DraftHiddenFields,
+  EditorNotice,
+  JobEditorAside,
+  JobEditorLayout,
+  jobEditorStepHref,
+  JobEditorStepSection,
+  JobPreviewRow,
+  RestoredNotice
+} from "@/components/v2/JobEditor"
+import styles from "@/components/v2/JobEditor.module.css"
+import { JobDraftSession } from "@/components/v2/JobDraftSession"
+import { PublishButton } from "@/components/v2/PublishButton"
 import { publishJobAction } from "@/lib/marketplace-v2/actions"
-import {
-  DRAFT_TEXT_FIELDS,
-  draftQueryString,
-  draftValuesFromQuery,
-  LANDING_NOT_OWNED,
-  validateDraftValues
-} from "@/lib/marketplace-v2/draft-params"
+import { draftQueryString, draftValuesFromQuery, hasDraftValues } from "@/lib/marketplace-v2/draft-params"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
+import { firstIncompleteJobEditorStep, jobEditorChecklist, jobEditorPreview, NEW_JOB_PATH } from "@/lib/marketplace-v2/job-editor"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
 import { resolveV2Viewer, withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
+const PUBLISH_FORM_ID = "job-publish-form"
+
+function one(value: string | string[] | undefined): string {
+  return (Array.isArray(value) ? value[0] : value) ?? ""
+}
+
+/**
+ * Step 4 of the job editor: review, attest and publish (UX 02 §B7, #128). It renders the draft through the same
+ * components discovery uses (JobResultRow `context="preview"` and JobDetail), lists what haulers never see, and
+ * asks for the three V2-DEC-03 statements. Publish stays aria-disabled until all three are ticked; the server
+ * (`publishJobAction`) re-checks everything. A draft that isn't ready goes back to the step that needs fixing.
+ */
 export default async function JobPreviewPage({ searchParams }: { searchParams: SearchParams }) {
   if (!marketplaceV2Enabled()) notFound()
 
@@ -34,114 +46,120 @@ export default async function JobPreviewPage({ searchParams }: { searchParams: S
 
   if (!resolved.ok || !resolved.access.capabilities.includes("job.publish")) {
     return (
-      <>
-        <h1>Job preview</h1>
-        <p className="v2-banner">{resolved.ok ? withBusinessSwitchNote("Your role in this business cannot post jobs.") : resolved.refusal}</p>
-      </>
+      <JobEditorLayout organizationName={resolved.ok ? resolved.access.organizationName : "LogLoads"}>
+        <EditorNotice>{resolved.ok ? withBusinessSwitchNote("Your role in this business cannot post jobs.") : resolved.refusal}</EditorNotice>
+      </JobEditorLayout>
     )
   }
 
+  const { access, viewer } = resolved
   const query = await searchParams
   const values = draftValuesFromQuery(query)
-  const editHref = `/v2/landing/jobs/new?${draftQueryString(values)}`
-  const validation = validateDraftValues(values)
-  const landings = await pilotMarketplaceV2.authoringLandings(resolved.viewer)
-  const landing = validation.ok ? landings.find((candidate) => candidate.id === validation.draft.landingId) : undefined
+  const restored = one(query.restored) === "1"
 
-  if (!validation.ok || !landing) {
-    const issues = validation.ok ? [{ field: "landingId", message: LANDING_NOT_OWNED }] : validation.issues
-    return (
-      <>
-        <h1>Job preview</h1>
-        <p className="v2-banner v2-banner--error" role="alert">This draft is not ready to preview.</p>
-        <ul className="v2-issues">
-          {issues.map((issue) => <li key={`${issue.field}-${issue.message}`}>{issue.message}</li>)}
-        </ul>
-        <p><Link className="v2-button" href={editHref}>Edit the draft</Link></p>
-      </>
-    )
+  if (!hasDraftValues(values)) redirect(NEW_JOB_PATH)
+
+  const landings = await pilotMarketplaceV2.authoringLandings(viewer)
+
+  // Not ready to review (a shared or edited URL, a landing that is no longer the organization's own): back to the
+  // first step that fails, which the editor shows with its errors.
+  if (firstIncompleteJobEditorStep(values, landings)) {
+    redirect(`${NEW_JOB_PATH}?${["step=review", draftQueryString(values), restored ? "restored=1" : ""].filter(Boolean).join("&")}`)
   }
 
   const now = new Date().toISOString()
-  const job = previewMarketplaceJob(validation.draft, {
-    landing,
-    now,
-    posterName: resolved.access.organizationName,
-    posterOrganizationId: resolved.viewer.organizationId,
-    posterVerification: null
-  })
-  // A draft may leave product and timing open; a published job may not (UX-DEC-02, UX-DEC-03).
-  const publicationIssues = marketplaceJobPublicationIssues(validation.draft)
-  const duration = durationLabel(job)
-  const runs = duration ?? (validation.draft.ongoing ? "Ongoing" : null)
-  const error = typeof query.error === "string" ? query.error : null
+  const preview = jobEditorPreview(values, landings, { now, posterName: access.organizationName, posterOrganizationId: viewer.organizationId })
+
+  if (!preview) {
+    return (
+      <JobEditorLayout organizationName={access.organizationName}>
+        <EditorNotice tone="critical">This draft is not ready to preview.</EditorNotice>
+        <Button href={jobEditorStepHref("basics", values)} label="Edit the draft" variant="secondary" />
+      </JobEditorLayout>
+    )
+  }
+
+  const { job, landing } = preview
+  const error = one(query.error)
+  const canPublish = pilotMarketplaceV2.supportsPublishing
   const attestations = marketplacePublishAttestations(landing.name)
+  const focusStatements = error === PUBLISH_ATTESTATION_REQUIRED
 
   return (
-    <>
-      <p><Link href={editHref}>← Edit the draft</Link></p>
-      <h1>Job preview</h1>
-      <p className="v2-muted">This is how haulers will see the listing in search and on the job page. Nothing has been published.</p>
-      {error ? <p className="v2-banner v2-banner--error" role="alert">{error}</p> : null}
-      {query.unavailable === "publish" ? (
-        <p className="v2-banner" role="status">Publishing is not saved yet — it needs the normalized marketplace store. Your draft is unchanged.</p>
+    <JobEditorLayout aside={<JobEditorAside checklist={jobEditorChecklist(values, landings)} now={now} values={values} />} organizationName={access.organizationName}>
+      {error ? <EditorNotice tone="critical">{error}</EditorNotice> : null}
+      {one(query.unavailable) === "publish" ? (
+        <EditorNotice>Publishing isn&apos;t saved yet: it needs the normalized marketplace store. Your draft is unchanged.</EditorNotice>
       ) : null}
+      {restored ? <RestoredNotice /> : null}
+      <JobEditorStepSection step="review">
+        <div>
+          <h3 className={styles.previewLabel}>How haulers see it in search</h3>
+          <JobPreviewRow job={job} now={now} />
+        </div>
+        <div>
+          <h3 className={styles.previewLabel}>How haulers see the job page</h3>
+          <JobDetail canExpressInterest={false} job={job} now={now} />
+        </div>
+        <p className={styles.hint}>Nothing has been published. Once you publish, the listing also shows the day your business confirmed it.</p>
 
-      <section aria-labelledby="preview-card">
-        <h2 id="preview-card">In search results</h2>
-        <JobCard job={job} now={now} />
-      </section>
-
-      <section aria-labelledby="preview-detail">
-        <h2 id="preview-detail">On the job page</h2>
-        <dl className="v2-facts">
-          <div><dt>Pay</dt><dd>{payLabel(job)}</dd></div>
-          <div><dt>Product</dt><dd>{job.product ?? "Not stated"}</dd></div>
-          <div><dt>Equipment</dt><dd>{job.equipment.join(", ")}</dd></div>
-          <div><dt>Start</dt><dd>{scheduleLabel(job)}{runs ? ` · ${runs}` : ""}</dd></div>
-          <div><dt>Trucks for the job</dt><dd>{trucksTotalLabel(job)}</dd></div>
-          <div><dt>Trucks per day</dt><dd>{trucksPerDayLabel(job)}</dd></div>
-          <div><dt>Loads per truck per day</dt><dd>{estimateLabel(job.estimatedLoadsPerTruckPerDay, "loads")}</dd></div>
-          <div><dt>Loads per day (whole job)</dt><dd>{estimateLabel(job.estimatedDailyLoads, "loads")}</dd></div>
-          <div><dt>Tons per load</dt><dd>{estimateLabel(job.estimatedTonsPerLoad, "tons")}</dd></div>
-          <div><dt>Landing area</dt><dd>{job.origin.label} <span className="v2-muted">(approximate)</span></dd></div>
-          <div><dt>Destination</dt><dd>{job.destinationLabel ?? "Not stated"}</dd></div>
-          <div><dt>Haul distance</dt><dd>{distanceLabel(job) ?? "Not stated"}</dd></div>
-          <div><dt>Road notes</dt><dd>{job.publicRoadNotes ?? "None provided"}</dd></div>
-        </dl>
-      </section>
-
-      {publicationIssues.length > 0 ? (
-        <section aria-labelledby="preview-before-publish" className="v2-banner" role="status">
-          <h2 id="preview-before-publish">Before you can publish</h2>
-          <ul className="v2-issues">
-            {publicationIssues.map((issue) => <li key={`${issue.field}-${issue.message}`}>{issue.message}</li>)}
+        <VisibilityPanel audience="private" title="Not shown to haulers">
+          <ul className={styles.privateList}>
+            <li>The exact location of {landing.name}</li>
+            <li>Gate and access instructions</li>
+            <li>The site contact</li>
           </ul>
-          <p><Link href={editHref}>Edit the draft</Link></p>
-        </section>
-      ) : null}
+          <p className={styles.hint}>Share them in a LogLoads message with a hauler you choose.</p>
+        </VisibilityPanel>
 
-      <form action={publishJobAction} className="v2-form">
-        {DRAFT_TEXT_FIELDS.map((name) => values.text[name] ? <input key={name} name={name} type="hidden" value={values.text[name]} /> : null)}
-        {values.equipment.map((code) => <input key={code} name="equipment" type="hidden" value={code} />)}
-        {/* The explicit attestation (V2-DEC-03): three statements, never pre-ticked, never carried in the draft or an edit link. */}
-        <fieldset className="v2-field">
-          <legend>Before you publish</legend>
-          {attestations.map((attestation) => (
-            <label className="v2-check" key={attestation.field}>
-              <input name={attestation.field} required type="checkbox" value={attestation.value} />
-              <span>{attestation.label}</span>
-            </label>
-          ))}
-          <p className="v2-muted">Publishing records that your business confirmed the job is available today.</p>
-        </fieldset>
-        <button disabled={!pilotMarketplaceV2.supportsPublishing || publicationIssues.length > 0} type="submit">Publish job</button>
-        {!pilotMarketplaceV2.supportsPublishing ? (
-          <p className="v2-muted">
-            Publishing is not available in this preview: V2 jobs will be saved by the normalized marketplace store, not the legacy load records.
+        <form action={publishJobAction} className={styles.form} data-job-draft-clear-on-submit="" id={PUBLISH_FORM_ID}>
+          <DraftHiddenFields values={values} />
+          {/* The explicit attestation (V2-DEC-03): three statements, never pre-ticked, never carried in the draft or an edit link. */}
+          <fieldset className={styles.fieldset}>
+            <legend className={styles.legend}>Before you publish</legend>
+            {attestations.map((attestation, index) => (
+              <FormCheckbox
+                autoFocus={focusStatements && index === 0}
+                id={`publish-${attestation.field}`}
+                key={attestation.field}
+                label={attestation.label}
+                name={attestation.field}
+                required
+                value={attestation.value}
+              />
+            ))}
+          </fieldset>
+          <p className={styles.hint}>
+            Publishing records that your business confirmed the job is available today. Haulers contact you through LogLoads
+            messages; phone numbers and email addresses aren&apos;t shown on listings.
           </p>
-        ) : null}
-      </form>
-    </>
+          {canPublish ? (
+            <p className={styles.srOnly} id="publish-why">Tick all three statements to publish.</p>
+          ) : (
+            <p className={styles.notice} data-tone="info" id="publish-unavailable">
+              Publishing isn&apos;t available in this preview: V2 jobs will be saved by the normalized marketplace store, not the
+              legacy load records. Your draft is kept in this browser tab.
+            </p>
+          )}
+          <FormActions
+            primary={
+              <>
+                <PublishButton
+                  attestationFields={MARKETPLACE_PUBLISH_ATTESTATION_FIELDS}
+                  canPublish={canPublish}
+                  className={styles.scripted}
+                  describedBy={canPublish ? "publish-why" : "publish-unavailable"}
+                />
+                <noscript>
+                  <Button aria-describedby={canPublish ? undefined : "publish-unavailable"} disabled={!canPublish} label="Publish job" type="submit" />
+                </noscript>
+              </>
+            }
+            secondary={<Button data-job-draft="carry" href={jobEditorStepHref("equipment", values)} label="Back" variant="secondary" />}
+          />
+        </form>
+        <JobDraftSession formId={PUBLISH_FORM_ID} restorable={false} revision={`review?${draftQueryString(values)}`} scope={viewer.organizationId} step="review" />
+      </JobEditorStepSection>
+    </JobEditorLayout>
   )
 }

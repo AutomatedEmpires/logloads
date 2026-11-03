@@ -1,0 +1,125 @@
+/* Job editor (UX-05, #128). Layout only: fields, checkboxes, buttons, panels and the preview are design-system
+   components. Semantic --ll-* tokens only; measures the AppShell's "ll-app" container. */
+
+.stack { display: grid; gap: var(--ll-space-5); min-width: 0; }
+
+.form { display: grid; gap: var(--ll-space-5); margin: 0; min-width: 0; }
+
+.step { margin: 0; font-size: var(--ll-text-sm); color: var(--ll-color-text-muted); }
+
+/* Two fields side by side from bp-sm, one column below. */
+.pair { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--ll-space-4); }
+
+@container ll-app (min-width: 600px) {
+  .pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.fieldset { display: grid; gap: var(--ll-space-2); min-width: 0; margin: 0; padding: 0; border: 0; }
+
+.legend {
+  padding: 0;
+  margin-bottom: var(--ll-space-1);
+  font-size: var(--ll-text-md);
+  font-weight: var(--ll-weight-semibold);
+  color: var(--ll-color-text);
+}
+
+.hint { margin: 0; font-size: var(--ll-text-sm); color: var(--ll-color-text-muted); }
+
+.error { margin: 0; font-size: var(--ll-text-sm); font-weight: var(--ll-weight-medium); color: var(--ll-color-status-critical); }
+
+/* Equipment by category: a mono label over each group, checkboxes two up from bp-sm. */
+.groups { display: grid; gap: var(--ll-space-4); }
+
+.group { display: grid; gap: 0; min-width: 0; margin: 0; padding: 0; border: 0; }
+
+.groupLegend {
+  padding: 0;
+  margin-bottom: var(--ll-space-1);
+  font-family: var(--ll-font-mono);
+  font-size: var(--ll-text-2xs);
+  font-weight: var(--ll-weight-semibold);
+  letter-spacing: var(--ll-tracking-label);
+  text-transform: uppercase;
+  color: var(--ll-color-text-muted);
+}
+
+.checks { display: grid; grid-template-columns: minmax(0, 1fr); column-gap: var(--ll-space-4); }
+
+@container ll-app (min-width: 600px) {
+  .checks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Optional details: a native disclosure, so it opens without JavaScript. */
+.more { border-top: 1px solid var(--ll-color-border); padding-top: var(--ll-space-2); }
+
+.more > summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--ll-target-touch);
+  cursor: pointer;
+  font-size: var(--ll-text-md);
+  font-weight: var(--ll-weight-semibold);
+}
+
+/* display: flex drops the native marker, so the disclosure state is drawn here. */
+.more > summary::before { content: "▸"; width: 1.25em; flex: none; color: var(--ll-color-text-muted); }
+.more[open] > summary::before { content: "▾"; }
+
+.more > summary:focus-visible {
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: var(--ll-focus-offset);
+}
+
+.moreBody { display: grid; gap: var(--ll-space-4); padding-top: var(--ll-space-3); }
+
+/* Page notices: status, refusals and the publishing preview note. */
+.notice {
+  margin: 0;
+  padding: var(--ll-space-3) var(--ll-space-4);
+  border: 1px solid var(--ll-color-border);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-surface);
+  color: var(--ll-color-text);
+  font-size: var(--ll-text-md);
+  line-height: var(--ll-leading-normal);
+}
+
+.notice[data-tone="critical"] { border-color: var(--ll-color-status-critical); background: var(--ll-color-status-critical-bg); }
+.notice[data-tone="info"] { border-color: var(--ll-color-border-strong); background: var(--ll-color-surface-subtle); }
+
+.noticeRow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--ll-space-3); }
+
+.issues { margin: var(--ll-space-2) 0 0; padding-left: var(--ll-space-5); }
+
+/* Review step */
+.previewLabel { margin: 0 0 var(--ll-space-2); font-size: var(--ll-text-md); font-weight: var(--ll-weight-semibold); }
+
+.privateList { margin: 0; padding-left: var(--ll-space-5); display: grid; gap: var(--ll-space-1); }
+
+/* "What's required" beside the editor. */
+.checklist { display: grid; gap: var(--ll-space-2); margin: 0; padding: 0; list-style: none; font-size: var(--ll-text-md); }
+
+.checkItem { display: flex; align-items: flex-start; gap: var(--ll-space-2); color: var(--ll-color-text-muted); }
+.checkItem[data-met] { color: var(--ll-color-text); }
+.checkItem[data-met] .checkIcon { color: var(--ll-color-status-positive); }
+.checkIcon { flex: none; width: 1.25em; font-weight: var(--ll-weight-bold); text-align: center; }
+
+.checkItem a { color: inherit; }
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The scripted Publish button gives way to the <noscript> submit button when scripting is off. */
+@media (scripting: none) {
+  .scripted { display: none; }
+}

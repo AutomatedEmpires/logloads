@@ -84,22 +84,10 @@
 .v2-more[open] { display: grid; gap: 0.75rem; }
 .v2-form__pair { display: grid; gap: 0.75rem; grid-template-columns: 1fr; }
 
-/* Job authoring */
-.v2-job-form { max-width: 36rem; }
-.v2-job-form section { display: grid; gap: 0.75rem; }
-.v2-job-form h2 { font-size: 1.05rem; margin: 0.75rem 0 0; }
-.v2-field { display: grid; gap: 0.25rem; font-weight: 600; font-size: 0.9rem; border: 0; padding: 0; margin: 0; min-width: 0; }
-.v2-field legend { font-weight: 600; margin-bottom: 0.35rem; }
-.v2-field--invalid input, .v2-field--invalid select, .v2-field--invalid textarea { border-color: var(--red); }
-.v2-field-error { color: var(--red); font-weight: 600; font-size: 0.85rem; }
-.v2-hint { font-size: 0.82rem; }
-.v2-checks { display: grid; gap: 0.35rem; grid-template-columns: 1fr; }
-.v2-checks .v2-check { display: flex; gap: 0.5rem; align-items: center; font-weight: 500; min-height: 44px; }
-.v2-checks input[type="checkbox"] { width: 1.25rem; height: 1.25rem; }
-.v2-issues { margin: 0.5rem 0 1rem; padding-left: 1.25rem; color: var(--red); }
+/* The job editor and job list are built from @logloads/ui (#128); their former .v2-job-form, .v2-field and
+   .v2-checks rules are retired. */
 .v2:not(:where(:has([data-ds-page]))) button:disabled { opacity: 0.55; cursor: not-allowed; }
 
 @media (min-width: 36rem) {
   .v2-form__pair { grid-template-columns: 1fr 1fr; }
-  .v2-checks { grid-template-columns: 1fr 1fr; }
 }

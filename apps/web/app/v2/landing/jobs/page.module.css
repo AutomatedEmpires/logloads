@@ -1,0 +1,37 @@
+/* Your job postings (#128 criterion 7). Layout only: header, tabs, rows, states and buttons are design-system
+   components. Semantic --ll-* tokens only; measures the AppShell's "ll-app" container. */
+
+.notice {
+  margin: 0;
+  padding: var(--ll-space-3) var(--ll-space-4);
+  border: 1px solid var(--ll-color-border-strong);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-surface-subtle);
+  color: var(--ll-color-text);
+  font-size: var(--ll-text-md);
+  line-height: var(--ll-leading-normal);
+}
+
+.notice[data-tone="critical"] { border-color: var(--ll-color-status-critical); background: var(--ll-color-status-critical-bg); }
+
+/* "Confirm what's still available": one compact form per listing that accepts interest. */
+.confirmList { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+
+.confirmItem {
+  display: grid;
+  gap: var(--ll-space-2);
+  padding-block: var(--ll-space-4);
+  border-top: 1px solid var(--ll-color-border);
+}
+
+.confirmItem:first-child { border-top: 0; padding-top: 0; }
+
+.confirmTitle { margin: 0; font-size: var(--ll-text-base); font-weight: var(--ll-weight-semibold); }
+
+.confirmMeta { margin: 0; font-size: var(--ll-text-sm); color: var(--ll-color-text-muted); }
+
+.confirmForm { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ll-space-2) var(--ll-space-4); margin: 0; }
+
+.confirmCheck { flex: 1 1 18rem; min-width: 0; }
+
+.confirmNote { font-size: var(--ll-text-sm); color: var(--ll-color-text-muted); }
