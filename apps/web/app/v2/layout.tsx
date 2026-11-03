@@ -35,8 +35,7 @@ export default async function MarketplaceV2Layout({ children }: { children: Reac
       business={business}
       capabilities={capabilities}
     >
-      {/* Pages not yet built from the layout components keep their v2.css styling inside the shell. */}
-      <div className="v2 v2-main">{children}</div>
+      {children}
     </V2AppShell>
   )
 }

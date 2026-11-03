@@ -26,7 +26,7 @@ import { BasicsFields, EquipmentFields, PayFields } from "./JobEditorFields"
 /**
  * The job editor (UX-05, #128; 06_DESIGN_SYSTEM §4 "Job editor"): PageHeader, then ContentGrid main-aside with
  * the step's Section (StepIndicator, FormFields, FormActions) and an aside with the hauler preview and the
- * required-items checklist. `data-ds-page` opts the page out of the legacy v2.css element rules.
+ * required-items checklist. `data-ds-page` on the root names the page for the DS-05 regression suite.
  */
 
 export const JOB_EDITOR_FORM_ID = "job-editor-form"
