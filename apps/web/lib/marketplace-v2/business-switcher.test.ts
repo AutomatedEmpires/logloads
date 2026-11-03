@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const mocks = vi.hoisted(() => ({
+  getClerkUserId: vi.fn(),
   getSessionActor: vi.fn(),
   unstableRethrow: vi.fn(),
   v2SessionCapabilities: vi.fn()
@@ -8,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("server-only", () => ({}))
 vi.mock("next/navigation", () => ({ redirect: vi.fn(), unstable_rethrow: mocks.unstableRethrow }))
-vi.mock("../session", () => ({ getClerkUserId: vi.fn(), getSessionActor: mocks.getSessionActor }))
+vi.mock("../session", () => ({ getClerkUserId: mocks.getClerkUserId, getSessionActor: mocks.getSessionActor }))
 vi.mock("./home", () => ({ v2SessionCapabilities: mocks.v2SessionCapabilities }))
 
 import type { SessionActor } from "../session-policy"
@@ -37,7 +38,7 @@ function actor(overrides: Partial<SessionActor> = {}): SessionActor {
     driverProfileId: null,
     isPlatformAdmin: false,
     memberships: [hauler, landing],
-    profile: { id: USER_ID } as SessionActor["profile"],
+    profile: { email: "jamie@example.test", fullName: "Jamie Pine", id: USER_ID } as SessionActor["profile"],
     workspaceSelectionInvalid: false,
     ...overrides
   }
@@ -45,6 +46,7 @@ function actor(overrides: Partial<SessionActor> = {}): SessionActor {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.getClerkUserId.mockResolvedValue(null)
 })
 
 describe("v2BusinessSwitcher", () => {
@@ -97,6 +99,7 @@ describe("resolveV2Shell", () => {
     mocks.v2SessionCapabilities.mockResolvedValue(["interest.express"])
 
     await expect(resolveV2Shell()).resolves.toMatchObject({
+      account: { kind: "signed-in", person: { email: "jamie@example.test", name: "Jamie Pine" } },
       business: { current: { name: "Kootenai Timber Haul" } },
       capabilities: ["interest.express"]
     })
@@ -106,15 +109,32 @@ describe("resolveV2Shell", () => {
   it("resolves no capabilities for a visitor", async () => {
     mocks.getSessionActor.mockResolvedValue(null)
 
-    await expect(resolveV2Shell()).resolves.toEqual({ business: undefined, capabilities: null })
+    await expect(resolveV2Shell()).resolves.toEqual({ account: { kind: "visitor" }, business: undefined, capabilities: null })
     expect(mocks.v2SessionCapabilities).not.toHaveBeenCalled()
+  })
+
+  it("keeps the account menu for a member whose selected business is gone, without a switcher or capabilities", async () => {
+    mocks.getSessionActor.mockResolvedValue(actor({ workspaceSelectionInvalid: true }))
+
+    await expect(resolveV2Shell()).resolves.toEqual({
+      account: { kind: "signed-in", person: { email: "jamie@example.test", name: "Jamie Pine" } },
+      business: undefined,
+      capabilities: null
+    })
+  })
+
+  it("treats a Clerk sign-in without a LogLoads profile as signed in, with no person", async () => {
+    mocks.getSessionActor.mockResolvedValue(null)
+    mocks.getClerkUserId.mockResolvedValue("user_example")
+
+    await expect(resolveV2Shell()).resolves.toMatchObject({ account: { kind: "signed-in", person: null }, business: undefined })
   })
 
   it("leaves the chrome at its public form when the session cannot be read, after rethrowing framework signals", async () => {
     const failure = new Error("state unavailable")
     mocks.getSessionActor.mockRejectedValue(failure)
 
-    await expect(resolveV2Shell()).resolves.toEqual({ business: undefined, capabilities: null })
+    await expect(resolveV2Shell()).resolves.toEqual({ account: { kind: "visitor" }, business: undefined, capabilities: null })
     expect(mocks.unstableRethrow).toHaveBeenCalledExactlyOnceWith(failure)
   })
 })
