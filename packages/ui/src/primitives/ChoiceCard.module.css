@@ -21,9 +21,11 @@
   cursor: inherit;
 }
 
+/* box-shadow: none removes the app's legacy global :focus-visible halo (globals.css). */
 .input:focus-visible {
   outline: var(--ll-focus-width) solid var(--ll-focus-color);
   outline-offset: var(--ll-focus-offset);
+  box-shadow: none;
 }
 
 .text { display: grid; gap: 2px; min-width: 0; }

@@ -137,6 +137,15 @@ export interface MessageComposerProps {
   quickReplies?: readonly string[]       // inserted into the draft, never sent automatically
   secondaryAction?: ReactNode            // e.g. Decline (danger, confirmed in a Dialog)
   sending?: boolean
+  /**
+   * DEVIATION (addition): progressive enhancement, so a reply posts without JavaScript (spec §7). The form submits
+   * natively to `action` (a server action or URL) with the textarea named `name` (default "body") and required,
+   * plus the page's `hiddenFields` (e.g. the inquiry id and the server-generated reply id). With scripts a blank or
+   * in-flight send is still stopped first, and `onSend` is called just before the action runs instead of sending.
+   */
+  action?: string | ((formData: FormData) => void | Promise<void>)
+  name?: string
+  hiddenFields?: ReactNode
 }
 
 export type { MarketplaceInterestView, MarketplaceJobCardView, MarketplaceJobDetailView, MarketplaceVerification }

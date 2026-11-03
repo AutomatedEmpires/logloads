@@ -9,7 +9,6 @@ import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 // DS-01 (#144): the semantic token layer. Tokens apply only inside .ll-theme (the AppShell root), so legacy
 // pages are unaffected. DS-02 (#145): the shared AppShell replaces the hand-rolled header.
 import "@logloads/ui/tokens.css"
-import "./v2.css"
 
 export const metadata: Metadata = {
   robots: { follow: false, index: false },

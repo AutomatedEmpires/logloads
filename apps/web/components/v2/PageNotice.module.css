@@ -1,0 +1,32 @@
+/* PageNotice: a framed note on a V2 page. Semantic --ll-* tokens only. */
+.notice {
+  margin: 0;
+  padding: var(--ll-space-3) var(--ll-space-4);
+  border: 1px solid var(--ll-color-border-strong);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-surface-subtle);
+  color: var(--ll-color-text);
+  font-size: var(--ll-text-md);
+  line-height: var(--ll-leading-normal);
+  overflow-wrap: anywhere;
+}
+
+.notice[data-tone="critical"] {
+  border-color: var(--ll-color-status-critical);
+  background: var(--ll-color-status-critical-bg);
+}
+
+.notice[data-tone="positive"] {
+  border-color: var(--ll-color-status-positive);
+  background: var(--ll-color-status-positive-bg);
+}
+
+.notice :where(p) { margin: 0; }
+.notice :where(p + p) { margin-top: var(--ll-space-2); }
+
+.notice :where(a) {
+  color: inherit;
+  font-weight: var(--ll-weight-semibold);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

@@ -42,6 +42,16 @@
   background: var(--ll-hover-overlay);
 }
 
+/* AppShell draws the ring; this removes the app's legacy global :focus-visible halo (globals.css). */
+.close:focus-visible {
+  box-shadow: none;
+}
+
+/* The panel itself can take focus (tabIndex -1): keep its elevation rather than the halo or AppShell's reset. */
+[data-layout="list-detail"] > .panel:focus-visible {
+  box-shadow: var(--ll-shadow-md);
+}
+
 .visuallyHidden {
   position: absolute;
   width: 1px;

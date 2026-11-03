@@ -160,6 +160,44 @@ describe("MessageComposer", () => {
     expect(html).toContain("&lt;script&gt;")
   })
 
+  describe("posting to a form action (progressive enhancement)", () => {
+    const action = async () => undefined
+    const posting = (overrides: Partial<MessageComposerProps> = {}) =>
+      props({ action, hiddenFields: <input name="interestId" type="hidden" value="i-1" />, ...overrides })
+
+    it("names and requires the textarea and carries the page's hidden fields", () => {
+      const html = renderToStaticMarkup(<MessageComposer {...posting()} />)
+
+      expect(openingTag(html, /^<textarea/)).toContain('name="body"')
+      expect(openingTag(html, /^<textarea/)).toContain('required=""')
+      expect(openingTag(html, /name="interestId"/)).toContain('type="hidden"')
+      expect(openingTag(renderToStaticMarkup(<MessageComposer {...posting({ name: "message" })} />), /^<textarea/)).toContain('name="message"')
+    })
+
+    it("offers a plain submit button for clients without scripts, beside the scripted Send", () => {
+      const html = renderToStaticMarkup(<MessageComposer {...posting()} />)
+
+      expect(html).toMatch(/<noscript><button[^>]*type="submit"[^>]*>(?:(?!<\/button>).)*Send/)
+      // The scripted Send is still unavailable while the draft is blank.
+      expect(openingTag(html, /aria-disabled="true"/)).toContain('type="button"')
+      expect(renderToStaticMarkup(<MessageComposer {...props()} />)).not.toContain("<noscript>")
+    })
+
+    it("lets a ready draft through to the form action, and stops a blank or in-flight one", () => {
+      const ready = posting({ draft: "On my way" })
+      expect(submit(ready)).not.toHaveBeenCalled()
+      expect(ready.onSend).toHaveBeenCalledOnce()
+
+      const blank = posting({ draft: "  " })
+      expect(submit(blank)).toHaveBeenCalledOnce()
+      expect(blank.onSend).not.toHaveBeenCalled()
+
+      const sending = posting({ draft: "On my way", sending: true })
+      expect(submit(sending)).toHaveBeenCalledOnce()
+      expect(sending.onSend).not.toHaveBeenCalled()
+    })
+  })
+
   it("names the recipient and keeps contact sharing explicit (UX-DEC-04)", () => {
     const html = renderToStaticMarkup(<MessageComposer {...props()} />)
 

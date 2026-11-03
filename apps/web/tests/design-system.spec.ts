@@ -4,8 +4,13 @@ import { expect, test, type Page } from "@playwright/test"
 /**
  * DS-05 (#148): responsive, keyboard and style-isolation regressions for the V2 design system, run against the
  * real app with Marketplace V2 enabled (design-system.config.mjs). Pages count as migrated when their root
- * carries `data-ds-page`; today that is /v2/work only. Cases that need a page nobody has built yet are
- * `test.fixme` with the page they wait for, never faked.
+ * carries `data-ds-page`; since DS-04 (#147) that is every V2 page and v2.css is gone. Cases that need a page or
+ * data nobody has built yet are `test.fixme` with what they wait for, never faked.
+ *
+ * Writes: the conversation cases need an inquiry, and the seed has none. New River Hauling (a hauling business
+ * with no trucks listed) expresses interest in the one public job, North Pine Logging's, and replies on it. Nothing
+ * else in the suite writes, and nothing declines or withdraws. When no job accepts interest in the shared CI state
+ * those cases are skipped with that reason, not passed.
  */
 
 const MATRIX = [1440, 1280, 1024, 768, 390] as const
@@ -51,6 +56,16 @@ const topNavigation = (page: Page) => page.locator(".ll-app > header nav[aria-la
 const bottomTabs = (page: Page) => page.locator(".ll-app > nav[aria-label='Main']")
 const jobRows = (page: Page) => page.locator("[data-ds-page] ul[aria-label='Jobs'] > li")
 
+/** Seeded accounts for the conversation cases (packages/db seed). */
+const NEW_RIVER = { email: "emptyfleet@logloads.example", name: "New River Hauling" } // hauling business, no trucks listed
+const NORTH_PINE_LANDING = "dispatch@northpine.example" // North Pine Logging (posts the public job), acting on its landing side; a founder demo account
+const LANDING_WITHOUT_INQUIRIES = "cole@summit.example" // Summit Ridge Timber has no public job, so no inquiries
+const NO_OPEN_JOB = "No job accepts interest in this run's state (the shared CI state can have them filled or closed)"
+
+/** Markup a hauler might type. It must reach every page as text: no element, no script. */
+const MARKUP_NOTE = `<img src=x onerror="window.__llInjected=1"><b>bold</b> & "two trucks"`
+const MARKUP_REPLY = `<script>window.__llInjected=2</script> Tuesday at 5 & Thursday`
+
 /**
  * /v2/work freshly loaded with at least one job row. In CI the state is shared with the pilot journeys, which can
  * fill or close the seeded jobs, so this falls back to every listing (`all=1`) when none is accepting interest.
@@ -61,6 +76,54 @@ async function openFindWorkWithRows(page: Page) {
 
   await openV2(page, "/v2/work?all=1")
   expect(await jobRows(page).count(), "the board lists at least one job").toBeGreaterThan(0)
+}
+
+/** The path of the first job on the board (any status), for the job page cases. */
+async function firstJobPath(page: Page): Promise<string> {
+  await openFindWorkWithRows(page)
+  const href = await jobRows(page).first().locator("h3 a").getAttribute("href")
+  expect(href).toMatch(/^\/v2\/work\/[^/]+$/)
+  return href!
+}
+
+const inquiryRows = (page: Page) => page.locator("#main [data-ds-page] ul[aria-label$='inquiries'] > li")
+
+/**
+ * Signs in as New River Hauling and makes sure it has an inquiry, expressing interest in the first job that
+ * accepts it (the note is MARKUP_NOTE) when it has none yet. False when no job accepts interest in this state.
+ */
+async function ensureNewRiverInquiry(page: Page): Promise<boolean> {
+  await signIn(page, NEW_RIVER.email)
+  await openV2(page, "/v2/inquiries")
+  if ((await inquiryRows(page).count()) > 0) return true
+
+  await openV2(page, "/v2/work")
+  const link = jobRows(page).first().locator("h3 a")
+  if ((await link.count()) === 0) return false
+
+  await openV2(page, (await link.getAttribute("href"))!)
+  // With no inquiry yet and a job that accepts interest, the form must be there; anything else is a defect.
+  const form = page.locator("form:has(input[name='loadPostingId'])")
+  await expect(form, "New River Hauling can express interest in an open job").toHaveCount(1)
+
+  await form.getByLabel("Message").fill(MARKUP_NOTE)
+  await form.getByRole("button", { name: "Send interest" }).click()
+  await expect(page).toHaveURL(/[?&]sent=1/)
+  return true
+}
+
+/** At 1024 px and up the conversation sits beside the list; below, under it (06_DESIGN_SYSTEM.md §5). */
+async function expectSplitLayout(page: Page, width: number) {
+  const list = await page.locator("[data-layout='split'] > :nth-child(1)").boundingBox()
+  const conversation = await page.locator("[data-layout='split'] > :nth-child(2)").boundingBox()
+
+  expect(list && conversation, "the split layout has a list and a conversation").toBeTruthy()
+  if (width >= 1024) {
+    expect(conversation!.x, `${width} px: the conversation is beside the list`).toBeGreaterThanOrEqual(list!.x + list!.width - 1)
+    expect(Math.abs(conversation!.y - list!.y), `${width} px: list and conversation start level`).toBeLessThan(2)
+  } else {
+    expect(conversation!.y, `${width} px: the conversation is under the list`).toBeGreaterThanOrEqual(list!.y + list!.height - 1)
+  }
 }
 
 /** No horizontal page scroll, with the widest offenders named when it fails. */
@@ -257,6 +320,130 @@ test.describe("responsive matrix: /v2/switch (signed in)", () => {
   })
 })
 
+// First of the cases that write: it needs New River Hauling to have no inquiry yet, so it runs before any test that
+// calls ensureNewRiverInquiry (workers: 1, file order).
+test.describe("the express-interest form (New River Hauling)", () => {
+  test("the truck count stays in range, the form has no serious axe violations, and sending opens an inquiry", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1440))
+    await signIn(page, NEW_RIVER.email)
+    await openV2(page, "/v2/work")
+    const link = jobRows(page).first().locator("h3 a")
+    test.skip((await link.count()) === 0, NO_OPEN_JOB)
+
+    await openV2(page, (await link.getAttribute("href"))!)
+    const form = page.locator("form:has(input[name='loadPostingId'])")
+    test.skip((await form.count()) === 0, "New River Hauling already sent interest on this job in this run's state")
+
+    // Hydrated, the count is a NumberStepper that only emits values in [1, 500] (no equipment listed, so a plain count).
+    const stepper = form.getByRole("group", { name: "Trucks you can offer" })
+    const fewer = stepper.getByRole("button", { name: "One fewer" })
+    const more = stepper.getByRole("button", { name: "One more" })
+    const value = form.locator("input[type='hidden'][name='trucksOffered']")
+
+    await expect(stepper).toBeVisible()
+    await expect(value).toHaveValue("1")
+    await expect(fewer).toHaveAttribute("aria-disabled", "true")
+    await fewer.click({ force: true })
+    await expect(value).toHaveValue("1")
+    await more.click()
+    await expect(stepper.locator("output")).toHaveText("2")
+    await expect(value).toHaveValue("2")
+    await fewer.click()
+    await expect(value).toHaveValue("1")
+    await expect(form.locator("[name='trucksOffered']")).toHaveCount(1)
+
+    // JobDetail's "I'm interested" leads to this form on the same page.
+    await expect(page.locator("[data-ds-page='job-detail'] article").getByRole("link", { name: "I'm interested" })).toHaveAttribute("href", "#interest")
+
+    await expectNoSeriousAxeViolations(page)
+    await page.setViewportSize(viewportFor(390))
+    await expectNoSeriousAxeViolations(page)
+
+    await form.getByLabel("Message").fill(MARKUP_NOTE)
+    await form.getByRole("button", { name: "Send interest" }).click()
+    await expect(page).toHaveURL(/[?&]sent=1/)
+    await expect(page.getByRole("status").filter({ hasText: "Your interest was sent." })).toBeVisible()
+    await expect(page.locator("form:has(input[name='loadPostingId'])")).toHaveCount(0)
+    await expect(page.getByRole("link", { name: "Open my inquiries" })).toHaveAttribute("href", /^\/v2\/inquiries\?inquiry=/)
+  })
+})
+
+test.describe("responsive matrix: pages migrated in DS-04 (#147)", () => {
+  test("visitor: the job page, /v2/start and the V2 not-found page", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1280))
+    const jobPath = await firstJobPath(page)
+    const pages = [
+      { current: "Find work", heading: "Job details", path: jobPath, root: "job-detail" },
+      { current: null, heading: "Set up your business", path: "/v2/start", root: "start" },
+      // A missing job is still under Find work, so that destination stays current.
+      { current: "Find work", heading: "This page is not available", path: "/v2/work/00000000-0000-4000-8000-000000000000", root: "not-found" }
+    ] as const
+
+    for (const { current, heading, path, root } of pages) {
+      for (const width of MATRIX) {
+        await page.setViewportSize(viewportFor(width))
+        await openV2(page, path)
+        await expect(page.locator(`[data-ds-page='${root}']`)).toBeVisible()
+        await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible()
+
+        await expectNoHorizontalOverflow(page)
+        expect(await expectNavigationForWidth(page, width)).toEqual(["Find work"])
+        await expectCurrent(page, width, current)
+      }
+    }
+  })
+
+  test("hauler: /v2/inquiries puts the conversation beside the list from 1024 px and under it below", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1280))
+    test.skip(!(await ensureNewRiverInquiry(page)), NO_OPEN_JOB)
+
+    for (const width of MATRIX) {
+      await page.setViewportSize(viewportFor(width))
+      await openV2(page, "/v2/inquiries")
+      await expect(page.locator("[data-ds-page='my-inquiries'] #conversation")).toBeVisible()
+
+      await expectNoHorizontalOverflow(page)
+      await expectSplitLayout(page, width)
+      expect(await expectNavigationForWidth(page, width)).toEqual(["Find work", "My inquiries"])
+      await expectCurrent(page, width, "My inquiries")
+    }
+  })
+
+  test("landing: /v2/landing/inquiries, with a conversation and with none", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1280))
+    const withInquiry = await ensureNewRiverInquiry(page)
+
+    if (!withInquiry) test.info().annotations.push({ description: `With a conversation: not checked. ${NO_OPEN_JOB}`, type: "skip" })
+    if (withInquiry) {
+      await page.context().clearCookies()
+      await signIn(page, NORTH_PINE_LANDING)
+
+      for (const width of MATRIX) {
+        await page.setViewportSize(viewportFor(width))
+        await openV2(page, "/v2/landing/inquiries")
+        await expect(page.locator("[data-ds-page='landing-inbox'] #conversation")).toBeVisible()
+
+        await expectNoHorizontalOverflow(page)
+        await expectSplitLayout(page, width)
+        await expectCurrent(page, width, "Landing inbox")
+      }
+    }
+
+    await page.context().clearCookies()
+    await signIn(page, LANDING_WITHOUT_INQUIRIES)
+    for (const width of MATRIX) {
+      await page.setViewportSize(viewportFor(width))
+      await openV2(page, "/v2/landing/inquiries")
+      await expect(page.getByRole("heading", { level: 2, name: "New" })).toBeVisible()
+      await expect(page.locator("#conversation")).toHaveCount(0)
+
+      await expectNoHorizontalOverflow(page)
+      expect(await expectNavigationForWidth(page, width)).toEqual(["Landing inbox", "Post jobs"])
+      await expectCurrent(page, width, "Landing inbox")
+    }
+  })
+})
+
 test.describe("capability navigation (#124)", () => {
   const cases = [
     { email: "hank@northpine.example", home: "/v2/work", items: ["Find work", "My inquiries"], visit: "/v2/inquiries", current: "My inquiries" },
@@ -362,6 +549,62 @@ test.describe("keyboard: /v2/work", () => {
   })
 })
 
+/**
+ * Every stop on the pages migrated in DS-04 (#147) draws the design-system ring and none of the legacy halo: the
+ * PageHeader breadcrumb, Tabs, NumberStepper, FormField controls, the composer, the confirm triggers and the page's
+ * own text links.
+ */
+test.describe("keyboard: the design-system ring on the migrated pages", () => {
+  test("visitor: the job page, /v2/start and the not-found page", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1280))
+    const jobPath = await firstJobPath(page)
+
+    for (const path of [jobPath, "/v2/start", "/v2/work/00000000-0000-4000-8000-000000000000"]) {
+      await openV2(page, path)
+      const stops = await tabThrough(page)
+
+      expect(stops.filter((stop) => stop.where === "main").length, `${path}: focus reaches the page content`).toBeGreaterThan(0)
+      for (const stop of stops) expectDesignSystemRing(stop)
+    }
+    // The job page's breadcrumb leads back to the board.
+    await openV2(page, jobPath)
+    await expect(page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Find work" })).toHaveAttribute("href", "/v2/work")
+  })
+
+  test("landing: the job postings tabs and an empty inbox", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1280))
+    await signIn(page, LANDING_WITHOUT_INQUIRIES)
+
+    // The job postings page: tabs, "Post a job" and the empty state's action.
+    await openV2(page, "/v2/landing/jobs")
+    const stops = await tabThrough(page)
+    expect(stops.filter((stop) => stop.where === "main").map((stop) => stop.key)).toEqual(
+      expect.arrayContaining(["Draft", expect.stringMatching(/^Published/), "Post a job"])
+    )
+    for (const stop of stops) expectDesignSystemRing(stop)
+
+    // An empty inbox has nothing to focus in the page: the chrome keeps the ring.
+    await openV2(page, "/v2/landing/inquiries")
+    const inbox = await tabThrough(page)
+    expect(inbox.filter((stop) => stop.where === "main")).toEqual([])
+    for (const stop of inbox) expectDesignSystemRing(stop)
+  })
+
+  test("hauler: /v2/inquiries, row link → conversation → composer → Withdraw", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1280))
+    test.skip(!(await ensureNewRiverInquiry(page)), NO_OPEN_JOB)
+    await openV2(page, "/v2/inquiries")
+
+    const stops = await tabThrough(page)
+    const main = stops.filter((stop) => stop.where === "main").map((stop) => stop.key)
+
+    // The row's single link, then the conversation's job link, the reply field, Send and Withdraw: no other stops.
+    expect(main[0]).toBe(await inquiryRows(page).first().getByRole("link").innerText())
+    expect(main.slice(-3)).toEqual([expect.stringMatching(/^Reply to /), "Send", "Withdraw interest"])
+    for (const stop of stops) expectDesignSystemRing(stop)
+  })
+})
+
 test.describe("job rows: semantic structure (/v2/work)", () => {
   test("a ul > li list, one link per row, no nested interactives, no listbox roles", async ({ page }) => {
     await openFindWorkWithRows(page)
@@ -400,23 +643,37 @@ test.describe("job rows: semantic structure (/v2/work)", () => {
   })
 })
 
+/** The shell carries the theme, and no text or control inside it resolves to the legacy Archivo/Inter stacks. */
+async function expectNoLegacyFonts(page: Page) {
+  await expect(page.locator(".ll-app")).toHaveClass(/\bll-theme\b/)
+  expect(await page.locator(".ll-app").evaluate((root) => getComputedStyle(root).getPropertyValue("--ll-color-action").trim())).not.toBe("")
+
+  // Legacy globals.css styles bare h1–h3 and :focus-visible; on a migrated page the components decide.
+  const leaks = await page.locator(".ll-app").evaluate((root, legacy) => {
+    const pattern = new RegExp(legacy)
+    return Array.from(root.querySelectorAll("*"))
+      .filter((element) => (element as HTMLElement).innerText?.trim() || /^(H[1-6]|INPUT|SELECT|TEXTAREA|BUTTON)$/.test(element.tagName))
+      .map((element) => ({ font: getComputedStyle(element).fontFamily, tag: element.tagName.toLowerCase(), text: (element as HTMLElement).innerText.trim().slice(0, 40) }))
+      .filter(({ font }) => pattern.test(font))
+  }, LEGACY_FONT.source)
+  expect(leaks, "design-system text resolving to the legacy Archivo/Inter stacks").toEqual([])
+}
+
 test.describe("style isolation", () => {
-  test("/v2/work: the shell carries the theme and nothing resolves to a legacy font", async ({ page }) => {
-    await openV2(page, "/v2/work")
+  test("/v2/work and the migrated visitor pages: the shell carries the theme and nothing resolves to a legacy font", async ({ page }) => {
+    const jobPath = await firstJobPath(page)
+    for (const path of ["/v2/work", jobPath, "/v2/start", "/v2/work/00000000-0000-4000-8000-000000000000"]) {
+      await openV2(page, path)
+      await expectNoLegacyFonts(page)
+    }
+  })
 
-    await expect(page.locator(".ll-app")).toHaveClass(/\bll-theme\b/)
-    expect(await page.locator(".ll-app").evaluate((root) => getComputedStyle(root).getPropertyValue("--ll-color-action").trim())).not.toBe("")
-
-    // Legacy globals.css styles bare h1–h3 and :focus-visible; on a migrated page the components decide.
-    const leaks = await page.locator(".ll-app").evaluate((root, legacy) => {
-      const pattern = new RegExp(legacy)
-      return Array.from(root.querySelectorAll("*"))
-        .filter((element) => !element.closest(".v2:not(:has([data-ds-page]))"))
-        .filter((element) => (element as HTMLElement).innerText?.trim() || /^(H[1-6]|INPUT|SELECT|TEXTAREA|BUTTON)$/.test(element.tagName))
-        .map((element) => ({ font: getComputedStyle(element).fontFamily, tag: element.tagName.toLowerCase(), text: (element as HTMLElement).innerText.trim().slice(0, 40) }))
-        .filter(({ font }) => pattern.test(font))
-    }, LEGACY_FONT.source)
-    expect(leaks, "design-system text resolving to the legacy Archivo/Inter stacks").toEqual([])
+  test("signed-in migrated pages: nothing resolves to a legacy font", async ({ page }) => {
+    await signIn(page, LANDING_WITHOUT_INQUIRIES)
+    for (const path of ["/v2/landing/inquiries", "/v2/switch"]) {
+      await openV2(page, path)
+      await expectNoLegacyFonts(page)
+    }
   })
 
   test("/v2/work makes no requests to Google Fonts", async ({ page }) => {
@@ -508,6 +765,28 @@ test.describe("accessibility audit (axe)", () => {
       await expectNoSeriousAxeViolations(page)
     })
   }
+
+  // Pages migrated in DS-04 (#147). The interest form and both conversations are audited in their own tests below,
+  // where the inquiry they need exists.
+  for (const width of [1440, 390]) {
+    test(`the job page, /v2/start and the not-found page (visitor) at ${width} px have no serious or critical violations`, async ({ page }) => {
+      await page.setViewportSize(viewportFor(width))
+      const jobPath = await firstJobPath(page)
+
+      for (const path of [jobPath, "/v2/start", "/v2/work/00000000-0000-4000-8000-000000000000"]) {
+        await openV2(page, path)
+        await expectNoSeriousAxeViolations(page)
+      }
+    })
+
+    test(`an empty landing inbox at ${width} px has no serious or critical violations`, async ({ page }) => {
+      await page.setViewportSize(viewportFor(width))
+      await signIn(page, LANDING_WITHOUT_INQUIRIES)
+      await openV2(page, "/v2/landing/inquiries")
+      await expect(page.locator("[data-ds-page='landing-inbox']")).toBeVisible()
+      await expectNoSeriousAxeViolations(page)
+    })
+  }
 })
 
 test.describe("waiting on page migrations", () => {
@@ -532,13 +811,123 @@ test.describe("waiting on page migrations", () => {
     // selecting a row, switching to compact and back keeps the same row selected and the panel on it.
   })
 
-  test.fixme("equipment capacity on a page: the count never exceeds the units and unknown is never 0", async () => {
-    // No page renders EquipmentCapacity yet (the hauler profile and inquiry pages still use v2.css markup).
-    // Component behaviour is covered by packages/ui/src/marketplace/profile.test.tsx.
+  test.fixme("equipment on a page: a per-setup count never exceeds the units listed, and unknown capacity is never 0", async () => {
+    // The job page's interest form now renders this (DS-04, #147): one NumberStepper per equipment configuration,
+    // capped at the units in the hauler's profile, beside an EquipmentCapacity in the unknown state ("N units ·
+    // availability not recently confirmed"). The browser cannot reach it with the seed: the only public job is North
+    // Pine Logging's, and every seeded hauling business with listed equipment is North Pine itself (its own job
+    // offers no form). Covered on the server-rendered page by apps/web/lib/marketplace-v2/v2-pages.test.tsx and in
+    // packages/ui (NumberStepper.test.tsx, profile.test.tsx). Needs a seeded hauler with equipment and another
+    // business's public job, or the hauler equipment page (UX-03, #126).
+  })
+})
+
+test.describe("conversation on a page (#148 criterion 4)", () => {
+  test("hauler: messages are escaped text, an empty send is blocked, a sent reply stays text", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1280))
+    test.skip(!(await ensureNewRiverInquiry(page)), NO_OPEN_JOB)
+    await openV2(page, "/v2/inquiries")
+
+    const log = page.getByRole("log")
+    const composer = page.locator("form:has(textarea[aria-label^='Reply to'])")
+    const textarea = composer.locator("textarea")
+    const send = composer.getByRole("button", { name: "Send", exact: true })
+
+    // The selected row's link is marked current, and its conversation is the one shown.
+    await expect(inquiryRows(page).first().getByRole("link")).toHaveAttribute("aria-current", "true")
+    await expect(log).toContainText(MARKUP_NOTE)
+    await expect(log.locator("img, script, b")).toHaveCount(0)
+
+    // Blank and whitespace-only drafts cannot be sent: Send stays unavailable and pressing it changes nothing.
+    const url = page.url()
+    const messages = await log.locator("li").count()
+    await expect(send).toHaveAttribute("aria-disabled", "true")
+    await send.click({ force: true })
+    await textarea.fill("   \n  ")
+    await expect(send).toHaveAttribute("aria-disabled", "true")
+    await send.click({ force: true })
+    await expect(page).toHaveURL(url)
+    await expect(log.locator("li")).toHaveCount(messages)
+
+    // A reply with markup is posted and comes back as text; the composer starts again empty.
+    await textarea.fill(MARKUP_REPLY)
+    await expect(send).not.toHaveAttribute("aria-disabled", "true")
+    await send.click()
+    await expect(page).toHaveURL(/[?&]updated=reply/)
+    await expect(page).toHaveURL(/[?&]inquiry=/)
+    await expect(page.getByRole("log")).toContainText(MARKUP_REPLY)
+    await expect(page.getByRole("log").locator("img, script, b")).toHaveCount(0)
+    await expect(page.locator("textarea[aria-label^='Reply to']")).toHaveValue("")
+    expect(await page.evaluate(() => (window as { __llInjected?: unknown }).__llInjected)).toBeUndefined()
+
+    await expectNoSeriousAxeViolations(page)
   })
 
-  test.fixme("conversation on a page: messages are escaped text and an empty send is blocked", async () => {
-    // No page renders ConversationThread or MessageComposer yet (/v2/inquiries and /v2/landing/inquiries still
-    // use v2.css markup). Component behaviour is covered by packages/ui/src/marketplace/conversation.test.tsx.
+  test("hauler: Withdraw asks first in a Dialog; Escape and Cancel close it and return focus", async ({ page }) => {
+    await page.setViewportSize(viewportFor(390))
+    test.skip(!(await ensureNewRiverInquiry(page)), NO_OPEN_JOB)
+    await openV2(page, "/v2/inquiries")
+
+    const withdraw = page.getByRole("link", { exact: true, name: "Withdraw interest" })
+    const dialog = page.getByRole("dialog", { name: "Withdraw your interest?" })
+
+    // Without scripts the same link opens the confirmation in the page.
+    await expect(withdraw).toHaveAttribute("href", /[?&]confirm=withdraw#confirm-action$/)
+    await withdraw.click()
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toHaveClass(/\bll-theme\b/)
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused()
+    await expect(page).not.toHaveURL(/confirm=/)
+    await page.keyboard.press("Escape")
+    await expect(dialog).toBeHidden()
+    await expect(withdraw).toBeFocused()
+
+    await withdraw.press("Enter")
+    await expect(dialog).toBeVisible()
+    await dialog.getByRole("button", { name: "Cancel" }).click()
+    await expect(dialog).toBeHidden()
+    await expect(withdraw).toBeFocused()
+    await expect(page.getByRole("log")).not.toContainText("You withdrew this inquiry.")
+  })
+
+  test("landing: the hauler's note is text, and Decline asks first in a Dialog that returns focus", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1440))
+    test.skip(!(await ensureNewRiverInquiry(page)), NO_OPEN_JOB)
+    await page.context().clearCookies()
+    await signIn(page, NORTH_PINE_LANDING)
+    await openV2(page, "/v2/landing/inquiries")
+
+    // Selecting the row is a plain link: it marks the row current and shows its conversation.
+    const rowLink = inquiryRows(page).getByRole("link", { exact: true, name: NEW_RIVER.name }).first()
+    await rowLink.click()
+    await expect(page).toHaveURL(/[?&]inquiry=[^&#]+#conversation$/)
+    await expect(inquiryRows(page).getByRole("link", { exact: true, name: NEW_RIVER.name }).first()).toHaveAttribute("aria-current", "true")
+    await expect(page.getByRole("heading", { level: 2, name: NEW_RIVER.name })).toBeVisible()
+
+    const log = page.getByRole("log", { name: `Messages with ${NEW_RIVER.name}` })
+    await expect(log).toContainText(MARKUP_NOTE)
+    await expect(log.locator("img, script, b")).toHaveCount(0)
+
+    const decline = page.getByRole("link", { exact: true, name: "Decline" })
+    const dialog = page.getByRole("dialog", { name: "Decline this inquiry?" })
+
+    await decline.click()
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toHaveClass(/\bll-theme\b/)
+    await expect(dialog).toContainText(`${NEW_RIVER.name} will see that you declined`)
+    await expect(dialog.getByRole("button", { name: "Decline inquiry" })).toBeVisible()
+    await page.keyboard.press("Escape")
+    await expect(dialog).toBeHidden()
+    await expect(decline).toBeFocused()
+
+    await decline.click()
+    await dialog.getByRole("button", { name: "Cancel" }).click()
+    await expect(dialog).toBeHidden()
+    await expect(decline).toBeFocused()
+    await expect(log).not.toContainText("You declined this inquiry.")
+
+    await expectNoSeriousAxeViolations(page)
+    await page.setViewportSize(viewportFor(390))
+    await expectNoSeriousAxeViolations(page)
   })
 })
