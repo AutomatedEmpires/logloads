@@ -91,6 +91,7 @@ import {
 import { releaseTruckSlotReservation } from "./truck-slots"
 import {
   assertCondition,
+  assertDomainCondition,
   assertFound,
   createUuid,
   DomainRefusalError,
@@ -138,6 +139,19 @@ function organizationParticipatesInNoticeLoad(
   )
 }
 
+/** True while `at` falls inside the notice's window. An unreadable timestamp is never in effect. */
+function operationalNoticeInEffect(notice: OperationalNotice, at: number): boolean {
+  const effectiveAt = Date.parse(notice.effectiveAt)
+  const expiresAt = notice.expiresAt ? Date.parse(notice.expiresAt) : null
+
+  return (
+    Number.isFinite(effectiveAt) &&
+    (expiresAt === null || Number.isFinite(expiresAt)) &&
+    effectiveAt <= at &&
+    (expiresAt === null || expiresAt > at)
+  )
+}
+
 export function operationalNoticeVisibleToActor(
   state: LogLoadsDatabaseState,
   input: {
@@ -149,16 +163,8 @@ export function operationalNoticeVisibleToActor(
 ): boolean {
   const notice = state.operationalNotices.find((candidate) => candidate.id === input.noticeId)
   const at = input.at ?? Date.now()
-  const effectiveAt = notice ? Date.parse(notice.effectiveAt) : Number.NaN
-  const expiresAt = notice?.expiresAt ? Date.parse(notice.expiresAt) : null
 
-  if (
-    !notice ||
-    !Number.isFinite(effectiveAt) ||
-    (expiresAt !== null && !Number.isFinite(expiresAt)) ||
-    effectiveAt > at ||
-    (expiresAt !== null && expiresAt <= at)
-  ) {
+  if (!notice || !operationalNoticeInEffect(notice, at)) {
     return false
   }
 
@@ -297,7 +303,11 @@ export interface ProgressTripStatusInput {
   organizationId?: string
   tripId: string
   nextStatus: TripStatusV2
-  source: TripEvent["source"]
+  /**
+   * @deprecated Ignored. The event's source is derived from the actor on the
+   * server (`tripEventActorSource`); web boundaries forward client JSON here.
+   */
+  source?: TripEvent["source"]
   note?: string | null
   metadata?: Record<string, unknown>
 }
@@ -2623,7 +2633,7 @@ export function progressTripStatus(
     metadata: input.metadata ?? {},
     note: input.note ?? null,
     occurredAt: timestamp,
-    source: input.source,
+    source: tripEventActorSource(state, context, trip),
     tripId: trip.id,
     type: tripEventByStatus[nextStatus]
   })
@@ -3198,10 +3208,18 @@ export function getRoutePackForAssignment(
     "Route Pack sources are unavailable"
   )
 
+  // A matching landing or destination id says where a notice applies, not who
+  // wrote it, so it is not enough on its own. A notice reaches this pack only
+  // while it is in effect, and only when it is on this haul's own load (whose
+  // publisher was checked against the load) or was published by the host, the
+  // organization whose landing this is.
+  const at = Date.now()
   const notices = state.operationalNotices.filter((notice) =>
-    notice.relatedLoadId === assignment.loadPostingId ||
-    notice.relatedLandingId === routePack.landingId ||
-    notice.relatedDestinationId === routePack.destinationId
+    operationalNoticeInEffect(notice, at) &&
+    (notice.relatedLoadId === assignment.loadPostingId ||
+      (notice.organizationId === load.companyId &&
+        (notice.relatedLandingId === routePack.landingId ||
+          notice.relatedDestinationId === routePack.destinationId)))
   )
 
   return { notices, routePack }
@@ -3378,7 +3396,9 @@ export function getTripDocumentTarget(
 }
 
 /**
- * Who filed this paperwork, in the timeline's own vocabulary.
+ * Who recorded a trip event (a status change or filed paperwork), in the
+ * timeline's own vocabulary. Always derived from the actor and never taken
+ * from the request, so a caller cannot sign the timeline as someone else.
  *
  * Only two answers are true. The haul's own driver photographs the ticket at the
  * scale; anyone else is office staff on one side or the other, which the seed's
@@ -3391,7 +3411,7 @@ export function getTripDocumentTarget(
  * the destination would tell a dispatcher that a mill with no login uploaded the
  * ticket.
  */
-function tripDocumentEventSource(
+function tripEventActorSource(
   state: LogLoadsDatabaseState,
   context: ActiveOrganizationContext,
   trip: TripV2
@@ -3475,7 +3495,7 @@ export function attachTripDocument(state: LogLoadsDatabaseState, input: AttachTr
     metadata: { documentId: document.id },
     note: `${document.type.replaceAll("_", " ")} uploaded.`,
     occurredAt: document.uploadedAt,
-    source: tripDocumentEventSource(state, context, trip),
+    source: tripEventActorSource(state, context, trip),
     tripId: document.tripId,
     type: tripDocumentEventType(document.type)
   }))
@@ -3488,6 +3508,8 @@ export function createOperationalNotice(state: LogLoadsDatabaseState, input: Cre
   const context = getContextForInput(state, input)
   assertOrganizationAction(context, "send_operational_notice")
 
+  let relatedLoad: LoadPosting | null = null
+
   if (input.relatedLoadId) {
     const load = assertFound(
       state.loadPostings.find((current) => current.id === input.relatedLoadId),
@@ -3497,6 +3519,33 @@ export function createOperationalNotice(state: LogLoadsDatabaseState, input: Cre
       load.companyId === context.organizationId ||
         organizationParticipatesInNoticeLoad(state, context.organizationId, load.id),
       `Organization ${context.organizationId} cannot publish an operational notice for load posting ${load.id}`
+    )
+    relatedLoad = load
+  }
+
+  // The landing and destination decide whose Route Packs a notice is matched
+  // against, so they are checked like the load. A landing must be the caller's
+  // own, or the pickup of the related load just checked. A destination must be
+  // a mill the caller may use (a shared record or its own), or the drop-off of
+  // that load. A missing record and a foreign one get the same refusal.
+  if (input.relatedLandingId) {
+    const landing = state.landings.find((current) => current.id === input.relatedLandingId)
+
+    assertDomainCondition(
+      landing !== undefined &&
+        (landing.companyId === context.organizationId || landing.id === relatedLoad?.pickupLandingId),
+      `Organization ${context.organizationId} cannot publish an operational notice for landing ${String(input.relatedLandingId)}`
+    )
+  }
+
+  if (input.relatedDestinationId) {
+    const destination = state.mills.find((current) => current.id === input.relatedDestinationId)
+
+    assertDomainCondition(
+      destination !== undefined &&
+        (millUsableByOrganization(destination, context.organizationId) ||
+          destination.id === relatedLoad?.dropoffMillId),
+      `Organization ${context.organizationId} cannot publish an operational notice for destination ${String(input.relatedDestinationId)}`
     )
   }
 
