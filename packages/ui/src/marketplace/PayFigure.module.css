@@ -1,0 +1,46 @@
+/* PayFigure (DS-04): ported from design-system/components.css (.ll-pay). Figure in the condensed display face,
+   basis beside it in muted text; negotiable and unstated figures are set smaller so the word fits the pay column. */
+.pay {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+  min-width: 0;
+}
+
+.amount {
+  font-family: var(--ll-font-display);
+  font-size: var(--ll-text-2xl);
+  font-weight: var(--ll-weight-bold);
+  line-height: 1;
+  letter-spacing: var(--ll-tracking-display);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.basis {
+  min-width: 0;
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-md);
+  line-height: var(--ll-leading-snug);
+  overflow-wrap: anywhere;
+}
+
+.pay[data-size="sm"] .amount { font-size: 1.125rem; font-weight: var(--ll-weight-semibold); }
+.pay[data-size="sm"] .basis { font-size: var(--ll-text-sm); }
+.pay[data-size="lg"] .amount { font-size: var(--ll-text-3xl); }
+
+.pay[data-kind="negotiable"] .amount { font-size: 1.375rem; }
+.pay[data-kind="negotiable"][data-size="sm"] .amount { font-size: 1.125rem; }
+.pay[data-kind="negotiable"][data-size="lg"] .amount { font-size: var(--ll-text-2xl); }
+
+/* "Pay not stated" is an absence, not a figure: body face, secondary colour. */
+.pay[data-kind="unstated"] .amount {
+  color: var(--ll-color-text-secondary);
+  font-family: var(--ll-font-sans);
+  font-size: var(--ll-text-lg);
+  font-weight: var(--ll-weight-semibold);
+  letter-spacing: normal;
+  line-height: var(--ll-leading-snug);
+}
+
+.pay[data-kind="unstated"][data-size="sm"] .amount { font-size: var(--ll-text-md); }

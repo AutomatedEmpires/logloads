@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./icons": "./src/icons/index.ts",
     "./layout": "./src/layout/index.ts",
+    "./marketplace": "./src/marketplace/index.ts",
     "./primitives": "./src/primitives/index.ts",
     "./tokens": "./src/tokens/index.ts",
     "./tokens.css": "./src/tokens/tokens.css"

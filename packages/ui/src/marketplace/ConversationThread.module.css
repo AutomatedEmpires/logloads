@@ -1,0 +1,61 @@
+/* ConversationThread (DS-04): ported from design-system/components.css (.ll-thread, .ll-msg). */
+.thread {
+  display: grid;
+  align-content: start;
+  gap: var(--ll-space-3);
+  min-height: 200px;
+  padding: var(--ll-space-5);
+  background: var(--ll-color-surface-subtle);
+}
+
+.system {
+  justify-self: center;
+  margin: 0;
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+  text-align: center;
+}
+
+.messages {
+  display: grid;
+  gap: var(--ll-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.message {
+  display: grid;
+  gap: 3px;
+  max-width: 80%;
+}
+
+.body {
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--ll-color-border);
+  border-radius: var(--ll-radius-lg);
+  background: var(--ll-color-surface);
+  line-height: var(--ll-leading-normal);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.meta {
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-xs);
+}
+
+.message[data-side="them"] .body { border-bottom-left-radius: var(--ll-radius-xs); }
+
+.message[data-side="me"] {
+  justify-self: end;
+  text-align: right;
+}
+
+.message[data-side="me"] .body {
+  border-color: var(--ll-color-action-subtle-border);
+  border-bottom-right-radius: var(--ll-radius-xs);
+  background: var(--ll-color-action-subtle);
+  text-align: left;
+}

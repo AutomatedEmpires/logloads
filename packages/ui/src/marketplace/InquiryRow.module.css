@@ -1,0 +1,108 @@
+/* InquiryRow (DS-04): ported from design-system/components.css (.ll-inquiry-row). Same single-link pattern as
+   JobResultRow. Rows sit in a plain <ul> the page frames (for example a flush Section). */
+.row {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  padding: var(--ll-space-4) var(--ll-space-5);
+  border-bottom: 1px solid var(--ll-color-border);
+  cursor: pointer;
+}
+
+.row:last-child { border-bottom: 0; }
+.row:hover { background: var(--ll-color-surface-subtle); }
+.row[data-selected] { background: var(--ll-color-selected-bg); }
+
+.row[data-selected]::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--ll-color-selected-indicator);
+}
+
+.top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ll-space-2);
+}
+
+.link {
+  min-width: 0;
+  color: inherit;
+  font-weight: var(--ll-weight-semibold);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.link:focus-visible {
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: var(--ll-focus-offset);
+  box-shadow: none;
+}
+
+@supports selector(:has(*)) {
+  .link:focus-visible { outline: none; }
+
+  .row:has(.link:focus-visible) {
+    outline: var(--ll-focus-width) solid var(--ll-focus-color);
+    outline-offset: calc(-1 * var(--ll-focus-width));
+  }
+}
+
+.time {
+  flex: none;
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+  white-space: nowrap;
+}
+
+.job,
+.offer,
+.state { margin: 0; }
+
+.job {
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-sm);
+}
+
+.offer { font-size: var(--ll-text-md); }
+
+.state {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-sm);
+}
+
+/* The viewer's move: bold, with a dot. Status is never colour alone; the words say whose turn it is. */
+.state[data-tone="attention"] {
+  color: var(--ll-color-text);
+  font-weight: var(--ll-weight-semibold);
+}
+
+.state[data-tone="attention"]::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ll-color-action);
+  transform: translateY(-1px);
+}
+
+.state[data-tone="closed"] { color: var(--ll-color-text-muted); }
