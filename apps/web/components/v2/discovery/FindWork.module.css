@@ -1,0 +1,174 @@
+/* Find work (#129): the summary bar, the filter sheet's fields, the list tools and the wide-layout probe. Layout and
+   placement only; controls, the sheet, the list and the panel are design-system components. Semantic --ll-* tokens
+   only. Container queries measure the AppShell's "ll-app" container; breakpoints are tokens/index.ts BREAKPOINTS. */
+
+/* ------------------------------------------------------------------ Summary bar */
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: var(--ll-space-3);
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 14px;
+  border: 1px solid var(--ll-color-control-border);
+  border-radius: var(--ll-radius-lg);
+  background: var(--ll-color-surface);
+  color: var(--ll-color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  list-style: none;
+}
+
+.summary::-webkit-details-marker { display: none; }
+
+.summary:hover { background: var(--ll-color-surface-subtle); }
+
+/* AppShell draws the ring; this removes the app's legacy global :focus-visible halo (globals.css). */
+.summary:focus-visible { box-shadow: none; }
+
+.summaryIcon {
+  flex: none;
+  color: var(--ll-color-text-muted);
+}
+
+.summaryText {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.summaryWhere,
+.summaryWhat {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summaryWhere { font-weight: var(--ll-weight-semibold); }
+
+.summaryWhat {
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+}
+
+.summaryAction {
+  flex: none;
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-md);
+  font-weight: var(--ll-weight-semibold);
+}
+
+/* Without JavaScript the bar is a native <details>: opening it shows the same fields as a plain GET form. */
+.disclosure[open] > .summary { margin-bottom: var(--ll-space-3); }
+
+/* ------------------------------------------------------------------ Filter fields */
+
+.form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--ll-space-4);
+  margin: 0;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--ll-space-4);
+}
+
+@container ll-app (min-width: 600px) { /* bp-sm: location and radius side by side in the page form */
+  .pair { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+}
+
+/* Inside the sheet the fields are measured by the dialog, not the page. */
+@media (min-width: 600px) {
+  .sheet .pair { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+}
+
+.formActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ll-space-3);
+}
+
+.sheetActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--ll-space-3);
+  width: 100%;
+}
+
+/* ------------------------------------------------------------------ List tools */
+
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ll-space-2);
+}
+
+.sort {
+  display: flex;
+  align-items: center;
+  gap: var(--ll-space-2);
+  margin: 0;
+}
+
+.sortLabel {
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-md);
+}
+
+.sortSelect {
+  height: var(--ll-c-button-h-sm);
+  max-width: 13rem;
+  padding: 0 8px;
+  border: 1px solid var(--ll-color-control-border);
+  border-radius: var(--ll-c-field-radius);
+  background: var(--ll-color-surface);
+  color: var(--ll-color-text);
+  font: inherit;
+  font-size: var(--ll-text-md);
+}
+
+.sortSelect:focus-visible { box-shadow: none; }
+
+/* With scripts the select applies on change, so its Sort button is only for visitors without JavaScript. */
+@media (scripting: enabled) {
+  .sort .sortSubmit { display: none; }
+}
+
+.density { display: none; }
+
+@container ll-app (min-width: 960px) { /* bp-lg: density is a desktop control */
+  .density { display: inline-flex; }
+}
+
+.notes {
+  display: grid;
+  gap: var(--ll-space-2);
+  padding: 0 var(--ll-space-5) var(--ll-space-3);
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-md);
+}
+
+.notes > p { margin: 0; }
+
+/* ------------------------------------------------------------------ Detail sheet */
+
+.sheetFoot {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+/* Shown exactly when ContentGrid puts the DetailPanel beside the list (bp-xl), so the page can tell whether a
+   selection belongs in the panel or in the sheet without measuring the window. */
+.wideProbe { display: none; }
+
+@container ll-app (min-width: 1200px) { /* bp-xl */
+  .wideProbe { display: block; }
+}
