@@ -38,3 +38,9 @@ jobs:
 
       - name: Check migrations
         run: pnpm db:check
+
+      # #113: back up, wipe and restore the canonical operating-state document on the disposable local stack that
+      # db:check just reset, through the operator CLI and the application's read path. Local only: no hosted
+      # project, no access token, no repository secret. See docs/RECOVERY.md section 7.
+      - name: Rehearse operating-state backup and restore
+        run: bash tools/operating-state-rehearsal/run.sh
