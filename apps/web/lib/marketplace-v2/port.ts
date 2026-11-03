@@ -1,4 +1,5 @@
 import type {
+  MarketplaceAvailabilityAttestation,
   MarketplaceCapability,
   MarketplaceDraftLandingContext,
   MarketplaceHaulerEquipmentOption,
@@ -59,8 +60,17 @@ export interface MarketplaceV2Port {
   respondToInterest(viewer: MarketplaceV2Viewer, input: unknown): Promise<void>
   postHaulerReply(viewer: MarketplaceV2Viewer, input: unknown): Promise<void>
 
-  /** Publish a validated draft as an active job. Throws `MarketplaceOperationUnavailableError` when unsupported. */
-  publishJob(viewer: MarketplaceV2Viewer, draft: MarketplaceJobDraft): Promise<{ jobId: string }>
-  /** Record the poster's explicit "still available" confirmation. Throws when unsupported. */
-  reconfirmJob(viewer: MarketplaceV2Viewer, jobId: string): Promise<void>
+  /**
+   * Publish a validated draft as an active job. The caller has already checked `job.publish`, landing
+   * ownership, the draft and publishing rules, and the explicit attestation. `attestation.confirmedAt`
+   * (server clock) becomes the job's initial `lastConfirmedAt` (ATT-1, #114). Throws
+   * `MarketplaceOperationUnavailableError` when unsupported.
+   */
+  publishJob(viewer: MarketplaceV2Viewer, draft: MarketplaceJobDraft, attestation: MarketplaceAvailabilityAttestation): Promise<{ jobId: string }>
+  /**
+   * Record the poster's explicit "still available" confirmation: `attestation.confirmedAt` becomes the
+   * job's `lastConfirmedAt`. Only this method and `publishJob` may set it; editing a job never does.
+   * Throws when unsupported.
+   */
+  reconfirmJob(viewer: MarketplaceV2Viewer, jobId: string, attestation: MarketplaceAvailabilityAttestation): Promise<void>
 }

@@ -241,7 +241,8 @@ describe("native job authoring draft", () => {
     expect(issues({ payUnit: "" })).toEqual(["payUnit"])
     expect(issues({ payAmount: "", payNote: "", payUnit: "negotiable" })).toEqual(["payNote"])
     expect(issues({ payAmount: "500", payNote: "by haul length", payUnit: "negotiable" })).toEqual(["payAmount"])
-    expect(issues({ payAmount: "", payUnit: "" })).toEqual([])
+    // C1 (#114): pay is required. The database allows none; the draft does not (marketplace-job-draft.test.ts).
+    expect(issues({ payAmount: "", payUnit: "" })).toEqual(["payUnit"])
   })
 
   it("keeps trucks per day within the total and needs a start for a duration", () => {
