@@ -38,8 +38,12 @@ describe("BusinessSwitcher", () => {
   it("links to the switch route when one exists", () => {
     const html = renderToStaticMarkup(<BusinessSwitcher current={CURRENT} memberships={TWO} switchHref="/v2/switch" />)
 
-    expect(html).toMatch(/^<a aria-label="Acting as Kootenai Timber Haul, Hauling business. Switch business"[^>]*href="\/v2\/switch"/)
+    expect(html).toMatch(/^<a [^>]*href="\/v2\/switch"/)
+    expect(html).not.toContain("aria-label")
+    // Label in Name (WCAG 2.5.3): the accessible name is the visible text plus hidden words.
+    expect(html).toContain(">Acting as </span>")
     expect(html).toContain("Hauling business · Owner")
+    expect(html).toContain(">. Switch business</span>")
   })
 
   it("is plain text, never a link, without a switch route", () => {
