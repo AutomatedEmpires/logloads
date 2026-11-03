@@ -5,6 +5,8 @@ import type { ReactNode } from "react"
 
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 
+// DS-01 (#144): the semantic token layer. Tokens apply only inside .ll-theme, so legacy pages are unaffected.
+import "@logloads/ui/tokens.css"
 import "./v2.css"
 
 export const metadata: Metadata = {
@@ -20,7 +22,7 @@ export default function MarketplaceV2Layout({ children }: { children: ReactNode 
   }
 
   return (
-    <div className="v2">
+    <div className="v2 ll-theme">
       <header className="v2-top">
         <Link className="v2-brand" href="/v2/work">LogLoads</Link>
         <nav aria-label="Marketplace V2">
