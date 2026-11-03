@@ -56,14 +56,15 @@ describe("Marketplace V2 public job mapping", () => {
     }
   })
 
-  it("exposes only approximate (~2 km grid) coordinates and no private access or contact data", () => {
+  it("exposes only 0.1°-rounded coordinates (V2-DEC-01) and no private access or contact data", () => {
     const { jobs, state } = publicJobs()
     const serialized = JSON.stringify(jobs)
     const secrets = [
       ...state.richLandingDetails.flatMap((detail) => [detail.gateInstructions, detail.privateRoadNotes, detail.stagingInstructions, detail.communicationInstructions]),
       ...state.haulRoutes.map((route) => route.roadNotes),
       ...state.landings.map((landing) => landing.accessNotes),
-      ...state.richLandingDetails.flatMap((detail) => [String(detail.entranceLat), String(detail.entranceLng)])
+      ...state.richLandingDetails.flatMap((detail) => [String(detail.entranceLat), String(detail.entranceLng)]),
+      ...state.landings.flatMap((landing) => [String(landing.coordinates.lat), String(landing.coordinates.lng)])
     ].filter((value): value is string => typeof value === "string" && value.trim().length > 6)
 
     expect(secrets.length).toBeGreaterThan(0)
@@ -71,11 +72,11 @@ describe("Marketplace V2 public job mapping", () => {
       expect(serialized).not.toContain(secret)
     }
 
-    for (const job of jobs) {
-      if (job.origin.approximatePoint) {
-        expect(Math.round(job.origin.approximatePoint.lat * 50) / 50).toBeCloseTo(job.origin.approximatePoint.lat, 10)
-        expect(Math.round(job.origin.approximatePoint.lng * 50) / 50).toBeCloseTo(job.origin.approximatePoint.lng, 10)
-      }
+    const points = jobs.flatMap((job) => job.origin.approximatePoint ? [job.origin.approximatePoint] : [])
+    expect(points.length).toBeGreaterThan(0)
+    for (const point of points) {
+      expect(JSON.stringify(point.lat)).toMatch(/^-?\d+(\.\d)?$/)
+      expect(JSON.stringify(point.lng)).toMatch(/^-?\d+(\.\d)?$/)
     }
   })
 

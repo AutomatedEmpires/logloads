@@ -2,7 +2,7 @@ import { createInMemoryDatabase } from "@logloads/db"
 import { createLogLoadsServices } from "@logloads/services"
 import { describe, expect, it } from "vitest"
 
-import { buildNetworkView, publicAvailableEquipmentCount } from "./network"
+import { approximateCoordinate, buildNetworkView, publicAvailableEquipmentCount } from "./network"
 
 function networkFixture() {
   const services = createLogLoadsServices(createInMemoryDatabase())
@@ -1429,5 +1429,78 @@ describe("direct-offer network views", () => {
     expect(networkLoad?.access).toEqual({ reason: "assigned", unlocked: true })
     expect(networkLoad?.routePack?.id).toBe(accepted.trip.routePackId)
     expect(networkLoad?.routePack?.snapshot?.originEntranceLat).toBeTypeOf("number")
+  })
+})
+
+describe("public coordinate precision (V2-DEC-01)", () => {
+  const ONE_DECIMAL = /^-?\d+(\.\d)?$/
+
+  it("rounds the decision's examples to the nearest 0.1° and serializes them exactly", () => {
+    expect(approximateCoordinate(47.654)).toBe(47.7)
+    expect(approximateCoordinate(-117.457)).toBe(-117.5)
+    expect(JSON.stringify({ lat: approximateCoordinate(47.654), lng: approximateCoordinate(-117.457) }))
+      .toBe('{"lat":47.7,"lng":-117.5}')
+  })
+
+  it("rounds halves away from zero like SQL round(coord, 1) and never returns negative zero", () => {
+    expect(approximateCoordinate(47.65)).toBe(47.7)
+    expect(approximateCoordinate(-117.45)).toBe(-117.5)
+    expect(approximateCoordinate(47.6499)).toBe(47.6)
+    expect(approximateCoordinate(-117.4499)).toBe(-117.4)
+    expect(approximateCoordinate(44)).toBe(44)
+    expect(approximateCoordinate(-122.3)).toBe(-122.3)
+    expect(Object.is(approximateCoordinate(-0.04), 0)).toBe(true)
+  })
+
+  it("never yields more than one decimal place, or moves a point more than 0.05°, across the globe", () => {
+    const failures: string[] = []
+
+    for (let tenThousandths = -1_800_000; tenThousandths <= 1_800_000; tenThousandths += 7) {
+      const value = tenThousandths / 10_000
+      const rounded = approximateCoordinate(value)
+
+      if (!ONE_DECIMAL.test(JSON.stringify(rounded)) || Math.abs(rounded - value) > 0.05 + 1e-9) {
+        failures.push(`${value} -> ${rounded}`)
+      }
+    }
+
+    expect(failures).toEqual([])
+  })
+
+  it("keeps the public point and the authorized exact entrance on distinct paths", () => {
+    const { load, request, services, sourceContext, viewer } = networkFixture()
+    const at = new Date("2026-06-05T12:00:00.000Z")
+    const landing = services.state.landings.find((site) => site.id === load.pickupLandingId)
+    const details = services.state.richLandingDetails.find((item) => item.landingId === load.pickupLandingId)
+    const capacity = services.state.opportunityCapacities.find((item) => item.loadPostingId === load.id)
+
+    if (!landing || !details || !capacity) throw new Error("The coordinate precision fixture is incomplete")
+
+    // List the fixture load on the open network so one load is seen by every kind of viewer.
+    capacity.visibilityMode = "open_network"
+
+    const publicPoint = { lat: approximateCoordinate(landing.coordinates.lat), lng: approximateCoordinate(landing.coordinates.lng) }
+    // The fixture's exact facts must be finer than the public grid, or this test proves nothing.
+    expect(String(details.entranceLat)).not.toMatch(ONE_DECIMAL)
+    expect(String(landing.coordinates.lat)).not.toMatch(ONE_DECIMAL)
+    // Seeded Blue River landing 44.1926, -122.0898.
+    expect(publicPoint).toEqual({ lat: 44.2, lng: -122.1 })
+
+    const anonymous = buildNetworkView(services.state, { kind: "public" }, at).loads.find((item) => item.id === load.id)
+    const assignment = request()
+    const pending = buildNetworkView(services.state, viewer, at).loads.find((item) => item.id === load.id)
+
+    expect(anonymous?.landing).toMatchObject({ approximate: true, ...publicPoint })
+    expect(pending?.landing).toMatchObject({ approximate: true, ...publicPoint })
+
+    services.approveCapacityRequest({ ...sourceContext, assignmentId: assignment.id })
+
+    const accepted = buildNetworkView(services.state, viewer, at).loads.find((item) => item.id === load.id)
+    const owner = buildNetworkView(services.state, { ...sourceContext, kind: "actor" }, at).loads.find((item) => item.id === load.id)
+
+    // Authorized access is unchanged by the coarser public grid: exact entrance, full precision.
+    expect(accepted?.landing).toMatchObject({ approximate: false, lat: details.entranceLat, lng: details.entranceLng })
+    expect(owner?.landing).toMatchObject({ approximate: false, lat: details.entranceLat, lng: details.entranceLng })
+    expect(accepted?.landing.lat).not.toBe(publicPoint.lat)
   })
 })
