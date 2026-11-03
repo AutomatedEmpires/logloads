@@ -61,7 +61,9 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   // One server and, in CI, one shared state row, so the suite stays serial like the pilot suite. Its only writes are
-  // New River Hauling's inquiry and replies (see design-system.spec.ts), and the cases rely on file order.
+  // New River Hauling's inquiry and replies, and Maya Mills's Summit Ridge Timber membership, which the last case
+  // seats through an invitation if needed, removes and restores (see design-system.spec.ts). The cases rely on file
+  // order.
   workers: 1,
   use: {
     baseURL,

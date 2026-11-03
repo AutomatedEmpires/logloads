@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Browser, type Page } from "@playwright/test"
 
 /**
  * DS-05 (#148): responsive, keyboard and style-isolation regressions for the V2 design system, run against the
@@ -9,8 +9,15 @@ import { expect, test, type Page } from "@playwright/test"
  *
  * Writes: the conversation cases need an inquiry, and the seed has none. New River Hauling (a hauling business
  * with no trucks listed) expresses interest in the one public job, North Pine Logging's, and replies on it. Nothing
- * else in the suite writes, and nothing declines or withdraws. When no job accepts interest in the shared CI state
- * those cases are skipped with that reason, not passed.
+ * declines or withdraws. When no job accepts interest in the shared CI state those cases are skipped with that
+ * reason, not passed.
+ *
+ * The business-switching case (#124 criterion 8, last in the file) needs a dual-membership account, which the seed
+ * does not have. Through the app's own pages it makes Maya Mills (North Pine Logging driver) a Summit Ridge Timber
+ * dispatcher, the same invitation the pilot journey invitations.spec.ts records, unless she already is one; Summit's
+ * owner then removes that membership, and the case ends by inviting her back so she holds it again. Every step is
+ * idempotent, so a retry or a state where the pilot journeys already seated her starts from the same place. Nothing
+ * else in the suite writes, and those writes touch only Maya's Summit membership and Summit's invitations.
  */
 
 const MATRIX = [1440, 1280, 1024, 768, 390] as const
@@ -54,6 +61,12 @@ async function signIn(page: Page, email: string) {
 
 const topNavigation = (page: Page) => page.locator(".ll-app > header nav[aria-label='Main']")
 const bottomTabs = (page: Page) => page.locator(".ll-app > nav[aria-label='Main']")
+/** The account menu at the end of the top bar (#124): a <details> disclosure whose <summary> is the trigger. */
+const accountMenu = (page: Page) => page.locator(".ll-app > header details")
+const accountTrigger = (page: Page) => accountMenu(page).locator("summary")
+/** The trigger's tab-order key (its first text line; the "Preview" tag follows on its own line). */
+const ACCOUNT_KEY = "Account"
+const PREVIEW_NOTICE = "nothing here dispatches trucks, records loads or charges a fee"
 const jobRows = (page: Page) => page.locator("[data-ds-page] ul[aria-label='Jobs'] > li")
 
 /** Seeded accounts for the conversation cases (packages/db seed). */
@@ -494,6 +507,90 @@ test.describe("capability navigation (#124)", () => {
   }
 })
 
+/** The shell's chrome above the content: the top of #main, which nothing but the top bar precedes (#124 criterion 6). */
+async function chromeHeight(page: Page): Promise<number> {
+  return page.locator(".ll-app #main").evaluate((main) => main.getBoundingClientRect().top + window.scrollY)
+}
+
+test.describe("account menu (#124 criterion 7)", () => {
+  for (const width of [1280, 390]) {
+    test(`visitor at ${width} px: no preview banner; the notice is in the account menu, which opens and closes from the keyboard`, async ({ page }) => {
+      await page.setViewportSize(viewportFor(width))
+      await openV2(page, "/v2/work")
+
+      // No banner: the top bar follows the skip link directly, and the notice is not shown until the menu opens.
+      expect(await page.locator(".ll-app > header").evaluate((header) => header.previousElementSibling?.tagName)).toBe("A")
+      await expect(page.getByText(PREVIEW_NOTICE)).toBeHidden()
+      await expect(accountTrigger(page)).toBeVisible()
+      await expect(accountTrigger(page)).toContainText("Preview")
+      if (width < BP_LG) expect(await chromeHeight(page), "chrome above the content at 390 px").toBeLessThanOrEqual(120)
+
+      // Reached by Tab; Enter opens it. The trigger and the panel's link draw the design-system ring.
+      for (let index = 0; index < 10 && !(await accountTrigger(page).evaluate((trigger) => trigger === document.activeElement)); index += 1) {
+        await page.keyboard.press("Tab")
+      }
+      await expect(accountTrigger(page)).toBeFocused()
+      expectDesignSystemRing((await focusStop(page))!)
+      await page.keyboard.press("Enter")
+      await expect(accountMenu(page)).toHaveAttribute("open", "")
+      const notice = accountMenu(page).getByRole("note", { name: "Marketplace V2 development preview" })
+      await expect(notice).toBeVisible()
+      await expect(notice).toContainText(PREVIEW_NOTICE)
+      await expect(accountMenu(page).getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/sign-in?next=%2Fv2%2Fwork")
+      await expectNoHorizontalOverflow(page)
+      await expectNoSeriousAxeViolations(page)
+
+      // Escape closes it and returns focus to the trigger.
+      await page.keyboard.press("Escape")
+      await expect(accountMenu(page)).not.toHaveAttribute("open", "")
+      await expect(accountTrigger(page)).toBeFocused()
+
+      // Tab walks into the panel's link, and tabbing past the panel closes it.
+      await page.keyboard.press("Enter")
+      await page.keyboard.press("Tab")
+      await expect(accountMenu(page).getByRole("link", { name: "Sign in" })).toBeFocused()
+      expectDesignSystemRing((await focusStop(page))!)
+      await page.keyboard.press("Tab")
+      await expect(accountMenu(page)).not.toHaveAttribute("open", "")
+
+      // A pointer press outside closes it too (here in the page's left gutter, which the panel never covers).
+      await accountTrigger(page).click()
+      await expect(notice).toBeVisible()
+      await page.mouse.click(6, 400)
+      await expect(accountMenu(page)).not.toHaveAttribute("open", "")
+    })
+  }
+
+  test("signed in: the person, Switch business and Sign out, with no serious axe violations at 1280 and 390 px", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1280))
+    await signIn(page, "hank@northpine.example")
+    await openV2(page, "/v2/work")
+
+    for (const width of [1280, 390]) {
+      await page.setViewportSize(viewportFor(width))
+      if (width < BP_LG) expect(await chromeHeight(page), "chrome above the content at 390 px").toBeLessThanOrEqual(120)
+      await accountTrigger(page).click()
+      await expect(accountMenu(page)).toContainText("Hank Hauler")
+      await expect(accountMenu(page)).toContainText("hank@northpine.example")
+      await expect(accountMenu(page).getByRole("note")).toContainText(PREVIEW_NOTICE)
+      await expect(accountMenu(page).getByRole("link", { name: "Switch business" })).toHaveAttribute("href", "/v2/switch")
+      await expect(accountMenu(page).getByRole("button", { name: "Sign out" })).toBeVisible()
+      await expectNoHorizontalOverflow(page)
+      await expectNoSeriousAxeViolations(page)
+      await page.keyboard.press("Escape")
+    }
+
+    // Sign out ends the session: the public home, then a V2 page offers Sign in and no business.
+    await accountTrigger(page).click()
+    await accountMenu(page).getByRole("button", { name: "Sign out" }).click()
+    await page.waitForURL((url) => url.pathname === "/")
+    await openV2(page, "/v2/work")
+    await expect(page.getByRole("link", { name: /^Acting as/ })).toHaveCount(0)
+    await accountTrigger(page).click()
+    await expect(accountMenu(page).getByRole("link", { name: "Sign in" })).toBeVisible()
+  })
+})
+
 test.describe("keyboard: /v2/work", () => {
   for (const width of [1280, 390]) {
     test(`tab order and the design-system focus ring at ${width} px`, async ({ page }) => {
@@ -511,6 +608,8 @@ test.describe("keyboard: /v2/work", () => {
         "Skip to main content",
         "LogLoads home",
         ...navigation,
+        // The account menu's trigger ends the top bar (#124); its panel is closed, so nothing inside it is a stop.
+        ACCOUNT_KEY,
         "#work-q",
         "#work-equipment",
         "#work-pay",
@@ -527,12 +626,12 @@ test.describe("keyboard: /v2/work", () => {
     })
   }
 
-  test("a signed-in hauler's chrome: navigation and business switcher keep the design-system ring", async ({ page }) => {
+  test("a signed-in hauler's chrome: navigation, business switcher and account menu keep the design-system ring", async ({ page }) => {
     await page.setViewportSize(viewportFor(1280))
     await signIn(page, "hank@northpine.example")
     await openV2(page, "/v2/work")
 
-    const stops = await tabThrough(page, 6)
+    const stops = await tabThrough(page, 7)
     const chrome = stops.filter((stop) => stop.where === "chrome")
 
     expect(chrome.map((stop) => stop.key)).toEqual([
@@ -542,7 +641,8 @@ test.describe("keyboard: /v2/work", () => {
       "My inquiries",
       // The switcher's first text line; its full accessible name (visible text plus hidden words) is asserted in the
       // capability-navigation tests.
-      "Acting as"
+      "Acting as",
+      ACCOUNT_KEY
     ])
     for (const stop of chrome) expectDesignSystemRing(stop)
   })
@@ -958,5 +1058,149 @@ test.describe("conversation on a page (#148 criterion 4)", () => {
     await expectNoSeriousAxeViolations(page)
     await page.setViewportSize(viewportFor(390))
     await expectNoSeriousAxeViolations(page)
+  })
+})
+
+/**
+ * #124 criterion 8's dual-membership account. Maya Mills drives for North Pine Logging: a hauling business where a
+ * driver holds no landing seat, so that context shows hauler navigation only. Summit Ridge Timber is a landing
+ * business, so her dispatcher seat there shows landing navigation only. The seed gives her North Pine only.
+ */
+const DUAL = { email: "maya@northpine.example", hauling: "North Pine Logging", landing: "Summit Ridge Timber", name: "Maya Mills" }
+const SUMMIT_OWNER = "cole@summit.example"
+const HAULER_NAVIGATION = ["Find work", "My inquiries"]
+const LANDING_NAVIGATION = ["Landing inbox", "Post jobs"]
+
+const businessChoices = (page: Page) => page.getByRole("list", { name: "Your businesses" }).getByRole("listitem")
+
+/** A fresh browser session for another account, at the suite's base URL. */
+async function session(browser: Browser, baseURL: string | undefined, width = 1280) {
+  const context = await browser.newContext({ baseURL, viewport: viewportFor(width) })
+  return { close: () => context.close(), page: await context.newPage() }
+}
+
+/** Opens Summit Ridge Timber's legacy team settings as its owner: the app's only member-management page. */
+async function openSummitTeam(browser: Browser, baseURL: string | undefined) {
+  const owner = await session(browser, baseURL)
+  await signIn(owner.page, SUMMIT_OWNER)
+  await owner.page.goto("/host/settings")
+  await expect(owner.page.getByRole("heading", { name: "Who works in this workspace" })).toBeVisible()
+  return owner
+}
+
+/**
+ * Makes Maya a Summit Ridge Timber member through the app, unless she is one: Summit's owner invites her as a
+ * dispatcher (unless an invitation is already waiting) and she accepts from the legacy account menu, the only
+ * place an existing account accepts an invitation today. Accepting a removed membership restores the same row.
+ */
+async function ensureDualMembership(browser: Browser, baseURL: string | undefined) {
+  const maya = await session(browser, baseURL)
+
+  try {
+    await signIn(maya.page, DUAL.email)
+    await openV2(maya.page, "/v2/switch")
+    if ((await businessChoices(maya.page).filter({ hasText: DUAL.landing }).count()) > 0) return
+
+    const owner = await openSummitTeam(browser, baseURL)
+    try {
+      const waiting = owner.page.getByRole("group", { name: "Waiting invitations" }).getByText(DUAL.email)
+      if ((await waiting.count()) === 0) {
+        await owner.page.getByLabel("Email address").fill(DUAL.email)
+        await owner.page.getByLabel("Role", { exact: true }).selectOption({ label: "Dispatcher" })
+        await owner.page.getByRole("button", { name: "Invite to workspace" }).click()
+        await expect(owner.page.getByText(/Invitation recorded/)).toBeVisible()
+      }
+    } finally {
+      await owner.close()
+    }
+
+    await maya.page.goto("/driver/profile")
+    await maya.page.getByRole("button", { name: "Account and product feedback" }).click()
+    const invitations = maya.page.getByRole("group", { name: "Workspace invitations" })
+    await expect(invitations.getByText(DUAL.landing)).toBeVisible()
+    await invitations.getByRole("button", { name: "Accept" }).click()
+    await maya.page.waitForURL((url) => !url.pathname.startsWith("/driver"))
+
+    await openV2(maya.page, "/v2/switch")
+    await expect(businessChoices(maya.page).filter({ hasText: DUAL.landing }), "Maya holds the Summit membership again").toHaveCount(1)
+  } finally {
+    await maya.close()
+  }
+}
+
+/** Chooses a business on /v2/switch and waits for its V2 home. */
+async function actAs(page: Page, business: string) {
+  await openV2(page, "/v2/switch")
+  await businessChoices(page).filter({ hasText: business }).getByRole("button", { name: `Act as ${business}` }).click()
+  await page.waitForURL((url) => !url.pathname.startsWith("/v2/switch"))
+  await expect(page.locator(".ll-app #main")).toBeVisible()
+  await expect(page.locator(".route-skeleton")).toHaveCount(0)
+}
+
+test.describe("business switching with two memberships (#124 criterion 8)", () => {
+  test("landing → hauling shows only hauler navigation at 1280 and 390 px; a removed membership is refused on the next request", async ({ baseURL, browser, page }) => {
+    // Several sessions, two legacy pages and a cold `next dev` compile of each: triple the budget.
+    test.slow()
+    await ensureDualMembership(browser, baseURL)
+
+    await page.setViewportSize(viewportFor(1280))
+    await signIn(page, DUAL.email)
+
+    for (const width of [1280, 390]) {
+      await page.setViewportSize(viewportFor(width))
+
+      await actAs(page, DUAL.landing)
+      await expect(page).toHaveURL(/\/v2\/landing(\/|$|\?)/)
+      expect(await expectNavigationForWidth(page, width), `${width} px: the landing context`).toEqual(LANDING_NAVIGATION)
+
+      await actAs(page, DUAL.hauling)
+      await expect(page).toHaveURL(/\/v2\/work(\?|$)/)
+      expect(await expectNavigationForWidth(page, width), `${width} px: only hauler navigation`).toEqual(HAULER_NAVIGATION)
+      await expectCurrent(page, width, "Find work")
+      await expect(page.getByRole("link", { name: /^Acting as North Pine Logging/ })).toHaveCount(1)
+      await expectNoHorizontalOverflow(page)
+      if (width < BP_LG) expect(await chromeHeight(page), "chrome above the content at 390 px").toBeLessThanOrEqual(120)
+    }
+
+    // When Summit removes her, Maya has one session acting for Summit (390 px) and one acting for North Pine with
+    // the switch page, which still offers Summit, open (1280 px).
+    const asLanding = await session(browser, baseURL, 390)
+    await signIn(asLanding.page, DUAL.email)
+    await actAs(asLanding.page, DUAL.landing)
+    await openV2(asLanding.page, "/v2/landing/inquiries")
+    await expect(asLanding.page.getByRole("link", { name: /^Acting as Summit Ridge Timber/ })).toHaveCount(1)
+
+    await page.setViewportSize(viewportFor(1280))
+    await openV2(page, "/v2/switch")
+    const staleSwitch = page.getByRole("button", { name: `Act as ${DUAL.landing}` })
+    await expect(staleSwitch).toBeVisible()
+
+    const owner = await openSummitTeam(browser, baseURL)
+    owner.page.once("dialog", (dialog) => void dialog.accept())
+    await owner.page.getByRole("button", { name: `Remove ${DUAL.name}` }).click()
+    // The roster lists no removed member, so her row (and its confirmation) leaves the page once the removal is saved.
+    await expect(owner.page.getByRole("button", { name: `Remove ${DUAL.name}` })).toHaveCount(0)
+    await owner.close()
+
+    // The next request acting for Summit is refused: no business, the public board only, and the account menu
+    // still offers Switch business.
+    await openV2(asLanding.page, "/v2/landing/inquiries")
+    await expect(asLanding.page.locator("#main")).toContainText("No landing business is selected for your account.")
+    await expect(asLanding.page.getByRole("link", { name: /^Acting as/ })).toHaveCount(0)
+    expect(await expectNavigationForWidth(asLanding.page, 390)).toEqual(["Find work"])
+    await accountTrigger(asLanding.page).click()
+    await expect(accountMenu(asLanding.page).getByRole("link", { name: "Switch business" })).toHaveAttribute("href", "/v2/switch")
+    await asLanding.close()
+
+    // The stale switch to Summit is refused on the server; Maya stays on North Pine with hauler navigation.
+    await staleSwitch.click()
+    await expect(page).toHaveURL(/\/v2\/switch\?unavailable=1/)
+    await expect(page.locator("#main").getByRole("alert")).toContainText("That business is not available to your account right now.")
+    await expect(businessChoices(page).filter({ hasText: DUAL.landing })).toHaveCount(0)
+    await expect(page.getByRole("link", { name: /^Acting as North Pine Logging/ })).toHaveCount(1)
+    expect(await expectNavigationForWidth(page, 1280)).toEqual(HAULER_NAVIGATION)
+
+    // Restore the membership this case removed: Summit invites Maya back and she accepts.
+    await ensureDualMembership(browser, baseURL)
   })
 })
