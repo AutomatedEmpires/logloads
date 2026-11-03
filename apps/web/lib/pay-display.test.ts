@@ -30,7 +30,7 @@ function economicsFor(loadTitle: string) {
   const { landing, load, rate, route } = seedFixture(loadTitle)
 
   return {
-    economics: estimateLoadEconomics({ driver: null, landing, load, rate, route, truck: null }),
+    economics: estimateLoadEconomics({ driver: null, landingPoint: landing.coordinates, load, rate, route, truck: null }),
     load
   }
 }
@@ -91,7 +91,7 @@ describe("what a load pays, as the driver reads it", () => {
 
       if (!rate || !route || !landing) continue
 
-      const economics = estimateLoadEconomics({ driver: null, landing, load, rate, route, truck: null })
+      const economics = estimateLoadEconomics({ driver: null, landingPoint: landing.coordinates, load, rate, route, truck: null })
       const presented = presentPay({ economics, payLabel: "unused" })
 
       if (economics.payBasis === "rate_card") {
@@ -125,10 +125,10 @@ describe("deadhead is road miles", () => {
       ...seedDriver,
       homeBaseCoordinates: { lat: landing.coordinates.lat - 1, lng: landing.coordinates.lng }
     }
-    const withHome = estimateLoadEconomics({ driver, landing, load, rate, route, truck: null })
+    const withHome = estimateLoadEconomics({ driver, landingPoint: landing.coordinates, load, rate, route, truck: null })
     const withoutHome = estimateLoadEconomics({
       driver: { ...seedDriver, homeBaseCoordinates: null },
-      landing,
+      landingPoint: landing.coordinates,
       load,
       rate,
       route,

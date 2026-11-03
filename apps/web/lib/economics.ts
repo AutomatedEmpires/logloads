@@ -1,5 +1,5 @@
 import { haversineMiles, SCHEDULING_BUFFER_DEFAULTS } from "@logloads/contracts"
-import type { DriverProfile, HaulRoute, Landing, LoadPosting, Rate, TruckProfile } from "@logloads/contracts"
+import type { Coordinates, DriverProfile, HaulRoute, LoadPosting, Rate, TruckProfile } from "@logloads/contracts"
 
 export const DEFAULT_FUEL_ECONOMY_MPG = 6.5
 export const DEFAULT_FUEL_PRICE_CENTS_PER_GALLON = 425
@@ -87,7 +87,17 @@ function driverPayEstimate(
 
 export function estimateLoadEconomics(input: {
   driver: DriverProfile | null
-  landing: Landing
+  /**
+   * The landing position every distance-derived figure is measured from:
+   * deadhead, total miles, gallons, fuel cost and after-fuel pay.
+   *
+   * It must be a point this viewer is already allowed to know (LE-14, #158).
+   * Pass the exact landing only to a viewer with exact-location access. Every
+   * other viewer gets the same 0.1° public point the view serializes. A deadhead
+   * figure measured to the exact landing lets a driver who moves their home
+   * base a few times trilaterate the landing that the rounding hides.
+   */
+  landingPoint: Coordinates
   load: LoadPosting
   rate: Rate
   route: HaulRoute
@@ -101,7 +111,7 @@ export function estimateLoadEconomics(input: {
   // roadCircuityFactor is the platform's own correction; using it here is what
   // makes the fuel figure and the scheduling deadhead measure the same road.
   const deadheadMiles = input.driver?.homeBaseCoordinates
-    ? distanceMiles(input.driver.homeBaseCoordinates, input.landing.coordinates) *
+    ? distanceMiles(input.driver.homeBaseCoordinates, input.landingPoint) *
       SCHEDULING_BUFFER_DEFAULTS.roadCircuityFactor
     : null
   const tripMiles = input.route.estimatedDistanceMiles

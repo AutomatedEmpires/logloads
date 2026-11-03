@@ -986,9 +986,21 @@ export function buildNetworkView(
     const routeWarning = warningForRoad(route.roadCondition)
     const weatherWarning = load.weatherNotes ? `Weather: ${load.weatherNotes}` : null
     const facilityWarning = destinationFacility?.currentNotice ? `Receiving: ${destinationFacility.currentNotice}` : null
+    const landingPoint = pointFromSite(
+      landing,
+      unlocked,
+      at,
+      effectiveEntrance,
+      landingDetails?.lastVerifiedAt
+    )
     const economics = estimateLoadEconomics({
       driver: currentDriverProfile,
-      landing,
+      // LE-14 (#158): a viewer without exact-location access gets estimates
+      // measured from the 0.1° public point this view serializes, never from the
+      // exact landing. Otherwise a driver could move their home base a few times
+      // and trilaterate the landing from the deadhead figure. Viewers with exact
+      // access keep estimates from the exact landing, as before.
+      landingPoint: unlocked ? landing.coordinates : { lat: landingPoint.lat, lng: landingPoint.lng },
       load,
       rate,
       route,
@@ -1051,13 +1063,7 @@ export function buildNetworkView(
         ? `+ ${formatRateLabel({ amountCents: rate.fuelSurchargeCents, currency: "USD" }, "flat_rate")} fuel`
         : "Fuel included in terms",
       id: load.id,
-      landing: pointFromSite(
-        landing,
-        unlocked,
-        at,
-        effectiveEntrance,
-        landingDetails?.lastVerifiedAt
-      ),
+      landing: landingPoint,
       landingDetails: landingDetails
         ? {
             exactLocationVisibility: "assigned_only",
