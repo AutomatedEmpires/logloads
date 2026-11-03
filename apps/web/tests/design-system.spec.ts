@@ -1031,13 +1031,15 @@ test.describe("find-work map (UX-13)", () => {
         return
       }
 
-      // Below bp-md the map is the full-screen view: edge to edge, at the top, down to the bottom tabs.
+      // Below bp-md the map is the full-screen view: edge to edge, from the top of the screen down to the bottom tabs
+      // (the tabs' height varies with the label font by a few px), never under them.
       const box = (await region.boundingBox())!
       const tabs = (await bottomTabs(page).boundingBox())!
       expect(box.x).toBe(0)
       expect(box.width).toBe(width)
       expect(Math.abs(box.y), "the map starts at the top of the screen").toBeLessThan(2)
-      expect(Math.abs(box.y + box.height - tabs.y), "the map ends at the bottom tabs").toBeLessThan(2)
+      expect(box.y + box.height, "the map never runs under the bottom tabs").toBeLessThanOrEqual(tabs.y + 0.5)
+      expect(box.y + box.height, "the map reaches the bottom tabs").toBeGreaterThan(tabs.y - 12)
 
       // The list is one tap away: the same search without view=map.
       expect((await showList.boundingBox())!.height).toBeGreaterThanOrEqual(44)

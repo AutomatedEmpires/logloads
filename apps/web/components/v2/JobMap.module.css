@@ -8,13 +8,16 @@
 .region {
   --job-map-pin: max(32px, var(--ll-target-min)); /* the visible pin (UX-13 criterion 1) */
   --job-map-target: max(var(--job-map-pin), var(--ll-target-touch)); /* its hit area */
+  /* Room for the sticky bottom tabs: 56 px tabs plus their border and a label line that grows with the font (about
+     57–60 px), rounded up so the map never runs under them. */
+  --job-map-chrome: calc(var(--ll-nav-height-compact) + var(--ll-space-2));
 
   display: grid;
   grid-template-areas: "bar" "canvas" "sheet";
   grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-columns: minmax(0, 1fr);
-  height: calc(100vh - var(--ll-nav-height-compact));
-  height: calc(100dvh - var(--ll-nav-height-compact) - env(safe-area-inset-bottom, 0px));
+  height: calc(100vh - var(--job-map-chrome));
+  height: calc(100dvh - var(--job-map-chrome) - env(safe-area-inset-bottom, 0px));
   min-height: 26rem;
   margin-inline: calc(-1 * var(--ll-gutter));
   overflow: hidden;
