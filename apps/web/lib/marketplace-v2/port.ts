@@ -56,8 +56,9 @@ export class MarketplaceRefusalError extends Error {
 export class MarketplaceStoreError extends Error {
   readonly code: string | null
 
-  constructor(message = "The marketplace could not complete this request. Try again in a moment.", code: string | null = null) {
-    super(message)
+  constructor(message = "The marketplace could not complete this request. Try again in a moment.", code: string | null = null, cause?: unknown) {
+    // `cause` is for server logs only; the message shown to people never includes it.
+    super(message, cause === undefined ? undefined : { cause })
     this.name = "MarketplaceStoreError"
     this.code = code
   }

@@ -141,10 +141,11 @@ const CLAIMS_TTL_SECONDS = 60
 const ANON_CLAIMS = JSON.stringify({ role: "anon" })
 
 /** One round trip: no search path (every name is schema-qualified), the API role, and the claims. */
-const SESSION_SETUP = "select set_config('search_path', '', true), set_config('role', $1, true), set_config('request.jwt.claims', $2, true)"
+const SESSION_SETUP =
+  "select set_config('search_path', '', true), set_config('role', $1::text, true), set_config('request.jwt.claims', $2::text, true)"
 
 const INQUIRY_PARTIES =
-  "select to_jsonb(e) as row from (select id, job_id, job_org_id, hauler_org_id from marketplace.expressions_of_interest where id = $1::uuid) as e"
+  "select to_jsonb(e) as row from (select id, job_id, job_org_id, hauler_org_id from marketplace.expressions_of_interest where id = $1::text::uuid) as e"
 
 /** What the connection's login role may be: nothing by itself, and able to become only `anon` and `authenticated`. */
 export const CREDENTIAL_CHECK = `
@@ -278,7 +279,13 @@ export function marketplaceCallStatement<F extends MarketplaceFunctionName>(
       }
 
       values.push(serialized)
-      const placeholder = `$${values.length}`
+      // Every parameter is sent as text and converted by the server. Typing the placeholder directly ($1::jsonb,
+      // $1::boolean, $1::date) would make the driver apply its own serializer to the already-serialized value.
+      const placeholder = `$${values.length}::text`
+
+      if (type === "text") {
+        return `${name} => ${placeholder}`
+      }
 
       return type === "text[]"
         ? `${name} => array(select jsonb_array_elements_text(${placeholder}::jsonb))`
@@ -334,7 +341,7 @@ export function translateStoreError(error: unknown): Error {
     return new MarketplaceRefusalError(CONFLICT, code)
   }
 
-  return new MarketplaceStoreError(undefined, code)
+  return new MarketplaceStoreError(undefined, code, error)
 }
 
 function rowsOf(result: readonly unknown[], column: "row" | "value"): unknown[] {

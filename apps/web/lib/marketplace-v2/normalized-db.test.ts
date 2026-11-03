@@ -28,20 +28,34 @@ describe("marketplaceCallStatement", () => {
     })
 
     expect(statement.text).toBe(
-      "select to_jsonb(r) as row from marketplace.list_marketplace_jobs(p_accepting_only => $1::boolean, p_equipment => null::text, p_limit => $2::integer, p_query => $3::text) as r"
+      "select to_jsonb(r) as row from marketplace.list_marketplace_jobs(p_accepting_only => $1::text::boolean, p_equipment => null::text, p_limit => $2::text::integer, p_query => $3::text) as r"
     )
     expect(statement.values).toEqual(["true", "200", "saw'; drop table x; --"])
   })
 
   it("leaves undefined arguments to the function's own default", () => {
     expect(marketplaceCallStatement("list_marketplace_interests", { p_job_id: undefined, p_org_id: "org", p_side: "hauler" }).text)
-      .toBe("select to_jsonb(r) as row from marketplace.list_marketplace_interests(p_org_id => $1::uuid, p_side => $2::text) as r")
+      .toBe("select to_jsonb(r) as row from marketplace.list_marketplace_interests(p_org_id => $1::text::uuid, p_side => $2::text) as r")
+  })
+
+  it("sends every value as text for the server to convert, so the driver never re-serializes it", () => {
+    const statement = marketplaceCallStatement("submit_expression_of_interest", {
+      p_available_from: "2026-12-01",
+      p_equipment: [{ configurationKey: "log_truck", count: 2 }],
+      p_trucks_offered: 2
+    })
+
+    expect(statement.text).toContain("p_available_from => $1::text::date")
+    expect(statement.text).toContain("p_equipment => $2::text::jsonb")
+    expect(statement.text).toContain("p_trucks_offered => $3::text::integer")
+    expect(statement.values.every((value) => typeof value === "string")).toBe(true)
+    expect(statement.text).not.toMatch(/\$\d+::(?!text)/)
   })
 
   it("passes arrays and JSON as JSON text, scalars and void calls in their own shape", () => {
     const publish = marketplaceCallStatement("publish_job_posting", { p_equipment_codes: ["log_truck", "self_loader"], p_landing_id: "landing" })
     expect(publish.text).toBe(
-      "select to_jsonb(marketplace.publish_job_posting(p_equipment_codes => array(select jsonb_array_elements_text($1::jsonb)), p_landing_id => $2::uuid)) as value"
+      "select to_jsonb(marketplace.publish_job_posting(p_equipment_codes => array(select jsonb_array_elements_text($1::text::jsonb)), p_landing_id => $2::text::uuid)) as value"
     )
     expect(publish.values).toEqual(['["log_truck","self_loader"]', "landing"])
 
@@ -49,7 +63,7 @@ describe("marketplaceCallStatement", () => {
     expect(interest.values).toEqual(['[{"configurationKey":"log_truck","count":2}]'])
 
     expect(marketplaceCallStatement("withdraw_interest", { p_interest_id: "interest" }).text)
-      .toBe("select 1 as done from marketplace.withdraw_interest(p_interest_id => $1::uuid) as r")
+      .toBe("select 1 as done from marketplace.withdraw_interest(p_interest_id => $1::text::uuid) as r")
   })
 
   it("refuses an uncatalogued function, an unknown argument or a wrongly typed value", () => {

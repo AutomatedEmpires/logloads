@@ -99,7 +99,7 @@ function parseRow<S extends z.ZodTypeAny>(schema: S, row: unknown): z.output<S> 
 
   if (!parsed.success) {
     // A drift between the SQL and this adapter. The detail stays out of the message shown to people.
-    throw new MarketplaceStoreError(undefined, "22000")
+    throw new MarketplaceStoreError(undefined, "22000", parsed.error)
   }
 
   return parsed.data
