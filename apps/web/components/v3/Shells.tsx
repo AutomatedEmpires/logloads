@@ -411,9 +411,9 @@ function PublicFooter() {
       </div>
       <div className="public-footer__legal">
         <p>
-          Drivers and fleets use LogLoads without a subscription. Hosts pay a 5%
-          platform fee on top of stated driver pay only when a load completes.
-          LogLoads does not carry freight or move transportation compensation.
+          LogLoads is a timber-hauling load board that connects businesses
+          needing log trucks with hauling businesses. LogLoads does not carry
+          freight or move transportation compensation.
         </p>
         <p>&copy; 2026 LogLoads</p>
       </div>

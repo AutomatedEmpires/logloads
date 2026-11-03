@@ -198,7 +198,7 @@ export const pilotLaunchGates = [
     title: "Money boundary accepted"
   },
   {
-    body: "Any 5% fee enrollment and collection are separately approved for the exact host after invoice, webhook, refund, support, and rollback evidence. A pilot does not silently activate charging.",
+    body: "Any paid enrollment and collection are separately approved for the exact host after invoice, webhook, refund, support, and rollback evidence. A pilot does not silently activate charging.",
     icon: "ops.document" as IconKey,
     title: "Commercial gates remain separate"
   },
@@ -214,7 +214,7 @@ export const pilotSuccessCriteria = [
   "Every published pilot load has complete pay, equipment, timing, destination, capacity, visibility, and access-boundary information.",
   "Every commitment resolves to one named driver, truck, schedule, and authoritative assignment without a duplicate booking.",
   "Every active movement has a current state, a visible next action, and an owner for any exception.",
-  "At least ten completed pilot movements reconcile assignment, capacity, trip, completion, proof, direct-payment status, and the host fee ledger before scope expands.",
+  "At least ten completed pilot movements reconcile assignment, capacity, trip, completion, proof, and direct-payment status before scope expands.",
   "At least four of five evaluators in each participating role complete their primary workflow without facilitation.",
   "Every physical completion has an authoritative record; direct driver-pay sent and received markers remain controlled by the host and driver respectively.",
   "No private route, gate, contact, credential, or media detail reaches an unauthorized participant.",
@@ -334,8 +334,8 @@ const hostSurfaces: readonly PilotSurface[] = [
     width: 1440
   },
   {
-    alt: "Synthetic host billing view explaining completed-load platform fee obligations",
-    description: "See the separate 5% host obligation after an authoritative completion while stated driver pay remains a direct host-to-driver obligation.",
+    alt: "Synthetic host billing view from the pilot workspace",
+    description: "Billing screen from the pilot workspace, shown for reference only. It is not current pricing: pricing for landing organizations has not been published.",
     group: "Workspace",
     height: 900,
     image: "/pilot/host-billing.jpg",
@@ -633,7 +633,7 @@ export const pilotRoles: Record<PilotRole, PilotRoleSpec> = {
     ]
   },
   host: {
-    commercialTruth: "There is no monthly minimum and no fee to post. For separately approved Network work, LogLoads charges the host 5% on top of stated driver pay only after an authoritative physical completion, invoiced monthly in arrears.",
+    commercialTruth: "Pricing for landing organizations has not been published, and nothing in this tour is offered for sale. Stated driver pay remains a direct host-to-driver obligation.",
     contactLabel: "Plan a host pilot",
     eyebrow: "Host experience",
     icon: "nav.landing",
@@ -643,7 +643,7 @@ export const pilotRoles: Record<PilotRole, PilotRoleSpec> = {
       "One to three real operating lanes with known timber, destinations, equipment, windows, and capacity",
       "Complete landing and route-pack rules that separate public summaries from assignment-only access",
       "A small approved fleet and driver cohort with a documented out-of-band fallback",
-      "Accepted completion, direct driver-pay, separate 5% fee, support, stop, and rollback responsibilities"
+      "Accepted completion, direct driver-pay, support, stop, and rollback responsibilities"
     ],
     signupHref: "/sign-up?path=host",
     signupLabel: "Create a host workspace",

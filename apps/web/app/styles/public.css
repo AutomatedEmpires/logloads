@@ -919,6 +919,24 @@
 }
 .legal-boundary-summary { border-left: 4px solid var(--pine); }
 .legal-boundary-summary p { margin: 6px 0 0; color: var(--ink-soft); line-height: 1.5; }
+/* Dated change and archived-version notices: the same notice tone as pricing availability. */
+.legal-notice {
+  max-width: 72ch;
+  border: 1px solid color-mix(in srgb, var(--amber) 34%, var(--line));
+  border-left: 4px solid var(--amber);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--amber-bg) 42%, var(--paper));
+  margin: 12px 0 18px;
+  padding: 16px;
+}
+.legal-notice p { margin: 6px 0 0; color: var(--ink-soft); line-height: 1.5; }
+.legal-notice a {
+  color: var(--pine);
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.legal-archived-intro { max-width: 72ch; margin: 8px 0 0; color: var(--ink-soft); line-height: 1.6; }
 .legal-toc ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px 18px; margin: 10px 0 0; padding-left: 18px; }
 .legal-toc a,
 .legal-page section a {
