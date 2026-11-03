@@ -21,28 +21,50 @@
  * put one in a CI artifact that outlives its need, do not paste one into a chat.
  *
  * USAGE
- *   node tools/operating-state-backup.mjs backup  [--out DIR]
+ *   node tools/operating-state-backup.mjs backup  --expected-project-ref REF [--out DIR]
  *   node tools/operating-state-backup.mjs verify   <FILE>
- *   node tools/operating-state-backup.mjs restore  <FILE> --i-understand-this-overwrites-production
+ *   node tools/operating-state-backup.mjs restore  <FILE> --expected-project-ref REF
+ *                                                  [--i-understand-this-overwrites-production]
  *
  * Requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY. Fails loudly when either
  * is absent — a backup tool that silently does nothing is worse than none,
  * because it converts an unprotected system into one that looks protected.
+ *
+ * TARGET GUARD: backup and restore also require the project the operator means,
+ * as --expected-project-ref and/or LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF (both
+ * must agree when both are set). Nothing is read or written unless it equals the
+ * project reference in SUPABASE_URL (`https://<ref>.supabase.co`). A loopback URL
+ * is a local stack, whose reference is `local`. A restore into any hosted project
+ * also needs --i-understand-this-overwrites-production, because a URL cannot tell
+ * production from staging. Output names the project reference and counts only:
+ * never document values, the URL, or the key.
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { isDeepStrictEqual } from "node:util"
 
+import {
+  checkTargetProject,
+  describeDocument as describe,
+  EXPECTED_PROJECT_REF_ENV,
+  EXPECTED_PROJECT_REF_FLAG,
+  parseArguments,
+  PRODUCTION_RESTORE_FLAG,
+  restoreGuard,
+  summaryDrift
+} from "./operating-state-backup-policy.mjs"
+
 const SNAPSHOT_ROW_ID = "primary"
 const REQUEST_TIMEOUT_MS = 30_000
+const TOOL_VERSION = "operating-state-backup/3"
 
 function fail(message) {
   console.error(`operating-state-backup: ${message}`)
   process.exit(1)
 }
 
-function config() {
+function config(options) {
   const url = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
 
@@ -54,14 +76,29 @@ function config() {
     )
   }
 
-  return { key, url: url.replace(/\/$/, "") }
+  // Before any request: a backup reads that project's personal data and a restore overwrites it.
+  const target = checkTargetProject({
+    expectedFromEnvironment: process.env[EXPECTED_PROJECT_REF_ENV],
+    expectedFromFlag: options[EXPECTED_PROJECT_REF_FLAG],
+    url
+  })
+
+  if (!target.ok) fail(target.reason)
+
+  return { hosted: target.hosted, key, ref: target.ref, url: target.origin }
+}
+
+function parsedArguments(argv, spec) {
+  const parsed = parseArguments(argv, spec)
+
+  if (!parsed.ok) fail(parsed.reason)
+
+  return parsed
 }
 
 function headers({ key }) {
   return { Accept: "application/json", Authorization: `Bearer ${key}`, apikey: key }
 }
-
-import { describeDocument as describe, summaryDrift } from "./operating-state-backup-policy.mjs"
 
 async function readRow(settings) {
   const response = await fetch(
@@ -83,11 +120,14 @@ async function readRow(settings) {
 }
 
 async function backup(argv) {
-  const settings = config()
-  const outIndex = argv.indexOf("--out")
-  const directory = outIndex === -1 ? "backups" : argv[outIndex + 1]
+  const args = parsedArguments(argv, { values: ["--out", EXPECTED_PROJECT_REF_FLAG] })
 
-  if (!directory) fail("--out needs a directory")
+  if (args.positionals.length > 0) fail("backup takes no file argument; use --out DIR")
+
+  const directory = args.options["--out"] ?? "backups"
+  const settings = config(args.options)
+
+  console.log(`target project: ${settings.ref}`)
 
   const row = await readRow(settings)
   const summary = describe(row)
@@ -108,7 +148,7 @@ async function backup(argv) {
   writeFileSync(
     file,
     JSON.stringify(
-      { capturedAt: new Date().toISOString(), row, summary, tool: "operating-state-backup/2" },
+      { capturedAt: new Date().toISOString(), projectRef: settings.ref, row, summary, tool: TOOL_VERSION },
       null,
       2
     ),
@@ -124,9 +164,10 @@ async function backup(argv) {
 }
 
 function verify(argv) {
-  const file = argv[0]
+  const args = parsedArguments(argv)
+  const file = args.positionals[0]
 
-  if (!file) fail("verify needs a file")
+  if (!file || args.positionals.length > 1) fail("verify needs exactly one file")
 
   const parsed = JSON.parse(readFileSync(file, "utf8"))
   const recomputed = describe(parsed.row ?? {})
@@ -147,24 +188,36 @@ function verify(argv) {
 }
 
 async function restore(argv) {
-  const file = argv[0]
+  const args = parsedArguments(argv, {
+    switches: [PRODUCTION_RESTORE_FLAG],
+    values: [EXPECTED_PROJECT_REF_FLAG]
+  })
+  const file = args.positionals[0]
 
-  if (!file) fail("restore needs a file")
+  if (!file || args.positionals.length > 1) fail("restore needs exactly one file")
 
-  if (!argv.includes("--i-understand-this-overwrites-production")) {
-    fail(
-      "restore replaces the entire live document and every row in it.\n" +
-        "  Re-run with --i-understand-this-overwrites-production once you are certain."
-    )
-  }
+  // Which project, then whether it may be overwritten: both before the file is even read.
+  const settings = config(args.options)
+  const guard = restoreGuard({
+    productionConfirmed: args.switches.has(PRODUCTION_RESTORE_FLAG),
+    target: settings
+  })
+
+  if (!guard.ok) fail(guard.reason)
+
+  console.log(`target project: ${settings.ref}`)
 
   verify([file])
 
-  const settings = config()
   const parsed = JSON.parse(readFileSync(file, "utf8"))
   const state = parsed.row?.state
 
   if (!state) fail("that file carries no state to restore")
+
+  // Informational: restoring a copy into another project (a rehearsal) is legitimate, but say so.
+  if (typeof parsed.projectRef === "string" && parsed.projectRef !== settings.ref) {
+    console.log(`  the file was captured from project ${parsed.projectRef}`)
+  }
 
   // Take the CURRENT document first. A restore is itself a destructive write, and
   // the thing most likely to be needed immediately afterwards is whatever was
@@ -176,7 +229,17 @@ async function restore(argv) {
   mkdirSync("backups", { recursive: true })
   writeFileSync(
     safety,
-    JSON.stringify({ capturedAt: new Date().toISOString(), row: current, summary: describe(current) }, null, 2),
+    JSON.stringify(
+      {
+        capturedAt: new Date().toISOString(),
+        projectRef: settings.ref,
+        row: current,
+        summary: describe(current),
+        tool: TOOL_VERSION
+      },
+      null,
+      2
+    ),
     "utf8"
   )
   console.log(`took a pre-restore snapshot: ${safety}`)
@@ -218,7 +281,7 @@ async function restore(argv) {
   const persisted = await readRow(settings)
   const after = describe(persisted)
 
-  console.log(`restored ${after.rows} rows across ${after.collections} collections`)
+  console.log(`restored ${after.rows} rows across ${after.collections} collections into project ${settings.ref}`)
   console.log(`  live document is now cas version ${after.version}`)
 
   if (
