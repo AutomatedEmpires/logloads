@@ -90,7 +90,7 @@ declare
   c_iss constant text := 'https://clerk.logloads.test';
   u_land uuid; u_haul uuid; u_drv uuid; u_admin uuid; u_bill uuid;
   o_land uuid; o_haul uuid; o_bare uuid; o_bill uuid; o_bill2 uuid;
-  o_bill3 uuid; o_bill4 uuid; o_bill5 uuid; o_bill6 uuid; o_bill7 uuid; o_bill8 uuid; o_bill9 uuid; o_bill10 uuid; o_e2 uuid; o_e3 uuid; o_e4 uuid; o_e5 uuid;
+  o_bill3 uuid; o_bill4 uuid; o_bill5 uuid; o_bill6 uuid; o_bill7 uuid; o_bill8 uuid; o_bill9 uuid; o_bill10 uuid; o_e2 uuid; o_e2b uuid; o_e3 uuid; o_e3b uuid; o_e4 uuid; o_e5 uuid;
   l_land uuid; l_bill uuid;
   j_a uuid; j_b uuid; j_legacy uuid; v_draft uuid; v_draft2 uuid;
   v_n bigint; v_n2 bigint; v_ts timestamptz; v_ts2 timestamptz; v_seq bigint;
@@ -800,6 +800,19 @@ begin
          from marketplace.organization_subscriptions s join marketplace.subscription_plans p on p.id = s.plan_id
          where s.org_id = o_e3 and s.status <> 'canceled'),
     'E-3: a reconciliation snapshot lets the provider subscription take over');
+  perform pg_temp.as_jwt('authenticated', 'p3_bill');
+  o_e3b := marketplace.create_organization('E3 Lapsed Manual', 'e3-lapsed-manual', 'OR', false);
+  perform pg_temp.as_jwt('service_role');
+  perform marketplace.open_subscription_cycle(o_e3b, 'pro', 'active', now() - interval '40 days', now() - interval '10 days', null, null, false, 7, false);
+  v_out := pg_temp.evt('e3b_01', 'customer.subscription.created', t0, o_e3b, 'sub_e3b', 'basic', 'active',
+                       t0, t0 + interval '30 days', 'subscription_create');
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok(v_out = 'applied'
+    and (select count(*) = 1 from marketplace.organization_subscriptions where org_id = o_e3b and status <> 'canceled' and provider_subscription_ref = 'sub_e3b')
+    and (select count(*) = 1 from marketplace.organization_subscriptions where org_id = o_e3b and status = 'canceled' and provider_subscription_ref is null)
+    and exists (select 1 from marketplace.audit_events where org_id = o_e3b and action = 'subscription.manual_superseded')
+    and ((marketplace.org_entitled_plan(o_e3b)).code = 'basic'),
+    'E-3 (final review): a lapsed manual subscription hands over to a paying provider subscription (audited)');
 
   -- E-4
   perform pg_temp.as_jwt('service_role');
@@ -900,6 +913,33 @@ begin
   perform pg_temp.ok(v_out = 'ignored_stale'
     and (select cycles_applied = 2 and cardinality(counted_period_ends) = 2 from marketplace.promotion_redemptions where org_id = o_e2),
     'E-2: a second payment event for a counted period does not count again; a late payment for the earlier period still counts');
+  perform pg_temp.as_jwt('service_role');
+  v_out := pg_temp.evt('e2_07', 'invoice.paid', t0 + interval '60 days', o_e2, 'sub_e2', 'pro', 'active',
+                       t0 + interval '60 days', t0 + interval '90 days', 'subscription_update');
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok(v_out = 'applied' and (select cycles_applied = 2 from marketplace.promotion_redemptions where org_id = o_e2),
+    'E-2 (final review): a plan-change payment that starts a new period is not a new founding cycle');
+
+  -- M5: a payment that was deferred and applied later (replay) still counts.
+  perform pg_temp.as_jwt('authenticated', 'p3_bill');
+  o_e2b := marketplace.create_organization('E2 Deferred Payment', 'e2-deferred-payment', 'OR', false);
+  perform pg_temp.as_jwt('authenticated', 'p3_admin');
+  perform marketplace.admin_set_org_verification(o_e2b, 'verified', 'OR SOS registry check');
+  perform marketplace.admin_grant_founding_promotion('founding_or_p3', o_e2b, 'Founding OR cohort');
+  perform pg_temp.as_jwt('service_role');
+  v_out := pg_temp.evt('e2b_01', 'customer.subscription.created', t0, o_e2b, 'sub_e2b_s', 'basic', 'active',
+                       t0, t0 + interval '30 days', 'subscription_create');
+  v_out := pg_temp.evt('e2b_02', 'customer.subscription.created', t0 + interval '2 days', o_e2b, 'sub_e2b_r', 'pro', 'active',
+                       t0 + interval '2 days', t0 + interval '32 days', 'subscription_create');
+  v_out := pg_temp.evt('e2b_03', 'invoice.paid', t0 + interval '3 days', o_e2b, 'sub_e2b_r', 'pro', 'active',
+                       t0 + interval '2 days', t0 + interval '32 days', 'subscription_create');
+  perform pg_temp.ok(v_out = 'deferred_conflict', 'E-2 setup: the replacement''s payment is deferred while the first subscription is live');
+  v_out := pg_temp.evt('e2b_04', 'customer.subscription.deleted', t0 + interval '4 days', o_e2b, 'sub_e2b_s', 'basic', 'canceled',
+                       t0, t0 + interval '30 days');
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok((select status = 'active' from marketplace.organization_subscriptions where provider_subscription_ref = 'sub_e2b_r')
+    and (select cycles_applied = 1 from marketplace.promotion_redemptions where org_id = o_e2b),
+    'E-2 (final review): a deferred payment counts once the replacement is applied by the replay');
   perform pg_temp.as_jwt('authenticated', 'p3_admin');
 
   raise notice 'ALL PHASE 3 POLICY (F1-F5) AND BILLING-ORDERING TESTS PASSED.';
