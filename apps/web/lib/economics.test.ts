@@ -10,7 +10,7 @@ describe("load economics", () => {
     const rate = state.rates.find((item) => item.id === load.rateId)!
     const route = state.haulRoutes.find((item) => item.id === load.routeId)!
     const landing = state.landings.find((item) => item.id === load.pickupLandingId)!
-    const estimate = estimateLoadEconomics({ driver: null, landing, load, rate, route, truck: null })
+    const estimate = estimateLoadEconomics({ driver: null, landingPoint: landing.coordinates, load, rate, route, truck: null })
 
     expect(estimate.fuelEconomyMpg).toBe(DEFAULT_FUEL_ECONOMY_MPG)
     expect(estimate.fuelEconomySource).toBe("estimate")
@@ -30,7 +30,7 @@ describe("load economics", () => {
       preferredFuelPriceCentsPerGallon: 390,
     }
     const truck = { ...state.truckProfiles[0]!, fuelEconomyMpg: 7.2 }
-    const estimate = estimateLoadEconomics({ driver, landing, load, rate, route, truck })
+    const estimate = estimateLoadEconomics({ driver, landingPoint: landing.coordinates, load, rate, route, truck })
 
     expect(estimate.fuelEconomySource).toBe("profile")
     expect(estimate.fuelPriceSource).toBe("profile")
@@ -69,7 +69,7 @@ describe("load economics", () => {
       fuelSurchargeCents: 500,
       rateType
     }
-    const estimate = estimateLoadEconomics({ driver, landing, load, rate, route, truck })
+    const estimate = estimateLoadEconomics({ driver, landingPoint: landing.coordinates, load, rate, route, truck })
 
     expect(estimate.payBasis).toBe("rate_card")
     expect(estimate.grossCents).toBe(expectedBaseCents + 500)
@@ -101,7 +101,7 @@ describe("load economics", () => {
       fuelSurchargeCents: 500,
       rateType
     }
-    const estimate = estimateLoadEconomics({ driver: null, landing, load, rate, route, truck: null })
+    const estimate = estimateLoadEconomics({ driver: null, landingPoint: landing.coordinates, load, rate, route, truck: null })
 
     expect(estimate.payBasis).toBe("host_stated")
     expect(estimate.grossCents).toBe(52_500)

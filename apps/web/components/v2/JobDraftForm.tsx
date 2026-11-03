@@ -36,7 +36,9 @@ function Field({ children, field, hint, issues, label, optional = false }: {
 /**
  * Native V2 job form (UX spec §8 "Create/Edit Job"). Submits with GET to the preview, so the poster
  * sees exactly what haulers will see before anything could be published. Short by default: optional
- * estimates sit in a collapsed section.
+ * estimates sit in a collapsed section. Pay is always required (C1); product and timing are required
+ * to publish (UX-DEC-02, UX-DEC-03). There is no contact field (UX-DEC-04), and no availability
+ * attestation here: that is ticked on the preview, so editing a draft never confirms anything.
  */
 export function JobDraftForm({ issues, landings, values }: {
   issues: MarketplaceDraftIssue[]
@@ -60,8 +62,8 @@ export function JobDraftForm({ issues, landings, values }: {
         <Field field="title" hint="Haulers see this first, e.g. “Doug-fir saw logs to Springfield”." issues={issues} label="Title">
           <input aria-describedby={describedBy("title")} aria-invalid={invalid("title")} defaultValue={v("title")} maxLength={140} name="title" required />
         </Field>
-        <Field field="product" issues={issues} label="Product / log type" optional>
-          <input defaultValue={v("product")} maxLength={120} name="product" placeholder="Saw logs, pulpwood, chips…" />
+        <Field field="product" hint="Required to publish." issues={issues} label="Product / log type">
+          <input aria-describedby={describedBy("product")} aria-invalid={invalid("product")} defaultValue={v("product")} maxLength={120} name="product" placeholder="Saw logs, pulpwood, chips…" />
         </Field>
         <fieldset className={invalid("equipment") ? "v2-field v2-field--invalid" : "v2-field"}>
           <legend>Equipment required</legend>
@@ -79,18 +81,19 @@ export function JobDraftForm({ issues, landings, values }: {
 
       <section aria-labelledby="draft-pay">
         <h2 id="draft-pay">Advertised pay</h2>
+        <p className="v2-muted">Required: an amount and what it is per, or Negotiable with a note on how pay is set.</p>
         <div className="v2-form__pair">
-          <Field field="payAmount" issues={issues} label="Amount ($)" optional>
+          <Field field="payAmount" hint="Leave blank for negotiable pay." issues={issues} label="Amount ($)">
             <input aria-describedby={describedBy("payAmount")} aria-invalid={invalid("payAmount")} defaultValue={v("payAmount")} inputMode="decimal" name="payAmount" placeholder="525" />
           </Field>
-          <Field field="payUnit" issues={issues} label="Pay basis" optional>
-            <select aria-describedby={describedBy("payUnit")} aria-invalid={invalid("payUnit")} defaultValue={v("payUnit")} name="payUnit">
-              <option value="">Not stated</option>
+          <Field field="payUnit" issues={issues} label="Pay basis">
+            <select aria-describedby={describedBy("payUnit")} aria-invalid={invalid("payUnit")} defaultValue={v("payUnit")} name="payUnit" required>
+              <option value="">Choose a basis</option>
               {marketplacePayUnitSchema.options.map((unit) => <option key={unit} value={unit}>{MARKETPLACE_PAY_UNIT_LABELS[unit]}</option>)}
             </select>
           </Field>
         </div>
-        <Field field="payNote" hint="Required for negotiable pay. No private contact or access details." issues={issues} label="Pay note" optional>
+        <Field field="payNote" hint="Required for negotiable pay or another basis. No phone numbers, email addresses or access details." issues={issues} label="Pay note" optional>
           <input aria-describedby={describedBy("payNote")} aria-invalid={invalid("payNote")} defaultValue={v("payNote")} maxLength={300} name="payNote" />
         </Field>
       </section>
@@ -105,14 +108,30 @@ export function JobDraftForm({ issues, landings, values }: {
             <input aria-describedby={describedBy("trucksPerDay")} aria-invalid={invalid("trucksPerDay")} defaultValue={v("trucksPerDay")} inputMode="numeric" min={1} name="trucksPerDay" type="number" />
           </Field>
         </div>
-        <div className="v2-form__pair">
-          <Field field="startsOn" issues={issues} label="Expected start" optional>
-            <input aria-describedby={describedBy("startsOn")} aria-invalid={invalid("startsOn")} defaultValue={v("startsOn")} name="startsOn" type="date" />
-          </Field>
-          <Field field="durationDays" issues={issues} label="Duration (days)" optional>
-            <input aria-describedby={describedBy("durationDays")} aria-invalid={invalid("durationDays")} defaultValue={v("durationDays")} inputMode="numeric" max={MARKETPLACE_DRAFT_LIMITS.durationDays} min={1} name="durationDays" type="number" />
-          </Field>
-        </div>
+        <Field field="startsOn" hint="Required to publish." issues={issues} label="Expected start">
+          <input aria-describedby={describedBy("startsOn")} aria-invalid={invalid("startsOn")} defaultValue={v("startsOn")} name="startsOn" type="date" />
+        </Field>
+        <fieldset
+          aria-describedby={invalid("workPeriod") ? "workPeriod-error" : undefined}
+          className={invalid("workPeriod") ? "v2-field v2-field--invalid" : "v2-field"}
+        >
+          <legend>How long it runs</legend>
+          <span className="v2-muted v2-hint">Required to publish: give one of an end date, a duration, or Ongoing.</span>
+          <div className="v2-form__pair">
+            <Field field="endsOn" issues={issues} label="End date">
+              <input aria-describedby={describedBy("endsOn")} aria-invalid={invalid("endsOn")} defaultValue={v("endsOn")} name="endsOn" type="date" />
+            </Field>
+            <Field field="durationDays" issues={issues} label="Duration (days)">
+              <input aria-describedby={describedBy("durationDays")} aria-invalid={invalid("durationDays")} defaultValue={v("durationDays")} inputMode="numeric" max={MARKETPLACE_DRAFT_LIMITS.durationDays} min={1} name="durationDays" type="number" />
+            </Field>
+          </div>
+          <label className="v2-check">
+            <input aria-invalid={invalid("ongoing")} defaultChecked={v("ongoing") === "1"} name="ongoing" type="checkbox" value="1" />
+            <span>Ongoing: no set end date</span>
+          </label>
+          <FieldError field="ongoing" issues={issues} />
+          <FieldError field="workPeriod" issues={issues} />
+        </fieldset>
       </section>
 
       <section aria-labelledby="draft-route">
@@ -146,6 +165,11 @@ export function JobDraftForm({ issues, landings, values }: {
         </Field>
         <p className="v2-muted">Estimates are shown to haulers as your estimates. Leave blank if unknown — LogLoads never fills them in.</p>
       </details>
+
+      <p className="v2-muted">
+        Haulers contact you through LogLoads messages, so the posting has no contact field. Leave phone numbers and email
+        addresses out of it; you can share them in a conversation with a business you choose.
+      </p>
 
       <button type="submit">Preview job</button>
     </form>
