@@ -1,0 +1,31 @@
+/* VisibilityPanel: ported from design-system/components.css (.ll-visibility). */
+.panel {
+  overflow: hidden;
+  border: 1px solid var(--ll-color-border);
+  border-radius: var(--ll-c-section-radius);
+  background: var(--ll-color-surface);
+}
+
+.panel[data-audience="private"] {
+  border-style: dashed;
+  border-color: var(--ll-color-border-strong);
+  background: var(--ll-color-surface-subtle);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--ll-space-2);
+  margin: 0;
+  padding: var(--ll-space-3) var(--ll-c-section-pad);
+  border-bottom: 1px solid var(--ll-color-border);
+  color: var(--ll-color-text-secondary);
+  font-family: var(--ll-font-mono);
+  font-size: var(--ll-text-2xs);
+  font-weight: var(--ll-weight-semibold);
+  letter-spacing: var(--ll-tracking-label);
+  line-height: var(--ll-leading-snug);
+  text-transform: uppercase;
+}
+
+.body { display: grid; gap: var(--ll-space-4); padding: var(--ll-c-section-pad); }

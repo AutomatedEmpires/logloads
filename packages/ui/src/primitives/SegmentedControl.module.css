@@ -1,0 +1,36 @@
+/* SegmentedControl: ported from design-system/components.css (.ll-seg). */
+.group {
+  display: inline-flex;
+  box-sizing: border-box;
+  height: var(--ll-c-button-h-sm);
+  border: 1px solid var(--ll-color-control-border);
+  border-radius: var(--ll-radius-md);
+  overflow: hidden;
+  flex: none;
+}
+
+.option {
+  padding: 0 12px;
+  border: 0;
+  background: var(--ll-color-surface);
+  color: var(--ll-color-text-secondary);
+  font-family: inherit;
+  font-size: var(--ll-text-sm);
+  font-weight: var(--ll-weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.option + .option { border-left: 1px solid var(--ll-color-control-border); }
+.option:not([aria-pressed="true"]):hover { background: var(--ll-color-surface-subtle); }
+.option[aria-pressed="true"] { background: var(--ll-color-text); color: var(--ll-color-text-inverse); }
+
+/* The group clips its corners, so the ring sits inside the button. */
+.option:focus-visible {
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: calc(-1 * var(--ll-focus-width));
+}
+
+@media (forced-colors: active) {
+  .option[aria-pressed="true"] { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+}

@@ -1,0 +1,98 @@
+/* Tabs: ported from design-system/components.css ("Tabs", .ll-tabs and .ll-seg). */
+
+/* Page variant: underline tabs. The padding/negative margin pair leaves room for the focus ring inside the scroller. */
+.tabs {
+  --tabs-ring-room: calc(var(--ll-focus-width) + var(--ll-focus-offset));
+  display: flex;
+  gap: var(--ll-space-5);
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: var(--tabs-ring-room) var(--tabs-ring-room) 0;
+  margin: calc(-1 * var(--tabs-ring-room)) calc(-1 * var(--tabs-ring-room)) 0;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ll-space-2);
+  min-height: var(--ll-target-min);
+  padding: 0 0 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--ll-color-text-muted);
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: var(--ll-weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.tab:hover { color: var(--ll-color-text); }
+
+.tab[aria-selected="true"],
+.tab[aria-current="page"] {
+  color: var(--ll-color-text);
+  font-weight: var(--ll-weight-semibold);
+  border-bottom-color: var(--ll-color-nav-active);
+}
+
+.tab:focus-visible {
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: var(--ll-focus-offset);
+}
+
+/* Segmented variant: joined buttons, 36 px tall. */
+.tabs[data-variant="segmented"] {
+  display: inline-flex;
+  gap: 0;
+  box-sizing: border-box;
+  height: var(--ll-c-button-h-sm);
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--ll-color-control-border);
+  border-radius: var(--ll-radius-md);
+  overflow: hidden;
+  flex: none;
+}
+
+.tabs[data-variant="segmented"] .tab {
+  min-height: 0;
+  height: 100%;
+  padding: 0 12px;
+  border: 0;
+  background: var(--ll-color-surface);
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-sm);
+}
+
+.tabs[data-variant="segmented"] .tab + .tab { border-left: 1px solid var(--ll-color-control-border); }
+
+.tabs[data-variant="segmented"] .tab:is([aria-selected="true"], [aria-current="page"]) {
+  background: var(--ll-color-text);
+  color: var(--ll-color-text-inverse);
+}
+
+.tabs[data-variant="segmented"] .tab:focus-visible { outline-offset: calc(-1 * var(--ll-focus-width)); }
+
+.count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: var(--ll-radius-pill);
+  background: var(--ll-color-surface-sunken);
+  color: var(--ll-color-text);
+  font-size: var(--ll-text-xs);
+  font-weight: var(--ll-weight-semibold);
+  line-height: 20px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (forced-colors: active) {
+  .tabs[data-variant="segmented"] .tab:is([aria-selected="true"], [aria-current="page"]) {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+}
