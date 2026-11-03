@@ -19,9 +19,11 @@
   font-size: 1rem; /* 16 px: stops iOS zooming into the field */
 }
 
+/* box-shadow: none removes the app's legacy global :focus-visible halo (globals.css). */
 .control:focus-visible {
   outline: var(--ll-focus-width) solid var(--ll-focus-color);
   outline-offset: var(--ll-focus-offset);
+  box-shadow: none;
 }
 
 .control[aria-invalid="true"] { border-color: var(--ll-color-status-critical); }

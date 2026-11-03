@@ -39,6 +39,11 @@
   height: 22px;
 }
 
+/* AppShell draws the ring; this removes the app's legacy global :focus-visible halo (globals.css). */
+.tab:focus-visible {
+  box-shadow: none;
+}
+
 .tab[aria-current="page"] {
   color: var(--ll-color-action);
   font-weight: var(--ll-weight-semibold);

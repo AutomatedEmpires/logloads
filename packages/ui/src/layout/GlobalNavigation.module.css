@@ -123,6 +123,12 @@
   color: var(--ll-color-text);
 }
 
+/* AppShell draws the ring; this removes the app's legacy global :focus-visible halo (globals.css). */
+.brand:focus-visible,
+.link:focus-visible {
+  box-shadow: none;
+}
+
 .link[aria-current="page"] {
   color: var(--ll-color-text);
   font-weight: var(--ll-weight-semibold);
