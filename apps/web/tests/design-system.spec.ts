@@ -59,6 +59,22 @@ async function signIn(page: Page, email: string) {
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"))
 }
 
+/**
+ * A V2 page the account has settled on, past the redirects that sign-in and switching run in the browser:
+ * /workspace and /v2/landing redirect after the root loading boundary has started streaming, so they land
+ * client-side, and a navigation started meanwhile is aborted (net::ERR_ABORTED, seen in CI).
+ */
+async function settleOnV2(page: Page) {
+  await page.waitForURL((url) => url.pathname.startsWith("/v2/") && url.pathname !== "/v2/landing")
+  await expect(page.locator(".ll-app #main")).toBeVisible()
+  await expect(page.locator(".route-skeleton")).toHaveCount(0)
+}
+
+async function signInToV2(page: Page, email: string) {
+  await signIn(page, email)
+  await settleOnV2(page)
+}
+
 const topNavigation = (page: Page) => page.locator(".ll-app > header nav[aria-label='Main']")
 const bottomTabs = (page: Page) => page.locator(".ll-app > nav[aria-label='Main']")
 /** The account menu at the end of the top bar (#124): a <details> disclosure whose <summary> is the trigger. */
@@ -563,7 +579,7 @@ test.describe("account menu (#124 criterion 7)", () => {
 
   test("signed in: the person, Switch business and Sign out, with no serious axe violations at 1280 and 390 px", async ({ page }) => {
     await page.setViewportSize(viewportFor(1280))
-    await signIn(page, "hank@northpine.example")
+    await signInToV2(page, "hank@northpine.example")
     await openV2(page, "/v2/work")
 
     for (const width of [1280, 390]) {
@@ -1082,7 +1098,7 @@ async function session(browser: Browser, baseURL: string | undefined, width = 12
 /** Opens Summit Ridge Timber's legacy team settings as its owner: the app's only member-management page. */
 async function openSummitTeam(browser: Browser, baseURL: string | undefined) {
   const owner = await session(browser, baseURL)
-  await signIn(owner.page, SUMMIT_OWNER)
+  await signInToV2(owner.page, SUMMIT_OWNER)
   await owner.page.goto("/host/settings")
   await expect(owner.page.getByRole("heading", { name: "Who works in this workspace" })).toBeVisible()
   return owner
@@ -1097,7 +1113,7 @@ async function ensureDualMembership(browser: Browser, baseURL: string | undefine
   const maya = await session(browser, baseURL)
 
   try {
-    await signIn(maya.page, DUAL.email)
+    await signInToV2(maya.page, DUAL.email)
     await openV2(maya.page, "/v2/switch")
     if ((await businessChoices(maya.page).filter({ hasText: DUAL.landing }).count()) > 0) return
 
@@ -1119,7 +1135,8 @@ async function ensureDualMembership(browser: Browser, baseURL: string | undefine
     const invitations = maya.page.getByRole("group", { name: "Workspace invitations" })
     await expect(invitations.getByText(DUAL.landing)).toBeVisible()
     await invitations.getByRole("button", { name: "Accept" }).click()
-    await maya.page.waitForURL((url) => !url.pathname.startsWith("/driver"))
+    // Accepting opens /workspace, which redirects to the newly selected business's V2 home.
+    await settleOnV2(maya.page)
 
     await openV2(maya.page, "/v2/switch")
     await expect(businessChoices(maya.page).filter({ hasText: DUAL.landing }), "Maya holds the Summit membership again").toHaveCount(1)
@@ -1133,8 +1150,7 @@ async function actAs(page: Page, business: string) {
   await openV2(page, "/v2/switch")
   await businessChoices(page).filter({ hasText: business }).getByRole("button", { name: `Act as ${business}` }).click()
   await page.waitForURL((url) => !url.pathname.startsWith("/v2/switch"))
-  await expect(page.locator(".ll-app #main")).toBeVisible()
-  await expect(page.locator(".route-skeleton")).toHaveCount(0)
+  await settleOnV2(page)
 }
 
 test.describe("business switching with two memberships (#124 criterion 8)", () => {
@@ -1144,7 +1160,7 @@ test.describe("business switching with two memberships (#124 criterion 8)", () =
     await ensureDualMembership(browser, baseURL)
 
     await page.setViewportSize(viewportFor(1280))
-    await signIn(page, DUAL.email)
+    await signInToV2(page, DUAL.email)
 
     for (const width of [1280, 390]) {
       await page.setViewportSize(viewportFor(width))
@@ -1165,7 +1181,7 @@ test.describe("business switching with two memberships (#124 criterion 8)", () =
     // When Summit removes her, Maya has one session acting for Summit (390 px) and one acting for North Pine with
     // the switch page, which still offers Summit, open (1280 px).
     const asLanding = await session(browser, baseURL, 390)
-    await signIn(asLanding.page, DUAL.email)
+    await signInToV2(asLanding.page, DUAL.email)
     await actAs(asLanding.page, DUAL.landing)
     await openV2(asLanding.page, "/v2/landing/inquiries")
     await expect(asLanding.page.getByRole("link", { name: /^Acting as Summit Ridge Timber/ })).toHaveCount(1)
