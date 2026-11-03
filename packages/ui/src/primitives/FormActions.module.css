@@ -1,0 +1,23 @@
+/* FormActions: ported from design-system/components.css (.ll-form-actions). */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--ll-space-3);
+  padding-top: var(--ll-space-4);
+  border-top: 1px solid var(--ll-color-border);
+}
+
+.group { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ll-space-2); }
+.primary { margin-inline-start: auto; }
+
+/* bp-sm 600: stick above the 56 px bottom navigation (ResponsiveNavigation), which pads for the safe area. */
+@container ll-app (max-width: 599px) {
+  .actions {
+    position: sticky;
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    z-index: var(--ll-z-sticky);
+    padding-bottom: var(--ll-space-3);
+    background: var(--ll-color-surface);
+  }
+}

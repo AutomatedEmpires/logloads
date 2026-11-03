@@ -1,0 +1,74 @@
+/* Button: ported from design-system/components.css ("Button"). Heights 36 / 44 / 48 px via --ll-c-button-h-*. */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ll-space-2);
+  box-sizing: border-box;
+  height: var(--ll-c-button-h-md);
+  min-width: var(--ll-target-min);
+  padding: 0 18px;
+  border: 1px solid transparent;
+  border-radius: var(--ll-c-button-radius);
+  font-family: inherit;
+  font-size: var(--ll-text-base);
+  font-weight: var(--ll-weight-semibold);
+  line-height: 1.2;
+  white-space: nowrap;
+  flex: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color var(--ll-duration-fast) var(--ll-ease);
+}
+
+.button:focus-visible {
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: var(--ll-focus-offset);
+}
+
+.button[data-size="sm"] { height: var(--ll-c-button-h-sm); padding: 0 12px; font-size: var(--ll-text-md); }
+.button[data-size="lg"] { height: var(--ll-c-button-h-lg); padding: 0 22px; }
+
+.button[data-variant="primary"] { background: var(--ll-color-action); color: var(--ll-color-on-action); }
+.button[data-variant="secondary"] { background: var(--ll-color-surface); color: var(--ll-color-text); border-color: var(--ll-color-control-border); }
+.button[data-variant="ghost"] { background: transparent; color: var(--ll-color-text-secondary); }
+.button[data-variant="danger"] { background: transparent; color: var(--ll-color-status-critical); }
+
+.button[data-variant="primary"]:not(:disabled, [aria-disabled="true"]):hover { background: var(--ll-color-action-hover); }
+.button[data-variant="secondary"]:not(:disabled, [aria-disabled="true"]):hover { background: var(--ll-color-surface-subtle); }
+.button[data-variant="ghost"]:not(:disabled, [aria-disabled="true"]):hover { background: var(--ll-hover-overlay); }
+.button[data-variant="danger"]:not(:disabled, [aria-disabled="true"]):hover { background: var(--ll-color-status-critical-bg); }
+
+.button[data-icon-only][data-size="sm"] { width: var(--ll-c-button-h-sm); padding: 0; }
+.button[data-icon-only][data-size="md"] { width: var(--ll-c-button-h-md); padding: 0; }
+.button[data-icon-only][data-size="lg"] { width: var(--ll-c-button-h-lg); padding: 0; }
+
+.button:disabled,
+.button[aria-disabled="true"] { opacity: var(--ll-disabled-opacity); cursor: not-allowed; }
+.button[aria-busy="true"] { cursor: progress; }
+
+.label { overflow: hidden; text-overflow: ellipsis; }
+
+/* Loading indicator: a CSS ring, so no extra icon key is needed. */
+.spinner {
+  box-sizing: border-box;
+  width: 1em;
+  height: 1em;
+  flex: none;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .spinner { animation: spin 0.8s linear infinite; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (forced-colors: active) {
+  .button:disabled,
+  .button[aria-disabled="true"] { color: GrayText; border-color: GrayText; }
+}

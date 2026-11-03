@@ -1,0 +1,5 @@
+/* EmptyState: ported from design-system/components.css (.ll-state). */
+.state { display: grid; justify-items: start; gap: var(--ll-space-3); padding: var(--ll-space-7) var(--ll-space-5); }
+.title { margin: 0; font-family: inherit; font-size: var(--ll-text-xl); font-weight: var(--ll-weight-semibold); line-height: var(--ll-leading-snug); letter-spacing: normal; }
+.body { margin: 0; max-width: 60ch; color: var(--ll-color-text-secondary); }
+.actions { display: flex; flex-wrap: wrap; gap: var(--ll-space-2); align-items: center; }

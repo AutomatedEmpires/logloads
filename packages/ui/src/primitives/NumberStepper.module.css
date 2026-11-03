@@ -1,0 +1,44 @@
+/* NumberStepper: ported from design-system/components.css (.ll-stepper). Height follows density via --ll-c-control-h. */
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: var(--ll-c-control-h);
+  border: 1px solid var(--ll-color-control-border);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-surface);
+  flex: none;
+}
+
+.step {
+  width: var(--ll-c-control-h);
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ll-radius-md);
+  background: none;
+  color: var(--ll-color-action);
+  font-family: inherit;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.step:focus-visible {
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: var(--ll-focus-offset);
+}
+
+.step[aria-disabled="true"] { color: var(--ll-color-border-strong); cursor: not-allowed; }
+
+.value {
+  min-width: 28px;
+  padding: 0 var(--ll-space-1);
+  text-align: center;
+  font-weight: var(--ll-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (forced-colors: active) {
+  .step[aria-disabled="true"] { color: GrayText; }
+}
