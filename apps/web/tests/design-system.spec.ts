@@ -1042,7 +1042,11 @@ test.describe("conversation on a page (#148 criterion 4)", () => {
 })
 
 test.describe("conversation without JavaScript (#174)", () => {
-  test.use({ javaScriptEnabled: false })
+  // The row link opens `#conversation`, and globals.css sets `html { scroll-behavior: smooth }`. With scripts off and
+  // smooth scrolling on, Playwright often never found Send stable, even after the page had stopped at its last scroll
+  // position (seen locally on Edge once the thread was long enough to scroll). Reduced motion turns smooth scrolling
+  // off; it changes nothing about how the form posts.
+  test.use({ contextOptions: { reducedMotion: "reduce" }, javaScriptEnabled: false })
 
   test("hauler: the plain Send button posts a reply and the page comes back with it", async ({ page }) => {
     await page.setViewportSize(viewportFor(1280))
