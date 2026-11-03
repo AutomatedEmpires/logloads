@@ -58,9 +58,12 @@ const jobRows = (page: Page) => page.locator("[data-ds-page] ul[aria-label='Jobs
 
 /** Seeded accounts for the conversation cases (packages/db seed). */
 const NEW_RIVER = { email: "emptyfleet@logloads.example", name: "New River Hauling" } // hauling business, no trucks listed
-const NORTH_PINE_LANDING = "dispatch@northpine.example" // North Pine Logging (posts the public job), acting on its landing side; a founder demo account
-const LANDING_WITHOUT_INQUIRIES = "cole@summit.example" // Summit Ridge Timber has no public job, so no inquiries
-const NO_OPEN_JOB = "No job accepts interest in this run's state (the shared CI state can have them filled or closed)"
+const NORTH_PINE = { landing: "dispatch@northpine.example", name: "North Pine Logging" } // posts the seeded public job; a founder demo account
+const NORTH_PINE_LANDING = NORTH_PINE.landing // North Pine Logging acting on its landing side
+// Summit Ridge Timber: the suite never expresses interest in its jobs, so its inbox stays empty even when the pilot
+// journeys have published one of them in the shared CI state.
+const LANDING_WITHOUT_INQUIRIES = "cole@summit.example"
+const NO_OPEN_JOB = "No North Pine Logging job accepts interest in this run's state (the shared CI state can have them filled or closed)"
 
 /** Markup a hauler might type. It must reach every page as text: no element, no script. */
 const MARKUP_NOTE = `<img src=x onerror="window.__llInjected=1"><b>bold</b> & "two trucks"`
@@ -89,16 +92,18 @@ async function firstJobPath(page: Page): Promise<string> {
 const inquiryRows = (page: Page) => page.locator("#main [data-ds-page] ul[aria-label$='inquiries'] > li")
 
 /**
- * Signs in as New River Hauling and makes sure it has an inquiry, expressing interest in the first job that
- * accepts it (the note is MARKUP_NOTE) when it has none yet. False when no job accepts interest in this state.
+ * Signs in as New River Hauling and makes sure it has an inquiry with North Pine Logging, expressing interest in
+ * North Pine's first job that accepts it (the note is MARKUP_NOTE) when it has none yet. Only North Pine's: in CI
+ * the pilot journeys publish other businesses' jobs ahead of it on the board, and an inquiry there would leave
+ * North Pine's inbox empty and fill LANDING_WITHOUT_INQUIRIES'. False when no North Pine job accepts interest.
  */
 async function ensureNewRiverInquiry(page: Page): Promise<boolean> {
   await signIn(page, NEW_RIVER.email)
   await openV2(page, "/v2/inquiries")
-  if ((await inquiryRows(page).count()) > 0) return true
+  if ((await inquiryRows(page).filter({ hasText: NORTH_PINE.name }).count()) > 0) return true
 
   await openV2(page, "/v2/work")
-  const link = jobRows(page).first().locator("h3 a")
+  const link = jobRows(page).filter({ hasText: NORTH_PINE.name }).first().locator("h3 a")
   if ((await link.count()) === 0) return false
 
   await openV2(page, (await link.getAttribute("href"))!)
