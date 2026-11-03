@@ -2,17 +2,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const mocks = vi.hoisted(() => ({
   getSessionActor: vi.fn(),
-  unstableRethrow: vi.fn()
+  unstableRethrow: vi.fn(),
+  v2SessionCapabilities: vi.fn()
 }))
 
 vi.mock("server-only", () => ({}))
 vi.mock("next/navigation", () => ({ redirect: vi.fn(), unstable_rethrow: mocks.unstableRethrow }))
 vi.mock("../session", () => ({ getClerkUserId: vi.fn(), getSessionActor: mocks.getSessionActor }))
-vi.mock("./pilot-adapter", () => ({ pilotMarketplaceV2: { viewerAccess: vi.fn() } }))
+vi.mock("./home", () => ({ v2SessionCapabilities: mocks.v2SessionCapabilities }))
 
 import type { SessionActor } from "../session-policy"
-import { businessInitials, resolveV2BusinessSwitcher, v2BusinessSwitcher } from "./business-switcher"
-import { BUSINESS_SWITCH_UNAVAILABLE } from "./viewer"
+import { businessInitials, resolveV2Shell, v2BusinessSwitcher, v2MembershipChoices } from "./business-switcher"
 
 const HAULER_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 const LANDING_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
@@ -48,16 +48,15 @@ beforeEach(() => {
 })
 
 describe("v2BusinessSwitcher", () => {
-  it("shows the session's selected business and every real membership, with no switch link", () => {
+  it("shows the session's selected business and every real membership, linking to the V2 switch page", () => {
     expect(v2BusinessSwitcher(actor())).toEqual({
       current: { id: HAULER_ID, initials: "KT", kind: "Hauling business", name: "Kootenai Timber Haul", roleLabel: "Owner" },
       memberships: [
         { id: HAULER_ID, kind: "Hauling business", name: "Kootenai Timber Haul", roleLabel: "Owner" },
         { id: LANDING_ID, kind: "Landing business", name: "Ridge Landing Co.", roleLabel: "Landing manager" }
       ],
-      unavailableNote: BUSINESS_SWITCH_UNAVAILABLE
+      switchHref: "/v2/switch"
     })
-    expect(v2BusinessSwitcher(actor())).not.toHaveProperty("switchHref")
   })
 
   it("shows nothing without a session, a selected business or a valid selection", () => {
@@ -78,18 +77,44 @@ describe("businessInitials", () => {
   })
 })
 
-describe("resolveV2BusinessSwitcher", () => {
-  it("reads the session actor", async () => {
-    mocks.getSessionActor.mockResolvedValue(actor({ memberships: [hauler] }))
-
-    await expect(resolveV2BusinessSwitcher()).resolves.toMatchObject({ current: { name: "Kootenai Timber Haul" } })
+describe("v2MembershipChoices", () => {
+  it("lists only the account's memberships and marks the current selection", () => {
+    expect(v2MembershipChoices(actor())).toEqual([
+      { current: true, id: HAULER_ID, kind: "Hauling business", name: "Kootenai Timber Haul", roleLabel: "Owner" },
+      { current: false, id: LANDING_ID, kind: "Landing business", name: "Ridge Landing Co.", roleLabel: "Landing manager" }
+    ])
   })
 
-  it("leaves the chrome without a switcher when the session cannot be read, after rethrowing framework signals", async () => {
+  it("marks nothing current when the signed selection is invalid", () => {
+    expect(v2MembershipChoices(actor({ workspaceSelectionInvalid: true })).some((choice) => choice.current)).toBe(false)
+  })
+})
+
+describe("resolveV2Shell", () => {
+  it("reads the session actor and the selected business's capabilities", async () => {
+    const session = actor({ memberships: [hauler] })
+    mocks.getSessionActor.mockResolvedValue(session)
+    mocks.v2SessionCapabilities.mockResolvedValue(["interest.express"])
+
+    await expect(resolveV2Shell()).resolves.toMatchObject({
+      business: { current: { name: "Kootenai Timber Haul" } },
+      capabilities: ["interest.express"]
+    })
+    expect(mocks.v2SessionCapabilities).toHaveBeenCalledExactlyOnceWith(session)
+  })
+
+  it("resolves no capabilities for a visitor", async () => {
+    mocks.getSessionActor.mockResolvedValue(null)
+
+    await expect(resolveV2Shell()).resolves.toEqual({ business: undefined, capabilities: null })
+    expect(mocks.v2SessionCapabilities).not.toHaveBeenCalled()
+  })
+
+  it("leaves the chrome at its public form when the session cannot be read, after rethrowing framework signals", async () => {
     const failure = new Error("state unavailable")
     mocks.getSessionActor.mockRejectedValue(failure)
 
-    await expect(resolveV2BusinessSwitcher()).resolves.toBeUndefined()
+    await expect(resolveV2Shell()).resolves.toEqual({ business: undefined, capabilities: null })
     expect(mocks.unstableRethrow).toHaveBeenCalledExactlyOnceWith(failure)
   })
 })

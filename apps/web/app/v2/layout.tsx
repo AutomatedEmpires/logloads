@@ -3,7 +3,7 @@ import { notFound } from "next/navigation"
 import type { ReactNode } from "react"
 
 import { V2AppShell } from "@/components/v2/V2AppShell"
-import { resolveV2BusinessSwitcher } from "@/lib/marketplace-v2/business-switcher"
+import { resolveV2Shell } from "@/lib/marketplace-v2/business-switcher"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 
 // DS-01 (#144): the semantic token layer. Tokens apply only inside .ll-theme (the AppShell root), so legacy
@@ -23,7 +23,7 @@ export default async function MarketplaceV2Layout({ children }: { children: Reac
     notFound()
   }
 
-  const business = await resolveV2BusinessSwitcher()
+  const { business, capabilities } = await resolveV2Shell()
 
   return (
     <V2AppShell
@@ -34,6 +34,7 @@ export default async function MarketplaceV2Layout({ children }: { children: Reac
         </p>
       }
       business={business}
+      capabilities={capabilities}
     >
       {/* Pages not yet built from the layout components keep their v2.css styling inside the shell. */}
       <div className="v2 v2-main">{children}</div>
