@@ -9,6 +9,8 @@ import { selectMapRuntime } from "@/lib/map-runtime"
 import { loadMaplibre } from "@/lib/maplibre-worker"
 import { useCartoBasemap } from "@/lib/use-carto-basemap"
 
+import styles from "./JobMap.module.css"
+
 export interface JobMapPoint {
   id: string
   title: string
@@ -36,11 +38,11 @@ export default function JobMap({ points }: { points: JobMapPoint[] }) {
   const { failed, mapProps } = useCartoBasemap(CARTO_KEY)
 
   if (points.length === 0) {
-    return <p className="v2-muted">No mappable approximate locations in these results.</p>
+    return <p className={styles.note}>No mappable approximate locations in these results.</p>
   }
 
   if (failed) {
-    return <p className="v2-banner" role="status">The map could not load right now. Every job is listed below.</p>
+    return <p className={styles.notice} role="status">The map could not load right now. Every job is listed below.</p>
   }
 
   const lats = points.map((point) => point.lat)
@@ -48,7 +50,7 @@ export default function JobMap({ points }: { points: JobMapPoint[] }) {
   const pad = 0.15
 
   return (
-    <div className="v2-map" role="region" aria-label="Approximate job locations">
+    <div aria-label="Approximate job locations" className={styles.map} role="region">
       <MaplibreMap
         {...mapProps}
         initialViewState={{
@@ -63,8 +65,8 @@ export default function JobMap({ points }: { points: JobMapPoint[] }) {
         <NavigationControl position="top-right" showCompass={false} />
         {points.map((point) => (
           <Marker key={point.id} latitude={point.lat} longitude={point.lng}>
-            <a className="v2-pin" href={`/v2/work/${point.id}`} title={`${point.title} (approximate area)`}>
-              <span className="v2-sr">{point.title}</span>
+            <a className={styles.pin} href={`/v2/work/${point.id}`} title={`${point.title} (approximate area)`}>
+              <span className={styles.visuallyHidden}>{point.title}</span>
             </a>
           </Marker>
         ))}

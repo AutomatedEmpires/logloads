@@ -77,6 +77,17 @@ function message(error: unknown): string {
   return serializeError(error).error.slice(0, 160)
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * Back to an inquiry list with the same inquiry selected (`inquiry`), so the conversation the viewer acted on stays
+ * open beside the list. Only a well-formed id is carried; the page shows it only if it is one of the viewer's own.
+ */
+function inquiryRedirect(path: string, formData: FormData, query: Record<string, string>): never {
+  const interestId = field(formData, "interestId").trim()
+  safeRedirect(path, UUID.test(interestId) ? { ...query, inquiry: interestId } : query)
+}
+
 export async function expressInterestAction(formData: FormData): Promise<void> {
   const jobId = field(formData, "loadPostingId")
   const back = `/v2/work/${jobId}`
@@ -107,11 +118,11 @@ export async function withdrawInterestAction(formData: FormData): Promise<void> 
   try {
     await pilotMarketplaceV2.withdrawInterest(viewer, field(formData, "interestId"))
   } catch (error) {
-    safeRedirect("/v2/inquiries", { error: message(error) })
+    inquiryRedirect("/v2/inquiries", formData, { error: message(error) })
   }
 
   revalidatePath("/v2", "layout")
-  safeRedirect("/v2/inquiries", { updated: "withdrawn" })
+  inquiryRedirect("/v2/inquiries", formData, { updated: "withdrawn" })
 }
 
 export async function haulerReplyAction(formData: FormData): Promise<void> {
@@ -125,11 +136,11 @@ export async function haulerReplyAction(formData: FormData): Promise<void> {
       replyId: field(formData, "replyId") || randomUUID()
     })
   } catch (error) {
-    safeRedirect("/v2/inquiries", { error: message(error) })
+    inquiryRedirect("/v2/inquiries", formData, { error: message(error) })
   }
 
   revalidatePath("/v2", "layout")
-  safeRedirect("/v2/inquiries", { updated: "reply" })
+  inquiryRedirect("/v2/inquiries", formData, { updated: "reply" })
 }
 
 export async function respondToInterestAction(formData: FormData): Promise<void> {
@@ -145,11 +156,11 @@ export async function respondToInterestAction(formData: FormData): Promise<void>
       replyId: field(formData, "replyId") || undefined
     })
   } catch (error) {
-    safeRedirect("/v2/landing/inquiries", { error: message(error) })
+    inquiryRedirect("/v2/landing/inquiries", formData, { error: message(error) })
   }
 
   revalidatePath("/v2", "layout")
-  safeRedirect("/v2/landing/inquiries", { updated: decision })
+  inquiryRedirect("/v2/landing/inquiries", formData, { updated: decision })
 }
 
 const NEW_JOB_PATH = "/v2/landing/jobs/new"

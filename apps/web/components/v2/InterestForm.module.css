@@ -1,0 +1,204 @@
+/* The job page's interest form and listing dates (DS-04, #147). Layout only: fields, steppers, capacity and buttons
+   are design-system components. Semantic --ll-* tokens only. The app's legacy global rules for a, dl, dl div, dt,
+   dd, button and summary are neutralised explicitly. */
+
+/* The interest Section is the target of JobDetail's "I'm interested" link; keep it clear of the page top. */
+.anchor { scroll-margin-top: var(--ll-space-4); min-width: 0; }
+
+.stack {
+  display: grid;
+  gap: var(--ll-space-3);
+  min-width: 0;
+}
+
+.text {
+  margin: 0;
+  font-size: var(--ll-text-md);
+  line-height: var(--ll-leading-normal);
+  overflow-wrap: anywhere;
+}
+
+.hint {
+  margin: 0;
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+  line-height: var(--ll-leading-normal);
+}
+
+.link {
+  color: inherit;
+  font-weight: var(--ll-weight-semibold);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* AppShell draws the ring; this removes the app's legacy global :focus-visible halo (globals.css). */
+.link:focus-visible { box-shadow: none; }
+
+.form {
+  display: grid;
+  gap: var(--ll-space-4);
+  margin: 0;
+  min-width: 0;
+}
+
+.group {
+  display: grid;
+  gap: var(--ll-space-2);
+}
+
+.fieldset {
+  display: grid;
+  gap: var(--ll-space-3);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.legend {
+  padding: 0;
+  margin-bottom: var(--ll-space-2);
+  font-size: var(--ll-text-md);
+  font-weight: var(--ll-weight-semibold);
+}
+
+.equipmentList {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--ll-color-border);
+  border-radius: var(--ll-radius-md);
+}
+
+.equipmentRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ll-space-2) var(--ll-space-3);
+  padding: var(--ll-space-3);
+}
+
+.equipmentRow + .equipmentRow { border-top: 1px solid var(--ll-color-border); }
+
+.equipmentText {
+  display: grid;
+  flex: 1 1 10rem;
+  gap: var(--ll-space-1);
+  min-width: 0;
+}
+
+.equipmentName {
+  font-size: var(--ll-text-md);
+  font-weight: var(--ll-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+/* A count before hydration or without JavaScript: a native number input in the field style. */
+.countInput {
+  box-sizing: border-box;
+  width: 6rem;
+  height: var(--ll-c-field-h);
+  padding: 0 var(--ll-space-3);
+  border: 1px solid var(--ll-color-control-border);
+  border-radius: var(--ll-c-field-radius);
+  background: var(--ll-color-surface);
+  color: var(--ll-color-text);
+  font-family: inherit;
+  font-size: 1rem; /* 16 px: stops iOS zooming into the field */
+}
+
+.countInput:focus-visible {
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: var(--ll-focus-offset);
+  box-shadow: none;
+}
+
+/* A count with a visible label once scripts run: label, hint, then the stepper. */
+.countField {
+  display: grid;
+  justify-items: start;
+  gap: var(--ll-space-1);
+}
+
+.countLabel {
+  font-size: var(--ll-text-md);
+  font-weight: var(--ll-weight-semibold);
+}
+
+.countHint {
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+}
+
+.more {
+  display: grid;
+  gap: var(--ll-space-3);
+  padding-top: var(--ll-space-2);
+  border-top: 1px solid var(--ll-color-border);
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--ll-target-touch);
+  font-size: var(--ll-text-md);
+  font-weight: var(--ll-weight-semibold);
+  cursor: pointer;
+}
+
+.moreBody {
+  display: grid;
+  gap: var(--ll-space-4);
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--ll-space-4);
+}
+
+.submit { justify-self: start; }
+
+/* Listing dates under the job. */
+.facts {
+  display: grid;
+  gap: var(--ll-space-2);
+  margin: 0;
+}
+
+.fact {
+  display: grid;
+  grid-template-columns: minmax(7rem, 11rem) minmax(0, 1fr);
+  gap: var(--ll-space-3);
+  justify-content: stretch;
+  padding: 0;
+  border: 0;
+}
+
+.factLabel {
+  padding-top: 3px;
+  color: var(--ll-color-text-muted);
+  font-family: var(--ll-font-mono);
+  font-size: var(--ll-text-2xs);
+  font-weight: var(--ll-weight-semibold);
+  letter-spacing: var(--ll-tracking-label);
+  text-transform: uppercase;
+}
+
+.factValue {
+  min-width: 0;
+  margin: 0;
+  font-size: var(--ll-text-md);
+  font-weight: var(--ll-weight-regular);
+  line-height: var(--ll-leading-snug);
+  text-align: start;
+}
+
+.note {
+  display: block;
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+}

@@ -6,11 +6,14 @@ const mocks = vi.hoisted(() => ({
   getJob: vi.fn(),
   getSessionActor: vi.fn(),
   marketplaceV2Enabled: vi.fn(),
+  postHaulerReply: vi.fn(),
   publishJob: vi.fn(),
   reconfirmJob: vi.fn(),
   redirect: vi.fn(),
+  respondToInterest: vi.fn(),
   revalidatePath: vi.fn(),
-  viewerAccess: vi.fn()
+  viewerAccess: vi.fn(),
+  withdrawInterest: vi.fn()
 }))
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }))
@@ -25,10 +28,13 @@ vi.mock("./pilot-adapter", () => ({
   pilotMarketplaceV2: {
     authoringLandings: mocks.authoringLandings,
     getJob: mocks.getJob,
+    postHaulerReply: mocks.postHaulerReply,
     publishJob: mocks.publishJob,
     reconfirmJob: mocks.reconfirmJob,
+    respondToInterest: mocks.respondToInterest,
     supportsPublishing: false,
-    viewerAccess: mocks.viewerAccess
+    viewerAccess: mocks.viewerAccess,
+    withdrawInterest: mocks.withdrawInterest
   }
 }))
 
@@ -38,7 +44,7 @@ import {
   PUBLISH_ATTESTATION_REQUIRED
 } from "@logloads/contracts"
 
-import { publishJobAction, reconfirmJobAction } from "./actions"
+import { haulerReplyAction, publishJobAction, reconfirmJobAction, respondToInterestAction, withdrawInterestAction } from "./actions"
 import { MarketplaceOperationUnavailableError } from "./port"
 
 const USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -326,5 +332,37 @@ describe("reconfirmJobAction server-side checks", () => {
     expect(mocks.reconfirmJob).toHaveBeenCalledExactlyOnceWith(VIEWER, JOB_ID, { action: "reconfirm", confirmedAt: NOW.toISOString() })
     expect(target).toMatchObject({ path: JOBS_PATH, query: { unavailable: "reconfirm" } })
     expect(mocks.revalidatePath).not.toHaveBeenCalled()
+  })
+})
+
+describe("inquiry actions keep the inquiry selected (DS-04 list and conversation pages)", () => {
+  const INTEREST_ID = "44444444-4444-4444-8444-444444444444"
+  const REPLY_ID = "55555555-5555-4555-8555-555555555555"
+
+  it.each([
+    ["a hauler reply", haulerReplyAction, { body: "Both trucks", interestId: INTEREST_ID, replyId: REPLY_ID }, "/v2/inquiries", "reply"],
+    ["a withdrawal", withdrawInterestAction, { interestId: INTEREST_ID }, "/v2/inquiries", "withdrawn"],
+    ["a landing reply", respondToInterestAction, { body: "Start Tuesday", decision: "replied", interestId: INTEREST_ID, replyId: REPLY_ID }, "/v2/landing/inquiries", "replied"],
+    ["a decline", respondToInterestAction, { decision: "declined", interestId: INTEREST_ID }, "/v2/landing/inquiries", "declined"]
+  ])("returns to the list with %s's inquiry selected", async (_label, action, fields, path, updated) => {
+    const target = await redirectOf(action, form(fields, []))
+
+    expect(target).toEqual({ path, query: { inquiry: INTEREST_ID, updated }, raw: expect.any(String) })
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/v2", "layout")
+  })
+
+  it("keeps the inquiry selected when the service refuses, and passes only the form's ids to the port", async () => {
+    mocks.respondToInterest.mockRejectedValueOnce(new Error("This inquiry is already closed"))
+
+    const target = await redirectOf(respondToInterestAction, form({ decision: "declined", interestId: INTEREST_ID, organizationId: "x" }, []))
+
+    expect(target).toMatchObject({ path: "/v2/landing/inquiries", query: { error: "This inquiry is already closed", inquiry: INTEREST_ID } })
+    expect(mocks.respondToInterest).toHaveBeenCalledExactlyOnceWith(VIEWER, { body: "", decision: "declined", interestId: INTEREST_ID, replyId: undefined })
+  })
+
+  it("carries only a well-formed inquiry id", async () => {
+    const target = await redirectOf(withdrawInterestAction, form({ interestId: "../../workspace?x=1" }, []))
+
+    expect(target.query).toEqual({ updated: "withdrawn" })
   })
 })

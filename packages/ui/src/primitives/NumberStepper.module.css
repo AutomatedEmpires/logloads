@@ -24,9 +24,11 @@
   cursor: pointer;
 }
 
+/* box-shadow: none removes the app's legacy global :focus-visible halo (globals.css). */
 .step:focus-visible {
   outline: var(--ll-focus-width) solid var(--ll-focus-color);
   outline-offset: var(--ll-focus-offset);
+  box-shadow: none;
 }
 
 .step[aria-disabled="true"] { color: var(--ll-color-border-strong); cursor: not-allowed; }

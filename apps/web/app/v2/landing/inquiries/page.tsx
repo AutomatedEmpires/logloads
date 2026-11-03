@@ -1,17 +1,32 @@
 import { randomUUID } from "node:crypto"
 
-import Link from "next/link"
 import { notFound } from "next/navigation"
 
 import { landingInterestQueue, type LandingInterestQueue, type MarketplaceInterestView } from "@logloads/contracts"
+import { ContentGrid, PageContainer, PageHeader, Section } from "@logloads/ui/layout"
+import { availabilityText, formatDay, InquiryRow } from "@logloads/ui/marketplace"
 
-import { availabilityLabel, equipmentOfferLabel, formatDay, interestStatusLabel } from "@/components/v2/format"
+import { ConfirmActionDialog } from "@/components/v2/ConfirmActionDialog"
+import { ConfirmActionForm } from "@/components/v2/ConfirmActionForm"
+import {
+  CONFIRM_ANCHOR,
+  InquiryConfirmation,
+  InquiryConversation,
+  inquiryHref,
+  type InquiryFact
+} from "@/components/v2/InquiryConversation"
+import styles from "@/components/v2/InquiryConversation.module.css"
+import { InquiryReplyComposer } from "@/components/v2/InquiryReplyComposer"
+import { PageNotice } from "@/components/v2/PageNotice"
+import { PendingSubmitButton } from "@/components/v2/PendingSubmitButton"
 import { respondToInterestAction } from "@/lib/marketplace-v2/actions"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
 import { resolveV2Actor, withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
+
+const PATH = "/v2/landing/inquiries"
 
 const QUEUES: Array<{ key: LandingInterestQueue; title: string; empty: string }> = [
   { empty: "No new interest.", key: "new", title: "New" },
@@ -21,68 +36,49 @@ const QUEUES: Array<{ key: LandingInterestQueue; title: string; empty: string }>
 
 const CONTACT_LABELS = { email: "Email", in_app: "LogLoads messages", phone: "Phone" } as const
 
-function InquiryCard({ interest }: { interest: MarketplaceInterestView }) {
-  const open = interest.status !== "withdrawn" && interest.status !== "declined"
+const DECLINE_TITLE = "Decline this inquiry?"
 
+function one(value: string | string[] | undefined): string {
+  return (Array.isArray(value) ? value[0] : value) ?? ""
+}
+
+function declineBody(interest: MarketplaceInterestView) {
   return (
-    <article className="v2-card">
-      <header className="v2-card__head">
-        <h3>{interest.haulerOrganization.name}</h3>
-        <p className="v2-card__poster">for <Link href={`/v2/work/${interest.job.slug}`}>{interest.job.title}</Link></p>
-      </header>
-      <p><span className={`v2-status v2-status--interest-${interest.status}`}>{interestStatusLabel(interest.status)}</span></p>
-      <dl className="v2-facts">
-        <div><dt>Offers</dt><dd>{interest.trucksOffered} truck{interest.trucksOffered === 1 ? "" : "s"} <span className="v2-muted">(self-reported by the hauler; not verified)</span></dd></div>
-        {equipmentOfferLabel(interest.equipment) ? <div><dt>Equipment</dt><dd>{equipmentOfferLabel(interest.equipment)}</dd></div> : null}
-        {availabilityLabel(interest) ? <div><dt>Available</dt><dd>{availabilityLabel(interest)}</dd></div> : null}
-        <div><dt>Sent by</dt><dd>{interest.submittedBy.name} · {formatDay(interest.createdAt)}</dd></div>
-        <div><dt>Contact</dt><dd>{CONTACT_LABELS[interest.contactPreference]}</dd></div>
-        {interest.message ? <div><dt>Note</dt><dd>{interest.message}</dd></div> : null}
-      </dl>
-      {interest.replies.length > 0 ? (
-        <ol className="v2-thread" aria-label="Conversation">
-          {interest.replies.map((reply) => (
-            <li className={`v2-msg v2-msg--${reply.authorSide}`} key={reply.id}>
-              <strong>{reply.authorSide === "landing" ? `${reply.authorName} (your team)` : interest.haulerOrganization.name}</strong> · {formatDay(reply.createdAt)}
-              <p>{reply.body}</p>
-            </li>
-          ))}
-        </ol>
-      ) : null}
-      {open ? (
-        <div className="v2-actions">
-          <form action={respondToInterestAction} className="v2-form v2-form--inline">
-            <input name="interestId" type="hidden" value={interest.id} />
-            <input name="replyId" type="hidden" value={randomUUID()} />
-            <input name="decision" type="hidden" value="replied" />
-            <label>
-              <span className="v2-sr">Reply to {interest.haulerOrganization.name}</span>
-              <input maxLength={2000} name="body" placeholder="Reply" required />
-            </label>
-            <button type="submit">Reply</button>
-          </form>
-          {interest.status === "submitted" ? (
-            <form action={respondToInterestAction}>
-              <input name="interestId" type="hidden" value={interest.id} />
-              <input name="decision" type="hidden" value="viewed" />
-              <button className="v2-button--quiet" type="submit">Mark reviewed</button>
-            </form>
-          ) : null}
-          <form action={respondToInterestAction}>
-            <input name="interestId" type="hidden" value={interest.id} />
-            <input name="decision" type="hidden" value="declined" />
-            <button className="v2-button--quiet" type="submit">Decline</button>
-          </form>
-        </div>
-      ) : null}
-    </article>
+    <p className={styles.dialogBody}>
+      {interest.haulerOrganization.name} will see that you declined their interest in “{interest.job.title}”, and the conversation
+      closes. You can’t reply to it afterwards.
+    </p>
   )
 }
 
+function landingFacts(interest: MarketplaceInterestView): InquiryFact[] {
+  const equipment = interest.equipment.map((line) => `${line.count} × ${line.label}`).join(", ")
+  const available = availabilityText(interest)
+
+  return [
+    {
+      label: "Offers",
+      note: "Self-reported by the hauler; not verified",
+      value: `${interest.trucksOffered} truck${interest.trucksOffered === 1 ? "" : "s"}`
+    },
+    ...(equipment ? [{ label: "Equipment", value: equipment }] : []),
+    ...(available ? [{ label: "Available", value: available }] : []),
+    { label: "Sent by", value: `${interest.submittedBy.name} · ${formatDay(interest.createdAt)}` },
+    { label: "Contact", value: CONTACT_LABELS[interest.contactPreference] }
+  ]
+}
+
+/**
+ * Hauler inquiries (landing inbox, UX 02 §B9), built from the design system (DS-04, #147): the New, Responded and
+ * Closed queues as InquiryRows beside the selected conversation (ContentGrid "split"). Selection is the `inquiry`
+ * query parameter, so rows are plain links. Replying, marking reviewed and declining post to the existing server
+ * action; declining is confirmed first, in a Dialog, or in the page without JavaScript. Nothing here shares the
+ * landing's private details: a reply carries only what its author writes.
+ */
 export default async function LandingInboxPage({ searchParams }: { searchParams: SearchParams }) {
   if (!marketplaceV2Enabled()) notFound()
 
-  const resolved = await resolveV2Actor("/v2/landing/inquiries")
+  const resolved = await resolveV2Actor(PATH)
   const query = await searchParams
   const actor = resolved.ok ? resolved.actor : null
   const workspace = actor && !actor.workspaceSelectionInvalid ? actor.activeOrganization : null
@@ -101,29 +97,118 @@ export default async function LandingInboxPage({ searchParams }: { searchParams:
     }
   }
 
-  const error = typeof query.error === "string" ? query.error : null
+  const error = one(query.error) || null
+  const queues = QUEUES.map((queue) => ({ ...queue, rows: interests.filter((interest) => landingInterestQueue(interest.status) === queue.key) }))
+  const ordered = queues.flatMap((queue) => queue.rows)
+  const selected = ordered.find((interest) => interest.id === one(query.inquiry)) ?? ordered[0] ?? null
 
-  return (
+  const list = (
     <>
-      <h1>Hauler inquiries</h1>
-      <p className="v2-muted">Interest received on your organization’s jobs. Replies are unlimited; nothing here assigns trucks or records a hire.</p>
-      {error ? <p className="v2-banner v2-banner--error" role="alert">{error}</p> : null}
+      {error ? <PageNotice role="alert" tone="critical">{error}</PageNotice> : null}
       {refusal ? (
-        <p className="v2-banner">{refusal}</p>
+        <PageNotice>{refusal}</PageNotice>
       ) : (
-        QUEUES.map((queue) => {
-          const rows = interests.filter((interest) => landingInterestQueue(interest.status) === queue.key)
-
-          return (
-            <section aria-labelledby={`queue-${queue.key}`} className="v2-queue" key={queue.key}>
-              <h2 id={`queue-${queue.key}`}>{queue.title} <span className="v2-count-badge">{rows.length}</span></h2>
-              {rows.length === 0
-                ? <p className="v2-muted">{queue.empty}</p>
-                : <ol className="v2-list">{rows.map((interest) => <li key={interest.id}><InquiryCard interest={interest} /></li>)}</ol>}
-            </section>
-          )
-        })
+        queues.map((queue) => (
+          <Section
+            description={`${queue.rows.length} inquir${queue.rows.length === 1 ? "y" : "ies"}`}
+            key={queue.key}
+            title={queue.title}
+            variant="flush"
+          >
+            {queue.rows.length === 0 ? (
+              <p className={styles.empty}>{queue.empty}</p>
+            ) : (
+              <ul aria-label={`${queue.title} inquiries`} className={styles.rows}>
+                {queue.rows.map((interest) => (
+                  <InquiryRow
+                    href={inquiryHref(PATH, interest.id)}
+                    interest={interest}
+                    key={interest.id}
+                    selected={interest.id === selected?.id}
+                    viewerSide="landing"
+                  />
+                ))}
+              </ul>
+            )}
+          </Section>
+        ))
       )}
     </>
+  )
+
+  return (
+    <div data-ds-page="landing-inbox">
+      <PageHeader
+        description="Interest received on your organization’s jobs. Replies are unlimited; nothing here assigns trucks or records a hire."
+        title="Hauler inquiries"
+      />
+      <PageContainer>
+        {refusal || !selected ? (
+          <ContentGrid layout="single" main={list} />
+        ) : (
+          <ContentGrid
+            aside={<LandingConversation confirmDecline={one(query.confirm) === "decline"} interest={selected} />}
+            layout="split"
+            main={list}
+          />
+        )}
+      </PageContainer>
+    </div>
+  )
+}
+
+/**
+ * The selected conversation: facts, "Mark reviewed" while it is new, the thread, and while it is open the reply
+ * composer with Decline beside Send.
+ */
+function LandingConversation({ confirmDecline, interest }: { confirmDecline: boolean; interest: MarketplaceInterestView }) {
+  const open = interest.status !== "withdrawn" && interest.status !== "declined"
+  const replyId = randomUUID()
+  const declineFields = { decision: "declined", interestId: interest.id }
+
+  return (
+    <InquiryConversation
+      closedNote="This conversation is closed. Nothing more can be sent on it."
+      composer={
+        open ? (
+          <InquiryReplyComposer
+            action={respondToInterestAction}
+            fields={{ decision: "replied", interestId: interest.id, replyId }}
+            key={replyId}
+            recipientName={interest.haulerOrganization.name}
+            secondaryAction={
+              <ConfirmActionDialog
+                action={respondToInterestAction}
+                body={declineBody(interest)}
+                confirmLabel="Decline inquiry"
+                fallbackHref={inquiryHref(PATH, interest.id, { confirm: "decline" }, CONFIRM_ANCHOR)}
+                fields={declineFields}
+                title={DECLINE_TITLE}
+                triggerLabel="Decline"
+              />
+            }
+          />
+        ) : null
+      }
+      confirmation={
+        open && confirmDecline ? (
+          <InquiryConfirmation body={declineBody(interest)} cancelHref={inquiryHref(PATH, interest.id)} title={DECLINE_TITLE}>
+            <ConfirmActionForm action={respondToInterestAction} confirmLabel="Decline inquiry" fields={declineFields} />
+          </InquiryConfirmation>
+        ) : null
+      }
+      facts={landingFacts(interest)}
+      headActions={
+        interest.status === "submitted" ? (
+          <form action={respondToInterestAction} className={styles.dialogForm}>
+            <input name="interestId" type="hidden" value={interest.id} />
+            <input name="decision" type="hidden" value="viewed" />
+            <PendingSubmitButton label="Mark reviewed" size="sm" variant="secondary" />
+          </form>
+        ) : null
+      }
+      interest={interest}
+      viewerSide="landing"
+    />
   )
 }

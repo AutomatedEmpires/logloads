@@ -9,7 +9,6 @@ import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 // DS-01 (#144): the semantic token layer. Tokens apply only inside .ll-theme (the AppShell root), so legacy
 // pages are unaffected. DS-02 (#145): the shared AppShell replaces the hand-rolled header.
 import "@logloads/ui/tokens.css"
-import "./v2.css"
 
 export const metadata: Metadata = {
   robots: { follow: false, index: false },
@@ -36,8 +35,7 @@ export default async function MarketplaceV2Layout({ children }: { children: Reac
       business={business}
       capabilities={capabilities}
     >
-      {/* Pages not yet built from the layout components keep their v2.css styling inside the shell. */}
-      <div className="v2 v2-main">{children}</div>
+      {children}
     </V2AppShell>
   )
 }

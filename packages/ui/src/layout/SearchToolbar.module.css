@@ -83,6 +83,13 @@
   background: var(--ll-color-action-hover);
 }
 
+/* AppShell draws the ring; this removes the app's legacy global :focus-visible halo (globals.css). */
+.input:focus-visible,
+.submit:focus-visible,
+.summary:focus-visible {
+  box-shadow: none;
+}
+
 .summary {
   display: none;
   align-items: center;

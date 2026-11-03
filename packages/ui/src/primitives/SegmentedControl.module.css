@@ -25,10 +25,12 @@
 .option:not([aria-pressed="true"]):hover { background: var(--ll-color-surface-subtle); }
 .option[aria-pressed="true"] { background: var(--ll-color-text); color: var(--ll-color-text-inverse); }
 
-/* The group clips its corners, so the ring sits inside the button. */
+/* The group clips its corners, so the ring sits inside the button. box-shadow: none removes the app's legacy
+   global :focus-visible halo (globals.css). */
 .option:focus-visible {
   outline: var(--ll-focus-width) solid var(--ll-focus-color);
   outline-offset: calc(-1 * var(--ll-focus-width));
+  box-shadow: none;
 }
 
 @media (forced-colors: active) {

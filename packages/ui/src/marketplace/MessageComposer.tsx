@@ -1,6 +1,7 @@
 "use client"
 
 import type { FormEvent } from "react"
+import { useFormStatus } from "react-dom"
 
 import { cx } from "../layout/cx"
 import { Button } from "../primitives/Button"
@@ -10,10 +11,20 @@ import type { MessageComposerProps, Placement } from "./types"
 /** The longest reply the contracts accept (`haulerInterestReplyInputSchema`, `respondToInterestInputSchema`). */
 export const MESSAGE_MAX_LENGTH = 2000
 
+/** The textarea's field name when the composer posts to a form `action` and no `name` is given. */
+export const MESSAGE_FIELD_NAME = "body"
+
 /**
  * Writes one reply. Controlled: the page owns the draft. A quick reply only replaces the draft text; it never
  * sends. Send is unavailable while the draft is blank or a send is in flight, so an empty or double submit
  * cannot happen. The reply id that makes a send idempotent is generated on the server, not here.
+ *
+ * With `action` the form also posts natively (progressive enhancement): the textarea is named and required, the
+ * page's `hiddenFields` (for example the inquiry id and the server-generated reply id) go with it, and a plain
+ * submit button stands in for Send when scripting is off. The form then has no submit handler of its own, like
+ * the app's other server-action forms: Send is its only submit control and is inert (`type="button"`) while the
+ * draft is blank or the action runs (React's own form status, SendButton), so an empty or double submit cannot
+ * reach the action. `onSend` is not called. A textarea's Enter key never submits.
  */
 export function MessageComposer({
   recipientName,
@@ -23,10 +34,15 @@ export function MessageComposer({
   quickReplies = [],
   secondaryAction,
   sending = false,
+  action,
+  name,
+  hiddenFields,
   className
 }: MessageComposerProps & Placement) {
   const blank = draft.trim().length === 0
+  const posts = action !== undefined
 
+  // Without a form action the page sends. A posting form submits straight to its action (see above).
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (blank || sending) return
@@ -34,7 +50,8 @@ export function MessageComposer({
   }
 
   return (
-    <form className={cx(styles.composer, className)} onSubmit={submit}>
+    <form action={action} className={cx(styles.composer, className)} onSubmit={posts ? undefined : submit}>
+      {hiddenFields}
       {quickReplies.length > 0 ? (
         <div aria-label="Quick replies" className={styles.quick} role="group">
           {quickReplies.map((reply) => (
@@ -49,11 +66,19 @@ export function MessageComposer({
           aria-label={`Reply to ${recipientName}`}
           className={styles.input}
           maxLength={MESSAGE_MAX_LENGTH}
+          name={posts ? (name ?? MESSAGE_FIELD_NAME) : name}
           onChange={(event) => onDraftChange(event.currentTarget.value)}
+          required={posts || undefined}
           rows={3}
           value={draft}
         />
-        <Button aria-disabled={blank || undefined} label="Send" loading={sending} type="submit" />
+        <SendButton blank={blank} className={posts ? styles.scripted : undefined} sending={sending} />
+        {/* Without scripts the draft never reaches React, so this plain submit sends; `required` blocks an empty one. */}
+        {posts ? (
+          <noscript>
+            <Button label="Send" type="submit" />
+          </noscript>
+        ) : null}
       </div>
       <div className={styles.foot}>
         <span>
@@ -64,4 +89,16 @@ export function MessageComposer({
       </div>
     </form>
   )
+}
+
+/**
+ * Send. Loading while the page says a send is in flight (`sending`), or while this form's action runs. The form
+ * status is React's: it ends with the action, including the navigation a server action's redirect makes, so Send
+ * cannot stay stuck in loading after a reply was accepted. Loading makes the Button inert (`type="button"`), so a
+ * second press cannot submit again. Outside a posting form `pending` is always false.
+ */
+function SendButton({ blank, className, sending }: { blank: boolean; className?: string; sending: boolean }) {
+  const { pending } = useFormStatus()
+
+  return <Button aria-disabled={blank || undefined} className={className} label="Send" loading={sending || pending} type="submit" />
 }

@@ -72,3 +72,8 @@
   color: var(--ll-color-text-muted);
   font-size: var(--ll-text-sm);
 }
+
+/* With a form action, the scripted Send gives way to the <noscript> submit button when scripting is off. */
+@media (scripting: none) {
+  .scripted { display: none; }
+}

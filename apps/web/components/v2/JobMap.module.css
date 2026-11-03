@@ -1,0 +1,50 @@
+/* The optional find-work map (replaces the retired v2.css .v2-map and .v2-pin rules). Semantic --ll-* tokens only. */
+.map {
+  height: 18rem;
+  overflow: hidden;
+  border: 1px solid var(--ll-color-border);
+  border-radius: var(--ll-radius-md);
+}
+
+/* One approximate landing area, at the size v2.css gave it (18 px with its border). Target size and clustering are
+   UX-13 (#136). */
+.pin {
+  display: block;
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  border: 3px solid var(--ll-color-surface);
+  border-radius: 50%;
+  background: var(--ll-color-action);
+  box-shadow: var(--ll-shadow-sm);
+}
+
+.pin:focus-visible {
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: var(--ll-focus-offset);
+  box-shadow: none;
+}
+
+.note {
+  margin: 0;
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-md);
+}
+
+.notice {
+  margin: 0;
+  padding: var(--ll-space-3) var(--ll-space-4);
+  border: 1px solid var(--ll-color-border-strong);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-surface-subtle);
+  font-size: var(--ll-text-md);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

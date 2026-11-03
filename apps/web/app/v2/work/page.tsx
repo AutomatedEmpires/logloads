@@ -17,8 +17,8 @@ function one(value: string | string[] | undefined): string {
 }
 
 /**
- * Find work (hauler), built from the design system (DS-04, #147). `data-ds-page` on the root opts this page out
- * of the legacy element rules in v2.css. The page fetches and decides; the components only render.
+ * Find work (hauler), built from the design system (DS-04, #147). `data-ds-page` on the root names the page for the
+ * DS-05 regression suite. The page fetches and decides; the components only render.
  */
 export default async function FindWorkPage({ searchParams }: { searchParams: SearchParams }) {
   if (!marketplaceV2Enabled()) notFound()
