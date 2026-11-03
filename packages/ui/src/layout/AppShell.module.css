@@ -30,9 +30,12 @@
   color: inherit;
 }
 
+/* The one ring inside the shell. box-shadow: none also removes the app's legacy global :focus-visible halo
+   (globals.css) from plain elements a page composes itself, such as a text link or a <summary>. */
 .root :focus-visible {
   outline: var(--ll-focus-width) solid var(--ll-focus-color);
   outline-offset: var(--ll-focus-offset);
+  box-shadow: none;
 }
 
 /* A container query cannot style its own container, so the gutter is raised on the shell's children. */

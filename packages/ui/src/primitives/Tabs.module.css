@@ -38,9 +38,11 @@
   border-bottom-color: var(--ll-color-nav-active);
 }
 
+/* box-shadow: none removes the app's legacy global :focus-visible halo (globals.css). */
 .tab:focus-visible {
   outline: var(--ll-focus-width) solid var(--ll-focus-color);
   outline-offset: var(--ll-focus-offset);
+  box-shadow: none;
 }
 
 /* Segmented variant: joined buttons, 36 px tall. */

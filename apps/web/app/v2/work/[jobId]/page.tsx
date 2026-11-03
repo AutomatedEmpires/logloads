@@ -1,21 +1,15 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
 
-import { describeMarketplaceVerification, postingFreshness, type MarketplaceHaulerEquipmentOption } from "@logloads/contracts"
+import type { MarketplaceHaulerEquipmentOption, MarketplaceInterestView, MarketplaceJobDetailView } from "@logloads/contracts"
+import { ContentGrid, PageContainer, PageHeader, Section } from "@logloads/ui/layout"
+import { EquipmentCapacity, formatDay, inquiryStatus, JobDetail, JOB_PUBLIC_STATUS_LABELS } from "@logloads/ui/marketplace"
+import { Button, FormField } from "@logloads/ui/primitives"
 
-import {
-  distanceLabel,
-  durationLabel,
-  equipmentOfferLabel,
-  estimateLabel,
-  formatDay,
-  interestStatusLabel,
-  JOB_STATUS_LABELS,
-  payLabel,
-  scheduleLabel,
-  trucksPerDayLabel,
-  trucksTotalLabel
-} from "@/components/v2/format"
+import { InterestCountField } from "@/components/v2/InterestCountField"
+import styles from "@/components/v2/InterestForm.module.css"
+import { PageNotice } from "@/components/v2/PageNotice"
+import { PendingSubmitButton } from "@/components/v2/PendingSubmitButton"
 import { expressInterestAction } from "@/lib/marketplace-v2/actions"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
@@ -25,48 +19,108 @@ import { getSessionActor } from "@/lib/session"
 type Params = Promise<{ jobId: string }>
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
+/** The interest form's anchor: JobDetail's "I'm interested" links here, which also works without JavaScript. */
+const INTEREST_ANCHOR = "interest"
+
+/** Interest the hauler already sent and has not withdrawn; the form is not offered again while it stands. */
+function standingInterest(existing: MarketplaceInterestView | null): MarketplaceInterestView | null {
+  return existing && existing.status !== "withdrawn" ? existing : null
+}
+
+/** "You offered this landing 2 trucks (2 × Log truck + Pole trailer). Sent · waiting for the landing." */
+function standingSummary(interest: MarketplaceInterestView): string {
+  const trucks = `${interest.trucksOffered} truck${interest.trucksOffered === 1 ? "" : "s"}`
+  const equipment = interest.equipment.map((line) => `${line.count} × ${line.label}`).join(", ")
+
+  return `You offered this landing ${trucks}${equipment ? ` (${equipment})` : ""}. ${inquiryStatus(interest, "hauler").label}.`
+}
+
+/**
+ * Trucks offered, by equipment configuration from the hauler's own business profile (self-reported). Each row
+ * caps its count at the units listed; V2 has no availability record, so each says "not recently confirmed" rather
+ * than a number. Without equipment the landing sees a plain count. The server re-checks every count.
+ */
 function EquipmentFields({ options }: { options: MarketplaceHaulerEquipmentOption[] }) {
   if (options.length === 0) {
     return (
-      <>
-        <label>
-          <span>Trucks you can offer</span>
-          <input defaultValue={1} inputMode="numeric" max={500} min={1} name="trucksOffered" required type="number" />
-        </label>
-        <p className="v2-muted">
-          Your business profile lists no trucks or trailers yet, so the landing sees a count only. Adding equipment to
-          your profile is not available in this preview yet.
+      <div className={styles.group}>
+        <InterestCountField defaultValue={1} id="interest-trucks" label="Trucks you can offer" max={500} min={1} name="trucksOffered" required />
+        <p className={styles.hint}>
+          Your business profile lists no trucks or trailers yet, so the landing sees a count only. Adding equipment to your profile is
+          not available in this preview yet.
         </p>
-      </>
+      </div>
     )
   }
 
   return (
-    <fieldset className="v2-equipment">
-      <legend>Trucks you can send, by equipment</legend>
-      {options.map((option) => (
-        <label className="v2-equipment__row" key={option.configurationKey}>
-          <input name="equipmentKey" type="hidden" value={option.configurationKey} />
-          <span>
-            {option.label}
-            <span className="v2-muted"> · {option.unitsListed} in your profile</span>
-          </span>
-          <input
-            aria-label={`Trucks offered: ${option.label}`}
-            defaultValue={options.length === 1 ? 1 : 0}
-            inputMode="numeric"
-            max={option.unitsListed}
-            min={0}
-            name="equipmentCount"
-            type="number"
-          />
-        </label>
-      ))}
-      <p className="v2-muted">Self-reported from your business profile — not live availability. Enter at least one truck.</p>
+    <fieldset className={styles.fieldset}>
+      <legend className={styles.legend}>Trucks you can send, by equipment</legend>
+      <ul className={styles.equipmentList}>
+        {options.map((option, index) => (
+          <li className={styles.equipmentRow} key={option.configurationKey}>
+            <input name="equipmentKey" type="hidden" value={option.configurationKey} />
+            <div className={styles.equipmentText}>
+              <span className={styles.equipmentName}>{option.label}</span>
+              <EquipmentCapacity available={null} state="unknown" units={option.unitsListed} />
+            </div>
+            <InterestCountField
+              defaultValue={options.length === 1 ? 1 : 0}
+              id={`interest-equipment-${index}`}
+              label={`Trucks offered: ${option.label}`}
+              labelHidden
+              max={option.unitsListed}
+              min={0}
+              name="equipmentCount"
+            />
+          </li>
+        ))}
+      </ul>
+      <p className={styles.hint}>Self-reported from your business profile — not live availability. Enter at least one truck.</p>
     </fieldset>
   )
 }
 
+function InterestForm({ equipmentOptions, job }: { equipmentOptions: MarketplaceHaulerEquipmentOption[]; job: MarketplaceJobDetailView }) {
+  return (
+    <form action={expressInterestAction} className={styles.form}>
+      <input name="loadPostingId" type="hidden" value={job.id} />
+      <EquipmentFields options={equipmentOptions} />
+      <FormField id="interest-message" label="Message" optional>
+        <textarea maxLength={2000} name="message" rows={3} />
+      </FormField>
+      <details className={styles.more}>
+        <summary className={styles.summary}>Dates and contact preference (optional)</summary>
+        <div className={styles.moreBody}>
+          <div className={styles.pair}>
+            <FormField id="interest-from" label="Available from">
+              <input name="availableFrom" type="date" />
+            </FormField>
+            <FormField id="interest-until" label="Available until">
+              <input name="availableUntil" type="date" />
+            </FormField>
+          </div>
+          <FormField id="interest-contact" label="Preferred contact">
+            <select defaultValue="in_app" name="contactPreference">
+              <option value="in_app">LogLoads messages</option>
+              <option value="phone">Phone</option>
+              <option value="email">Email</option>
+            </select>
+          </FormField>
+        </div>
+      </details>
+      <PendingSubmitButton className={styles.submit} label="Send interest" />
+      <p className={styles.hint}>Free and nonbinding. Not a contract or an assignment — the landing reviews and replies.</p>
+    </form>
+  )
+}
+
+/**
+ * One job (hauler view, UX 02 §A7), built from the design system (DS-04, #147): the shared JobDetail in a flush
+ * Section, the listing's dates, and the express-interest form beside it from bp-xl. The page header is "Job
+ * details", as on the DetailPanel and the mobile sheet, because JobDetail carries the job's own title. Who may
+ * express interest is decided here from the session's business; JobDetail only renders the result.
+ */
 export default async function JobDetailPage({ params, searchParams }: { params: Params; searchParams: SearchParams }) {
   if (!marketplaceV2Enabled()) notFound()
 
@@ -93,121 +147,82 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
   const error = typeof query.error === "string" ? query.error : null
   const sent = query.sent === "1"
   const now = new Date().toISOString()
-  const freshness = postingFreshness(job, now)
-  const duration = durationLabel(job)
-  const distance = distanceLabel(job)
-  const existingEquipment = existing ? equipmentOfferLabel(existing.equipment) : null
-  const verification = job.posterVerification ? describeMarketplaceVerification(job.posterVerification) : null
+  const standing = standingInterest(existing)
+  const showForm = job.acceptingInterest && canExpress && !standing
 
   return (
-    <article className="v2-detail">
-      <p><Link href="/v2/work">← Back to jobs</Link></p>
-      <header>
-        <p className="v2-muted">{job.posterName}{verification ? ` · ${verification.label.toLowerCase()}` : ""}</p>
-        {verification ? <p className="v2-muted">{verification.statement}</p> : null}
-        <h1>{job.title}</h1>
-        <p className="v2-card__pay">{payLabel(job)}</p>
-        <p>
-          <span className={`v2-status v2-status--${job.status}`}>{JOB_STATUS_LABELS[job.status]}</span>{" "}
-          <span className={`v2-fresh v2-fresh--${freshness.band}`}>{freshness.label}</span>
-        </p>
-      </header>
-
-      <section aria-labelledby="terms">
-        <h2 id="terms">Haul terms</h2>
-        <dl className="v2-facts">
-          <div><dt>Pay</dt><dd>{payLabel(job)} <span className="v2-muted">— stated by the poster; not a LogLoads guarantee</span></dd></div>
-          <div><dt>Product</dt><dd>{job.product ?? "Not stated"}</dd></div>
-          <div><dt>Equipment</dt><dd>{job.equipment.length > 0 ? job.equipment.join(", ") : "Not stated"}</dd></div>
-          <div><dt>Start</dt><dd>{scheduleLabel(job)}{duration ? ` · ${duration}` : ""}</dd></div>
-        </dl>
-      </section>
-
-      <section aria-labelledby="demand">
-        <h2 id="demand">Trucks and volume</h2>
-        <dl className="v2-facts">
-          <div><dt>Trucks for the job</dt><dd>{trucksTotalLabel(job)}</dd></div>
-          <div><dt>Trucks per day</dt><dd>{trucksPerDayLabel(job)}</dd></div>
-          <div><dt>Loads per truck per day</dt><dd>{estimateLabel(job.estimatedLoadsPerTruckPerDay, "loads")}</dd></div>
-          <div><dt>Loads per day (whole job)</dt><dd>{estimateLabel(job.estimatedDailyLoads, "loads")}</dd></div>
-          <div><dt>Tons per load</dt><dd>{estimateLabel(job.estimatedTonsPerLoad, "tons")}</dd></div>
-        </dl>
-      </section>
-
-      <section aria-labelledby="where">
-        <h2 id="where">Location and route</h2>
-        <dl className="v2-facts">
-          <div><dt>Landing area</dt><dd>{job.origin.label} <span className="v2-muted">(approximate; exact access is shared by the landing after contact)</span></dd></div>
-          <div><dt>Destination</dt><dd>{job.destinationLabel ?? "Not stated"}</dd></div>
-          <div><dt>Haul distance</dt><dd>{distance ?? "Not stated"}</dd></div>
-          <div><dt>Road notes</dt><dd>{job.publicRoadNotes ?? "None provided"}</dd></div>
-          {job.publicAccessRequirements.length > 0
-            ? <div><dt>Requirements</dt><dd>{job.publicAccessRequirements.join(", ")}</dd></div>
-            : null}
-        </dl>
-      </section>
-
-      <section aria-labelledby="currency">
-        <h2 id="currency">Listing status</h2>
-        <dl className="v2-facts">
-          <div><dt>Availability confirmed</dt><dd>{job.lastConfirmedAt ? formatDay(job.lastConfirmedAt) : "Not confirmed by the poster"}</dd></div>
-          <div><dt>Last edited</dt><dd>{formatDay(job.lastModifiedAt)}</dd></div>
-          <div><dt>Expires</dt><dd>{job.expiresAt ? formatDay(job.expiresAt) : "No expiry set"}</dd></div>
-        </dl>
-      </section>
-
-      <section aria-labelledby="interest" className="v2-interest">
-        <h2 id="interest">Interested in this job?</h2>
-        {sent ? <p className="v2-banner v2-banner--ok" role="status">Your interest was sent. The landing can reply in My inquiries.</p> : null}
-        {error ? <p className="v2-banner v2-banner--error" role="alert">{error}</p> : null}
-        {!job.acceptingInterest ? (
-          <p>This job is {JOB_STATUS_LABELS[job.status].toLowerCase()} and is not accepting new interest. <Link href="/v2/work">See open jobs</Link>.</p>
-        ) : !actor ? (
-          <p><Link className="v2-button" href={`/sign-in?next=${encodeURIComponent(`/v2/work/${job.id}`)}`}>Sign in to express interest</Link> It is free for haulers.</p>
-        ) : isPoster ? (
-          <p>This is your organization’s job. Review inquiries in the <Link href="/v2/landing/inquiries">landing inbox</Link>.</p>
-        ) : !canExpress ? (
-          <p>{withBusinessSwitchNote("Only a hauling business can express interest.")}</p>
-        ) : existing && existing.status !== "withdrawn" ? (
-          <p>
-            You told this landing you can offer {existing.trucksOffered} truck{existing.trucksOffered === 1 ? "" : "s"}
-            {existingEquipment ? ` (${existingEquipment})` : ""} — {interestStatusLabel(existing.status).toLowerCase()}.{" "}
-            <Link href="/v2/inquiries">Open my inquiries</Link>
-          </p>
-        ) : (
-          <form action={expressInterestAction} className="v2-form">
-            <input name="loadPostingId" type="hidden" value={job.id} />
-            <EquipmentFields options={equipmentOptions} />
-            <label>
-              <span>Message <span className="v2-muted">(optional)</span></span>
-              <textarea maxLength={2000} name="message" rows={3} />
-            </label>
-            <details className="v2-more">
-              <summary>Dates and contact preference (optional)</summary>
-              <div className="v2-form__pair">
-                <label>
-                  <span>Available from</span>
-                  <input name="availableFrom" type="date" />
-                </label>
-                <label>
-                  <span>Available until</span>
-                  <input name="availableUntil" type="date" />
-                </label>
-              </div>
-              <label>
-                <span>Preferred contact</span>
-                <select defaultValue="in_app" name="contactPreference">
-                  <option value="in_app">LogLoads messages</option>
-                  <option value="phone">Phone</option>
-                  <option value="email">Email</option>
-                </select>
-              </label>
-            </details>
-            <button type="submit">Send interest</button>
-            <p className="v2-muted">Free and nonbinding. Not a contract or an assignment — the landing reviews and replies.</p>
-          </form>
-        )}
-      </section>
-    </article>
+    <div data-ds-page="job-detail">
+      <PageHeader breadcrumbs={[{ href: "/v2/work", label: "Find work" }, { label: job.title }]} title="Job details" />
+      <PageContainer>
+        <ContentGrid
+          aside={
+            <div className={styles.anchor} id={INTEREST_ANCHOR}>
+              <Section title="Interested in this job?">
+                <div className={styles.stack}>
+                  {sent ? <PageNotice role="status" tone="positive">Your interest was sent. The landing can reply in My inquiries.</PageNotice> : null}
+                  {error ? <PageNotice role="alert" tone="critical">{error}</PageNotice> : null}
+                  {!job.acceptingInterest ? (
+                    <p className={styles.text}>
+                      This job is {JOB_PUBLIC_STATUS_LABELS[job.status].toLowerCase()} and is not accepting new interest.{" "}
+                      <Link className={styles.link} href="/v2/work">See open jobs</Link>.
+                    </p>
+                  ) : !actor ? (
+                    <div className={styles.stack}>
+                      <Button href={`/sign-in?next=${encodeURIComponent(`/v2/work/${job.id}`)}`} label="Sign in to express interest" />
+                      <p className={styles.hint}>It is free for haulers.</p>
+                    </div>
+                  ) : isPoster ? (
+                    <p className={styles.text}>
+                      This is your organization’s job. Review inquiries in the <Link className={styles.link} href="/v2/landing/inquiries">landing inbox</Link>.
+                    </p>
+                  ) : !canExpress ? (
+                    <p className={styles.text}>{withBusinessSwitchNote("Only a hauling business can express interest.")}</p>
+                  ) : standing ? (
+                    <p className={styles.text}>
+                      {standingSummary(standing)} <Link className={styles.link} href={`/v2/inquiries?inquiry=${standing.id}`}>Open my inquiries</Link>
+                    </p>
+                  ) : (
+                    <InterestForm equipmentOptions={equipmentOptions} job={job} />
+                  )}
+                </div>
+              </Section>
+            </div>
+          }
+          layout="main-aside"
+          main={
+            <>
+              <Section variant="flush">
+                <JobDetail
+                  canExpressInterest={showForm}
+                  expressInterestHref={showForm ? `#${INTEREST_ANCHOR}` : undefined}
+                  interestState={standing ? "sent" : "none"}
+                  job={job}
+                  now={now}
+                />
+              </Section>
+              <Section title="Listing dates" variant="open">
+                <dl className={styles.facts}>
+                  <div className={styles.fact}>
+                    <dt className={styles.factLabel}>Availability confirmed</dt>
+                    <dd className={styles.factValue}>{job.lastConfirmedAt ? formatDay(job.lastConfirmedAt) : "Not confirmed by the poster"}</dd>
+                  </div>
+                  <div className={styles.fact}>
+                    <dt className={styles.factLabel}>Last edited</dt>
+                    <dd className={styles.factValue}>
+                      {formatDay(job.lastModifiedAt)}
+                      <small className={styles.note}>Editing a job never confirms it.</small>
+                    </dd>
+                  </div>
+                  <div className={styles.fact}>
+                    <dt className={styles.factLabel}>Expires</dt>
+                    <dd className={styles.factValue}>{job.expiresAt ? formatDay(job.expiresAt) : "No expiry set"}</dd>
+                  </div>
+                </dl>
+              </Section>
+            </>
+          }
+        />
+      </PageContainer>
+    </div>
   )
 }

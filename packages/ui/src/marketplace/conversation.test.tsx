@@ -160,6 +160,40 @@ describe("MessageComposer", () => {
     expect(html).toContain("&lt;script&gt;")
   })
 
+  describe("posting to a form action (progressive enhancement)", () => {
+    const action = async () => undefined
+    const posting = (overrides: Partial<MessageComposerProps> = {}) =>
+      props({ action, hiddenFields: <input name="interestId" type="hidden" value="i-1" />, ...overrides })
+
+    it("names and requires the textarea and carries the page's hidden fields", () => {
+      const html = renderToStaticMarkup(<MessageComposer {...posting()} />)
+
+      expect(openingTag(html, /^<textarea/)).toContain('name="body"')
+      expect(openingTag(html, /^<textarea/)).toContain('required=""')
+      expect(openingTag(html, /name="interestId"/)).toContain('type="hidden"')
+      expect(openingTag(renderToStaticMarkup(<MessageComposer {...posting({ name: "message" })} />), /^<textarea/)).toContain('name="message"')
+    })
+
+    it("offers a plain submit button for clients without scripts, beside the scripted Send", () => {
+      const html = renderToStaticMarkup(<MessageComposer {...posting()} />)
+
+      expect(html).toMatch(/<noscript><button[^>]*type="submit"[^>]*>(?:(?!<\/button>).)*Send/)
+      // The scripted Send is still unavailable while the draft is blank.
+      expect(openingTag(html, /aria-disabled="true"/)).toContain('type="button"')
+      expect(renderToStaticMarkup(<MessageComposer {...props()} />)).not.toContain("<noscript>")
+    })
+
+    it("submits straight to the form action, with Send inert while the draft is blank or a send is in flight", () => {
+      // No submit handler of its own, like the app's other server-action forms (PR #179).
+      expect(MessageComposer(posting({ draft: "On my way" })).props.onSubmit).toBeUndefined()
+
+      const scriptedSend = (html: string) => openingTag(html, /class="[^"]*scripted/)
+      expect(scriptedSend(renderToStaticMarkup(<MessageComposer {...posting({ draft: "On my way" })} />))).toContain('type="submit"')
+      expect(scriptedSend(renderToStaticMarkup(<MessageComposer {...posting({ draft: "  " })} />))).toContain('type="button"')
+      expect(scriptedSend(renderToStaticMarkup(<MessageComposer {...posting({ draft: "On my way", sending: true })} />))).toContain('type="button"')
+    })
+  })
+
   it("names the recipient and keeps contact sharing explicit (UX-DEC-04)", () => {
     const html = renderToStaticMarkup(<MessageComposer {...props()} />)
 

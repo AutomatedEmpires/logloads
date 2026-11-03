@@ -62,6 +62,12 @@
   cursor: pointer;
 }
 
+/* AppShell draws the ring; this removes the app's legacy global :focus-visible halo (globals.css). */
+.filter:focus-visible,
+.clear:focus-visible {
+  box-shadow: none;
+}
+
 .wideOnly {
   display: none;
 }

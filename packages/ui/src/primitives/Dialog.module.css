@@ -29,9 +29,12 @@
 .dialog *::before,
 .dialog *::after { box-sizing: border-box; }
 
+/* The dialog may be portalled outside the AppShell, so it draws its own ring. box-shadow: none removes the app's
+   legacy global :focus-visible halo (globals.css). */
 .dialog :focus-visible {
   outline: var(--ll-focus-width) solid var(--ll-focus-color);
   outline-offset: var(--ll-focus-offset);
+  box-shadow: none;
 }
 
 .dialog::backdrop { background: var(--ll-color-backdrop); }
