@@ -62,6 +62,7 @@ declare
   o_haul uuid; o_land uuid; o_priv uuid;
   m_inv uuid; v_q uuid;
   u_mod uuid; u_post uuid; o_post uuid; l_one uuid; l_two uuid; j_held uuid;
+  u_billing uuid; u_support uuid; u_super uuid; v_job uuid; v_job2 uuid; v_eoi uuid; v_period uuid;
 begin
   perform pg_temp.as_jwt('service_role');
   u_own  := marketplace.sync_verified_identity(c_iss, 's16_owner', 'S16 Owner',     'owner@s16.test', true);
@@ -227,6 +228,117 @@ begin
       l_one, 'Spruce Haul to Mill', array['log_truck'], 3, 'Spruce sawlogs', 'Corrected repost.', 'per_ton', 600, null,
       3, current_date + 10, 8, 3.0, 9, 30.0, 'Bend Mill, OR', 28, null, null, array['ppe'], true) is not null,
     'C-1: after a moderator releases the hold, the corrected posting can be published');
+
+  -- -------------------------------------------------------------------------
+  -- Setup for LE-06/07/08/10 and B-7/B-9: platform staff by role, an inquiry with one message
+  -- -------------------------------------------------------------------------
+  perform pg_temp.as_jwt('service_role');
+  u_billing := marketplace.sync_verified_identity(c_iss, 's16_billing', 'S16 Billing Staff', 'billing@s16.test', true);
+  u_support := marketplace.sync_verified_identity(c_iss, 's16_support', 'S16 Support Staff', 'support@s16.test', true);
+  u_super   := marketplace.sync_verified_identity(c_iss, 's16_super',   'S16 Super Staff',   'super@s16.test',   true);
+  perform pg_temp.as_jwt('harness');
+  insert into marketplace.platform_admins (user_id, admin_role, note)
+  values (u_billing, 'billing', 'suite 17'), (u_support, 'support', 'suite 17'), (u_super, 'superadmin', 'suite 17');
+  select id into v_job from marketplace.job_postings where org_id = o_post and title = 'Fir Haul to Mill';
+  insert into marketplace.expressions_of_interest (job_id, job_org_id, hauler_org_id, submitted_by, trucks_offered, status)
+  values (v_job, o_post, o_priv, u_haul, 1, 'submitted')
+  returning id into v_eoi;
+  insert into marketplace.interest_messages (interest_id, author_user_id, author_side, body)
+  values (v_eoi, u_haul, 'hauler', 'We can run two trucks Monday.');
+
+  -- LE-07: staff read access by role; message content only through the audited function
+  perform pg_temp.as_jwt('authenticated', 's16_billing');
+  perform pg_temp.ok(not exists (select 1 from marketplace.expressions_of_interest where id = v_eoi)
+    and not exists (select 1 from marketplace.organization_memberships where org_id = o_post),
+    'LE-07: billing staff cannot read other organizations'' inquiries or memberships');
+  perform pg_temp.as_jwt('authenticated', 's16_support');
+  perform pg_temp.ok(exists (select 1 from marketplace.expressions_of_interest where id = v_eoi)
+    and exists (select 1 from marketplace.organization_memberships where org_id = o_post),
+    'LE-07: support staff can read inquiries and memberships');
+  perform pg_temp.ok(not exists (select 1 from marketplace.interest_messages where interest_id = v_eoi),
+    'LE-07: support staff cannot read message content directly');
+  perform pg_temp.ok((select count(*) from marketplace.admin_read_interest_thread(v_eoi, 'Investigating an abuse report')) = 1,
+    'LE-07: support staff read a thread through the audited function');
+  perform pg_temp.fails(format($q$select * from marketplace.admin_read_interest_thread(%L, 'x')$q$, v_eoi),
+    '22023', 'reason', 'LE-07: a thread read needs a reason');
+  perform pg_temp.as_jwt('authenticated', 's16_mod');
+  perform pg_temp.fails(format($q$select * from marketplace.admin_read_interest_thread(%L, 'Moderation check')$q$, v_eoi),
+    '42501', 'support administrator', 'LE-07: moderators cannot read inquiry threads');
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok(exists (select 1 from marketplace.audit_events
+                             where action = 'admin.interest_thread_read' and entity_id = v_eoi
+                               and actor_kind = 'platform_admin' and actor_user_id = u_support and reason = 'Investigating an abuse report'),
+    'LE-07: the staff read is audited with its reason');
+  perform pg_temp.as_jwt('authenticated', 's16_haul');
+  perform pg_temp.ok((select count(*) from marketplace.interest_messages where interest_id = v_eoi) = 1,
+    'LE-07: the hauling business still reads its own thread');
+  perform pg_temp.as_jwt('authenticated', 's16_post');
+  perform pg_temp.ok((select count(*) from marketplace.interest_messages where interest_id = v_eoi) = 1,
+    'LE-07: the landing desk still reads the thread on its job');
+
+  -- B-9: the 200-message limit binds direct inserts
+  perform pg_temp.as_jwt('harness');
+  insert into marketplace.interest_messages (interest_id, author_user_id, author_side, body)
+  select v_eoi, u_haul, 'hauler', 'message ' || g from generate_series(1, 199) g;
+  perform pg_temp.as_jwt('authenticated', 's16_haul');
+  perform pg_temp.fails(format($q$insert into marketplace.interest_messages (interest_id, author_side, body)
+      values (%L, 'hauler', 'one more')$q$, v_eoi),
+    '23514', '200-message limit', 'B-9: a direct insert past the 200-message limit is refused');
+
+  -- B-7: a declined inquiry no longer opens the landing's private details
+  perform pg_temp.as_jwt('harness');
+  update marketplace.expressions_of_interest
+  set status = 'replied', responded_at = now(), private_details_shared_at = now(), private_details_shared_by = u_post
+  where id = v_eoi;
+  perform pg_temp.as_jwt('authenticated', 's16_haul');
+  perform pg_temp.ok(marketplace.can_view_landing_private(l_one), 'B-7 setup: a shared, open inquiry opens the private details');
+  perform pg_temp.as_jwt('harness');
+  update marketplace.expressions_of_interest set status = 'declined' where id = v_eoi;
+  perform pg_temp.as_jwt('authenticated', 's16_haul');
+  perform pg_temp.ok(not marketplace.can_view_landing_private(l_one), 'B-7: once declined, the private details are closed');
+
+  -- LE-06: an owner sees a moderation action's reason, not the moderator
+  perform pg_temp.as_jwt('authenticated', 's16_post');
+  perform pg_temp.ok(exists (select 1 from marketplace.audit_events
+                             where entity_id = j_held and action = 'job_posting.moderated' and reason = 'Reported misleading pay'),
+    'LE-06: the owner reads the moderation action and its reason');
+  perform pg_temp.fails('select actor_user_id from marketplace.audit_events limit 1', '42501', 'permission denied',
+    'LE-06: the actor column is not directly readable');
+  perform pg_temp.ok(marketplace.audit_event_actor(
+      (select max(id) from marketplace.audit_events where entity_id = j_held and action = 'job_posting.moderated')) is null,
+    'LE-06: the owner cannot learn which moderator acted');
+  perform pg_temp.ok(marketplace.audit_event_actor(
+      (select max(id) from marketplace.audit_events where entity_id = o_post and action = 'organization.created')) = u_post,
+    'LE-06: the owner still sees who in their own organization acted');
+  perform pg_temp.as_jwt('authenticated', 's16_support');
+  perform pg_temp.ok(marketplace.audit_event_actor(
+      (select max(id) from marketplace.audit_events where entity_id = j_held and action = 'job_posting.moderated')) = u_mod,
+    'LE-06: platform staff can see the acting moderator');
+
+  -- LE-08: a legal-name change after verification returns the organization to pending review
+  perform pg_temp.as_jwt('authenticated', 's16_super');
+  perform marketplace.admin_set_org_verification(o_post, 'verified', 'OR SOS registry check');
+  perform pg_temp.as_jwt('authenticated', 's16_post');
+  update marketplace.organizations set display_name = 'S16 Posting Company' where id = o_post;
+  perform pg_temp.ok((select verification_status = 'verified' from marketplace.organizations where id = o_post)
+    and exists (select 1 from marketplace.audit_events where entity_id = o_post and action = 'organization.identity_changed'),
+    'LE-08: a display-name change keeps verification and is audited');
+  update marketplace.organizations set legal_name = 'S16 Posting LLC' where id = o_post;
+  perform pg_temp.ok((select verification_status = 'pending' and verified_at is null from marketplace.organizations where id = o_post)
+    and exists (select 1 from marketplace.audit_events where entity_id = o_post and action = 'organization.verification_reset'),
+    'LE-08: a legal-name change after verification returns the organization to pending review (audited)');
+
+  -- LE-10: the plan's dedupe window cannot be shortened by a caller
+  perform pg_temp.as_jwt('harness');
+  select id into v_job2 from marketplace.job_postings where org_id = o_post and title = 'Spruce Haul to Mill' and landing_id = l_two;
+  select id into v_period from marketplace.entitlement_periods where org_id = o_post order by period_start desc limit 1;
+  insert into marketplace.targeted_invitations
+    (job_id, sender_org_id, recipient_org_id, sent_by, entitlement_period_id, status, created_at, delivered_at, resolved_at)
+  values (v_job2, o_post, o_priv, u_post, v_period, 'delivered', now() - interval '2 days', now() - interval '2 days', now() - interval '2 days');
+  perform pg_temp.fails(format($q$insert into marketplace.targeted_invitations
+      (job_id, sender_org_id, recipient_org_id, sent_by, entitlement_period_id, status) values (%L, %L, %L, %L, %L, 'reserved')$q$,
+      v_job2, o_post, o_priv, u_post, v_period),
+    '23514', 'dedupe window', 'LE-10: a business invited 2 days ago cannot be invited again, whatever window a caller passes');
 
   raise notice 'ALL IDENTITY, MEMBERSHIP AND QUALIFICATION (B-1, B-2, B-5) TESTS PASSED.';
 end

@@ -348,6 +348,214 @@ revoke all on function
   from public, anon, authenticated, service_role;
 
 -- -----------------------------------------------------------------------------
+-- LE-07 (B-3, decision under the founder's delegation): platform staff read memberships and inquiries only
+-- with the support role (superadmin satisfies every role). Message CONTENT is never readable by staff through
+-- row-level security; it is read only through admin_read_interest_thread, which requires a reason and is audited.
+-- -----------------------------------------------------------------------------
+drop policy if exists memberships_read on marketplace.organization_memberships;
+create policy memberships_read on marketplace.organization_memberships for select to authenticated
+  using (org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff', 'driver']))
+         or user_id = (select marketplace.current_user_id())
+         or marketplace.is_platform_admin(array['support']));
+
+drop policy if exists interests_read on marketplace.expressions_of_interest;
+create policy interests_read on marketplace.expressions_of_interest for select to authenticated
+  using (hauler_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff', 'driver']))
+         or job_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff'], true))
+         or marketplace.is_platform_admin(array['support']));
+
+-- 06's helper without the platform-admin read branch (interest_messages_read uses it).
+create or replace function marketplace.can_access_interest(p_interest uuid, p_write_side text default null)
+returns boolean language sql stable security definer
+set search_path = pg_catalog, extensions, pg_temp
+as $$
+  select exists (
+    select 1
+    from marketplace.expressions_of_interest e
+    where e.id = p_interest
+      and (
+        (p_write_side is null and (
+           e.hauler_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff', 'driver']))
+           or e.job_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff'], true))
+        ))
+        or (p_write_side = 'hauler' and e.status not in ('withdrawn', 'declined')
+            and e.hauler_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff', 'driver'])))
+        or (p_write_side = 'landing' and e.status not in ('withdrawn', 'declined')
+            and e.job_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff'], true)))
+      )
+  )
+$$;
+
+create or replace function marketplace.admin_read_interest_thread(p_interest_id uuid, p_reason text)
+returns table (message_id uuid, message_author_side text, message_body text, message_created_at timestamptz)
+language plpgsql security definer
+set search_path = pg_catalog, extensions, pg_temp
+as $$
+declare
+  v_org uuid;
+begin
+  if not marketplace.is_platform_admin(array['support']) then
+    raise exception 'a support administrator is required to read an inquiry thread' using errcode = '42501';
+  end if;
+  if p_reason is null or char_length(btrim(p_reason)) < 5 then
+    raise exception 'a reason (at least 5 characters) is required to read an inquiry thread' using errcode = '22023';
+  end if;
+  select e.job_org_id into v_org from marketplace.expressions_of_interest e where e.id = p_interest_id;
+  if v_org is null then
+    raise exception 'Inquiry not found' using errcode = 'P0002';
+  end if;
+  perform marketplace.write_audit(
+    'admin.interest_thread_read', 'expressions_of_interest', p_interest_id, v_org, btrim(p_reason), '{}'::jsonb, true);
+  return query
+    select m.id, m.author_side, m.body, m.created_at
+    from marketplace.interest_messages m
+    where m.interest_id = p_interest_id
+    order by m.created_at, m.id;
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- LE-06 (B-8): organizations read their audit trail, including a moderation action's reason and time, but not
+-- the identity of the platform staff member who acted. The actor column is no longer directly readable;
+-- audit_event_actor returns it to platform staff, and to the organization's owners for non-staff actions.
+-- -----------------------------------------------------------------------------
+revoke select on marketplace.audit_events from authenticated;
+grant select (id, occurred_at, actor_kind, org_id, action, entity_table, entity_id, reason, metadata)
+  on marketplace.audit_events to authenticated;
+
+create or replace function marketplace.audit_event_actor(p_event_id bigint)
+returns uuid language sql stable security definer
+set search_path = pg_catalog, extensions, pg_temp
+as $$
+  select a.actor_user_id
+  from marketplace.audit_events a
+  where a.id = p_event_id
+    and (marketplace.is_platform_admin()
+         or (a.actor_kind <> 'platform_admin'
+             and a.org_id in (select marketplace.my_org_ids(array['owner']))))
+$$;
+
+-- -----------------------------------------------------------------------------
+-- LE-08 (B-4): verification attests to a legal identity. Changing a verified organization's legal name returns
+-- it to pending review (audited); display-name and slug changes keep verification and are audited.
+-- -----------------------------------------------------------------------------
+create or replace function marketplace.tg_org_identity_guard()
+returns trigger language plpgsql security definer
+set search_path = pg_catalog, extensions, pg_temp
+as $$
+begin
+  if old.verification_status = 'verified' and new.verification_status = 'verified'
+     and new.legal_name is distinct from old.legal_name then
+    new.verification_status := 'pending';
+    new.verified_at := null;
+    new.verified_by := null;
+    perform marketplace.write_audit(
+      'organization.verification_reset', 'organizations', new.id, new.id,
+      'the legal name changed after verification',
+      jsonb_build_object('previous_legal_name', old.legal_name, 'legal_name', new.legal_name));
+  elsif (new.display_name, new.slug) is distinct from (old.display_name, old.slug) then
+    perform marketplace.write_audit(
+      'organization.identity_changed', 'organizations', new.id, new.id, null,
+      jsonb_build_object('previous_display_name', old.display_name, 'previous_slug', old.slug));
+  end if;
+  return new;
+end
+$$;
+
+drop trigger if exists org_identity_guard on marketplace.organizations;
+create trigger org_identity_guard
+  before update on marketplace.organizations
+  for each row execute function marketplace.tg_org_identity_guard();
+
+-- -----------------------------------------------------------------------------
+-- LE-10 (I-1): the invitation dedupe window cannot be shortened by a caller. Whatever window was passed to the
+-- reservation functions, a new invitation for the same job and business is refused while an earlier one is
+-- reserved, or was delivered within the sending plan's window (default 30 days).
+-- -----------------------------------------------------------------------------
+create or replace function marketplace.tg_invitation_dedupe_floor()
+returns trigger language plpgsql security definer
+set search_path = pg_catalog, extensions, pg_temp
+as $$
+declare
+  v_days integer;
+begin
+  v_days := coalesce((marketplace.org_entitled_plan(new.sender_org_id)).invitation_dedupe_days, 30);
+  if exists (
+    select 1 from marketplace.targeted_invitations ti
+    where ti.job_id = new.job_id
+      and ti.recipient_org_id = new.recipient_org_id
+      and ti.id <> new.id
+      and (ti.status = 'reserved'
+           or (ti.status = 'delivered' and ti.created_at >= now() - v_days * interval '1 day'))
+  ) then
+    raise exception 'this business was already invited to this job within the % day dedupe window', v_days
+      using errcode = '23514';
+  end if;
+  return new;
+end
+$$;
+
+drop trigger if exists invitation_dedupe_floor on marketplace.targeted_invitations;
+create trigger invitation_dedupe_floor
+  before insert on marketplace.targeted_invitations
+  for each row execute function marketplace.tg_invitation_dedupe_floor();
+
+-- -----------------------------------------------------------------------------
+-- B-7: a declined inquiry no longer opens the landing's private details (02 excluded only withdrawn ones).
+-- -----------------------------------------------------------------------------
+create or replace function marketplace.can_view_landing_private(p_landing uuid)
+returns boolean language sql stable security definer
+set search_path = pg_catalog, extensions, pg_temp
+as $$
+  select exists (
+    select 1 from marketplace.landings l
+    where l.id = p_landing and marketplace.has_org_role(l.org_id, array['owner', 'manager', 'staff'], true)
+  ) or exists (
+    select 1
+    from marketplace.expressions_of_interest e
+    join marketplace.job_postings j on j.id = e.job_id
+    where j.landing_id = p_landing
+      and j.status in ('active', 'paused')
+      and e.status not in ('withdrawn', 'declined')
+      and e.private_details_shared_at is not null
+      and e.hauler_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff', 'driver']))
+  )
+$$;
+
+-- -----------------------------------------------------------------------------
+-- B-9: the 200-message limit per inquiry (enforced by the reply functions) also binds direct inserts.
+-- -----------------------------------------------------------------------------
+create or replace function marketplace.tg_interest_message_cap()
+returns trigger language plpgsql security definer
+set search_path = pg_catalog, extensions, pg_temp
+as $$
+begin
+  perform 1 from marketplace.expressions_of_interest e where e.id = new.interest_id for update;
+  if (select count(*) from marketplace.interest_messages m where m.interest_id = new.interest_id) >= 200 then
+    raise exception 'This conversation has reached its 200-message limit' using errcode = '23514';
+  end if;
+  return new;
+end
+$$;
+
+drop trigger if exists interest_message_cap on marketplace.interest_messages;
+create trigger interest_message_cap
+  before insert on marketplace.interest_messages
+  for each row execute function marketplace.tg_interest_message_cap();
+
+revoke all on function
+  marketplace.admin_read_interest_thread(uuid, text),
+  marketplace.audit_event_actor(bigint),
+  marketplace.tg_org_identity_guard(),
+  marketplace.tg_invitation_dedupe_floor(),
+  marketplace.tg_interest_message_cap()
+  from public, anon, authenticated, service_role;
+grant execute on function
+  marketplace.admin_read_interest_thread(uuid, text),
+  marketplace.audit_event_actor(bigint)
+  to authenticated;
+
+-- -----------------------------------------------------------------------------
 -- Record this migration.
 -- -----------------------------------------------------------------------------
 insert into marketplace.schema_migrations (version, name) values ('16', '16_v2_identity_membership_hardening');
