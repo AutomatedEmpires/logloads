@@ -140,8 +140,8 @@ export interface MessageComposerProps {
   /**
    * DEVIATION (addition): progressive enhancement, so a reply posts without JavaScript (spec §7). The form submits
    * natively to `action` (a server action or URL) with the textarea named `name` (default "body") and required,
-   * plus the page's `hiddenFields` (e.g. the inquiry id and the server-generated reply id). With scripts a blank or
-   * in-flight send is still stopped first, and `onSend` is called just before the action runs instead of sending.
+   * plus the page's `hiddenFields` (e.g. the inquiry id and the server-generated reply id). The form has no submit
+   * handler then: Send is inert while the draft is blank or the action runs, and `onSend` is not called.
    */
   action?: string | ((formData: FormData) => void | Promise<void>)
   name?: string

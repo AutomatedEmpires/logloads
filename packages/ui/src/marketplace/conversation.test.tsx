@@ -183,18 +183,14 @@ describe("MessageComposer", () => {
       expect(renderToStaticMarkup(<MessageComposer {...props()} />)).not.toContain("<noscript>")
     })
 
-    it("lets a ready draft through to the form action, and stops a blank or in-flight one", () => {
-      const ready = posting({ draft: "On my way" })
-      expect(submit(ready)).not.toHaveBeenCalled()
-      expect(ready.onSend).toHaveBeenCalledOnce()
+    it("submits straight to the form action, with Send inert while the draft is blank or a send is in flight", () => {
+      // No submit handler of its own, like the app's other server-action forms (PR #179).
+      expect(MessageComposer(posting({ draft: "On my way" })).props.onSubmit).toBeUndefined()
 
-      const blank = posting({ draft: "  " })
-      expect(submit(blank)).toHaveBeenCalledOnce()
-      expect(blank.onSend).not.toHaveBeenCalled()
-
-      const sending = posting({ draft: "On my way", sending: true })
-      expect(submit(sending)).toHaveBeenCalledOnce()
-      expect(sending.onSend).not.toHaveBeenCalled()
+      const scriptedSend = (html: string) => openingTag(html, /class="[^"]*scripted/)
+      expect(scriptedSend(renderToStaticMarkup(<MessageComposer {...posting({ draft: "On my way" })} />))).toContain('type="submit"')
+      expect(scriptedSend(renderToStaticMarkup(<MessageComposer {...posting({ draft: "  " })} />))).toContain('type="button"')
+      expect(scriptedSend(renderToStaticMarkup(<MessageComposer {...posting({ draft: "On my way", sending: true })} />))).toContain('type="button"')
     })
   })
 

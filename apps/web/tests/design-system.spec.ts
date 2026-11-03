@@ -864,8 +864,25 @@ test.describe("conversation on a page (#148 criterion 4)", () => {
     // A reply with markup is posted and comes back as text; the composer starts again empty.
     await textarea.fill(MARKUP_REPLY)
     await expect(send).not.toHaveAttribute("aria-disabled", "true")
+
+    // PR #179: in CI (production build + Supabase) the reply was saved and redirected but the page never moved, and
+    // the trace holds neither the action's response body nor console output. Keep them, attached on a failure.
+    const diagnostics: string[] = []
+    page.on("console", (entry) => diagnostics.push(`console.${entry.type()}: ${entry.text()}`))
+    page.on("pageerror", (error) => diagnostics.push(`pageerror: ${error.stack ?? error.message}`))
+    page.on("response", async (response) => {
+      if (response.request().method() !== "POST") return
+      const body = await response.text().catch((error: unknown) => `<unreadable: ${String(error)}>`)
+      diagnostics.push(`${response.status()} ${response.url()}\n${JSON.stringify(response.headers())}\n${body.slice(0, 50_000)}`)
+    })
+
     await send.click()
-    await expect(page).toHaveURL(/[?&]updated=reply/)
+    try {
+      await expect(page).toHaveURL(/[?&]updated=reply/)
+    } catch (error) {
+      await test.info().attach("reply-diagnostics", { body: diagnostics.join("\n\n") || "(nothing captured)", contentType: "text/plain" })
+      throw error
+    }
     await expect(page).toHaveURL(/[?&]inquiry=/)
     await expect(page.getByRole("log")).toContainText(MARKUP_REPLY)
     await expect(page.getByRole("log").locator("img, script, b")).toHaveCount(0)

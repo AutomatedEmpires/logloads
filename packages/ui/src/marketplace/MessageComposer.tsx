@@ -21,9 +21,10 @@ export const MESSAGE_FIELD_NAME = "body"
  *
  * With `action` the form also posts natively (progressive enhancement): the textarea is named and required, the
  * page's `hiddenFields` (for example the inquiry id and the server-generated reply id) go with it, and a plain
- * submit button stands in for Send when scripting is off. With scripts, a blank or in-flight send is still
- * stopped here before the form action runs, and `onSend` is told just before it does. While the action runs,
- * Send shows React's own form status (SendButton), so the page needs no sending state of its own for it.
+ * submit button stands in for Send when scripting is off. The form then has no submit handler of its own, like
+ * the app's other server-action forms: Send is its only submit control and is inert (`type="button"`) while the
+ * draft is blank or the action runs (React's own form status, SendButton), so an empty or double submit cannot
+ * reach the action. `onSend` is not called. A textarea's Enter key never submits.
  */
 export function MessageComposer({
   recipientName,
@@ -41,18 +42,15 @@ export function MessageComposer({
   const blank = draft.trim().length === 0
   const posts = action !== undefined
 
+  // Without a form action the page sends. A posting form submits straight to its action (see above).
   const submit = (event: FormEvent<HTMLFormElement>) => {
-    if (blank || sending) {
-      event.preventDefault()
-      return
-    }
-    // Without a form action the page sends; with one, the form submits to it after this handler returns.
-    if (!posts) event.preventDefault()
+    event.preventDefault()
+    if (blank || sending) return
     onSend()
   }
 
   return (
-    <form action={action} className={cx(styles.composer, className)} onSubmit={submit}>
+    <form action={action} className={cx(styles.composer, className)} onSubmit={posts ? undefined : submit}>
       {hiddenFields}
       {quickReplies.length > 0 ? (
         <div aria-label="Quick replies" className={styles.quick} role="group">

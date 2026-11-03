@@ -34,7 +34,7 @@ export function InquiryReplyComposer({
       draft={draft}
       hiddenFields={Object.entries(fields).map(([name, value]) => <input key={name} name={name} type="hidden" value={value} />)}
       onDraftChange={setDraft}
-      // The form posts to `action`; nothing else happens on send.
+      // Not called: with `action` the form posts straight to the server action.
       onSend={() => undefined}
       recipientName={recipientName}
       secondaryAction={secondaryAction}
