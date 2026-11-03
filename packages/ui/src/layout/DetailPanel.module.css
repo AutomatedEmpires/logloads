@@ -1,0 +1,52 @@
+/* DetailPanel (DS-02). Shown beside a ContentGrid "list-detail" list at bp-xl (1200) and up, while the detail
+   is open; 400 px wide, 432 px at bp-2xl (widths come from ContentGrid). Below bp-xl the page shows the same
+   detail in a Dialog sheet instead. Sticky, scrolling inside itself when taller than the viewport. */
+.panel {
+  display: none;
+  position: sticky;
+  top: var(--ll-space-4);
+  max-height: calc(100vh - 2 * var(--ll-space-4));
+  max-height: calc(100dvh - 2 * var(--ll-space-4));
+  overflow: auto;
+  border: 1px solid var(--ll-color-border);
+  border-radius: var(--ll-c-section-radius);
+  background: var(--ll-color-surface);
+  box-shadow: var(--ll-shadow-md);
+}
+
+@container ll-app (min-width: 1200px) { /* bp-xl */
+  [data-layout="list-detail"][data-detail="open"] > .panel { display: block; }
+}
+
+.bar {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--ll-space-2) var(--ll-space-2) 0;
+}
+
+.close {
+  display: inline-flex;
+  align-items: center;
+  height: var(--ll-c-button-h-sm);
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--ll-c-button-radius);
+  background: transparent;
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-md);
+  font-weight: var(--ll-weight-semibold);
+  cursor: pointer;
+}
+
+.close:hover {
+  background: var(--ll-hover-overlay);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

@@ -1,0 +1,63 @@
+/* Section (DS-02). surface: white panel. open: a dark top rule, no box. flush: a panel whose list runs edge to
+   edge (the list's own frame is removed). Never nested. */
+.section {
+  display: grid;
+  gap: var(--ll-space-4);
+  min-width: 0;
+}
+
+.section[data-variant="surface"] {
+  padding: var(--ll-c-section-pad);
+  border: 1px solid var(--ll-color-border);
+  border-radius: var(--ll-c-section-radius);
+  background: var(--ll-color-surface);
+}
+
+.section[data-variant="open"] {
+  padding-top: var(--ll-space-4);
+  border-top: 1px solid var(--ll-color-rule);
+}
+
+.section[data-variant="flush"] {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--ll-color-border);
+  border-radius: var(--ll-c-section-radius);
+  background: var(--ll-color-surface);
+}
+
+.section[data-variant="flush"] > .head {
+  padding: var(--ll-space-4) var(--ll-c-row-px);
+  border-bottom: 1px solid var(--ll-color-border);
+}
+
+.section[data-variant="flush"] > :not(.head) {
+  border: 0;
+  border-radius: 0;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ll-space-3);
+}
+
+.headText {
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--ll-text-lg);
+  font-weight: var(--ll-weight-semibold);
+  line-height: var(--ll-leading-snug);
+}
+
+.desc {
+  max-width: 72ch;
+  margin-top: 2px;
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-md);
+}

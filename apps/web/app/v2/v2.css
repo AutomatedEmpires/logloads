@@ -1,11 +1,7 @@
-/* Marketplace V2 preview — route-scoped; reuses the global design tokens. Mobile-first. */
-.v2 { background: var(--paper); color: var(--ink); min-height: 100vh; font-family: var(--font-ui); }
-.v2-top { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; align-items: center; padding: 0.75rem 1rem; border-bottom: 1px solid var(--line); }
-.v2-brand { font-family: var(--font-display); font-weight: 800; font-size: 1.15rem; color: var(--pine); text-decoration: none; }
-.v2-top nav { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; }
-.v2-top nav a { color: var(--ink-soft); font-weight: 600; text-decoration: none; padding: 0.5rem 0; min-height: 44px; display: inline-flex; align-items: center; }
-.v2-top nav a:hover, .v2-top nav a:focus-visible { color: var(--pine); text-decoration: underline; }
-.v2-preview { margin: 0; padding: 0.5rem 1rem; background: var(--amber-bg); color: var(--ink-soft); font-size: 0.85rem; }
+/* Marketplace V2 preview — route-scoped; reuses the global design tokens. Mobile-first.
+   The page content inside the shared AppShell (#145); the shell owns the frame, navigation, banner and page
+   background. Retire this file once the pages are built from @logloads/ui layout components. */
+.v2 { color: var(--ink); font-family: var(--font-ui); }
 .v2-main { max-width: 52rem; margin: 0 auto; padding: 1rem; }
 .v2-main h1 { font-family: var(--font-display); font-size: 1.6rem; margin: 0.5rem 0 1rem; }
 .v2-muted { color: var(--muted); font-weight: 400; }

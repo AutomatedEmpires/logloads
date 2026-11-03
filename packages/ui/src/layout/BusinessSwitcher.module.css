@@ -1,0 +1,83 @@
+/* BusinessSwitcher (DS-02). Shows the acting business, its kind and the viewer's role. A link to the switch
+   route when one exists; otherwise plain text with no control chrome. Name and role show at bp-lg and up;
+   below that only the initials are visible and the text stays available to assistive technology. */
+.switcher {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: var(--ll-target-touch);
+  padding: 5px 10px 5px 5px;
+  border: 1px solid var(--ll-color-border);
+  border-radius: var(--ll-radius-lg);
+  background: var(--ll-color-surface);
+  color: var(--ll-color-text);
+  text-align: left;
+  text-decoration: none;
+}
+
+.switcher[href]:hover {
+  background: var(--ll-color-surface-subtle);
+}
+
+.switcher[data-static] {
+  border-color: transparent;
+  padding-right: 5px;
+}
+
+.avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-text);
+  color: var(--ll-color-text-inverse);
+  font-size: var(--ll-text-xs);
+  font-weight: var(--ll-weight-bold);
+}
+
+.text,
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@container ll-app (min-width: 960px) { /* bp-lg */
+  .text {
+    position: static;
+    display: block;
+    width: auto;
+    height: auto;
+    min-width: 0;
+    overflow: visible;
+    clip: auto;
+  }
+}
+
+.name,
+.role {
+  display: block;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.name {
+  font-size: var(--ll-text-md);
+  font-weight: var(--ll-weight-semibold);
+  line-height: 1.2;
+}
+
+.role {
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-xs);
+  line-height: 1.3;
+}
