@@ -21,9 +21,11 @@
   transition: background-color var(--ll-duration-fast) var(--ll-ease);
 }
 
+/* box-shadow: none removes the app's legacy global :focus-visible halo (globals.css). */
 .button:focus-visible {
   outline: var(--ll-focus-width) solid var(--ll-focus-color);
   outline-offset: var(--ll-focus-offset);
+  box-shadow: none;
 }
 
 .button[data-size="sm"] { height: var(--ll-c-button-h-sm); padding: 0 12px; font-size: var(--ll-text-md); }

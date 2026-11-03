@@ -21,6 +21,11 @@
   background: var(--ll-color-surface-subtle);
 }
 
+/* AppShell draws the ring; this removes the app's legacy global :focus-visible halo (globals.css). */
+.switcher:focus-visible {
+  box-shadow: none;
+}
+
 .switcher[data-static] {
   border-color: transparent;
   padding-right: 5px;

@@ -48,11 +48,14 @@
   min-width: 0;
 }
 
+/* font-family and letter-spacing neutralise the app's legacy global h1–h3 rule (globals.css), as EmptyState does. */
 .title {
   margin: 0;
+  font-family: inherit;
   font-size: var(--ll-text-lg);
   font-weight: var(--ll-weight-semibold);
   line-height: var(--ll-leading-snug);
+  letter-spacing: normal;
 }
 
 .desc {

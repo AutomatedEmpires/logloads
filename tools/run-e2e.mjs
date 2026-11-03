@@ -52,9 +52,16 @@ if (forwardedArguments[0] === "--") {
   forwardedArguments.shift()
 }
 
+// A forwarded config selects another suite against the same isolated stack (`pnpm test:e2e:design-system`).
+// Without one, the pilot journeys run exactly as before.
+const configSelected = forwardedArguments.some(
+  (argument) => argument === "--config" || argument === "-c" || argument.startsWith("--config=")
+)
+const configArguments = configSelected ? [] : ["--config", "tests/playwright.config.mjs"]
+
 const result = spawnSync(
   process.execPath,
-  [playwrightCli, "test", "--config", "tests/playwright.config.mjs", ...forwardedArguments],
+  [playwrightCli, "test", ...configArguments, ...forwardedArguments],
   {
     cwd: webRoot,
     env: {
