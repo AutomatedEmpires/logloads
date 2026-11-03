@@ -11,6 +11,13 @@ import { expect, test, type Page } from "@playwright/test"
 const SHOTS = ".artifacts"
 mkdirSync(SHOTS, { recursive: true })
 
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** UTC calendar date `days` from now (YYYY-MM-DD). Keeps the recurring window in the future on every run. */
+function isoDateFromNow(days: number): string {
+  return new Date(Date.now() + days * DAY_MS).toISOString().slice(0, 10)
+}
+
 async function signIn(page: Page, email: string) {
   await page.goto("/sign-in")
   await page.waitForLoadState("domcontentloaded")
@@ -44,8 +51,8 @@ test.describe.serial("rich load posting", () => {
 
   // Step 2 — Capacity + schedule: recurring, weekly on set days.
   await page.getByLabel("Cadence").selectOption("recurring")
-  await page.getByLabel("Starting").fill("2026-08-03")
-  await page.getByLabel("Repeat until").fill("2026-08-28")
+  await page.getByLabel("Starting").fill(isoDateFromNow(3))
+  await page.getByLabel("Repeat until").fill(isoDateFromNow(28))
   // Day-of-week chips default to Mon/Wed/Fri; confirm they render.
   await expect(page.locator(".req-chip").filter({ hasText: "Mon" }).first()).toBeVisible()
   await page.screenshot({ path: `${SHOTS}/posting-schedule.png`, fullPage: true })
