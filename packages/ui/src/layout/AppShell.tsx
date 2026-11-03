@@ -8,14 +8,15 @@ import type { AppShellProps, Placement } from "./types"
 export const MAIN_CONTENT_ID = "main"
 
 /**
- * The single V2 application frame: skip link, optional banner, white top navigation (bp-lg and up),
- * the page, and bottom tabs below bp-lg. Server-renderable; the page decides `activeNavId`.
+ * The single V2 application frame: skip link, optional banner, white top navigation (bp-lg and up) with
+ * the business switcher and account menu, the page, and bottom tabs below bp-lg. Server-renderable; the page decides `activeNavId`.
  */
 export function AppShell({
   workspace,
   navigation,
   activeNavId,
   business,
+  account,
   children,
   density = "comfortable",
   banner,
@@ -25,7 +26,7 @@ export function AppShell({
     <div className={cx("ll-theme ll-app", styles.root, className)} data-density={density} data-workspace={workspace}>
       <a className={styles.skip} href={`#${MAIN_CONTENT_ID}`}>Skip to main content</a>
       {banner ? <div className={styles.banner}>{banner}</div> : null}
-      <GlobalNavigation activeId={activeNavId} business={business} items={navigation} />
+      <GlobalNavigation account={account} activeId={activeNavId} business={business} items={navigation} />
       <main className={styles.main} id={MAIN_CONTENT_ID} tabIndex={-1}>
         {children}
       </main>

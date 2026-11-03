@@ -44,6 +44,7 @@ function rule(name: string, selector: string): string {
 describe("layout CSS Modules", () => {
   it("has one module per layout component", () => {
     expect(modules.sort()).toEqual([
+      "AccountMenu.module.css",
       "AppShell.module.css",
       "BusinessSwitcher.module.css",
       "ContentGrid.module.css",
