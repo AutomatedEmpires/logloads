@@ -1,82 +1,54 @@
-# LogLoads — Documentation Archive
+# LogLoads — Historical Evidence
 
-> **Everything in this directory is HISTORICAL.** None of it guides current implementation, product scope,
-> pricing, or operations. The current product is Blueprint v1.0 ([`../DECISIONS.md`](../DECISIONS.md),
-> 2026-11-01). The current documentation map is [`../README.md`](../README.md).
+> **Status:** HISTORICAL; index revised 2026-11-02. Nothing here guides current work. The current state is in
+> [`../README.md`](../README.md).
 
-## Why these documents are kept
+## 1. Retained in the tree — evidence pending a retention decision
 
-They are evidence of:
+| File | Why it is kept |
+|---|---|
+| [`security/SECURITY_RECORD_2026-08-05.md`](./security/SECURITY_RECORD_2026-08-05.md) | Live Supabase verification (2026-07-08), the closed anon-RW exposure, the RLS inventory, accepted advisor exceptions. Security evidence. |
+| [`2026-legacy-commercial/ACTIVATION_STRIPE_2026-08-01.md`](./2026-legacy-commercial/ACTIVATION_STRIPE_2026-08-01.md) | Activation controls for `percentage_v1` collection: account and mode assertions, enrollment gates. Needed to interpret any historical provider activity. **Never an execution plan.** |
+| [`../SUBSCRIPTION_BILLING_V1.md`](../SUBSCRIPTION_BILLING_V1.md) | The `subscription_v1` contract: obligations, frozen terms, reconciliation rules. Kept at its original path because the root `README.md` links to it. |
 
-- legal, billing, and financial obligations;
-- security findings and their remediation;
-- deployment and recovery rehearsals;
-- Git provenance.
+The files are verbatim; do not edit them. Write corrections in the current documents.
 
-Archiving a document **does not authorize** deleting:
+**Founder decision needed:** the retention period for these three files. Once it is set, they may move behind
+the tag in §2 like the rest.
 
-- database records, invoices, or frozen terms;
-- Stripe identifiers or webhook history;
-- migration files or code guardrails;
-- Git branches, tags, or stashes.
+## 2. Removed from the tree — recoverable from tag `archive/docs-history-20261102`
 
-Do not edit archived files. They are preserved verbatim. When something in them needs correcting, write the
-correction in a current document instead.
-
-## Rules for reading archived files
-
-- Statements such as "current", "locked", "must implement", "sole collection gate", "SECURITY VERIFIED", or
-  "the founder's current model" were true only on the document's date.
-- Relative links resolve against the file's **original** location in `docs/`. Known consequence:
-  `repository/REPOSITORY_CONSOLIDATION_2026-08-03.md` links to `DECISIONS.md`, which now lives at
-  [`../DECISIONS.md`](../DECISIONS.md).
-- Never use an archived runbook as an execution plan, in particular to enable `LOGLOADS_FEE_COLLECTION`,
-  `LOGLOADS_PERCENTAGE_ENROLLMENT`, `LOGLOADS_SUBSCRIPTION_COLLECTION`, or `LOGLOADS_DISPATCH_SELF_SERVE`.
-
-## Contents
-
-| Archived file | Original path | Dated | What it is | Redirect at old path |
-|---|---|---|---|---|
-| [`2026-06-scaffold/LOGLOADS_NEXT_STEPS-2026-06.md`](./2026-06-scaffold/LOGLOADS_NEXT_STEPS-2026-06.md) | repo root → `docs/history/` | 2026-06 | Scaffold checklist | — |
-| [`2026-06-scaffold/LOGLOADS_REPO_AUDIT-2026-06.md`](./2026-06-scaffold/LOGLOADS_REPO_AUDIT-2026-06.md) | repo root → `docs/history/` | 2026-06 | Pre-reconstruction repository audit | — |
-| [`handoffs/HANDOFF_2026-07-17.md`](./handoffs/HANDOFF_2026-07-17.md) | `docs/HANDOFF.md` | 2026-07-17 (revised to 08-01) | Engineering handoff; obsolete `ae` lease workflow | [`../HANDOFF.md`](../HANDOFF.md) |
-| [`handoffs/HANDOFF_2026-07-27.md`](./handoffs/HANDOFF_2026-07-27.md) | `docs/HANDOFF-2026-07-27.md` | 2026-07-27 | Launch-readiness handoff; PR and fee evidence | [`../HANDOFF-2026-07-27.md`](../HANDOFF-2026-07-27.md) |
-| [`2026-legacy-commercial/marketplace-implementation-spec_2026-07-24.md`](./2026-legacy-commercial/marketplace-implementation-spec_2026-07-24.md) | `docs/marketplace-implementation-spec.md` | 2026-07-24 | Dispatch / per-load fee implementation specification | [`../marketplace-implementation-spec.md`](../marketplace-implementation-spec.md) |
-| [`2026-legacy-commercial/marketplace-realignment-blueprint_2026-07-24.md`](./2026-legacy-commercial/marketplace-realignment-blueprint_2026-07-24.md) | `docs/marketplace-realignment-blueprint.md` | 2026-07-24 | Percentage-model research and audit | [`../marketplace-realignment-blueprint.md`](../marketplace-realignment-blueprint.md) |
-| [`2026-legacy-commercial/ACTIVATION_STRIPE_2026-08-01.md`](./2026-legacy-commercial/ACTIVATION_STRIPE_2026-08-01.md) | `docs/ACTIVATION_STRIPE.md` | 2026-08-01 (revised to 08-03) | `percentage_v1` Stripe activation runbook | Replaced by the new [`../ACTIVATION_STRIPE.md`](../ACTIVATION_STRIPE.md) |
-| [`2026-legacy-commercial/PILOT_LAUNCH_2026-08-10.md`](./2026-legacy-commercial/PILOT_LAUNCH_2026-08-10.md) | `docs/PILOT_LAUNCH.md` | 2026-08-10 | Pilot contract: dispatch loop, 5% completed-load fee, assignment-gated access | Replaced by the new [`../PILOT_LAUNCH.md`](../PILOT_LAUNCH.md) |
-| [`security/SECURITY_RECORD_2026-08-05.md`](./security/SECURITY_RECORD_2026-08-05.md) | `docs/SECURITY.md` | Verified 2026-07-08, revised to 08-05 | Live Supabase security verification, RLS inventory, remediation evidence | Replaced by the new [`../SECURITY.md`](../SECURITY.md) |
-| [`repository/REPOSITORY_CONSOLIDATION_2026-08-03.md`](./repository/REPOSITORY_CONSOLIDATION_2026-08-03.md) | `docs/REPOSITORY_CONSOLIDATION_2026-08-03.md` | 2026-08-03 | Git recovery and consolidation record | — (no references) |
-
-**Verbatim check (2026-11-01):** every file above is byte-identical to its original, ignoring line endings.
-The five files also present in the reconciliation package match the package's archived copies.
-
-## Historical documents that stayed at their original path
-
-- [`../SUBSCRIPTION_BILLING_V1.md`](../SUBSCRIPTION_BILLING_V1.md) — the `subscription_v1` billing contract.
-  It stays in place because the root `README.md` and `product/TRANSITION_PLAN.md` link to it. It carries a
-  superseded notice; the original text below the notice is unchanged.
-- [`../DECISIONS.md`](../DECISIONS.md) — an append-only log. Earlier entries are historical by definition;
-  the newest applicable entry governs.
-
-## Do not act on the archived consolidation record
-
-`REPOSITORY_CONSOLIDATION_2026-08-03.md` names branches, tags, stashes, and artifacts. It is **not** an
-instruction to delete, prune, or recreate any of them. Its canonical-checkout procedure (`ae path logloads`,
-WSL) is retired.
-
-## Pre-reconciliation versions of rewritten documents
-
-The rewritten operational documents carried no unique evidence beyond what Git preserves, so their previous
-text is not duplicated here. Retrieve any of them from the commit before the reconciliation:
+The annotated tag `archive/docs-history-20261102` is pushed to GitHub and points at commit `f40d85e` (PR #100).
+On 2026-11-02, recovery from a fresh clone of the remote was verified byte-for-byte for every file below. **Do
+not delete or move the tag.**
 
 ```bash
-git show 15892b7:docs/<FILE>.md
+git fetch origin tag archive/docs-history-20261102 --no-tags
+git show archive/docs-history-20261102:<path> > recovered.md
 ```
 
-This applies to `ACTIVATION_CLERK`, `ACTIVATION_RESEND`, `AGENT_WORKFLOW`, `API_CONTRACTS`,
-`AUTOMATION_ROADMAP`, `BACKEND_ARCHITECTURE`, `DATA_MODEL`, `DEPLOYMENT`, `ENV_CONTRACT`, `ENVIRONMENT`,
-`MVP_BACKEND_SCOPE`, `OBSERVABILITY`, `RECOVERY`, `REVIEW_CHECKLIST`, and `RUNNERS`.
+| Path at the tag | What it was |
+|---|---|
+| `docs/archive/2026-legacy-commercial/marketplace-implementation-spec_2026-07-24.md` | Dispatch and per-load fee implementation specification (316 KB) |
+| `docs/archive/2026-legacy-commercial/marketplace-realignment-blueprint_2026-07-24.md` | Percentage-model research (170 KB) |
+| `docs/archive/2026-legacy-commercial/PILOT_LAUNCH_2026-08-10.md` | Pilot contract: dispatch loop, 5% completed-load fee |
+| `docs/archive/handoffs/HANDOFF_2026-07-17.md`, `HANDOFF_2026-07-27.md` | Engineering handoffs, including the retired `ae` lease workflow |
+| `docs/archive/repository/REPOSITORY_CONSOLIDATION_2026-08-03.md` | Git recovery record. **Not** an instruction to prune branches, tags or stashes. |
+| `docs/archive/2026-06-scaffold/LOGLOADS_NEXT_STEPS-2026-06.md`, `LOGLOADS_REPO_AUDIT-2026-06.md` | June 2026 scaffold notes |
+| `docs/BACKEND_ARCHITECTURE.md`, `docs/DATA_MODEL.md`, `docs/MVP_BACKEND_SCOPE.md` | Consolidated into `ARCHITECTURE.md` |
+| `docs/RUNNERS.md`, `docs/AUTOMATION_ROADMAP.md` | Consolidated into `CI.md` |
+| `docs/HANDOFF.md`, `docs/HANDOFF-2026-07-27.md`, `docs/marketplace-*.md` | Redirect stubs |
 
-The procedures that are still accurate — the founder-admin claim, migration order, smoke assertions, rollback,
-and media and Stripe fail-closed rules — were carried into the current documents.
+Earlier versions of every document are also in normal Git history. For example, use
+`git show 15892b7:docs/<file>` for the text from before the 2026-11-01 reconciliation.
+
+## 3. What removal does not authorize
+
+Removing a document from the tree never authorizes deleting:
+
+- database records, invoices, frozen terms, Stripe identifiers or webhook history;
+- migrations or billing code;
+- Git branches, tags or stashes.
+
+The financial obligations themselves live in canonical state and in code (`packages/contracts/src/billing-model.ts`,
+`packages/services/src/platform-fees.ts`, `subscription-billing.ts`), not in these documents.

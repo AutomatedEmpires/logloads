@@ -1,273 +1,106 @@
-# LogLoads — Environment & Provider Configuration
+# LogLoads — Local Environment
 
-> **Updated:** November 1, 2026 (CARTO, unread-variable, and V2-guard corrections applied in the documentation reconciliation)
->
-> **Purpose:** Development, testing, provider configuration, and deployment reference for the LogLoads timber-hauling marketplace.
->
-> **Authority:** `AGENTS.md`, `docs/DECISIONS.md`, `docs/product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md`, `docs/product/LOGLOADS_UX_FUNCTIONAL_SPEC_v1.0.md`, and `docs/product/TRANSITION_PLAN.md`.
->
-> **Accuracy convention:** **CURRENT** means observed in the checked-in `work/logloads-repair` code or documented existing runtime; **TARGET** means the approved architecture or a change still to be implemented; **CONDITIONAL** means dependent on the relevant service, environment, or code path. Do not represent TARGET configuration as already operational.
+> **Status:** IMPLEMENTED behavior, last verified 2026-11-02 against `4c9518e`. Scope: local development only.
+> Production variables and their fail-closed rules are in [`ENV_CONTRACT.md`](./ENV_CONTRACT.md). Deployment is
+> in [`DEPLOYMENT.md`](./DEPLOYMENT.md). CI is in [`CI.md`](./CI.md).
 
-## 1. Environment principles and product boundaries
+## 1. Toolchain and first run
 
-- LogLoads is a timber-hauling **load board and recruiting marketplace**, not a dispatch, trip-accounting, freight-settlement, or load-payment service.
-- Hauler and fleet business workspaces remain free. Landing organizations use the adopted Basic, Pro, and Regional membership model when paid access is eventually activated. No paid plans, boosts, or outbound invitation purchases are live merely because environment variables or test artifacts exist.
-- **CURRENT:** The deployed/pilot application's canonical operating data is stored in the versioned `public.operating_state` Supabase document. **TARGET:** A normalized, tenant-isolated PostgreSQL/PostGIS architecture under the isolated `architecture/normalized-v2/` prototype, once integration tests and an authorized migration plan pass.
-- Current runtime behavior and target product architecture must be documented separately. No agent may silently switch providers, enable live billing, migrate production data, or deploy because a specification references the target.
-- Never commit credentials, `.env.local`, provider service-role keys, session secrets, private access instructions, or production data snapshots.
-
-## 2. Supported local workflow
-
-**CURRENT:** Native Windows 11 working copy in Cursor. WSL is not required for ordinary development. Other operating systems may work, but Windows-specific tests do not by themselves establish cross-platform parity.
-
-- Repository working copy: `C:\Users\Cole0\AutomatedEmpires\Projects\logloads` (machine-specific; do not hardcode into application code).
-- Node.js: `24.16.0`, selected by `.nvmrc` using fnm or nvm.
-- Package manager: pnpm `10.12.4`, defined in root `package.json`; Corepack may be used to provision it.
-- Non-interactive terminals may not inherit fnm's shell initialization. Check `node -v` and `pnpm --version` before relying on build or test results.
-- Install dependencies with `pnpm install --frozen-lockfile`.
-- First-run local setup: `pnpm setup:local`.
-- Launch local app with `pnpm dev`; the development server binds **`127.0.0.1:3002`**, not all network interfaces.
-- Open in the browser at `http://localhost:3002` (or the loopback address configured consistently in the application).
-- `pnpm --filter @logloads/web dev:webpack` is an alternate local server command that also binds loopback port 3002.
-- Do not run a production build into `apps/web/.next` while an active development server uses that directory. Use an isolated build directory or a carefully managed separate worktree when necessary, and clean up generated artifacts afterward.
-- Agents sharing the repository must coordinate file ownership, Git staging and commits; do not overwrite another agent's uncommitted files.
-
-Typical first-run commands:
+- Native Windows 11 checkout (Cursor). WSL, Docker Desktop and local PostgreSQL are **not** needed and must not
+  be installed for ordinary work.
+- Node **24.16.0** (`.nvmrc`, via fnm or nvm). pnpm **10.12.4** via Corepack. In PowerShell, use `pnpm.cmd` if the
+  execution policy blocks `pnpm.ps1`.
+- Non-interactive shells may not load fnm. Check `node -v` before trusting any result.
 
 ```powershell
-node -v
-pnpm --version
+node -v; pnpm --version
 pnpm install --frozen-lockfile
-pnpm setup:local
-pnpm dev
+pnpm setup:local     # one time: writes git-ignored apps/web/.env.local
+pnpm dev             # 127.0.0.1:3002 only; open http://localhost:3002
 ```
 
-Do not claim that `pnpm validate` passed merely because an underlying database check was **skipped** on a machine without Docker/Supabase CLI.
+- `pnpm --filter @logloads/web dev:webpack` is an alternative dev server, also on loopback port 3002.
+- Never run a production build into `apps/web/.next` while `pnpm dev` is using it. Build from a separate worktree
+  instead, and delete it afterwards.
 
-## 3. Local environment file and development login
+## 2. `apps/web/.env.local`
 
-**CURRENT:** `tools/setup-local-env.mjs` creates or completes the Git-ignored file `apps/web/.env.local` without overwriting existing nonempty values. It refuses CI/Vercel runtimes, generates random values locally, and does not print secret values.
-
-It supplies only these settings:
+`tools/setup-local-env.mjs` fills only empty values. It refuses to run in CI or on Vercel, and never prints
+secrets. It writes:
 
 ```dotenv
 NEXT_PUBLIC_APP_URL=http://localhost:3002
-LOGLOADS_SESSION_SECRET=<randomly-generated-local-secret>
-LOGLOADS_RATE_LIMIT_HMAC_SECRET=<randomly-generated-local-secret>
+LOGLOADS_SESSION_SECRET=<generated>
+LOGLOADS_RATE_LIMIT_HMAC_SECRET=<generated>
 ```
 
-The placeholder strings above are explanatory, **not** credentials to paste. Use `pnpm setup:local` to generate actual secrets.
+- `NEXT_PUBLIC_APP_URL` must be a loopback origin, or seeded sign-in stays off.
+- `LOGLOADS_RATE_LIMIT_HMAC_SECRET` is required: `requestClientKey()` throws without it
+  (`apps/web/lib/rate-limit-client-key.ts`).
+- It writes **no** provider credentials, so local development uses the JSON store and seeded sign-in.
+- Do not point local development at a hosted Supabase project unless an issue explicitly scopes it.
 
-- `NEXT_PUBLIC_APP_URL` must point to an approved loopback origin for seeded development sign-in; the local server remains loopback-bound.
-- `LOGLOADS_SESSION_SECRET` signs the application's local session implementation; production must use a separate production secret.
-- `LOGLOADS_RATE_LIMIT_HMAC_SECRET` is required by the checked-in `apps/web/lib/rate-limit-client-key.ts` request-key derivation. Without it, rate-limited routes invoking `requestClientKey()` can throw an error.
-- This setup deliberately does **not** write Clerk, Supabase, Stripe, CARTO, Mapbox, email, or other provider credentials.
-- Do not configure a real production Supabase URL in local development unless an explicitly scoped, read-only or otherwise authorized task requires it. Use local JSON state or a disposable local database.
-- On Windows, a Unix file mode such as `0600` is not a substitute for confirming Windows filesystem permissions when sharing machines.
+## 3. Sign-in
 
-### Clerk and development sessions
+- **Without Clerk keys**, use a seeded email address:
+  - `hank@northpine.example`
+  - `dispatch@northpine.example`
+  - `cole@summit.example`
+  - `admin@logloads.example`
 
-- **CURRENT:** `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` configure Clerk where that integration is enabled. Clerk is the selected production identity provider.
-- **CURRENT:** Local seeded sessions are a development convenience, **not** a production sign-in option. They depend on the applicable non-production and loopback authorization checks, not merely on the absence of Clerk keys.
-- `LOGLOADS_ENABLE_DEV_LOGIN=true` is a developer/test switch and **must never be enabled on real production or public hosted Preview**.
-- **TARGET:** Normalized Supabase table access will use validated Clerk-to-Supabase third-party authentication and explicit database authorization/RLS. Never trust client-supplied user IDs, organization IDs or role values as proof of access.
-- **CURRENT:** Production auth still requires verification of the actual deployed environment; development success does not prove the production integration.
+  This only works on loopback and outside production.
+- `LOGLOADS_ENABLE_DEV_LOGIN=true` is a development and test switch. **Never** set it on Production or on a
+  public Preview.
+- With Clerk keys (`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`), Clerk resolves identity
+  ([`ACTIVATION_CLERK.md`](./ACTIVATION_CLERK.md)).
 
-## 4. Local Supabase / PostgreSQL — optional test environment
+## 4. Local state
 
-**CURRENT repository configuration** (`supabase/config.toml`):
+- The JSON fallback is `LOGLOADS_STATE_FILE`, default `apps/web/.data/logloads-state.json`. Deleting it resets
+  **local** state only.
+- Never treat a hosted `operating_state` row or a backup file as disposable.
+- Seed data is synthetic. Never present it as real activity.
 
-| Item | Local-only value |
+## 5. Local Supabase (optional)
+
+`supabase/config.toml` configures the local stack:
+
+| Setting | Value |
 |---|---|
-| Project ID | `logloads-local` |
-| PostgreSQL URL | `postgresql://postgres:postgres@localhost:55322/postgres` |
-| API URL | `http://127.0.0.1:55321` |
-| DB version configured | PostgreSQL 17 |
-| Migration directory | `supabase/migrations/` |
-| Canonical seed module | `packages/db/src/seed-data.ts` |
-| Database test script | `pnpm db:check` |
+| Project | `logloads-local` |
+| Database | PostgreSQL 17 on `localhost:55322` |
+| API | `127.0.0.1:55321` |
 
-These are configured **addresses, not proof that a database is currently running**. A local Supabase CLI installation and running Docker daemon are required by `tools/db-check.sh`.
+- `pnpm db:check` runs `supabase db reset --local`, which **destroys local database data**. Without the Supabase
+  CLI and Docker it skips and exits 0 — that is not a pass.
+- The normalized-v2 SQL is not run locally. It runs in CI ([`CI.md`](./CI.md) §3).
 
-**Safety-critical:** `pnpm db:check` invokes `supabase db reset --local`. This resets the **local** Supabase database, reapplies migrations and can discard local test data. It is not a production-safe or non-destructive inspection command. Confirm the selected stack is disposable before running it.
+## 6. Feature flags and maps
 
-- If Docker or Supabase CLI is missing, the checked-in script may **skip** local DB validation with a success exit. CI is configured to fail rather than silently skip.
-- `pnpm test:e2e` requires the appropriate local stack and a production build; do not treat a skipped run as a passing integration test.
-- Local seed/bootstrap state must not be confused with real registered companies, customers or job postings.
-- **TARGET:** `architecture/normalized-v2/01_schema.sql` through `04_tests.sql` remain **non-active prototype files** until executed, repaired and verified in an explicitly disposable PostgreSQL/PostGIS environment. Do not assume that running the existing `pnpm db:check` automatically tests these prototype files.
-- Never apply the normalized prototype to the linked production Supabase project without an approved migration, backup, rollback plan, data-parity tests and an explicit authorization.
+**V2 preview.** `LOGLOADS_MARKETPLACE_V2=enabled` turns on `/v2`.
 
-## 5. Linked Supabase project and secrets
+- It is always off when `VERCEL_ENV=production`.
+- When disabled, `/v2` returns `notFound()`. The layout is always `noindex`.
+- Keep it to local development until an isolated hosted preview is approved
+  ([`DEPLOYMENT.md`](./DEPLOYMENT.md) §4).
 
-The linked canonical Supabase deployment uses the relevant subset of:
+**Maps.** `apps/web/lib/map-runtime.ts` chooses a provider in this order:
 
-- `SUPABASE_PROJECT_REF` — project identifier for administrative tooling when required.
-- `SUPABASE_URL` — selected deployment's API endpoint.
-- `SUPABASE_ANON_KEY` — legacy public client key only for flows that actually require it; new Supabase publishable keys may supersede it when the application is intentionally updated.
-- `SUPABASE_SERVICE_ROLE_KEY` — **server-only privileged credential**; never prefix with `NEXT_PUBLIC_`, embed in browser code, expose to logs or put in the repository.
+1. offline demo;
+2. keyed CARTO on MapLibre, when `NEXT_PUBLIC_CARTO_BASEMAP_KEY` is set;
+3. legacy Mapbox, only when there is no CARTO key and `NEXT_PUBLIC_MAPBOX_TOKEN` is set;
+4. keyless CARTO.
 
-Store real credentials in approved environment-specific secret managers (e.g., configured Vercel environment settings, GitHub Actions secrets and/or Doppler). A local `.env.local` file is acceptable only for explicitly approved local/non-production credentials. Separate development, preview and production resources wherever practical.
+Further map rules:
 
-**CURRENT:** When `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are configured, the pilot's `public.operating_state` remains canonical. Production does not use an anon key as authority for writes to that document.
+- `carto-basemap.ts` sends the key only to HTTPS `*.basemaps.cartocdn.com`.
+- A CARTO key is browser-visible. Restrict it by origin (`http://localhost:3002`, `http://127.0.0.1:3002`) and
+  keep dev and prod keys separate.
+- Never paste a key into issues, chat or screenshots.
+- The founder-reported 5M requests/month allowance is **UNVERIFIED**.
 
-## 6. Operating-state persistence (current pilot)
+## 7. Known `.env.example` drift (tracked as an issue)
 
-- **CURRENT:** `public.operating_state` is a versioned document, with optimistic compare-and-swap and replay/retry semantics for conflicting mutations.
-- `LOGLOADS_STATE_FILE` selects the non-production JSON fallback. Default: `apps/web/.data/logloads-state.json`.
-- Deleting the JSON fallback intentionally resets **local development state only**; never treat a production database or shared backup as a disposable development file.
-- `LOGLOADS_ALLOW_STATE_BOOTSTRAP=true` allows a controlled initial remote row when canonical storage is empty. Do not enable this against an established production database.
-- Existing historical dispatch, financial, invoice and audit records must remain retained and accessible under an explicit preservation strategy even though the V2 marketplace no longer creates those records.
-- **TARGET:** Read adapters, parity checks and explicit cutover gates will migrate active marketplace functionality to normalized, tenant-isolated Supabase tables. A schema prototype is not a migration authorization.
-
-## 7. Marketplace V2 preview (not production)
-
-**CURRENT:** `LOGLOADS_MARKETPLACE_V2=enabled` enables isolated `/v2` development routes for job discovery, job detail, expressions of interest, hauler inquiries and the landing inbox. Other values disable the preview; `VERCEL_ENV=production` also disables it (`apps/web/lib/marketplace-v2/flag.ts`). When disabled, `apps/web/app/v2/layout.tsx` calls `notFound()` (a `404`); the layout metadata is always `noindex, nofollow`.
-
-- The initial V2 UI reads redacted posting data from the pilot operating state and persists inquiry data to the additive `marketplaceInterests` collection.
-- This is an interim preview adapter. It is **not** proof that normalized-v2 SQL, Clerk-to-Supabase authentication, or RLS has been integrated.
-- The preview must not create new assignments, dispatch trips, settlement records, percentage-fee charges, boosts, subscriptions or paid targeted invitations.
-- Do not set this flag on hosted Preview or Production without an explicitly approved, secured deployment plan, even if the code would technically permit some preview environments.
-- Publish factual state labels; seeded or synthetic postings must not be presented as real customer activity.
-
-## 8. Rate limiting and abuse protection
-
-**CURRENT:** Rate limiting contains two distinct HMAC-related paths that should not be conflated:
-
-1. **Caller-key derivation** (`apps/web/lib/rate-limit-client-key.ts`): `requestClientKey()` requires a configured `LOGLOADS_RATE_LIMIT_HMAC_SECRET`; there is no service-role fallback in this function.
-2. **Distributed store-key configuration** (`apps/web/lib/rate-limit-config.ts`): when both `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` exist, the store's `keySecret` currently uses the dedicated HMAC secret **or falls back to the service-role key**. This does **not** override the caller-key requirement above.
-
-Accordingly, configure a dedicated high-entropy `LOGLOADS_RATE_LIMIT_HMAC_SECRET` in every environment that runs protected routes. The separate store fallback is existing implementation behavior, **not** the recommended long-term secret-management policy.
-
-Other current boundaries:
-
-- Production distributes counters through the Supabase `consume_rate_limit` RPC, with atomic fixed-window updates shared across app instances when configured correctly.
-- `LOGLOADS_RATE_LIMIT_KEY_PREFIX` optionally namespaces rate-limit buckets; its default is `logloads:rate-limit`.
-- Raw client IPs and emails must not be persisted as limiter keys; use keyed digests.
-- On Vercel, `x-vercel-forwarded-for` is the trusted platform-overwritten IP signal in the checked-in request-key logic. Off supported proxy trust boundaries, other client-supplied forwarding headers must not be trusted as verified IPs.
-- If Supabase is absent in non-production, process-local memory limiting can be used. Partial Supabase credentials lead to an unavailable store; production must not quietly fall back to in-memory limiting.
-- `LOGLOADS_RATE_LIMIT_TEST_MODE=true` is allowed only under the implementation's strict local test conditions and must never be enabled on public hosted deployments.
-- Changing HMAC material can reset or fragment existing rate-limit buckets; rotate deliberately with deployment and operational awareness.
-- Provider migration, multi-instance/outage testing and production HMAC configuration require explicit review. A green local test is not enough to claim distributed fail-closed behavior.
-
-## 9. Maps and geography — CURRENT versus TARGET
-
-### CURRENT checked-in behavior
-
-*Corrected 2026-11-01 after commit `15892b7`, which wired authenticated CARTO Basemaps. An earlier revision of this section described CARTO as not yet wired.*
-
-- `apps/web/lib/map-runtime.ts` selects a provider in this order:
-  1. the offline demo style;
-  2. **MapLibre with authenticated CARTO Basemaps** when `NEXT_PUBLIC_CARTO_BASEMAP_KEY` is set;
-  3. legacy **Mapbox**, only when no CARTO key is set and `NEXT_PUBLIC_MAPBOX_TOKEN` is set;
-  4. otherwise, **keyless CARTO** on MapLibre.
-- `apps/web/lib/carto-basemap.ts` adds the key only to HTTPS `*.basemaps.cartocdn.com` requests (style, tiles, glyphs, sprites) and never sends it to any other host. Map errors fall back to text and are not logged, because MapLibre's default logging would include the keyed URL.
-- Maps are lazy-loaded. The V2 approximate-area map is capped at zoom 12.
-- Whether a given deployment actually sends keyed CARTO requests depends on its environment. Verify with browser network traces (without exposing the key) before calling an environment's integration complete.
-
-### TARGET: approved LogLoads mapping stack
-
-- **MapLibre GL JS** — preferred interactive map renderer.
-- **CARTO Basemaps** — preferred basemap tile/style provider. The account holder reports an entitlement of **5,000,000 basemap requests per month**; verify billing scope, terms, and whether keys share that allowance in CARTO's dashboard.
-- **Supabase/PostGIS** — geographic searches, proximity checks and tenant-authorized spatial queries.
-- **Weather provider** — separately integrated conditions and forecasts; CARTO does not provide job-specific weather.
-- **Routing/distance provider (if introduced)** — separate from basemap tiles. Straight-line radius must be labeled as such; do not present it as driving mileage.
-
-### CARTO environment variable (CURRENT — implemented in `15892b7`)
-
-The browser-side CARTO Basemaps key is read from this variable. It is listed as optional in `ops/production-env-contract.json`; it is not yet in `.env.example`:
-
-```dotenv
-NEXT_PUBLIC_CARTO_BASEMAP_KEY=<CARTO_BROWSER_BASEMAP_KEY>
-```
-
-- The key value must live in an ignored local env file or the appropriate environment's secure configuration; do not paste it into repository files, issues or AI messages.
-- A `NEXT_PUBLIC_` key is **visible to browser users** after bundling. Domain/referrer restrictions and provider-side usage monitoring, not secrecy alone, protect public basemap usage.
-- Where supported, use separate development/production keys and only authorize the corresponding origins/domains. Development origins may include `http://localhost:3002` and `http://127.0.0.1:3002` in CARTO's accepted restriction syntax.
-- The style, tile, glyph and sprite requests must work with the intended key configuration; verify in browser network traces without exposing raw credentials in logs or screenshots.
-- Preserve CARTO and OpenStreetMap attribution as required by provider terms and chosen style.
-- Lazy-load maps and imagery so text results remain useful under weak rural connections and tile requests stay proportional to actual map usage.
-- Separate public approximate landing pins from private exact access information. Never derive or reveal gate codes or restricted road instructions through public map links.
-- `NEXT_PUBLIC_MAPBOX_TOKEN` remains a **legacy** code path, used only when no CARTO key is set. `NEXT_PUBLIC_MAP_PROVIDER` appears in `.env.example`, but no application code reads it at `15892b7`. Do not remove either solely by editing this document.
-
-## 10. Web deployment and Vercel
-
-The environment-dependent variables below are a **configuration inventory**, not a claim that every listed variable is mandatory in all deployments:
-
-| Variable | Scope | Status / purpose |
-|---|---|---|
-| `NEXT_PUBLIC_APP_URL` | Browser-visible | Canonical application URL, per environment |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Browser-visible | Clerk client identity when enabled |
-| `CLERK_SECRET_KEY` | Server-only | Clerk server authentication |
-| `LOGLOADS_SESSION_SECRET` | Server-only | Session signing; required by production session paths |
-| `LOGLOADS_RATE_LIMIT_HMAC_SECRET` | Server-only | Required for caller-key derivation on protected routes |
-| `SUPABASE_URL` | Server/integration | Supabase endpoint for canonical application state |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server-only, privileged | Canonical state and current distributed rate-limiter RPC |
-| `SUPABASE_ANON_KEY` | Client-public only when actually used | Legacy client API key; never substitute for service-role authority |
-| `NEXT_PUBLIC_MAP_PROVIDER` | Browser-visible | `.env.example` placeholder only; no code reader at `15892b7` |
-| `NEXT_PUBLIC_MAPBOX_TOKEN` | Browser-visible | Legacy Mapbox path, used only without a CARTO key |
-| `NEXT_PUBLIC_CARTO_BASEMAP_KEY` | Browser-visible | **Preferred** CARTO Basemaps key, wired in `map-runtime.ts`; restrict it by origin |
-| `NEXT_PUBLIC_NOTIFICATION_PROVIDER` | Browser-visible | `.env.example` placeholder only; no code reader at `15892b7` |
-| `SENTRY_DSN` | Depends on integration | Error monitoring; scope and environment must be reviewed |
-| `RESEND_API_KEY` | Server-only | Email delivery if configured |
-| `RESEND_FROM` / `RESEND_REPLY_TO` | Server-only | Canonical sender and reply-to identities ([`ACTIVATION_RESEND.md`](./ACTIVATION_RESEND.md)) |
-| `LOGLOADS_EMAIL_FROM` | Server-only | Compatibility fallback when `RESEND_FROM` is absent |
-| `LOGLOADS_EMAIL_REPLY_TO` | Server-only | Compatibility fallback; default `support@logloads.com` |
-| `LOGLOADS_CONTACT_EMAIL` | Server-only | Contact address; default `support@logloads.com` |
-| `VERCEL_TOKEN` | Server-only tooling | `.env.example` placeholder only; no repository code reads it |
-
-Production-required variables and their fail-closed behavior are defined in [`ENV_CONTRACT.md`](./ENV_CONTRACT.md). This table is a configuration inventory; `ENV_CONTRACT.md` is the production contract.
-
-Any `NEXT_PUBLIC_` value is client-exposed. Do not place service-role, Clerk secret, Stripe secret, Resend key or similar private credentials behind that prefix.
-
-- Production deployments are managed through the authorized Vercel/GitHub workflow. Merging to the production branch may trigger deployment; do not merge or change production variables without authorization.
-- Separate Vercel Development, Preview and Production environment settings. Do not use a shared production service-role key to test preview mutations.
-- Never activate live Stripe purchases, paid invitation delivery or marketing sends simply because the environment has their credentials.
-- Public domain changes, DNS switches, key rotation and paid-plan changes require explicit authorization.
-
-## 11. GitHub Actions, checks and safe testing
-
-- `GITHUB_TOKEN` is normally provided automatically by GitHub Actions. Additional provider credentials must come from the appropriate repository/organization secret or approved identity integration.
-- Repo scripts currently include `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm guardrails`, `pnpm validate`, `pnpm db:check`, and `pnpm test:e2e`.
-- **CURRENT root `pnpm validate`:** lint, typecheck, tests, build, `pnpm db:assert`, and guardrails. The DB step can skip locally without prerequisites, so report its actual status explicitly.
-- Run test suites in proportion to code changes. Full builds should not collide with a running development server's output directory.
-- Browser tests should use synthetic identities and records in an isolated environment. Never point destructive test paths at production.
-- Distinguish: **passed**, **failed**, **skipped**, and **not run**. Database DDL static checks are not PostgreSQL execution; RLS policy presence is not authorization proof.
-- For real integration readiness, verify Clerk JWT signature trust, RLS, tenant isolation, cross-session concurrency and private-location redaction against a disposable database.
-
-## 12. Notifications, mail and other integrations
-
-- `NOTIFICATION_PROVIDER=placeholder` appears in `.env.example`, but no application code reads it at `15892b7`. Email delivery is controlled by `RESEND_API_KEY` ([`ACTIVATION_RESEND.md`](./ACTIVATION_RESEND.md)). Do not claim public email or SMS delivery works without provider and end-to-end proof.
-- Existing notification provider configuration and future targeted invitation delivery are separate product capabilities.
-- Targeted invitations are opt-in, distinct-hauler-business job notices subject to monthly allowance and anti-spam restrictions. Ordinary inquiries, replies and general alerts do not consume that allowance.
-- No auto-billing, paid invitation packs or live boosts until the relevant product, legal and provider gates are satisfied.
-- Stripe is for future LogLoads membership/boost billing and preservation/reconciliation of historical obligations, not freight payments or dispatch settlement.
-
-## 13. Normalized V2 database prototype — activation gates
-
-The existing `architecture/normalized-v2/` SQL prototype defines proposed account, membership, landing, job, hauler, availability, inquiry, invitation, boost and audit relationships. It remains **non-active**.
-
-Before application adoption or production migration:
-
-1. Reconcile the schema with `packages/contracts/src/membership.ts` and the approved UX/product specifications.
-2. Execute SQL in order against an **explicitly disposable** PostgreSQL 17 / PostGIS environment, never an existing production database. The prototype states 15+ compatibility; the intended CI job and the pilot ledger both use 17 ([`RUNNERS.md`](./RUNNERS.md) §3). Do not install PostgreSQL on the founder's laptop for this.
-3. Test all table grants, RLS policies, `SECURITY DEFINER` functions and cross-tenant boundaries with actual authenticated and anonymous roles.
-4. Validate Supabase's supported Clerk third-party JWT trust boundary; local forged-claim simulation alone is insufficient.
-5. Test invitations, delivery callbacks and billing-cycle initialization concurrently in independent transactions.
-6. Preserve historical pilot financial/dispatch records, including retention and access paths, during the transition.
-7. Obtain an authorized migration plan, backups, rollback design, release gates and explicit approval before production changes.
-
-No agent should describe the schema as live or production-ready until those checks are complete.
-
-## 14. Security, privacy and operational hard stops
-
-- Never place Supabase service-role, Clerk secret, Stripe secret, Resend key, signing secret or private customer data in source control or browser-exposed variables.
-- Do not reveal exact private landing locations, gate/access instructions or restricted contacts through public job details, public maps, unauthenticated RPCs or error logs.
-- Do not infer actual truck availability from a user's recent login, app activity or geographic presence. Availability is self-reported and time-stamped.
-- Do not create or promise executed hauling contracts, completed loads, trip records, settlement records or freight funds movement through LogLoads.
-- Never run `supabase db reset` or any destructive command without confirming the target is isolated and disposable.
-- Never enable paid subscriptions, boosts, fee collection, bulk notifications or live provider mutations without the required business authorization and published terms.
-- For every agent handoff, report the branch/commit, changed files, test results, actual environment, unverified claims, live-provider impact and rollback implications.
-
----
-
-**Maintainer note:** This file is a configuration and operating reference. It does not grant permission to mutate providers, switch live authentication, activate billing, deploy to production or alter the founder-approved product model. When code differs from target specifications, record the difference and execute a controlled implementation change rather than documenting the desired behavior as already live.
+- Missing: `NEXT_PUBLIC_CARTO_BASEMAP_KEY`, `LOGLOADS_MARKETPLACE_V2`.
+- Listed but read by no code at `4c9518e`: `NEXT_PUBLIC_MAP_PROVIDER`, `NOTIFICATION_PROVIDER`,
+  `NEXT_PUBLIC_NOTIFICATION_PROVIDER`, `VERCEL_TOKEN`.

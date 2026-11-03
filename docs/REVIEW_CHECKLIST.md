@@ -1,6 +1,6 @@
 # Engineering Review Checklist
 
-> **Status:** CURRENT, revised 2026-11-01. Use it for every PR and agent handoff. Mark each item **pass**,
+> **Status:** APPROVED review gate, revised 2026-11-02. Use it for every PR and agent handoff. Mark each item **pass**,
 > **fail**, **N/A** (with a reason), or **not run**. A skipped or unrun check is never reported as passing.
 >
 > Authority: [`AGENTS.md`](../AGENTS.md); [`DECISIONS.md`](./DECISIONS.md);
@@ -29,8 +29,10 @@
 
 ## 2. Current versus target honesty
 
-- [ ] Docs, PR text, and UI copy label behavior as CURRENT (in code), TARGET (approved, not built), or
-      HISTORICAL.
+- [ ] Docs, PR text, and UI copy use the six status labels in [`README.md`](./README.md) §2:
+      APPROVED / IMPLEMENTED / VERIFIED / TARGET / HISTORICAL / UNVERIFIED.
+- [ ] Every VERIFIED claim links its evidence, recorded in [`CI.md`](./CI.md) §3 for test runs. A passing SQL
+      suite is not presented as live-Supabase or Clerk proof.
 - [ ] Nothing describes the `/v2` preview, the normalized-v2 prototype, Stripe test objects, or seeded data
       as live, launched, or customer-ready.
 - [ ] Code that still runs on `public.operating_state` is not described as relational or RLS-protected.
@@ -70,7 +72,7 @@
 - [ ] No rollover between cycles. Ordinary inquiries never debit the allowance.
 - [ ] Recipients are opted-in hauler businesses only. Deduplication and per-recipient frequency rules are
       applied and tested.
-- [ ] Concurrency claims rest on real multi-session tests ([`RUNNERS.md`](./RUNNERS.md) §3), not
+- [ ] Concurrency claims rest on real multi-session tests ([`CI.md`](./CI.md) §3), not
       single-session assertions.
 
 ## 7. Mobile, accessibility and low bandwidth
@@ -114,13 +116,8 @@
 
 ## 11. Agent ownership and Git safety
 
-- [ ] Lanes respected:
-      - Claude Session 1 — application, V2, CI, integration.
-      - Claude Session 2 — `docs/` only.
-      - Gemini — `architecture/normalized-v2/`.
-      - Codex — assigned tests and review.
-
-      No agent edits or stages another lane's unfinished files.
+- [ ] The work has a GitHub issue on Project Board #10, and the PR links it. Lanes are respected
+      ([`AGENT_WORKFLOW.md`](./AGENT_WORKFLOW.md) §7). No agent edits or stages another lane's unfinished files.
 - [ ] `git status` was inspected first. Untracked files from other agents are left untouched. Nothing was
       reset, cleaned, stashed, or rebased over someone else's work.
 - [ ] One coherent change set. No force push, history rewrite, bypassed hook, or self-merge.

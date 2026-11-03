@@ -1,12 +1,12 @@
 # Recovery — the operating state
 
-> **Status:** CURRENT operational runbook for the existing canonical store, `public.operating_state`.
+> **Status:** IMPLEMENTED operational runbook for the existing canonical store, `public.operating_state`.
 > Reviewed 2026-11-01 against `tools/operating-state-backup.mjs` and
 > `tools/operating-state-backup-policy.mjs` at commit `15892b7`. The commands and the tool's behavior below
 > were checked against source. **None was executed against any real project for this review.**
 >
-> A TARGET section (§9) covers the planned normalized PostgreSQL store. It is planning only — no normalized
-> database exists in any environment.
+> A TARGET section (§9) covers the planned normalized PostgreSQL store. It is planning only. The normalized
+> schema has run only in disposable CI databases ([`CI.md`](./CI.md) §3); no hosted normalized database exists.
 
 ## 1. What this protects
 
@@ -27,8 +27,8 @@ recovery is never an opportunity to edit, drop, or "clean up" them.
 
 | Layer | What it covers | What it does not | Status |
 |---|---|---|---|
-| Row validation on read (`packages/db/src/snapshot.ts`) | A malformed row is withheld from runtime state and reported. It is re-appended on the next write, so the compare-and-swap cannot erase it. | Nothing — it is a read gate, not a copy | CURRENT, in code |
-| `tools/operating-state-backup.mjs` | A verifiable point-in-time copy you can put back | Runs only when someone runs it. No scheduled job exists. | CURRENT, manual only |
+| Row validation on read (`packages/db/src/snapshot.ts`) | A malformed row is withheld from runtime state and reported. It is re-appended on the next write, so the compare-and-swap cannot erase it. | Nothing — it is a read gate, not a copy | IMPLEMENTED, in code |
+| `tools/operating-state-backup.mjs` | A verifiable point-in-time copy you can put back | Runs only when someone runs it. No scheduled job exists. | IMPLEMENTED, manual only |
 | Supabase platform backups / point-in-time recovery | The database as a whole | — | **UNVERIFIED** for this project — see §8 |
 
 ## 3. Before you run anything
@@ -123,7 +123,7 @@ remembered". No document, workflow, or provider setting establishes either value
 
 As of `15892b7`, no workflow in `.github/workflows/` runs the backup tool or references a Supabase secret.
 `ci.yml` passes `secrets: inherit` to an organization reusable workflow. Whether any Supabase repository secret
-exists cannot be determined from the repository and is **unverified** ([`RUNNERS.md`](./RUNNERS.md)).
+exists cannot be determined from the repository and is **unverified** ([`CI.md`](./CI.md)).
 
 - [ ] **UNVERIFIED:** whether Supabase point-in-time recovery or daily backups are enabled for the production
       project, and on which plan. Confirm in the provider dashboard (read-only), record the date and who
@@ -140,8 +140,8 @@ exists cannot be determined from the repository and is **unverified** ([`RUNNERS
 ## 9. TARGET — normalized PostgreSQL recovery (planning only)
 
 The approved direction replaces the single document with normalized, tenant-isolated tables. The prototype is
-`architecture/normalized-v2/`. It is non-active and not executed against PostgreSQL in any environment.
-Recovery for that store does not exist yet. Before any cutover ([`DEPLOYMENT.md`](./DEPLOYMENT.md) §5) it
+`architecture/normalized-v2/`. It is verified only in disposable CI databases (`ec4bb66`, [`CI.md`](./CI.md)
+§3), and is not applied to any hosted project. Recovery for that store does not exist yet. Before any cutover ([`DEPLOYMENT.md`](./DEPLOYMENT.md) §5) it
 needs:
 
 1. a verified full export of `operating_state` (§4–§5), retained through the cutover window;

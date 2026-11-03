@@ -10,8 +10,8 @@
 > [`product/TRANSITION_PLAN.md`](./product/TRANSITION_PLAN.md).
 >
 > **Superseded plan:** the 2026-08-10 *Pilot Launch Contract* (Plan → Publish → Match → Commit → Coordinate →
-> Haul → Confirm, 5% completed-load fee, assignment-gated access, completion proof) is preserved verbatim at
-> [`archive/2026-legacy-commercial/PILOT_LAUNCH_2026-08-10.md`](./archive/2026-legacy-commercial/PILOT_LAUNCH_2026-08-10.md).
+> Haul → Confirm, 5% completed-load fee, assignment-gated access, completion proof) is HISTORICAL. It is
+> recoverable verbatim from tag `archive/docs-history-20261102` ([`archive/README.md`](./archive/README.md) §2).
 > It is historical evidence only. Its acceptance criteria are **not** requirements for the new pilot.
 
 ## 1. What the pilot must prove

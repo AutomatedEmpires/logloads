@@ -7,7 +7,7 @@
 > The authoritative V2 type boundary is `packages/contracts/src/marketplace-v2.ts`. This document is not an
 > OpenAPI specification. Verify a handler before promising its behavior to an external consumer.
 
-## 1. V2 marketplace — CURRENT development preview
+## 1. V2 marketplace — IMPLEMENTED development preview
 
 `LOGLOADS_MARKETPLACE_V2=enabled` exposes `/v2`. `VERCEL_ENV=production` always disables it
 (`apps/web/lib/marketplace-v2/flag.ts`). The pages are `/v2/work`, `/v2/work/[jobId]`, `/v2/inquiries`,
@@ -85,7 +85,7 @@ The pilot cockpits mostly use server actions (`apps/web/lib/cockpit-actions.ts`)
 services. Absence from V2 navigation is not permission to delete a route that is still needed to read or
 reconcile history.
 
-## 3. Invariants for both surfaces (CURRENT)
+## 3. Invariants for both surfaces (IMPLEMENTED)
 
 - Route handlers and server actions call `packages/services`. Identity always resolves on the server
   (`apps/web/lib/api-actor.ts`, `session.ts`). Clients may choose only among the actor's own memberships.
@@ -111,7 +111,7 @@ reconcile history.
 ## 4. Next contract work (TARGET)
 
 - Map `MarketplaceV2Port` methods to the normalized functions once the prototype executes
-  ([`RUNNERS.md`](./RUNNERS.md) §3).
+  ([`CI.md`](./CI.md) §3).
 - Persist `publishJob` and `reconfirmJob` through a normalized adapter. Add an audited private-detail
   disclosure method to the port.
 - Expose HTTP endpoints only when a real client needs them. Specify pagination, filters, rate limits, and

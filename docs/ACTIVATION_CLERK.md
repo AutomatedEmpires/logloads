@@ -1,13 +1,13 @@
 # LogLoads — Clerk Identity Activation and Normalized-V2 Authorization
 
-> **Status:** Revised 2026-11-01.
-> - §1–§3 are CURRENT: they describe the existing pilot integration as found in code at `15892b7`.
+> **Status:** Last verified 2026-11-02.
+> - §1–§3 are IMPLEMENTED: they describe the existing pilot integration in code at `4c9518e`.
 > - §4 is TARGET.
 >
 > Do not activate a new environment, run the founder-admin claim, or migrate identities just by following
 > this document. Each needs explicit, scoped authorization. Verify the live provider state first, read-only.
 
-## 1. What Clerk does today (CURRENT)
+## 1. What Clerk does today (IMPLEMENTED)
 
 Clerk is the identity provider. LogLoads organizations, memberships, and roles live inside LogLoads, **not**
 in Clerk Organizations or Clerk roles.
@@ -28,7 +28,7 @@ in Clerk Organizations or Clerk roles.
 ([`ENVIRONMENT.md`](./ENVIRONMENT.md) §3). `LOGLOADS_ENABLE_DEV_LOGIN` must never be set in production or on a
 public hosted preview. Never mix one Clerk instance's keys with another environment's identities.
 
-## 2. Configuration checklist (CURRENT pilot)
+## 2. Configuration checklist (IMPLEMENTED pilot)
 
 1. Use a dedicated **LogLoads** Clerk application, with separate development and production instances.
 2. Clerk Organizations, Clerk roles, and a `user.created` webhook are **not required**. Profiles are
@@ -42,7 +42,7 @@ public hosted preview. Never mix one Clerk instance's keys with another environm
 6. Test: new user, sign-out and sign-in, removed membership, multi-organization switching, and direct-URL
    access without authorization.
 
-## 3. One-time founder platform-admin claim (CURRENT pilot, sensitive)
+## 3. One-time founder platform-admin claim (IMPLEMENTED pilot, sensitive)
 
 The pilot has one fixed seed admin profile. A controlled claim binds that row to exactly one verified Clerk
 identity. **Running it is a production operation and needs the founder's explicit authorization.**
@@ -88,9 +88,10 @@ service-role `operating_state` repository, so no Clerk-to-Supabase integration i
 The pilot schema's `current_clerk_user_id()` helper reads `auth.jwt() ->> 'sub'` and is unused on the live
 request path.
 
-Gemini's prototype (`architecture/normalized-v2/`, uncommitted at this revision) designs
+Gemini's schema (`architecture/normalized-v2/`; validated copy on `test/normalized-v2-postgres17-ci`) designs
 `trusted_identity_issuers`, `identity_links`, `app_users`, and strict claim inspection
-([`SECURITY.md`](./SECURITY.md) §4). None of it is operational until the prototype has executed successfully
+([`SECURITY.md`](./SECURITY.md) §4). Its SQL-level claim inspection is **VERIFIED with simulated claims**
+([`CI.md`](./CI.md) §3). None of it is operational until real-token verification succeeds
 on a disposable database and an application integration exists.
 
 Required proof before the application relies on normalized RLS:
