@@ -90,7 +90,7 @@ const COMPLETION_COPY: Record<OnboardingPath, {
     title: "Fleet Free opens with your first unit on file."
   },
   host: {
-    body: "Workspace creation is free and does not activate live publication. An authorized host can prepare a draft; pilot approval, the current 5% completed-load agreement, and a card are required before publishing.",
+    body: "Workspace creation is free and does not activate live publication. An authorized host can prepare a draft; separate pilot approval is required before publishing.",
     button: "Create host workspace",
     pending: "Creating host workspace...",
     title: "Start with one landing, its first lane, and the rate you pay."
@@ -375,9 +375,8 @@ export function OnboardingFlow({
           <legend tabIndex={-1}>Your workspace is ready to create</legend>
           <p className="fieldset-note">
             Next, set up the operating records your first timber movement needs.
-            Creating the workspace does not charge a card. Hosts accept the 5%
-            completed-load agreement and attach a payment method from Billing
-            before publishing live work; driver setup remains free.
+            Creating the workspace does not charge a card. Publishing live work
+            requires separate pilot approval; driver setup remains free.
           </p>
           <div className="onboarding-ready">
             <strong>{completionCopy.title}</strong>

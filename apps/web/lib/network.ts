@@ -530,8 +530,22 @@ function formatWindow(startAt: string, endAt: string): string {
   return `${formatter.format(new Date(startAt))} - ${formatter.format(new Date(endAt))} UTC`
 }
 
-function approximateCoordinate(value: number): number {
-  return Math.round(value * 50) / 50
+/**
+ * Public location generalization (V2-DEC-01, founder-confirmed 2026-11-02): a
+ * viewer without exact-location access gets every site coordinate rounded to
+ * the nearest 0.1° (about 11 km north–south). This runs here, on the server,
+ * before the view is serialized; browsers render the value as given and never
+ * re-round it.
+ *
+ * Halves round away from zero, as SQL `round(coord, 1)` does in the normalized
+ * schema, so both layers put a landing in the same cell. Dividing a whole
+ * number of tenths by 10 yields the double nearest that tenth, so the value
+ * serializes as `47.7`, never `47.70000000000001`.
+ */
+export function approximateCoordinate(value: number): number {
+  const magnitude = Math.round(Math.abs(value) * 10) / 10
+
+  return value < 0 && magnitude !== 0 ? -magnitude : magnitude
 }
 
 const SITE_REPORT_FRESHNESS_WINDOW_MS = 7 * 24 * 60 * 60 * 1_000

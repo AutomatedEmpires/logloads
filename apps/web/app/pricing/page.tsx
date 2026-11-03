@@ -5,7 +5,7 @@ import { PricingPage } from "@/components/v3"
 export const metadata: Metadata = {
   title: "Pricing — Free for drivers and fleets",
   description:
-    "Drivers and fleet workspaces use LogLoads for free. Hosts pay 5% of stated driver pay for each completed load, added on top—with no posting fee, subscription, monthly minimum, tier, allowance, or overage."
+    "LogLoads is a timber-hauling load board. Drivers and hauling businesses use it free. Pricing for landing organizations has not been published, and nothing is offered for sale yet."
 }
 
 export default function Page() {

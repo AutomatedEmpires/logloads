@@ -1,90 +1,114 @@
-# LogLoads — Clerk Activation Runbook
+# LogLoads — Clerk Identity Activation and Normalized-V2 Authorization
 
-## Founder gate
-> **Create the dedicated LogLoads Clerk application and provide/authorize its
-> production keys.**
+> **Status:** Revised 2026-11-01.
+> - §1–§3 are CURRENT: they describe the existing pilot integration as found in code at `15892b7`.
+> - §4 is TARGET.
+>
+> Do not activate a new environment, run the founder-admin claim, or migrate identities just by following
+> this document. Each needs explicit, scoped authorization. Verify the live provider state first, read-only.
 
-## What the code already does (verified)
-- `apps/web/app/layout.tsx` mounts `<ClerkProvider>` only when
-  `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is set.
-- `apps/web/middleware.ts` runs `clerkMiddleware` and protects `/driver /fleet /host
-  /admin` when Clerk is configured; otherwise falls back to the signed dev-session cookie.
-- `apps/web/lib/session.ts`: `getSessionActor()` resolves the Clerk user →
-  `findProfileByClerkId` → `SessionActor`. A signed-in Clerk user **without** a LogLoads
-  profile is routed to `/onboarding` (not a sign-in loop) via `requireCockpitActor` +
-  `getClerkUserId`.
-- `apps/web/lib/session-actions.ts`: `completeOnboardingAction` reads `auth()`, and when
-  Clerk is configured it requires a Clerk session and links the new profile to the Clerk
-  user id (`createAccount({ clerkUserId })`).
+## 1. What Clerk does today (CURRENT)
 
-### The guaranteed post-activation path
-`Clerk user signs in` → session resolves → **no profile?** → `/onboarding` →
-`completeOnboardingAction` provisions profile+org+membership linked to the Clerk id →
-`homePathFor` sends them to their role cockpit. Provisioned users skip onboarding
-(the onboarding page redirects an existing actor to `homePathFor`).
+Clerk is the identity provider. LogLoads organizations, memberships, and roles live inside LogLoads, **not**
+in Clerk Organizations or Clerk roles.
 
-## Configuration (all that's needed)
-1. Create a Clerk application named **LogLoads** (production instance).
-2. **Clerk Organizations: NOT required.** LogLoads has its own org/membership model
-   (created during onboarding). Clerk is used purely for user identity.
-3. **Roles:** come from the app's membership model, not Clerk. No Clerk roles needed.
-4. Set redirect URLs (both to `/onboarding` — provisioned users bounce home automatically):
-   - `NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in`
-   - `NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up`
-   - `NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/onboarding`
-   - `NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/onboarding`
-5. **Webhook: NOT required.** Profiles are provisioned on-demand at onboarding. (Optional
-   later: a `user.created` webhook to pre-provision; the app does not need it.)
-6. Production domain: `logloads.com`. Add it as an allowed origin / satellite as Clerk
-   requires once the host is live.
-7. Store `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` + `CLERK_SECRET_KEY` in Doppler → host secrets.
+- `apps/web/app/layout.tsx` mounts `<ClerkProvider>` only when `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is set.
+- `apps/web/middleware.ts` runs `clerkMiddleware` and, when Clerk is configured, protects the pilot
+  workspaces (`/driver`, `/fleet`, `/host`, `/admin`). Otherwise it falls back to the signed development
+  session cookie.
+- `apps/web/lib/session.ts` — `getSessionActor()` resolves the Clerk user to a LogLoads profile
+  (`findProfileByClerkId`). A signed-in Clerk user **without** a profile goes to `/onboarding`, not a sign-in
+  loop.
+- `apps/web/lib/session-actions.ts` — when Clerk is configured, onboarding requires a Clerk session and links
+  the new profile to the Clerk user ID.
+- The `/v2` preview uses the same session: actions call `getSessionActor()`, and pages call
+  `resolveV2Viewer()`. Both require an active organization ([`SECURITY.md`](./SECURITY.md) §3).
 
-## One-time founder platform-admin claim
+**Local development sessions** work only under the loopback and non-production safeguards
+([`ENVIRONMENT.md`](./ENVIRONMENT.md) §3). `LOGLOADS_ENABLE_DEV_LOGIN` must never be set in production or on a
+public hosted preview. Never mix one Clerk instance's keys with another environment's identities.
 
-Do not onboard the founder through a driver, fleet, or host path. Production
-contains one fixed seed admin profile and the controlled claim binds only that
-row to one verified Clerk identity.
+## 2. Configuration checklist (CURRENT pilot)
 
-1. Sign in to the dedicated LogLoads Clerk application and copy the founder's
-   exact `user_...` id. Confirm the account has a verified primary email.
-2. Set `LOGLOADS_PLATFORM_ADMIN_CLERK_IDS` to that one id. No second id,
-   wildcard, seed placeholder, or alternate syntax is valid.
-3. Compute the lowercase SHA-256 of this exact material (no trailing newline):
-   `logloads-platform-admin-scope-v1\n<exact user id>`. Store it as
-   `LOGLOADS_PLATFORM_ADMIN_EXPECTED_SCOPE_SHA256`.
-4. Set `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP=enabled` and set
-   `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP_EXPIRES_AT` to a short-lived future
-   canonical ISO instant such as `2026-08-05T18:00:00.000Z`. Deploy those names
-   without printing their values in logs.
-5. While signed in as that exact identity, open `/admin/bootstrap` and choose
-   **Claim founder access** once. The route requires same-origin JSON, shared
-   rate limiting, the verified Clerk primary email, the exact persistent scope,
-   and the unexpired temporary gate. It then performs one canonical CAS update.
-6. Verify `/admin` opens and the canonical activity contains one
-   `platform_admin_claimed` event for the fixed admin profile. The event stores
-   only the scope digest and claim source, not the Clerk id or email.
-7. Immediately set `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP=disabled`, remove
-   `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP_EXPIRES_AT`, and redeploy. Keep the exact
-   `LOGLOADS_PLATFORM_ADMIN_CLERK_IDS` and expected scope digest in place; those
-   two persistent values continue to authorize the claimed founder.
+1. Use a dedicated **LogLoads** Clerk application, with separate development and production instances.
+2. Clerk Organizations, Clerk roles, and a `user.created` webhook are **not required**. Profiles are
+   provisioned at onboarding.
+3. Redirects: `NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in`, `NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up`, and both
+   fallback redirect URLs set to `/onboarding`. Already-provisioned users are sent home automatically.
+4. Register `logloads.com` and any approved preview origins. Developer origins must not give hosted
+   environments an identity shortcut.
+5. Store `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (browser-visible) and `CLERK_SECRET_KEY` (server-only) through
+   the approved Doppler-to-host path.
+6. Test: new user, sign-out and sign-in, removed membership, multi-organization switching, and direct-URL
+   access without authorization.
 
-The operation is idempotent for the same identity and digest. It refuses a
-different identity, an already-linked non-admin profile, a second admin, a
-replaced seed identity, a missing or changed claim record, or any client-selected
-actor, role, or profile id.
+## 3. One-time founder platform-admin claim (CURRENT pilot, sensitive)
 
-## Supabase JWT integration — NOT required for launch
-`current_clerk_user_id()` reads `auth.jwt() ->> 'sub'`, used only when authenticated
-users query normalized Postgres tables directly. The app currently serves all data
-through the server-only, service-role `operating_state` repository, so **no
-Clerk↔Supabase JWT template is needed for launch.** Wire it only when browser/session
-queries move onto RLS-scoped relational tables.
+The pilot has one fixed seed admin profile. A controlled claim binds that row to exactly one verified Clerk
+identity. **Running it is a production operation and needs the founder's explicit authorization.**
 
-## Verification after activation
-1. `curl https://logloads.com/api/health` → `integrations.auth: "clerk"`.
-2. Sign up a fresh user → lands on `/onboarding` → complete a path → arrives at the
-   correct cockpit.
-3. Sign out, sign back in → goes straight to the cockpit (no onboarding).
-4. Confirm `LOGLOADS_ENABLE_DEV_LOGIN` is unset (dev sign-in must be off in prod).
-5. Confirm the claimed founder can open `/admin`, while a different Clerk user
-   cannot, after the temporary bootstrap gate and expiry have been removed.
+1. Sign in to the LogLoads Clerk application and copy the founder's exact `user_...` ID. Confirm the account
+   has a verified primary email.
+2. Set `LOGLOADS_PLATFORM_ADMIN_CLERK_IDS` to that one ID. A second ID, a wildcard, the seed placeholder, or
+   any alternate syntax is invalid and fails closed.
+3. Compute the lowercase SHA-256 of `logloads-platform-admin-scope-v1`, one newline, and the exact user ID
+   (no trailing newline). Store it as `LOGLOADS_PLATFORM_ADMIN_EXPECTED_SCOPE_SHA256`.
+4. Set `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP=enabled`, and set `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP_EXPIRES_AT` to
+   a short-lived future ISO instant. Deploy without printing either value.
+5. Signed in as that identity, open `/admin/bootstrap` and choose **Claim founder access** once. The route
+   requires:
+   - same-origin JSON;
+   - shared rate limits;
+   - the verified primary email;
+   - the exact persistent scope;
+   - the unexpired temporary gate.
+
+   It then performs one canonical compare-and-swap update.
+6. Verify that `/admin` opens and that one `platform_admin_claimed` audit event exists. The event stores only
+   the scope digest and the claim source.
+7. **Immediately** set the bootstrap gate back to `disabled`, remove its expiry, and redeploy. Keep the
+   persistent ID and digest: they continue to authorize the founder.
+
+The claim is idempotent for the same identity. It refuses a different identity, a second admin, a replaced
+seed identity, and any client-selected actor or profile. Never copy a seed placeholder, broaden the
+allowlist, leave the temporary gate active, or log the digest or ID.
+
+**Verification after activation:**
+
+- `/api/health` reports `integrations.auth: "clerk"`.
+- A fresh sign-up lands on `/onboarding`.
+- A returning user skips onboarding.
+- `LOGLOADS_ENABLE_DEV_LOGIN` is unset.
+- Only the claimed founder can open `/admin`.
+
+## 4. Normalized V2: the Clerk → Supabase boundary (TARGET, not live)
+
+The pilot does **not** use Clerk JWTs against Supabase. All data is served through the server-only,
+service-role `operating_state` repository, so no Clerk-to-Supabase integration is configured or needed today.
+The pilot schema's `current_clerk_user_id()` helper reads `auth.jwt() ->> 'sub'` and is unused on the live
+request path.
+
+Gemini's prototype (`architecture/normalized-v2/`, uncommitted at this revision) designs
+`trusted_identity_issuers`, `identity_links`, `app_users`, and strict claim inspection
+([`SECURITY.md`](./SECURITY.md) §4). None of it is operational until the prototype has executed successfully
+on a disposable database and an application integration exists.
+
+Required proof before the application relies on normalized RLS:
+
+1. Configure Supabase's third-party auth integration for the **correct** Clerk environment, starting with
+   development. Supabase validates signature, issuer, JWKS, and expiry at its API gateway. SQL claim checks
+   with simulated claims cannot substitute for that cryptographic verification.
+2. Require explicit, valid identity and role claims. Never fall back from a missing role to an authorized
+   role. Treat user-editable metadata as untrusted.
+3. Link a verified `(issuer, subject)` to exactly one application user. Disabled or suspended users must fail
+   closed. Never link identities by matching email alone.
+4. Test anon, authenticated, unrelated tenant, multi-organization switching, removed membership, private
+   landing disclosure, and platform-admin separation.
+5. Review `SECURITY DEFINER` functions, `search_path`, grants, and Data API schema exposure.
+6. Prove the exact access path the app will use. A service-role connection bypasses RLS. Never claim RLS
+   protection on that path.
+7. Reconcile historical identity mapping without creating duplicate application users or moving tenant
+   records to a different Clerk identity.
+
+Production key entry, identity migration, and enabling the integration are founder actions. None of them
+activates paid plans.

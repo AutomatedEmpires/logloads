@@ -1,274 +1,143 @@
-# LogLoads — Stripe activation runbook
+# LogLoads — Stripe Activation Runbook (Current Marketplace Direction)
 
-Current authority is the founder's 2026-08-01 `percentage_v1` decision. Stripe
-may collect only the host's separate LogLoads platform-fee invoice and reconcile
-provider obligations accepted under an earlier commercial decision. LogLoads
-does not receive or distribute driver/carrier compensation and never uses
-Connect, destination charges, transfers, or application fees.
+> **Status:** **NO LIVE V2 BILLING AUTHORIZED.** Revised 2026-11-01. This replaces the earlier
+> `percentage_v1` activation instructions, which sounded current. That runbook is preserved verbatim at
+> [`archive/2026-legacy-commercial/ACTIVATION_STRIPE_2026-08-01.md`](./archive/2026-legacy-commercial/ACTIVATION_STRIPE_2026-08-01.md)
+> as historical evidence only. It is **prohibited** as an execution plan.
+>
+> Read [`DECISIONS.md`](./DECISIONS.md) (2026-11-01) and
+> [`product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md`](./product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md) before any billing
+> change.
 
-Repository implementation, provider catalog provisioning, and test-mode proof
-do not authorize real enrollment or collection.
+## 1. What the adopted business model sells
 
-## Current `percentage_v1` hard gates
+| Landing subscription | Monthly fee | Active landings | Team members (owner included) | Targeted invitations / cycle |
+|---|---:|---:|---:|---:|
+| Basic | $149 | 1 | 2 | 3 |
+| Pro | $299 | 3 | 5 | 10 |
+| Regional | $499 | Unlimited legitimate landings | 10 | 30 |
 
-Real percentage-v1 enrollment and platform-fee collection require all of:
+**Included on every plan:**
 
-1. the intended LogLoads-owned Stripe account and public business identity;
-2. accepted terms stating that the host owes LogLoads 5% of host-stated driver
-   pay after completion, on top of and separate from full direct driver pay;
-3. a dated counsel-approved Network operating posture and tax treatment;
-4. an explicit `percentage_v1` agreement for the exact organization, with no
-   monthly minimum and no posting charge;
-5. exact fee arithmetic, completion idempotency, monthly invoice, webhook,
-   retry, credit/void, reconciliation, and rollback proof in test mode;
-6. exact-SHA protected-preview evidence and independent review;
-7. explicit activation of `LOGLOADS_PERCENTAGE_ENROLLMENT` plus the exact
-   organization id in `LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS` for the
-   counsel-cleared pilot only, with its private sorted-scope SHA-256 assertion in
-   `LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256`;
-8. founder authorization for the exact live canary and controlled charge/refund;
-9. explicit activation of the sole current collection switch,
-   `LOGLOADS_FEE_COLLECTION`.
+- unlimited legitimate job postings;
+- unrestricted inbound hauler interest and replies;
+- any genuine number of trucks requested.
 
-Both current gates default to `disabled`, and the percentage organization
-allowlist defaults blank. Enrollment permits only the exact allowlisted host to
-accept the current agreement; it does not authorize a Stripe charge. Collection
-permits provider collection only for an already valid obligation; it does not
-enroll a host. The subscription-era switches
-`LOGLOADS_SUBSCRIPTION_COLLECTION` and `LOGLOADS_DISPATCH_SELF_SERVE` must remain
-`disabled`; they may reconcile a previously accepted provider obligation but
-must not create a new subscription customer, Checkout, plan, usage event, or
-charge. No catalog Price, allowlist, deployment, or provider object substitutes
-for the current fee gate.
+Unused invitations expire at the end of the cycle; nothing rolls over. Owner-operators and fleets have **no
+paid tiers**.
 
-## Historical subscription gates — do not activate
+**Optional boosts.** A landing subscriber may buy a labelled **Sponsored** boost for one posting:
 
-The following list is retained only to interpret and reconcile an obligation
-accepted while the 2026-07-28 subscription-v1 decision governed:
+| Boost | Price |
+|---|---:|
+| 7 days | $99 |
+| 14 days | $149 |
+| 28 days | $199 |
 
-1. the intended LogLoads-owned Stripe account and public business identity;
-2. accepted commercial terms, tax treatment, renewal/non-renewal language, and
-   a counsel-approved Network operating posture;
-3. a deliberately selected Pilot organization and explicit administrator
-   activation authorization;
-4. idempotently provisioned Products and Prices whose metadata matches the
-   committed manifest;
-5. signed webhook, test-clock, anniversary, overage, supplemental-invoice,
-   failure/retry, cancellation, reconciliation, and rollback proof;
-6. exact-SHA protected-preview evidence and independent review;
-7. explicit activation of `LOGLOADS_SUBSCRIPTION_COLLECTION`;
-8. `LOGLOADS_SUBSCRIPTION_ALLOWED_ORGANIZATION_IDS` containing only the exact
-   founder-approved Pilot organization UUID;
-9. `LOGLOADS_DISPATCH_SELF_SERVE=disabled` for the Pilot-first launch.
+A boost covers an approximate 100-mile radius, subject to audience safeguards, and never renews
+automatically.
 
-The historical switch remains `disabled`. Never place `enabled` in a general
-example, preview, test, local environment, or new production enrollment.
+**Founding offer.** The first 10 qualifying landing organizations in each launched state get 50% off their
+selected tier for their first 6 paid cycles: $74.50 / $149.50 / $249.50. Recognition for founding haulers is
+never a paid feature.
 
-Under the superseded contract, an enabled collection switch with an empty
-organization allowlist permitted no new money, and Dispatch Pro self-serve had
-its own exact gate. Under the current decision the allowlist remains empty, the
-`*` sentinel is invalid, and neither historical gate may be enabled. Closing
-those gates does not suppress signed reconciliation for a Checkout obligation
-that was accepted while the historical decision governed.
+**LogLoads never charges a percentage of hauling revenue, or per completed load, hired truck, or freight
+settlement.** Hauling agreements and carrier/driver payments happen outside the platform.
 
-## Historical subscription catalog
+The single code source for these numbers is `packages/contracts/src/membership.ts`. Do not create a second
+copy.
 
-| Plan | Monthly base | Allowance | Overage | Enrollment |
-|---|---:|---:|---:|---|
-| Dispatch Pro | $499 | no Network units | none | software |
-| Network Pilot | $1,500 | 30 pooled over exact 90 days | $150 | invitation-only |
-| Network 25 | $3,000 | 25/month | $125 | sales-assisted |
-| Network 50 | $5,500 | 50/month | $110 | sales-assisted |
-| Network 100 | $10,000 | 100/month | $90 | sales-assisted |
-| Enterprise custom | negotiated | negotiated, never unlimited | negotiated | sales-assisted |
-| Internal billing test | $1 | none | none | owner-only, no entitlement or revenue recognition |
+## 2. Activation status and separation from legacy code
 
-The historical recurring base was billed in advance. Network 25/50/100 allowance
-windows followed the Stripe subscription anniversary. The historical public
-Pilot shorthand was $1,500/mo, but its provider contract was exactly three
-$1,500 advance installments:
-at the first paid provider period start, day 30, and day 60. Its pre-created Price recurs every 30 days
-inside a finite schedule ending at day 90, so no fourth Pilot base invoice can
-exist. The first verified paid base invoice after explicit authorization makes
-that provider period start the one canonical operational, commitment, and
-pooled-allowance anchor. Agreement configuration, authorization, and an
-unpaid Checkout session do not start that clock.
-Overage is billed in arrears through one explicit invoice line or a
-supplemental invoice for valid late usage.
+- The adopted prices are **commercial requirements**. They are not evidence that Stripe Products/Prices,
+  checkout, webhooks, or entitlements exist for them. None exists in code at `15892b7`.
+- `percentage_v1`, `legacy_percentage`, and `subscription_v1` records and provider IDs stay preserved and
+  reconcilable ([`SUBSCRIPTION_BILLING_V1.md`](./SUBSCRIPTION_BILLING_V1.md)). No new enrollment under them.
+- `LOGLOADS_FEE_COLLECTION`, `LOGLOADS_PERCENTAGE_ENROLLMENT`, `LOGLOADS_SUBSCRIPTION_COLLECTION`, and
+  `LOGLOADS_DISPATCH_SELF_SERVE` stay closed. **Never** repurpose them, or their meaning, for Basic, Pro,
+  Regional, or boosts.
+- `STRIPE_PRICE_DISPATCH`, `STRIPE_PRICE_NETWORK_*`, the overage prices, and the internal $1 smoke are legacy
+  catalog entries, not V2 product IDs.
+- `tools/provision-stripe-catalog.mjs`, `tools/stripe-catalog.mjs`, `tools/verify-stripe-subscriptions.mjs`,
+  and `tools/stripe-test-clock.mjs` operate the **historical** catalog. Do not run them with `--apply` against
+  any account to create new-model products.
+- A signed webhook proves the event's source is authentic. It does not prove the agreement, amount,
+  customer, or entitlement was authorized.
+- **Guardrail conflict to resolve deliberately:** `tools/check-guardrails.mjs` bans the retired copy pattern
+  `$499/mo` in `apps/web`, but Regional is $499/month. The new pricing surface needs an intentional guardrail
+  update that keeps banning the retired Dispatch Pro copy ([`product/TRANSITION_PLAN.md`](./product/TRANSITION_PLAN.md)).
 
-Historical Dispatch Pro enrollment also began from an explicitly accepted
-canonical subscription. Carrier and fleet Checkout could create a Stripe customer when no
-canonical customer is bound; the signed Checkout webhook must bind the returned
-customer and subscription before the first paid base webhook activates
-operations. The preserved entitlement-only Checkout action cannot create new
-subscriptions. Existing legacy Dispatch subscriptions keep webhook and portal
-reconciliation.
+## 3. Before even test-mode checkout
 
-Historical Products and Prices were provisioned by the repository operator
-tool. Ordinary requests did not create catalog objects. Stable metadata
-included:
+1. Get qualified transportation and advertising legal review of paid invitations, sponsored jobs, and
+   business introductions. A subscription does not settle regulatory classification.
+2. Decide and publish terms for:
+   - cancellation timing;
+   - failed-payment grace and dunning;
+   - taxes, proration, refunds, disputes, and receipts;
+   - trials, if any;
+   - account verification and founding-cohort rules (Blueprint §10.3, §16.2).
+3. On a disposable normalized database, prove server-side landing and seat limits, entitlement periods, and
+   no-rollover invitation accounting. A downgrade must never silently suspend users; excess seats and
+   landings are resolved explicitly by the owner.
+4. Create a **new**, versioned Stripe catalog. Link each price ID to the database's immutable plan version,
+   with the correct currency and cadence.
+5. Define the billing state machine:
+   - states: `incomplete`, `active`, `past_due`, `canceled`;
+   - events: failure, retry, scheduled change, refund, promotion, test clock.
 
-- `logloads_plan_code`
-- `billing_model`
-- `included_network_loads`
-- `allowance_cadence`
-- `overage_unit_amount`
-- `internal_billing_test`
+   Never grant service because a client reached the success page.
+6. Keep `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` server-only. Assert the expected account ID and
+   live/test mode, as the existing code already does.
+7. Implement signed webhook deduplication, ordered retries, reconciliation, and audit logs. Prove that
+   concurrent requests cannot create duplicate subscriptions or charges.
 
-## Webhook contract
+## 4. Subscription and boost acceptance tests
 
-Endpoint:
+- **Plan limits.** Basic: 1 landing, 2 seats, 3 invitations. Pro: 3 / 5 / 10. Regional: unlimited genuine
+  landings, 10 seats, 30 invitations. The owner counts as a seat. Free hauler or fleet roles never become paid
+  seats, including in a company that does both kinds of business.
+- **Downgrades.** A downgrade that exceeds limits is refused, or scheduled and explicitly resolved. It never
+  triggers arbitrary suspension.
+- **Invitation allowance.**
+  - The allowance resets exactly at the cycle boundary, with no rollover.
+  - A failed delivery releases its credit exactly once.
+  - Inquiries never debit the allowance.
+- **Boosts.** A boost charges once and runs between disclosed UTC times. It promotes one eligible real job
+  with a visible Sponsored label, and stops when the job becomes invalid. It promises no views or hires.
+- **Free users.** Free users cannot reach paid checkout by accident. Stripe metadata alone cannot turn an
+  organization into a paid subscriber.
+- **Founding offer.** The founding discount is limited by launched state, verification, and first-ten
+  eligibility. It applies 50% for exactly 6 paid cycles, then the full price.
+- **Failure and timing paths.** Test payment failure, webhook ordering and retries, disputes and refunds,
+  renewal, and test-clock shifts — in test mode only.
 
-`POST https://logloads.com/api/billing/webhook`
+## 5. Production hard stop
 
-The route reads the raw request body, verifies `stripe-signature`, deduplicates
-by Stripe event id, resolves same-second ordering by `(created, event_id)`, and
-returns a retryable error when a money event cannot be reconciled.
+**Without explicit, scoped founder authorization, do not:**
 
-Metadata classifiers are exclusive:
+- create live Products or Prices;
+- charge a customer;
+- activate a subscription;
+- sell a boost;
+- issue a refund;
+- send commercial invitations;
+- change DNS;
+- enable any payment gate.
 
-- `hostInvoiceId` — legacy percentage invoice
-- `organizationSubscriptionId` — subscription base lifecycle
-- `billingPeriodSummaryId` — overage/supplemental invoice
-- `internal_billing_test=true` — nominal owner smoke
+Before launch, the founder must also have:
 
-An event naming more than one class is unresolved. A valid signature proves
-the sender, not the correctness of local metadata: customer, currency, amount,
-price, livemode, plan, and local store-once binding must still agree.
+- environment segregation;
+- reviewed SQL/RLS;
+- a legal review;
+- proof of the live account's identity;
+- published terms;
+- a tested backup and rollback;
+- exact-SHA deployment evidence.
 
-Unknown, `incomplete`, `incomplete_expired`, or `paused` subscription states do
-not grant active entitlement.
+## 6. Historical reconciliation and retirement
 
-## Required environment
-
-The exact names and scopes live in `.env.example` and
-`ops/production-env-contract.json`. At minimum:
-
-- Stripe server key and signed-webhook secret;
-- `LOGLOADS_STRIPE_EXPECTED_LIVEMODE=live` in Production (`test` only in
-  controlled non-production runtimes), with every key and signed event required
-  to agree;
-- `LOGLOADS_STRIPE_EXPECTED_ACCOUNT_ID`, verified against Stripe's account
-  endpoint without printing either account id;
-- `LOGLOADS_PERCENTAGE_ENROLLMENT=disabled` and a blank
-  `LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS` and
-  `LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256` until an exact
-  counsel-cleared pilot activation;
-- the historical Dispatch Pro and Network Price ids only when a preserved
-  accepted obligation actually requires reconciliation;
-- hidden internal-test Price id;
-- the separate current collection switch and historical Dispatch Pro safety
-  gate;
-- the restricted portal configuration (payment method and invoice history
-  enabled; self-service cancellation and plan switching disabled);
-- internal-smoke switch plus separate owner and target-organization allowlists.
-- Resend API key and verified From identity before billing-notification email
-  delivery is activated; otherwise canonical notifications remain queued.
-- `LOGLOADS_FEE_COLLECTION=disabled` until the current percentage-v1 hard gates
-  pass; it is the only switch that may later authorize current commercial
-  collection.
-
-Keep `LOGLOADS_SUBSCRIPTION_COLLECTION=disabled`, keep
-`LOGLOADS_DISPATCH_SELF_SERVE=disabled`, and leave the historical subscription
-organization allowlist empty for new activity.
-
-Every hosted smoke must explicitly assert both collection and enrollment. A
-dark release uses `SMOKE_EXPECT_FEE_COLLECTION=disabled` and
-`SMOKE_EXPECT_PERCENTAGE_ENROLLMENT=disabled`, which also requires an empty,
-valid enrollment scope. An enabled pilot configures the private expected SHA-256
-fingerprint through
-`LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256`. Health exposes only
-`scopeVerified: true` after that assertion matches; it never publishes the
-fingerprint, organization count, or organization ids.
-
-Never print or pipe environment values to stdout. Verify names, scopes, age, and
-presence using provider metadata only.
-
-## Test-mode proof
-
-Use an isolated Stripe test customer and an isolated LogLoads host organization.
-Do not create Checkout Sessions, subscriptions, schedules, subscription Items,
-or catalog Prices for this proof. Verify the current `percentage_v1` path in
-this order:
-
-1. the expected test-mode Stripe account, then a SetupIntent and default payment
-   method bound only to the intended host;
-2. test-only activation of `LOGLOADS_PERCENTAGE_ENROLLMENT` for the exact
-   isolated organization, then acceptance of the current percentage agreement
-   by an authorized host billing actor, with the frozen 500-basis-point USD
-   monthly-in-arrears terms;
-3. a published load and accepted assignment carrying the exact host-stated
-   driver pay, while the driver's direct-pay obligation remains unchanged;
-4. a billable delivery followed by host confirmation, producing exactly one
-   platform fee equal to 5% of the frozen stated pay;
-5. idempotent completion redelivery, no fee for a valid zero/no-delivery close,
-   and a fee for a positive-pay short-load completion;
-6. one closed monthly period and one itemized canonical invoice whose fee rows,
-   assignment/load bindings, currency, frozen pay, fee rate, and subtotal all
-   reconcile exactly;
-7. fail-closed behavior while `LOGLOADS_FEE_COLLECTION=disabled`, then an
-   explicitly enabled test-only run that creates and charges only that canonical
-   host invoice;
-8. provider customer, payment method, account, livemode, currency, amount, and
-   local invoice metadata checks before any Stripe charge call;
-9. signed invoice success events, duplicate delivery, and out-of-order delivery,
-   with one store-once provider binding and one canonical settlement;
-10. payment failure, retry, payment-method replacement, and recovery without a
-    duplicate charge or rewritten fee history;
-11. draft/open invoice void behavior and settled-invoice credit or refund
-    behavior, preserving the original receivable and audited correction;
-12. reconciliation refusal for duplicate fee claims, cross-organization links,
-    wrong-month rows, altered frozen terms, amount drift, or provider/local
-    mismatch;
-13. billing-email claim, retry, authorization revocation, and bounded exhaustion;
-14. runtime-mode mismatch refusal for the secret key, publishable key, signed
-    event, account identity, payment-method operation, invoice charge, and smoke;
-15. collection-switch rollback: disabling `LOGLOADS_FEE_COLLECTION` prevents all
-    new provider charges while canonical fee and invoice history stays readable;
-16. internal owner-smoke exclusion from commercial fees and business metrics.
-
-Stripe webhook processing is asynchronous. Verify signed webhook/local
-convergence rather than treating a provider API response as settlement. The
-subscription-era test matrix is historical evidence only and belongs under the
-do-not-execute sections below.
-
-## Owner-only live smoke
-
-The live smoke is a one-off $1 invoice, not a subscription. It requires:
-
-- an authenticated platform owner on the explicit allowlist;
-- a controlled internal billing organization on its separate explicit
-  allowlist;
-- the separate smoke switch;
-- an unused one-redemption canonical record;
-- `internal_billing_test=true` metadata;
-- signed webhook receipt and canonical paid state;
-- cancellation/refund or credit-note reversal proof;
-- exclusion from entitlement and business metrics.
-
-No repository command automatically performs this charge. The founder must
-authorize the exact run while authenticated in the intended LogLoads Stripe
-account.
-
-## Historical subscription activation and rollback — do not execute for new work
-
-The old sequence below is preserved for audit and incident reconstruction. It is
-not an authorized path to new enrollment:
-
-1. enroll only the approved Pilot organization;
-2. accept the immutable plan/terms snapshot;
-3. explicitly authorize activation as an administrator;
-4. enable collection only for this controlled activation, after confirming no
-   other organization is activation-authorized;
-5. create Checkout against the pre-provisioned 30-day Pilot Price;
-6. verify the first base invoice is paid; its provider period start must become
-   the canonical operational, commitment, and allowance start, and that same
-   webhook must create and bind the finite 90-day schedule before the
-   subscription becomes operationally ready;
-7. manually review the base charges at activation/day 30/day 60, confirm no
-   fourth charge at day 90, and review the Pilot allowance close.
-
-If provider and canonical state diverge, disable new collection, preserve
-operational work, capture provider-safe identifiers, reconcile against the
-canonical ledger, and correct with audited adjustments or credit notes. Never
-delete or restate historical usage or invoices.
+Keep historical invoices, terms, and webhook IDs readable and auditable. Never delete or re-bill an old
+obligation under the new model. Reconcile actual outstanding provider obligations before designing a
+retirement path. Retirement needs zero open obligations, both in canonical state and in Stripe, plus explicit
+authorization ([`product/TRANSITION_PLAN.md`](./product/TRANSITION_PLAN.md)).

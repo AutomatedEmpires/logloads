@@ -1,3 +1,4 @@
+import { TERMS_2026_08_03_PATH } from "./legal-archive"
 import type { NetworkLoadView, NetworkView } from "./network"
 
 export interface PublicStoryPage {
@@ -17,11 +18,26 @@ export interface PublicStoryPage {
   attribution?: string
 }
 
+/** A dated notice that a legal page changed, shown above its sections. */
+export interface LegalChangeNotice {
+  date: string
+  /** ISO form of `date`, for the `<time>` element. */
+  dateTime: string
+  body: string
+  /** Where the replaced text can still be read. */
+  link: {
+    lead: string
+    href: string
+    label: string
+  }
+}
+
 export interface LegalPageContent {
   slug: string
   title: string
   intro: string
   effectiveDate: string
+  changeNotice?: LegalChangeNotice
   sections: Array<{
     title: string
     body: string
@@ -59,7 +75,7 @@ const SIGN_UP_COPY_BY_INTENT: Record<PublicSignUpIntent, PublicSignUpCopy> = {
     title: "Set up dispatch for your fleet."
   },
   host: {
-    body: "Create a free workspace to prepare landings and timber work. Live publication still requires separate pilot approval, the current 5% agreement, and a card in Billing.",
+    body: "Create a free workspace to prepare landings and timber work. Live publication still requires separate pilot approval.",
     eyebrow: "Host workspace",
     intentLabel: "Host workspace",
     title: "Prepare your timber operation."
@@ -270,26 +286,21 @@ export const pricingPlans: PricingPlan[] = [
   {
     name: "Fleet Free",
     price: "Free",
-    audience: "Fleets and dispatch teams",
-    summary: "Run dispatch, equipment, drivers, and private partner work without a LogLoads subscription.",
-    included: "Dispatch board, truck planning, driver seats, and private partner work",
-    overage: "None",
+    audience: "Hauling businesses and fleets",
+    summary: "Keep trucks, drivers, equipment, and availability in one place and find work that fits your fleet, without a LogLoads subscription.",
+    included: "Truck and equipment records, driver seats, availability, and private partner work",
     commitment: "No subscription, trial clock, or LogLoads truck limit",
-    features: ["Dispatch board", "Truck and equipment planning", "Driver seats", "Private partner work"],
-    cta: { href: "/sign-up?path=fleet", label: "Create fleet workspace" },
-    note: "Hosts—not fleets or drivers—owe the 5% platform fee when host-posted work completes."
+    features: ["Truck and equipment records", "Driver seats", "Availability", "Private partner work"],
+    cta: { href: "/sign-up?path=fleet", label: "Create fleet workspace" }
   },
   {
     name: "Host",
-    price: "5% per completed load",
+    price: "Not yet published",
     audience: "Landings, mills, and timber operations",
-    summary: "State what the load pays the driver. LogLoads adds a 5% platform fee to the host's cost when the load completes.",
-    included: "Posting, matching, coordination, and load records",
-    overage: "None",
-    commitment: "No subscription or monthly minimum",
-    features: ["No charge to post", "No tiers or allowances", "Itemized monthly fee invoices", "Driver pay remains direct and whole"],
+    summary: "Prepare landings and post the hauling work you need trucks for. Pricing for landing organizations will be published before any paid feature is offered.",
+    features: ["Landing and work setup", "Choose who sees each posting", "Review requests from drivers and fleets", "Driver pay remains direct and whole"],
     cta: { href: "/sign-up?path=host", label: "Create host workspace" },
-    note: "Workspace setup is free. Live publication requires separate pilot approval; creating an account does not activate billing. Example after approval: $500 driver pay + $25 LogLoads fee = $525 total host cost."
+    note: "Workspace setup is free. Live publication requires separate pilot approval; creating an account does not activate billing."
   }
 ]
 
@@ -386,10 +397,18 @@ export const legalPages: Record<string, LegalPageContent> = {
     title: "Terms of Service",
     intro: "These Terms of Service govern your use of LogLoads. By creating an account or using the service, you agree to them.",
     effectiveDate: "August 3, 2026",
+    changeNotice: {
+      date: "November 2, 2026",
+      dateTime: "2026-11-02",
+      body: "The “Host platform fee” and “Agreement and payment method” sections were removed from these Terms because the per-load fee model was retired.",
+      link: {
+        lead: "For agreements accepted under the earlier version, read the",
+        href: TERMS_2026_08_03_PATH,
+        label: "archived Terms of Service effective August 3, 2026"
+      }
+    },
     sections: [
       { title: "What LogLoads is", body: "LogLoads provides software for discovering, coordinating, and recording timber hauling work. LogLoads does not carry freight or receive, escrow, deduct from, or distribute transportation compensation.", points: ["Participants remain responsible for their own regulatory compliance", "Assignments record the coordination terms both sides accepted", "The legally identified carrier, owner-operator, or private-fleet payee is paid directly by the host"] },
-      { title: "Host platform fee", body: "For each completed load, the host owes LogLoads a platform fee equal to 5% of the driver pay the host stated for that load. The fee is added to the host's cost and is never deducted from driver pay or carrier compensation. LogLoads bills its own fees monthly in arrears to the host's payment method.", points: ["A $500 load means $500 paid directly to the driver plus a $25 LogLoads fee", "There is no charge to post, subscription, monthly minimum, tier, allowance, or overage rate", "Cancelled, unaccepted, or uncompleted work does not create a platform fee"] },
-      { title: "Agreement and payment method", body: "Before publishing live work, an authorized host representative must accept the current percentage agreement and attach a valid payment method. Attaching a card or accepting the agreement does not itself create a charge.", points: ["The accepted terms freeze the fee rate, currency, and billing cadence", "Itemized invoices identify the completed loads that produced each fee", "Billing disputes use audited corrections rather than deleting historical records"] },
       { title: "Your responsibilities", body: "You are responsible for the accuracy of what you publish and for operating safely and lawfully: weight compliance, cargo securement, insurance, permits, operating authority, and road use.", points: ["Do not publish capacity or work that does not exist", "Do not misuse access instructions released to you", "Keep your equipment, insurance, and account details current"] },
       { title: "No guarantees", body: "LogLoads does not guarantee the quality or conduct of any carrier or host, the legality or condition of any route, the accuracy of posted weights, destination acceptance, or that you will be paid for work arranged through coordination on the platform.", points: ["Use your professional judgment on every haul", "Verify field conditions before committing equipment", "Raise problems early through messages, notices, or reports"] },
       { title: "Independent businesses and limits on liability", body: "Every participant is an independent business. Nothing on LogLoads creates an employment, agency, joint-venture, or partnership relationship between you and LogLoads or between you and another participant. Disputes about hauls, payment, damage, or delay are between the participants; we can provide the assignment record but we are not a party to the haul. To the fullest extent the law allows, LogLoads' total liability for any claim related to the service is limited to the platform fees you paid us in the twelve months before the claim, and we are not liable for indirect, incidental, or consequential losses, including lost loads, lost revenue, equipment damage, or downtime.", points: ["Participants contract with each other, not with LogLoads", "Assignment records are available to both sides of a dispute", "Liability is capped at twelve months of LogLoads platform fees"] },
