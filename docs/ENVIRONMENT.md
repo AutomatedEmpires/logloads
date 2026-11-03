@@ -1,84 +1,108 @@
-# LogLoads Environment
+# LogLoads — Local Environment
 
-## Local development
-- Supported workflow: a native Windows 11 checkout edited in Cursor (macOS/Linux work the same way). WSL is not required.
-- Use Node `24.16.0` from `.nvmrc` (fnm or nvm) and pnpm `10.12.4` via `corepack enable`. Non-interactive shells may not load fnm's shell hook; confirm `node -v` prints `v24.16.0` before running checks.
-- Install with `pnpm install --frozen-lockfile`.
-- One-time: `pnpm setup:local` creates or completes the git-ignored `apps/web/.env.local` with `NEXT_PUBLIC_APP_URL=http://localhost:3002` and freshly generated local-only `LOGLOADS_SESSION_SECRET` and `LOGLOADS_RATE_LIMIT_HMAC_SECRET`. It never overwrites values, never prints secrets, refuses CI/Vercel, and adds no provider keys.
-- Why both are needed locally: seeded development sign-in stays off unless `NEXT_PUBLIC_APP_URL` is a loopback URL, and rate-limited routes (sign-in, contact, onboarding, weather) refuse to run without `LOGLOADS_RATE_LIMIT_HMAC_SECRET` in every environment. Production behaviour is unchanged.
-- `pnpm dev` and `pnpm --filter @logloads/web dev:webpack` bind `127.0.0.1:3002` only. Never run `next build` into `apps/web/.next` while a dev server uses it; build from a separate git worktree.
-- Run the full local gate with `pnpm validate` (its database step needs the local Supabase CLI and Docker).
+> **Status:** IMPLEMENTED behavior, last verified 2026-11-02 against `4c9518e`. Scope: local development only.
+> Production variables and their fail-closed rules are in [`ENV_CONTRACT.md`](./ENV_CONTRACT.md). Deployment is
+> in [`DEPLOYMENT.md`](./DEPLOYMENT.md). CI is in [`CI.md`](./CI.md).
 
-## Local Supabase
-- Dedicated local Postgres URL: `postgresql://postgres:postgres@localhost:55322/postgres`
-- Dedicated local API URL: `http://127.0.0.1:55321`
-- Local config file: `supabase/config.toml`
-- Migration folder: `supabase/migrations/`
-- Bootstrap seed state: `packages/db/src/seed-data.ts` (inserted only when the canonical row is intentionally empty and bootstrap is enabled)
-- Validation command: `pnpm db:check`
-- `pnpm db:check` starts the isolated API/database stack when needed and resets the PostgreSQL 17 migration ledger. It may skip locally when the CLI or Docker is absent, but CI fails rather than skipping.
-- `pnpm test:e2e` requires that stack plus a production build. Its wrapper captures local service credentials in-process and never prints them.
+## 1. Toolchain and first run
 
-## Linked Supabase project
-- Required variables:
-  - `SUPABASE_PROJECT_REF`
-  - `SUPABASE_URL`
-  - `SUPABASE_ANON_KEY`
-  - `SUPABASE_SERVICE_ROLE_KEY`
-- These values belong in Doppler, GitHub Actions secrets, or Vercel env, not in git.
+- Native Windows 11 checkout (Cursor). WSL, Docker Desktop and local PostgreSQL are **not** needed and must not
+  be installed for ordinary work.
+- Node **24.16.0** (`.nvmrc`, via fnm or nvm). pnpm **10.12.4** via Corepack. In PowerShell, use `pnpm.cmd` if the
+  execution policy blocks `pnpm.ps1`.
+- Non-interactive shells may not load fnm. Check `node -v` before trusting any result.
 
-## GitHub Actions
-- Required workflow-time env/secrets depend on the workflow:
-  - `GITHUB_TOKEN` is provided automatically by GitHub Actions.
-  - Dependency review uses the default GitHub token.
-  - Future deployment workflows should read Vercel and Supabase secrets from repo/org secrets.
+```powershell
+node -v; pnpm --version
+pnpm install --frozen-lockfile
+pnpm setup:local     # one time: writes git-ignored apps/web/.env.local
+pnpm dev             # 127.0.0.1:3002 only; open http://localhost:3002
+```
 
-## Vercel / deployment
-- Required variables for the web app:
-  - `NEXT_PUBLIC_APP_URL`
-  - `NEXT_PUBLIC_MAP_PROVIDER`
-  - `NEXT_PUBLIC_MAPBOX_TOKEN`
-  - `NEXT_PUBLIC_NOTIFICATION_PROVIDER`
-  - `SUPABASE_URL`
-  - `SUPABASE_SERVICE_ROLE_KEY`
-- Optional server-only variables:
-  - `VERCEL_TOKEN`
-  - `SENTRY_DSN`
-  - `RESEND_API_KEY`
-  - `LOGLOADS_EMAIL_FROM`
-  - `LOGLOADS_EMAIL_REPLY_TO` (defaults to `support@logloads.com`)
-  - `LOGLOADS_CONTACT_EMAIL` (defaults to `support@logloads.com`)
+- `pnpm --filter @logloads/web dev:webpack` is an alternative dev server, also on loopback port 3002.
+- Never run a production build into `apps/web/.next` while `pnpm dev` is using it. Build from a separate worktree
+  instead, and delete it afterwards.
 
-## Sessions and identity
-- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` + `CLERK_SECRET_KEY` activate Clerk (production auth provider).
-- `LOGLOADS_SESSION_SECRET` signs sessions; REQUIRED in production.
-- `LOGLOADS_ENABLE_DEV_LOGIN=true` allows email dev sign-in in production-like builds without Clerk (never set in real production).
-- Without Clerk keys, non-production environments use dev sessions automatically through the same session resolution path.
+## 2. `apps/web/.env.local`
 
-## Operating state
-- Supabase `operating_state` is canonical whenever `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are present. Production requires both and never accepts the anon key for this row.
-- Every request entry awaits the canonical row. Mutations compare `version`, replay on a conflict, and resolve only after the remote commit succeeds.
-- `LOGLOADS_STATE_FILE` overrides the non-production fallback path (default `apps/web/.data/logloads-state.json`). Delete that file only to reset local development state.
-- `LOGLOADS_ALLOW_STATE_BOOTSTRAP=true` allows one controlled insert when the remote row is intentionally empty. Leave it unset in established production and remove it immediately after a planned bootstrap.
+`tools/setup-local-env.mjs` fills only empty values. It refuses to run in CI or on Vercel, and never prints
+secrets. It writes:
 
-## Marketplace V2 preview (development only)
-- `LOGLOADS_MARKETPLACE_V2=enabled` turns on the isolated `/v2` routes (find work, job detail, express interest, hauler inquiries, landing inbox). Any other value, or `VERCEL_ENV=production`, keeps them off; middleware then answers every `/v2` path with a plain 404 marked `noindex`.
-- The preview reads job postings from the current operating state through the public redacted network view and stores inquiries in the additive `marketplaceInterests` collection. It creates no dispatch, trip, assignment, invitation, boost, subscription or fee record. Never set the flag on hosted Preview or Production until the normalized model is approved.
+```dotenv
+NEXT_PUBLIC_APP_URL=http://localhost:3002
+LOGLOADS_SESSION_SECRET=<generated>
+LOGLOADS_RATE_LIMIT_HMAC_SECRET=<generated>
+```
 
-## Distributed rate limiting
-- Production reuses `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` to call the service-role-only `consume_rate_limit` Postgres RPC. Both are already required for canonical operating state; partial configuration fails closed.
-- The RPC atomically upserts one fixed-window counter, so all Vercel instances share a bucket. Supabase is sufficient for the current workload; no separate KV/Redis provider is required.
-- `LOGLOADS_RATE_LIMIT_KEY_PREFIX` is optional and defaults to `logloads:rate-limit`. Use a unique prefix when Preview and Production share a provider account; separate databases are preferred.
-- `LOGLOADS_RATE_LIMIT_HMAC_SECRET` is the recommended dedicated high-entropy key for HMAC-SHA-256 pseudonymization. When absent, the already-required server-only service-role key supplies key material; no secret is placed in the RPC body.
-- The store receives a bucket name and keyed digest, never a raw IP, actor ID, or email. Rotating the effective HMAC secret resets active buckets; expired keyed rows are removed by bounded cleanup during later consumes.
-- On Vercel, only the platform-overwritten `x-vercel-forwarded-for` is trusted for the client IP. Generic forwarded headers are ignored outside that trust boundary, preventing callers from rotating spoofed header values around a limit.
-- Local development uses process memory when Supabase is completely absent. Production never falls back to memory: missing/partial credentials, timeout, non-2xx response, or malformed result makes protected actions fail closed with a retryable service-unavailable response.
-- `LOGLOADS_RATE_LIMIT_TEST_MODE=true` lets the single-process Playwright harness bypass request counters so repeated seeded-user journeys remain deterministic. The bypass requires `LOGLOADS_ENABLE_DEV_LOGIN=true`, a loopback Supabase URL with local service credentials, and a non-Vercel runtime. Never set either flag on hosted Preview or Production.
-- Applying the migration, placing a dedicated HMAC secret, and exact-SHA multi-instance/outage proof remain founder-controlled operations. This change does not mutate provider settings.
+- `NEXT_PUBLIC_APP_URL` must be a loopback origin, or seeded sign-in stays off.
+- `LOGLOADS_RATE_LIMIT_HMAC_SECRET` is required: `requestClientKey()` throws without it
+  (`apps/web/lib/rate-limit-client-key.ts`).
+- It writes **no** provider credentials, so local development uses the JSON store and seeded sign-in.
+- Do not point local development at a hosted Supabase project unless an issue explicitly scopes it.
 
-## Maps
-- `NEXT_PUBLIC_MAPBOX_TOKEN` activates Mapbox (locked provider). Without it, the map renders real geography through the MapLibre + Carto fallback.
+## 3. Sign-in
 
-## Placeholders and future providers
-- Notification provider placeholder: `NOTIFICATION_PROVIDER=placeholder`
-- Do not commit secrets while provider choice is still fluid.
+- **Without Clerk keys**, use a seeded email address:
+  - `hank@northpine.example`
+  - `dispatch@northpine.example`
+  - `cole@summit.example`
+  - `admin@logloads.example`
+
+  This only works on loopback and outside production.
+- `LOGLOADS_ENABLE_DEV_LOGIN=true` is a development and test switch. **Never** set it on Production or on a
+  public Preview.
+- With Clerk keys (`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`), Clerk resolves identity
+  ([`ACTIVATION_CLERK.md`](./ACTIVATION_CLERK.md)).
+
+## 4. Local state
+
+- The JSON fallback is `LOGLOADS_STATE_FILE`, default `apps/web/.data/logloads-state.json`. Deleting it resets
+  **local** state only.
+- Never treat a hosted `operating_state` row or a backup file as disposable.
+- Seed data is synthetic. Never present it as real activity.
+
+## 5. Local Supabase (optional)
+
+`supabase/config.toml` configures the local stack:
+
+| Setting | Value |
+|---|---|
+| Project | `logloads-local` |
+| Database | PostgreSQL 17 on `localhost:55322` |
+| API | `127.0.0.1:55321` |
+
+- `pnpm db:check` runs `supabase db reset --local`, which **destroys local database data**. Without the Supabase
+  CLI and Docker it skips and exits 0 — that is not a pass.
+- The normalized-v2 SQL is not run locally. It runs in CI ([`CI.md`](./CI.md) §3).
+
+## 6. Feature flags and maps
+
+**V2 preview.** `LOGLOADS_MARKETPLACE_V2=enabled` turns on `/v2`.
+
+- It is always off when `VERCEL_ENV=production`.
+- When disabled, `/v2` returns `notFound()`. The layout is always `noindex`.
+- Keep it to local development until an isolated hosted preview is approved
+  ([`DEPLOYMENT.md`](./DEPLOYMENT.md) §4).
+
+**Maps.** `apps/web/lib/map-runtime.ts` chooses a provider in this order:
+
+1. offline demo;
+2. keyed CARTO on MapLibre, when `NEXT_PUBLIC_CARTO_BASEMAP_KEY` is set;
+3. legacy Mapbox, only when there is no CARTO key and `NEXT_PUBLIC_MAPBOX_TOKEN` is set;
+4. keyless CARTO.
+
+Further map rules:
+
+- `carto-basemap.ts` sends the key only to HTTPS `*.basemaps.cartocdn.com`.
+- A CARTO key is browser-visible. Restrict it by origin (`http://localhost:3002`, `http://127.0.0.1:3002`) and
+  keep dev and prod keys separate.
+- Never paste a key into issues, chat or screenshots.
+- The founder-reported 5M requests/month allowance is **UNVERIFIED**.
+
+## 7. `.env.example` status (#111)
+
+- `.env.example` now lists `NEXT_PUBLIC_CARTO_BASEMAP_KEY` and `LOGLOADS_MARKETPLACE_V2` (unset).
+- These four are annotated as read by no application code at `4c9518e`, but are kept: `NEXT_PUBLIC_MAP_PROVIDER`,
+  `NOTIFICATION_PROVIDER`, `NEXT_PUBLIC_NOTIFICATION_PROVIDER`, `VERCEL_TOKEN`.
+- `ops/production-env-contract.json` still lacks `LOGLOADS_MARKETPLACE_V2`. That file is checked by
+  `tools/turbo-env-contract.test.mjs`, so the change is a proposal for its implementation owner (#111).

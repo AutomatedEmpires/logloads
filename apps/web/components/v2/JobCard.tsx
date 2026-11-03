@@ -1,6 +1,6 @@
 import Link from "next/link"
 
-import { postingFreshness, type MarketplaceJobCardView } from "@logloads/contracts"
+import { describeMarketplaceVerification, postingFreshness, type MarketplaceJobCardView } from "@logloads/contracts"
 
 import { distanceLabel, JOB_STATUS_LABELS, payLabel, scheduleLabel, trucksSummary, volumeSummary } from "./format"
 
@@ -8,6 +8,7 @@ export function JobCard({ job, now }: { job: MarketplaceJobCardView; now: string
   const freshness = postingFreshness(job, now)
   const distance = distanceLabel(job)
   const volume = volumeSummary(job)
+  const verification = job.posterVerification ? describeMarketplaceVerification(job.posterVerification) : null
 
   return (
     <article className="v2-card" aria-labelledby={`job-${job.id}`}>
@@ -17,7 +18,7 @@ export function JobCard({ job, now }: { job: MarketplaceJobCardView; now: string
         </h2>
         <p className="v2-card__poster">
           {job.posterName}
-          {job.posterVerified ? <span className="v2-tag v2-tag--ok">Business verified</span> : null}
+          {verification ? <span className="v2-tag v2-tag--ok" title={verification.statement}>{verification.label}</span> : null}
         </p>
       </header>
       <p className="v2-card__pay">{payLabel(job)}</p>

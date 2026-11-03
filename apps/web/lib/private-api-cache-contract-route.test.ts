@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => {
   const state = {
     landings: [
       {
-        coordinates: { lat: 44.5, lng: -122.7 },
+        coordinates: { lat: 44.5137, lng: -122.7461 },
         id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
       }
     ],
@@ -109,7 +109,9 @@ import { GET as getWeather } from "@/app/api/weather/route"
 describe("private API GET cache contract", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.buildNetworkView.mockReturnValue({ loads: [{ id: LOAD_ID }] })
+    mocks.buildNetworkView.mockReturnValue({
+      loads: [{ id: LOAD_ID, landing: { approximate: true, lat: 44.5, lng: -122.7 } }]
+    })
     mocks.checkRateLimit.mockResolvedValue(undefined)
     mocks.fetchLiveWeather.mockResolvedValue({ condition: "clear" })
     mocks.getSessionActor.mockResolvedValue({
@@ -147,6 +149,17 @@ describe("private API GET cache contract", () => {
       expect(response.status).toBe(200)
       expect(response.headers.get("cache-control")).toBe("private, no-store")
     }
+  })
+
+  it("requests weather at the point the viewer may know, never the exact landing (LE-14, #158)", async () => {
+    await getWeather(new NextRequest(`https://logloads.test/api/weather?loadId=${LOAD_ID}`))
+
+    expect(mocks.fetchLiveWeather).toHaveBeenCalledWith(
+      expect.objectContaining({ latitude: 44.5, longitude: -122.7 })
+    )
+    expect(mocks.fetchLiveWeather).not.toHaveBeenCalledWith(
+      expect.objectContaining({ latitude: 44.5137 })
+    )
   })
 
   it("keeps the redacted public load board explicitly public", async () => {

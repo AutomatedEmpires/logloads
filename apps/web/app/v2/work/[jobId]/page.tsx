@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
 
-import { postingFreshness, type MarketplaceHaulerEquipmentOption } from "@logloads/contracts"
+import { describeMarketplaceVerification, postingFreshness, type MarketplaceHaulerEquipmentOption } from "@logloads/contracts"
 
 import {
   distanceLabel,
@@ -19,6 +19,7 @@ import {
 import { expressInterestAction } from "@/lib/marketplace-v2/actions"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
+import { withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
 import { getSessionActor } from "@/lib/session"
 
 type Params = Promise<{ jobId: string }>
@@ -33,8 +34,8 @@ function EquipmentFields({ options }: { options: MarketplaceHaulerEquipmentOptio
           <input defaultValue={1} inputMode="numeric" max={500} min={1} name="trucksOffered" required type="number" />
         </label>
         <p className="v2-muted">
-          Your business profile lists no trucks or trailers yet, so the landing sees a count only.{" "}
-          <Link href="/fleet/trucks">Add your equipment</Link> to show what you run.
+          Your business profile lists no trucks or trailers yet, so the landing sees a count only. Adding equipment to
+          your profile is not available in this preview yet.
         </p>
       </>
     )
@@ -96,12 +97,14 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
   const duration = durationLabel(job)
   const distance = distanceLabel(job)
   const existingEquipment = existing ? equipmentOfferLabel(existing.equipment) : null
+  const verification = job.posterVerification ? describeMarketplaceVerification(job.posterVerification) : null
 
   return (
     <article className="v2-detail">
       <p><Link href="/v2/work">← Back to jobs</Link></p>
       <header>
-        <p className="v2-muted">{job.posterName}{job.posterVerified ? " · business verified" : ""}</p>
+        <p className="v2-muted">{job.posterName}{verification ? ` · ${verification.label.toLowerCase()}` : ""}</p>
+        {verification ? <p className="v2-muted">{verification.statement}</p> : null}
         <h1>{job.title}</h1>
         <p className="v2-card__pay">{payLabel(job)}</p>
         <p>
@@ -164,7 +167,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
         ) : isPoster ? (
           <p>This is your organization’s job. Review inquiries in the <Link href="/v2/landing/inquiries">landing inbox</Link>.</p>
         ) : !canExpress ? (
-          <p>Switch to a hauling business workspace to express interest. <Link href="/workspace">Choose workspace</Link></p>
+          <p>{withBusinessSwitchNote("Only a hauling business can express interest.")}</p>
         ) : existing && existing.status !== "withdrawn" ? (
           <p>
             You told this landing you can offer {existing.trucksOffered} truck{existing.trucksOffered === 1 ? "" : "s"}

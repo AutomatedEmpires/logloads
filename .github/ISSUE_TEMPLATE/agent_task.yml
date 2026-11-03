@@ -1,0 +1,74 @@
+name: Agent task
+description: One owned unit of agent work. Required for every active engineering task (docs/AGENT_WORKFLOW.md).
+title: "[lane] "
+labels:
+  - agent-task
+body:
+  - type: markdown
+    attributes:
+      value: |
+        GitHub Issues are the task tracker (docs/AGENT_WORKFLOW.md). Coordination happens on this issue. Post
+        progress as comments using the STATE / DID / EVIDENCE / NEXT / BOUNDARIES format. Only a reviewer other than
+        the owner may move the issue to Done, and only when the evidence is linked.
+  - type: textarea
+    id: header
+    attributes:
+      label: Task header
+      description: |
+        Keep these three lines in exactly this format; the tracker command parses them.
+        Owner — Claude Agent 1 · Claude Agent 2 · Claude Agent 3 — UX · Codex · Gemini · Claude Security Auditor ·
+        Claude QA · Claude Product · Claude Research · Claude Adapter · Founder.
+        Priority — P0 · P1 · P2.
+        Status — Backlog · Ready · In Progress · Blocked · In Review · Done.
+      value: |
+        **Agent owner:** <one primary owner>
+        **Priority:** P1
+        **Status:** Backlog
+    validations:
+      required: true
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: The outcome and who benefits, not a list of activities.
+    validations:
+      required: true
+  - type: input
+    id: branch
+    attributes:
+      label: Branch / worktree
+      placeholder: "feat/<lane>/<slug> at C:\\Users\\...\\logloads-<slug>"
+    validations:
+      required: true
+  - type: textarea
+    id: owned
+    attributes:
+      label: Owned files
+      description: The paths this task may change.
+    validations:
+      required: true
+  - type: textarea
+    id: prohibited
+    attributes:
+      label: Prohibited overlap
+      description: Paths and lanes this task must not touch.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria and required evidence
+      description: The checks, run URLs and SHAs that must exist before the issue can move to Done.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Linked issues or PRs. Write "none" if there are none.
+    validations:
+      required: true
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out of scope

@@ -12,7 +12,7 @@ import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { buildNetworkView } from "../network"
 import { mutateState, readState } from "../services"
-import { toInterestView, toJobDetailView } from "./mapping"
+import { pilotPosterVerification, toInterestView, toJobDetailView } from "./mapping"
 import { MarketplaceOperationUnavailableError, type MarketplaceV2Port, type MarketplaceV2Viewer } from "./port"
 
 /**
@@ -39,7 +39,7 @@ function publicJobs(state: LogLoadsDatabaseState, at = new Date()): MarketplaceJ
 
     const poster = state.organizations.find((organization) => organization.id === load.companyId)
 
-    return [toJobDetailView(networkLoad, load, poster?.verificationStatus === "verified", marketplaceJobStatus(load, atIso))]
+    return [toJobDetailView(networkLoad, load, pilotPosterVerification(poster, state.verificationRecords), marketplaceJobStatus(load, atIso))]
   })
 }
 

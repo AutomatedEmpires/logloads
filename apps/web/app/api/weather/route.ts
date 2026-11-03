@@ -44,10 +44,12 @@ export async function GET(request: NextRequest) {
     }
 
     try {
+      // LE-14 (#158): weather is requested at the point this viewer may know — the 0.10° public point
+      // unless the viewer has exact-location access — so elevation-adjusted values cannot narrow the landing.
       const weather = await fetchLiveWeather({
         demoMode: await isFounderDemoMode(),
-        latitude: landing.coordinates.lat,
-        longitude: landing.coordinates.lng
+        latitude: visibleLoad.landing.lat,
+        longitude: visibleLoad.landing.lng
       })
 
       return NextResponse.json(weather, {

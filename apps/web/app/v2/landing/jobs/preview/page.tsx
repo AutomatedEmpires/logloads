@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
 
-import { previewMarketplaceJob } from "@logloads/contracts"
+import { MARKETPLACE_AVAILABILITY_ATTESTATION, marketplaceJobPublicationIssues, previewMarketplaceJob } from "@logloads/contracts"
 
 import { JobCard } from "@/components/v2/JobCard"
 import {
@@ -14,10 +14,16 @@ import {
   trucksTotalLabel
 } from "@/components/v2/format"
 import { publishJobAction } from "@/lib/marketplace-v2/actions"
-import { DRAFT_TEXT_FIELDS, draftQueryString, draftValuesFromQuery, validateDraftValues } from "@/lib/marketplace-v2/draft-params"
+import {
+  DRAFT_TEXT_FIELDS,
+  draftQueryString,
+  draftValuesFromQuery,
+  LANDING_NOT_OWNED,
+  validateDraftValues
+} from "@/lib/marketplace-v2/draft-params"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
-import { resolveV2Viewer } from "@/lib/marketplace-v2/viewer"
+import { resolveV2Viewer, withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
@@ -30,7 +36,7 @@ export default async function JobPreviewPage({ searchParams }: { searchParams: S
     return (
       <>
         <h1>Job preview</h1>
-        <p className="v2-banner">{resolved.ok ? "Your role in this workspace cannot post jobs." : resolved.refusal}</p>
+        <p className="v2-banner">{resolved.ok ? withBusinessSwitchNote("Your role in this business cannot post jobs.") : resolved.refusal}</p>
       </>
     )
   }
@@ -43,7 +49,7 @@ export default async function JobPreviewPage({ searchParams }: { searchParams: S
   const landing = validation.ok ? landings.find((candidate) => candidate.id === validation.draft.landingId) : undefined
 
   if (!validation.ok || !landing) {
-    const issues = validation.ok ? [{ field: "landingId", message: "Choose one of your organization's landings" }] : validation.issues
+    const issues = validation.ok ? [{ field: "landingId", message: LANDING_NOT_OWNED }] : validation.issues
     return (
       <>
         <h1>Job preview</h1>
@@ -62,10 +68,14 @@ export default async function JobPreviewPage({ searchParams }: { searchParams: S
     now,
     posterName: resolved.access.organizationName,
     posterOrganizationId: resolved.viewer.organizationId,
-    posterVerified: false
+    posterVerification: null
   })
+  // A draft may leave product and timing open; a published job may not (UX-DEC-02, UX-DEC-03).
+  const publicationIssues = marketplaceJobPublicationIssues(validation.draft)
   const duration = durationLabel(job)
+  const runs = duration ?? (validation.draft.ongoing ? "Ongoing" : null)
   const error = typeof query.error === "string" ? query.error : null
+  const attestation = MARKETPLACE_AVAILABILITY_ATTESTATION
 
   return (
     <>
@@ -88,7 +98,7 @@ export default async function JobPreviewPage({ searchParams }: { searchParams: S
           <div><dt>Pay</dt><dd>{payLabel(job)}</dd></div>
           <div><dt>Product</dt><dd>{job.product ?? "Not stated"}</dd></div>
           <div><dt>Equipment</dt><dd>{job.equipment.join(", ")}</dd></div>
-          <div><dt>Start</dt><dd>{scheduleLabel(job)}{duration ? ` · ${duration}` : ""}</dd></div>
+          <div><dt>Start</dt><dd>{scheduleLabel(job)}{runs ? ` · ${runs}` : ""}</dd></div>
           <div><dt>Trucks for the job</dt><dd>{trucksTotalLabel(job)}</dd></div>
           <div><dt>Trucks per day</dt><dd>{trucksPerDayLabel(job)}</dd></div>
           <div><dt>Loads per truck per day</dt><dd>{estimateLabel(job.estimatedLoadsPerTruckPerDay, "loads")}</dd></div>
@@ -101,10 +111,25 @@ export default async function JobPreviewPage({ searchParams }: { searchParams: S
         </dl>
       </section>
 
+      {publicationIssues.length > 0 ? (
+        <section aria-labelledby="preview-before-publish" className="v2-banner" role="status">
+          <h2 id="preview-before-publish">Before you can publish</h2>
+          <ul className="v2-issues">
+            {publicationIssues.map((issue) => <li key={`${issue.field}-${issue.message}`}>{issue.message}</li>)}
+          </ul>
+          <p><Link href={editHref}>Edit the draft</Link></p>
+        </section>
+      ) : null}
+
       <form action={publishJobAction} className="v2-form">
         {DRAFT_TEXT_FIELDS.map((name) => values.text[name] ? <input key={name} name={name} type="hidden" value={values.text[name]} /> : null)}
         {values.equipment.map((code) => <input key={code} name="equipment" type="hidden" value={code} />)}
-        <button disabled={!pilotMarketplaceV2.supportsPublishing} type="submit">Publish job</button>
+        {/* The explicit attestation: never pre-ticked, never carried in the draft or an edit link. */}
+        <label className="v2-check">
+          <input name={attestation.field} required type="checkbox" value={attestation.value} />
+          <span>{attestation.label}</span>
+        </label>
+        <button disabled={!pilotMarketplaceV2.supportsPublishing || publicationIssues.length > 0} type="submit">Publish job</button>
         {!pilotMarketplaceV2.supportsPublishing ? (
           <p className="v2-muted">
             Publishing is not available in this preview: V2 jobs will be saved by the normalized marketplace store, not the legacy load records.

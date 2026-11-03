@@ -5,11 +5,19 @@ import { randomUUID } from "node:crypto"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 
-import { validateMarketplaceJobDraft } from "@logloads/contracts"
+import {
+  attestAvailability,
+  AVAILABILITY_ATTESTATION_REQUIRED,
+  MARKETPLACE_AVAILABILITY_ATTESTATION,
+  validateMarketplaceJobPublication,
+  type MarketplaceAvailabilityAttestation,
+  type MarketplaceJobDraft
+} from "@logloads/contracts"
 
 import { checkRateLimit } from "../rate-limit"
 import { serializeError } from "../services"
 import { getSessionActor } from "../session"
+import { draftInput, draftQueryString, draftValuesFromForm, LANDING_NOT_OWNED, type DraftFormValues } from "./draft-params"
 import { marketplaceV2Enabled } from "./flag"
 import { pilotMarketplaceV2 } from "./pilot-adapter"
 import { MarketplaceOperationUnavailableError, type MarketplaceV2Viewer } from "./port"
@@ -142,83 +150,178 @@ export async function respondToInterestAction(formData: FormData): Promise<void>
   safeRedirect("/v2/landing/inquiries", { updated: decision })
 }
 
-const DRAFT_FIELDS = [
-  "landingId", "title", "product", "description", "payUnit", "payAmount", "payNote", "trucksRequested", "trucksPerDay",
-  "startsOn", "durationDays", "estLoadsPerTruckPerDay", "estDailyLoads", "estTonsPerLoad", "destinationLabel",
-  "estOneWayMiles", "publicRoadNotes"
-] as const
+const NEW_JOB_PATH = "/v2/landing/jobs/new"
+const PREVIEW_PATH = "/v2/landing/jobs/preview"
+const JOBS_PATH = "/v2/landing/jobs"
+const HOUR_MS = 60 * 60_000
 
-/** The draft as plain query parameters, so preview/edit round-trips keep everything the poster typed. */
-function draftQuery(formData: FormData): Record<string, string> {
-  const query: Record<string, string> = {}
+/** Per-user ceilings for the two actions that create or refresh a public listing. */
+const PUBLISH_RATE_LIMIT = { bucket: "marketplace-publish", limit: 20 } as const
+const RECONFIRM_RATE_LIMIT = { bucket: "marketplace-reconfirm", limit: 120 } as const
 
-  for (const name of DRAFT_FIELDS) {
-    const value = field(formData, name).slice(0, 6000)
-    if (value) query[name] = value
+const CANNOT_PUBLISH = "Your role cannot publish jobs for this organization"
+const CANNOT_CONFIRM = "Your role cannot confirm jobs for this organization"
+const FIX_FIELDS = "Fix the highlighted fields before publishing"
+const NOT_OWN_JOB = "You can only confirm your organization's own job postings"
+const NOT_ACCEPTING = "Only a job that is accepting interest can be confirmed as still available"
+const RECONFIRM_ATTESTATION_REQUIRED = "Tick the availability confirmation to record that this job is still available"
+
+/** Back to the authoring screens with the poster's draft intact. The attestation is never carried back. */
+function redirectWithDraft(path: string, values: DraftFormValues, extra: Record<string, string>): never {
+  const params = new URLSearchParams(draftQueryString(values))
+
+  for (const [name, value] of Object.entries(extra)) {
+    params.set(name, value)
   }
 
-  const equipment = formData.getAll("equipment").filter((value): value is string => typeof value === "string").slice(0, 11)
-  if (equipment.length > 0) query.equipment = equipment.join(",")
-
-  return query
+  redirect(`${path}?${params.toString()}`)
 }
 
+type PublishCheck =
+  | { ok: true; draft: MarketplaceJobDraft; attestation: MarketplaceAvailabilityAttestation }
+  | { ok: false; path: string; error: string }
+
 /**
- * Publishing a native V2 job. Requires `job.publish`; the draft is validated again server-side. On the
- * pilot store the port refuses (no persistence yet), and the poster is returned to the preview with an
- * explanation instead of a fake success.
+ * Every server-side check publishing needs, in order. Identity is the session viewer; the form supplies
+ * only the draft and the checkbox. Thrown service errors (rate limit, membership) propagate.
  */
-export async function publishJobAction(formData: FormData): Promise<void> {
-  const viewer = await requireViewer("/v2/landing/jobs/new")
-  const query = draftQuery(formData)
+async function checkPublishRequest(viewer: MarketplaceV2Viewer, values: DraftFormValues, attestationValue: string): Promise<PublishCheck> {
+  // 1. Rate limit first, so refused attempts (for example probing other organizations' landings) count too.
+  await checkRateLimit(PUBLISH_RATE_LIMIT.bucket, viewer.userId, PUBLISH_RATE_LIMIT.limit, HOUR_MS)
+
+  // 2. Capability `job.publish` in the session's active organization.
   const access = await pilotMarketplaceV2.viewerAccess(viewer)
 
   if (!access.capabilities.includes("job.publish")) {
-    safeRedirect("/v2/landing/jobs/preview", { ...query, error: "Your role cannot publish jobs for this organization" })
+    return { error: CANNOT_PUBLISH, ok: false, path: PREVIEW_PATH }
   }
 
-  const parsed = validateMarketplaceJobDraft({ ...query, equipment: query.equipment ? query.equipment.split(",") : [] })
+  // 3. Draft rules (required pay, sensitive-access and contact text, limits), publishing rules (product,
+  //    timing) and the explicit attestation, whose timestamp is the server clock.
+  const publication = validateMarketplaceJobPublication(draftInput(values), attestationValue, new Date())
 
-  if (!parsed.ok) {
-    safeRedirect("/v2/landing/jobs/new", { ...query, error: "Fix the highlighted fields before publishing" })
+  if (!publication.ok) {
+    const onlyAttestationMissing = publication.issues.every((issue) => issue.field === MARKETPLACE_AVAILABILITY_ATTESTATION.field)
+
+    return onlyAttestationMissing
+      ? { error: AVAILABILITY_ATTESTATION_REQUIRED, ok: false, path: PREVIEW_PATH }
+      : { error: FIX_FIELDS, ok: false, path: NEW_JOB_PATH }
+  }
+
+  // 4. The landing belongs to the viewer's organization: the service lists only the organization's own
+  //    active landings, so another organization's landing id is refused here.
+  const landings = await pilotMarketplaceV2.authoringLandings(viewer)
+
+  if (!landings.some((landing) => landing.id === publication.draft.landingId)) {
+    return { error: LANDING_NOT_OWNED, ok: false, path: NEW_JOB_PATH }
+  }
+
+  return { attestation: publication.attestation, draft: publication.draft, ok: true }
+}
+
+/**
+ * Publishing a native V2 job. Every check runs on the server (see `checkPublishRequest`) before the port
+ * is called. On the pilot store the port refuses (no persistence yet), and the poster is returned to the
+ * preview with an explanation instead of a fake success.
+ */
+export async function publishJobAction(formData: FormData): Promise<void> {
+  const viewer = await requireViewer(NEW_JOB_PATH)
+  const values = draftValuesFromForm(formData)
+  let checked: PublishCheck
+
+  try {
+    checked = await checkPublishRequest(viewer, values, field(formData, MARKETPLACE_AVAILABILITY_ATTESTATION.field))
+  } catch (error) {
+    redirectWithDraft(PREVIEW_PATH, values, { error: message(error) })
+  }
+
+  if (!checked.ok) {
+    redirectWithDraft(checked.path, values, { error: checked.error })
   }
 
   let published: { jobId: string }
 
   try {
-    published = await pilotMarketplaceV2.publishJob(viewer, parsed.draft)
+    published = await pilotMarketplaceV2.publishJob(viewer, checked.draft, checked.attestation)
   } catch (error) {
     if (error instanceof MarketplaceOperationUnavailableError) {
-      safeRedirect("/v2/landing/jobs/preview", { ...query, unavailable: "publish" })
+      redirectWithDraft(PREVIEW_PATH, values, { unavailable: "publish" })
     }
 
-    safeRedirect("/v2/landing/jobs/preview", { ...query, error: message(error) })
+    redirectWithDraft(PREVIEW_PATH, values, { error: message(error) })
   }
 
   revalidatePath("/v2", "layout")
   safeRedirect(`/v2/work/${published.jobId}`, { published: "1" })
 }
 
-/** The poster's explicit "this work is still available" confirmation. Requires `job.publish`. */
-export async function reconfirmJobAction(formData: FormData): Promise<void> {
-  const viewer = await requireViewer("/v2/landing/jobs")
-  const jobId = field(formData, "jobId")
+type ReconfirmCheck =
+  | { ok: true; jobId: string; attestation: MarketplaceAvailabilityAttestation }
+  | { ok: false; error: string }
+
+async function checkReconfirmRequest(viewer: MarketplaceV2Viewer, jobId: string, attestationValue: string): Promise<ReconfirmCheck> {
+  // 1. Rate limit.
+  await checkRateLimit(RECONFIRM_RATE_LIMIT.bucket, viewer.userId, RECONFIRM_RATE_LIMIT.limit, HOUR_MS)
+
+  // 2. Capability `job.publish`.
   const access = await pilotMarketplaceV2.viewerAccess(viewer)
 
   if (!access.capabilities.includes("job.publish")) {
-    safeRedirect("/v2/landing/jobs", { error: "Your role cannot confirm jobs for this organization" })
+    return { error: CANNOT_CONFIRM, ok: false }
+  }
+
+  // 3. Ownership: the job is a posting of the viewer's organization. A job's organization is its
+  //    landing's organization (`job_postings (landing_id, org_id)` references `landings (id, org_id)`).
+  const id = jobId.trim()
+  const job = id && id.length <= 200 ? await pilotMarketplaceV2.getJob(id) : null
+
+  if (!job || job.posterOrganizationId !== viewer.organizationId) {
+    return { error: NOT_OWN_JOB, ok: false }
+  }
+
+  // 4. Only a listing that is accepting interest can be "still available".
+  if (!job.acceptingInterest) {
+    return { error: NOT_ACCEPTING, ok: false }
+  }
+
+  // 5. The explicit attestation; its timestamp is the server clock.
+  const attestation = attestAvailability(attestationValue, "reconfirm", new Date())
+
+  if (!attestation) {
+    return { error: RECONFIRM_ATTESTATION_REQUIRED, ok: false }
+  }
+
+  return { attestation, jobId: job.id, ok: true }
+}
+
+/**
+ * The poster's explicit "this work is still available" confirmation, checked on the server (see
+ * `checkReconfirmRequest`). It is the only way besides publishing to set `lastConfirmedAt`.
+ */
+export async function reconfirmJobAction(formData: FormData): Promise<void> {
+  const viewer = await requireViewer(JOBS_PATH)
+  let checked: ReconfirmCheck
+
+  try {
+    checked = await checkReconfirmRequest(viewer, field(formData, "jobId"), field(formData, MARKETPLACE_AVAILABILITY_ATTESTATION.field))
+  } catch (error) {
+    safeRedirect(JOBS_PATH, { error: message(error) })
+  }
+
+  if (!checked.ok) {
+    safeRedirect(JOBS_PATH, { error: checked.error })
   }
 
   try {
-    await pilotMarketplaceV2.reconfirmJob(viewer, jobId)
+    await pilotMarketplaceV2.reconfirmJob(viewer, checked.jobId, checked.attestation)
   } catch (error) {
     if (error instanceof MarketplaceOperationUnavailableError) {
-      safeRedirect("/v2/landing/jobs", { unavailable: "reconfirm" })
+      safeRedirect(JOBS_PATH, { unavailable: "reconfirm" })
     }
 
-    safeRedirect("/v2/landing/jobs", { error: message(error) })
+    safeRedirect(JOBS_PATH, { error: message(error) })
   }
 
   revalidatePath("/v2", "layout")
-  safeRedirect("/v2/landing/jobs", { updated: "reconfirmed" })
+  safeRedirect(JOBS_PATH, { updated: "reconfirmed" })
 }

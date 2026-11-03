@@ -1,134 +1,162 @@
-# LogLoads — Deployment Contract
+# LogLoads — Deployment and Migration Contract
 
-## Current target
+> **Status:** Revised 2026-11-01. It covers the current pilot runtime (§1–§3, §6), the V2 preview (§4), and
+> the not-yet-approved normalized cutover (§5).
+>
+> **This is not authorization to deploy.** `main` may auto-deploy to Vercel Production, so review and founder
+> approval must come before any merge. The pre-revision text is retrievable with
+> `git show 15892b7:docs/DEPLOYMENT.md`.
 
-The transitional runtime is now compatible with Vercel/serverless execution:
-Supabase `public.operating_state` is canonical, each request awaits remote state,
-and each mutation uses a conditional `version` update with deterministic retry.
-The process-global service object is only a request cache; local disk is never
-production authority.
-
-This repository change does **not** itself apply the migration or cut traffic.
-`fly.toml` and the Docker image remain rollback/reference artifacts until an
-exact-SHA Vercel preview and production rollback gate are approved.
-
-## Runtime contract
+## 1. Present runtime (IMPLEMENTED)
 
 | Property | Value |
 |---|---|
-| Preferred host | Vercel, Node runtime |
-| Runtime | Node 24.16.0, pnpm 10.12.4 |
-| Health | `GET /api/health`; `200` only after canonical state loads |
+| Host | Vercel, Node runtime |
+| Toolchain | Node 24.16.0, pnpm 10.12.4 |
+| Health | `GET /api/health` returns `200` only after canonical state loads, and exposes `VERCEL_GIT_COMMIT_SHA` (or `GITHUB_SHA`) for exact-SHA proof |
 | Canonical data | Supabase `public.operating_state`, row `id=primary` |
-| Concurrency | optimistic compare-and-swap on monotonic `version`; four attempts |
-| Local fallback | JSON snapshot only when `NODE_ENV != production` |
-| Production disk/volume | not required and not authoritative |
+| Concurrency | Optimistic compare-and-swap on a monotonic `version`, with deterministic replay |
+| Local fallback | JSON snapshot only when `NODE_ENV != production`. Production fails closed when Supabase state is unavailable. |
+| Disk/volume | Not required and not authoritative |
 
-The full-state JSON document is a bounded transitional design. Relational tables
-remain the long-term scaling path, but no material service rewrite is required for
-the first Supabase-canonical deployment.
+### Rate limiting
 
-Sign-in, contact, onboarding, and authenticated API mutation limits use the
-provider-neutral `RateLimitStore` contract. Production uses the existing
-Supabase URL and service-role key to call a service-role-only Postgres RPC. Each
-request executes one atomic fixed-window upsert shared by all instances. Missing,
-partial, unavailable, or invalid Supabase configuration fails closed; process
-memory is never an implicit production fallback. `LOGLOADS_RATE_LIMIT_HMAC_SECRET`
-is the recommended dedicated keyed-pseudonymization secret; otherwise the
-server-only service-role key supplies the HMAC key material. KV/Redis is not
-required for the current workload.
+Shared limits use the service-role-only `consume_rate_limit` RPC with HMAC-derived keys. Missing, partial, or
+unavailable configuration fails closed. **`LOGLOADS_RATE_LIMIT_HMAC_SECRET` is required.** The store falls
+back to the service-role key for its own key material, but `requestClientKey()` throws without the dedicated
+secret (`apps/web/lib/rate-limit-client-key.ts`).
 
-## Required production environment
+*Correction:* the previous revision of this document called the secret "optional but recommended", which was
+wrong.
 
-- `NEXT_PUBLIC_APP_URL=https://logloads.com`
-- `LOGLOADS_SESSION_SECRET`
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY` (server-only)
-- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
-- `CLERK_SECRET_KEY`
+### Legacy surfaces and hosting
 
-`LOGLOADS_RATE_LIMIT_HMAC_SECRET` is optional but recommended as a dedicated
-server-only HMAC key; without it, the required Supabase service-role key supplies
-the key material.
+- The pilot surfaces — `/driver`, `/fleet`, `/host`, `/admin`, `/pilot`, and the historical billing routes —
+  still exist. Their commercial gates are disabled. They are not the V2 end state.
+- `fly.toml` and `Dockerfile` are legacy-host rollback and reference artifacts only.
 
-Optional provider variables are catalogued in
-[`ops/production-env-contract.json`](../ops/production-env-contract.json).
-Production fails closed if either canonical Supabase variable is absent.
+## 2. Environment responsibilities
 
-`LOGLOADS_ALLOW_STATE_BOOTSTRAP=true` is a one-time recovery/provisioning switch.
-Use it only after proving `operating_state` is intentionally empty, then remove it.
-The established live project already has a row and should not need this switch.
+| Category | Variables (IMPLEMENTED) | Target / change requirement |
+|---|---|---|
+| Application | `NEXT_PUBLIC_APP_URL=https://logloads.com`, `LOGLOADS_SESSION_SECRET` | No dev-login switch in production |
+| Supabase | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (server-only) | Normalized integration needs reviewed grants, claims, and RLS |
+| Clerk | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | Environment-specific; Supabase third-party auth only after [`ACTIVATION_CLERK.md`](./ACTIVATION_CLERK.md) §4 |
+| Abuse limits | `LOGLOADS_RATE_LIMIT_HMAC_SECRET` (required), `LOGLOADS_RATE_LIMIT_KEY_PREFIX` | Prove shared buckets across instances on the exact SHA |
+| Maps | `NEXT_PUBLIC_CARTO_BASEMAP_KEY` (preferred; browser-visible, restrict by origin); legacy `NEXT_PUBLIC_MAPBOX_TOKEN` only when no CARTO key; keyless CARTO when neither | Verify the account-reported 5M requests/month entitlement and key restrictions in the CARTO account |
+| Email | `RESEND_API_KEY` and identities | Production key only after authorization ([`ACTIVATION_RESEND.md`](./ACTIVATION_RESEND.md)) |
+| Billing | Stripe credentials; historical collection gates **disabled** | New-model billing does not exist yet ([`ACTIVATION_STRIPE.md`](./ACTIVATION_STRIPE.md)) |
 
-## Migration order
+Exact rules: [`ENV_CONTRACT.md`](./ENV_CONTRACT.md) and `ops/production-env-contract.json`. Local workflow:
+[`ENVIRONMENT.md`](./ENVIRONMENT.md). Where they disagree, inspect the code and correct every representation
+together. Documentation does not change runtime validation.
 
-Apply `supabase/migrations/*.sql` in filename order. The latest migrations are:
+`LOGLOADS_ALLOW_STATE_BOOTSTRAP=true` is a one-time provisioning switch. Use it only after proving
+`operating_state` is intentionally empty, then remove it. The established project should never need it.
 
-5. `20260711034301_canonical_operating_state.sql`
-6. `20260713053327_shared_rate_limit_windows.sql`
+## 3. Pilot migration ledger (IMPLEMENTED)
 
-The convergence migration is additive: it adds `schema_version` and `version`, backfills only a missing
-`tripReviews` array, preserves all existing JSON, enables RLS, revokes broad grants,
-and explicitly grants only `SELECT`, `INSERT`, and `UPDATE` to `service_role`. It
-contains no `SECURITY DEFINER` function and no delete path.
+Apply `supabase/migrations/*.sql` in filename order. At `15892b7` there are 11 files:
 
-The rate-limit migration is also additive. It creates only operational counter
-state, enables RLS without public policies, restricts its table and atomic RPC to
-`service_role`, and performs bounded cleanup only on expired rate-limit rows. It
-does not read, update, or delete business or user data.
+| File | Notes |
+|---|---|
+| `20260604190000_backend_foundation.sql` | |
+| `20260706090000_operating_network_phase2.sql` | |
+| `20260706210000_operating_state_mirror.sql` | |
+| `20260707050000_security_rls_coverage.sql` | Closed the anon-RW exposure — [`SECURITY.md`](./SECURITY.md) §1 |
+| `20260711034301_canonical_operating_state.sql` | Additive: `schema_version` and `version`; service-role `SELECT`/`INSERT`/`UPDATE` only; no `SECURITY DEFINER`, no delete path |
+| `20260713053327_shared_rate_limit_windows.sql` | Additive: counter table plus service-role-only RPC; bounded cleanup of expired rows only |
+| `20260714051526_production_activation_profile_economics_media.sql` | |
+| `20260716120000_dispatcher_publish_load.sql` | |
+| `20260721232000_support_requests_state.sql` | |
+| `20260726090000_revoke_public_relational_grants.sql` | |
+| `20260808230214_admin_manage_billing_permission.sql` | |
 
-The rate-limit migration is committed but was not applied to a live provider in
-this pass. An isolated local Supabase PostgreSQL 17 database accepted it on
-2026-07-12; 12 concurrent sessions produced exactly the counts 1–12, reset behavior
-returned to count 1, anon/authenticated execution was denied, and the local
-advisors reported no limiter-specific finding. A complete fresh migration reset
-remains a preview/cutover gate.
+CI applies the full ledger from empty on PostgreSQL 17 ([`CI.md`](./CI.md)). **Whether every file
+is applied to the live project is not recorded in the repository.** Verify read-only before any cutover
+([`SECURITY.md`](./SECURITY.md) §5).
 
-## Preview and cutover gates
+Migrations are forward-only. Correct a defect with a new migration.
 
-1. Back up the existing `operating_state` row:
-   `node tools/operating-state-backup.mjs backup --out backups`, then
-   `node tools/operating-state-backup.mjs verify backups/<filename>.json` before
-   you trust it. See [RECOVERY.md](./RECOVERY.md) for the
-   restore path, the rehearsal record, and why a backup file is production personal
-   data. This step previously named "an approved secret-safe path" with no tool
-   behind it, which meant it was not being done.
-2. Validate all migrations from empty local Supabase and upgrade a copy of the
-   current row; verify `tripReviews`, `schema_version=2`, and the existing payload.
-3. Deploy an exact commit SHA to Vercel Preview with an isolated preview database
-   or isolated preview row/project. Never mutation-test against the production row.
-4. Run `pnpm validate`, Playwright, and the smoke with an explicit money-state
-   assertions: `SMOKE_BASE=<preview-url> SMOKE_EXPECT_FEE_COLLECTION=disabled SMOKE_EXPECT_PERCENTAGE_ENROLLMENT=disabled node tools/production-smoke.mjs`.
-5. Prove two concurrent writers preserve independent changes and a forced cold
-   start loads Supabase before serving health or product data.
-6. Confirm Doppler → Vercel production variables and exact deployment provenance.
-7. On the exact Preview SHA, prove two instances share sign-in, contact,
-   onboarding, and mutation buckets; verify 429 `Retry-After` behavior and that a
-   simulated Supabase RPC outage fails closed with 503. Confirm
-   `LOGLOADS_RATE_LIMIT_TEST_MODE` is absent.
-8. Apply the additive migration, deploy the canonical-aware SHA, then smoke test.
-9. Cut DNS only after the preview and rollback gates are green.
+**`architecture/normalized-v2/` is not part of this ledger.** Never copy it into `supabase/migrations/`
+without the §5 gates.
 
-Do not run the old mirror writer concurrently after step 7: it predates versioned
-compare-and-swap and could bypass the new concurrency contract.
+## 4. Readiness gates for a hosted V2 preview
 
-## Rollback
+`/v2` is disabled when `VERCEL_ENV=production`, but the code allows hosted Preview deployments when the flag
+is set. Do not set `LOGLOADS_MARKETPLACE_V2` on a hosted Preview until all of these hold:
 
-- Preserve the pre-cutover row backup and the immediately preceding canonical-aware
-  deployment SHA.
-- Code rollback is safe only to a canonical-aware SHA. Rolling back to the legacy
-  fire-and-forget mirror requires maintenance mode because it can overwrite a newer
-  state document.
-- The database migration is forward-only and additive; leave the columns/grants in
-  place and correct defects with a new migration.
-- If a write-path defect is found, stop mutations, capture the current row, compare
-  versions, restore only with explicit production approval, and redeploy the known
-  good canonical-aware SHA.
+1. The exact branch SHA and its CI results are recorded. The preview uses an **isolated** Supabase project
+   or row. It never shares a writable production `operating_state`.
+2. Private coordinates, gate directions, contacts, and inquiries are shown to be unreachable for other
+   tenants and anonymous clients.
+3. Hauler discover → interest → landing reply works at mobile and desktop widths. That includes a disabled
+   map or weather and the closed-job case.
+4. Payments, outbound email, and marketing stay inactive. No fictional customers or jobs are presented as
+   real.
+5. Evidence and failures are recorded in the PR, not only a green health response.
 
-## Provenance cleanup
+## 5. Normalized database cutover — NOT approved
 
-- `main` must contain the converged CI/release automation and the canonical-state
-  implementation before any production deploy.
-- Vercel must build from the reviewed Git commit, never a dashboard-only upload.
-- `fly.toml` and `Dockerfile` are retained as explicit legacy-host rollback/reference
-  artifacts; they are not production truth after Vercel cutover.
-- `/api/health` exposes `VERCEL_GIT_COMMIT_SHA` (or `GITHUB_SHA`) for exact-SHA proof.
+1. **Execute the schema and tests in CI.**
+   - `01`–`05` on a disposable PostgreSQL 17/PostGIS: **VERIFIED** at `ec4bb66` ([`CI.md`](./CI.md) §3).
+   - `06`–`10` alignment: **VERIFIED in CI** on draft PR #123; the verified head is recorded in [`CI.md`](./CI.md) §3.
+   - Still required:
+     - review and merge of PR #123, and merge of the CI branch;
+     - verified Clerk tokens through a configured **development** Supabase project
+       ([`SECURITY.md`](./SECURITY.md) §4–§5).
+2. Reconcile the schema with `MarketplaceV2Port` and the native job, inquiry, membership, equipment, and
+   public/private separation.
+3. Prove a synthetic migration from the current JSON snapshot. Keep stable IDs, quarantine invalid rows, and
+   keep fee, trip, invoice, and webhook history in a read-only legacy store.
+4. Validate:
+   - read parity;
+   - retention evidence;
+   - a tested backup **and** restore ([`RECOVERY.md`](./RECOVERY.md) §9);
+   - a dual-write or change-freeze strategy;
+   - rollback;
+   - cold starts.
+
+   No rollback may re-enable a writer that overwrites newer state.
+5. Get an independent review and explicit production authorization. Then migrate and deploy only the
+   approved scope and exact SHA. If invariants fail, stop and restore.
+
+`pnpm db:check` runs `supabase db reset --local`. Never point it at a populated or production-equivalent
+stack. A local skip is not SQL validation.
+
+## 6. Pilot cutover gates, rollback, and provenance (IMPLEMENTED procedure)
+
+Before deploying a change that touches canonical-state handling:
+
+1. Back up and verify the `operating_state` row with an authorized operator ([`RECOVERY.md`](./RECOVERY.md)).
+2. Validate all migrations from an empty local Supabase. Upgrade a *copy* of the current row.
+3. Deploy the exact SHA to a Preview backed by an isolated database. Never mutation-test against the
+   production row.
+4. Run `pnpm validate` and Playwright, then the smoke test with money-state assertions:
+
+   ```bash
+   SMOKE_BASE=<preview-url> SMOKE_EXPECT_FEE_COLLECTION=disabled \
+     SMOKE_EXPECT_PERCENTAGE_ENROLLMENT=disabled node tools/production-smoke.mjs
+   ```
+
+5. Prove the concurrency contract:
+   - two concurrent writers preserve independent changes;
+   - a cold start loads Supabase before serving.
+6. Prove shared rate-limit behavior on the exact Preview SHA:
+   - two instances share buckets;
+   - a `429` carries `Retry-After`;
+   - an RPC outage returns `503`;
+   - `LOGLOADS_RATE_LIMIT_TEST_MODE` is absent.
+7. Confirm the Doppler → Vercel variables and the deployment provenance. Vercel must build from a reviewed
+   Git commit, never a dashboard upload.
+
+**Rollback:**
+
+- Keep the pre-change row backup and the previous canonical-aware SHA.
+- Roll code back only to a canonical-aware SHA. The pre-canonical "mirror" writer predates compare-and-swap
+  and needs maintenance mode, because it can overwrite newer state.
+- On a write-path defect: stop mutations, capture the row, compare versions, restore only with explicit
+  approval, and redeploy the known-good SHA.
+
+The historical July 2026 cutover sequence, including DNS, is in Git history and the archived handoffs. It is
+evidence, not an instruction for V2.

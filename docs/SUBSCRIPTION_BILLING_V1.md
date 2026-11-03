@@ -1,3 +1,29 @@
+> **SUPERSEDED FOR ALL NEW LOGLOADS BUSINESS — HISTORICAL BILLING CONTRACT, RETAINED FOR OBLIGATIONS.**
+> *Notice added 2026-11-01. Everything below the horizontal rule is the original document, unchanged.*
+>
+> - **The current commercial model is not in this document.** It is Blueprint v1.0
+>   ([`product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md`](./product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md)), the
+>   2026-11-01 entry in [`DECISIONS.md`](./DECISIONS.md), and `packages/contracts/src/membership.ts`. It is
+>   not yet activated ([`ACTIVATION_STRIPE.md`](./ACTIVATION_STRIPE.md)).
+> - **Two layers of supersession.** The text below states that `percentage_v1` is "the current model" and
+>   `LOGLOADS_FEE_COLLECTION` "the sole current commercial collection gate". That was true from 2026-08-01
+>   until 2026-11-01. Both `subscription_v1` (this contract) **and** `percentage_v1` are now historical.
+> - **Still binding:** obligations accepted under this contract, frozen plan snapshots, accepted terms,
+>   invoices, usage and adjustment records, Stripe customer/subscription/price identifiers, webhook and
+>   idempotency reconciliation, and the dual-billing exclusion rules. They stay intact and parseable until a
+>   separately authorized, evidence-backed retirement.
+> - **Never activate.** Do not enable `LOGLOADS_SUBSCRIPTION_COLLECTION`, `LOGLOADS_DISPATCH_SELF_SERVE`,
+>   `LOGLOADS_FEE_COLLECTION`, or `LOGLOADS_PERCENTAGE_ENROLLMENT` for new activity. Do not create Network or
+>   Dispatch Pro enrollments, usage, overages, or charges. Do not reuse these gates or price variables for
+>   Basic/Pro/Regional.
+> - **Do not rewrite history.** Never substitute Basic/Pro/Regional prices into these records, reclassify old
+>   obligations as new-model revenue, or double-bill them.
+> - Related historical evidence is indexed in [`archive/README.md`](./archive/README.md). The
+>   `docs/HANDOFF-2026-07-27.md` and `docs/marketplace-*.md` documents named in the dependency map below are
+>   no longer in the tree. Recover them from tag `archive/docs-history-20261102` (archive index §2).
+
+---
+
 # LogLoads subscription billing v1
 
 Status: **historical/read-only as of 2026-08-01.** This document preserves the

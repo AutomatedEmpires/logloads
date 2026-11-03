@@ -2,10 +2,10 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 
 import { JobDraftForm } from "@/components/v2/JobDraftForm"
-import { draftValuesFromQuery, hasDraftValues, validateDraftValues } from "@/lib/marketplace-v2/draft-params"
+import { draftPublishingIssues, draftValuesFromQuery, hasDraftValues } from "@/lib/marketplace-v2/draft-params"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
-import { resolveV2Viewer } from "@/lib/marketplace-v2/viewer"
+import { resolveV2Viewer, withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
@@ -19,7 +19,7 @@ export default async function NewJobPage({ searchParams }: { searchParams: Searc
       <>
         <h1>Post a job</h1>
         <p className="v2-banner">
-          {resolved.ok ? "Your role in this workspace cannot post jobs." : resolved.refusal} <Link href="/workspace">Choose workspace</Link>
+          {resolved.ok ? withBusinessSwitchNote("Your role in this business cannot post jobs.") : resolved.refusal}
         </p>
       </>
     )
@@ -27,10 +27,11 @@ export default async function NewJobPage({ searchParams }: { searchParams: Searc
 
   const query = await searchParams
   const values = draftValuesFromQuery(query)
-  // Coming back from the preview with a draft: show its problems inline; a blank form shows none.
-  const validation = hasDraftValues(values) ? validateDraftValues(values) : null
-  const issues = validation && !validation.ok ? validation.issues : []
   const landings = await pilotMarketplaceV2.authoringLandings(resolved.viewer)
+  // Coming back from the preview (or a refused publish) with a draft: show everything that stands
+  // between it and publishing inline, including a landing that is not the organization's own. A blank
+  // form shows none.
+  const issues = hasDraftValues(values) ? draftPublishingIssues(values, landings) : []
 
   return (
     <>

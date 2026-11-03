@@ -2,6 +2,147 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-11-02 — Founder grant: Claude Agent 2 takes ownership of unstaffed integration blockers
+
+- **Grant.** The founder authorized Claude Agent 2 to "take ownership of what's needed" and to justify each
+  decision. Agent 2 reads this as authority over **unstaffed** work that blocks integration. It is **not**:
+  - authority to take over lanes that have an active owner;
+  - authority to merge;
+  - authority to deploy.
+
+  The AGENTS.md hard stops and the need for explicit merge approval are unchanged.
+- **Taken:**
+  - **#149** (invitations E2E flake), as PR #151. The QA lane has no active session, the flake failed PR #123
+    outright, and it would keep every PR's application gate unreliable after #143. Test-only.
+  - **#111, ops side** (`ops/production-env-contract.json`), as PR #152. No implementation owner is active. It is a
+    manifest only, with no runtime readers, and is verifiable with dependency-free tool tests.
+- **Declined, with reasons:**
+  - **#108** (public `/pricing` and `/terms`). The 5% model runs through the whole legacy public site, including
+    the Terms legal text. Fixing it is a product and legal wording decision, so it is **escalated to the founder**
+    with options in #108. Agent 2 implements option A once the wording is approved.
+  - **#105, #139, #144–#147, #103/#104.** These have active owners (Codex, Claude Agent 1); taking them would
+    create overlapping writers.
+
+## 2026-11-02 — Recorded approvals: V2 visual direction, `packages/ui` grant, V2-DEC-01/02/03
+
+This entry consolidates approvals that already exist in GitHub, with their sources. It approves nothing new. Where
+the founder's original statement is not in the repository, the source line says so.
+
+- **V2 visual direction — APPROVED for implementation.**
+  - **What:** the light-surface "Modern Industrial" hybrid at commit `2b09192` on `docs/product/v2-ux-spec`, with
+    `docs/product/ux-v2/06_DESIGN_SYSTEM.md` and its `design-system/` source.
+  - **Visual details:**
+    - white navigation and page/company headers on a light neutral background;
+    - **forest green** for primary actions and selected states;
+    - **rounded** controls, sections and dialogs: 8 / 12 / 16 px;
+    - restrained timber accents;
+    - IBM Plex typography.
+  - **Requirements that remain binding:**
+    - legible pay and basis;
+    - truthful availability;
+    - explicit verification scope;
+    - public/private separation.
+  - **Required implementation corrections:**
+    - semantic lists, with no nested interactive listbox;
+    - theme tokens scoped away from legacy pages;
+    - self-hosted fonts with system fallbacks;
+    - verification that names its actual scope.
+  - **Source:** founder direction, recorded by the reviewing agent on #116 (comment of 2026-11-02 19:35 UTC).
+- **`packages/ui` ownership grant.**
+  - **Who:** the existing Codex implementation owner, **limited to the files described in #144–#147**.
+  - **Order:** #144 may begin now. #145 and #146 follow the token foundation, each with separate file ownership. #147
+    migrates one V2 page per PR, coordinating the job-authoring files with #105.
+  - **#148** stays with Claude QA. The optional dev dependency `@axe-core/playwright` is approved for #148. **No paid
+    service or runtime framework is approved.**
+  - **Source:** the same #116 comment.
+- **V2-DEC-01 / V2-DEC-02 / V2-DEC-03 — APPROVED.**
+  - **V2-DEC-01:** public landing precision is **0.10°**. Implementation is #141.
+  - **V2-DEC-02:** pay disclosure — an amount with its basis, or Negotiable with supporting detail. This is the
+    same rule as C1 in the entry below.
+  - **V2-DEC-03:** an explicit publish attestation, with server-generated confirmation. This matches the
+    attestation rule in the entry below. Only the checkbox wording is still open.
+  - **Source:** the founder-directed review on PR #123 (comment of 2026-11-02 19:43 UTC) states that these "already
+    have explicit founder approval". The SQL comments in `06_v2_contract_alignment.sql` date V2-DEC-01 to
+    2026-11-01. **The founder's original statements are not in the repository.**
+- **Explicitly NOT approved by passing tests:** SQL behaviour is not founder approval.
+  - F1–F4 (`11_v2_founder_decisions.sql`) and F5 (`12_v2_billing_events.sql`) are **recommendations**, pending
+    reconciliation in the #114 register. F5 appears consistent with six paid billing cycles, but its provider-event
+    mapping still needs review.
+  - **F2a** (active legacy jobs missing pay), **F6** (mid-cycle invitation allowance) and **F7** (meaning of a paused
+    subscription) remain **open**.
+  - Integration tests must keep these behaviours isolated and clearly provisional.
+  - **Source:** the same PR #123 comment.
+- **Bounded adapter work authorized.** The CI evidence at `67b4777` is sufficient to start bounded
+  `MarketplaceV2Port` adapter development against disposable databases (#139), **using the verified user-token path,
+  not service-role access**.
+  - `supportsPublishing` stays `false` until the integrated flow is proven.
+  - This is not an independent line-by-line security approval of the SQL.
+  - Real Clerk/JWKS and hosted-project verification remain gates (#112).
+  - Billing is not ready end to end. The application webhook handler for R4 is not implemented.
+  - **Source:** the same PR #123 comment.
+
+None of the above authorizes any of the following:
+
+- a merge to `main`;
+- a deployment;
+- a production database change;
+- SQL changes outside their owners' lanes;
+- billing activation.
+
+## 2026-11-02 — GitHub Issues are the task tracker; Project Board #10 deferred
+
+- **Project Board #10 is deferred and optional.** The required `project` token scope could not be granted to the
+  agent environment. No agent spends time on board authentication, field setup or item import. Issue #101 is
+  closed as Not Planned, and its setup plan is retained there for a possible revival through a new dated decision.
+- **GitHub Issues labelled `agent-task`, together with their pull requests, are the authoritative source of task
+  state.** Each issue maintains, in its header:
+  - a primary owner;
+  - a priority: P0, P1 or P2;
+  - a status: Backlog, Ready, In Progress, Blocked, In Review or Done.
+
+  The body holds the dependencies, the acceptance criteria, and the branch, commit, PR and test evidence
+  (`docs/AGENT_WORKFLOW.md`).
+- Existing labels are reused, and status and priority are not duplicated as labels. No new external
+  project-management platform is introduced.
+- **The Blueprint remains authoritative for product requirements.**
+- **Current priorities:**
+  - **P0:**
+    - QA #107 (the expired-date Playwright test);
+    - sequential integration of the documentation PRs #100 → #115 → #142;
+    - database and application integration: Supabase verification, Codex's publishing checks and attestation,
+      the security review, and adapter readiness.
+  - **P1:** the UX decision register, and Agent 3's revised desktop-first design specification.
+
+## 2026-11-02 — Founder direction: root-document ownership, evidence retention, pay disclosure, attestation
+
+Recorded from the founder's Phase 3/4 coordination directive to Claude Agent 2. It changes no pricing, plan, or
+product scope.
+
+- **Root-document ownership.** Claude Agent 2 owns `README.md`, `AGENTS.md`, `CLAUDE.md`, and the
+  documentation side of the environment contracts and examples, in coordination with the application and security
+  owners.
+  - The uncommitted revised `AGENTS.md` is preserved and reconciled, not overwritten.
+  - Environment files that affect deployed configuration or runtime behaviour are changed only by proposal to their
+    implementation owner.
+- **Historical evidence stays active.** It stays in the tree until legacy obligations are reconciled. This covers
+  the security record, the `percentage_v1` Stripe runbook, and `SUBSCRIPTION_BILLING_V1.md`.
+  - Legacy billing obligations are **unverified**, not presumed zero.
+  - No evidence file, archive tag (`archive/docs-history-20261102`), Stripe record, or legacy migration may be
+    deleted or rewritten.
+  - A retention period is still to be decided.
+- **Pay disclosure (resolves UX decision C1).** Every new load posting must disclose pay — an amount with its
+  basis — or be marked Negotiable with supporting detail.
+- **Publication attestation.** The poster's attestation at publication may establish the initial, server-generated
+  availability confirmation (`lastConfirmedAt`). The exact attestation wording is still to be approved.
+- **CARTO.** The reported basemap allowance requires account verification before anyone relies on it.
+- **Still open; agents must not decide them:**
+  - the final UX choices: C4, C5/C6, C8–C10, the attestation wording, and Spec v1.1;
+  - the market-validation thresholds;
+  - the retention period;
+  - the definition of a "launched state".
+
+  Each needs documented founder approval (#114).
+
 ## 2026-11-01 — LogLoads becomes a timber-hauling load board (Blueprint v1.0)
 
 - **Authority.** The founder adopted the *LogLoads Product, Membership & Monetization

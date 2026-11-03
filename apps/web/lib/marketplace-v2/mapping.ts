@@ -5,7 +5,9 @@ import {
   type MarketplaceInterestView,
   type MarketplaceJobDetailView,
   type MarketplaceJobStatus,
-  type RoadCondition
+  type MarketplaceVerification,
+  type RoadCondition,
+  type VerificationRecord
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
@@ -50,10 +52,40 @@ export function humanizeProduct(loadType: string): string {
   return PRODUCT_LABELS[loadType] ?? loadType.replace(/_/g, " ")
 }
 
+/**
+ * The pilot's organization verification is a platform review of business identity only: an administrator
+ * decides the organization's `verificationStatus` and the decision is stamped on its `organization`-type
+ * verification records (`services/admin` applyOrganizationDecision; docs/PILOT_LAUNCH.md gate 1; Blueprint
+ * §10.2). That is the only scope claimed. Any other status, or a missing organization, claims nothing. The
+ * review date comes from the record; account age and activity are never used.
+ */
+export function pilotPosterVerification(
+  organization: { id: string; verificationStatus: string } | null | undefined,
+  verificationRecords: readonly Pick<VerificationRecord, "status" | "subjectId" | "subjectType" | "verificationType" | "verifiedAt">[]
+): MarketplaceVerification | null {
+  if (!organization || organization.verificationStatus !== "verified") {
+    return null
+  }
+
+  const reviewedAt = verificationRecords
+    .filter((record) =>
+      record.subjectType === "organization" &&
+      record.subjectId === organization.id &&
+      record.verificationType === "organization" &&
+      record.status === "verified" &&
+      record.verifiedAt
+    )
+    .map((record) => record.verifiedAt as string)
+    .sort()
+    .at(-1)
+
+  return { reviewedOn: reviewedAt ? reviewedAt.slice(0, 10) : null, scope: "business_identity" }
+}
+
 export function toJobDetailView(
   view: NetworkLoadView,
   load: LoadPosting,
-  posterVerified: boolean,
+  posterVerification: MarketplaceVerification | null,
   status: MarketplaceJobStatus
 ): MarketplaceJobDetailView {
   const startsOn = load.scheduleType === "one_off" ? load.loadDate ?? null : load.campaignStartDate ?? null
@@ -85,7 +117,7 @@ export function toJobDetailView(
       : { amountCents: null, note: null, unit: null },
     posterName: view.sourceName,
     posterOrganizationId: load.companyId,
-    posterVerified,
+    posterVerification,
     product: humanizeProduct(load.loadType),
     publicAccessRequirements: [...view.accessRequirements],
     publicRoadNotes: [roadSummary, view.route.weatherNotes].filter(Boolean).join(". ") || null,

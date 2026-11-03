@@ -17,13 +17,18 @@ export interface JobMapPoint {
 }
 
 const CARTO_KEY = readCartoBasemapKey(process.env.NEXT_PUBLIC_CARTO_BASEMAP_KEY)
-/** Points are snapped to a ~2 km grid; closer zoom would suggest precision the data does not have and fetch extra tiles. */
-const MAX_ZOOM = 12
+/**
+ * Points arrive rounded by the server to a 0.1° grid (about 11 km north–south). At zoom 10 one cell is
+ * about 145 px wide, close to the ~115 px a 0.02° cell was at the former cap of 12. Closer zoom would
+ * suggest precision the data does not have and fetch extra tiles.
+ */
+const MAX_ZOOM = 10
 
 /**
  * Optional, lazily loaded map of approximate landing areas on CARTO Basemaps. It is rendered only when
- * the visitor asks for it and never replaces the text list (UX spec §5.2, §11.1). Points are the public,
- * ~2 km-snapped approximations; exact landing coordinates never reach the browser.
+ * the visitor asks for it and never replaces the text list (UX spec §5.2, §11.1). Points are the public
+ * approximations, already rounded to 0.1° by the server, and are plotted as given; exact landing
+ * coordinates never reach the browser.
  */
 export default function JobMap({ points }: { points: JobMapPoint[] }) {
   const runtime = selectMapRuntime(false, "", CARTO_KEY)

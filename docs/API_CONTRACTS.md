@@ -1,102 +1,118 @@
-# API Contracts
+# LogLoads — API and Marketplace Interaction Contracts
 
-## Implemented routes
-- `GET /api/health`
-- `GET /api/auth/session` — same-origin public session-status probe; returns
-  only JSON `{ "authenticated": boolean }` and always sends
-  `Cache-Control: no-store` so account state cannot be cached or disclosed
-- `GET /api/loads` — public, redacted network load views
-- `POST /api/loads` — authenticated; requires the `publish_load` role action; `companyId` forced to the actor's organization
-- `GET /api/loads/:loadId` — viewer-aware (public redaction vs actor view)
-- `GET /api/network` — authenticated actor network view
-- `GET /api/truck-slots?date=YYYY-MM-DD` — authenticated
-- `POST /api/truck-slots` — authenticated
-- `POST /api/assignments/request` — authenticated
-- `POST /api/assignments/:assignmentId/approve` — authenticated
-- `POST /api/assignments/:assignmentId/decline` — authenticated; source organization only; optional `reason`
-- `POST /api/assignments/:assignmentId/cancel` — authenticated; assignment participants under the cancellation policy; optional `reason` (max 140 chars)
-- `GET /api/availability` — authenticated; scoped to the actor's driver profile
-- `POST /api/availability` — authenticated; `driverProfileId` forced to the actor's own
-- `POST /api/direct-offers` — authenticated
-- `POST /api/future-availability` — authenticated
-- `POST /api/notices` — authenticated
-- `GET /api/route-packs/:assignmentId` — authenticated; assignment-gated
-- `POST /api/trips/:tripId/events` — authenticated
-- `POST /api/trips/:tripId/documents` — authenticated
-- `POST /api/media/signature` — authenticated; returns a short-lived,
-  single-object Supabase Storage upload token for an immutable,
-  organization-scoped target in the private media bucket
-- `GET /api/media/asset` — authenticated; proxies the viewer-authorized private image with an upstream timeout
-- `GET /api/weather?loadId=...` — rate-limited; returns cached destination weather for a visible load
-- `GET /api/billing/payment-method` — organization-scoped, read-only card status;
-  remains readable to an actor with `manage_billing` even when card setup is
-  unavailable
-- `POST /api/billing/payment-method` — requires `manage_billing` and creates a
-  SetupIntent only when canonical state proves either (a) the exact current
-  `percentage_v1` agreement plus exact organization rollout authorization or
-  (b) a preserved provider-bound, `legacy_percentage`, or unsettled billing
-  obligation. Duplicate or cross-wired billing records fail closed. An
-  ineligible request is refused before any Stripe customer lookup/creation or
-  SetupIntent creation. Card setup never enrolls an organization, enables fee
-  collection, or moves driver or carrier compensation.
-- `POST /api/billing/subscription-checkout` — **historical route, disabled for
-  new activity.** It remains only as frozen `subscription_v1` implementation
-  evidence for accepted historical obligations. Both historical activation
-  gates remain disabled, so the route must not reach Stripe or create a new
-  subscription for any organization, including Dispatch Pro.
-- `POST /api/billing/subscription-portal` — **historical route.** It may expose
-  payment-method and invoice history for an already provider-bound obligation;
-  it may not enroll, switch, renew, or extend a subscription. Self-service plan
-  changes and cancellation remain disabled.
-- `POST /api/billing/webhook` — raw-body, Stripe-signed current platform-fee,
-  preserved legacy-fee, and historical subscription reconciliation. Provider
-  facts never create an unapproved commercial agreement, and freight
-  compensation remains out of scope.
-- `GET /api/billing/cron` — bearer-authenticated current and legacy platform-fee
-  reconciliation, historical subscription-obligation reconciliation,
-  adjustment settlement, and billing-notification delivery. It must not create
-  a new subscription schedule, enrollment, tier allowance, or usage obligation.
-- `POST /api/billing/internal-smoke` — platform-admin-only, separately gated,
-  user-and-organization-allowlisted one-dollar charge/refund proof; internal
-  fixtures never grant ordinary access or enter commercial metrics
-- `POST /api/admin/billing/actions` — platform-admin-only configuration,
-  current fee-collection authorization, audited reversal and adjustment, and
-  reconciliation controls. Subscription scheduling and enrollment controls are
-  retained only for historical-obligation reconciliation and may not activate
-  new work.
-- `GET /api/admin/billing/export` — platform-admin-only canonical
-  `percentage_v1`, preserved `legacy_percentage`, historical subscription,
-  usage, invoice, adjustment, and provider-reconciliation breakdown
+> **Status:** Revised 2026-11-01. The route inventory and port methods are read from code at `4c9518e`.
+> - The V2 preview uses **Next.js server actions**. It has no public REST API.
+> - The `/api/*` routes belong to the legacy pilot.
+>
+> The authoritative V2 type boundary is `packages/contracts/src/marketplace-v2.ts`. This document is not an
+> OpenAPI specification. Verify a handler before promising its behavior to an external consumer.
 
-## Contract rules
-- Route handlers call `packages/services` only.
-- Actor identity always resolves from the session (`apps/web/lib/api-actor.ts`); client payloads can select only among the actor's own organization memberships. Client-supplied actor IDs are rejected by design and banned by guardrails.
-- Validation happens in shared schemas and service-layer functions.
-- Errors: `401` unauthenticated, `403` membership/permission, `422` invalid fields, `409` sanitized business-rule conflict, `429` shared rate limit exceeded, and `503` production safety check unavailable. Bodies are JSON `{ error }`; rate-limit `429`/`503` responses include integer-seconds `Retry-After`. Domain-conflict bodies never include record identifiers or the service's internal refusal detail.
-- Successful mutations resolve only after `mutateState` commits a conditional Supabase update. A stale version reloads and replays the deterministic service operation; it never overwrites the newer row.
-- Driver economics and media writes are service-owned, verify active organization membership and driver ownership, and resolve the active equipment combination server-side.
-- Supabase Storage is the only active media provider. Upload tokens authorize
-  one generated object path with upsert disabled. The server reads the stored
-  object back before attachment; only verified JPG/PNG/WebP images of
-  10,000,000 bytes or less under the current target prefix can be committed.
-- Assignment approval performs all fallible commercial-terms and trip validation before consuming the assignment or confirming the slot.
-- `LOGLOADS_FEE_COLLECTION=enabled` is the sole current commercial collection
-  gate. It remains fail-closed behind the exact expected Stripe account,
-  accepted `percentage_v1` or frozen legacy terms, deterministic invoices,
-  signed webhook reconciliation, and canonical activation authorization.
-  `LOGLOADS_SUBSCRIPTION_COLLECTION` and
-  `LOGLOADS_DISPATCH_SELF_SERVE` are historical safety gates that must remain
-  disabled and cannot authorize new enrollment.
-- One completed physical movement can create at most one deterministic
-  commercial obligation: a current `percentage_v1` platform-fee event, a
-  frozen `legacy_percentage` event, or a historical `subscription_v1` usage
-  event. Private capacity, posting, cancellation before execution, duplicate
-  completion, and any already-obligated movement cannot enter another ledger.
-- Historical usage and invoices are append-only. Corrections use audited
-  reversal/adjustment records and provider credit notes or supplemental
-  invoices rather than rewriting settled facts.
+## 1. V2 marketplace — IMPLEMENTED development preview
 
-## Current limitations
-- Backed by the transitional versioned `operating_state` document in Supabase. Normalizing service operations onto relational tables remains a later scale milestone.
-- No pagination.
-- Cockpit UIs primarily use server actions (`apps/web/lib/cockpit-actions.ts`) that call the same service layer; the HTTP routes are the external/API-consumer contract.
+`LOGLOADS_MARKETPLACE_V2=enabled` exposes `/v2`. `VERCEL_ENV=production` always disables it
+(`apps/web/lib/marketplace-v2/flag.ts`). The pages are `/v2/work`, `/v2/work/[jobId]`, `/v2/inquiries`,
+`/v2/landing/inquiries`, and the job-authoring pages `/v2/landing/jobs`, `/v2/landing/jobs/new`, and
+`/v2/landing/jobs/preview`.
+
+Pages call `MarketplaceV2Port` (`apps/web/lib/marketplace-v2/port.ts`). The only implementation is
+`pilot-adapter.ts`, over the `operating_state` store. It sets `supportsPublishing: false`.
+
+| Port method | Server action (`actions.ts`) | Backing today |
+|---|---|---|
+| `listJobs(filters)` | — (page read) | Redacted public network projection → `mapping.ts` |
+| `getJob(jobId)` | — (page read) | Same, single job |
+| `viewerAccess(viewer)` | — | V2 capabilities for the active workspace (`marketplace-access.ts`) |
+| `haulerEquipment(viewer)` | — | The viewer's own equipment configurations, self-reported |
+| `authoringLandings(viewer)` | — | The viewer organization's landings, public labels only; requires `job.publish` |
+| `interestForJob(viewer, jobId)` | — | Organization-scoped read |
+| `listHaulerInterests(viewer)` | — | Organization-scoped read |
+| `listLandingInterests(viewer)` | — | Organization-scoped read for the owning landing |
+| `expressInterest(viewer, input)` | `expressInterestAction` — limit 20/hour | `marketplace-interest.ts` → `marketplaceInterests` collection, CAS commit |
+| `withdrawInterest(viewer, id)` | `withdrawInterestAction` | Service mutation, CAS commit |
+| `postHaulerReply(viewer, input)` | `haulerReplyAction` — 60/hour | Service mutation, CAS commit |
+| `respondToInterest(viewer, input)` | `respondToInterestAction` — 120/hour | Service mutation, CAS commit |
+| `publishJob(viewer, draft)` | `publishJobAction` — requires `job.publish`; no rate limit | **Not persisted:** throws `MarketplaceOperationUnavailableError` on the pilot adapter |
+| `reconfirmJob(viewer, jobId)` | `reconfirmJobAction` — requires `job.publish`; no rate limit | **Not persisted:** same |
+
+The viewer is always derived on the server — from `getSessionActor()` in actions and `resolveV2Viewer()` in
+pages — together with its active organization. Form input never supplies the viewer.
+
+### V2 contract semantics
+
+- **Statuses describe advertisements, not hauling progress.** A job is `active`, `paused`, `filled`,
+  `closed`, or `expired`. A closed or expired job accepts no new interest.
+- **Job views** show:
+  - the poster;
+  - an approximate area only;
+  - equipment codes;
+  - pay amount and unit, or negotiable with a note;
+  - start date and duration;
+  - separate nullable values for trucks for the job, trucks per day, loads per truck per day, whole-job loads
+    per day, and tons per load, each shown as "Not stated" when unknown;
+  - `lastModifiedAt`, `lastConfirmedAt`, and `expiresAt` as separate fields. `lastConfirmedAt` stays `null`
+    unless the poster explicitly confirmed. An edit is never a confirmation.
+- **Interest** carries the offered truck count, optional per-configuration counts from the hauler's own
+  equipment (capped at the units listed and labelled self-reported), an availability window, and an optional
+  note. It is limited to one live interest per job and hauler business, and can be withdrawn. It is never a
+  contract, assignment, or invitation debit.
+- **Visibility.** Participants see only their own threads. Denials do not reveal whether another tenant's
+  record exists.
+- **Persistence.** The prototype SQL functions (`marketplace.search_job_postings`, `respond_to_interest`)
+  are **not** wired to the app. A normalized adapter does not exist yet.
+
+New V2 code must never:
+
+- put private coordinates, access notes, or contacts into a public response;
+- accept client-supplied identity;
+- create assignment, trip, or fee records;
+- describe a message as a hauling contract.
+
+## 2. Legacy pilot HTTP routes — not V2 goals
+
+| Family | Paths (`apps/web/app/api`) | Policy |
+|---|---|---|
+| Health / session | `GET /api/health`, `/api/auth/session` | Coarse status only. Health exposes the commit SHA for exact-SHA proof. |
+| Public network | `/api/loads`, `/api/loads/[loadId]`, `/api/network` | Pilot projection. Public output is redacted. |
+| Availability | `/api/availability`, `/api/future-availability` | Legacy. Adapt deliberately for hauler profiles. |
+| Dispatch | `/api/truck-slots`, `/api/direct-offers`, `/api/assignments/request`, `/api/assignments/[id]/{approve,decline,cancel}`, `/api/trips/[tripId]/{events,documents}`, `/api/route-packs/[assignmentId]`, `/api/trip-documents/{signature,asset}` | **Retired direction.** Kept for compatibility and records. Do not extend. |
+| Media / credentials | `/api/media/{signature,asset,featured-truck}`, `/api/credentials/signature` | Private Supabase Storage with organization authorization |
+| Weather | `/api/weather` | Conditional provider. Time-stamped, degrades gracefully. |
+| Notices / support | `/api/notices`, `/api/support-requests`, `/api/admin/support-requests/[requestId]` | Caller authorization required |
+| Historical billing | `/api/billing/{payment-method,percentage-agreement,subscription-checkout,subscription-portal,invoices/[invoiceId]/charge,webhook,cron,internal-smoke}` | Historical-obligation reconciliation only. **Cannot authorize new fees or subscriptions.** All collection and enrollment gates stay disabled. |
+| Admin | `/api/admin/bootstrap`, `/api/admin/billing/{actions,export}` | Platform-admin only and audited ([`ACTIVATION_CLERK.md`](./ACTIVATION_CLERK.md) §3) |
+
+The pilot cockpits mostly use server actions (`apps/web/lib/cockpit-actions.ts`) that call the same
+services. Absence from V2 navigation is not permission to delete a route that is still needed to read or
+reconcile history.
+
+## 3. Invariants for both surfaces (IMPLEMENTED)
+
+- Route handlers and server actions call `packages/services`. Identity always resolves on the server
+  (`apps/web/lib/api-actor.ts`, `session.ts`). Clients may choose only among the actor's own memberships.
+  Guardrails ban client-supplied actor IDs.
+- Validation uses the shared Zod contracts plus service rules.
+- **Pilot HTTP errors:**
+  - `401` unauthenticated;
+  - `403` permission;
+  - `422` invalid fields;
+  - `409` sanitized domain conflict (`DomainRefusalError`, constant body);
+  - `429` rate limit;
+  - `503` safety dependency unavailable.
+
+  Bodies are JSON `{ error }`. `429` and `503` include `Retry-After`.
+- A mutation succeeds only after `mutateState` commits a conditional `version` update. A stale version
+  reloads and replays; it never overwrites newer state.
+- Historical obligations are append-only. One physical movement can have created at most one historical
+  obligation (`percentage_v1`, `legacy_percentage`, or `subscription_v1`). **No route may create a new one**
+  under the current decision.
+- Private sites, raw tokens, media access, message bodies, and Stripe identifiers never appear in public
+  payloads.
+
+## 4. Next contract work (TARGET)
+
+- Map `MarketplaceV2Port` methods to the normalized functions once the prototype executes
+  ([`CI.md`](./CI.md) §3).
+- Persist `publishJob` and `reconfirmJob` through a normalized adapter. Add an audited private-detail
+  disclosure method to the port.
+- Expose HTTP endpoints only when a real client needs them. Specify pagination, filters, rate limits, and
+  idempotency from implemented code, not invented endpoints.
