@@ -194,8 +194,9 @@ service-layer authorization over the schema's functions, as the session's person
 1. The server identifies the person from its own session (`getSessionActor()`; Clerk verifies the session
    token). The adapter refuses a viewer that is not the session's user.
 2. It connects directly to PostgreSQL (postgres.js) as a **dedicated login role** that can do nothing by itself.
-   It must be NOINHERIT, with no superuser, BYPASSRLS, CREATEROLE or replication attributes, no membership of
-   `service_role`, and no ownership of the schema. It may only switch to `anon` and `authenticated`.
+   It must be NOINHERIT, with no superuser, BYPASSRLS, CREATEROLE or replication attributes, and no ownership of
+   the schema. It must not belong to `service_role`, or to any role with superuser, BYPASSRLS or CREATEROLE, directly
+   or through other roles (HF-22, #187). It may only switch to `anon` and `authenticated`.
    `createPostgresMarketplaceDb` checks this on first use and refuses any other credential.
 3. Each call is one transaction. It runs `set_config('role', 'authenticated', true)` and sets
    `request.jwt.claims` to the configured issuer, the session's Clerk user id and the pinned audience, with a
@@ -214,7 +215,9 @@ sessions carry no Clerk token. This path is verifiable today on a disposable dat
 **What it trusts.** The database trusts the server's assertion of identity. Anyone holding the adapter's
 database credential can act as any user, but only as that user would through the API: never as `service_role`,
 and never past RLS. That is narrower than the pilot's service-role key, which reads and writes everything. Keep
-the credential server-side, like the service-role key. When #112 is verified, a PostgREST transport that carries
+the credential server-side, like the service-role key. The asserted claims reuse the real Clerk issuer row. That
+residual (HF-23) is accepted for now and tracked in #187 until #112 allows a separate issuer row for server-asserted
+identity. When #112 is verified, a PostgREST transport that carries
 the user's own token can replace `normalized-db.ts`. `normalized-mapping.ts` already consumes PostgREST-shaped JSON
 and does not change.
 

@@ -18,7 +18,8 @@ import { MarketplaceAdapterConfigurationError, MarketplaceRefusalError, Marketpl
  * Both settings are transaction-local, so a pooled connection never carries one person's identity into the next call.
  *
  * The connection's own login role must be unable to do anything by itself: no superuser, no BYPASSRLS, no inherited
- * privileges, no membership of `service_role`, and nothing but the ability to switch to `anon` and `authenticated`.
+ * privileges, no membership of `service_role` or of any superuser, BYPASSRLS or CREATEROLE role, and nothing but the
+ * ability to switch to `anon` and `authenticated`.
  * `checkCredential` proves this on first use and refuses to run otherwise. This is not a service-role path: the
  * service role holds no EXECUTE on any user function in this schema, and this adapter never uses it.
  *
@@ -158,7 +159,15 @@ select to_jsonb(c) as row from (
          coalesce((select pg_has_role(r.oid, x.oid, 'MEMBER') from pg_roles x where x.rolname = 'service_role'), false) as service_role_member,
          coalesce((select pg_has_role(r.oid, x.oid, 'SET') from pg_roles x where x.rolname = 'authenticated'), false) as can_become_authenticated,
          coalesce((select pg_has_role(r.oid, x.oid, 'SET') from pg_roles x where x.rolname = 'anon'), false) as can_become_anon,
-         exists (select 1 from pg_namespace n where n.nspname = 'marketplace' and n.nspowner = r.oid) as owns_marketplace
+         exists (select 1 from pg_namespace n where n.nspname = 'marketplace' and n.nspowner = r.oid) as owns_marketplace,
+         -- HF-22: membership, direct or through other roles, of any role that is a superuser, bypasses RLS or can
+         -- create roles (for example postgres or supabase_admin) is refused even though NOINHERIT withholds its
+         -- privileges, because the login role could SET ROLE to it.
+         coalesce((select array_agg(p.rolname::text order by p.rolname)
+                   from pg_roles p
+                   where p.oid <> r.oid
+                     and (p.rolsuper or p.rolbypassrls or p.rolcreaterole)
+                     and pg_has_role(r.oid, p.oid, 'MEMBER')), array[]::text[]) as privileged_memberships
   from pg_roles r
   where r.rolname = current_user
 ) as c`
@@ -173,6 +182,8 @@ export interface CredentialFacts {
   can_become_authenticated: boolean
   can_become_anon: boolean
   owns_marketplace: boolean
+  /** Roles with superuser, BYPASSRLS or CREATEROLE that the login role belongs to, directly or indirectly. */
+  privileged_memberships: string[]
 }
 
 /** The reasons a login role is unsafe for this adapter; empty when it is safe. */
@@ -190,7 +201,9 @@ export function credentialProblems(facts: CredentialFacts | null | undefined): s
     facts.service_role_member && "it is a member of service_role",
     !facts.can_become_authenticated && "it cannot switch to the authenticated role",
     !facts.can_become_anon && "it cannot switch to the anon role",
-    facts.owns_marketplace && "it owns the marketplace schema"
+    facts.owns_marketplace && "it owns the marketplace schema",
+    (!Array.isArray(facts.privileged_memberships) || facts.privileged_memberships.length > 0) &&
+      `it belongs to a privileged role (${Array.isArray(facts.privileged_memberships) ? facts.privileged_memberships.join(", ") : "unknown"})`
   ].filter((problem): problem is string => typeof problem === "string")
 }
 

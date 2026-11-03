@@ -36,6 +36,9 @@ const ISSUER = "https://clerk.adapter-contract.test"
 const AUDIENCE = "logloads-adapter-contract"
 const ADAPTER_ROLE = "logloads_adapter_ci"
 const UNSAFE_ROLE = "logloads_adapter_ci_unsafe"
+/** HF-22: login roles that hold no attribute themselves but belong to a privileged role, directly or indirectly. */
+const INDIRECT_ROLE = "logloads_adapter_ci_indirect"
+const ROLE_ADMIN_MEMBER = "logloads_adapter_ci_roleadmin"
 
 /** Public and private strings of the fixture landing. The private ones must never appear in any V2 view. */
 const EXACT_POINT = "POINT(-122.48765 44.15432)"
@@ -125,6 +128,8 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
   let admin: Sql
   let adapterSql: Sql
   let unsafeSql: Sql
+  let indirectSql: Sql
+  let roleAdminMemberSql: Sql
   let db: MarketplaceDb
   let port: MarketplaceV2Port
   let fixture: Fixture
@@ -169,6 +174,16 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
     await admin.unsafe(`grant anon, authenticated to ${ADAPTER_ROLE}`)
     await admin.unsafe(`create role ${UNSAFE_ROLE} login noinherit password '${unsafePassword}'`)
     await admin.unsafe(`grant anon, authenticated, service_role to ${UNSAFE_ROLE}`)
+    const indirectPassword = randomBytes(18).toString("hex")
+    const roleAdminPassword = randomBytes(18).toString("hex")
+    await admin.unsafe("create role logloads_ci_bypass nologin bypassrls")
+    await admin.unsafe("create role logloads_ci_middle nologin")
+    await admin.unsafe("grant logloads_ci_bypass to logloads_ci_middle")
+    await admin.unsafe(`create role ${INDIRECT_ROLE} login noinherit password '${indirectPassword}'`)
+    await admin.unsafe(`grant anon, authenticated, logloads_ci_middle to ${INDIRECT_ROLE}`)
+    await admin.unsafe("create role logloads_ci_role_admin nologin createrole")
+    await admin.unsafe(`create role ${ROLE_ADMIN_MEMBER} login noinherit password '${roleAdminPassword}'`)
+    await admin.unsafe(`grant anon, authenticated, logloads_ci_role_admin to ${ROLE_ADMIN_MEMBER}`)
 
     await admin.unsafe(fixtureSql())
 
@@ -197,12 +212,20 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
 
     adapterSql = client(roleUrl(ADAPTER_ROLE, password))
     unsafeSql = client(roleUrl(UNSAFE_ROLE, unsafePassword))
+    indirectSql = client(roleUrl(INDIRECT_ROLE, indirectPassword))
+    roleAdminMemberSql = client(roleUrl(ROLE_ADMIN_MEMBER, roleAdminPassword))
     db = createPostgresMarketplaceDb({ sql: adapterSql })
     port = createNormalizedMarketplaceV2({ db, principal: principalFor(ISSUER) })
   }, 120_000)
 
   afterAll(async () => {
-    await Promise.allSettled([adapterSql?.end({ timeout: 5 }), unsafeSql?.end({ timeout: 5 }), admin?.end({ timeout: 5 })])
+    await Promise.allSettled([
+      adapterSql?.end({ timeout: 5 }),
+      unsafeSql?.end({ timeout: 5 }),
+      indirectSql?.end({ timeout: 5 }),
+      roleAdminMemberSql?.end({ timeout: 5 }),
+      admin?.end({ timeout: 5 })
+    ])
   })
 
   function publishDraft(landingId: string, title: string) {
@@ -242,6 +265,15 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
       await expect(superuser.asAnon(async () => "ran")).rejects.toThrow(MarketplaceAdapterConfigurationError)
       await expect(superuser.asAnon(async () => "ran")).rejects.toThrow(/superuser/)
       await expect(serviceMember.asAnon(async () => "ran")).rejects.toThrow(/service_role/)
+    })
+
+    it("refuses a login role that belongs to a privileged role, even through another role (HF-22)", async () => {
+      await expect(createPostgresMarketplaceDb({ sql: indirectSql }).asAnon(async () => "ran"))
+        .rejects.toThrow(/privileged role \(logloads_ci_bypass\)/)
+      await expect(createPostgresMarketplaceDb({ sql: roleAdminMemberSql }).asAnon(async () => "ran"))
+        .rejects.toThrow(/privileged role \(logloads_ci_role_admin\)/)
+      // The adapter's own role passes the same check.
+      await expect(createPostgresMarketplaceDb({ sql: adapterSql }).asAnon(async () => "ran")).resolves.toBe("ran")
     })
 
     it("calls only functions that exist with the catalogued argument names and grants", async () => {

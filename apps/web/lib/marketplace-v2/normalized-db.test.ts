@@ -112,6 +112,7 @@ describe("credentialProblems", () => {
     create_role: false,
     inherits: false,
     owns_marketplace: false,
+    privileged_memberships: [],
     replication: false,
     service_role_member: false,
     superuser: false
@@ -128,7 +129,9 @@ describe("credentialProblems", () => {
     ["a service_role member (Supabase authenticator)", { service_role_member: true }, "service_role"],
     ["a role that cannot become authenticated", { can_become_authenticated: false }, "authenticated"],
     ["the schema owner", { owns_marketplace: true }, "owns the marketplace schema"],
-    ["a role creator", { create_role: true }, "create roles"]
+    ["a role creator", { create_role: true }, "create roles"],
+    ["a member of a privileged role, even through another role (HF-22)", { privileged_memberships: ["postgres"] }, "privileged role (postgres)"],
+    ["a role whose memberships could not be read", { privileged_memberships: null as never }, "privileged role (unknown)"]
   ])("refuses %s", (_label, change, reason) => {
     expect(credentialProblems({ ...safe, ...change }).join("; ")).toContain(reason)
   })
