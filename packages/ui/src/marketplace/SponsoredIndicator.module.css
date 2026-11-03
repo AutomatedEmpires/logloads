@@ -1,0 +1,10 @@
+/* SponsoredIndicator (DS-04): ported from design-system/components.css (.ll-sponsored). Timber text, mono label. */
+.sponsored {
+  display: inline-block;
+  color: var(--ll-color-sponsored-text);
+  font-family: var(--ll-font-mono);
+  font-size: var(--ll-text-2xs);
+  font-weight: var(--ll-weight-semibold);
+  letter-spacing: var(--ll-tracking-label);
+  text-transform: uppercase;
+}

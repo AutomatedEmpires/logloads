@@ -1,0 +1,230 @@
+/* JobResultRow (DS-04): ported from design-system/components.css (.ll-job-row). One markup for both densities.
+   Every query measures the JobResultList's "ll-list" container, so the row follows the list's width:
+     base      pay and Save on top, then title, facts (2 × 2) and freshness
+     ≥ 620 px  pay column beside the title; facts under the title
+     ≥ 740 px  facts in one line of four
+     ≥ 720 px  compact density (a data-density="compact" ancestor): one aligned line under the list header;
+               below 720 px compact falls back to the comfortable layout.
+   The app's legacy global rules for h3, dl, dt, dd, a and :focus-visible are neutralised explicitly. */
+.row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "pay end"
+    "main main"
+    "facts facts"
+    "fresh fresh";
+  gap: var(--ll-c-row-gap) var(--ll-space-4);
+  padding: var(--ll-space-4);
+  border-bottom: 1px solid var(--ll-color-border);
+}
+
+.row:last-child { border-bottom: 0; }
+.row[data-linked] { cursor: pointer; }
+.row[data-linked]:hover { background: var(--ll-color-surface-subtle); }
+.row[data-sponsored] { background: var(--ll-color-sponsored-bg); }
+.row[data-selected] { background: var(--ll-color-selected-bg); }
+
+.row[data-selected]::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--ll-color-selected-indicator);
+}
+
+/* The single link. Its ::after covers the row so the whole row is clickable; Save sits above it. */
+.link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.link:focus-visible {
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: var(--ll-focus-offset);
+  box-shadow: none;
+}
+
+/* Where :has() exists, the ring is drawn round the whole row instead of the title alone. */
+@supports selector(:has(*)) {
+  .link:focus-visible { outline: none; }
+
+  .row:has(.link:focus-visible) {
+    outline: var(--ll-focus-width) solid var(--ll-focus-color);
+    outline-offset: calc(-1 * var(--ll-focus-width));
+  }
+}
+
+.save {
+  position: relative;
+  z-index: 1;
+}
+
+.pay { grid-area: pay; min-width: 0; }
+.main { grid-area: main; min-width: 0; }
+.fresh { grid-area: fresh; min-width: 0; }
+
+.end {
+  grid-area: end;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ll-space-3);
+}
+
+.title {
+  margin: 0;
+  color: var(--ll-color-text);
+  font-family: inherit;
+  font-size: var(--ll-text-lg);
+  font-weight: var(--ll-weight-semibold);
+  line-height: var(--ll-leading-snug);
+  letter-spacing: normal;
+  overflow-wrap: anywhere;
+}
+
+.business {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--ll-space-3);
+  margin: 2px 0 0;
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-md);
+}
+
+.poster { font-weight: var(--ll-weight-medium); }
+.verification { display: inline-flex; min-width: 0; }
+
+.status {
+  color: var(--ll-color-text);
+  font-weight: var(--ll-weight-semibold);
+}
+
+.status:not([data-accepting]) { color: var(--ll-color-status-warning); }
+
+.facts {
+  grid-area: facts;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ll-space-3) var(--ll-space-5);
+  margin: var(--ll-space-2) 0 0;
+}
+
+.fact {
+  display: block;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+.label {
+  color: var(--ll-color-text-muted);
+  font-family: var(--ll-font-mono);
+  font-size: var(--ll-text-2xs);
+  font-weight: var(--ll-weight-semibold);
+  letter-spacing: var(--ll-tracking-label);
+  text-transform: uppercase;
+}
+
+.value {
+  margin: 2px 0 0;
+  color: var(--ll-color-text);
+  font-size: var(--ll-text-md);
+  font-weight: var(--ll-weight-regular);
+  line-height: var(--ll-leading-snug);
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+.note {
+  display: block;
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+}
+
+@container ll-list (min-width: 620px) {
+  .row {
+    grid-template-columns: var(--ll-c-pay-col) minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "pay main fresh end"
+      ". facts facts facts";
+    padding: var(--ll-c-row-py) var(--ll-c-row-px);
+  }
+
+  .pay > [data-kind] { display: grid; gap: 2px; }
+  .fresh { padding-top: 6px; }
+  .end { align-items: flex-start; }
+  .facts { margin-top: var(--ll-space-3); }
+}
+
+@container ll-list (min-width: 740px) {
+  .facts { grid-template-columns: 1.1fr 1.3fr 1fr 0.9fr; }
+}
+
+/* Compact: the same cells in one line. Labels and notes move to the list header; demand stays in the detail. */
+@container ll-list (min-width: 720px) {
+  [data-density="compact"] .row {
+    grid-template-columns: var(--ll-c-results-columns);
+    grid-template-areas: none;
+    align-items: baseline;
+    gap: var(--ll-space-3);
+  }
+
+  [data-density="compact"] .row > *,
+  [data-density="compact"] .fact { grid-area: auto; }
+
+  [data-density="compact"] .facts { display: contents; }
+  [data-density="compact"] .fresh { order: 1; padding-top: 0; }
+  [data-density="compact"] .end { order: 2; align-self: center; }
+
+  [data-density="compact"] .label,
+  [data-density="compact"] .note,
+  [data-density="compact"] .fact:nth-child(4) { display: none; }
+
+  [data-density="compact"] .pay > [data-kind] { display: flex; }
+  [data-density="compact"] .pay [data-part="amount"] { font-size: 1.125rem; font-weight: var(--ll-weight-semibold); }
+  [data-density="compact"] .pay [data-part="basis"] { font-size: var(--ll-text-xs); }
+
+  [data-density="compact"] .title,
+  [data-density="compact"] .value {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  [data-density="compact"] .title { font-size: var(--ll-text-md); }
+
+  [data-density="compact"] .value { margin: 0; }
+
+  [data-density="compact"] .value [data-part="labels"] {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  [data-density="compact"] .value [data-part="fit"] { display: none; }
+
+  [data-density="compact"] .business {
+    flex-wrap: nowrap;
+    overflow: hidden;
+    font-size: var(--ll-text-sm);
+    white-space: nowrap;
+  }
+
+  /* A clipped mark would misstate what was checked, so compact rows leave it to the detail. */
+  [data-density="compact"] .verification { display: none; }
+}
