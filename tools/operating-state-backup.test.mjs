@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -190,7 +190,7 @@ test("refuses when the flag and the environment name different projects", () => 
 test("checks the target against the expected project: missing, mismatch, match, malformed", () => {
   const missing = checkTargetProject({ url: HOSTED_URL })
   const mismatch = checkTargetProject({ expectedFromFlag: "logloads-other", url: HOSTED_URL })
-  const match = checkTargetProject({ expectedFromEnvironment: "logloads-test", url: HOSTED_URL })
+  const match = checkTargetProject({ expectedFromFlag: "logloads-test", url: HOSTED_URL })
   const malformed = checkTargetProject({ expectedFromFlag: "logloads-test", url: "https://" })
   const localMismatch = checkTargetProject({ expectedFromFlag: "logloads-test", url: "http://127.0.0.1:55321" })
 
@@ -208,6 +208,26 @@ test("checks the target against the expected project: missing, mismatch, match, 
   // A hosted reference can never be satisfied by the local stack, or the reverse.
   assert.equal(localMismatch.ok, false)
   assert.equal(checkTargetProject({ expectedFromFlag: LOCAL_PROJECT_REF, url: HOSTED_URL }).ok, false)
+})
+
+test("a hosted project must be named on the command line; the environment alone only satisfies a local stack", () => {
+  // A pulled production env file sets both SUPABASE_URL and the expected reference, so agreeing with itself
+  // proves nothing about what the operator meant.
+  const environmentOnly = checkTargetProject({ expectedFromEnvironment: "logloads-test", url: HOSTED_URL })
+
+  assert.equal(environmentOnly.ok, false)
+  assert.match(environmentOnly.reason, /--expected-project-ref <ref> on the command line/)
+  assert.ok(environmentOnly.reason.includes(EXPECTED_PROJECT_REF_ENV))
+
+  assert.equal(
+    checkTargetProject({ expectedFromEnvironment: "logloads-test", expectedFromFlag: "logloads-test", url: HOSTED_URL })
+      .ok,
+    true
+  )
+  assert.equal(
+    checkTargetProject({ expectedFromEnvironment: LOCAL_PROJECT_REF, url: "http://127.0.0.1:55321" }).ok,
+    true
+  )
 })
 
 test("a restore into a hosted project needs the production confirmation; a local stack does not", () => {
@@ -254,7 +274,7 @@ const scratch = mkdtempSync(join(tmpdir(), "logloads-backup-test-"))
 
 after(() => rmSync(scratch, { force: true, recursive: true }))
 
-async function stubPostgrest(row) {
+async function stubPostgrest(row, { redirectTo = null } = {}) {
   const store = { requests: [], row: structuredClone(row) }
   const server = createServer((request, response) => {
     const url = new URL(request.url, "http://127.0.0.1")
@@ -269,6 +289,11 @@ async function stubPostgrest(row) {
       body += chunk
     })
     request.on("end", () => {
+      if (redirectTo) {
+        response.writeHead(307, { Location: `${redirectTo}${request.url}` })
+        return response.end()
+      }
+
       if (request.headers.apikey !== FAKE_KEY) return reply(401, { message: "bad key" })
 
       if (url.pathname !== "/rest/v1/operating_state" || url.searchParams.get("id") !== "eq.primary") {
@@ -388,6 +413,81 @@ test("the CLI refuses a hosted restore without the production flag, before readi
   assert.ok(run.stderr.includes(PRODUCTION_RESTORE_FLAG))
   assert.match(run.stderr, /treated as production/)
   assert.ok(!run.output.includes(FAKE_KEY))
+})
+
+test("the CLI will not take a hosted project's reference from the environment alone", async () => {
+  // Exactly what a pulled production env file looks like: URL, key and expected reference all agreeing.
+  // The URL is a fake host; reaching the network would fail with a different message.
+  const env = { SUPABASE_SERVICE_ROLE_KEY: FAKE_KEY, SUPABASE_URL: HOSTED_URL, [EXPECTED_PROJECT_REF_ENV]: "logloads-test" }
+  const backup = await runTool(["backup", "--out", join(scratch, "never-written")], { env })
+  const restore = await runTool(["restore", "no-such-file.json", PRODUCTION_RESTORE_FLAG], { env })
+
+  for (const run of [backup, restore]) {
+    assert.equal(run.code, 1)
+    assert.match(run.stderr, /on the command line/)
+    assert.ok(!run.output.includes(FAKE_KEY))
+  }
+
+  assert.equal(existsSync(join(scratch, "never-written")), false)
+})
+
+test("the CLI never follows a redirect, so the key cannot reach another origin", async () => {
+  const elsewhere = await stubPostgrest(LIVE_ROW)
+  const redirecting = await stubPostgrest(LIVE_ROW, { redirectTo: elsewhere.origin })
+
+  try {
+    const run = await runTool(["backup", "--expected-project-ref", LOCAL_PROJECT_REF, "--out", join(scratch, "redirect")], {
+      env: { SUPABASE_SERVICE_ROLE_KEY: FAKE_KEY, SUPABASE_URL: redirecting.origin }
+    })
+
+    assert.equal(run.code, 1)
+    assert.match(run.stderr, /could not reach project local/)
+    assert.match(run.stderr, /redirects are refused/)
+    assert.equal(redirecting.store.requests.length, 1)
+    assert.deepEqual(elsewhere.store.requests, [], "the redirect target must never be contacted")
+
+    for (const leaked of [FAKE_KEY, redirecting.origin, elsewhere.origin]) {
+      assert.ok(!run.output.includes(leaked), `output must not contain ${leaked}`)
+    }
+  } finally {
+    await redirecting.close()
+    await elsewhere.close()
+  }
+})
+
+test("verify reports a corrupt or unreadable file without quoting any of it", async () => {
+  const directory = mkdtempSync(join(scratch, "corrupt-"))
+  const truncated = join(directory, "truncated.json")
+  const notAnObject = join(directory, "null.json")
+
+  // A truncated download: JSON.parse would quote the text around the fault, and here that text is personal data.
+  writeFileSync(truncated, '{"row":{"state":{"profiles":[{"email":"leak-marker@example.test","name":"Leak Marker', "utf8")
+  writeFileSync(notAnObject, "null", "utf8")
+
+  const corrupt = await runTool(["verify", truncated])
+  const wrongShape = await runTool(["verify", notAnObject])
+  const missing = await runTool(["verify", join(directory, "absent.json")])
+
+  assert.equal(corrupt.code, 1)
+  assert.match(corrupt.stderr, /is not valid JSON\. Treat it as corrupt/)
+  assert.ok(!corrupt.output.includes("leak-marker"), "no snippet of the file may be printed")
+  assert.ok(!corrupt.output.includes("Leak Marker"), "no snippet of the file may be printed")
+  assert.ok(!corrupt.output.includes("SyntaxError"), "the raw parse error must not surface")
+
+  assert.equal(wrongShape.code, 1)
+  assert.match(wrongShape.stderr, /is not a backup file/)
+
+  assert.equal(missing.code, 1)
+  assert.match(missing.stderr, /cannot be read/)
+  assert.ok(!missing.output.includes("ENOENT"))
+})
+
+test("the missing-credentials message no longer claims CI has nothing configured", async () => {
+  const run = await runTool(["backup", "--expected-project-ref", LOCAL_PROJECT_REF])
+
+  assert.equal(run.code, 1)
+  assert.match(run.stderr, /SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must both be set/)
+  assert.doesNotMatch(run.stderr, /present in CI today/)
 })
 
 test("a guarded backup and restore round-trip a damaged loopback document, printing refs and counts only", async () => {
