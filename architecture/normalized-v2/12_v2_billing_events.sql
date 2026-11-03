@@ -390,6 +390,48 @@ as $$
 $$;
 
 -- -----------------------------------------------------------------------------
+-- LE-02 (final review M5/M6): founding-discount cycles are counted from the ledger for one provider subscription,
+-- whenever its events apply - at delivery, by the deferred replay, or in order after an older event - so a payment
+-- that was deferred and applied later still counts. Only creation and renewal payments count (a plan-change or manual
+-- invoice is not a new paid cycle), each billing period once, never for a canceled or rejected event. Internal.
+-- -----------------------------------------------------------------------------
+create or replace function marketplace.count_founding_cycles_from_ledger(p_org_id uuid, p_ref text)
+returns integer
+language plpgsql security definer
+set search_path = pg_catalog, extensions, pg_temp
+as $$
+declare
+  r       record;
+  v_one   integer;
+  v_total integer := 0;
+begin
+  for r in
+    select distinct e.period_end
+    from marketplace.billing_provider_events e
+    where e.org_id = p_org_id
+      and e.provider_subscription_ref = p_ref
+      and e.event_type in ('invoice.paid', 'invoice.payment_succeeded')
+      and e.subscription_status = 'active'
+      and (e.billing_reason is null or e.billing_reason in ('subscription_create', 'subscription_cycle'))
+      and e.outcome in ('applied', 'ignored_stale', 'ignored_no_change', 'deferred_tie')
+    order by e.period_end
+  loop
+    update marketplace.promotion_redemptions pr
+    set cycles_applied = pr.cycles_applied + 1,
+        status = case when pr.cycles_applied + 1 >= p.billing_cycles then 'exhausted' else 'applied' end,
+        counted_period_ends = pr.counted_period_ends || r.period_end
+    from marketplace.promotions p
+    where pr.org_id = p_org_id and p.id = pr.promotion_id
+      and pr.status in ('granted', 'applied') and pr.cycles_applied < p.billing_cycles
+      and not (r.period_end = any (pr.counted_period_ends));
+    get diagnostics v_one = row_count;
+    v_total := v_total + v_one;
+  end loop;
+  return v_total;
+end
+$$;
+
+-- -----------------------------------------------------------------------------
 -- H1 (fourth review). When a provider subscription is applied for the first time, its OWN deferred
 -- snapshots are resolved in order: older ones are stale; the latest newer one is applied (so a delayed
 -- older event that went live first does not strand the subscription on an old period); same-timestamp
@@ -447,6 +489,7 @@ begin
       where e.org_id = p_org_id and e.outcome = 'deferred_conflict' and e.provider_subscription_ref = p_live_ref
         and e.provider_created_at < v_newer.provider_created_at;
       v_applied := 1;
+      perform marketplace.count_founding_cycles_from_ledger(p_org_id, p_live_ref);
     exception when others then
       if sqlstate like '40%' or sqlstate in ('55P03', '57014') then
         raise;
@@ -577,7 +620,7 @@ begin
       p_org_id, v_evt.plan_code, v_evt.subscription_status, v_evt.period_start, v_evt.period_end,
       v_evt.provider_customer_ref, v_evt.provider_subscription_ref, v_evt.cancel_at_period_end,
       null,
-      true, -- external provider event: preserve members and landings (03 policy)
+      true, -- external provider event: record seat/landing over-limit conflicts instead of refusing (03 policy)
       v_billing_reason,
       false); -- LE-02: counted on payment evidence, not on opening
     update marketplace.organization_subscriptions s
@@ -610,6 +653,7 @@ begin
     and e.outcome = 'deferred_conflict'
     and e.id <> v_evt.id;
   perform marketplace.supersede_deferred_billing_events(p_org_id, v_evt.provider_subscription_ref, v_evt.provider_created_at);
+  perform marketplace.count_founding_cycles_from_ledger(p_org_id, v_evt.provider_subscription_ref);
 
   perform marketplace.write_audit(
     'billing.deferred_replayed', 'billing_provider_events', v_evt.id, p_org_id, v_reason,
@@ -795,9 +839,23 @@ begin
       if p_status = 'canceled' then
         v_result := 'ignored_superseded';
         v_reason := 'cancellation of a provider subscription the organization is not using (its live subscription is manually administered)';
-      elsif coalesce(p_is_reconciliation, false) then
+      elsif coalesce(p_is_reconciliation, false)
+            or not marketplace.subscription_is_entitling(v_live.status, v_live.current_period_end, v_live.grace_ends_at) then
+        -- A reconciliation snapshot, or a manual subscription that no longer entitles: the manual row ends (kept as
+        -- history, audited) and the provider subscription gets its own row, so no period rewind guard applies.
+        update marketplace.organization_subscriptions s
+        set status = 'canceled', canceled_at = coalesce(s.canceled_at, now())
+        where s.id = v_live.id;
+        perform marketplace.write_audit(
+          'subscription.manual_superseded', 'organization_subscriptions', v_live.id, p_org_id,
+          'a provider subscription took over from the manually administered subscription',
+          jsonb_build_object('provider_subscription_ref', p_provider_subscription_ref,
+                             'reconciliation', coalesce(p_is_reconciliation, false)));
+        v_sub_id := null;
         v_apply := true;
-        v_reason := 'reconciliation snapshot: the provider subscription takes over from the manually administered one';
+        v_reason := case when coalesce(p_is_reconciliation, false)
+                         then 'reconciliation snapshot: the provider subscription takes over from the manually administered one'
+                         else 'the manually administered subscription had lapsed; the provider subscription takes over' end;
       else
         v_result := 'deferred_conflict';
         v_reason := 'the live subscription is manually administered; a provider subscription replaces it only through a reconciliation snapshot';
@@ -816,7 +874,7 @@ begin
         p_org_id, p_plan_code, p_status, p_period_start, p_period_end,
         p_provider_customer_ref, p_provider_subscription_ref, coalesce(p_cancel_at_period_end, false),
         null,
-        true, -- external provider event: preserve members and landings, record any conflict (03 policy)
+        true, -- external provider event: record seat/landing over-limit conflicts instead of refusing (03 policy)
         p_billing_reason,
         false); -- LE-02: counted on payment evidence below, not on opening
       update marketplace.organization_subscriptions s
@@ -852,22 +910,6 @@ begin
     end if;
   end if;
 
-  -- LE-02 (F5): a founding-discount cycle is consumed once per billing period, when payment evidence for that
-  -- period arrives on an active subscription, whatever the delivery order (a late invoice.paid still counts;
-  -- a canceled subscription's does not).
-  if p_event_type in ('invoice.paid', 'invoice.payment_succeeded') and p_status = 'active'
-     and v_result in ('applied', 'ignored_stale', 'ignored_no_change') then
-    update marketplace.promotion_redemptions pr
-    set cycles_applied = pr.cycles_applied + 1,
-        status = case when pr.cycles_applied + 1 >= p.billing_cycles then 'exhausted' else 'applied' end,
-        counted_period_ends = pr.counted_period_ends || p_period_end
-    from marketplace.promotions p
-    where pr.org_id = p_org_id and p.id = pr.promotion_id
-      and pr.status in ('granted', 'applied') and pr.cycles_applied < p.billing_cycles
-      and not (p_period_end = any (pr.counted_period_ends));
-    get diagnostics v_counted = row_count;
-  end if;
-
   if v_evt_id is null then
     insert into marketplace.billing_provider_events (
       provider, provider_event_id, event_type, provider_created_at, provider_subscription_ref, provider_customer_ref,
@@ -887,6 +929,11 @@ begin
         is_reconciliation = coalesce(p_is_reconciliation, false), payload_sha256 = p_payload_sha256,
         outcome = v_result, outcome_reason = v_reason, subscription_id = v_sub_id, processed_at = clock_timestamp()
     where e.id = v_evt_id;
+  end if;
+
+  -- LE-02 (F5): count founding-discount cycles from this subscription's payment evidence (see the helper).
+  if v_result in ('applied', 'ignored_stale', 'ignored_no_change') then
+    v_counted := marketplace.count_founding_cycles_from_ledger(p_org_id, p_provider_subscription_ref);
   end if;
 
   perform marketplace.write_audit(
@@ -938,6 +985,7 @@ revoke all on function
   marketplace.apply_subscription_cycle(uuid, text, text, timestamptz, timestamptz, text, text, boolean, integer, boolean, text, boolean),
   marketplace.replay_deferred_billing_event(uuid),
   marketplace.supersede_deferred_billing_events(uuid, text, timestamptz),
+  marketplace.count_founding_cycles_from_ledger(uuid, text),
   marketplace.apply_billing_provider_event(text, text, text, timestamptz, uuid, text, text, text, text, timestamptz, timestamptz, boolean, text, text, boolean),
   marketplace.admin_list_billing_provider_events(uuid, integer)
   from public, anon, authenticated, service_role;

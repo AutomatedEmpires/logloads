@@ -62,7 +62,7 @@ declare
   o_haul uuid; o_land uuid; o_priv uuid;
   m_inv uuid; v_q uuid;
   u_mod uuid; u_post uuid; o_post uuid; l_one uuid; l_two uuid; j_held uuid;
-  u_billing uuid; u_support uuid; u_super uuid; v_job uuid; v_job2 uuid; v_eoi uuid; v_period uuid;
+  u_billing uuid; u_support uuid; u_super uuid; v_job uuid; v_job2 uuid; v_eoi uuid; v_period uuid; j_rename uuid;
 begin
   perform pg_temp.as_jwt('service_role');
   u_own  := marketplace.sync_verified_identity(c_iss, 's16_owner', 'S16 Owner',     'owner@s16.test', true);
@@ -221,6 +221,11 @@ begin
       l_one, 'Fir Haul to Mill', array['log_truck'], 3, 'Fir sawlogs', 'Different job.', 'per_ton', 525, null,
       3, current_date + 10, 8, 3.0, 9, 30.0, 'Bend Mill, OR', 28, null, null, array['ppe'], true) is not null,
     'C-1: a different posting at the same landing is not blocked');
+  j_rename := marketplace.publish_job_posting(
+      l_one, 'Spruce Haul to Mill 2', array['log_truck'], 3, 'Spruce sawlogs', 'Second haul.', 'per_ton', 525, null,
+      3, current_date + 10, 8, 3.0, 9, 30.0, 'Bend Mill, OR', 28, null, null, array['ppe'], true);
+  perform pg_temp.fails(format($q$update marketplace.job_postings set title = 'Spruce-Haul to Mill!' where id = %L$q$, j_rename),
+    '23514', 'moderation hold', 'C-1 (final review): a live posting cannot be renamed to a held title, punctuation aside');
   perform pg_temp.as_jwt('authenticated', 's16_mod');
   perform marketplace.admin_release_job_moderation_hold(j_held, 'Pay corrected after review');
   perform pg_temp.as_jwt('authenticated', 's16_post');
@@ -240,8 +245,8 @@ begin
   insert into marketplace.platform_admins (user_id, admin_role, note)
   values (u_billing, 'billing', 'suite 17'), (u_support, 'support', 'suite 17'), (u_super, 'superadmin', 'suite 17');
   select id into v_job from marketplace.job_postings where org_id = o_post and title = 'Fir Haul to Mill';
-  insert into marketplace.expressions_of_interest (job_id, job_org_id, hauler_org_id, submitted_by, trucks_offered, status)
-  values (v_job, o_post, o_priv, u_haul, 1, 'submitted')
+  insert into marketplace.expressions_of_interest (job_id, job_org_id, hauler_org_id, submitted_by, trucks_offered, status, message)
+  values (v_job, o_post, o_priv, u_haul, 1, 'submitted', 'Opening note from the hauler')
   returning id into v_eoi;
   insert into marketplace.interest_messages (interest_id, author_user_id, author_side, body)
   values (v_eoi, u_haul, 'hauler', 'We can run two trucks Monday.');
@@ -252,13 +257,15 @@ begin
     and not exists (select 1 from marketplace.organization_memberships where org_id = o_post),
     'LE-07: billing staff cannot read other organizations'' inquiries or memberships');
   perform pg_temp.as_jwt('authenticated', 's16_support');
-  perform pg_temp.ok(exists (select 1 from marketplace.expressions_of_interest where id = v_eoi)
+  perform pg_temp.ok(not exists (select 1 from marketplace.expressions_of_interest where id = v_eoi)
     and exists (select 1 from marketplace.organization_memberships where org_id = o_post),
-    'LE-07: support staff can read inquiries and memberships');
+    'LE-07: support staff read memberships, but not inquiry rows (they carry the opening message)');
   perform pg_temp.ok(not exists (select 1 from marketplace.interest_messages where interest_id = v_eoi),
     'LE-07: support staff cannot read message content directly');
-  perform pg_temp.ok((select count(*) from marketplace.admin_read_interest_thread(v_eoi, 'Investigating an abuse report')) = 1,
-    'LE-07: support staff read a thread through the audited function');
+  perform pg_temp.ok((select count(*) from marketplace.admin_read_interest_thread(v_eoi, 'Investigating an abuse report')) = 2
+    and exists (select 1 from marketplace.admin_read_interest_thread(v_eoi, 'Investigating an abuse report') t
+                where t.message_body = 'Opening note from the hauler'),
+    'LE-07: support staff read the whole thread, opening message included, through the audited function');
   perform pg_temp.fails(format($q$select * from marketplace.admin_read_interest_thread(%L, 'x')$q$, v_eoi),
     '22023', 'reason', 'LE-07: a thread read needs a reason');
   perform pg_temp.as_jwt('authenticated', 's16_mod');
@@ -284,6 +291,11 @@ begin
   perform pg_temp.fails(format($q$insert into marketplace.interest_messages (interest_id, author_side, body)
       values (%L, 'hauler', 'one more')$q$, v_eoi),
     '23514', '200-message limit', 'B-9: a direct insert past the 200-message limit is refused');
+  perform pg_temp.as_jwt('authenticated', 's16_post');
+  insert into marketplace.interest_messages (interest_id, author_side, body) values (v_eoi, 'landing', 'Closing this inquiry.');
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok((select count(*) from marketplace.interest_messages where interest_id = v_eoi) = 201,
+    'B-9 (final review): the landing side can still reply or decline at the limit');
 
   -- B-7: a declined inquiry no longer opens the landing's private details
   perform pg_temp.as_jwt('harness');
@@ -296,6 +308,9 @@ begin
   update marketplace.expressions_of_interest set status = 'declined' where id = v_eoi;
   perform pg_temp.as_jwt('authenticated', 's16_haul');
   perform pg_temp.ok(not marketplace.can_view_landing_private(l_one), 'B-7: once declined, the private details are closed');
+  perform pg_temp.as_jwt('authenticated', 's16_post');
+  perform pg_temp.ok(not marketplace.has_live_inquiry_from_hauler(o_priv),
+    'B-2 (final review): a declined inquiry no longer counts as live for the landing desk');
 
   -- LE-06: an owner sees a moderation action's reason, not the moderator
   perform pg_temp.as_jwt('authenticated', 's16_post');
@@ -304,6 +319,12 @@ begin
     'LE-06: the owner reads the moderation action and its reason');
   perform pg_temp.fails('select actor_user_id from marketplace.audit_events limit 1', '42501', 'permission denied',
     'LE-06: the actor column is not directly readable');
+  perform pg_temp.fails('select verified_by from marketplace.organizations limit 1', '42501', 'permission denied',
+    'LE-06 (final review): the staff member who verified an organization is not client-readable');
+  perform pg_temp.fails('select granted_by from marketplace.promotion_redemptions limit 1', '42501', 'permission denied',
+    'LE-06 (final review): the staff member who granted a promotion is not client-readable');
+  perform pg_temp.ok(exists (select 1 from marketplace.organizations where id = o_post and verification_status is not null),
+    'LE-06 (final review): the organization still reads its own verification status');
   perform pg_temp.ok(marketplace.audit_event_actor(
       (select max(id) from marketplace.audit_events where entity_id = j_held and action = 'job_posting.moderated')) is null,
     'LE-06: the owner cannot learn which moderator acted');

@@ -36,6 +36,10 @@ begin
       (select applied_at from marketplace.schema_migrations where version = '16')
       using errcode = '55000', hint = 'Migrations are forward-only.';
   end if;
+  if to_regprocedure('marketplace.count_founding_cycles_from_ledger(uuid, text)') is null then
+    raise exception 'migration 16 requires the current 12 (billing E-3/E-4/E-5 and LE-02); this database applied an earlier 12'
+      using errcode = '55000';
+  end if;
   if exists (select 1 from information_schema.columns
              where table_schema = 'marketplace' and table_name = 'organization_memberships' and column_name = 'accepted_at') then
     raise exception 'migration 16 appears to be applied already (organization_memberships.accepted_at exists) but is not recorded; refusing to re-run'
@@ -309,7 +313,7 @@ create or replace function marketplace.normalize_listing_title(p_title text)
 returns text language sql immutable
 set search_path = pg_catalog, pg_temp
 as $$
-  select lower(regexp_replace(btrim(coalesce(p_title, '')), '[[:space:]]+', ' ', 'g'))
+  select lower(regexp_replace(coalesce(p_title, ''), '[^[:alnum:]]+', '', 'g'))
 $$;
 
 create or replace function marketplace.tg_job_hold_duplicate_guard()
@@ -319,7 +323,9 @@ as $$
 declare
   v_reason text;
 begin
-  if new.status = 'active' and (tg_op = 'INSERT' or old.status <> 'active') then
+  if new.status = 'active'
+     and (tg_op = 'INSERT' or old.status <> 'active'
+          or new.title is distinct from old.title or new.landing_id is distinct from old.landing_id) then
     select h.reason into v_reason
     from marketplace.job_moderation_holds h
     join marketplace.job_postings j on j.id = h.job_id
@@ -358,11 +364,11 @@ create policy memberships_read on marketplace.organization_memberships for selec
          or user_id = (select marketplace.current_user_id())
          or marketplace.is_platform_admin(array['support']));
 
+-- Inquiries carry the hauler's opening message, so staff have no direct row access at all (final review M1).
 drop policy if exists interests_read on marketplace.expressions_of_interest;
 create policy interests_read on marketplace.expressions_of_interest for select to authenticated
   using (hauler_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff', 'driver']))
-         or job_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff'], true))
-         or marketplace.is_platform_admin(array['support']));
+         or job_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff'], true)));
 
 -- 06's helper without the platform-admin read branch (interest_messages_read uses it).
 create or replace function marketplace.can_access_interest(p_interest uuid, p_write_side text default null)
@@ -407,10 +413,17 @@ begin
   perform marketplace.write_audit(
     'admin.interest_thread_read', 'expressions_of_interest', p_interest_id, v_org, btrim(p_reason), '{}'::jsonb, true);
   return query
-    select m.id, m.author_side, m.body, m.created_at
-    from marketplace.interest_messages m
-    where m.interest_id = p_interest_id
-    order by m.created_at, m.id;
+    select x.id, x.author_side, x.body, x.created_at
+    from (
+      select e.id, 'hauler'::text as author_side, e.message as body, e.created_at, 0 as ord
+      from marketplace.expressions_of_interest e
+      where e.id = p_interest_id and e.message is not null
+      union all
+      select m.id, m.author_side, m.body, m.created_at, 1
+      from marketplace.interest_messages m
+      where m.interest_id = p_interest_id
+    ) x
+    order by x.ord, x.created_at, x.id;
 end
 $$;
 
@@ -420,6 +433,13 @@ $$;
 -- audit_event_actor returns it to platform staff, and to the organization's owners for non-staff actions.
 -- -----------------------------------------------------------------------------
 revoke select on marketplace.audit_events from authenticated;
+-- Final review M2: the staff member who verified an organization or granted a promotion is not client-readable.
+revoke select on marketplace.organizations from authenticated;
+grant select (id, display_name, legal_name, slug, home_state, verification_status, verified_at, status, created_by, created_at, updated_at)
+  on marketplace.organizations to authenticated;
+revoke select on marketplace.promotion_redemptions from authenticated;
+grant select (id, promotion_id, program, org_id, granted_at, cycles_applied, status, counted_period_ends)
+  on marketplace.promotion_redemptions to authenticated;
 grant select (id, occurred_at, actor_kind, org_id, action, entity_table, entity_id, reason, metadata)
   on marketplace.audit_events to authenticated;
 
@@ -531,7 +551,9 @@ set search_path = pg_catalog, extensions, pg_temp
 as $$
 begin
   perform 1 from marketplace.expressions_of_interest e where e.id = new.interest_id for update;
-  if (select count(*) from marketplace.interest_messages m where m.interest_id = new.interest_id) >= 200 then
+  -- 200 messages per inquiry; the landing side keeps a little room (to 210) so it can always reply or decline.
+  if (select count(*) from marketplace.interest_messages m where m.interest_id = new.interest_id)
+     >= case when new.author_side = 'landing' then 210 else 200 end then
     raise exception 'This conversation has reached its 200-message limit' using errcode = '23514';
   end if;
   return new;
@@ -554,6 +576,22 @@ grant execute on function
   marketplace.admin_read_interest_thread(uuid, text),
   marketplace.audit_event_actor(bigint)
   to authenticated;
+
+-- -----------------------------------------------------------------------------
+-- Final review Low (B-2/B-7): a declined inquiry no longer counts as live, so the landing desk's read of the hauler
+-- profile and qualifications ends with the decline (06 excluded only withdrawn inquiries).
+-- -----------------------------------------------------------------------------
+create or replace function marketplace.has_live_inquiry_from_hauler(p_hauler_org uuid)
+returns boolean language sql stable security definer
+set search_path = pg_catalog, extensions, pg_temp
+as $$
+  select exists (
+    select 1 from marketplace.expressions_of_interest e
+    where e.hauler_org_id = p_hauler_org
+      and e.status not in ('withdrawn', 'declined')
+      and e.job_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff'], true))
+  )
+$$;
 
 -- -----------------------------------------------------------------------------
 -- Record this migration.

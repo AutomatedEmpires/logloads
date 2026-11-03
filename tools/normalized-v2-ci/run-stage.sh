@@ -193,6 +193,7 @@ case "$STAGE" in
     check "R4: apply_billing_provider_event executable by service_role only" "select has_function_privilege('service_role', p.oid, 'EXECUTE') and not has_function_privilege('authenticated', p.oid, 'EXECUTE') and not has_function_privilege('anon', p.oid, 'EXECUTE') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and p.proname = 'apply_billing_provider_event';"
     check "R4: the subscription-cycle core is not executable by any API role" "select not has_function_privilege('service_role', p.oid, 'EXECUTE') and not has_function_privilege('authenticated', p.oid, 'EXECUTE') and not has_function_privilege('anon', p.oid, 'EXECUTE') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and p.proname = 'apply_subscription_cycle';"
     check "E-1: the deferred-replay core is not executable by any API role" "select not has_function_privilege('service_role', 'marketplace.replay_deferred_billing_event(uuid)', 'EXECUTE') and not has_function_privilege('authenticated', 'marketplace.replay_deferred_billing_event(uuid)', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.replay_deferred_billing_event(uuid)', 'EXECUTE');"
+    check "LE-02: the founding-cycle counter is not executable by any API role" "select not has_function_privilege('service_role', 'marketplace.count_founding_cycles_from_ledger(uuid, text)', 'EXECUTE') and not has_function_privilege('authenticated', 'marketplace.count_founding_cycles_from_ledger(uuid, text)', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.count_founding_cycles_from_ledger(uuid, text)', 'EXECUTE');"
     check "H1: the deferred-supersede core is not executable by any API role" "select not has_function_privilege('service_role', 'marketplace.supersede_deferred_billing_events(uuid, text, timestamptz)', 'EXECUTE') and not has_function_privilege('authenticated', 'marketplace.supersede_deferred_billing_events(uuid, text, timestamptz)', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.supersede_deferred_billing_events(uuid, text, timestamptz)', 'EXECUTE');"
     check "D-1/D-2: the migration ledger records 06, 11, 12 in order" "select string_agg(version, ',' order by applied_at, version) = '06,11,12' from marketplace.schema_migrations;"
     check "R4: one apply_billing_provider_event and one open_subscription_cycle (no stray overloads)" "select count(*) filter (where p.proname = 'apply_billing_provider_event') = 1 and count(*) filter (where p.proname = 'open_subscription_cycle') = 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace';"
@@ -227,7 +228,7 @@ case "$STAGE" in
     check "suite rolled back (no test organizations left)" "select count(*) = 0 from marketplace.organizations;"
     PASSES="$(grep -cE "NOTICE:  00000: PASS: " "$LOG" || true)"
     echo "  executed assertions reporting PASS: $PASSES" | tee -a "$LOG" | tee -a "$SUMMARY"
-    [[ "$PASSES" -ge 44 ]] || { echo "STAGE 17: only $PASSES PASS notices; expected at least 44" >&2; exit 1; }
+    [[ "$PASSES" -ge 50 ]] || { echo "STAGE 17: only $PASSES PASS notices; expected at least 50" >&2; exit 1; }
     ;;
   13)
     run_sql "$DIR/13_v2_phase3_tests.sql"

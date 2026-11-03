@@ -138,3 +138,19 @@ Fixed this phase (engineering): E6, E7, S5, owner-reversible moderation (hold me
 | **Adapter integration** (building the real V2 adapter against this schema) | **NOT READY** (revised after independent review — see `INDEPENDENT_REVIEW_FINDINGS.md`) | Verified High defects: re-running 06 corrupts data and reverts 11 (D-1, D-2), 06 aborts on valid baseline data (D-4), a replacement subscription can be lost (E-1), and moderation can be evaded by republishing (C-1). Fix and re-verify first; R1 and R2 still block go-live. |
 | **Staging** | **NOT READY** | Requires an isolated hosted Supabase branch with a Clerk development instance (R2, R3 remainder, R9), the webhook handler (R4), and the adapter changes (R1, R5, R8). |
 | **Production** | **NOT READY — NOT AUTHORIZED** | No production run, credentials or deployment were used or are authorized. Disposable-database results alone are not evidence of production readiness. |
+
+## Handler and deployment prerequisites (final review, 2026-11-02)
+
+These are conditions the application and environment must meet. The SQL cannot enforce them.
+
+- **Payload digest.** `p_payload_sha256` must be computed over a canonical serialization of the provider event:
+  the event id, type, `created` and the `data.object` snapshot, with keys sorted. It must never be computed over the
+  raw HTTP body. Stripe redeliveries can differ in delivery-only fields such as `pending_webhooks` and `request`.
+  If those fields are hashed, a failed event can never be retried (E-4) and every redelivery is audited as a payload
+  conflict (E-5).
+- **Token audience.** LE-09 requires every enabled issuer to pin `expected_audience`. Before an issuer is enabled,
+  the Clerk tokens Supabase receives must carry that `aud` claim (configure it in the Clerk session-token or JWT
+  template). Otherwise every user resolves to no identity. Verify this in #112's development project first.
+- **Paused / unpaid (LE-04).** These statuses deactivate the organization's landings, as any non-entitling status
+  does, and postings at inactive landings stop being discoverable. Payment restores the plan. Landings and postings
+  are re-activated by the owner, and postings need a fresh attestation (F3).
