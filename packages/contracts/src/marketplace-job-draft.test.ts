@@ -2,10 +2,14 @@ import { describe, expect, it } from "vitest"
 
 import {
   attestAvailability,
-  AVAILABILITY_ATTESTATION_REQUIRED,
+  attestPublication,
+  draftProductLabel,
   containsPublicContactText,
   draftEndsOn,
   MARKETPLACE_AVAILABILITY_ATTESTATION,
+  MARKETPLACE_PUBLISH_ATTESTATION_FIELDS,
+  marketplacePublishAttestations,
+  PUBLISH_ATTESTATION_REQUIRED,
   marketplaceJobPublicationIssues,
   previewMarketplaceJob,
   validateMarketplaceJobDraft,
@@ -15,6 +19,8 @@ import {
 
 const LANDING_ID = "66666666-6666-4666-8666-666666666666"
 const NOW = new Date("2026-11-02T17:30:00.000Z")
+/** All three publish statements ticked (V2-DEC-03, UX 02 §B7). */
+const ALL_ATTESTED = Object.fromEntries(MARKETPLACE_PUBLISH_ATTESTATION_FIELDS.map((name) => [name, MARKETPLACE_AVAILABILITY_ATTESTATION.value]))
 
 /** A draft that satisfies every draft and publishing rule. */
 const publishable = {
@@ -80,7 +86,10 @@ describe("required pay disclosure (founder decision C1)", () => {
 })
 
 describe("public text never carries private access or direct contact details", () => {
-  const publicFields = ["title", "product", "description", "payNote", "destinationLabel", "publicRoadNotes"] as const
+  const publicFields = ["title", "productOther", "description", "payNote", "destinationLabel", "publicRoadNotes"] as const
+  /** Keep the draft valid apart from the field under test: negotiable pay for the pay note, "Other" for its description. */
+  const context = (name: (typeof publicFields)[number]) =>
+    name === "payNote" ? { payAmount: "", payUnit: "negotiable" } : name === "productOther" ? { product: "Other" } : {}
 
   it.each([
     ["an email address", "Questions: dispatch@cedarfork.example"],
@@ -92,9 +101,7 @@ describe("public text never carries private access or direct contact details", (
   ])("refuses %s in every public field (UX-DEC-04)", (_label, text) => {
     expect(containsPublicContactText(text)).toBe(true)
     for (const name of publicFields) {
-      // Keep negotiable pay valid when the pay note is the field under test.
-      const pay = name === "payNote" ? { payAmount: "", payUnit: "negotiable" } : {}
-      expect(fields({ ...pay, [name]: `Oak run. ${text}` })).toEqual([name])
+      expect(fields({ ...context(name), [name]: `Oak run. ${text}` })).toEqual([name])
     }
   })
 
@@ -109,11 +116,10 @@ describe("public text never carries private access or direct contact details", (
     expect(fields({ publicRoadNotes: text })).toEqual([])
   })
 
-  it("applies the sensitive-access rule to every public field, including product", () => {
+  it("applies the sensitive-access rule to every public field, including an Other-product description", () => {
     for (const name of publicFields) {
-      const pay = name === "payNote" ? { payAmount: "", payUnit: "negotiable" } : {}
-      expect(fields({ ...pay, [name]: "Oak run, gate code 4471" })).toEqual([name])
-      expect(fields({ ...pay, [name]: "Oak run at 44.12345, -122.45678" })).toEqual([name])
+      expect(fields({ ...context(name), [name]: "Oak run, gate code 4471" })).toEqual([name])
+      expect(fields({ ...context(name), [name]: "Oak run at 44.12345, -122.45678" })).toEqual([name])
     }
   })
 })
@@ -163,14 +169,33 @@ describe("work timing (UX-DEC-02)", () => {
 describe("product (UX-DEC-03)", () => {
   it("lets a draft omit the product but refuses to publish without it", () => {
     expect(fields({ product: "" })).toEqual([])
-    expect(marketplaceJobPublicationIssues(draft({ product: "  " }))).toEqual([{ field: "product", message: "Name the product before publishing" }])
+    expect(marketplaceJobPublicationIssues(draft({ product: "  " }))).toEqual([{ field: "product", message: "Choose the product before publishing" }])
+  })
+
+  it("accepts only the controlled list, not free text", () => {
+    for (const product of ["Saw logs", "Pulpwood", "Poles and pilings", "Chips", "Hog fuel and biomass", "Hardwood logs"]) {
+      expect(fields({ product })).toEqual([])
+    }
+    expect(fields({ product: "saw logs" })).toEqual(["product"])
+    expect(fields({ product: "Spruce sawlogs" })).toEqual(["product"])
+  })
+
+  it("requires a description for Other and stores that description", () => {
+    expect(fields({ product: "Other" })).toEqual(["productOther"])
+    expect(draftProductLabel(draft({ product: "Other", productOther: "Cedar shake blocks" }))).toBe("Cedar shake blocks")
+    expect(fields({ product: "Other", productOther: "x".repeat(121) })).toEqual(["productOther"])
+  })
+
+  it("stores a listed product's label and ignores a stray description", () => {
+    expect(draftProductLabel(draft({ product: "Pulpwood", productOther: "ignored" }))).toBe("Pulpwood")
+    expect(draftProductLabel(draft({ product: "" }))).toBeNull()
   })
 })
 
 describe("explicit availability attestation (V2-DEC-03, ATT-1)", () => {
   const { field, label, value } = MARKETPLACE_AVAILABILITY_ATTESTATION
 
-  it("uses a neutral placeholder label while the wording is open (#114)", () => {
+  it("keeps the LE-15 wording for reconfirmation", () => {
     expect(field).toBe("availabilityAttestation")
     expect(label).toBe("I confirm this job is currently available as described.")
   })
@@ -185,7 +210,7 @@ describe("explicit availability attestation (V2-DEC-03, ATT-1)", () => {
   it("takes the confirmation time from the server clock, never from the request", () => {
     const result = validateMarketplaceJobPublication(
       { ...publishable, confirmedAt: "2020-01-01T00:00:00.000Z", lastConfirmedAt: "2020-01-01T00:00:00.000Z" },
-      value,
+      ALL_ATTESTED,
       NOW
     )
     expect(result.ok).toBe(true)
@@ -200,24 +225,41 @@ describe("explicit availability attestation (V2-DEC-03, ATT-1)", () => {
   })
 })
 
-describe("the publishing gate", () => {
-  const { value } = MARKETPLACE_AVAILABILITY_ATTESTATION
+describe("the three publish statements (V2-DEC-03, UX 02 §B7)", () => {
+  it("words the statements as the approved design does, naming the landing", () => {
+    expect(marketplacePublishAttestations("Hills Creek Unit 4").map((statement) => statement.label)).toEqual([
+      "This is a real job at Hills Creek Unit 4, which is recruiting now.",
+      "Pay, equipment and dates are accurate today.",
+      "We'll update or pause it when we no longer need trucks."
+    ])
+  })
 
+  it("records one attestation only when all three carry the exact value", () => {
+    expect(attestPublication(ALL_ATTESTED, NOW)).toEqual({ action: "publish", confirmedAt: NOW.toISOString() })
+    for (const missing of MARKETPLACE_PUBLISH_ATTESTATION_FIELDS) {
+      expect(attestPublication({ ...ALL_ATTESTED, [missing]: undefined }, NOW)).toBeNull()
+      expect(attestPublication({ ...ALL_ATTESTED, [missing]: "on" }, NOW)).toBeNull()
+    }
+    expect(attestPublication(null, NOW)).toBeNull()
+  })
+})
+
+describe("the publishing gate", () => {
   it("passes a complete, attested draft", () => {
-    const result = validateMarketplaceJobPublication(publishable, value, NOW)
+    const result = validateMarketplaceJobPublication(publishable, ALL_ATTESTED, NOW)
     expect(result).toMatchObject({ attestation: { action: "publish" }, draft: { payUnit: "per_load", product: "Saw logs" }, ok: true })
   })
 
   it("refuses a complete draft without the attestation", () => {
     expect(validateMarketplaceJobPublication(publishable, undefined, NOW)).toEqual({
-      issues: [{ field: "availabilityAttestation", message: AVAILABILITY_ATTESTATION_REQUIRED }],
+      issues: [{ field: "publishAttestation", message: PUBLISH_ATTESTATION_REQUIRED }],
       ok: false
     })
   })
 
   it("refuses an attested draft that breaks a draft rule or a publishing rule", () => {
     const fieldsOf = (input: Record<string, unknown>) => {
-      const result = validateMarketplaceJobPublication({ ...publishable, ...input }, value, NOW)
+      const result = validateMarketplaceJobPublication({ ...publishable, ...input }, ALL_ATTESTED, NOW)
       return result.ok ? [] : result.issues.map((issue) => issue.field).sort()
     }
     expect(fieldsOf({ payAmount: "", payUnit: "" })).toEqual(["payUnit"])
@@ -228,8 +270,8 @@ describe("the publishing gate", () => {
   })
 
   it("reports draft and attestation problems together", () => {
-    const result = validateMarketplaceJobPublication({ ...publishable, payUnit: "" }, "", NOW)
-    expect(result.ok ? [] : result.issues.map((issue) => issue.field)).toEqual(["payUnit", "availabilityAttestation"])
+    const result = validateMarketplaceJobPublication({ ...publishable, payUnit: "" }, {}, NOW)
+    expect(result.ok ? [] : result.issues.map((issue) => issue.field)).toEqual(["payUnit", "publishAttestation"])
   })
 })
 

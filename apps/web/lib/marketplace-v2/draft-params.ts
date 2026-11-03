@@ -10,12 +10,12 @@ import {
  * is stored anywhere until a real publish exists. Job text is public by design and sensitive access
  * patterns are rejected by validation, so nothing private is placed in the URL.
  *
- * The availability attestation is deliberately NOT a draft field: it is ticked on the preview for one
+ * The publish attestations are deliberately NOT draft fields: they are ticked on the preview for one
  * publish request and never carried into an edit link or a redirect, so an edit is never a confirmation.
  */
 
 export const DRAFT_TEXT_FIELDS = [
-  "landingId", "title", "product", "description", "payUnit", "payAmount", "payNote", "trucksRequested", "trucksPerDay",
+  "landingId", "title", "product", "productOther", "description", "payUnit", "payAmount", "payNote", "trucksRequested", "trucksPerDay",
   "startsOn", "endsOn", "durationDays", "ongoing", "estLoadsPerTruckPerDay", "estDailyLoads", "estTonsPerLoad",
   "destinationLabel", "estOneWayMiles", "publicRoadNotes"
 ] as const

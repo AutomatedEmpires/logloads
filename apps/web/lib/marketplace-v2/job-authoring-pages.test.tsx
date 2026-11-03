@@ -36,7 +36,7 @@ vi.mock("@/lib/marketplace-v2/pilot-adapter", () => ({
   pilotMarketplaceV2: { authoringLandings: mocks.authoringLandings, listJobs: mocks.listJobs, supportsPublishing: false }
 }))
 
-import { MARKETPLACE_AVAILABILITY_ATTESTATION } from "@logloads/contracts"
+import { MARKETPLACE_AVAILABILITY_ATTESTATION, MARKETPLACE_PUBLISH_ATTESTATION_FIELDS, marketplacePublishAttestations } from "@logloads/contracts"
 
 import LandingJobsPage from "@/app/v2/landing/jobs/page"
 import NewJobPage from "@/app/v2/landing/jobs/new/page"
@@ -63,10 +63,17 @@ async function render(page: (props: { searchParams: Promise<Record<string, strin
   return renderToStaticMarkup(await page({ searchParams: Promise.resolve(query) }))
 }
 
-/** The `<input>` tag for the attestation checkbox, or null. */
+/** The `<input>` tags for the reconfirmation checkbox. */
 function attestationInputs(html: string): string[] {
   return html.match(new RegExp(`<input[^>]*name="${field}"[^>]*>`, "g")) ?? []
 }
+
+/** The `<input>` tags for the three publish statements (V2-DEC-03, UX 02 §B7). */
+function publishAttestationInputs(html: string): string[] {
+  return MARKETPLACE_PUBLISH_ATTESTATION_FIELDS.flatMap((name) => html.match(new RegExp(`<input[^>]*name="${name}"[^>]*>`, "g")) ?? [])
+}
+
+const escapeHtml = (text: string) => text.replace(/'/g, "&#x27;")
 
 beforeEach(() => {
   vi.stubGlobal("React", React)
@@ -84,23 +91,30 @@ afterEach(() => {
 })
 
 describe("job preview page", () => {
-  it("asks for an explicit, unticked, required attestation with the neutral label", async () => {
+  it("asks for the three explicit, unticked, required publish statements, naming the landing", async () => {
     const html = await render(JobPreviewPage, COMPLETE)
-    const inputs = attestationInputs(html)
+    const inputs = publishAttestationInputs(html)
 
-    expect(inputs).toHaveLength(1)
-    expect(inputs[0]).toContain('type="checkbox"')
-    expect(inputs[0]).toContain(`value="${value}"`)
-    expect(inputs[0]).toContain("required")
-    expect(inputs[0]).not.toContain("checked")
-    expect(html).toContain(label)
+    expect(inputs).toHaveLength(3)
+    for (const input of inputs) {
+      expect(input).toContain('type="checkbox"')
+      expect(input).toContain(`value="${value}"`)
+      expect(input).toContain("required")
+      expect(input).not.toContain("checked")
+    }
+    for (const statement of marketplacePublishAttestations("Landing 7")) {
+      expect(html).toContain(escapeHtml(statement.label))
+    }
+    expect(html).toContain("This is a real job at Landing 7, which is recruiting now.")
+    expect(attestationInputs(html)).toHaveLength(0)
   })
 
-  it("never pre-ticks the attestation, even when the URL carries one", async () => {
-    const html = await render(JobPreviewPage, { ...COMPLETE, [field]: value, lastConfirmedAt: "2020-01-01T00:00:00.000Z" })
+  it("never pre-ticks the statements, even when the URL carries them", async () => {
+    const carried = Object.fromEntries(MARKETPLACE_PUBLISH_ATTESTATION_FIELDS.map((name) => [name, value]))
+    const html = await render(JobPreviewPage, { ...COMPLETE, ...carried, lastConfirmedAt: "2020-01-01T00:00:00.000Z" })
 
-    expect(attestationInputs(html)).toHaveLength(1)
-    expect(attestationInputs(html)[0]).not.toContain("checked")
+    expect(publishAttestationInputs(html)).toHaveLength(3)
+    for (const input of publishAttestationInputs(html)) expect(input).not.toContain("checked")
     expect(html).not.toContain("lastConfirmedAt")
   })
 
@@ -115,7 +129,7 @@ describe("job preview page", () => {
     const html = await render(JobPreviewPage, { ...COMPLETE, durationDays: "", product: "", startsOn: "" })
 
     expect(html).toContain("Before you can publish")
-    expect(html).toContain("Name the product before publishing")
+    expect(html).toContain("Choose the product before publishing")
     expect(html).toContain("Add the expected start date before publishing")
     expect(html).toContain("Before publishing, add an end date or a duration, or mark the work as ongoing")
   })
@@ -125,7 +139,7 @@ describe("job preview page", () => {
 
     expect(html).toContain("This draft is not ready to preview.")
     expect(html).toContain("State the pay: an amount and what it is per, or Negotiable with a note")
-    expect(attestationInputs(html)).toHaveLength(0)
+    expect(publishAttestationInputs(html)).toHaveLength(0)
   })
 
   it("refuses to preview a draft on another organization's landing", async () => {
@@ -133,7 +147,7 @@ describe("job preview page", () => {
 
     expect(html).toContain("This draft is not ready to preview.")
     expect(html).toContain("Choose one of your organization&#x27;s landings")
-    expect(attestationInputs(html)).toHaveLength(0)
+    expect(publishAttestationInputs(html)).toHaveLength(0)
   })
 
   it("shows Ongoing for an ongoing job", async () => {
@@ -151,8 +165,20 @@ describe("job edit form", () => {
     expect(html).toContain("Choose a basis")
     expect(html).not.toContain("Not stated")
     expect(attestationInputs(html)).toHaveLength(0)
+    expect(publishAttestationInputs(html)).toHaveLength(0)
     expect(html).toContain("Haulers contact you through LogLoads messages")
     expect(html).not.toMatch(/name="(phone|email|contact)/i)
+  })
+
+  it("offers the controlled product list with a described Other (UX-DEC-03)", async () => {
+    const html = await render(NewJobPage, {})
+
+    expect(html).toMatch(/<select[^>]*name="product"/)
+    for (const product of ["Saw logs", "Pulpwood", "Poles and pilings", "Chips", "Hog fuel and biomass", "Hardwood logs"]) {
+      expect(html).toContain(`<option value="${product}">${product}</option>`)
+    }
+    expect(html).toContain('<option value="Other">Other (describe)</option>')
+    expect(html).toMatch(/<input[^>]*maxLength="120"[^>]*name="productOther"/)
   })
 
   it("offers end date, duration and Ongoing for the work period", async () => {

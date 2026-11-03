@@ -33,7 +33,7 @@ vi.mock("../services", async () => {
   }
 })
 
-import { MARKETPLACE_AVAILABILITY_ATTESTATION, type MarketplaceJobDraft } from "@logloads/contracts"
+import { MARKETPLACE_AVAILABILITY_ATTESTATION, MARKETPLACE_PUBLISH_ATTESTATION_FIELDS, type MarketplaceJobDraft } from "@logloads/contracts"
 
 import { services } from "../services"
 import { publishJobAction, reconfirmJobAction } from "./actions"
@@ -51,7 +51,7 @@ const attestation = { action: "publish" as const, confirmedAt: "2026-11-02T17:30
 function publishForm(landingId: string): FormData {
   const formData = new FormData()
   for (const [name, value] of Object.entries({
-    [MARKETPLACE_AVAILABILITY_ATTESTATION.field]: MARKETPLACE_AVAILABILITY_ATTESTATION.value,
+    ...Object.fromEntries(MARKETPLACE_PUBLISH_ATTESTATION_FIELDS.map((field) => [field, MARKETPLACE_AVAILABILITY_ATTESTATION.value])),
     durationDays: "10",
     landingId,
     payAmount: "525",

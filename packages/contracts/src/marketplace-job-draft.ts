@@ -3,7 +3,9 @@ import { z } from "zod"
 import {
   marketplaceEquipmentCodeSchema,
   marketplaceEquipmentLabel,
+  MARKETPLACE_OTHER_PRODUCT,
   marketplacePayUnitSchema,
+  marketplaceProductSchema,
   type MarketplaceJobDetailView,
   type MarketplaceVerification
 } from "./marketplace-v2"
@@ -82,7 +84,10 @@ function periodDays(startsOn: string, endsOn: string): number {
 export const marketplaceJobDraftSchema = z.object({
   landingId: z.string().uuid({ message: "Choose one of your landings" }),
   title: publicString(140, { length: 3, message: "Give the job a short title (3+ characters)" }),
-  product: publicText(120),
+  /** One of MARKETPLACE_PRODUCTS (UX-DEC-03). */
+  product: z.preprocess(blankToUndefined, marketplaceProductSchema.optional()),
+  /** The poster's description when the product is "Other"; ignored for listed products. */
+  productOther: publicText(120),
   description: publicText(6000),
   equipment: z.array(marketplaceEquipmentCodeSchema).min(1, "Choose at least one equipment type").max(11),
   payUnit: z.preprocess(blankToUndefined, marketplacePayUnitSchema.optional()),
@@ -125,6 +130,10 @@ export const marketplaceJobDraftSchema = z.object({
     }
   }
 
+  if (draft.product === MARKETPLACE_OTHER_PRODUCT && !draft.productOther) {
+    context.addIssue({ code: "custom", message: "Describe the product (up to 120 characters)", path: ["productOther"] })
+  }
+
   if (draft.trucksPerDay !== undefined && draft.trucksPerDay > draft.trucksRequested) {
     context.addIssue({ code: "custom", message: "Trucks per day cannot exceed total trucks requested", path: ["trucksPerDay"] })
   }
@@ -152,6 +161,18 @@ export const marketplaceJobDraftSchema = z.object({
 })
 
 export type MarketplaceJobDraft = z.infer<typeof marketplaceJobDraftSchema>
+
+/**
+ * The text stored in `job_postings.product` and shown to haulers: the listed product's label, or the
+ * poster's own description for "Other". `null` while the draft names no product.
+ */
+export function draftProductLabel(draft: Pick<MarketplaceJobDraft, "product" | "productOther">): string | null {
+  if (!draft.product) {
+    return null
+  }
+
+  return draft.product === MARKETPLACE_OTHER_PRODUCT ? draft.productOther ?? null : draft.product
+}
 
 export interface MarketplaceDraftIssue {
   field: string
@@ -182,7 +203,7 @@ export function marketplaceJobPublicationIssues(draft: MarketplaceJobDraft): Mar
   const issues: MarketplaceDraftIssue[] = []
 
   if (!draft.product) {
-    issues.push({ field: "product", message: "Name the product before publishing" })
+    issues.push({ field: "product", message: "Choose the product before publishing" })
   }
 
   if (!draft.startsOn) {
@@ -197,9 +218,9 @@ export function marketplaceJobPublicationIssues(draft: MarketplaceJobDraft): Mar
 }
 
 /**
- * The explicit availability attestation (V2-DEC-03; founder decision ATT-1 in #114: it may set the
- * initial, server-generated `lastConfirmedAt`). The label is a neutral placeholder until the founder
- * decides the wording (#114, UX-05 / #128); only the label text changes when that lands.
+ * The explicit availability confirmation used to RECONFIRM a published job (V2-DEC-03; founder decision
+ * ATT-1 in #114: it may set the server-generated `lastConfirmedAt`). Wording per LE-15. Publishing uses the
+ * three statements of the approved job-editor design instead (MARKETPLACE_PUBLISH_ATTESTATIONS).
  */
 export const MARKETPLACE_AVAILABILITY_ATTESTATION = Object.freeze({
   field: "availabilityAttestation",
@@ -239,19 +260,56 @@ export function attestAvailability(
 export const AVAILABILITY_ATTESTATION_REQUIRED = "Tick the availability confirmation before publishing"
 
 /**
+ * The publish attestation (V2-DEC-03) as the approved job-editor design words it (UX 02 §B7, #116/#128):
+ * three statements, all required, that together record ONE explicit confirmation whose time is the
+ * server clock. None is ever pre-ticked or carried in a draft.
+ */
+export const MARKETPLACE_PUBLISH_ATTESTATION_FIELDS = ["attestRealJob", "attestAccurate", "attestMaintained"] as const
+export type MarketplacePublishAttestationField = (typeof MARKETPLACE_PUBLISH_ATTESTATION_FIELDS)[number]
+
+/** The issue field reported when any of the three is missing. */
+export const PUBLISH_ATTESTATION_FIELD = "publishAttestation"
+export const PUBLISH_ATTESTATION_REQUIRED = "Tick all three confirmations before publishing"
+
+/** The three statements, naming the landing the job is at. */
+export function marketplacePublishAttestations(landingName: string): Array<{ field: MarketplacePublishAttestationField; label: string; value: string }> {
+  const value = MARKETPLACE_AVAILABILITY_ATTESTATION.value
+
+  return [
+    { field: "attestRealJob", label: `This is a real job at ${landingName.trim() || "this landing"}, which is recruiting now.`, value },
+    { field: "attestAccurate", label: "Pay, equipment and dates are accurate today.", value },
+    { field: "attestMaintained", label: "We'll update or pause it when we no longer need trucks.", value }
+  ]
+}
+
+/** One publish attestation when, and only when, all three statements carry the exact checkbox value. */
+export function attestPublication(
+  submitted: Readonly<Partial<Record<MarketplacePublishAttestationField, unknown>>> | null | undefined,
+  now: Date
+): MarketplaceAvailabilityAttestation | null {
+  const allTicked = MARKETPLACE_PUBLISH_ATTESTATION_FIELDS.every((field) => submitted?.[field] === MARKETPLACE_AVAILABILITY_ATTESTATION.value)
+
+  return allTicked ? attestAvailability(MARKETPLACE_AVAILABILITY_ATTESTATION.value, "publish", now) : null
+}
+
+/**
  * Everything publishing requires of the request itself, in one server-side check: the draft rules (pay,
  * sensitive and contact text, limits), the publishing rules and the explicit attestation. Landing
  * ownership and the `job.publish` capability depend on the viewer's organization and are checked by
  * the caller.
  */
-export function validateMarketplaceJobPublication(input: unknown, attestationValue: unknown, now: Date):
+export function validateMarketplaceJobPublication(
+  input: unknown,
+  attestations: Readonly<Partial<Record<MarketplacePublishAttestationField, unknown>>> | null | undefined,
+  now: Date
+):
   | { ok: true; draft: MarketplaceJobDraft; attestation: MarketplaceAvailabilityAttestation }
   | { ok: false; issues: MarketplaceDraftIssue[] } {
   const validation = validateMarketplaceJobDraft(input)
-  const attestation = attestAvailability(attestationValue, "publish", now)
+  const attestation = attestPublication(attestations, now)
   const issues = [
     ...(validation.ok ? marketplaceJobPublicationIssues(validation.draft) : validation.issues),
-    ...(attestation ? [] : [{ field: MARKETPLACE_AVAILABILITY_ATTESTATION.field, message: AVAILABILITY_ATTESTATION_REQUIRED }])
+    ...(attestation ? [] : [{ field: PUBLISH_ATTESTATION_FIELD, message: PUBLISH_ATTESTATION_REQUIRED }])
   ]
 
   if (!validation.ok || !attestation || issues.length > 0) {
@@ -314,7 +372,7 @@ export function previewMarketplaceJob(
     posterName: context.posterName,
     posterOrganizationId: context.posterOrganizationId,
     posterVerification: context.posterVerification,
-    product: draft.product ?? null,
+    product: draftProductLabel(draft),
     publicAccessRequirements: [],
     publicRoadNotes: draft.publicRoadNotes ?? null,
     scheduleNote: null,
