@@ -549,11 +549,13 @@ create or replace function marketplace.tg_interest_message_cap()
 returns trigger language plpgsql security definer
 set search_path = pg_catalog, extensions, pg_temp
 as $$
+declare
+  -- 200 messages per inquiry; the landing side keeps a little room (to 210) so it can always reply or decline.
+  -- (Computed here: a CASE inside an IF condition would end the condition at its first THEN.)
+  v_limit integer := case when new.author_side = 'landing' then 210 else 200 end;
 begin
   perform 1 from marketplace.expressions_of_interest e where e.id = new.interest_id for update;
-  -- 200 messages per inquiry; the landing side keeps a little room (to 210) so it can always reply or decline.
-  if (select count(*) from marketplace.interest_messages m where m.interest_id = new.interest_id)
-     >= case when new.author_side = 'landing' then 210 else 200 end then
+  if (select count(*) from marketplace.interest_messages m where m.interest_id = new.interest_id) >= v_limit then
     raise exception 'This conversation has reached its 200-message limit' using errcode = '23514';
   end if;
   return new;
