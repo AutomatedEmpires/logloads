@@ -4,7 +4,8 @@ import {
   marketplaceEquipmentCodeSchema,
   marketplaceEquipmentLabel,
   marketplacePayUnitSchema,
-  type MarketplaceJobDetailView
+  type MarketplaceJobDetailView,
+  type MarketplaceVerification
 } from "./marketplace-v2"
 
 /**
@@ -289,7 +290,7 @@ export interface MarketplaceDraftLandingContext {
  */
 export function previewMarketplaceJob(
   draft: MarketplaceJobDraft,
-  context: { landing: MarketplaceDraftLandingContext; posterOrganizationId: string; posterName: string; posterVerified: boolean; now: string }
+  context: { landing: MarketplaceDraftLandingContext; posterOrganizationId: string; posterName: string; posterVerification: MarketplaceVerification | null; now: string }
 ): MarketplaceJobDetailView {
   return {
     acceptingInterest: false,
@@ -312,7 +313,7 @@ export function previewMarketplaceJob(
     },
     posterName: context.posterName,
     posterOrganizationId: context.posterOrganizationId,
-    posterVerified: context.posterVerified,
+    posterVerification: context.posterVerification,
     product: draft.product ?? null,
     publicAccessRequirements: [],
     publicRoadNotes: draft.publicRoadNotes ?? null,

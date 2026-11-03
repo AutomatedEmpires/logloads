@@ -240,7 +240,7 @@ describe("a preview is never a confirmation", () => {
       now: NOW.toISOString(),
       posterName: "North Pine",
       posterOrganizationId: "77777777-7777-4777-8777-777777777777",
-      posterVerified: false
+      posterVerification: null
     })
     expect(preview).toMatchObject({ acceptingInterest: false, endsOn: null, lastConfirmedAt: null, product: "Saw logs", startsOn: "2026-11-10" })
   })

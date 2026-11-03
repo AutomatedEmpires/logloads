@@ -1,10 +1,11 @@
+import { MARKETPLACE_VERIFICATION_SCOPES } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import { marketplaceJobStatus } from "@logloads/services"
 import { describe, expect, it } from "vitest"
 
 import { buildNetworkView } from "../network"
 import { marketplaceV2Enabled } from "./flag"
-import { toInterestView, toJobDetailView } from "./mapping"
+import { pilotPosterVerification, toInterestView, toJobDetailView } from "./mapping"
 
 // Seed fixtures are dated June 2026; pin the clock inside that window.
 const AT = new Date("2026-06-05T18:00:00.000Z")
@@ -14,11 +15,65 @@ function publicJobs() {
   const view = buildNetworkView(state, { kind: "public" }, AT)
   const jobs = view.loads.flatMap((networkLoad) => {
     const load = state.loadPostings.find((candidate) => candidate.id === networkLoad.id)
-    return load ? [toJobDetailView(networkLoad, load, false, marketplaceJobStatus(load, AT.toISOString()))] : []
+    return load ? [toJobDetailView(networkLoad, load, null, marketplaceJobStatus(load, AT.toISOString()))] : []
   })
 
   return { jobs, state }
 }
+
+describe("pilot poster verification (#150)", () => {
+  const organization = { id: "11111111-1111-4111-8111-111111111111", verificationStatus: "verified" as const }
+  const record = {
+    createdAt: "2026-09-01T00:00:00.000Z",
+    evidenceSummary: "Oregon SOS registry entry reviewed",
+    expiresAt: null,
+    id: "88888888-8888-4888-8888-888888888888",
+    lastCheckedAt: "2026-10-14T16:20:00.000Z",
+    reviewerUserId: "33333333-3333-4333-8333-333333333333",
+    source: "official_record_reviewed" as const,
+    status: "verified" as const,
+    subjectId: organization.id,
+    subjectType: "organization" as const,
+    updatedAt: "2026-10-14T16:20:00.000Z",
+    verificationType: "organization" as const,
+    verifiedAt: "2026-10-14T16:20:00.000Z"
+  }
+
+  it("names business identity, with the review date from the organization's record", () => {
+    expect(pilotPosterVerification(organization, [record])).toEqual({ reviewedOn: "2026-10-14", scope: "business_identity" })
+  })
+
+  it("uses the latest verified organization review and ignores other subjects and check types", () => {
+    const earlier = { ...record, id: "44444444-4444-4444-8444-444444444444", verifiedAt: "2026-03-02T09:00:00.000Z" }
+    const insurance = { ...record, id: "55555555-5555-4555-8555-555555555555", verificationType: "insurance_document" as const, verifiedAt: "2026-11-01T00:00:00.000Z" }
+    const otherOrg = { ...record, id: "66666666-6666-4666-8666-666666666666", subjectId: "77777777-7777-4777-8777-777777777777", verifiedAt: "2026-11-01T00:00:00.000Z" }
+
+    expect(pilotPosterVerification(organization, [earlier, insurance, otherOrg, record])?.reviewedOn).toBe("2026-10-14")
+  })
+
+  it("keeps the scope but claims no date when no review date is on record", () => {
+    expect(pilotPosterVerification(organization, [])).toEqual({ reviewedOn: null, scope: "business_identity" })
+  })
+
+  it.each(["pending", "rejected", "suspended"] as const)("claims nothing for a %s organization", (verificationStatus) => {
+    expect(pilotPosterVerification({ ...organization, verificationStatus }, [record])).toBeNull()
+  })
+
+  it("claims nothing for an unknown organization", () => {
+    expect(pilotPosterVerification(undefined, [record])).toBeNull()
+    expect(pilotPosterVerification(null, [record])).toBeNull()
+  })
+
+  it("only ever claims a scope from the fixed list", () => {
+    const state = createInMemoryDatabase()
+
+    for (const candidate of state.organizations) {
+      const verification = pilotPosterVerification(candidate, state.verificationRecords)
+      expect(verification === null || MARKETPLACE_VERIFICATION_SCOPES.includes(verification.scope)).toBe(true)
+      if (candidate.verificationStatus !== "verified") expect(verification).toBeNull()
+    }
+  })
+})
 
 describe("Marketplace V2 public job mapping", () => {
   it("produces real seeded jobs only and never fabricates pay", () => {

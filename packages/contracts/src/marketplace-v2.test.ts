@@ -8,6 +8,7 @@ import {
 } from "./marketplace-job-draft"
 import { MARKETPLACE_CAPABILITIES, marketplaceCan, marketplaceCapabilities, type MarketplaceMembership } from "./marketplace-permissions"
 import {
+  describeMarketplaceVerification,
   expressInterestInputSchema,
   filterMarketplaceJobs,
   formatMarketplacePay,
@@ -38,7 +39,7 @@ const job = (overrides: Partial<MarketplaceJobCardView>): MarketplaceJobCardView
   pay: { amountCents: 52_500, note: null, unit: "per_load" },
   posterName: "Summit Ridge Timber",
   posterOrganizationId: "11111111-1111-4111-8111-111111111111",
-  posterVerified: true,
+  posterVerification: { reviewedOn: "2026-10-14", scope: "business_identity" },
   product: "Saw logs",
   scheduleNote: null,
   slug: "oak-run",
@@ -266,9 +267,26 @@ describe("native job authoring draft", () => {
     expect(draftEndsOn(result.draft)).toBe("2026-11-12")
     const preview = previewMarketplaceJob(result.draft, {
       landing: { areaLabel: "Oakridge, OR", id: landingId, name: "Landing 7", stateCode: "OR" },
-      now: "2026-11-01T00:00:00.000Z", posterName: "North Pine", posterOrganizationId: "77777777-7777-4777-8777-777777777777", posterVerified: false
+      now: "2026-11-01T00:00:00.000Z", posterName: "North Pine", posterOrganizationId: "77777777-7777-4777-8777-777777777777", posterVerification: null
     })
     expect(preview).toMatchObject({ acceptingInterest: false, lastConfirmedAt: null, pay: { amountCents: 52_500, unit: "per_load" }, trucks: { perDay: 3, total: 6 } })
     expect(preview.equipment).toEqual(["Log truck", "Pole trailer"])
+  })
+})
+
+describe("verification marks name what was checked (#150)", () => {
+  it("says business identity and the review date, and nothing broader", () => {
+    const mark = describeMarketplaceVerification({ reviewedOn: "2026-10-14", scope: "business_identity" })
+
+    expect(mark).toEqual({
+      label: "Business identity verified",
+      statement: "Business identity reviewed by LogLoads on Oct 14, 2026."
+    })
+    expect(`${mark.label} ${mark.statement}`).not.toMatch(/insur|authority|licen|safety|equipment|employ/i)
+  })
+
+  it("does not invent a date when none is on record", () => {
+    expect(describeMarketplaceVerification({ reviewedOn: null, scope: "business_identity" }).statement)
+      .toBe("Business identity reviewed by LogLoads.")
   })
 })

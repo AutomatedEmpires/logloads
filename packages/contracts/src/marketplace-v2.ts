@@ -212,13 +212,47 @@ export interface MarketplacePay {
   note: string | null
 }
 
+/**
+ * The checks LogLoads actually performs. A verification mark names exactly one of these. It never implies
+ * operating authority, insurance, equipment, safety or employment (Blueprint §10.2; UX spec §7.2, §8.17).
+ */
+export const MARKETPLACE_VERIFICATION_SCOPES = ["business_identity"] as const
+export type MarketplaceVerificationScope = (typeof MARKETPLACE_VERIFICATION_SCOPES)[number]
+
+export const MARKETPLACE_VERIFICATION_SCOPE_LABELS: Record<MarketplaceVerificationScope, string> = {
+  business_identity: "Business identity"
+}
+
+/** What LogLoads checked about a business, and when. `null` on a view means nothing is claimed. */
+export interface MarketplaceVerification {
+  scope: MarketplaceVerificationScope
+  /** UTC calendar date (YYYY-MM-DD) of the review that confirmed the scope; `null` when no review date is on record. */
+  reviewedOn: string | null
+}
+
+const REVIEWED_ON_FORMAT = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", timeZone: "UTC", year: "numeric" })
+
+/** Mark text that says what was checked, and the longer statement for its tooltip or detail line. */
+export function describeMarketplaceVerification(verification: MarketplaceVerification): { label: string; statement: string } {
+  const scope = MARKETPLACE_VERIFICATION_SCOPE_LABELS[verification.scope]
+  const reviewed = verification.reviewedOn
+    ? REVIEWED_ON_FORMAT.format(new Date(`${verification.reviewedOn.slice(0, 10)}T00:00:00.000Z`))
+    : null
+
+  return {
+    label: `${scope} verified`,
+    statement: reviewed ? `${scope} reviewed by LogLoads on ${reviewed}.` : `${scope} reviewed by LogLoads.`
+  }
+}
+
 export interface MarketplaceJobCardView {
   id: string
   slug: string
   title: string
   posterOrganizationId: string
   posterName: string
-  posterVerified: boolean
+  /** Scope-specific verification of the posting business; `null` when nothing was verified or it cannot be confirmed. */
+  posterVerification: MarketplaceVerification | null
   product: string | null
   pay: MarketplacePay
   equipment: string[]
