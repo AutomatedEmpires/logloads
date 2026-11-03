@@ -10,6 +10,7 @@ import {
   marketplaceAuthoringLandings,
   marketplaceHaulerEquipment,
   marketplaceViewerAccess,
+  pilotEquipmentCode,
   pilotMarketplaceMembership
 } from "./marketplace-access"
 import { expressMarketplaceInterest, listMarketplaceInterestsForHauler, type MarketplaceActor } from "./marketplace-interest"
@@ -124,8 +125,26 @@ describe("self-reported equipment in an inquiry", () => {
     addCombination({ status: "maintenance", trailerTypes: ["chip_van"], truckTypes: ["chip_truck"] })
     addCombination({ status: "inactive", trailerTypes: ["bunk_trailer"], truckTypes: ["log_truck"] })
     expect(haulerEquipmentOptions(state, NEW_RIVER)).toEqual([
-      { configurationKey: "log_truck|pole_trailer", label: "Log truck + Pole trailer", unitsListed: 2 }
+      { configurationKey: "log_truck|pole_trailer", equipmentCodes: ["log_truck", "pole_trailer"], label: "Log truck + Pole trailer", unitsListed: 2 }
     ])
+  })
+
+  it("names each configuration's parts with taxonomy codes for fit, leaving out parts outside the taxonomy", () => {
+    const { addCombination, state } = fixture()
+    addCombination({ status: "available", trailerTypes: ["flatbed"], truckTypes: ["lowboy"] })
+    addCombination({ status: "available", trailerTypes: ["self_loader"], truckTypes: ["service_truck"] })
+    expect(haulerEquipmentOptions(state, NEW_RIVER).map((option) => option.equipmentCodes)).toEqual([["lowboy_tractor"], ["self_loader"]])
+  })
+
+  it("maps pilot equipment words onto taxonomy codes and never guesses", () => {
+    expect(pilotEquipmentCode("pole-trailer")).toBe("pole_trailer")
+    expect(pilotEquipmentCode("Pole trailer")).toBe("pole_trailer")
+    expect(pilotEquipmentCode("bunk_trailer")).toBe("bunk_trailer")
+    expect(pilotEquipmentCode("chip-box")).toBe("chip_van")
+    expect(pilotEquipmentCode("lowboy")).toBe("lowboy_tractor")
+    expect(pilotEquipmentCode("chains")).toBeNull()
+    expect(pilotEquipmentCode("tridem")).toBeNull()
+    expect(pilotEquipmentCode("flatbed")).toBeNull()
   })
 
   it("records equipment lines with snapshotted labels and derives the truck total from them", () => {

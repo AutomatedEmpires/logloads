@@ -93,7 +93,9 @@ export const pilotMarketplaceV2: MarketplaceV2Port = {
   },
 
   async listJobs(filters: MarketplaceJobFilters) {
-    return readState((current) => sortMarketplaceJobs(filterMarketplaceJobs(publicJobs(current.state), filters)))
+    // Filtering and order are the contract's pure rules, so this adapter and the normalized one agree: distance is
+    // measured only to each job's approximate public point, from a search origin snapped to the same 0.1° grid.
+    return readState((current) => sortMarketplaceJobs(filterMarketplaceJobs(publicJobs(current.state), filters), filters))
   },
 
   async listLandingInterests(viewer) {
