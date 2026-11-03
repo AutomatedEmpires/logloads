@@ -14,7 +14,7 @@ vi.mock("./pilot-adapter", () => ({ pilotMarketplaceV2: { viewerAccess: mocks.vi
 
 import type { SessionActor } from "../session-policy"
 import {
-  BUSINESS_SWITCH_UNAVAILABLE,
+  BUSINESS_SWITCH_NOTE,
   NO_BUSINESS_PROFILE_REFUSAL,
   resolveV2Actor,
   resolveV2Viewer,
@@ -84,7 +84,7 @@ describe("resolveV2Viewer", () => {
 
     const resolved = await resolveV2Viewer("/v2/landing/jobs")
 
-    expect(resolved).toEqual({ ok: false, refusal: `No business is selected for your account. ${BUSINESS_SWITCH_UNAVAILABLE}` })
+    expect(resolved).toEqual({ ok: false, refusal: `No business is selected for your account. ${BUSINESS_SWITCH_NOTE}` })
     expect(mocks.viewerAccess).not.toHaveBeenCalled()
   })
 
@@ -106,7 +106,7 @@ describe("resolveV2Viewer", () => {
 
     await expect(resolveV2Viewer("/v2/landing/jobs")).resolves.toEqual({
       ok: false,
-      refusal: `This business is not available to your account. ${BUSINESS_SWITCH_UNAVAILABLE}`
+      refusal: `This business is not available to your account. ${BUSINESS_SWITCH_NOTE}`
     })
   })
 })
@@ -114,8 +114,8 @@ describe("resolveV2Viewer", () => {
 describe("withBusinessSwitchNote", () => {
   it("ends the refusal as a sentence before the switcher note", () => {
     expect(withBusinessSwitchNote("Switch to a hauling business to express interest"))
-      .toBe(`Switch to a hauling business to express interest. ${BUSINESS_SWITCH_UNAVAILABLE}`)
+      .toBe(`Switch to a hauling business to express interest. ${BUSINESS_SWITCH_NOTE}`)
     expect(withBusinessSwitchNote("Only a hauling business can express interest. "))
-      .toBe(`Only a hauling business can express interest. ${BUSINESS_SWITCH_UNAVAILABLE}`)
+      .toBe(`Only a hauling business can express interest. ${BUSINESS_SWITCH_NOTE}`)
   })
 })

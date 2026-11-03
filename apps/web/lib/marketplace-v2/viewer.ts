@@ -7,16 +7,16 @@ import { pilotMarketplaceV2 } from "./pilot-adapter"
 import type { MarketplaceV2Viewer, MarketplaceV2ViewerAccess } from "./port"
 
 /**
- * V2 has no business switcher (`/v2/switch`, #124) and no business setup (`/v2/start`) yet. Until they
- * exist, V2 says so in plain text: the only existing switcher and setup flow open a legacy cockpit.
+ * Points a refused viewer at the V2 business switcher (`/v2/switch`, #124), which the shell's business
+ * name links to. V2 never sends anyone to the legacy workspace chooser.
  */
-export const BUSINESS_SWITCH_UNAVAILABLE = "The business switcher is not available in this preview yet."
+export const BUSINESS_SWITCH_NOTE = "To act for another business, choose it from the business name at the top of the page."
 
-/** A refusal followed by the switcher note, as full sentences. Replace with a `/v2/switch` link once it exists. */
+/** A refusal followed by the switcher note, as full sentences. */
 export function withBusinessSwitchNote(refusal: string): string {
   const sentence = refusal.trim()
 
-  return `${/[.!?]$/.test(sentence) ? sentence : `${sentence}.`} ${BUSINESS_SWITCH_UNAVAILABLE}`
+  return `${/[.!?]$/.test(sentence) ? sentence : `${sentence}.`} ${BUSINESS_SWITCH_NOTE}`
 }
 
 export const NO_BUSINESS_PROFILE_REFUSAL =

@@ -14,6 +14,8 @@ import {
   parseEntryIntent,
   type EntryIntent
 } from "./entry-routing"
+import { marketplaceV2Enabled } from "./marketplace-v2/flag"
+import { v2HomePathForActor } from "./marketplace-v2/home"
 import { checkRateLimit, requestClientKey } from "./rate-limit"
 import { mutateState, refreshState, serializeError, services } from "./services"
 import {
@@ -98,7 +100,9 @@ async function signInDevProfile(email: string, next: string): Promise<AuthFormSt
   cookieStore.set(SESSION_COOKIE, createSessionCookieValue(profile.id, null), COOKIE_OPTIONS)
 
   const actor = await getSessionActor()
-  const destination = safeInternalPath(next, actor ? homePathFor(actor) : "/workspace")
+  // With the V2 preview enabled, signing in lands on the business's V2 home (#124); otherwise unchanged.
+  const home = actor ? (marketplaceV2Enabled() ? await v2HomePathForActor(actor) : null) ?? homePathFor(actor) : "/workspace"
+  const destination = safeInternalPath(next, home)
 
   redirect(destination)
 }
