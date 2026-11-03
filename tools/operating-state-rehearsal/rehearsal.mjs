@@ -23,7 +23,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { afterAll, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import {
   auditStateSnapshot,
@@ -66,6 +66,7 @@ const reports = []
 const record = []
 let seeded
 let backupFile
+let backupVerified = false
 
 setOperatingStateDefectReporter((report) => reports.push(report))
 
@@ -177,7 +178,9 @@ function line(summary) {
 }
 
 describe("operating-state restore rehearsal on a disposable local stack", () => {
-  it("starts from an empty canonical table", async () => {
+  // A hook, not a test: when it fails, vitest runs none of the steps below, so a stack that already holds a
+  // document is never wiped by a rehearsal.
+  beforeAll(async () => {
     expect(
       await readRawRow(),
       "operating_state already holds a row; rehearse only on a freshly reset stack (`supabase db reset --local`)"
@@ -223,6 +226,7 @@ describe("operating-state restore rehearsal on a disposable local stack", () => 
 
     expect(verify.code, verify.stderr).toBe(0)
     expect(verify.stdout).toMatch(/is intact/)
+    backupVerified = true
     record.push(["backup", `${line(written.summary)} · verified intact`])
   })
 
@@ -248,6 +252,9 @@ describe("operating-state restore rehearsal on a disposable local stack", () => 
   })
 
   it("wipes the live document the way a bad write would", async () => {
+    // Even on a disposable stack, nothing is wiped without a verified backup to put back.
+    expect(backupVerified, "no verified backup exists; refusing to wipe").toBe(true)
+
     const response = await fetch(
       `${url}/rest/v1/operating_state?id=eq.primary&version=eq.${seeded.row.version}`,
       {
