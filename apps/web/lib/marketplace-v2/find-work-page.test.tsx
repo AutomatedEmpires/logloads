@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   getJob: vi.fn(),
   getSessionActor: vi.fn(),
   haulerEquipment: vi.fn(),
-  interestForJob: vi.fn(),
+  listHaulerInterests: vi.fn(),
   listJobs: vi.fn(),
   viewerAccess: vi.fn()
 }))
@@ -20,17 +20,8 @@ vi.mock("server-only", () => ({}))
 vi.mock("next/navigation", () => ({
   notFound: () => {
     throw new Error("NEXT_NOT_FOUND")
-  },
-  useRouter: () => ({ replace: vi.fn() })
-}))
-// The progressive GET form: without the app router it is a plain <form>, which is what a visitor without JavaScript gets.
-vi.mock("next/form", () => {
-  const nextOnly = new Set(["prefetch", "replace", "scroll"])
-  return {
-    default: (props: Record<string, unknown>) =>
-      React.createElement("form", Object.fromEntries(Object.entries(props).filter(([name]) => !nextOnly.has(name))))
   }
-})
+}))
 vi.mock("@/components/v2/JobMapLoader", () => ({ JobMapLoader: () => React.createElement("div", { "data-map": "" }) }))
 vi.mock("@/lib/marketplace-v2/flag", () => ({ marketplaceV2Enabled: () => true }))
 vi.mock("@/lib/session", () => ({ getSessionActor: mocks.getSessionActor }))
@@ -38,7 +29,7 @@ vi.mock("@/lib/marketplace-v2/pilot-adapter", () => ({
   pilotMarketplaceV2: {
     getJob: mocks.getJob,
     haulerEquipment: mocks.haulerEquipment,
-    interestForJob: mocks.interestForJob,
+    listHaulerInterests: mocks.listHaulerInterests,
     listJobs: mocks.listJobs,
     viewerAccess: mocks.viewerAccess
   }
@@ -120,7 +111,7 @@ beforeEach(() => {
   mocks.getSessionActor.mockResolvedValue(null)
   mocks.listJobs.mockResolvedValue([saw, chips])
   mocks.getJob.mockImplementation(async (id: string) => [saw, chips, own].find((candidate) => candidate.id === id) ?? null)
-  mocks.interestForJob.mockResolvedValue(null)
+  mocks.listHaulerInterests.mockResolvedValue([])
 })
 
 describe("the summary bar and its filter form (criterion 1)", () => {
@@ -257,14 +248,22 @@ describe("list and detail (06_DESIGN_SYSTEM.md §4–5)", () => {
     expect(html).toMatch(/<aside[^>]*aria-label="Job details"[^>]*id="find-work-detail"|<aside[^>]*id="find-work-detail"[^>]*aria-label="Job details"/)
     expect(rowOf(html, saw.title)).toMatch(/aria-controls="find-work-detail"[^>]*aria-current="true"/)
     expect(rowOf(html, chips.title)).not.toContain("aria-current")
-    expect(mocks.getJob).toHaveBeenCalledWith(SAW)
+    // Every listed job's public detail is read up front, so selecting another row needs no request.
+    expect(mocks.getJob.mock.calls.map(([id]) => id)).toEqual([SAW, CHIPS])
   })
 
   it("ignores a selection that isn't in the results", async () => {
     const html = await render({ job: OWN })
     expect(html).toContain('data-detail="closed"')
     expect(html).not.toContain("<aside")
-    expect(mocks.getJob).not.toHaveBeenCalled()
+    expect(html).not.toContain('aria-current="true"')
+  })
+
+  it("drops a job whose detail is no longer public between the list and the detail read", async () => {
+    mocks.getJob.mockImplementation(async (id: string) => (id === SAW ? saw : null))
+    const html = await render()
+    expect(textOf(html)).toContain("1 job")
+    expect(rowOf(html, chips.title)).toBe("")
   })
 
   it("offers interest from the panel only to a hauler who may express it, and not on its own job", async () => {
@@ -273,6 +272,18 @@ describe("list and detail (06_DESIGN_SYSTEM.md §4–5)", () => {
 
     expect(await render({ equipment: "any", job: SAW })).toContain(`href="/v2/work/${SAW}#interest"`)
     expect(await render({ equipment: "any", job: OWN })).not.toContain("#interest")
-    expect(mocks.interestForJob).toHaveBeenCalledTimes(1)
+    expect(mocks.listHaulerInterests).toHaveBeenCalledWith({ organizationId: HAULER_ORG, userId: USER_ID })
+  })
+
+  it("says interest was sent instead of offering it again, until it is withdrawn", async () => {
+    signInAsHauler()
+    mocks.listJobs.mockResolvedValue([saw])
+    mocks.listHaulerInterests.mockResolvedValue([{ job: { id: SAW }, status: "submitted" }])
+    const sent = await render({ equipment: "any", job: SAW })
+    expect(textOf(sent)).toContain("Interest sent")
+    expect(sent).not.toContain("#interest")
+
+    mocks.listHaulerInterests.mockResolvedValue([{ job: { id: SAW }, status: "withdrawn" }])
+    expect(await render({ equipment: "any", job: SAW })).toContain(`href="/v2/work/${SAW}#interest"`)
   })
 })

@@ -4,11 +4,9 @@ import {
   MARKETPLACE_PAY_UNIT_LABELS,
   marketplaceComparablePayUnits,
   marketplaceDistanceMiles,
-  marketplaceEquipmentFit,
-  type MarketplaceInterestView
+  marketplaceEquipmentFit
 } from "@logloads/contracts"
 import { PageContainer, PageHeader } from "@logloads/ui/layout"
-import { JobDetail } from "@logloads/ui/marketplace"
 import { Button, EmptyState } from "@logloads/ui/primitives"
 
 import { FindWorkFilters } from "@/components/v2/discovery/FindWorkFilters"
@@ -37,11 +35,6 @@ import { getSessionActor } from "@/lib/session"
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
 const PLACE_OPTIONS = MARKETPLACE_PLACES.map(placeLabel)
-
-/** Interest the hauler already sent and has not withdrawn. */
-function standing(interest: MarketplaceInterestView | null): boolean {
-  return Boolean(interest && interest.status !== "withdrawn")
-}
 
 /** "Within 100 mi of Sweet Home, OR · accepting interest" */
 function listDescription(search: FindWorkSearch): string {
@@ -78,39 +71,35 @@ export default async function FindWorkPage({ searchParams }: { searchParams: Sea
   const origin = search.place.status === "found" ? search.place.place.point : null
   const href = (overrides: Partial<FindWorkSearch>) => findWorkHref(search, context, overrides)
 
-  const rows: FindWorkRow[] = jobs.map((job) => ({
-    distanceMiles: origin ? marketplaceDistanceMiles(origin, job) : null,
-    // Advisory, from the viewer's own setups; never on the viewer's own listing.
-    fit: setups.length > 0 && job.posterOrganizationId !== workspace?.id ? marketplaceEquipmentFit(job.equipment, setups) ?? undefined : undefined,
-    href: `/v2/work/${job.slug}`,
-    job,
-    selectHref: href({ jobId: job.id })
-  }))
+  // Each listed job's public detail view and the viewer's standing interest, so selecting a row needs no request.
+  const [details, interests] = await Promise.all([
+    Promise.all(jobs.map((job) => pilotMarketplaceV2.getJob(job.id))),
+    canExpress && viewer ? pilotMarketplaceV2.listHaulerInterests(viewer).catch(() => []) : Promise.resolve([])
+  ])
+  const sentTo = new Set(interests.filter((interest) => interest.status !== "withdrawn").map((interest) => interest.job.id))
 
-  const selected = search.jobId ? jobs.find((job) => job.id === search.jobId) ?? null : null
-  const isPoster = Boolean(selected && workspace?.id === selected.posterOrganizationId)
-  const [detailView, interest] = selected
-    ? await Promise.all([
-        pilotMarketplaceV2.getJob(selected.id),
-        canExpress && viewer && !isPoster ? pilotMarketplaceV2.interestForJob(viewer, selected.id).catch(() => null) : null
-      ])
-    : [null, null]
-  const detail = detailView ? (
-    <JobDetail
-      canExpressInterest={canExpress && !isPoster}
-      expressInterestHref={`/v2/work/${detailView.slug}#interest`}
-      fit={rows.find((row) => row.job.id === detailView.id)?.fit}
-      interestState={standing(interest) ? "sent" : "none"}
-      job={detailView}
-      now={now}
-    />
-  ) : null
+  const rows: FindWorkRow[] = details.flatMap((job) => {
+    if (!job) return []
+    const own = job.posterOrganizationId === workspace?.id
+
+    return [{
+      canExpressInterest: canExpress && !own,
+      distanceMiles: origin ? marketplaceDistanceMiles(origin, job) : null,
+      // Advisory, from the viewer's own setups; never on the viewer's own listing.
+      fit: setups.length > 0 && !own ? marketplaceEquipmentFit(job.equipment, setups) ?? undefined : undefined,
+      href: `/v2/work/${job.slug}`,
+      interestSent: sentTo.has(job.id),
+      job,
+      selectHref: href({ jobId: job.id })
+    }]
+  })
+  const selectedId = search.jobId && rows.some((row) => row.job.id === search.jobId) ? search.jobId : null
 
   const showMap = search.view === "map"
   const points = jobs.flatMap((job) => job.origin.approximatePoint ? [{ id: job.id, title: job.title, ...job.origin.approximatePoint }] : [])
   const sort = effectiveSort(search)
   const bases = marketplaceComparablePayUnits(jobs)
-  const empty = jobs.length === 0 ? findWorkEmptyState(search, context) : null
+  const empty = rows.length === 0 ? findWorkEmptyState(search, context) : null
   const notes = [
     search.place.status === "unknown" ? (
       <p key="place">
@@ -141,7 +130,7 @@ export default async function FindWorkPage({ searchParams }: { searchParams: Sea
         <FindWorkResults
           actions={
             <>
-              {jobs.length > 1 ? (
+              {rows.length > 1 ? (
                 <SortControl
                   hidden={findWorkHiddenFields(search, context, { jobId: null, sort: "newest" })}
                   nearestAvailable={origin !== null}
@@ -159,7 +148,6 @@ export default async function FindWorkPage({ searchParams }: { searchParams: Sea
           }
           closeHref={href({ jobId: null })}
           description={listDescription(search)}
-          detail={detail}
           empty={
             empty ? (
               <EmptyState
@@ -172,12 +160,12 @@ export default async function FindWorkPage({ searchParams }: { searchParams: Sea
             ) : null
           }
           footnote="Pay is shown as each poster stated it. Rates on different bases (per load, per ton, per hour) are never converted into one another."
-          heading={`${jobs.length} job${jobs.length === 1 ? "" : "s"}`}
+          heading={`${rows.length} job${rows.length === 1 ? "" : "s"}`}
           map={showMap ? <JobMapLoader points={points} /> : null}
           notes={notes.length > 0 ? notes : null}
           now={now}
           rows={rows}
-          selectedId={detailView ? detailView.id : null}
+          selectedId={selectedId}
         />
       </PageContainer>
     </div>

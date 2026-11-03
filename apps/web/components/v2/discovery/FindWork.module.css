@@ -141,10 +141,11 @@
   .sort .sortSubmit { display: none; }
 }
 
-.density { display: none; }
+/* Doubled with .tools so it outranks the SegmentedControl module's own display whatever the stylesheet order. */
+.tools .density { display: none; }
 
 @container ll-app (min-width: 960px) { /* bp-lg: density is a desktop control */
-  .density { display: inline-flex; }
+  .tools .density { display: inline-flex; }
 }
 
 .notes {

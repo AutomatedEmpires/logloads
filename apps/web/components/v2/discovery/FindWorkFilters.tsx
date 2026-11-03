@@ -2,7 +2,6 @@
 
 import { Icon } from "@logloads/ui/icons"
 import { Button, Dialog } from "@logloads/ui/primitives"
-import Form from "next/form"
 import { useRef, useState, useSyncExternalStore } from "react"
 
 import { FIND_WORK_PATH, type FindWorkFormValues } from "@/lib/marketplace-v2/find-work"
@@ -49,9 +48,8 @@ function SummaryText({ what, where }: { what: string; where: string }) {
  * Find work's summary bar and filter sheet (UX-06 criterion 1, UX 02 §A6). The bar states the active search as text;
  * it opens a Dialog (a bottom sheet below 768 px) holding the GET form, with Apply and Reset in the sheet's footer.
  *
- * Without JavaScript (and until hydration) the bar is a native <details> whose body is the same form, so every
- * field still submits as a plain GET request. `next/form` turns the submit into a client navigation when scripts
- * run, which keeps the list's own state (density) and skips a full reload.
+ * Without JavaScript (and until hydration) the bar is a native <details> whose body is the same form. Either way
+ * Apply submits a plain GET request to /v2/work, so the search is the URL and a full page load renders it.
  */
 export function FindWorkFilters({ places, resetHref, values, what, where }: FindWorkFiltersProps) {
   const scripted = useScripted()
@@ -64,13 +62,13 @@ export function FindWorkFilters({ places, resetHref, values, what, where }: Find
         <summary className={styles.summary} id={SUMMARY_ID}>
           <SummaryText what={what} where={where} />
         </summary>
-        <Form action={FIND_WORK_PATH} aria-labelledby={SUMMARY_ID} className={styles.form} id={FORM_ID} role="search">
+        <form action={FIND_WORK_PATH} aria-labelledby={SUMMARY_ID} className={styles.form} id={FORM_ID} method="get" role="search">
           <FindWorkFields places={places} values={values} />
           <div className={styles.formActions}>
             <Button label="Apply" type="submit" />
             <Button href={resetHref} label="Reset" variant="secondary" />
           </div>
-        </Form>
+        </form>
       </details>
     )
   }
@@ -100,16 +98,9 @@ export function FindWorkFilters({ places, resetHref, values, what, where }: Find
         returnFocusRef={openerRef}
         title="Filter jobs"
       >
-        <Form
-          action={FIND_WORK_PATH}
-          aria-label="Filter jobs"
-          className={styles.form}
-          id={FORM_ID}
-          onSubmit={() => setOpen(false)}
-          role="search"
-        >
+        <form action={FIND_WORK_PATH} aria-label="Filter jobs" className={styles.form} id={FORM_ID} method="get" role="search">
           <FindWorkFields places={places} values={values} />
-        </Form>
+        </form>
       </Dialog>
     </>
   )
