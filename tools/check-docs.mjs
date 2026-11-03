@@ -27,7 +27,7 @@
 // Deliberate differences from the reference implementation: paths must exist with the exact case (CI runs on a
 // case-sensitive file system), fences are found line by line, and rule 2's archive context matches "tag" as a word
 // (the reference's /tag/ also matched "percentage" and "stage").
-import { readdirSync, readFileSync } from "node:fs"
+import { readdirSync, readFileSync, realpathSync } from "node:fs"
 import { join, posix, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -36,11 +36,17 @@ const repoRoot = resolve(scriptPath, "..", "..")
 
 const ROOT_DOCS = ["README.md", "AGENTS.md", "CLAUDE.md"]
 
-// Reviewed findings that are accepted for now. Each entry matches one finding by file, rule and a substring of its
-// message (line numbers move, so they are not part of the key). Keep every entry tied to an issue or owner. An entry
-// that no longer matches anything is reported as a warning, not a failure, so the PR that fixes the underlying doc
-// can merge before or after the PR that removes the entry.
+// Reviewed findings that are accepted for now. An entry `{ file, rule, match, reason }` matches the findings of that
+// rule in that file whose message contains `match` (line numbers move, so they are not part of the key). All four
+// fields must be non-empty and `rule` must be a rule id, so an entry can never match every finding. Each allowlisted
+// finding is still printed as a warning. Keep every entry tied to an issue or owner. An entry that no longer matches
+// anything is reported as a warning, not a failure, so the PR that fixes the underlying doc can merge before or after
+// the PR that removes the entry.
 export const DOCS_ALLOWLIST = []
+const RULE_IDS = new Set([
+  "link", "anchor", "removed-ref", "metadata", "obsolete-pricing", "stale-claim", "vocabulary", "authority",
+  "repo-path", "pnpm-script", "env-name"
+])
 
 // Environment variables that docs may name although `ops/production-env-contract.json` does not list them. Each one
 // is read by a platform, SDK or build plugin rather than declared by LogLoads code. Prefer adding a variable to the
@@ -542,20 +548,34 @@ export function checkDocs({ root = repoRoot, allowlist = DOCS_ALLOWLIST } = {}) 
   const order = new Map(files.map((file, position) => [file, position]))
   findings.sort((a, b) => (order.get(a.file) ?? files.length) - (order.get(b.file) ?? files.length) || a.line - b.line)
 
-  const used = new Set()
+  // An invalid allowlist entry is itself an error and suppresses nothing.
   const errors = []
+  const entries = []
+  allowlist.forEach((item, position) => {
+    const filled = (key) => typeof item?.[key] === "string" && item[key].trim() !== ""
+    if (["file", "rule", "match", "reason"].every(filled) && RULE_IDS.has(item.rule)) entries.push(item)
+    else
+      errors.push({
+        file: "tools/check-docs.mjs",
+        line: 1,
+        rule: "allowlist",
+        message: `DOCS_ALLOWLIST entry ${position} needs a non-empty file, match and reason and a known rule id`
+      })
+  })
+
+  const used = new Set()
   const allowed = []
   for (const finding of findings) {
-    const entry = allowlist.findIndex(
+    const entry = entries.find(
       (item) => item.file === finding.file && item.rule === finding.rule && finding.message.includes(item.match)
     )
-    if (entry === -1) errors.push(finding)
+    if (!entry) errors.push(finding)
     else {
       used.add(entry)
-      allowed.push({ ...finding, reason: allowlist[entry].reason })
+      allowed.push({ ...finding, reason: entry.reason })
     }
   }
-  const unusedAllowlist = allowlist.filter((_, entry) => !used.has(entry))
+  const unusedAllowlist = entries.filter((entry) => !used.has(entry))
   return { files, errors, allowed, unusedAllowlist }
 }
 
@@ -566,6 +586,7 @@ function main(argv) {
   const root = rootFlag === -1 ? repoRoot : resolve(argv[rootFlag + 1] ?? ".")
   const { files, errors, allowed, unusedAllowlist } = checkDocs({ root })
 
+  for (const item of allowed) console.warn(`check-docs: allowlisted: ${formatFinding(item)} (${item.reason})`)
   for (const item of unusedAllowlist)
     console.warn(`check-docs: warning: allowlist entry no longer matches (${item.file} [${item.rule}] ${item.match}); remove it`)
   if (errors.length > 0) {
@@ -582,4 +603,15 @@ function main(argv) {
   return 0
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === scriptPath) process.exitCode = main(process.argv.slice(2))
+// Compare real paths. Through a Windows junction or a symlinked directory, argv[1] keeps the link path while
+// import.meta.url is the real path, and a plain comparison would skip main() and exit 0 without checking anything.
+const realPath = (path) => {
+  try {
+    return realpathSync.native(path)
+  } catch {
+    return resolve(path)
+  }
+}
+if (process.argv[1] && realPath(process.argv[1]) === realPath(scriptPath)) {
+  process.exitCode = main(process.argv.slice(2))
+}

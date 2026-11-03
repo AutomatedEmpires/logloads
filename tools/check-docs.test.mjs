@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { after, test } from "node:test"
@@ -232,6 +232,36 @@ test("a reviewed allowlist entry suppresses one finding and an unused entry is r
     [["env-name", "fixture"]]
   )
   assert.deepEqual(result.unusedAllowlist, [allowlist[1]])
+})
+
+test("an allowlist entry cannot suppress a different finding of the same rule, and an empty entry is an error", () => {
+  const entry = { file: "docs/GUIDE.md", rule: "env-name", match: "LOGLOADS_NOT_REAL", reason: "fixture" }
+  const both = guide("Set `LOGLOADS_NOT_REAL=1` and `LOGLOADS_OTHER=1`.")
+  const result = run(both, { allowlist: [entry] })
+  assert.deepEqual(
+    result.errors.map((finding) => finding.message),
+    ["LOGLOADS_OTHER is not in ops/production-env-contract.json"]
+  )
+  for (const invalid of [{ ...entry, match: "" }, { ...entry, rule: "env" }, { ...entry, reason: " " }]) {
+    const rejected = run(both, { allowlist: [invalid] })
+    assert.deepEqual(
+      rejected.errors.map((finding) => finding.rule),
+      ["allowlist", "env-name", "env-name"]
+    )
+    assert.deepEqual(rejected.allowed, [])
+  }
+})
+
+test("the CLI runs when invoked through a directory link (Windows junction or symlink)", () => {
+  const base = mkdtempSync(join(tmpdir(), "check-docs-link-"))
+  roots.push(base)
+  mkdirSync(join(base, "real", "tools"), { recursive: true })
+  copyFileSync(script, join(base, "real", "tools", "check-docs.mjs"))
+  symlinkSync(join(base, "real"), join(base, "link"), "junction")
+  const linked = join(base, "link", "tools", "check-docs.mjs")
+  const result = spawnSync(process.execPath, [linked, "--root", fixture()], { encoding: "utf8" })
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /^check-docs: ok \(9 files\)/)
 })
 
 test("the CLI exits 1 with file:line [rule] output on a problem and 0 when clean", () => {
