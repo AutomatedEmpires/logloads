@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright"
 import { expect, test, type Page } from "@playwright/test"
 
 /**
@@ -340,7 +341,9 @@ test.describe("keyboard: /v2/work", () => {
       "LogLoads home",
       "Find work",
       "My inquiries",
-      expect.stringMatching(/^Acting as .+ Switch business$/)
+      // The switcher's first text line; its full accessible name (visible text plus hidden words) is asserted in the
+      // capability-navigation tests.
+      "Acting as"
     ])
     for (const stop of chrome) expectDesignSystemRing(stop)
   })
@@ -442,6 +445,67 @@ test.describe("style isolation", () => {
 
       await expect(page.locator(".ll-theme")).toHaveCount(0)
       expect(await page.evaluate(() => getComputedStyle(document.body).getPropertyValue("--ll-color-action"))).toBe("")
+    })
+  }
+})
+
+/**
+ * Automated accessibility audit (#148 criterion 6; `@axe-core/playwright` approved in docs/DECISIONS.md). Scoped to the
+ * V2 shell, WCAG 2.2 A/AA rules. A serious or critical violation fails the test and names the rule and nodes;
+ * any exception must name an issue. Pages are added here as they move onto the design system.
+ */
+async function expectNoSeriousAxeViolations(page: Page) {
+  // The sticky form actions and bottom tabs cover whatever sits under them at the current scroll position, and
+  // axe's target-size rule then measures only the uncovered sliver of that control (seen in CI at 390 px, where the
+  // Linux fonts push a 44 px select under the bar). The audit is about the components, so it runs with the viewport
+  // grown to the full page height at the same width, so nothing is under a sticky bar, then restores it.
+  const viewport = page.viewportSize()
+  const pageHeight = await page.evaluate(() => document.documentElement.scrollHeight)
+  if (viewport && pageHeight > viewport.height) await page.setViewportSize({ height: pageHeight, width: viewport.width })
+
+  const results = await new AxeBuilder({ page })
+    .include(".ll-app")
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+    .analyze()
+
+  if (viewport) await page.setViewportSize(viewport)
+  const blocking = results.violations.filter((violation) => violation.impact === "serious" || violation.impact === "critical")
+  const summary = blocking.map((violation) => {
+    const nodes = violation.nodes.slice(0, 5).map((node) => node.target.join(" "))
+    return `${violation.id} (${violation.impact}): ${violation.help} — ${nodes.join(" | ")}`
+  })
+
+  expect(summary, "serious or critical axe violations").toEqual([])
+}
+
+test.describe("accessibility audit (axe)", () => {
+  for (const width of [1440, 390]) {
+    test(`/v2/work at ${width} px has no serious or critical violations`, async ({ page }) => {
+      await page.setViewportSize(viewportFor(width))
+      await openFindWorkWithRows(page)
+      await expectNoSeriousAxeViolations(page)
+    })
+  }
+
+  test("/v2/switch (signed in) has no serious or critical violations", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1280))
+    await signIn(page, "hank@northpine.example")
+    await openV2(page, "/v2/switch")
+    await expectNoSeriousAxeViolations(page)
+  })
+
+  // The job editor and job list (#128, #175), signed in as a landing user.
+  for (const width of [1440, 390]) {
+    test(`job editor step 1 and the job list at ${width} px have no serious or critical violations`, async ({ page }) => {
+      await page.setViewportSize(viewportFor(width))
+      await signIn(page, "cole@summit.example")
+      await openV2(page, "/v2/landing/jobs/new")
+      await expect(page.locator("[data-ds-page='job-editor']")).toBeVisible()
+      await expectNoSeriousAxeViolations(page)
+
+      await openV2(page, "/v2/landing/jobs")
+      await expect(page.locator("[data-ds-page='job-postings']").first()).toBeVisible()
+      await expectNoSeriousAxeViolations(page)
     })
   }
 })

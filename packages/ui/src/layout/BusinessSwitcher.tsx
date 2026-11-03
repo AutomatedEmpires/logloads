@@ -32,14 +32,17 @@ export function BusinessSwitcher({
 
   if (switchHref) {
     return (
+      // The accessible name is built from the visible text plus hidden words, so it always contains what sighted
+      // users read (WCAG 2.5.3 Label in Name; an aria-label here dropped the visible role, found by axe in DS-05).
       <a
         {...rest}
-        aria-label={`Acting as ${current.name}, ${current.kind}. Switch business`}
         className={cx(styles.switcher, className)}
         href={switchHref}
         ref={ref as LayoutRef<HTMLAnchorElement> | undefined}
       >
+        <span className={styles.visuallyHidden}>Acting as </span>
         {identity}
+        <span className={styles.visuallyHidden}>. Switch business</span>
       </a>
     )
   }
