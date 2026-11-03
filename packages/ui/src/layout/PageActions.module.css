@@ -1,0 +1,11 @@
+/* PageActions (DS-02). The header's action row: wraps on phones, right-aligned from bp-lg. */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ll-space-2);
+}
+
+@container ll-app (min-width: 960px) { /* bp-lg */
+  .actions { justify-content: flex-end; }
+}
