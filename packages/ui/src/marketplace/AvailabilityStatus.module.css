@@ -1,0 +1,34 @@
+/* AvailabilityStatus (DS-04): ported from design-system/components.css (.ll-availability). */
+.status {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-sm);
+  line-height: var(--ll-leading-snug);
+}
+
+.status::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ll-color-status-positive);
+  transform: translateY(-1px);
+}
+
+.status[data-state="aging"]::before { background: var(--ll-color-border-strong); }
+
+.status[data-state="stale"] { color: var(--ll-color-status-warning); }
+.status[data-state="stale"]::before { background: var(--ll-color-accent); }
+
+.status[data-state="unconfirmed"],
+.status[data-state="unknown"] { color: var(--ll-color-text-muted); }
+
+.status[data-state="unconfirmed"]::before,
+.status[data-state="unknown"]::before {
+  box-sizing: border-box;
+  border: 1.5px solid var(--ll-color-border-strong);
+  background: transparent;
+}

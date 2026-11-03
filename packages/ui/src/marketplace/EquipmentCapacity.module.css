@@ -1,0 +1,38 @@
+/* EquipmentCapacity (DS-04): ported from design-system/components.css (.ll-capacity). Filled marks are available
+   units; unknown availability draws every mark dashed and says so in words. */
+.capacity {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.mark {
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--ll-color-text-secondary);
+  border-radius: 3px;
+}
+
+.mark[data-on] {
+  border-color: var(--ll-color-text);
+  background: var(--ll-color-text);
+}
+
+.capacity[data-state="unknown"] .mark {
+  border-style: dashed;
+  border-color: var(--ll-color-border-strong);
+}
+
+.text {
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-md);
+}
+
+.capacity[data-state="unknown"] .text { color: var(--ll-color-status-warning); }

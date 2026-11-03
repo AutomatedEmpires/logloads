@@ -1,0 +1,48 @@
+/* OperatingRegion (DS-04): ported from design-system/components.css (.ll-region). The figure is drawn in CSS
+   (the guardrails forbid hand-rolled inline SVG): a sunken square, a dashed brand ring for the stated range and
+   a dot for the home base. A dotted ring means the range is not stated. */
+.region {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--ll-space-4);
+}
+
+.figure {
+  position: relative;
+  display: block;
+  width: 104px;
+  height: 104px;
+  border-radius: 10px;
+  background: var(--ll-color-surface-sunken);
+}
+
+.ring {
+  position: absolute;
+  inset: 14px;
+  border: 1.5px dotted var(--ll-color-border-strong);
+  border-radius: 50%;
+}
+
+.ring[data-known] { border: 1.5px dashed var(--ll-color-brand); }
+
+.home {
+  position: absolute;
+  top: calc(50% - 4px);
+  left: calc(50% - 4px);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ll-color-text);
+}
+
+.list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--ll-text-md);
+}
+
+.strong { font-weight: var(--ll-weight-semibold); }

@@ -1,0 +1,23 @@
+/* Find-work filters (DS-04, #147). Layout only: the fields, the checkbox and the button are design-system
+   components. Semantic --ll-* tokens only; measures the AppShell's "ll-app" container. */
+.form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--ll-space-3);
+  margin: 0;
+}
+
+.submit { justify-self: start; }
+
+.inactive { min-width: 0; }
+
+@container ll-app (min-width: 768px) { /* bp-md: search, equipment, pay basis and Apply in one row */
+  .form {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+    align-items: end;
+    column-gap: var(--ll-space-4);
+  }
+
+  .submit { justify-self: stretch; }
+  .inactive { grid-column: 1 / -1; }
+}

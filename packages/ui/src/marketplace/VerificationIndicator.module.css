@@ -1,0 +1,11 @@
+/* VerificationIndicator (DS-04): ported from design-system/components.css (.ll-verified). */
+.verified {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-sm);
+  line-height: var(--ll-leading-snug);
+}
+
+.mark { color: var(--ll-color-status-positive); }

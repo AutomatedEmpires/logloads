@@ -1,0 +1,49 @@
+/* JobResultList (DS-04): ported from design-system/components.css (.ll-results). The list is the "ll-list"
+   inline-size container JobResultRow measures. Inside a flush Section its own frame is removed by Section. */
+.results {
+  /* Compact columns, shared by this header and every row: pay, job, area, truck and trailer, start, availability
+     and a fixed action column so rows with and without Save stay aligned. */
+  --ll-c-results-columns: 100px minmax(0, 1.8fr) minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 0.8fr) 136px var(--ll-c-button-h-sm);
+
+  container: ll-list / inline-size;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--ll-color-border);
+  border-radius: var(--ll-c-section-radius);
+  background: var(--ll-color-surface);
+}
+
+.head { display: none; }
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.foot {
+  margin: 0;
+  padding: var(--ll-space-3) var(--ll-c-row-px);
+  border-top: 1px solid var(--ll-color-border);
+  background: var(--ll-color-surface-subtle);
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+}
+
+/* Compact header: the labels move here from the rows. Below a 720 px list width compact falls back to comfortable. */
+@container ll-list (min-width: 720px) {
+  [data-density="compact"] .head {
+    display: grid;
+    grid-template-columns: var(--ll-c-results-columns);
+    gap: var(--ll-space-3);
+    padding: 10px var(--ll-c-row-px);
+    border-bottom: 1px solid var(--ll-color-border);
+    background: var(--ll-color-surface-subtle);
+    color: var(--ll-color-text-muted);
+    font-family: var(--ll-font-mono);
+    font-size: var(--ll-text-2xs);
+    font-weight: var(--ll-weight-semibold);
+    letter-spacing: var(--ll-tracking-label);
+    text-transform: uppercase;
+  }
+}

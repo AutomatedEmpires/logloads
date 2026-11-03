@@ -1,0 +1,33 @@
+/* EquipmentRequirement (DS-04): ported from design-system/components.css (.ll-equip). */
+.equipment {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.labels {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.fit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-sm);
+}
+
+/* A drawn tick: the words carry the meaning, the mark only reinforces it. */
+.fit[data-fit="fits"]::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 4px;
+  margin-bottom: 3px;
+  border-bottom: 2px solid var(--ll-color-status-positive);
+  border-left: 2px solid var(--ll-color-status-positive);
+  transform: rotate(-45deg);
+}
+
+.fit[data-fit="not_in_setups"] { color: var(--ll-color-text-muted); }

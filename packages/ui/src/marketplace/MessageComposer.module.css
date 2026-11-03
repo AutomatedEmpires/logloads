@@ -1,0 +1,74 @@
+/* MessageComposer (DS-04): ported from design-system/components.css (.ll-composer). */
+.composer {
+  display: grid;
+  gap: var(--ll-space-3);
+  margin: 0;
+  padding: var(--ll-space-4) var(--ll-space-5) var(--ll-space-5);
+  border-top: 1px solid var(--ll-color-border);
+}
+
+.quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ll-space-2);
+}
+
+.chip {
+  box-sizing: border-box;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--ll-color-control-border);
+  border-radius: var(--ll-radius-pill);
+  background: var(--ll-color-surface);
+  color: var(--ll-color-text-secondary);
+  font-family: inherit;
+  font-size: var(--ll-text-sm);
+  font-weight: var(--ll-weight-regular);
+  cursor: pointer;
+}
+
+.chip:hover { background: var(--ll-color-surface-subtle); }
+
+.chip:focus-visible {
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: var(--ll-focus-offset);
+  box-shadow: none;
+}
+
+.box {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--ll-space-2);
+}
+
+.input {
+  flex: 1;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 72px;
+  padding: 10px 12px;
+  border: 1px solid var(--ll-color-control-border);
+  border-radius: var(--ll-c-field-radius);
+  background: var(--ll-color-surface);
+  color: var(--ll-color-text);
+  font-family: inherit;
+  font-size: 1rem; /* 16 px: stops iOS zooming into the field */
+  line-height: var(--ll-leading-normal);
+  resize: vertical;
+}
+
+.input:focus-visible {
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: var(--ll-focus-offset);
+  box-shadow: none;
+}
+
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ll-space-3);
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+}

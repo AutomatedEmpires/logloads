@@ -1,0 +1,132 @@
+/* JobDetail (DS-04): ported from design-system/components.css (.ll-job-detail__*). It fills whatever frame holds
+   it (DetailPanel, the mobile Dialog sheet, the editor preview) and draws no frame of its own. The app's legacy
+   global rules for h2, h3, dl, dt and dd are neutralised explicitly. */
+.detail {
+  display: grid;
+  min-width: 0;
+  color: var(--ll-color-text);
+}
+
+.head {
+  display: grid;
+  gap: var(--ll-space-2);
+  padding: var(--ll-space-5) var(--ll-space-5) var(--ll-space-4);
+  border-bottom: 1px solid var(--ll-color-border);
+}
+
+.poster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--ll-space-3);
+  margin: 0;
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-md);
+}
+
+.title {
+  margin: 0;
+  font-family: inherit;
+  font-size: var(--ll-text-xl);
+  font-weight: var(--ll-weight-semibold);
+  line-height: var(--ll-leading-snug);
+  letter-spacing: normal;
+  overflow-wrap: anywhere;
+}
+
+.source {
+  margin: 0;
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ll-space-2);
+  margin-top: var(--ll-space-2);
+}
+
+.actions:empty { display: none; }
+.primary { flex: 1 1 auto; }
+
+.state {
+  margin: 0;
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-md);
+  font-weight: var(--ll-weight-semibold);
+}
+
+.body {
+  display: grid;
+  gap: var(--ll-space-5);
+  padding: var(--ll-space-2) var(--ll-space-5) var(--ll-space-5);
+}
+
+.group {
+  display: grid;
+  gap: var(--ll-space-3);
+  min-width: 0;
+}
+
+.groupTitle {
+  margin: var(--ll-space-3) 0 0;
+  color: var(--ll-color-text-muted);
+  font-family: var(--ll-font-mono);
+  font-size: var(--ll-text-2xs);
+  font-weight: var(--ll-weight-semibold);
+  letter-spacing: var(--ll-tracking-label);
+  text-transform: uppercase;
+}
+
+/* Stacked facts: a 104 px label column beside the value. */
+.facts {
+  display: grid;
+  gap: var(--ll-space-2);
+  margin: 0;
+}
+
+.fact {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: var(--ll-space-3);
+  justify-content: stretch;
+  padding: 0;
+  border: 0;
+}
+
+.label {
+  padding-top: 3px;
+  color: var(--ll-color-text-muted);
+  font-family: var(--ll-font-mono);
+  font-size: var(--ll-text-2xs);
+  font-weight: var(--ll-weight-semibold);
+  letter-spacing: var(--ll-tracking-label);
+  text-transform: uppercase;
+}
+
+.value {
+  min-width: 0;
+  margin: 0;
+  font-size: var(--ll-text-md);
+  font-weight: var(--ll-weight-regular);
+  line-height: var(--ll-leading-snug);
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+.note {
+  display: block;
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+}
+
+.foot {
+  display: grid;
+  gap: var(--ll-space-1);
+  padding: var(--ll-space-4) var(--ll-space-5);
+  border-top: 1px solid var(--ll-color-border);
+  background: var(--ll-color-surface-subtle);
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+}
