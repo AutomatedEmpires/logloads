@@ -1,0 +1,454 @@
+name: Normalized V2 Database CI
+
+# Validates the non-active normalized-v2 prototype (architecture/normalized-v2/) on disposable databases
+# created inside each job. No production, staging, hosted-Supabase or Vercel credentials are used or needed.
+#   Job 1 (baseline): the verified 01..05 suite on PostgreSQL 17 + PostGIS, unchanged. 3 fresh databases.
+#   Job 2 (alignment): 01, 02, 03, 06, 11, 12, 16, then 04, 07, 09, 13, 17, 08, 10, 15 on PostgreSQL 17 + PostGIS.
+#   Job 3 (Supabase): the same chain and suites, plus PostgREST/JWT API tests (14), on a Supabase CLI
+#   local stack started inside the job (real authenticator / anon / authenticated / service_role roles,
+#   non-superuser migration role, Supabase's PostgreSQL 17 image).
+
+on:
+  push:
+    branches: [test/normalized-v2-postgres17-ci, test/normalized-v2-contract-alignment]
+    paths:
+      - architecture/normalized-v2/**
+      - tools/normalized-v2-ci/**
+      - .github/workflows/normalized-v2-ci.yml
+  pull_request:
+    paths:
+      - architecture/normalized-v2/**
+      - tools/normalized-v2-ci/**
+      - .github/workflows/normalized-v2-ci.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: normalized-v2-ci-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  postgres17-baseline:
+    name: PostgreSQL 17 baseline (fresh database ${{ matrix.iteration }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        iteration: [1, 2, 3]
+
+    services:
+      postgres:
+        # postgis/postgis:17-3.5 (PostgreSQL 17, PostGIS 3.5), pinned by index digest for reproducibility.
+        image: postgis/postgis:17-3.5@sha256:01a6a70e41e6c4467c8f55f6063555ed72db2d6662cd0d571040d42eadaeb6f6
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres # CI-only credential for a throwaway service container.
+          POSTGRES_DB: logloads_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres -d logloads_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+
+    env:
+      LOGLOADS_DISPOSABLE_DB_URL: postgresql://postgres:postgres@127.0.0.1:5432/logloads_test
+      LOGLOADS_DB_ENV: ci-disposable
+      LOGLOADS_CI_ITERATION: ${{ matrix.iteration }}
+      PGCONNECT_TIMEOUT: "10"
+      # Bound every statement and lock wait so a deadlock or stuck session cannot hang CI.
+      PGOPTIONS: "-c lock_timeout=30s -c statement_timeout=300s -c idle_in_transaction_session_timeout=120s"
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install PostgreSQL 17 client
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common >/dev/null
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+          sudo apt-get install -y -qq postgresql-client-17 >/dev/null
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Wait for the service to finish initialization
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          psql --version
+          # The PostGIS image runs init scripts on a socket-only server, then restarts on TCP.
+          # Require three consecutive successful TCP queries before continuing.
+          ok=0
+          for _ in $(seq 1 60); do
+            if psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -t -A -c "select 1" >/dev/null 2>&1; then
+              ok=$((ok + 1)); [[ $ok -ge 3 ]] && break
+            else
+              ok=0
+            fi
+            sleep 2
+          done
+          [[ $ok -ge 3 ]] || { echo "database service never became stable" >&2; exit 1; }
+          psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -t -A -c "select version();"
+          psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -t -A -c "select extname || ' ' || extversion || ' in ' || extnamespace::regnamespace from pg_extension order by 1;"
+
+      - name: Guard and provision disposable database
+        run: bash tools/normalized-v2-ci/guard.sh provision
+
+      - name: "Stage 1: 01_schema.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 1
+
+      - name: "Stage 2: 02_access.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 2
+
+      - name: "Stage 3: 03_entitlements.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 3
+
+      - name: "Stage 4: 04_tests.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 4
+
+      - name: "Stage 5: 05_concurrency_test.sh"
+        timeout-minutes: 12
+        run: bash tools/normalized-v2-ci/run-stage.sh 5
+
+      - name: Collect database server log
+        if: failure()
+        run: |
+          set +e
+          cid="$(docker ps -q --filter "ancestor=postgis/postgis:17-3.5@sha256:01a6a70e41e6c4467c8f55f6063555ed72db2d6662cd0d571040d42eadaeb6f6" | head -1)"
+          [[ -z "$cid" ]] && cid="$(docker ps -q | head -1)"
+          mkdir -p "$RUNNER_TEMP/normalized-v2-ci/logs"
+          docker logs "$cid" > "$RUNNER_TEMP/normalized-v2-ci/logs/postgres-server.log" 2>&1
+          tail -n 80 "$RUNNER_TEMP/normalized-v2-ci/logs/postgres-server.log"
+
+      - name: Upload stage logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: normalized-v2-ci-logs-${{ matrix.iteration }}
+          path: ${{ runner.temp }}/normalized-v2-ci/logs/
+          retention-days: 7
+
+  postgres17-contract-alignment:
+    name: PostgreSQL 17 + V2 contract alignment (fresh database ${{ matrix.iteration }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        iteration: [1, 2, 3]
+
+    services:
+      postgres:
+        # postgis/postgis:17-3.5 (PostgreSQL 17, PostGIS 3.5), pinned by index digest for reproducibility.
+        image: postgis/postgis:17-3.5@sha256:01a6a70e41e6c4467c8f55f6063555ed72db2d6662cd0d571040d42eadaeb6f6
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres # CI-only credential for a throwaway service container.
+          POSTGRES_DB: logloads_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres -d logloads_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+
+    env:
+      LOGLOADS_DISPOSABLE_DB_URL: postgresql://postgres:postgres@127.0.0.1:5432/logloads_test
+      LOGLOADS_DB_ENV: ci-disposable
+      LOGLOADS_CI_ITERATION: ${{ matrix.iteration }}
+      PGCONNECT_TIMEOUT: "10"
+      # Bound every statement and lock wait so a deadlock or stuck session cannot hang CI.
+      PGOPTIONS: "-c lock_timeout=30s -c statement_timeout=300s -c idle_in_transaction_session_timeout=120s"
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install PostgreSQL 17 client
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common >/dev/null
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+          sudo apt-get install -y -qq postgresql-client-17 >/dev/null
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Wait for the service to finish initialization
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          psql --version
+          # The PostGIS image runs init scripts on a socket-only server, then restarts on TCP.
+          # Require three consecutive successful TCP queries before continuing.
+          ok=0
+          for _ in $(seq 1 60); do
+            if psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -t -A -c "select 1" >/dev/null 2>&1; then
+              ok=$((ok + 1)); [[ $ok -ge 3 ]] && break
+            else
+              ok=0
+            fi
+            sleep 2
+          done
+          [[ $ok -ge 3 ]] || { echo "database service never became stable" >&2; exit 1; }
+          psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -t -A -c "select version();"
+          psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -t -A -c "select extname || ' ' || extversion || ' in ' || extnamespace::regnamespace from pg_extension order by 1;"
+
+      - name: Guard and provision disposable database
+        run: bash tools/normalized-v2-ci/guard.sh provision
+
+      - name: "Stage 1: 01_schema.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 1
+
+      - name: "Stage 2: 02_access.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 2
+
+      - name: "Stage 3: 03_entitlements.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 3
+
+      - name: "Stage 6: 06_v2_contract_alignment.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 6
+
+      - name: "Stage 11: 11_v2_phase3_policy.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 11
+
+      - name: "Stage 12: 12_v2_billing_events.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 12
+
+      - name: "Stage 16: 16_v2_identity_membership_hardening.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 16
+
+      - name: "Stage 4: 04_tests.sql on the aligned schema"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 4
+
+      - name: "Stage 7: 07_v2_contract_tests.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 7
+
+      - name: "Stage 9: 09_v2_integration_audit_tests.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 9
+
+      - name: "Stage 13: 13_v2_phase3_tests.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 13
+
+      - name: "Stage 17: 17_v2_identity_membership_tests.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 17
+
+      - name: "Stage 8: 08_v2_contract_concurrency_test.sh"
+        timeout-minutes: 12
+        run: bash tools/normalized-v2-ci/run-stage.sh 8
+
+      - name: "Stage 10: 10_v2_migration_path_test.sh"
+        timeout-minutes: 6
+        run: bash tools/normalized-v2-ci/run-stage.sh 10
+
+      - name: "Stage 15: 15_migration_drill.sh"
+        timeout-minutes: 8
+        run: bash tools/normalized-v2-ci/run-stage.sh 15
+
+      - name: Collect database server log
+        if: failure()
+        run: |
+          set +e
+          cid="$(docker ps -q --filter "ancestor=postgis/postgis:17-3.5@sha256:01a6a70e41e6c4467c8f55f6063555ed72db2d6662cd0d571040d42eadaeb6f6" | head -1)"
+          [[ -z "$cid" ]] && cid="$(docker ps -q | head -1)"
+          mkdir -p "$RUNNER_TEMP/normalized-v2-ci/logs"
+          docker logs "$cid" > "$RUNNER_TEMP/normalized-v2-ci/logs/postgres-server.log" 2>&1
+          tail -n 80 "$RUNNER_TEMP/normalized-v2-ci/logs/postgres-server.log"
+
+      - name: Upload stage logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: normalized-v2-alignment-logs-${{ matrix.iteration }}
+          path: ${{ runner.temp }}/normalized-v2-ci/logs/
+          retention-days: 7
+
+  supabase-local-stack:
+    # Disposable Supabase local stack (Supabase CLI + its pinned PostgreSQL 17 image) started inside this
+    # job. Exercises the real Supabase roles (authenticator, anon, authenticated, service_role with
+    # BYPASSRLS), supautils, PostgREST JWT verification and a non-superuser migration role. No hosted
+    # Supabase project, access token or credential is used; the stack's generated local keys are masked.
+    name: Supabase local stack (PostgreSQL 17, fresh stack ${{ matrix.iteration }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        iteration: [1, 2]
+
+    env:
+      LOGLOADS_DISPOSABLE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      LOGLOADS_DISPOSABLE_DB_NAME: postgres
+      LOGLOADS_DB_ENV: supabase-local-ci
+      LOGLOADS_CI_ITERATION: ${{ matrix.iteration }}
+      LOGLOADS_SUPABASE_PROJECT_ID: logloads-ci
+      SUPABASE_CLI_VERSION: 2.121.0
+      SUPABASE_CLI_SHA256: 4b481189efbdc57cf2d37bdee5f1a0d29574314398564b32a6dfb76c0fcf275f
+      SUPABASE_TELEMETRY_DISABLED: "1"
+      DO_NOT_TRACK: "1"
+      PGCONNECT_TIMEOUT: "10"
+      PGOPTIONS: "-c lock_timeout=30s -c statement_timeout=300s -c idle_in_transaction_session_timeout=120s"
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install PostgreSQL 17 client
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common >/dev/null
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+          sudo apt-get install -y -qq postgresql-client-17 >/dev/null
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Install Supabase CLI (pinned release, checksum-verified)
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          tgz="supabase_${SUPABASE_CLI_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$tgz" "https://github.com/supabase/cli/releases/download/v${SUPABASE_CLI_VERSION}/${tgz}"
+          echo "${SUPABASE_CLI_SHA256}  $RUNNER_TEMP/$tgz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/supabase-cli"
+          tar -xzf "$RUNNER_TEMP/$tgz" -C "$RUNNER_TEMP/supabase-cli" supabase
+          echo "$RUNNER_TEMP/supabase-cli" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/supabase-cli/supabase" --version
+
+      - name: Start a disposable Supabase local stack (database, auth, PostgREST, API gateway)
+        timeout-minutes: 12
+        run: bash tools/normalized-v2-ci/supabase-stack.sh start
+
+      - name: Supabase environment evidence (read-only)
+        run: bash tools/normalized-v2-ci/supabase-probe.sh
+
+      - name: Guard and provision the disposable Supabase database
+        run: bash tools/normalized-v2-ci/guard.sh provision
+
+      - name: "Stage 1: 01_schema.sql (as the non-superuser postgres role)"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 1
+
+      - name: "Stage 2: 02_access.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 2
+
+      - name: "Stage 3: 03_entitlements.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 3
+
+      - name: "Stage 6: 06_v2_contract_alignment.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 6
+
+      - name: "Stage 11: 11_v2_phase3_policy.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 11
+
+      - name: "Stage 12: 12_v2_billing_events.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 12
+
+      - name: "Stage 16: 16_v2_identity_membership_hardening.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 16
+
+      - name: "Stage 4: 04_tests.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 4
+
+      - name: "Stage 7: 07_v2_contract_tests.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 7
+
+      - name: "Stage 9: 09_v2_integration_audit_tests.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 9
+
+      - name: "Stage 13: 13_v2_phase3_tests.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 13
+
+      - name: "Stage 17: 17_v2_identity_membership_tests.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 17
+
+      - name: "Stage 14: 14_supabase_api_tests.sh (PostgREST + JWT, real Supabase roles)"
+        timeout-minutes: 6
+        run: bash tools/normalized-v2-ci/run-stage.sh 14
+
+      - name: "Stage 8: 08_v2_contract_concurrency_test.sh"
+        timeout-minutes: 12
+        run: bash tools/normalized-v2-ci/run-stage.sh 8
+
+      - name: "Stage 10: 10_v2_migration_path_test.sh"
+        timeout-minutes: 6
+        run: bash tools/normalized-v2-ci/run-stage.sh 10
+
+      - name: "Stage 15: 15_migration_drill.sh"
+        timeout-minutes: 8
+        run: bash tools/normalized-v2-ci/run-stage.sh 15
+
+      - name: Collect Supabase container logs
+        if: failure()
+        run: |
+          set +e
+          mkdir -p "$RUNNER_TEMP/normalized-v2-ci/logs"
+          for c in db rest kong auth; do
+            docker logs "supabase_${c}_${LOGLOADS_SUPABASE_PROJECT_ID}" > "$RUNNER_TEMP/normalized-v2-ci/logs/supabase-${c}.log" 2>&1
+          done
+          tail -n 60 "$RUNNER_TEMP/normalized-v2-ci/logs/supabase-db.log"
+          tail -n 30 "$RUNNER_TEMP/normalized-v2-ci/logs/supabase-rest.log"
+
+      - name: Upload stage logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: normalized-v2-supabase-logs-${{ matrix.iteration }}
+          path: ${{ runner.temp }}/normalized-v2-ci/logs/
+          retention-days: 7
+
+      - name: Stop the Supabase local stack
+        if: always()
+        run: bash tools/normalized-v2-ci/supabase-stack.sh stop
