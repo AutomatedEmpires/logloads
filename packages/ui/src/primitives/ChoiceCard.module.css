@@ -1,0 +1,39 @@
+/* ChoiceCard: ported from design-system/components.css (.ll-choice). */
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ll-space-3);
+  padding: var(--ll-space-4);
+  border: 1px solid var(--ll-color-control-border);
+  border-radius: var(--ll-radius-lg);
+  background: var(--ll-color-surface);
+  cursor: pointer;
+}
+
+.choice:hover { background: var(--ll-color-surface-subtle); }
+
+.input {
+  width: 20px;
+  height: 20px;
+  margin: 2px 0 0;
+  flex: none;
+  accent-color: var(--ll-color-action);
+  cursor: inherit;
+}
+
+.input:focus-visible {
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: var(--ll-focus-offset);
+}
+
+.text { display: grid; gap: 2px; min-width: 0; }
+.title { display: block; font-weight: var(--ll-weight-semibold); }
+.description { display: block; font-size: var(--ll-text-md); color: var(--ll-color-text-secondary); }
+
+.choice:has(.input:checked) {
+  border-color: var(--ll-color-selected-indicator);
+  background: var(--ll-color-selected-bg);
+  box-shadow: inset 0 0 0 1px var(--ll-color-selected-indicator);
+}
+
+.choice:has(.input:disabled) { cursor: not-allowed; opacity: var(--ll-disabled-opacity); }

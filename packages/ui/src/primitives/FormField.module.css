@@ -1,0 +1,36 @@
+/* FormField: ported from design-system/components.css (.ll-field, .ll-input). */
+.field { display: grid; gap: var(--ll-space-1); min-width: 0; }
+.label { font-size: var(--ll-text-md); font-weight: var(--ll-weight-semibold); }
+.optional { font-weight: var(--ll-weight-regular); color: var(--ll-color-text-muted); }
+.hint { font-size: var(--ll-text-sm); color: var(--ll-color-text-muted); }
+.error { font-size: var(--ll-text-sm); color: var(--ll-color-status-critical); font-weight: var(--ll-weight-medium); }
+
+/* Applied to a native input, select or textarea placed inside the field. */
+.control {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--ll-c-field-h);
+  padding: 0 12px;
+  border: 1px solid var(--ll-color-control-border);
+  border-radius: var(--ll-c-field-radius);
+  background: var(--ll-color-surface);
+  color: var(--ll-color-text);
+  font-family: inherit;
+  font-size: 1rem; /* 16 px: stops iOS zooming into the field */
+}
+
+.control:focus-visible {
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: var(--ll-focus-offset);
+}
+
+.control[aria-invalid="true"] { border-color: var(--ll-color-status-critical); }
+.control:disabled { opacity: var(--ll-disabled-opacity); cursor: not-allowed; }
+
+textarea.control {
+  height: auto;
+  min-height: 72px;
+  padding: 10px 12px;
+  resize: vertical;
+  line-height: var(--ll-leading-normal);
+}

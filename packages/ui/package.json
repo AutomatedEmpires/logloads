@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./icons": "./src/icons/index.ts",
     "./layout": "./src/layout/index.ts",
+    "./primitives": "./src/primitives/index.ts",
     "./tokens": "./src/tokens/index.ts",
     "./tokens.css": "./src/tokens/tokens.css"
   },
@@ -23,8 +24,8 @@
   },
   "devDependencies": {
     "@types/node": "^24.13.2",
-    "@types/react": "^19.2.17",
+    "@types/react": "^19.2.16",
     "@types/react-dom": "^19.2.3",
-    "react-dom": "19.2.7"
+    "react-dom": "^19.2.7"
   }
 }

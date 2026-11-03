@@ -1,0 +1,29 @@
+/* Checkbox: ported from design-system/components.css (.ll-check). The whole row is the 44 px target. */
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ll-space-3);
+  box-sizing: border-box;
+  min-height: var(--ll-target-touch);
+  padding: 10px 0;
+  cursor: pointer;
+}
+
+.input {
+  width: 20px;
+  height: 20px;
+  margin: 1px 0 0;
+  flex: none;
+  accent-color: var(--ll-color-action);
+  cursor: inherit;
+}
+
+.input:focus-visible {
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: var(--ll-focus-offset);
+}
+
+.text { display: grid; gap: 2px; min-width: 0; }
+.hint { display: block; font-size: var(--ll-text-sm); color: var(--ll-color-text-muted); }
+
+.check:has(.input:disabled) { cursor: not-allowed; opacity: var(--ll-disabled-opacity); }

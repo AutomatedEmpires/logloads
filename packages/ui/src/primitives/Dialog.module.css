@@ -1,0 +1,93 @@
+/*
+ * Dialog: ported from design-system/components.css (.ll-dialog). The native modal <dialog> sits in the top layer
+ * and is positioned against the viewport, so the sheet/centred switch is a viewport media query at bp-md (768),
+ * not an ll-app container query. The root also carries .ll-theme, and sets its own type, so it works portalled.
+ */
+.dialog {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  max-height: 88vh;
+  max-height: 88dvh;
+  margin: auto 0 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--ll-radius-xl) var(--ll-radius-xl) 0 0;
+  background: var(--ll-color-surface);
+  color: var(--ll-color-text);
+  box-shadow: var(--ll-shadow-lg);
+  font-family: var(--ll-font-sans);
+  font-size: var(--ll-text-base);
+  line-height: var(--ll-leading-normal);
+}
+
+/* Only when open: a display value on the closed element would override the browser's display: none. */
+.dialog[open] { display: flex; flex-direction: column; }
+
+.dialog *,
+.dialog *::before,
+.dialog *::after { box-sizing: border-box; }
+
+.dialog :focus-visible {
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: var(--ll-focus-offset);
+}
+
+.dialog::backdrop { background: var(--ll-color-backdrop); }
+
+/* bp-md 768: centred, 96 px from the top. */
+@media (min-width: 768px) {
+  .dialog {
+    width: min(560px, 92vw);
+    max-height: calc(100vh - 96px - var(--ll-space-6));
+    max-height: calc(100dvh - 96px - var(--ll-space-6));
+    margin: 96px auto auto;
+    border-radius: var(--ll-radius-xl);
+  }
+
+  .dialog[data-size="wide"] { width: min(720px, 92vw); }
+}
+
+.surface { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+
+.head {
+  display: flex;
+  flex: none;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--ll-space-3);
+  padding: var(--ll-space-5) var(--ll-space-5) var(--ll-space-3);
+}
+
+.title {
+  margin: 0;
+  font-family: inherit;
+  font-size: var(--ll-text-xl);
+  font-weight: var(--ll-weight-semibold);
+  line-height: var(--ll-leading-snug);
+  letter-spacing: normal;
+}
+
+.body {
+  display: grid;
+  flex: 1 1 auto;
+  gap: var(--ll-space-4);
+  min-height: 0;
+  padding: 0 var(--ll-space-5) var(--ll-space-5);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.body:last-child { padding-bottom: calc(var(--ll-space-5) + env(safe-area-inset-bottom, 0px)); }
+
+.foot {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--ll-space-2);
+  padding: var(--ll-space-4) var(--ll-space-5) calc(var(--ll-space-4) + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--ll-color-border);
+  background: var(--ll-color-surface-subtle);
+}

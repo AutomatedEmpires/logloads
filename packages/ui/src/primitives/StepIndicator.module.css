@@ -1,0 +1,40 @@
+/* StepIndicator: ported from design-system/components.css (.ll-steps). */
+.steps {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: var(--ll-space-2);
+  margin: 0 0 var(--ll-space-2);
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: grid;
+  gap: 6px;
+  padding-top: var(--ll-space-2);
+  border-top: 3px solid var(--ll-color-border);
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+}
+
+.step[data-state="done"] { border-top-color: var(--ll-color-text-secondary); color: var(--ll-color-text-secondary); }
+.step[data-state="current"] { border-top-color: var(--ll-color-action); color: var(--ll-color-text); font-weight: var(--ll-weight-semibold); }
+
+.number { font-family: var(--ll-font-mono); font-size: var(--ll-text-2xs); letter-spacing: var(--ll-tracking-label); }
+
+/* bp-sm 600: collapse to the current label. Other labels are clipped, not removed, so screen readers keep them. */
+@container ll-app (max-width: 599px) {
+  .steps { display: flex; }
+  .step { flex: none; min-width: 28px; }
+  .step[data-state="current"] { flex: 1 1 auto; }
+
+  .step:not([data-state="current"]) .label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
