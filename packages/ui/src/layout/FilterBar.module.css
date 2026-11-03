@@ -1,0 +1,72 @@
+/* FilterBar (DS-02). One white row of filter buttons with the active value shown; scrolls horizontally on
+   phones. Below bp-lg a single "Filters" button leads, and desktop-only filters, "More filters" and
+   "Clear all" are hidden. */
+.bar {
+  border-bottom: 1px solid var(--ll-color-border);
+  background: var(--ll-color-surface);
+}
+
+.inner {
+  composes: container from "./PageContainer.module.css";
+  display: flex;
+  align-items: center;
+  gap: var(--ll-space-2);
+  padding-block: var(--ll-space-3);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.filter {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: var(--ll-c-button-h-sm);
+  padding: 0 12px;
+  border: 1px solid var(--ll-color-control-border);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-surface);
+  color: var(--ll-color-text);
+  font-size: var(--ll-text-md);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.filter:hover {
+  background: var(--ll-color-surface-subtle);
+}
+
+.filter[data-active] {
+  border-color: var(--ll-color-text);
+}
+
+.filterLabel {
+  color: var(--ll-color-text-muted);
+}
+
+.filterValue {
+  font-weight: var(--ll-weight-semibold);
+}
+
+.clear {
+  flex: none;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-md);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.wideOnly {
+  display: none;
+}
+
+@container ll-app (min-width: 960px) { /* bp-lg */
+  .wideOnly { display: inline-flex; }
+  .narrowOnly { display: none; }
+}

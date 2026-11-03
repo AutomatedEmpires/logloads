@@ -1,0 +1,12 @@
+/* PageContainer (DS-02). Max width 1376 px. The gutter (--ll-gutter) is 16 / 24 / 32 px at base / bp-md / bp-xl,
+   raised by AppShell; GlobalNavigation, PageHeader and FilterBar compose `.container` for their inner rows. */
+.container {
+  width: 100%;
+  max-width: var(--ll-container-max);
+  margin-inline: auto;
+  padding-inline: var(--ll-gutter);
+}
+
+.container[data-width="narrow"] {
+  max-width: calc(var(--ll-container-narrow) + 2 * var(--ll-gutter));
+}

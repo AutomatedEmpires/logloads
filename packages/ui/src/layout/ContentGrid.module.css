@@ -1,0 +1,31 @@
+/* ContentGrid (DS-02). Pages choose a layout, never column widths. One column below each threshold.
+   list-detail: list + DetailPanel at bp-xl (400 px) and bp-2xl (432 px), only while the detail is open.
+   main-aside: content + 360 px aside at bp-xl.  split: 420 px list + conversation at 1024 px (spec §4–5). */
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: var(--ll-space-5);
+  padding-block: var(--ll-space-5) var(--ll-space-7);
+}
+
+@container ll-app (min-width: 1024px) { /* split threshold from the spec; not a named breakpoint */
+  .grid[data-layout="split"] { grid-template-columns: var(--ll-list-width) minmax(0, 1fr); }
+}
+
+@container ll-app (min-width: 1200px) { /* bp-xl */
+  .grid[data-layout="list-detail"][data-detail="open"] { grid-template-columns: minmax(0, 1fr) var(--ll-panel-width); }
+  .grid[data-layout="main-aside"] { grid-template-columns: minmax(0, 1fr) var(--ll-aside-width); gap: var(--ll-space-6); }
+}
+
+@container ll-app (min-width: 1400px) { /* bp-2xl */
+  .grid[data-layout="list-detail"][data-detail="open"] { grid-template-columns: minmax(0, 1fr) var(--ll-panel-width-wide); gap: var(--ll-space-6); }
+}
+
+.col {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--ll-space-5);
+  min-width: 0;
+}

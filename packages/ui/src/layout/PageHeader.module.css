@@ -1,0 +1,95 @@
+/* PageHeader (DS-02). A white header surface, never a dark band: breadcrumbs, title, description, meta,
+   actions (right-aligned from bp-lg), tabs and a full-width slot. */
+.header {
+  background: var(--ll-color-surface);
+  border-bottom: 1px solid var(--ll-color-border);
+}
+
+.inner {
+  composes: container from "./PageContainer.module.css";
+  display: grid;
+  gap: var(--ll-space-4);
+  padding-block: var(--ll-space-5);
+}
+
+@container ll-app (min-width: 960px) { /* bp-lg */
+  .inner {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    padding-block: var(--ll-space-6) var(--ll-space-5);
+  }
+}
+
+.header[data-tabs] .inner {
+  padding-bottom: 0;
+}
+
+.lead {
+  min-width: 0;
+}
+
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ll-space-1);
+  margin: 0 0 var(--ll-space-2);
+  padding: 0;
+  list-style: none;
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+}
+
+.crumbs li + li::before {
+  content: "/";
+  margin-right: var(--ll-space-1);
+}
+
+.crumbs a {
+  color: inherit;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--ll-font-display);
+  font-size: var(--ll-text-2xl);
+  font-weight: var(--ll-weight-semibold);
+  line-height: var(--ll-leading-tight);
+  letter-spacing: var(--ll-tracking-display);
+  text-wrap: balance;
+  overflow-wrap: break-word;
+}
+
+@container ll-app (min-width: 960px) { /* bp-lg */
+  .title { font-size: 2rem; }
+}
+
+.desc {
+  max-width: 70ch;
+  margin-top: var(--ll-space-2);
+  color: var(--ll-color-text-secondary);
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ll-space-1) var(--ll-space-4);
+  margin-top: var(--ll-space-3);
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-md);
+}
+
+.actions {
+  min-width: 0;
+}
+
+.slot {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.tabs {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin-top: var(--ll-space-2);
+}
