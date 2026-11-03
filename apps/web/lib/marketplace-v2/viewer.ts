@@ -1,22 +1,68 @@
 import "server-only"
 
-import { requireAuthenticatedActor } from "../session"
+import { redirect } from "next/navigation"
+
+import { getClerkUserId, getSessionActor, type SessionActor } from "../session"
 import { pilotMarketplaceV2 } from "./pilot-adapter"
 import type { MarketplaceV2Viewer, MarketplaceV2ViewerAccess } from "./port"
 
 /**
+ * V2 has no business switcher (`/v2/switch`, #124) and no business setup (`/v2/start`) yet. Until they
+ * exist, V2 says so in plain text: the only existing switcher and setup flow open a legacy cockpit.
+ */
+export const BUSINESS_SWITCH_UNAVAILABLE = "The business switcher is not available in this preview yet."
+
+/** A refusal followed by the switcher note, as full sentences. Replace with a `/v2/switch` link once it exists. */
+export function withBusinessSwitchNote(refusal: string): string {
+  const sentence = refusal.trim()
+
+  return `${/[.!?]$/.test(sentence) ? sentence : `${sentence}.`} ${BUSINESS_SWITCH_UNAVAILABLE}`
+}
+
+export const NO_BUSINESS_PROFILE_REFUSAL =
+  "Your sign-in is not linked to a LogLoads business yet. Setting up a business is not available in this preview yet."
+
+/**
+ * The signed-in actor for a V2 page. No session at all goes to sign-in and comes back to `nextPath`.
+ * A sign-in that has no LogLoads profile yet gets a refusal instead of the shared guard's redirect to
+ * the legacy onboarding flow, which ends in a legacy cockpit.
+ */
+export async function resolveV2Actor(nextPath: string): Promise<
+  | { ok: true; actor: SessionActor }
+  | { ok: false; refusal: string }
+> {
+  const actor = await getSessionActor()
+
+  if (actor) {
+    return { actor, ok: true }
+  }
+
+  if (await getClerkUserId()) {
+    return { ok: false, refusal: NO_BUSINESS_PROFILE_REFUSAL }
+  }
+
+  redirect(`/sign-in?next=${encodeURIComponent(nextPath)}`)
+}
+
+/**
  * Session-derived viewer plus V2 capabilities for signed-in V2 pages. Redirects to sign-in when there is
- * no session; returns a refusal message (never a capability) when no usable workspace is selected.
+ * no session; returns a refusal message (never a capability) when no usable business is selected.
  */
 export async function resolveV2Viewer(nextPath: string): Promise<
   | { ok: true; viewer: MarketplaceV2Viewer; access: MarketplaceV2ViewerAccess }
   | { ok: false; refusal: string }
 > {
-  const actor = await requireAuthenticatedActor(nextPath)
+  const resolved = await resolveV2Actor(nextPath)
+
+  if (!resolved.ok) {
+    return resolved
+  }
+
+  const { actor } = resolved
   const workspace = actor.activeOrganization
 
   if (!workspace || actor.workspaceSelectionInvalid) {
-    return { ok: false, refusal: "Choose a workspace to continue." }
+    return { ok: false, refusal: withBusinessSwitchNote("No business is selected for your account.") }
   }
 
   const viewer = { organizationId: workspace.id, userId: actor.profile.id }
@@ -24,6 +70,6 @@ export async function resolveV2Viewer(nextPath: string): Promise<
   try {
     return { access: await pilotMarketplaceV2.viewerAccess(viewer), ok: true, viewer }
   } catch {
-    return { ok: false, refusal: "This workspace is not available." }
+    return { ok: false, refusal: withBusinessSwitchNote("This business is not available to your account.") }
   }
 }

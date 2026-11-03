@@ -7,7 +7,7 @@ import { formatDay, JOB_STATUS_LABELS, payLabel } from "@/components/v2/format"
 import { reconfirmJobAction } from "@/lib/marketplace-v2/actions"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
-import { resolveV2Viewer } from "@/lib/marketplace-v2/viewer"
+import { resolveV2Viewer, withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
@@ -22,7 +22,7 @@ export default async function LandingJobsPage({ searchParams }: { searchParams: 
       <>
         <h1>Your job postings</h1>
         <p className="v2-banner">
-          {resolved.ok ? "Your role in this workspace cannot post or confirm jobs." : resolved.refusal} <Link href="/workspace">Choose workspace</Link>
+          {resolved.ok ? withBusinessSwitchNote("Your role in this business cannot post or confirm jobs.") : resolved.refusal}
         </p>
       </>
     )

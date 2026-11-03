@@ -17,7 +17,7 @@ import { publishJobAction } from "@/lib/marketplace-v2/actions"
 import { DRAFT_TEXT_FIELDS, draftQueryString, draftValuesFromQuery, validateDraftValues } from "@/lib/marketplace-v2/draft-params"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
-import { resolveV2Viewer } from "@/lib/marketplace-v2/viewer"
+import { resolveV2Viewer, withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
@@ -30,7 +30,7 @@ export default async function JobPreviewPage({ searchParams }: { searchParams: S
     return (
       <>
         <h1>Job preview</h1>
-        <p className="v2-banner">{resolved.ok ? "Your role in this workspace cannot post jobs." : resolved.refusal}</p>
+        <p className="v2-banner">{resolved.ok ? withBusinessSwitchNote("Your role in this business cannot post jobs.") : resolved.refusal}</p>
       </>
     )
   }
