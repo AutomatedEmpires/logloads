@@ -92,6 +92,13 @@ async function firstJobPath(page: Page): Promise<string> {
 const inquiryRows = (page: Page) => page.locator("#main [data-ds-page] ul[aria-label$='inquiries'] > li")
 
 /**
+ * The title link of North Pine Logging's first job on the board. Every case that expresses interest uses it: in CI
+ * the pilot journeys publish other businesses' jobs ahead of North Pine's, and New River's inquiry must reach North
+ * Pine's inbox, never LANDING_WITHOUT_INQUIRIES'.
+ */
+const northPineJobLink = (page: Page) => jobRows(page).filter({ hasText: NORTH_PINE.name }).first().locator("h3 a")
+
+/**
  * Signs in as New River Hauling and makes sure it has an inquiry with North Pine Logging, expressing interest in
  * North Pine's first job that accepts it (the note is MARKUP_NOTE) when it has none yet. Only North Pine's: in CI
  * the pilot journeys publish other businesses' jobs ahead of it on the board, and an inquiry there would leave
@@ -103,7 +110,7 @@ async function ensureNewRiverInquiry(page: Page): Promise<boolean> {
   if ((await inquiryRows(page).filter({ hasText: NORTH_PINE.name }).count()) > 0) return true
 
   await openV2(page, "/v2/work")
-  const link = jobRows(page).filter({ hasText: NORTH_PINE.name }).first().locator("h3 a")
+  const link = northPineJobLink(page)
   if ((await link.count()) === 0) return false
 
   await openV2(page, (await link.getAttribute("href"))!)
@@ -332,7 +339,7 @@ test.describe("the express-interest form (New River Hauling)", () => {
     await page.setViewportSize(viewportFor(1440))
     await signIn(page, NEW_RIVER.email)
     await openV2(page, "/v2/work")
-    const link = jobRows(page).first().locator("h3 a")
+    const link = northPineJobLink(page)
     test.skip((await link.count()) === 0, NO_OPEN_JOB)
 
     await openV2(page, (await link.getAttribute("href"))!)

@@ -61,7 +61,18 @@ jobs:
       # DS-05 (#148): reuses this job's build, browsers and Supabase stack, with Marketplace V2 on its own port.
       # It runs even when the pilot journeys above fail, so each suite reports its own result.
       - name: Design-system regression
+        id: design-system
         if: ${{ !cancelled() && steps.playwright-browsers.outcome == 'success' }}
         run: pnpm test:e2e:design-system
         env:
           CI: "true"
+
+      # Playwright keeps a trace of each failed DS-05 case (design-system.config.mjs); upload them so a CI-only failure
+      # can be read. They hold only this job's disposable local stack and seeded demo accounts.
+      - name: Upload design-system traces
+        if: ${{ !cancelled() && steps.design-system.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: design-system-traces
+          path: apps/web/tests/test-results/design-system/
+          retention-days: 7
