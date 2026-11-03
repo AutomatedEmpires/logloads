@@ -32,7 +32,11 @@ vi.mock("./pilot-adapter", () => ({
   }
 }))
 
-import { AVAILABILITY_ATTESTATION_REQUIRED, MARKETPLACE_AVAILABILITY_ATTESTATION } from "@logloads/contracts"
+import {
+  MARKETPLACE_AVAILABILITY_ATTESTATION,
+  MARKETPLACE_PUBLISH_ATTESTATION_FIELDS,
+  PUBLISH_ATTESTATION_REQUIRED
+} from "@logloads/contracts"
 
 import { publishJobAction, reconfirmJobAction } from "./actions"
 import { MarketplaceOperationUnavailableError } from "./port"
@@ -50,6 +54,10 @@ const NEW_PATH = "/v2/landing/jobs/new"
 const PREVIEW_PATH = "/v2/landing/jobs/preview"
 const JOBS_PATH = "/v2/landing/jobs"
 const ATTESTED = { [MARKETPLACE_AVAILABILITY_ATTESTATION.field]: MARKETPLACE_AVAILABILITY_ATTESTATION.value }
+/** All three publish statements ticked (V2-DEC-03, UX 02 §B7). */
+const PUBLISH_ATTESTED: Record<string, string> = Object.fromEntries(
+  MARKETPLACE_PUBLISH_ATTESTATION_FIELDS.map((name) => [name, MARKETPLACE_AVAILABILITY_ATTESTATION.value])
+)
 
 /** A draft that passes every draft and publishing rule, on the viewer's own landing. */
 const PUBLISHABLE = {
@@ -116,7 +124,7 @@ describe("publishJobAction server-side checks", () => {
   it("does nothing while V2 is disabled", async () => {
     mocks.marketplaceV2Enabled.mockReturnValue(false)
 
-    await expect(redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...ATTESTED }))).resolves.toMatchObject({ path: "/" })
+    await expect(redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...PUBLISH_ATTESTED }))).resolves.toMatchObject({ path: "/" })
     expect(mocks.checkRateLimit).not.toHaveBeenCalled()
     expect(mocks.publishJob).not.toHaveBeenCalled()
   })
@@ -124,14 +132,14 @@ describe("publishJobAction server-side checks", () => {
   it("sends a request without a session to sign-in", async () => {
     mocks.getSessionActor.mockResolvedValue(null)
 
-    await expect(redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...ATTESTED }))).resolves.toMatchObject({ path: "/sign-in" })
+    await expect(redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...PUBLISH_ATTESTED }))).resolves.toMatchObject({ path: "/sign-in" })
     expect(mocks.publishJob).not.toHaveBeenCalled()
   })
 
   it("rate-limits every attempt per session user, before any other check", async () => {
     mocks.checkRateLimit.mockRejectedValue(new Error("Too many attempts. Wait a moment and try again."))
 
-    const target = await redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...ATTESTED }))
+    const target = await redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...PUBLISH_ATTESTED }))
 
     expect(mocks.checkRateLimit).toHaveBeenCalledExactlyOnceWith("marketplace-publish", USER_ID, 20, 3_600_000)
     expect(target).toMatchObject({ path: PREVIEW_PATH, query: { error: "Too many attempts. Wait a moment and try again.", title: PUBLISHABLE.title } })
@@ -143,7 +151,7 @@ describe("publishJobAction server-side checks", () => {
   it("refuses a role without job.publish", async () => {
     mocks.viewerAccess.mockResolvedValue({ capabilities: ["interest.express", "interest.withdraw", "interest.reply"], organizationName: "North Pine" })
 
-    const target = await redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...ATTESTED }))
+    const target = await redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...PUBLISH_ATTESTED }))
 
     expect(target).toMatchObject({ path: PREVIEW_PATH, query: { error: "Your role cannot publish jobs for this organization" } })
     expect(mocks.viewerAccess).toHaveBeenCalledWith(VIEWER)
@@ -164,14 +172,14 @@ describe("publishJobAction server-side checks", () => {
     ["no end date, duration or Ongoing", { durationDays: "" }],
     ["two ways of stating the end", { endsOn: "2026-11-20" }]
   ])("re-validates the draft on the server and refuses %s", async (_label, change) => {
-    const target = await redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...change, ...ATTESTED }))
+    const target = await redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...change, ...PUBLISH_ATTESTED }))
 
     expect(target).toMatchObject({ path: NEW_PATH, query: { error: "Fix the highlighted fields before publishing" } })
     expect(mocks.publishJob).not.toHaveBeenCalled()
   })
 
   it("refuses another organization's landing (cross-organization attempt)", async () => {
-    const target = await redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...ATTESTED, landingId: OTHER_LANDING_ID }))
+    const target = await redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...PUBLISH_ATTESTED, landingId: OTHER_LANDING_ID }))
 
     expect(target).toMatchObject({ path: NEW_PATH, query: { error: "Choose one of your organization's landings", landingId: OTHER_LANDING_ID } })
     // Ownership is resolved for the session's organization, not one the form names.
@@ -182,7 +190,7 @@ describe("publishJobAction server-side checks", () => {
   it("refuses a cross-organization attempt even when the form claims the other organization", async () => {
     const target = await redirectOf(publishJobAction, form({
       ...PUBLISHABLE,
-      ...ATTESTED,
+      ...PUBLISH_ATTESTED,
       actorUserId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
       landingId: OTHER_LANDING_ID,
       organizationId: OTHER_ORGANIZATION_ID
@@ -196,20 +204,21 @@ describe("publishJobAction server-side checks", () => {
 
   it.each([
     ["missing", {}],
-    ["blank", { availabilityAttestation: "" }],
-    ["a generic checkbox value", { availabilityAttestation: "on" }],
-    ["a truthy string", { availabilityAttestation: "true" }]
-  ])("requires the explicit attestation (%s)", async (_label, attestation) => {
+    ["blank", { ...PUBLISH_ATTESTED, attestAccurate: "" }],
+    ["a generic checkbox value", { ...PUBLISH_ATTESTED, attestRealJob: "on" }],
+    ["a truthy string", { ...PUBLISH_ATTESTED, attestMaintained: "true" }],
+    ["only the old single confirmation", ATTESTED]
+  ])("requires all three explicit attestations (%s)", async (_label, attestation) => {
     const target = await redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...attestation }))
 
-    expect(target).toMatchObject({ path: PREVIEW_PATH, query: { error: AVAILABILITY_ATTESTATION_REQUIRED, title: PUBLISHABLE.title } })
+    expect(target).toMatchObject({ path: PREVIEW_PATH, query: { error: PUBLISH_ATTESTATION_REQUIRED, title: PUBLISHABLE.title } })
     expect(mocks.publishJob).not.toHaveBeenCalled()
   })
 
   it("passes the session viewer and a server-generated attestation, ignoring identity and timestamps in the form", async () => {
     await redirectOf(publishJobAction, form({
       ...PUBLISHABLE,
-      ...ATTESTED,
+      ...PUBLISH_ATTESTED,
       confirmedAt: "2020-01-01T00:00:00.000Z",
       lastConfirmedAt: "2020-01-01T00:00:00.000Z",
       organizationId: OTHER_ORGANIZATION_ID,
@@ -227,17 +236,17 @@ describe("publishJobAction server-side checks", () => {
   })
 
   it("returns to the preview with the draft intact, and without the attestation, when the store cannot publish", async () => {
-    const target = await redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...ATTESTED }))
+    const target = await redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...PUBLISH_ATTESTED }))
 
     expect(target).toMatchObject({ path: PREVIEW_PATH, query: { landingId: OWN_LANDING_ID, title: PUBLISHABLE.title, unavailable: "publish" } })
-    expect(target.raw).not.toContain(MARKETPLACE_AVAILABILITY_ATTESTATION.field)
+    for (const name of MARKETPLACE_PUBLISH_ATTESTATION_FIELDS) expect(target.raw).not.toContain(name)
     expect(mocks.revalidatePath).not.toHaveBeenCalled()
   })
 
   it("opens the published job once an adapter can publish", async () => {
     mocks.publishJob.mockResolvedValue({ jobId: JOB_ID })
 
-    await expect(redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...ATTESTED }))).resolves.toMatchObject({
+    await expect(redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...PUBLISH_ATTESTED }))).resolves.toMatchObject({
       path: `/v2/work/${JOB_ID}`,
       query: { published: "1" }
     })

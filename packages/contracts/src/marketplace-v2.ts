@@ -74,6 +74,25 @@ export function marketplaceEquipmentLabel(code: string): string {
   return MARKETPLACE_EQUIPMENT_TYPES.find((type) => type.code === code)?.label ?? code.replace(/[_-]+/g, " ")
 }
 
+/**
+ * Product types (UX-DEC-03): a controlled list, stored as its label in the existing `job_postings.product`
+ * text column. "Other" is described by the poster (up to 120 characters) and that description is stored.
+ * The list lives here, next to the equipment types, so the editor and the filters share one source.
+ */
+export const MARKETPLACE_PRODUCTS = [
+  "Saw logs",
+  "Pulpwood",
+  "Poles and pilings",
+  "Chips",
+  "Hog fuel and biomass",
+  "Hardwood logs",
+  "Other"
+] as const
+
+export type MarketplaceProduct = (typeof MARKETPLACE_PRODUCTS)[number]
+export const MARKETPLACE_OTHER_PRODUCT: MarketplaceProduct = "Other"
+export const marketplaceProductSchema = z.enum(MARKETPLACE_PRODUCTS)
+
 export const marketplaceJobStatusSchema = z.enum(["active", "paused", "filled", "closed", "expired"])
 export type MarketplaceJobStatus = z.infer<typeof marketplaceJobStatusSchema>
 

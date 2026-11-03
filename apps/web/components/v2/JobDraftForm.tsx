@@ -2,6 +2,7 @@ import {
   MARKETPLACE_DRAFT_LIMITS,
   MARKETPLACE_EQUIPMENT_TYPES,
   MARKETPLACE_PAY_UNIT_LABELS,
+  MARKETPLACE_PRODUCTS,
   marketplacePayUnitSchema,
   type MarketplaceDraftIssue,
   type MarketplaceDraftLandingContext
@@ -62,8 +63,14 @@ export function JobDraftForm({ issues, landings, values }: {
         <Field field="title" hint="Haulers see this first, e.g. “Doug-fir saw logs to Springfield”." issues={issues} label="Title">
           <input aria-describedby={describedBy("title")} aria-invalid={invalid("title")} defaultValue={v("title")} maxLength={140} name="title" required />
         </Field>
-        <Field field="product" hint="Required to publish." issues={issues} label="Product / log type">
-          <input aria-describedby={describedBy("product")} aria-invalid={invalid("product")} defaultValue={v("product")} maxLength={120} name="product" placeholder="Saw logs, pulpwood, chips…" />
+        <Field field="product" hint="Required to publish." issues={issues} label="Product">
+          <select aria-describedby={describedBy("product")} aria-invalid={invalid("product")} defaultValue={v("product")} name="product">
+            <option value="">Choose a product</option>
+            {MARKETPLACE_PRODUCTS.map((product) => <option key={product} value={product}>{product === "Other" ? "Other (describe)" : product}</option>)}
+          </select>
+        </Field>
+        <Field field="productOther" hint="Only for Other: what is being hauled, up to 120 characters." issues={issues} label="Describe the product">
+          <input aria-describedby={describedBy("productOther")} aria-invalid={invalid("productOther")} defaultValue={v("productOther")} maxLength={120} name="productOther" />
         </Field>
         <fieldset className={invalid("equipment") ? "v2-field v2-field--invalid" : "v2-field"}>
           <legend>Equipment required</legend>

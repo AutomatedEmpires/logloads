@@ -7,8 +7,10 @@ import { redirect } from "next/navigation"
 
 import {
   attestAvailability,
-  AVAILABILITY_ATTESTATION_REQUIRED,
   MARKETPLACE_AVAILABILITY_ATTESTATION,
+  MARKETPLACE_PUBLISH_ATTESTATION_FIELDS,
+  PUBLISH_ATTESTATION_FIELD,
+  PUBLISH_ATTESTATION_REQUIRED,
   validateMarketplaceJobPublication,
   type MarketplaceAvailabilityAttestation,
   type MarketplaceJobDraft
@@ -183,9 +185,9 @@ type PublishCheck =
 
 /**
  * Every server-side check publishing needs, in order. Identity is the session viewer; the form supplies
- * only the draft and the checkbox. Thrown service errors (rate limit, membership) propagate.
+ * only the draft and the three attestation checkboxes. Thrown service errors (rate limit, membership) propagate.
  */
-async function checkPublishRequest(viewer: MarketplaceV2Viewer, values: DraftFormValues, attestationValue: string): Promise<PublishCheck> {
+async function checkPublishRequest(viewer: MarketplaceV2Viewer, values: DraftFormValues, attestations: Record<string, string>): Promise<PublishCheck> {
   // 1. Rate limit first, so refused attempts (for example probing other organizations' landings) count too.
   await checkRateLimit(PUBLISH_RATE_LIMIT.bucket, viewer.userId, PUBLISH_RATE_LIMIT.limit, HOUR_MS)
 
@@ -197,14 +199,14 @@ async function checkPublishRequest(viewer: MarketplaceV2Viewer, values: DraftFor
   }
 
   // 3. Draft rules (required pay, sensitive-access and contact text, limits), publishing rules (product,
-  //    timing) and the explicit attestation, whose timestamp is the server clock.
-  const publication = validateMarketplaceJobPublication(draftInput(values), attestationValue, new Date())
+  //    timing) and all three explicit attestations, whose timestamp is the server clock.
+  const publication = validateMarketplaceJobPublication(draftInput(values), attestations, new Date())
 
   if (!publication.ok) {
-    const onlyAttestationMissing = publication.issues.every((issue) => issue.field === MARKETPLACE_AVAILABILITY_ATTESTATION.field)
+    const onlyAttestationMissing = publication.issues.every((issue) => issue.field === PUBLISH_ATTESTATION_FIELD)
 
     return onlyAttestationMissing
-      ? { error: AVAILABILITY_ATTESTATION_REQUIRED, ok: false, path: PREVIEW_PATH }
+      ? { error: PUBLISH_ATTESTATION_REQUIRED, ok: false, path: PREVIEW_PATH }
       : { error: FIX_FIELDS, ok: false, path: NEW_JOB_PATH }
   }
 
@@ -230,7 +232,8 @@ export async function publishJobAction(formData: FormData): Promise<void> {
   let checked: PublishCheck
 
   try {
-    checked = await checkPublishRequest(viewer, values, field(formData, MARKETPLACE_AVAILABILITY_ATTESTATION.field))
+    const attestations = Object.fromEntries(MARKETPLACE_PUBLISH_ATTESTATION_FIELDS.map((name) => [name, field(formData, name)]))
+    checked = await checkPublishRequest(viewer, values, attestations)
   } catch (error) {
     redirectWithDraft(PREVIEW_PATH, values, { error: message(error) })
   }

@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
 
-import { MARKETPLACE_AVAILABILITY_ATTESTATION, marketplaceJobPublicationIssues, previewMarketplaceJob } from "@logloads/contracts"
+import { marketplaceJobPublicationIssues, marketplacePublishAttestations, previewMarketplaceJob } from "@logloads/contracts"
 
 import { JobCard } from "@/components/v2/JobCard"
 import {
@@ -75,7 +75,7 @@ export default async function JobPreviewPage({ searchParams }: { searchParams: S
   const duration = durationLabel(job)
   const runs = duration ?? (validation.draft.ongoing ? "Ongoing" : null)
   const error = typeof query.error === "string" ? query.error : null
-  const attestation = MARKETPLACE_AVAILABILITY_ATTESTATION
+  const attestations = marketplacePublishAttestations(landing.name)
 
   return (
     <>
@@ -124,11 +124,17 @@ export default async function JobPreviewPage({ searchParams }: { searchParams: S
       <form action={publishJobAction} className="v2-form">
         {DRAFT_TEXT_FIELDS.map((name) => values.text[name] ? <input key={name} name={name} type="hidden" value={values.text[name]} /> : null)}
         {values.equipment.map((code) => <input key={code} name="equipment" type="hidden" value={code} />)}
-        {/* The explicit attestation: never pre-ticked, never carried in the draft or an edit link. */}
-        <label className="v2-check">
-          <input name={attestation.field} required type="checkbox" value={attestation.value} />
-          <span>{attestation.label}</span>
-        </label>
+        {/* The explicit attestation (V2-DEC-03): three statements, never pre-ticked, never carried in the draft or an edit link. */}
+        <fieldset className="v2-field">
+          <legend>Before you publish</legend>
+          {attestations.map((attestation) => (
+            <label className="v2-check" key={attestation.field}>
+              <input name={attestation.field} required type="checkbox" value={attestation.value} />
+              <span>{attestation.label}</span>
+            </label>
+          ))}
+          <p className="v2-muted">Publishing records that your business confirmed the job is available today.</p>
+        </fieldset>
         <button disabled={!pilotMarketplaceV2.supportsPublishing || publicationIssues.length > 0} type="submit">Publish job</button>
         {!pilotMarketplaceV2.supportsPublishing ? (
           <p className="v2-muted">
