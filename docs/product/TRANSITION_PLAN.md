@@ -143,3 +143,31 @@ Items for the prototype owner:
 - Qualified transportation-law review before monetized invitations or boosts.
 - `tools/check-guardrails.mjs` bans the retired copy pattern `$499/mo` in `apps/web`; the Regional plan is $499/month,
   so the new pricing surface must update that guardrail deliberately (keep banning the retired Dispatch Pro copy).
+
+## Status addendum — 2026-11-01 documentation reconciliation
+
+*Append-only status notes. The plan text above is not edited. They record repository evidence at commit `4c9518e`
+plus the observed state of the primary checkout. They do not change sequencing or product decisions.*
+
+### Schema prototype
+
+- The "Location of the schema prototype (blocks step 1)" open decision is answered: `architecture/normalized-v2/`.
+  The step 1 row already says so.
+- Those files are still **untracked** in the primary checkout, so links to them do not resolve on any branch yet.
+  The intended CI job is described in [`../RUNNERS.md`](../RUNNERS.md) §3.
+
+### CARTO allowance
+
+The 5M requests/month figure in "Parallel tracks" is the account owner's report. It is **unverified** — see the
+dashboard check listed there. An earlier revision of this plan cited a public "1M tile requests/month from
+2026-12-01" free-tier limit. `4c9518e` replaced it. If both figures are real, they describe different things: a
+public tier versus this account's entitlement.
+
+### Missing tool
+
+`logloads-audit/storage-check.sh`, cited under "Environment discipline", does not exist in this repository.
+
+### Historical contracts referenced above
+
+`docs/SUBSCRIPTION_BILLING_V1.md` now carries a superseded notice. The pre-November handoffs, marketplace
+specification, Stripe runbook, pilot contract, and security record are under [`../archive/`](../archive/README.md).

@@ -1,68 +1,78 @@
-# LogLoads — Resend Activation Runbook
+# LogLoads — Resend Email Activation and Delivery Policy
 
-Outbound email is wired and key-gated (`apps/web/lib/notify.ts`). It **fails open
-honestly**: without `RESEND_API_KEY`, delivery is skipped and the in-app record remains
-the source of truth — the code never reports a false success.
+> **Status:** Revised 2026-11-01.
+> - §1–§3 are CURRENT: the existing, key-gated email integration in code at `15892b7`.
+> - §4 is TARGET.
+>
+> This document authorizes no campaign, broadcast, production key, or DNS change.
 
-## Founder gate
-> **Activate only with a Resend API key whose Sending access is restricted to the
-> verified `logloads.com` domain. Send as `LogLoads <notifications@logloads.com>` and
-> route replies to `support@logloads.com`. Do not substitute a shared, cross-account,
-> or unrestricted key.**
+## 1. What the code does today (CURRENT)
 
-Keep the Production `RESEND_API_KEY` absent until this identity change is merged and
-the production activation is explicitly authorized. Development and Preview may use
-the domain-scoped key for pre-production verification.
+Outbound email lives in `apps/web/lib/notify.ts`. It **fails open honestly**: without `RESEND_API_KEY`,
+delivery is skipped and the in-app record remains the source of truth. The code never reports a false
+success.
 
-## What the code does
-- `deliverEmail({ to, subject, text })` POSTs to `https://api.resend.com/emails` with a
-  8s timeout; returns `false` (never throws) on any failure. No retry (fire-and-forget).
+- `deliverEmail({ to, subject, text })` POSTs to Resend with an 8-second timeout. It returns `false` on any
+  failure and never throws. It does not retry.
 - `isEmailDeliveryEnabled()` gates callers on `RESEND_API_KEY`.
-- **From identity:** `RESEND_FROM`, then legacy `LOGLOADS_EMAIL_FROM`, then the safe
-  default `LogLoads <notifications@logloads.com>`.
-- **Support/reply identity:** `RESEND_REPLY_TO`, then `SUPPORT_EMAIL`, then legacy
-  `LOGLOADS_EMAIL_REPLY_TO`, then the safe default `support@logloads.com`.
-- **Current email-triggering event:** contact-form inquiries
-  (`apps/web/lib/contact-actions.ts`) → emails `LOGLOADS_CONTACT_EMAIL`
-  (default `support@logloads.com`) AND writes an in-app notification to the
-  platform admin. The in-app record is always written regardless of email outcome.
+- **From:** `RESEND_FROM`, then the compatibility `LOGLOADS_EMAIL_FROM`, then the default
+  `LogLoads <notifications@logloads.com>`.
+- **Reply-to:** `RESEND_REPLY_TO`, then `SUPPORT_EMAIL`, then the compatibility `LOGLOADS_EMAIL_REPLY_TO`,
+  then `support@logloads.com`.
+- **Contact form** (`apps/web/lib/contact-actions.ts`) emails `LOGLOADS_CONTACT_EMAIL` and always writes an
+  in-app platform-admin notification, whatever the email outcome.
+- **Historical billing notifications** (`apps/web/lib/billing-notification-email.ts`) form a transactional
+  outbox. Sends happen only when the relevant historical collection gate is enabled. Those gates stay disabled
+  ([`ENV_CONTRACT.md`](./ENV_CONTRACT.md)).
+- The `/v2` preview sends **no email**. Interest and reply notifications are in-app only, or not yet built.
 
-## Configuration
-1. Confirm `logloads.com` remains verified in Resend. If verification is absent, stop;
-   do not switch to another product's domain or sender.
-2. Confirm the API key has **Sending** access restricted only to `logloads.com`. Store
-   `RESEND_API_KEY` through the approved Doppler-to-host path; never expose it to the
-   browser or commit it.
-3. Keep the canonical identity values aligned in every environment:
+An in-app notification, an API `200`, or `integrations.email=true` is not proof of delivery. Check Resend's
+delivery events.
 
-   ```dotenv
-   RESEND_FROM="LogLoads <notifications@logloads.com>"
-   RESEND_REPLY_TO="support@logloads.com"
-   SUPPORT_EMAIL="support@logloads.com"
-   LOGLOADS_CONTACT_EMAIL="support@logloads.com"
-   ```
+## 2. Sender configuration (CURRENT)
 
-   `LOGLOADS_EMAIL_FROM` and `LOGLOADS_EMAIL_REPLY_TO` remain compatibility fallbacks,
-   not the canonical controls.
+- `RESEND_API_KEY` — a server secret with **Sending** access restricted to the verified `logloads.com`
+  domain. Never substitute a shared, cross-account, or unrestricted key.
+- Canonical identities in every environment:
 
-## Activation path
-`merge the identity fix` → `confirm domain-scoped key + canonical identities` →
-`authorize Production RESEND_API_KEY` → `deploy` → `submit the /contact form` →
-`confirm email delivery + the in-app admin notification`.
+  ```dotenv
+  RESEND_FROM="LogLoads <notifications@logloads.com>"
+  RESEND_REPLY_TO="support@logloads.com"
+  SUPPORT_EMAIL="support@logloads.com"
+  LOGLOADS_CONTACT_EMAIL="support@logloads.com"
+  ```
 
-This activates coordination notifications only. It does not make LogLoads a freight
-broker, payment handler, or authority for money-moving communication.
+- `LOGLOADS_EMAIL_FROM` and `LOGLOADS_EMAIL_REPLY_TO` are compatibility fallbacks, not the canonical
+  controls.
 
-## Verification
-- `curl https://logloads.com/api/health` → `integrations.email: true`.
-- Submit `/contact` with a test message → email delivered to `LOGLOADS_CONTACT_EMAIL`;
-  the admin's in-app notifications show the inquiry.
-- Run `corepack pnpm --filter @logloads/web exec vitest run lib/notify.test.ts` to verify
-  the exact sender/reply payload and the no-key/no-fetch behavior. Do not remove a
-  Production credential solely to exercise the fail-open path.
+Never put a raw key, a personal address, a private landing contact, or a recipient list into code, logs, test
+reports, or Git.
 
-## Recipients to confirm with the founder
-- Operations/contact inbox (`LOGLOADS_CONTACT_EMAIL`).
-- Future operating emails (assignment confirmations, notices) are not yet wired to
-  email — they live as in-app notifications. When those are promoted to email, they use
-  the same `deliverEmail` path and the recipient is the affected user's profile email.
+## 3. Controlled activation and test (CURRENT pilot path)
+
+1. Confirm domain ownership, DKIM/SPF, sending-key scope, and the recipient identities.
+2. Keep the production `RESEND_API_KEY` absent until the founder explicitly authorizes it. Development and
+   Preview may use a domain-scoped key with **controlled test recipients**.
+3. Run `pnpm --filter @logloads/web exec vitest run lib/notify.test.ts`. It verifies the exact sender/reply
+   payload and the no-key/no-fetch behavior.
+4. After authorized activation, submit `/contact` and confirm two things: the email arrives at
+   `LOGLOADS_CONTACT_EMAIL`, and the in-app admin notification exists.
+5. Record the environment, exact SHA, recipient *category* (not the address), the Resend event status, and
+   cleanup.
+
+## 4. Future V2 email types (TARGET — not live because listed)
+
+- Opted-in **targeted job invitations** to hauler businesses, with relevance, unsubscribe/mute, and frequency
+  limits.
+- "Interest received" and "interest replied" notices to the right business participants.
+- Saved-search digests and job-change alerts, only with explicit preference and frequency controls.
+- Account, security, and other necessary transactional notices, kept legally distinct from marketing.
+
+**Invitation billing is stricter than ordinary notices.** An undelivered invitation must never permanently
+consume an included credit. Before paid invitations launch, define "delivered", and test atomic reservation,
+per-recipient caps, retry idempotency, and a single refund on failure.
+
+Templates must never carry gate codes, non-public coordinates, credentials, or private correspondence. They
+must not imply the recipient is hired, contracted, or dispatched. Public broadcasts, imported recipient lists,
+and marketing campaigns need founder approval, lawful consent, and unsubscribe controls. Assignment and trip
+emails are historical concepts and are not V2 requirements.

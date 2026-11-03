@@ -1,202 +1,197 @@
-# LogLoads — Security Record
+# LogLoads — Security Posture
 
-Authoritative record of the database security posture. Verified against the live
-Supabase project `fdzohbiiyzgvjzfsjyxo` on 2026-07-08. The next agent should not
-have to rediscover any of this.
+> **Status:** Revised 2026-11-01. This document separates **historical evidence**, **controls present in
+> code today**, **target architecture**, and **verification still owed**.
+>
+> **There is no blanket "SECURITY VERIFIED" status.** The July 2026 verification applied to one live Supabase
+> project and the schema of that date. It does not extend to later code, to the V2 preview, or to the
+> normalized-v2 schema. The normalized-v2 schema has never been executed against PostgreSQL.
+>
+> The full original security record is preserved verbatim at
+> [`archive/security/SECURITY_RECORD_2026-08-05.md`](./archive/security/SECURITY_RECORD_2026-08-05.md):
+> first verified 2026-07-08, last revised 2026-08-05.
 
-## Status: SECURITY VERIFIED
+Labels used below: **HISTORICAL** = observed at a past date, not re-verified. **CURRENT (code)** = present
+in the repository at commit `4c9518e`; this review did not verify the deployed production configuration.
+**TARGET** = designed, not active. **OWED** = verification that has not happened.
 
-- 36 public tables · **35 RLS-enabled** · 1 documented PostGIS exception
-- `operating_state` (the only data-bearing table): **service-role only**
-- Anonymous read/write denied (proven from outside with the live anon key)
-- PII access denied · sensitive RPCs no longer anonymous · function search_paths pinned
-- Supabase security advisor: **zero application-table ERRORs**
+## 1. Historical findings and verification evidence — July 2026 (HISTORICAL)
 
-## Distributed abuse controls
+These results were observed against the live Supabase project on the stated dates. They remain important
+evidence, and the controls they established are still in the migrations. They have **not** been re-verified
+for this revision.
 
-- Sign-in, contact, onboarding, and authenticated mutation routes consume shared,
-  atomic fixed-window limits through the existing Supabase Postgres stack.
-- Migration `20260713053327_shared_rate_limit_windows.sql` adds an RLS-enabled table and `SECURITY INVOKER` RPC with service-role-only grants. The atomic upsert serializes concurrent consumes for the same bucket/key; bounded `FOR UPDATE SKIP LOCKED` cleanup removes only expired counter rows.
-- Store keys contain HMAC-SHA-256 digests rather than raw IPs, actor IDs, or emails. A dedicated secret is preferred, with the existing server-only Supabase service-role key as the safe fallback; secret material never enters the RPC body.
-- Rotating the effective HMAC secret resets active rate-limit buckets. Old keyed buckets expire and are removed by bounded cleanup during later requests.
-- Only Vercel's platform-overwritten forwarding header is trusted in production. Generic forwarding headers are ignored outside that trust boundary, and missing/invalid platform values share one fail-safe bucket.
-- Production fails closed if Supabase credentials or the RPC are absent or unavailable. The
-  memory implementation is restricted to development and the explicit local E2E
-  harness.
-- Code and tests are complete; migration approval/application, optional dedicated
-  HMAC secret placement, and exact-SHA multi-instance/outage proof remain public-cutover gates. No KV/Redis provider is required.
+### 1.1 Critical exposure found and closed — anon read/write on `operating_state`
 
-## External API refusal boundary
+- `public.operating_state` (then a mirror, now the canonical store, holding all PII) had a policy,
+  `operating_state_rw`, granting **anon** full read and write. The publishable anon key could have read or
+  overwritten the entire operating state.
+- Fixed in `supabase/migrations/20260707050000_security_rls_coverage.sql`: the permissive policy was dropped
+  and anon/authenticated grants were revoked. The table is RLS-enabled with **no policy**, so PostgREST
+  denies everyone except the service role.
+- `20260711034301_canonical_operating_state.sql` makes the service-role grants explicit (`SELECT`, `INSERT`,
+  `UPDATE` only; no delete path).
+- Verified from outside with the live anon key on 2026-07-08: `GET` and `POST /rest/v1/operating_state` →
+  permission denied; `GET /rest/v1/driver_profiles` → permission denied; `request_capacity` not callable;
+  `is_org_member` → permission denied.
 
-- Service-layer business preconditions throw `DomainRefusalError`. The shared
-  HTTP mapper returns one constant `409` body and records only a fixed,
-  identifier-free refusal event in server logs.
-- Assignment, availability, load, truck-slot, route-pack, driver-media, and trip-
-  document paths preserve that typed boundary. Media adapters do not rewrap
-  domain errors with record-specific messages.
-- Unknown application errors remain sanitized `500` responses; typed domain
-  failures never expose cross-tenant record identifiers or existence details.
+### 1.2 RLS coverage gap — reconciled
 
-## Billing payment-method mutation boundary
+The foundation migration (`20260604190000`) created 19 tables without RLS. Phase 2 (`20260706090000`)
+covered 21 tables, but only 5 of the foundation tables. Two apparently conflicting reports were both subsets of
+the same original coverage gap. `20260707050000` closed it. The July inventory was 36 public tables: 35
+RLS-enabled, plus the PostGIS `spatial_ref_sys` exception. The per-table list is in the archived record.
 
-- `GET /api/billing/payment-method` remains a read-only status surface for an
-  actor with `manage_billing`, even when the organization cannot start card
-  setup. Read access does not imply permission to mutate provider state.
-- `POST /api/billing/payment-method` requires `manage_billing`. The server
-  recomputes eligibility from canonical billing state and the server-owned
-  rollout configuration; client input cannot grant commercial authority.
-- A current `percentage_v1` organization is eligible only after accepting the
-  exact current agreement and immutable terms and receiving exact organization
-  rollout authorization. Preserved provider-bound historical subscriptions,
-  explicit `legacy_percentage` accounts, and accrued or otherwise unsettled fee
-  or invoice obligations remain serviceable so an existing obligation is not
-  orphaned.
-- Duplicate profiles, accounts, subscriptions, provider mismatches, and
-  cross-organization records fail closed. An ineligible request is refused
-  before Stripe customer lookup or creation and before SetupIntent creation;
-  the billing service enforces the same rule as the route. A preserved
-  provider-bound Stripe customer is reused, and a profile/subscription customer
-  mismatch is refused rather than repaired implicitly.
-- Card setup is non-activating: it does not accept terms, enroll a host, enable
-  collection, create a fee, charge a card, or move driver compensation.
-  Percentage enrollment and fee collection remain independent, default-dark
-  gates.
+### 1.3 Accepted Supabase advisor exceptions (as of July 2026)
 
-## Platform-admin authority boundary
-
-- `profiles.role = admin` is historical identity data, not authorization. Every
-  Clerk-backed platform-admin session must match exactly one server-configured
-  Clerk user id and the independently configured SHA-256 of the versioned scope
-  material. Malformed, padded, duplicate, multiple, missing, or mismatched
-  values fail closed.
-- The one-time claim additionally requires a verified Clerk primary email,
-  same-origin bounded JSON with a fixed confirmation, client and identity rate
-  limits, an exact `enabled` gate, and a strict future ISO expiry. The canonical
-  mutation can bind only the fixed active, organization-less, membership-less
-  seed administrator and writes one sanitized audit event.
-- The temporary gate has no part in ongoing authority. It is removed after the
-  claim; the exact persistent identity and scope digest remain required. Contact
-  inquiry notifications are filtered by current platform-admin authority so
-  removing that scope also removes access to historical inquiry PII on the next
-  request.
-
-## Membership revocation and private-response boundary
-
-- Organization reads and mutations require an active user, a non-archived exact
-  organization, and one unambiguous active membership. Driver reads and writes
-  additionally require one driver profile owned by that organization; request
-  paths also require the driver to be available. An unrelated membership or
-  historical driver row cannot restore access.
-- Suspension/removal preserve operating records but make the driver and every
-  current/future availability record unavailable. Reactivation does not change
-  availability. Last-owner, self-removal, self-suspension, duplicate membership,
-  duplicate driver-profile, and non-grantable-role cases fail closed inside one
-  atomic state mutation.
-- Authenticated private JSON, signatures, Route Packs, trip activity, and media
-  responses carry `Cache-Control: private, no-store`, including refusals and
-  failures. A browser therefore cannot reuse private content after revocation;
-  the next read must pass current authorization. Public load discovery remains a
-  separately redacted public surface.
-
-## How the RLS discrepancy arose (reconciled, proven)
-
-Two earlier reports appeared to conflict; both were true subsets of the same reality:
-
-- The **foundation migration** (`20260604190000_backend_foundation.sql`) predated the
-  RLS design and created 19 tables with **no RLS**.
-- **Phase 2** (`20260706090000_operating_network_phase2.sql`) enabled RLS on 21 tables
-  but only **5 of the foundation tables** (profiles, companies, load_postings,
-  truck_slots, assignments), leaving **14 foundation tables uncovered**.
-- Report A ("~21 protected") = the phase-2 set. Report B ("15 disabled") = the 14
-  uncovered tables + PostGIS `spatial_ref_sys`.
-- **Not a regression, not stale, not an unapplied migration — an original coverage gap.**
-
-## The real exposure that was found and closed (was CRITICAL)
-
-`public.operating_state` — the full-state JSON blob (then a durability mirror, now
-the transitional canonical store) holding
-all PII — had a policy (`operating_state_rw`) granting **anon** full read/write. The
-publishable anon key could have exfiltrated or overwritten the entire operating state.
-
-Fixed in `20260707050000_security_rls_coverage.sql`: permissive policy dropped, anon
-and authenticated grants revoked. The table is now RLS-enabled with **no policy**, so
-PostgREST denies everyone except the service role (which bypasses RLS). The app
-repository requires `SUPABASE_SERVICE_ROLE_KEY` (`packages/db/src/snapshot.ts`).
-The repo-local 2026-07-10 convergence migration further makes service-role grants
-explicit (`SELECT`, `INSERT`, `UPDATE` only); that additive migration still requires
-live application and verification.
-
-Empirically verified from outside with the live anon key:
-- `GET /rest/v1/operating_state` → `permission denied for table operating_state`
-- `POST /rest/v1/operating_state` → `permission denied`
-- `GET /rest/v1/driver_profiles` (PII) → `permission denied`
-- `POST /rest/v1/rpc/request_capacity` → not callable; `is_org_member` → `permission denied`
-
-## 36-table inventory
-
-**RLS-enabled with policies (21 application tables):** assignments, companies,
-destination_facilities, direct_offers, entitlements, equipment_combinations,
-future_availability, load_postings, operational_notices, opportunity_capacities,
-organization_invitations, organization_memberships, private_network_relationships,
-profiles, rich_landing_details, route_packs, trip_documents, trip_events, trips,
-truck_slots, verification_records.
-
-**RLS-enabled with policies (added 2026-07-08, migration `20260707050000`, 14 tables):**
-driver_profiles, dispatcher_profiles, loader_profiles, truck_profiles,
-trailer_profiles, landings, mills, haul_routes, rates, availability_windows,
-notifications, message_threads, message_events, audit_events.
-
-**RLS-enabled, NO policy (deny-all but service role) — intentional:** operating_state;
-`rate_limit_windows` joins this category after its pending migration is applied.
-
-**RLS exempt (1):** `spatial_ref_sys` — PostGIS system table, extension-owned, cannot
-take RLS. Contains only public coordinate-reference definitions (SRIDs); no app data
-or PII. This is the single accepted `rls_disabled_in_public` advisor ERROR.
-
-## Policy design principles
-
-- SELECT policies are member/owner-scoped via the `current_profile_id()` and
-  `is_org_member()` SECURITY DEFINER helpers.
-- Writes are NOT granted to anon/authenticated on these tables; they flow through the
-  service role (server-side) or SECURITY DEFINER RPCs. This matches the phase-2 pattern.
-- `mills` and `destination_facilities` are intentionally public-readable (shared
-  destination reference data).
-
-## Function / RPC execution restrictions
-
-- Internal RLS helpers (`current_profile_id`, `current_clerk_user_id`, `is_org_member`,
-  `org_role_can`, `load_visible_to_org`, `orgs_have_active_relationship`): EXECUTE
-  revoked from PUBLIC; granted to `authenticated` (required for RLS evaluation under a
-  Clerk JWT) and `service_role`. **anon cannot execute them.**
-- `request_capacity` (mutating RPC): EXECUTE revoked from PUBLIC; granted to
-  `service_role` only. Not callable by anon or authenticated over REST.
-- `consume_rate_limit` (mutating RPC, pending migration): `SECURITY INVOKER`, empty
-  `search_path`, EXECUTE revoked from PUBLIC/anon/authenticated and granted only to
-  `service_role`.
-- `set_updated_at` and `current_clerk_user_id`: `search_path` pinned (was mutable).
-
-## Accepted advisor exceptions (documented, not defects)
-
-| Advisor finding | Level | Why accepted |
+| Finding | Level | Reason accepted |
 |---|---|---|
-| `spatial_ref_sys` RLS disabled | ERROR | PostGIS extension-owned system table; public SRID reference data only; cannot enable RLS |
-| `postgis` extension in `public` schema | WARN | Moving it risks breaking geography columns; not a data-exposure vector |
-| `st_estimatedextent(...)` executable by anon/authenticated | WARN | PostGIS extension functions (geometry-extent estimators); extension-owned, not revocable |
-| `current_profile_id`/`is_org_member`/etc. executable by `authenticated` | WARN | REQUIRED — RLS policies cannot evaluate without it |
+| `spatial_ref_sys` RLS disabled | ERROR | PostGIS extension-owned; public SRID reference data only |
+| `postgis` extension in `public` | WARN | Moving it risks breaking geography columns |
+| `st_estimatedextent(...)` executable by anon/authenticated | WARN | Extension-owned, not revocable |
+| RLS helper functions executable by `authenticated` | WARN | Required for RLS evaluation |
 | `operating_state` RLS enabled, no policy | INFO | Intentional deny-all-but-service-role |
 
-## Future note (when normalized Postgres tables become the read path)
+### 1.4 Later hardening evidence
 
-RLS tables currently fail-closed for anon (`permission denied for function
-current_profile_id`). Correct today: the Next server reads the canonical whole-state
-row via service role; anon never queries PostgREST. If open-network loads are ever
-served directly to anon via PostgREST, revisit those specific policies/grants.
+- **Shared rate limiting** (`20260713053327_shared_rate_limit_windows.sql`): on 2026-07-12, an isolated
+  local PostgreSQL 17 accepted the migration. 12 concurrent sessions produced exactly the counts 1–12, and
+  anon/authenticated execution was denied. Live application of the migration, and exact-SHA multi-instance
+  and outage proof, were recorded as cutover gates. Their completion is not evidenced in the repository.
+- `20260726090000_revoke_public_relational_grants.sql` and
+  `20260808230214_admin_manage_billing_permission.sql` revoked further relational grants. Their live
+  application status is not recorded here.
 
-## Repo ↔ live ledger reconciliation
+## 2. Current pilot canonical-state controls — CURRENT (code)
 
-The live project was bootstrapped and secured via the Supabase MCP `apply_migration`,
-which timestamps ledger entries at apply time. The repo `supabase/migrations/*.sql`
-files are the **idempotent source of truth** (CREATE IF NOT EXISTS / DROP POLICY IF
-EXISTS / CREATE OR REPLACE / enable-RLS-is-a-no-op-if-enabled). A fresh environment
-applies them in filename order; re-applying against the live project is safe. See
-`docs/DEPLOYMENT.md` for the migration order.
+The deployed pilot keeps nearly all business data in one JSON document. **RLS does not protect application
+reads or writes of that document,** because the server uses the service-role key, which bypasses RLS. Tenant
+isolation for the pilot therefore depends on the service-layer authorization below. Keep it intact for as long
+as the legacy code is reachable.
+
+- **Storage boundary:** `operating_state` is service-role only. The repository layer requires
+  `SUPABASE_SERVICE_ROLE_KEY` (`packages/db/src/snapshot.ts`). Writes are full-document compare-and-swap on a
+  monotonic `version`. A malformed row is withheld from runtime state, not erased.
+- **Identity:** `apps/web/lib/session.ts` resolves the actor from the Clerk session or from a tightly
+  restricted loopback development session. Client-supplied actor, role, or organization IDs are never trusted.
+- **Membership boundary:** reads and mutations require an active user, a non-archived exact organization, and
+  one unambiguous active membership. Suspension and removal take effect on the next request. Last-owner,
+  self-removal, duplicate-membership, and non-grantable-role cases fail closed.
+- **Refusal boundary:** service-layer preconditions throw `DomainRefusalError`. The shared HTTP mapper
+  returns one constant `409` body, and unknown errors return a sanitized `500`. No cross-tenant identifier or
+  existence detail leaks.
+- **Private responses:** authenticated private JSON, signatures, route packs, trip activity, and media carry
+  `Cache-Control: private, no-store`, including refusals.
+- **Rate limiting:** shared Supabase fixed windows via a service-role-only `SECURITY INVOKER` RPC with an
+  empty `search_path`. Keys are HMAC-SHA-256 digests, never raw IPs, emails, or IDs. Production fails closed
+  when the store is unavailable or partially configured. `requestClientKey()` throws when
+  `LOGLOADS_RATE_LIMIT_HMAC_SECRET` is absent (`apps/web/lib/rate-limit-client-key.ts`), so that secret is
+  operationally required ([`ENV_CONTRACT.md`](./ENV_CONTRACT.md)). On Vercel, only the platform-overwritten
+  forwarding header is trusted.
+- **Platform-admin authority:** `profiles.role = admin` is historical data, not authorization. Admin
+  sessions must match exactly one server-configured Clerk user ID and the configured scope SHA-256. The
+  one-time bootstrap claim is separately gated and expiring.
+- **Private media:** active only when the Supabase URL, the expected project reference, the bucket, and the
+  keys all validate. Uploads are read back and validated server-side. Delivery uses five-minute signed URLs
+  after authorization. Cloudinary is not an active provider.
+- **Historical commercial gates:** `LOGLOADS_FEE_COLLECTION`, `LOGLOADS_PERCENTAGE_ENROLLMENT`,
+  `LOGLOADS_SUBSCRIPTION_COLLECTION`, and `LOGLOADS_DISPATCH_SELF_SERVE` default to disabled and fail closed.
+  Card setup is non-activating. Stripe calls assert the expected account and live/test mode. These gates
+  protect **historical** obligations only. They must not be repurposed to activate the new model
+  ([`ACTIVATION_STRIPE.md`](./ACTIVATION_STRIPE.md)).
+
+## 3. Current V2 preview controls — CURRENT (code, development preview)
+
+The `/v2` load-board preview (`apps/web/app/v2`, `apps/web/lib/marketplace-v2`) runs on the same pilot
+store and inherits §2. In addition:
+
+- **Exposure gate:** renders only when `LOGLOADS_MARKETPLACE_V2=enabled`, and never when
+  `VERCEL_ENV=production` (`flag.ts`). When disabled, the layout returns `notFound()`. The layout is always
+  `noindex, nofollow`. **Note:** the code permits hosted *Preview* deployments when the flag is set. Do not set
+  it there without an approved, isolated preview plan ([`DEPLOYMENT.md`](./DEPLOYMENT.md) §4).
+- **Identity:** server actions call `getSessionActor()`; signed-in pages use `resolveV2Viewer()`
+  (`viewer.ts`). Both require an active organization. Viewer IDs never come from form input.
+- **Authority:** explicit V2 capabilities, as of `4c9518e`:
+  - **Hauler side:** `interest.express`, `interest.withdraw`, `interest.reply`, `equipment.manage`.
+  - **Landing side:** `job.publish`, `landing.manage`, `inquiry.respond`.
+
+  `packages/contracts/src/marketplace-permissions.ts` defines them, restating the normalized-v2 role sets
+  (owner/manager/staff/driver plus landing seat). Drivers never gain landing capabilities.
+  `packages/services/src/marketplace-access.ts` translates pilot roles into that membership. It is
+  side-limited: billing, viewer, and destination-manager roles get nothing, and a landing seat requires
+  operating a landing. The legacy `request_assignment` and `publish_load` checks no longer authorize V2
+  actions.
+- **Job authoring:** `/v2/landing/jobs` (and its `/new` and `/preview` pages) validates a draft against
+  `marketplace-job-draft.ts`. That includes the sensitive-access-text rule, which mirrors
+  `contains_sensitive_access_pattern`. Publish and reconfirm require `job.publish`, but the pilot adapter
+  reports `supportsPublishing: false`, so **nothing is persisted**. The publish and reconfirm actions apply no
+  rate limit; add one before persistence is enabled.
+- **Integrity:** one live interest per job and hauler business. Replies are replay-safe. Every transition
+  writes an audit event inside the compare-and-swap mutation.
+- **Abuse limits:** `checkRateLimit` per user (`apps/web/lib/marketplace-v2/actions.ts`):
+  - interest submissions: 20/hour;
+  - hauler follow-up replies: 60/hour;
+  - landing responses: 120/hour.
+
+  Both reply limits share the `marketplace-reply` bucket. Withdrawal has no separate limit.
+- **Redaction:** reads come from the redacted public network projection (`apps/web/lib/network.ts`, which
+  rounds public coordinates to 0.02°). `mapping.ts` maps only approximate points and never maps access notes,
+  exact coordinates, or contacts into V2 views.
+- **Not yet present:** an explicit, audited private-detail disclosure action. Expressing interest alone
+  unlocks nothing in V2. The pilot's assignment-triggered disclosure is legacy behavior and is not carried
+  into V2.
+
+## 4. TARGET — normalized-v2 RLS and Clerk authentication (not active)
+
+The prototype lives under `architecture/normalized-v2/`. It is owned by Gemini and, at this revision, exists only
+as uncommitted files in the primary checkout. It designs:
+
+- a `marketplace` schema of 32 tables, with RLS on every table and anon-readable public projections
+  implemented as RLS policies, not views;
+- `landing_private_details` with no anon grant or policy;
+- identity resolution through `marketplace.current_user_id()`. It requires a non-empty `iss` matching an
+  enabled `trusted_identity_issuers` row, a non-empty `sub`, an explicit `role = authenticated`, a numeric
+  future `exp`, a valid `nbf` when present, and a pinned `aud` when configured. It then resolves
+  `(issuer, sub)` through `identity_links` to an active `app_users` row;
+- audited `SECURITY DEFINER` functions for invitations, entitlement cycles, and boosts, with row-locking
+  designed for concurrency.
+
+**Simulated claims are not verified tokens.** The prototype's SQL tests (`04_tests.sql`,
+`05_concurrency_test.*`) use `set_config('request.jwt.claims', …)` with `SET LOCAL ROLE`. That exercises
+*claim inspection and RLS policies only* (layer 2). Cryptographic verification of a Clerk-signed token — the
+RS256 signature against Clerk's JWKS, issuer, and expiry — happens at Supabase's API gateway through the
+third-party auth integration (layer 1). Only an end-to-end test that sends real Clerk tokens through a
+configured Supabase project proves layer 1. A passing SQL suite never does.
+
+**Service-role bypass still applies.** If the application reaches normalized tables with the service-role
+key, RLS protects nothing on that path. A target design must either carry the verified user token to
+PostgREST or keep explicit service-layer authorization. The choice is open (TRANSITION_PLAN, "Identity").
+
+## 5. Verification still owed (OWED)
+
+Do not claim the corresponding security property until the evidence exists. Record each result with its date,
+SHA, environment, and command output.
+
+| # | Requirement | Applies to |
+|---|---|---|
+| 1 | Re-run the anon/authenticated denial probes and the advisor review against the **current** production project, read-only. Record the date. | Pilot |
+| 2 | Confirm that migrations `20260713053327`, `20260726090000`, and `20260808230214` are applied live, and that the ledger matches the repository. | Pilot |
+| 3 | Exact-SHA multi-instance rate-limit proof and simulated store outage → `503` | Pilot |
+| 4 | Execute `01`–`03` DDL plus `04_tests.sql` and `05_concurrency_test.sh` on a disposable PostgreSQL 17/PostGIS in CI, with logs ([`RUNNERS.md`](./RUNNERS.md)) | Normalized-v2 |
+| 5 | Configure Supabase third-party auth for a **development** Clerk instance. Prove that forged, expired, wrong-issuer, and wrong-audience tokens are rejected at the gateway, and that valid tokens resolve to the right `app_users` row. | Normalized-v2 |
+| 6 | Cross-tenant denial matrix: anon, authenticated stranger, member of another org, removed member, multi-org user switching context, platform admin without a support reason | Normalized-v2 and V2 adapter |
+| 7 | `SECURITY DEFINER` review: owners, `search_path`, grants, and exposure through the Data API | Normalized-v2 |
+| 8 | Parity between the `marketplace-permissions.ts` capability sets (added in `4c9518e`, unit-tested) and the normalized RLS role sets, proven on an executed database. Rate limits on publish/reconfirm before persistence is enabled. | V2 and normalized-v2 |
+| 9 | Audited private-detail disclosure and revocation, with tests proving interest alone discloses nothing | V2 |
+| 10 | Invitation quota races (final credit, double failure callback, reaper versus callback, duplicate cycle webhook) under real concurrent sessions | Normalized-v2 |
+| 11 | Migration rehearsal on synthetic data, with historical financial records preserved read-only | Cutover |
+
+## 6. Handling rules
+
+- Never put secrets, service-role keys, Clerk secrets, real tokens, backup files, or private landing details
+  into Git, issues, PRs, logs, or chat.
+- Security probes against production are read-only and need explicit authorization. Mutation testing uses
+  disposable environments only.
+- Report a suspected vulnerability privately to the founder. Do not open a public issue with exploit detail.
+- When a control changes, update this document and add a dated entry to [`DECISIONS.md`](./DECISIONS.md) if
+  it changes an architecture or provider boundary.

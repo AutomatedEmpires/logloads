@@ -1,148 +1,129 @@
-# LogLoads Pilot Launch Contract
+# LogLoads — Marketplace Pilot Plan
 
-## Purpose
+> **Status:** PLAN, revised 2026-11-01 for the adopted load-board model. **No pilot described here is
+> operating.** Nothing in this document activates a membership, a founding offer, a boost, targeted
+> invitations, email, billing, or a public launch.
+>
+> **Authority:** [`DECISIONS.md`](./DECISIONS.md) (2026-11-01),
+> [`product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md`](./product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md) §8, §13–§15,
+> [`product/LOGLOADS_UX_FUNCTIONAL_SPEC_v1.0.md`](./product/LOGLOADS_UX_FUNCTIONAL_SPEC_v1.0.md) and
+> [`product/TRANSITION_PLAN.md`](./product/TRANSITION_PLAN.md).
+>
+> **Superseded plan:** the 2026-08-10 *Pilot Launch Contract* (Plan → Publish → Match → Commit → Coordinate →
+> Haul → Confirm, 5% completed-load fee, assignment-gated access, completion proof) is preserved verbatim at
+> [`archive/2026-legacy-commercial/PILOT_LAUNCH_2026-08-10.md`](./archive/2026-legacy-commercial/PILOT_LAUNCH_2026-08-10.md).
+> It is historical evidence only. Its acceptance criteria are **not** requirements for the new pilot.
 
-The pilot must let a timber operation prove the full LogLoads loop before it
-depends on the product in the field:
+## 1. What the pilot must prove
 
-**Plan → Publish → Match → Commit → Coordinate → Haul → Confirm → Repeat**
+LogLoads is a timber-hauling load board. The pilot proves one loop with real businesses:
 
-It is not a generic free trial and it is not a historical Network Pilot
-subscription. Drivers and fleet workspaces are free. A host creates its
-workspace for free and, only after exact pilot approval, accepts the current 5%
-completed-load agreement and prepares Billing before publishing live work.
+**Publish → Discover → Express interest → Reply → Parties arrange work themselves → Return.**
 
-## Three deliberately separate experiences
+The goal is supply density and repeat use in a small region (Blueprint §8.3) — not revenue, not hauling
+volume. LogLoads never records, verifies, or bills a physical load. The pilot succeeds when real landing
+operators get useful, plausible responses from real hauling businesses, and haulers find opportunities worth
+returning for.
 
-### 1. Public Pilot Center
+## 2. What the pilot is not
 
-- No account, card, or form gate is required to understand the product.
-- Every Host, Fleet, and Driver surface is named and shown using current-product
-  captures from a disposable synthetic workspace.
-- One fictional movement explains how state and responsibility pass between the
-  three roles.
-- No actor is impersonated. No canonical operating record, private route detail,
-  message, upload, notification, enrollment, charge, or mutation is available
-  from the tour. The shared public shell may perform its ordinary read-only
-  identity or analytics check; it does not grant cockpit access or load
-  canonical operating state.
-- Relevant next actions are role-specific: create a free Driver or Fleet
-  workspace, prepare a Host workspace, or request a guided pilot conversation.
+None of the following is a pilot requirement, success measure, or activation gate:
 
-### 2. Assisted rehearsal
+- per-load, per-truck, or percentage-of-pay fees, or any freight-payment proof;
+- truck assignment, slots, route packs, trips, completion confirmation, or settlement;
+- dispatcher or driver-schedule workflows;
+- release of private landing details triggered by an assignment;
+- counting loads hauled, trucks hired, or invoices paid between the parties.
 
-- The existing `pnpm demo` environment is the immediate rehearsal tool for a
-  founder-led call. It runs only on loopback, shifts synthetic dates to the
-  current period, disables every provider, writes to a disposable file, and
-  deletes that file on exit.
-- A prospect follows one connected scenario as Host, Fleet coordinator, and
-  Driver. The walkthrough includes one exception and recovery, not only a happy
-  path.
-- Nothing in rehearsal is silently copied into a live workspace.
+The old pilot code that does these things may still exist behind disabled gates. Leave it in place to keep
+historical records readable. Do not demonstrate it, extend it, or use it as evidence for this pilot.
 
-### 3. Live founding pilot
+## 3. Pilot components
 
-- The exact host organization, participating organizations, people, equipment,
-  landing, lane, and visibility policy are agreed before activation.
-- Live publication remains off until the organization is approved, the
-  authorized representative accepts the current agreement, a valid payment
-  method is attached, and every legal and rollout gate is satisfied.
-- The host remains responsible for paying the driver directly and in full.
-  LogLoads never holds or moves that money. A separate LogLoads fee equal to 5%
-  of stated driver pay becomes billable only after authoritative physical
-  completion.
-- Enrollment and fee collection are independent gates. Neither is implied by a
-  workspace, rehearsal, stored card, or public Pilot Center visit.
+| # | Component | Pilot requirement | Current implementation (commit `4c9518e`) |
+|---|---|---|---|
+| 1 | **Verified landing organizations** | Each participating landing is a real, independently identified business with a legitimate active operation. Verification covers business identity only, never truck availability, insurance, or compliance (Blueprint §10.2). | Pilot organization review and verification records exist. No V2-specific landing verification flow exists. |
+| 2 | **Real job advertisements** | Every posting is a genuine opportunity with a stated pay amount and pay basis, equipment, approximate origin, destination area, start/duration, truck demand, and a truthful *last confirmed* timestamp. No seeded or invented listings appear as real. | `/v2` reads existing pilot postings through a redacted adapter. Pilot jobs are never labelled "confirmed". Native authoring at `/v2/landing/jobs` validates and previews but does **not** persist (`supportsPublishing: false`). |
+| 3 | **Free hauling business registration** | Owner-operators and fleets register free. No card, plan, or paywall. | Pilot onboarding exists. No V2-native hauler registration flow yet. |
+| 4 | **Equipment and availability profiles** | Haulers describe trucks/trailers and self-reported availability, each with a visible timestamp. Availability is never inferred from login activity or location. | Pilot equipment/availability records exist. V2 interest can cite configurations from the existing profile. V2 profile and availability screens are not built yet. |
+| 5 | **Search and discovery** | Text-first, fast on weak rural connections, usable without the map. The map is optional and lazy-loaded. | `/v2/work` (text list, optional map) behind `LOGLOADS_MARKETPLACE_V2`. |
+| 6 | **Expressions of interest** | Short, nonbinding: offered truck count, availability, optional note. One live interest per job and hauler business; withdrawable. Never a contract or an assignment. | Implemented in the `/v2` preview (`packages/services/src/marketplace-interest.ts`). |
+| 7 | **Landing responses** | The landing reviews, replies, asks for clarification, or declines. Inbound interest and replies are unlimited and never consume invitations. | Implemented in the `/v2` preview (`/v2/landing/inquiries`). |
+| 8 | **Private data protection** | Public views show only an approximate landing area. Gate codes, access roads, exact coordinates, and private contacts are released only through an explicit, audited landing action. Interest alone unlocks nothing. | V2 maps only approximate points and excludes access notes and contacts. The explicit disclosure action does not exist yet. |
+| 9 | **Marketplace quality and response metrics** | See §5. Measured from real interactions only. | V2 emits no analytics events yet ([`OBSERVABILITY.md`](./OBSERVABILITY.md)). |
+| 10 | **No invented operational transactions** | The platform does not fabricate loads, hires, reviews, reach claims, or verification badges. Synthetic data is always labelled synthetic. | Policy. Enforced through review ([`REVIEW_CHECKLIST.md`](./REVIEW_CHECKLIST.md)). |
 
-## Recommended first field cohort
+The `/v2` preview is disabled whenever `VERCEL_ENV=production`
+(`apps/web/lib/marketplace-v2/flag.ts`). It is a development preview, not a pilot environment.
 
-Start narrow enough to learn from every movement:
+## 4. Pilot stages
 
-- one host organization with one accountable operating lead;
-- one active landing and one destination lane;
-- one partner fleet or a small invited carrier circle;
-- three to six participating trucks and drivers;
-- one primary equipment pattern; and
-- a 30-day field window after readiness and rehearsal are complete.
+### Stage 0 — Readiness (engineering, no real users)
 
-Additional landings, lanes, organizations, or equipment patterns are added only
-after the first operating loop is stable. The cohort is a recommendation, not a
-public promise or a substitute for the exact written pilot scope.
+Every item must be true before any real business is invited. None is true today.
 
-## Pilot sequence
+1. **Persisted** native V2 job publishing and reconfirmation. Drafting and preview exist; persistence does
+   not.
+2. Free hauler registration, with equipment and timestamped availability.
+3. An explicit, audited private-detail disclosure action, with a revocation path.
+4. Persistence decision: either the normalized V2 adapter has passed its gates
+   ([`DEPLOYMENT.md`](./DEPLOYMENT.md) §5), or the founder has explicitly approved running the pilot on the
+   current `operating_state` store, with backups ([`RECOVERY.md`](./RECOVERY.md)).
+5. Tenant isolation proven on the real request path ([`SECURITY.md`](./SECURITY.md) §5).
+6. A pilot environment isolated from any shared production row. Its exact SHA, provider tenancy, and rollback
+   are recorded.
+7. The V2 events in §5 are instrumented with the privacy rules in [`OBSERVABILITY.md`](./OBSERVABILITY.md).
+8. Abuse reporting and moderation for postings and messages.
+9. Published pilot terms and privacy notice. Transportation-law review of the actual
+   advertising/introduction workflow (Blueprint §15).
 
-### Align
+### Stage 1 — Founder-assisted cohort (free)
 
-Record the current coordination baseline, named owners, operating region,
-landing and destination, equipment needs, driver pay convention, access policy,
-proof requirements, exception contacts, and the outcome the organization wants
-to improve.
+- A small cluster of timber regions with enough landings and hauling businesses for recurring interactions.
+- No charge is collected, because commercial activation (Stage 3) is not approved. **Open founder decision:**
+  whether early landing participants are told they will move to the founding offer when billing activates.
+  Do not promise free or discounted terms until that decision exists.
+- The founder onboards each landing personally and confirms its postings are genuine.
+- Haulers are recruited by invitation or organic sign-up. Outreach is lawful and consented — no bulk
+  purchased lists.
+- Weekly review of the §5 metrics and of qualitative feedback on posting clarity, availability freshness, and
+  usefulness.
 
-### Prepare
+### Stage 2 — Proactive recruiting and boosts (still not billed)
 
-Create real member, driver, equipment, landing, lane, schedule, credential, and
-Billing records. Keep live publication locked. Confirm every participant can
-reach only the cockpit and private detail their membership and assignment grant.
+Targeted invitations and boosts are tested only after their gates pass: consent, deduplication, atomic
+allowance accounting, delivery definition, low-density protection, and Sponsored labelling
+(Blueprint §6–§7; TRANSITION_PLAN steps 5–6). Paid invitation packs stay deferred.
 
-### Rehearse
+### Stage 3 — Commercial activation (separate decision)
 
-Run a synthetic movement from draft through completion. Include an access or
-schedule notice, an exception, completion evidence, host confirmation, direct
-host-to-driver payment status, and illustrative LogLoads fee math. Reset and run
-again until each role can explain its next action.
+Basic $149 / Pro $299 / Regional $499 subscriptions, $99/$149/$199 boosts, and the founding offer (50% off for
+6 billing cycles, first 10 qualifying landing organizations per launched state) may be sold only after:
 
-### Activate
+- the founder records an explicit, dated activation decision in [`DECISIONS.md`](./DECISIONS.md);
+- the gates in [`ACTIVATION_STRIPE.md`](./ACTIVATION_STRIPE.md) pass;
+- the definition of a "launched state" and the founding-eligibility process are decided (Blueprint §16.2).
 
-Authorize the exact organization and smallest agreed live footprint. Prove the
-current deployment SHA, health, provider tenancy, rollback, shared rate limits,
-private media, Clerk identities, agreement version, payment method, enrollment
-gate, and collection gate before the first live publication.
+**Do not describe the founding launch as open, operating, or available until then.**
 
-### Review
+## 5. Pilot scorecard
 
-Review operations at least weekly during the field window. Resolve critical
-defects before adding scope. At the end, choose to continue, revise, or stop;
-preserve the operating record and outstanding obligations either way.
+Use evidence, not enthusiasm. Each measure comes from real participants, not seeds or demos (Blueprint §13).
 
-## Success scorecard
+| Area | Measure |
+|---|---|
+| Liquidity | Active hauler organizations by region and equipment; recent availability confirmations; relevant posting density per region |
+| Engagement | Postings that receive at least one qualified interest; interests per posting; return visits by haulers and landings |
+| Responsiveness | Time from interest to first landing reply; share of interests answered; decline/clarify rates |
+| Freshness | Age of the last posting confirmation; age of the last availability update; stale-listing reports |
+| Trust | Spam/inaccuracy/impersonation reports and their resolution; notification unsubscribes; zero private-data exposure incidents |
+| Experience | Mobile error rate; page performance on weak connections; unassisted completion of each role's primary task |
 
-The pilot succeeds only when evidence—not enthusiasm—supports it:
+**Never** use trucks hired, loads hauled, revenue moved, or fee totals as pilot measures. The platform does not
+observe them.
 
-- every participating user can identify what is available, what it pays, where
-  to go, whether it fits, who owns the next action, and what changed;
-- at least one complete cross-role lifecycle and one exception/recovery path
-  pass without founder intervention;
-- at least ten completed movements reconcile assignment, capacity, trip,
-  completion, proof, direct-payment status, and the host fee ledger;
-- no user receives exact access, contacts, or route instructions before the
-  assignment grants them;
-- no duplicate physical movement creates a second commercial obligation;
-- at least four of five evaluators in each participating role complete their
-  primary workflow without facilitation;
-- the host correctly explains that $500 stated driver pay remains $500 to the
-  driver and creates a separate $25 LogLoads fee after completion;
-- no P0 or P1 defect remains open and no retry-only browser pass is accepted;
-- zero production/test cross-contamination, external side effects from rehearsal,
-  or transportation-fund movement occurs; and
-- measured publish-to-decision time, manual coordination touches, exception
-  resolution, and record completeness are compared with the kickoff baseline
-  without inventing savings.
+## 6. Exit decision
 
-## Hosted evaluation environment gate
-
-A broadly accessible, mutable hosted demo does not exist today. Building one
-requires all of the following before it may be called real:
-
-1. a dedicated Vercel Preview project or protected deployment;
-2. a dedicated Supabase project and synthetic canonical `primary` row;
-3. an explicit expected-project reference check at the canonical-state boundary;
-4. Clerk development identities and ordinary memberships—never public actors;
-5. deterministic provision/reset and one isolated environment per cohort;
-6. synthetic private-media objects or explicit unavailable states;
-7. email, analytics, AI, enrollment, collection, and every payment side effect
-   disabled and tested; and
-8. hosted Clerk, authorization, privacy, reset, concurrency, and full-lifecycle
-   acceptance evidence.
-
-Until that gate is complete, the public Pilot Center plus the disposable local
-founder demo are the truthful launch surfaces.
+At the end of the cohort window, the founder decides to continue, revise, or stop, and records it in
+`DECISIONS.md`. Real participants' records are preserved either way. Any change to pricing, plans, or scope
+needs a new Blueprint version.
