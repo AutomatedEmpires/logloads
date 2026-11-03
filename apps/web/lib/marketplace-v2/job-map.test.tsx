@@ -25,11 +25,13 @@ import {
   jobMapPoints,
   jobMapSiteFeatures,
   nearestMarker,
+  revealOffset,
   sameMarkers,
   shouldClusterJobMap,
   siteMarkerLabel,
   siteMarkers,
   siteSheetTitle,
+  uncoveredMapArea,
   type JobMapPoint,
   type JobMapSite
 } from "./job-map"
@@ -224,6 +226,33 @@ describe("clustering: more than 20 points cluster with counts", () => {
     const markers = siteMarkers(groupJobMapSites([point("a", 44.1, -122.4), point("b", 45.2, -121.9)]))
     expect(nearestMarker(markers, { lat: 45, lng: -122 })?.key).toBe("45.2,-121.9")
     expect(nearestMarker([], { lat: 45, lng: -122 })).toBeNull()
+  })
+})
+
+describe("the sheet overlays the map without resizing it", () => {
+  const map = { bottom: 690, left: 0, right: 390, top: 0 }
+
+  it("leaves the map above a bottom sheet, or left of a side sheet, uncovered", () => {
+    expect(uncoveredMapArea(map, null)).toEqual(map)
+    expect(uncoveredMapArea(map, { bottom: 690, left: 0, right: 390, top: 310 })).toEqual({ ...map, bottom: 310 })
+    const wide = { bottom: 440, left: 0, right: 1216, top: 0 }
+    expect(uncoveredMapArea(wide, { bottom: 440, left: 856, right: 1216, top: 0 })).toEqual({ ...wide, right: 856 })
+    // A sheet that is not over the map (closed, or elsewhere on the page) covers nothing.
+    expect(uncoveredMapArea(map, { bottom: 900, left: 0, right: 390, top: 700 })).toEqual(map)
+  })
+
+  it("leaves a point that is well inside the uncovered area alone, and centres one that is not", () => {
+    const area = { bottom: 310, left: 0, right: 390, top: 0 }
+    expect(revealOffset({ x: 195, y: 150 }, area, 48)).toEqual([0, 0])
+    expect(revealOffset({ x: 60, y: 260 }, area, 48)).toEqual([0, 0])
+    // Under the sheet, past an edge, or too close to one: centred in the uncovered area.
+    expect(revealOffset({ x: 195, y: 500 }, area, 48)).toEqual([0, 345])
+    expect(revealOffset({ x: -40, y: 10 }, area, 48)).toEqual([-235, -145])
+    expect(revealOffset({ x: 380, y: 150 }, area, 48)).toEqual([185, -5])
+  })
+
+  it("centres the point when the uncovered area is too small for the margin", () => {
+    expect(revealOffset({ x: 195, y: 40 }, { bottom: 50, left: 0, right: 390, top: 0 }, 48)).toEqual([0, 15])
   })
 })
 

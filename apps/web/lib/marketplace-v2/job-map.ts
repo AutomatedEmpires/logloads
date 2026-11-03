@@ -237,6 +237,39 @@ export function nearestMarker<T extends { lat: number; lng: number }>(markers: r
   return best
 }
 
+/** A rectangle in the map container's pixels. */
+export interface MapArea {
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
+
+/**
+ * The part of the map the preview sheet does not cover. The sheet overlays the map without resizing it: below bp-md
+ * it covers the bottom edge to edge, from bp-md the right side top to bottom.
+ */
+export function uncoveredMapArea(map: MapArea, sheet: MapArea | null): MapArea {
+  if (!sheet || sheet.right <= map.left || sheet.left >= map.right || sheet.bottom <= map.top || sheet.top >= map.bottom) return map
+
+  const spansWidth = sheet.left <= map.left + 1 && sheet.right >= map.right - 1
+  return spansWidth
+    ? { ...map, bottom: Math.max(map.top, Math.min(map.bottom, sheet.top)) }
+    : { ...map, right: Math.max(map.left, Math.min(map.right, sheet.left)) }
+}
+
+/**
+ * How far to pan (MapLibre `panBy`: positive moves the view right and down) to reveal a projected point: nothing when
+ * it already sits at least `margin` inside `area` (the margin keeps a whole marker, and the attribution beside the
+ * sheet, clear of it); otherwise the move that centres it in `area`, so the camera moves once and lands somewhere calm.
+ */
+export function revealOffset(point: { x: number; y: number }, area: MapArea, margin: number): [number, number] {
+  const inside = (value: number, start: number, end: number) => end - start >= 2 * margin && value >= start + margin && value <= end - margin
+  if (inside(point.x, area.left, area.right) && inside(point.y, area.top, area.bottom)) return [0, 0]
+
+  return [point.x - (area.left + area.right) / 2, point.y - (area.top + area.bottom) / 2]
+}
+
 function jobsText(count: number): string {
   return `${count} ${count === 1 ? "job" : "jobs"}`
 }

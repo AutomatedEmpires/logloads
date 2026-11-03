@@ -21,10 +21,12 @@ import {
   jobMapListHref,
   jobMapSiteFeatures,
   nearestMarker,
+  revealOffset,
   sameMarkers,
   shouldClusterJobMap,
   siteMarkerLabel,
   siteMarkers,
+  uncoveredMapArea,
   type JobMapMarker,
   type JobMapPoint
 } from "@/lib/marketplace-v2/job-map"
@@ -48,6 +50,10 @@ const SOURCE_LAYER = { id: "job-map-sites-index", paint: { "circle-opacity": 0, 
 const MAP_LOCALE = { "Map.Title": "Map of approximate job areas. Arrow keys pan, plus and minus zoom." }
 /** bp-md (768): below it the map is the full-screen view and the list is one tap away. */
 const FULL_SCREEN_QUERY = "(max-width: 767.98px)"
+/** How far inside the uncovered map a marker must sit to count as revealed: half its target plus the attribution. */
+const REVEAL_MARGIN = 48
+/** The first view keeps pins clear of the zoom buttons (top right), the bar edge and the attribution. */
+const FIT_PADDING = { bottom: 40, left: 32, right: 64, top: 32 }
 
 function motionDuration(ms: number): number {
   return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : ms
@@ -61,7 +67,9 @@ function motionDuration(ms: number): number {
  * - Markers are buttons: 44 px targets (--ll-target-touch) around a 32 px pin, with the design-system focus ring,
  *   in north-to-south order. Jobs that share an area share one pin with a count.
  * - With more than 20 points, MapLibre's GeoJSON clustering groups them; a cluster shows its job count and zooms in.
- * - A pin opens the preview sheet (JobMapSheet) and moves focus to it; Escape or Close returns focus to the pin.
+ * - A pin opens the preview sheet (JobMapSheet) and moves focus to it; Escape or Close returns focus to the pin. The
+ *   sheet overlays part of the map without resizing it, so opening and closing it never moves the camera; the map
+ *   only pans, instantly, to bring the open area out from under it.
  * - Below bp-md the map fills the screen under its bar, which keeps "Approximate areas" and "Show list" in view.
  */
 export default function JobMap({ points, now }: JobMapProps) {
@@ -75,6 +83,8 @@ export default function JobMap({ points, now }: JobMapProps) {
   const headingRef = useRef<HTMLHeadingElement | null>(null)
   const openerRef = useRef<HTMLElement | null>(null)
   const focusedMarkerRef = useRef<JobMapMarker | null>(null)
+  const sheetOpenRef = useRef(false)
+  const autoScrollRef = useRef<number | null>(null)
 
   const [openedAt] = useState(() => new Date().toISOString())
   const [listHref] = useState(() => typeof window === "undefined" ? "/v2/work" : jobMapListHref(window.location.pathname, window.location.search))
@@ -129,26 +139,56 @@ export default function JobMap({ points, now }: JobMapProps) {
     if (selectedKey) headingRef.current?.focus()
   }, [selectedKey])
 
-  // The sheet takes room from the map; keep the open area in view.
+  /**
+   * Pans, without animation, to bring a point into the part of the map no sheet covers, when it is not there already.
+   * The sheet overlays the map and never resizes it, so opening and closing it never move the camera by themselves;
+   * this is the only camera move the sheet causes, and closing causes none.
+   */
+  const reveal = useCallback((point: { lat: number; lng: number }) => {
+    const map = mapRef.current?.getMap()
+    if (!map) return
+
+    const container = map.getContainer().getBoundingClientRect()
+    const sheet = sheetOpenRef.current ? document.getElementById(sheetId)?.getBoundingClientRect() ?? null : null
+    const area = uncoveredMapArea(
+      { bottom: container.height, left: 0, right: container.width, top: 0 },
+      sheet ? { bottom: sheet.bottom - container.top, left: sheet.left - container.left, right: sheet.right - container.left, top: sheet.top - container.top } : null
+    )
+    const projected = map.project([point.lng, point.lat])
+    const [dx, dy] = revealOffset(projected, area, REVEAL_MARGIN)
+    if (dx !== 0 || dy !== 0) map.panBy([dx, dy], { animate: false })
+  }, [sheetId])
+
+  // An open sheet covers part of the map: bring the open area out from under it.
   useEffect(() => {
-    if (!selectedSite) return
-    const frame = requestAnimationFrame(() => {
-      const map = mapRef.current?.getMap()
-      if (!map) return
-      map.resize()
-      if (!map.getBounds().contains([selectedSite.lng, selectedSite.lat])) {
-        map.easeTo({ center: [selectedSite.lng, selectedSite.lat], duration: motionDuration(300) })
-      }
+    sheetOpenRef.current = selectedSite !== null
+    if (selectedSite) reveal(selectedSite)
+  }, [reveal, selectedSite])
+
+  // The visitor asked for the map: below bp-md it is the full-screen view, so bring it to the top of the screen unless
+  // they have already scrolled. Web fonts can still reflow the page above it, so it settles again once they are in,
+  // as long as the visitor has not scrolled since.
+  useEffect(() => {
+    const region = regionRef.current
+    if (!region || !window.matchMedia(FULL_SCREEN_QUERY).matches) return
+
+    if (autoScrollRef.current === null) {
+      if (window.scrollY > 0) return
+      region.scrollIntoView({ block: "start" })
+      autoScrollRef.current = window.scrollY
+    }
+
+    let active = true
+    void document.fonts?.ready.then(() => {
+      const placed = autoScrollRef.current
+      if (!active || placed === null || Math.abs(window.scrollY - placed) > 1) return
+      region.scrollIntoView({ block: "start" })
+      autoScrollRef.current = window.scrollY
     })
 
-    return () => cancelAnimationFrame(frame)
-  }, [selectedSite])
-
-  // The visitor asked for the map: below bp-md it is the full-screen view, so bring it to the top of the screen
-  // unless they have already scrolled.
-  useEffect(() => {
-    if (window.scrollY > 0 || !window.matchMedia(FULL_SCREEN_QUERY).matches) return
-    regionRef.current?.scrollIntoView({ block: "start" })
+    return () => {
+      active = false
+    }
   }, [])
 
   const openSite = useCallback((key: string, opener: HTMLElement) => {
@@ -158,6 +198,7 @@ export default function JobMap({ points, now }: JobMapProps) {
 
   const closeSheet = useCallback(() => {
     const key = selectedKey
+    sheetOpenRef.current = false
     setSelectedKey(null)
 
     const opener = openerRef.current
@@ -222,7 +263,7 @@ export default function JobMap({ points, now }: JobMapProps) {
           {...mapProps}
           initialViewState={{
             bounds: [[Math.min(...lngs) - pad, Math.min(...lats) - pad], [Math.max(...lngs) + pad, Math.max(...lats) + pad]],
-            fitBoundsOptions: { maxZoom: JOB_MAP_CLUSTER_MAX_ZOOM }
+            fitBoundsOptions: { maxZoom: JOB_MAP_CLUSTER_MAX_ZOOM, padding: FIT_PADDING }
           }}
           locale={MAP_LOCALE}
           mapLib={loadMaplibre()}
@@ -257,8 +298,11 @@ export default function JobMap({ points, now }: JobMapProps) {
                   if (element.isConnected && focusedMarkerRef.current?.key === marker.key) focusedMarkerRef.current = null
                 }, 0)
               },
-              onFocus: () => {
+              // A marker reached from the keyboard is never left under the sheet or past the map's edge (WCAG 2.4.11).
+              // Mouse focus is left alone, so the map never moves out from under a click.
+              onFocus: (event: FocusEvent<HTMLButtonElement>) => {
                 focusedMarkerRef.current = marker
+                if (event.currentTarget.matches(":focus-visible")) reveal(marker)
               }
             }
 
@@ -303,10 +347,10 @@ export default function JobMap({ points, now }: JobMapProps) {
             )
           })}
         </MaplibreMap>
+        {selectedSite ? (
+          <JobMapSheet headingRef={headingRef} id={sheetId} now={now ?? openedAt} onClose={closeSheet} site={selectedSite} />
+        ) : null}
       </div>
-      {selectedSite ? (
-        <JobMapSheet headingRef={headingRef} id={sheetId} now={now ?? openedAt} onClose={closeSheet} site={selectedSite} />
-      ) : null}
     </section>
   )
 }

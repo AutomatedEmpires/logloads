@@ -1032,12 +1032,13 @@ test.describe("find-work map (UX-13)", () => {
       }
 
       // Below bp-md the map is the full-screen view: edge to edge, from the top of the screen down to the bottom tabs
-      // (the tabs' height varies with the label font by a few px), never under them.
+      // (the tabs' height varies with the label font by a few px), never under them. It settles at the top again once
+      // the web fonts have reflowed the page above it.
+      await expect.poll(async () => Math.abs((await region.boundingBox())!.y), { message: "the map starts at the top of the screen" }).toBeLessThanOrEqual(1)
       const box = (await region.boundingBox())!
       const tabs = (await bottomTabs(page).boundingBox())!
       expect(box.x).toBe(0)
       expect(box.width).toBe(width)
-      expect(Math.abs(box.y), "the map starts at the top of the screen").toBeLessThan(2)
       expect(box.y + box.height, "the map never runs under the bottom tabs").toBeLessThanOrEqual(tabs.y + 0.5)
       expect(box.y + box.height, "the map reaches the bottom tabs").toBeGreaterThan(tabs.y - 12)
 
@@ -1077,40 +1078,74 @@ test.describe("find-work map (UX-13)", () => {
   }
 
   for (const width of [1280, 390]) {
-    test(`${width} px: a pin opens its preview sheet; Escape and Close return focus to the pin`, async ({ page }) => {
+    test(`${width} px: a pin opens its preview sheet over the map without resizing it; Escape and Close return focus to the pin`, async ({ page }) => {
       await openFindWorkMap(page, width)
+      const region = jobMap(page)
       const pin = mapMarkers(page).first()
+      const canvas = region.locator(".maplibregl-canvas")
+      const mapSize = async () => {
+        const box = (await canvas.boundingBox())!
+        return { height: box.height, width: box.width }
+      }
+      // Where the camera puts the pin: relative to the map, so page scrolling does not count.
+      const pinOnMap = async () => {
+        const [marker, map] = await Promise.all([pin.boundingBox(), canvas.boundingBox()])
+        return { x: marker!.x - map!.x, y: marker!.y - map!.y }
+      }
+      const expectSamePlace = (actual: { x: number; y: number }, expected: { x: number; y: number }, message: string) => {
+        expect(Math.abs(actual.x - expected.x) + Math.abs(actual.y - expected.y), message).toBeLessThanOrEqual(1)
+      }
+      const size = await mapSize()
 
       await pin.focus()
       await page.keyboard.press("Enter")
-      const sheet = jobMap(page).getByRole("region", { name: /in this area$/ })
+      const sheet = region.getByRole("region", { name: /in this area$/ })
       await expect(sheet).toBeVisible()
       await expect(pin).toHaveAttribute("aria-expanded", "true")
       await expect(pin).toHaveAttribute("aria-controls", (await sheet.getAttribute("id"))!)
       await expect(sheet.getByRole("heading", { level: 2 })).toBeFocused()
+      expect(await mapSize(), "opening the sheet never resizes the map").toEqual(size)
 
-      // The preview links each job, and the sheet never covers the label, the attribution or the pin.
+      // The preview links each job. It covers part of the map, but never the pin, the "Approximate areas" label, the
+      // attribution or the zoom buttons.
       const links = sheet.getByRole("list", { name: "Jobs in this area" }).getByRole("link")
       expect(await links.count()).toBeGreaterThan(0)
       for (const href of await links.evaluateAll((anchors) => anchors.map((anchor) => anchor.getAttribute("href")))) {
         expect(href).toMatch(/^\/v2\/work\/[^/?#]+$/)
       }
-      await expect(jobMap(page).getByText("Approximate areas", { exact: true })).toBeInViewport()
-      await expect(jobMap(page).locator(".maplibregl-ctrl-attrib")).toBeInViewport()
-      await expect(pin).toBeInViewport()
+      const sheetBox = (await sheet.boundingBox())!
+      const uncovered = [
+        ["the pin", pin],
+        ["the label", region.getByText("Approximate areas", { exact: true })],
+        ["the attribution", region.locator(".maplibregl-ctrl-attrib")],
+        ["the zoom buttons", region.locator(".maplibregl-ctrl-group")]
+      ] as const
+      for (const [name, locator] of uncovered) {
+        await expect(locator).toBeInViewport()
+        const box = (await locator.boundingBox())!
+        const overlaps = box.x < sheetBox.x + sheetBox.width && sheetBox.x < box.x + box.width && box.y < sheetBox.y + sheetBox.height && sheetBox.y < box.y + box.height
+        expect(overlaps, `the sheet covers ${name}`).toBe(false)
+      }
+      const opened = await pinOnMap()
+
+      // The audit grows the viewport to the page's height and back; the camera ends where it was.
       await expectNoSeriousAxeViolations(page)
+      expectSamePlace(await pinOnMap(), opened, "a window resize leaves the camera where it was")
 
       await sheet.getByRole("heading", { level: 2 }).focus()
       await page.keyboard.press("Escape")
       await expect(sheet).toHaveCount(0)
       await expect(pin).toBeFocused()
       await expect(pin).toHaveAttribute("aria-expanded", "false")
+      expect(await mapSize(), "closing the sheet never resizes the map").toEqual(size)
+      expectSamePlace(await pinOnMap(), opened, "closing the sheet never moves the camera")
 
       await pin.click()
       await expect(sheet).toBeVisible()
       await sheet.getByRole("button", { name: "Close job preview" }).click()
       await expect(sheet).toHaveCount(0)
       await expect(pin).toBeFocused()
+      expectSamePlace(await pinOnMap(), opened, "reopening and closing leave the camera where it was")
     })
   }
 

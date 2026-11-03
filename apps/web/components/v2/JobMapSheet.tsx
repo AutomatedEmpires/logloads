@@ -23,11 +23,12 @@ export interface JobMapSheetProps {
 }
 
 /**
- * The pin preview (UX-13 criterion 3): the job cards of one approximate area, docked under the map below bp-md and
- * beside it from bp-md. It is part of the map region's layout, not an overlay, so it never covers a marker, the
- * "Approximate areas" label or the attribution. The map opens it and moves focus to its heading; Escape or Close
- * closes it and the map returns focus to the pin. Cards are the list's own `JobResultRow`s, built from public card
- * fields only; a point without a card is named and linked.
+ * The pin preview (UX-13 criterion 3): the job cards of one approximate area, as a sheet over the bottom of the map
+ * below bp-md and over its right side from bp-md. It covers a fixed share of the map and never resizes it; the map
+ * moves its attribution and controls clear of it and pans the open area (and any marker reached by keyboard) out from
+ * under it. The map opens it and moves focus to its heading; Escape or Close closes it and the map returns focus to
+ * the pin. Cards are the list's own `JobResultRow`s, built from public card fields only; a point without a card is
+ * named and linked.
  */
 export function JobMapSheet({ site, now, id, headingRef, onClose }: JobMapSheetProps) {
   const headingId = `${id}-title`
