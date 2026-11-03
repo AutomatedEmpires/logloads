@@ -110,7 +110,7 @@ test.describe.serial("workspace invitations", () => {
     ).toBeVisible()
   })
 
-  test("a brand-new person joins through the seeded invitation without creating an organization", async ({ page }) => {
+  test("a brand-new person joins through the seeded invitation without creating an organization", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 390, height: 844 })
     // The credential-free bench previews onboarding for an invited address
     // via ?as= — production resolves the identity from Clerk instead.
@@ -118,6 +118,19 @@ test.describe.serial("workspace invitations", () => {
     await page.waitForLoadState("domcontentloaded")
 
     const joinCard = page.locator(".invite-panel__join")
+
+    // The path chooser always renders on this page, beside any pending
+    // invitation. Wait for it so the branch below never races the render;
+    // locator.isVisible() is an instant snapshot and does not wait (#149).
+    await expect(page.getByRole("group", { name: "How will you use LogLoads?" })).toBeVisible()
+
+    // On the first attempt the seeded invitation is always pending: nothing
+    // else in the suite touches Casey, and desktop-chrome skips this file.
+    // Require the join card there, so a missing card fails here with a precise
+    // error instead of silently taking the retry-only branch below.
+    if (testInfo.retry === 0) {
+      await expect(joinCard).toBeVisible()
+    }
 
     // On a serial-group retry Casey may already have joined (the invitation
     // is consumed, so no join card renders). Demo-mode sign-in only covers

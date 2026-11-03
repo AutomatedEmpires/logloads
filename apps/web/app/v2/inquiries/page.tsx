@@ -9,7 +9,7 @@ import { availabilityLabel, equipmentOfferLabel, formatDay, interestStatusLabel 
 import { haulerReplyAction, withdrawInterestAction } from "@/lib/marketplace-v2/actions"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
-import { requireAuthenticatedActor } from "@/lib/session"
+import { resolveV2Actor, withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
@@ -18,19 +18,22 @@ const OPEN = new Set(["submitted", "viewed", "replied"])
 export default async function MyInquiriesPage({ searchParams }: { searchParams: SearchParams }) {
   if (!marketplaceV2Enabled()) notFound()
 
-  const actor = await requireAuthenticatedActor("/v2/inquiries")
+  const resolved = await resolveV2Actor("/v2/inquiries")
   const query = await searchParams
-  const workspace = actor.activeOrganization
+  const actor = resolved.ok ? resolved.actor : null
+  const workspace = actor && !actor.workspaceSelectionInvalid ? actor.activeOrganization : null
   let interests: MarketplaceInterestView[] = []
   let refusal: string | null = null
 
-  if (!workspace || actor.workspaceSelectionInvalid) {
-    refusal = "Choose a hauling business workspace to see its inquiries."
+  if (!resolved.ok) {
+    refusal = resolved.refusal
+  } else if (!actor || !workspace) {
+    refusal = withBusinessSwitchNote("No hauling business is selected for your account.")
   } else {
     try {
       interests = await pilotMarketplaceV2.listHaulerInterests({ organizationId: workspace.id, userId: actor.profile.id })
     } catch (error) {
-      refusal = error instanceof Error ? error.message : "Inquiries are not available for this workspace."
+      refusal = withBusinessSwitchNote(error instanceof Error ? error.message : "Inquiries are not available for this business.")
     }
   }
 
@@ -42,7 +45,7 @@ export default async function MyInquiriesPage({ searchParams }: { searchParams: 
       <p className="v2-muted">Interest your hauling business sent to landing operators. This tracks conversations only — not contracts, loads or pay.</p>
       {error ? <p className="v2-banner v2-banner--error" role="alert">{error}</p> : null}
       {refusal ? (
-        <p className="v2-banner">{refusal} <Link href="/workspace">Choose workspace</Link></p>
+        <p className="v2-banner">{refusal}</p>
       ) : interests.length === 0 ? (
         <section className="v2-empty">
           <h2>No inquiries yet</h2>

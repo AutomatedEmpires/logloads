@@ -17,6 +17,7 @@ import type {
   HostFeeTotalsView,
   HostInvoiceView
 } from "@/lib/host-billing-data"
+import { TERMS_2026_08_03_PATH } from "@/lib/legal-archive"
 import type { BillingView, SettingsView } from "@/lib/plans"
 import type { HostSubscriptionBillingView } from "@/lib/subscription-billing-data"
 import type { VerificationRecordView } from "@/lib/verification-data"
@@ -696,6 +697,9 @@ function SubscriptionBillingAction({
   )
 }
 
+// This control accepts the percentage-v1-2026-08-03 agreement (see
+// app/api/billing/percentage-agreement), so it links the Terms text that version
+// accepted, archived at a stable URL, not whatever /terms says today (LE-13).
 function PercentageAgreementControl() {
   const [accepted, setAccepted] = useState(false)
   const [pending, setPending] = useState(false)
@@ -709,7 +713,7 @@ function PercentageAgreementControl() {
           onChange={(event) => setAccepted(event.target.checked)}
           type="checkbox"
         />{" "}
-        I am authorized to accept the current <Link href="/terms">LogLoads Terms</Link>. I
+        I am authorized to accept the <Link href={TERMS_2026_08_03_PATH}>LogLoads Terms effective August 3, 2026</Link>. I
         understand that each completed load carries a 5% LogLoads fee added on top
         of the driver pay I state; there is no posting fee, subscription, monthly
         minimum, tier, allowance, or overage charge.
