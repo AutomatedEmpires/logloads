@@ -43,6 +43,10 @@ $$;
 create function pg_temp.hardened() returns boolean language sql stable as $$
   select to_regprocedure('marketplace.can_view_user_qualifications(uuid)') is not null
 $$;
+-- 18 (hardening from the #106 security review) applied on top of 16.
+create function pg_temp.reviewed() returns boolean language sql stable as $$
+  select to_regprocedure('marketplace.can_view_app_user(uuid)') is not null
+$$;
 
 -- Runs p_sql and requires failure with SQLSTATE p_state AND a constraint name or message matching
 -- p_reason (case-insensitive regex), so a negative test cannot pass because an unrelated rule fired.
@@ -137,6 +141,10 @@ begin
 end
 $$;
 
+-- 18 (HF-18): functions created by the migration role no longer get EXECUTE for PUBLIC, and this harness runs as
+-- that role. The helpers are called after SET ROLE anon / authenticated / service_role, so they are granted here.
+grant execute on all functions in schema pg_temp to public;
+
 -- =============================================================================
 -- 1. Schema object inventory & Blueprint v1.0 catalog alignment
 -- =============================================================================
@@ -163,9 +171,10 @@ begin
   select count(*) into v_funcs
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'marketplace';
-  -- Functions: baseline 44; + 06 63; + 11/12 74 (5 in 11, 6 in 12); + 16 82 (the rest redefine existing ones).
-  perform pg_temp.assert_true(v_funcs = case when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end,
-    format('expected %s functions in marketplace, found %s', case when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end, v_funcs));
+  -- Functions: baseline 44; + 06 63; + 11/12 74 (5 in 11, 6 in 12); + 16 82 (the rest redefine existing ones);
+  -- + 18 86 (three visibility helpers and one trigger function; the rest redefine existing ones).
+  perform pg_temp.assert_true(v_funcs = case when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end,
+    format('expected %s functions in marketplace, found %s', case when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end, v_funcs));
 
   -- No function in `marketplace` may be executable by PUBLIC.
   select count(*) into v_pub_exec
