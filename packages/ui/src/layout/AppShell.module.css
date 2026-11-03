@@ -62,7 +62,9 @@
   transform: translateY(calc(-100% - var(--ll-space-4)));
 }
 
+/* Restating the shadow here outranks the app's legacy global :focus-visible halo whatever the stylesheet order. */
 .skip:focus {
+  box-shadow: var(--ll-shadow-md);
   transform: none;
 }
 
@@ -84,7 +86,8 @@
   min-width: 0;
 }
 
-/* The skip link moves focus here; the landmark itself needs no ring. */
+/* The skip link moves focus here; the landmark itself needs no ring, nor the app's legacy :focus-visible halo. */
 .main:focus {
   outline: none;
+  box-shadow: none;
 }

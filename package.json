@@ -45,6 +45,7 @@
     "test": "turbo run test --concurrency=1 && pnpm test:tools",
     "test:tools": "node --test tools/*.test.mjs",
     "test:e2e": "node tools/run-e2e.mjs",
+    "test:e2e:design-system": "node tools/run-e2e.mjs --config tests/design-system.config.mjs",
     "typecheck": "turbo run typecheck",
     "validate": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm db:assert && pnpm guardrails"
   },

@@ -50,9 +50,18 @@ jobs:
         run: pnpm --filter @logloads/web build
 
       - name: Install Playwright browsers
+        id: playwright-browsers
         run: pnpm --filter @logloads/web exec playwright install --with-deps chromium
 
       - name: End-to-end smoke
         run: pnpm test:e2e
+        env:
+          CI: "true"
+
+      # DS-05 (#148): reuses this job's build, browsers and Supabase stack, with Marketplace V2 on its own port.
+      # It runs even when the pilot journeys above fail, so each suite reports its own result.
+      - name: Design-system regression
+        if: ${{ !cancelled() && steps.playwright-browsers.outcome == 'success' }}
+        run: pnpm test:e2e:design-system
         env:
           CI: "true"
