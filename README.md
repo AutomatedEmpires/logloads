@@ -1,56 +1,46 @@
 # LogLoads
 
-**The operating network for moving timber.** Timber needs trucks. Trucks need work. LogLoads connects the operation — one product with four authenticated cockpits: Driver, Fleet, Host (landing operations), and Admin.
+**A timber-hauling load board.** Landing operators advertise genuine hauling jobs. Haulers and fleets discover
+them, free, and express interest. The businesses then arrange the work directly.
 
-- **Name + domain are LOCKED:** LogLoads · logloads.com (GoDaddy). "LogBoard" is the retired placeholder — do not reintroduce.
-- **Product truth lives in Notion** (AutomatedEmpires — Ventures → LogLoads Source of Truth). This repo is implementation truth; binding architecture decisions live in [`docs/DECISIONS.md`](./docs/DECISIONS.md).
+LogLoads is **not** a dispatch, freight-brokerage, or freight-settlement platform. It charges no per-load fee and
+no commission.
 
-## The operating loop
+- **Name and domain are LOCKED:** LogLoads · logloads.com. "LogBoard" is retired; do not reintroduce it.
+- **Product authority:** the
+  [Product, Membership & Monetization Blueprint v1.0](./docs/product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md)
+  (2026-11-01). Dated founder decisions are in [`docs/DECISIONS.md`](./docs/DECISIONS.md). The documentation map,
+  current-state summary and status vocabulary are in [`docs/README.md`](./docs/README.md).
+- **Work coordination:** GitHub Issues labelled `agent-task` are the task tracker, with pull requests as the
+  evidence. Process: [`docs/AGENT_WORKFLOW.md`](./docs/AGENT_WORKFLOW.md). Rules for agents:
+  [`AGENTS.md`](./AGENTS.md).
 
-Plan → Publish → Match → Commit → Coordinate → Haul → Confirm → Repeat.
+## Commercial model
 
-Hosts publish timber movement with capacity, schedule, and visibility control (private network first, open network when needed). Drivers and fleets see work that fits their actual equipment, request capacity, and — once committed — unlock Route Packs, exact access, live trip state, and document history. Sensitive operational detail (gate instructions, private roads, exact coordinates) stays redacted server-side until assignment.
+- **Haulers and fleets:** free forever.
+- **Landing operators:** the approved membership model in the Blueprint (§3–§8), which **replaces percentage-fee
+  enrollment**. It consists of Basic, Pro and Regional subscriptions, targeted invitations, optional boosts, and a
+  founding offer. The single code source for its numbers is `packages/contracts/src/membership.ts`.
+- **Nothing is purchasable yet.** Production billing is not authorized
+  ([`docs/ACTIVATION_STRIPE.md`](./docs/ACTIVATION_STRIPE.md)).
+- **Legacy billing:** the deployed app still contains the pilot's dispatch cockpits and the historical
+  `percentage_v1` / `legacy_percentage` / `subscription_v1` billing code. That code is kept only so existing records
+  and any obligations stay intact and readable. Every collection and enrollment gate stays `disabled`
+  ([`docs/SUBSCRIPTION_BILLING_V1.md`](./docs/SUBSCRIPTION_BILLING_V1.md),
+  [`docs/ENV_CONTRACT.md`](./docs/ENV_CONTRACT.md) §5).
 
-## Product and commercial authority
+## Stack
 
-**Current: [LogLoads Product, Membership & Monetization Blueprint v1.0](./docs/product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md) (2026-11-01).**
-LogLoads is becoming a specialized timber-hauling load board: landing organizations
-advertise long-lived hauling opportunities and find self-reported truck capacity;
-haulers find work free forever. Landing plans are Basic $149 / Pro $299 / Regional
-$499 per month with 3 / 10 / 30 targeted invitations per cycle, plus optional
-$99 / $149 / $199 job boosts. There are no per-load, per-truck or percentage fees.
-The transition is in progress — see [`docs/product/TRANSITION_PLAN.md`](./docs/product/TRANSITION_PLAN.md).
-Nothing in the new model is purchasable yet, and the running app still contains the
-pilot's dispatch-oriented cockpits described below until they are replaced.
-
-### Historical commercial models (preserved for existing obligations)
-
-Until 2026-11-01 the newest decision was `percentage_v1` (2026-08-01): LogLoads billed
-the host a separate platform fee equal to **5% of the host-stated driver pay**
-after a load completes. The driver remains owed the full stated amount directly
-by the host; LogLoads never receives, deducts, escrows, or distributes driver
-funds. Posting has no charge, there is no monthly minimum, and drivers and fleet
-workspaces are free.
-
-`legacy_percentage` is retained only for obligations already frozen under that
-legacy model. Fleet Free is the current no-cost dispatch workspace. The
-2026-07-28 `subscription_v1` catalog and Dispatch Pro self-serve paths are
-historical/read-only: preserve and reconcile any previously accepted obligation,
-but create no new subscription enrollment. The sole current
-commercial collection gate is `LOGLOADS_FEE_COLLECTION`, which defaults to
-`disabled`. New host agreement acceptance is independently dark behind
-`LOGLOADS_PERCENTAGE_ENROLLMENT` and an exact organization allowlist; the
-historical subscription and self-serve gates remain disabled.
-See [`docs/DECISIONS.md`](./docs/DECISIONS.md) for authority and
-[`docs/SUBSCRIPTION_BILLING_V1.md`](./docs/SUBSCRIPTION_BILLING_V1.md) for the
-preserved historical subscription contract.
-
-## Stack (AutomatedEmpires family standard)
-
-- Runtime: Node 24.16.0 · pnpm 10.12.4 · Turborepo monorepo
-- Auth: Clerk (dev sessions until keys are provisioned — see `docs/ENVIRONMENT.md`) · DB: Supabase Postgres (+ PostGIS; versioned `operating_state` is the transitional canonical store) · Maps: Mapbox (keyless MapLibre fallback)
-- Secrets: Doppler · Hosting: Vercel · Media: private Supabase Storage · Observability: PostHog + Sentry · Email: Resend
-- Icons: Phosphor through `@logloads/ui` semantic icon registry (`<Icon name="domain.action" />`)
+- **Runtime:** Node 24.16.0, pnpm 10.12.4, Turborepo monorepo.
+- **Auth:** Clerk; dev sessions until keys are configured.
+- **Database:** Supabase Postgres with PostGIS. The versioned `operating_state` row is the running store.
+  - The normalized V2 schema is **under integration verification**. It is verified in CI on disposable PostgreSQL
+    17.
+  - It also passes on a local Supabase stack. It is not verified on a hosted Supabase project or with real Clerk
+    tokens, not connected to the app, and not authorized for production ([`docs/CI.md`](./docs/CI.md) §3).
+- **Maps:** MapLibre with **CARTO Basemaps** (preferred). Legacy Mapbox is used only when no CARTO key is set.
+- **Services:** Doppler, Vercel, private Supabase Storage, PostHog, Sentry, Resend.
+- **Icons:** Phosphor, through the `@logloads/ui` icon registry (`<Icon name="domain.action" />`).
 
 ## Getting started
 
@@ -64,10 +54,11 @@ pnpm setup:local   # one time: writes git-ignored apps/web/.env.local with local
 pnpm dev           # http://localhost:3002 (bound to 127.0.0.1 only)
 ```
 
-`pnpm setup:local` never overwrites existing values, never prints secrets, refuses to run on CI/Vercel, and adds no provider credentials, so local development uses the JSON store and seeded sign-in rather than any hosted project. Do not run `next build` while `pnpm dev` is using `apps/web/.next`; build from a separate git worktree.
+[`docs/ENVIRONMENT.md`](./docs/ENVIRONMENT.md) covers seeded sign-in accounts, local state reset, and the V2
+preview flag. Do not run `next build` while `pnpm dev` is using `apps/web/.next`.
 
-Local sign-in (no Clerk keys): use the email of a seeded account — `hank@northpine.example` (driver), `dispatch@northpine.example` (fleet), `cole@summit.example` (host), `admin@logloads.example` (admin) — or create a real account through `/onboarding`. When using only the local JSON fallback, delete `apps/web/.data/logloads-state.json` to reset it; never delete a canonical Supabase row as a development reset.
+**Validation:** run `pnpm validate`, then `pnpm test:e2e`.
 
-Validation gate: `pnpm validate` (lint, typecheck, unit tests, build, fresh local Supabase migration reset, guardrails), then `pnpm test:e2e` for the production-build journey suite. The E2E wrapper reads the isolated local Supabase status without printing credentials; run `pnpm guardrails` first if the stack is not already active.
-
-See [`AGENTS.md`](./AGENTS.md) for the operating contract every agent (human or AI) must follow before touching this repo.
+- The database step skips locally without the Supabase CLI and Docker. Report that as **skipped**, not passed.
+- CI and verification evidence: [`docs/CI.md`](./docs/CI.md).
+- **No agent merges or deploys without explicit founder authorization.** Merging `main` deploys production.

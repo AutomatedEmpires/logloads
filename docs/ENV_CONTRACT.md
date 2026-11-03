@@ -73,7 +73,7 @@ they remain required for ongoing admin authority.
 
 | Group | Variables |
 |---|---|
-| Marketplace V2 preview | `LOGLOADS_MARKETPLACE_V2`. Exactly `enabled` turns on `/v2`, which is always off when `VERCEL_ENV=production`. **Must be unset in Production.** Do not set it on hosted Preview without an approved, isolated preview ([`DEPLOYMENT.md`](./DEPLOYMENT.md) §4). Not yet listed in the JSON contract or `.env.example`. |
+| Marketplace V2 preview | `LOGLOADS_MARKETPLACE_V2`. Exactly `enabled` turns on `/v2`, which is always off when `VERCEL_ENV=production`. **Must be unset in Production.** Do not set it on hosted Preview without an approved, isolated preview ([`DEPLOYMENT.md`](./DEPLOYMENT.md) §4). Listed, unset, in `.env.example`. Not yet in the JSON contract (#111). |
 | Maps | `NEXT_PUBLIC_CARTO_BASEMAP_KEY` — preferred: authenticated CARTO Basemaps on MapLibre. Browser-visible; restrict it by origin. The legacy `NEXT_PUBLIC_MAPBOX_TOKEN` is used only when no CARTO key is set; keyless CARTO when neither is. |
 | Billing provider | `STRIPE_SECRET_KEY`, `LOGLOADS_STRIPE_EXPECTED_LIVEMODE`, `LOGLOADS_STRIPE_EXPECTED_ACCOUNT_ID`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PUBLISHABLE_KEY` or `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` |
 | Historical Dispatch Pro catalog | `STRIPE_PRICE_DISPATCH` — read-only reconciliation, no new enrollment |
@@ -214,8 +214,8 @@ delivery fails unavailable. Every `CLOUDINARY_*` and `LOGLOADS_CLOUDINARY_*` var
 Runtime canonical state does not read them.
 
 `.env.example` also lists `NEXT_PUBLIC_MAP_PROVIDER`, `NOTIFICATION_PROVIDER`,
-`NEXT_PUBLIC_NOTIFICATION_PROVIDER`, and `VERCEL_TOKEN`. No application or tool code reads any of them at
-`15892b7`. Reconcile them in `.env.example` separately; that is a configuration change.
+`NEXT_PUBLIC_NOTIFICATION_PROVIDER`, and `VERCEL_TOKEN`. No application code reads any of them at `4c9518e`, and
+each is annotated as such in `.env.example`. Removing them is left to the implementation owner (#111).
 
 ## 8. Email identity
 

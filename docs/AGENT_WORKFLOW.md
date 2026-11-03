@@ -1,53 +1,75 @@
 # LogLoads — Agent Coordination
 
-> **Status:** APPROVED process, revised 2026-11-02.
-> - **Source of truth for tasks:** GitHub Issues in `AutomatedEmpires/logloads`, tracked on
->   [Project Board #10](https://github.com/users/AutomatedEmpires/projects/10).
+> **Status:** APPROVED process, revised 2026-11-02 (founder directive: Project Board #10 deferred).
+> - **The source of truth for task state is GitHub Issues** in `AutomatedEmpires/logloads`, together with their
+>   pull requests.
+> - Project Board #10 is **optional and currently deferred**. No agent needs it, configures it, or troubleshoots
+>   access to it. Its retained setup plan is in closed #101.
 > - No Markdown file keeps task status. This one defines the process only.
-> - Product authority is unchanged: [`README.md`](./README.md) §1.
+> - Product requirements remain governed by the Blueprint ([`README.md`](./README.md) §1).
 
-## 1. Before any work
+## 1. Where to find, report and submit work
 
-1. Open the board. Find **your** issue, or ask the coordinator (Claude Agent 2) to create one. **No work starts
-   without an issue.**
-2. Read the issue's owned files and prohibited overlap.
-3. Run `git status`, and check the branch and HEAD. Untracked files may belong to another agent: never stage,
-   reset, clean, stash or rebase over them.
-4. Read the smallest relevant source, plus the authority documents the issue cites.
+| You need to… | Do this |
+|---|---|
+| See every task | Run the tracker command below. It prints one line per open `agent-task` issue — priority, issue number, status, owner — parsed from the issue headers in §2. |
+| Find your assignment | Pipe the tracker through `grep "— Codex"`, using your owner name. No issue, no work: ask the coordinator (Claude Agent 2) to create one. |
+| Report progress | Comment on **your issue**, using the format in §5. |
+| Report a blocker | Set the issue's header to `Status: Blocked — <what> (<who can clear it>)`, and comment with the evidence. |
+| Submit work for review | Open a PR that links the issue (`Refs #NNN`). Set the header to `Status: In Review — PR #NNN`, and comment with the SHA, the commands you ran, and their results. |
+| Find out what is blocking everything | Run the tracker and read the `P0` lines whose status is `Blocked`. |
 
-## 2. Every task issue contains
+**Tracker command** (read-only; GitHub's text search is too fuzzy to filter on headers):
 
-These fields come from the template at `.github/ISSUE_TEMPLATE/agent_task.yml`:
+```bash
+gh issue list --repo AutomatedEmpires/logloads --label agent-task --state open --limit 100 --json number,body --jq '.[] | (.body | ((capture("[*][*]Agent owner:[*][*] (?<o>[^\n]+)") // {o:"?"}) + (capture("[*][*]Priority:[*][*] (?<p>P[0-2])") // {p:"?"}) + (capture("[*][*]Status:[*][*] (?<s>[^\n]+)") // {s:"?"}))) as $h | "\($h.p) #\(.number) \($h.s | split(" — ")[0]) — \($h.o)"' | sort -k1,1 -k2,2V
+```
 
-- **Agent owner** — exactly one.
-- **Objective** — the outcome, not a list of activities.
-- **Priority**.
-- **Branch / worktree**.
-- **Owned files**.
-- **Prohibited overlap**.
-- **Acceptance criteria**, including the evidence required for Done.
-- **Dependencies** — linked issues or PRs.
-- **Out of scope**.
+A `?` in the output means an issue's header is malformed. Fix the header.
 
-## 3. Board fields
+Before editing files:
+
+- read the issue's **Owned files** and **Prohibited overlap**;
+- run `git status`, and check the branch and HEAD;
+- never stage, reset, clean, stash or rebase over another agent's files or worktree.
+
+## 2. The issue header is the task record
+
+Every `agent-task` issue begins with these lines. They are the **only** place its state lives:
+
+```text
+**Agent owner:** <one primary owner>   (collaborators may be named after it)
+**Priority:** P0 | P1 | P2
+**Status:** Backlog | Ready | In Progress | Blocked | In Review | Done   (optional "— reason")
+```
+
+The body below the header holds:
+
+- the **Objective**;
+- the **Branch / worktree**;
+- the **Owned files** and the **Prohibited overlap**;
+- the **Acceptance criteria and required evidence**;
+- the **Dependencies** — linked issues or PRs;
+- what is **Out of scope**.
+
+The template is `.github/ISSUE_TEMPLATE/agent_task.yml`.
+
+**Who may edit the header:** the owner, the coordinator, or the founder. When you change the Status, also post a
+comment saying why. The comment thread is the history; the header is the current state.
 
 | Field | Values |
 |---|---|
-| **Status** | Backlog → Ready → In Progress → Blocked → In Review → Done |
-| **Priority** | P0 (production risk or blocker) · P1 (current milestone) · P2 (later) |
-| **Agent Owner** | Claude Agent 1 (database integration) · Claude Agent 2 (docs / coordination) · Claude Agent 3 — UX · Codex (V2 frontend) · Gemini (SQL author, standby) · Claude Security Auditor · Claude QA (Playwright) · Claude Product (public copy) · Claude Research (market validation) · Claude Adapter (normalized adapter) · Founder |
+| **Priority** | P0 — production risk or integration blocker · P1 — current milestone · P2 — later |
+| **Agent owner** | Claude Agent 1 (database integration) · Claude Agent 2 (docs / coordination) · Claude Agent 3 — UX · Codex (V2 frontend) · Gemini (SQL author, standby) · Claude Security Auditor · Claude QA (Playwright) · Claude Product (public copy) · Claude Research (market validation) · Claude Adapter (normalized adapter) · Founder |
 
-A single-select field holds one owner. On a shared issue the board shows the primary owner, and the issue body
-names the collaborators.
+**Labels** describe the subject only. Status and priority are **not** labels, so there is never a second,
+conflicting copy:
 
-Lane labels describe the subject of an issue. Status and priority are **never** expressed as labels:
+- every agent task carries `agent-task`;
+- one or more lane labels: `lane:database` · `lane:v2-frontend` · `lane:docs` · `lane:security` · `lane:qa` ·
+  `lane:product-copy` · `lane:integration` · `lane:coordination` · `lane:research`.
 
-`lane:database` · `lane:v2-frontend` · `lane:docs` · `lane:security` · `lane:qa` · `lane:product-copy` ·
-`lane:integration` · `lane:coordination` · `lane:research`
-
-All agent issues also carry `agent-task`.
-
-## 4. How status moves
+## 3. How status moves
 
 | Move | Who may make it | Required |
 |---|---|---|
@@ -55,10 +77,20 @@ All agent issues also carry `agent-task`.
 | → In Progress | Owner | A first comment naming the branch and worktree |
 | → Blocked | Owner | A comment stating the blocker and who can clear it |
 | → In Review | Owner | A PR link, commit SHA, and exact commands with pass/fail/skip results |
-| → **Done** | **A reviewer other than the owner** (founder, integration owner or coordinator) | Every acceptance criterion met, **with evidence linked**: run URL, SHA, test output. "Agent says done" is not evidence. |
+| → **Done** | **A reviewer other than the owner** (founder, integration owner or coordinator) | Every acceptance criterion met, **with evidence linked**: run URL, SHA, test output. Close the issue as *completed*. "Agent says done" is not evidence. |
 
-There is no separate VERIFIED column. Done **means** verified. If a claim is only partly verified, the issue
-stays In Review and the remainder is recorded as UNVERIFIED.
+There is no separate VERIFIED status. Done **means** verified. If a claim is only partly verified, the issue stays
+In Review and the remainder is recorded as UNVERIFIED.
+
+Work that is abandoned or superseded is closed as **Not planned**, with a comment explaining why.
+
+## 4. Pull requests
+
+- Every PR links its issue, lists the commands it ran with their results, and states its boundaries.
+- Required checks must be green, or the founder must accept a known failure **explicitly**. Never disable or
+  weaken a test to get a merge through.
+- **No agent merges without explicit founder authorization.** Stacked PRs are merged in order, using
+  **merge commits**.
 
 ## 5. Comments are the handoff
 
@@ -70,7 +102,7 @@ Post a comment whenever one of these happens:
 - tests run;
 - you hand off.
 
-Use this shape:
+Skip empty "still working" comments. Use this shape:
 
 ```text
 STATE: In Progress | Blocked | In Review
@@ -82,31 +114,32 @@ BOUNDARIES: data/money/email/deploy/provider impact — or "none"
 
 - A new session resumes from the issue thread, never from private conversation history.
 - Never post secrets, tokens, backup contents or private landing data.
+- Decisions belong in [`DECISIONS.md`](./DECISIONS.md), not only in an issue thread.
 
 ## 6. Coordination rules
 
-- One owner per file at a time. Need another lane's file? Comment on that lane's issue; do not edit it.
-- A defect found outside your lane becomes a **new issue** with exact evidence (path, line, SHA). Do not fix it.
-- Hard stops still apply ([`../AGENTS.md`](../AGENTS.md)): no merge to `main`, no deploy, no production data or
-  provider change, no live billing or email, without explicit founder authorization.
-- The coordinator triages new issues weekly, closes duplicates, and keeps the board fields filled in. The
-  coordinator does not do other lanes' work.
+- One owner per file at a time. If you need another lane's file, comment on that lane's issue; do not edit it.
+- A defect you find outside your lane becomes a **new issue** with exact evidence (path, line, SHA). Do not fix it.
+- Hard stops still apply ([`../AGENTS.md`](../AGENTS.md)). Explicit founder authorization is required for:
+  - any merge to `main`;
+  - any deploy;
+  - any production data or provider change;
+  - any live billing or email.
+- The coordinator triages new issues, closes duplicates, and keeps every issue header accurate. The coordinator
+  does not do other lanes' work.
 
 ## 7. Where things live
 
 | Path | Owner lane |
 |---|---|
 | `packages/contracts`, `packages/services`, `packages/db`, `supabase/`, `.github/workflows/` | Integration (Claude Agent 1), unless an issue assigns otherwise |
-| `architecture/normalized-v2/` | Gemini (schema) and Claude Agent 1 (CI fixes on the CI branch) |
-| `apps/web/app/v2`, `apps/web/lib/marketplace-v2` | Codex (V2 frontend publishing) |
+| `architecture/normalized-v2/` | Claude Agent 1, the single editor. Gemini proposes changes in issues. |
+| `apps/web/app/v2`, `apps/web/lib/marketplace-v2` | Codex (V2 frontend) |
 | `apps/web/app/pricing`, `apps/web/app/terms` | Claude Product |
 | `apps/web/tests/*.spec.ts`, Playwright configuration | Claude QA |
 | `docs/product/ux-v2/**` (V2 UX specification and design tickets) | Claude Agent 3 — UX |
-| `docs/` (except `product/` content), issue templates, coordination | Claude Agent 2 |
-| `README.md`, `AGENTS.md`, `CLAUDE.md`, `.env.example`, `ops/` | **Unassigned.** Awaiting a founder ownership grant (#109, #111). Nobody edits them until then. |
-
-**Gemini** authors SQL only when an issue asks it to, by proposing changes in that issue. **Claude Agent 1** is
-the single editor of `architecture/normalized-v2/`, so two agents never edit the same SQL at once.
+| `docs/` (except `product/` content), `README.md`, `AGENTS.md`, `CLAUDE.md`, issue templates, the documentation side of `.env.example` | Claude Agent 2 (founder grant, 2026-11-02) |
+| `ops/production-env-contract.json`, and any runtime-affecting environment change | The implementation owner. Claude Agent 2 proposes. |
 
 When a code change alters a documented behavior, update the matching document in the same PR, or open a
 `lane:docs` issue.

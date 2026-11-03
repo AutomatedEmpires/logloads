@@ -12,8 +12,8 @@ LogLoads is a timber-hauling **load board**:
 LogLoads does not dispatch, track loads, broker freight, handle freight payments, or charge per load or by
 percentage.
 
-**Tasks, owners and status** live on GitHub Issues and Project Board #10, not in these files
-([`AGENT_WORKFLOW.md`](./AGENT_WORKFLOW.md)).
+**Tasks, owners and status** live in GitHub Issues (label `agent-task`), not in these files. Project Board #10 is
+deferred ([`AGENT_WORKFLOW.md`](./AGENT_WORKFLOW.md)).
 
 ## 1. Authority, in order
 
@@ -55,7 +55,7 @@ migrations, or deployments.**
 |---|---|---|
 | Persistence | **IMPLEMENTED:** one JSON row, `public.operating_state` | [`ARCHITECTURE.md`](./ARCHITECTURE.md) §2 |
 | Normalized schema `01`–`05` | **VERIFIED** on disposable PostgreSQL 17 + PostGIS, on branch `test/normalized-v2-postgres17-ci`. Not merged. Not connected to the app. | [`CI.md`](./CI.md) §3 |
-| V2 contract alignment `06`–`10` (Gemini's 06/07 plus Claude Agent 1's stages) | **VERIFIED in CI** at `fab4b0a`. It sits on draft PR #123, which is not reviewed, not merged, and not connected to the app. | [`CI.md`](./CI.md) §3 |
+| V2 contract alignment `06`–`10` (Gemini's 06/07 plus Claude Agent 1's stages) | **VERIFIED in CI** (head recorded in `CI.md`). It sits on draft PR #123, which is not reviewed, not merged, and not connected to the app. | [`CI.md`](./CI.md) §3 |
 | Clerk → Supabase identity | **UNVERIFIED:** no real-token test exists | [`SECURITY.md`](./SECURITY.md) §4 |
 | V2 load board `/v2` | **IMPLEMENTED** behind a flag. Discovery and interest work; job authoring is preview-only and nothing is saved. | [`ARCHITECTURE.md`](./ARCHITECTURE.md) §3 |
 | New billing (Basic/Pro/Regional, boosts) | **APPROVED, TARGET:** no code, no Stripe products | [`ACTIVATION_STRIPE.md`](./ACTIVATION_STRIPE.md) |

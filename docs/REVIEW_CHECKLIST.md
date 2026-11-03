@@ -116,7 +116,7 @@
 
 ## 11. Agent ownership and Git safety
 
-- [ ] The work has a GitHub issue on Project Board #10, and the PR links it. Lanes are respected
+- [ ] The work has an `agent-task` GitHub issue with an accurate header, and the PR links it. Lanes are respected
       ([`AGENT_WORKFLOW.md`](./AGENT_WORKFLOW.md) §7). No agent edits or stages another lane's unfinished files.
 - [ ] `git status` was inspected first. Untracked files from other agents are left untouched. Nothing was
       reset, cleaned, stashed, or rebased over someone else's work.

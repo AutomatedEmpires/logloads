@@ -140,6 +140,9 @@ store and inherits §2. In addition:
 - **Redaction:** reads come from the redacted public network projection (`apps/web/lib/network.ts`, which
   rounds public coordinates to 0.02°). `mapping.ts` maps only approximate points and never maps access notes,
   exact coordinates, or contacts into V2 views.
+
+  **Open finding (#141):** the 0.02° grid is finer than the approved 0.10° public precision (**V2-DEC-01**,
+  `DECISIONS.md` 2026-11-02). The pilot path's implementation is tracked in #141 (Codex, after #105).
 - **Not yet present:** an explicit, audited private-detail disclosure action. Expressing interest alone
   unlocks nothing in V2. The pilot's assignment-triggered disclosure is legacy behavior and is not carried
   into V2.
@@ -192,7 +195,7 @@ SHA, environment, and command output.
 | 1 | Re-run the anon/authenticated denial probes and the advisor review against the **current** production project, read-only. Record the date. | Pilot |
 | 2 | Confirm that migrations `20260713053327`, `20260726090000`, and `20260808230214` are applied live, and that the ledger matches the repository. | Pilot |
 | 3 | Exact-SHA multi-instance rate-limit proof and simulated store outage → `503` | Pilot |
-| 4 | ~~Execute `01`–`05` on a disposable PostgreSQL 17/PostGIS in CI~~ — **VERIFIED** at `ec4bb66` ([`CI.md`](./CI.md) §3). `06`–`10` are VERIFIED in CI at `fab4b0a` (draft PR #123). Still open: review and merge of PR #123, and integration of the CI branch. | Normalized-v2 |
+| 4 | ~~Execute `01`–`05` on a disposable PostgreSQL 17/PostGIS in CI~~ — **VERIFIED** at `ec4bb66` ([`CI.md`](./CI.md) §3). `06`–`10` are VERIFIED in CI on draft PR #123 (head recorded in `CI.md` §3). Still open: review and merge of PR #123, and integration of the CI branch. | Normalized-v2 |
 | 5 | Configure Supabase third-party auth for a **development** Clerk instance. Prove that forged, expired, wrong-issuer, and wrong-audience tokens are rejected at the gateway, and that valid tokens resolve to the right `app_users` row. | Normalized-v2 |
 | 6 | Cross-tenant denial matrix: anon, authenticated stranger, member of another org, removed member, multi-org user switching context, platform admin without a support reason | Normalized-v2 and V2 adapter |
 | 7 | `SECURITY DEFINER` review: owners, `search_path`, grants, and exposure through the Data API | Normalized-v2 |

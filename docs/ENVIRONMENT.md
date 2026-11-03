@@ -99,8 +99,10 @@ Further map rules:
 - Never paste a key into issues, chat or screenshots.
 - The founder-reported 5M requests/month allowance is **UNVERIFIED**.
 
-## 7. Known `.env.example` drift (tracked as an issue)
+## 7. `.env.example` status (#111)
 
-- Missing: `NEXT_PUBLIC_CARTO_BASEMAP_KEY`, `LOGLOADS_MARKETPLACE_V2`.
-- Listed but read by no code at `4c9518e`: `NEXT_PUBLIC_MAP_PROVIDER`, `NOTIFICATION_PROVIDER`,
-  `NEXT_PUBLIC_NOTIFICATION_PROVIDER`, `VERCEL_TOKEN`.
+- `.env.example` now lists `NEXT_PUBLIC_CARTO_BASEMAP_KEY` and `LOGLOADS_MARKETPLACE_V2` (unset).
+- These four are annotated as read by no application code at `4c9518e`, but are kept: `NEXT_PUBLIC_MAP_PROVIDER`,
+  `NOTIFICATION_PROVIDER`, `NEXT_PUBLIC_NOTIFICATION_PROVIDER`, `VERCEL_TOKEN`.
+- `ops/production-env-contract.json` still lacks `LOGLOADS_MARKETPLACE_V2`. That file is checked by
+  `tools/turbo-env-contract.test.mjs`, so the change is a proposal for its implementation owner (#111).
