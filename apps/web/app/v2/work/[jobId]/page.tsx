@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
 
-import { postingFreshness, type MarketplaceHaulerEquipmentOption } from "@logloads/contracts"
+import { describeMarketplaceVerification, postingFreshness, type MarketplaceHaulerEquipmentOption } from "@logloads/contracts"
 
 import {
   distanceLabel,
@@ -97,12 +97,14 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
   const duration = durationLabel(job)
   const distance = distanceLabel(job)
   const existingEquipment = existing ? equipmentOfferLabel(existing.equipment) : null
+  const verification = job.posterVerification ? describeMarketplaceVerification(job.posterVerification) : null
 
   return (
     <article className="v2-detail">
       <p><Link href="/v2/work">← Back to jobs</Link></p>
       <header>
-        <p className="v2-muted">{job.posterName}{job.posterVerified ? " · business verified" : ""}</p>
+        <p className="v2-muted">{job.posterName}{verification ? ` · ${verification.label.toLowerCase()}` : ""}</p>
+        {verification ? <p className="v2-muted">{verification.statement}</p> : null}
         <h1>{job.title}</h1>
         <p className="v2-card__pay">{payLabel(job)}</p>
         <p>

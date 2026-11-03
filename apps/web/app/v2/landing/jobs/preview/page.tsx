@@ -68,7 +68,7 @@ export default async function JobPreviewPage({ searchParams }: { searchParams: S
     now,
     posterName: resolved.access.organizationName,
     posterOrganizationId: resolved.viewer.organizationId,
-    posterVerified: false
+    posterVerification: null
   })
   // A draft may leave product and timing open; a published job may not (UX-DEC-02, UX-DEC-03).
   const publicationIssues = marketplaceJobPublicationIssues(validation.draft)
