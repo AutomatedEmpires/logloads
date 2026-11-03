@@ -455,10 +455,20 @@ test.describe("style isolation", () => {
  * any exception must name an issue. Pages are added here as they move onto the design system.
  */
 async function expectNoSeriousAxeViolations(page: Page) {
+  // The sticky form actions and bottom tabs cover whatever sits under them at the current scroll position, and
+  // axe's target-size rule then measures only the uncovered sliver of that control (seen in CI at 390 px, where the
+  // Linux fonts push a 44 px select under the bar). The audit is about the components, so it runs with the viewport
+  // grown to the full page height at the same width, so nothing is under a sticky bar, then restores it.
+  const viewport = page.viewportSize()
+  const pageHeight = await page.evaluate(() => document.documentElement.scrollHeight)
+  if (viewport && pageHeight > viewport.height) await page.setViewportSize({ height: pageHeight, width: viewport.width })
+
   const results = await new AxeBuilder({ page })
     .include(".ll-app")
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
     .analyze()
+
+  if (viewport) await page.setViewportSize(viewport)
   const blocking = results.violations.filter((violation) => violation.impact === "serious" || violation.impact === "critical")
   const summary = blocking.map((violation) => {
     const nodes = violation.nodes.slice(0, 5).map((node) => node.target.join(" "))
