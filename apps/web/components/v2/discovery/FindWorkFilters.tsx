@@ -35,11 +35,12 @@ function SummaryText({ what, where }: { what: string; where: string }) {
   return (
     <>
       <Icon aria-hidden className={styles.summaryIcon} name="action.search" size={20} />
+      {/* The spaces keep the parts apart in the accessible name, which is the visible text (WCAG 2.5.3). */}
       <span className={styles.summaryText}>
-        <span className={styles.summaryWhere}>{where}</span>
+        <span className={styles.summaryWhere}>{where}</span>{" "}
         <span className={styles.summaryWhat}>{what}</span>
-      </span>
-      <span aria-hidden="true" className={styles.summaryAction}>Change</span>
+      </span>{" "}
+      <span className={styles.summaryAction}>Change</span>
     </>
   )
 }
@@ -60,7 +61,7 @@ export function FindWorkFilters({ places, resetHref, values, what, where }: Find
   if (!scripted) {
     return (
       <details className={styles.disclosure}>
-        <summary aria-label={`Change search: ${where}. ${what}`} className={styles.summary} id={SUMMARY_ID}>
+        <summary className={styles.summary} id={SUMMARY_ID}>
           <SummaryText what={what} where={where} />
         </summary>
         <Form action={FIND_WORK_PATH} aria-labelledby={SUMMARY_ID} className={styles.form} id={FORM_ID} role="search">
@@ -78,7 +79,6 @@ export function FindWorkFilters({ places, resetHref, values, what, where }: Find
     <>
       <button
         aria-haspopup="dialog"
-        aria-label={`Change search: ${where}. ${what}`}
         className={styles.summary}
         id={SUMMARY_ID}
         onClick={() => setOpen(true)}

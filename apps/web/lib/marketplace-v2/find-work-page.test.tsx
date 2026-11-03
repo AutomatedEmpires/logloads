@@ -127,7 +127,10 @@ describe("the summary bar and its filter form (criterion 1)", () => {
   it("states the search as text and, before scripts run, opens the same fields as a plain GET form", async () => {
     const html = await render()
 
-    expect(html).toMatch(/<details[^>]*>\s*<summary[^>]*aria-label="Change search: Anywhere\. Any equipment · Any pay basis"/)
+    const summary = /<details[^>]*>\s*<summary[^>]*>([\s\S]*?)<\/summary>/.exec(html)?.[1] ?? ""
+    // The bar's accessible name is its visible text (WCAG 2.5.3).
+    expect(textOf(summary)).toBe("Anywhere Any equipment · Any pay basis Change")
+    expect(summary).not.toContain("aria-label")
     const form = /<form\b[^>]*action="\/v2\/work"[^>]*>[\s\S]*?<\/form>/.exec(html)?.[0] ?? ""
     expect(form).not.toContain('method="post"')
     for (const name of ["near", "radius", "equipment", "product", "pay", "start", "q", "all"]) {
