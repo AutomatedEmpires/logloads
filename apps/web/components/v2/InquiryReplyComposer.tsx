@@ -9,7 +9,11 @@ import { useState, type ReactNode } from "react"
  * and the reply id the server generated for this render, which makes a repeated submit idempotent.
  *
  * Render it with `key={replyId}`: after the action redirects, the page renders a new reply id, so the composer
- * starts again with an empty draft and is no longer sending.
+ * starts again with an empty draft.
+ *
+ * It keeps no sending state of its own. MessageComposer's Send reads React's form status, which ends with the
+ * action. A flag set in onSubmit and cleared only by that remount left Send stuck in loading when the redirect's
+ * navigation did not commit (seen in CI on the production build, PR #179).
  */
 export function InquiryReplyComposer({
   action,
@@ -23,7 +27,6 @@ export function InquiryReplyComposer({
   secondaryAction?: ReactNode
 }) {
   const [draft, setDraft] = useState("")
-  const [sending, setSending] = useState(false)
 
   return (
     <MessageComposer
@@ -31,10 +34,10 @@ export function InquiryReplyComposer({
       draft={draft}
       hiddenFields={Object.entries(fields).map(([name, value]) => <input key={name} name={name} type="hidden" value={value} />)}
       onDraftChange={setDraft}
-      onSend={() => setSending(true)}
+      // The form posts to `action`; nothing else happens on send.
+      onSend={() => undefined}
       recipientName={recipientName}
       secondaryAction={secondaryAction}
-      sending={sending}
     />
   )
 }

@@ -1,6 +1,7 @@
 "use client"
 
 import type { FormEvent } from "react"
+import { useFormStatus } from "react-dom"
 
 import { cx } from "../layout/cx"
 import { Button } from "../primitives/Button"
@@ -21,7 +22,8 @@ export const MESSAGE_FIELD_NAME = "body"
  * With `action` the form also posts natively (progressive enhancement): the textarea is named and required, the
  * page's `hiddenFields` (for example the inquiry id and the server-generated reply id) go with it, and a plain
  * submit button stands in for Send when scripting is off. With scripts, a blank or in-flight send is still
- * stopped here before the form action runs, and `onSend` is told just before it does.
+ * stopped here before the form action runs, and `onSend` is told just before it does. While the action runs,
+ * Send shows React's own form status (SendButton), so the page needs no sending state of its own for it.
  */
 export function MessageComposer({
   recipientName,
@@ -72,13 +74,7 @@ export function MessageComposer({
           rows={3}
           value={draft}
         />
-        <Button
-          aria-disabled={blank || undefined}
-          className={posts ? styles.scripted : undefined}
-          label="Send"
-          loading={sending}
-          type="submit"
-        />
+        <SendButton blank={blank} className={posts ? styles.scripted : undefined} sending={sending} />
         {/* Without scripts the draft never reaches React, so this plain submit sends; `required` blocks an empty one. */}
         {posts ? (
           <noscript>
@@ -95,4 +91,16 @@ export function MessageComposer({
       </div>
     </form>
   )
+}
+
+/**
+ * Send. Loading while the page says a send is in flight (`sending`), or while this form's action runs. The form
+ * status is React's: it ends with the action, including the navigation a server action's redirect makes, so Send
+ * cannot stay stuck in loading after a reply was accepted. Loading makes the Button inert (`type="button"`), so a
+ * second press cannot submit again. Outside a posting form `pending` is always false.
+ */
+function SendButton({ blank, className, sending }: { blank: boolean; className?: string; sending: boolean }) {
+  const { pending } = useFormStatus()
+
+  return <Button aria-disabled={blank || undefined} className={className} label="Send" loading={sending || pending} type="submit" />
 }
