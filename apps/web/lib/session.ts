@@ -134,6 +134,39 @@ export async function hasSessionIdentity(): Promise<boolean> {
   return Boolean(verifySessionCookieValue(cookieStore.get(SESSION_COOKIE)?.value))
 }
 
+/** The slice of a Clerk user that decides which email address it may act as. */
+export interface ClerkEmailOwner {
+  primaryEmailAddressId: string | null
+  primaryEmailAddress: {
+    emailAddress: string
+    id: string
+    verification: { status: string } | null
+  } | null
+}
+
+/**
+ * The user's primary email address, and only while Clerk reports it verified.
+ *
+ * Onboarding stores this address on the profile, and invitations are claimed
+ * by matching it, so an address the person has not proven they control must
+ * never stand in for one they have. No other address is a fallback, verified or
+ * not. The founder bootstrap applies the same rule.
+ */
+export function verifiedPrimaryEmailAddress(user: ClerkEmailOwner | null | undefined): string | null {
+  const primary = user?.primaryEmailAddress
+
+  if (
+    !user ||
+    !primary ||
+    primary.id !== user.primaryEmailAddressId ||
+    primary.verification?.status !== "verified"
+  ) {
+    return null
+  }
+
+  return primary.emailAddress || null
+}
+
 export const getClerkIdentity = cache(async (): Promise<{ email: string; fullName: string } | null> => {
   if (!isClerkConfigured()) {
     return null
@@ -141,7 +174,7 @@ export const getClerkIdentity = cache(async (): Promise<{ email: string; fullNam
 
   try {
     const user = await currentUser()
-    const email = user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses[0]?.emailAddress ?? ""
+    const email = verifiedPrimaryEmailAddress(user)
     const fullName = user?.fullName ?? [user?.firstName, user?.lastName].filter(Boolean).join(" ")
 
     return user && email ? { email, fullName } : null
