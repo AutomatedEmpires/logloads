@@ -3,9 +3,10 @@
 > **Status:** IMPLEMENTED operational runbook for the existing canonical store, `public.operating_state`.
 > Reviewed 2026-11-01 against `tools/operating-state-backup.mjs` and
 > `tools/operating-state-backup-policy.mjs` at commit `15892b7`. Updated 2026-11-03 for the expected-project
-> guard and the automated rehearsal (#113). The commands and the tool's behavior below were checked against
-> source, and the rehearsal (§7) runs them on a disposable local stack in CI. **None was executed against any
-> hosted project.**
+> guard and the automated rehearsal (#113), then for the #184 review follow-ups: a hosted project must be named
+> on the command line, requests never follow redirects, and corrupt files are reported without quoting them.
+> The commands and the tool's behavior below were checked against source, and the rehearsal (§7) runs them on
+> a disposable local stack in CI. **None was executed against any hosted project.**
 >
 > A TARGET section (§9) covers the planned normalized PostgreSQL store. It is planning only. The normalized
 > schema has run only in disposable CI databases ([`CI.md`](./CI.md) §3); no hosted normalized database exists.
@@ -36,20 +37,26 @@ recovery is never an opportunity to edit, drop, or "clean up" them.
 
 ## 3. Before you run anything
 
-- **Name the target project.** `backup` and `restore` require the project you mean, as
-  `--expected-project-ref <ref>` and/or `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF` (the variable the media path
-  already uses). Before any request, the tool derives the reference from `SUPABASE_URL` and refuses to run
-  when:
+- **Name the target project.** `backup` and `restore` require the project you mean. Before any request, the
+  tool derives the reference from `SUPABASE_URL` and refuses to run when:
   - no expected reference is given;
+  - the target is a hosted project and `--expected-project-ref <ref>` is not on the command line.
+    `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF` alone is not enough here. An env file pulled from a hosted project
+    sets that variable beside its own `SUPABASE_URL`, so the two would only agree with each other. Only the flag
+    records what you meant at the moment of the run;
   - the flag and the variable are both set and disagree;
   - the expected reference differs from the URL's reference;
   - the URL is malformed or names no reference. Only `https://<ref>.supabase.co` and a loopback origin are
     accepted. A custom domain, a path, a query, or embedded credentials are refused.
 
-  A loopback URL (`127.0.0.1`, `localhost`, `[::1]`) is a local stack, whose reference is `local`. Never
-  tunnel a hosted project to a loopback port: the tool would take it for a local stack. Prefer the flag. You
-  type it at the moment of the run, while the variable may come from the same env file as the URL. Output
-  names the project reference and counts only. It never prints document values, the URL, or the key.
+  A loopback URL (`127.0.0.1`, `localhost`, `[::1]`) is a local stack, whose reference is `local`. For a local
+  stack, the variable alone is accepted. Never tunnel a hosted project to a loopback port: the tool would take
+  it for a local stack.
+- **Requests never follow a redirect.** A redirect would send the service-role key (the `apikey` header) to
+  whatever origin the response names, after the guard approved a different one. A redirect, network error, or
+  timeout stops the run with a generic message.
+- **Output** names the project reference and counts only. It never prints document values, the URL, the key,
+  or any part of a backup file.
 - **Credentials:** `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are required. The service-role key bypasses
   RLS. Use it only from a trusted operator shell. Never paste it into a chat, issue, PR, log, or CI output.
 - **Authorization:** a production backup reads production personal data. A production restore is a production
@@ -87,10 +94,14 @@ node tools/operating-state-backup.mjs verify backups/operating-state-….json
 the summary disagrees with what was recorded. This catches a truncated download or a hand-edited file — the
 two failures that would otherwise surface halfway through a restore.
 
+A file that is unreadable, is not valid JSON, or is not a backup object is refused with a generic message. The
+raw parse error is never printed, because it quotes the text around the fault, and in a backup that text is
+personal data. `restore` reads its file through the same check.
+
 ## 6. Restoring
 
 ```bash
-# A hosted project: the reference AND the production confirmation.
+# A hosted project: the reference on the command line AND the production confirmation.
 node tools/operating-state-backup.mjs restore backups/operating-state-….json \
   --expected-project-ref <ref> --i-understand-this-overwrites-production
 
@@ -111,7 +122,8 @@ needs only the `local` reference. Both checks run before the file is read or any
    `--out` used earlier. The snapshot is also production personal data;
 4. writes the document with the application's compare-and-swap against the live version it just snapshotted
    (`PATCH …&version=eq.<live>`), and stops without writing if another live write changed the document in
-   between;
+   between. If the write itself does not complete (a network error, a timeout, or a refused redirect), the
+   tool cannot know whether it landed. It says so: back up the live document to inspect it before you retry;
 5. re-reads through the application's read path and refuses to report success unless the restored document
    exactly matches the file.
 
