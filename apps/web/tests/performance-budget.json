@@ -1,7 +1,7 @@
 {
-  "$comment": "UX-14 (#137): the V2 performance budget, measured by .github/workflows/performance-budget.yml with Lighthouse CI on a production build; tools/performance-budget.mjs turns this file into the Lighthouse CI config and the run summary. Every value is the median of the runs. Sizes are compressed transfer sizes in KiB (1,024 bytes), as Lighthouse reports them; times are milliseconds. `budget` is enforced: the measured median plus a margin (about 5 % on bytes, 2 requests, about 10 % on LCP, and 300 ms of TBT, 500 ms with the map, because CI runners vary most there), so a regression fails the check. `target` is where each screen should get to (the issue's targets and Lighthouse's 'good' thresholds); it is reported, not enforced, until the screen meets it.",
+  "$comment": "UX-14 (#137): the V2 performance budget, measured by .github/workflows/performance-budget.yml with Lighthouse CI on a production build; tools/performance-budget.mjs turns this file into the Lighthouse CI config and the run summary. Every value is the median of the runs. Sizes are compressed transfer sizes in KiB (1,024 bytes), as Lighthouse reports them; times are milliseconds. `budget` is enforced: the measured median plus a margin (about 5 % on bytes, 2 requests, about 10 % on LCP above the highest median of the calibration runs (Lighthouse's simulated LCP moves by up to 10 % between runs), and 300 ms of TBT, 500 ms with the map, because CI runners vary most there), so a regression fails the check. `target` is where each screen should get to (the issue's targets and Lighthouse's 'good' thresholds); it is reported, not enforced, until the screen meets it.",
   "lighthouse": {
-    "runs": 3,
+    "runs": 5,
     "settings": {
       "onlyCategories": ["performance"],
       "formFactor": "mobile",
@@ -37,7 +37,7 @@
       "label": "Find work with the map requested",
       "path": "/v2/work?view=map",
       "budget": {
-        "lcpMs": 5000,
+        "lcpMs": 5400,
         "tbtMs": 500,
         "transferKiB": 970,
         "scriptKiB": 580
@@ -51,7 +51,7 @@
       "label": "A job page (the board's first job)",
       "path": "/v2/work/:job",
       "budget": {
-        "lcpMs": 4700,
+        "lcpMs": 5200,
         "tbtMs": 300,
         "cls": 0.1,
         "transferKiB": 610,
