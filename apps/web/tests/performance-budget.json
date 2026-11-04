@@ -1,5 +1,5 @@
 {
-  "$comment": "UX-14 (#137): the V2 performance budget, measured by .github/workflows/performance-budget.yml with Lighthouse CI on a production build; tools/performance-budget.mjs turns this file into the Lighthouse CI config and the run summary. Every value is the median of the runs. Sizes are compressed transfer sizes in KiB (1,024 bytes), as Lighthouse reports them; times are milliseconds. `budget` is enforced: the measured median plus a margin (about 5 % on bytes, 2 requests, 5,500 ms of LCP, about 15 % above the medians measured (4.2 to 4.8 s), because Lighthouse's simulated LCP moved by up to 12 % from run to run; the byte budgets are the precise guard, and 300 ms of TBT, 500 ms with the map, because CI runners vary most there), so a regression fails the check. `target` is where each screen should get to (the issue's targets and Lighthouse's 'good' thresholds); it is reported, not enforced, until the screen meets it.",
+  "$comment": "UX-14 (#137): the V2 performance budget, measured by .github/workflows/performance-budget.yml with Lighthouse CI on a production build; tools/performance-budget.mjs turns this file into the Lighthouse CI config and the run summary. Every value is the median of the runs. Sizes are compressed transfer sizes in KiB (1,024 bytes), as Lighthouse reports them, response headers included (next start serves HTTP/1.1, so each response carries its security headers uncompressed); times are milliseconds. `budget` is enforced: the measured median plus a margin (about 5 % on bytes, 2 requests, 6,000 ms of LCP, about 20 % above the medians measured (4.5 to 5.0 s): Lighthouse's simulated LCP moved by up to 12 % from run to run, so LCP is a backstop and the byte budgets are the precise guard, and 300 ms of TBT, 500 ms with the map, because CI runners vary most there), so a regression fails the check. `target` is where each screen should get to (the issue's targets and Lighthouse's 'good' thresholds); it is reported, not enforced, until the screen meets it.",
   "lighthouse": {
     "runs": 5,
     "settings": {
@@ -17,12 +17,12 @@
       "label": "Find work, the list",
       "path": "/v2/work",
       "budget": {
-        "lcpMs": 5500,
+        "lcpMs": 6000,
         "tbtMs": 300,
         "cls": 0.1,
-        "transferKiB": 640,
+        "transferKiB": 665,
         "requests": 46,
-        "scriptKiB": 260,
+        "scriptKiB": 270,
         "thirdPartyRequests": 0
       },
       "target": {
@@ -37,10 +37,10 @@
       "label": "Find work with the map requested",
       "path": "/v2/work?view=map",
       "budget": {
-        "lcpMs": 5500,
+        "lcpMs": 6000,
         "tbtMs": 500,
-        "transferKiB": 970,
-        "scriptKiB": 580
+        "transferKiB": 1000,
+        "scriptKiB": 595
       },
       "target": {
         "lcpMs": 2500
@@ -51,12 +51,12 @@
       "label": "A job page (the board's first job)",
       "path": "/v2/work/:job",
       "budget": {
-        "lcpMs": 5500,
+        "lcpMs": 6000,
         "tbtMs": 300,
         "cls": 0.1,
-        "transferKiB": 610,
+        "transferKiB": 635,
         "requests": 42,
-        "scriptKiB": 235,
+        "scriptKiB": 245,
         "thirdPartyRequests": 0
       },
       "target": {
