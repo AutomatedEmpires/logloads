@@ -1775,6 +1775,99 @@ test.describe("find-work map (UX-13)", () => {
 })
 
 /**
+ * UX-14 (#137): the map's code loads only when the visitor asks for the map. JobMapLoader imports JobMap (the map and
+ * react-map-gl) through `next/dynamic`, and JobMap imports MapLibre GL when it mounts, so /v2/work requests neither
+ * until "Show map". A production build hashes file names, so map code is recognised by what it contains: MapLibre GL
+ * by its control class names, JobMap by its canvas label and MapLibre's stylesheet by its canvas container rule.
+ * performance-budget.yml runs these cases beside Lighthouse (budget: apps/web/tests/performance-budget.json).
+ */
+const MAP_CODE = [
+  { marker: "maplibregl-ctrl", name: "MapLibre GL", type: "script" },
+  { marker: MAP_CANVAS, name: "the job map (JobMap)", type: "script" },
+  { marker: "maplibregl-canvas-container", name: "MapLibre GL's stylesheet", type: "stylesheet" }
+] as const
+
+/**
+ * Records the map code that script and stylesheet responses carry. `take()` waits for the network to go quiet and for
+ * every body to be read, then returns the code found since the last call and how many bodies could not be read.
+ */
+function recordMapCode(page: Page) {
+  let found: string[] = []
+  let unreadable = 0
+  const reads: Promise<void>[] = []
+
+  page.on("response", (response) => {
+    const codes = MAP_CODE.filter((code) => code.type === response.request().resourceType())
+    if (codes.length === 0) return
+    reads.push(
+      response.text().then(
+        (body) => {
+          for (const code of codes) if (body.includes(code.marker)) found.push(code.name)
+        },
+        () => {
+          unreadable += 1
+        }
+      )
+    )
+  })
+
+  return {
+    async take() {
+      await page.waitForLoadState("networkidle")
+      await Promise.all(reads)
+      const result = { found: [...new Set(found)].sort(), unreadable }
+      found = []
+      unreadable = 0
+      return result
+    }
+  }
+}
+
+test.describe("the find-work map loads on request (UX-14, #137)", () => {
+  test("/v2/work requests no map code until Show map, then MapLibre GL, the map and its stylesheet load", async ({ baseURL, browser, page }) => {
+    // A board with jobs (a board without one draws no map), opened in a fresh browser so nothing comes from a cache.
+    await openFindWorkWithRows(page)
+    const board = new URL(page.url())
+    const fresh = await browser.newContext({ baseURL, viewport: viewportFor(390) })
+
+    try {
+      const visitor = await fresh.newPage()
+      await standInBasemap(visitor)
+      const mapCode = recordMapCode(visitor)
+
+      await openV2(visitor, `${board.pathname}${board.search}`)
+      await expect(jobRows(visitor).first()).toBeVisible()
+      expect(await mapCode.take(), "no map code (and no unread body) before the map is requested").toEqual({ found: [], unreadable: 0 })
+
+      await visitor.getByRole("link", { name: "Show map" }).click()
+      await visitor.waitForURL((url) => url.searchParams.get("view") === "map")
+      await expect(jobMap(visitor)).toBeVisible()
+      await expect(mapMarkers(visitor).first()).toBeVisible()
+      expect((await mapCode.take()).found, "the map's code loads once the map is requested").toEqual(MAP_CODE.map((code) => code.name).sort())
+    } finally {
+      await fresh.close()
+    }
+  })
+
+  test.describe("without JavaScript", () => {
+    test.use({ javaScriptEnabled: false })
+
+    test("with the map requested the server's page still lists every job: job text needs no map code", async ({ page }) => {
+      await page.setViewportSize(viewportFor(1280))
+      await openFindWorkWithRows(page)
+      const titles = await jobRows(page).locator("h3 a").allInnerTexts()
+      const url = new URL(page.url())
+      url.searchParams.set("view", "map")
+      await openV2(page, `${url.pathname}${url.search}`)
+
+      await expect(page.getByText("Loading map… the list below is already complete.")).toBeVisible()
+      await expect(jobRows(page).first()).toBeVisible()
+      expect(await jobRows(page).locator("h3 a").allInnerTexts()).toEqual(titles)
+    })
+  })
+})
+
+/**
  * #124 criterion 8's dual-membership account. Maya Mills drives for North Pine Logging: a hauling business where a
  * driver holds no landing seat, so that context shows hauler navigation only. Summit Ridge Timber is a landing
  * business, so her dispatcher seat there shows landing navigation only. The seed gives her North Pine only.
