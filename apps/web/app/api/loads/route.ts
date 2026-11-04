@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse, requireApiActor } from "@/lib/api-actor"
 import { publicBoard } from "@/lib/public-board"
 import { mutateState } from "@/lib/services"
+import { readJsonBody } from "@/lib/request-body"
 
 export async function GET() {
 	try {
@@ -17,7 +18,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
 	try {
-		const payload = await request.json()
+		const payload = await readJsonBody(request)
 		const { actorUserId, organizationId } = await requireApiActor(payload.organizationId ?? payload.companyId)
 		// Publishing is role-gated (publish_load) and the posting is stamped with
 		// the actor's own organization inside the policy.

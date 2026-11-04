@@ -10,6 +10,7 @@ import {
 } from "@/lib/api-actor"
 import { parseJsonObject, signedUpload } from "@/lib/media"
 import { services } from "@/lib/services"
+import { readJsonBody } from "@/lib/request-body"
 
 /**
  * Signs a one-object upload inside the authenticated driver's private vault.
@@ -19,7 +20,7 @@ import { services } from "@/lib/services"
 export async function POST(request: NextRequest) {
   try {
     const { actor, actorUserId, organizationId } = await requireApiActor()
-    const payload = parseJsonObject(await request.json())
+    const payload = parseJsonObject(await readJsonBody(request))
     const kind = credentialKindSchema.safeParse(payload.kind)
 
     if (!kind.success) {
