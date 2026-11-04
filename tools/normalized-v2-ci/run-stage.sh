@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Runs one normalized-v2 validation stage against the guarded disposable database
-# and performs independent post-stage checks. Usage: run-stage.sh <stage number, 1..22>
+# and performs independent post-stage checks. Usage: run-stage.sh <stage number, 1..25>
 # Logs: $RUNNER_TEMP/normalized-v2-ci/logs/stage<N>.log (uploaded on failure).
 # =============================================================================
 set -euo pipefail
@@ -311,6 +311,45 @@ case "$STAGE" in
     [[ "$rc" == "0" ]] || exit "$rc"
     grep -q "AUTH HARNESS LOCAL-STACK RUNS PASSED" "$LOG" || { echo "STAGE 22: harness did not report completion" >&2; exit 1; }
     { echo "### Stage 22 #112 auth harness on the local stack (locally signed tokens through the gateway)"; echo '```'; grep -E "^\[run|^\| |^verify-clerk-supabase-auth: (PASS|FAIL)|^  ok" "$LOG" || true; echo '```'; } >> "$SUMMARY"
+    ;;
+  23)
+    # Which marketplace functions 23 changes, by source: exactly the three it redefines (no billing function).
+    FN_BEFORE="$LOG_DIR/stage23-functions-before.txt"; FN_AFTER="$LOG_DIR/stage23-functions-after.txt"
+    FN_SQL="select p.oid::regprocedure::text || '|' || md5(p.prosrc) || '|' || coalesce(array_to_string(p.proacl, ','), '') from pg_proc p where p.pronamespace = 'marketplace'::regnamespace order by 1;"
+    q "$FN_SQL" > "$FN_BEFORE"
+    run_migration "$DIR/23_v2_round2_hardening.sql"
+    q "$FN_SQL" > "$FN_AFTER"
+    aligned_privilege_checks "'job_publication_attestations','legacy_job_imports','job_moderation_holds','billing_provider_events','schema_migrations'"
+    check "D-1/D-2: the migration ledger records 06, 11, 12, 16, 18, 23 in order" "select string_agg(version, ',' order by applied_at, version) = '06,11,12,16,18,23' from marketplace.schema_migrations;"
+    [[ "$(wc -l < "$FN_BEFORE")" == "$(wc -l < "$FN_AFTER")" ]] || { echo "POST-STAGE CHECK FAILED: 23 added or dropped a marketplace function" | tee -a "$LOG" >&2; exit 1; }
+    CHANGED="$(diff "$FN_BEFORE" "$FN_AFTER" | sed -nE 's/^> ([^|]+)\|.*$/\1/p' | LC_ALL=C sort | paste -sd, -)"
+    EXPECTED_CHANGED="marketplace.can_view_app_user(uuid),marketplace.can_view_organization(uuid),marketplace.tg_membership_guard()"
+    [[ "$CHANGED" == "$EXPECTED_CHANGED" ]] || { echo "POST-STAGE CHECK FAILED: 23 changed [$CHANGED], expected [$EXPECTED_CHANGED]" | tee -a "$LOG" >&2; exit 1; }
+    echo "  check ok: R2-1: 23 changes only can_view_app_user, can_view_organization and tg_membership_guard; every billing function (and every grant) is unchanged" | tee -a "$LOG"
+    check "R2-1: billing's owner-seat trigger (tg_ensure_owner_landing_seat) is still installed" "select exists (select 1 from pg_trigger t where t.tgrelid = 'marketplace.organization_subscriptions'::regclass and t.tgname = 'ensure_owner_landing_seat_on_sub' and t.tgenabled = 'O');"
+    check "R2-2/R2-3: the visibility helpers keep their grants (authenticated only)" "select has_function_privilege('authenticated', 'marketplace.can_view_app_user(uuid)', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.can_view_app_user(uuid)', 'EXECUTE') and not has_function_privilege('service_role', 'marketplace.can_view_app_user(uuid)', 'EXECUTE') and has_function_privilege('authenticated', 'marketplace.can_view_organization(uuid)', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.can_view_organization(uuid)', 'EXECUTE') and not has_function_privilege('service_role', 'marketplace.can_view_organization(uuid)', 'EXECUTE');"
+    check "R2-4: the qualification's verification status and reviewer are not client-writable" "select not has_column_privilege('authenticated', 'marketplace.user_qualifications', 'verification_status', 'UPDATE') and not has_column_privilege('authenticated', 'marketplace.user_qualifications', 'reviewed_by', 'UPDATE') and not has_column_privilege('authenticated', 'marketplace.user_qualifications', 'reviewed_at', 'UPDATE') and not has_column_privilege('authenticated', 'marketplace.user_qualifications', 'verification_status', 'INSERT');"
+    check "R2-4: the re-verification path is documented on the HF-06 trigger function" "select coalesce(obj_description('marketplace.tg_qualification_verification_reset()'::regprocedure, 'pg_proc'), '') ~ 'There is no exemption';"
+    ;;
+  24)
+    run_sql "$DIR/24_v2_round2_hardening_tests.sql"
+    grep -q "ALL ROUND-2 HARDENING (R2-1, R2-2, R2-3, R2-4) TESTS PASSED" "$LOG" || { echo "STAGE 24: suite did not reach its final PASS notice" >&2; exit 1; }
+    check "suite rolled back (no test organizations left)" "select count(*) = 0 from marketplace.organizations where slug like 's23-%';"
+    PASSES="$(grep -cE "NOTICE:  00000: PASS: " "$LOG" || true)"
+    echo "  executed assertions reporting PASS: $PASSES" | tee -a "$LOG" | tee -a "$SUMMARY"
+    [[ "$PASSES" -ge 35 ]] || { echo "STAGE 24: only $PASSES PASS notices; expected at least 35" >&2; exit 1; }
+    ;;
+  25)
+    echo "== bash $DIR/25_v2_round2_concurrency_test.sh" | tee "$LOG"
+    started=$SECONDS
+    set +e
+    timeout --kill-after=30s 300s bash "$DIR/25_v2_round2_concurrency_test.sh" 2>&1 | tee -a "$LOG"
+    rc=${PIPESTATUS[0]}
+    set -e
+    echo "== exit $rc after $((SECONDS - started))s" | tee -a "$LOG"
+    [[ "$rc" == "0" ]] || exit "$rc"
+    grep -q "ALL ROUND-2 CONCURRENCY TESTS PASSED" "$LOG" || { echo "STAGE 25: runner did not report completion" >&2; exit 1; }
+    { echo "### Stage 25 round-2 concurrency (R2-1: owner exit against billing, two exits, open exit)"; echo '```'; grep -E "^\[|ok:|overlap|outcome:" "$LOG" || true; echo '```'; } >> "$SUMMARY"
     ;;
   *) echo "unknown stage $STAGE" >&2; exit 2 ;;
 esac
