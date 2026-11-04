@@ -13,7 +13,6 @@ import {
 import { DomainRefusalError } from "@logloads/services"
 
 import { checkRateLimit } from "../rate-limit"
-import { getClerkUserId, getSessionActor } from "../session"
 import { marketplaceV2Enabled } from "./flag"
 import {
   PROFILE_PATH,
@@ -21,7 +20,10 @@ import {
   PROFILE_SAVE_UNAVAILABLE,
   PROFILE_SAVED,
   PROFILE_SETUP_NEXT_PATH,
+  PROFILE_SETUP_PATH,
   profileValuesFromForm,
+  START_BUSINESS_FAILED,
+  START_BUSINESS_NOT_SELECTED,
   START_BUSINESS_UNAVAILABLE,
   HAULER_START_PATH,
   type HaulerProfileFormState,
@@ -30,6 +32,7 @@ import {
 import { pilotMarketplaceV2 } from "./pilot-adapter"
 import { placeLabel, resolvePlace } from "./places"
 import { MarketplaceOperationUnavailableError, MarketplaceRefusalError } from "./port"
+import { getV2SessionActor, selectNormalizedSessionBusiness, v2SignedInWithoutPerson } from "./v2-session"
 
 /**
  * The home base placed on the Find work place list (#129): its label becomes the list's ("97386" -> "Sweet Home, OR")
@@ -55,7 +58,7 @@ export async function saveHaulerProfileAction(previous: HaulerProfileFormState, 
     redirect("/")
   }
 
-  const actor = await getSessionActor()
+  const actor = await getV2SessionActor()
 
   if (!actor) {
     redirect(`/sign-in?next=${encodeURIComponent(PROFILE_PATH)}`)
@@ -118,17 +121,23 @@ export async function saveHaulerProfileAction(previous: HaulerProfileFormState, 
 
 /**
  * "Your business" for an account with no hauling business (UX 02 §A3, #125). The input is validated on the server
- * like the profile's, and then the page says plainly that creating a business is not available: V2 sessions read
- * their businesses from the pilot store, which has no service that adds a business to an existing account, so a
- * business created elsewhere could not be selected. Nothing is written.
+ * like the profile's.
+ *
+ * - Normalized store (#213): the business is created with its public basics, owned by the session's person, and
+ *   becomes the session's selected business at once (the V2 session reads its memberships from the same store).
+ *   Setup then continues on the business profile.
+ * - Pilot store (the default): the page says plainly that creating a business is not available. The pilot store has
+ *   no service that adds a business to an existing account. Nothing is written.
  */
 export async function startHaulingBusinessAction(previous: StartBusinessFormState, formData: FormData): Promise<StartBusinessFormState> {
   if (!marketplaceV2Enabled()) {
     redirect("/")
   }
 
+  const actor = await getV2SessionActor()
+
   // A sign-in with no LogLoads profile yet is still a person setting up; only no sign-in at all goes to sign-in.
-  if (!(await getSessionActor()) && !(await getClerkUserId())) {
+  if (!actor && !(await v2SignedInWithoutPerson())) {
     redirect(`/sign-in?next=${encodeURIComponent(HAULER_START_PATH)}`)
   }
 
@@ -143,9 +152,36 @@ export async function startHaulingBusinessAction(previous: StartBusinessFormStat
     return { attempt, issues: validation.issues, message: null, status: "invalid", values }
   }
 
-  if (!placedProfile(validation.input)) {
+  const input = placedProfile(validation.input)
+
+  if (!input) {
     return { attempt, issues: [{ field: "homeBase", message: HOME_BASE_UNKNOWN_MESSAGE }], message: null, status: "invalid", values }
   }
 
-  return { attempt, issues: [], message: START_BUSINESS_UNAVAILABLE, status: "unavailable", values }
+  const unavailable: StartBusinessFormState = { attempt, issues: [], message: START_BUSINESS_UNAVAILABLE, status: "unavailable", values }
+
+  // Only where the V2 session reads the store the business is created in can the person act for it afterwards.
+  if (!actor || actor.store !== "normalized") {
+    return unavailable
+  }
+
+  try {
+    await checkRateLimit("marketplace-organization", actor.profile.id, 5, 60 * 60_000)
+    const { organizationId } = await pilotMarketplaceV2.createHaulingBusiness({ userId: actor.profile.id }, input)
+
+    if (!(await selectNormalizedSessionBusiness(organizationId))) {
+      return { attempt, issues: [], message: START_BUSINESS_NOT_SELECTED, status: "refused", values }
+    }
+  } catch (error) {
+    if (error instanceof MarketplaceOperationUnavailableError) {
+      return unavailable
+    }
+
+    const message = error instanceof MarketplaceRefusalError || error instanceof DomainRefusalError ? error.message.slice(0, 300) : START_BUSINESS_FAILED
+
+    return { attempt, issues: [], message, status: "refused", values }
+  }
+
+  revalidatePath("/v2", "layout")
+  redirect(PROFILE_SETUP_PATH)
 }

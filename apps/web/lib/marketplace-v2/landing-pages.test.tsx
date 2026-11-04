@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const mocks = vi.hoisted(() => ({
   getOwnLanding: vi.fn(),
-  getSessionActor: vi.fn(),
+  getV2SessionActor: vi.fn(),
   landingAllowance: vi.fn(),
   listOwnLandings: vi.fn(),
   resolveV2Viewer: vi.fn(),
@@ -28,7 +28,8 @@ vi.mock("next/navigation", () => ({
   unstable_rethrow: () => undefined
 }))
 vi.mock("@/lib/marketplace-v2/flag", () => ({ marketplaceV2Enabled: () => true }))
-vi.mock("@/lib/session", () => ({ getSessionActor: mocks.getSessionActor }))
+// #213: the setup page reads the V2 session (the selected store's person and business), not the pilot session.
+vi.mock("@/lib/marketplace-v2/v2-session", () => ({ getV2SessionActor: mocks.getV2SessionActor }))
 vi.mock("@/lib/marketplace-v2/viewer", () => ({
   resolveV2Viewer: mocks.resolveV2Viewer,
   withBusinessSwitchNote: (refusal: string) => refusal
@@ -219,7 +220,7 @@ describe("the landing editor (#127, B3)", () => {
 
 describe("landing business setup and plans (#127, B1–B2)", () => {
   it("shows every plan fact from LANDING_PLANS, says billing is inactive, and offers no checkout (criteria 1 and 2)", async () => {
-    mocks.getSessionActor.mockResolvedValue(null)
+    mocks.getV2SessionActor.mockResolvedValue(null)
     const page = await html(LandingSetupPage())
 
     for (const plan of Object.values(LANDING_PLANS)) {
@@ -236,7 +237,7 @@ describe("landing business setup and plans (#127, B1–B2)", () => {
   })
 
   it("offers the business form to a signed-in account without a landing business", async () => {
-    mocks.getSessionActor.mockResolvedValue({ activeOrganization: null, profile: { id: USER }, workspaceSelectionInvalid: false })
+    mocks.getV2SessionActor.mockResolvedValue({ activeOrganization: null, profile: { id: USER }, workspaceSelectionInvalid: false })
     const page = await html(LandingSetupPage())
 
     expect(page).toContain("name=\"displayName\"")
@@ -244,7 +245,7 @@ describe("landing business setup and plans (#127, B1–B2)", () => {
   })
 
   it("sends an account already acting for a landing business to its landings", async () => {
-    mocks.getSessionActor.mockResolvedValue({ activeOrganization: { id: ORG }, profile: { id: USER }, workspaceSelectionInvalid: false })
+    mocks.getV2SessionActor.mockResolvedValue({ activeOrganization: { id: ORG }, profile: { id: USER }, workspaceSelectionInvalid: false })
     mocks.viewerAccess.mockResolvedValue({ capabilities: MANAGER, organizationName: "Adapter Timber" })
     const page = await html(LandingSetupPage())
 

@@ -22,8 +22,8 @@ export function OrganizationSetupForm() {
     return (
       <PageNotice role="status" tone="positive">
         <p>
-          <strong>{state.createdName}</strong> is set up, with you as its owner. It appears in your business switcher once
-          your sign-in is connected to the marketplace store that holds it.
+          <strong>{state.createdName}</strong> is set up, with you as its owner, and you are acting for it now. It is in
+          your business switcher at the top of the page.
         </p>
       </PageNotice>
     )

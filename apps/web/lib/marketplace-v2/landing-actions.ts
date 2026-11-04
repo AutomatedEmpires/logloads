@@ -14,19 +14,20 @@ import {
 
 import { checkRateLimit } from "../rate-limit"
 import { serializeError } from "../services"
-import { getSessionActor } from "../session"
 import { marketplaceV2Enabled } from "./flag"
 import {
   FIX_LANDING_FIELDS,
   LANDING_SAVE_UNAVAILABLE,
   LANDINGS_PATH,
   landingFormValuesFrom,
+  ORGANIZATION_NOT_SELECTED,
   ORGANIZATION_SETUP_UNAVAILABLE,
   type LandingFormState,
   type OrganizationFormState
 } from "./landing-workspace"
 import { pilotMarketplaceV2 } from "./pilot-adapter"
 import { MarketplaceOperationUnavailableError, MarketplaceRefusalError, type MarketplaceV2Viewer } from "./port"
+import { getV2SessionActor, selectNormalizedSessionBusiness } from "./v2-session"
 
 /**
  * Landing workspace form actions (#127). Identity and the active business always come from the server session; the
@@ -42,7 +43,8 @@ async function sessionViewer(nextPath: string): Promise<MarketplaceV2Viewer> {
     redirect("/")
   }
 
-  const actor = await getSessionActor()
+  // The V2 session (#213): on the normalized store, the person and the business come from that store.
+  const actor = await getV2SessionActor()
 
   if (!actor) {
     redirect(`/sign-in?next=${encodeURIComponent(nextPath)}`)
@@ -151,7 +153,7 @@ export async function createLandingOrganizationAction(_previous: OrganizationFor
     redirect("/")
   }
 
-  const actor = await getSessionActor()
+  const actor = await getV2SessionActor()
 
   if (!actor) {
     redirect(`/sign-in?next=${encodeURIComponent("/v2/start/landing")}`)
@@ -167,7 +169,12 @@ export async function createLandingOrganizationAction(_previous: OrganizationFor
 
   try {
     await checkRateLimit("marketplace-organization", actor.profile.id, 5, HOUR_MS)
-    await pilotMarketplaceV2.createLandingOrganization({ userId: actor.profile.id }, values)
+    const { organizationId } = await pilotMarketplaceV2.createLandingOrganization({ userId: actor.profile.id }, values)
+
+    // #213: the V2 session reads the store the business was created in, so the new business is selected at once.
+    if (actor.store === "normalized" && !(await selectNormalizedSessionBusiness(organizationId))) {
+      return keep("refused", ORGANIZATION_NOT_SELECTED)
+    }
   } catch (error) {
     if (error instanceof MarketplaceOperationUnavailableError) {
       return keep("unavailable", ORGANIZATION_SETUP_UNAVAILABLE)

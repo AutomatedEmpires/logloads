@@ -98,6 +98,10 @@ function fakeDb(): MarketplaceDb {
         recorded.push({ ...extra, args: { organizationId }, fn: "inquiryJobs", session })
         return inquiryJobs
       },
+      async viewerSession() {
+        recorded.push({ ...extra, args: {}, fn: "viewerSession", session })
+        return { memberships: [], person: null }
+      },
       async standingListingReport(jobId) {
         recorded.push({ ...extra, args: { jobId }, fn: "standingListingReport", session })
         return standingReport

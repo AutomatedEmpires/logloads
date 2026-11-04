@@ -50,7 +50,8 @@ interface FunctionSpec {
 
 /** The closed list of database functions the adapter may call. Names and argument names match the SQL exactly. */
 export const MARKETPLACE_FUNCTIONS = {
-  // Landing workspace (#127): a landing business owned by the caller (03_entitlements.sql, 06 §4).
+  // A business owned by the caller, who becomes its owner (03_entitlements.sql, 06 §4): a landing business (#127) or,
+  // with p_enable_hauler, a hauling business (#213, which leaves p_home_state to the function's default).
   create_organization: {
     anonymous: false,
     args: { p_display_name: "text", p_enable_hauler: "boolean", p_home_state: "bpchar", p_slug: "text" },
@@ -232,6 +233,11 @@ export interface MarketplaceCalls {
    * applies as for any direct read: only the owning desk sees them.
    */
   inquiryJobs(organizationId: string): Promise<unknown[]>
+  /**
+   * #213: the person the claims resolve to (`VIEWER_PERSON`, or `null` when they resolve to no one) and that person's
+   * active memberships of active businesses (`VIEWER_MEMBERSHIPS`, `get_viewer_marketplace_access` rows), as JSON.
+   */
+  viewerSession(): Promise<{ person: unknown; memberships: unknown[] }>
 
   // --- Listing reports (UX-07, #130): the schema has no function for these, so they are two fixed statements that
   // run as the person under `abuse_reports`' row-level security and column grants (02_access.sql, HF-16).
@@ -278,6 +284,39 @@ select to_jsonb(j) as row from (
     and exists (select 1 from marketplace.expressions_of_interest i where i.job_id = jp.id and i.job_org_id = jp.org_id)
   order by jp.id
 ) as j`
+
+/**
+ * #213: the person `current_user_id()` resolves the claims to, with their email only once a provider verified it.
+ * Row-level security (`app_users_read`, `user_contacts_self_or_support`) shows a person their own rows.
+ */
+const VIEWER_PERSON = `
+select to_jsonb(u) as row from (
+  select a.id,
+         a.display_name,
+         (select c.email from marketplace.user_contacts c where c.user_id = a.id and c.email_verified_at is not null) as email
+  from marketplace.app_users a
+  where a.id = marketplace.current_user_id()
+) as u`
+
+/**
+ * #213: the person's active memberships of active businesses, oldest first, each as the schema's own
+ * `get_viewer_marketplace_access` row (role, seat, hauler profile and capabilities). `memberships_read` and
+ * `organizations_read` show a person their own memberships and businesses; the function re-checks both. One
+ * statement, so every row comes from one snapshot: a membership removed or a business suspended before it runs is
+ * simply absent.
+ */
+const VIEWER_MEMBERSHIPS = `
+with mine as materialized (
+  select m.org_id, m.created_at
+  from marketplace.organization_memberships m
+  join marketplace.organizations o on o.id = m.org_id and o.status = 'active'
+  where m.user_id = marketplace.current_user_id()
+    and m.status = 'active'
+)
+select to_jsonb(a) as row
+from mine
+cross join lateral marketplace.get_viewer_marketplace_access(mine.org_id) as a
+order by mine.created_at, mine.org_id`
 
 /**
  * Listing reports (UX-07, #130). Only the reporter's own reports are read (`reporter_user_id = current_user_id()`;
@@ -600,6 +639,17 @@ function callsFor(tx: TransactionSql, anonymous: boolean): MarketplaceCalls {
       return rowsOf(await tx.unsafe(INQUIRY_JOBS, [organizationId]), "row")
     },
 
+    async viewerSession() {
+      if (anonymous) {
+        throw new TypeError("A session needs a signed-in person")
+      }
+
+      const [person] = rowsOf(await tx.unsafe(VIEWER_PERSON), "row")
+
+      // No person, no memberships: claims that resolve to no one read nothing, so the second query is not run.
+      return person ? { memberships: rowsOf(await tx.unsafe(VIEWER_MEMBERSHIPS), "row"), person } : { memberships: [], person: null }
+    },
+
     async standingListingReport(jobId) {
       if (anonymous) {
         throw new TypeError("Reports need a signed-in person")
@@ -697,6 +747,181 @@ export function createPostgresMarketplaceDb(options: PostgresMarketplaceDbOption
 
     asUser: async (principal, work, runOptions) =>
       run(runOptions?.readOnly === false ? "read write" : "read only", "authenticated", principalClaims(principal), work),
+
+    async close() {
+      if (client && !options.sql) {
+        const sql = await client.catch(() => null)
+        client = null
+        await sql?.end({ timeout: 5 })
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Identity linking (#213)
+// ---------------------------------------------------------------------------------------------------------------
+
+/**
+ * The person to create or link, from the server session only: the configured issuer, the session's Clerk user id
+ * (`identity_links.subject`), a display name, and an email address that is stored only when the provider verified it.
+ */
+export interface MarketplaceIdentityToLink {
+  issuer: string
+  subject: string
+  displayName: string
+  email: string | null
+  emailVerified: boolean
+}
+
+/**
+ * Links a signed-in person to the normalized store through `marketplace.sync_verified_identity`, the schema's own
+ * server-side identity bridge (03, hardened in 16 B-5). The schema grants that function to `service_role` only, and
+ * the marketplace connection can never become `service_role` (HF-22), so linking runs over a separate login role
+ * that can become `service_role` and nothing else, and calls only this one function.
+ */
+export interface MarketplaceIdentitySync {
+  /** The `app_users.id` the identity now resolves to (created on first sign-in, the same one afterwards). */
+  link(identity: MarketplaceIdentityToLink): Promise<string>
+  close(): Promise<void>
+}
+
+/** What the identity-sync login role may be: nothing by itself, and able to become only `service_role`. */
+export const IDENTITY_SYNC_CREDENTIAL_CHECK = `
+select to_jsonb(c) as row from (
+  select r.rolsuper as superuser,
+         r.rolbypassrls as bypass_rls,
+         r.rolinherit as inherits,
+         r.rolcreaterole as create_role,
+         r.rolreplication as replication,
+         coalesce((select pg_has_role(r.oid, x.oid, 'SET') from pg_roles x where x.rolname = 'service_role'), false) as can_become_service_role,
+         exists (select 1 from pg_namespace n where n.nspname = 'marketplace' and n.nspowner = r.oid) as owns_marketplace,
+         (exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                  where n.nspname = 'marketplace' and c.relowner = r.oid)
+          or exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                     where n.nspname = 'marketplace' and p.proowner = r.oid)
+          or exists (select 1 from pg_type t join pg_namespace n on n.oid = t.typnamespace
+                     where n.nspname = 'marketplace' and t.typowner = r.oid)) as owns_marketplace_objects,
+         -- Any role reachable other than service_role and the roles service_role itself reaches: anon, authenticated,
+         -- pg_write_all_data or a table owner would let this credential do more than link identities.
+         coalesce((select array_agg(p.rolname::text order by p.rolname)
+                   from pg_roles p
+                   where p.oid <> r.oid
+                     and p.rolname <> 'service_role'
+                     and pg_has_role(r.oid, p.oid, 'MEMBER')
+                     and not exists (select 1 from pg_roles s
+                                     where s.rolname = 'service_role' and pg_has_role(s.oid, p.oid, 'MEMBER'))),
+                  array[]::text[]) as other_memberships,
+         -- Membership of a superuser, BYPASSRLS or CREATEROLE role other than service_role itself, which holds
+         -- BYPASSRLS on Supabase but no table privilege in this schema (02's trust model).
+         coalesce((select array_agg(p.rolname::text order by p.rolname)
+                   from pg_roles p
+                   where p.oid <> r.oid
+                     and p.rolname <> 'service_role'
+                     and (p.rolsuper or p.rolbypassrls or p.rolcreaterole)
+                     and pg_has_role(r.oid, p.oid, 'MEMBER')), array[]::text[]) as privileged_memberships
+  from pg_roles r
+  where r.rolname = session_user
+) as c`
+
+export interface IdentitySyncCredentialFacts {
+  superuser: boolean
+  bypass_rls: boolean
+  inherits: boolean
+  create_role: boolean
+  replication: boolean
+  can_become_service_role: boolean
+  owns_marketplace: boolean
+  owns_marketplace_objects: boolean
+  other_memberships: string[]
+  privileged_memberships: string[]
+}
+
+/** The reasons a login role is unsafe for identity linking; empty when it is safe. */
+export function identitySyncCredentialProblems(facts: IdentitySyncCredentialFacts | null | undefined): string[] {
+  if (!facts) {
+    return ["the login role could not be inspected"]
+  }
+
+  const list = (value: unknown) => (Array.isArray(value) ? value.join(", ") : "unknown")
+
+  return [
+    facts.superuser && "it is a superuser",
+    facts.bypass_rls && "it bypasses row-level security",
+    facts.inherits && "it inherits the privileges of roles it belongs to (use NOINHERIT)",
+    facts.create_role && "it can create roles",
+    facts.replication && "it is a replication role",
+    !facts.can_become_service_role && "it cannot switch to the service_role role",
+    facts.owns_marketplace && "it owns the marketplace schema",
+    facts.owns_marketplace_objects !== false && "it owns objects in the marketplace schema",
+    (!Array.isArray(facts.privileged_memberships) || facts.privileged_memberships.length > 0) &&
+      `it belongs to a privileged role (${list(facts.privileged_memberships)})`,
+    (!Array.isArray(facts.other_memberships) || facts.other_memberships.length > 0) &&
+      `it belongs to roles other than service_role (${list(facts.other_memberships)})`
+  ].filter((problem): problem is string => typeof problem === "string")
+}
+
+const WORKER_CLAIMS = JSON.stringify({ role: "service_role" })
+
+const SYNC_VERIFIED_IDENTITY =
+  "select to_jsonb(marketplace.sync_verified_identity(p_issuer => $1::text, p_subject => $2::text, p_display_name => $3::text, " +
+  "p_email => $4::text, p_email_verified => $5::text::boolean)) as value"
+
+const UUID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Identity linking over a direct PostgreSQL connection as the identity-sync login role (postgres.js). */
+export function createPostgresIdentitySync(options: PostgresMarketplaceDbOptions): MarketplaceIdentitySync {
+  if (!options.sql && !options.url) {
+    throw new MarketplaceAdapterConfigurationError("The normalized identity link has no connection configured")
+  }
+
+  let client: Promise<Sql> | null = null
+  let checked = false
+
+  async function ready(): Promise<Sql> {
+    client ??= options.sql ? Promise.resolve(options.sql) : connect(options.url as string, options.max ?? 1)
+    const sql = await client
+
+    if (!checked) {
+      const [facts] = rowsOf(await sql.unsafe(IDENTITY_SYNC_CREDENTIAL_CHECK), "row") as Array<IdentitySyncCredentialFacts | undefined>
+      const problems = identitySyncCredentialProblems(facts)
+
+      if (problems.length > 0) {
+        throw new MarketplaceAdapterConfigurationError(
+          `The normalized identity link connection is refused because its login role is unsafe: ${problems.join("; ")}`
+        )
+      }
+
+      checked = true
+    }
+
+    return sql
+  }
+
+  return {
+    async link(identity) {
+      const issuer = principalField(identity.issuer, "issuer", 8, 300)
+      const subject = principalField(identity.subject, "subject", 1, 255)
+      const displayName = identity.displayName.trim().slice(0, 120)
+      const email = identity.emailVerified && identity.email?.trim() ? identity.email.trim() : null
+
+      try {
+        const sql = await ready()
+        const userId = await sql.begin("read write", async (tx) => {
+          await tx.unsafe(SESSION_SETUP, ["service_role", WORKER_CLAIMS])
+          const [value] = rowsOf(await tx.unsafe(SYNC_VERIFIED_IDENTITY, [issuer, subject, displayName, email, email ? "true" : "false"]), "value")
+          return value
+        })
+
+        if (typeof userId !== "string" || !UUID_TEXT.test(userId)) {
+          throw new MarketplaceStoreError()
+        }
+
+        return userId
+      } catch (error) {
+        throw translateStoreError(error)
+      }
+    },
 
     async close() {
       if (client && !options.sql) {

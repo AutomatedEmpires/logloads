@@ -32,7 +32,7 @@ vi.mock("next/navigation", () => ({
 }))
 vi.mock("@/lib/marketplace-v2/flag", () => ({ marketplaceV2Enabled: () => true }))
 vi.mock("./flag", () => ({ marketplaceV2Enabled: () => true }))
-vi.mock("../session", () => ({ getSessionActor: mocks.getSessionActor }))
+vi.mock("./v2-session", () => ({ getV2SessionActor: mocks.getSessionActor }))
 vi.mock("../rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }))
 vi.mock("@/lib/marketplace-v2/viewer", () => ({ resolveV2Viewer: mocks.resolveV2Viewer, withBusinessSwitchNote: (text: string) => text }))
 vi.mock("@/lib/marketplace-v2/pilot-adapter", () => ({ pilotMarketplaceV2: mocks.port }))

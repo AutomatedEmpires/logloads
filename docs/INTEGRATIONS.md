@@ -261,7 +261,8 @@ Optional local keys go in `dev`: Clerk development keys, a dev CARTO key, Stripe
    normalized-V2 proof is scheduled on staging: then `LOGLOADS_MARKETPLACE_V2_ADAPTER=normalized`,
    `LOGLOADS_NORMALIZED_DATABASE_URL` (a restricted login role, secret), `LOGLOADS_NORMALIZED_IDENTITY_ISSUER` and
    `LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE` go in `stg` only ([`SECURITY.md`](./SECURITY.md) §4.1), after the
-   store is deployed (§15). Never in `prd`; the readiness check marks them INVALID there.
+   store is deployed (§15), with the optional `LOGLOADS_NORMALIZED_IDENTITY_SYNC_DATABASE_URL` (a second restricted
+   login role, secret) to link first sign-ins. Never in `prd`; the readiness check marks them INVALID there.
 6. **Cron:** `apps/web/vercel.json` schedules `/api/billing/cron` daily at 05:15 UTC (Hobby allows daily jobs,
    run within the hour). Vercel runs crons on Production deployments only and sends `CRON_SECRET` as a bearer
    token. The route stays dark while the historical gates are disabled.
@@ -402,6 +403,7 @@ the same list with every variable, including the ones set by Vercel or CI.
 | app | `LOGLOADS_NORMALIZED_DATABASE_URL` | — | normalized-V2 proof only | **never** | secret |
 | app | `LOGLOADS_NORMALIZED_IDENTITY_ISSUER` | — | normalized-V2 proof only | **never** | public |
 | app | `LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE` | — | normalized-V2 proof only | **never** | public |
+| app | `LOGLOADS_NORMALIZED_IDENTITY_SYNC_DATABASE_URL` | — | normalized-V2 proof only (optional) | **never** | secret |
 | session | `LOGLOADS_SESSION_SECRET` | — | yes | yes | secret |
 | supabase-api | `SUPABASE_URL` | — | yes | yes | public |
 | supabase-api | `SUPABASE_SERVICE_ROLE_KEY` | — | yes | yes | secret |
@@ -492,6 +494,30 @@ store" jobs of `.github/workflows/normalized-adapter-ci.yml`, on plain PostgreSQ
    | `LOGLOADS_NORMALIZED_IDENTITY_ISSUER` | The Clerk development instance's issuer: its Frontend API URL, `https://<slug>.clerk.accounts.dev`. |
    | `LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE` | A name for the identity this app asserts, for example `logloads-staging`. |
 
+   Optional: `LOGLOADS_NORMALIZED_IDENTITY_SYNC_DATABASE_URL` lets a first Clerk sign-in link itself through
+   `sync_verified_identity` (#213, [`SECURITY.md`](./SECURITY.md) §4.1). Without it only the seeded people resolve.
+   `pnpm normalized:store` neither creates nor checks its login role, so this is an **Owner** step, after §15.2:
+
+   1. Set it in `stg` like the adapter's URL, with its own role and its own new password:
+      `postgresql://logloads_identity_sync.<ref>:<password>@<pooler host>:6543/postgres?sslmode=require`. The app
+      refuses the adapter's own URL here.
+   2. As the migration role (`doppler run --project logloads --config stg -- bash -c 'psql "$DATABASE_URL"'`), run
+      the statements below. `\password` prompts for the password and sends only a SCRAM-SHA-256 verifier. Grant
+      nothing else: no other role, table or function. If the `grant` is refused, stop; never use a broader role.
+
+      ```sql
+      create role logloads_identity_sync with login noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
+      grant service_role to logloads_identity_sync;
+      alter role logloads_identity_sync set statement_timeout = '15s';
+      alter role logloads_identity_sync set idle_in_transaction_session_timeout = '60s';
+      \password logloads_identity_sync
+      ```
+
+   3. On first use the app checks the role and writes nothing if it is a superuser, bypasses RLS, inherits, can
+      create roles, owns anything in `marketplace` or reaches any role other than `service_role`. The app calls only
+      `sync_verified_identity` over it, but `service_role` can also run the schema's other worker functions (billing,
+      boosts, invitation delivery): treat this URL like `SUPABASE_SERVICE_ROLE_KEY`.
+
 `<ref>` below is the staging project reference (`SUPABASE_PROJECT_REF`). If you chose a tooling config in §2.2, use
 `--config stg_tooling` instead of `--config stg`; it inherits the `stg` values.
 
@@ -563,7 +589,8 @@ real activity.
 ### 15.4 Point staging at it
 
 1. **Owner:** in `stg`, set `LOGLOADS_MARKETPLACE_V2_ADAPTER=normalized`, with `LOGLOADS_MARKETPLACE_V2=enabled` (only
-   when the [`DEPLOYMENT.md`](./DEPLOYMENT.md) §4 gates hold, §5) and the three values from §15.1. Never in `prd`.
+   when the [`DEPLOYMENT.md`](./DEPLOYMENT.md) §4 gates hold, §5), the three values from §15.1 and, optionally, the
+   identity-sync URL. Never in `prd`.
 2. **Owner:** let Doppler sync, then redeploy the staging Preview (Vercel → Deployments → Redeploy).
 
 To switch back, delete `LOGLOADS_MARKETPLACE_V2_ADAPTER` from `stg` and redeploy: the pilot adapter is the default.
@@ -577,14 +604,14 @@ To switch back, delete `LOGLOADS_MARKETPLACE_V2_ADAPTER` from `stg` and redeploy
 | Health | `curl -fsS https://<staging-origin>/api/health` | `status: "ok"` and the deployed commit. It does not name the V2 store. |
 | Page, **Owner** | Open `https://<staging-origin>/v2/work` in a browser, signed out | The seed's three open jobs, newest first: "Oak saw-log morning run", "Oak chip shuttle", "Blue River high-grade campaign". The pilot seed publishes only North Pine Logging's job, so Summit Ridge Timber's job shows that the normalized store answered. A job page shows "Oakridge, OR" or "Blue River, OR", and never a gate, directions or an exact location. |
 
-**What staging does not prove yet.** Signed-in V2 pages need the session's person and business in the normalized
-store. The seed links only the seeded people's pilot Clerk ids, and on staging people sign in with real Clerk
-accounts: seeded sign-in (`LOGLOADS_ENABLE_DEV_LOGIN`) is never enabled on a hosted target. So while the normalized
-adapter is selected, the signed-in V2 pages refuse a staging account. The signed-in flows are proven in CI on the
-seeded store (`apps/web/lib/marketplace-v2/normalized-seed.contract.test.ts`), and can be tried locally (§15.6).
-#213 (in progress) covers this. With the normalized adapter selected, the session's memberships and active business
-will come from the normalized store. A Clerk user's first sign-in will be linked there through the schema's own
-`sync_verified_identity`. Moving existing pilot data across stays cutover work (#200).
+**Signed-in pages on staging.** With the normalized adapter selected, V2's session, businesses and active business
+come from the normalized store (#213). The seed links only the seeded people's pilot Clerk ids, and seeded sign-in
+(`LOGLOADS_ENABLE_DEV_LOGIN`) is never enabled on a hosted target. So a real staging Clerk account needs the optional
+identity-sync URL (§15.1): its first V2 request then links it through `sync_verified_identity`, with no business yet,
+and `/v2/start/hauler` can set one up. Without that URL the signed-in V2 pages refuse a staging account. Sign-up still
+ends in the legacy `/onboarding`; open `/workspace` afterwards, which lands on `/v2/start`. The signed-in flows are
+proven in CI on the seeded store (`apps/web/lib/marketplace-v2/normalized-seed.contract.test.ts`), and can be tried
+locally (§15.6). Moving existing pilot data across stays cutover work (#200).
 
 ### 15.6 A disposable local stack
 

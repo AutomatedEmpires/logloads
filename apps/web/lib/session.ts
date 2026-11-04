@@ -29,6 +29,15 @@ export type { Cockpit, SessionActor } from "./session-policy"
 export const SESSION_COOKIE = "ll_session"
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14
 
+/** How the signed session cookie is written (server actions only). */
+export const SESSION_COOKIE_OPTIONS = {
+  httpOnly: true,
+  maxAge: SESSION_TTL_SECONDS,
+  path: "/",
+  sameSite: "lax" as const,
+  secure: process.env.NODE_ENV === "production"
+}
+
 export function isClerkConfigured(): boolean {
   return Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY)
 }
@@ -180,6 +189,92 @@ export const getClerkIdentity = cache(async (): Promise<{ email: string; fullNam
     return user && email ? { email, fullName } : null
   } catch {
     return null
+  }
+})
+
+/**
+ * The signed-in Clerk user's name and primary email address (only while Clerk reports it verified), for a first
+ * link of the person in another store. Unlike `getClerkIdentity`, an unverified address does not hide the name.
+ */
+export const getClerkPersonHints = cache(async (): Promise<{ fullName: string; verifiedEmail: string | null } | null> => {
+  if (!isClerkConfigured()) {
+    return null
+  }
+
+  try {
+    const user = await currentUser()
+
+    if (!user) {
+      return null
+    }
+
+    return {
+      fullName: (user.fullName ?? [user.firstName, user.lastName].filter(Boolean).join(" ")).trim(),
+      verifiedEmail: verifiedPrimaryEmailAddress(user)
+    }
+  } catch {
+    return null
+  }
+})
+
+/**
+ * Who the server session says is signed in, without the pilot account context. Used by Marketplace V2 when its
+ * store is not the pilot one (`marketplace-v2/v2-session.ts`, #213).
+ *
+ * - `clerk`: the Clerk user id from Clerk's verified session.
+ * - `dev`: the loopback development bench only. The signed dev cookie names a pilot profile, and its linked
+ *   `clerkUserId` stands in for a Clerk user id: the same dev identity mapping the normalized adapter uses.
+ *
+ * Nothing here comes from request input other than the server-signed cookie. `requestedOrganizationId` is that
+ * cookie's workspace selection: a hint that every reader re-checks against the person's current memberships.
+ */
+export interface SessionIdentity {
+  source: "clerk" | "dev"
+  clerkUserId: string
+  /**
+   * The user id a re-signed workspace selection must keep: the dev profile's id for a dev sign-in, which is how the
+   * next request finds that sign-in again. `null` for a Clerk sign-in, whose identity is Clerk's own session.
+   */
+  cookieUserId: string | null
+  requestedOrganizationId: string | null
+  /** The person's name and provider-verified email, for a first link. Dev profiles never carry a verified email. */
+  hints: () => Promise<{ fullName: string; verifiedEmail: string | null }>
+}
+
+export const getSessionIdentity = cache(async (): Promise<SessionIdentity | null> => {
+  const cookieStore = await cookies()
+  const devSession = verifySessionCookieValue(cookieStore.get(SESSION_COOKIE)?.value)
+  const clerkUserId = await getClerkUserId()
+
+  if (clerkUserId) {
+    return {
+      clerkUserId,
+      cookieUserId: null,
+      hints: async () => (await getClerkPersonHints()) ?? { fullName: "", verifiedEmail: null },
+      requestedOrganizationId: devSession?.organizationId ?? null,
+      source: "clerk"
+    }
+  }
+
+  if (!devSession || !(await isDevSessionEnabled())) {
+    return null
+  }
+
+  await refreshState()
+
+  const profile = services.state.profiles.find((candidate) => candidate.id === devSession.userId)
+  const linkedClerkUserId = profile?.isActive ? profile.clerkUserId?.trim() ?? "" : ""
+
+  if (!profile || !linkedClerkUserId) {
+    return null
+  }
+
+  return {
+    clerkUserId: linkedClerkUserId,
+    cookieUserId: profile.id,
+    hints: async () => ({ fullName: profile.fullName, verifiedEmail: null }),
+    requestedOrganizationId: devSession.organizationId,
+    source: "dev"
   }
 })
 

@@ -4,6 +4,8 @@ import postgres, { type Sql } from "postgres"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 
 vi.mock("server-only", () => ({}))
+// v2-session.ts reads the request's session through ../session; these tests hand the store the subject directly.
+vi.mock("../session", () => ({}))
 
 import {
   landingInterestQueueFor,
@@ -14,9 +16,17 @@ import {
 } from "@logloads/contracts"
 
 import { createNormalizedMarketplaceV2 } from "./normalized-adapter"
-import { createPostgresMarketplaceDb, MARKETPLACE_FUNCTIONS, type MarketplaceDb, type MarketplacePrincipal } from "./normalized-db"
+import {
+  createPostgresIdentitySync,
+  createPostgresMarketplaceDb,
+  MARKETPLACE_FUNCTIONS,
+  type MarketplaceDb,
+  type MarketplacePrincipal
+} from "./normalized-db"
 import { viewerAccessRow } from "./normalized-mapping"
+import { createNormalizedSessionStore, type NormalizedSessionStore } from "./normalized-session"
 import { MarketplaceAdapterConfigurationError, MarketplaceRefusalError, type MarketplaceV2Port, type MarketplaceV2Viewer } from "./port"
+import { selectV2Membership, v2MembershipFromNormalized } from "./v2-session"
 
 /**
  * Contract tests of the normalized adapter against the REAL schema: architecture/normalized-v2 stages 01, 02, 03, 06,
@@ -48,6 +58,8 @@ const ROLE_ADMIN_MEMBER = "logloads_adapter_ci_roleadmin"
 /** HF-22: a member of a role that holds no attribute (pg_write_all_data), and an owner of an object in the schema. */
 const WRITER_ROLE = "logloads_adapter_ci_writer"
 const OWNER_ROLE = "logloads_adapter_ci_owner"
+/** #213: the identity-sync login role. NOINHERIT, and able to become service_role and nothing else. */
+const SYNC_ROLE = "logloads_identity_sync_ci"
 
 /** Public and private strings of the fixture landing. The private ones must never appear in any V2 view. */
 const EXACT_POINT = "POINT(-122.48765 44.15432)"
@@ -146,9 +158,14 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
   let writerSql: Sql
   let ownerSql: Sql
   let maskedSuperuserSql: Sql
+  let syncSql: Sql
   let db: MarketplaceDb
   let port: MarketplaceV2Port
+  /** A second port on `secondSql`, so two interest sends can run at once (UX-08 #131). */
   let secondPort: MarketplaceV2Port
+  /** #213: session memberships without identity linking, and with it. */
+  let sessionStore: NormalizedSessionStore
+  let linkingStore: NormalizedSessionStore
   let fixture: Fixture
   const subjects = new Map<string, string>()
 
@@ -209,6 +226,9 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
     await admin.unsafe(`grant anon, authenticated to ${OWNER_ROLE}`)
     await admin.unsafe("create function marketplace.logloads_ci_owned_probe() returns integer language sql immutable as 'select 1'")
     await admin.unsafe(`alter function marketplace.logloads_ci_owned_probe() owner to ${OWNER_ROLE}`)
+    const syncPassword = randomBytes(18).toString("hex")
+    await admin.unsafe(`create role ${SYNC_ROLE} login noinherit password '${syncPassword}'`)
+    await admin.unsafe(`grant service_role to ${SYNC_ROLE}`)
 
     await admin.unsafe(fixtureSql())
 
@@ -244,9 +264,16 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
     ownerSql = client(roleUrl(OWNER_ROLE, ownerPassword))
     // The superuser's credential with the adapter role set at connection time: current_user looks inert, the login is not.
     maskedSuperuserSql = postgres(DB_URL, { connection: { options: `-c role=${ADAPTER_ROLE}` }, max: 1, onnotice: () => undefined, prepare: false })
+    syncSql = client(roleUrl(SYNC_ROLE, syncPassword))
     db = createPostgresMarketplaceDb({ sql: adapterSql })
     port = createNormalizedMarketplaceV2({ db, principal: principalFor(ISSUER) })
     secondPort = createNormalizedMarketplaceV2({ db: createPostgresMarketplaceDb({ sql: secondSql }), principal: principalFor(ISSUER) })
+    sessionStore = createNormalizedSessionStore({ db, identity: { audience: AUDIENCE, issuer: ISSUER } })
+    linkingStore = createNormalizedSessionStore({
+      db,
+      identity: { audience: AUDIENCE, issuer: ISSUER },
+      sync: createPostgresIdentitySync({ sql: syncSql })
+    })
   }, 120_000)
 
   afterAll(async () => {
@@ -259,6 +286,7 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
       writerSql?.end({ timeout: 5 }),
       ownerSql?.end({ timeout: 5 }),
       maskedSuperuserSql?.end({ timeout: 5 }),
+      syncSql?.end({ timeout: 5 }),
       admin?.end({ timeout: 5 })
     ])
   })
@@ -738,6 +766,195 @@ $$;`)
 
       const seen = JSON.stringify(await port.getJob(rivalJobId, viewer("rival", "rival")))
       for (const secret of PRIVATE_STRINGS) expect(seen).not.toContain(secret)
+    })
+  })
+
+  // -------------------------------------------------------------------------------------------------------------
+  describe("session memberships (#213)", () => {
+    const NEWCOMER = "adapter_newcomer"
+    const newcomerHints = vi.fn(async () => ({ fullName: "New Comer", verifiedEmail: "newcomer@adapter-contract.test" as string | null }))
+    const noHints = async () => ({ fullName: "", verifiedEmail: null })
+
+    /** One statement as a person, through the migration role with that person's claims (as the fixture does). */
+    async function asPerson(subject: string, query: string, values: Array<string | null> = []) {
+      const claims = JSON.stringify({ aud: AUDIENCE, exp: Math.floor(Date.now() / 1000) + 600, iss: ISSUER, role: "authenticated", sub: subject })
+
+      return admin.begin(async (tx) => {
+        await tx.unsafe("select set_config('request.jwt.claims', $1::text, true), set_config('role', 'authenticated', true)", [claims])
+        return tx.unsafe(query, values)
+      }) as Promise<Array<Record<string, unknown>>>
+    }
+
+    const linksFor = async (subject: string) =>
+      (await one<{ n: number }>("select count(*)::int as n from marketplace.identity_links where issuer = $1 and subject = $2", [ISSUER, subject])).n
+
+    it("lists each person's active memberships of active businesses, as the schema's access function reports them", async () => {
+      const land = await sessionStore.resolve({ hints: noHints, subject: "adapter_land" })
+
+      expect(land?.person).toEqual({ displayName: "Land Owner", email: "land@adapter-contract.test", id: fixture.users.land })
+      // Both were created in one fixture transaction (equal created_at), so compare them by name.
+      const byName = (left: unknown[], right: unknown[]) => String(left[0]).localeCompare(String(right[0]))
+      expect(land?.memberships.map((entry) => [entry.organizationName, entry.role, entry.haulerProfile]).sort(byName)).toEqual([
+        ["Adapter Timber", "owner", false],
+        ["Adapter Timber Hauling", "owner", true]
+      ])
+      expect(land?.memberships.find((entry) => entry.organizationId === fixture.orgs.land)?.capabilities)
+        .toEqual(expect.arrayContaining(["job.publish", "landing.manage", "inquiry.respond"]))
+      expect(land?.memberships.map(v2MembershipFromNormalized).map((entry) => [entry.organization.displayName, entry.kindLabel, entry.roleLabel]).sort(byName))
+        .toEqual([["Adapter Timber", "Landing business", "Owner"], ["Adapter Timber Hauling", "Hauling business", "Owner"]])
+
+      expect((await sessionStore.resolve({ hints: noHints, subject: "adapter_haul" }))?.memberships.map((entry) => entry.organizationId))
+        .toEqual([fixture.orgs.haul])
+
+      const stranger = await sessionStore.resolve({ hints: noHints, subject: "adapter_stranger" })
+      expect(stranger).toEqual({ memberships: [], person: { displayName: "Stranger", email: "stranger@adapter-contract.test", id: fixture.users.stranger } })
+    })
+
+    it("resolves no one for a subject that is not linked, and writes nothing without the identity-sync connection", async () => {
+      await expect(sessionStore.resolve({ hints: newcomerHints, subject: NEWCOMER })).resolves.toBeNull()
+      expect(newcomerHints).not.toHaveBeenCalled()
+      expect(await linksFor(NEWCOMER)).toBe(0)
+    })
+
+    it("links a first sign-in through sync_verified_identity, once, keyed to the session's Clerk user id", async () => {
+      const users = async () => (await one<{ n: number }>("select count(*)::int as n from marketplace.app_users")).n
+      const before = await users()
+
+      const first = await linkingStore.resolve({ hints: newcomerHints, subject: NEWCOMER })
+      expect(first).toMatchObject({ memberships: [], person: { displayName: "New Comer", email: "newcomer@adapter-contract.test" } })
+      expect(await linksFor(NEWCOMER)).toBe(1)
+      expect(await users()).toBe(before + 1)
+
+      const again = await linkingStore.resolve({ hints: newcomerHints, subject: NEWCOMER })
+      expect(again?.person.id).toBe(first?.person.id)
+      expect(newcomerHints).toHaveBeenCalledOnce()
+      expect(await users()).toBe(before + 1)
+
+      // An address the provider has not verified is never stored (16 B-5).
+      await linkingStore.resolve({ hints: async () => ({ fullName: "Unverified", verifiedEmail: null }), subject: "adapter_unverified" })
+      const contact = await one<{ n: number }>(
+        "select count(*)::int as n from marketplace.user_contacts c join marketplace.identity_links l on l.user_id = c.user_id where l.subject = $1",
+        ["adapter_unverified"]
+      )
+      expect(contact.n).toBe(0)
+    })
+
+    it("links only over a login role that can become service_role and nothing else", async () => {
+      const attempt = { displayName: "Never Linked", email: null, emailVerified: false, issuer: ISSUER, subject: "adapter_never" }
+
+      await expect(createPostgresIdentitySync({ sql: adapterSql }).link(attempt)).rejects.toThrow(/cannot switch to the service_role role/)
+      await expect(createPostgresIdentitySync({ sql: unsafeSql }).link(attempt)).rejects.toThrow(/roles other than service_role \(anon, authenticated\)/)
+      await expect(createPostgresIdentitySync({ sql: admin }).link(attempt)).rejects.toThrow(/superuser/)
+      expect(await linksFor("adapter_never")).toBe(0)
+
+      // By itself the sync role reads nothing and cannot act as a person; the marketplace connection refuses it.
+      await expect(syncSql.unsafe("select count(*) from marketplace.app_users")).rejects.toMatchObject({ code: "42501" })
+      await expect(syncSql.begin((tx) => tx.unsafe("set local role authenticated"))).rejects.toMatchObject({ code: "42501" })
+      await expect(createPostgresMarketplaceDb({ sql: syncSql }).asAnon(async () => "ran")).rejects.toThrow(MarketplaceAdapterConfigurationError)
+    })
+
+    it("makes a business created through create_organization selectable at once", async () => {
+      const [created] = await asPerson(NEWCOMER, "select marketplace.create_organization('Adapter Newcomer Logging', 'adapter-newcomer-logging', 'OR', false)::text as id")
+      const organizationId = String(created?.id)
+
+      const session = await linkingStore.resolve({ hints: newcomerHints, subject: NEWCOMER })
+      const memberships = (session?.memberships ?? []).map(v2MembershipFromNormalized)
+
+      expect(memberships).toEqual([{ kindLabel: "Landing business", organization: { displayName: "Adapter Newcomer Logging", id: organizationId }, roleLabel: "Owner" }])
+      expect(selectV2Membership(memberships, organizationId)).toEqual({ active: memberships[0], invalid: false })
+      expect(selectV2Membership(memberships, null).active?.organization.id).toBe(organizationId)
+
+      // The adapter acts for it as the same person.
+      subjects.set(session?.person.id ?? "", NEWCOMER)
+      await expect(port.viewerAccess({ organizationId, userId: session?.person.id ?? "" }))
+        .resolves.toMatchObject({ organizationName: "Adapter Newcomer Logging" })
+    })
+
+    it("drops a removed membership on the next read, so a stale switch to it is refused and access ends", async () => {
+      // The landing's owner invites the stranger as a driver (no landing seat), and the stranger accepts.
+      await asPerson("adapter_land",
+        "insert into marketplace.organization_memberships (org_id, user_id, role, landing_workspace_seat, status) values ($1::uuid, $2::uuid, 'driver', false, 'invited')",
+        [fixture.orgs.land, fixture.users.stranger])
+      const invited = await sessionStore.resolve({ hints: noHints, subject: "adapter_stranger" })
+      expect(invited?.memberships).toEqual([]) // an invitation alone lists nothing
+
+      await asPerson("adapter_stranger",
+        "update marketplace.organization_memberships set status = 'active' where org_id = $1::uuid and user_id = marketplace.current_user_id()",
+        [fixture.orgs.land])
+
+      const joined = ((await sessionStore.resolve({ hints: noHints, subject: "adapter_stranger" }))?.memberships ?? []).map(v2MembershipFromNormalized)
+      expect(joined.map((entry) => [entry.organization.id, entry.roleLabel])).toEqual([[fixture.orgs.land, "Driver"]])
+      expect(selectV2Membership(joined, fixture.orgs.land)).toEqual({ active: joined[0], invalid: false })
+      await expect(port.viewerAccess(viewer("stranger", "land"))).resolves.toMatchObject({ organizationName: "Adapter Timber" })
+
+      // The owner removes the stranger. The page the stranger already has still shows the business.
+      await asPerson("adapter_land",
+        "update marketplace.organization_memberships set status = 'removed' where org_id = $1::uuid and user_id = $2::uuid",
+        [fixture.orgs.land, fixture.users.stranger])
+
+      const after = ((await sessionStore.resolve({ hints: noHints, subject: "adapter_stranger" }))?.memberships ?? []).map(v2MembershipFromNormalized)
+      expect(after).toEqual([])
+      // The switch action's check (switch-actions.ts) and the session's selection rule both refuse it.
+      expect(after.some((entry) => entry.organization.id === fixture.orgs.land)).toBe(false)
+      expect(selectV2Membership(after, fixture.orgs.land)).toEqual({ active: null, invalid: true })
+      await expect(port.viewerAccess(viewer("stranger", "land"))).rejects.toBeInstanceOf(MarketplaceRefusalError)
+    })
+
+    it("drops a business that is suspended from every member's list", async () => {
+      await admin.unsafe("update marketplace.organizations set status = 'suspended' where id = $1::uuid", [fixture.orgs.dual])
+
+      try {
+        const land = await sessionStore.resolve({ hints: noHints, subject: "adapter_land" })
+        expect(land?.memberships.map((entry) => entry.organizationId)).toEqual([fixture.orgs.land])
+      } finally {
+        await admin.unsafe("update marketplace.organizations set status = 'active' where id = $1::uuid", [fixture.orgs.dual])
+      }
+    })
+
+    it("sets up a hauling business for a first sign-in (/v2/start/hauler), selectable at once as a hauling business", async () => {
+      const subject = "adapter_new_hauler"
+      const linked = await linkingStore.resolve({ hints: async () => ({ fullName: "New Hauler", verifiedEmail: null }), subject })
+      const userId = linked?.person.id ?? ""
+      expect(linked?.memberships).toEqual([])
+      subjects.set(userId, subject)
+
+      const { organizationId } = await port.createHaulingBusiness({ userId }, {
+        about: "",
+        acceptsInvitations: false,
+        businessName: "Adapter New Hauling",
+        homeBase: "Sweet Home, OR",
+        homeBasePoint: { lat: 44.4, lng: -122.7 },
+        legalName: "",
+        listed: false,
+        serviceRadiusMiles: null
+      })
+
+      const memberships = (await sessionStore.resolve({ hints: noHints, subject }))?.memberships ?? []
+      expect(memberships.map((entry) => [entry.organizationId, entry.role, entry.haulerProfile])).toEqual([[organizationId, "owner", true]])
+      expect(memberships[0]?.capabilities).toEqual(expect.arrayContaining(["interest.express", "interest.withdraw", "interest.reply"]))
+      expect(memberships[0]?.capabilities).not.toContain("job.publish")
+
+      const choices = memberships.map(v2MembershipFromNormalized)
+      expect(choices).toEqual([{ kindLabel: "Hauling business", organization: { displayName: "Adapter New Hauling", id: organizationId }, roleLabel: "Owner" }])
+      expect(selectV2Membership(choices, organizationId)).toEqual({ active: choices[0], invalid: false })
+      await expect(port.haulerProfile({ organizationId, userId })).resolves.toMatchObject({
+        businessName: "Adapter New Hauling",
+        homeBase: "Sweet Home, OR",
+        listed: false,
+        organizationId
+      })
+    })
+
+    it("creates no business for someone the session does not resolve, and leaves nothing half-made", async () => {
+      const organizations = async () => (await one<{ n: number }>("select count(*)::int as n from marketplace.organizations")).n
+      const before = await organizations()
+      const input = { about: "", acceptsInvitations: false, businessName: "Never Made", homeBase: "", legalName: "", listed: false, serviceRadiusMiles: null }
+
+      await expect(port.createHaulingBusiness({ userId: randomUUID() }, input)).rejects.toBeInstanceOf(MarketplaceRefusalError)
+      // A principal whose claims resolve to no one (an untrusted issuer) is refused by create_organization itself.
+      const untrusted = createNormalizedMarketplaceV2({ db, principal: principalFor("https://clerk.untrusted.test") })
+      await expect(untrusted.createHaulingBusiness({ userId: fixture.users.haul }, input)).rejects.toBeInstanceOf(MarketplaceRefusalError)
+      expect(await organizations()).toBe(before)
     })
   })
 

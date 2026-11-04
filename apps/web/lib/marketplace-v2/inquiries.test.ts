@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock("server-only", () => ({}))
-vi.mock("../session", () => ({ getSessionActor: mocks.getSessionActor }))
+vi.mock("./v2-session", () => ({ getV2SessionActor: mocks.getSessionActor }))
 vi.mock("./pilot-adapter", () => ({
   pilotMarketplaceV2: { listHaulerInterests: mocks.listHaulerInterests, listLandingInterests: mocks.listLandingInterests }
 }))

@@ -18,11 +18,11 @@ import {
 
 import { checkRateLimit } from "../rate-limit"
 import { serializeError } from "../services"
-import { getSessionActor } from "../session"
 import { draftInput, draftQueryString, draftValuesFromForm, LANDING_NOT_OWNED, type DraftFormValues } from "./draft-params"
 import { marketplaceV2Enabled } from "./flag"
 import { pilotMarketplaceV2 } from "./pilot-adapter"
 import { MarketplaceOperationUnavailableError, type MarketplaceV2Viewer } from "./port"
+import { getV2SessionActor } from "./v2-session"
 
 /**
  * Marketplace V2 form actions. Identity and workspace always come from the server session; the form
@@ -35,7 +35,7 @@ async function requireViewer(nextPath: string): Promise<MarketplaceV2Viewer> {
     redirect("/")
   }
 
-  const actor = await getSessionActor()
+  const actor = await getV2SessionActor()
 
   if (!actor) {
     redirect(`/sign-in?next=${encodeURIComponent(nextPath)}`)

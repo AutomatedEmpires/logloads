@@ -23,7 +23,7 @@ vi.mock("../rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }))
 vi.mock("../services", () => ({
   serializeError: (error: unknown) => ({ error: error instanceof Error ? error.message : "Unknown error" })
 }))
-vi.mock("../session", () => ({ getSessionActor: mocks.getSessionActor }))
+vi.mock("./v2-session", () => ({ getV2SessionActor: mocks.getSessionActor }))
 vi.mock("./flag", () => ({ marketplaceV2Enabled: mocks.marketplaceV2Enabled }))
 vi.mock("./pilot-adapter", () => ({
   pilotMarketplaceV2: {

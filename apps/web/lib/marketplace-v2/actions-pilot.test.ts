@@ -18,7 +18,7 @@ vi.mock("next/navigation", () => ({ redirect: hoisted.redirect }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 vi.mock("../rate-limit", () => ({ checkRateLimit: vi.fn(async () => undefined) }))
 vi.mock("./flag", () => ({ marketplaceV2Enabled: () => true }))
-vi.mock("../session", () => ({ getSessionActor: vi.fn(async () => hoisted.sessionActor) }))
+vi.mock("./v2-session", () => ({ getV2SessionActor: vi.fn(async () => hoisted.sessionActor) }))
 vi.mock("../services", async () => {
   const { createInMemoryDatabase } = await import("@logloads/db")
   const { createLogLoadsServices } = await import("@logloads/services")

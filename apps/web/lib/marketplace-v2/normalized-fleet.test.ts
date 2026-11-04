@@ -38,6 +38,7 @@ function fakeDb(): MarketplaceDb {
     fileListingReport: async () => {
       throw new Error("fileListingReport is not used by the My trucks tests")
     },
+    viewerSession: async () => ({ memberships: [], person: null }),
     async query(name, values) {
       statements.push({ name, values })
       return rows[name] ?? []

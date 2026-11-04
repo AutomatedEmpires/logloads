@@ -19,8 +19,8 @@ import { contradictionText, UPDATE_AVAILABILITY, type CapacityContradiction } fr
 import { interestConfirmation, interestSheetModel, sentContradictions, standingInterestSummary } from "@/lib/marketplace-v2/interest-sheet"
 import { interestBarOffer, jobPagePath, jobShareUrl, similarJobs, type SimilarJob } from "@/lib/marketplace-v2/job-detail"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
+import { getV2SessionActor } from "@/lib/marketplace-v2/v2-session"
 import { withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
-import { getSessionActor } from "@/lib/session"
 
 type Params = Promise<{ jobId: string }>
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
@@ -94,7 +94,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
 
   const { jobId } = await params
   const query = await searchParams
-  const actor = await getSessionActor()
+  const actor = await getV2SessionActor()
   const workspace = actor && !actor.workspaceSelectionInvalid ? actor.activeOrganization ?? null : null
   const viewer = actor && workspace ? { organizationId: workspace.id, userId: actor.profile.id } : null
   const job = await pilotMarketplaceV2.getJob(jobId, viewer)
