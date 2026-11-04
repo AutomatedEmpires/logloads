@@ -131,7 +131,8 @@ export async function reportHaulerAvailabilityAction(formData: FormData): Promis
       state: posted.state
     })
     await pilotMarketplaceV2.reportHaulerAvailability(viewer, input)
-    return "Availability saved. Landings see it with today's date."
+    // A withdrawn report is never shown to landings (availability_read), so neither message promises they see it.
+    return input.state === "none" ? "Saved as not available, dated today." : "Availability saved, dated today."
   })
 }
 

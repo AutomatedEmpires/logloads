@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("server-only", () => ({}))
 
-import { FLEET_EDIT_REFUSED, FLEET_NOT_HAULING } from "@logloads/services"
+import { FLEET_EDIT_REFUSED, FLEET_NOT_HAULING, FLEET_NOTHING_TO_WITHDRAW } from "@logloads/services"
 
 import { createNormalizedMarketplaceV2 } from "./normalized-adapter"
 import type { MarketplaceCalls, MarketplaceDb } from "./normalized-db"
@@ -87,8 +87,14 @@ describe("reportHaulerAvailability", () => {
   })
 
   it("re-dates the latest withdrawal when Not available is said again", async () => {
+    rows.availability_restate_withdrawn = [{ id: "r" }]
     await port().reportHaulerAvailability(viewer, { count: null, equipmentCode: "log_truck", state: "none" })
     expect(statements.slice(-2).map((statement) => statement.name)).toEqual(["availability_withdraw", "availability_restate_withdrawn"])
+  })
+
+  it("says nothing was saved when Not available has no report to withdraw or re-date", async () => {
+    await expect(port().reportHaulerAvailability(viewer, { count: null, equipmentCode: "log_truck", state: "none" })).rejects.toThrow(FLEET_NOTHING_TO_WITHDRAW)
+    expect(statements.some((statement) => statement.name === "availability_insert")).toBe(false)
   })
 
   it("refuses a driver (no edit right) with the shared rule's message", async () => {

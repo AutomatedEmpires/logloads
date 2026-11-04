@@ -6,6 +6,7 @@ import { ContentGrid, PageContainer, PageHeader, Section } from "@logloads/ui/la
 import { EquipmentCapacity, formatDay, inquiryStatus, JobDetail, JOB_PUBLIC_STATUS_LABELS } from "@logloads/ui/marketplace"
 import { Button, FormField } from "@logloads/ui/primitives"
 
+import { AppLink } from "@/components/AppLink"
 import { InterestCountField } from "@/components/v2/InterestCountField"
 import styles from "@/components/v2/InterestForm.module.css"
 import { PageNotice } from "@/components/v2/PageNotice"
@@ -48,7 +49,7 @@ function EquipmentFields({ options }: { options: MarketplaceHaulerEquipmentOptio
         <InterestCountField defaultValue={1} id="interest-trucks" label="Trucks you can offer" max={500} min={1} name="trucksOffered" required />
         <p className={styles.hint}>
           Your business lists no trucks or trailers yet, so the landing sees a count only.{" "}
-          <Link href={TRUCKS_PATH}>Add your equipment</Link> to offer trucks by type.
+          <AppLink href={TRUCKS_PATH}>Add your equipment</AppLink> to offer trucks by type.
         </p>
       </div>
     )

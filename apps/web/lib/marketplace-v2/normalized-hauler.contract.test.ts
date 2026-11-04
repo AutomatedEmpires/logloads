@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 
 vi.mock("server-only", () => ({}))
 
-import { fleetCapacity, HAULER_IDENTITY_EDIT_REFUSED, HAULER_PROFILE_EDIT_REFUSED, publicHaulerProfile } from "@logloads/services"
+import { FLEET_NOTHING_TO_WITHDRAW, fleetCapacity, HAULER_IDENTITY_EDIT_REFUSED, HAULER_PROFILE_EDIT_REFUSED, publicHaulerProfile } from "@logloads/services"
 
 import { createNormalizedMarketplaceV2 } from "./normalized-adapter"
 import { createPostgresMarketplaceDb, type MarketplacePrincipal } from "./normalized-db"
@@ -295,6 +295,14 @@ describe.skipIf(!DISPOSABLE)("normalized hauler profile and trucks contract (dis
       await expect(port.confirmHaulerAvailability(as("owner"))).resolves.toEqual({ confirmed: 1 })
       const rows = fleetCapacity(await fleet(), new Date())
       expect(rows[0]).toMatchObject({ stamp: { fresh: true, label: "Updated today by the hauler" }, state: "not_available" })
+    })
+
+    it("says nothing was saved for Not available on a truck type that was never reported, and records nothing", async () => {
+      const count = async () =>
+        (await one<{ n: number }>("select count(*)::int as n from marketplace.availability_reports where org_id = $1::uuid and equipment_code = 'chip_truck'", [haul])).n
+
+      await expect(port.reportHaulerAvailability(as("owner"), { count: null, equipmentCode: "chip_truck", state: "none" })).rejects.toThrow(FLEET_NOTHING_TO_WITHDRAW)
+      expect(await count()).toBe(0)
     })
 
     it("lets a driver read the trucks but not change them", async () => {

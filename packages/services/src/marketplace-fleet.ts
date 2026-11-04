@@ -32,6 +32,12 @@ export const FLEET_EDIT_REFUSED = "Only an owner, manager or staff member of thi
 export const FLEET_NOT_PLACED =
   "Availability is reported for the area around your home base. Add your home base and how far you travel on your business profile first."
 export const NOT_RECENTLY_CONFIRMED = "Not recently confirmed"
+/**
+ * "Not available" for a truck type with no report to withdraw or re-date: the schema has no row for it (a report
+ * needs a count of 1 or more), so nothing is recorded and nothing is claimed as saved.
+ */
+export const FLEET_NOTHING_TO_WITHDRAW =
+  "Nothing was saved: no availability has been reported for this truck type yet, so there is nothing to mark not available. It reads Not recently confirmed until you report trucks available."
 
 const TRUCK_CODES = new Set<string>(MARKETPLACE_EQUIPMENT_GROUPS.truck.map((type) => type.code))
 const DAY_MS = 86_400_000

@@ -14,6 +14,7 @@ import {
   DomainRefusalError,
   FLEET_EDIT_REFUSED,
   FLEET_NOT_HAULING,
+  FLEET_NOTHING_TO_WITHDRAW,
   planAvailabilityReport,
   planEquipmentAdd,
   registeredUnits
@@ -225,8 +226,11 @@ export function normalizedHaulerFleetMethods(asViewer: AsViewer, now: () => Date
         const withdrawn = await calls.query("availability_withdraw", [viewer.organizationId, plan.equipmentCode])
 
         if (plan.kind === "withdraw") {
-          // Saying "not available" again re-states the latest withdrawal, so the date shown is today's.
-          if (withdrawn.length === 0) await calls.query("availability_restate_withdrawn", [viewer.organizationId, plan.equipmentCode])
+          if (withdrawn.length > 0) return
+          // Saying "not available" again re-states the latest withdrawal, so the date shown is today's. With no
+          // report of this type at all there is nothing to record, and that is said rather than claimed as saved.
+          const restated = await calls.query("availability_restate_withdrawn", [viewer.organizationId, plan.equipmentCode])
+          if (restated.length === 0) throw new MarketplaceRefusalError(FLEET_NOTHING_TO_WITHDRAW, "23514")
           return
         }
 
