@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 
 import { ApiError, apiErrorResponse, requireApiActor } from "@/lib/api-actor"
-import { parseJsonObject, parseTripDocumentType, tripDocumentTarget, verifiedMediaReference } from "@/lib/media"
+import {
+	isOwnedUploadPublicId,
+	parseJsonObject,
+	parseTripDocumentType,
+	tripDocumentTarget,
+	verifiedMediaReference
+} from "@/lib/media"
 import { mutateState, services } from "@/lib/services"
 
 /**
@@ -35,7 +41,7 @@ export async function POST(
 
 		const target = tripDocumentTarget(services.state, actor, organizationId, tripId, "write")
 
-		if (!payload.publicId.startsWith(`${target.publicIdPrefix}/uploads/`)) {
+		if (!isOwnedUploadPublicId(payload.publicId, target.publicIdPrefix)) {
 			throw new ApiError("The uploaded document does not belong to this trip", 403)
 		}
 
