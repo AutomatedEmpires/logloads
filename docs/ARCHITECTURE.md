@@ -47,14 +47,14 @@ isolated preview is approved ([`DEPLOYMENT.md`](./DEPLOYMENT.md) §4).
 | Concern | Where |
 |---|---|
 | Port | `apps/web/lib/marketplace-v2/port.ts`. Methods are listed in [`API_CONTRACTS.md`](./API_CONTRACTS.md) §1. |
-| Adapter | `pilot-adapter.ts`, over `operating_state`. `supportsPublishing: false`. |
+| Adapters | `pilot-adapter.ts`, over `operating_state`: the default, `supportsPublishing: false`. `normalized-adapter.ts`, over the normalized-v2 `marketplace` functions: `supportsPublishing: true`, selected only by `LOGLOADS_MARKETPLACE_V2_ADAPTER=normalized` outside production (`adapter.ts`; identity path in [`SECURITY.md`](./SECURITY.md) §4.1). |
 | Interest rules | `packages/services/src/marketplace-interest.ts`: one live interest per job and hauler business; equipment counts from the hauler's own profile; replay-safe replies; audit events |
 | Capabilities | `marketplace-permissions.ts`, which restates the normalized role sets. `marketplace-access.ts` maps pilot roles onto them and is to be deleted at cutover. |
 | Listing semantics | `lastModifiedAt`, `lastConfirmedAt` and `expiresAt` are separate; no pilot job is ever labelled confirmed. The volume fields are distinct and nullable, shown as "Not stated". |
 
 **Not built:**
 
-- persisted publish or reconfirm;
+- persisted publish or reconfirm on the pilot store (only the normalized adapter persists them);
 - an audited private-detail disclosure action;
 - V2 hauler onboarding and availability screens;
 - any V2 analytics.

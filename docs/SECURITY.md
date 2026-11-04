@@ -126,9 +126,10 @@ store and inherits §2. In addition:
   actions.
 - **Job authoring:** `/v2/landing/jobs` (and its `/new` and `/preview` pages) validates a draft against
   `marketplace-job-draft.ts`. That includes the sensitive-access-text rule, which mirrors
-  `contains_sensitive_access_pattern`. Publish and reconfirm require `job.publish`, but the pilot adapter
-  reports `supportsPublishing: false`, so **nothing is persisted**. The publish and reconfirm actions apply no
-  rate limit; add one before persistence is enabled.
+  `contains_sensitive_access_pattern`. Publish and reconfirm require `job.publish` and are rate limited per user
+  (`marketplace-publish` 20/hour, `marketplace-reconfirm` 120/hour). The pilot adapter reports
+  `supportsPublishing: false`, so **nothing is persisted on the pilot store**. Only the normalized adapter
+  persists them, when deliberately selected outside production (§4.1).
 - **Integrity:** one live interest per job and hauler business. Replies are replay-safe. Every transition
   writes an audit event inside the compare-and-swap mutation.
 - **Abuse limits:** `checkRateLimit` per user (`apps/web/lib/marketplace-v2/actions.ts`):
@@ -183,7 +184,50 @@ is still unreviewed. The same layer-2-only limit applies to them.
 
 **Service-role bypass still applies.** If the application reaches normalized tables with the service-role
 key, RLS protects nothing on that path. A target design must either carry the verified user token to
-PostgREST or keep explicit service-layer authorization. The choice is open (TRANSITION_PLAN, "Identity").
+PostgREST or keep explicit service-layer authorization.
+
+### 4.1 Adapter identity path — decided 2026-11-03 (#139; IMPLEMENTED, development only)
+
+The normalized `MarketplaceV2Port` adapter (`apps/web/lib/marketplace-v2/normalized-*.ts`) uses **explicit
+service-layer authorization over the schema's functions, as the session's person**:
+
+1. The server identifies the person from its own session (`getSessionActor()`; Clerk verifies the session
+   token). The adapter refuses a viewer that is not the session's user.
+2. It connects directly to PostgreSQL (postgres.js) as a **dedicated login role** that can do nothing by itself.
+   It must be NOINHERIT, with no superuser, BYPASSRLS, CREATEROLE or replication attributes, and own neither the
+   schema nor any table, function or type in it. It must not belong to `service_role`, to any role with superuser,
+   BYPASSRLS or CREATEROLE, or to any other role that `anon` and `authenticated` do not already reach (for example
+   `pg_write_all_data`), directly or through other roles (HF-22, #187). It may only switch to `anon` and
+   `authenticated`. `createPostgresMarketplaceDb` checks the login role itself (`session_user`) on first use and
+   refuses any other credential.
+3. Each call is one transaction. It runs `set_config('role', 'authenticated', true)` and sets
+   `request.jwt.claims` to the configured issuer, the session's Clerk user id and the pinned audience, with a
+   60-second expiry. These are the settings PostgREST makes after verifying a token. `current_user_id()`, every
+   function's role check and every RLS policy then apply to that person. Both settings are transaction-local, so
+   no identity survives on a pooled connection. Public discovery runs as `anon`.
+4. The adapter adds one check of its own. Every write is bound to the viewer's **active** business, so a
+   person's other businesses are untouched, even ones they belong to. It calls only a fixed list of user
+   functions (`MARKETPLACE_FUNCTIONS`). Those exclude worker, billing, admin and legacy-import functions.
+
+**Why not the verified-token path yet.** Real Clerk tokens through Supabase third-party auth are not verified
+(#112). Building on them now would rest the adapter on an unproven trust path, and local loopback development
+sessions carry no Clerk token. This path is verifiable today on a disposable database
+(`.github/workflows/normalized-adapter-ci.yml`).
+
+**What it trusts.** The database trusts the server's assertion of identity. Anyone holding the adapter's
+database credential can act as any user, but only as that user would through the API: never as `service_role`,
+and never past RLS. That is narrower than the pilot's service-role key, which reads and writes everything. Keep
+the credential server-side, like the service-role key. The asserted claims reuse the real Clerk issuer row. That
+residual (HF-23) is accepted for now and tracked in #187 until #112 allows a separate issuer row for server-asserted
+identity. When #112 is verified, a PostgREST transport that carries
+the user's own token can replace `normalized-db.ts`. `normalized-mapping.ts` already consumes PostgREST-shaped JSON
+and does not change.
+
+**Selection.** `LOGLOADS_MARKETPLACE_V2_ADAPTER=normalized`, together with `LOGLOADS_NORMALIZED_DATABASE_URL`,
+`LOGLOADS_NORMALIZED_IDENTITY_ISSUER` and `LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE`, selects the normalized adapter.
+The default is the pilot adapter. `VERCEL_ENV=production` always selects the pilot adapter, and an incomplete
+selection fails closed rather than falling back to the pilot store (`adapter.ts`). No hosted database has the
+schema or the role. Provisioning them is a separate, approved step.
 
 ## 5. Unverified requirements (UNVERIFIED unless marked)
 

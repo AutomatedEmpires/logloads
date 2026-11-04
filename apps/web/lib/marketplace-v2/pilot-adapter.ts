@@ -12,13 +12,14 @@ import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { buildNetworkView } from "../network"
 import { mutateState, readState } from "../services"
+import { selectMarketplaceV2Port } from "./adapter"
 import { pilotPosterVerification, toInterestView, toJobDetailView } from "./mapping"
 import { MarketplaceOperationUnavailableError, type MarketplaceV2Port, type MarketplaceV2Viewer } from "./port"
 
 /**
  * Marketplace V2 over the pilot's versioned `operating_state` document. Reads go through the public,
  * redacted network view; writes go through the services facade inside the compare-and-swap mutation
- * path. Replace with a normalized-v2 adapter implementing the same port once that schema is validated.
+ * path. `normalized-adapter.ts` implements the same port over the normalized-v2 schema; `adapter.ts` chooses.
  *
  * Native V2 job publishing and reconfirmation are deliberately NOT persisted here: forcing a V2 job
  * advertisement into the legacy load/slot/route-pack records would recreate the dispatch model, and a
@@ -51,7 +52,7 @@ function interestView(state: LogLoadsDatabaseState, interest: Parameters<typeof 
   return toInterestView(state, interest, (load) => marketplaceJobStatus(load))
 }
 
-export const pilotMarketplaceV2: MarketplaceV2Port = {
+export const operatingStateMarketplaceV2: MarketplaceV2Port = {
   supportsPublishing: false,
 
   async authoringLandings(viewer) {
@@ -128,3 +129,10 @@ export const pilotMarketplaceV2: MarketplaceV2Port = {
     await mutateState((draft) => draft.withdrawMarketplaceInterest(actor(viewer), interestId))
   }
 }
+
+/**
+ * The V2 port every page and action uses. Its name predates the normalized adapter: it is the pilot adapter above,
+ * unchanged, unless `LOGLOADS_MARKETPLACE_V2_ADAPTER=normalized` deliberately selects the normalized one outside
+ * production (`adapter.ts`).
+ */
+export const pilotMarketplaceV2: MarketplaceV2Port = selectMarketplaceV2Port(operatingStateMarketplaceV2)
