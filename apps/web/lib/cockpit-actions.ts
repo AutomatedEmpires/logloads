@@ -262,19 +262,14 @@ export async function progressTripAction(input: {
 }): Promise<ActionResult> {
   try {
     const actor = await requireActor()
-    const source = actor.driverProfileId
-      ? "driver"
-      : actor.activeOrganization?.type === "landing_source"
-        ? "landing"
-        : "dispatcher"
 
+    // The event's source (driver or dispatcher) is derived by the service.
     const result = await commit(["/driver", "/fleet", "/host"], (draft) =>
       draft.progressTripStatus({
         actorUserId: actor.profile.id,
         nextStatus: input.nextStatus as Parameters<typeof services.progressTripStatus>[0]["nextStatus"],
         note: input.note ?? undefined,
         organizationId: actorOrganizationId(actor),
-        source,
         tripId: input.tripId
       })
     )
@@ -318,7 +313,6 @@ export async function recordPreTripInspectionAction(input: {
           actorUserId: actor.profile.id,
           nextStatus: "en_route_to_landing",
           organizationId: actorOrganizationId(actor),
-          source: "driver",
           tripId: input.tripId
         })
       }

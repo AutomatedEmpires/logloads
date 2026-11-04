@@ -103,8 +103,9 @@
   --ll-target-touch: 44px;              /* default control height */
 
   /* ---------- 2. Semantic: typography ---------- */
-  /* Self-hosted via next/font in app/v2/layout.tsx, which sets --ll-font-*-face on the V2 root.
-     The fallbacks keep text and controls usable before (or without) the web fonts. */
+  /* Self-hosted with next/font/local (apps/web/app/v2/_fonts/ibm-plex.ts); app/v2/layout.tsx sets --ll-font-*-face
+     on every .ll-theme root, portalled dialogs included. The fallbacks keep text and controls usable before (or
+     without) the web fonts. */
   --ll-font-sans: var(--ll-font-sans-face, "IBM Plex Sans"), "Segoe UI", system-ui, -apple-system, sans-serif;
   --ll-font-display: var(--ll-font-display-face, "IBM Plex Sans Condensed"), var(--ll-font-sans-face, "IBM Plex Sans"), "Arial Narrow", sans-serif;
   --ll-font-mono: var(--ll-font-mono-face, "IBM Plex Mono"), ui-monospace, "SFMono-Regular", Consolas, monospace;
