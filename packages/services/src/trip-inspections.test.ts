@@ -1,4 +1,4 @@
-import { PRE_TRIP_INSPECTION_CHECKLIST } from "@logloads/contracts"
+import { OPERATIONAL_NOTICE_LIMITS, PRE_TRIP_INSPECTION_CHECKLIST } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
@@ -201,6 +201,30 @@ describe("pre-trip inspection gate", () => {
     expect(() => services.progressTripStatus(rollInput(trip.id))).toThrow(
       /The pre-trip inspection failed/
     )
+  })
+
+  it("records a failed walk-around even when the host's load title is far longer than a notice may be", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { load, trip } = bookRuntimeHaul(services)
+    // The load title is the host's free text and has no bound of its own.
+    services.state.loadPostings = services.state.loadPostings.map((candidate) =>
+      candidate.id === load.id ? { ...candidate, title: "T".repeat(OPERATIONAL_NOTICE_LIMITS.body) } : candidate
+    )
+
+    const { inspection } = services.recordPreTripInspection({
+      actorUserId: HAULER_DRIVER_ACTOR,
+      items: PRE_TRIP_INSPECTION_CHECKLIST.map((item) => ({ key: item.key, note: "n".repeat(300), status: "fail" as const })),
+      organizationId: HAULER_ORG,
+      tripId: trip.id
+    })
+
+    expect(inspection.outcome).toBe("fail")
+    const notice = services.state.operationalNotices.find(
+      (candidate) => candidate.relatedLoadId === load.id && candidate.severity === "critical"
+    )
+
+    expect(notice?.body.length).toBeLessThanOrEqual(OPERATIONAL_NOTICE_LIMITS.body)
+    expect(notice?.body).toMatch(/The haul will not progress until the truck returns to service/)
   })
 
   it("supersedes a failed inspection with a re-inspection instead of editing it", () => {

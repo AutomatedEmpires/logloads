@@ -92,6 +92,11 @@ reactivateJob(viewer, jobId, attestation: { attestAvailable: true }): Promise<{ 
 * `replied` without a non-blank `body` → `23514` ("A reply needs a message"). `respondToInterestInputSchema` already enforces this client-side; keep the two in step.
 * Re-sending the same `replyId` is a no-op (exactly one message), so the adapter may retry a `replied` call after a timeout with the same id.
 
+## Review #106 hardening (`18`, issue #187)
+
+* **A decline is final for that job.** `withdraw_interest` on a declined inquiry → `23514` ("The landing has closed this inquiry"), and `submit_expression_of_interest` for the same job already refuses it with the same message. The inquiry stays `declined`. The pilot service (`withdrawMarketplaceInterest`) refuses it the same way; the V2 hauler page already offers no Withdraw on a closed conversation.
+* **No directory reads.** Direct `select`s on `app_users` and `organizations` now return only rows the person may see (self, co-members, invitees and inviters, the other side of an inquiry or invitation, organizations with a public landing or a consented hauler profile, platform staff). `organizations.created_by` and `abuse_reports.reviewed_by` are not client-readable. The adapter's RPCs are SECURITY DEFINER and are unaffected.
+
 ## F4 / H4. Drafts (optional server-side drafts)
 
 If drafts should survive across devices, add `saveDraft(viewer, partialDraft): Promise<{ draftId }>` → `save_job_posting_draft`. Drafts may now omit truck demand, pay and equipment (F4); the database no longer invents a truck count. The *draft* schema should therefore make `trucksRequested` optional, while the *publish* schema keeps it required. Publishing a saved draft passes `p_draft_job_id`.
