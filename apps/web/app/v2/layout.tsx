@@ -24,22 +24,14 @@ export default async function MarketplaceV2Layout({ children }: { children: Reac
     notFound()
   }
 
-  const { business, capabilities } = await resolveV2Shell()
+  const { account, business, capabilities } = await resolveV2Shell()
 
+  // The development-preview notice is in the account menu on every page, not a banner (#124 criterion 7).
   return (
     <>
       {/* #148: the self-hosted IBM Plex faces, for V2 only (app/v2/_fonts/ibm-plex.ts). Build-time constant. */}
       <style dangerouslySetInnerHTML={{ __html: plexFaceDeclarations }} />
-      <V2AppShell
-        banner={
-          <p role="note">
-            Marketplace V2 development preview. Listings come from the current LogLoads data store; nothing here
-            dispatches trucks, records loads or charges a fee.
-          </p>
-        }
-        business={business}
-        capabilities={capabilities}
-      >
+      <V2AppShell account={account} business={business} capabilities={capabilities}>
         {children}
       </V2AppShell>
     </>
