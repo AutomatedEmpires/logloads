@@ -14,25 +14,31 @@
 `/v2/landing/inquiries`, and the job-authoring pages `/v2/landing/jobs`, `/v2/landing/jobs/new`, and
 `/v2/landing/jobs/preview`.
 
-Pages call `MarketplaceV2Port` (`apps/web/lib/marketplace-v2/port.ts`). The only implementation is
-`pilot-adapter.ts`, over the `operating_state` store. It sets `supportsPublishing: false`.
+Pages call `MarketplaceV2Port` (`apps/web/lib/marketplace-v2/port.ts`). Two adapters implement it:
 
-| Port method | Server action (`actions.ts`) | Backing today |
-|---|---|---|
-| `listJobs(filters)` | — (page read) | Redacted public network projection → `mapping.ts` |
-| `getJob(jobId)` | — (page read) | Same, single job |
-| `viewerAccess(viewer)` | — | V2 capabilities for the active workspace (`marketplace-access.ts`) |
-| `haulerEquipment(viewer)` | — | The viewer's own equipment configurations, self-reported |
-| `authoringLandings(viewer)` | — | The viewer organization's landings, public labels only; requires `job.publish` |
-| `interestForJob(viewer, jobId)` | — | Organization-scoped read |
-| `listHaulerInterests(viewer)` | — | Organization-scoped read |
-| `listLandingInterests(viewer)` | — | Organization-scoped read for the owning landing |
-| `expressInterest(viewer, input)` | `expressInterestAction` — limit 20/hour | `marketplace-interest.ts` → `marketplaceInterests` collection, CAS commit |
-| `withdrawInterest(viewer, id)` | `withdrawInterestAction` | Service mutation, CAS commit |
-| `postHaulerReply(viewer, input)` | `haulerReplyAction` — 60/hour | Service mutation, CAS commit |
-| `respondToInterest(viewer, input)` | `respondToInterestAction` — 120/hour | Service mutation, CAS commit |
-| `publishJob(viewer, draft)` | `publishJobAction` — requires `job.publish`; no rate limit | **Not persisted:** throws `MarketplaceOperationUnavailableError` on the pilot adapter |
-| `reconfirmJob(viewer, jobId)` | `reconfirmJobAction` — requires `job.publish`; no rate limit | **Not persisted:** same |
+- `pilot-adapter.ts`, over the `operating_state` store. It is the default and sets `supportsPublishing: false`.
+- `normalized-adapter.ts`, over the normalized-v2 `marketplace` schema's functions. It sets
+  `supportsPublishing: true`. It is used only when `LOGLOADS_MARKETPLACE_V2_ADAPTER=normalized` is set outside
+  production (`adapter.ts`). The identity path is in [`SECURITY.md`](./SECURITY.md) §4.1.
+
+Every caller imports `pilotMarketplaceV2`, which routes to the selected adapter.
+
+| Port method | Server action (`actions.ts`) | Pilot adapter (default) | Normalized adapter (`marketplace.*`) |
+|---|---|---|---|
+| `listJobs(filters)` | — (page read) | Redacted public network projection → `mapping.ts` | `list_marketplace_jobs`, as `anon` |
+| `getJob(jobId)` | — (page read) | Same, single job | `get_marketplace_job`, as `anon` |
+| `viewerAccess(viewer)` | — | V2 capabilities for the active workspace (`marketplace-access.ts`) | `get_viewer_marketplace_access` |
+| `haulerEquipment(viewer)` | — | The viewer's own equipment configurations, self-reported | `list_hauler_equipment_options` |
+| `authoringLandings(viewer)` | — | The viewer organization's landings, public labels only; requires `job.publish` | `list_authoring_landings` |
+| `interestForJob(viewer, jobId)` | — | Organization-scoped read | `list_marketplace_interests` (hauler side, one job) |
+| `listHaulerInterests(viewer)` | — | Organization-scoped read | `list_marketplace_interests` (hauler side) |
+| `listLandingInterests(viewer)` | — | Organization-scoped read for the owning landing | `list_marketplace_interests` (landing side) |
+| `expressInterest(viewer, input)` | `expressInterestAction` — limit 20/hour | `marketplace-interest.ts` → `marketplaceInterests` collection, CAS commit | `submit_expression_of_interest` |
+| `withdrawInterest(viewer, id)` | `withdrawInterestAction` | Service mutation, CAS commit | `withdraw_interest`, own business only |
+| `postHaulerReply(viewer, input)` | `haulerReplyAction` — 60/hour | Service mutation, CAS commit | `post_hauler_interest_reply`, own business only |
+| `respondToInterest(viewer, input)` | `respondToInterestAction` — 120/hour | Service mutation, CAS commit | `respond_to_interest`, own landing only; never shares private details |
+| `publishJob(viewer, draft, attestation)` | `publishJobAction` — `job.publish`; 20/hour | **Not persisted:** throws `MarketplaceOperationUnavailableError` | `publish_job_posting` with `p_attest_available => true`, at an own active landing |
+| `reconfirmJob(viewer, jobId, attestation)` | `reconfirmJobAction` — `job.publish`; 120/hour | **Not persisted:** same | `reconfirm_job_posting`, own job only |
 
 The viewer is always derived on the server — from `getSessionActor()` in actions and `resolveV2Viewer()` in
 pages — together with its active organization. Form input never supplies the viewer.

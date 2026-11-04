@@ -30,14 +30,17 @@
  * is absent — a backup tool that silently does nothing is worse than none,
  * because it converts an unprotected system into one that looks protected.
  *
- * TARGET GUARD: backup and restore also require the project the operator means,
- * as --expected-project-ref and/or LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF (both
- * must agree when both are set). Nothing is read or written unless it equals the
- * project reference in SUPABASE_URL (`https://<ref>.supabase.co`). A loopback URL
- * is a local stack, whose reference is `local`. A restore into any hosted project
- * also needs --i-understand-this-overwrites-production, because a URL cannot tell
- * production from staging. Output names the project reference and counts only:
- * never document values, the URL, or the key.
+ * TARGET GUARD: backup and restore also require the project the operator means.
+ * Nothing is read or written unless it equals the project reference in
+ * SUPABASE_URL (`https://<ref>.supabase.co`). A hosted project must be named with
+ * --expected-project-ref on the command line: an env file pulled from that project
+ * sets LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF too, so the variable alone proves
+ * nothing. A loopback URL is a local stack, whose reference is `local`; there the
+ * variable alone is accepted. When both are set they must agree. A restore into any
+ * hosted project also needs --i-understand-this-overwrites-production, because a
+ * URL cannot tell production from staging. Requests never follow a redirect, so the
+ * key cannot be forwarded to another origin. Output names the project reference and
+ * counts only: never document values, the URL, the key, or the contents of a file.
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
@@ -71,8 +74,8 @@ function config(options) {
   if (!url || !key) {
     fail(
       "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must both be set.\n" +
-        "  Neither is present in CI today, which is why nothing is being backed up.\n" +
-        "  Set them as repository secrets to schedule this, or export them locally to run it by hand."
+        "  Export them in a trusted operator shell for the project you name with --expected-project-ref.\n" +
+        "  No scheduled backup exists; scheduling one, and its secrets, is a founder decision (docs/RECOVERY.md §8)."
     )
   }
 
@@ -100,17 +103,47 @@ function headers({ key }) {
   return { Accept: "application/json", Authorization: `Bearer ${key}`, apikey: key }
 }
 
+/**
+ * Every request the tool makes. `redirect: "error"` because a followed redirect would carry the service-role key
+ * to whatever origin the response names, after the target guard has already approved a different one. Failures
+ * are reported generically: the underlying error can name the URL.
+ */
+async function request(settings, query, init = {}, failure = null) {
+  try {
+    return await fetch(`${settings.url}/rest/v1/operating_state?${query}`, {
+      ...init,
+      headers: { ...headers(settings), ...init.headers },
+      redirect: "error",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+    })
+  } catch {
+    fail(
+      failure ??
+        `could not reach project ${settings.ref}: a network error, a timeout, or a redirect (redirects are ` +
+          "refused so the key is never sent to another origin)"
+    )
+  }
+}
+
+async function jsonBody(response) {
+  try {
+    return await response.json()
+  } catch {
+    fail("the target answered with a body that is not JSON")
+  }
+}
+
 async function readRow(settings) {
-  const response = await fetch(
-    `${settings.url}/rest/v1/operating_state?id=eq.${SNAPSHOT_ROW_ID}&select=state,version,schema_version,updated_at`,
-    { headers: headers(settings), signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }
+  const response = await request(
+    settings,
+    `id=eq.${SNAPSHOT_ROW_ID}&select=state,version,schema_version,updated_at`
   )
 
   if (!response.ok) {
     fail(`read failed with HTTP ${response.status}`)
   }
 
-  const rows = await response.json()
+  const rows = await jsonBody(response)
 
   if (!Array.isArray(rows) || rows.length === 0) {
     fail("the canonical row does not exist — there is nothing to back up")
@@ -163,13 +196,41 @@ async function backup(argv) {
   console.log("  this file contains production personal data — handle it accordingly")
 }
 
+/**
+ * A backup file, parsed. Every failure is reported generically: a JSON parse error quotes the text around the
+ * fault, and in a backup that text is production personal data.
+ */
+function readBackupFile(file) {
+  let text
+
+  try {
+    text = readFileSync(file, "utf8")
+  } catch {
+    fail(`${file} cannot be read`)
+  }
+
+  let parsed
+
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    fail(`${file} is not valid JSON. Treat it as corrupt and do not restore it.`)
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    fail(`${file} is not a backup file. Treat it as corrupt and do not restore it.`)
+  }
+
+  return parsed
+}
+
 function verify(argv) {
   const args = parsedArguments(argv)
   const file = args.positionals[0]
 
   if (!file || args.positionals.length > 1) fail("verify needs exactly one file")
 
-  const parsed = JSON.parse(readFileSync(file, "utf8"))
+  const parsed = readBackupFile(file)
   const recomputed = describe(parsed.row ?? {})
   const drifted = summaryDrift(parsed.summary ?? {}, recomputed)
 
@@ -209,7 +270,7 @@ async function restore(argv) {
 
   verify([file])
 
-  const parsed = JSON.parse(readFileSync(file, "utf8"))
+  const parsed = readBackupFile(file)
   const state = parsed.row?.state
 
   if (!state) fail("that file carries no state to restore")
@@ -248,26 +309,28 @@ async function restore(argv) {
   // contract as the application. The pre-restore read and safety snapshot define
   // the exact version being replaced; if a live write lands after that read, zero
   // rows are updated and the operator must start over from a fresh snapshot.
-  const response = await fetch(
-    `${settings.url}/rest/v1/operating_state?id=eq.${SNAPSHOT_ROW_ID}&version=eq.${current.version}`,
+  const response = await request(
+    settings,
+    `id=eq.${SNAPSHOT_ROW_ID}&version=eq.${current.version}`,
     {
-    body: JSON.stringify({
-      schema_version: parsed.row.schema_version,
-      state,
-      updated_at: new Date().toISOString(),
-      version: Number(current.version) + 1
-    }),
-    headers: { ...headers(settings), "Content-Type": "application/json", Prefer: "return=representation" },
-    method: "PATCH",
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-    }
+      body: JSON.stringify({
+        schema_version: parsed.row.schema_version,
+        state,
+        updated_at: new Date().toISOString(),
+        version: Number(current.version) + 1
+      }),
+      headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+      method: "PATCH"
+    },
+    "the restore write did not complete (a network error, a timeout, or a refused redirect). The live " +
+      "document may or may not have changed: back it up to inspect it, and keep the pre-restore snapshot"
   )
 
   if (!response.ok) {
     fail(`restore failed with HTTP ${response.status} — the live document is unchanged`)
   }
 
-  const written = await response.json()
+  const written = await jsonBody(response)
 
   if (!Array.isArray(written) || written.length !== 1) {
     fail(

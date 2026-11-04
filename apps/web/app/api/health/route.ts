@@ -5,9 +5,25 @@ import { platformFeeCollectionEnabled } from "@/lib/billing"
 import { percentageEnrollmentStatus } from "@/lib/percentage-enrollment"
 import { refreshState, services } from "@/lib/services"
 import { isClerkConfigured } from "@/lib/session"
+import { PUBLIC_READ_TTL_MS, shortLivedCache } from "@/lib/short-lived-cache"
 import { stripeRuntimeModeProblem } from "@/lib/subscription-stripe"
 
 export const dynamic = "force-dynamic"
+
+/**
+ * The engine check downloads the whole operating_state document. The probe is
+ * unauthenticated, so its outcome, healthy or not, is shared for a short
+ * window per instance rather than repeated per request (HF-09, #187).
+ */
+const engineProbe = shortLivedCache(PUBLIC_READ_TTL_MS, async () => {
+  try {
+    await refreshState()
+
+    return Array.isArray(services.state.loadPostings)
+  } catch {
+    return false
+  }
+})
 
 /**
  * Liveness + readiness probe for the single-node runtime. Confirms the operating
@@ -16,14 +32,7 @@ export const dynamic = "force-dynamic"
  * Used by the container/host health check and post-deploy smoke.
  */
 export async function GET() {
-  let engineOk = false
-
-  try {
-    await refreshState()
-    engineOk = Array.isArray(services.state.loadPostings)
-  } catch {
-    engineOk = false
-  }
+  const engineOk = await engineProbe.get()
 
   const expectedStripeMode =
     process.env.LOGLOADS_STRIPE_EXPECTED_LIVEMODE?.trim().toLowerCase()

@@ -19,7 +19,7 @@
 
 | Workflow | Trigger | Does |
 |---|---|---|
-| `ci.yml` | push `main`, PR, merge queue | Organization reusable CI (`secrets: inherit`), then `extended-validation`: Supabase CLI 2.101.0; `pnpm db:assert` (resets an isolated PostgreSQL 17 stack); guardrails; build; Playwright |
+| `ci.yml` | push `main`, PR, merge queue | Organization reusable CI (`secrets: inherit`), then `extended-validation`: Supabase CLI 2.101.0; `pnpm db:assert` (resets an isolated PostgreSQL 17 stack); guardrails (including `pnpm docs:check`); build; Playwright |
 | `database-check.yml` | PR, manual | `pnpm db:check` on the pilot ledger `supabase/migrations/`. In CI it fails rather than skips. Then rehearses an operating-state backup, wipe and restore on that disposable stack ([`RECOVERY.md`](./RECOVERY.md) §7.1). |
 | `codeql.yml`, `dependency-review.yml`, `pr-review.yml` | PR, `main`, weekly | Security and review |
 | `release.yml` | push `main` | Organization reusable release |
@@ -27,6 +27,13 @@
 
 **Locally**, `pnpm db:check` and `pnpm db:assert` print a skip and exit 0 when the Supabase CLI or Docker is
 missing. A local skip is **not** a pass.
+
+**Documentation checks (IMPLEMENTED, #110).** `pnpm guardrails` also runs `pnpm docs:check`
+(`tools/check-docs.mjs`), so the organization CI and `extended-validation` both run it on every PR. It needs no
+network. It checks `docs/**`, `README.md`, `AGENTS.md` and `CLAUDE.md` for broken relative links and anchors,
+missing repository paths, unknown `pnpm` scripts, env names absent from `ops/production-env-contract.json`, a
+missing `**Status:**` line, retired commercial terms, stale claims and deprecated status labels. The script lists
+its rules at the top.
 
 ### Application E2E gate (`extended-validation`) — separate from database verification
 
@@ -85,7 +92,7 @@ lower level never implies a higher one.
 |---|---|---|
 | **1. PostgreSQL 17 verification** (disposable CI databases, simulated JWT claims) | **VERIFIED** — see the run table below | Actions runs |
 | **2. Supabase-specific verification** (real Clerk tokens through Supabase third-party auth; project settings, grants and Data API exposure on a real Supabase project) | **PARTIAL.** A **local** Supabase stack — database, auth, PostgREST and the API gateway, started by the pinned Supabase CLI — passed on 2 fresh stacks at `67b4777` (PR #123; runs `41506515086` push and `41506523544` PR). Its first attempt at `24313c0` had failed on a Docker registry pull limit.<br>Still **UNVERIFIED**: a **hosted** Supabase project's settings, and **real Clerk-signed tokens** through third-party auth. Those need the founder's development provider setup. | #112, #104 |
-| **3. Application integration** (normalized `MarketplaceV2Port` adapter; persistent publish → discover → interest → respond loop) | **UNVERIFIED** — adapter not built | #139, #140 |
+| **3. Application integration** (normalized `MarketplaceV2Port` adapter; persistent publish → discover → interest → respond loop) | **PARTIAL.** The normalized adapter is built (PR #180). Its contract tests passed, 20 of 20, on a disposable PostgreSQL 17 database with stages `01`–`03`, `06`, `11`, `12` and `16` applied. The latest run was `41738628239` at `dd2a870` (the first green run was `41730990167` at `79a01ab`), workflow `normalized-adapter-ci.yml`, behind the same guard. They cover the adapter through a restricted login role: publish → discover → interest → respond → reply → reconfirm → withdraw, refusals across businesses, and capability parity with `marketplace-permissions.ts`. Identity is server-asserted claims (`SECURITY.md` §4.1).<br>Still **UNVERIFIED**: the loop through the running app and its pages (#140), a hosted project, and real Clerk tokens (#112). | #139, #140 |
 | **4. Staging readiness** (isolated hosted preview, migration rehearsal on synthetic data, backup and restore, rollback) | **UNVERIFIED** | `DEPLOYMENT.md` §4–§5, #113 |
 | **5. Production authorization** (migration, activation, billing) | **NOT AUTHORIZED** | `DECISIONS.md`; founder only |
 
@@ -128,5 +135,4 @@ These items are tracked as GitHub issues ([`AGENT_WORKFLOW.md`](./AGENT_WORKFLOW
 
 - Review and merge draft PR #123, then integrate the CI branch into `work/logloads-repair`.
 - Add a real Clerk token test.
-- Implement a documentation-check script (spec in the docs-check issue).
 - Add contract-drift tests between `membership.ts` and the seed rows.
