@@ -2047,7 +2047,7 @@ const CHECKOUT_PLANS: Record<PlanProduct, CheckoutPlan> = {
   landing_operations: {
     kind: "not_purchasable",
     message:
-      "Hosts use the current 5% completed-load agreement in Host Billing. There is no posting fee, subscription, monthly minimum, tier, allowance, or overage charge. Historical obligations remain under their original accepted terms."
+      "Landing memberships are Basic $149, Pro $299, and Regional $499 per month. They are not available for purchase yet. The retired percentage fee cannot be accepted. Historical records remain under their original terms."
   }
 }
 

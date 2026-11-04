@@ -41,12 +41,12 @@ async function expectHealthyPage(page: Page, clientErrors: string[]) {
   expect(clientErrors, "the rendered page emitted browser errors").toEqual([])
 }
 
-// The retired 5% completed-load host fee (and any price at all) must not
-// appear on public pages until new pricing and terms are approved (#108).
-const RETIRED_OR_UNAPPROVED_PRICE_CLAIM =
-  /\d\s?%|per completed load|completed-load fee|\$\s?\d/i
+// The retired percentage fee stays off public pages. The only dollar amounts
+// allowed there are the locked landing memberships, which are not for sale.
+const RETIRED_COMMERCIAL_CLAIM =
+  /\d\s?%|per completed load|completed-load fee/i
 
-test("public pricing makes no price claim for landing organizations", async ({
+test("public pricing shows the locked landing prices and nothing for sale", async ({
   page
 }) => {
   const clientErrors = captureClientErrors(page)
@@ -80,23 +80,16 @@ test("public pricing makes no price claim for landing organizations", async ({
   ).toHaveAttribute("href", "/sign-up?path=fleet")
 
   const host = pricingCard(page, "Host")
-  await expect(host).toContainText("Not yet published")
-  await expect(host).toContainText(
-    "Pricing for landing organizations will be published before any paid feature is offered."
-  )
+  await expect(host).toContainText("$149 / $299 / $499")
+  await expect(host).toContainText("not available for purchase yet")
   await expect(
     host.getByRole("link", { name: "Create host workspace" })
   ).toHaveAttribute("href", "/sign-up?path=host")
 
   await expect(
-    page.getByText(
-      "Prices and terms for landing organizations will be published before any paid feature is offered.",
-      { exact: false }
-    )
+    page.getByText("they are not available for purchase yet", { exact: false })
   ).toBeVisible()
-  await expect(page.locator("body")).not.toContainText(
-    RETIRED_OR_UNAPPROVED_PRICE_CLAIM
-  )
+  await expect(page.locator("body")).not.toContainText(RETIRED_COMMERCIAL_CLAIM)
   await expect(page.locator("body")).not.toContainText(/platform fee/i)
 
   for (const retiredPlan of [
@@ -147,7 +140,7 @@ test("public terms no longer describe the retired 5% host fee", async ({
     ).toHaveCount(0)
   }
   await expect(page.locator("body")).not.toContainText(
-    RETIRED_OR_UNAPPROVED_PRICE_CLAIM
+    RETIRED_COMMERCIAL_CLAIM
   )
   await expect(page.locator("body")).not.toContainText(/monthly in arrears/i)
 
@@ -218,7 +211,7 @@ test("the August 3, 2026 Terms stay readable, unchanged, for agreements accepted
   await expectHealthyPage(page, clientErrors)
 })
 
-test("an active host sees percentage billing, direct driver pay, and no subscription checkout", async ({
+test("an active host sees locked membership prices and no percentage offer", async ({
   page
 }) => {
   const clientErrors = captureClientErrors(page)
@@ -232,18 +225,14 @@ test("an active host sees percentage billing, direct driver pay, and no subscrip
   ).toBeVisible()
   await expect(
     page.getByRole("heading", {
-      name: "5% of stated driver pay, added on top"
+      name: "Basic $149, Pro $299, or Regional $499 per month"
     })
   ).toBeVisible()
   await expect(
-    page.getByText("Current percentage agreement active", { exact: false })
+    page.getByText("The completed-load percentage fee is retired", { exact: false })
   ).toBeVisible()
-  await expect(page.getByText("You state the driver is paid", { exact: true })).toBeVisible()
-  await expect(page.getByText("LogLoads fee, on top")).toBeVisible()
-  await expect(page.getByText("Your total cost")).toBeVisible()
-  await expect(
-    page.getByText("The driver receives exactly this")
-  ).toBeVisible()
+  await expect(page.getByText("You state the driver is paid", { exact: true })).toHaveCount(0)
+  await expect(page.getByText("LogLoads fee, on top")).toHaveCount(0)
 
   await expect(
     page.getByRole("button", { name: "Accept 5% host agreement" })
@@ -338,14 +327,11 @@ test("admin billing is percentage-first and subscription writes stay closed", as
     page.getByRole("heading", { exact: true, name: "Billing" })
   ).toBeVisible()
   await expect(
-    page.getByRole("heading", { name: "Current host billing position" })
+    page.getByRole("heading", { name: "Retired fee ledger" })
   ).toBeVisible()
-  await expect(page.getByText("Percentage organizations").first()).toBeVisible()
+  await expect(page.getByText("Current percentage organizations").first()).toBeVisible()
   await expect(
-    page.getByText(
-      "Current host revenue is the 5% platform fee added on top of stated driver pay for completed loads.",
-      { exact: false }
-    )
+    page.getByText("The completed-load percentage fee is retired", { exact: false })
   ).toBeVisible()
   await expect(
     page.getByRole("heading", { name: "New subscription writes are closed" })

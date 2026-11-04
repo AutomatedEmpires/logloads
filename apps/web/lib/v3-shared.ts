@@ -279,8 +279,8 @@ export const pricingPlans: PricingPlan[] = [
     name: "Driver",
     price: "Free forever",
     audience: "Owner-operators and company drivers",
-    summary: "Find, request, schedule, and complete work without paying LogLoads.",
-    features: ["Loads ranked for your truck", "Plain-language match checks", "Request and booking status", "Mobile schedule and haul steps"],
+    summary: "Search hauling opportunities and express interest. Drivers use LogLoads free of charge.",
+    features: ["Search open opportunities", "See pay and equipment", "Express interest", "No fee taken from driver pay"],
     cta: { href: "/sign-up?path=driver", label: "Create driver profile" }
   },
   {
@@ -295,12 +295,12 @@ export const pricingPlans: PricingPlan[] = [
   },
   {
     name: "Host",
-    price: "Not yet published",
-    audience: "Landings, mills, and timber operations",
-    summary: "Prepare landings and post the hauling work you need trucks for. Pricing for landing organizations will be published before any paid feature is offered.",
-    features: ["Landing and work setup", "Choose who sees each posting", "Review requests from drivers and fleets", "Driver pay remains direct and whole"],
+    price: "$149 / $299 / $499",
+    audience: "Landing operators",
+    summary: "Basic, Pro, and Regional memberships are the only landing prices. They are not available for purchase yet.",
+    features: ["Basic $149, one active landing", "Pro $299, three active landings", "Regional $499", "Drivers and fleets stay free"],
     cta: { href: "/sign-up?path=host", label: "Create host workspace" },
-    note: "Workspace setup is free. Live publication requires separate pilot approval; creating an account does not activate billing."
+    note: "Nothing on this page is for sale. Creating an account does not start a charge."
   }
 ]
 
@@ -308,23 +308,23 @@ export const storyPages: Record<string, PublicStoryPage> = {
   "how-it-works": {
     slug: "how-it-works",
     eyebrow: "How it works",
-    title: "Plan the haul. Commit the truck. Keep the move connected.",
-    intro: "One haul on LogLoads goes from posted work to delivery proof without living in three phones and a notebook.",
+    title: "Publish the work. Find a truck. Arrange it directly.",
+    intro: "LogLoads is a timber-hauling marketplace. Landing operators publish opportunities. Haulers and fleets find them, express interest, and arrange the haul themselves.",
     sections: [
       {
-        title: "Post the work",
-        body: "A landing or timber operation posts what needs to move: how many loads, the schedule, the equipment it takes, and who gets to see it.",
-        points: ["Keep it inside your carrier circle", "Open it to verified carriers in the region", "Or post it for everyone"]
+        title: "Publish an opportunity",
+        body: "A landing operator describes the hauling work: pay and pay basis, equipment, origin area, destination, and when it starts.",
+        points: ["Pay amount and pay basis", "Equipment the job needs", "Public area, not private access details"]
       },
       {
-        title: "Match and commit",
-        body: "Drivers and fleets see the work that fits the truck and trailer they actually run — with the reasons why — before anyone commits.",
-        points: ["Fit shown with plain reasons", "Capacity reserved when a request is approved", "Terms recorded on the assignment"]
+        title: "Discover work",
+        body: "Drivers and fleets search open opportunities that fit the equipment they run. An empty area means no listings yet, not that the state is closed.",
+        points: ["Search without an account where it is safe", "See the posting as the landing wrote it", "No guaranteed match"]
       },
       {
-        title: "Haul and confirm",
-        body: "The assignment unlocks the Route Pack — gate access, road notes, who to call — and the trip carries its own status and paperwork.",
-        points: ["Exact access after assignment, not before", "Live trip status shared with assigned participants", "Scale tickets and photos stay on the record"]
+        title: "Express interest",
+        body: "A hauler sends a short introduction with truck count, equipment, and dates. The landing replies. Private landing details stay private until the landing shares them.",
+        points: ["Interest is not a booked haul", "The parties arrange the work directly", "LogLoads does not dispatch the trip"]
       }
     ],
     cta: { href: "/loads", label: "See current loads" }
@@ -333,35 +333,35 @@ export const storyPages: Record<string, PublicStoryPage> = {
     slug: "for-haulers",
     eyebrow: "For haulers",
     title: "Find timber work that fits the truck you actually run.",
-    intro: "Open the app in the morning and see today's haul, the next action, and loads worth requesting — built for a phone in a truck cab.",
+    intro: "Search open hauling opportunities, review the pay and equipment, and express interest. Drivers use LogLoads free of charge.",
     sections: [
-      { title: "Start with your equipment", body: "Add your truck and trailer once. Every load you see after that is measured against what you can really haul.", points: ["Long log, chip, and bunk setups", "Self-loader support", "Payload limits respected"] },
-      { title: "Know what unlocks when", body: "Public loads show the general area and the work. When you are assigned, the exact entrance, road notes, and contact unlock.", points: ["Exact access after assignment", "Private road notes", "Destination check-in details"] },
-      { title: "Keep the record", body: "Trip status, scale tickets, and photos stay attached to the haul instead of getting lost in calls and texts.", points: ["Scale tickets", "Field photos", "Delay history that protects you"] }
+      { title: "Start with your equipment", body: "Add the truck and trailer you run. Search results can be compared with that equipment.", points: ["Long log, chip, and bunk setups", "Self-loader support", "Your own availability"] },
+      { title: "See the public job", body: "A listing shows pay, pay basis, and the public area. Expressing interest does not unlock private landing access.", points: ["Pay and pay basis", "Public area only", "Private details stay with the landing"] },
+      { title: "Express interest", body: "Send a short introduction. The landing replies, and you arrange the haul directly.", points: ["Truck count and dates", "Not a booked trip", "No fee taken from driver pay"] }
     ],
     cta: { href: "/sign-up?path=driver", label: "Create a driver profile" }
   },
   "for-fleets": {
     slug: "for-fleets",
     eyebrow: "For fleets",
-    title: "Put idle trucks to work without losing dispatch control.",
-    intro: "See which trucks are free, which work fits them, and where the exceptions are — on one board.",
+    title: "Show the trucks you can put to work.",
+    intro: "A fleet is a hauling business with more than one truck. Fleets use LogLoads free of charge. There is no dispatch subscription.",
     sections: [
-      { title: "Truck-first dispatch", body: "Plan by the real truck-and-trailer combinations in your yard, and assign the driver who runs them.", points: ["Truck and trailer pairing", "Driver assignment", "Availability windows"] },
-      { title: "Partner work", body: "Show selected availability to hosts you trust and take direct offers when they need trucks.", points: ["Private relationships", "Future availability", "Direct offers"] },
-      { title: "Exceptions stay visible", body: "Delays, route changes, and paperwork sit on the trip itself, so dispatch can step in before a problem grows.", points: ["Live trip state", "Route change notices", "Documents on the record"] }
+      { title: "List your equipment", body: "Record the truck and trailer combinations your business runs, and how many are available.", points: ["Several trucks on one business", "Self-reported availability", "Equipment the landing can read"] },
+      { title: "Find fitting work", body: "Search the same opportunities as an independent hauler and express interest for the trucks you can offer.", points: ["Pay and equipment on the listing", "Interest for more than one truck", "No booked trip until you arrange it"] },
+      { title: "Arrange it yourselves", body: "The landing replies to the business. LogLoads does not assign drivers, track the trip, or settle the haul.", points: ["Direct arrangement", "No trip tracking", "No deduction from hauler pay"] }
     ],
     cta: { href: "/sign-up?path=fleet", label: "Set up your fleet" }
   },
   "for-landings": {
     slug: "for-landings",
     eyebrow: "For landing and logging teams",
-    title: "Know exactly how many trucks you still need.",
-    intro: "Create a free workspace for landings, lanes, schedules, equipment, and driver pay. Live network publication is available only after separate pilot approval.",
+    title: "Publish the hauling work you need.",
+    intro: "Landing operators are the paying customers. Memberships are Basic $149, Pro $299, and Regional $499 per month, and they are not available for purchase yet.",
     sections: [
-      { title: "Prepare with control", body: "Set the schedule, equipment, pay, and visibility in a draft before work goes live. Publishing remains locked until the exact pilot organization is approved.", points: ["Private carrier circle", "Manual approval when you want it", "Reusable load setups"] },
-      { title: "Run the landing", body: "The live board shows who is expected, who is arriving, who is loading, and who is late — without a phone call.", points: ["Truck identity at the gate", "Trip status as it changes", "Issues flagged, not buried"] },
-      { title: "Keep good carriers close", body: "Invite the haulers you already work with, share your future schedule, and send direct offers when it matters.", points: ["Preferred carriers", "Shared forward schedule", "Direct offers"] }
+      { title: "Describe the opportunity", body: "Record the landing, the pay and pay basis, the equipment, and when the work starts. A draft is not a live listing.", points: ["Pay amount and pay basis", "Equipment and dates", "Public area only"] },
+      { title: "Review interest", body: "Haulers send a short introduction. You reply, decline, or ask for clarification. Interest is not a booked truck.", points: ["See the trucks offered", "Reply in the inquiry", "Arrange the haul directly"] },
+      { title: "Keep private details private", body: "Gate instructions and exact access stay off the public listing until you choose to share them with a hauler.", points: ["Approximate public area", "Sharing is a separate action", "No dispatch board"] }
     ],
     cta: { href: "/sign-up?path=host", label: "Create a host workspace" }
   },
@@ -369,11 +369,11 @@ export const storyPages: Record<string, PublicStoryPage> = {
     slug: "about",
     eyebrow: "About",
     title: "Built for the field reality of timber hauling.",
-    intro: "Timber hauling runs on landings that move, private roads, tight loaders, and weather. LogLoads is built around that reality — not a generic freight board with trees on it.",
+    intro: "LogLoads connects landing operators with haulers and fleets for timber hauling. The parties find each other here and arrange the haul themselves.",
     sections: [
-      { title: "Field-first", body: "The product starts with today's haul and the next decision: where the truck is, what happens next, and what changed.", points: ["Driver tools that work on a phone at the landing", "Dispatch boards for the office", "A live board for the landing"] },
-      { title: "Trust with context", body: "Verification on LogLoads shows what was actually reviewed and where the information came from — never just a badge.", points: ["Identity", "Organization", "Equipment", "Landing authorization"] },
-      { title: "More than a load board", body: "An assignment is not an introduction. It carries the Route Pack, live status, documents, and the history that makes the next haul easier.", points: ["Commitments on the record", "Repeat work with the same people", "History you can point to"] }
+      { title: "A marketplace", body: "Landings publish opportunities. Haulers and fleets discover them and express interest. LogLoads does not dispatch the trip or settle the pay.", points: ["Publish", "Discover", "Express interest"] },
+      { title: "Trust with context", body: "Verification shows what was actually reviewed and where the information came from.", points: ["Identity", "Organization", "Equipment"] },
+      { title: "Nationwide", body: "Hosts and haulers in supported US locations use the same marketplace. An area with no listings is empty, not closed.", points: ["No state-by-state launch", "No invented listings", "No guaranteed matches"] }
     ],
     cta: { href: "/how-it-works", label: "See how a haul runs" }
   },

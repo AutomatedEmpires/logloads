@@ -1,7 +1,12 @@
 import { z } from "zod"
 
 /**
- * The LogLoads platform fee, as arithmetic and nothing else.
+ * Preserved arithmetic for historical completed-load fee records.
+ *
+ * This is not a current product. The 2026-11-04 founder decision retired the
+ * percentage fee. Do not quote it, enroll a host in it, or create a new charge
+ * from it. Landing memberships are Basic $149, Pro $299, and Regional $499,
+ * and they are not activated for purchase.
  *
  * WHAT IS BEING CHARGED. A host posts a load and states what it pays the driver.
  * LogLoads charges the HOST a percentage of that stated driver pay, ON TOP of it,

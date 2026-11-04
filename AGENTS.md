@@ -8,7 +8,7 @@ features, migrations, integrations, subscriptions, or legal permissions are live
 # LogLoads — Venture Operating Contract
 
 **Status:** Current operating instructions for human contributors and coding agents.  
-**Product decision:** November 1, 2026 — LogLoads Product, Membership & Monetization Blueprint v1.0.  
+**Product decision:** November 4, 2026 — locked landing memberships at $149 / $299 / $499, nationwide US launch, and retirement of the percentage fee. Blueprint v1.0 still defines plan limits. `docs/DECISIONS.md` (2026-11-04) is newer where they conflict.  
 **Execution environment:** Windows 11, Cursor, Node.js 24.16.0, pnpm 10.12.4.  
 **Current task:** Repair and transition the existing LogLoads application into a focused timber-hauling load board, preserving security and historical records.
 
@@ -82,7 +82,7 @@ The paid side is a set of landing subscriptions:
 - **Team members, including the owner:** 2 / 5 / 10.
 - **Targeted invitations:** 3 / 10 / 30 per billing cycle, with no rollover.
 - **Optional one-job boosts:** $99 / $149 / $199.
-- **Founding offer:** 50% off for 6 cycles, for the first 10 qualifying landings per launched state.
+- **Founding offer:** not activated. The per-state schedule in Blueprint §8.1 is superseded by the nationwide launch. Cohort size, eligibility window, and whether a discount still applies are unanswered. Do not invent them.
 
 The **authoritative definitions** are the Blueprint (`docs/product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md`). In code, the numbers live only in `packages/contracts/src/membership.ts`. Do not restate plan tables elsewhere. **None of this is purchasable yet** (§7.5).
 
@@ -112,7 +112,7 @@ The intended promotion radius is approximately **100 miles from the job's public
 
 ### 1.6 Founding-member program
 
-- The landing-operator offer is defined in Blueprint §8.1. Eligibility and verification must be enforced, and duplicate business accounts cannot consume multiple grants. The definition of a "launched state" is still an open founder decision (#114).
+- Launch is nationwide. An empty area is not an unlaunched state. The founding discount is not activated; do not implement a per-state cohort while its nationwide rules are unanswered.
 - Haulers are **free forever**; the first 1,000 qualifying early haulers may receive recognition/early feature participation rather than a fake six-month free offer.
 - Founding promotions require accurate public terms and controlled activation. They are **not automatically live** because the schema, documentation, or test product exists.
 

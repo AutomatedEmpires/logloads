@@ -50,7 +50,7 @@ describe("Host first-run billing readiness", () => {
     expect(markup).toContain('href="/host/billing"')
     expect(markup).toContain("Review host billing")
     expect(markup).toContain(
-      "The current 5% completed-load agreement is active. Attach a working payment method in Billing before publishing live work."
+      "Attach a working payment method in Billing before publishing live work. Landing memberships are not available for purchase yet."
     )
     expect(markup).toContain("Pilot")
     expect(markup).not.toContain("Open command center")
@@ -64,7 +64,7 @@ describe("Host first-run billing readiness", () => {
     expect(markup).toContain("Open command center")
     expect(markup).toContain("Billing activation is complete for this workspace.")
     expect(markup).toContain(
-      "The current 5% completed-load agreement is active and a working payment method is attached."
+      "A working payment method is attached. Landing memberships are not available for purchase yet."
     )
     expect(markup).not.toContain("Review host billing")
   })
@@ -72,7 +72,7 @@ describe("Host first-run billing readiness", () => {
   it("keeps a failed card out of the ready state", () => {
     const markup = renderReadiness({ billingProfileStatus: "failed" })
 
-    expect(markup).toContain("the payment method failed")
+    expect(markup).toContain("The payment method failed")
     expect(markup).toContain("Replace it in Billing before publishing live work.")
     expect(markup).not.toContain("Open command center")
   })

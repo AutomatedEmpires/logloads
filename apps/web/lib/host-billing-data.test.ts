@@ -412,7 +412,7 @@ describe("the card on file, and what its state costs the host", () => {
     expect(view.paymentMethod.consequence).toMatch(/cannot publish/i)
     expect(view.paymentMethod.nextStep).toMatch(/attach a card/i)
     // A host with no card is not charged for having no card.
-    expect(view.paymentMethod.consequence).toMatch(/no monthly fee/i)
+    expect(view.paymentMethod.consequence).toMatch(/not available for purchase yet/i)
   })
 
   it("blocks publishing on a declined card and shows what the processor said", () => {

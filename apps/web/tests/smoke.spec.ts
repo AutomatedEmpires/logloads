@@ -298,7 +298,7 @@ test("admin command keeps commercial and operating exceptions truthful", async (
 
   await page.goto("/admin/billing")
   await expect(page.getByRole("heading", { name: "Percentage fee attention" })).toBeVisible()
-  await expect(page.getByText(/Current host revenue is the 5% platform fee/)).toBeVisible()
+  await expect(page.getByText(/The completed-load percentage fee is retired/)).toBeVisible()
 
   await page.goto("/admin/reports")
   await expect(page.getByRole("heading", { name: "Feedback" })).toBeVisible()
@@ -562,7 +562,7 @@ test("host onboarding opens a mobile first-movement launchpad", async ({ page },
   await expect(readiness.getByText("Add a pay rate", { exact: true })).toBeVisible()
   await expect(readiness.getByText("Prepare a draft", { exact: true })).toBeVisible()
   await expect(readiness.getByText("Host billing activation", { exact: true })).toBeVisible()
-  await expect(readiness.getByText(/accept the current 5% agreement and attach a card/i)).toBeVisible()
+  await expect(readiness.getByText(/not available for purchase yet/i)).toBeVisible()
   await expect(readiness.getByText(/workspace setup itself does not charge you/i)).toBeVisible()
   const hostContinuation = readiness.getByRole("button", {
     name: "Continue to the host work you opened"

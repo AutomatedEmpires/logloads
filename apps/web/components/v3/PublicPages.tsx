@@ -394,8 +394,8 @@ export function PricingPage() {
       <main className="page-main pricing-page">
         <PageIntro
           eyebrow="Pricing"
-          title="Pricing for landing organizations is not published yet."
-          body="LogLoads is a timber-hauling load board: businesses that need log trucks post their hauling work, and hauling businesses find work that fits their trucks. Drivers and hauling businesses use LogLoads free. Pricing for landing organizations will be published before any paid feature is offered."
+          title="Landing memberships are $149, $299, and $499."
+          body="LogLoads is a timber-hauling marketplace. Landing operators publish opportunities. Haulers and fleets find them and express interest. Drivers and fleets use LogLoads free of charge. Basic, Pro, and Regional are the only landing prices, and they are not available for purchase yet."
         />
 
         <aside className="pricing-availability" role="note">

@@ -213,7 +213,7 @@ export function planViewForEntitlement(entitlement: Entitlement): PlanView {
         // This entitlement predates subscription_v1. It remains visible so a host
         // can explain historical assignments and bills, but it is never presented
         // as the commercial model for new activity.
-        statusDetail: "This grandfathered record explains frozen work and obligations only. New commercial activity uses the current 5% completed-load agreement.",
+        statusDetail: "This preserved record explains frozen work and obligations only. It is not a current offer. Landing memberships are not available for purchase yet.",
         statusLine: "Historical legacy terms",
         statusTone: "neutral"
       } satisfies PlanStatusView
@@ -620,11 +620,11 @@ export function getSettingsView(network: NetworkView, currentProfileId: string):
       ? [
           {
             id: percentageAccount.id,
-            name: "Host 5% agreement",
-            priceLine: "5% per completed load",
-            recordMode: "current",
-            statusLine: "Accepted",
-            statusTone: "success"
+            name: "Preserved percentage record",
+            priceLine: "Retired completed-load fee",
+            recordMode: "historical",
+            statusLine: "On file",
+            statusTone: "neutral"
           },
           ...entitlementSummaries.filter(
             (summary) => summary.recordMode === "historical"

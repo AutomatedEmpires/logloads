@@ -2,6 +2,15 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-11-04 — Membership prices locked, percentage fee retired, nationwide launch
+
+- **Authority.** Explicit founder decisions on 2026-11-04. They supersede, for new product and commercial work, the 2026-08-01 `percentage_v1` decision and the state-by-state founding schedule in Blueprint v1.0 §8.1. The Blueprint file stays the verbatim commercial specification for plan prices and limits. This entry is the newer decision where they conflict.
+- **Locked prices.** Landing memberships are Basic $149, Pro $299, and Regional $499 per month. Do not change them without a new explicit founder approval. Drivers and fleets are free. There is no per-load commission, percentage fee, transaction fee, or deduction from driver pay.
+- **Percentage fee.** The 5% completed-load model is retired. It is not a current offer, not a selectable agreement, and not an instruction for future agents. Customer-facing surfaces must not present it as available. `LOGLOADS_FEE_COLLECTION` and `LOGLOADS_PERCENTAGE_ENROLLMENT` stay disabled. No new percentage obligation may be created.
+- **Historical ledger.** Fee, invoice, and agreement parsers stay until the founder confirms that the production `operating_state` document contains no accepted agreements, invoices, accrued obligations, or refunds. The connected Supabase projects visible on 2026-11-04 (`ee-dev`, `ee-preview`) are not the LogLoads production project, so that confirmation is still open. Do not destroy those parsers, rewrite Git history, or run a destructive migration before that confirmation.
+- **Nationwide.** LogLoads launches across the United States. An empty region is not an unlaunched state. Do not invent listings, haulers, or guaranteed matches.
+- **Founding promotion.** The per-state “first 10” schedule is superseded. A nationwide founding rule is not activated. Cohort size, eligibility window, and whether the 50% / six-cycle discount still applies are unanswered. Do not invent them and do not turn on promotional billing.
+
 ## 2026-11-03 — One status vocabulary for interests and jobs (UX-12, #135)
 
 - **Approval.** The lead approved #135 on 2026-11-03 and delegated the exact wording. This implements UX-DEC-01

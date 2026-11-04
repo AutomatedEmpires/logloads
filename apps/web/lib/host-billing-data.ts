@@ -215,7 +215,7 @@ export const PAYMENT_STATE_PRESENTATION: Record<HostBillingProfileStatus, Paymen
   attached: {
     blocksPublishing: false,
     consequence:
-      "You can publish after the current host agreement is active. This card is charged only for LogLoads platform-fee invoices—never for driver or carrier compensation.",
+      "A card on file does not start a charge. Landing memberships are not available for purchase yet, and the retired percentage fee cannot be accepted.",
     nextStep: null,
     statusLabel: "Card on file",
     tone: "success"
@@ -223,7 +223,7 @@ export const PAYMENT_STATE_PRESENTATION: Record<HostBillingProfileStatus, Paymen
   failed: {
     blocksPublishing: true,
     consequence:
-      "The last LogLoads fee charge did not go through, so you cannot publish new work until a working card is on file. Work already on the network is unaffected, and your drivers are still paid by you exactly as agreed.",
+      "The card on file was declined, so you cannot publish live work until it is replaced. Work already on the network is unchanged, and drivers are paid by you. Landing memberships are not available for purchase yet.",
     nextStep: "Replace the card on this workspace's billing profile, then publish.",
     statusLabel: "Card declined",
     tone: "critical"
@@ -231,7 +231,7 @@ export const PAYMENT_STATE_PRESENTATION: Record<HostBillingProfileStatus, Paymen
   none: {
     blocksPublishing: true,
     consequence:
-      "You cannot publish live work until a card is on file. There is no monthly fee and posting itself is not billed; the card supports only LogLoads fees on completed loads.",
+      "No card is on file, so you cannot publish live work yet. Landing memberships are not available for purchase yet, and this page cannot accept a percentage fee.",
     nextStep: "Attach a card to this workspace's billing profile, then publish.",
     statusLabel: "No card on file",
     tone: "critical"

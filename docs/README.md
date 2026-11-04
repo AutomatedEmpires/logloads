@@ -58,10 +58,10 @@ migrations, or deployments.**
 | V2 contract alignment `06`–`10` (Gemini's 06/07 plus Claude Agent 1's stages) | **VERIFIED in CI** (head recorded in `CI.md`). It sits on draft PR #123, which is not reviewed, not merged, and not connected to the app. | [`CI.md`](./CI.md) §3 |
 | Clerk → Supabase identity | **UNVERIFIED:** no real-token test exists | [`SECURITY.md`](./SECURITY.md) §4 |
 | V2 load board `/v2` | **IMPLEMENTED** behind a flag. Discovery and interest work; job authoring is preview-only and nothing is saved. | [`ARCHITECTURE.md`](./ARCHITECTURE.md) §3 |
-| New billing (Basic/Pro/Regional, boosts) | **APPROVED, TARGET:** no code, no Stripe products | [`ACTIVATION_STRIPE.md`](./ACTIVATION_STRIPE.md) |
-| Legacy billing (`percentage_v1` etc.) | **HISTORICAL:** code kept for existing records; all gates disabled | [`ENV_CONTRACT.md`](./ENV_CONTRACT.md) §5 |
-| Public `/pricing` and `/terms` copy | **IMPLEMENTED but wrong:** still advertises the 5% fee. Tracked as an issue. | `apps/web/app/pricing/page.tsx` |
-| Production migration or activation | **Not authorized** | `DECISIONS.md` 2026-11-01 |
+| Landing memberships ($149 / $299 / $499) | **APPROVED, not purchasable.** Prices are locked. Billing is not activated. | `docs/DECISIONS.md` 2026-11-04 |
+| Retired percentage fee | **HISTORICAL:** not an offer. Parsers stay until production records are confirmed empty. Gates stay disabled. | `docs/DECISIONS.md` 2026-11-04 |
+| Public `/pricing` | **IMPLEMENTED:** shows the locked prices and says nothing is for sale. | `apps/web/components/v3/PublicPages.tsx` |
+| Production migration or activation | **Not authorized** | `DECISIONS.md` 2026-11-04 |
 
 ## 4. Documents
 

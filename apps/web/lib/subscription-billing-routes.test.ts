@@ -273,7 +273,7 @@ function retiredCheckoutDescribe(
       expect(response.status).toBe(410)
       await expect(response.json()).resolves.toEqual({
         error:
-          "New subscription enrollment is closed. Hosts use the current 5% completed-load agreement."
+          "Landing memberships are not available for purchase yet. The retired percentage fee is not an offer."
       })
       expect(mocks.operatingStateAccess).not.toHaveBeenCalled()
       expect(mocks.resolveSubscriptionStripe).not.toHaveBeenCalled()
