@@ -151,10 +151,20 @@ export function selectMarketplaceV2Port(
         return false
       }
     },
+    get supportsHaulerProfile() {
+      try {
+        return current().supportsHaulerProfile
+      } catch {
+        return false
+      }
+    },
     authoringLandings: async (viewer) => current().authoringLandings(viewer),
     expressInterest: async (viewer, input) => current().expressInterest(viewer, input),
-    getJob: async (jobId) => current().getJob(jobId),
+    getJob: async (jobId, viewer) => current().getJob(jobId, viewer),
+    // Listing reports (UX-07, #130)
+    reportListing: async (viewer, input) => current().reportListing(viewer, input),
     haulerEquipment: async (viewer) => current().haulerEquipment(viewer),
+    haulerProfile: async (viewer) => current().haulerProfile(viewer),
     interestForJob: async (viewer, jobId) => current().interestForJob(viewer, jobId),
     listHaulerInterests: async (viewer) => current().listHaulerInterests(viewer),
     listJobs: async (filters) => current().listJobs(filters),
@@ -163,7 +173,12 @@ export function selectMarketplaceV2Port(
     publishJob: async (viewer, draft, attestation) => current().publishJob(viewer, draft, attestation),
     reconfirmJob: async (viewer, jobId, attestation) => current().reconfirmJob(viewer, jobId, attestation),
     respondToInterest: async (viewer, input) => current().respondToInterest(viewer, input),
+    saveHaulerProfile: async (viewer, input) => current().saveHaulerProfile(viewer, input),
     viewerAccess: async (viewer) => current().viewerAccess(viewer),
-    withdrawInterest: async (viewer, interestId) => current().withdrawInterest(viewer, interestId)
+    withdrawInterest: async (viewer, interestId) => current().withdrawInterest(viewer, interestId),
+
+    // Inquiry conversations (UX-09, #132).
+    landingInquiryJobs: async (viewer) => current().landingInquiryJobs(viewer),
+    withdrawInterestWithReason: async (viewer, input) => current().withdrawInterestWithReason(viewer, input)
   }
 }

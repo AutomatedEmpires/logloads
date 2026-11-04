@@ -13,6 +13,8 @@ import type {
   MarketplaceInterestView,
   MarketplaceJobCardView,
   MarketplaceJobDetailView,
+  MarketplacePublicJobCardView,
+  MarketplacePublicJobView,
   MarketplaceVerification
 } from "@logloads/contracts"
 
@@ -53,7 +55,8 @@ export interface VerificationIndicatorProps { verification: MarketplaceVerificat
 export type SponsoredIndicatorProps = Record<string, never>
 
 interface JobResultRowBaseProps {
-  job: MarketplaceJobCardView
+  /** DEVIATION: the public card view (#130), so a client list never needs the poster's organization id. */
+  job: MarketplacePublicJobCardView
   /**
    * DEVIATION (addition): the request's ISO 8601 instant. `postingFreshness` is pure, and a component must not
    * read the clock while rendering (the server and the browser would disagree on hydration).
@@ -91,13 +94,27 @@ export interface JobResultListProps { label: string; children: ReactNode; footno
  * `expressInterestHref` is added so a page without JavaScript can link to its interest form (spec §7).
  */
 export interface JobDetailProps {
-  job: MarketplaceJobDetailView
+  /** DEVIATION: the public view (#130), without the poster's organization id, which only the server needs. */
+  job: MarketplacePublicJobView
   now: string
   fit?: EquipmentFit
   canExpressInterest: boolean           // capability resolved on the server
   interestState?: "none" | "sent" | "closed"
   onExpressInterest?: () => void
   expressInterestHref?: string
+}
+
+/**
+ * DEVIATION (addition, UX-07 #130): the decision summary at the top of JobDetail, also on its own wherever a page
+ * needs only the summary. The seven decision facts (pay and basis, equipment with fit, area, destination and miles,
+ * start and duration, trucks, freshness) and one "Not stated by the poster" line. `action` is the interest action,
+ * or why there is none, which JobDetail resolves; the summary itself decides nothing.
+ */
+export interface JobSummaryProps {
+  job: MarketplacePublicJobView
+  now: string
+  fit?: EquipmentFit
+  action?: ReactNode
 }
 
 export interface CompanyProfileHeaderProps {
@@ -127,7 +144,11 @@ export interface InquiryRowProps {
   onSelect?: (id: string) => void
 }
 
-export interface ConversationThreadProps { interest: MarketplaceInterestView; viewerSide: ViewerSide }
+/**
+ * DEVIATION (addition, UX-09 #132): optional `viewerUserId`, so "You" marks only the viewer's own messages and a
+ * colleague's on the same side are named.
+ */
+export interface ConversationThreadProps { interest: MarketplaceInterestView; viewerSide: ViewerSide; viewerUserId?: string }
 
 export interface MessageComposerProps {
   recipientName: string
@@ -148,4 +169,11 @@ export interface MessageComposerProps {
   hiddenFields?: ReactNode
 }
 
-export type { MarketplaceInterestView, MarketplaceJobCardView, MarketplaceJobDetailView, MarketplaceVerification }
+export type {
+  MarketplaceInterestView,
+  MarketplaceJobCardView,
+  MarketplaceJobDetailView,
+  MarketplacePublicJobCardView,
+  MarketplacePublicJobView,
+  MarketplaceVerification
+}

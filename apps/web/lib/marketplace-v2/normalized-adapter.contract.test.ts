@@ -5,7 +5,13 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 
 vi.mock("server-only", () => ({}))
 
-import { marketplaceCapabilities, validateMarketplaceJobDraft, type MarketplaceMemberRole } from "@logloads/contracts"
+import {
+  landingInterestQueueFor,
+  marketplaceCapabilities,
+  marketplaceInquiryUnread,
+  validateMarketplaceJobDraft,
+  type MarketplaceMemberRole
+} from "@logloads/contracts"
 
 import { createNormalizedMarketplaceV2 } from "./normalized-adapter"
 import { createPostgresMarketplaceDb, MARKETPLACE_FUNCTIONS, type MarketplaceDb, type MarketplacePrincipal } from "./normalized-db"
@@ -249,7 +255,7 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
     ])
   })
 
-  function publishDraft(landingId: string, title: string, overrides: Record<string, string> = {}) {
+  function publishDraft(landingId: string, title: string, overrides: Record<string, string | string[]> = {}) {
     const result = validateMarketplaceJobDraft({
       destinationLabel: "Mill near Albany, OR",
       durationDays: "10",
@@ -543,6 +549,158 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
       ) as unknown as Array<{ action: string }>).map((row) => row.action)
 
       expect(actions).toEqual(expect.arrayContaining(["job_posting.published", "job_posting.reconfirmed", "interest.submitted", "interest.replied", "interest.withdrawn"]))
+    })
+  })
+
+  // -------------------------------------------------------------------------------------------------------------
+  describe("inquiry conversations (UX-09, #132)", () => {
+    let poleJobId = ""
+    /** Adapter Hauling → the pole job: marked reviewed, then declined with a reason. */
+    let poleInterestId = ""
+    /** Adapter Timber Hauling (the dual business) → the pole job: withdrawn with a reason. */
+    let dualPoleInterestId = ""
+
+    const messageCount = async (interestId: string) =>
+      (await one<{ n: number }>("select count(*)::int as n from marketplace.interest_messages where interest_id = $1::uuid", [interestId])).n
+
+    it("lists the landing's own inquiry jobs with their landing and equipment, and refuses everyone else", async () => {
+      poleJobId = (await port.publishJob(
+        viewer("land", "land"),
+        publishDraft(fixture.landings.land, "Adapter Pole Run", { equipment: ["pole_trailer", "log_truck"] }),
+        attestation("publish")
+      )).jobId
+      poleInterestId = (await port.expressInterest(viewer("haul", "haul"), {
+        equipment: [{ configurationKey: "log_truck", count: "1" }],
+        loadPostingId: poleJobId,
+        message: "One truck from Sweet Home"
+      })).id
+      dualPoleInterestId = (await port.expressInterest(viewer("land", "dual"), { loadPostingId: poleJobId, trucksOffered: "1" })).id
+
+      const landing = { id: fixture.landings.land, name: "Upper Spur Landing" }
+      const jobs = await port.landingInquiryJobs(viewer("land", "land"))
+
+      expect(jobs).toEqual(expect.arrayContaining([
+        { equipmentCodes: ["log_truck"], jobId: landJobId, landing },
+        { equipmentCodes: ["log_truck", "pole_trailer"], jobId: poleJobId, landing }
+      ]))
+      expect(jobs.map((job) => job.jobId)).not.toContain(rivalJobId)
+      for (const secret of PRIVATE_STRINGS) expect(JSON.stringify(jobs)).not.toContain(secret)
+
+      expect((await port.landingInquiryJobs(viewer("rival", "rival"))).map((job) => job.jobId)).toEqual([rivalJobId])
+      await expect(port.landingInquiryJobs(viewer("haul", "haul"))).rejects.toBeInstanceOf(MarketplaceRefusalError)
+      await expect(port.landingInquiryJobs(viewer("stranger", "land"))).rejects.toBeInstanceOf(MarketplaceRefusalError)
+    })
+
+    it("refuses a cross-organization read of an inbox or of a hauling business's inquiries", async () => {
+      await expect(port.listLandingInterests(viewer("haul", "land"))).rejects.toBeInstanceOf(MarketplaceRefusalError)
+      await expect(port.listHaulerInterests(viewer("land", "haul"))).rejects.toBeInstanceOf(MarketplaceRefusalError)
+      await expect(port.listLandingInterests(viewer("stranger", "rival"))).rejects.toBeInstanceOf(MarketplaceRefusalError)
+
+      expect((await port.listLandingInterests(viewer("rival", "rival"))).map((row) => row.id)).not.toContain(poleInterestId)
+      expect((await port.listHaulerInterests(viewer("land", "dual"))).map((row) => row.id)).not.toContain(poleInterestId)
+    })
+
+    it("marks an inquiry reviewed: it stays in New, seen and no longer unread", async () => {
+      await port.respondToInterest(viewer("land", "land"), { decision: "viewed", interestId: poleInterestId })
+
+      const seen = (await port.listLandingInterests(viewer("land", "land"))).find((row) => row.id === poleInterestId)
+      expect(seen?.status).toBe("viewed")
+      expect(seen && landingInterestQueueFor(seen)).toBe("new")
+      expect(seen && marketplaceInquiryUnread(seen, "landing")).toBe(false)
+      expect(await messageCount(poleInterestId)).toBe(0)
+    })
+
+    it("declines with a reason the hauler sees, and a declined inquiry cannot be withdrawn (#194 HF-03)", async () => {
+      await port.respondToInterest(viewer("land", "land"), {
+        body: "We've filled this job",
+        decision: "declined",
+        interestId: poleInterestId,
+        replyId: randomUUID()
+      })
+
+      const declined = (await port.listHaulerInterests(viewer("haul", "haul"))).find((row) => row.id === poleInterestId)
+      expect(declined?.status).toBe("declined")
+      expect(declined?.replies.map((entry) => [entry.authorSide, entry.body])).toEqual([["landing", "We've filled this job"]])
+
+      await expect(port.withdrawInterestWithReason(viewer("haul", "haul"), { interestId: poleInterestId, reason: "Never mind", replyId: randomUUID() }))
+        .rejects.toThrow("The landing has closed this inquiry")
+      await expect(port.withdrawInterest(viewer("haul", "haul"), poleInterestId)).rejects.toThrow("The landing has closed this inquiry")
+
+      expect(await messageCount(poleInterestId)).toBe(1)
+      expect((await one<{ status: string }>("select status from marketplace.expressions_of_interest where id = $1::uuid", [poleInterestId])).status)
+        .toBe("declined")
+    })
+
+    it("withdraws with a reason the landing sees, once, in one change, and only from the business that sent it", async () => {
+      const input = { interestId: dualPoleInterestId, reason: "Booked on another job this week", replyId: randomUUID() }
+
+      await expect(port.withdrawInterestWithReason(viewer("haul", "haul"), input)).rejects.toThrow("Inquiry not found")
+      expect(await messageCount(dualPoleInterestId)).toBe(0)
+
+      await port.withdrawInterestWithReason(viewer("land", "dual"), input)
+      await port.withdrawInterestWithReason(viewer("land", "dual"), input)
+
+      const withdrawn = (await port.listLandingInterests(viewer("land", "land"))).find((row) => row.id === dualPoleInterestId)
+      expect(withdrawn?.status).toBe("withdrawn")
+      expect(withdrawn?.replies.map((entry) => [entry.authorSide, entry.body])).toEqual([["hauler", "Booked on another job this week"]])
+      expect(withdrawn && landingInterestQueueFor(withdrawn)).toBe("closed")
+    })
+  })
+
+  // -------------------------------------------------------------------------------------------------------------
+  describe("the job page: reports and a job that stopped (#130)", () => {
+    const reportsOf = async (jobId: string) =>
+      (await admin.unsafe(
+        "select reporter_user_id::text as reporter, target_kind, reason, details, status from marketplace.abuse_reports where target_id = $1::uuid order by created_at",
+        [jobId]
+      )) as unknown as Array<{ reporter: string; target_kind: string; reason: string; details: string | null; status: string }>
+
+    it("files one report per person and listing, as that person, with the reason the person chose", async () => {
+      const first = await port.reportListing(viewer("haul", "haul"), { details: "Filled last week", jobId: landJobId, reason: "stale" })
+      const again = await port.reportListing(viewer("haul", "haul"), { details: "Still up", jobId: landJobId, reason: "inaccurate_pay" })
+
+      expect(first.alreadyReported).toBe(false)
+      expect(again).toEqual({ ...first, alreadyReported: true })
+      expect(await reportsOf(landJobId)).toEqual([
+        { details: "Reason: No longer available.\nFilled last week", reason: "other", reporter: fixture.users.haul, status: "open", target_kind: "job_posting" }
+      ])
+    })
+
+    it("keeps each person's report apart, and a schema reason as itself", async () => {
+      const rival = await port.reportListing(viewer("rival", "rival"), { jobId: landJobId, reason: "inaccurate_pay" })
+
+      expect(rival.alreadyReported).toBe(false)
+      expect((await reportsOf(landJobId)).map((row) => [row.reporter, row.reason])).toEqual([
+        [fixture.users.haul, "other"],
+        [fixture.users.rival, "inaccurate_pay"]
+      ])
+    })
+
+    it("refuses a listing the person cannot see, and files nothing", async () => {
+      const missing = randomUUID()
+
+      await expect(port.reportListing(viewer("haul", "haul"), { jobId: missing, reason: "fake_work" })).rejects.toThrow("Listing not found")
+      expect(await reportsOf(missing)).toEqual([])
+    })
+
+    it("shows a paused job to its own business and to a business that sent interest, never to the public", async () => {
+      await admin.unsafe(`do $$
+begin
+  perform set_config('request.jwt.claims', jsonb_build_object('role','authenticated','iss','${ISSUER}','sub','adapter_rival','aud','${AUDIENCE}','exp',extract(epoch from now())::bigint + 600)::text, true);
+  set local role authenticated;
+  perform marketplace.set_job_posting_status('${rivalJobId}'::uuid, 'paused');
+  reset role;
+end
+$$;`)
+
+      expect(await port.getJob(rivalJobId)).toBeNull()
+      expect(await port.getJob(rivalJobId, viewer("rival", "rival"))).toMatchObject({ acceptingInterest: false, id: rivalJobId, status: "paused" })
+      // Adapter Timber Hauling's inquiry on it was withdrawn, but it was sent: the job can still say why it stopped.
+      expect((await port.getJob(rivalJobId, viewer("land", "dual")))?.status).toBe("paused")
+      expect(await port.getJob(rivalJobId, viewer("stranger", "land"))).toBeNull()
+
+      const seen = JSON.stringify(await port.getJob(rivalJobId, viewer("rival", "rival")))
+      for (const secret of PRIVATE_STRINGS) expect(seen).not.toContain(secret)
     })
   })
 

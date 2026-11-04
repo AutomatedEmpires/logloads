@@ -2,6 +2,7 @@ import "server-only"
 
 import type { Sql, TransactionSql } from "postgres"
 
+import { marketplaceQueryStatement, type MarketplaceQueryName, type MarketplaceQueryValue } from "./normalized-queries"
 import { MarketplaceAdapterConfigurationError, MarketplaceRefusalError, MarketplaceStoreError } from "./port"
 
 /**
@@ -123,11 +124,34 @@ export interface MarketplaceInquiryParties {
   haulerOrganizationId: string
 }
 
+/** The reasons `marketplace.abuse_reports.reason` accepts (01_schema.sql). */
+export type StoredAbuseReason = "inaccurate_pay" | "nonexistent_job" | "spam" | "impersonation" | "unsafe_disclosure" | "abuse" | "other"
+
+/** A report row the reporter may read back (HF-16 grants the reporter these columns of their own reports). */
+export interface StoredListingReport {
+  id: string
+  createdAt: string
+}
+
 /** What a unit of work can do inside one identity-bound transaction. */
 export interface MarketplaceCalls {
   /** Rows as JSON objects (`rows`), `[value]` (`value`) or `[]` (`void`). */
   call<F extends MarketplaceFunctionName>(fn: F, args: MarketplaceCallArguments<F>): Promise<unknown[]>
   inquiryParties(interestId: string): Promise<MarketplaceInquiryParties | null>
+  /** Rows (JSON objects) of one catalogued table statement (`MARKETPLACE_QUERIES`, normalized-queries.ts). */
+  query(name: MarketplaceQueryName, values: readonly MarketplaceQueryValue[]): Promise<unknown[]>
+  /**
+   * UX-09 (#132): the organization's jobs that have inquiries, as `INQUIRY_JOBS` rows (JSON). Row-level security
+   * applies as for any direct read: only the owning desk sees them.
+   */
+  inquiryJobs(organizationId: string): Promise<unknown[]>
+
+  // --- Listing reports (UX-07, #130): the schema has no function for these, so they are two fixed statements that
+  // run as the person under `abuse_reports`' row-level security and column grants (02_access.sql, HF-16).
+  /** The person's own open or in-review report of a job posting, if any. */
+  standingListingReport(jobId: string): Promise<StoredListingReport | null>
+  /** Files a report of a job posting. The reporter is always the caller (`abuse_reports_insert`, default column). */
+  fileListingReport(report: { jobId: string; reason: StoredAbuseReason; details: string | null }): Promise<StoredListingReport>
 }
 
 export interface MarketplaceDb {
@@ -147,6 +171,46 @@ const SESSION_SETUP =
 
 const INQUIRY_PARTIES =
   "select to_jsonb(e) as row from (select id, job_id, job_org_id, hauler_org_id from marketplace.expressions_of_interest where id = $1::text::uuid) as e"
+
+/**
+ * UX-09 (#132): the organization's jobs that have inquiries, with the landing each is posted at and the equipment
+ * codes it asks for. Only existing columns, read under the caller's row-level security (`job_postings_read`,
+ * `landings_read`, `job_equipment_read`, `interests_read`): a person outside the organization's landing desk gets no
+ * rows. Never `landing_private_details`.
+ */
+const INQUIRY_JOBS = `
+select to_jsonb(j) as row from (
+  select jp.id as job_id,
+         l.id as landing_id,
+         l.name as landing_name,
+         coalesce((select array_agg(e.equipment_code::text order by e.equipment_code)
+                   from marketplace.job_posting_equipment e where e.job_id = jp.id), array[]::text[]) as equipment_codes
+  from marketplace.job_postings jp
+  left join marketplace.landings l on l.id = jp.landing_id
+  where jp.org_id = $1::text::uuid
+    and exists (select 1 from marketplace.expressions_of_interest i where i.job_id = jp.id and i.job_org_id = jp.org_id)
+  order by jp.id
+) as j`
+
+/**
+ * Listing reports (UX-07, #130). Only the reporter's own reports are read (`reporter_user_id = current_user_id()`;
+ * a platform admin could otherwise see everyone's), and only the columns HF-16 grants. The insert names only the
+ * columns `authenticated` may write; `reporter_user_id` takes its default, the caller.
+ */
+export const STANDING_LISTING_REPORT =
+  "select to_jsonb(r) as row from (select id, created_at from marketplace.abuse_reports" +
+  " where reporter_user_id = marketplace.current_user_id() and target_kind = 'job_posting' and target_id = $1::text::uuid" +
+  " and status in ('open', 'reviewing') order by created_at desc limit 1) as r"
+
+export const FILE_LISTING_REPORT =
+  "with r as (insert into marketplace.abuse_reports (target_kind, target_id, reason, details)" +
+  " values ('job_posting', $1::text::uuid, $2::text, $3::text) returning id, created_at)" +
+  " select to_jsonb(r) as row from r"
+
+function storedReport(row: unknown): StoredListingReport | null {
+  const record = row as Record<string, unknown> | undefined
+  return record && typeof record.id === "string" && typeof record.created_at === "string" ? { createdAt: record.created_at, id: record.id } : null
+}
 
 /** What the connection's login role may be: nothing by itself, and able to become only `anon` and `authenticated`. */
 export const CREDENTIAL_CHECK = `
@@ -411,6 +475,47 @@ function callsFor(tx: TransactionSql, anonymous: boolean): MarketplaceCalls {
       }
 
       return { haulerOrganizationId: row.hauler_org_id, jobId: row.job_id, jobOrganizationId: row.job_org_id }
+    },
+
+    async query(name, values) {
+      if (anonymous) {
+        throw new TypeError(`${name} needs a signed-in person`)
+      }
+
+      const statement = marketplaceQueryStatement(name, values)
+      return rowsOf(await tx.unsafe(statement.text, statement.values), "row")
+    },
+
+    async inquiryJobs(organizationId) {
+      if (anonymous) {
+        throw new TypeError("Inquiries need a signed-in person")
+      }
+
+      return rowsOf(await tx.unsafe(INQUIRY_JOBS, [organizationId]), "row")
+    },
+
+    async standingListingReport(jobId) {
+      if (anonymous) {
+        throw new TypeError("Reports need a signed-in person")
+      }
+
+      const [row] = rowsOf(await tx.unsafe(STANDING_LISTING_REPORT, [jobId]), "row")
+      return storedReport(row)
+    },
+
+    async fileListingReport({ details, jobId, reason }) {
+      if (anonymous) {
+        throw new TypeError("Reports need a signed-in person")
+      }
+
+      const [row] = rowsOf(await tx.unsafe(FILE_LISTING_REPORT, [jobId, reason, details]), "row")
+      const report = storedReport(row)
+
+      if (!report) {
+        throw new MarketplaceStoreError()
+      }
+
+      return report
     }
   }
 }

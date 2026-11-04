@@ -9,21 +9,26 @@ import {
 } from "@logloads/contracts"
 
 import type { MarketplaceCalls, MarketplaceDb, MarketplacePrincipal } from "./normalized-db"
+import { normalizedHaulerProfileMethods } from "./normalized-hauler"
 import {
   equipmentOptionFromRow,
   expressInterestArguments,
   haulerReplyArguments,
+  inquiryJobFromRow,
   interestViewFromRow,
   isUuid,
   jobFilterArguments,
   jobViewFromRow,
   landingFromRow,
+  listingReportReceipt,
+  listingReportRow,
   publishArguments,
   refineDiscovery,
   respondArguments,
   submittedInterestId,
   uuidValue,
-  viewerAccessFromRow
+  viewerAccessFromRow,
+  withdrawArguments
 } from "./normalized-mapping"
 import { MarketplaceRefusalError, MarketplaceStoreError, type MarketplaceV2Port, type MarketplaceV2Viewer } from "./port"
 
@@ -54,6 +59,9 @@ const LANDING_NOT_OWNED = "Choose one of your organization's landings"
 const NOT_OWN_JOB = "You can only confirm your organization's own job postings"
 const FIX_FIELDS = "Fix the highlighted fields before publishing"
 const RECONFIRM_ATTESTATION_REQUIRED = "Tick the availability confirmation to record that this job is still available"
+/** `withdraw_interest`'s refusal for a declined inquiry (18_v2_review_106_hardening.sql, HF-03). */
+const LANDING_CLOSED = "The landing has closed this inquiry"
+const LISTING_NOT_FOUND = "Listing not found"
 
 /** An attestation is the server's record of a confirmation made in this request; an old one is not accepted. */
 const ATTESTATION_MAX_AGE_MS = 5 * 60_000
@@ -117,6 +125,7 @@ export function createNormalizedMarketplaceV2({ db, now = () => new Date(), prin
 
   return {
     supportsPublishing: true,
+    ...normalizedHaulerProfileMethods(asViewer),
 
     async authoringLandings(viewer) {
       const rows = await asViewer(viewer, (calls) => calls.call("list_authoring_landings", { p_org_id: viewer.organizationId }), read)
@@ -140,13 +149,45 @@ export function createNormalizedMarketplaceV2({ db, now = () => new Date(), prin
       }, write)
     },
 
-    async getJob(jobId) {
+    async getJob(jobId, viewer) {
       if (!isUuid(jobId)) {
         return null
       }
 
-      const [row] = await db.asAnon((calls) => calls.call("get_marketplace_job", { p_job_id: jobId }))
+      // As the viewer, row-level security also shows a paused, filled, closed or expired job to its own business and
+      // to businesses that sent interest (`can_read_job_posting`), with the same public columns. A viewer the store
+      // refuses (a stale session, a removed membership) sees what the public sees.
+      const asPerson = viewer
+        ? await asViewer(viewer, (calls) => calls.call("get_marketplace_job", { p_job_id: jobId }), read).catch((error: unknown) => {
+            if (error instanceof MarketplaceRefusalError) return null
+            throw error
+          })
+        : null
+      const [row] = asPerson ?? (await db.asAnon((calls) => calls.call("get_marketplace_job", { p_job_id: jobId })))
       return row ? jobViewFromRow(row) : null
+    },
+
+    // Listing reports (UX-07, #130)
+    async reportListing(viewer, input) {
+      const report = listingReportRow(input)
+
+      return asViewer(viewer, async (calls) => {
+        // Only a listing this person can see can be reported; any other id is "not found", whether it exists or not.
+        const [job] = await calls.call("get_marketplace_job", { p_job_id: report.jobId })
+
+        if (!job) {
+          throw new MarketplaceRefusalError(LISTING_NOT_FOUND, "P0002")
+        }
+
+        // One standing report per person and listing (spec §8.18 "submit report once"): a repeat files nothing.
+        const standing = await calls.standingListingReport(report.jobId)
+
+        if (standing) {
+          return listingReportReceipt(standing, true)
+        }
+
+        return listingReportReceipt(await calls.fileListingReport(report), false)
+      }, write)
     },
 
     async haulerEquipment(viewer) {
@@ -262,6 +303,60 @@ export function createNormalizedMarketplaceV2({ db, now = () => new Date(), prin
 
       await asViewer(viewer, async (calls) => {
         await requireInquiryParty(calls, target, "hauler", viewer)
+        await calls.call("withdraw_interest", { p_interest_id: target })
+      }, write)
+    },
+
+    // --- Inquiry conversations (UX-09, #132) ---------------------------------------------------------------------
+
+    async landingInquiryJobs(viewer) {
+      return asViewer(viewer, async (calls) => {
+        // The same authority as the inbox itself: `list_marketplace_interests(p_side => 'landing')` needs inquiry.respond.
+        const [access] = await calls.call("get_viewer_marketplace_access", { p_org_id: viewer.organizationId })
+
+        if (!access || !viewerAccessFromRow(access).capabilities.includes("inquiry.respond")) {
+          throw new MarketplaceRefusalError(INQUIRY_NOT_FOUND, "42501")
+        }
+
+        return (await calls.inquiryJobs(viewer.organizationId)).map(inquiryJobFromRow)
+      }, read)
+    },
+
+    async withdrawInterestWithReason(viewer, input) {
+      const { interestId: target, reason } = withdrawArguments(input)
+
+      await asViewer(viewer, async (calls) => {
+        const parties = await calls.inquiryParties(target)
+
+        if (!parties || parties.haulerOrganizationId !== viewer.organizationId) {
+          throw new MarketplaceRefusalError(INQUIRY_NOT_FOUND, "42501")
+        }
+
+        // One transaction: the reason is posted and the inquiry withdrawn together, or neither. The status is read
+        // first so a declined inquiry gets withdraw_interest's own refusal before any reason is written, and an
+        // already withdrawn one is left as it is without posting the reason again.
+        const [current] = (await calls.call("list_marketplace_interests", {
+          p_job_id: parties.jobId,
+          p_org_id: viewer.organizationId,
+          p_side: "hauler"
+        })).map(interestViewFromRow).filter((interest) => interest.id === target)
+
+        if (!current) {
+          throw new MarketplaceRefusalError(INQUIRY_NOT_FOUND, "42501")
+        }
+
+        if (current.status === "declined") {
+          throw new MarketplaceRefusalError(LANDING_CLOSED, "23514")
+        }
+
+        if (current.status === "withdrawn") {
+          return
+        }
+
+        if (reason) {
+          await calls.call("post_hauler_interest_reply", reason)
+        }
+
         await calls.call("withdraw_interest", { p_interest_id: target })
       }, write)
     }

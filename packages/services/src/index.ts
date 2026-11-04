@@ -47,6 +47,7 @@ import {
   postHaulerInterestReply,
   respondToMarketplaceInterest,
   withdrawMarketplaceInterest,
+  withdrawMarketplaceInterestWithReason,
   type MarketplaceActor
 } from "./marketplace-interest"
 import { marketplaceAuthoringLandings, marketplaceHaulerEquipment, marketplaceViewerAccess } from "./marketplace-access"
@@ -449,6 +450,8 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     postHaulerInterestReply: (actor: MarketplaceActor, input: unknown) => postHaulerInterestReply(state, actor, input),
     listMarketplaceInterestsForHauler: (actor: MarketplaceActor) => listMarketplaceInterestsForHauler(state, actor),
     listMarketplaceInterestsForLanding: (actor: MarketplaceActor) => listMarketplaceInterestsForLanding(state, actor),
+    // UX-09 (#132): withdraw with an optional reason the landing sees, in one change.
+    withdrawMarketplaceInterestWithReason: (actor: MarketplaceActor, input: unknown) => withdrawMarketplaceInterestWithReason(state, actor, input),
     marketplaceViewerAccess: (actor: MarketplaceActor) => marketplaceViewerAccess(state, actor),
     marketplaceHaulerEquipment: (actor: MarketplaceActor) => marketplaceHaulerEquipment(state, actor),
     marketplaceAuthoringLandings: (actor: MarketplaceActor) => marketplaceAuthoringLandings(state, actor),
@@ -704,6 +707,17 @@ export { directOfferClaimCount, directOfferIsClaimable, effectiveDirectOfferStat
 export { DomainRefusalError } from "./utils"
 export { marketplaceJobStatus, type MarketplaceActor } from "./marketplace-interest"
 export { pilotEquipmentCode, pilotMarketplaceMembership, type MarketplaceViewerAccess } from "./marketplace-access"
+export {
+  HAULER_IDENTITY_EDIT_REFUSED,
+  HAULER_PROFILE_EDIT_REFUSED,
+  HAULER_PROFILE_NOT_HAULING,
+  haulerSetupChecklist,
+  pilotHaulerProfile,
+  planHaulerProfileSave,
+  publicHaulerProfile,
+  type HaulerProfileSavePlan,
+  type HaulerSetupItem
+} from "./marketplace-hauler"
 export {
   organizationOperationallyAccessible,
   resolveRestrictedOrganizationAccess

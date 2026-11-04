@@ -1,53 +1,12 @@
-/* JobDetail (DS-04): ported from design-system/components.css (.ll-job-detail__*). It fills whatever frame holds
-   it (DetailPanel, the mobile Dialog sheet, the editor preview) and draws no frame of its own. The app's legacy
-   global rules for h2, h3, dl, dt and dd are neutralised explicitly. */
+/* JobDetail (DS-04; UX-07 #130): the JobSummary, then collapsible sections and a footer. It fills whatever frame holds
+   it (the job page's Section, the DetailPanel, the mobile Dialog sheet, the editor preview) and draws no frame of its
+   own. The app's legacy global rules for dl, dl div, dt and dd are neutralised explicitly. */
 .detail {
   display: grid;
   min-width: 0;
   color: var(--ll-color-text);
 }
 
-.head {
-  display: grid;
-  gap: var(--ll-space-2);
-  padding: var(--ll-space-5) var(--ll-space-5) var(--ll-space-4);
-  border-bottom: 1px solid var(--ll-color-border);
-}
-
-.poster {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px var(--ll-space-3);
-  margin: 0;
-  color: var(--ll-color-text-secondary);
-  font-size: var(--ll-text-md);
-}
-
-.title {
-  margin: 0;
-  font-family: inherit;
-  font-size: var(--ll-text-xl);
-  font-weight: var(--ll-weight-semibold);
-  line-height: var(--ll-leading-snug);
-  letter-spacing: normal;
-  overflow-wrap: anywhere;
-}
-
-.source {
-  margin: 0;
-  color: var(--ll-color-text-muted);
-  font-size: var(--ll-text-sm);
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ll-space-2);
-  margin-top: var(--ll-space-2);
-}
-
-.actions:empty { display: none; }
 .primary { flex: 1 1 auto; }
 
 .state {
@@ -57,29 +16,88 @@
   font-weight: var(--ll-weight-semibold);
 }
 
-.body {
+/* A listing that is not accepting interest: why and when, in place of the action. */
+.closed {
   display: grid;
-  gap: var(--ll-space-5);
-  padding: var(--ll-space-2) var(--ll-space-5) var(--ll-space-5);
+  flex: 1 1 100%;
+  gap: 2px;
+  padding: var(--ll-space-3);
+  border: 1px solid var(--ll-color-border);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-surface-subtle);
 }
 
-.group {
+.closedWhy {
+  margin: 0;
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-sm);
+}
+
+.sections {
   display: grid;
+  border-top: 1px solid var(--ll-color-border);
+}
+
+.more + .more { border-top: 1px solid var(--ll-color-border); }
+
+/* The <summary> is the 44 px control; the browser's own disclosure triangle is replaced by a chevron that turns. */
+.summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--ll-space-3);
-  min-width: 0;
-}
-
-.groupTitle {
-  margin: var(--ll-space-3) 0 0;
-  color: var(--ll-color-text-muted);
-  font-family: var(--ll-font-mono);
-  font-size: var(--ll-text-2xs);
+  min-height: var(--ll-target-touch);
+  padding: var(--ll-space-2) var(--ll-space-5);
+  font-size: var(--ll-text-md);
   font-weight: var(--ll-weight-semibold);
-  letter-spacing: var(--ll-tracking-label);
-  text-transform: uppercase;
+  list-style: none;
+  cursor: pointer;
 }
 
-/* Stacked facts: a 104 px label column beside the value. */
+.summary::-webkit-details-marker { display: none; }
+
+.summary::after {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--ll-color-text-muted);
+  border-bottom: 2px solid var(--ll-color-text-muted);
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.more[open] > .summary::after { transform: translateY(2px) rotate(-135deg); }
+
+/* Inside the section's frame the ring sits inset, so a clipping frame (overflow: hidden) never cuts it off. The
+   shadow reset removes the app's legacy global :focus-visible halo (globals.css). */
+.more > .summary:focus-visible {
+  outline-offset: calc(-1 * var(--ll-focus-width) - 2px);
+  box-shadow: none;
+}
+
+.summary:hover { background: var(--ll-color-surface-subtle); }
+
+.moreBody {
+  display: grid;
+  gap: var(--ll-space-2);
+  padding: 0 var(--ll-space-5) var(--ll-space-4);
+}
+
+.text {
+  margin: 0;
+  font-size: var(--ll-text-md);
+  line-height: var(--ll-leading-normal);
+  overflow-wrap: anywhere;
+}
+
+.hint {
+  margin: 0;
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+  line-height: var(--ll-leading-normal);
+}
+
+/* Stacked facts: an 80 px label column beside the value, as in JobSummary. */
 .facts {
   display: grid;
   gap: var(--ll-space-2);
@@ -88,11 +106,15 @@
 
 .fact {
   display: grid;
-  grid-template-columns: 104px minmax(0, 1fr);
+  grid-template-columns: 80px minmax(0, 1fr);
   gap: var(--ll-space-3);
   justify-content: stretch;
   padding: 0;
   border: 0;
+}
+
+@container ll-app (min-width: 768px) { /* bp-md */
+  .fact { grid-template-columns: 104px minmax(0, 1fr); }
 }
 
 .label {
@@ -115,16 +137,8 @@
   overflow-wrap: anywhere;
 }
 
-.note {
-  display: block;
-  color: var(--ll-color-text-muted);
-  font-size: var(--ll-text-sm);
-}
-
 .foot {
-  display: grid;
-  gap: var(--ll-space-1);
-  padding: var(--ll-space-4) var(--ll-space-5);
+  padding: var(--ll-space-3) var(--ll-space-5);
   border-top: 1px solid var(--ll-color-border);
   background: var(--ll-color-surface-subtle);
   color: var(--ll-color-text-muted);

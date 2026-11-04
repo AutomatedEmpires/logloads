@@ -7,7 +7,14 @@ vi.mock("server-only", () => ({}))
 import { validateMarketplaceJobDraft } from "@logloads/contracts"
 
 import { createNormalizedMarketplaceV2 } from "./normalized-adapter"
-import type { MarketplaceCalls, MarketplaceDb, MarketplaceFunctionName, MarketplaceInquiryParties, MarketplacePrincipal } from "./normalized-db"
+import type {
+  MarketplaceCalls,
+  MarketplaceDb,
+  MarketplaceFunctionName,
+  MarketplaceInquiryParties,
+  MarketplacePrincipal,
+  StoredListingReport
+} from "./normalized-db"
 import { MarketplaceRefusalError, type MarketplaceV2Viewer } from "./port"
 
 /**
@@ -26,6 +33,7 @@ const JOB = "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 const INTEREST = "66666666-eeee-4eee-8eee-eeeeeeeeeeee"
 const LANDING = "77777777-ffff-4fff-8fff-ffffffffffff"
 const REPLY = "99999999-dddd-4ddd-8ddd-dddddddddddd"
+const REPORT = "22222222-eeee-4eee-8eee-eeeeeeeeeeee"
 const PRINCIPAL: MarketplacePrincipal = { audience: "logloads-test-audience", issuer: "https://clerk.logloads.test", subject: "user_test_subject" }
 
 const landingViewer: MarketplaceV2Viewer = { organizationId: LAND, userId: USER }
@@ -60,6 +68,8 @@ function interestRow(overrides: Record<string, unknown> = {}) {
 let recorded: Recorded[]
 let responses: Partial<Record<MarketplaceFunctionName, unknown[]>>
 let parties: MarketplaceInquiryParties | null
+let inquiryJobs: unknown[]
+let standingReport: StoredListingReport | null
 let principal: ReturnType<typeof vi.fn>
 
 function fakeDb(): MarketplaceDb {
@@ -72,6 +82,22 @@ function fakeDb(): MarketplaceDb {
       async inquiryParties() {
         recorded.push({ ...extra, args: {}, fn: "inquiryParties", session })
         return parties
+      },
+      async query(name, values) {
+        recorded.push({ ...extra, args: { values }, fn: name, session })
+        return []
+      },
+      async inquiryJobs(organizationId) {
+        recorded.push({ ...extra, args: { organizationId }, fn: "inquiryJobs", session })
+        return inquiryJobs
+      },
+      async standingListingReport(jobId) {
+        recorded.push({ ...extra, args: { jobId }, fn: "standingListingReport", session })
+        return standingReport
+      },
+      async fileListingReport(report) {
+        recorded.push({ ...extra, args: report, fn: "fileListingReport", session })
+        return { createdAt: "2026-11-03T12:00:00.123456+00:00", id: REPORT }
       }
     }
   }
@@ -88,7 +114,7 @@ function adapter() {
 }
 
 function storeCalls() {
-  return recorded.filter((call) => call.fn !== "inquiryParties").map((call) => call.fn)
+  return recorded.filter((call) => call.fn !== "inquiryParties" && call.fn !== "inquiryJobs").map((call) => call.fn)
 }
 
 function publishDraft() {
@@ -107,6 +133,8 @@ beforeEach(() => {
   recorded = []
   responses = {}
   parties = { haulerOrganizationId: HAUL, jobId: JOB, jobOrganizationId: LAND }
+  inquiryJobs = []
+  standingReport = null
   principal = vi.fn(async () => PRINCIPAL)
 })
 
@@ -132,6 +160,24 @@ describe("normalized adapter: identity and discovery", () => {
     expect((await adapter().listJobs({ product: "Pulpwood" })).map((job) => job.id)).toEqual([other])
     expect((await adapter().listJobs({ sort: "pay" })).map((job) => job.id)).toEqual([other, JOB])
     expect(recorded[0]?.args).toEqual({ p_accepting_only: true, p_equipment: null, p_limit: 200, p_pay_unit: null, p_query: null })
+  })
+
+  it("reads one job as the session's person when there is one, so a job that stopped can still say why (#130)", async () => {
+    responses.get_marketplace_job = [jobRow({ accepting_interest: false, status: "paused" })]
+
+    expect((await adapter().getJob(JOB, haulerViewer))?.status).toBe("paused")
+    expect(recorded).toEqual([{ args: { p_job_id: JOB }, fn: "get_marketplace_job", principal: PRINCIPAL, readOnly: true, session: "user" }])
+  })
+
+  it("falls back to the public view when the store refuses the person, and never hides a store failure", async () => {
+    responses.get_marketplace_job = [jobRow()]
+    principal.mockRejectedValueOnce(new MarketplaceRefusalError("Sign in again to continue."))
+
+    expect((await adapter().getJob(JOB, haulerViewer))?.id).toBe(JOB)
+    expect(recorded.map((call) => call.session)).toEqual(["anon"])
+
+    principal.mockRejectedValueOnce(new Error("connection reset"))
+    await expect(adapter().getJob(JOB, haulerViewer)).rejects.toThrow("connection reset")
   })
 
   it("answers not-found for an id that cannot exist, without asking the store", async () => {
@@ -212,6 +258,71 @@ describe("normalized adapter: inquiries stay inside the active business", () => 
   })
 })
 
+describe("normalized adapter: inquiry conversations (UX-09, #132)", () => {
+  const access = (capabilities: string[]) => [{
+    capabilities, hauler_profile: false, landing_workspace_seat: true, organization_id: LAND, organization_name: "Adapter Timber", role: "owner"
+  }]
+
+  it("withdraws with the hauler's reason in one write: the reason first, then the withdrawal", async () => {
+    responses.list_marketplace_interests = [interestRow()]
+
+    await adapter().withdrawInterestWithReason(haulerViewer, { interestId: INTEREST, reason: " Booked elsewhere ", replyId: REPLY })
+
+    expect(storeCalls()).toEqual(["list_marketplace_interests", "post_hauler_interest_reply", "withdraw_interest"])
+    expect(new Set(recorded.map((call) => call.readOnly))).toEqual(new Set([false]))
+    expect(recorded.find((call) => call.fn === "list_marketplace_interests")?.args).toEqual({ p_job_id: JOB, p_org_id: HAUL, p_side: "hauler" })
+    expect(recorded.find((call) => call.fn === "post_hauler_interest_reply")?.args).toEqual({ p_body: "Booked elsewhere", p_interest_id: INTEREST, p_reply_id: REPLY })
+  })
+
+  it("withdraws without a message when there is no reason, and does nothing more for a withdrawn inquiry", async () => {
+    responses.list_marketplace_interests = [interestRow()]
+    await adapter().withdrawInterestWithReason(haulerViewer, { interestId: INTEREST, reason: "", replyId: REPLY })
+    expect(storeCalls()).toEqual(["list_marketplace_interests", "withdraw_interest"])
+
+    recorded = []
+    responses.list_marketplace_interests = [interestRow({ status: "withdrawn" })]
+    await adapter().withdrawInterestWithReason(haulerViewer, { interestId: INTEREST, reason: "Again", replyId: REPLY })
+    expect(storeCalls()).toEqual(["list_marketplace_interests"])
+  })
+
+  it("refuses a declined inquiry with the landing's closure, before writing a reason (#194 HF-03)", async () => {
+    responses.list_marketplace_interests = [interestRow({ status: "declined" })]
+
+    await expect(adapter().withdrawInterestWithReason(haulerViewer, { interestId: INTEREST, reason: "Never mind", replyId: REPLY }))
+      .rejects.toThrow("The landing has closed this inquiry")
+    expect(storeCalls()).toEqual(["list_marketplace_interests"])
+  })
+
+  it("refuses another business's inquiry, and a reason without a reply id, before reaching the store", async () => {
+    parties = { haulerOrganizationId: OTHER, jobId: JOB, jobOrganizationId: LAND }
+    await expect(adapter().withdrawInterestWithReason(haulerViewer, { interestId: INTEREST, reason: "x", replyId: REPLY })).rejects.toThrow("Inquiry not found")
+    await expect(adapter().withdrawInterestWithReason(haulerViewer, { interestId: INTEREST, reason: "x" })).rejects.toBeInstanceOf(MarketplaceRefusalError)
+    expect(storeCalls()).toEqual([])
+  })
+
+  it("reads the landing's own inquiry jobs read-only, once inquiry.respond is confirmed", async () => {
+    responses.get_viewer_marketplace_access = access(["inquiry.respond", "job.publish"])
+    inquiryJobs = [
+      { equipment_codes: ["log_truck", "pole_trailer"], job_id: JOB, landing_id: LANDING, landing_name: "Upper Spur" },
+      { equipment_codes: null, job_id: INTEREST, landing_id: null, landing_name: null }
+    ]
+
+    expect(await adapter().landingInquiryJobs(landingViewer)).toEqual([
+      { equipmentCodes: ["log_truck", "pole_trailer"], jobId: JOB, landing: { id: LANDING, name: "Upper Spur" } },
+      { equipmentCodes: [], jobId: INTEREST, landing: null }
+    ])
+    expect(recorded.map((call) => [call.fn, call.readOnly])).toEqual([["get_viewer_marketplace_access", true], ["inquiryJobs", true]])
+    expect(recorded[1]?.args).toEqual({ organizationId: LAND })
+  })
+
+  it("refuses the job context to a role without inquiry.respond: a cross-organization read is refused", async () => {
+    responses.get_viewer_marketplace_access = access(["interest.express", "interest.reply"])
+
+    await expect(adapter().landingInquiryJobs(haulerViewer)).rejects.toThrow("Inquiry not found")
+    expect(recorded.map((call) => call.fn)).toEqual(["get_viewer_marketplace_access"])
+  })
+})
+
 describe("normalized adapter: publishing and reconfirmation", () => {
   beforeEach(() => {
     responses.list_authoring_landings = [{ area_label: "Near Vida, OR", id: LANDING, name: "Upper Spur", state_code: "OR" }]
@@ -260,6 +371,51 @@ describe("normalized adapter: publishing and reconfirmation", () => {
 
   it("refuses a reconfirmation without its own attestation", async () => {
     await expect(adapter().reconfirmJob(landingViewer, JOB, publishAttestation)).rejects.toThrow("availability confirmation")
+    expect(recorded).toEqual([])
+  })
+})
+
+describe("normalized adapter: reporting a listing (#130)", () => {
+  beforeEach(() => {
+    responses.get_marketplace_job = [jobRow()]
+  })
+
+  it("files one report as the person, for a listing they can see, and returns the receipt", async () => {
+    await expect(adapter().reportListing(haulerViewer, { details: "Pay was $80 a ton", jobId: JOB, reason: "inaccurate_pay" })).resolves.toEqual({
+      alreadyReported: false,
+      reportId: REPORT,
+      reportedAt: "2026-11-03T12:00:00.123Z"
+    })
+
+    expect(recorded.map((call) => [call.fn, call.session, call.readOnly])).toEqual([
+      ["get_marketplace_job", "user", false],
+      ["standingListingReport", "user", false],
+      ["fileListingReport", "user", false]
+    ])
+    expect(recorded[2]?.args).toEqual({ details: "Pay was $80 a ton", jobId: JOB, reason: "inaccurate_pay" })
+  })
+
+  it("files nothing when the person already has a standing report of the listing", async () => {
+    standingReport = { createdAt: "2026-11-01T08:00:00+00:00", id: REPORT }
+
+    await expect(adapter().reportListing(haulerViewer, { jobId: JOB, reason: "stale" })).resolves.toEqual({
+      alreadyReported: true,
+      reportId: REPORT,
+      reportedAt: "2026-11-01T08:00:00.000Z"
+    })
+    expect(storeCalls()).not.toContain("fileListingReport")
+  })
+
+  it("says not found for a listing the person cannot see, and files nothing", async () => {
+    responses.get_marketplace_job = []
+
+    await expect(adapter().reportListing(haulerViewer, { jobId: JOB, reason: "fake_work" })).rejects.toThrow("Listing not found")
+    expect(storeCalls()).toEqual(["get_marketplace_job"])
+  })
+
+  it("validates the report before reaching the store", async () => {
+    await expect(adapter().reportListing(haulerViewer, { jobId: JOB, reason: "spam" })).rejects.toThrow("Choose why you are reporting this listing")
+    await expect(adapter().reportListing(haulerViewer, { jobId: "../etc", reason: "stale" })).rejects.toThrow("Listing not found")
     expect(recorded).toEqual([])
   })
 })

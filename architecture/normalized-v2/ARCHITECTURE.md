@@ -300,3 +300,14 @@ psql $env:LOGLOADS_DISPOSABLE_DB_URL -X -v ON_ERROR_STOP=1 -f architecture/norma
 psql $env:LOGLOADS_DISPOSABLE_DB_URL -X -v ON_ERROR_STOP=1 -f architecture/normalized-v2/04_tests.sql
 pwsh -File architecture/normalized-v2/05_concurrency_test.ps1
 ```
+
+### 8.4 Deploying to a database the app uses, and the synthetic seed (#200)
+
+`tools/normalized-store.mjs` applies the migration chain (01, 02, 03, 06, 11, 12, 16, 18, 23) to one database in
+CI's order, one transaction per file, skipping what the ledger or the 01–03 baseline objects show is applied. It
+also registers the adapter's issuer row and creates the adapter's login role. A test keeps its chain equal to the
+`run_migration` stages of `tools/normalized-v2-ci/run-stage.sh` and to the order every CI job applies them.
+`seed/pilot_demo_seed.sql` loads the pilot demo businesses into an empty store with the pilot seed's ids. It writes
+through the schema's triggers and functions, and checks its own result before it commits. The owner runbook is
+[`docs/INTEGRATIONS.md`](../../docs/INTEGRATIONS.md) §15. CI runs both on disposable databases in
+`.github/workflows/normalized-adapter-ci.yml`, the seeded-store jobs.
