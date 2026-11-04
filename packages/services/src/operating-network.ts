@@ -5,6 +5,7 @@ import {
   equipmentCombinationSchema,
   futureAvailabilitySchema,
   loadPostingSchema,
+  OPERATIONAL_NOTICE_LIMITS,
   operationalNoticeSchema,
   canTransitionAssignmentStatus,
   canTransitionAssignmentStatusV2,
@@ -2263,9 +2264,16 @@ export function applyEquipmentDownConsequence(
     })
   }
 
+  // The load title is the host's free text and has no bound of its own, so it is
+  // shortened here to keep this generated notice inside the stored cap: a long
+  // title must never stop a driver recording a failed walk-around, or a fleet
+  // putting a truck in the shop. The detail is already bounded by the checklist.
+  const titleLimit = OPERATIONAL_NOTICE_LIMITS.title
+  const loadLabel =
+    input.load.title.length > titleLimit ? `${input.load.title.slice(0, titleLimit - 1)}…` : input.load.title
   const detailLine = input.detail ? ` ${input.detail}` : ""
   const noticeBody =
-    `${input.load.title} has a truck out of service (${input.cause}).${detailLine} ` +
+    `${loadLabel} has a truck out of service (${input.cause}).${detailLine} ` +
     "The haul will not progress until the truck returns to service or a dispatcher reassigns the work."
 
   for (const membership of state.organizationMemberships.filter((membership) =>
