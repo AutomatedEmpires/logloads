@@ -496,7 +496,7 @@ describe("job postings page", () => {
     const published = await render(LandingJobsPage, {})
     expect(published).toContain("Oak saw-log morning run")
     expect(published).toContain("Pulp to Eugene")
-    expect(published).toContain("poster reports enough trucks")
+    expect(published).toContain("Marked filled by the poster")
     expect(published).not.toContain("Chips on hold")
     expect(published).not.toContain("Someone else")
     expect(published).toMatch(/<li[^>]*data-context="poster"/)
