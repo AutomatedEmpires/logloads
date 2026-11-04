@@ -3,7 +3,8 @@
 // Run `pnpm docs:check` (it is also part of `pnpm guardrails`), or `node tools/check-docs.mjs [--root <dir>]`.
 //
 // Rules 1-7 are the issue's specification and follow its reference implementation. Rules 8-10 extend it to every
-// backticked repository path, every `pnpm` command in code, and every production environment variable name.
+// backticked repository path, every `pnpm` command in code, and every environment variable in the project's own
+// namespaces.
 //
 // | Rule id           | Checks                                                                   | Applies to          |
 // |-------------------|--------------------------------------------------------------------------|---------------------|
@@ -15,8 +16,8 @@
 // | 6 `vocabulary`    | Deprecated status labels are absent                                      | Active docs         |
 // | 7 `authority`     | `docs/README.md` links the five authority documents                      | Index               |
 // | 8 `repo-path`     | Any other backticked repository path exists                              | Root + active (b)   |
-// | 9 `pnpm-script`   | `pnpm <script>` in code names a script of the targeted package           | Root + active       |
-// | 10 `env-name`     | A production-namespace env variable in code is in the env contract       | Root + active       |
+// | 9 `pnpm-script`   | `pnpm <x>` in code is a pnpm command, a script or a dependency binary    | Root + active       |
+// | 10 `env-name`     | A project-namespace env variable in code is in the env contract          | Root + active       |
 //
 // (a) Verbatim files keep links that broke when they moved; their link findings are not failures.
 // (b) `docs/archive/README.md` lists removed paths by design and is exempt.
@@ -25,8 +26,8 @@
 // first `---` line is active. Fenced code is ignored by rules 1-8 and read by rules 9-10.
 //
 // Deliberate differences from the reference implementation: paths must exist with the exact case (CI runs on a
-// case-sensitive file system), fences are found line by line, and rule 2's archive context matches "tag" as a word
-// (the reference's /tag/ also matched "percentage" and "stage").
+// case-sensitive file system), fences are found line by line, and rule 2's archive context must name the archive tag
+// (the reference's /tag/ and /recover/ also matched "percentage", "stage", "HTML tag" and "recovery").
 import { readdirSync, readFileSync, realpathSync } from "node:fs"
 import { join, posix, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -80,14 +81,50 @@ const GENERATED_SEGMENTS = new Set([
   "test-results"
 ])
 
+// Rule 10 covers only the project's own environment namespaces. Generic names (`NODE_*`, `GITHUB_*`, `VERCEL_*`,
+// `NEXT_TELEMETRY_DISABLED`, `CI`) belong to Node, GitHub, Vercel or Next.js and are not checked. The contract's
+// forbidden prefixes (the retired Cloudinary ones) are added at load time, so naming them needs removal context.
+const ENV_PROJECT_PREFIXES = [
+  "ANTHROPIC_",
+  "CLERK_",
+  "CREDENTIAL_REVIEW_",
+  "CRON_",
+  "LOGLOADS_",
+  "NEXT_PUBLIC_",
+  "POSTHOG_",
+  "RESEND_",
+  "SENTRY_",
+  "STRIPE_",
+  "SUPABASE_"
+]
+// Well-known variables of external tools inside those namespaces. They configure a CLI, not LogLoads, so they need
+// not be in the contract (it may still list them). Keep the list short and say which tool reads each one.
+export const ENV_EXTERNAL_TOOL_NAMES = {
+  SUPABASE_ACCESS_TOKEN: "Personal access token for the Supabase CLI (`supabase link`, `supabase db push`)."
+}
+
+// pnpm 10's own commands and aliases, plus the npm commands it passes through. `test`/`t`/`tst` and `start` are
+// absent on purpose: they run a script, so the script must exist.
 const PNPM_BUILTINS = new Set([
-  "add", "audit", "bin", "c", "cache", "cat-file", "cat-index", "config", "create", "dedupe", "deploy", "dlx",
-  "doctor", "env", "exec", "fetch", "find-hash", "help", "i", "import", "init", "install", "install-test", "it", "la",
-  "licenses", "link", "list", "ll", "ln", "ls", "outdated", "pack", "patch", "patch-commit", "patch-remove", "prune",
-  "publish", "rb", "rebuild", "remove", "rm", "root", "self-update", "server", "setup", "store", "un", "uninstall",
-  "unlink", "up", "update", "upgrade", "why"
+  "access", "add", "adduser", "approve-builds", "audit", "bin", "bugs", "c", "cache", "cat-file", "cat-index",
+  "config", "create", "dedupe", "deploy", "deprecate", "dist-tag", "dlx", "docs", "doctor", "edit", "env", "exec",
+  "fetch", "find-hash", "get", "help", "i", "ignored-builds", "import", "info", "init", "install", "install-test", "it",
+  "la", "licenses", "link", "list", "ll", "ln", "login", "logout", "ls", "m", "multi", "outdated", "owner", "pack",
+  "patch", "patch-commit", "patch-remove", "ping", "pkg", "prefix", "profile", "prune", "publish", "rb", "rebuild",
+  "recursive", "remove", "repo", "restart", "rm", "root", "s", "sbom", "se", "search", "self-update", "server", "set",
+  "set-script", "setup", "show", "star", "stars", "store", "team", "token", "un", "uni", "uninstall", "unlink",
+  "unpublish", "unstar", "up", "update", "upgrade", "v", "version", "view", "whoami", "why", "xmas"
 ])
 const PNPM_OPTIONS_WITH_VALUE = new Set(["--filter", "-F", "--filter-prod", "-C", "--dir", "--reporter", "--loglevel"])
+
+// `pnpm <name>` that is neither a script nor a pnpm command runs a binary of the package's dependencies. An unscoped
+// package's binary usually has the package's name; these declare others. The map keeps the result independent of
+// whether `node_modules` is installed. Add a dependency here when a doc runs one of its binaries through `pnpm`.
+const KNOWN_BINS = {
+  "@changesets/cli": ["changeset"],
+  "@playwright/test": ["playwright"],
+  typescript: ["tsc", "tsserver"]
+}
 
 // Rule 4-6 vocabulary, from the reference implementation in #110.
 const HISTORICAL_CONTEXT =
@@ -109,8 +146,9 @@ const REQUIRED_AUTHORITY = [
   "AGENT_WORKFLOW.md"
 ]
 
-// A missing path is fine when the same or an adjacent line says where it went (rule 2, from #110)...
-const ARCHIVE_CONTEXT = /archive\/docs-history-|\btag\b|recover|no longer in the tree/i
+// A missing path is fine when the same or an adjacent line says it is at the archive tag (rule 2, from #110): the tag's
+// name, "archive tag", or "no longer in the tree". A bare "tag" or "recover" is not enough ("HTML tag", "recovery").
+const ARCHIVE_CONTEXT = /archive\/docs-history-|\barchive tag\b|no longer in the tree/i
 // ...and, for other repository paths and env names, when the same line says it is gone.
 const REMOVAL_CONTEXT = /\b(removed|retired|deleted|renamed|no longer)\b/i
 
@@ -263,7 +301,14 @@ function loadWorkspace(root) {
   const packages = []
   const add = (dir) => {
     const manifest = readJson(root, dir ? `${dir}/package.json` : "package.json")
-    if (manifest) packages.push({ dir, name: manifest.name ?? "", scripts: new Set(Object.keys(manifest.scripts ?? {})) })
+    if (!manifest) return
+    const bins = new Set()
+    const dependencies = { ...manifest.dependencies, ...manifest.devDependencies, ...manifest.optionalDependencies }
+    for (const dependency of Object.keys(dependencies)) {
+      if (!dependency.startsWith("@")) bins.add(dependency)
+      for (const bin of KNOWN_BINS[dependency] ?? []) bins.add(bin)
+    }
+    packages.push({ dir, name: manifest.name ?? "", scripts: new Set(Object.keys(manifest.scripts ?? {})), bins })
   }
   add("")
   let patterns = []
@@ -294,14 +339,13 @@ function loadWorkspace(root) {
 
 function loadEnvContract(root) {
   const contract = readJson(root, "ops/production-env-contract.json")
-  const known = new Set(Object.keys(ENV_OUTSIDE_CONTRACT))
-  const prefixes = new Set()
+  const known = new Set([...Object.keys(ENV_OUTSIDE_CONTRACT), ...Object.keys(ENV_EXTERNAL_TOOL_NAMES)])
+  const prefixes = new Set(ENV_PROJECT_PREFIXES)
   if (!contract) return { known, prefixes, loaded: false }
 
   for (const variable of contract.variables ?? []) {
     if (typeof variable?.name !== "string") continue
     known.add(variable.name)
-    prefixes.add(variable.name.split("_")[0])
   }
   // Names the contract records as listed-but-unused, and the historical gates it keeps disabled.
   for (const note of contract.unused_in_code_remove_or_ignore ?? [])
@@ -309,13 +353,16 @@ function loadEnvContract(root) {
   for (const name of Object.keys(contract.commercial_authority?.historical_gates ?? {})) known.add(name)
   // Retired prefixes (Cloudinary) stay in the namespace, so naming them needs removal context.
   for (const prefix of contract.private_media_storage?.forbidden_environment_prefixes ?? [])
-    prefixes.add(String(prefix).split("_")[0])
+    if (/^[A-Z][A-Z0-9_]*_$/.test(String(prefix))) prefixes.add(String(prefix))
   return { known, prefixes, loaded: true }
 }
 
+// Shell words after each `pnpm`, with surrounding quotes removed (`--filter "@logloads/web"`, `--filter='./apps/web'`).
+const unquote = (word) => word.replace(/^(["'])(.*)\1$/, "$2").replace(/=(["'])(.*)\1$/, "=$2")
+
 function pnpmInvocations(code) {
   return [...code.matchAll(/(?<![\w@/.-])pnpm(?=\s)([^;&|`)\n]*)/g)].map((match) =>
-    match[1].trim().split(/\s+/).filter(Boolean)
+    match[1].trim().split(/\s+/).filter(Boolean).map(unquote)
   )
 }
 
@@ -339,7 +386,8 @@ function checkPnpmInvocation(tokens, workspace) {
   skipOptions()
   let command = tokens[index]
   if (!command) return null
-  if (command === "run" || command === "run-script") {
+  const viaRun = command === "run" || command === "run-script"
+  if (viaRun) {
     index += 1
     skipOptions()
     command = tokens[index]
@@ -378,7 +426,11 @@ function checkPnpmInvocation(tokens, workspace) {
   }
 
   if (targets.some((pkg) => pkg.scripts.has(script))) return null
-  return `\`pnpm ${tokens.join(" ")}\`: no script "${script}" in ${label}`
+  // Without `run`, pnpm falls back to a binary of the package's dependencies (`pnpm tsc`, `pnpm changeset`). The root's
+  // binaries count for every package, because pnpm also puts the workspace root's node_modules/.bin on the PATH.
+  if (!viaRun && [...targets, root].some((pkg) => pkg?.bins.has(script))) return null
+  const binary = viaRun ? "" : ", and no dependency binary of that name"
+  return `\`pnpm ${tokens.join(" ")}\`: no script "${script}" in ${label}${binary}`
 }
 
 function envNamesIn(code, wholeSpan) {
@@ -395,6 +447,47 @@ function envNamesIn(code, wholeSpan) {
   ]
   for (const pattern of patterns) for (const match of code.matchAll(pattern)) names.push(match[1])
   return names
+}
+
+// Inline link destinations `](target "title")`. As in CommonMark, a destination may contain balanced parentheses, so
+// a Next.js route group such as `app/(marketing)/page.tsx` stays whole; `<…>` destinations may contain anything but
+// `>`. A `](` that is not closed by `)` is not a link.
+function inlineLinkTargets(line) {
+  const targets = []
+  let from = 0
+  for (;;) {
+    const start = line.indexOf("](", from)
+    if (start === -1) return targets
+    let cursor = start + 2
+    while (line[cursor] === " " || line[cursor] === "\t") cursor += 1
+    let target
+    if (line[cursor] === "<") {
+      const end = line.indexOf(">", cursor + 1)
+      if (end === -1) {
+        from = start + 2
+        continue
+      }
+      target = line.slice(cursor + 1, end)
+      cursor = end + 1
+    } else {
+      const begin = cursor
+      let depth = 0
+      for (; cursor < line.length; cursor += 1) {
+        const char = line[cursor]
+        if (char === "\\") cursor += 1
+        else if (/\s/.test(char)) break
+        else if (char === "(") depth += 1
+        else if (char === ")") {
+          if (depth === 0) break
+          depth -= 1
+        }
+      }
+      target = line.slice(begin, cursor).replace(/\\(.)/g, "$1")
+    }
+    const close = /^\s*(?:(?:"[^"]*"|'[^']*'|\([^)]*\))\s*)?\)/.exec(line.slice(cursor))
+    if (close && target) targets.push(target)
+    from = close ? cursor + close[0].length : start + 2
+  }
 }
 
 // SUBSCRIPTION_BILLING_V1.md: only the superseded notice above the first `---` line is active content.
@@ -443,7 +536,7 @@ export function checkDocs({ root = repoRoot, allowlist = DOCS_ALLOWLIST } = {}) 
     // 1. Relative links (inline, reference definitions and HTML href/src) and their anchors resolve.
     doc.withoutCode.forEach((line, index) => {
       const targets = [
-        ...[...line.matchAll(/\]\(\s*<?([^)\s>]+)>?(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g)].map((m) => m[1]),
+        ...inlineLinkTargets(line),
         ...[...line.matchAll(/^\s{0,3}\[[^\]]+\]:\s*<?([^\s>]+)>?/g)].map((m) => m[1]),
         ...[...line.matchAll(/<[a-z][^>]*\b(?:href|src)\s*=\s*["']([^"']+)["']/gi)].map((m) => m[1])
       ]
@@ -511,7 +604,7 @@ export function checkDocs({ root = repoRoot, allowlist = DOCS_ALLOWLIST } = {}) 
     if (env.loaded)
       for (const code of [...spans.map((span) => ({ ...span, whole: true })), ...fenced])
         for (const name of envNamesIn(code.text, code.whole)) {
-          if (!env.prefixes.has(name.split("_")[0]) || env.known.has(name)) continue
+          if (![...env.prefixes].some((prefix) => name.startsWith(prefix)) || env.known.has(name)) continue
           if (REMOVAL_CONTEXT.test(doc.lines[code.index])) continue
           fail(file, code.index + 1, "env-name", `${name} is not in ops/production-env-contract.json`)
         }
