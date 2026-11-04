@@ -627,8 +627,12 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
     it("pausing a landing unlists its jobs; paused and archived landings do not count toward the cap", async () => {
       await expect(port.setLandingStatus(viewer("rival", "rival"), fixture.landings.land, "paused")).rejects.toThrow("That landing was not found")
 
+      const jobStatus = async () => (await one<{ status: string }>("select status from marketplace.job_postings where id = $1::uuid", [landJobId])).status
+
       await port.setLandingStatus(viewer("land", "land"), fixture.landings.land, "paused")
-      expect((await port.getJob(landJobId))?.status).toBe("paused")
+      expect(await jobStatus()).toBe("paused")
+      // Unlisted: anonymous discovery no longer returns the job at all.
+      expect(await port.getJob(landJobId)).toBeNull()
       expect((await port.listJobs({ acceptingOnly: true })).map((job) => job.id)).not.toContain(landJobId)
       expect((await port.landingAllowance(viewer("land", "land"))).activeLandings).toBe(0)
 
@@ -644,7 +648,7 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
         ["Upper Spur Landing", "archived"]
       ])
       // The job stays paused: putting a job back on the board needs its own fresh availability confirmation.
-      expect((await port.getJob(landJobId))?.status).toBe("paused")
+      expect(await jobStatus()).toBe("paused")
     })
 
     it("reads the plan code, counts and the cycle from the store", async () => {
