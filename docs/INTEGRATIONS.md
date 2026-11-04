@@ -177,7 +177,9 @@ The seed is synthetic. Never present it as real activity. On production this ste
   relevant only for the normalized-V2 proof, on the staging project first
   ([`ACTIVATION_CLERK.md`](./ACTIVATION_CLERK.md) §4). When that is scheduled, **Owner:** Clerk → Integrations → Supabase →
   activate and copy the Clerk domain; Supabase → Authentication → Sign In / Providers → Third-party auth → Clerk →
-  paste the domain.
+  paste the domain. The one-command check is `tools/verify-clerk-supabase-auth.mjs`
+  ([`SECURITY.md`](./SECURITY.md) §5.1); **Owner:** it reads `LOGLOADS_SUPABASE_DEV_PROJECT_REFS` (the project refs
+  it may touch) and `LOGLOADS_AUTH_HARNESS_CLERK_USER_IDS` (two development-instance test users) from `dev` only.
 - **Data API:** **Owner:** keep it enabled with the `public` schema exposed. The app reads `operating_state` and calls
   `consume_rate_limit` through it with the service-role key.
 - Confirm everything with `doppler run --project logloads --config stg -- pnpm supabase:post-provision check`.
@@ -249,7 +251,11 @@ Optional local keys go in `dev`: Clerk development keys, a dev CARTO key, Stripe
    sends it.
 5. **V2 flag. Owner:** set `LOGLOADS_MARKETPLACE_V2=enabled` only in `stg`, and only when the
    [`DEPLOYMENT.md`](./DEPLOYMENT.md) §4 gates hold. Never in `prd`: the readiness check marks it INVALID there
-   (the code also ignores it when `VERCEL_ENV=production`).
+   (the code also ignores it when `VERCEL_ENV=production`). The V2 store stays the pilot store unless the
+   normalized-V2 proof is scheduled on staging: then `LOGLOADS_MARKETPLACE_V2_ADAPTER=normalized`,
+   `LOGLOADS_NORMALIZED_DATABASE_URL` (a restricted login role, secret), `LOGLOADS_NORMALIZED_IDENTITY_ISSUER` and
+   `LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE` go in `stg` only ([`SECURITY.md`](./SECURITY.md) §4.1). Never in `prd`;
+   the readiness check marks them INVALID there.
 6. **Cron:** `apps/web/vercel.json` schedules `/api/billing/cron` daily at 05:15 UTC (Hobby allows daily jobs,
    run within the hour). Vercel runs crons on Production deployments only and sends `CRON_SECRET` as a bearer
    token. The route stays dark while the historical gates are disabled.
@@ -385,6 +391,10 @@ the same list with every variable, including the ones set by Vercel or CI.
 |---|---|---|---|---|---|
 | app | `NEXT_PUBLIC_APP_URL` | — | yes | yes | public |
 | app | `LOGLOADS_MARKETPLACE_V2` | yes | yes | **never** | public |
+| app | `LOGLOADS_MARKETPLACE_V2_ADAPTER` | — | normalized-V2 proof only | **never** | public |
+| app | `LOGLOADS_NORMALIZED_DATABASE_URL` | — | normalized-V2 proof only | **never** | secret |
+| app | `LOGLOADS_NORMALIZED_IDENTITY_ISSUER` | — | normalized-V2 proof only | **never** | public |
+| app | `LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE` | — | normalized-V2 proof only | **never** | public |
 | session | `LOGLOADS_SESSION_SECRET` | — | yes | yes | secret |
 | supabase-api | `SUPABASE_URL` | — | yes | yes | public |
 | supabase-api | `SUPABASE_SERVICE_ROLE_KEY` | — | yes | yes | secret |
@@ -430,9 +440,12 @@ the same list with every variable, including the ones set by Vercel or CI.
 | sentry | `SENTRY_DSN` | — | — | optional | secret |
 | maps | `NEXT_PUBLIC_CARTO_BASEMAP_KEY` | optional | optional | optional | public |
 | anthropic | `ANTHROPIC_API_KEY` | — | optional | optional | secret |
+| test | `LOGLOADS_SUPABASE_DEV_PROJECT_REFS` | auth harness only | **never** | **never** | public |
+| test | `LOGLOADS_AUTH_HARNESS_CLERK_USER_IDS` | auth harness only | **never** | **never** | public |
 
 **Must stay unset** on hosted targets: `LOGLOADS_ENABLE_DEV_LOGIN`, `LOGLOADS_DEMO_MODE`, `LOGLOADS_STATE_FILE`,
-`LOGLOADS_RATE_LIMIT_TEST_MODE`, `SUPABASE_ACCESS_TOKEN`; everywhere: `LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS`,
+`LOGLOADS_RATE_LIMIT_TEST_MODE`, `SUPABASE_ACCESS_TOKEN`, `LOGLOADS_SUPABASE_DEV_PROJECT_REFS`,
+`LOGLOADS_AUTH_HARNESS_CLERK_USER_IDS`; everywhere: `LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS`,
 `LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256`, `LOGLOADS_SUBSCRIPTION_ALLOWED_ORGANIZATION_IDS`; in
-production: `LOGLOADS_MARKETPLACE_V2`. The historical catalog ids (`STRIPE_PRICE_*`,
+production: `LOGLOADS_MARKETPLACE_V2`, `LOGLOADS_MARKETPLACE_V2_ADAPTER` and `LOGLOADS_NORMALIZED_*`. The historical catalog ids (`STRIPE_PRICE_*`,
 `STRIPE_PORTAL_CONFIGURATION_NETWORK`) and the smoke allowlists stay unset on a fresh start.

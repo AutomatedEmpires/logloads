@@ -65,7 +65,7 @@ it ([`INTEGRATIONS.md`](./INTEGRATIONS.md) §2.5). The established project shoul
 
 ## 3. Pilot migration ledger (IMPLEMENTED)
 
-Apply `supabase/migrations/*.sql` in filename order. At `15892b7` there are 11 files:
+Apply `supabase/migrations/*.sql` in filename order. There are 12 files:
 
 | File | Notes |
 |---|---|
@@ -80,6 +80,7 @@ Apply `supabase/migrations/*.sql` in filename order. At `15892b7` there are 11 f
 | `20260721232000_support_requests_state.sql` | |
 | `20260726090000_revoke_public_relational_grants.sql` | |
 | `20260808230214_admin_manage_billing_permission.sql` | |
+| `20261103200000_pilot_sql_hardening.sql` | #187 HF-19 to HF-21: a blank `sub` is no identity, `clerk_user_id` cannot be blank, the definers pin an empty `search_path`, `request_capacity` checks equipment ownership; anon loses `SELECT` on every `public` table and in the default privileges; `audit_events` is append-only with an `ON DELETE RESTRICT` actor. **Aborts by design** on a blank `profiles.clerk_user_id` or on a `public` table the migration role does not own; the file header says what to do. |
 
 CI applies the full ledger from empty on PostgreSQL 17 ([`CI.md`](./CI.md)). On a hosted project the ledger
 is applied with one command, a dry run unless `--apply` is given

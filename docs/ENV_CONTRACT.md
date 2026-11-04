@@ -77,6 +77,7 @@ they remain required for ongoing admin authority.
 | Group | Variables |
 |---|---|
 | Marketplace V2 preview | `LOGLOADS_MARKETPLACE_V2`. Exactly `enabled` turns on `/v2`, which is always off when `VERCEL_ENV=production`. **Must be unset in Production** (`must_be_unset_in: ["production"]` in the JSON contract; the readiness check marks it INVALID there). Allowed in Doppler `dev`, and in `stg` (hosted Preview/Staging) only with an isolated Supabase project and the [`DEPLOYMENT.md`](./DEPLOYMENT.md) §4 gates. Listed, unset, in `.env.example`. |
+| Marketplace V2 store (V2 preview only) | `LOGLOADS_MARKETPLACE_V2_ADAPTER`: `pilot` (default) or `normalized`. `normalized` also needs `LOGLOADS_NORMALIZED_DATABASE_URL` (a restricted NOINHERIT login role, **secret**, server-only), `LOGLOADS_NORMALIZED_IDENTITY_ISSUER` and `LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE` (an enabled `marketplace.trusted_identity_issuers` row). An incomplete or unsafe configuration fails closed. `VERCEL_ENV=production` always uses the pilot store ([`SECURITY.md`](./SECURITY.md) §4.1). In the JSON contract with `must_be_unset_in: ["production"]` and Doppler `stg` only, for the staging normalized-V2 proof; never in `prd`. Listed, unset, in `.env.example`. |
 | Clerk paths | `NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in`, `NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up`, `NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL` and `NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL` (`/onboarding`). Read by `@clerk/nextjs`, not by LogLoads code; without them Clerk-rendered links follow the Clerk dashboard Paths. |
 | Maps | `NEXT_PUBLIC_CARTO_BASEMAP_KEY` — preferred: authenticated CARTO Basemaps on MapLibre. Browser-visible; restrict it by origin. The legacy `NEXT_PUBLIC_MAPBOX_TOKEN` is used only when no CARTO key is set; keyless CARTO when neither is. |
 | Billing provider | `STRIPE_SECRET_KEY`, `LOGLOADS_STRIPE_EXPECTED_LIVEMODE`, `LOGLOADS_STRIPE_EXPECTED_ACCOUNT_ID`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PUBLISHABLE_KEY` or `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` |
@@ -214,6 +215,8 @@ delivery fails unavailable. Every `CLOUDINARY_*` and `LOGLOADS_CLOUDINARY_*` var
 - `LOGLOADS_RATE_LIMIT_TEST_MODE` — the local Playwright bypass.
 - `LOGLOADS_STATE_FILE` — the non-production JSON fallback.
 - `LOGLOADS_MARKETPLACE_V2` — the code ignores it in production anyway. Keep it unset so intent is clear.
+- `LOGLOADS_MARKETPLACE_V2_ADAPTER` and `LOGLOADS_NORMALIZED_*` — also ignored in production. No production
+  database has the normalized schema.
 - `SUPABASE_ACCESS_TOKEN` — the account-wide Supabase management token. It is used only by the provisioning
   tool, never belongs in `stg` or `prd` (they sync to Vercel), and is revoked after provisioning.
 - Any `CLOUDINARY_*` or `LOGLOADS_CLOUDINARY_*` variable.
