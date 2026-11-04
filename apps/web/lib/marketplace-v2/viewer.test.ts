@@ -1,18 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const mocks = vi.hoisted(() => ({
-  getClerkUserId: vi.fn(),
-  getSessionActor: vi.fn(),
+  getV2SessionActor: vi.fn(),
   redirect: vi.fn(),
+  v2SignedInWithoutPerson: vi.fn(),
   viewerAccess: vi.fn()
 }))
 
 vi.mock("server-only", () => ({}))
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }))
-vi.mock("../session", () => ({ getClerkUserId: mocks.getClerkUserId, getSessionActor: mocks.getSessionActor }))
+vi.mock("./v2-session", () => ({ getV2SessionActor: mocks.getV2SessionActor, v2SignedInWithoutPerson: mocks.v2SignedInWithoutPerson }))
 vi.mock("./pilot-adapter", () => ({ pilotMarketplaceV2: { viewerAccess: mocks.viewerAccess } }))
 
-import type { SessionActor } from "../session-policy"
+import type { V2SessionActor } from "./v2-session"
 import {
   BUSINESS_SWITCH_NOTE,
   NO_BUSINESS_PROFILE_REFUSAL,
@@ -24,14 +24,14 @@ import {
 const ORGANIZATION_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 const USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 
-function actor(overrides: Partial<SessionActor> = {}): SessionActor {
+function actor(overrides: Partial<V2SessionActor> = {}): V2SessionActor {
   return {
     activeMembership: null,
-    activeOrganization: { id: ORGANIZATION_ID } as SessionActor["activeOrganization"],
-    driverProfileId: null,
+    activeOrganization: { displayName: "Ridgeline Landing Co.", id: ORGANIZATION_ID },
     isPlatformAdmin: false,
     memberships: [],
-    profile: { id: USER_ID } as SessionActor["profile"],
+    profile: { email: null, fullName: "Rae Ridge", id: USER_ID },
+    store: "pilot",
     workspaceSelectionInvalid: false,
     ...overrides
   }
@@ -39,8 +39,8 @@ function actor(overrides: Partial<SessionActor> = {}): SessionActor {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mocks.getClerkUserId.mockResolvedValue(null)
-  mocks.getSessionActor.mockResolvedValue(null)
+  mocks.v2SignedInWithoutPerson.mockResolvedValue(false)
+  mocks.getV2SessionActor.mockResolvedValue(null)
   mocks.redirect.mockImplementation((href: string) => {
     throw new Error(`NEXT_REDIRECT ${href}`)
   })
@@ -53,15 +53,15 @@ describe("resolveV2Actor", () => {
   })
 
   it("refuses a sign-in without a LogLoads profile instead of opening legacy onboarding", async () => {
-    mocks.getClerkUserId.mockResolvedValue("user_clerk")
+    mocks.v2SignedInWithoutPerson.mockResolvedValue(true)
 
     await expect(resolveV2Actor("/v2/landing/inquiries")).resolves.toEqual({ ok: false, refusal: NO_BUSINESS_PROFILE_REFUSAL })
     expect(mocks.redirect).not.toHaveBeenCalled()
   })
 
-  it("returns the session actor unchanged", async () => {
+  it("returns the V2 session actor unchanged", async () => {
     const sessionActor = actor()
-    mocks.getSessionActor.mockResolvedValue(sessionActor)
+    mocks.getV2SessionActor.mockResolvedValue(sessionActor)
 
     await expect(resolveV2Actor("/v2/inquiries")).resolves.toEqual({ actor: sessionActor, ok: true })
     expect(mocks.redirect).not.toHaveBeenCalled()
@@ -70,7 +70,7 @@ describe("resolveV2Actor", () => {
 
 describe("resolveV2Viewer", () => {
   it("passes through the no-profile refusal without asking for capabilities", async () => {
-    mocks.getClerkUserId.mockResolvedValue("user_clerk")
+    mocks.v2SignedInWithoutPerson.mockResolvedValue(true)
 
     await expect(resolveV2Viewer("/v2/landing/jobs")).resolves.toEqual({ ok: false, refusal: NO_BUSINESS_PROFILE_REFUSAL })
     expect(mocks.viewerAccess).not.toHaveBeenCalled()
@@ -80,7 +80,7 @@ describe("resolveV2Viewer", () => {
     ["no active business", { activeOrganization: null }],
     ["a revoked business selection", { workspaceSelectionInvalid: true }]
   ])("refuses %s in text, without a link", async (_label, overrides) => {
-    mocks.getSessionActor.mockResolvedValue(actor(overrides))
+    mocks.getV2SessionActor.mockResolvedValue(actor(overrides))
 
     const resolved = await resolveV2Viewer("/v2/landing/jobs")
 
@@ -89,7 +89,7 @@ describe("resolveV2Viewer", () => {
   })
 
   it("resolves the viewer from the session, never from request input", async () => {
-    mocks.getSessionActor.mockResolvedValue(actor())
+    mocks.getV2SessionActor.mockResolvedValue(actor())
     mocks.viewerAccess.mockResolvedValue({ capabilities: ["job.publish"], organizationName: "Ridgeline Landing Co." })
 
     await expect(resolveV2Viewer("/v2/landing/jobs")).resolves.toEqual({
@@ -101,7 +101,7 @@ describe("resolveV2Viewer", () => {
   })
 
   it("refuses a business the capability check rejects", async () => {
-    mocks.getSessionActor.mockResolvedValue(actor())
+    mocks.getV2SessionActor.mockResolvedValue(actor())
     mocks.viewerAccess.mockRejectedValue(new Error("Membership not found"))
 
     await expect(resolveV2Viewer("/v2/landing/jobs")).resolves.toEqual({

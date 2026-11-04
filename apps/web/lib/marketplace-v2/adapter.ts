@@ -1,8 +1,8 @@
 import "server-only"
 
-import type { SessionActor } from "../session-policy"
 import { createNormalizedMarketplaceV2 } from "./normalized-adapter"
-import { createPostgresMarketplaceDb, type MarketplacePrincipal } from "./normalized-db"
+import { createPostgresIdentitySync, createPostgresMarketplaceDb, type MarketplacePrincipal } from "./normalized-db"
+import { createNormalizedSessionStore, type NormalizedSessionStore } from "./normalized-session"
 import {
   MarketplaceAdapterConfigurationError,
   MarketplaceRefusalError,
@@ -18,6 +18,8 @@ import {
  *   LOGLOADS_NORMALIZED_DATABASE_URL=<restricted login role; see normalized-db.ts>
  *   LOGLOADS_NORMALIZED_IDENTITY_ISSUER=<enabled marketplace.trusted_identity_issuers row>
  *   LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE=<that row's expected_audience>
+ *   LOGLOADS_NORMALIZED_IDENTITY_SYNC_DATABASE_URL=<optional: a separate login role that can become only service_role,
+ *     to link a first sign-in through sync_verified_identity (#213); without it a sign-in not linked yet has no business>
  *
  * `VERCEL_ENV=production` always selects the pilot adapter, whatever the other settings say. A selected but
  * incomplete or unsafe configuration fails closed: it never falls back to the pilot store, because two stores
@@ -31,6 +33,7 @@ export interface MarketplaceV2AdapterEnvironment {
   LOGLOADS_NORMALIZED_DATABASE_URL?: string
   LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE?: string
   LOGLOADS_NORMALIZED_IDENTITY_ISSUER?: string
+  LOGLOADS_NORMALIZED_IDENTITY_SYNC_DATABASE_URL?: string
   VERCEL_ENV?: string
 }
 
@@ -40,6 +43,7 @@ function processEnvironment(): MarketplaceV2AdapterEnvironment {
     LOGLOADS_NORMALIZED_DATABASE_URL: process.env.LOGLOADS_NORMALIZED_DATABASE_URL,
     LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE: process.env.LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE,
     LOGLOADS_NORMALIZED_IDENTITY_ISSUER: process.env.LOGLOADS_NORMALIZED_IDENTITY_ISSUER,
+    LOGLOADS_NORMALIZED_IDENTITY_SYNC_DATABASE_URL: process.env.LOGLOADS_NORMALIZED_IDENTITY_SYNC_DATABASE_URL,
     VERCEL_ENV: process.env.VERCEL_ENV
   }
 }
@@ -65,41 +69,55 @@ export function marketplaceV2AdapterKind(environment: MarketplaceV2AdapterEnviro
 export interface NormalizedAdapterConfiguration {
   databaseUrl: string
   identity: { issuer: string; audience: string }
+  /** The identity-sync connection (#213), or `null` when first sign-ins are not linked. */
+  identitySyncDatabaseUrl: string | null
 }
 
 export function normalizedAdapterConfiguration(environment: MarketplaceV2AdapterEnvironment = processEnvironment()): NormalizedAdapterConfiguration {
   const databaseUrl = environment.LOGLOADS_NORMALIZED_DATABASE_URL?.trim() ?? ""
   const issuer = environment.LOGLOADS_NORMALIZED_IDENTITY_ISSUER?.trim() ?? ""
   const audience = environment.LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE?.trim() ?? ""
+  const identitySyncDatabaseUrl = environment.LOGLOADS_NORMALIZED_IDENTITY_SYNC_DATABASE_URL?.trim() ?? ""
   const missing = [
     !/^postgres(ql)?:\/\//.test(databaseUrl) && "LOGLOADS_NORMALIZED_DATABASE_URL",
     (issuer.length < 8 || issuer.length > 300) && "LOGLOADS_NORMALIZED_IDENTITY_ISSUER",
-    (audience.length < 1 || audience.length > 200) && "LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE"
+    (audience.length < 1 || audience.length > 200) && "LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE",
+    // Optional, but when set it must be its own PostgreSQL login: the marketplace role can never link identities.
+    identitySyncDatabaseUrl !== "" &&
+      (!/^postgres(ql)?:\/\//.test(identitySyncDatabaseUrl) || identitySyncDatabaseUrl === databaseUrl) &&
+      "LOGLOADS_NORMALIZED_IDENTITY_SYNC_DATABASE_URL"
   ].filter((name): name is string => typeof name === "string")
 
   if (missing.length > 0) {
     throw new MarketplaceAdapterConfigurationError(`The normalized marketplace adapter is selected but not configured: set ${missing.join(", ")}`)
   }
 
-  return { databaseUrl, identity: { audience, issuer } }
+  return { databaseUrl, identity: { audience, issuer }, identitySyncDatabaseUrl: identitySyncDatabaseUrl || null }
 }
 
 const SIGN_IN_AGAIN = "Sign in again to continue."
 
+/** The session's person in the normalized store: their `app_users.id` and the Clerk user id they resolve from. */
+export interface NormalizedSessionPrincipal {
+  userId: string
+  subject: string
+}
+
 /**
- * The database identity of a V2 viewer, from the server session only: the viewer must be the session's own user,
- * and the subject is the Clerk user id linked to that profile. A viewer object that does not match the session is
- * refused, so no caller can act for someone else by passing a different user id.
+ * The database identity of a V2 viewer, from the server session only: the viewer must be the session's own person
+ * in the normalized store (`v2-session.ts`, #213), and the subject is the Clerk user id that session resolves from.
+ * A viewer object that does not match the session is refused, so no caller can act for someone else by passing a
+ * different user id.
  */
 export function sessionPrincipalResolver(
   identity: NormalizedAdapterConfiguration["identity"],
-  loadActor: () => Promise<SessionActor | null> = async () => (await import("../session")).getSessionActor()
+  loadPrincipal: () => Promise<NormalizedSessionPrincipal | null> = async () => (await import("./v2-session")).normalizedSessionPrincipal()
 ): (viewer: MarketplaceV2Viewer) => Promise<MarketplacePrincipal> {
   return async (viewer) => {
-    const actor = await loadActor()
-    const subject = actor?.profile.clerkUserId?.trim() ?? ""
+    const session = await loadPrincipal()
+    const subject = session?.subject.trim() ?? ""
 
-    if (!actor || actor.profile.id !== viewer.userId || !subject) {
+    if (!session || session.userId !== viewer.userId || !subject) {
       throw new MarketplaceRefusalError(SIGN_IN_AGAIN, "42501")
     }
 
@@ -107,24 +125,37 @@ export function sessionPrincipalResolver(
   }
 }
 
-let normalizedInstance: { key: string; port: MarketplaceV2Port } | null = null
+let normalizedInstance: { key: string; port: MarketplaceV2Port; session: NormalizedSessionStore } | null = null
 
-/** The normalized adapter for the current configuration, created once per configuration. */
-function normalizedFromEnvironment(): MarketplaceV2Port {
+/** The normalized adapter and its session store for the current configuration, created once per configuration. */
+function normalizedInstanceFromEnvironment(): { port: MarketplaceV2Port; session: NormalizedSessionStore } {
   const configuration = normalizedAdapterConfiguration()
   const key = JSON.stringify(configuration)
 
   if (normalizedInstance?.key !== key) {
+    const db = createPostgresMarketplaceDb({ url: configuration.databaseUrl })
+    const sync = configuration.identitySyncDatabaseUrl ? createPostgresIdentitySync({ url: configuration.identitySyncDatabaseUrl }) : null
+
     normalizedInstance = {
       key,
-      port: createNormalizedMarketplaceV2({
-        db: createPostgresMarketplaceDb({ url: configuration.databaseUrl }),
-        principal: sessionPrincipalResolver(configuration.identity)
-      })
+      port: createNormalizedMarketplaceV2({ db, principal: sessionPrincipalResolver(configuration.identity) }),
+      session: createNormalizedSessionStore({ db, identity: configuration.identity, sync })
     }
   }
 
-  return normalizedInstance.port
+  return normalizedInstance
+}
+
+function normalizedFromEnvironment(): MarketplaceV2Port {
+  return normalizedInstanceFromEnvironment().port
+}
+
+/**
+ * Session memberships from the normalized store (#213), for `v2-session.ts`. Only for the normalized selection; an
+ * incomplete or unsafe configuration throws, like the adapter itself, and never falls back to the pilot store.
+ */
+export function normalizedSessionStore(): NormalizedSessionStore {
+  return normalizedInstanceFromEnvironment().session
 }
 
 export interface MarketplaceV2Selection {

@@ -254,8 +254,9 @@ Optional local keys go in `dev`: Clerk development keys, a dev CARTO key, Stripe
    (the code also ignores it when `VERCEL_ENV=production`). The V2 store stays the pilot store unless the
    normalized-V2 proof is scheduled on staging: then `LOGLOADS_MARKETPLACE_V2_ADAPTER=normalized`,
    `LOGLOADS_NORMALIZED_DATABASE_URL` (a restricted login role, secret), `LOGLOADS_NORMALIZED_IDENTITY_ISSUER` and
-   `LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE` go in `stg` only ([`SECURITY.md`](./SECURITY.md) §4.1). Never in `prd`;
-   the readiness check marks them INVALID there.
+   `LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE` go in `stg` only ([`SECURITY.md`](./SECURITY.md) §4.1), with the optional
+   `LOGLOADS_NORMALIZED_IDENTITY_SYNC_DATABASE_URL` (a second restricted login role, secret) to link first sign-ins.
+   Never in `prd`; the readiness check marks them INVALID there.
 6. **Cron:** `apps/web/vercel.json` schedules `/api/billing/cron` daily at 05:15 UTC (Hobby allows daily jobs,
    run within the hour). Vercel runs crons on Production deployments only and sends `CRON_SECRET` as a bearer
    token. The route stays dark while the historical gates are disabled.
@@ -395,6 +396,7 @@ the same list with every variable, including the ones set by Vercel or CI.
 | app | `LOGLOADS_NORMALIZED_DATABASE_URL` | — | normalized-V2 proof only | **never** | secret |
 | app | `LOGLOADS_NORMALIZED_IDENTITY_ISSUER` | — | normalized-V2 proof only | **never** | public |
 | app | `LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE` | — | normalized-V2 proof only | **never** | public |
+| app | `LOGLOADS_NORMALIZED_IDENTITY_SYNC_DATABASE_URL` | — | normalized-V2 proof only (optional) | **never** | secret |
 | session | `LOGLOADS_SESSION_SECRET` | — | yes | yes | secret |
 | supabase-api | `SUPABASE_URL` | — | yes | yes | public |
 | supabase-api | `SUPABASE_SERVICE_ROLE_KEY` | — | yes | yes | secret |

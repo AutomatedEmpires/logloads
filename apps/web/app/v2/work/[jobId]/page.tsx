@@ -13,8 +13,8 @@ import { PendingSubmitButton } from "@/components/v2/PendingSubmitButton"
 import { expressInterestAction } from "@/lib/marketplace-v2/actions"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
+import { getV2SessionActor } from "@/lib/marketplace-v2/v2-session"
 import { withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
-import { getSessionActor } from "@/lib/session"
 
 type Params = Promise<{ jobId: string }>
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
@@ -132,7 +132,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
     notFound()
   }
 
-  const actor = await getSessionActor()
+  const actor = await getV2SessionActor()
   const workspace = actor && !actor.workspaceSelectionInvalid ? actor.activeOrganization ?? null : null
   const viewer = actor && workspace ? { organizationId: workspace.id, userId: actor.profile.id } : null
   const access = viewer ? await pilotMarketplaceV2.viewerAccess(viewer).catch(() => null) : null

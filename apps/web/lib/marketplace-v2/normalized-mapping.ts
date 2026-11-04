@@ -7,6 +7,7 @@ import {
   haulerInterestReplyInputSchema,
   MARKETPLACE_CAPABILITIES,
   MARKETPLACE_EQUIPMENT_TYPES,
+  MARKETPLACE_MEMBER_ROLES,
   marketplaceContactPreferenceSchema,
   marketplaceInterestStatusSchema,
   marketplaceJobStatusSchema,
@@ -21,7 +22,8 @@ import {
   type MarketplaceInterestView,
   type MarketplaceJobDetailView,
   type MarketplaceJobDraft,
-  type MarketplaceJobFilters
+  type MarketplaceJobFilters,
+  type MarketplaceMemberRole
 } from "@logloads/contracts"
 
 import { MarketplaceRefusalError, MarketplaceStoreError, type MarketplaceV2ViewerAccess } from "./port"
@@ -248,6 +250,56 @@ export function viewerAccessFromRow(row: unknown): MarketplaceV2ViewerAccess {
   const access = viewerAccessRow(row)
 
   return { capabilities: access.capabilities.filter(isCapability), organizationName: access.organization_name }
+}
+
+/** The signed-in person in the normalized store (#213). `email` only once a provider verified it. */
+export interface NormalizedViewerPerson {
+  id: string
+  displayName: string
+  email: string | null
+}
+
+/** One of the person's active memberships of an active business, as `get_viewer_marketplace_access` reports it. */
+export interface NormalizedViewerMembership {
+  organizationId: string
+  organizationName: string
+  role: MarketplaceMemberRole
+  /** The business operates as a hauling business (it has a hauler profile). */
+  haulerProfile: boolean
+  capabilities: MarketplaceCapability[]
+}
+
+const personRowSchema = z.object({ display_name: z.string(), email: nullableText, id: uuid })
+const isMemberRole = (value: string): value is MarketplaceMemberRole => (MARKETPLACE_MEMBER_ROLES as readonly string[]).includes(value)
+
+/** `viewerSession()` rows → the person and their memberships, or `null` when the claims resolve to no one. */
+export function viewerSessionFromRows(rows: { person: unknown; memberships: unknown[] }): {
+  person: NormalizedViewerPerson
+  memberships: NormalizedViewerMembership[]
+} | null {
+  if (rows.person === null || rows.person === undefined) {
+    return null
+  }
+
+  const person = parseRow(personRowSchema, rows.person)
+  const memberships = rows.memberships.map((row): NormalizedViewerMembership => {
+    const access = viewerAccessRow(row)
+
+    if (!isMemberRole(access.role)) {
+      // A role outside the schema's four is a drift between the SQL and this adapter, never a guess.
+      throw new MarketplaceStoreError(undefined, "22000")
+    }
+
+    return {
+      capabilities: access.capabilities.filter(isCapability),
+      haulerProfile: access.hauler_profile,
+      organizationId: access.organization_id,
+      organizationName: access.organization_name,
+      role: access.role
+    }
+  })
+
+  return { memberships, person: { displayName: person.display_name, email: person.email?.trim() || null, id: person.id } }
 }
 
 const landingRowSchema = z.object({ area_label: nullableText, id: uuid, name: z.string(), state_code: nullableText })

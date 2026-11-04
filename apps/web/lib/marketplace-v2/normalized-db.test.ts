@@ -3,12 +3,15 @@ import { describe, expect, it, vi } from "vitest"
 vi.mock("server-only", () => ({}))
 
 import {
+  createPostgresIdentitySync,
   credentialProblems,
+  identitySyncCredentialProblems,
   MARKETPLACE_FUNCTIONS,
   marketplaceCallStatement,
   principalClaims,
   translateStoreError,
-  type CredentialFacts
+  type CredentialFacts,
+  type IdentitySyncCredentialFacts
 } from "./normalized-db"
 import { MarketplaceAdapterConfigurationError, MarketplaceRefusalError, MarketplaceStoreError } from "./port"
 
@@ -144,6 +147,96 @@ describe("credentialProblems", () => {
 
   it("refuses when the role cannot be inspected", () => {
     expect(credentialProblems(undefined)).not.toEqual([])
+  })
+})
+
+describe("identitySyncCredentialProblems (#213)", () => {
+  const safe: IdentitySyncCredentialFacts = {
+    bypass_rls: false,
+    can_become_service_role: true,
+    create_role: false,
+    inherits: false,
+    other_memberships: [],
+    owns_marketplace: false,
+    owns_marketplace_objects: false,
+    privileged_memberships: [],
+    replication: false,
+    superuser: false
+  }
+
+  it("accepts a NOINHERIT login role that can only become service_role", () => {
+    expect(identitySyncCredentialProblems(safe)).toEqual([])
+  })
+
+  it.each([
+    ["superuser", { superuser: true }, "superuser"],
+    ["BYPASSRLS", { bypass_rls: true }, "bypasses row-level security"],
+    ["an inheriting role", { inherits: true }, "NOINHERIT"],
+    ["a role creator", { create_role: true }, "create roles"],
+    ["a replication role", { replication: true }, "replication"],
+    ["the marketplace connection's role, which cannot become service_role", { can_become_service_role: false }, "cannot switch to the service_role role"],
+    ["a role that can also act as a person (anon or authenticated)", { other_memberships: ["anon", "authenticated"] }, "other than service_role (anon, authenticated)"],
+    ["a role whose other memberships could not be read", { other_memberships: undefined as never }, "other than service_role (unknown)"],
+    ["a member of a privileged role", { privileged_memberships: ["postgres"] }, "privileged role (postgres)"],
+    ["the schema owner", { owns_marketplace: true }, "owns the marketplace schema"],
+    ["an owner of objects in the schema", { owns_marketplace_objects: true }, "owns objects in the marketplace schema"]
+  ])("refuses %s", (_label, change, reason) => {
+    expect(identitySyncCredentialProblems({ ...safe, ...change }).join("; ")).toContain(reason)
+  })
+
+  it("refuses when the role cannot be inspected", () => {
+    expect(identitySyncCredentialProblems(null)).not.toEqual([])
+  })
+})
+
+describe("createPostgresIdentitySync (#213)", () => {
+  function fakeSql(facts: Partial<IdentitySyncCredentialFacts>, linkedUserId: unknown = "abababab-abab-4bab-8bab-abababababab") {
+    const statements: Array<{ text: string; values: unknown[] }> = []
+    const safe = { bypass_rls: false, can_become_service_role: true, create_role: false, inherits: false, other_memberships: [], owns_marketplace: false,
+      owns_marketplace_objects: false, privileged_memberships: [], replication: false, superuser: false }
+    const unsafe = async (text: string, values: unknown[] = []) => {
+      statements.push({ text, values })
+      if (text.includes("from pg_roles r")) return [{ row: { ...safe, ...facts } }]
+      if (text.includes("sync_verified_identity")) return [{ value: linkedUserId }]
+      return [{}]
+    }
+    const sql = { begin: async (_mode: string, work: (tx: unknown) => Promise<unknown>) => work({ unsafe }), unsafe }
+
+    return { sql: sql as never, statements }
+  }
+
+  const identity = { displayName: " Rae Ridge ", email: "rae@example.test", emailVerified: true, issuer: PRINCIPAL.issuer, subject: PRINCIPAL.subject }
+
+  it("calls only sync_verified_identity, as service_role, with the session's subject and a verified email", async () => {
+    const { sql, statements } = fakeSql({})
+
+    await expect(createPostgresIdentitySync({ sql }).link(identity)).resolves.toBe("abababab-abab-4bab-8bab-abababababab")
+
+    const [, setup, call] = statements
+    expect(setup?.values).toEqual(["service_role", JSON.stringify({ role: "service_role" })])
+    expect(call?.text).toMatch(/^select to_jsonb\(marketplace\.sync_verified_identity\(p_issuer => \$1::text, p_subject => \$2::text/)
+    expect(call?.values).toEqual([PRINCIPAL.issuer, PRINCIPAL.subject, "Rae Ridge", "rae@example.test", "true"])
+    expect(statements).toHaveLength(3)
+  })
+
+  it("never sends an email the provider did not verify", async () => {
+    const { sql, statements } = fakeSql({})
+
+    await createPostgresIdentitySync({ sql }).link({ ...identity, emailVerified: false })
+    expect(statements[2]?.values.slice(3)).toEqual([null, "false"])
+  })
+
+  it("refuses an unsafe login role before linking anyone", async () => {
+    const { sql, statements } = fakeSql({ other_memberships: ["authenticated"] })
+
+    await expect(createPostgresIdentitySync({ sql }).link(identity)).rejects.toThrow(MarketplaceAdapterConfigurationError)
+    expect(statements.some((statement) => statement.text.includes("sync_verified_identity"))).toBe(false)
+  })
+
+  it("treats an unexpected result as a store failure", async () => {
+    const { sql } = fakeSql({}, null)
+
+    await expect(createPostgresIdentitySync({ sql }).link(identity)).rejects.toBeInstanceOf(MarketplaceStoreError)
   })
 })
 

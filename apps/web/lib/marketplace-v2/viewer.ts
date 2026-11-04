@@ -2,9 +2,9 @@ import "server-only"
 
 import { redirect } from "next/navigation"
 
-import { getClerkUserId, getSessionActor, type SessionActor } from "../session"
 import { pilotMarketplaceV2 } from "./pilot-adapter"
 import type { MarketplaceV2Viewer, MarketplaceV2ViewerAccess } from "./port"
+import { getV2SessionActor, v2SignedInWithoutPerson, type V2SessionActor } from "./v2-session"
 
 /**
  * Points a refused viewer at the V2 business switcher (`/v2/switch`, #124). The account menu's "Switch business"
@@ -24,21 +24,21 @@ export const NO_BUSINESS_PROFILE_REFUSAL =
   "Your sign-in is not linked to a LogLoads business yet. Setting up a business is not available in this preview yet."
 
 /**
- * The signed-in actor for a V2 page. No session at all goes to sign-in and comes back to `nextPath`.
- * A sign-in that has no LogLoads profile yet gets a refusal instead of the shared guard's redirect to
- * the legacy onboarding flow, which ends in a legacy cockpit.
+ * The signed-in actor for a V2 page, from the V2 session (the selected store's memberships, #213). No session at
+ * all goes to sign-in and comes back to `nextPath`. A sign-in that has no LogLoads profile yet gets a refusal
+ * instead of the shared guard's redirect to the legacy onboarding flow, which ends in a legacy cockpit.
  */
 export async function resolveV2Actor(nextPath: string): Promise<
-  | { ok: true; actor: SessionActor }
+  | { ok: true; actor: V2SessionActor }
   | { ok: false; refusal: string }
 > {
-  const actor = await getSessionActor()
+  const actor = await getV2SessionActor()
 
   if (actor) {
     return { actor, ok: true }
   }
 
-  if (await getClerkUserId()) {
+  if (await v2SignedInWithoutPerson()) {
     return { ok: false, refusal: NO_BUSINESS_PROFILE_REFUSAL }
   }
 

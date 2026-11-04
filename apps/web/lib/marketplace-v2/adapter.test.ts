@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest"
 
 vi.mock("server-only", () => ({}))
 
-import type { SessionActor } from "../session-policy"
 import {
   marketplaceV2AdapterKind,
   normalizedAdapterConfiguration,
@@ -66,7 +65,24 @@ describe("normalizedAdapterConfiguration", () => {
   }
 
   it("reads the connection and the identity issuer and audience", () => {
-    expect(normalizedAdapterConfiguration(complete)).toEqual({ databaseUrl: complete.LOGLOADS_NORMALIZED_DATABASE_URL, identity: IDENTITY })
+    expect(normalizedAdapterConfiguration(complete)).toEqual({
+      databaseUrl: complete.LOGLOADS_NORMALIZED_DATABASE_URL,
+      identity: IDENTITY,
+      identitySyncDatabaseUrl: null
+    })
+  })
+
+  it("reads an optional identity-sync connection, which must be its own login (#213)", () => {
+    const sync = "postgresql://identity_sync_role@127.0.0.1:5432/example_marker_db"
+
+    expect(normalizedAdapterConfiguration({ ...complete, LOGLOADS_NORMALIZED_IDENTITY_SYNC_DATABASE_URL: ` ${sync} ` }).identitySyncDatabaseUrl).toBe(sync)
+    expect(normalizedAdapterConfiguration({ ...complete, LOGLOADS_NORMALIZED_IDENTITY_SYNC_DATABASE_URL: " " }).identitySyncDatabaseUrl).toBeNull()
+    expect(() => normalizedAdapterConfiguration({ ...complete, LOGLOADS_NORMALIZED_IDENTITY_SYNC_DATABASE_URL: "mysql://nope" }))
+      .toThrow(/set LOGLOADS_NORMALIZED_IDENTITY_SYNC_DATABASE_URL$/)
+    expect(() => normalizedAdapterConfiguration({
+      ...complete,
+      LOGLOADS_NORMALIZED_IDENTITY_SYNC_DATABASE_URL: complete.LOGLOADS_NORMALIZED_DATABASE_URL
+    })).toThrow(MarketplaceAdapterConfigurationError)
   })
 
   it("names every missing setting and never prints a value", () => {
@@ -138,24 +154,23 @@ describe("selectMarketplaceV2Port", () => {
 })
 
 describe("sessionPrincipalResolver", () => {
-  function actor(profile: Partial<SessionActor["profile"]>): SessionActor {
-    return { profile: { clerkUserId: "user_test_clerk_subject", id: VIEWER.userId, ...profile } } as SessionActor
-  }
+  // The normalized V2 session's person (#213): their app_users id and the Clerk user id they resolve from.
+  const session = (overrides: { userId?: string; subject?: string } = {}) => ({ subject: "user_test_clerk_subject", userId: VIEWER.userId, ...overrides })
 
   it("uses the session's Clerk user id with the configured issuer and audience", async () => {
-    const resolve = sessionPrincipalResolver(IDENTITY, async () => actor({}))
+    const resolve = sessionPrincipalResolver(IDENTITY, async () => session())
 
     await expect(resolve(VIEWER)).resolves.toEqual({ ...IDENTITY, subject: "user_test_clerk_subject" })
   })
 
-  it("refuses a viewer that is not the session's own user", async () => {
-    const resolve = sessionPrincipalResolver(IDENTITY, async () => actor({ id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" }))
+  it("refuses a viewer that is not the session's own person", async () => {
+    const resolve = sessionPrincipalResolver(IDENTITY, async () => session({ userId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" }))
 
     await expect(resolve(VIEWER)).rejects.toBeInstanceOf(MarketplaceRefusalError)
   })
 
-  it("refuses when there is no session or no linked Clerk user", async () => {
+  it("refuses when there is no session or no Clerk user id", async () => {
     await expect(sessionPrincipalResolver(IDENTITY, async () => null)(VIEWER)).rejects.toBeInstanceOf(MarketplaceRefusalError)
-    await expect(sessionPrincipalResolver(IDENTITY, async () => actor({ clerkUserId: " " }))(VIEWER)).rejects.toBeInstanceOf(MarketplaceRefusalError)
+    await expect(sessionPrincipalResolver(IDENTITY, async () => session({ subject: " " }))(VIEWER)).rejects.toBeInstanceOf(MarketplaceRefusalError)
   })
 })
