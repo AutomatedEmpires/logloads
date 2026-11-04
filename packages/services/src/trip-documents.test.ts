@@ -14,6 +14,12 @@ const HOST_OWNER = "22222222-2222-4222-8222-222222222223"
 const DRIVER_PROFILE = "44444444-4444-4444-8444-444444444441"
 const TRUCK_PROFILE = "77777777-7777-4777-8777-777777777771"
 const TRAILER_PROFILE = "88888888-8888-4888-8888-888888888881"
+/** Obviously fake object names in the lowercase UUID shape the upload signer mints. */
+const MINTED_OBJECT_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeee1"
+const OBJECT_ID_FOR = {
+  photo: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeee3",
+  scale_ticket: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeee2"
+} as const
 
 const LOAD_DATE = "2026-06-25"
 
@@ -291,6 +297,32 @@ describe("attaching trip documents", () => {
     ).toThrow(/does not belong to this trip/)
   })
 
+  // HF-07 (#187): the service re-checks the exact `<prefix>/uploads/<uuid>` shape the
+  // signer mints. Each of these starts with this trip's own uploads prefix.
+  it.each([
+    ["a parent-directory traversal", (prefix: string) => `${prefix}/uploads/../../other-trip/uploads/${MINTED_OBJECT_ID}`],
+    ["a nested object below an upload", (prefix: string) => `${prefix}/uploads/${MINTED_OBJECT_ID}/extra`],
+    ["an encoded separator", (prefix: string) => `${prefix}/uploads/..%2F${MINTED_OBJECT_ID}`],
+    ["an object name the signer never mints", (prefix: string) => `${prefix}/uploads/abc`]
+  ])("refuses %s under the trip's own uploads prefix", (_label, publicIdFor) => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const { trip } = bookHaul(services)
+
+    expect(() =>
+      services.attachTripDocument({
+        actorUserId: HAULER_DRIVER_ACTOR,
+        filename: "scale-ticket.jpg",
+        media: stubTripDocumentMedia(trip.id, {
+          publicId: publicIdFor(tripDocumentPublicIdPrefix(trip.id))
+        }),
+        organizationId: HAULER_ORG,
+        tripId: trip.id,
+        type: "scale_ticket"
+      })
+    ).toThrow(/does not belong to this trip/)
+    expect(services.state.tripDocuments.filter((document) => document.tripId === trip.id)).toHaveLength(0)
+  })
+
   it("lets the posting organization file proof for a haul it posted", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
     const { trip } = bookHaul(services)
@@ -345,8 +377,9 @@ describe("attaching trip documents", () => {
       const document = services.attachTripDocument({
         actorUserId: HAULER_DRIVER_ACTOR,
         filename: `${type}.jpg`,
+        // One distinct minted object per proof, so neither collapses into the other.
         media: stubTripDocumentMedia(trip.id, {
-          publicId: `${tripDocumentPublicIdPrefix(trip.id)}/uploads/${type}-asset`
+          publicId: `${tripDocumentPublicIdPrefix(trip.id)}/uploads/${OBJECT_ID_FOR[type]}`
         }),
         organizationId: HAULER_ORG,
         tripId: trip.id,

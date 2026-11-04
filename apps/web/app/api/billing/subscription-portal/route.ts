@@ -13,6 +13,7 @@ import {
   resolveSubscriptionStripe,
   verifyExpectedStripeAccount
 } from "@/lib/subscription-stripe"
+import { readJsonBody } from "@/lib/request-body"
 
 const requestSchema = z.object({
   organizationSubscriptionId: z.string().uuid()
@@ -46,7 +47,7 @@ function billingReturnUrl(path: "/fleet/billing" | "/host/billing"): string {
  */
 export async function POST(request: Request) {
   try {
-    const { organizationSubscriptionId } = requestSchema.parse(await request.json())
+    const { organizationSubscriptionId } = requestSchema.parse(await readJsonBody(request))
     const actor = await requireApiActor()
     const membership = actor.actor.memberships.find(
       (candidate) => candidate.organization.id === actor.organizationId

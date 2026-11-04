@@ -23,6 +23,7 @@ import {
   resolveSubscriptionStripe,
   verifyExpectedStripeAccount
 } from "@/lib/subscription-stripe"
+import { readJsonBody } from "@/lib/request-body"
 
 const requestSchema = z.discriminatedUnion("action", [
   z.object({
@@ -86,7 +87,7 @@ export async function POST(request: Request) {
 
     await enforceApiRateLimit("billing-internal-smoke", actorUserId, 4, 86_400_000)
 
-    const input = requestSchema.parse(await request.json())
+    const input = requestSchema.parse(await readJsonBody(request))
 
     if (input.action === "charge") {
       const authorization = internalBillingSmokeAuthorization(

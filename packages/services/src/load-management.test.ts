@@ -1,4 +1,5 @@
 import {
+  LOAD_POSTING_TITLE_MAX_LENGTH,
   loaderProfileSchema,
   organizationMembershipSchema,
   userSchema
@@ -735,5 +736,48 @@ describe("verified-network visibility", () => {
     expect(
       services.listVisibleLoadsForOrganization(HOST_ORG).some((candidate) => candidate.id === load.id)
     ).toBe(true)
+  })
+})
+
+describe("load posting title length (#187)", () => {
+  it("refuses a new posting whose title is over the cap, and leaves nothing behind", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const before = services.state.loadPostings.length
+
+    expect(() =>
+      publishAsOwner(services, "open", { title: "T".repeat(LOAD_POSTING_TITLE_MAX_LENGTH + 1) })
+    ).toThrow(/Keep the work title to 140 characters or fewer/)
+    expect(services.state.loadPostings).toHaveLength(before)
+
+    expect(publishAsOwner(services, "open", { title: "T".repeat(LOAD_POSTING_TITLE_MAX_LENGTH) }).title).toHaveLength(
+      LOAD_POSTING_TITLE_MAX_LENGTH
+    )
+  })
+
+  it("keeps a stored draft whose title predates the cap usable: it still publishes and closes", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const draft = publishAsOwner(services, "draft")
+    const legacyTitle = "T".repeat(LOAD_POSTING_TITLE_MAX_LENGTH * 4)
+
+    // A posting written before the cap existed.
+    services.state.loadPostings = services.state.loadPostings.map((candidate) =>
+      candidate.id === draft.id ? { ...candidate, title: legacyTitle } : candidate
+    )
+
+    const opened = services.openDraftLoadPosting({
+      actorUserId: HOST_OWNER,
+      loadPostingId: draft.id,
+      organizationId: HOST_ORG
+    })
+
+    expect(opened.title).toBe(legacyTitle)
+    expect(
+      services.closeLoadPosting({
+        actorUserId: HOST_OWNER,
+        loadPostingId: draft.id,
+        organizationId: HOST_ORG,
+        reason: "Weather closed the block."
+      }).title
+    ).toBe(legacyTitle)
   })
 })
