@@ -54,9 +54,9 @@
         "lcpMs": 6000,
         "tbtMs": 300,
         "cls": 0.1,
-        "transferKiB": 635,
-        "requests": 42,
-        "scriptKiB": 245,
+        "transferKiB": 665,
+        "requests": 44,
+        "scriptKiB": 270,
         "thirdPartyRequests": 0
       },
       "target": {
