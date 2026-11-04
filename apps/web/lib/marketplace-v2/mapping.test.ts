@@ -1,11 +1,11 @@
-import { MARKETPLACE_VERIFICATION_SCOPES } from "@logloads/contracts"
+import { MARKETPLACE_EQUIPMENT_TYPES, MARKETPLACE_VERIFICATION_SCOPES } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import { marketplaceJobStatus } from "@logloads/services"
 import { describe, expect, it } from "vitest"
 
 import { buildNetworkView } from "../network"
 import { marketplaceV2Enabled } from "./flag"
-import { pilotPosterVerification, toInterestView, toJobDetailView } from "./mapping"
+import { pilotJobEquipment, pilotPosterVerification, toInterestView, toJobDetailView } from "./mapping"
 
 // Seed fixtures are dated June 2026; pin the clock inside that window.
 const AT = new Date("2026-06-05T18:00:00.000Z")
@@ -133,6 +133,27 @@ describe("Marketplace V2 public job mapping", () => {
       expect(JSON.stringify(point.lat)).toMatch(/^-?\d+(\.\d)?$/)
       expect(JSON.stringify(point.lng)).toMatch(/^-?\d+(\.\d)?$/)
     }
+  })
+
+  it("lists equipment as taxonomy codes only, and other pilot tags as requirements in words (#129)", () => {
+    const { jobs, state } = publicJobs()
+    const codes = new Set<string>(MARKETPLACE_EQUIPMENT_TYPES.map((type) => type.code))
+
+    for (const job of jobs) {
+      for (const code of job.equipment) expect(codes.has(code)).toBe(true)
+      for (const requirement of job.publicAccessRequirements) expect(requirement).toMatch(/^[A-Z][^_-]*$/)
+    }
+
+    const saw = jobs.find((job) => job.title === "Oak saw-log morning run")
+    expect(saw?.equipment).toEqual(["pole_trailer"])
+    expect(state.loadPostings.some((load) => load.equipmentRequirements.includes("chains"))).toBe(true)
+  })
+
+  it("splits pilot tags without guessing a code for an unknown one", () => {
+    expect(pilotJobEquipment(["pole-trailer", "chip-box", "chains", "pole_trailer", "snow kit"])).toEqual({
+      codes: ["pole_trailer", "chip_van"],
+      otherRequirements: ["Chains", "Snow kit"]
+    })
   })
 
   it("marks only active jobs as accepting interest", () => {

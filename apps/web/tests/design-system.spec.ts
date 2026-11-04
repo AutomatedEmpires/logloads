@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Browser, type Locator, type Page } from "@playwright/test"
 
 /**
  * DS-05 (#148): responsive, keyboard and style-isolation regressions for the V2 design system, run against the
@@ -9,10 +9,17 @@ import { expect, test, type Page } from "@playwright/test"
  *
  * Writes: the conversation cases need an inquiry, and the seed has none. New River Hauling (a hauling business
  * with no trucks listed) expresses interest in the one public job, North Pine Logging's, and replies on it. Nothing
- * else in the suite writes, and nothing declines or withdraws; the no-JavaScript interest case posts once with a date
- * range the server refuses, which writes nothing. The equipment case signs in as Granite Creek Hauling (equipment
- * listed) and submits one offer above its listing, which the server refuses without writing. When no job accepts
- * interest in the shared CI state those cases are skipped with that reason, not passed.
+ * declines or withdraws; the no-JavaScript interest case posts once with a date range the server refuses, which
+ * writes nothing. The equipment case signs in as Granite Creek Hauling (equipment listed) and submits one offer
+ * above its listing, which the server refuses without writing. When no job accepts interest in the shared CI state
+ * those cases are skipped with that reason, not passed.
+ *
+ * The business-switching case (#124 criterion 8, last in the file) needs a dual-membership account, which the seed
+ * does not have. Through the app's own pages it makes Maya Mills (North Pine Logging driver) a Summit Ridge Timber
+ * dispatcher, the same invitation the pilot journey invitations.spec.ts records, unless she already is one; Summit's
+ * owner then removes that membership, and the case ends by inviting her back so she holds it again. Every step is
+ * idempotent, so a retry or a state where the pilot journeys already seated her starts from the same place. Nothing
+ * else in the suite writes, and those writes touch only Maya's Summit membership and Summit's invitations.
  */
 
 const MATRIX = [1440, 1280, 1024, 768, 390] as const
@@ -57,9 +64,36 @@ async function signIn(page: Page, email: string) {
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"))
 }
 
+/**
+ * Gives the browser up to 15 s to finish the redirects that sign-in and accepting an invitation end with, so the
+ * caller's next navigation does not race them. While a loading boundary sat above every route (before #174), those
+ * redirects landed in the browser and a navigation started meanwhile was aborted (net::ERR_ABORTED, seen in CI).
+ * It never fails: every caller opens the page it checks next with a full navigation.
+ */
+async function settleOnV2(page: Page) {
+  await page
+    .waitForURL((url) => url.pathname.startsWith("/v2/") && url.pathname !== "/v2/landing", { timeout: 15_000 })
+    .catch(() => undefined)
+}
+
+async function signInToV2(page: Page, email: string) {
+  await signIn(page, email)
+  await settleOnV2(page)
+}
+
 const topNavigation = (page: Page) => page.locator(".ll-app > header nav[aria-label='Main']")
 const bottomTabs = (page: Page) => page.locator(".ll-app > nav[aria-label='Main']")
+/** The account menu at the end of the top bar (#124): a <details> disclosure whose <summary> is the trigger. */
+const accountMenu = (page: Page) => page.locator(".ll-app > header details")
+const accountTrigger = (page: Page) => accountMenu(page).locator("summary")
+/** The trigger's tab-order key (its first text line; the "Preview" tag follows on its own line). */
+const ACCOUNT_KEY = "Account"
+const PREVIEW_NOTICE = "nothing here dispatches trucks, records loads or charges a fee"
 const jobRows = (page: Page) => page.locator("[data-ds-page] ul[aria-label='Jobs'] > li")
+/** Find work's summary bar (#129): its text states the search, and it opens the filter sheet. */
+const findWorkSummary = (page: Page) => page.locator("#work-filters-summary")
+const detailPanel = (page: Page) => page.locator("[data-ds-page='find-work'] aside[aria-label='Job details']")
+const jobSheet = (page: Page) => page.getByRole("dialog", { name: "Job details" })
 
 /** Seeded accounts for the conversation cases (packages/db seed). */
 const NEW_RIVER = { email: "emptyfleet@logloads.example", name: "New River Hauling" } // hauling business, no trucks listed
@@ -317,7 +351,7 @@ test.describe("responsive matrix: /v2/work (visitor)", () => {
         expect(main?.haloShadows, "#main draws no focus halo").toEqual([])
 
         await page.keyboard.press("Tab")
-        await expect(page.locator("#work-q")).toBeFocused()
+        await expect(page.locator("#work-filters-summary")).toBeFocused()
       })
 
       test("no horizontal overflow with web fonts blocked (fallback stack)", async ({ page }) => {
@@ -326,7 +360,7 @@ test.describe("responsive matrix: /v2/work (visitor)", () => {
 
         await expectNoHorizontalOverflow(page)
         await expect(page.getByRole("heading", { level: 1, name: "Find hauling work" })).toBeVisible()
-        await expect(page.getByRole("button", { name: "Apply" })).toBeEnabled()
+        await expect(findWorkSummary(page)).toBeEnabled()
       })
     })
   }
@@ -553,6 +587,90 @@ test.describe("capability navigation (#124)", () => {
   }
 })
 
+/** The shell's chrome above the content: the top of #main, which nothing but the top bar precedes (#124 criterion 6). */
+async function chromeHeight(page: Page): Promise<number> {
+  return page.locator(".ll-app #main").evaluate((main) => main.getBoundingClientRect().top + window.scrollY)
+}
+
+test.describe("account menu (#124 criterion 7)", () => {
+  for (const width of [1280, 390]) {
+    test(`visitor at ${width} px: no preview banner; the notice is in the account menu, which opens and closes from the keyboard`, async ({ page }) => {
+      await page.setViewportSize(viewportFor(width))
+      await openV2(page, "/v2/work")
+
+      // No banner: the top bar follows the skip link directly, and the notice is not shown until the menu opens.
+      expect(await page.locator(".ll-app > header").evaluate((header) => header.previousElementSibling?.tagName)).toBe("A")
+      await expect(page.getByText(PREVIEW_NOTICE)).toBeHidden()
+      await expect(accountTrigger(page)).toBeVisible()
+      await expect(accountTrigger(page)).toContainText("Preview")
+      if (width < BP_LG) expect(await chromeHeight(page), "chrome above the content at 390 px").toBeLessThanOrEqual(120)
+
+      // Reached by Tab; Enter opens it. The trigger and the panel's link draw the design-system ring.
+      for (let index = 0; index < 10 && !(await accountTrigger(page).evaluate((trigger) => trigger === document.activeElement)); index += 1) {
+        await page.keyboard.press("Tab")
+      }
+      await expect(accountTrigger(page)).toBeFocused()
+      expectDesignSystemRing((await focusStop(page))!)
+      await page.keyboard.press("Enter")
+      await expect(accountMenu(page)).toHaveAttribute("open", "")
+      const notice = accountMenu(page).getByRole("note", { name: "Marketplace V2 development preview" })
+      await expect(notice).toBeVisible()
+      await expect(notice).toContainText(PREVIEW_NOTICE)
+      await expect(accountMenu(page).getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/sign-in?next=%2Fv2%2Fwork")
+      await expectNoHorizontalOverflow(page)
+      await expectNoSeriousAxeViolations(page)
+
+      // Escape closes it and returns focus to the trigger.
+      await page.keyboard.press("Escape")
+      await expect(accountMenu(page)).not.toHaveAttribute("open", "")
+      await expect(accountTrigger(page)).toBeFocused()
+
+      // Tab walks into the panel's link, and tabbing past the panel closes it.
+      await page.keyboard.press("Enter")
+      await page.keyboard.press("Tab")
+      await expect(accountMenu(page).getByRole("link", { name: "Sign in" })).toBeFocused()
+      expectDesignSystemRing((await focusStop(page))!)
+      await page.keyboard.press("Tab")
+      await expect(accountMenu(page)).not.toHaveAttribute("open", "")
+
+      // A pointer press outside closes it too (here in the page's left gutter, which the panel never covers).
+      await accountTrigger(page).click()
+      await expect(notice).toBeVisible()
+      await page.mouse.click(6, 400)
+      await expect(accountMenu(page)).not.toHaveAttribute("open", "")
+    })
+  }
+
+  test("signed in: the person, Switch business and Sign out, with no serious axe violations at 1280 and 390 px", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1280))
+    await signInToV2(page, "hank@northpine.example")
+    await openV2(page, "/v2/work")
+
+    for (const width of [1280, 390]) {
+      await page.setViewportSize(viewportFor(width))
+      if (width < BP_LG) expect(await chromeHeight(page), "chrome above the content at 390 px").toBeLessThanOrEqual(120)
+      await accountTrigger(page).click()
+      await expect(accountMenu(page)).toContainText("Hank Hauler")
+      await expect(accountMenu(page)).toContainText("hank@northpine.example")
+      await expect(accountMenu(page).getByRole("note")).toContainText(PREVIEW_NOTICE)
+      await expect(accountMenu(page).getByRole("link", { name: "Switch business" })).toHaveAttribute("href", "/v2/switch")
+      await expect(accountMenu(page).getByRole("button", { name: "Sign out" })).toBeVisible()
+      await expectNoHorizontalOverflow(page)
+      await expectNoSeriousAxeViolations(page)
+      await page.keyboard.press("Escape")
+    }
+
+    // Sign out ends the session: the public home, then a V2 page offers Sign in and no business.
+    await accountTrigger(page).click()
+    await accountMenu(page).getByRole("button", { name: "Sign out" }).click()
+    await page.waitForURL((url) => url.pathname === "/")
+    await openV2(page, "/v2/work")
+    await expect(page.getByRole("link", { name: /^Acting as/ })).toHaveCount(0)
+    await accountTrigger(page).click()
+    await expect(accountMenu(page).getByRole("link", { name: "Sign in" })).toBeVisible()
+  })
+})
+
 test.describe("keyboard: /v2/work", () => {
   for (const width of [1280, 390]) {
     test(`tab order and the design-system focus ring at ${width} px`, async ({ page }) => {
@@ -570,12 +688,15 @@ test.describe("keyboard: /v2/work", () => {
         "Skip to main content",
         "LogLoads home",
         ...navigation,
-        "#work-q",
-        "#work-equipment",
-        "#work-pay",
-        "Apply",
-        "#work-all",
+        // The account menu's trigger ends the top bar (#124); its panel is closed, so nothing inside it is a stop.
+        ACCOUNT_KEY,
+        // The summary bar opens the filter sheet (#129); the fields themselves are inside it.
+        "#work-filters-summary",
+        // The order applies on change; it is offered once there is more than one job to order.
+        ...(rowTitles.length > 1 ? ["#work-sort"] : []),
         "Show map",
+        // Density is a desktop view control (bp-lg and up).
+        ...(width >= BP_LG ? ["Comfortable", "Compact"] : []),
         // One stop per job row (its title link), in list order; there is no Save button on this page yet.
         ...rowTitles,
         ...tabs
@@ -586,12 +707,12 @@ test.describe("keyboard: /v2/work", () => {
     })
   }
 
-  test("a signed-in hauler's chrome: navigation and business switcher keep the design-system ring", async ({ page }) => {
+  test("a signed-in hauler's chrome: navigation, business switcher and account menu keep the design-system ring", async ({ page }) => {
     await page.setViewportSize(viewportFor(1280))
     await signIn(page, "hank@northpine.example")
     await openV2(page, "/v2/work")
 
-    const stops = await tabThrough(page, 6)
+    const stops = await tabThrough(page, 7)
     const chrome = stops.filter((stop) => stop.where === "chrome")
 
     expect(chrome.map((stop) => stop.key)).toEqual([
@@ -601,22 +722,25 @@ test.describe("keyboard: /v2/work", () => {
       "My inquiries",
       // The switcher's first text line; its full accessible name (visible text plus hidden words) is asserted in the
       // capability-navigation tests.
-      "Acting as"
+      "Acting as",
+      ACCOUNT_KEY
     ])
     for (const stop of chrome) expectDesignSystemRing(stop)
   })
 
-  test("Enter on a job row's link opens the job (below 1200 px it navigates)", async ({ page }) => {
+  test("Enter on a job row's link opens the job: in a sheet below 1200 px, and the link still leads to its page", async ({ page }) => {
     await page.setViewportSize(viewportFor(390))
     await openFindWorkWithRows(page)
 
     const link = jobRows(page).first().locator("h3 a")
     const href = await link.getAttribute("href")
+    const title = (await link.innerText()).trim()
     expect(href).toMatch(/^\/v2\/work\/[^/]+$/)
 
     await link.focus()
     await page.keyboard.press("Enter")
-    await expect(page).toHaveURL(new RegExp(`${href}$`))
+    await expect(jobSheet(page).getByRole("heading", { level: 2, name: title })).toBeVisible()
+    await expect(page).toHaveURL(/\/v2\/work\?(.*&)?job=/)
   })
 })
 
@@ -716,15 +840,20 @@ test.describe("job rows: semantic structure (/v2/work)", () => {
     test("the filter form is a GET form the server answers", async ({ page }) => {
       await openV2(page, "/v2/work?all=1")
       const title = (await jobRows(page).first().locator("h3 a").innerText()).trim()
-      const filters = page.getByRole("search", { name: "Filter jobs" })
-      const search = filters.getByLabel("Search")
+      // Unhydrated, the summary bar (#129) is a native <details> whose body is the same GET form as the sheet's.
+      const summary = findWorkSummary(page)
+      const filters = page.locator("form[role='search']:has(#work-q)")
+      const search = filters.getByRole("searchbox", { name: "Keywords (optional)" })
 
       // The page rendered the box from the query, so the next search still includes every listing.
+      await summary.click()
       await expect(filters.getByRole("checkbox", { name: "Include filled, paused and closed jobs" })).toBeChecked()
 
       await search.fill(title)
       await filters.getByRole("button", { name: "Apply" }).click()
       await page.waitForURL((url) => url.searchParams.get("q") === title && url.searchParams.get("all") === "1")
+      // The new page's <details> starts closed, and getByRole skips what a closed <details> hides.
+      await summary.click()
       await expect(search).toHaveValue(title)
       await expect(jobRows(page).filter({ hasText: title }).first()).toBeVisible()
 
@@ -732,8 +861,8 @@ test.describe("job rows: semantic structure (/v2/work)", () => {
       await filters.getByRole("button", { name: "Apply" }).click()
       await page.waitForURL((url) => url.searchParams.get("q") === "no listing matches this zqxv")
       await expect(jobRows(page)).toHaveCount(0)
-      await expect(page.getByText("No jobs match right now")).toBeVisible()
-      await expect(page.getByRole("link", { name: "Clear filters" })).toHaveAttribute("href", "/v2/work")
+      await expect(page.getByText("No jobs match your search")).toBeVisible()
+      await expect(page.getByRole("link", { name: "Clear keywords" })).toHaveAttribute("href", "/v2/work?all=1")
     })
 
     test.fixme("a missing job's not-found page shows its message", async ({ page }) => {
@@ -1005,28 +1134,164 @@ test.describe("accessibility audit (axe)", () => {
   }
 })
 
-test.describe("waiting on page migrations", () => {
-  test.fixme(`DetailPanel shows beside the job list at ${BP_XL} px and up, and never below`, async () => {
-    // No V2 page renders ContentGrid layout="list-detail" with a DetailPanel yet; /v2/work is layout="single".
-    // When the find-work page adopts list-detail (#147 follow-up): at 1440 and 1280 the panel (an <aside> with the
-    // job's label) is visible beside the list; at 1024, 768 and 390 it is absent and no overflow appears.
+/**
+ * Find work as list and detail (#129; 06_DESIGN_SYSTEM.md §4–5 and §9 "Job list"). With scripts a row's link selects
+ * the job instead of leaving the page: beside the list in the DetailPanel at bp-xl and up, in a Dialog sheet below.
+ */
+test.describe("find work: list and detail (#129)", () => {
+  /** Selects the first row at 1440 px and returns the selected search's URL and the row's title. */
+  async function selectFirstRow(page: Page): Promise<{ title: string; url: string }> {
+    await page.setViewportSize(viewportFor(1440))
+    await openFindWorkWithRows(page)
+    const link = jobRows(page).first().locator("h3 a")
+    const title = (await link.innerText()).trim()
+
+    await link.click()
+    await expect(detailPanel(page).getByRole("heading", { level: 2, name: title })).toBeVisible()
+    return { title, url: page.url() }
+  }
+
+  test(`DetailPanel shows beside the job list at ${BP_XL} px and up, and never below`, async ({ page }) => {
+    const { url } = await selectFirstRow(page)
+
+    for (const width of MATRIX) {
+      await page.setViewportSize(viewportFor(width))
+      await openV2(page, url)
+      await expectNoHorizontalOverflow(page)
+
+      if (width >= BP_XL) {
+        await expect(detailPanel(page), `${width} px: the panel is shown`).toBeVisible()
+        const list = await page.locator("[data-ds-page] ul[aria-label='Jobs']").boundingBox()
+        const panel = await detailPanel(page).boundingBox()
+        expect(panel!.x, `${width} px: the panel is beside the list`).toBeGreaterThanOrEqual(list!.x + list!.width - 1)
+      } else {
+        await expect(detailPanel(page), `${width} px: no panel below ${BP_XL} px`).toBeHidden()
+        await expect(page.getByRole("dialog")).toHaveCount(0)
+      }
+    }
   })
 
-  test.fixme("selecting a job row updates the DetailPanel", async () => {
-    // Needs the list-detail find-work page: click and Enter on a row link set aria-current="true" on that link and
-    // show the same job in the panel, without navigating.
+  test("selecting a job row updates the DetailPanel", async ({ page }) => {
+    const { title } = await selectFirstRow(page)
+    const first = jobRows(page).first().locator("h3 a")
+
+    // The row is current and the page did not navigate away.
+    await expect(first).toHaveAttribute("aria-current", "true")
+    await expect(first).toHaveAttribute("aria-controls", "find-work-detail")
+    await expect(page).toHaveURL(/\/v2\/work\?(.*&)?job=/)
+    await expect(detailPanel(page).locator("article h2")).toHaveText(title)
+
+    // Enter on another row moves the selection and the panel with it.
+    if ((await jobRows(page).count()) > 1) {
+      const second = jobRows(page).nth(1).locator("h3 a")
+      const secondTitle = (await second.innerText()).trim()
+      await second.focus()
+      await page.keyboard.press("Enter")
+      await expect(detailPanel(page).locator("article h2")).toHaveText(secondTitle)
+      await expect(second).toHaveAttribute("aria-current", "true")
+      await expect(first).not.toHaveAttribute("aria-current", "true")
+      await expect(second).toBeFocused()
+    }
+
+    // Close clears the selection.
+    await detailPanel(page).getByRole("button", { name: /^Close/ }).click()
+    await expect(detailPanel(page)).toHaveCount(0)
+    await expect(page).not.toHaveURL(/[?&]job=/)
+    await expect(page.locator("[data-ds-page] ul[aria-label='Jobs'] a[aria-current='true']")).toHaveCount(0)
   })
 
-  test.fixme(`below ${BP_XL} px a row opens a dialog; Escape closes it and focus returns to the row link`, async () => {
-    // Needs the list-detail find-work page and its Dialog sheet (#146 Gate 3): focus moves into the dialog, which
-    // carries ll-theme; Escape, Close and Cancel each close it and return focus to the opener.
+  for (const width of [1024, 390]) {
+    test(`below ${BP_XL} px a row opens a dialog; Escape closes it and focus returns to the row link (${width} px)`, async ({ page }) => {
+      await page.setViewportSize(viewportFor(width))
+      await openFindWorkWithRows(page)
+      const link = jobRows(page).first().locator("h3 a")
+      const title = (await link.innerText()).trim()
+
+      await link.click()
+      const sheet = jobSheet(page)
+      await expect(sheet.getByRole("heading", { level: 2, name: title })).toBeVisible()
+      await expect(sheet).toHaveClass(/\bll-theme\b/)
+      expect(await page.evaluate(() => Boolean(document.activeElement?.closest("dialog[open]"))), "focus is inside the sheet").toBe(true)
+      await expect(detailPanel(page)).toHaveCount(0)
+      await expectNoSeriousAxeViolations(page)
+
+      await page.keyboard.press("Escape")
+      await expect(page.getByRole("dialog")).toHaveCount(0)
+      await expect(link).toBeFocused()
+
+      // The Close button returns focus the same way.
+      await link.click()
+      await expect(sheet.getByRole("heading", { level: 2, name: title })).toBeVisible()
+      await sheet.getByRole("button", { name: "Close" }).click()
+      await expect(page.getByRole("dialog")).toHaveCount(0)
+      await expect(link).toBeFocused()
+      await expectNoHorizontalOverflow(page)
+    })
+  }
+
+  test("switching density keeps the selection", async ({ page }) => {
+    const { title } = await selectFirstRow(page)
+    const density = page.getByRole("group", { name: "Density" })
+    const list = page.locator("[data-ds-page] [data-density]:has(ul[aria-label='Jobs'])")
+
+    for (const choice of ["Compact", "Comfortable"] as const) {
+      await density.getByRole("button", { name: choice }).click()
+      await expect(density.getByRole("button", { name: choice })).toHaveAttribute("aria-pressed", "true")
+      await expect(list).toHaveAttribute("data-density", choice.toLowerCase())
+      await expect(jobRows(page).first().locator("h3 a")).toHaveAttribute("aria-current", "true")
+      await expect(detailPanel(page).locator("article h2")).toHaveText(title)
+    }
+  })
+})
+
+/** Find work's search (#129, UX-06): summary bar, filter sheet, location and radius, and the phone fold. */
+test.describe("find work: the search (#129)", () => {
+  test("the first job's title is above the fold at 390 × 844", async ({ page }) => {
+    await page.setViewportSize({ height: 844, width: 390 })
+    await openFindWorkWithRows(page)
+
+    const title = await jobRows(page).first().locator("h3").boundingBox()
+    const tabs = await bottomTabs(page).boundingBox()
+    expect(title, "the first row has a title").toBeTruthy()
+    expect(title!.y + title!.height, "the title ends above the bottom tabs").toBeLessThanOrEqual((tabs?.y ?? 844) + 0.5)
   })
 
-  test.fixme("switching density keeps the selection", async () => {
-    // No page offers a density control yet (AppShell renders data-density="comfortable" only). Once one does,
-    // selecting a row, switching to compact and back keeps the same row selected and the panel on it.
-  })
+  test("the summary bar opens the filter sheet; a typed town searches from its approximate point", async ({ page }) => {
+    await page.setViewportSize(viewportFor(390))
+    await openV2(page, "/v2/work?all=1")
+    await expect(findWorkSummary(page)).toContainText("Anywhere")
 
+    await findWorkSummary(page).click()
+    const sheet = page.getByRole("dialog", { name: "Filter jobs" })
+    await expect(sheet).toBeVisible()
+    for (const label of ["Location", "Radius", "Equipment", "Product", "Pay basis", "Starting", "Include filled, paused and closed jobs"]) {
+      await expect(sheet.getByLabel(label, { exact: true }), label).toBeVisible()
+    }
+    await expect(sheet.getByLabel("Radius", { exact: true }).locator("option")).toHaveText(["50 mi", "100 mi", "150 mi", "250+ mi"])
+    await expect(sheet.getByRole("button", { name: "Apply" })).toBeVisible()
+    await expect(sheet.getByRole("link", { name: "Reset" })).toBeVisible()
+    await expectNoSeriousAxeViolations(page)
+
+    // Escape closes the sheet and returns focus to the bar.
+    await page.keyboard.press("Escape")
+    await expect(sheet).toHaveCount(0)
+    await expect(findWorkSummary(page)).toBeFocused()
+
+    await findWorkSummary(page).click()
+    await sheet.getByLabel("Location", { exact: true }).fill("sweet home")
+    await sheet.getByRole("button", { name: "Apply" }).click()
+    await expect(page).toHaveURL(/[?&]near=sweet\+home/)
+    await expect(page).toHaveURL(/[?&]all=1/)
+    await expect(findWorkSummary(page)).toContainText("Near Sweet Home, OR · 100 mi")
+
+    // Distance is to each job's approximate public point, and says so.
+    for (const row of await jobRows(page).all()) {
+      await expect(row.locator("dd").first()).toContainText(/About \d+ mi from your search|Under 1 mi from your search/)
+    }
+    if ((await jobRows(page).count()) === 0) {
+      await expect(page.getByRole("heading", { name: /within 100 mi of Sweet Home, OR/ })).toBeVisible()
+    }
+  })
 })
 
 test.describe("equipment on a page (#148 criterion 4)", () => {
@@ -1396,8 +1661,14 @@ test.describe("find-work map (UX-13)", () => {
 
       const stops = await tabThrough(page)
       const keys = stops.map((stop) => stop.key)
-      const first = keys.indexOf("#work-all") + 1
-      const last = keys.indexOf("Hide map")
+      // The map sits at the top of the list column (#129): after the summary bar, before the list's tools (the sort,
+      // offered with more than one job; the map toggle; density from bp-lg) and the rows.
+      // Below bp-md the first Tab lands on the full-screen map's "Show list", so anchor on the map's own first stop.
+      const tools = [...(rowTitles.length > 1 ? ["#work-sort"] : []), "Hide map", ...(width >= BP_LG ? ["Comfortable", "Compact"] : [])]
+      const first = keys.indexOf(width < 768 ? "Show list" : MAP_CANVAS)
+      const last = keys.indexOf(tools[0]!)
+      expect(first, "the map is reachable by keyboard").toBeGreaterThanOrEqual(0)
+      if (first > 0) expect(keys[first - 1], "the map follows the summary bar").toBe("#work-filters-summary")
 
       expect(keys.slice(first, last)).toEqual([
         ...(width < 768 ? ["Show list"] : []),
@@ -1408,8 +1679,8 @@ test.describe("find-work map (UX-13)", () => {
         "OpenStreetMap",
         "CARTO"
       ])
-      // The list stays complete and reachable after the map.
-      expect(keys.slice(last + 1, last + 1 + rowTitles.length)).toEqual(rowTitles)
+      // The list stays complete and reachable after the map and its tools.
+      expect(keys.slice(last, last + tools.length + rowTitles.length)).toEqual([...tools, ...rowTitles])
       for (const stop of stops.slice(first, last)) expectDesignSystemRing(stop)
     })
   }
@@ -1450,6 +1721,8 @@ test.describe("find-work map (UX-13)", () => {
       for (const href of await links.evaluateAll((anchors) => anchors.map((anchor) => anchor.getAttribute("href")))) {
         expect(href).toMatch(/^\/v2\/work\/[^/?#]+$/)
       }
+      // Find work passes each job's public card (#129, #183): every link is a full JobResultRow's title, not a bare link.
+      await expect(sheet.getByRole("list", { name: "Jobs in this area" }).locator("li h3 a")).toHaveCount(await links.count())
       const sheetBox = (await sheet.boundingBox())!
       const uncovered = [
         ["the pin", pin],
@@ -1498,5 +1771,167 @@ test.describe("find-work map (UX-13)", () => {
     await expect(page.getByRole("status").filter({ hasText: "The map could not load right now. Every job is listed below." })).toBeVisible()
     await expect(jobMap(page)).toHaveCount(0)
     await expect(jobRows(page)).toHaveCount(rows)
+  })
+})
+
+/**
+ * #124 criterion 8's dual-membership account. Maya Mills drives for North Pine Logging: a hauling business where a
+ * driver holds no landing seat, so that context shows hauler navigation only. Summit Ridge Timber is a landing
+ * business, so her dispatcher seat there shows landing navigation only. The seed gives her North Pine only.
+ */
+const DUAL = { email: "maya@northpine.example", hauling: "North Pine Logging", landing: "Summit Ridge Timber", name: "Maya Mills" }
+const SUMMIT_OWNER = "cole@summit.example"
+const HAULER_NAVIGATION = ["Find work", "My inquiries"]
+const LANDING_NAVIGATION = ["Landing inbox", "Post jobs"]
+
+const businessChoices = (page: Page) => page.getByRole("list", { name: "Your businesses" }).getByRole("listitem")
+
+/** A fresh browser session for another account, at the suite's base URL. */
+async function session(browser: Browser, baseURL: string | undefined, width = 1280) {
+  const context = await browser.newContext({ baseURL, viewport: viewportFor(width) })
+  return { close: () => context.close(), page: await context.newPage() }
+}
+
+/** Opens Summit Ridge Timber's legacy team settings as its owner: the app's only member-management page. */
+async function openSummitTeam(browser: Browser, baseURL: string | undefined) {
+  const owner = await session(browser, baseURL)
+  await signInToV2(owner.page, SUMMIT_OWNER)
+  await owner.page.goto("/host/settings")
+  await expect(owner.page.getByRole("heading", { name: "Who works in this workspace" })).toBeVisible()
+  return owner
+}
+
+/**
+ * Makes Maya a Summit Ridge Timber member through the app, unless she is one: Summit's owner invites her as a
+ * dispatcher (unless an invitation is already waiting) and she accepts from the legacy account menu, the only
+ * place an existing account accepts an invitation today. Accepting a removed membership restores the same row.
+ */
+async function ensureDualMembership(browser: Browser, baseURL: string | undefined) {
+  const maya = await session(browser, baseURL)
+
+  try {
+    await signInToV2(maya.page, DUAL.email)
+    await openV2(maya.page, "/v2/switch")
+    if ((await businessChoices(maya.page).filter({ hasText: DUAL.landing }).count()) > 0) return
+
+    const owner = await openSummitTeam(browser, baseURL)
+    try {
+      const waiting = owner.page.getByRole("group", { name: "Waiting invitations" }).getByText(DUAL.email)
+      if ((await waiting.count()) === 0) {
+        await owner.page.getByLabel("Email address").fill(DUAL.email)
+        await owner.page.getByLabel("Role", { exact: true }).selectOption({ label: "Dispatcher" })
+        await owner.page.getByRole("button", { name: "Invite to workspace" }).click()
+        await expect(owner.page.getByText(/Invitation recorded/)).toBeVisible()
+      }
+    } finally {
+      await owner.close()
+    }
+
+    await maya.page.goto("/driver/profile")
+    await maya.page.getByRole("button", { name: "Account and product feedback" }).click()
+    const invitations = maya.page.getByRole("group", { name: "Workspace invitations" })
+    await expect(invitations.getByText(DUAL.landing)).toBeVisible()
+    await invitations.getByRole("button", { name: "Accept" }).click()
+    // Accepting opens /workspace, which redirects to the newly selected business's V2 home.
+    await settleOnV2(maya.page)
+
+    await openV2(maya.page, "/v2/switch")
+    await expect(businessChoices(maya.page).filter({ hasText: DUAL.landing }), "Maya holds the Summit membership again").toHaveCount(1)
+  } finally {
+    await maya.close()
+  }
+}
+
+/**
+ * Presses an "Act as …" button and returns where the server sends the account: the action response's
+ * `x-action-redirect`. It is read from the response, not the address bar: while a loading boundary sat above every
+ * route (before #174), CI's production build stopped short of an action's redirect, the reply composer's symptom
+ * in PR #179's diagnostics and here an empty /v2/landing. Callers then open the page they check with a full
+ * navigation.
+ */
+async function chooseBusiness(page: Page, button: Locator): Promise<string> {
+  const before = page.url()
+  const posted = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/v2/switch")
+  await button.click()
+  const target = ((await (await posted).headerValue("x-action-redirect")) ?? "").split(";")[0]!
+  // Let the client router finish whatever it does with that redirect before the caller's next navigation.
+  await page.waitForURL((url) => url.href !== before, { timeout: 10_000 }).catch(() => undefined)
+  return target
+}
+
+/** Acts as `business` from /v2/switch, then opens `then` (a page of that context). Returns the server's landing path. */
+async function actAs(page: Page, business: string, then: string): Promise<string> {
+  await openV2(page, "/v2/switch")
+  const home = await chooseBusiness(page, businessChoices(page).filter({ hasText: business }).getByRole("button", { name: `Act as ${business}` }))
+  await openV2(page, then)
+  return home
+}
+
+test.describe("business switching with two memberships (#124 criterion 8)", () => {
+  test("landing → hauling shows only hauler navigation at 1280 and 390 px; a removed membership is refused on the next request", async ({ baseURL, browser, page }) => {
+    // Several sessions, two legacy pages and a cold `next dev` compile of each: triple the budget.
+    test.slow()
+    await ensureDualMembership(browser, baseURL)
+
+    await page.setViewportSize(viewportFor(1280))
+    await signInToV2(page, DUAL.email)
+
+    for (const width of [1280, 390]) {
+      await page.setViewportSize(viewportFor(width))
+
+      expect(await actAs(page, DUAL.landing, "/v2/landing/inquiries"), "a landing context lands on its V2 home").toBe("/v2/landing")
+      expect(await expectNavigationForWidth(page, width), `${width} px: the landing context`).toEqual(LANDING_NAVIGATION)
+
+      expect(await actAs(page, DUAL.hauling, "/v2/work"), "a hauling context lands on its V2 home").toBe("/v2/work")
+      expect(await expectNavigationForWidth(page, width), `${width} px: only hauler navigation`).toEqual(HAULER_NAVIGATION)
+      await expectCurrent(page, width, "Find work")
+      await expect(page.getByRole("link", { name: /^Acting as North Pine Logging/ })).toHaveCount(1)
+      await expectNoHorizontalOverflow(page)
+      if (width < BP_LG) expect(await chromeHeight(page), "chrome above the content at 390 px").toBeLessThanOrEqual(120)
+    }
+
+    // When Summit removes her, Maya has one session acting for Summit (390 px) and one acting for North Pine with
+    // the switch page, which still offers Summit, open (1280 px).
+    const asLanding = await session(browser, baseURL, 390)
+    await signInToV2(asLanding.page, DUAL.email)
+    await actAs(asLanding.page, DUAL.landing, "/v2/landing/inquiries")
+    await expect(asLanding.page.getByRole("link", { name: /^Acting as Summit Ridge Timber/ })).toHaveCount(1)
+
+    await page.setViewportSize(viewportFor(1280))
+    await openV2(page, "/v2/switch")
+    const staleSwitch = page.getByRole("button", { name: `Act as ${DUAL.landing}` })
+    await expect(staleSwitch).toBeVisible()
+
+    const owner = await openSummitTeam(browser, baseURL)
+    owner.page.once("dialog", (dialog) => void dialog.accept())
+    const removal = owner.page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/host/settings")
+    await owner.page.getByRole("button", { name: `Remove ${DUAL.name}` }).click()
+    await removal
+    // A fresh load of the roster, which lists no removed member: her row and its Remove control are gone.
+    await owner.page.reload()
+    await expect(owner.page.getByRole("heading", { name: "Who works in this workspace" })).toBeVisible()
+    await expect(owner.page.getByRole("button", { name: `Remove ${DUAL.name}` })).toHaveCount(0)
+    await owner.close()
+
+    // The next request acting for Summit is refused: no business, the public board only, and the account menu
+    // still offers Switch business.
+    await openV2(asLanding.page, "/v2/landing/inquiries")
+    await expect(asLanding.page.locator("#main")).toContainText("No landing business is selected for your account.")
+    await expect(asLanding.page.getByRole("link", { name: /^Acting as/ })).toHaveCount(0)
+    expect(await expectNavigationForWidth(asLanding.page, 390)).toEqual(["Find work"])
+    await accountTrigger(asLanding.page).click()
+    await expect(accountMenu(asLanding.page).getByRole("link", { name: "Switch business" })).toHaveAttribute("href", "/v2/switch")
+    await asLanding.close()
+
+    // The stale switch to Summit is refused on the server; Maya stays on North Pine with hauler navigation.
+    expect(await chooseBusiness(page, staleSwitch), "the server refuses the switch").toBe("/v2/switch?unavailable=1")
+    await openV2(page, "/v2/switch?unavailable=1")
+    await expect(page.locator("#main").getByRole("alert")).toContainText("That business is not available to your account right now.")
+    await expect(businessChoices(page).filter({ hasText: DUAL.landing })).toHaveCount(0)
+    await expect(page.getByRole("link", { name: /^Acting as North Pine Logging/ })).toHaveCount(1)
+    expect(await expectNavigationForWidth(page, 1280)).toEqual(HAULER_NAVIGATION)
+
+    // Restore the membership this case removed: Summit invites Maya back and she accepts.
+    await ensureDualMembership(browser, baseURL)
   })
 })
