@@ -13,6 +13,13 @@ export const JSON_BODY_LIMIT_BYTES = 64 * 1024
 
 const BODY_TOO_LARGE_MESSAGE = "The request body is too large."
 
+/**
+ * Exactly what `request.json()` resolves to, so a route that switches to the
+ * bounded reader keeps its existing types. Validation stays where it was: each
+ * route and service still parses the fields it reads.
+ */
+type JsonBody = Awaited<ReturnType<Request["json"]>>
+
 function bodyTooLarge(): ApiError {
   return new ApiError(BODY_TOO_LARGE_MESSAGE, 413)
 }
@@ -73,7 +80,7 @@ async function readBoundedText(request: Request, limitBytes: number): Promise<st
 export async function readJsonBody(
   request: Request,
   limitBytes = JSON_BODY_LIMIT_BYTES
-): Promise<any> {
+): Promise<JsonBody> {
   return JSON.parse(await readBoundedText(request, limitBytes))
 }
 
@@ -84,7 +91,7 @@ export async function readJsonBody(
 export async function readOptionalJsonBody(
   request: Request,
   limitBytes = JSON_BODY_LIMIT_BYTES
-): Promise<any> {
+): Promise<JsonBody> {
   try {
     return await readJsonBody(request, limitBytes)
   } catch (error) {
