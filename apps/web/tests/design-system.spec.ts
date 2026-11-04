@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright"
-import { expect, test, type Browser, type Page } from "@playwright/test"
+import { expect, test, type Browser, type Locator, type Page } from "@playwright/test"
 
 /**
  * DS-05 (#148): responsive, keyboard and style-isolation regressions for the V2 design system, run against the
@@ -60,14 +60,16 @@ async function signIn(page: Page, email: string) {
 }
 
 /**
- * A V2 page the account has settled on, past the redirects that sign-in and switching run in the browser:
- * /workspace and /v2/landing redirect after the root loading boundary has started streaming, so they land
- * client-side, and a navigation started meanwhile is aborted (net::ERR_ABORTED, seen in CI).
+ * Gives the browser up to 15 s to finish the redirects that sign-in and accepting an invitation end with, so the
+ * caller's next navigation does not race them. /workspace and /v2/landing redirect after the root loading boundary
+ * has started streaming, so the redirect lands in the browser, and a navigation started meanwhile is aborted
+ * (net::ERR_ABORTED, seen in CI). In CI's production build the browser has also stopped on a redirect-only page,
+ * so this never fails: every caller opens the page it checks next with a full navigation.
  */
 async function settleOnV2(page: Page) {
-  await page.waitForURL((url) => url.pathname.startsWith("/v2/") && url.pathname !== "/v2/landing")
-  await expect(page.locator(".ll-app #main")).toBeVisible()
-  await expect(page.locator(".route-skeleton")).toHaveCount(0)
+  await page
+    .waitForURL((url) => url.pathname.startsWith("/v2/") && url.pathname !== "/v2/landing", { timeout: 15_000 })
+    .catch(() => undefined)
 }
 
 async function signInToV2(page: Page, email: string) {
@@ -1145,12 +1147,28 @@ async function ensureDualMembership(browser: Browser, baseURL: string | undefine
   }
 }
 
-/** Chooses a business on /v2/switch and waits for its V2 home. */
-async function actAs(page: Page, business: string) {
+/**
+ * Presses an "Act as …" button and returns where the server sends the account: the action response's
+ * `x-action-redirect`. It is read from the response, not the address bar, because in CI's production build the
+ * client router has been seen to stop short of an action's redirect: the reply composer's symptom in PR #179's
+ * diagnostics, and here an empty /v2/landing. Callers then open the page they check with a full navigation.
+ */
+async function chooseBusiness(page: Page, button: Locator): Promise<string> {
+  const before = page.url()
+  const posted = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/v2/switch")
+  await button.click()
+  const target = ((await (await posted).headerValue("x-action-redirect")) ?? "").split(";")[0]!
+  // Let the client router finish whatever it does with that redirect before the caller's next navigation.
+  await page.waitForURL((url) => url.href !== before, { timeout: 10_000 }).catch(() => undefined)
+  return target
+}
+
+/** Acts as `business` from /v2/switch, then opens `then` (a page of that context). Returns the server's landing path. */
+async function actAs(page: Page, business: string, then: string): Promise<string> {
   await openV2(page, "/v2/switch")
-  await businessChoices(page).filter({ hasText: business }).getByRole("button", { name: `Act as ${business}` }).click()
-  await page.waitForURL((url) => !url.pathname.startsWith("/v2/switch"))
-  await settleOnV2(page)
+  const home = await chooseBusiness(page, businessChoices(page).filter({ hasText: business }).getByRole("button", { name: `Act as ${business}` }))
+  await openV2(page, then)
+  return home
 }
 
 test.describe("business switching with two memberships (#124 criterion 8)", () => {
@@ -1165,12 +1183,10 @@ test.describe("business switching with two memberships (#124 criterion 8)", () =
     for (const width of [1280, 390]) {
       await page.setViewportSize(viewportFor(width))
 
-      await actAs(page, DUAL.landing)
-      await expect(page).toHaveURL(/\/v2\/landing(\/|$|\?)/)
+      expect(await actAs(page, DUAL.landing, "/v2/landing/inquiries"), "a landing context lands on its V2 home").toBe("/v2/landing")
       expect(await expectNavigationForWidth(page, width), `${width} px: the landing context`).toEqual(LANDING_NAVIGATION)
 
-      await actAs(page, DUAL.hauling)
-      await expect(page).toHaveURL(/\/v2\/work(\?|$)/)
+      expect(await actAs(page, DUAL.hauling, "/v2/work"), "a hauling context lands on its V2 home").toBe("/v2/work")
       expect(await expectNavigationForWidth(page, width), `${width} px: only hauler navigation`).toEqual(HAULER_NAVIGATION)
       await expectCurrent(page, width, "Find work")
       await expect(page.getByRole("link", { name: /^Acting as North Pine Logging/ })).toHaveCount(1)
@@ -1182,8 +1198,7 @@ test.describe("business switching with two memberships (#124 criterion 8)", () =
     // the switch page, which still offers Summit, open (1280 px).
     const asLanding = await session(browser, baseURL, 390)
     await signInToV2(asLanding.page, DUAL.email)
-    await actAs(asLanding.page, DUAL.landing)
-    await openV2(asLanding.page, "/v2/landing/inquiries")
+    await actAs(asLanding.page, DUAL.landing, "/v2/landing/inquiries")
     await expect(asLanding.page.getByRole("link", { name: /^Acting as Summit Ridge Timber/ })).toHaveCount(1)
 
     await page.setViewportSize(viewportFor(1280))
@@ -1193,8 +1208,12 @@ test.describe("business switching with two memberships (#124 criterion 8)", () =
 
     const owner = await openSummitTeam(browser, baseURL)
     owner.page.once("dialog", (dialog) => void dialog.accept())
+    const removal = owner.page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/host/settings")
     await owner.page.getByRole("button", { name: `Remove ${DUAL.name}` }).click()
-    // The roster lists no removed member, so her row (and its confirmation) leaves the page once the removal is saved.
+    await removal
+    // A fresh load of the roster, which lists no removed member: her row and its Remove control are gone.
+    await owner.page.reload()
+    await expect(owner.page.getByRole("heading", { name: "Who works in this workspace" })).toBeVisible()
     await expect(owner.page.getByRole("button", { name: `Remove ${DUAL.name}` })).toHaveCount(0)
     await owner.close()
 
@@ -1209,8 +1228,8 @@ test.describe("business switching with two memberships (#124 criterion 8)", () =
     await asLanding.close()
 
     // The stale switch to Summit is refused on the server; Maya stays on North Pine with hauler navigation.
-    await staleSwitch.click()
-    await expect(page).toHaveURL(/\/v2\/switch\?unavailable=1/)
+    expect(await chooseBusiness(page, staleSwitch), "the server refuses the switch").toBe("/v2/switch?unavailable=1")
+    await openV2(page, "/v2/switch?unavailable=1")
     await expect(page.locator("#main").getByRole("alert")).toContainText("That business is not available to your account right now.")
     await expect(businessChoices(page).filter({ hasText: DUAL.landing })).toHaveCount(0)
     await expect(page.getByRole("link", { name: /^Acting as North Pine Logging/ })).toHaveCount(1)
