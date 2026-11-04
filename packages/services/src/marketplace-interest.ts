@@ -145,7 +145,9 @@ function audit(
 /**
  * A hauling business expresses interest in an active job it can see. Resubmitting to the same job
  * updates the live interest instead of creating a duplicate (UX spec §5.4); a withdrawn interest
- * may be renewed. Returns the stored row and whether a new interest was created.
+ * may be renewed. A declined interest is final for that job: it is never renewed, and it cannot be
+ * withdrawn first (`withdrawMarketplaceInterest`). Returns the stored row and whether a new interest
+ * was created.
  */
 export function expressMarketplaceInterest(
   state: LogLoadsDatabaseState,
@@ -242,7 +244,11 @@ export function expressMarketplaceInterest(
   return { created: true, interest }
 }
 
-/** The submitting hauling business withdraws its interest. Idempotent. */
+/**
+ * The submitting hauling business withdraws its interest. Idempotent. A declined inquiry cannot be
+ * withdrawn: the landing's decline is final for that job, and a withdrawn inquiry could otherwise be
+ * renewed back into the landing's inbox (the normalized `withdraw_interest` applies the same rule).
+ */
 export function withdrawMarketplaceInterest(
   state: LogLoadsDatabaseState,
   actor: MarketplaceActor,
@@ -258,6 +264,10 @@ export function withdrawMarketplaceInterest(
 
   if (interest.status === "withdrawn") {
     return interest
+  }
+
+  if (interest.status === "declined") {
+    throw new Error("The landing has closed this inquiry")
   }
 
   interest.status = "withdrawn"

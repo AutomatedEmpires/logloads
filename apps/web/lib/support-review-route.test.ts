@@ -56,16 +56,23 @@ const supportRequest = {
   updatedAt: "2026-07-21T14:00:00.000Z"
 }
 
-function patchRequest(body: Record<string, unknown>): NextRequest {
+/** A PATCH as the admin page sends it: the browser adds Origin and Sec-Fetch-Site. */
+function patchRequest(
+  body: Record<string, unknown>,
+  headers: Record<string, string> = {
+    Origin: "https://logloads.test",
+    "Sec-Fetch-Site": "same-origin"
+  }
+): NextRequest {
   return new NextRequest(`https://logloads.test/api/admin/support-requests/${REQUEST_ID}`, {
     body: JSON.stringify(body),
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     method: "PATCH"
   })
 }
 
-async function patch(body: Record<string, unknown>) {
-  return PATCH(patchRequest(body), { params: Promise.resolve({ requestId: REQUEST_ID }) })
+async function patch(body: Record<string, unknown>, headers?: Record<string, string>) {
+  return PATCH(patchRequest(body, headers), { params: Promise.resolve({ requestId: REQUEST_ID }) })
 }
 
 describe("support review API", () => {
@@ -76,6 +83,30 @@ describe("support review API", () => {
       profile: { id: ADMIN_ID }
     })
     mocks.enforceApiRateLimit.mockResolvedValue(undefined)
+  })
+
+  it.each([
+    ["a cross-site page", { Origin: "https://attacker.example", "Sec-Fetch-Site": "cross-site" }],
+    ["a same-site sibling", { Origin: "https://logloads.test", "Sec-Fetch-Site": "same-site" }],
+    ["a request without an Origin", {}]
+  ])("refuses %s before reading the admin session (HF-10)", async (_label, headers) => {
+    const response = await patch(
+      {
+        expectedStatus: "open",
+        expectedUpdatedAt: "2026-07-21T13:00:00.000Z",
+        status: "in_review"
+      },
+      headers
+    )
+
+    expect(response.status).toBe(403)
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
+    await expect(response.json()).resolves.toEqual({
+      error: "This request must come from the LogLoads application"
+    })
+    expect(mocks.requireAdminApiActor).not.toHaveBeenCalled()
+    expect(mocks.enforceApiRateLimit).not.toHaveBeenCalled()
+    expect(mocks.mutateState).not.toHaveBeenCalled()
   })
 
   it("returns 409 without analytics when an ABA version precondition conflicts", async () => {

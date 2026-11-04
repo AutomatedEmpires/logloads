@@ -22,6 +22,7 @@ import { parseDriverPayCents } from "./driver-pay-input"
 import { reviewCredentialDocument } from "./credential-reviewer"
 import { checkRateLimit } from "./rate-limit"
 import {
+  isOwnedUploadPublicId,
   mediaTarget,
   parseMediaKind,
   parseTripDocumentType,
@@ -376,7 +377,7 @@ export async function attachTripDocumentAction(input: {
     const type = parseTripDocumentType(input.type)
     const target = tripDocumentTarget(services.state, actor, organizationId, input.tripId, "write")
 
-    if (!input.publicId.startsWith(`${target.publicIdPrefix}/uploads/`)) {
+    if (!isOwnedUploadPublicId(input.publicId, target.publicIdPrefix)) {
       throw new Error("The uploaded document does not belong to this trip")
     }
 
@@ -469,7 +470,7 @@ export async function saveDriverMediaAction(input: {
     const kind = parseMediaKind(input.kind)
     const target = mediaTarget(services.state, actor, organizationId, kind)
 
-    if (!input.publicId.startsWith(`${target.publicIdPrefix}/uploads/`)) {
+    if (!isOwnedUploadPublicId(input.publicId, target.publicIdPrefix)) {
       throw new Error("The uploaded photo does not belong to this profile")
     }
 
@@ -634,9 +635,7 @@ export async function submitDriverCredentialAction(input: {
 
     // Checked before the provider round trip against the same authorized target
     // resolver the upload-signature route and write-time service use.
-    const expectedPrefix = `${target.publicIdPrefix}/uploads/`
-
-    if (!input.publicId.startsWith(expectedPrefix)) {
+    if (!isOwnedUploadPublicId(input.publicId, target.publicIdPrefix)) {
       throw new Error("That document was not uploaded to your vault")
     }
 

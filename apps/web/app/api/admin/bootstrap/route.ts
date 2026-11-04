@@ -13,6 +13,7 @@ import {
   platformAdminStatus
 } from "@/lib/platform-admin"
 import { requestClientKey } from "@/lib/rate-limit"
+import { assertSameOrigin } from "@/lib/same-origin"
 import { mutateState } from "@/lib/services"
 
 const bootstrapRequestSchema = z
@@ -22,18 +23,6 @@ const bootstrapRequestSchema = z
   .strict()
 
 const BOOTSTRAP_BODY_LIMIT_BYTES = 256
-
-function assertSameOrigin(request: Request): void {
-  const origin = request.headers.get("origin")
-  const fetchSite = request.headers.get("sec-fetch-site")
-
-  if (
-    origin !== new URL(request.url).origin ||
-    (fetchSite !== null && fetchSite !== "same-origin")
-  ) {
-    throw new ApiError("This request must come from the LogLoads application", 403)
-  }
-}
 
 async function readBoundedJson(request: Request): Promise<unknown> {
   const contentType = request.headers.get("content-type")?.toLowerCase()
