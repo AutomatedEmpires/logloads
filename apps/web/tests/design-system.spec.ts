@@ -392,10 +392,26 @@ test.describe("responsive matrix: /v2/switch (signed in)", () => {
       await expect(page.getByRole("heading", { level: 1, name: "Switch business" })).toBeVisible()
 
       await expectNoHorizontalOverflow(page)
-      expect(await expectNavigationForWidth(page, width)).toEqual(["Find work", "My inquiries", "Profile"])
+      expect(await expectNavigationForWidth(page, width)).toEqual(["Find work", "My inquiries", "My trucks", "Profile"])
       // /v2/switch is not a navigation destination, so no item claims to be the current page.
       await expectCurrent(page, width, null)
     }
+  })
+})
+
+// #126: before any case that sends New River Hauling's interest, because the link is in the interest form, which
+// goes once New River has an inquiry on the job (workers: 1, file order; later cases leave one open).
+test.describe("My trucks (#126): the job page's equipment link", () => {
+  test("the job page's Add your equipment link leads here", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1440))
+    await signIn(page, NEW_RIVER.email)
+    await openV2(page, "/v2/work")
+    const link = northPineJobLink(page)
+    test.skip((await link.count()) === 0, NO_OPEN_JOB)
+    await openV2(page, (await link.getAttribute("href"))!)
+    const form = page.locator("form:has(input[name='loadPostingId'])")
+    test.skip((await form.count()) === 0, "New River Hauling already sent interest on this job in this run's state")
+    await expect(form.getByRole("link", { name: "Add your equipment" })).toHaveAttribute("href", TRUCKS_PATH)
   })
 })
 
@@ -526,7 +542,7 @@ test.describe("responsive matrix: pages migrated in DS-04 (#147)", () => {
 
       await expectNoHorizontalOverflow(page)
       await expectSplitLayout(page, width)
-      expect(await expectNavigationForWidth(page, width)).toEqual(["Find work", "My inquiries", "Profile"])
+      expect(await expectNavigationForWidth(page, width)).toEqual(["Find work", "My inquiries", "My trucks", "Profile"])
       await expectCurrent(page, width, "My inquiries")
     }
   })
@@ -571,12 +587,12 @@ test.describe("responsive matrix: pages migrated in DS-04 (#147)", () => {
 
 test.describe("capability navigation (#124)", () => {
   const cases = [
-    { email: "hank@northpine.example", home: "/v2/work", items: ["Find work", "My inquiries", "Profile"], visit: "/v2/inquiries", current: "My inquiries" },
+    { email: "hank@northpine.example", home: "/v2/work", items: ["Find work", "My inquiries", "My trucks", "Profile"], visit: "/v2/inquiries", current: "My inquiries" },
     { email: "cole@summit.example", home: "/v2/landing", items: ["Landing inbox", "Post jobs"], visit: "/v2/landing/inquiries", current: "Landing inbox" },
     {
       email: "dispatch@northpine.example",
       home: "/v2/work",
-      items: ["Find work", "My inquiries", "Profile", "Landing inbox", "Post jobs"],
+      items: ["Find work", "My inquiries", "My trucks", "Landing inbox", "Post jobs"],
       visit: "/v2/inquiries",
       current: "My inquiries"
     }
@@ -732,7 +748,7 @@ test.describe("keyboard: /v2/work", () => {
     await signIn(page, "hank@northpine.example")
     await openV2(page, "/v2/work")
 
-    const stops = await tabThrough(page, 8)
+    const stops = await tabThrough(page, 9)
     const chrome = stops.filter((stop) => stop.where === "chrome")
 
     expect(chrome.map((stop) => stop.key)).toEqual([
@@ -740,6 +756,7 @@ test.describe("keyboard: /v2/work", () => {
       "LogLoads home",
       "Find work",
       "My inquiries",
+      "My trucks",
       "Profile",
       // The switcher's first text line; its full accessible name (visible text plus hidden words) is asserted in the
       // capability-navigation tests.
@@ -2208,7 +2225,7 @@ test.describe("find-work map (UX-13)", () => {
  */
 const DUAL = { email: "maya@northpine.example", hauling: "North Pine Logging", landing: "Summit Ridge Timber", name: "Maya Mills" }
 const SUMMIT_OWNER = "cole@summit.example"
-const HAULER_NAVIGATION = ["Find work", "My inquiries", "Profile"]
+const HAULER_NAVIGATION = ["Find work", "My inquiries", "My trucks", "Profile"]
 const LANDING_NAVIGATION = ["Landing inbox", "Post jobs"]
 
 const businessChoices = (page: Page) => page.getByRole("list", { name: "Your businesses" }).getByRole("listitem")
@@ -2476,6 +2493,88 @@ test.describe("hauler setup and business profile (#125)", () => {
       await expect(page.getByLabel("Home base")).toHaveValue("sweet home, or")
       await expect(page.getByLabel("About")).toHaveValue("Sent without JavaScript: two trucks")
       await expect(page).toHaveURL(new RegExp(`${PROFILE_PATH}$`))
+    })
+  })
+})
+
+/**
+ * #126: My trucks (/v2/hauler/trucks). Nothing here writes: the pilot store reads a business's equipment but cannot
+ * save V2 presets or availability, so every post is answered with that, and the cases check the page keeps what was
+ * posted. Granite Creek Hauling is the seeded hauling business with equipment listed; New River Hauling has none.
+ */
+const TRUCKS_PATH = "/v2/hauler/trucks"
+
+test.describe("My trucks (#126)", () => {
+  test("responsive at 390 and 1440 px, with every availability shown with its source and never as zero", async ({ page }) => {
+    await signIn(page, GRANITE_CREEK.email)
+    for (const width of [390, 1440]) {
+      await page.setViewportSize(viewportFor(width))
+      await openV2(page, TRUCKS_PATH)
+      await expect(page.locator("[data-ds-page='hauler-trucks']")).toBeVisible()
+      await expect(page.getByRole("heading", { level: 1, name: "My trucks" })).toBeVisible()
+      await expectNoHorizontalOverflow(page)
+      await expectCurrent(page, width, "My trucks")
+
+      // The pilot holds no V2 availability report: each truck type reads "Not recently confirmed", never 0.
+      await expect(page.getByText("Not recently confirmed").first()).toBeVisible()
+      await expect(page.locator("#main")).not.toContainText(/\b0 of \d+ available/)
+      // Presets come from the reference list, grouped truck, trailer and extras, with Other (describe).
+      await expect(page.getByLabel("Truck", { exact: true })).toBeVisible()
+      await expect(page.getByLabel("Trailer (optional)", { exact: true })).toContainText("Other (describe)")
+      await expect(page.getByRole("group", { name: "Extras on these trucks (optional)" })).toBeVisible()
+    }
+  })
+
+  test("keyboard: every stop on My trucks keeps the design-system ring", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1280))
+    await signIn(page, GRANITE_CREEK.email)
+    await openV2(page, TRUCKS_PATH)
+    const stops = await tabThrough(page)
+    expect(stops.filter((stop) => stop.where === "main").map((stop) => stop.key)).toEqual(expect.arrayContaining(["#add-truck", "Add to my trucks"]))
+    for (const stop of stops) expectDesignSystemRing(stop)
+  })
+
+  for (const width of [1440, 390]) {
+    test(`axe at ${width} px: My trucks with equipment, without equipment, and as setup step 3`, async ({ page }) => {
+      await page.setViewportSize(viewportFor(width))
+      await signIn(page, GRANITE_CREEK.email)
+      for (const path of [TRUCKS_PATH, `${TRUCKS_PATH}?setup=1`]) {
+        await openV2(page, path)
+        await expectNoSeriousAxeViolations(page)
+      }
+      // A signed-in browser is sent away from /sign-in, so the second business signs in from a fresh session.
+      await page.context().clearCookies()
+      await signIn(page, NEW_RIVER.email)
+      await openV2(page, TRUCKS_PATH)
+      await expectNoSeriousAxeViolations(page)
+    })
+  }
+
+  test.describe("without JavaScript", () => {
+    test.use({ javaScriptEnabled: false })
+
+    test("the add form posts to its action, which answers on the page and keeps what was posted", async ({ page }) => {
+      await page.setViewportSize(viewportFor(1440))
+      await signIn(page, NEW_RIVER.email)
+      await openV2(page, TRUCKS_PATH)
+
+      await page.getByLabel("Truck", { exact: true }).selectOption("chip_truck")
+      await page.getByLabel("Trailer (optional)", { exact: true }).selectOption("chip_van")
+      await page.getByLabel("On-board scales").check()
+      // Unhydrated, the count is a native number field.
+      const count = page.getByRole("spinbutton", { name: "How many like this" })
+      await count.fill("3")
+      await expect(page.getByRole("button", { name: "Add to my trucks" })).toHaveAttribute("type", "submit")
+      // Enter in a field submits the form natively through its submit button (Playwright reports that button as
+      // "not stable" in this unscripted dev page, so the case does not click it).
+      await count.press("Enter")
+
+      await page.waitForURL((url) => url.pathname === TRUCKS_PATH && url.searchParams.get("outcome") === "unavailable")
+      await expect(page.getByRole("alert").filter({ hasText: "isn't available in this preview yet" })).toBeVisible()
+      await expect(page.getByLabel("Truck", { exact: true })).toHaveValue("chip_truck")
+      await expect(page.getByLabel("Trailer (optional)", { exact: true })).toHaveValue("chip_van")
+      await expect(page.getByLabel("On-board scales")).toBeChecked()
+      await expect(page.getByRole("spinbutton", { name: "How many like this" })).toHaveValue("3")
     })
   })
 })

@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   getClerkUserId: vi.fn(),
   getSessionActor: vi.fn(),
   haulerEquipment: vi.fn(),
+  haulerFleet: vi.fn(),
   haulerProfile: vi.fn(),
   resolveV2Actor: vi.fn(),
   resolveV2Viewer: vi.fn(),
@@ -51,6 +52,7 @@ vi.mock("./pilot-adapter", () => ({ pilotMarketplaceV2: mocks.port }))
 const port = mocks.port
 Object.assign(port, {
   haulerEquipment: mocks.haulerEquipment,
+  haulerFleet: mocks.haulerFleet,
   haulerProfile: mocks.haulerProfile,
   saveHaulerProfile: mocks.saveHaulerProfile,
   viewerAccess: mocks.viewerAccess
@@ -314,7 +316,7 @@ describe("saveHaulerProfileAction", () => {
     expect(await saveHaulerProfileAction(idle, post(VALID_POST))).toMatchObject({ message: expect.stringContaining("Only the owner"), status: "refused" })
 
     mocks.saveHaulerProfile.mockResolvedValueOnce(profile())
-    await expect(saveHaulerProfileAction(idle, post({ ...VALID_POST, setup: "1" }))).rejects.toThrow("NEXT_REDIRECT /v2/work")
+    await expect(saveHaulerProfileAction(idle, post({ ...VALID_POST, setup: "1" }))).rejects.toThrow("NEXT_REDIRECT /v2/hauler/trucks?setup=1")
   })
 })
 

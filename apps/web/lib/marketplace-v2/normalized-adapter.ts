@@ -9,6 +9,7 @@ import {
 } from "@logloads/contracts"
 
 import type { MarketplaceCalls, MarketplaceDb, MarketplacePrincipal } from "./normalized-db"
+import { normalizedHaulerFleetMethods } from "./normalized-fleet"
 import { normalizedHaulerProfileMethods } from "./normalized-hauler"
 import {
   equipmentOptionFromRow,
@@ -133,6 +134,7 @@ export function createNormalizedMarketplaceV2({ db, now = () => new Date(), prin
       // No business is selected yet: the person acts as themselves, and the store makes them the new business's owner.
       return db.asUser(await principal({ organizationId: "", userId: account.userId }), work, write)
     }),
+    ...normalizedHaulerFleetMethods(asViewer, now),
 
     async authoringLandings(viewer) {
       const rows = await asViewer(viewer, (calls) => calls.call("list_authoring_landings", { p_org_id: viewer.organizationId }), read)

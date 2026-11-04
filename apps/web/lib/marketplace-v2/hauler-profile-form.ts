@@ -16,13 +16,15 @@ export const HAULER_START_PATH = "/v2/start/hauler"
 /** The landing operator's setup is UX-04 (#127). */
 export const LANDING_START_PATH = "/v2/start/landing"
 
-/** The hauler setup steps after A1 (UX 02 §A2–A3). My trucks (#126) adds its own. */
-export const HAULER_SETUP_STEPS: readonly string[] = Object.freeze(["Business type", "Your business", "Find work"])
+/** The hauler setup steps after A1 (UX 02 §A2–A5): My trucks (#126) is A4 and A5 on one page. */
+export const HAULER_SETUP_STEPS: readonly string[] = Object.freeze(["Business type", "Your business", "Trucks and availability", "Find work"])
 
 export const PROFILE_PATH = "/v2/hauler/profile"
 export const PROFILE_SETUP_PATH = `${PROFILE_PATH}?setup=1`
-/** Where setup goes after this step, and where Skip leads. My trucks (#126) is the next step once it exists. */
-export const PROFILE_SETUP_NEXT_PATH = "/v2/work"
+/** Where setup goes after the profile step, and where its Skip leads: My trucks (#126). */
+export const PROFILE_SETUP_NEXT_PATH = "/v2/hauler/trucks?setup=1"
+/** The end of setup: Find work, with the checklist for anything skipped. */
+export const SETUP_DONE_PATH = "/v2/work"
 
 export const PROFILE_FIELD_IDS: Readonly<Record<HaulerProfileField, string>> = Object.freeze({
   about: "profile-about",

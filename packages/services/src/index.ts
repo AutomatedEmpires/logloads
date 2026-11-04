@@ -719,6 +719,28 @@ export {
   type HaulerSetupItem
 } from "./marketplace-hauler"
 export {
+  availabilityCapMessage,
+  availabilityStamp,
+  confirmableCodes,
+  FLEET_EDIT_REFUSED,
+  FLEET_NOT_HAULING,
+  FLEET_NOT_PLACED,
+  FLEET_NOTHING_TO_WITHDRAW,
+  fleetCapacity,
+  NOT_RECENTLY_CONFIRMED,
+  pilotHaulerFleet,
+  planAvailabilityReport,
+  planEquipmentAdd,
+  registeredTrucks,
+  registeredUnits,
+  showsCapacityBoard,
+  type AvailabilityStamp,
+  type CapacityRow,
+  type CapacityState,
+  type HaulerAvailabilityPlan,
+  type HaulerEquipmentRecord
+} from "./marketplace-fleet"
+export {
   organizationOperationallyAccessible,
   resolveRestrictedOrganizationAccess
 } from "./organization-access"
