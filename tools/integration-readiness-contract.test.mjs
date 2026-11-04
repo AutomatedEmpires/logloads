@@ -14,9 +14,9 @@ const DOPPLER_CONFIGS = new Set(["dev", "stg", "prd"])
 const SCANNED_ROOTS = ["apps", "packages", "tools"]
 const SKIPPED_DIRECTORIES = new Set([".next", ".turbo", "coverage", "dist", "node_modules", "playwright-report", "public", "test-results"])
 const SOURCE_EXTENSIONS = /\.(?:[cm]?js|tsx?)$/
-// Files that name variables without reading them: the founder demo strips a deny-list, and the
-// readiness kit itself reasons about names.
-const NOT_READERS = /^tools\/(?:founder-demo-policy\.mjs|integration-readiness)/
+// Files that name variables without reading them: the founder demo strips a deny-list, the readiness
+// kit and the docs checker reason about names, and test files use names as fixtures.
+const NOT_READERS = /^tools\/(?:founder-demo-policy\.mjs|integration-readiness|check-docs)|\.(?:test|spec)\.[cm]?[jt]sx?$/
 
 function sourceFiles(directory, files = []) {
   for (const entry of readdirSync(directory)) {

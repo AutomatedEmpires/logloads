@@ -19,7 +19,7 @@
 
 | Workflow | Trigger | Does |
 |---|---|---|
-| `ci.yml` | push `main`, PR, merge queue | Organization reusable CI (`secrets: inherit`), then `extended-validation`: Supabase CLI 2.101.0; `pnpm db:assert` (resets an isolated PostgreSQL 17 stack); guardrails; build; Playwright |
+| `ci.yml` | push `main`, PR, merge queue | Organization reusable CI (`secrets: inherit`), then `extended-validation`: Supabase CLI 2.101.0; `pnpm db:assert` (resets an isolated PostgreSQL 17 stack); guardrails (including `pnpm docs:check`); build; Playwright |
 | `database-check.yml` | PR, manual | `pnpm db:check` on the pilot ledger `supabase/migrations/`. In CI it fails rather than skips. Then rehearses an operating-state backup, wipe and restore on that disposable stack ([`RECOVERY.md`](./RECOVERY.md) §7.1). |
 | `normalized-v2-ci.yml` | PR touching `architecture/normalized-v2/**`, `tools/normalized-v2-ci/**` or the workflow; manual | The normalized-v2 prototype on disposable databases (§3) |
 | `codeql.yml`, `dependency-review.yml`, `pr-review.yml` | PR, `main`, weekly | Security and review |
@@ -28,6 +28,13 @@
 
 **Locally**, `pnpm db:check` and `pnpm db:assert` print a skip and exit 0 when the Supabase CLI or Docker is
 missing. A local skip is **not** a pass.
+
+**Documentation checks (IMPLEMENTED, #110).** `pnpm guardrails` also runs `pnpm docs:check`
+(`tools/check-docs.mjs`), so the organization CI and `extended-validation` both run it on every PR. It needs no
+network. It checks `docs/**`, `README.md`, `AGENTS.md` and `CLAUDE.md` for broken relative links and anchors,
+missing repository paths, unknown `pnpm` scripts, env names absent from `ops/production-env-contract.json`, a
+missing `**Status:**` line, retired commercial terms, stale claims and deprecated status labels. The script lists
+its rules at the top.
 
 ### Application E2E gate (`extended-validation`) — separate from database verification
 
@@ -132,5 +139,4 @@ These limits apply equally to the alignment stages.
 These items are tracked as GitHub issues ([`AGENT_WORKFLOW.md`](./AGENT_WORKFLOW.md)):
 
 - Add a real Clerk token test.
-- Implement a documentation-check script (spec in the docs-check issue).
 - Add contract-drift tests between `membership.ts` and the seed rows.
