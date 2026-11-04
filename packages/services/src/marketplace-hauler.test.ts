@@ -37,6 +37,7 @@ function input(overrides: Partial<HaulerProfileInput> = {}): HaulerProfileInput 
     acceptsInvitations: current.acceptsInvitations,
     businessName: current.businessName,
     homeBase: current.homeBase,
+    homeBasePoint: null,
     legalName: current.legalName,
     listed: current.listed,
     serviceRadiusMiles: current.serviceRadiusMiles,
@@ -47,8 +48,8 @@ function input(overrides: Partial<HaulerProfileInput> = {}): HaulerProfileInput 
 describe("publicHaulerProfile", () => {
   it("copies exactly the public fields; private fields and settings never reach it", () => {
     const view = publicHaulerProfile(profile(), [
-      { configurationKey: "log_truck|pole_trailer", label: "Log truck + Pole trailer", unitsListed: 2 },
-      { configurationKey: "chip_truck", label: "Chip truck", unitsListed: 0 }
+      { configurationKey: "log_truck|pole_trailer", equipmentCodes: ["log_truck", "pole_trailer"], label: "Log truck + Pole trailer", unitsListed: 2 },
+      { configurationKey: "chip_truck", equipmentCodes: ["chip_truck"], label: "Chip truck", unitsListed: 0 }
     ])
 
     expect(Object.keys(view).sort()).toEqual([...HAULER_PUBLIC_PROFILE_KEYS].sort())
