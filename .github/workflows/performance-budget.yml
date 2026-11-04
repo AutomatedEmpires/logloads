@@ -67,7 +67,7 @@ jobs:
       - name: Set up Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: 2.101.0
+          version: 2.121.0
 
       # The same isolated stack as extended-validation; the app bootstraps the seeded operating state into it.
       - name: Start the isolated Supabase stack
