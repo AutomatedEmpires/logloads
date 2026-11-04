@@ -101,11 +101,11 @@ describe("JobDetail", () => {
       now: NOW,
       onExpressInterest: () => undefined
     })
-    expect(textOfDetail(paused)).toContain("Not accepting interest Paused by the poster · listing last changed Nov 4, 2026")
+    expect(textOfDetail(paused)).toContain("Not accepting interest The poster paused this listing. Listing last changed on Nov 4, 2026.")
     expect(paused).not.toMatch(/<button/)
 
     const expired = render({ canExpressInterest: true, job: jobDetail({ acceptingInterest: false, expiresAt: "2026-11-01T00:00:00.000Z", status: "expired" }), now: NOW })
-    expect(textOfDetail(expired)).toContain("Not accepting interest Listing expired on Nov 1, 2026")
+    expect(textOfDetail(expired)).toContain("Not accepting interest This listing expired. Expired on Nov 1, 2026.")
   })
 
   it("is an article labelled by the job title", () => {

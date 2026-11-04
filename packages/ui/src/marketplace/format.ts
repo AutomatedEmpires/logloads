@@ -14,6 +14,7 @@ import {
   MARKETPLACE_JOB_STATUS_LABELS,
   MARKETPLACE_PAY_UNIT_LABELS,
   marketplaceEquipmentLabel,
+  marketplaceJobClosedReason,
   postingFreshness,
   type MarketplaceInterestTone,
   type MarketplaceInterestView,
@@ -232,28 +233,21 @@ export function unstatedText(job: StatedFields): string | null {
  */
 export const JOB_PUBLIC_STATUS_LABELS: Readonly<Record<MarketplaceJobStatus, string>> = MARKETPLACE_JOB_STATUS_LABELS
 
-const CLOSURE_REASONS: Readonly<Record<MarketplaceJobStatus, string>> = Object.freeze({
-  active: "Not accepting interest",
-  closed: "Closed by the poster",
-  expired: "Listing expired",
-  filled: "The poster reports enough trucks",
-  paused: "Paused by the poster"
-})
-
 /**
- * Why a listing is not accepting interest, and when, from what the listing records (spec §5.3). No view carries the
- * moment a status changed, so "when" is never invented: the expiry date when one is set, the last stated work day for
- * an expired job without one, and otherwise the day the listing last changed, worded as exactly that.
+ * Why a listing is not accepting interest, and when, from what the listing records (spec §5.3, UX-07 #130). The why is
+ * contracts `marketplaceJobClosedReason`. No view carries the moment a status changed, so the when is never invented:
+ * the expiry date when one is set, the last stated work day for an expired job without one, and otherwise the day the
+ * listing last changed, worded as exactly that.
  */
 export function jobClosureText(job: Pick<MarketplaceJobCardView, "status" | "expiresAt" | "endsOn" | "lastModifiedAt">): string {
-  const reason = CLOSURE_REASONS[job.status]
+  const reason = marketplaceJobClosedReason(job.status) ?? "This listing is not accepting interest."
+  const when = job.status === "expired" && job.expiresAt
+    ? `Expired on ${formatDay(job.expiresAt)}.`
+    : job.status === "expired" && job.endsOn
+      ? `Last stated work day: ${formatDay(job.endsOn)}.`
+      : `Listing last changed on ${formatDay(job.lastModifiedAt)}.`
 
-  if (job.status === "expired") {
-    if (job.expiresAt) return `${reason} on ${formatDay(job.expiresAt)}`
-    if (job.endsOn) return `${reason} · last stated work day ${formatDay(job.endsOn)}`
-  }
-
-  return `${reason} · listing last changed ${formatDay(job.lastModifiedAt)}`
+  return `${reason} ${when}`
 }
 
 /** "attention": the viewer's move. "waiting": the other side's move. "closed": nothing more to do. */

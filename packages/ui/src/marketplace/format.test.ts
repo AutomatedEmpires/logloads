@@ -206,19 +206,19 @@ describe("what the poster did not state (UX-07, #130)", () => {
 })
 
 describe("jobClosureText (spec §5.3)", () => {
-  it("says why and when from what the listing records, never an invented status date", () => {
+  it("says why (the contracts reason) and when, from what the listing records, never an invented status date", () => {
     const changed = { lastModifiedAt: "2026-11-04T18:00:00.000Z" }
 
-    expect(jobClosureText(jobCard({ ...changed, status: "paused" }))).toBe("Paused by the poster · listing last changed Nov 4, 2026")
-    expect(jobClosureText(jobCard({ ...changed, status: "closed" }))).toBe("Closed by the poster · listing last changed Nov 4, 2026")
-    expect(jobClosureText(jobCard({ ...changed, status: "filled" }))).toBe("The poster reports enough trucks · listing last changed Nov 4, 2026")
+    expect(jobClosureText(jobCard({ ...changed, status: "paused" }))).toBe("The poster paused this listing. Listing last changed on Nov 4, 2026.")
+    expect(jobClosureText(jobCard({ ...changed, status: "closed" }))).toBe("The poster closed this listing. Listing last changed on Nov 4, 2026.")
+    expect(jobClosureText(jobCard({ ...changed, status: "filled" }))).toBe("The poster marked this job filled. Listing last changed on Nov 4, 2026.")
   })
 
   it("dates an expired listing by its expiry, else by its last stated work day", () => {
-    expect(jobClosureText(jobCard({ expiresAt: "2026-11-05T00:00:00.000Z", status: "expired" }))).toBe("Listing expired on Nov 5, 2026")
-    expect(jobClosureText(jobCard({ endsOn: "2026-10-30", expiresAt: null, status: "expired" }))).toBe("Listing expired · last stated work day Oct 30, 2026")
+    expect(jobClosureText(jobCard({ expiresAt: "2026-11-05T00:00:00.000Z", status: "expired" }))).toBe("This listing expired. Expired on Nov 5, 2026.")
+    expect(jobClosureText(jobCard({ endsOn: "2026-10-30", expiresAt: null, status: "expired" }))).toBe("This listing expired. Last stated work day: Oct 30, 2026.")
     expect(jobClosureText(jobCard({ endsOn: null, expiresAt: null, lastModifiedAt: NOW, status: "expired" }))).toBe(
-      "Listing expired · listing last changed Nov 2, 2026"
+      "This listing expired. Listing last changed on Nov 2, 2026."
     )
   })
 })

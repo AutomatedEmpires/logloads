@@ -4,7 +4,8 @@ import {
   MARKETPLACE_PAY_UNIT_LABELS,
   marketplaceComparablePayUnits,
   marketplaceDistanceMiles,
-  marketplaceEquipmentFit
+  marketplaceEquipmentFit,
+  toPublicJobView
 } from "@logloads/contracts"
 import { PageContainer, PageHeader } from "@logloads/ui/layout"
 import { Button, EmptyState } from "@logloads/ui/primitives"
@@ -90,7 +91,8 @@ export default async function FindWorkPage({ searchParams }: { searchParams: Sea
       fit: setups.length > 0 && !own ? marketplaceEquipmentFit(job.equipment, setups) ?? undefined : undefined,
       href: `/v2/work/${job.slug}`,
       interestSent: sentTo.has(job.id),
-      job,
+      // The public view only: the row is a client component's prop, and the organization id is needed only above.
+      job: toPublicJobView(job),
       selectHref: href({ jobId: job.id })
     }]
   })

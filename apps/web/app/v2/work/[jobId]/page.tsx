@@ -1,17 +1,28 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
 
-import type { MarketplaceHaulerEquipmentOption, MarketplaceInterestView, MarketplaceJobDetailView } from "@logloads/contracts"
+import {
+  marketplaceEquipmentFit,
+  toPublicJobView,
+  type MarketplaceHaulerEquipmentOption,
+  type MarketplaceInterestView,
+  type MarketplaceJobDetailView
+} from "@logloads/contracts"
 import { ContentGrid, PageContainer, PageHeader, Section } from "@logloads/ui/layout"
-import { EquipmentCapacity, formatDay, inquiryStatus, JobDetail, JOB_PUBLIC_STATUS_LABELS } from "@logloads/ui/marketplace"
+import { EquipmentCapacity, formatDay, inquiryStatus, JobDetail, jobClosureText, jobSummaryId } from "@logloads/ui/marketplace"
 import { Button, FormField } from "@logloads/ui/primitives"
 
 import { InterestCountField } from "@/components/v2/InterestCountField"
 import styles from "@/components/v2/InterestForm.module.css"
+import { JobInterestBar } from "@/components/v2/JobInterestBar"
+import page from "@/components/v2/JobPage.module.css"
 import { PageNotice } from "@/components/v2/PageNotice"
 import { PendingSubmitButton } from "@/components/v2/PendingSubmitButton"
+import { ReportListing } from "@/components/v2/ReportListing"
+import { ShareListing } from "@/components/v2/ShareListing"
 import { expressInterestAction } from "@/lib/marketplace-v2/actions"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
+import { interestBarOffer, jobPagePath, jobShareUrl, similarJobs, type SimilarJob } from "@/lib/marketplace-v2/job-detail"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
 import { withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
 import { getSessionActor } from "@/lib/session"
@@ -110,31 +121,62 @@ function InterestForm({ equipmentOptions, job }: { equipmentOptions: Marketplace
         </div>
       </details>
       <PendingSubmitButton className={styles.submit} label="Send interest" />
-      <p className={styles.hint}>Free and nonbinding. Not a contract or an assignment — the landing reviews and replies.</p>
+      <p className={styles.hint}>Free and nonbinding. The landing reviews and replies.</p>
     </form>
   )
 }
 
 /**
- * One job (hauler view, UX 02 §A7), built from the design system (DS-04, #147): the shared JobDetail in a flush
- * Section, the listing's dates, and the express-interest form beside it from bp-xl. The page header is "Job
- * details", as on the DetailPanel and the mobile sheet, because JobDetail carries the job's own title. Who may
- * express interest is decided here from the session's business; JobDetail only renders the result.
+ * Open jobs like this one, for a listing that stopped accepting interest (spec §5.3). Links to job pages are rendered
+ * per request, so they do not prefetch (the Next 15.5 parked-navigation bug, #197/#203).
+ */
+function SimilarJobs({ jobs }: { jobs: SimilarJob[] }) {
+  return (
+    <Section title="Similar open jobs" variant="open">
+      {jobs.length > 0 ? (
+        <ul className={page.similar}>
+          {jobs.map((similar) => (
+            <li className={page.similarItem} key={similar.id}>
+              <Link className={page.link} href={similar.href} prefetch={false}>{similar.title}</Link>
+              <span className={page.meta}>{similar.posterName} · Near {similar.areaLabel}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className={page.text}>No other open job is listed right now.</p>
+      )}
+      <p className={page.text}>
+        <Link className={page.link} href="/v2/work" prefetch={false}>See all open jobs</Link>
+      </p>
+    </Section>
+  )
+}
+
+/**
+ * One job (hauler view, UX 02 §A7; UX-07 #130), built from the design system: the shared JobDetail (its JobSummary
+ * first, then collapsible sections) in a flush Section with Share and Report under it, the listing's dates, and the
+ * express-interest form beside it from bp-xl. The page header is "Job details", as on the DetailPanel and the mobile
+ * sheet, because JobDetail carries the job's own title. Who may express interest is decided here from the session's
+ * business; JobDetail only renders the result.
+ *
+ * A paused, filled, closed or expired job still renders here (200) with why and when, and similar open jobs; only a job
+ * the store does not return is a 404 (#188, #193). Components receive the public view, never the poster's
+ * organization id, which only the server's own-job check needs.
  */
 export default async function JobDetailPage({ params, searchParams }: { params: Params; searchParams: SearchParams }) {
   if (!marketplaceV2Enabled()) notFound()
 
   const { jobId } = await params
   const query = await searchParams
-  const job = await pilotMarketplaceV2.getJob(jobId)
+  const actor = await getSessionActor()
+  const workspace = actor && !actor.workspaceSelectionInvalid ? actor.activeOrganization ?? null : null
+  const viewer = actor && workspace ? { organizationId: workspace.id, userId: actor.profile.id } : null
+  const job = await pilotMarketplaceV2.getJob(jobId, viewer)
 
   if (!job) {
     notFound()
   }
 
-  const actor = await getSessionActor()
-  const workspace = actor && !actor.workspaceSelectionInvalid ? actor.activeOrganization ?? null : null
-  const viewer = actor && workspace ? { organizationId: workspace.id, userId: actor.profile.id } : null
   const access = viewer ? await pilotMarketplaceV2.viewerAccess(viewer).catch(() => null) : null
   const isPoster = workspace?.id === job.posterOrganizationId
   const canExpress = Boolean(access?.capabilities.includes("interest.express")) && !isPoster
@@ -144,11 +186,25 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
         pilotMarketplaceV2.haulerEquipment(viewer).catch(() => [])
       ])
     : [null, []]
+  const similar = job.acceptingInterest ? [] : similarJobs(job, await pilotMarketplaceV2.listJobs({ acceptingOnly: true }).catch(() => []))
   const error = typeof query.error === "string" ? query.error : null
   const sent = query.sent === "1"
   const now = new Date().toISOString()
   const standing = standingInterest(existing)
   const showForm = job.acceptingInterest && canExpress && !standing
+  // Advisory, from the hauler's own self-reported setups (never offered on the viewer's own listing).
+  const setups = equipmentOptions.map((option) => option.equipmentCodes ?? []).filter((codes) => codes.length > 0)
+  const fit = setups.length > 0 ? marketplaceEquipmentFit(job.equipment, setups) ?? undefined : undefined
+  const path = jobPagePath(job)
+  const signInHref = `/sign-in?next=${encodeURIComponent(path)}`
+  const barOffer = interestBarOffer({
+    acceptingInterest: job.acceptingInterest,
+    formOffered: showForm,
+    interestHref: `#${INTEREST_ANCHOR}`,
+    isPoster,
+    signedIn: Boolean(actor),
+    signInHref
+  })
 
   return (
     <div data-ds-page="job-detail">
@@ -163,23 +219,25 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
                   {error ? <PageNotice role="alert" tone="critical">{error}</PageNotice> : null}
                   {!job.acceptingInterest ? (
                     <p className={styles.text}>
-                      This job is {JOB_PUBLIC_STATUS_LABELS[job.status].toLowerCase()} and is not accepting new interest.{" "}
-                      <Link className={styles.link} href="/v2/work">See open jobs</Link>.
+                      {jobClosureText(job)} It is not accepting new interest.{" "}
+                      <Link className={styles.link} href="/v2/work" prefetch={false}>See open jobs</Link>.
                     </p>
                   ) : !actor ? (
                     <div className={styles.stack}>
-                      <Button href={`/sign-in?next=${encodeURIComponent(`/v2/work/${job.id}`)}`} label="Sign in to express interest" />
+                      <Button href={signInHref} label="Sign in to express interest" />
                       <p className={styles.hint}>It is free for haulers.</p>
                     </div>
                   ) : isPoster ? (
                     <p className={styles.text}>
-                      This is your organization’s job. Review inquiries in the <Link className={styles.link} href="/v2/landing/inquiries">landing inbox</Link>.
+                      This is your organization’s job. Review inquiries in the{" "}
+                      <Link className={styles.link} href="/v2/landing/inquiries" prefetch={false}>landing inbox</Link>.
                     </p>
                   ) : !canExpress ? (
                     <p className={styles.text}>{withBusinessSwitchNote("Only a hauling business can express interest.")}</p>
                   ) : standing ? (
                     <p className={styles.text}>
-                      {standingSummary(standing)} <Link className={styles.link} href={`/v2/inquiries?inquiry=${standing.id}`}>Open my inquiries</Link>
+                      {standingSummary(standing)}{" "}
+                      <Link className={styles.link} href={`/v2/inquiries?inquiry=${standing.id}`} prefetch={false}>Open my inquiries</Link>
                     </p>
                   ) : (
                     <InterestForm equipmentOptions={equipmentOptions} job={job} />
@@ -195,11 +253,17 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
                 <JobDetail
                   canExpressInterest={showForm}
                   expressInterestHref={showForm ? `#${INTEREST_ANCHOR}` : undefined}
+                  fit={isPoster ? undefined : fit}
                   interestState={standing ? "sent" : "none"}
-                  job={job}
+                  job={toPublicJobView(job)}
                   now={now}
                 />
+                <div className={page.tools}>
+                  <ShareListing url={jobShareUrl(job)} />
+                  <ReportListing jobId={job.id} signedIn={Boolean(actor)} signInHref={`/sign-in?next=${encodeURIComponent(`${path}#report`)}`} />
+                </div>
               </Section>
+              {job.acceptingInterest ? null : <SimilarJobs jobs={similar} />}
               <Section title="Listing dates" variant="open">
                 <dl className={styles.facts}>
                   <div className={styles.fact}>
@@ -223,6 +287,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
           }
         />
       </PageContainer>
+      {barOffer ? <JobInterestBar offer={barOffer} summaryId={jobSummaryId(job.id)} targetId={INTEREST_ANCHOR} /> : null}
     </div>
   )
 }
