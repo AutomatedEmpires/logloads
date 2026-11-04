@@ -5,11 +5,11 @@ import type { BusinessSwitcherProps } from "@logloads/ui/layout"
 import { unstable_rethrow } from "next/navigation"
 
 import { MEMBER_ROLE_LABELS } from "../plans"
-import { getSessionActor, type SessionActor } from "../session"
+import { getClerkUserId, getSessionActor, type SessionActor } from "../session"
+import { V2_SWITCH_PATH, type V2ShellAccount } from "./account-menu"
 import { v2SessionCapabilities } from "./home"
 
-/** The V2 business switch route (#124): it lists the account's real memberships and revalidates on the server. */
-export const V2_SWITCH_PATH = "/v2/switch"
+export { V2_SWITCH_PATH }
 
 /** V2 wording for an organization's kind; hauling covers both carrier and fleet organizations. */
 const BUSINESS_KIND_LABELS = {
@@ -79,13 +79,26 @@ export function v2MembershipChoices(actor: SessionActor): V2MembershipChoice[] {
   }))
 }
 
+/** The account menu's view of the session: the signed-in person, or a visitor. */
+async function v2ShellAccount(actor: SessionActor | null): Promise<V2ShellAccount> {
+  if (actor) {
+    const { email, fullName } = actor.profile
+    return { kind: "signed-in", person: email ? { email, name: fullName } : { name: fullName } }
+  }
+
+  // A Clerk sign-in without a LogLoads profile yet: no person to show, but it can still sign out.
+  return (await getClerkUserId()) ? { kind: "signed-in", person: null } : { kind: "visitor" }
+}
+
 /**
  * Resolves the V2 layout's chrome from the session: the business switcher and the selected business's
- * capabilities, which decide the navigation (#124). A visitor without a session (public pages) or without a
- * usable business gets neither. A failure to read the session leaves the chrome at its public form; the
- * page's own session and data reads still surface that failure.
+ * capabilities, which decide the navigation (#124), and the account menu's person. A visitor without a
+ * session (public pages) or without a usable business gets no switcher or capabilities. A failure to read
+ * the session leaves the chrome at its public form; the page's own session and data reads still surface
+ * that failure.
  */
 export async function resolveV2Shell(): Promise<{
+  account: V2ShellAccount
   business: BusinessSwitcherProps | undefined
   capabilities: MarketplaceCapability[] | null
 }> {
@@ -93,9 +106,13 @@ export async function resolveV2Shell(): Promise<{
     const actor = await getSessionActor()
     const business = v2BusinessSwitcher(actor)
 
-    return { business, capabilities: business ? await v2SessionCapabilities(actor) : null }
+    return {
+      account: await v2ShellAccount(actor),
+      business,
+      capabilities: business ? await v2SessionCapabilities(actor) : null
+    }
   } catch (error) {
     unstable_rethrow(error)
-    return { business: undefined, capabilities: null }
+    return { account: { kind: "visitor" }, business: undefined, capabilities: null }
   }
 }

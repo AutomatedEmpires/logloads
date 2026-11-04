@@ -158,8 +158,15 @@
   text-align: center;
 }
 
-.business {
+/* The business switcher and the account menu, at the end of the bar. */
+.end {
   display: flex;
+  align-items: center;
+  gap: var(--ll-space-2);
   min-width: 0;
   margin-left: auto;
+}
+
+.business {
+  min-width: 0;
 }

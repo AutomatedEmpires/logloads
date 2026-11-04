@@ -7,10 +7,11 @@ import { pilotMarketplaceV2 } from "./pilot-adapter"
 import type { MarketplaceV2Viewer, MarketplaceV2ViewerAccess } from "./port"
 
 /**
- * Points a refused viewer at the V2 business switcher (`/v2/switch`, #124), which the shell's business
- * name links to. V2 never sends anyone to the legacy workspace chooser.
+ * Points a refused viewer at the V2 business switcher (`/v2/switch`, #124). The account menu's "Switch business"
+ * is on every signed-in page, including when the selected business is no longer available and the shell shows no
+ * business name. V2 never sends anyone to the legacy workspace chooser.
  */
-export const BUSINESS_SWITCH_NOTE = "To act for another business, choose it from the business name at the top of the page."
+export const BUSINESS_SWITCH_NOTE = "To act for another business, open the account menu and choose Switch business."
 
 /** A refusal followed by the switcher note, as full sentences. */
 export function withBusinessSwitchNote(refusal: string): string {
