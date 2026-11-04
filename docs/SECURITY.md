@@ -274,9 +274,10 @@ a NOINHERIT login role that can switch only to `service_role`, owns nothing in t
 function. `createPostgresIdentitySync` checks it on first use, and it stores an email only when Clerk verified it.
 The database does not limit it to that function: `service_role` also runs the schema's other worker functions
 (billing, boosts, invitation delivery), so the credential is as sensitive as the service-role key. Narrowing it to
-`sync_verified_identity` alone needs a schema change (a dedicated grantee). Without that credential nothing is written, and a sign-in the store has not linked yet has no business there. On this
-store `/v2/start/hauler` creates the business through `create_organization` as the person, who becomes its owner,
-and selects it. Legacy cockpits keep the pilot session.
+`sync_verified_identity` alone needs a schema change (a dedicated grantee). Without that credential nothing is
+written, and a sign-in the store has not linked yet has no business there. On this store `/v2/start/hauler` and
+`/v2/start/landing` create the business through `create_organization` as the person, who becomes its owner, and
+select it. Legacy cockpits keep the pilot session.
 
 **Why not the verified-token path yet.** Real Clerk tokens through Supabase third-party auth are not verified
 (#112). Building on them now would rest the adapter on an unproven trust path, and local loopback development
