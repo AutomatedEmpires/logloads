@@ -111,4 +111,9 @@ describe("layout CSS Modules", () => {
   it("pads the bottom tabs for the device safe area", () => {
     expect(rule("ResponsiveNavigation.module.css", ".tabs")).toMatch(/padding-bottom:\s*env\(safe-area-inset-bottom/)
   })
+
+  it("gives the off-screen skip link no shadow until it is focused", () => {
+    expect(rule("AppShell.module.css", ".skip")).toMatch(/box-shadow:\s*none/)
+    expect(rule("AppShell.module.css", ".skip:focus")).toMatch(/box-shadow:\s*var\(--ll-shadow-md\)/)
+  })
 })
