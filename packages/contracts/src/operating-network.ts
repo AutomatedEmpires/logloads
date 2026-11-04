@@ -171,6 +171,16 @@ export const tripEventTypeSchema = z.enum([
   "cancelled"
 ])
 
+/**
+ * Upper bounds for the text an operational notice stores. Every notice lands in
+ * the one shared operating-state document that each request reads and rewrites,
+ * so an unbounded field would let a single writer slow every tenant down.
+ */
+export const OPERATIONAL_NOTICE_LIMITS = Object.freeze({
+  body: 4000,
+  title: 200
+})
+
 export const operationalNoticeSchema = z.object({
   id: uuidSchema,
   organizationId: uuidSchema,
@@ -178,8 +188,8 @@ export const operationalNoticeSchema = z.object({
   relatedLandingId: uuidSchema.optional().nullable(),
   relatedDestinationId: uuidSchema.optional().nullable(),
   severity: z.enum(["info", "watch", "critical"]),
-  title: z.string().min(1),
-  body: z.string().min(1),
+  title: z.string().min(1).max(OPERATIONAL_NOTICE_LIMITS.title),
+  body: z.string().min(1).max(OPERATIONAL_NOTICE_LIMITS.body),
   effectiveAt: timestampSchema,
   expiresAt: optionalTimestampSchema,
   createdAt: timestampSchema

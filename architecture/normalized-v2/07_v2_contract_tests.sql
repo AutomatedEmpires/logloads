@@ -84,6 +84,10 @@ begin
 end
 $$;
 
+-- 18 (HF-18): functions created by the migration role no longer get EXECUTE for PUBLIC, and this harness runs as
+-- that role. The helpers are called after SET ROLE anon / authenticated / service_role, so they are granted here.
+grant execute on all functions in schema pg_temp to public;
+
 do $$
 declare
   v_issuer constant text := 'https://clerk.logloads.v2.test';
