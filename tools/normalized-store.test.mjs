@@ -384,7 +384,7 @@ function scriptedPsql(database) {
   const calls = []
 
   const spawnSync = (command, args, options = {}) => {
-    calls.push({ args, command, env: options.env ?? {}, input: options.input ?? "" })
+    calls.push({ args, command, connection: options.env ?? {}, input: options.input ?? "" })
 
     if (args[0] === "--version") return { status: 0, stderr: "", stdout: "psql (PostgreSQL) 17.6\n" }
 
@@ -393,7 +393,7 @@ function scriptedPsql(database) {
 
     if (file === "-" && input === STATE_SQL) return { status: 0, stderr: "", stdout: stateLines(database) }
     if (file === "-" && input === ADAPTER_LOGIN_SQL) {
-      if (options.env.PGPASSWORD !== database.adapterPassword) return { status: 2, stderr: "psql: error: FATAL:  password authentication failed\n", stdout: "" }
+      if ((options.env ?? {})["PGPASSWORD"] !== database.adapterPassword) return { status: 2, stderr: "psql: error: FATAL:  password authentication failed\n", stdout: "" }
       return { status: 0, stderr: "", stdout: 'adapter_login|{"user":"logloads_marketplace_adapter","superuser":false,"bypassrls":false,"inherit":false}\nadapter_discovery|3\n' }
     }
     if (file === "-" && input.includes("insert into marketplace.trusted_identity_issuers")) {
@@ -475,11 +475,11 @@ test("schema --apply applies each file in one transaction, in order, then the is
   assert.ok(role, "the role is created")
   assert.match(role.input, /password 'SCRAM-SHA-256\$4096:/)
   assert.ok(!role.input.includes(ADAPTER_PASSWORD), "the plaintext password is never sent")
-  assert.equal(role.env.PGUSER, "postgres")
-  assert.equal(role.env.PGPASSWORD, MIGRATION_PASSWORD, "connection values travel in the environment")
+  assert.equal(role.connection.PGUSER, "postgres")
+  assert.equal(role.connection.PGPASSWORD, MIGRATION_PASSWORD, "connection values travel in the environment")
 
   const login = calls.find((call) => call.input === ADAPTER_LOGIN_SQL)
-  assert.equal(login.env.PGUSER, "logloads_marketplace_adapter")
+  assert.equal(login.connection.PGUSER, "logloads_marketplace_adapter")
   assert.match(out, /as anon, public discovery returned 3 job\(s\)/)
   assert.match(out, /Result: the normalized store is deployed to project local/)
 })
