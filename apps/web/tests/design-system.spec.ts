@@ -711,10 +711,13 @@ test.describe("job rows: semantic structure (/v2/work)", () => {
     test("the filter form is a GET form the server answers", async ({ page }) => {
       await openV2(page, "/v2/work?all=1")
       const title = (await jobRows(page).first().locator("h3 a").innerText()).trim()
-      const filters = page.getByRole("search", { name: "Filter jobs" })
-      const search = filters.getByLabel("Search")
+      // Unhydrated, the summary bar (#129) is a native <details> whose body is the same GET form as the sheet's.
+      const summary = findWorkSummary(page)
+      const filters = page.locator("form[role='search']:has(#work-q)")
+      const search = filters.getByRole("searchbox", { name: "Keywords (optional)" })
 
       // The page rendered the box from the query, so the next search still includes every listing.
+      await summary.click()
       await expect(filters.getByRole("checkbox", { name: "Include filled, paused and closed jobs" })).toBeChecked()
 
       await search.fill(title)
@@ -723,12 +726,13 @@ test.describe("job rows: semantic structure (/v2/work)", () => {
       await expect(search).toHaveValue(title)
       await expect(jobRows(page).filter({ hasText: title }).first()).toBeVisible()
 
+      await summary.click()
       await search.fill("no listing matches this zqxv")
       await filters.getByRole("button", { name: "Apply" }).click()
       await page.waitForURL((url) => url.searchParams.get("q") === "no listing matches this zqxv")
       await expect(jobRows(page)).toHaveCount(0)
-      await expect(page.getByText("No jobs match right now")).toBeVisible()
-      await expect(page.getByRole("link", { name: "Clear filters" })).toHaveAttribute("href", "/v2/work")
+      await expect(page.getByText("No jobs match your search")).toBeVisible()
+      await expect(page.getByRole("link", { name: "Clear keywords" })).toHaveAttribute("href", "/v2/work?all=1")
     })
 
     test.fixme("a missing job's not-found page shows its message", async ({ page }) => {
