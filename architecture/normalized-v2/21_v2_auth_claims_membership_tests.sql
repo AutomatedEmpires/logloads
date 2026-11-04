@@ -139,7 +139,8 @@ declare
   u_a uuid; u_b uuid; u_blank uuid;
   o_a uuid; o_b uuid; e_a uuid; e_b uuid; m_b uuid; m_again uuid;
   t_a jsonb; t_b jsonb; t_wrong jsonb;
-  v_now bigint := extract(epoch from now())::bigint;
+  -- floor, not ::bigint (which rounds): the "expiring this second" case must not land half a second ahead.
+  v_now bigint := floor(extract(epoch from now()))::bigint;
 begin
   perform pg_temp.as_service();
   u_a := marketplace.sync_verified_identity(c_iss, 's21_a', 'S21 A', 'a@s21.test', true);
