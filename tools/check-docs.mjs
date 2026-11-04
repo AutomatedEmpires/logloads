@@ -53,11 +53,6 @@ const RULE_IDS = new Set([
 // is read by a platform, SDK or build plugin rather than declared by LogLoads code. Prefer adding a variable to the
 // contract; list it here only with the reason it is outside the contract.
 export const ENV_OUTSIDE_CONTRACT = {
-  VERCEL_ENV:
-    "Vercel system variable. apps/web reads it (marketplace-v2/flag.ts, rate-limit-config.ts, demo-mode.ts) but the " +
-    "contract does not list it yet; add it to ops/production-env-contract.json, then drop it from here.",
-  NEXT_PUBLIC_CLERK_SIGN_IN_URL: "Read by the Clerk SDK, not by LogLoads code (docs/ACTIVATION_CLERK.md).",
-  NEXT_PUBLIC_CLERK_SIGN_UP_URL: "Read by the Clerk SDK, not by LogLoads code (docs/ACTIVATION_CLERK.md).",
   SENTRY_AUTH_TOKEN: "Optional build-time token for the Sentry source-map upload plugin; never read at runtime."
 }
 
@@ -84,8 +79,10 @@ const GENERATED_SEGMENTS = new Set([
 // Rule 10 covers only the project's own environment namespaces. Generic names (`NODE_*`, `GITHUB_*`, `VERCEL_*`,
 // `NEXT_TELEMETRY_DISABLED`, `CI`) belong to Node, GitHub, Vercel or Next.js and are not checked. The contract's
 // forbidden prefixes (the retired Cloudinary ones) are added at load time, so naming them needs removal context.
+// `ASSISTANT_` and `SUPPORT_` hold app variables without a provider prefix (`ASSISTANT_MODEL`, `SUPPORT_EMAIL`).
 const ENV_PROJECT_PREFIXES = [
   "ANTHROPIC_",
+  "ASSISTANT_",
   "CLERK_",
   "CREDENTIAL_REVIEW_",
   "CRON_",
@@ -95,13 +92,13 @@ const ENV_PROJECT_PREFIXES = [
   "RESEND_",
   "SENTRY_",
   "STRIPE_",
-  "SUPABASE_"
+  "SUPABASE_",
+  "SUPPORT_"
 ]
 // Well-known variables of external tools inside those namespaces. They configure a CLI, not LogLoads, so they need
-// not be in the contract (it may still list them). Keep the list short and say which tool reads each one.
-export const ENV_EXTERNAL_TOOL_NAMES = {
-  SUPABASE_ACCESS_TOKEN: "Personal access token for the Supabase CLI (`supabase link`, `supabase db push`)."
-}
+// not be in the contract. Keep the list short and say which tool reads each one. Empty today: the Supabase CLI's
+// `SUPABASE_ACCESS_TOKEN` is in the contract (#111), which is the better home for any name a doc tells you to set.
+export const ENV_EXTERNAL_TOOL_NAMES = {}
 
 // pnpm 10's own commands and aliases, plus the npm commands it passes through. `test`/`t`/`tst` and `start` are
 // absent on purpose: they run a script, so the script must exist.
@@ -347,7 +344,10 @@ function loadEnvContract(root) {
     if (typeof variable?.name !== "string") continue
     known.add(variable.name)
   }
-  // Names the contract records as listed-but-unused, and the historical gates it keeps disabled.
+  // Names the contract records outside `variables`: placeholders removed for having no reader (#111), GitHub
+  // Actions secrets, the older free-text listed-but-unused notes, and the historical gates it keeps disabled.
+  for (const name of contract.removed_placeholders?.names ?? []) known.add(String(name))
+  for (const name of contract.ci_only_variables?.names ?? []) known.add(String(name))
   for (const note of contract.unused_in_code_remove_or_ignore ?? [])
     for (const match of String(note).matchAll(new RegExp(`\\b${ENV_NAME}\\b`, "g"))) known.add(match[0])
   for (const name of Object.keys(contract.commercial_authority?.historical_gates ?? {})) known.add(name)

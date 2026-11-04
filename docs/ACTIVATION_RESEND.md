@@ -4,7 +4,9 @@
 > - §1–§3 are IMPLEMENTED: the existing, key-gated email integration in code at `15892b7`.
 > - §4 is TARGET.
 >
-> This document authorizes no campaign, broadcast, production key, or DNS change.
+> This document authorizes no campaign, broadcast, production key, or DNS change. The earlier Resend account
+> was deleted for the fresh start; creating the new one (domain, DNS, keys per environment) is
+> [`INTEGRATIONS.md`](./INTEGRATIONS.md) §7.
 
 ## 1. What the code does today (IMPLEMENTED)
 
@@ -16,7 +18,8 @@ success.
   failure and never throws. It does not retry.
 - `isEmailDeliveryEnabled()` gates callers on `RESEND_API_KEY`.
 - **From:** `RESEND_FROM`, then the compatibility `LOGLOADS_EMAIL_FROM`, then the default
-  `LogLoads <notifications@logloads.com>`.
+  `LogLoads <notifications@logloads.com>`. The default applies to `notify.ts` only: the billing outbox has no
+  default, so without `RESEND_FROM` or `LOGLOADS_EMAIL_FROM` its email stays queued.
 - **Reply-to:** `RESEND_REPLY_TO`, then `SUPPORT_EMAIL`, then the compatibility `LOGLOADS_EMAIL_REPLY_TO`,
   then `support@logloads.com`.
 - **Contact form** (`apps/web/lib/contact-actions.ts`) emails `LOGLOADS_CONTACT_EMAIL` and always writes an

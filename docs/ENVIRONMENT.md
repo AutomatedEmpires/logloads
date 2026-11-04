@@ -1,8 +1,9 @@
 # LogLoads — Local Environment
 
-> **Status:** IMPLEMENTED behavior, last verified 2026-11-02 against `4c9518e`. Scope: local development only.
-> Production variables and their fail-closed rules are in [`ENV_CONTRACT.md`](./ENV_CONTRACT.md). Deployment is
-> in [`DEPLOYMENT.md`](./DEPLOYMENT.md). CI is in [`CI.md`](./CI.md).
+> **Status:** IMPLEMENTED behavior, last verified 2026-11-03. Scope: local development only.
+> Production variables and their fail-closed rules are in [`ENV_CONTRACT.md`](./ENV_CONTRACT.md). Connecting the
+> hosted providers is in [`INTEGRATIONS.md`](./INTEGRATIONS.md). Deployment is in [`DEPLOYMENT.md`](./DEPLOYMENT.md).
+> CI is in [`CI.md`](./CI.md).
 
 ## 1. Toolchain and first run
 
@@ -38,7 +39,11 @@ LOGLOADS_RATE_LIMIT_HMAC_SECRET=<generated>
 - `LOGLOADS_RATE_LIMIT_HMAC_SECRET` is required: `requestClientKey()` throws without it
   (`apps/web/lib/rate-limit-client-key.ts`).
 - It writes **no** provider credentials, so local development uses the JSON store and seeded sign-in.
-- Do not point local development at a hosted Supabase project unless an issue explicitly scopes it.
+- Do not point local development at a hosted Supabase project unless an issue explicitly scopes it. The readiness
+  check warns when it does.
+- Check the file without printing values: `pnpm integrations:check --target local --env-file apps/web/.env.local`.
+  Optional local provider keys belong in the Doppler `dev` config instead
+  ([`INTEGRATIONS.md`](./INTEGRATIONS.md) §4).
 
 ## 3. Sign-in
 
@@ -79,10 +84,10 @@ LOGLOADS_RATE_LIMIT_HMAC_SECRET=<generated>
 
 **V2 preview.** `LOGLOADS_MARKETPLACE_V2=enabled` turns on `/v2`.
 
-- It is always off when `VERCEL_ENV=production`.
+- It is always off when `VERCEL_ENV=production`, and it must be unset in Production.
 - When disabled, `/v2` returns `notFound()`. The layout is always `noindex`.
-- Keep it to local development until an isolated hosted preview is approved
-  ([`DEPLOYMENT.md`](./DEPLOYMENT.md) §4).
+- Set it in Doppler `dev` for local work. On a hosted Preview (`stg`) only with an isolated Supabase project and
+  the [`DEPLOYMENT.md`](./DEPLOYMENT.md) §4 gates.
 
 **Maps.** `apps/web/lib/map-runtime.ts` chooses a provider in this order:
 
@@ -99,10 +104,11 @@ Further map rules:
 - Never paste a key into issues, chat or screenshots.
 - The founder-reported 5M requests/month allowance is **UNVERIFIED**.
 
-## 7. `.env.example` status (#111)
+## 7. `.env.example` status (#111, reconciled 2026-11-03)
 
-- `.env.example` now lists `NEXT_PUBLIC_CARTO_BASEMAP_KEY` and `LOGLOADS_MARKETPLACE_V2` (unset).
-- These four are annotated as read by no application code at `4c9518e`, but are kept: `NEXT_PUBLIC_MAP_PROVIDER`,
-  `NOTIFICATION_PROVIDER`, `NEXT_PUBLIC_NOTIFICATION_PROVIDER`, `VERCEL_TOKEN`.
-- `ops/production-env-contract.json` still lacks `LOGLOADS_MARKETPLACE_V2`. That file is checked by
-  `tools/turbo-env-contract.test.mjs`, so the change is a proposal for its implementation owner (#111).
+- `.env.example`, `ops/production-env-contract.json` and the code readers agree.
+  `tools/integration-readiness-contract.test.mjs` (part of `pnpm test:tools`) fails if they drift.
+- `NEXT_PUBLIC_CARTO_BASEMAP_KEY` and `LOGLOADS_MARKETPLACE_V2` are listed (unset), and the contract marks the
+  V2 flag as must be unset in Production.
+- Placeholders with no reader were removed; the list, with the reason for each, is in
+  [`ENV_CONTRACT.md`](./ENV_CONTRACT.md) §7.

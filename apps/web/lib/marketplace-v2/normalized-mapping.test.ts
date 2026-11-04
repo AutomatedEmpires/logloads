@@ -3,12 +3,15 @@ import { describe, expect, it } from "vitest"
 import { validateMarketplaceJobDraft } from "@logloads/contracts"
 
 import {
+  configurationEquipmentCodes,
+  equipmentOptionFromRow,
   expressInterestArguments,
   interestViewFromRow,
   jobFilterArguments,
   jobViewFromRow,
   landingFromRow,
   publishArguments,
+  refineDiscovery,
   respondArguments,
   viewerAccessFromRow,
   workDurationDays
@@ -32,7 +35,6 @@ function jobRow(overrides: Record<string, unknown> = {}) {
     duration_days: 10,
     ends_on: "2026-12-10",
     equipment_codes: ["log_truck"],
-    equipment_labels: ["Log truck"],
     est_one_way_miles: 42,
     estimated_daily_loads: 12,
     estimated_loads_per_truck_per_day: 2.5,
@@ -73,7 +75,7 @@ describe("jobViewFromRow", () => {
     expect(view.origin).toEqual({ approximatePoint: { lat: 47.7, lng: -117.5 }, label: "Near Vida, OR", stateCode: "OR" })
     expect(view).toMatchObject({
       acceptingInterest: true,
-      equipment: ["Log truck"],
+      equipment: ["log_truck"],
       estimatedLoadsPerTruckPerDay: 2.5,
       estimatedTonsPerLoad: 28.5,
       haulDistance: { basis: "poster_route_estimate", miles: 42 },
@@ -261,5 +263,34 @@ describe("arguments", () => {
     expect(() => respondArguments({ decision: "replied", interestId: INTEREST_ID, replyId: USER_ID })).toThrow("A reply needs a message")
     expect(respondArguments({ body: "Call us", decision: "replied", interestId: INTEREST_ID, replyId: USER_ID }))
       .toEqual({ p_body: "Call us", p_interest_id: INTEREST_ID, p_reply_id: USER_ID, p_status: "replied" })
+  })
+})
+
+describe("equipment codes (#185)", () => {
+  it("reads a configuration's codes from its generated key, keeping only taxonomy codes", () => {
+    expect(configurationEquipmentCodes("log_truck")).toEqual(["log_truck"])
+    expect(configurationEquipmentCodes("self_loader|pole_trailer")).toEqual(["self_loader", "pole_trailer"])
+    expect(configurationEquipmentCodes("log_truck|flatbed")).toEqual(["log_truck"])
+    expect(equipmentOptionFromRow({ configuration_key: "chip_truck|chip_van", label: "Chip truck + Chip van", units_listed: 3 }))
+      .toEqual({ configurationKey: "chip_truck|chip_van", equipmentCodes: ["chip_truck", "chip_van"], label: "Chip truck + Chip van", unitsListed: 3 })
+  })
+})
+
+describe("refineDiscovery (#185 filters the function does not take yet)", () => {
+  const near = jobViewFromRow(jobRow({ job_id: "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaa1", origin_lat: 44.2, origin_lng: -122.5, pay_amount_cents: 9100, pay_unit: "per_ton", product: "Saw logs", starts_on: "2026-12-01", title: "Near saw logs" }))
+  const far = jobViewFromRow(jobRow({ job_id: "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaa2", origin_lat: 45.5, origin_lng: -122.7, pay_amount_cents: 52500, pay_unit: "per_load", product: "Pulpwood", starts_on: "2026-12-20", title: "Far pulpwood", equipment_codes: ["self_loader"] }))
+  const jobs = [near, far]
+  const ids = (list: Array<{ id: string }>) => list.map((job) => job.id)
+
+  it("filters by product, start date, distance from a typed place and the viewer's setups", () => {
+    expect(ids(refineDiscovery(jobs, { product: "Pulpwood" }))).toEqual([far.id])
+    expect(ids(refineDiscovery(jobs, { startsBy: "2026-12-05" }))).toEqual([near.id])
+    expect(ids(refineDiscovery(jobs, { near: { lat: 44.16, lng: -122.48 }, radiusMiles: 10 }))).toEqual([near.id])
+    expect(ids(refineDiscovery(jobs, { equipmentSetups: [["log_truck"]] }))).toEqual([near.id])
+  })
+
+  it("orders by the chosen sort, with pay compared only within a basis", () => {
+    expect(ids(refineDiscovery(jobs, { near: { lat: 45.5, lng: -122.7 }, sort: "nearest" }))).toEqual([far.id, near.id])
+    expect(ids(refineDiscovery(jobs, { sort: "pay" }))).toEqual([far.id, near.id])
   })
 })

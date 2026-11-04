@@ -72,6 +72,7 @@ migrations, or deployments.**
 | Security controls and open verification | [`SECURITY.md`](./SECURITY.md) |
 | Local setup | [`ENVIRONMENT.md`](./ENVIRONMENT.md) |
 | Production variables | [`ENV_CONTRACT.md`](./ENV_CONTRACT.md), companion to `ops/production-env-contract.json` |
+| Provider setup from a fresh start (runbook) | [`INTEGRATIONS.md`](./INTEGRATIONS.md) |
 | Deploy, migrate, roll back | [`DEPLOYMENT.md`](./DEPLOYMENT.md) |
 | Backup and restore | [`RECOVERY.md`](./RECOVERY.md) |
 | CI and verification evidence | [`CI.md`](./CI.md) |
