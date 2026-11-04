@@ -9,6 +9,7 @@ import {
 	verifiedMediaReference
 } from "@/lib/media"
 import { mutateState, services } from "@/lib/services"
+import { readJsonBody } from "@/lib/request-body"
 
 /**
  * Attaches proof already uploaded via `/api/trip-documents/signature`.
@@ -24,7 +25,7 @@ export async function POST(
 ) {
 	try {
 		const { tripId } = await context.params
-		const payload = parseJsonObject(await request.json())
+		const payload = parseJsonObject(await readJsonBody(request))
 		const requestedOrganizationId = typeof payload.organizationId === "string"
 			? payload.organizationId
 			: undefined
