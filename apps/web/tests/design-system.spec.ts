@@ -1954,10 +1954,17 @@ const LANDING_PAGES = [
   { email: LANDING_OWNER, heading: "Edit landing", path: `/v2/landing/landings/${BLUE_RIVER.id}`, root: "landing-editor" }
 ] as const
 
+/**
+ * The HTML the server sends for a page, fetched by navigating so the browser's own session cookie goes with it (an
+ * API request does not send the production build's Secure cookie over plain http). A redirect, for example to
+ * sign-in, fails rather than letting an absence check pass on the wrong page.
+ */
 async function pageHtml(page: Page, path: string): Promise<string> {
-  const response = await page.request.get(path)
-  expect(response.status(), `${path} answers`).toBe(200)
-  return response.text()
+  const response = await page.goto(path)
+  expect(response?.status(), `${path} answers`).toBe(200)
+  const served = new URL(response!.url())
+  expect(`${served.pathname}${served.search}`, `${path} is served without a redirect`).toBe(path)
+  return response!.text()
 }
 
 const landingForm = (page: Page) => page.locator("[data-ds-page='landing-editor'] form").filter({ has: page.locator("input[name='name']") })
