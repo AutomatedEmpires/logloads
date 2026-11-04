@@ -126,6 +126,10 @@ jobs:
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 16
 
+      - name: "Stage 18: 18_v2_review_106_hardening.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 18
+
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
