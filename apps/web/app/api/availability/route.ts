@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 
 import { ApiError, apiErrorResponse, requireApiActor } from "@/lib/api-actor"
 import { mutateState, services } from "@/lib/services"
+import { readJsonBody } from "@/lib/request-body"
 
 export async function GET() {
 	try {
@@ -25,7 +26,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
 	try {
-		const payload = await request.json()
+		const payload = await readJsonBody(request)
 		const { actor, actorUserId, organizationId } = await requireApiActor()
 		const driverProfileId = actor.driverProfileId
 

@@ -27,6 +27,27 @@ const timestampSchema = z.string().datetime()
 export const initialLoadStatusSchema = loadStatusSchema.extract(["draft", "open", "scheduled"])
 export const initialTruckSlotStatusSchema = truckSlotStatusSchema.extract(["open"])
 
+/**
+ * The longest title a host may give a load posting (#187). The same bound as the
+ * V2 job title (`marketplaceJobDraftSchema`) and the normalized schema's
+ * `jobs.title` check, so a pilot title also fits there.
+ *
+ * Every posting lands in the one shared operating-state document, and the title
+ * is copied into notices and messages, so it needs an upper bound. The bound is
+ * on the create and update inputs only, not on the stored row
+ * (`loadPostingSchema`): a load posted before the cap keeps loading, keeps its
+ * title and can still be published from a draft.
+ */
+export const LOAD_POSTING_TITLE_MAX_LENGTH = 140
+
+export const loadPostingTitleInputSchema = z
+  .string()
+  .min(1)
+  .max(
+    LOAD_POSTING_TITLE_MAX_LENGTH,
+    `Keep the work title to ${LOAD_POSTING_TITLE_MAX_LENGTH} characters or fewer`
+  )
+
 export const createLoadPostingInputSchema = loadPostingSchema
   .omit({
     archivedAt: true,
@@ -36,7 +57,8 @@ export const createLoadPostingInputSchema = loadPostingSchema
     updatedAt: true
   })
   .extend({
-    status: initialLoadStatusSchema
+    status: initialLoadStatusSchema,
+    title: loadPostingTitleInputSchema
   })
 
 /**

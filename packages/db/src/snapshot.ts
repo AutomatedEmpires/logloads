@@ -69,6 +69,23 @@ const REPORTED_SIGNATURE_LIMIT = 500
 export const OPERATING_STATE_SCHEMA_VERSION = 2
 
 /**
+ * The largest operating_state write the snapshot writer sends (HF-02, #187).
+ *
+ * Every request downloads this one document, parses it and, on a write, clones
+ * it and sends it back whole, inside an 8-second timeout. A document that keeps
+ * growing slows every tenant, so a write that would push it past this size is
+ * refused rather than stored.
+ *
+ * 8 MiB is a generous ceiling, not a target. The seeded document is about
+ * 112 KB (`JSON.stringify(seedDatabaseState)`, measured 2026-11-03), so this
+ * leaves room for roughly 75 times that much data, while a full download,
+ * parse, clone and upload of a document this size still fits well inside the
+ * request timeout. The live document's size was not measured for this change
+ * (no hosted access); a pilot document is expected to be far below the limit.
+ */
+export const OPERATING_STATE_MAX_BYTES = 8 * 1024 * 1024
+
+/**
  * The verdict this module needs from a contract schema, described structurally.
  * packages/db depends on @logloads/contracts, not on zod, and reaching through a
  * transitive dependency for a type would break the moment contracts changes how
@@ -342,6 +359,8 @@ export interface OperatingStateAudit extends OperatingStateReport {
 export interface RemoteSnapshotConfig {
   url: string
   key: string
+  /** Defaults to `OPERATING_STATE_MAX_BYTES`. */
+  maxDocumentBytes?: number
 }
 
 export interface RemoteOperatingStateSnapshot {
@@ -371,6 +390,23 @@ export class OperatingStateConflictError extends Error {
   constructor(attempts: number) {
     super(`Operating state changed concurrently after ${attempts} attempts`)
     this.name = "OperatingStateConflictError"
+  }
+}
+
+/**
+ * A write refused because the stored document would pass the size limit. The
+ * write was never sent, so the stored document is unchanged; retrying the same
+ * write cannot succeed.
+ */
+export class OperatingStateTooLargeError extends Error {
+  constructor(
+    public readonly byteLength: number,
+    public readonly limitBytes: number
+  ) {
+    super(
+      `Operating state write refused: the document would be ${byteLength} bytes, over the ${limitBytes}-byte limit`
+    )
+    this.name = "OperatingStateTooLargeError"
   }
 }
 
@@ -1294,6 +1330,19 @@ export function remoteSnapshotConfig(): RemoteSnapshotConfig | null {
   return { key, url: url.replace(/\/$/, "") }
 }
 
+/** The request body for a write, or a refusal when it would pass the size limit. */
+function boundedWriteBody(config: RemoteSnapshotConfig, row: Record<string, unknown>): string {
+  const body = JSON.stringify(row)
+  const limitBytes = config.maxDocumentBytes ?? OPERATING_STATE_MAX_BYTES
+  const byteLength = new TextEncoder().encode(body).byteLength
+
+  if (byteLength > limitBytes) {
+    throw new OperatingStateTooLargeError(byteLength, limitBytes)
+  }
+
+  return body
+}
+
 function requestHeaders(config: RemoteSnapshotConfig): Record<string, string> {
   return {
     Accept: "application/json",
@@ -1495,16 +1544,17 @@ export async function initializeRemoteOperatingState(
     return existing
   }
 
+  const body = boundedWriteBody(config, {
+    id: SNAPSHOT_ROW_ID,
+    schema_version: OPERATING_STATE_SCHEMA_VERSION,
+    state,
+    version: 0
+  })
   let response: Response
 
   try {
     response = await fetch(`${config.url}/rest/v1/operating_state`, {
-      body: JSON.stringify({
-        id: SNAPSHOT_ROW_ID,
-        schema_version: OPERATING_STATE_SCHEMA_VERSION,
-        state,
-        version: 0
-      }),
+      body,
       headers: {
         ...requestHeaders(config),
         "Content-Type": "application/json",
@@ -1551,18 +1601,21 @@ export async function updateRemoteOperatingState(
   timeoutMs = 8000,
   withheldRows: WithheldOperatingStateRows = {}
 ): Promise<RemoteOperatingStateSnapshot | null> {
+  // Measured with the withheld rows put back, because that is the document that
+  // would be stored.
+  const body = boundedWriteBody(config, {
+    schema_version: OPERATING_STATE_SCHEMA_VERSION,
+    state: restoreWithheldRows(state, withheldRows),
+    updated_at: new Date().toISOString(),
+    version: expectedVersion + 1
+  })
   let response: Response
 
   try {
     response = await fetch(
       `${config.url}/rest/v1/operating_state?id=eq.${SNAPSHOT_ROW_ID}&version=eq.${expectedVersion}`,
       {
-        body: JSON.stringify({
-          schema_version: OPERATING_STATE_SCHEMA_VERSION,
-          state: restoreWithheldRows(state, withheldRows),
-          updated_at: new Date().toISOString(),
-          version: expectedVersion + 1
-        }),
+        body,
         headers: {
           ...requestHeaders(config),
           "Content-Type": "application/json",
