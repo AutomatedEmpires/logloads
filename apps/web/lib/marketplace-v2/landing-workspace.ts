@@ -25,6 +25,17 @@ export const ORGANIZATION_SETUP_UNAVAILABLE =
   "Setting up a business isn't available in this preview yet: it needs the normalized marketplace store. Nothing was saved, and what you entered is still here."
 export const FIX_LANDING_FIELDS = "Check the highlighted fields. Nothing was saved yet."
 
+/**
+ * What a landing row or its status forms need: public labels and the status, never the private half. Pages pass this
+ * (not the whole landing) to their components, because a development build also sends server components' props to
+ * the browser for debugging.
+ */
+export type LandingRowView = Pick<MarketplaceLandingView, "id" | "name" | "areaLabel" | "status" | "activeJobs">
+
+export function landingRowView(landing: MarketplaceLandingView): LandingRowView {
+  return { activeJobs: landing.activeJobs, areaLabel: landing.areaLabel, id: landing.id, name: landing.name, status: landing.status }
+}
+
 export type LandingFormValues = Record<MarketplaceLandingFormField, string>
 
 /** What the last submission of a landing form came to. `idle` is a fresh form. */

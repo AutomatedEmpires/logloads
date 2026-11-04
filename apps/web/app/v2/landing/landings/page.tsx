@@ -1,10 +1,6 @@
 import { notFound, unstable_rethrow } from "next/navigation"
 
-import {
-  summarizeLandingAllowance,
-  type LandingAllowanceSummary,
-  type MarketplaceLandingView
-} from "@logloads/contracts"
+import { summarizeLandingAllowance, type LandingAllowanceSummary } from "@logloads/contracts"
 import { ContentGrid, PageActions, PageContainer, PageHeader, Section } from "@logloads/ui/layout"
 import { Button, EmptyState, ErrorState } from "@logloads/ui/primitives"
 
@@ -19,9 +15,11 @@ import {
   jobsLine,
   LANDING_STATUS_UNAVAILABLE,
   LANDINGS_PATH,
+  landingRowView,
   landingStatusLabel,
   NEW_LANDING_PATH,
-  PLANS_HREF
+  PLANS_HREF,
+  type LandingRowView
 } from "@/lib/marketplace-v2/landing-workspace"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
 import { resolveV2Viewer, withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
@@ -142,7 +140,7 @@ export default async function LandingsPage({ searchParams }: { searchParams: Sea
               ) : (
                 <Section description="Haulers see a landing's name and approximate area on its jobs." title="Your landings">
                   <ul aria-label="Your landings" className={styles.rows} id="landings">
-                    {landings.value.map((landing) => (
+                    {landings.value.map(landingRowView).map((landing) => (
                       <LandingRow canManage={canManage} key={landing.id} landing={landing} recruit={recruit} />
                     ))}
                   </ul>
@@ -156,7 +154,7 @@ export default async function LandingsPage({ searchParams }: { searchParams: Sea
   )
 }
 
-function LandingRow({ canManage, landing, recruit }: { canManage: boolean; landing: MarketplaceLandingView; recruit: "room" | "at_cap" | "billing_inactive" }) {
+function LandingRow({ canManage, landing, recruit }: { canManage: boolean; landing: LandingRowView; recruit: "room" | "at_cap" | "billing_inactive" }) {
   return (
     <li className={styles.row}>
       <div className={styles.rowHead}>

@@ -1,7 +1,7 @@
-import type { MarketplaceLandingStatus, MarketplaceLandingView } from "@logloads/contracts"
+import type { MarketplaceLandingStatus } from "@logloads/contracts"
 
 import { setLandingStatusAction } from "@/lib/marketplace-v2/landing-actions"
-import { LANDINGS_PATH, PLANS_HREF } from "@/lib/marketplace-v2/landing-workspace"
+import { LANDINGS_PATH, PLANS_HREF, type LandingRowView } from "@/lib/marketplace-v2/landing-workspace"
 
 import { PendingSubmitButton } from "../PendingSubmitButton"
 import styles from "./landing.module.css"
@@ -20,7 +20,7 @@ function StatusForm({ label, landingId, status, variant = "secondary" }: { label
  * A landing's status actions (#127 criteria 5 and 7). Each is its own small form with the landing id and the status
  * asked for, so a stale page can never resubmit the landing's details. The server re-checks the role and the plan.
  */
-export function LandingStatusForms({ landing, recruit }: { landing: MarketplaceLandingView; recruit: "room" | "at_cap" | "billing_inactive" }) {
+export function LandingStatusForms({ landing, recruit }: { landing: LandingRowView; recruit: "room" | "at_cap" | "billing_inactive" }) {
   const jobs = landing.activeJobs ?? 0
   const pauseNoteId = `landing-${landing.id}-pause-note`
 

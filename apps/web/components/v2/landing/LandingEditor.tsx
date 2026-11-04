@@ -8,6 +8,7 @@ import {
   hasRoomToRecruit,
   initialLandingFormState,
   LANDINGS_PATH,
+  landingRowView,
   landingStatusLabel,
   PLANS_HREF,
   recruitingHint
@@ -105,7 +106,7 @@ export async function landingEditorPage(landingId: string | null) {
               {landing ? (
                 <Section description={summary ? activeLandingsLine(summary) : undefined} title="Recruiting status">
                   <LandingStatusForms
-                    landing={landing}
+                    landing={landingRowView(landing)}
                     recruit={!summary || !summary.plan ? "billing_inactive" : hasRoomToRecruit(summary) ? "room" : "at_cap"}
                   />
                 </Section>
