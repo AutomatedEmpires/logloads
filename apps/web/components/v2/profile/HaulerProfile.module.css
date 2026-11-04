@@ -1,0 +1,111 @@
+/* Hauling business profile (UX 02 §A3, §5.1; #125): the edit form and the public profile. Layout only; fields,
+   panels and buttons are design-system components. Semantic --ll-* tokens only; measures the "ll-app" container. */
+
+.form { display: grid; gap: var(--ll-space-5); margin: 0; min-width: 0; }
+
+.fields { display: grid; gap: var(--ll-space-5); min-width: 0; margin: 0; padding: 0; border: 0; }
+
+/* The public and private panels side by side from bp-lg (UX 02 "Journey A on desktop"), stacked below. */
+.panels { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--ll-space-5); align-items: start; }
+
+@container ll-app (min-width: 960px) {
+  .panels { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.panels > section > div { display: grid; gap: var(--ll-space-4); }
+
+.setting { padding-top: var(--ll-space-1); border-top: 1px solid var(--ll-color-rule); }
+
+.readOnly { display: grid; gap: var(--ll-space-1); min-width: 0; }
+
+.readOnlyLabel { margin: 0; font-size: var(--ll-text-sm); font-weight: var(--ll-weight-semibold); color: var(--ll-color-text); }
+
+.readOnlyHint { margin: 0; font-size: var(--ll-text-sm); color: var(--ll-color-text-muted); }
+
+.readOnlyValue { margin: 0; font-size: var(--ll-text-md); color: var(--ll-color-text); overflow-wrap: anywhere; }
+
+.summary {
+  display: grid;
+  gap: var(--ll-space-2);
+  margin: 0;
+  padding: var(--ll-space-3) var(--ll-space-4);
+  border: 1px solid var(--ll-color-border-strong);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-surface-subtle);
+  color: var(--ll-color-text);
+  font-size: var(--ll-text-md);
+  line-height: var(--ll-leading-normal);
+  overflow-wrap: anywhere;
+}
+
+.summary[data-tone="critical"] { border-color: var(--ll-color-status-critical); background: var(--ll-color-status-critical-bg); }
+.summary[data-tone="positive"] { border-color: var(--ll-color-status-positive); background: var(--ll-color-status-positive-bg); }
+.summary :where(p, ul) { margin: 0; }
+.summary :where(ul) { padding-left: var(--ll-space-5); }
+.summary :where(a) { color: inherit; font-weight: var(--ll-weight-semibold); text-decoration: underline; text-underline-offset: 3px; }
+.summary:focus-visible { outline: var(--ll-focus-width) solid var(--ll-focus-color); outline-offset: var(--ll-focus-offset); }
+
+.summaryTitle { font-weight: var(--ll-weight-semibold); }
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- The public profile (what a landing operator sees) ---- */
+
+.profile {
+  display: grid;
+  gap: var(--ll-space-5);
+  min-width: 0;
+  padding: var(--ll-c-section-pad);
+  border: 1px solid var(--ll-color-border);
+  border-radius: var(--ll-c-section-radius);
+  background: var(--ll-color-surface);
+}
+
+.identity { display: grid; gap: var(--ll-space-2); min-width: 0; }
+
+.name {
+  margin: 0;
+  font-family: var(--ll-font-display);
+  font-size: var(--ll-text-2xl);
+  font-weight: var(--ll-weight-bold);
+  line-height: var(--ll-leading-tight);
+  letter-spacing: var(--ll-tracking-display);
+  color: var(--ll-color-text);
+  overflow-wrap: anywhere;
+}
+
+.meta { display: flex; flex-wrap: wrap; gap: var(--ll-space-1) var(--ll-space-3); margin: 0; font-size: var(--ll-text-sm); color: var(--ll-color-text-secondary); }
+
+.figures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--ll-space-3); margin: 0; }
+
+.figure { display: grid; gap: var(--ll-space-1); min-width: 0; padding: var(--ll-space-3); border-radius: var(--ll-radius-md); background: var(--ll-color-surface-subtle); }
+
+.figureLabel { margin: 0; font-size: var(--ll-text-xs); color: var(--ll-color-text-muted); }
+
+.figureValue { margin: 0; font-size: var(--ll-text-lg); font-weight: var(--ll-weight-semibold); font-variant-numeric: tabular-nums; color: var(--ll-color-text); }
+
+.part { display: grid; gap: var(--ll-space-2); min-width: 0; }
+
+.partTitle { margin: 0; font-size: var(--ll-text-md); font-weight: var(--ll-weight-semibold); color: var(--ll-color-text); }
+
+.partText { margin: 0; font-size: var(--ll-text-md); line-height: var(--ll-leading-relaxed); color: var(--ll-color-text); white-space: pre-line; overflow-wrap: anywhere; }
+
+.partEmpty { margin: 0; font-size: var(--ll-text-md); color: var(--ll-color-text-muted); }
+
+.source { margin: 0; font-size: var(--ll-text-xs); color: var(--ll-color-text-muted); }
+
+.equipmentList { display: grid; gap: var(--ll-space-1); margin: 0; padding: 0; list-style: none; font-size: var(--ll-text-md); }
+
+.units { font-variant-numeric: tabular-nums; font-weight: var(--ll-weight-semibold); }
+
+.previewNote { display: grid; gap: var(--ll-space-4); min-width: 0; }

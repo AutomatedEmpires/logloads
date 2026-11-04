@@ -105,4 +105,14 @@
   transform: translateY(-1px);
 }
 
+/* "Seen" (UX-DEC-01): reviewed but not answered, so still the landing's move. The dot stays, hollow, and the text is
+   regular weight; the words "Seen · not answered" carry the meaning, not the shape. */
+.state[data-seen] { font-weight: var(--ll-weight-regular); }
+
+.state[data-seen]::before {
+  box-sizing: border-box;
+  border: 1.5px solid var(--ll-color-action);
+  background: transparent;
+}
+
 .state[data-tone="closed"] { color: var(--ll-color-text-muted); }

@@ -1,0 +1,5 @@
+/* LocalTime (UX-09, #132): a message time never breaks across lines, and its digits keep their width. */
+.time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

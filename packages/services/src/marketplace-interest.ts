@@ -5,6 +5,7 @@ import {
   haulerInterestReplyInputSchema,
   marketplaceInterestSchema,
   respondToInterestInputSchema,
+  withdrawInterestInputSchema,
   type LoadPosting,
   type MarketplaceInterest,
   type MarketplaceInterestEquipment,
@@ -390,4 +391,43 @@ export function listMarketplaceInterestsForLanding(state: LogLoadsDatabaseState,
   return state.marketplaceInterests
     .filter((interest) => interest.jobOrganizationId === organization.id)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}
+
+// ---------------------------------------------------------------------------
+// Inquiry conversations (UX-09, #132)
+// ---------------------------------------------------------------------------
+
+/**
+ * The hauling business withdraws its interest with an optional reason the landing sees. The reason is posted as the
+ * hauler's last message and the inquiry withdrawn in the same change, so neither happens without the other. A
+ * declined inquiry is refused before anything is written ("The landing has closed this inquiry", as
+ * `withdrawMarketplaceInterest`); an already withdrawn one is returned unchanged, without posting the reason again.
+ */
+export function withdrawMarketplaceInterestWithReason(
+  state: LogLoadsDatabaseState,
+  actor: MarketplaceActor,
+  rawInput: unknown,
+  at = nowIso()
+): MarketplaceInterest {
+  const input = withdrawInterestInputSchema.parse(rawInput)
+  const { organization } = requireHaulerCapability(state, actor, "interest.withdraw")
+  const interest = findInterest(state, input.interestId)
+
+  if (!interest || interest.haulerOrganizationId !== organization.id) {
+    throw new Error("Inquiry not found")
+  }
+
+  if (interest.status === "declined") {
+    throw new Error("The landing has closed this inquiry")
+  }
+
+  if (interest.status === "withdrawn") {
+    return interest
+  }
+
+  if (input.reason && input.replyId) {
+    postHaulerInterestReply(state, actor, { body: input.reason, interestId: interest.id, replyId: input.replyId }, at)
+  }
+
+  return withdrawMarketplaceInterest(state, actor, interest.id, at)
 }

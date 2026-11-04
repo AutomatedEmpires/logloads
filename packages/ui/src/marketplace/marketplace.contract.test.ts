@@ -31,6 +31,7 @@ const COMPONENTS = [
   "JobDetail",
   "JobResultList",
   "JobResultRow",
+  "LocalTime",
   "MessageComposer",
   "OperatingRegion",
   "PayFigure",
@@ -53,7 +54,8 @@ describe("marketplace contract (DS-04, #147)", () => {
   it('marks only handler-owning components "use client"', () => {
     const client = components.filter((name) => read(name).startsWith('"use client"')).sort()
 
-    expect(client).toEqual(["MessageComposer.tsx"])
+    // LocalTime (UX-09, #132) owns no handler but an effect: only the browser knows the reader's time zone.
+    expect(client).toEqual(["LocalTime.tsx", "MessageComposer.tsx"])
   })
 
   it("never renders markup from strings", () => {

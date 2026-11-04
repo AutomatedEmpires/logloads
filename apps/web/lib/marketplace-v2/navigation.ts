@@ -5,6 +5,7 @@ import type { NavItem, WorkspaceKind } from "@logloads/ui/layout"
 export const V2_NAVIGATION: readonly NavItem[] = Object.freeze([
   { href: "/v2/work", icon: "nav.loads", id: "work", label: "Find work" },
   { href: "/v2/inquiries", icon: "nav.messages", id: "inquiries", label: "My inquiries" },
+  { href: "/v2/hauler/profile", icon: "nav.profile", id: "hauler-profile", label: "Profile" },
   { href: "/v2/landing/inquiries", icon: "nav.landing", id: "landing-inquiries", label: "Landing inbox" },
   { href: "/v2/landing/jobs", icon: "ops.document", id: "landing-jobs", label: "Post jobs" }
 ])
@@ -14,6 +15,7 @@ export const V2_NAVIGATION: readonly NavItem[] = Object.freeze([
  * convenience only: every page still resolves the viewer on the server and refuses what the role cannot do.
  */
 const NAV_CAPABILITY: Readonly<Record<string, MarketplaceCapability | null>> = Object.freeze({
+  "hauler-profile": "interest.express",
   "inquiries": "interest.express",
   "landing-inquiries": "inquiry.respond",
   "landing-jobs": "job.publish",
@@ -33,7 +35,10 @@ export function hasLandingSide(capabilities: readonly MarketplaceCapability[]): 
  * sees the public board only. A landing-only business gets the landing set; a hauling business gets the
  * hauler set; a business that is both gets both.
  */
-export function v2NavigationFor(capabilities: readonly MarketplaceCapability[] | null): NavItem[] {
+export function v2NavigationFor(
+  capabilities: readonly MarketplaceCapability[] | null,
+  counts: Readonly<Partial<Record<string, number>>> = {}
+): NavItem[] {
   if (!capabilities) {
     return V2_NAVIGATION.filter((item) => NAV_CAPABILITY[item.id] === null)
   }
@@ -43,6 +48,10 @@ export function v2NavigationFor(capabilities: readonly MarketplaceCapability[] |
   return V2_NAVIGATION.filter((item) => {
     const needed = NAV_CAPABILITY[item.id]
     return needed === null ? !landingOnly : needed !== undefined && capabilities.includes(needed)
+  }).map((item) => {
+    // UX-09 (#132): unread inquiries per destination (`inquiries.ts`); a zero shows no badge.
+    const count = counts[item.id]
+    return count && count > 0 ? { ...item, count } : item
   })
 }
 

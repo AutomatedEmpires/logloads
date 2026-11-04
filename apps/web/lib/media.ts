@@ -2,7 +2,13 @@ import "server-only"
 
 import { createClient } from "@supabase/supabase-js"
 import type { LogLoadsDatabaseState } from "@logloads/db"
-import { tripDocumentSchema, type MediaReference, type TripDocument } from "@logloads/contracts"
+import {
+  isOwnedUploadPublicId,
+  isUploadObjectPath,
+  tripDocumentSchema,
+  type MediaReference,
+  type TripDocument
+} from "@logloads/contracts"
 import { imageSize } from "image-size"
 import {
   DomainRefusalError,
@@ -26,54 +32,11 @@ const MEDIA_UNAVAILABLE_MESSAGE = "File uploads are not activated for this envir
 const MAX_MEDIA_BYTES = 10_000_000
 const MEDIA_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const
 
-/** The object name `signedUpload` mints: a lowercase `crypto.randomUUID()`. */
-const UPLOAD_OBJECT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-
 /**
- * One path segment the storage layer will read as itself. The storage client
- * puts the path into the request URL without encoding it, so an empty, `.` or
- * `..` segment, or one carrying `%`, `\`, `?`, `#`, whitespace or a control
- * character, could name a different object than the string that was checked.
+ * The ownership rule lives in contracts so the services re-check the same shape
+ * before a record is written (HF-07, #187). Re-exported for the web callers.
  */
-function safeStorageSegment(segment: string): boolean {
-  return (
-    segment.length > 0 &&
-    segment !== "." &&
-    segment !== ".." &&
-    !/[%\\?#\s\p{Cc}]/u.test(segment)
-  )
-}
-
-/** `<safe segments>/uploads/<uuid>`: the only shape `signedUpload` ever mints. */
-function isUploadObjectPath(publicId: string): boolean {
-  const segments = publicId.split("/")
-
-  return (
-    segments.length >= 3 &&
-    segments.every(safeStorageSegment) &&
-    segments[segments.length - 2] === "uploads" &&
-    UPLOAD_OBJECT_ID.test(segments[segments.length - 1] ?? "")
-  )
-}
-
-/**
- * True only for the exact object `signedUpload` mints for this target:
- * `<publicIdPrefix>/uploads/<uuid>`. A prefix match alone also accepts a
- * nested path, a dot segment or an encoded separator that starts the same
- * way (HF-07, #187).
- */
-export function isOwnedUploadPublicId(
-  publicId: unknown,
-  publicIdPrefix: string
-): publicId is string {
-  if (typeof publicId !== "string" || !isUploadObjectPath(publicId)) {
-    return false
-  }
-
-  const objectId = publicId.slice(publicId.lastIndexOf("/") + 1)
-
-  return publicId === `${publicIdPrefix}/uploads/${objectId}`
-}
+export { isOwnedUploadPublicId }
 
 function environment() {
   const config = dedicatedSupabaseMediaConfiguration(process.env)

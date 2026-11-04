@@ -1,8 +1,10 @@
 import type {
+  HaulerProfileView,
   MarketplaceAvailabilityAttestation,
   MarketplaceCapability,
   MarketplaceDraftLandingContext,
   MarketplaceHaulerEquipmentOption,
+  MarketplaceInquiryJobContext,
   MarketplaceInterestView,
   MarketplaceJobCardView,
   MarketplaceJobDetailView,
@@ -109,4 +111,32 @@ export interface MarketplaceV2Port {
    * Throws when unsupported.
    */
   reconfirmJob(viewer: MarketplaceV2Viewer, jobId: string, attestation: MarketplaceAvailabilityAttestation): Promise<void>
+
+  /** Whether saving the hauling-business profile persists through this adapter (#125). */
+  readonly supportsHaulerProfile: boolean
+  /**
+   * The viewer's own hauling business profile, private fields included, for the business's members only. Refuses a
+   * person who is not a member of the active business, and a business with no hauler profile.
+   */
+  haulerProfile(viewer: MarketplaceV2Viewer): Promise<HaulerProfileView>
+  /**
+   * Save the profile form (`haulerProfileInputSchema`, re-parsed here). Owners and managers may change the profile;
+   * only the owner may change the business name or legal name (`planHaulerProfileSave`). Returns the saved profile.
+   * Throws `MarketplaceOperationUnavailableError` when this adapter cannot persist it.
+   */
+  saveHaulerProfile(viewer: MarketplaceV2Viewer, input: unknown): Promise<HaulerProfileView>
+
+  // --- Inquiry conversations (UX-09, #132) ---------------------------------------------------------------------
+  /**
+   * Withdraw the viewer's own inquiry with an optional reason (`withdrawInterestInputSchema`), posted as the
+   * hauler's last message in the same change. A declined inquiry is refused ("The landing has closed this
+   * inquiry") and nothing is written.
+   */
+  withdrawInterestWithReason(viewer: MarketplaceV2Viewer, input: unknown): Promise<void>
+  /**
+   * The viewer landing organization's jobs that have inquiries: the landing each is posted at and the equipment
+   * codes it asks for, for the inbox's landing filter and equipment comparison. Requires `inquiry.respond`; never
+   * another organization's jobs, and never private landing details.
+   */
+  landingInquiryJobs(viewer: MarketplaceV2Viewer): Promise<MarketplaceInquiryJobContext[]>
 }

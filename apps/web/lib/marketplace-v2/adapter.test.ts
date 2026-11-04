@@ -22,6 +22,7 @@ function spyPort(supportsPublishing: boolean): MarketplaceV2Port {
     expressInterest: vi.fn(),
     getJob: resolved(null),
     haulerEquipment: resolved([]),
+    haulerProfile: resolved({ organizationId: "org" }),
     interestForJob: resolved(null),
     listHaulerInterests: resolved([]),
     listJobs: resolved([]),
@@ -30,6 +31,8 @@ function spyPort(supportsPublishing: boolean): MarketplaceV2Port {
     publishJob: resolved({ jobId: "job" }),
     reconfirmJob: resolved(undefined),
     respondToInterest: resolved(undefined),
+    saveHaulerProfile: resolved({ organizationId: "org" }),
+    supportsHaulerProfile: supportsPublishing,
     supportsPublishing,
     viewerAccess: resolved({ capabilities: [], organizationName: "Test" }),
     withdrawInterest: resolved(undefined)
@@ -121,6 +124,22 @@ describe("selectMarketplaceV2Port", () => {
     }
   })
 
+  it("routes the hauler profile methods (#125) like every other call", async () => {
+    const pilot = spyPort(false)
+    const target = spyPort(true)
+
+    const viaPilot = selectMarketplaceV2Port(pilot, { kind: () => "pilot", normalized: () => target })
+    expect(viaPilot.supportsHaulerProfile).toBe(false)
+    await viaPilot.haulerProfile(VIEWER)
+    expect(pilot.haulerProfile).toHaveBeenCalledWith(VIEWER)
+
+    const viaNormalized = selectMarketplaceV2Port(pilot, { kind: () => "normalized", normalized: () => target })
+    expect(viaNormalized.supportsHaulerProfile).toBe(true)
+    await viaNormalized.saveHaulerProfile(VIEWER, { businessName: "x" })
+    expect(target.saveHaulerProfile).toHaveBeenCalledWith(VIEWER, { businessName: "x" })
+    expect(pilot.saveHaulerProfile).not.toHaveBeenCalled()
+  })
+
   it("fails closed on a broken selection: calls reject and nothing claims to publish", async () => {
     const pilot = spyPort(false)
     const port = selectMarketplaceV2Port(pilot, {
@@ -131,6 +150,7 @@ describe("selectMarketplaceV2Port", () => {
     })
 
     expect(port.supportsPublishing).toBe(false)
+    expect(port.supportsHaulerProfile).toBe(false)
     await expect(port.listJobs({})).rejects.toBeInstanceOf(MarketplaceAdapterConfigurationError)
     await expect(port.viewerAccess(VIEWER)).rejects.toBeInstanceOf(MarketplaceAdapterConfigurationError)
     expect(pilot.listJobs).not.toHaveBeenCalled()
