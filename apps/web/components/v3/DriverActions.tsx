@@ -2,7 +2,6 @@
 
 import Link from "next/link"
 import Image from "next/image"
-import { useRouter } from "next/navigation"
 import { useState, useTransition, type FormEvent } from "react"
 import { PRE_TRIP_INSPECTION_CHECKLIST } from "@logloads/contracts"
 import { Badge, Icon } from "@logloads/ui"
@@ -471,7 +470,6 @@ export function assignmentCancellationCopy(kind: keyof typeof CANCEL_COPY): (typ
  */
 export function CancelHaulControl({ assignmentId, kind }: { assignmentId: string; kind: keyof typeof CANCEL_COPY }) {
   const copy = assignmentCancellationCopy(kind)
-  const router = useRouter()
   const [confirming, setConfirming] = useState(false)
   const [reason, setReason] = useState("")
   const [error, setError] = useState<string | null>(null)
@@ -498,11 +496,13 @@ export function CancelHaulControl({ assignmentId, kind }: { assignmentId: string
       if (!result.ok) {
         setError(result.error ?? "The haul could not be cancelled. Try again.")
       } else {
+        // The success copy shows at once. The fresh projection needs no
+        // router.refresh(): the action revalidates the /driver, /fleet and
+        // /host layouts, so its own response carries the updated page. A
+        // second refresh only added a trailing request, and leaving the page
+        // while it was in flight could turn it into a full-page navigation
+        // that interrupted the next one (direct-offer.spec.ts ERR_ABORTED).
         setDone(true)
-        // Keep the success copy on screen if a field connection drops while
-        // the fresh server projection is loading. A router refresh can remove
-        // the active card when online without throwing away the usable page.
-        router.refresh()
       }
     })
   }
