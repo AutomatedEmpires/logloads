@@ -5,10 +5,11 @@ import type { MarketplaceCapability } from "@logloads/contracts"
 import { activeV2NavId, V2_NAVIGATION, v2HomePathFor, v2NavigationFor, v2WorkspaceFor, v2WorkspaceForContext } from "./navigation"
 
 describe("V2 navigation", () => {
-  it("keeps the five preview destinations, in order", () => {
+  it("keeps the six preview destinations, in order", () => {
     expect(V2_NAVIGATION.map((item) => [item.label, item.href])).toEqual([
       ["Find work", "/v2/work"],
       ["My inquiries", "/v2/inquiries"],
+      ["Overview", "/v2/landing"],
       ["Landing inbox", "/v2/landing/inquiries"],
       ["Post jobs", "/v2/landing/jobs"],
       ["Landings", "/v2/landing/landings"]
@@ -23,6 +24,7 @@ describe("V2 navigation", () => {
     ["/v2/landing/jobs", "landing-jobs"],
     ["/v2/landing/jobs/new", "landing-jobs"],
     ["/v2/landing/jobs/preview", "landing-jobs"],
+    ["/v2/landing", "landing-overview"],
     ["/v2/landing/landings", "landings"],
     ["/v2/landing/landings/new", "landings"]
   ])("marks %s as %s", (pathname, id) => {
@@ -33,7 +35,7 @@ describe("V2 navigation", () => {
     expect(activeV2NavId(null)).toBe("")
     expect(activeV2NavId("/v2")).toBe("")
     expect(activeV2NavId("/v2/workshop")).toBe("")
-    expect(activeV2NavId("/v2/landing")).toBe("")
+    expect(activeV2NavId("/v2/landingpage")).toBe("")
   })
 
   it("treats /v2/landing pages as the landing workspace and the rest as hauler", () => {
@@ -60,16 +62,16 @@ describe("capability-scoped V2 navigation (#124)", () => {
   it("gives a hauling business the hauler set and a landing business the landing set", () => {
     expect(ids(HAULER)).toEqual(["work", "inquiries"])
     expect(ids(DRIVER)).toEqual(["work", "inquiries"])
-    expect(ids(LANDING_DESK)).toEqual(["landing-inquiries", "landing-jobs", "landings"])
+    expect(ids(LANDING_DESK)).toEqual(["landing-overview", "landing-inquiries", "landing-jobs", "landings"])
   })
 
   it("hides each landing item the role lacks", () => {
     expect(ids(["inquiry.respond"])).toEqual(["landing-inquiries"])
-    expect(ids(["job.publish"])).toEqual(["landing-jobs", "landings"])
+    expect(ids(["job.publish"])).toEqual(["landing-overview", "landing-jobs", "landings"])
   })
 
   it("gives a business that is both sides both sets, in display order", () => {
-    expect(ids([...HAULER, ...LANDING_DESK])).toEqual(["work", "inquiries", "landing-inquiries", "landing-jobs", "landings"])
+    expect(ids([...HAULER, ...LANDING_DESK])).toEqual(["work", "inquiries", "landing-overview", "landing-inquiries", "landing-jobs"])
   })
 
   it("never offers more than the five bottom tabs allowed", () => {

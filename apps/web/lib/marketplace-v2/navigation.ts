@@ -5,6 +5,7 @@ import type { NavItem, WorkspaceKind } from "@logloads/ui/layout"
 export const V2_NAVIGATION: readonly NavItem[] = Object.freeze([
   { href: "/v2/work", icon: "nav.loads", id: "work", label: "Find work" },
   { href: "/v2/inquiries", icon: "nav.messages", id: "inquiries", label: "My inquiries" },
+  { href: "/v2/landing", icon: "nav.today", id: "landing-overview", label: "Overview" },
   { href: "/v2/landing/inquiries", icon: "nav.landing", id: "landing-inquiries", label: "Landing inbox" },
   { href: "/v2/landing/jobs", icon: "ops.document", id: "landing-jobs", label: "Post jobs" },
   { href: "/v2/landing/landings", icon: "map.landing", id: "landings", label: "Landings" }
@@ -18,6 +19,7 @@ const NAV_CAPABILITY: Readonly<Record<string, MarketplaceCapability | null>> = O
   "inquiries": "interest.express",
   "landing-inquiries": "inquiry.respond",
   "landing-jobs": "job.publish",
+  "landing-overview": "job.publish",
   "landings": "job.publish",
   "work": null
 })
@@ -41,9 +43,12 @@ export function v2NavigationFor(capabilities: readonly MarketplaceCapability[] |
   }
 
   const landingOnly = hasLandingSide(capabilities) && !hasHaulerSide(capabilities)
+  // Both sides would need six destinations; the bottom tabs hold five. Landings stays one tap away, under Overview.
+  const bothSides = hasLandingSide(capabilities) && hasHaulerSide(capabilities)
 
   return V2_NAVIGATION.filter((item) => {
     const needed = NAV_CAPABILITY[item.id]
+    if (bothSides && item.id === "landings") return false
     return needed === null ? !landingOnly : needed !== undefined && capabilities.includes(needed)
   })
 }

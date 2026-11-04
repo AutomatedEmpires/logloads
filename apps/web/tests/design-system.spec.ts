@@ -543,7 +543,7 @@ test.describe("responsive matrix: pages migrated in DS-04 (#147)", () => {
       await expect(page.locator("#conversation")).toHaveCount(0)
 
       await expectNoHorizontalOverflow(page)
-      expect(await expectNavigationForWidth(page, width)).toEqual(["Landing inbox", "Post jobs", "Landings"])
+      expect(await expectNavigationForWidth(page, width)).toEqual(["Overview", "Landing inbox", "Post jobs", "Landings"])
       await expectCurrent(page, width, "Landing inbox")
     }
   })
@@ -552,11 +552,11 @@ test.describe("responsive matrix: pages migrated in DS-04 (#147)", () => {
 test.describe("capability navigation (#124)", () => {
   const cases = [
     { email: "hank@northpine.example", home: "/v2/work", items: ["Find work", "My inquiries"], visit: "/v2/inquiries", current: "My inquiries" },
-    { email: "cole@summit.example", home: "/v2/landing", items: ["Landing inbox", "Post jobs", "Landings"], visit: "/v2/landing/inquiries", current: "Landing inbox" },
+    { email: "cole@summit.example", home: "/v2/landing", items: ["Overview", "Landing inbox", "Post jobs", "Landings"], visit: "/v2/landing/inquiries", current: "Landing inbox" },
     {
       email: "dispatch@northpine.example",
       home: "/v2/work",
-      items: ["Find work", "My inquiries", "Landing inbox", "Post jobs", "Landings"],
+      items: ["Find work", "My inquiries", "Overview", "Landing inbox", "Post jobs"],
       visit: "/v2/inquiries",
       current: "My inquiries"
     }
@@ -566,8 +566,7 @@ test.describe("capability navigation (#124)", () => {
     test(`${email} sees ${items.join(", ")}`, async ({ page }) => {
       await page.setViewportSize(viewportFor(1280))
       await signIn(page, email)
-      // Sign-in lands on the business's V2 home (#124). /v2/landing redirects into the job editor, which is
-      // checked here by path only: its pages are being migrated separately.
+      // Sign-in lands on the business's V2 home (#124): /v2/landing is the landing overview (#133).
       await expect(page).toHaveURL(new RegExp(`${home}(/|$|\\?)`))
 
       await openV2(page, visit)
@@ -1782,7 +1781,7 @@ test.describe("find-work map (UX-13)", () => {
 const DUAL = { email: "maya@northpine.example", hauling: "North Pine Logging", landing: "Summit Ridge Timber", name: "Maya Mills" }
 const SUMMIT_OWNER = "cole@summit.example"
 const HAULER_NAVIGATION = ["Find work", "My inquiries"]
-const LANDING_NAVIGATION = ["Landing inbox", "Post jobs", "Landings"]
+const LANDING_NAVIGATION = ["Overview", "Landing inbox", "Post jobs", "Landings"]
 
 const businessChoices = (page: Page) => page.getByRole("list", { name: "Your businesses" }).getByRole("listitem")
 
@@ -2113,5 +2112,119 @@ test.describe("the landing form without JavaScript (#127)", () => {
     await expect(page.getByRole("alert").filter({ hasText: "Remove coordinates and gate or lock codes" })).toBeVisible()
     await expect(landingForm(page).getByLabel("Landing name")).toHaveAttribute("aria-invalid", "true")
     await expect(landingForm(page).getByLabel("Nearest town")).toHaveValue("Oakridge")
+  })
+})
+
+/**
+ * #133 (UX-10): the landing overview at /v2/landing. Summit Ridge Timber (landing only) and North Pine Logging (both
+ * sides) in the seed. The pilot store cannot save a reconfirmation, so Confirm is shown inert with that note and
+ * nothing in these cases writes.
+ */
+const OVERVIEW_ACCOUNTS = [
+  { email: LANDING_OWNER, items: LANDING_NAVIGATION },
+  // Both sides: five destinations, the bottom tabs' limit; Landings is one tap away under Overview.
+  { email: "dispatch@northpine.example", items: ["Find work", "My inquiries", "Overview", "Landing inbox", "Post jobs"] }
+] as const
+
+test.describe("landing overview (#133)", () => {
+  test("responsive at 1440 and 390 px: no overflow, Overview current, the action row in order", async ({ page }) => {
+    for (const { email, items } of OVERVIEW_ACCOUNTS) {
+      await page.context().clearCookies()
+      await signIn(page, email)
+
+      for (const width of [1440, 390]) {
+        await page.setViewportSize(viewportFor(width))
+        await openV2(page, "/v2/landing")
+        await expect(page.locator("[data-ds-page='landing-overview']")).toBeVisible()
+        await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible()
+
+        await expectNoHorizontalOverflow(page)
+        expect(await expectNavigationForWidth(page, width)).toEqual([...items])
+        await expectCurrent(page, width, "Overview")
+
+        const actions = page.locator("[data-ds-page='landing-overview'] header").getByRole("link").or(
+          page.locator("[data-ds-page='landing-overview'] header").getByRole("button")
+        )
+        const labels = (await actions.allInnerTexts()).map((label) => label.trim()).filter((label) => /^(Post a job|Inbox|Find trucks)/.test(label))
+        expect(labels.map((label) => label.replace(/ \(.*\)$/, ""))).toEqual(["Post a job", "Inbox", "Find trucks"])
+        expect(labels[1]).toMatch(/^Inbox \(\d+ new\)$/)
+      }
+    }
+  })
+
+  test("states allowances from the contracts and billing as inactive, and no hired-truck, load or revenue figure", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1440))
+    await signIn(page, LANDING_OWNER)
+    await openV2(page, "/v2/landing")
+    const overview = page.locator("[data-ds-page='landing-overview']")
+
+    const cycle = overview.getByRole("region", { name: "This billing cycle" })
+    await expect(cycle).toContainText("None active · billing isn't active yet")
+    await expect(cycle).toContainText("None while billing is inactive")
+    await expect(cycle).toContainText("Billing isn't active yet")
+    await expect(overview).not.toContainText(/hired|revenue|earnings|loads (hauled|delivered|completed)|tons hauled/i)
+
+    // Find trucks is announced as unavailable, not a dead link.
+    await expect(overview.getByRole("button", { name: "Find trucks" })).toHaveAttribute("aria-disabled", "true")
+
+    const body = await pageHtml(page, "/v2/landing")
+    for (const secret of BLUE_RIVER_PRIVATE) expect(body, `the overview never carries ${secret}`).not.toContain(secret)
+  })
+
+  test("a listing past the interval offers one-tap Confirm, inert with a note while the store can't save it", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1440))
+    await signIn(page, "dispatch@northpine.example")
+    await openV2(page, "/v2/landing")
+
+    const attention = page.getByRole("list", { name: "Needs attention" })
+    const confirm = attention.getByRole("button", { name: "Confirm still available" })
+    test.skip((await confirm.count()) === 0, "No North Pine Logging listing is past the confirmation interval in this run's state")
+
+    await expect(confirm.first()).toHaveAttribute("aria-disabled", "true")
+    await expect(page.getByText("Confirming isn't saved in this preview.")).toBeVisible()
+    await expect(page.getByText(/Confirm records your statement: .I confirm this job is currently available as described../)).toBeVisible()
+  })
+
+  test("keyboard: every stop on the overview keeps the design-system ring", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1280))
+
+    for (const { email } of OVERVIEW_ACCOUNTS) {
+      await page.context().clearCookies()
+      await signIn(page, email)
+      await openV2(page, "/v2/landing")
+      const stops = await tabThrough(page)
+
+      expect(stops.filter((stop) => stop.where === "main").map((stop) => stop.key)).toEqual(expect.arrayContaining(["Post a job", "Find trucks"]))
+      for (const stop of stops) expectDesignSystemRing(stop)
+    }
+  })
+
+  for (const width of [1440, 390]) {
+    test(`the overview at ${width} px has no serious or critical axe violations`, async ({ page }) => {
+      await page.setViewportSize(viewportFor(width))
+
+      for (const { email } of OVERVIEW_ACCOUNTS) {
+        await page.context().clearCookies()
+        await signIn(page, email)
+        await openV2(page, "/v2/landing")
+        await expectNoSeriousAxeViolations(page)
+      }
+    })
+  }
+})
+
+test.describe("the landing overview without JavaScript (#133)", () => {
+  test.use({ contextOptions: { reducedMotion: "reduce" }, javaScriptEnabled: false })
+
+  test("the server sends the whole overview: the action row as plain links, the allowances and the checklist or attention list", async ({ page }) => {
+    await page.setViewportSize(viewportFor(390))
+    await signIn(page, LANDING_OWNER)
+    await openV2(page, "/v2/landing")
+    const overview = page.locator("[data-ds-page='landing-overview']")
+
+    await expect(overview.getByRole("link", { name: "Post a job" })).toHaveAttribute("href", "/v2/landing/jobs/new")
+    await expect(overview.getByRole("link", { name: /^Inbox \(\d+ new\)$/ })).toHaveAttribute("href", "/v2/landing/inquiries")
+    await expect(overview.getByRole("region", { name: "This billing cycle" })).toBeVisible()
+    await expect(overview.getByRole("region", { name: "Get started" }).or(overview.getByRole("region", { name: "Needs attention" }))).toBeVisible()
   })
 })
