@@ -1,0 +1,94 @@
+{
+  "APPLY_GUIDE.md": {
+    "bytes": 5715,
+    "sha256": "f8ca12f1668f7cb9ef1d207b2202728997c93428b6a879790b33cb939bd7ad0d"
+  },
+  "docs/ACTIVATION_CLERK.md": {
+    "bytes": 4600,
+    "sha256": "1c4d44931ed45a9b0d63ea9e9209c8c7ec20cebd3f245787e319f05d24d65e27"
+  },
+  "docs/ACTIVATION_RESEND.md": {
+    "bytes": 3640,
+    "sha256": "94565cb4d3ad3337f95c8574e012719ebf59faab70a19951fa725b43252d791f"
+  },
+  "docs/ACTIVATION_STRIPE.md": {
+    "bytes": 6881,
+    "sha256": "fd50ba40ac43628c287f663050e2151ba9373ae07139ec8dbd001005d1f74f32"
+  },
+  "docs/AGENT_WORKFLOW.md": {
+    "bytes": 2486,
+    "sha256": "419b82da44bef632e8459700fde61e9b428f7c35cf2fc1999f91f6e46eb9c1ea"
+  },
+  "docs/API_CONTRACTS.md": {
+    "bytes": 6395,
+    "sha256": "8c29f76545e5485371f87d0aa1ed2c2fdbe90e9611165ab410d595b3b834256d"
+  },
+  "docs/AUTOMATION_ROADMAP.md": {
+    "bytes": 3919,
+    "sha256": "6e4fe1ecfae6dbafdf80c544fd127011456c9e8f52afdcc7271ab60be2c9a5b4"
+  },
+  "docs/BACKEND_ARCHITECTURE.md": {
+    "bytes": 6524,
+    "sha256": "4c3864bb5e0f44457155b715fc73664f09d3c7a3deae1bec3da8f64698518d26"
+  },
+  "docs/DATA_MODEL.md": {
+    "bytes": 5711,
+    "sha256": "33fac471021df0912aa25233380554b8182d5131ec59de3d4596b602387ba347"
+  },
+  "docs/DEPLOYMENT.md": {
+    "bytes": 6221,
+    "sha256": "e0db14d2e59f72f52bc8bc750adad0dfcbe0892eb011846087f9c8c8aa865b33"
+  },
+  "docs/ENV_CONTRACT.md": {
+    "bytes": 8119,
+    "sha256": "c9b7b277c568b1db22d03c02f0ff390c337e501aa58f58d4502c041f2639b6cc"
+  },
+  "docs/HANDOFF-2026-07-27.md": {
+    "bytes": 894,
+    "sha256": "ce986ca0d2cc0dc77d44c316199b8ac19d019c9ddd278ed33c36b983f8ad3e09"
+  },
+  "docs/HANDOFF.md": {
+    "bytes": 889,
+    "sha256": "01d4fa08915c9001e654feeb33914e297a5cb51c304fb66091cc64224db22f38"
+  },
+  "docs/MVP_BACKEND_SCOPE.md": {
+    "bytes": 2979,
+    "sha256": "d5392ac89957aca03aa687e92aa6e76644436bf33a4d4bf1e5de1eb1abe43c5c"
+  },
+  "docs/OBSERVABILITY.md": {
+    "bytes": 4652,
+    "sha256": "ddf256d1458c2d3176d0e7949319c3f988c460e8f3d06a81a689e63ce25d2110"
+  },
+  "docs/README.md": {
+    "bytes": 3634,
+    "sha256": "556eeb875afa5228bc544d920bad4ab6132b8bd26c2016d72cc20d960bbefd63"
+  },
+  "docs/archive/2026-legacy-commercial/ACTIVATION_STRIPE_2026-08-01.md": {
+    "bytes": 14666,
+    "sha256": "be396ca4eb79a3b771a5c6b23c42de5104e7f6979e5e76c2974d93d45aca62ba"
+  },
+  "docs/archive/2026-legacy-commercial/marketplace-implementation-spec_2026-07-24.md": {
+    "bytes": 315997,
+    "sha256": "b65ed034d5b9e8d425fd98a97753cfc28b94c91463fd225866560b425a64b46f"
+  },
+  "docs/archive/2026-legacy-commercial/marketplace-realignment-blueprint_2026-07-24.md": {
+    "bytes": 170216,
+    "sha256": "138e5c4073f0a98e518797ed90253297f6113f45d59af67c1c7e83bf650deecc"
+  },
+  "docs/archive/handoffs/HANDOFF_2026-07-17.md": {
+    "bytes": 20120,
+    "sha256": "a20101ac4f4a9eb9ba6b91d991a65789caa80532040bc3fd5a51b5671a11b746"
+  },
+  "docs/archive/handoffs/HANDOFF_2026-07-27.md": {
+    "bytes": 20149,
+    "sha256": "9a3e1d537fad65e4b02072b37a9887a40fb8f7bff661f96be9a3a136be64e6b7"
+  },
+  "docs/marketplace-implementation-spec.md": {
+    "bytes": 993,
+    "sha256": "036c65bc03cca53eb01e85afc138fb24efbb2c8f82fe99f60f19d16fb6eb9d6e"
+  },
+  "docs/marketplace-realignment-blueprint.md": {
+    "bytes": 992,
+    "sha256": "d3f124fd9e33057bcfa567bd47e4df0ba167f10e90120d3197460586ecb577df"
+  }
+}
