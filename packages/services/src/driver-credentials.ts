@@ -11,6 +11,7 @@ import {
   driverCredentialSchema,
   credentialExtractionSchema,
   hostVisibleCredential,
+  isOwnedUploadPublicId,
   mediaReferenceSchema,
   organizationRoleCan,
   type AssignmentStatus,
@@ -1075,8 +1076,11 @@ export function submitCredential(
 
   const expectedPrefix = `${uploadTarget.publicIdPrefix}/uploads/`
 
+  // The exact object the signer mints for this target, not a prefix match: a
+  // nested path, a dot segment or an encoded separator can start the same way
+  // (HF-07, #187).
   assertCondition(
-    input.documentMedia.publicId.startsWith(expectedPrefix),
+    isOwnedUploadPublicId(input.documentMedia.publicId, uploadTarget.publicIdPrefix),
     `A credential document must be stored under ${expectedPrefix}`
   )
 

@@ -1,6 +1,7 @@
 import {
   auditEventSchema,
   driverProfileSchema,
+  isOwnedUploadPublicId,
   mediaReferenceSchema,
   organizationRoleCan,
   selectDriverEquipmentCombination,
@@ -315,9 +316,10 @@ export function getFeaturedTruckPhotoReference(state: LogLoadsDatabaseState, raw
 export function saveDriverMediaReference(state: LogLoadsDatabaseState, rawInput: unknown): MediaReference {
   const input = saveDriverMediaInputSchema.parse(rawInput)
   const target = getDriverMediaTarget(state, input)
-  const expectedPrefix = `${target.publicIdPrefix}/uploads/`
 
-  if (!input.photo.publicId.startsWith(expectedPrefix)) {
+  // The exact object the signer mints for this target, not a prefix match
+  // (HF-07, #187).
+  if (!isOwnedUploadPublicId(input.photo.publicId, target.publicIdPrefix)) {
     throw new DomainRefusalError("The uploaded photo does not belong to this profile")
   }
 
