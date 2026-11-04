@@ -60,12 +60,15 @@ function chunkedRequest(chunks: string[]): NextRequest {
     }
   })
 
-  return new NextRequest("http://127.0.0.1:3002/api/notices", {
+  // A streamed body needs `duplex: "half"`, which the DOM RequestInit type does not list yet.
+  const streamed = new Request("http://127.0.0.1:3002/api/notices", {
     body: stream,
     duplex: "half",
     headers: { "Content-Type": "application/json" },
     method: "POST"
-  } as RequestInit & { duplex: "half" })
+  } as RequestInit)
+
+  return new NextRequest(streamed)
 }
 
 /** A valid notice whose body text pads the JSON to exactly `bytes`. */
