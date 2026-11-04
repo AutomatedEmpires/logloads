@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 
 vi.mock("server-only", () => ({}))
 
-import { HAULER_IDENTITY_EDIT_REFUSED, HAULER_PROFILE_EDIT_REFUSED, publicHaulerProfile } from "@logloads/services"
+import { FLEET_NOTHING_TO_WITHDRAW, fleetCapacity, HAULER_IDENTITY_EDIT_REFUSED, HAULER_PROFILE_EDIT_REFUSED, publicHaulerProfile } from "@logloads/services"
 
 import { createNormalizedMarketplaceV2 } from "./normalized-adapter"
 import { createPostgresMarketplaceDb, type MarketplacePrincipal } from "./normalized-db"
@@ -13,7 +13,8 @@ import { MARKETPLACE_QUERIES } from "./normalized-queries"
 import { MarketplaceRefusalError, type MarketplaceV2Port, type MarketplaceV2Viewer } from "./port"
 
 /**
- * Contract tests of the hauling business profile statements (#125, `normalized-queries.ts`) against the REAL schema,
+ * Contract tests of the hauling business profile (#125) and My trucks (#126) statements (`normalized-queries.ts`)
+ * against the REAL schema,
  * on the same guarded disposable PostgreSQL 17 database as `normalized-adapter.contract.test.ts`
  * (`.github/workflows/normalized-adapter-ci.yml`). They skip anywhere else; with `LOGLOADS_ADAPTER_CONTRACT=required`
  * a missing database fails. Their fixtures use their own issuer, login role and slugs, so the two files never touch
@@ -72,7 +73,7 @@ end
 $$;`
 }
 
-describe.skipIf(!DISPOSABLE)("normalized hauler profile contract (disposable PostgreSQL 17)", () => {
+describe.skipIf(!DISPOSABLE)("normalized hauler profile and trucks contract (disposable PostgreSQL 17)", () => {
   let admin: Sql
   let adapterSql: Sql
   let port: MarketplaceV2Port
@@ -223,6 +224,114 @@ describe.skipIf(!DISPOSABLE)("normalized hauler profile contract (disposable Pos
 
     await port.saveHaulerProfile(as("owner"), form({ legalName: "Contract Ridge Hauling Co." }))
     await expect(port.haulerProfile(as("owner"))).resolves.toMatchObject({ legalName: "Contract Ridge Hauling Co.", verification: null })
+  })
+
+  // ------------------------------------------------------------------------------------------------------------
+  // My trucks (#126). Runs after the profile cases above (file order): the business is placed only once the
+  // owner saves a home base with its place-list point.
+  describe("my trucks and availability (#126)", () => {
+    const add = (overrides: Record<string, unknown> = {}) => ({ attachments: [], count: 2, otherTrailer: "", trailer: "pole_trailer", truckCode: "log_truck", ...overrides })
+    const fleet = () => port.haulerFleet(as("owner"))
+
+    it("lists nothing at first, with every truck type unknown rather than zero", async () => {
+      await expect(fleet()).resolves.toMatchObject({ availability: [], canEdit: true, units: [] })
+    })
+
+    it("adds a preset configuration, an Other (describe) trailer and an extra, and refuses a duplicate", async () => {
+      await port.addHaulerEquipment(as("owner"), add({ attachments: ["onboard_scales"] }))
+      await port.addHaulerEquipment(as("manager"), add({ count: 1, otherTrailer: "Tri-axle jeep", trailer: "other" }))
+      await expect(port.addHaulerEquipment(as("owner"), add())).rejects.toThrow("Log truck + Pole trailer is already in your list")
+
+      const view = await fleet()
+      expect(view.units.map((unit) => [unit.label, unit.units, unit.category])).toEqual([
+        ["Log truck + Pole trailer", 2, "truck"],
+        ["Log truck + Tri-axle jeep", 1, "truck"],
+        ["On-board scales", 2, "attachment"]
+      ])
+      expect(view.units[1]).toMatchObject({ otherTrailer: "Tri-axle jeep", trailerCode: null })
+    })
+
+    it("never reports more available than listed, and needs a service area", async () => {
+      await port.saveHaulerProfile(as("owner"), form({ about: "Manager's words", homeBase: "", homeBasePoint: null }))
+      await expect(port.reportHaulerAvailability(as("owner"), { count: 2, equipmentCode: "log_truck", state: "now" })).rejects.toThrow(/home base/)
+
+      await port.saveHaulerProfile(as("owner"), form({ about: "Manager's words", homeBase: "Sweet Home, OR", homeBasePoint: { lat: 44.4, lng: -122.7 } }))
+      await expect(port.reportHaulerAvailability(as("owner"), { count: 4, equipmentCode: "log_truck", state: "now" })).rejects.toThrow("at most 3 can be available")
+      await expect(port.reportHaulerAvailability(as("owner"), { count: 1, equipmentCode: "chip_truck", state: "now" })).rejects.toThrow("No Chip truck is listed")
+      expect((await one<{ n: number }>("select count(*)::int as n from marketplace.availability_reports where org_id = $1::uuid", [haul])).n).toBe(0)
+
+      await port.reportHaulerAvailability(as("owner"), { count: 3, equipmentCode: "log_truck", state: "now" })
+      const [report] = (await fleet()).availability
+      expect(report).toMatchObject({ availableCount: 3, equipmentCode: "log_truck", state: "available" })
+      const stored = await one<{ area: string; radius: number; reported_by: string }>(
+        "select area_label as area, radius_miles as radius, reported_by::text from marketplace.availability_reports where org_id = $1::uuid and withdrawn_at is null",
+        [haul]
+      )
+      expect(stored).toEqual({ area: "Sweet Home, OR", radius: 100, reported_by: users.owner })
+    })
+
+    it("brings an open report down when the list is lowered, and withdraws it when the type is gone", async () => {
+      const view = await fleet()
+      const jeep = view.units.find((unit) => unit.label === "Log truck + Tri-axle jeep")!
+      await port.setHaulerEquipmentCount(as("owner"), { count: 0, unitId: jeep.id })
+      expect((await fleet()).availability[0]).toMatchObject({ availableCount: 2, state: "available" })
+    })
+
+    it("labels a stale report Not recently confirmed (the board never shows its old number)", async () => {
+      await admin.unsafe("alter table marketplace.availability_reports disable trigger availability_guard")
+      await admin.unsafe("update marketplace.availability_reports set reported_at = now() - interval '10 days' where org_id = $1::uuid", [haul])
+      await admin.unsafe("alter table marketplace.availability_reports enable trigger availability_guard")
+
+      const rows = fleetCapacity(await fleet(), new Date())
+      expect(rows).toEqual([expect.objectContaining({ available: null, equipmentCode: "log_truck", stamp: { fresh: false, label: "Not recently confirmed" }, state: "unknown" })])
+      // "Confirm all as shown" re-states only fresh rows, so the stale one stays as it is.
+      await expect(port.confirmHaulerAvailability(as("owner"))).resolves.toEqual({ confirmed: 0 })
+    })
+
+    it("records Not available as a withdrawal dated now, and Confirm all re-dates it", async () => {
+      await port.reportHaulerAvailability(as("owner"), { count: null, equipmentCode: "log_truck", state: "none" })
+      expect((await fleet()).availability[0]).toMatchObject({ availableCount: null, state: "not_available" })
+
+      await expect(port.confirmHaulerAvailability(as("owner"))).resolves.toEqual({ confirmed: 1 })
+      const rows = fleetCapacity(await fleet(), new Date())
+      expect(rows[0]).toMatchObject({ stamp: { fresh: true, label: "Updated today by the hauler" }, state: "not_available" })
+    })
+
+    it("says nothing was saved for Not available on a truck type that was never reported, and records nothing", async () => {
+      const count = async () =>
+        (await one<{ n: number }>("select count(*)::int as n from marketplace.availability_reports where org_id = $1::uuid and equipment_code = 'chip_truck'", [haul])).n
+
+      await expect(port.reportHaulerAvailability(as("owner"), { count: null, equipmentCode: "chip_truck", state: "none" })).rejects.toThrow(FLEET_NOTHING_TO_WITHDRAW)
+      expect(await count()).toBe(0)
+    })
+
+    it("lets a driver read the trucks but not change them", async () => {
+      await expect(port.haulerFleet(as("driver"))).resolves.toMatchObject({ canEdit: false })
+      await expect(port.addHaulerEquipment(as("driver"), add({ truckCode: "chip_truck", trailer: "chip_van" }))).rejects.toBeInstanceOf(MarketplaceRefusalError)
+      await expect(port.reportHaulerAvailability(as("driver"), { count: 1, equipmentCode: "log_truck", state: "now" })).rejects.toBeInstanceOf(MarketplaceRefusalError)
+    })
+
+    it("refuses a person outside the business, and a member of another hauling business", async () => {
+      const before = await one<{ units: number; reports: number }>(
+        `select (select count(*)::int from marketplace.equipment_units where org_id = $1::uuid) as units,
+                (select count(*)::int from marketplace.availability_reports where org_id = $1::uuid) as reports`,
+        [haul]
+      )
+
+      await expect(port.haulerFleet(as("stranger"))).rejects.toBeInstanceOf(MarketplaceRefusalError)
+      await expect(port.haulerFleet(as("rival"))).rejects.toBeInstanceOf(MarketplaceRefusalError)
+      await expect(port.addHaulerEquipment(as("rival"), add({ truckCode: "chip_truck" }))).rejects.toBeInstanceOf(MarketplaceRefusalError)
+      await expect(port.reportHaulerAvailability(as("rival"), { count: 1, equipmentCode: "log_truck", state: "now" })).rejects.toBeInstanceOf(MarketplaceRefusalError)
+      await expect(port.confirmHaulerAvailability(as("stranger"))).rejects.toBeInstanceOf(MarketplaceRefusalError)
+      // The rival's own business is untouched by a request naming the other one.
+      await expect(port.haulerFleet(as("owner", rival))).rejects.toBeInstanceOf(MarketplaceRefusalError)
+
+      expect(await one(
+        `select (select count(*)::int from marketplace.equipment_units where org_id = $1::uuid) as units,
+                (select count(*)::int from marketplace.availability_reports where org_id = $1::uuid) as reports`,
+        [haul]
+      )).toEqual(before)
+    })
   })
 
   it("names only catalogued tables and runs every statement through has_org_role", () => {

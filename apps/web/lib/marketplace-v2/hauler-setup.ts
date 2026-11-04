@@ -15,7 +15,12 @@ export async function haulerChecklistFor(viewer: MarketplaceV2Viewer | null, can
   }
 
   try {
-    return haulerSetupChecklist({ profile: await pilotMarketplaceV2.haulerProfile(viewer) })
+    const [profile, fleet] = await Promise.all([
+      pilotMarketplaceV2.haulerProfile(viewer),
+      // Trucks are optional on the checklist: a failed read leaves those items out.
+      Promise.resolve().then(() => pilotMarketplaceV2.haulerFleet(viewer)).catch(() => null)
+    ])
+    return haulerSetupChecklist({ fleet, profile })
   } catch {
     return []
   }

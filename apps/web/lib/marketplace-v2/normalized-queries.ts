@@ -1,13 +1,17 @@
 /**
  * The closed list of table statements the normalized adapter may run, beside the schema functions in
  * `MARKETPLACE_FUNCTIONS` (normalized-db.ts). They exist where the schema has no function for a V2 screen yet: the
- * hauling business's own profile (#125). Each one runs inside the identity-bound transaction as `authenticated`,
- * so the schema's row-level security, column grants and triggers decide what the person may read and change:
+ * hauling business's own profile (#125), and its trucks and self-reported availability (#126). Each one runs inside
+ * the identity-bound transaction as `authenticated`, so the schema's row-level security, column grants and triggers
+ * decide what the person may read and change:
  *
  *   hauler_profiles   read: members; update: owner or manager (hauler_profiles_update), consent stamped by
  *                     tg_hauler_public_consent, invitation consent by tg_hauler_profile_guard
  *   organizations     update: owner only (organizations_owner_update); tg_org_identity_guard re-opens verification
  *                     when a verified business changes its legal name (LE-08)
+ *   equipment_units   read: members; insert/update: owner, manager or staff (equipment_units_insert/_update)
+ *   availability_reports  read: members; insert/update: owner, manager or staff here (availability_insert/_update);
+ *                     tg_availability_guard snaps the area and stamps reported_at on every write
  *
  * Every statement also names the active business explicitly (`$1`) and checks the person's membership of it, so a
  * person who belongs to several businesses only ever reads or changes the one they are acting for. Values are bound
@@ -15,7 +19,7 @@
  * come back as `to_jsonb(row)`, like the function calls.
  */
 
-export type MarketplaceQueryArgument = "uuid" | "text" | "integer" | "numeric" | "boolean"
+export type MarketplaceQueryArgument = "uuid" | "text" | "integer" | "numeric" | "boolean" | "date"
 
 interface QuerySpec {
   args: readonly MarketplaceQueryArgument[]
@@ -23,6 +27,8 @@ interface QuerySpec {
 }
 
 const MEMBER_ROLES = "array['owner', 'manager', 'staff', 'driver']::text[]"
+/** Who may change a business's equipment and availability (equipment_units / availability_reports updates). */
+const DESK_ROLES = "array['owner', 'manager', 'staff']::text[]"
 
 export const MARKETPLACE_QUERIES = {
   /** The active business's hauler profile with its organization, and what the person may change. */
@@ -76,6 +82,182 @@ with changed as (
     and marketplace.has_org_role(id, array['owner']::text[])
   returning id
 ) select to_jsonb(changed) as row from changed`
+  },
+
+  // ---- My trucks (#126) -------------------------------------------------------------------------------------
+
+  /** Whether the person may change the business's trucks, and whether it has a service area to report from. */
+  hauler_fleet_access: {
+    args: ["uuid"],
+    text: `
+select to_jsonb(a) as row from (
+  select h.org_id,
+         marketplace.has_org_role(h.org_id, ${DESK_ROLES}) as can_edit,
+         h.service_center is not null and h.service_radius_miles is not null as placed
+  from marketplace.hauler_profiles h
+  where h.org_id = $1::text::uuid
+    and marketplace.has_org_role(h.org_id, ${MEMBER_ROLES})
+) as a`
+  },
+
+  /** The business's listed trucks and extras (equipment_units), in the reference list's order. */
+  hauler_equipment_units: {
+    args: ["uuid"],
+    text: `
+select to_jsonb(u) as row from (
+  select eu.id, eu.equipment_code, eu.paired_trailer_code, eu.capacity_note, eu.unit_label, eu.unit_count, et.category
+  from marketplace.equipment_units eu
+  join marketplace.equipment_types et on et.code = eu.equipment_code
+  where eu.org_id = $1::text::uuid
+    and eu.is_active
+    and et.category in ('truck', 'attachment')
+    and marketplace.has_org_role(eu.org_id, ${MEMBER_ROLES})
+  order by et.sort_order, eu.created_at, eu.unit_label
+) as u`
+  },
+
+  /**
+   * The latest self-report per truck type: the open report if there is one (V2 keeps at most one), otherwise the
+   * latest withdrawal, which is "not available" as of `withdrawn_at`.
+   */
+  hauler_availability_latest: {
+    args: ["uuid"],
+    text: `
+select to_jsonb(r) as row from (
+  select distinct on (ar.equipment_code)
+         ar.equipment_code, ar.available_count, ar.available_from, ar.available_until, ar.reported_at, ar.withdrawn_at
+  from marketplace.availability_reports ar
+  where ar.org_id = $1::text::uuid
+    and marketplace.has_org_role(ar.org_id, ${MEMBER_ROLES})
+  order by ar.equipment_code, (ar.withdrawn_at is null) desc, coalesce(ar.withdrawn_at, ar.reported_at) desc, ar.reported_at desc
+) as r`
+  },
+
+  /**
+   * Adds a configuration or extra; a removed row with the same label comes back with the new count (the label is
+   * unique per business). Owner, manager or staff.
+   */
+  equipment_unit_upsert: {
+    args: ["uuid", "text", "text", "text", "integer", "text"],
+    text: `
+with added as (
+  insert into marketplace.equipment_units (org_id, equipment_code, paired_trailer_code, unit_label, unit_count, capacity_note)
+  select $1::text::uuid, $2::text, $3::text, $4::text, $5::text::integer, $6::text
+  where marketplace.has_org_role($1::text::uuid, ${DESK_ROLES})
+  on conflict (org_id, unit_label) do update
+    set equipment_code = excluded.equipment_code,
+        paired_trailer_code = excluded.paired_trailer_code,
+        unit_count = excluded.unit_count,
+        capacity_note = excluded.capacity_note,
+        is_active = true
+  returning id
+) select to_jsonb(added) as row from added`
+  },
+
+  /** A listed row's count; 0 takes it off the list (is_active = false; the row and its history stay). */
+  equipment_unit_set_count: {
+    args: ["uuid", "uuid", "integer"],
+    text: `
+with changed as (
+  update marketplace.equipment_units
+  set unit_count = case when $3::text::integer > 0 then $3::text::integer else unit_count end,
+      is_active = $3::text::integer > 0
+  where id = $2::text::uuid
+    and org_id = $1::text::uuid
+    and is_active
+    and marketplace.has_org_role(org_id, ${DESK_ROLES})
+  returning id, equipment_code
+) select to_jsonb(changed) as row from changed`
+  },
+
+  /** Withdraws the open report of a truck type ("not available", or before a new report). */
+  availability_withdraw: {
+    args: ["uuid", "text"],
+    text: `
+with changed as (
+  update marketplace.availability_reports
+  set withdrawn_at = now()
+  where org_id = $1::text::uuid
+    and equipment_code = $2::text
+    and withdrawn_at is null
+    and marketplace.has_org_role(org_id, ${DESK_ROLES})
+  returning id
+) select to_jsonb(changed) as row from changed`
+  },
+
+  /** "Not available" said again: the latest withdrawal of that type, with no open report, is re-dated to now. */
+  availability_restate_withdrawn: {
+    args: ["uuid", "text"],
+    text: `
+with latest as (
+  select ar.id
+  from marketplace.availability_reports ar
+  where ar.org_id = $1::text::uuid
+    and ar.equipment_code = $2::text
+    and ar.withdrawn_at is not null
+    and not exists (select 1 from marketplace.availability_reports o
+                    where o.org_id = ar.org_id and o.equipment_code = ar.equipment_code and o.withdrawn_at is null)
+  order by ar.withdrawn_at desc
+  limit 1
+), changed as (
+  update marketplace.availability_reports
+  set withdrawn_at = now()
+  where id in (select id from latest)
+    and marketplace.has_org_role(org_id, ${DESK_ROLES})
+  returning id
+) select to_jsonb(changed) as row from changed`
+  },
+
+  /**
+   * A new self-report: N trucks of a type, from a date, for the business's service area (its home base's point and
+   * travel distance). Nothing is reported without a service area; the area is never guessed.
+   */
+  availability_insert: {
+    args: ["uuid", "text", "integer", "date", "date"],
+    text: `
+with added as (
+  insert into marketplace.availability_reports
+    (org_id, equipment_code, available_count, area_center, area_label, radius_miles, available_from, available_until)
+  select h.org_id, $2::text, $3::text::integer, h.service_center, h.base_area_label, h.service_radius_miles, $4::text::date, $5::text::date
+  from marketplace.hauler_profiles h
+  where h.org_id = $1::text::uuid
+    and h.service_center is not null
+    and h.service_radius_miles is not null
+    and marketplace.has_org_role(h.org_id, ${DESK_ROLES})
+  returning id
+) select to_jsonb(added) as row from added`
+  },
+
+  /** "Confirm all as shown" for an open report: the same count, from today (or its later start) for a week. */
+  availability_renew: {
+    args: ["uuid", "text"],
+    text: `
+with changed as (
+  update marketplace.availability_reports
+  set available_from = greatest(available_from, current_date),
+      available_until = greatest(available_from, current_date) + 7
+  where org_id = $1::text::uuid
+    and equipment_code = $2::text
+    and withdrawn_at is null
+    and marketplace.has_org_role(org_id, ${DESK_ROLES})
+  returning id
+) select to_jsonb(changed) as row from changed`
+  },
+
+  /** A list lowered below an open report brings the report down to the units still listed. */
+  availability_clamp: {
+    args: ["uuid", "text", "integer"],
+    text: `
+with changed as (
+  update marketplace.availability_reports
+  set available_count = $3::text::integer
+  where org_id = $1::text::uuid
+    and equipment_code = $2::text
+    and withdrawn_at is null
+    and available_count > $3::text::integer
+    and marketplace.has_org_role(org_id, ${DESK_ROLES})
+  returning id
+) select to_jsonb(changed) as row from changed`
   }
 } as const satisfies Record<string, QuerySpec>
 
@@ -105,6 +287,9 @@ function serializeQueryValue(value: MarketplaceQueryValue, type: MarketplaceQuer
       break
     case "boolean":
       if (typeof value === "boolean") return value ? "true" : "false"
+      break
+    case "date":
+      if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value
       break
   }
 

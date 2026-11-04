@@ -21,6 +21,7 @@ import { PendingSubmitButton } from "@/components/v2/PendingSubmitButton"
 import { ReportListing } from "@/components/v2/ReportListing"
 import { ShareListing } from "@/components/v2/ShareListing"
 import { expressInterestAction } from "@/lib/marketplace-v2/actions"
+import { TRUCKS_PATH } from "@/lib/marketplace-v2/fleet-page"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { interestBarOffer, jobPagePath, jobShareUrl, similarJobs, type SimilarJob } from "@/lib/marketplace-v2/job-detail"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
@@ -57,8 +58,8 @@ function EquipmentFields({ options }: { options: MarketplaceHaulerEquipmentOptio
       <div className={styles.group}>
         <InterestCountField defaultValue={1} id="interest-trucks" label="Trucks you can offer" max={500} min={1} name="trucksOffered" required />
         <p className={styles.hint}>
-          Your business profile lists no trucks or trailers yet, so the landing sees a count only. Adding equipment to your profile is
-          not available in this preview yet.
+          Your business lists no trucks or trailers yet, so the landing sees a count only.{" "}
+          <AppLink href={TRUCKS_PATH}>Add your equipment</AppLink> to offer trucks by type.
         </p>
       </div>
     )

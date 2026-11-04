@@ -1,4 +1,5 @@
 import type {
+  HaulerFleetView,
   HaulerProfileView,
   MarketplaceAvailabilityAttestation,
   MarketplaceCapability,
@@ -139,6 +140,25 @@ export interface MarketplaceV2Port {
    * Throws `MarketplaceOperationUnavailableError` when this adapter cannot persist it.
    */
   saveHaulerProfile(viewer: MarketplaceV2Viewer, input: unknown): Promise<HaulerProfileView>
+
+  /** Whether "My trucks" (equipment and availability) persists through this adapter (#126). */
+  readonly supportsHaulerFleet: boolean
+  /**
+   * The active hauling business's listed equipment and latest self-reported availability per truck type. Refuses a
+   * person who is not a member of that business, and a business with no hauler profile.
+   */
+  haulerFleet(viewer: MarketplaceV2Viewer): Promise<HaulerFleetView>
+  /** Add a configuration (or extra) from the presets (`haulerEquipmentAddInputSchema`). Owner, manager or staff. */
+  addHaulerEquipment(viewer: MarketplaceV2Viewer, input: unknown): Promise<void>
+  /** Change one listed row's count (`haulerEquipmentCountInputSchema`); 0 takes it off the list. */
+  setHaulerEquipmentCount(viewer: MarketplaceV2Viewer, input: unknown): Promise<void>
+  /**
+   * Report one truck type available now, from a date, or not available (`haulerAvailabilityInputSchema`). The count
+   * can never exceed the units of that type listed (`planAvailabilityReport`).
+   */
+  reportHaulerAvailability(viewer: MarketplaceV2Viewer, input: unknown): Promise<void>
+  /** "Confirm all as shown": re-states every truck type with a fresh answer, dated now. */
+  confirmHaulerAvailability(viewer: MarketplaceV2Viewer): Promise<{ confirmed: number }>
 
   // --- Inquiry conversations (UX-09, #132) ---------------------------------------------------------------------
   /**

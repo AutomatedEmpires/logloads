@@ -1,5 +1,6 @@
 import {
   HAULER_PUBLIC_PROFILE_KEYS,
+  type HaulerFleetView,
   type HaulerProfileInput,
   type HaulerProfileView,
   type HaulerPublicProfileView,
@@ -9,6 +10,7 @@ import {
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { actorCan, resolveMarketplaceActor } from "./marketplace-access"
+import { fleetCapacity, registeredTrucks } from "./marketplace-fleet"
 import type { MarketplaceActor } from "./marketplace-interest"
 import { DomainRefusalError } from "./utils"
 
@@ -89,7 +91,7 @@ export interface HaulerSetupItem {
  * The resumable setup checklist on Find work (UX 02 §A3–A5; spec §10.20). It never blocks search: it only names
  * what is still unset and links to it. `null` facts (a read that failed) leave that item out rather than guessing.
  */
-export function haulerSetupChecklist(facts: { profile: HaulerProfileView | null }): HaulerSetupItem[] {
+export function haulerSetupChecklist(facts: { profile: HaulerProfileView | null; fleet?: HaulerFleetView | null; now?: Date }): HaulerSetupItem[] {
   const items: HaulerSetupItem[] = []
 
   if (facts.profile) {
@@ -99,6 +101,20 @@ export function haulerSetupChecklist(facts: { profile: HaulerProfileView | null 
       id: "business",
       label: "Add your home base and how far you travel"
     })
+  }
+
+  if (facts.fleet) {
+    const trucks = registeredTrucks(facts.fleet)
+    items.push({ done: trucks > 0, href: "/v2/hauler/trucks?setup=1", id: "trucks", label: "List your trucks" })
+
+    if (trucks > 0) {
+      items.push({
+        done: fleetCapacity(facts.fleet, facts.now ?? new Date()).every((row) => row.state !== "unknown"),
+        href: "/v2/hauler/trucks#availability",
+        id: "availability",
+        label: "Say when your trucks are free"
+      })
+    }
   }
 
   return items

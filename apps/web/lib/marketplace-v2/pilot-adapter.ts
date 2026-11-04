@@ -7,7 +7,7 @@ import {
   type MarketplaceJobDetailView,
   type MarketplaceJobFilters
 } from "@logloads/contracts"
-import { marketplaceJobStatus, pilotHaulerProfile } from "@logloads/services"
+import { marketplaceJobStatus, pilotHaulerFleet, pilotHaulerProfile } from "@logloads/services"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { buildNetworkView } from "../network"
@@ -56,6 +56,29 @@ export const operatingStateMarketplaceV2: MarketplaceV2Port = {
   supportsPublishing: false,
   // The pilot holds a business name and legal name only, and no service edits them (#125).
   supportsHaulerProfile: false,
+  // The pilot's equipment is per-unit dispatch records (unit numbers, payload, drivers) and its availability is per
+  // driver; V2 presets and self-reported counts are read from it but never written into it (#126).
+  supportsHaulerFleet: false,
+
+  async haulerFleet(viewer) {
+    return readState((current) => pilotHaulerFleet(current.state, actor(viewer)))
+  },
+
+  async addHaulerEquipment() {
+    throw new MarketplaceOperationUnavailableError("Adding equipment")
+  },
+
+  async setHaulerEquipmentCount() {
+    throw new MarketplaceOperationUnavailableError("Changing equipment counts")
+  },
+
+  async reportHaulerAvailability() {
+    throw new MarketplaceOperationUnavailableError("Reporting availability")
+  },
+
+  async confirmHaulerAvailability() {
+    throw new MarketplaceOperationUnavailableError("Confirming availability")
+  },
 
   async authoringLandings(viewer) {
     return readState((current) => current.marketplaceAuthoringLandings(actor(viewer)))
