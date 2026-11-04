@@ -24,3 +24,13 @@ Next action: finish installation; run pnpm validate in this worktree; record loc
 ## Remaining ownership
 
 Codex owns #218/#219/#209 stabilization and batch classification under #220. Original agent worktrees are preservation-only; no source there is assigned for edits during this task. Schema26 and sec3 remain isolated recovery snapshots pending classification. The maintainer owns integration merges; none is authorized here.
+
+## Recovered batches: inventory complete, implementation deferred
+
+File-level classifications are in `docs/reports/STABILIZATION_RECOVERED_BATCHES_2026-11-04.json`.
+No complete change from either batch is on integration f78a5b3, and neither batch was imported.
+
+- Schema26: 15 files, including two new SQL files. Seven adapter/session files diverged. G1 landing public fields needs coordinated schema/contracts/UI; G2 private contact table still needs application wiring; G3 legal-name grant/accessor change needs privacy and adapter compatibility review; G4 truck-only choices overlaps application filtering proposed in #219; G5 report reclassification/deduplication and G6 availability caps/locks modify historical rows and require migration, rollback and concurrency evidence. None is an activated migration. Owner: AutomatedEmpires maintainer, normalized-database execution lane to be assigned. Next actions and acceptance: #221.
+- Sec3: 26 files; all existing baseline files unchanged on integration, new tests absent. Separate slices: bounded webhook body, report-only HTML CSP/provider origins, shared write timeout parity, operating-state non-growth recovery/warnings, legacy board cache/title maintenance, staging tooling allow-list. Highest risk is preserving withheld rows and CAS while changing size checks. Next configuration conflicts with #218 externalization and must retain it. Owner: AutomatedEmpires maintainer, security execution lane to be assigned. Next actions and acceptance: #222.
+
+No fresh execution of either recovered batch is claimed. Existing original worktrees, snapshots and all recovery refs remain preserved. Their code is not a prerequisite to silence performance budgets in #209.
