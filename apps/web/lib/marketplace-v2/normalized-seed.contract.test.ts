@@ -230,7 +230,7 @@ describe.skipIf(!SEEDED)("normalized adapter on the seeded store", () => {
     expect(await portFor(DANA).authoringLandings(viewer(DANA, NORTH_PINE))).toEqual([{ areaLabel: "Oakridge, OR", id: oak?.id, name: "Oak Landing", stateCode: "OR" }])
   })
 
-  it("offers each hauler its own listed equipment (DS-05's Granite Creek setups; none for New River)", async () => {
+  it("offers each hauler its own listed equipment and profile (DS-05's Granite Creek setups; none for New River)", async () => {
     const options = await portFor(AVERY).haulerEquipment(viewer(AVERY, GRANITE_CREEK))
 
     expect(options.map(({ configurationKey, label, unitsListed }) => ({ configurationKey, label, unitsListed }))).toEqual([
@@ -238,6 +238,17 @@ describe.skipIf(!SEEDED)("normalized adapter on the seeded store", () => {
       { configurationKey: "log_truck|pole_trailer", label: "Log truck + Pole trailer", unitsListed: 1 }
     ])
     expect(await portFor(MORGAN).haulerEquipment(viewer(MORGAN, NEW_RIVER))).toEqual([])
+
+    // The hauling profiles: Granite Creek Hauling consented to public discovery; New River Hauling did not.
+    expect(await portFor(AVERY).haulerProfile(viewer(AVERY, GRANITE_CREEK))).toMatchObject({
+      businessName: "Granite Creek Hauling",
+      canEditProfile: true,
+      homeBase: "Springfield, OR",
+      listed: true,
+      organizationId: business(GRANITE_CREEK).id,
+      serviceRadiusMiles: 75
+    })
+    expect(await portFor(MORGAN).haulerProfile(viewer(MORGAN, NEW_RIVER))).toMatchObject({ businessName: "New River Hauling", listed: false })
   })
 
   // -------------------------------------------------------------------------------------------------------------
