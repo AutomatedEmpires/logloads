@@ -705,6 +705,17 @@ export { DomainRefusalError } from "./utils"
 export { marketplaceJobStatus, type MarketplaceActor } from "./marketplace-interest"
 export { pilotMarketplaceMembership, type MarketplaceViewerAccess } from "./marketplace-access"
 export {
+  HAULER_IDENTITY_EDIT_REFUSED,
+  HAULER_PROFILE_EDIT_REFUSED,
+  HAULER_PROFILE_NOT_HAULING,
+  haulerSetupChecklist,
+  pilotHaulerProfile,
+  planHaulerProfileSave,
+  publicHaulerProfile,
+  type HaulerProfileSavePlan,
+  type HaulerSetupItem
+} from "./marketplace-hauler"
+export {
   organizationOperationallyAccessible,
   resolveRestrictedOrganizationAccess
 } from "./organization-access"

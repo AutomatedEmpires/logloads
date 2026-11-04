@@ -72,6 +72,10 @@ function fakeDb(): MarketplaceDb {
       async inquiryParties() {
         recorded.push({ ...extra, args: {}, fn: "inquiryParties", session })
         return parties
+      },
+      async query(name, values) {
+        recorded.push({ ...extra, args: { values }, fn: name, session })
+        return []
       }
     }
   }
