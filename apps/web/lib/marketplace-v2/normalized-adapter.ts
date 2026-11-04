@@ -15,6 +15,7 @@ import {
   equipmentOptionFromRow,
   expressInterestArguments,
   haulerReplyArguments,
+  inquiryJobFromRow,
   interestViewFromRow,
   isUuid,
   jobFilterArguments,
@@ -25,7 +26,8 @@ import {
   respondArguments,
   submittedInterestId,
   uuidValue,
-  viewerAccessFromRow
+  viewerAccessFromRow,
+  withdrawArguments
 } from "./normalized-mapping"
 import { MarketplaceRefusalError, MarketplaceStoreError, type MarketplaceV2Port, type MarketplaceV2Viewer } from "./port"
 
@@ -56,6 +58,8 @@ const LANDING_NOT_OWNED = "Choose one of your organization's landings"
 const NOT_OWN_JOB = "You can only confirm your organization's own job postings"
 const FIX_FIELDS = "Fix the highlighted fields before publishing"
 const RECONFIRM_ATTESTATION_REQUIRED = "Tick the availability confirmation to record that this job is still available"
+/** `withdraw_interest`'s refusal for a declined inquiry (18_v2_review_106_hardening.sql, HF-03). */
+const LANDING_CLOSED = "The landing has closed this inquiry"
 
 /** An attestation is the server's record of a confirmation made in this request; an old one is not accepted. */
 const ATTESTATION_MAX_AGE_MS = 5 * 60_000
@@ -266,6 +270,60 @@ export function createNormalizedMarketplaceV2({ db, now = () => new Date(), prin
 
       await asViewer(viewer, async (calls) => {
         await requireInquiryParty(calls, target, "hauler", viewer)
+        await calls.call("withdraw_interest", { p_interest_id: target })
+      }, write)
+    },
+
+    // --- Inquiry conversations (UX-09, #132) ---------------------------------------------------------------------
+
+    async landingInquiryJobs(viewer) {
+      return asViewer(viewer, async (calls) => {
+        // The same authority as the inbox itself: `list_marketplace_interests(p_side => 'landing')` needs inquiry.respond.
+        const [access] = await calls.call("get_viewer_marketplace_access", { p_org_id: viewer.organizationId })
+
+        if (!access || !viewerAccessFromRow(access).capabilities.includes("inquiry.respond")) {
+          throw new MarketplaceRefusalError(INQUIRY_NOT_FOUND, "42501")
+        }
+
+        return (await calls.inquiryJobs(viewer.organizationId)).map(inquiryJobFromRow)
+      }, read)
+    },
+
+    async withdrawInterestWithReason(viewer, input) {
+      const { interestId: target, reason } = withdrawArguments(input)
+
+      await asViewer(viewer, async (calls) => {
+        const parties = await calls.inquiryParties(target)
+
+        if (!parties || parties.haulerOrganizationId !== viewer.organizationId) {
+          throw new MarketplaceRefusalError(INQUIRY_NOT_FOUND, "42501")
+        }
+
+        // One transaction: the reason is posted and the inquiry withdrawn together, or neither. The status is read
+        // first so a declined inquiry gets withdraw_interest's own refusal before any reason is written, and an
+        // already withdrawn one is left as it is without posting the reason again.
+        const [current] = (await calls.call("list_marketplace_interests", {
+          p_job_id: parties.jobId,
+          p_org_id: viewer.organizationId,
+          p_side: "hauler"
+        })).map(interestViewFromRow).filter((interest) => interest.id === target)
+
+        if (!current) {
+          throw new MarketplaceRefusalError(INQUIRY_NOT_FOUND, "42501")
+        }
+
+        if (current.status === "declined") {
+          throw new MarketplaceRefusalError(LANDING_CLOSED, "23514")
+        }
+
+        if (current.status === "withdrawn") {
+          return
+        }
+
+        if (reason) {
+          await calls.call("post_hauler_interest_reply", reason)
+        }
+
         await calls.call("withdraw_interest", { p_interest_id: target })
       }, write)
     }

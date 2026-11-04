@@ -11,13 +11,16 @@ function isPlainClick(event: MouseEvent<HTMLAnchorElement>): boolean {
 
 /**
  * One inquiry in a semantic <ul>: the same row pattern as JobResultRow. The other party's name is the row's single
- * link (`aria-current="true"` when selected, stretched over the row); the turn state comes from UX-DEC-01. What
+ * link (`aria-current="true"` when selected, stretched over the row); the turn state comes from UX-DEC-01. A
+ * landing's reviewed inquiry carries the "Seen" marker: the same dot, hollow, beside words that say "Seen". What
  * the hauler offers is self-reported, and the row says nothing about it being booked.
  */
 export function InquiryRow({ interest, viewerSide, selected, href, onSelect, className }: InquiryRowProps & Placement) {
   const landing = viewerSide === "landing"
   const name = landing ? interest.haulerOrganization.name : interest.landingOrganization.name
   const status = inquiryStatus(interest, viewerSide)
+  // UX-DEC-01: a landing's "Mark reviewed" keeps the inquiry in New with a "Seen" marker (UX-09 criterion 6).
+  const seen = landing && interest.status === "viewed"
   const available = availabilityText(interest)
   const updated = formatDay(interest.updatedAt)
 
@@ -40,7 +43,7 @@ export function InquiryRow({ interest, viewerSide, selected, href, onSelect, cla
       </div>
       <p className={styles.job}>{interest.job.title}</p>
       <p className={styles.offer}>{offerText(interest)}</p>
-      <p className={styles.state} data-tone={status.tone}>
+      <p className={styles.state} data-seen={seen ? "" : undefined} data-tone={status.tone}>
         {available ? `${status.label} · ${available.charAt(0).toLowerCase()}${available.slice(1)}` : status.label}
       </p>
     </li>

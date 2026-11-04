@@ -7,11 +7,13 @@ export interface ConfirmActionFormProps {
   fields: Readonly<Record<string, string>>
   confirmLabel: string
   className?: string
+  /** The form's id, which a reason field outside it names in its `form` attribute (`ConfirmReasonField`). */
+  id?: string
 }
 
-export function ConfirmActionForm({ action, className, confirmLabel, fields }: ConfirmActionFormProps) {
+export function ConfirmActionForm({ action, className, confirmLabel, fields, id }: ConfirmActionFormProps) {
   return (
-    <form action={action} className={className}>
+    <form action={action} className={className} id={id}>
       {Object.entries(fields).map(([name, value]) => (
         <input key={name} name={name} type="hidden" value={value} />
       ))}

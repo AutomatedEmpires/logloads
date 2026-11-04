@@ -22,8 +22,23 @@ describe("GlobalNavigation", () => {
     expect(html).toMatch(/^<header/)
     expect(html).toMatch(/<a aria-label="LogLoads home"[^>]*href="\/v2\/work"/)
     expect(html).toMatch(/<a aria-current="page"[^>]*href="\/v2\/work"[^>]*>Find work<\/a>/)
-    expect(html).toMatch(/<a [^>]*href="\/v2\/inquiries"[^>]*>My inquiries<span[^>]*>3<\/span><\/a>/)
+    expect(html).toMatch(/<a [^>]*href="\/v2\/inquiries"[^>]*>My inquiries<span[^>]*>, <\/span><span[^>]*>3<\/span><span[^>]*> unread<\/span><\/a>/)
     expect([...html.matchAll(/aria-current/g)]).toHaveLength(1)
+  })
+
+  it("reads a destination's count as '<label>, <count> unread' and still shows the badge (UX-09, #132)", () => {
+    const html = renderToStaticMarkup(<GlobalNavigation activeId="work" items={NAV} />)
+    const link = html.match(/<a [^>]*href="\/v2\/inquiries"[^>]*>([\s\S]*?)<\/a>/)?.[1] ?? ""
+
+    // The link's text content is its accessible name: words, never "My inquiries3".
+    expect(link.replace(/<[^>]+>/g, "")).toBe("My inquiries, 3 unread")
+    // Only the number is visible; the words around it are visually hidden.
+    expect([...link.matchAll(/<span class="([^"]*)">([^<]*)<\/span>/g)].map((match) => [/count/.test(match[1] ?? ""), match[2]])).toEqual([
+      [false, ", "],
+      [true, "3"],
+      [false, " unread"]
+    ])
+    expect(renderToStaticMarkup(<GlobalNavigation activeId="work" items={[{ ...NAV[1]!, count: 0 }]} />)).not.toContain("unread")
   })
 
   it("renders the brand as text when there are no destinations", () => {

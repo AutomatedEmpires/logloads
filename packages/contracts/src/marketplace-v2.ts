@@ -775,3 +775,85 @@ const MARKETPLACE_JOB_CLOSED_REASONS: Readonly<Record<MarketplaceJobStatus, stri
 export function marketplaceJobClosedReason(status: MarketplaceJobStatus): string | null {
   return MARKETPLACE_JOB_CLOSED_REASONS[status]
 }
+
+// ---------------------------------------------------------------------------
+// Inquiry conversations (UX-09, #132): queues, turn, unread, equipment fit and closing with a reason
+// ---------------------------------------------------------------------------
+
+export type HaulerInterestQueue = "active" | "replied" | "closed"
+
+/**
+ * The hauler's tabs (UX 02 §A9): Active until the landing replies, Replied once it has (each row then says whose
+ * turn it is), Closed when the landing declined or the hauler withdrew.
+ */
+export function haulerInterestQueue(status: MarketplaceInterestStatus): HaulerInterestQueue {
+  switch (status) {
+    case "submitted":
+    case "viewed":
+      return "active"
+    case "replied":
+      return "replied"
+    case "declined":
+    case "withdrawn":
+      return "closed"
+  }
+}
+
+/**
+ * Whether an inquiry is unread for one side, which is what the navigation counts. LogLoads keeps no per-person read
+ * receipts, so "unread" is what the stored status and the thread can prove:
+ * - landing: in New and not marked reviewed — a new inquiry, or a hauler message after the landing's last reply;
+ * - hauler: the landing spoke last on an open inquiry ("Your turn").
+ */
+export function marketplaceInquiryUnread(interest: Pick<MarketplaceInterestView, "status" | "replies">, side: "hauler" | "landing"): boolean {
+  if (side === "landing") {
+    return landingInterestQueueFor(interest) === "new" && interest.status !== "viewed"
+  }
+
+  return interest.status === "replied" && lastMarketplaceInterestReplySide(interest) === "landing"
+}
+
+/**
+ * The hauler withdraws, optionally saying why. The reason is posted to the thread as the hauler's last message, in
+ * the same change as the withdrawal, so the landing sees it; `replyId` (server-generated per render) makes a
+ * repeated submit idempotent.
+ */
+export const withdrawInterestInputSchema = z.object({
+  interestId: uuidSchema,
+  replyId: uuidSchema.optional(),
+  reason: z.string().trim().max(2000).optional().transform((value) => (value ? value : null))
+}).refine((input) => !input.reason || input.replyId, {
+  message: "A reason needs a reply id",
+  path: ["replyId"]
+})
+export type WithdrawInterestInput = z.infer<typeof withdrawInterestInputSchema>
+
+/**
+ * One of the landing organization's jobs as its inbox needs it: the landing (site) it is posted at, for the landing
+ * filter, and the equipment codes it asks for, to compare with what haulers offer. `equipmentCodes` is `null` when
+ * the store holds no comparable equipment list for the job (the pilot store's free-text requirements).
+ */
+export interface MarketplaceInquiryJobContext {
+  jobId: string
+  landing: { id: string; name: string } | null
+  equipmentCodes: string[] | null
+}
+
+export type MarketplaceOfferedEquipmentFit = "matches" | "not_requested"
+
+/** The equipment codes in an offered configuration's key: codes joined by `|` and `+`, e.g. `log_truck|pole_trailer`. */
+export function configurationEquipmentCodes(configurationKey: string): string[] {
+  return configurationKey.split(/[|+]/).map((code) => code.trim()).filter(Boolean)
+}
+
+/**
+ * One offered configuration against the codes a job asks for (UX 02 §B9): "matches" when it has every piece of
+ * equipment the job lists, the same rule as the hauler's own fit (`marketplaceEquipmentFit`), otherwise "not
+ * requested". `null` when there is nothing to compare. Advisory only: the offer is self-reported by the hauler.
+ */
+export function offeredEquipmentFit(configurationKey: string, jobEquipmentCodes: readonly string[]): MarketplaceOfferedEquipmentFit | null {
+  const codes = configurationEquipmentCodes(configurationKey)
+
+  if (jobEquipmentCodes.length === 0) return null
+  return codes.length > 0 && marketplaceEquipmentFit(jobEquipmentCodes, [codes]) === "fits" ? "matches" : "not_requested"
+}

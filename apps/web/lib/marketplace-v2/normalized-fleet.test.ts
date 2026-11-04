@@ -29,6 +29,7 @@ const unitRow = { capacity_note: null, category: "truck", equipment_code: "log_t
 function fakeDb(): MarketplaceDb {
   const calls: MarketplaceCalls = {
     call: async () => [],
+    inquiryJobs: async () => [],
     inquiryParties: async () => null,
     async query(name, values) {
       statements.push({ name, values })

@@ -5,6 +5,7 @@ import type {
   MarketplaceCapability,
   MarketplaceDraftLandingContext,
   MarketplaceHaulerEquipmentOption,
+  MarketplaceInquiryJobContext,
   MarketplaceInterestView,
   MarketplaceJobCardView,
   MarketplaceJobDetailView,
@@ -144,4 +145,18 @@ export interface MarketplaceV2Port {
   reportHaulerAvailability(viewer: MarketplaceV2Viewer, input: unknown): Promise<void>
   /** "Confirm all as shown": re-states every truck type with a fresh answer, dated now. */
   confirmHaulerAvailability(viewer: MarketplaceV2Viewer): Promise<{ confirmed: number }>
+
+  // --- Inquiry conversations (UX-09, #132) ---------------------------------------------------------------------
+  /**
+   * Withdraw the viewer's own inquiry with an optional reason (`withdrawInterestInputSchema`), posted as the
+   * hauler's last message in the same change. A declined inquiry is refused ("The landing has closed this
+   * inquiry") and nothing is written.
+   */
+  withdrawInterestWithReason(viewer: MarketplaceV2Viewer, input: unknown): Promise<void>
+  /**
+   * The viewer landing organization's jobs that have inquiries: the landing each is posted at and the equipment
+   * codes it asks for, for the inbox's landing filter and equipment comparison. Requires `inquiry.respond`; never
+   * another organization's jobs, and never private landing details.
+   */
+  landingInquiryJobs(viewer: MarketplaceV2Viewer): Promise<MarketplaceInquiryJobContext[]>
 }
