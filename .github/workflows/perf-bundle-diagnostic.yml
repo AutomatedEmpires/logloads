@@ -1,0 +1,49 @@
+name: Perf bundle diagnostic (temporary)
+
+# TEMPORARY (#137): a one-off bundle analysis for the performance budget's findings. Builds with browser source maps
+# (patched into this run's checkout only) and maps every client chunk to its modules. Deleted before review.
+
+on:
+  push:
+    branches: [test/qa/ux-14-perf-budget]
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: Enable browser source maps in this checkout only
+        run: |
+          sed -i 's/^const nextConfig: NextConfig = {$/const nextConfig: NextConfig = {\n\tproductionBrowserSourceMaps: true,/' apps/web/next.config.ts
+          grep -n "productionBrowserSourceMaps" apps/web/next.config.ts
+      - name: Build
+        run: pnpm --filter @logloads/web build
+      - name: Map chunks to modules
+        working-directory: apps/web/.next
+        run: |
+          mkdir -p "$RUNNER_TEMP/bundle"
+          cp app-build-manifest.json build-manifest.json "$RUNNER_TEMP/bundle/"
+          cp server/app/v2/work/page_client-reference-manifest.js "$RUNNER_TEMP/bundle/" || true
+          npx --yes source-map-explorer@2.5.3 'static/chunks/**/*.js' --json --no-border-checks >"$RUNNER_TEMP/bundle/source-map-explorer.json" || true
+          ls -la "$RUNNER_TEMP/bundle"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: perf-bundle-diagnostic
+          path: ${{ runner.temp }}/bundle
+          retention-days: 3
