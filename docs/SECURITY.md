@@ -194,10 +194,12 @@ service-layer authorization over the schema's functions, as the session's person
 1. The server identifies the person from its own session (`getSessionActor()`; Clerk verifies the session
    token). The adapter refuses a viewer that is not the session's user.
 2. It connects directly to PostgreSQL (postgres.js) as a **dedicated login role** that can do nothing by itself.
-   It must be NOINHERIT, with no superuser, BYPASSRLS, CREATEROLE or replication attributes, and no ownership of
-   the schema. It must not belong to `service_role`, or to any role with superuser, BYPASSRLS or CREATEROLE, directly
-   or through other roles (HF-22, #187). It may only switch to `anon` and `authenticated`.
-   `createPostgresMarketplaceDb` checks this on first use and refuses any other credential.
+   It must be NOINHERIT, with no superuser, BYPASSRLS, CREATEROLE or replication attributes, and own neither the
+   schema nor any table, function or type in it. It must not belong to `service_role`, to any role with superuser,
+   BYPASSRLS or CREATEROLE, or to any other role that `anon` and `authenticated` do not already reach (for example
+   `pg_write_all_data`), directly or through other roles (HF-22, #187). It may only switch to `anon` and
+   `authenticated`. `createPostgresMarketplaceDb` checks the login role itself (`session_user`) on first use and
+   refuses any other credential.
 3. Each call is one transaction. It runs `set_config('role', 'authenticated', true)` and sets
    `request.jwt.claims` to the configured issuer, the session's Clerk user id and the pinned audience, with a
    60-second expiry. These are the settings PostgREST makes after verifying a token. `current_user_id()`, every

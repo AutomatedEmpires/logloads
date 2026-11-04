@@ -111,7 +111,9 @@ describe("credentialProblems", () => {
     can_become_authenticated: true,
     create_role: false,
     inherits: false,
+    other_memberships: [],
     owns_marketplace: false,
+    owns_marketplace_objects: false,
     privileged_memberships: [],
     replication: false,
     service_role_member: false,
@@ -131,7 +133,11 @@ describe("credentialProblems", () => {
     ["the schema owner", { owns_marketplace: true }, "owns the marketplace schema"],
     ["a role creator", { create_role: true }, "create roles"],
     ["a member of a privileged role, even through another role (HF-22)", { privileged_memberships: ["postgres"] }, "privileged role (postgres)"],
-    ["a role whose memberships could not be read", { privileged_memberships: null as never }, "privileged role (unknown)"]
+    ["a role whose memberships could not be read", { privileged_memberships: null as never }, "privileged role (unknown)"],
+    ["an owner of a table or function in the schema (HF-22)", { owns_marketplace_objects: true }, "owns objects in the marketplace schema"],
+    ["a role whose object ownership could not be read", { owns_marketplace_objects: undefined as never }, "owns objects in the marketplace schema"],
+    ["a member of any role beyond anon and authenticated (HF-22)", { other_memberships: ["pg_write_all_data"] }, "other than anon and authenticated (pg_write_all_data)"],
+    ["a role whose other memberships could not be read", { other_memberships: undefined as never }, "other than anon and authenticated (unknown)"]
   ])("refuses %s", (_label, change, reason) => {
     expect(credentialProblems({ ...safe, ...change }).join("; ")).toContain(reason)
   })
