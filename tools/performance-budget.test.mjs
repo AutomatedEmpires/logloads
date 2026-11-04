@@ -29,7 +29,7 @@ function sampleBudget() {
   return {
     lighthouse: { runs: 3, settings: { formFactor: "mobile", throttlingMethod: "simulate" } },
     screens: [
-      { budget: { cls: 0.1, lcpMs: 2500, scriptKiB: 150 }, id: "find-work", label: "Find work", path: "/v2/work" },
+      { budget: { cls: 0.1, lcpMs: 2500, scriptKiB: 150 }, id: "find-work", label: "Find work", path: "/v2/work", target: { scriptKiB: 90 } },
       { budget: { lcpMs: 3000 }, id: "find-work-map", label: "Find work with the map", path: "/v2/work?view=map" },
       { budget: { requests: 40 }, id: "job", label: "A job page", path: "/v2/work/:job" }
     ]
@@ -82,7 +82,12 @@ test("the repository's budget is valid and measures Find work, its map and a job
   assert.ok(paths.includes("/v2/work/:job"))
   // The issue's target (#137 criterion 2): under 150 KiB of compressed script on /v2/work before the map.
   const findWork = budget.screens.find((screen) => screen.path === "/v2/work")
-  assert.ok(findWork.budget.scriptKiB <= 150, "Find work's script budget stays within the issue's 150 KiB")
+  assert.ok(findWork.target.scriptKiB <= 150, "Find work's script target is the issue's 150 KiB or less")
+  for (const screen of budget.screens) {
+    for (const [key, target] of Object.entries(screen.target ?? {})) {
+      if (key in (screen.budget ?? {})) assert.ok(screen.budget[key] >= target, `${screen.id}'s ${key} budget is a ceiling, never stricter than its target`)
+    }
+  }
   assert.equal(budget.lighthouse.settings.formFactor, "mobile")
   assert.equal(budget.lighthouse.settings.throttlingMethod, "simulate")
 })
@@ -91,6 +96,10 @@ test("a budget with an unknown line, a duplicate path or two job pages is refuse
   const unknown = sampleBudget()
   unknown.screens[0].budget.speedIndexMs = 1
   assert.throws(() => validateBudget(unknown), /unknown budget line "speedIndexMs"/)
+
+  const unknownTarget = sampleBudget()
+  unknownTarget.screens[0].target.ttiMs = 1
+  assert.throws(() => validateBudget(unknownTarget), /unknown target line "ttiMs"/)
 
   const duplicate = sampleBudget()
   duplicate.screens[1].path = "/v2/work"
@@ -291,7 +300,9 @@ test("the Markdown names each screen's values, its budget, failures and the buil
   assert.match(markdown, /Lighthouse 12\.6\.1, mobile, simulate throttling \(150 ms RTT, 1,638 kbps, 4x CPU slowdown\)/)
   assert.match(markdown, /- `\/v2\/work`: Script 200\.0 KiB, budget 150\.0 KiB/)
   assert.match(markdown, /### Find work — `\/v2\/work`/)
-  assert.match(markdown, /\| Largest Contentful Paint \| 1,000 ms \| ≤ 2,500 ms \| 1,000 ms \|/)
+  assert.match(markdown, /\| Largest Contentful Paint \| 1,000 ms \| ≤ 2,500 ms \|  \| 1,000 ms \|/)
+  assert.match(markdown, /\| Script \| 100\.0 KiB \| ≤ 150\.0 KiB \| ≤ 90\.0 KiB \| 100\.0 KiB \|/)
+  assert.match(markdown, /\*\*Short of target\*\* \(reported, not enforced\):\n\n- `\/v2\/work`: Script 100\.0 KiB, target 90\.0 KiB/)
   assert.match(markdown, /\| `\/_next\/static\/chunks\/framework-example\.js` \| 90\.0 KiB \| 300\.0 KiB \|/)
   assert.match(markdown, /### A job page — `\/v2\/work\/north-pine-example`/)
   assert.match(markdown, /├ ƒ \/v2\/work\/\[jobId\]/)

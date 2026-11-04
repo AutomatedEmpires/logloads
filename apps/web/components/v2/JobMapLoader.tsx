@@ -6,7 +6,12 @@ import type { JobMapPoint } from "./JobMap"
 import styles from "./JobMap.module.css"
 
 const JobMap = dynamic(() => import("./JobMap"), {
-  loading: () => <p className={styles.note}>Loading map… the list below is already complete.</p>,
+  // The region's own box while the code loads, so the map arrives without moving the list (#137).
+  loading: () => (
+    <div className={`${styles.region} ${styles.placeholder}`}>
+      <p className={styles.note}>Loading map… the list below is already complete.</p>
+    </div>
+  ),
   ssr: false
 })
 

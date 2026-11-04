@@ -85,10 +85,13 @@ export function validateBudget(budget) {
     ids.add(screen.id)
     paths.add(screen.path)
 
-    for (const [key, value] of Object.entries(screen.budget ?? {})) {
-      if (!METRICS[key]) throw new Error(`Screen ${screen.id} has an unknown budget line "${key}".`)
-      if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-        throw new Error(`Screen ${screen.id}'s ${key} budget must be a number of at least 0.`)
+    // `budget` is enforced; `target` is where the screen should get to (#137), reported but not asserted.
+    for (const field of ["budget", "target"]) {
+      for (const [key, value] of Object.entries(screen[field] ?? {})) {
+        if (!METRICS[key]) throw new Error(`Screen ${screen.id} has an unknown ${field} line "${key}".`)
+        if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+          throw new Error(`Screen ${screen.id}'s ${key} ${field} must be a number of at least 0.`)
+        }
       }
     }
   }
@@ -293,7 +296,7 @@ export function summarize(budget, lhrs, assertionResults = null) {
     const runs = runsByScreen.get(screen.id)
     const metrics = Object.keys(METRICS).map((key) => {
       const values = runs.map((lhr) => readMetric(lhr, key)).filter((value) => value !== null)
-      return { budget: screen.budget?.[key] ?? null, key, median: median(values), values }
+      return { budget: screen.budget?.[key] ?? null, key, median: median(values), target: screen.target?.[key] ?? null, values }
     })
     const node = runs.length > 0 ? firstNode(runs[0].audits?.["largest-contentful-paint-element"]?.details) : null
 
@@ -323,6 +326,11 @@ export function summarize(budget, lhrs, assertionResults = null) {
     failures: (assertionResults ?? []).filter((result) => result.passed === false),
     missing: screens.filter((screen) => screen.runs === 0).map((screen) => screen.id),
     screens,
+    shortOfTarget: screens.flatMap((screen) =>
+      screen.metrics
+        .filter((metric) => metric.target !== null && metric.median !== null && metric.median > metric.target)
+        .map((metric) => ({ key: metric.key, median: metric.median, path: screen.path, target: metric.target }))
+    ),
     unmatched
   }
 }
@@ -399,17 +407,26 @@ export function renderSummary(summary, { buildLog = null } = {}) {
     out.push("Every screen is within its budget.", "")
   }
 
+  if (summary.shortOfTarget.length > 0) {
+    out.push("**Short of target** (reported, not enforced):", "")
+    for (const gap of summary.shortOfTarget) {
+      out.push(`- \`${gap.path}\`: ${METRICS[gap.key].label} ${formatValue(gap.key, gap.median)}, target ${formatValue(gap.key, gap.target)}`)
+    }
+    out.push("")
+  }
+
   for (const screen of summary.screens) {
     out.push(`### ${screen.label} — \`${screen.path}\``, "")
     if (screen.runs === 0) {
       out.push("No run.", "")
       continue
     }
-    out.push(`${screen.runs} run${screen.runs === 1 ? "" : "s"}.`, "", "| Metric | Median | Budget | Runs |", "|---|---:|---:|---|")
+    out.push(`${screen.runs} run${screen.runs === 1 ? "" : "s"}.`, "", "| Metric | Median | Budget | Target | Runs |", "|---|---:|---:|---:|---|")
     for (const metric of screen.metrics) {
       const runs = metric.values.map((value) => formatValue(metric.key, value)).join(" · ")
       const budget = metric.budget === null ? "" : `≤ ${formatValue(metric.key, metric.budget)}`
-      out.push(`| ${METRICS[metric.key].label} | ${formatValue(metric.key, metric.median)} | ${budget} | ${runs} |`)
+      const target = metric.target === null ? "" : `≤ ${formatValue(metric.key, metric.target)}`
+      out.push(`| ${METRICS[metric.key].label} | ${formatValue(metric.key, metric.median)} | ${budget} | ${target} | ${runs} |`)
     }
     out.push("")
     if (screen.lcpElement) {
