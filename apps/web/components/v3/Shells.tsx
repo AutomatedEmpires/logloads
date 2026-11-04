@@ -1,7 +1,7 @@
 "use client"
 
-import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import { AppLink as Link } from "../AppLink"
+import { usePathname } from "next/navigation"
 import { useEffect, useRef, useState, useTransition, type ReactNode } from "react"
 import { Badge, Icon, type IconKey } from "@logloads/ui"
 
@@ -637,7 +637,6 @@ function NotificationBell({ notifications, role, unreadCount }: {
 }
 
 function AccountMenu({ account, pathname }: { account: ShellAccount; pathname: string }) {
-  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [invitationError, setInvitationError] = useState<string | null>(null)
   const [respondingInvitation, setRespondingInvitation] = useState<string | null>(null)
@@ -670,7 +669,6 @@ function AccountMenu({ account, pathname }: { account: ShellAccount; pathname: s
       return
     }
 
-    router.refresh()
   }
 
   useEffect(() => {

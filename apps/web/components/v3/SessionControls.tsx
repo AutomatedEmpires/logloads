@@ -1,7 +1,7 @@
 "use client"
 
 import { useClerk } from "@clerk/nextjs"
-import Link from "next/link"
+import { AppLink as Link } from "../AppLink"
 import { useRouter } from "next/navigation"
 import { useEffect, useState, useTransition } from "react"
 

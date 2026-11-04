@@ -1,6 +1,6 @@
 "use client"
 
-import Link from "next/link"
+import { AppLink as Link } from "../AppLink"
 import { useActionState, useEffect, useRef, useState, type MouseEvent } from "react"
 
 import {
