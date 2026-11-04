@@ -86,6 +86,34 @@ async function signIn(page: Page, email: string) {
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"))
 }
 
+/**
+ * Makes `business` the session's active business through the V2 business switcher (/v2/switch, #124), when it is not
+ * already. Dana Dispatch staffs two landing businesses (North Pine Logging and Summit Ridge Timber), and which one a
+ * sign-in starts with is the session store's choice, so the landing steps pick North Pine Logging explicitly.
+ */
+async function actFor(page: Page, business: string) {
+  await openV2(page, "/v2/switch")
+  const choice = page.getByRole("list", { name: "Your businesses" }).getByRole("listitem").filter({ hasText: business })
+  await expect(choice, `${business} is one of the account's businesses`).toHaveCount(1)
+  const act = choice.getByRole("button", { name: `Act as ${business}` })
+
+  if ((await act.count()) > 0) {
+    const posted = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/v2/switch")
+    await act.click()
+    await posted
+    await page.waitForURL((url) => url.pathname !== "/v2/switch", { timeout: 10_000 }).catch(() => undefined)
+    await openV2(page, "/v2/switch")
+  }
+
+  await expect(choice).toContainText("Acting as this business")
+}
+
+/** Signs in as North Pine Logging's landing desk, acting for North Pine Logging. */
+async function signInAsLandingDesk(page: Page) {
+  await signIn(page, NORTH_PINE.email)
+  await actFor(page, NORTH_PINE.name)
+}
+
 const jobRows = (page: Page) => page.locator("[data-ds-page] ul[aria-label='Jobs'] > li")
 const inquiryRows = (page: Page) => page.locator("#main [data-ds-page] ul[aria-label$='inquiries'] > li")
 const interestForm = (page: Page) => page.locator("form:has(input[name='loadPostingId'])")
@@ -179,7 +207,7 @@ test("1. a verified landing publishes a real job through the job editor", { tag:
     return
   }
 
-  await signIn(page, NORTH_PINE.email)
+  await signInAsLandingDesk(page)
   await openV2(page, "/v2/landing/jobs")
   await page.getByRole("link", { name: "Post a job" }).first().click()
   await page.waitForURL((url) => url.pathname === "/v2/landing/jobs/new")
@@ -266,7 +294,8 @@ test("2–5. the published job is discovered signed out, a free hauler sends int
     const form = interestForm(page)
 
     if ((await form.count()) > 0) {
-      await expect(form.getByRole("spinbutton", { name: "Trucks you can offer" })).toHaveValue("1")
+      // No equipment listed, so the landing sees a count: the stepper starts at one truck.
+      await expect(form.getByRole("group", { name: "Trucks you can offer" }).getByRole("status")).toHaveText("1")
       await form.getByLabel("Message").fill(note)
       await form.getByRole("button", { name: "Send interest" }).click()
       await page.waitForURL((url) => url.searchParams.get("sent") === "1")
@@ -283,7 +312,7 @@ test("2–5. the published job is discovered signed out, a free hauler sends int
   })
 
   await test.step("4. North Pine Logging's landing desk replies from its inbox", async () => {
-    await signIn(page, NORTH_PINE.email)
+    await signInAsLandingDesk(page)
     const row = await landingRow(page, title, testInfo)
     await row.getByRole("link").click()
     await page.waitForURL((url) => url.searchParams.get("inquiry") === inquiryId)
@@ -394,7 +423,7 @@ test.describe("negative checks", () => {
     const title = jobTitle(testInfo)
 
     // North Pine Logging's own reply form on New River Hauling's inquiry: its fields, with the stranger's words.
-    await signIn(page, NORTH_PINE.email)
+    await signInAsLandingDesk(page)
     await openV2(page, "/v2/landing/inquiries")
     await openQueue(page, "Inquiries by queue", "Replied")
     const row = inquiryRows(page).filter({ hasText: title }).filter({ hasText: NEW_RIVER.name })
@@ -416,7 +445,7 @@ test.describe("negative checks", () => {
     await expect(page.getByRole("alert").filter({ hasText: "Inquiry not found" })).toBeVisible()
 
     // The conversation is unchanged for both of its parties.
-    await signIn(page, NORTH_PINE.email)
+    await signInAsLandingDesk(page)
     await openV2(page, `/v2/landing/inquiries?inquiry=${inquiryId}`)
     await expect(page.getByRole("log")).toContainText(landingReply(testInfo))
     await expect(page.getByRole("log")).not.toContainText(FORGED_REPLY)
