@@ -9,8 +9,10 @@ import { expect, test, type Browser, type Locator, type Page } from "@playwright
  *
  * Writes: the conversation cases need an inquiry, and the seed has none. New River Hauling (a hauling business
  * with no trucks listed) expresses interest in the one public job, North Pine Logging's, and replies on it; near the
- * end (UX-09, #132) North Pine marks that inquiry reviewed and replies to it. Nothing withdraws; the no-JavaScript
- * interest case posts once with a date range the server refuses, which writes nothing. The equipment case signs in
+ * end (UX-09, #132) North Pine marks that inquiry reviewed and replies to it. The case that sends New River's interest
+ * (UX-08, #131) taps Send twice and then replays the same request, and both are the same inquiry, so the run still
+ * writes one. Nothing withdraws; the no-JavaScript interest case posts once with a date range the server refuses,
+ * which writes nothing. The equipment case signs in
  * as Granite Creek Hauling (equipment listed) and submits one offer above its listing, which the server refuses
  * without writing; the last conversation case then has Granite Creek express interest in the same North Pine job
  * and North Pine decline it with a reason. A decline is final (HF-03), so that case runs after every case that
@@ -106,18 +108,40 @@ const NORTH_PINE_LANDING = NORTH_PINE.landing // North Pine Logging acting on it
 // journeys have published one of them in the shared CI state.
 const LANDING_WITHOUT_INQUIRIES = "cole@summit.example"
 /**
- * Granite Creek Hauling (#178): a hauling business whose profile lists equipment, in the interest form's order
- * (most units first). The suite reads its form and sends one refused offer, and only the Decline case under
- * "conversation without JavaScript (#174)" sends its interest, which North Pine declines. The suite runs on one worker
- * in file order, so every case that needs Granite Creek's form (equipment on a page, the UX-07 job page) comes first.
+ * Granite Creek Hauling (#178): a hauling business whose profile lists equipment, most units first. The interest sheet
+ * (UX-08, #131) lists first the setups a job asks for, so on North Pine's pole-trailer job the pole truck leads and the
+ * bunk trucks wait under "Show my other trucks"; the cases read the sheet's own order rather than assume one. The
+ * suite reads its form and sends one refused offer, and only the Decline case under "conversation without JavaScript
+ * (#174)" sends its interest, which North Pine declines. The suite runs on one worker in file order, so every case that
+ * needs Granite Creek's form (equipment on a page, the interest sheet, the UX-07 job page) comes first.
  */
 const GRANITE_CREEK = {
   email: "avery@granitecreek.example",
+  name: "Granite Creek Hauling",
   setups: [
     { label: "Log truck + Bunk / short-log", units: 2 },
     { label: "Log truck + Pole trailer", units: 1 }
   ]
 } as const
+const POLE_SETUP = GRANITE_CREEK.setups[1]
+
+/** The interest sheet's form, its truck rows in screen order, and the rows behind "Show my other trucks". */
+const interestForm = (page: Page) => page.locator("form:has(input[name='loadPostingId'])")
+const requestedRows = (page: Page) => interestForm(page).locator("fieldset > ul > li")
+const otherRows = (page: Page) => interestForm(page).locator("fieldset details li")
+/** The fields the sheet posts, whether or not scripts run (criterion 5): the count is a native input or the stepper's. */
+const PLAIN_COUNT_FIELDS = ["availableFrom", "availableUntil", "contactPreference", "loadPostingId", "message", "trucksOffered"]
+
+async function fieldNames(form: Locator): Promise<string[]> {
+  const names = await form.evaluate((element) =>
+    Array.from((element as HTMLFormElement).elements, (control) => (control as HTMLInputElement).name).filter((name) => name && !name.startsWith("$"))
+  )
+  return Array.from(new Set(names)).sort()
+}
+
+/** "Nov 11, 2026", as the app formats a calendar day. */
+const dayText = (day: string) => new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", timeZone: "UTC", year: "numeric" }).format(new Date(`${day}T00:00:00.000Z`))
+const isoDayFromNow = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10)
 const NO_OPEN_JOB = "No North Pine Logging job accepts interest in this run's state (the shared CI state can have them filled or closed)"
 
 /** Markup a hauler might type. It must reach every page as text: no element, no script. */
@@ -419,9 +443,10 @@ test.describe("My trucks (#126): the job page's equipment link", () => {
 // It submits once, with a date range the server refuses, so it writes nothing and the run's one interest is still
 // sent by the scripted case.
 test.describe("the express-interest form without JavaScript (New River Hauling, #174)", () => {
-  test.use({ javaScriptEnabled: false })
+  // Reduced motion turns off the app's smooth scrolling (globals.css), which otherwise keeps Send moving after a field takes focus.
+  test.use({ contextOptions: { reducedMotion: "reduce" }, javaScriptEnabled: false })
 
-  test("the server's form has a native truck count and posts to the action, which answers on the page", async ({ page }) => {
+  test("the server's interest sheet has every field in the page, a native truck count, and posts to the action, which answers on the page", async ({ page }) => {
     await page.setViewportSize(viewportFor(1440))
     await signIn(page, NEW_RIVER.email)
     await openV2(page, "/v2/work")
@@ -430,7 +455,7 @@ test.describe("the express-interest form without JavaScript (New River Hauling, 
 
     const jobPath = (await link.getAttribute("href"))!
     await openV2(page, jobPath)
-    const form = page.locator("form:has(input[name='loadPostingId'])")
+    const form = interestForm(page)
     test.skip((await form.count()) === 0, "New River Hauling already sent interest on this job in this run's state")
 
     // "I'm interested" is an in-page link to the form.
@@ -444,30 +469,42 @@ test.describe("the express-interest form without JavaScript (New River Hauling, 
     await expect(form.getByRole("group", { name: "Trucks you can offer" })).toHaveCount(0)
     await expect(form.locator("[name='trucksOffered']")).toHaveCount(1)
 
+    // Every field is in the page and filled in (UX-08 #131 criteria 1 and 5): no availability is reported for a business
+    // with no trucks, so the date is empty; it has sent no inquiry, so LogLoads messages.
+    expect(await fieldNames(form)).toEqual(PLAIN_COUNT_FIELDS)
+    await expect(form).toContainText(`As ${NEW_RIVER.name}`)
+    await expect(form.getByLabel("Available from")).toBeVisible()
+    await expect(form.getByLabel("Available from")).toHaveValue("")
+    await expect(form.getByLabel("Reach me by")).toHaveValue("in_app")
+    await expect(form.getByLabel("Message")).toBeVisible()
+    await expect(form.getByLabel("Available until")).toBeHidden()
+
     // The browser posts the form itself; the action refuses the inverted range and the page comes back with why.
-    await form.getByText("Dates and contact preference (optional)").click()
     await form.getByLabel("Available from").fill("2026-12-10")
+    await form.getByText("Add an end date").click()
     await form.getByLabel("Available until").fill("2026-12-01")
     await form.getByRole("button", { name: "Send interest" }).click()
 
     await page.waitForURL((url) => url.pathname === jobPath && url.searchParams.has("error"))
+    expect(new URL(page.url()).hash, "the answer opens at the sheet").toBe("#interest")
     await expect(page.getByRole("alert").filter({ hasText: "Available until must not be before available from" })).toBeVisible()
-    await expect(page.locator("form:has(input[name='loadPostingId'])"), "nothing was sent: the form is still offered").toHaveCount(1)
+    await expect(interestForm(page), "nothing was sent: the form is still offered").toHaveCount(1)
   })
 })
 
 // First of the cases that send: it needs New River Hauling to have no inquiry yet, so it runs before any test that
 // calls ensureNewRiverInquiry (workers: 1, file order).
 test.describe("the express-interest form (New River Hauling)", () => {
-  test("the truck count stays in range, the form has no serious axe violations, and sending opens an inquiry", async ({ page }) => {
+  test("the truck count stays in range, the interest sheet has no serious axe violations, and sending twice opens one inquiry", async ({ baseURL, page }) => {
     await page.setViewportSize(viewportFor(1440))
     await signIn(page, NEW_RIVER.email)
     await openV2(page, "/v2/work")
     const link = northPineJobLink(page)
     test.skip((await link.count()) === 0, NO_OPEN_JOB)
 
-    await openV2(page, (await link.getAttribute("href"))!)
-    const form = page.locator("form:has(input[name='loadPostingId'])")
+    const jobPath = (await link.getAttribute("href"))!
+    await openV2(page, jobPath)
+    const form = interestForm(page)
     test.skip((await form.count()) === 0, "New River Hauling already sent interest on this job in this run's state")
 
     // Hydrated, the count is a NumberStepper that only emits values in [1, 500] (no equipment listed, so a plain count).
@@ -487,6 +524,8 @@ test.describe("the express-interest form (New River Hauling)", () => {
     await fewer.click()
     await expect(value).toHaveValue("1")
     await expect(form.locator("[name='trucksOffered']")).toHaveCount(1)
+    // The same fields as without JavaScript (criterion 5).
+    expect(await fieldNames(form)).toEqual(PLAIN_COUNT_FIELDS)
 
     // JobDetail's "I'm interested" leads to this form on the same page.
     await expect(page.locator("[data-ds-page='job-detail'] article").getByRole("link", { name: "I'm interested" })).toHaveAttribute("href", "#interest")
@@ -495,12 +534,58 @@ test.describe("the express-interest form (New River Hauling)", () => {
     await page.setViewportSize(viewportFor(390))
     await expectNoSeriousAxeViolations(page)
 
+    const from = isoDayFromNow(7)
     await form.getByLabel("Message").fill(MARKUP_NOTE)
-    await form.getByRole("button", { name: "Send interest" }).click()
+    await form.getByLabel("Available from").fill(from)
+
+    // The action is held at the network until Send has been checked, so its in-flight state can be read.
+    let release: () => void = () => undefined
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const posts: Array<{ body: Buffer | null; headers: Record<string, string> }> = []
+    await page.route((url) => url.pathname === jobPath, async (route) => {
+      if (route.request().method() !== "POST") return route.continue()
+      posts.push({ body: route.request().postDataBuffer(), headers: await route.request().allHeaders() })
+      await held
+      await route.continue()
+    })
+
+    // Criterion 3: the tap disables Send, which reads "Sending…"; a second tap sends nothing.
+    const send = form.getByRole("button", { name: "Send interest" })
+    await send.click()
+    const sending = form.getByRole("button", { name: "Sending…" })
+    await expect(sending).toHaveAttribute("aria-disabled", "true")
+    await expect(sending).toHaveAttribute("aria-busy", "true")
+    await sending.click({ force: true })
+    await page.waitForTimeout(500)
+    expect(posts, "one tap, one request").toHaveLength(1)
+    release()
+
     await expect(page).toHaveURL(/[?&]sent=1/)
-    await expect(page.getByRole("status").filter({ hasText: "Your interest was sent." })).toBeVisible()
-    await expect(page.locator("form:has(input[name='loadPostingId'])")).toHaveCount(0)
+    await page.unroute((url) => url.pathname === jobPath)
+
+    // Criterion 4: the confirmation names the landing business, the trucks and the date, and never "hired" or "booked".
+    const confirmation = page.getByRole("status").filter({ hasText: "Sent to" })
+    await expect(confirmation).toHaveText(`Sent to ${NORTH_PINE.name}: 1 truck, available from ${dayText(from)}.`)
+    await expect(page.locator("#interest")).not.toContainText(/\b(hired|booked|assigned)\b/i)
+    await expect(interestForm(page)).toHaveCount(0)
     await expect(page.getByRole("link", { name: "Open my inquiries" })).toHaveAttribute("href", /^\/v2\/inquiries\?inquiry=/)
+    await expect(page.getByRole("link", { name: "See similar jobs" })).toHaveAttribute("href", "#similar")
+
+    // A retry of the same request (an answer lost on the way back) is the same inquiry: the action answers as before.
+    const [post] = posts
+    const keep = ["accept", "content-type", "next-action", "next-router-state-tree", "origin"]
+    const retry = await page.request.post(new URL(jobPath, baseURL).toString(), {
+      data: post!.body ?? undefined,
+      headers: Object.fromEntries(Object.entries(post!.headers).filter(([name]) => keep.includes(name.toLowerCase()))),
+      maxRedirects: 0
+    })
+    expect(retry.status(), "the retry is answered").toBeLessThan(400)
+    expect(retry.headers()["x-action-redirect"] ?? retry.headers()["location"] ?? "").toContain("sent=1")
+
+    await openV2(page, "/v2/inquiries")
+    await expect(inquiryRows(page).filter({ hasText: NORTH_PINE.name }), "one inquiry after two taps and a retry").toHaveCount(1)
+    await openV2(page, jobPath)
+    await expect(page.locator("#interest")).toContainText(`You offered ${NORTH_PINE.name} 1 truck, available from ${dayText(from)}.`)
   })
 })
 
@@ -1359,7 +1444,7 @@ test.describe("find work: the search (#129)", () => {
   })
 })
 
-test.describe("equipment on a page (#148 criterion 4)", () => {
+test.describe("equipment on a page: the interest sheet (#148 criterion 4)", () => {
   test("a per-setup count never exceeds the units listed, and unknown capacity is never 0", async ({ page }) => {
     await page.setViewportSize(viewportFor(1440))
     await signIn(page, GRANITE_CREEK.email)
@@ -1370,31 +1455,33 @@ test.describe("equipment on a page (#148 criterion 4)", () => {
     const jobPath = (await link.getAttribute("href"))!
     await openV2(page, jobPath)
     // No earlier case sends Granite Creek's interest (see GRANITE_CREEK), so a job that accepts interest offers the form.
-    const form = page.locator("form:has(input[name='loadPostingId'])")
+    const form = interestForm(page)
     await expect(form, "Granite Creek Hauling can express interest in North Pine Logging's open job").toHaveCount(1)
     await expect(form.locator("[name='trucksOffered']"), "with equipment listed there is no plain count").toHaveCount(0)
 
+    // The setups the job does not ask for are behind "Show my other trucks"; open it to reach every row.
+    const others = form.locator("fieldset details > summary")
+    if ((await others.count()) > 0) await others.click()
     const setups = form.locator("fieldset li")
     await expect(setups).toHaveCount(GRANITE_CREEK.setups.length)
 
-    for (const [index, { label, units }] of GRANITE_CREEK.setups.entries()) {
-      const setup = setups.nth(index)
-      await expect(setup).toContainText(label)
+    for (const { label, units } of GRANITE_CREEK.setups) {
+      const setup = setups.filter({ hasText: label })
+      await expect(setup).toHaveCount(1)
 
-      // EquipmentCapacity: V2 has no availability record, so it is unknown — the units listed, never a 0.
+      // EquipmentCapacity: the pilot holds no availability report (#126), so it is unknown — the units listed, never a 0.
       const capacity = setup.locator("[data-state]")
       await expect(capacity).toHaveAttribute("data-state", "unknown")
       await expect(capacity).toHaveText(`${units} ${units === 1 ? "unit" : "units"} · availability not recently confirmed`)
       await expect(capacity.locator("[aria-hidden='true'] > span"), "one dashed mark per unit").toHaveCount(units)
       await expect(capacity.locator("[data-on]"), "no mark claims a unit is available").toHaveCount(0)
 
-      // The stepper starts at 0 when there are several setups and stops at the units listed.
+      // The stepper stops at the units listed, whatever it was filled in with.
       const stepper = setup.getByRole("group", { name: `Trucks offered: ${label}` })
       const more = stepper.getByRole("button", { name: "One more" })
       const fewer = stepper.getByRole("button", { name: "One fewer" })
       const value = setup.locator("input[type='hidden'][name='equipmentCount']")
 
-      await expect(value).toHaveValue("0")
       for (let step = 0; step < units + 2; step += 1) await more.click({ force: true })
       await expect(value).toHaveValue(String(units))
       await expect(stepper.locator("output")).toHaveText(String(units))
@@ -1405,7 +1492,7 @@ test.describe("equipment on a page (#148 criterion 4)", () => {
     // The server re-checks every count: one edited past the listing is refused, and no interest is sent.
     const [first] = GRANITE_CREEK.setups
     const refusal = `Your profile lists ${first.units} x ${first.label}`
-    await setups.first().locator("input[type='hidden'][name='equipmentCount']").evaluate((input, count) => {
+    await setups.filter({ hasText: first.label }).locator("input[type='hidden'][name='equipmentCount']").evaluate((input, count) => {
       (input as HTMLInputElement).value = String(count)
     }, first.units + 1)
     const [response] = await Promise.all([
@@ -1424,7 +1511,75 @@ test.describe("equipment on a page (#148 criterion 4)", () => {
 
     await openV2(page, `${target.pathname}${target.search}`)
     await expect(page.getByRole("alert").filter({ hasText: refusal })).toBeVisible()
-    await expect(page.locator("form:has(input[name='loadPostingId'])"), "the refused offer created no inquiry").toHaveCount(1)
+    await expect(interestForm(page), "the refused offer created no inquiry").toHaveCount(1)
+  })
+})
+
+// UX-08 (#131): Granite Creek's sheet before it sends anything, so before the Decline case under "#174" (see GRANITE_CREEK).
+test.describe("the interest sheet, filled in (Granite Creek Hauling, UX-08 #131)", () => {
+  test("the trucks the job asks for come first and are filled in, the rest wait at 0, and the contact route is filled in", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1440))
+    await signIn(page, GRANITE_CREEK.email)
+    await openV2(page, "/v2/work")
+    const link = northPineJobLink(page)
+    test.skip((await link.count()) === 0, NO_OPEN_JOB)
+
+    await openV2(page, (await link.getAttribute("href"))!)
+    const form = interestForm(page)
+    await expect(form, "Granite Creek Hauling can express interest in North Pine Logging's open job").toHaveCount(1)
+    await expect(form).toContainText(`As ${GRANITE_CREEK.name}`)
+
+    const requested = requestedRows(page)
+    const others = otherRows(page)
+    const unmatched = (await form.getByText(/None of your listed trucks has all of it/).count()) > 0
+    const values = async (rows: Locator) => rows.locator("input[name='equipmentCount']").evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value))
+
+    await expect(requested.first()).toBeVisible()
+    expect((await requested.count()) + (await others.count()), "every listed setup is offered").toBe(GRANITE_CREEK.setups.length)
+    if (unmatched) {
+      // A North Pine job asking for equipment Granite Creek does not list: everything at 0, nothing hidden.
+      expect(await values(requested)).toEqual(GRANITE_CREEK.setups.map(() => "0"))
+    } else {
+      // With no availability report (the pilot holds none, #126), the first setup the job asks for gets one truck.
+      const filled = await values(requested)
+      expect(filled[0]).toBe("1")
+      expect(filled.slice(1).every((count) => count === "0")).toBe(true)
+      // The rest wait behind a native disclosure, at 0.
+      if ((await others.count()) > 0) {
+        await expect(others.first()).toBeHidden()
+        await form.getByText(/^Show my other trucks \(\d+\)$/).click()
+        await expect(others.first()).toBeVisible()
+        expect((await values(others)).every((count) => count === "0")).toBe(true)
+      }
+      // On North Pine's seeded pole-trailer job, the pole truck leads.
+      if ((await requested.filter({ hasText: POLE_SETUP.label }).count()) > 0) await expect(requested.first()).toContainText(POLE_SETUP.label)
+    }
+
+    // No report says when the trucks are free, so the date is left empty; no inquiry yet, so LogLoads messages.
+    await expect(form.getByLabel("Available from")).toHaveValue("")
+    await expect(form.getByLabel("Reach me by")).toHaveValue("in_app")
+    await expect(form.getByRole("link", { name: "My trucks", exact: true })).toHaveAttribute("href", "/v2/hauler/trucks")
+
+    // Criterion 2's other half: with nothing reported, no contradiction is claimed, however many are offered.
+    for (const row of await form.locator("fieldset li").all()) {
+      const more = row.getByRole("button", { name: "One more" })
+      for (let step = 0; step < 3; step += 1) await more.click({ force: true })
+    }
+    await expect(form.getByText("Update availability?")).toHaveCount(0)
+    await expect(form.locator("div[aria-live='polite']")).toBeEmpty()
+
+    for (const width of [1440, 390]) {
+      await page.setViewportSize(viewportFor(width))
+      await expectNoHorizontalOverflow(page)
+      await expectNoSeriousAxeViolations(page)
+    }
+  })
+
+  test.fixme("offering more than the reported available count asks 'Update availability?' and still sends (criterion 2)", async () => {
+    // Waits for a store with availability reports: the pilot store this suite runs on holds none (#126), so no count
+    // was reported to exceed. The rule, the live note and Send staying a submit button are covered by
+    // interest-sheet.test.ts and interest-sheet-form.test.tsx, and the server's flag on the confirmation by
+    // job-detail-page.test.tsx.
   })
 })
 
@@ -1899,7 +2054,7 @@ test.describe("conversation without JavaScript (#174)", () => {
   test("landing: Decline confirms in the page with a reason the hauler sees, and the hauler's page says it is closed", async ({ page }) => {
     await page.setViewportSize(viewportFor(1280))
     const reason = "Equipment doesn't fit this job (sent without JavaScript)"
-    const [, poleSetup] = GRANITE_CREEK.setups
+    const poleSetup = POLE_SETUP
 
     // Granite Creek Hauling offers its pole-trailer truck on North Pine's job, unless a retry already did.
     await signIn(page, GRANITE_CREEK.email)
@@ -1910,8 +2065,13 @@ test.describe("conversation without JavaScript (#174)", () => {
       test.skip((await link.count()) === 0, NO_OPEN_JOB)
 
       await openV2(page, (await link.getAttribute("href"))!)
-      const form = page.locator("form:has(input[name='loadPostingId'])")
+      const form = interestForm(page)
       await expect(form, "Granite Creek Hauling can express interest in North Pine Logging's open job").toHaveCount(1)
+      // The sheet fills in the pole truck on North Pine's pole-trailer job; on any other job it may wait under
+      // "Show my other trucks" (UX-08, #131). Only the pole truck is offered either way.
+      const others = form.locator("fieldset details > summary")
+      if ((await others.count()) > 0) await others.click()
+      for (const count of await form.getByRole("spinbutton", { name: /^Trucks offered: / }).all()) await count.fill("0")
       await form.getByRole("spinbutton", { name: `Trucks offered: ${poleSetup.label}` }).fill("1")
       await form.getByRole("button", { name: "Send interest" }).click()
       await page.waitForURL((url) => url.searchParams.get("sent") === "1")

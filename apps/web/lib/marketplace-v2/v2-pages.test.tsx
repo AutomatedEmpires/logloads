@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   getJob: vi.fn(),
   getSessionActor: vi.fn(),
   haulerEquipment: vi.fn(),
+  haulerFleet: vi.fn(),
   interestForJob: vi.fn(),
   landingInquiryJobs: vi.fn(),
   listHaulerInterests: vi.fn(),
@@ -52,6 +53,7 @@ vi.mock("@/lib/marketplace-v2/pilot-adapter", () => ({
   pilotMarketplaceV2: {
     getJob: mocks.getJob,
     haulerEquipment: mocks.haulerEquipment,
+    haulerFleet: mocks.haulerFleet,
     interestForJob: mocks.interestForJob,
     landingInquiryJobs: mocks.landingInquiryJobs,
     listHaulerInterests: mocks.listHaulerInterests,
@@ -182,9 +184,12 @@ beforeEach(() => {
   mocks.interestForJob.mockResolvedValue(null)
   mocks.listJobs.mockResolvedValue([])
   mocks.haulerEquipment.mockResolvedValue([
-    { configurationKey: "log_truck|pole_trailer", label: "Log truck + Pole trailer", unitsListed: 2 },
-    { configurationKey: "chip_truck|chip_van", label: "Chip truck + Chip van", unitsListed: 1 }
+    { configurationKey: "log_truck|pole_trailer", equipmentCodes: ["log_truck", "pole_trailer"], label: "Log truck + Pole trailer", unitsListed: 2 },
+    { configurationKey: "chip_truck|chip_van", equipmentCodes: ["chip_truck", "chip_van"], label: "Chip truck + Chip van", unitsListed: 1 }
   ])
+  // As on the pilot store: equipment listed, and no availability report (#126).
+  mocks.haulerFleet.mockResolvedValue({ availability: [], canEdit: true, organizationId: HAULER_ORG, placed: false, units: [] })
+  mocks.listHaulerInterests.mockResolvedValue([])
   mocks.resolveV2Actor.mockResolvedValue({ actor: actorFor(HAULER_ORG), ok: true })
   mocks.landingInquiryJobs.mockResolvedValue([])
 })
@@ -211,13 +216,17 @@ describe("the job page (/v2/work/[jobId])", () => {
     expect(hidden(form, "equipmentKey", "log_truck|pole_trailer")).toBe(true)
     expect(hidden(form, "equipmentKey", "chip_truck|chip_van")).toBe(true)
 
-    // Before hydration (and without JavaScript) each count is a native number input; parallel to the keys.
+    // Before hydration (and without JavaScript) each count is a native number input; parallel to the keys. The job
+    // asks for a pole trailer, so that configuration comes first with one truck (no availability report, #131); the
+    // chip truck waits behind "Show my other trucks" at 0.
     const counts = form.match(/<input[^>]*name="equipmentCount"[^>]*>/g) ?? []
     expect(counts).toHaveLength(2)
     expect(counts[0]).toContain('max="2"')
     expect(counts[1]).toContain('max="1"')
-    expect(counts.every((tag) => tag.includes('min="0"') && tag.includes('value="0"'))).toBe(true)
+    expect(counts.every((tag) => tag.includes('min="0"'))).toBe(true)
+    expect(counts.map((tag) => /value="(\d+)"/.exec(tag)?.[1])).toEqual(["1", "0"])
     expect(counts[0]).toContain('aria-label="Trucks offered: Log truck + Pole trailer"')
+    expect(textOf(form)).toContain("Show my other trucks (1)")
 
     expect(textOf(form)).toContain("Log truck + Pole trailer 2 units · availability not recently confirmed")
     expect(textOf(form)).toContain("Chip truck + Chip van 1 unit · availability not recently confirmed")
@@ -226,7 +235,7 @@ describe("the job page (/v2/work/[jobId])", () => {
   })
 
   it("defaults a single configuration to one truck, and a business without equipment to a plain count", async () => {
-    mocks.haulerEquipment.mockResolvedValueOnce([{ configurationKey: "log_truck|pole_trailer", label: "Log truck + Pole trailer", unitsListed: 3 }])
+    mocks.haulerEquipment.mockResolvedValueOnce([{ configurationKey: "log_truck|pole_trailer", equipmentCodes: ["log_truck", "pole_trailer"], label: "Log truck + Pole trailer", unitsListed: 3 }])
     expect(formAround(await renderJob(), 'name="loadPostingId"').match(/<input[^>]*name="equipmentCount"[^>]*>/)?.[0]).toContain('value="1"')
 
     mocks.haulerEquipment.mockResolvedValueOnce([])
@@ -262,8 +271,8 @@ describe("the job page (/v2/work/[jobId])", () => {
 
     mocks.interestForJob.mockResolvedValueOnce(interest({ status: "replied" }))
     const sent = await renderJob({ sent: "1" })
-    expect(textOf(sent)).toContain("Your interest was sent.")
-    expect(textOf(sent)).toContain("You offered this landing 2 trucks (2 × Log truck + Pole trailer).")
+    expect(textOf(sent)).toContain("Sent to Example Timber Co: 2 trucks (2 × Log truck + Pole trailer), available from Nov 10, 2026.")
+    expect(textOf(sent)).toContain("Your turn. Free and nonbinding")
     expect(textOf(sent)).toContain("Interest sent · the poster reviews interest and replies")
     expect(sent).toContain(`href="/v2/inquiries?inquiry=${FIRST}"`)
     expect(sent).not.toContain('name="loadPostingId"')

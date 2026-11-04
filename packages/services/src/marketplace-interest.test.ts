@@ -97,6 +97,24 @@ describe("hauler expresses interest", () => {
     expect(state.marketplaceInterests).toHaveLength(1)
   })
 
+  it("records a double submit or a retry of the same form once: one interest, one audit event (UX-08 #131)", () => {
+    const { hauler, openJob, state } = fixture()
+    const form = { availableFrom: "2026-06-08", contactPreference: "phone", loadPostingId: openJob.id, message: "Two trucks", trucksOffered: "2" }
+    const audits = () => state.auditEvents.filter((event) => event.entityType === "marketplace_interest").length
+    const before = audits()
+
+    const first = expressMarketplaceInterest(state, hauler, form, AT)
+    const again = expressMarketplaceInterest(state, hauler, form, AT)
+    const retry = expressMarketplaceInterest(state, hauler, { ...form }, "2026-06-05T18:00:05.000Z")
+
+    expect([first.created, again.created, retry.created]).toEqual([true, false, false])
+    expect(again.interest).toBe(first.interest)
+    expect(retry.interest.id).toBe(first.interest.id)
+    expect(retry.interest.updatedAt).toBe(AT)
+    expect(state.marketplaceInterests.filter((interest) => interest.loadPostingId === openJob.id)).toHaveLength(1)
+    expect(audits() - before).toBe(1)
+  })
+
   it("refuses a landing-type organization, its own job, a foreign workspace, and closed or invisible jobs", () => {
     const { hauler, landing, loadNamed, openJob, otherLanding, publisherDriver, state } = fixture()
 
