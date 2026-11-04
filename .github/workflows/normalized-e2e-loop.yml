@@ -1,0 +1,312 @@
+name: Normalized V2 E2E Loop
+
+# #140: the product's core loop through the running app, on persistent normalized storage. A verified landing
+# publishes a real job in the job editor, the job appears in public discovery, a free hauler expresses interest, the
+# landing replies and the hauler reads the reply (apps/web/tests/v2-normalized-loop.spec.ts), at desktop and mobile
+# width, plus the negative checks.
+#
+# The store is a disposable Supabase CLI local stack started inside this job (tools/normalized-v2-ci/supabase-stack.sh),
+# deployed the way the owner deploys staging (docs/INTEGRATIONS.md §15.1): the normalized store first, with the owner
+# tool (tools/normalized-store.mjs: the chain, the issuer row, the adapter's login role), then the pilot migrations,
+# then the synthetic pilot seed. The app is the production build under `next start`, with
+# LOGLOADS_MARKETPLACE_V2_ADAPTER=normalized; the session and the rest of the app keep the pilot operating state, in the
+# same stack's API. Publishing and the rest of the loop run in two Playwright invocations, each with its own server, and
+# psql checks the rows in between and after, so the loop is proven against the database, not a process's memory.
+#
+# No hosted database, Supabase project, Vercel environment, Clerk instance or secret is used. The adapter's password is
+# generated in the job; the stack's keys are its own, local and masked.
+
+on:
+  pull_request:
+    paths:
+      - apps/web/app/v2/**
+      - apps/web/app/sign-in/**
+      - apps/web/components/v2/**
+      - apps/web/lib/marketplace-v2/**
+      - apps/web/lib/session*.ts
+      - apps/web/tests/v2-normalized-loop.*
+      - packages/contracts/src/marketplace*.ts
+      - packages/ui/src/**
+      - architecture/normalized-v2/**
+      - tools/normalized-store*.mjs
+      - tools/normalized-v2-ci/**
+      - supabase/migrations/**
+      - .github/workflows/normalized-e2e-loop.yml
+      - apps/web/package.json
+      - pnpm-lock.yaml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: normalized-e2e-loop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e-loop:
+    name: Publish → discover → interest → respond → reply (normalized store, next start)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      LOGLOADS_DISPOSABLE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      LOGLOADS_DISPOSABLE_DB_NAME: postgres
+      LOGLOADS_DB_ENV: supabase-local-ci
+      LOGLOADS_CI_ITERATION: "1"
+      LOGLOADS_SUPABASE_PROJECT_ID: logloads-ci
+      SUPABASE_CLI_VERSION: 2.121.0
+      SUPABASE_CLI_SHA256: 4b481189efbdc57cf2d37bdee5f1a0d29574314398564b32a6dfb76c0fcf275f
+      SUPABASE_TELEMETRY_DISABLED: "1"
+      DO_NOT_TRACK: "1"
+      NEXT_TELEMETRY_DISABLED: "1"
+      PGCONNECT_TIMEOUT: "10"
+      PGOPTIONS: "-c lock_timeout=30s -c statement_timeout=300s -c idle_in_transaction_session_timeout=120s"
+      # The owner tool's inputs, as a staging config holds them: the migration role and the adapter's identity. The
+      # adapter's login URL (LOGLOADS_NORMALIZED_DATABASE_URL) gets a fresh, masked password in a step below.
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      LOGLOADS_NORMALIZED_IDENTITY_ISSUER: https://clerk.normalized-loop.test
+      LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE: logloads-normalized-loop-ci
+      # The suite's server (v2-normalized-loop.config.mjs).
+      NORMALIZED_LOOP_PORT: "3014"
+      # Matches the spec's job titles (`jobTitle`) and the stranger's forged reply (`FORGED_REPLY`).
+      LOOP_TITLES: "Spruce saw logs, loop check (%)"
+      FORGED_REPLY: "Forged by another business: this must never be posted"
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install PostgreSQL 17 client
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common >/dev/null
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+          sudo apt-get install -y -qq postgresql-client-17 >/dev/null
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Install Supabase CLI (pinned release, checksum-verified)
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          tgz="supabase_${SUPABASE_CLI_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$tgz" "https://github.com/supabase/cli/releases/download/v${SUPABASE_CLI_VERSION}/${tgz}"
+          echo "${SUPABASE_CLI_SHA256}  $RUNNER_TEMP/$tgz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/supabase-cli"
+          tar -xzf "$RUNNER_TEMP/$tgz" -C "$RUNNER_TEMP/supabase-cli" supabase
+          echo "$RUNNER_TEMP/supabase-cli" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/supabase-cli/supabase" --version
+
+      - name: Start a disposable Supabase local stack
+        timeout-minutes: 12
+        run: bash tools/normalized-v2-ci/supabase-stack.sh start
+
+      - name: Guard and provision the disposable Supabase database
+        run: bash tools/normalized-v2-ci/guard.sh provision
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The build needs no database and no Supabase setting: the app reads its stores at request time.
+      - name: Build the production application
+        timeout-minutes: 15
+        run: pnpm --filter @logloads/web build
+
+      - name: Install Playwright's Chromium
+        timeout-minutes: 10
+        run: pnpm --filter @logloads/web exec playwright install --with-deps chromium
+
+      - name: A fresh adapter login password for this run (masked)
+        run: |
+          set -euo pipefail
+          password="$(openssl rand -hex 24)"
+          echo "::add-mask::${password}"
+          echo "LOGLOADS_NORMALIZED_DATABASE_URL=postgresql://logloads_marketplace_adapter:${password}@127.0.0.1:54322/postgres" >> "$GITHUB_ENV"
+
+      - name: Re-verify the disposable database before the tool writes
+        run: bash tools/normalized-v2-ci/guard.sh verify
+
+      - name: "Owner tool: schema --apply (the normalized store first, as on staging)"
+        timeout-minutes: 10
+        run: node tools/normalized-store.mjs schema --expected-project-ref local --apply
+
+      # The pilot tables the session reads (operating_state), each migration in one transaction as the migration role,
+      # then PostgREST reloads its schema cache so the app's API calls see them.
+      - name: Pilot migrations on the same database, after the normalized store
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          for file in supabase/migrations/*.sql; do
+            echo "== $file"
+            psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$file" >/dev/null
+          done
+          psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -v ON_ERROR_STOP=1 -c "notify pgrst, 'reload schema'"
+
+      - name: "Owner tool: seed --apply, then status"
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          node tools/normalized-store.mjs seed --expected-project-ref local --apply
+          node tools/normalized-store.mjs status --expected-project-ref local
+
+      - name: Wait for the stack's API to serve the pilot operating-state table
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 60); do
+            status="$(curl -s -o /dev/null -w '%{http_code}' \
+              -H "apikey: ${LOGLOADS_SUPABASE_SERVICE_ROLE_KEY}" -H "Authorization: Bearer ${LOGLOADS_SUPABASE_SERVICE_ROLE_KEY}" \
+              "${LOGLOADS_SUPABASE_API_URL}/rest/v1/operating_state?select=id&limit=1" || true)"
+            [[ "$status" == "200" ]] && { echo "operating_state is served"; exit 0; }
+            sleep 2
+          done
+          echo "the stack's API never served operating_state (last HTTP ${status:-none})" >&2
+          exit 1
+
+      # The spec checks that no page outside the landing's business carries one of these (synthetic seed values).
+      - name: The seeded landings' private details, for the spec's checks
+        run: |
+          set -euo pipefail
+          details="$(psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -t -A -v ON_ERROR_STOP=1 -c "
+            select json_agg(v order by v) from (
+              select unnest(array[directions, gate_instructions, site_contact_phone,
+                                  extensions.st_x(exact_point::extensions.geometry)::text,
+                                  extensions.st_y(exact_point::extensions.geometry)::text]) as v
+              from marketplace.landing_private_details) s")"
+          [[ "$(jq 'length' <<<"$details")" == "10" ]] || { echo "expected 10 private details from 2 seeded landings" >&2; exit 1; }
+          echo "NORMALIZED_LOOP_PRIVATE_DETAILS=$(jq -c . <<<"$details")" >> "$GITHUB_ENV"
+
+      - name: Re-verify the disposable database before the app writes
+        run: bash tools/normalized-v2-ci/guard.sh verify
+
+      - name: "1. Publish through the job editor (desktop and mobile), on the first server"
+        timeout-minutes: 10
+        env:
+          SUPABASE_URL: ${{ env.LOGLOADS_SUPABASE_API_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ env.LOGLOADS_SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          pnpm --filter @logloads/web exec playwright test --config tests/v2-normalized-loop.config.mjs \
+            --grep @publish --output tests/test-results/normalized-loop/1-publish
+
+      - name: "Persistence: the first server is gone, and the jobs are rows in the normalized store only"
+        run: |
+          set -euo pipefail
+          if curl -s -o /dev/null --max-time 5 "http://127.0.0.1:${NORMALIZED_LOOP_PORT}/"; then
+            echo "the first server still answers; the next invocation would not be a restart" >&2; exit 1
+          fi
+          # psql reads the queries from standard input, where it interpolates :'titles'.
+          q() { psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -t -A -v ON_ERROR_STOP=1 -v titles="$LOOP_TITLES"; }
+          q <<'SQL' | tee "$RUNNER_TEMP/published.txt"
+          select j.title || ' | ' || j.status || ' | ' || o.slug || ' | ' || l.name || ' | by ' || u.display_name
+                 || ' | published ' || (j.published_at is not null) || ' | confirmed ' || (j.last_confirmed_at is not null)
+                 || ' | ' || j.pay_unit || ' ' || j.pay_amount_cents || ' | trucks ' || j.trucks_requested
+          from marketplace.job_postings j
+          join marketplace.organizations o on o.id = j.org_id
+          join marketplace.landings l on l.id = j.landing_id
+          join marketplace.app_users u on u.id = j.created_by
+          where j.title like :'titles'
+          order by j.title;
+          SQL
+          check() { [[ "$2" == "$1" ]] || { echo "$3 (expected $1, got ${2:-nothing})" >&2; exit 1; }; }
+          check 2 "$(wc -l < "$RUNNER_TEMP/published.txt")" "one published job per width"
+          check 2 "$(grep -c '| active | north-pine-logging | Oak Landing | by Dana Dispatch | published true | confirmed true | per_load 48000 | trucks 2$' "$RUNNER_TEMP/published.txt")" \
+            "active North Pine Logging jobs at Oak Landing, as the editor submitted them"
+          check 0 "$(q <<< "select count(*) from marketplace.expressions_of_interest;")" "inquiries before the loop"
+          # The pilot operating state holds no trace of them: the normalized store is where they were saved.
+          check 0 "$(q <<< "select count(*) from public.operating_state where strpos(state::text, 'Spruce saw logs, loop check') > 0;")" \
+            "pilot operating-state rows that mention a published V2 job"
+
+      - name: Re-verify the disposable database before the app writes again
+        run: bash tools/normalized-v2-ci/guard.sh verify
+
+      - name: "2–5. Discover, interest, respond, reply, and the negative checks, on a restarted server"
+        timeout-minutes: 15
+        env:
+          SUPABASE_URL: ${{ env.LOGLOADS_SUPABASE_API_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ env.LOGLOADS_SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          pnpm --filter @logloads/web exec playwright test --config tests/v2-normalized-loop.config.mjs \
+            --grep @loop --output tests/test-results/normalized-loop/2-loop
+
+      - name: "Persistence: the loop's rows, and nothing the refused requests tried to write"
+        run: |
+          set -euo pipefail
+          q() { psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -t -A -v ON_ERROR_STOP=1 -v forged="$FORGED_REPLY"; }
+          q <<'SQL' | tee "$RUNNER_TEMP/loop.txt"
+          select j.title || ' | ' || h.slug || ' by ' || s.display_name || ' | ' || e.status || ' | trucks ' || e.trucks_offered
+                 || ' | shared ' || (e.private_details_shared_at is not null)
+                 || ' | landing replies ' || (select count(*) from marketplace.interest_messages m
+                                              join marketplace.app_users a on a.id = m.author_user_id
+                                              where m.interest_id = e.id and m.author_side = 'landing'
+                                                and a.display_name = 'Dana Dispatch' and m.body like 'Loop check (%')
+          from marketplace.expressions_of_interest e
+          join marketplace.job_postings j on j.id = e.job_id
+          join marketplace.organizations h on h.id = e.hauler_org_id
+          join marketplace.app_users s on s.id = e.submitted_by
+          order by j.title;
+          SQL
+          check() { [[ "$2" == "$1" ]] || { echo "$3 (expected $1, got ${2:-nothing})" >&2; exit 1; }; }
+          check 2 "$(wc -l < "$RUNNER_TEMP/loop.txt")" "inquiries in the store: the two loop inquiries, and no other"
+          check 2 "$(grep -c '^Spruce saw logs, loop check (.*) | new-river-hauling by Morgan Newfleet | replied | trucks 1 | shared false | landing replies 1$' "$RUNNER_TEMP/loop.txt")" \
+            "New River Hauling inquiries answered once by the landing desk, with private details unshared"
+          check 0 "$(q <<< "select count(*) from marketplace.interest_messages where body = :'forged';")" "stored copies of the stranger's forged reply"
+          check 0 "$(q <<< "select count(*) from marketplace.expressions_of_interest e join marketplace.job_postings j on j.id = e.job_id where j.status <> 'active';")" \
+            "inquiries on a job that is not open"
+          {
+            echo "### Normalized E2E loop: rows in the store"
+            echo '```'
+            cat "$RUNNER_TEMP/published.txt" "$RUNNER_TEMP/loop.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Traces and error contexts of failed attempts, including a first attempt that passed on retry. They hold only
+      # this job's disposable stack and seeded demo accounts.
+      - name: Upload Playwright traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: normalized-e2e-loop-traces
+          path: apps/web/tests/test-results/normalized-loop/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Collect Supabase container logs
+        if: failure()
+        run: |
+          set +e
+          mkdir -p "$RUNNER_TEMP/normalized-loop-logs"
+          for c in db rest kong auth; do
+            docker logs "supabase_${c}_${LOGLOADS_SUPABASE_PROJECT_ID}" > "$RUNNER_TEMP/normalized-loop-logs/supabase-${c}.log" 2>&1
+          done
+          tail -n 60 "$RUNNER_TEMP/normalized-loop-logs/supabase-db.log"
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: normalized-e2e-loop-logs
+          path: ${{ runner.temp }}/normalized-loop-logs/
+          retention-days: 7
+
+      - name: Stop the Supabase local stack
+        if: always()
+        run: bash tools/normalized-v2-ci/supabase-stack.sh stop
