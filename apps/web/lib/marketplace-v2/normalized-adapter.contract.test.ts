@@ -697,13 +697,15 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
       const land = await sessionStore.resolve({ hints: noHints, subject: "adapter_land" })
 
       expect(land?.person).toEqual({ displayName: "Land Owner", email: "land@adapter-contract.test", id: fixture.users.land })
-      expect(land?.memberships.map((entry) => [entry.organizationName, entry.role, entry.haulerProfile]).sort()).toEqual([
+      // Both were created in one fixture transaction (equal created_at), so compare them by name.
+      const byName = (left: unknown[], right: unknown[]) => String(left[0]).localeCompare(String(right[0]))
+      expect(land?.memberships.map((entry) => [entry.organizationName, entry.role, entry.haulerProfile]).sort(byName)).toEqual([
         ["Adapter Timber", "owner", false],
         ["Adapter Timber Hauling", "owner", true]
       ])
       expect(land?.memberships.find((entry) => entry.organizationId === fixture.orgs.land)?.capabilities)
         .toEqual(expect.arrayContaining(["job.publish", "landing.manage", "inquiry.respond"]))
-      expect(land?.memberships.map(v2MembershipFromNormalized).map((entry) => [entry.organization.displayName, entry.kindLabel, entry.roleLabel]).sort())
+      expect(land?.memberships.map(v2MembershipFromNormalized).map((entry) => [entry.organization.displayName, entry.kindLabel, entry.roleLabel]).sort(byName))
         .toEqual([["Adapter Timber", "Landing business", "Owner"], ["Adapter Timber Hauling", "Hauling business", "Owner"]])
 
       expect((await sessionStore.resolve({ hints: noHints, subject: "adapter_haul" }))?.memberships.map((entry) => entry.organizationId))
