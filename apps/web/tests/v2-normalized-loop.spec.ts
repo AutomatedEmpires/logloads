@@ -410,10 +410,11 @@ test.describe("negative checks", () => {
     expect(refused.pathname).toBe(`/v2/work/${SEEDED_CLOSED_JOB_ID}`)
     expect(refused.searchParams.get("error")).toMatch(/no longer accepting interest/)
 
-    // Nothing was sent: My inquiries has no inquiry for it (CI's psql check counts the rows too).
-    await openV2(page, "/v2/inquiries")
-    for (const label of ["Active", "Replied", "Closed"]) {
-      await openQueue(page, "Inquiries by status", label)
+    // Nothing was sent: no tab of My inquiries lists it (CI's psql check counts the rows too). Each tab is opened by its
+    // id: the first tab's own link carries none, and an empty first tab then shows the first tab with inquiries.
+    for (const tab of ["active", "replied", "closed"]) {
+      await openV2(page, `/v2/inquiries?tab=${tab}`)
+      await expect(page.getByRole("navigation", { name: "Inquiries by status" }).locator("a[aria-current='page']")).toHaveAttribute("href", tab === "active" ? "/v2/inquiries" : `/v2/inquiries?tab=${tab}`)
       await expect(inquiryRows(page).filter({ hasText: "Oak recovery load" })).toHaveCount(0)
     }
   })
