@@ -9,6 +9,7 @@ import {
 } from "@logloads/contracts"
 
 import type { MarketplaceCalls, MarketplaceDb, MarketplacePrincipal } from "./normalized-db"
+import { normalizedHaulerProfileMethods } from "./normalized-hauler"
 import {
   equipmentOptionFromRow,
   expressInterestArguments,
@@ -124,6 +125,7 @@ export function createNormalizedMarketplaceV2({ db, now = () => new Date(), prin
 
   return {
     supportsPublishing: true,
+    ...normalizedHaulerProfileMethods(asViewer),
 
     async authoringLandings(viewer) {
       const rows = await asViewer(viewer, (calls) => calls.call("list_authoring_landings", { p_org_id: viewer.organizationId }), read)

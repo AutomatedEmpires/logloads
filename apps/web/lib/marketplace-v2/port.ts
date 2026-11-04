@@ -1,4 +1,5 @@
 import type {
+  HaulerProfileView,
   MarketplaceAvailabilityAttestation,
   MarketplaceCapability,
   MarketplaceDraftLandingContext,
@@ -124,6 +125,20 @@ export interface MarketplaceV2Port {
    * Throws when unsupported.
    */
   reconfirmJob(viewer: MarketplaceV2Viewer, jobId: string, attestation: MarketplaceAvailabilityAttestation): Promise<void>
+
+  /** Whether saving the hauling-business profile persists through this adapter (#125). */
+  readonly supportsHaulerProfile: boolean
+  /**
+   * The viewer's own hauling business profile, private fields included, for the business's members only. Refuses a
+   * person who is not a member of the active business, and a business with no hauler profile.
+   */
+  haulerProfile(viewer: MarketplaceV2Viewer): Promise<HaulerProfileView>
+  /**
+   * Save the profile form (`haulerProfileInputSchema`, re-parsed here). Owners and managers may change the profile;
+   * only the owner may change the business name or legal name (`planHaulerProfileSave`). Returns the saved profile.
+   * Throws `MarketplaceOperationUnavailableError` when this adapter cannot persist it.
+   */
+  saveHaulerProfile(viewer: MarketplaceV2Viewer, input: unknown): Promise<HaulerProfileView>
 
   // --- Inquiry conversations (UX-09, #132) ---------------------------------------------------------------------
   /**

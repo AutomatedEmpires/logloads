@@ -7,7 +7,7 @@ import {
   type MarketplaceJobDetailView,
   type MarketplaceJobFilters
 } from "@logloads/contracts"
-import { marketplaceJobStatus } from "@logloads/services"
+import { marketplaceJobStatus, pilotHaulerProfile } from "@logloads/services"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { buildNetworkView } from "../network"
@@ -54,6 +54,8 @@ function interestView(state: LogLoadsDatabaseState, interest: Parameters<typeof 
 
 export const operatingStateMarketplaceV2: MarketplaceV2Port = {
   supportsPublishing: false,
+  // The pilot holds a business name and legal name only, and no service edits them (#125).
+  supportsHaulerProfile: false,
 
   async authoringLandings(viewer) {
     return readState((current) => current.marketplaceAuthoringLandings(actor(viewer)))
@@ -65,6 +67,13 @@ export const operatingStateMarketplaceV2: MarketplaceV2Port = {
 
   async haulerEquipment(viewer) {
     return readState((current) => current.marketplaceHaulerEquipment(actor(viewer)))
+  },
+
+  async haulerProfile(viewer) {
+    return readState((current) => {
+      const organization = current.state.organizations.find((candidate) => candidate.id === viewer.organizationId)
+      return pilotHaulerProfile(current.state, actor(viewer), pilotPosterVerification(organization, current.state.verificationRecords))
+    })
   },
 
   async getJob(jobId) {
@@ -116,6 +125,10 @@ export const operatingStateMarketplaceV2: MarketplaceV2Port = {
 
   async reconfirmJob() {
     throw new MarketplaceOperationUnavailableError("Reconfirming a V2 job")
+  },
+
+  async saveHaulerProfile() {
+    throw new MarketplaceOperationUnavailableError("Saving a hauling business profile")
   },
 
   async postHaulerReply(viewer, input) {

@@ -151,7 +151,7 @@ jobs:
       - name: Re-verify the disposable database before the adapter writes fixtures
         run: bash tools/normalized-v2-ci/guard.sh verify
 
-      - name: Adapter contract tests (normalized-adapter.contract.test.ts)
+      - name: Adapter contract tests (normalized-*.contract.test.ts)
         timeout-minutes: 10
         env:
           # A missing or unguarded database fails these tests instead of skipping them.
@@ -159,8 +159,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/normalized-v2-ci/logs"
+          # The files share one database (each with its own issuer, login role and slugs), so they run one at a time.
           pnpm --filter @logloads/web exec vitest run lib/marketplace-v2/normalized-adapter.contract.test.ts \
-            --testTimeout=60000 --reporter=verbose 2>&1 | tee "$RUNNER_TEMP/normalized-v2-ci/logs/adapter-contract.log"
+            lib/marketplace-v2/normalized-hauler.contract.test.ts \
+            --no-file-parallelism --testTimeout=60000 --reporter=verbose 2>&1 | tee "$RUNNER_TEMP/normalized-v2-ci/logs/adapter-contract.log"
           {
             echo "### Normalized adapter contract tests"
             echo '```'
