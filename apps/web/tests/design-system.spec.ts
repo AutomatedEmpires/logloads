@@ -397,6 +397,22 @@ test.describe("responsive matrix: /v2/switch (signed in)", () => {
   })
 })
 
+// #126: before any case that sends New River Hauling's interest, because the link is in the interest form, which
+// goes once New River has an inquiry on the job (workers: 1, file order; later cases leave one open).
+test.describe("My trucks (#126): the job page's equipment link", () => {
+  test("the job page's Add your equipment link leads here", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1440))
+    await signIn(page, NEW_RIVER.email)
+    await openV2(page, "/v2/work")
+    const link = northPineJobLink(page)
+    test.skip((await link.count()) === 0, NO_OPEN_JOB)
+    await openV2(page, (await link.getAttribute("href"))!)
+    const form = page.locator("form:has(input[name='loadPostingId'])")
+    test.skip((await form.count()) === 0, "New River Hauling already sent interest on this job in this run's state")
+    await expect(form.getByRole("link", { name: "Add your equipment" })).toHaveAttribute("href", TRUCKS_PATH)
+  })
+})
+
 // Before the case that sends (below), because it needs the form, which goes once New River Hauling has an inquiry.
 // It submits once, with a date range the server refuses, so it writes nothing and the run's one interest is still
 // sent by the scripted case.
@@ -2268,18 +2284,6 @@ test.describe("My trucks (#126)", () => {
       await expectNoSeriousAxeViolations(page)
     })
   }
-
-  test("the job page's Add your equipment link leads here", async ({ page }) => {
-    await page.setViewportSize(viewportFor(1440))
-    await signIn(page, NEW_RIVER.email)
-    await openV2(page, "/v2/work")
-    const link = northPineJobLink(page)
-    test.skip((await link.count()) === 0, NO_OPEN_JOB)
-    await openV2(page, (await link.getAttribute("href"))!)
-    const form = page.locator("form:has(input[name='loadPostingId'])")
-    test.skip((await form.count()) === 0, "New River Hauling already sent interest on this job in this run's state")
-    await expect(form.getByRole("link", { name: "Add your equipment" })).toHaveAttribute("href", TRUCKS_PATH)
-  })
 
   test.describe("without JavaScript", () => {
     test.use({ javaScriptEnabled: false })
