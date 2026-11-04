@@ -34,10 +34,20 @@ describe("the overview's attention list (#133 criterion 2)", () => {
       interest("i2", "j1", "Oak saw-log morning run", "submitted", ORG, "2026-11-01T10:00:00.000Z"),
       interest("i3", "j2", "Pulp to Eugene", "submitted"),
       interest("i4", "j2", "Pulp to Eugene", "replied"),
-      interest("i5", "j9", "Rival job", "submitted", OTHER)
+      interest("i5", "j9", "Rival job", "submitted", OTHER),
+      // Seen but not answered stays New; a hauler's follow-up after a reply puts the inquiry back in New.
+      interest("i6", "j3", "Cedar poles", "viewed", ORG, "2026-11-01T08:00:00.000Z"),
+      {
+        ...interest("i7", "j3", "Cedar poles", "replied"),
+        replies: [
+          { authorName: "Desk", authorSide: "landing", authorUserId: ORG, body: "Can you start Tuesday?", createdAt: "2026-11-02T13:00:00.000Z", id: "r1" },
+          { authorName: "Haul Owner", authorSide: "hauler", authorUserId: OTHER, body: "Yes, two trucks.", createdAt: "2026-11-02T14:00:00.000Z", id: "r2" }
+        ]
+      }
     ], ORG)
 
     expect(items).toEqual([
+      { count: 2, firstInterestId: "i6", jobId: "j3", jobTitle: "Cedar poles", kind: "new_inquiries" },
       { count: 2, firstInterestId: "i2", jobId: "j1", jobTitle: "Oak saw-log morning run", kind: "new_inquiries" },
       { count: 1, firstInterestId: "i3", jobId: "j2", jobTitle: "Pulp to Eugene", kind: "new_inquiries" }
     ])

@@ -1,5 +1,6 @@
 import {
-  landingInterestQueue,
+  LANDING_INTEREST_QUEUE_LABELS,
+  landingInterestQueueFor,
   postingFreshness,
   RECENT_CONFIRMATION_DAYS,
   type MarketplaceInterestView,
@@ -37,12 +38,15 @@ export interface UnconfirmedJobItem {
 
 export type OverviewAttentionItem = NewInquiriesItem | UnconfirmedJobItem
 
-/** New inquiries (the inbox's "New" queue) on the business's own jobs, one item per job, most first. */
+/**
+ * Inquiries in the inbox's New queue on the business's own jobs, one item per job, most first. The queue is the
+ * inbox's own (`landingInterestQueueFor`), so an inquiry whose hauler wrote last after a reply counts as New again.
+ */
 export function newInquiryItems(interests: readonly MarketplaceInterestView[], organizationId: string): NewInquiriesItem[] {
   const byJob = new Map<string, { title: string; ids: Array<{ id: string; at: string }> }>()
 
   for (const interest of interests) {
-    if (interest.landingOrganization.id !== organizationId || landingInterestQueue(interest.status) !== "new") {
+    if (interest.landingOrganization.id !== organizationId || landingInterestQueueFor(interest) !== "new") {
       continue
     }
 
@@ -93,8 +97,11 @@ export function unconfirmedLabel(item: UnconfirmedJobItem): string {
     : `“${item.jobTitle}” not confirmed for ${item.days} days`
 }
 
+/** The inbox's own queue word ("New"), so the overview and the inbox name the same thing alike. */
+export const NEW_QUEUE_WORD = LANDING_INTEREST_QUEUE_LABELS.new.toLowerCase()
+
 export function newInquiriesLabel(item: NewInquiriesItem): string {
-  return `${item.count} new ${item.count === 1 ? "inquiry" : "inquiries"} on ${item.jobTitle}`
+  return `${item.count} ${NEW_QUEUE_WORD} ${item.count === 1 ? "inquiry" : "inquiries"} on ${item.jobTitle}`
 }
 
 export const UNCONFIRMED_INTERVAL_NOTE = `Haulers see a listing as aging once it goes ${RECENT_CONFIRMATION_DAYS} days without your confirmation.`
