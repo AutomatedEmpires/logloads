@@ -86,7 +86,7 @@ describe("landing allowance summary", () => {
 describe("landing input", () => {
   it("saves without an exact location (B3, spec §4.3)", () => {
     expect(marketplaceLandingInputSchema.parse(VALID)).toEqual({
-      areaLabel: "Oakridge",
+      areaLabel: "Oakridge, OR",
       county: null,
       exactLocation: null,
       gateInstructions: null,

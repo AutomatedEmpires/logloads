@@ -334,7 +334,7 @@ describe("normalized adapter: landing workspace", () => {
 
     expect(await adapter().saveLanding(landingViewer, NEW_LANDING)).toEqual({ landingId: LANDING })
     expect(storeCalls()).toEqual(["get_viewer_marketplace_access", "statement:insert_landing", "statement:save_landing_private"])
-    expect(recorded.find((call) => call.fn === "statement:insert_landing")?.args).toEqual({ values: [LAND, "Hills Creek Unit 4", "inactive", "Oakridge", null, null, "OR", null] })
+    expect(recorded.find((call) => call.fn === "statement:insert_landing")?.args).toEqual({ values: [LAND, "Hills Creek Unit 4", "inactive", "Oakridge, OR", null, null, "OR", null] })
     expect(recorded.at(-1)?.readOnly).toBe(false)
   })
 
@@ -359,7 +359,7 @@ describe("normalized adapter: landing workspace", () => {
     await adapter().saveLanding(landingViewer, { ...NEW_LANDING, exactLat: "44.15432", exactLng: "-122.48765", landingId: LANDING, recruiting: "1" })
     expect(storeCalls()).toEqual(["get_viewer_marketplace_access", "statement:own_landings", "statement:update_landing", "statement:save_landing_private"])
     expect(recorded.find((call) => call.fn === "statement:update_landing")?.args).toEqual({
-      values: [LANDING, LAND, "Hills Creek Unit 4", "Oakridge", "44.15432", "-122.48765", "OR", null]
+      values: [LANDING, LAND, "Hills Creek Unit 4", "Oakridge, OR", "44.15432", "-122.48765", "OR", null]
     })
 
     recorded = []

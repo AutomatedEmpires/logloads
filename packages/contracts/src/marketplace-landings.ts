@@ -255,7 +255,8 @@ export function landingPlanCards(): LandingPlanCardFacts[] {
 // ---------------------------------------------------------------------------
 
 export const MARKETPLACE_LANDING_LIMITS = Object.freeze({
-  areaLabel: 120,
+  /** The town as typed; the stored label adds ", ST" and stays within the store's 120 characters. */
+  areaLabel: 116,
   county: 80,
   gateInstructions: 2000,
   name: 120,
@@ -362,7 +363,8 @@ export const marketplaceLandingInputSchema = z.object({
     })
   }
 }).transform((input) => ({
-  areaLabel: input.areaLabel,
+  // The public label is "Town, ST", as job pages show it after "Near". A town typed with its state is kept as typed.
+  areaLabel: /,\s*[A-Za-z]{2}$/.test(input.areaLabel) ? input.areaLabel : `${input.areaLabel}, ${input.stateCode as string}`,
   county: input.county ?? null,
   exactLocation: input.exactLat !== undefined && input.exactLng !== undefined ? { lat: input.exactLat, lng: input.exactLng } : null,
   gateInstructions: input.gateInstructions ?? null,

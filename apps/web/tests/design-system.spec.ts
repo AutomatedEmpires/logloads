@@ -539,7 +539,7 @@ test.describe("responsive matrix: pages migrated in DS-04 (#147)", () => {
       await expect(page.locator("#conversation")).toHaveCount(0)
 
       await expectNoHorizontalOverflow(page)
-      expect(await expectNavigationForWidth(page, width)).toEqual(["Landing inbox", "Post jobs"])
+      expect(await expectNavigationForWidth(page, width)).toEqual(["Landing inbox", "Post jobs", "Landings"])
       await expectCurrent(page, width, "Landing inbox")
     }
   })
@@ -548,11 +548,11 @@ test.describe("responsive matrix: pages migrated in DS-04 (#147)", () => {
 test.describe("capability navigation (#124)", () => {
   const cases = [
     { email: "hank@northpine.example", home: "/v2/work", items: ["Find work", "My inquiries"], visit: "/v2/inquiries", current: "My inquiries" },
-    { email: "cole@summit.example", home: "/v2/landing", items: ["Landing inbox", "Post jobs"], visit: "/v2/landing/inquiries", current: "Landing inbox" },
+    { email: "cole@summit.example", home: "/v2/landing", items: ["Landing inbox", "Post jobs", "Landings"], visit: "/v2/landing/inquiries", current: "Landing inbox" },
     {
       email: "dispatch@northpine.example",
       home: "/v2/work",
-      items: ["Find work", "My inquiries", "Landing inbox", "Post jobs"],
+      items: ["Find work", "My inquiries", "Landing inbox", "Post jobs", "Landings"],
       visit: "/v2/inquiries",
       current: "My inquiries"
     }
@@ -1626,7 +1626,7 @@ test.describe("find-work map (UX-13)", () => {
 const DUAL = { email: "maya@northpine.example", hauling: "North Pine Logging", landing: "Summit Ridge Timber", name: "Maya Mills" }
 const SUMMIT_OWNER = "cole@summit.example"
 const HAULER_NAVIGATION = ["Find work", "My inquiries"]
-const LANDING_NAVIGATION = ["Landing inbox", "Post jobs"]
+const LANDING_NAVIGATION = ["Landing inbox", "Post jobs", "Landings"]
 
 const businessChoices = (page: Page) => page.getByRole("list", { name: "Your businesses" }).getByRole("listitem")
 

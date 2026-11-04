@@ -563,7 +563,7 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
       const count = async () => (await one<{ n: number }>("select count(*)::int as n from marketplace.landings where org_id = $1::uuid", [fixture.orgs.land])).n
       const before = await count()
 
-      await expect(port.saveLanding(viewer("land", "land"), { areaLabel: "Near Blue River", name: "Lower Spur Landing", recruiting: "1", stateCode: "OR" }))
+      await expect(port.saveLanding(viewer("land", "land"), { areaLabel: "Blue River", name: "Lower Spur Landing", recruiting: "1", stateCode: "OR" }))
         .rejects.toThrow(/Basic plan allows 1 active landing/)
       expect(await count()).toBe(before)
 
@@ -575,11 +575,12 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
     })
 
     it("saves a paused landing without an exact location; it has no public point and does not count", async () => {
-      lowerSpurId = (await port.saveLanding(viewer("land", "land"), { areaLabel: "Near Blue River", name: "Lower Spur Landing", stateCode: "or" })).landingId
+      lowerSpurId = (await port.saveLanding(viewer("land", "land"), { areaLabel: "Blue River", name: "Lower Spur Landing", stateCode: "or" })).landingId
 
       expect(await port.getOwnLanding(viewer("land", "land"), lowerSpurId)).toMatchObject({
         activeJobs: 0,
         approximatePoint: null,
+        areaLabel: "Blue River, OR",
         privateDetails: { exactLocation: null, gateInstructions: null, siteContactName: null, siteContactPhone: null },
         stateCode: "OR",
         status: "paused"
@@ -589,7 +590,7 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
 
     it("keeps the exact location and access details private, and publishes only the 0.10° point", async () => {
       await port.saveLanding(viewer("land", "land"), {
-        areaLabel: "Near Blue River",
+        areaLabel: "Blue River",
         exactLat: LOWER_PRIVATE[3],
         exactLng: LOWER_PRIVATE[4],
         gateInstructions: LOWER_PRIVATE[0],
@@ -672,8 +673,8 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
 
       expect((await port.viewerAccess(own)).capabilities).toEqual(expect.arrayContaining(["landing.manage", "job.publish"]))
       expect(await port.landingAllowance(own)).toEqual({ activeLandings: 0, cycleEndsAt: null, invitationsRemaining: null, planCode: null, teamMembers: 1 })
-      await expect(port.saveLanding(own, { areaLabel: "Near Detroit", name: "Fresh Landing", recruiting: "1", stateCode: "OR" })).rejects.toThrow("Billing isn't active yet")
-      expect((await port.saveLanding(own, { areaLabel: "Near Detroit", name: "Fresh Landing", stateCode: "OR" })).landingId).toMatch(/^[0-9a-f-]{36}$/)
+      await expect(port.saveLanding(own, { areaLabel: "Detroit", name: "Fresh Landing", recruiting: "1", stateCode: "OR" })).rejects.toThrow("Billing isn't active yet")
+      expect((await port.saveLanding(own, { areaLabel: "Detroit", name: "Fresh Landing", stateCode: "OR" })).landingId).toMatch(/^[0-9a-f-]{36}$/)
     })
   })
 

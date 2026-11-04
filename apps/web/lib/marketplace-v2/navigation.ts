@@ -6,7 +6,8 @@ export const V2_NAVIGATION: readonly NavItem[] = Object.freeze([
   { href: "/v2/work", icon: "nav.loads", id: "work", label: "Find work" },
   { href: "/v2/inquiries", icon: "nav.messages", id: "inquiries", label: "My inquiries" },
   { href: "/v2/landing/inquiries", icon: "nav.landing", id: "landing-inquiries", label: "Landing inbox" },
-  { href: "/v2/landing/jobs", icon: "ops.document", id: "landing-jobs", label: "Post jobs" }
+  { href: "/v2/landing/jobs", icon: "ops.document", id: "landing-jobs", label: "Post jobs" },
+  { href: "/v2/landing/landings", icon: "map.landing", id: "landings", label: "Landings" }
 ])
 
 /**
@@ -17,6 +18,7 @@ const NAV_CAPABILITY: Readonly<Record<string, MarketplaceCapability | null>> = O
   "inquiries": "interest.express",
   "landing-inquiries": "inquiry.respond",
   "landing-jobs": "job.publish",
+  "landings": "job.publish",
   "work": null
 })
 

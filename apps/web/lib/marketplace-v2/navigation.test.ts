@@ -5,12 +5,13 @@ import type { MarketplaceCapability } from "@logloads/contracts"
 import { activeV2NavId, V2_NAVIGATION, v2HomePathFor, v2NavigationFor, v2WorkspaceFor, v2WorkspaceForContext } from "./navigation"
 
 describe("V2 navigation", () => {
-  it("keeps the four preview destinations, in order", () => {
+  it("keeps the five preview destinations, in order", () => {
     expect(V2_NAVIGATION.map((item) => [item.label, item.href])).toEqual([
       ["Find work", "/v2/work"],
       ["My inquiries", "/v2/inquiries"],
       ["Landing inbox", "/v2/landing/inquiries"],
-      ["Post jobs", "/v2/landing/jobs"]
+      ["Post jobs", "/v2/landing/jobs"],
+      ["Landings", "/v2/landing/landings"]
     ])
   })
 
@@ -21,7 +22,9 @@ describe("V2 navigation", () => {
     ["/v2/landing/inquiries", "landing-inquiries"],
     ["/v2/landing/jobs", "landing-jobs"],
     ["/v2/landing/jobs/new", "landing-jobs"],
-    ["/v2/landing/jobs/preview", "landing-jobs"]
+    ["/v2/landing/jobs/preview", "landing-jobs"],
+    ["/v2/landing/landings", "landings"],
+    ["/v2/landing/landings/new", "landings"]
   ])("marks %s as %s", (pathname, id) => {
     expect(activeV2NavId(pathname)).toBe(id)
   })
@@ -57,16 +60,16 @@ describe("capability-scoped V2 navigation (#124)", () => {
   it("gives a hauling business the hauler set and a landing business the landing set", () => {
     expect(ids(HAULER)).toEqual(["work", "inquiries"])
     expect(ids(DRIVER)).toEqual(["work", "inquiries"])
-    expect(ids(LANDING_DESK)).toEqual(["landing-inquiries", "landing-jobs"])
+    expect(ids(LANDING_DESK)).toEqual(["landing-inquiries", "landing-jobs", "landings"])
   })
 
   it("hides each landing item the role lacks", () => {
     expect(ids(["inquiry.respond"])).toEqual(["landing-inquiries"])
-    expect(ids(["job.publish"])).toEqual(["landing-jobs"])
+    expect(ids(["job.publish"])).toEqual(["landing-jobs", "landings"])
   })
 
   it("gives a business that is both sides both sets, in display order", () => {
-    expect(ids([...HAULER, ...LANDING_DESK])).toEqual(["work", "inquiries", "landing-inquiries", "landing-jobs"])
+    expect(ids([...HAULER, ...LANDING_DESK])).toEqual(["work", "inquiries", "landing-inquiries", "landing-jobs", "landings"])
   })
 
   it("never offers more than the five bottom tabs allowed", () => {
