@@ -38,6 +38,7 @@ import {
 } from "@logloads/services"
 
 import { mutateState, serializeError, services } from "./services"
+import { OPERATIONAL_NOTICE_WRITE_LIMIT, TRIP_EVENT_WRITE_LIMIT, type WriteLimit } from "./write-limits"
 import {
   getSessionActor,
   SESSION_COOKIE,
@@ -135,6 +136,14 @@ async function requireResidualSettlementActor(): Promise<{
     : actor.activeOrganization?.id ?? undefined
 
   return { actor, organizationId }
+}
+
+/**
+ * Spends one unit of the user's budget for this kind of write, before the write.
+ * The API route for the same write spends the same bucket (HF-02, #187).
+ */
+async function spendWriteLimit(actor: SessionActor, writeLimit: WriteLimit): Promise<void> {
+  await checkRateLimit(writeLimit.bucket, actor.profile.id, writeLimit.limit, writeLimit.windowMs)
 }
 
 async function commit<T>(
@@ -262,6 +271,8 @@ export async function progressTripAction(input: {
 }): Promise<ActionResult> {
   try {
     const actor = await requireActor()
+
+    await spendWriteLimit(actor, TRIP_EVENT_WRITE_LIMIT)
 
     // The event's source (driver or dispatcher) is derived by the service.
     const result = await commit(["/driver", "/fleet", "/host"], (draft) =>
@@ -1769,6 +1780,8 @@ export async function createOperationalNoticeAction(input: {
 }): Promise<ActionResult> {
   try {
     const actor = await requireActor()
+
+    await spendWriteLimit(actor, OPERATIONAL_NOTICE_WRITE_LIMIT)
 
     await commit(["/host", "/fleet", "/driver"], (draft) =>
       draft.createOperationalNotice({
