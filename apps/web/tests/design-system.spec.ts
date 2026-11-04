@@ -1598,6 +1598,8 @@ test.describe("find-work map (UX-13)", () => {
       for (const href of await links.evaluateAll((anchors) => anchors.map((anchor) => anchor.getAttribute("href")))) {
         expect(href).toMatch(/^\/v2\/work\/[^/?#]+$/)
       }
+      // Find work passes each job's public card (#129, #183): every link is a full JobResultRow's title, not a bare link.
+      await expect(sheet.getByRole("list", { name: "Jobs in this area" }).locator("li h3 a")).toHaveCount(await links.count())
       const sheetBox = (await sheet.boundingBox())!
       const uncovered = [
         ["the pin", pin],

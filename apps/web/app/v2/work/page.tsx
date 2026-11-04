@@ -28,6 +28,7 @@ import {
   type FindWorkSearch
 } from "@/lib/marketplace-v2/find-work"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
+import { jobMapPoints } from "@/lib/marketplace-v2/job-map"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
 import { MARKETPLACE_PLACES, placeLabel } from "@/lib/marketplace-v2/places"
 import { getSessionActor } from "@/lib/session"
@@ -96,7 +97,8 @@ export default async function FindWorkPage({ searchParams }: { searchParams: Sea
   const selectedId = search.jobId && rows.some((row) => row.job.id === search.jobId) ? search.jobId : null
 
   const showMap = search.view === "map"
-  const points = jobs.flatMap((job) => job.origin.approximatePoint ? [{ id: job.id, title: job.title, ...job.origin.approximatePoint }] : [])
+  // Each pin's preview is the job's public card (#183): the allowlisted fields only, never the detail view.
+  const points = jobMapPoints(jobs)
   const sort = effectiveSort(search)
   const bases = marketplaceComparablePayUnits(jobs)
   const empty = rows.length === 0 ? findWorkEmptyState(search, context) : null
@@ -161,7 +163,7 @@ export default async function FindWorkPage({ searchParams }: { searchParams: Sea
           }
           footnote="Pay is shown as each poster stated it. Rates on different bases (per load, per ton, per hour) are never converted into one another."
           heading={`${rows.length} job${rows.length === 1 ? "" : "s"}`}
-          map={showMap ? <JobMapLoader points={points} /> : null}
+          map={showMap ? <JobMapLoader now={now} points={points} /> : null}
           notes={notes.length > 0 ? notes : null}
           now={now}
           rows={rows}
