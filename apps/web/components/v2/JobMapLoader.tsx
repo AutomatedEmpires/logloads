@@ -22,5 +22,8 @@ const JobMap = dynamic(() => import("./JobMap"), {
  * cards' freshness; without it the map uses the time it opened.
  */
 export function JobMapLoader({ points, now }: { points: JobMapPoint[]; now?: string }) {
+  // Nothing to plot (e.g. a search with no results): say so at once, without the map's box or its code, so the list
+  // never jumps up when the map would only have said this (#137).
+  if (points.length === 0) return <p className={styles.note}>No mappable approximate locations in these results.</p>
   return <JobMap now={now} points={points} />
 }
