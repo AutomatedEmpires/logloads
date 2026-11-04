@@ -23,6 +23,9 @@ export const LANDING_STATUS_UNAVAILABLE =
   "Changing a landing's status isn't available in this preview yet: it needs the normalized marketplace store. Nothing was changed."
 export const ORGANIZATION_SETUP_UNAVAILABLE =
   "Setting up a business isn't available in this preview yet: it needs the normalized marketplace store. Nothing was saved, and what you entered is still here."
+/** #213: the business was created but the session could not select it; the business switcher still lists it. */
+export const ORGANIZATION_NOT_SELECTED =
+  "Your business was set up, but we couldn't switch you to it. Choose it from the business name at the top of the page."
 export const FIX_LANDING_FIELDS = "Check the highlighted fields. Nothing was saved yet."
 
 /**

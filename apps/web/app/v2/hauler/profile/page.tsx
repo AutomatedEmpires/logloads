@@ -21,8 +21,8 @@ import {
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
 import { MARKETPLACE_PLACES, placeLabel } from "@/lib/marketplace-v2/places"
 import { MarketplaceRefusalError } from "@/lib/marketplace-v2/port"
+import { getV2SessionActor } from "@/lib/marketplace-v2/v2-session"
 import { resolveV2Viewer, withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
-import { getSessionActor } from "@/lib/session"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
@@ -95,7 +95,7 @@ export default async function HaulerProfilePage({ searchParams }: { searchParams
   }
 
   const equipment: MarketplaceHaulerEquipmentOption[] = await pilotMarketplaceV2.haulerEquipment(viewer).catch(() => [])
-  const actor = await getSessionActor()
+  const actor = await getV2SessionActor()
   const tabs = [
     { href: setupQuery ? `${PROFILE_PATH}?${setupQuery}` : PROFILE_PATH, id: "edit", label: "Edit" },
     { href: `${PROFILE_PATH}?${[setupQuery, "view=preview"].filter(Boolean).join("&")}`, id: "preview", label: "Preview as a landing sees it" }

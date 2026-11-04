@@ -9,7 +9,7 @@ import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { LANDINGS_PATH } from "@/lib/marketplace-v2/landing-workspace"
 import { hasLandingSide } from "@/lib/marketplace-v2/navigation"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
-import { getSessionActor } from "@/lib/session"
+import { getV2SessionActor } from "@/lib/marketplace-v2/v2-session"
 
 export const dynamic = "force-dynamic"
 
@@ -18,7 +18,7 @@ const TITLE = "Set up your landing business"
 /** Who is looking: a visitor, an account without a landing business, or one acting for a landing business. */
 async function setupContext(): Promise<{ kind: "visitor" } | { kind: "account" } | { kind: "landing"; name: string }> {
   try {
-    const actor = await getSessionActor()
+    const actor = await getV2SessionActor()
 
     if (!actor) {
       return { kind: "visitor" }

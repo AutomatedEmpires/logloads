@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("server-only", () => ({}))
 vi.mock("../rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }))
-vi.mock("../session", () => ({ getSessionActor: mocks.getSessionActor }))
+vi.mock("./v2-session", () => ({ getV2SessionActor: mocks.getSessionActor }))
 vi.mock("./flag", () => ({ marketplaceV2Enabled: mocks.enabled }))
 vi.mock("./pilot-adapter", () => ({ pilotMarketplaceV2: { reportListing: mocks.reportListing } }))
 

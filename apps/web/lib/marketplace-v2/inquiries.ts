@@ -14,8 +14,8 @@ import {
 import { unstable_rethrow } from "next/navigation"
 import { cache } from "react"
 
-import { getSessionActor } from "../session"
 import { pilotMarketplaceV2 } from "./pilot-adapter"
+import { getV2SessionActor } from "./v2-session"
 
 /**
  * Inquiry conversations (UX-09, #132): the hauler's tabs, the landing's queues and filters, and the navigation's
@@ -145,7 +145,7 @@ export async function v2InquiryNavCounts(capabilities: readonly MarketplaceCapab
   }
 
   try {
-    const actor = await getSessionActor()
+    const actor = await getV2SessionActor()
     const organization = actor && !actor.workspaceSelectionInvalid ? actor.activeOrganization : null
 
     if (!actor || !organization) {

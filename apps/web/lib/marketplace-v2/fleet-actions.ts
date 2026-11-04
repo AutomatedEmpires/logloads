@@ -12,11 +12,11 @@ import { DomainRefusalError } from "@logloads/services"
 import type { z } from "zod"
 
 import { checkRateLimit } from "../rate-limit"
-import { getSessionActor } from "../session"
 import { FLEET_SAVE_FAILED, FLEET_SAVE_UNAVAILABLE, fleetAnswerQuery, TRUCKS_PATH, type FleetForm, type FleetOutcome } from "./fleet-page"
 import { marketplaceV2Enabled } from "./flag"
 import { pilotMarketplaceV2 } from "./pilot-adapter"
 import { MarketplaceOperationUnavailableError, MarketplaceRefusalError, type MarketplaceV2Viewer } from "./port"
+import { getV2SessionActor } from "./v2-session"
 
 /**
  * "My trucks" form actions (#126). Identity and the acting business come from the server session only; the forms
@@ -34,7 +34,7 @@ async function requireViewer(setup: boolean): Promise<MarketplaceV2Viewer> {
     redirect("/")
   }
 
-  const actor = await getSessionActor()
+  const actor = await getV2SessionActor()
 
   if (!actor) {
     redirect(`/sign-in?next=${encodeURIComponent(setup ? `${TRUCKS_PATH}?setup=1` : TRUCKS_PATH)}`)

@@ -4,14 +4,17 @@ import postgres, { type Sql } from "postgres"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 
 vi.mock("server-only", () => ({}))
+// v2-session.ts reads the request's session through ../session; this file hands the store the subject directly.
+vi.mock("../session", () => ({}))
 
 import { seedLandings, seedLoadPostings, seedOrganizationMemberships, seedOrganizations, seedProfiles } from "@logloads/db"
 
-import type { SessionActor } from "../session-policy"
 import { normalizedAdapterConfiguration, sessionPrincipalResolver, type NormalizedAdapterConfiguration } from "./adapter"
 import { createNormalizedMarketplaceV2 } from "./normalized-adapter"
 import { createPostgresMarketplaceDb, type MarketplaceDb } from "./normalized-db"
+import { createNormalizedSessionStore } from "./normalized-session"
 import { MarketplaceRefusalError, type MarketplaceV2Port, type MarketplaceV2Viewer } from "./port"
+import { v2MembershipFromNormalized } from "./v2-session"
 
 /**
  * The normalized adapter on a store deployed the way the owner deploys staging (#200): `tools/normalized-store.mjs
@@ -83,10 +86,13 @@ describe.skipIf(!SEEDED)("normalized adapter on the seeded store", () => {
   let privateStrings: string[] = []
   let newRiverInterestId = ""
 
-  /** The port as the app builds it for a signed-in person: the session's own profile is the principal. */
+  /**
+   * The port as the app builds it for a signed-in person. The V2 session's person is the principal (#213): the seed
+   * keeps the pilot ids, so the person's `app_users.id` is the pilot profile id, and the subject its pilot Clerk id.
+   */
   const portFor = (email: string): MarketplaceV2Port => {
-    const actor = { profile: profile(email) } as unknown as SessionActor
-    return createNormalizedMarketplaceV2({ db, principal: sessionPrincipalResolver(configuration.identity, async () => actor) })
+    const person = { subject: profile(email).clerkUserId ?? "", userId: profile(email).id }
+    return createNormalizedMarketplaceV2({ db, principal: sessionPrincipalResolver(configuration.identity, async () => person) })
   }
   const viewer = (email: string, slug: string): MarketplaceV2Viewer => ({ organizationId: business(slug).id, userId: profile(email).id })
   const anonymous = () => portFor(DANA)
@@ -209,6 +215,22 @@ describe.skipIf(!SEEDED)("normalized adapter on the seeded store", () => {
 
     const everything = JSON.stringify([listed, detail])
     for (const secret of privateStrings) expect(everything).not.toContain(secret)
+  })
+
+  it("gives each seeded person's V2 session their pilot businesses, from the normalized store (#213)", async () => {
+    const sessions = createNormalizedSessionStore({ db, identity: configuration.identity })
+    const noHints = async () => ({ fullName: "", verifiedEmail: null })
+    const businessesOf = async (email: string) => {
+      const session = await sessions.resolve({ hints: noHints, subject: profile(email).clerkUserId ?? "" })
+      expect(session?.person.id).toBe(profile(email).id)
+      return (session?.memberships ?? []).map(v2MembershipFromNormalized).map((entry) => entry.organization.id).sort()
+    }
+
+    expect(await businessesOf(DANA)).toEqual([business(NORTH_PINE).id, business(SUMMIT).id].sort())
+    expect(await businessesOf(MAYA)).toEqual([business(NORTH_PINE).id])
+    expect(await businessesOf(COLE)).toEqual([business(SUMMIT).id])
+    expect(await businessesOf(MORGAN)).toEqual([business(NEW_RIVER).id])
+    expect(await businessesOf(AVERY)).toEqual([business(GRANITE_CREEK).id])
   })
 
   it("resolves each seeded person to their pilot business, with the capabilities the V2 pages rely on", async () => {

@@ -34,7 +34,7 @@ import { haulerChecklistFor } from "@/lib/marketplace-v2/hauler-setup"
 import { jobMapPoints } from "@/lib/marketplace-v2/job-map"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
 import { MARKETPLACE_PLACES, placeLabel } from "@/lib/marketplace-v2/places"
-import { getSessionActor } from "@/lib/session"
+import { getV2SessionActor } from "@/lib/marketplace-v2/v2-session"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
@@ -61,7 +61,7 @@ export default async function FindWorkPage({ searchParams }: { searchParams: Sea
   const now = new Date().toISOString()
 
   // Identity is the session's (CLAUDE.md); a visitor sees the public board with no fit and no "My trucks".
-  const actor = await getSessionActor()
+  const actor = await getV2SessionActor()
   const workspace = actor && !actor.workspaceSelectionInvalid ? actor.activeOrganization ?? null : null
   const viewer = actor && workspace ? { organizationId: workspace.id, userId: actor.profile.id } : null
   const access = viewer ? await pilotMarketplaceV2.viewerAccess(viewer).catch(() => null) : null
