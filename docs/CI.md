@@ -20,7 +20,7 @@
 | Workflow | Trigger | Does |
 |---|---|---|
 | `ci.yml` | push `main`, PR, merge queue | Organization reusable CI (`secrets: inherit`), then `extended-validation`: Supabase CLI 2.101.0; `pnpm db:assert` (resets an isolated PostgreSQL 17 stack); guardrails; build; Playwright |
-| `database-check.yml` | PR, manual | `pnpm db:check` on the pilot ledger `supabase/migrations/`. In CI it fails rather than skips. |
+| `database-check.yml` | PR, manual | `pnpm db:check` on the pilot ledger `supabase/migrations/`. In CI it fails rather than skips. Then rehearses an operating-state backup, wipe and restore on that disposable stack ([`RECOVERY.md`](./RECOVERY.md) §7.1). |
 | `normalized-v2-ci.yml` | PR touching `architecture/normalized-v2/**`, `tools/normalized-v2-ci/**` or the workflow; manual | The normalized-v2 prototype on disposable databases (§3) |
 | `codeql.yml`, `dependency-review.yml`, `pr-review.yml` | PR, `main`, weekly | Security and review |
 | `release.yml` | push `main` | Organization reusable release |
