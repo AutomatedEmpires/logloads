@@ -1,6 +1,6 @@
 "use client"
 
-import Link from "next/link"
+import { AppLink as Link } from "../AppLink"
 import { useRouter } from "next/navigation"
 import { Fragment, useEffect, useMemo, useState, useTransition, type ReactNode } from "react"
 import { Badge, Icon } from "@logloads/ui"
@@ -1245,7 +1245,7 @@ export function FleetOpportunities({ account, network }: FleetShellProps) {
                     {offer.counterpartName} · {offer.acceptedTruckloads} of {offer.offeredTruckloads} accepted · expires {formatDateTime(offer.expiresAt)}
                   </span>
                 </div>
-                <Link className="action-link" href={opportunityHref(offer.loadPostingId)} prefetch={false}>Review offer</Link>
+                <Link className="action-link" href={opportunityHref(offer.loadPostingId)}>Review offer</Link>
               </article>
             ))}
           </div>
