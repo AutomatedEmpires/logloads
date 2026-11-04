@@ -7,6 +7,7 @@ import { listTruckSlotsForDate } from "@logloads/services"
 
 import { apiErrorResponse, requireApiActor } from "@/lib/api-actor"
 import { mutateState, readState } from "@/lib/services"
+import { readJsonBody } from "@/lib/request-body"
 
 export async function GET(request: NextRequest) {
 	try {
@@ -31,7 +32,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
 	try {
-		const payload = await request.json()
+		const payload = await readJsonBody(request)
 		// The organization comes from the verified membership, never from the
 		// body: requireApiActor only confirms the caller belongs to the org they
 		// named, so trusting the payload would let a member of one organization

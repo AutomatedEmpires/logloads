@@ -1,5 +1,28 @@
 {
   "root": true,
   "extends": ["../../.eslintrc.json", "next/core-web-vitals", "next/typescript"],
-  "ignorePatterns": [".next/", "node_modules/", "out/", "dist/", "next-env.d.ts"]
+  "ignorePatterns": [".next/", "node_modules/", "out/", "dist/", "next-env.d.ts"],
+  "overrides": [
+    {
+      "files": [
+        "components/v3/**/*.ts",
+        "components/v3/**/*.tsx",
+        "app/{host,fleet,driver,admin,workspace,loads}/**/*.ts",
+        "app/{host,fleet,driver,admin,workspace,loads}/**/*.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "next/link",
+                "message": "Use AppLink from components/AppLink. In Next 15.5 a click from an automatic prefetch of a dynamic page can leave the navigation uncommitted, and AppLink turns that prefetch off (lib/link-prefetch.ts, #153)."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }
