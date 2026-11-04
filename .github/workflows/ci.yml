@@ -58,6 +58,18 @@ jobs:
         env:
           CI: "true"
 
+      # The pilot config keeps the trace of every failed attempt, including the first attempt of a test that passes on
+      # retry, so a CI-only flake can be read instead of guessed at (#153, #159). A clean run leaves no trace, so
+      # nothing is uploaded. Like the DS-05 traces, they hold only this job's disposable stack and seeded demo accounts.
+      - name: Upload pilot E2E traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pilot-e2e-traces
+          path: apps/web/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
       # DS-05 (#148): reuses this job's build, browsers and Supabase stack, with Marketplace V2 on its own port.
       # It runs even when the pilot journeys above fail, so each suite reports its own result.
       - name: Design-system regression
