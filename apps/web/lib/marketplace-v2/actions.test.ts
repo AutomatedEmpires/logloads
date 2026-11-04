@@ -335,6 +335,18 @@ describe("reconfirmJobAction server-side checks", () => {
     expect(target).toMatchObject({ path: JOBS_PATH, query: { unavailable: "reconfirm" } })
     expect(mocks.revalidatePath).not.toHaveBeenCalled()
   })
+
+  it("answers on the landing overview when the one-tap Confirm came from it, and nowhere else (#133)", async () => {
+    await expect(redirectOf(reconfirmJobAction, form({ jobId: JOB_ID, returnTo: "/v2/landing", ...ATTESTED }, []))).resolves.toMatchObject({
+      path: "/v2/landing", query: { unavailable: "reconfirm" }
+    })
+    await expect(redirectOf(reconfirmJobAction, form({ jobId: JOB_ID, returnTo: "/v2/landing" }, []))).resolves.toMatchObject({
+      path: "/v2/landing", query: { error: expect.stringContaining("availability confirmation") }
+    })
+    for (const returnTo of ["https://evil.test/v2/landing", "/workspace", "//evil.test"]) {
+      await expect(redirectOf(reconfirmJobAction, form({ jobId: JOB_ID, returnTo, ...ATTESTED }, []))).resolves.toMatchObject({ path: JOBS_PATH })
+    }
+  })
 })
 
 describe("inquiry actions keep the inquiry selected (DS-04 list and conversation pages)", () => {

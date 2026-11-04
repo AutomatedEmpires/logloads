@@ -7,6 +7,7 @@ export const V2_NAVIGATION: readonly NavItem[] = Object.freeze([
   { href: "/v2/inquiries", icon: "nav.messages", id: "inquiries", label: "My inquiries" },
   { href: "/v2/hauler/trucks", icon: "truck.log", id: "hauler-trucks", label: "My trucks" },
   { href: "/v2/hauler/profile", icon: "nav.profile", id: "hauler-profile", label: "Profile" },
+  { href: "/v2/landing", icon: "nav.today", id: "landing-overview", label: "Overview" },
   { href: "/v2/landing/inquiries", icon: "nav.landing", id: "landing-inquiries", label: "Landing inbox" },
   { href: "/v2/landing/jobs", icon: "ops.document", id: "landing-jobs", label: "Post jobs" },
   { href: "/v2/landing/landings", icon: "map.landing", id: "landings", label: "Landings" }
@@ -22,16 +23,19 @@ const NAV_CAPABILITY: Readonly<Record<string, MarketplaceCapability | null>> = O
   "inquiries": "interest.express",
   "landing-inquiries": "inquiry.respond",
   "landing-jobs": "job.publish",
+  "landing-overview": "job.publish",
   "landings": "job.publish",
   "work": null
 })
 
 /**
  * Destinations a business that is both a hauling and a landing business does not get in its navigation, so it stays
- * within the five bottom tabs (#124). Its profile is still one link away, from My trucks and the Find work checklist;
- * Landings is linked from the landing overview (#133).
+ * within the five bottom tabs (#124): Find work, My inquiries, My trucks, Overview and Landing inbox (lead decision on
+ * #209, 2026-11-04). Each is still one link away: the profile from My trucks and the Find work checklist; Post jobs
+ * ("Post a job", "All jobs") and Landings ("All landings") from the landing overview (#133). The long-term fix is
+ * navigation scoped to the workspace the person is in.
  */
-const ONE_SIDED_ONLY: ReadonlySet<string> = new Set(["hauler-profile", "landings"])
+const ONE_SIDED_ONLY: ReadonlySet<string> = new Set(["hauler-profile", "landing-jobs", "landings"])
 
 export function hasHaulerSide(capabilities: readonly MarketplaceCapability[]): boolean {
   return capabilities.includes("interest.express")
