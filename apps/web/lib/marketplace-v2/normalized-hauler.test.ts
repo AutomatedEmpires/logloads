@@ -46,6 +46,7 @@ let updateRows: Record<string, unknown[]>
 function fakeDb(): MarketplaceDb {
   const calls = (readOnly?: boolean): MarketplaceCalls => ({
     call: async () => [],
+    inquiryJobs: async () => [],
     inquiryParties: async () => null,
     async query(name, values) {
       statements.push({ name, readOnly, values })
