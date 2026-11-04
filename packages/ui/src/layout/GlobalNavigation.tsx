@@ -1,3 +1,4 @@
+import { AccountMenu } from "./AccountMenu"
 import { BusinessSwitcher } from "./BusinessSwitcher"
 import { cx } from "./cx"
 import styles from "./GlobalNavigation.module.css"
@@ -21,10 +22,10 @@ function BrandContent() {
 }
 
 /**
- * The white top bar: brand, the workspace's destinations (bp-lg and up) and the business switcher.
- * The brand returns to the first destination, which is the workspace home.
+ * The white top bar: brand, the workspace's destinations (bp-lg and up), the business switcher and the
+ * account menu. The brand returns to the first destination, which is the workspace home.
  */
-export function GlobalNavigation({ items, activeId, business, className }: GlobalNavigationProps & Placement) {
+export function GlobalNavigation({ items, activeId, business, account, className }: GlobalNavigationProps & Placement) {
   const home = items[0]?.href
 
   return (
@@ -52,9 +53,10 @@ export function GlobalNavigation({ items, activeId, business, className }: Globa
             </a>
           ))}
         </nav>
-        {business ? (
-          <div className={styles.business}>
-            <BusinessSwitcher {...business} />
+        {business || account ? (
+          <div className={styles.end}>
+            {business ? <BusinessSwitcher className={styles.business} {...business} /> : null}
+            {account ? <AccountMenu {...account} /> : null}
           </div>
         ) : null}
       </div>
