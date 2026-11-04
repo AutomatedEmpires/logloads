@@ -162,3 +162,47 @@ describe("self-reported equipment in an inquiry", () => {
       .toThrow("Choose equipment from your business profile")
   })
 })
+
+// #178: the DS-05 browser case signs in as this seeded hauler, so its shape is pinned here.
+describe("the seeded hauler with listed equipment (Granite Creek Hauling)", () => {
+  const GRANITE_CREEK = "33333333-3333-4333-8333-333333333335"
+  const graniteFixture = () => {
+    const { openJob, state } = fixture()
+    const avery = state.profiles.find((profile) => profile.email === "avery@granitecreek.example")
+    if (!avery) throw new Error("seed user avery@granitecreek.example missing")
+    const granite: MarketplaceActor = { actorUserId: avery.id, organizationId: GRANITE_CREEK }
+    return { granite, openJob, state }
+  }
+
+  it("is a hauling business with two setups, capped at their units, and no landing of its own", () => {
+    const { granite, state } = graniteFixture()
+    const access = marketplaceViewerAccess(state, granite)
+
+    expect(access.organizationName).toBe("Granite Creek Hauling")
+    expect(access.capabilities).toContain("interest.express")
+    expect(access.capabilities).not.toContain("job.publish")
+    expect(marketplaceHaulerEquipment(state, granite)).toEqual([
+      { configurationKey: "log_truck|bunk_trailer", label: "Log truck + Bunk / short-log", unitsListed: 2 },
+      { configurationKey: "log_truck|pole_trailer", label: "Log truck + Pole trailer", unitsListed: 1 }
+    ])
+    expect(state.landings.some((landing) => landing.companyId === GRANITE_CREEK)).toBe(false)
+  })
+
+  it("can offer North Pine's open job up to the listed units, and no more", () => {
+    const { granite, openJob, state } = graniteFixture()
+
+    expect(openJob.companyId).not.toBe(GRANITE_CREEK)
+    expect(() => expressMarketplaceInterest(state, granite, { equipment: [{ configurationKey: "log_truck|bunk_trailer", count: 3 }], loadPostingId: openJob.id }, AT))
+      .toThrow(/profile lists 2/)
+
+    const { interest } = expressMarketplaceInterest(state, granite, {
+      equipment: [
+        { configurationKey: "log_truck|bunk_trailer", count: 2 },
+        { configurationKey: "log_truck|pole_trailer", count: 1 }
+      ],
+      loadPostingId: openJob.id
+    }, AT)
+    expect(interest.trucksOffered).toBe(3)
+    expect(interest.jobOrganizationId).toBe(openJob.companyId)
+  })
+})
