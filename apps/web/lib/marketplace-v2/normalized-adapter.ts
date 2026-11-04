@@ -18,6 +18,8 @@ import {
 } from "@logloads/contracts"
 
 import type { MarketplaceCalls, MarketplaceDb, MarketplacePrincipal } from "./normalized-db"
+import { normalizedHaulerFleetMethods } from "./normalized-fleet"
+import { normalizedHaulerProfileMethods } from "./normalized-hauler"
 import {
   equipmentOptionFromRow,
   expressInterestArguments,
@@ -35,6 +37,8 @@ import {
   landingPublicValues,
   landingStatusInput,
   landingViewFromRow,
+  listingReportReceipt,
+  listingReportRow,
   organizationSlug,
   publishArguments,
   refineDiscovery,
@@ -79,6 +83,7 @@ const CANNOT_VIEW_LANDINGS = "Your role cannot see this business's landings"
 const CANNOT_MANAGE_LANDINGS = "Only an owner or manager can change this business's landings"
 /** `withdraw_interest`'s refusal for a declined inquiry (18_v2_review_106_hardening.sql, HF-03). */
 const LANDING_CLOSED = "The landing has closed this inquiry"
+const LISTING_NOT_FOUND = "Listing not found"
 
 /** An attestation is the server's record of a confirmation made in this request; an old one is not accepted. */
 const ATTESTATION_MAX_AGE_MS = 5 * 60_000
@@ -188,6 +193,8 @@ export function createNormalizedMarketplaceV2({ db, now = () => new Date(), prin
 
   return {
     supportsPublishing: true,
+    ...normalizedHaulerProfileMethods(asViewer),
+    ...normalizedHaulerFleetMethods(asViewer, now),
 
     async authoringLandings(viewer) {
       const rows = await asViewer(viewer, (calls) => calls.call("list_authoring_landings", { p_org_id: viewer.organizationId }), read)
@@ -211,13 +218,45 @@ export function createNormalizedMarketplaceV2({ db, now = () => new Date(), prin
       }, write)
     },
 
-    async getJob(jobId) {
+    async getJob(jobId, viewer) {
       if (!isUuid(jobId)) {
         return null
       }
 
-      const [row] = await db.asAnon((calls) => calls.call("get_marketplace_job", { p_job_id: jobId }))
+      // As the viewer, row-level security also shows a paused, filled, closed or expired job to its own business and
+      // to businesses that sent interest (`can_read_job_posting`), with the same public columns. A viewer the store
+      // refuses (a stale session, a removed membership) sees what the public sees.
+      const asPerson = viewer
+        ? await asViewer(viewer, (calls) => calls.call("get_marketplace_job", { p_job_id: jobId }), read).catch((error: unknown) => {
+            if (error instanceof MarketplaceRefusalError) return null
+            throw error
+          })
+        : null
+      const [row] = asPerson ?? (await db.asAnon((calls) => calls.call("get_marketplace_job", { p_job_id: jobId })))
       return row ? jobViewFromRow(row) : null
+    },
+
+    // Listing reports (UX-07, #130)
+    async reportListing(viewer, input) {
+      const report = listingReportRow(input)
+
+      return asViewer(viewer, async (calls) => {
+        // Only a listing this person can see can be reported; any other id is "not found", whether it exists or not.
+        const [job] = await calls.call("get_marketplace_job", { p_job_id: report.jobId })
+
+        if (!job) {
+          throw new MarketplaceRefusalError(LISTING_NOT_FOUND, "P0002")
+        }
+
+        // One standing report per person and listing (spec §8.18 "submit report once"): a repeat files nothing.
+        const standing = await calls.standingListingReport(report.jobId)
+
+        if (standing) {
+          return listingReportReceipt(standing, true)
+        }
+
+        return listingReportReceipt(await calls.fileListingReport(report), false)
+      }, write)
     },
 
     async haulerEquipment(viewer) {

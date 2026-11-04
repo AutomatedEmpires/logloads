@@ -5,6 +5,7 @@
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
+  "sideEffects": false,
   "scripts": {
     "build": "tsc --noEmit",
     "lint": "eslint src --ext .ts --max-warnings=0",

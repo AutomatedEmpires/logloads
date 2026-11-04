@@ -22,6 +22,12 @@ function spyPort(supportsPublishing: boolean): MarketplaceV2Port {
     expressInterest: vi.fn(),
     getJob: resolved(null),
     haulerEquipment: resolved([]),
+    addHaulerEquipment: resolved(undefined),
+    confirmHaulerAvailability: resolved({ confirmed: 0 }),
+    haulerFleet: resolved({ organizationId: "org" }),
+    haulerProfile: resolved({ organizationId: "org" }),
+    reportHaulerAvailability: resolved(undefined),
+    setHaulerEquipmentCount: resolved(undefined),
     interestForJob: resolved(null),
     listHaulerInterests: resolved([]),
     listJobs: resolved([]),
@@ -29,7 +35,11 @@ function spyPort(supportsPublishing: boolean): MarketplaceV2Port {
     postHaulerReply: resolved(undefined),
     publishJob: resolved({ jobId: "job" }),
     reconfirmJob: resolved(undefined),
+    reportListing: resolved({ alreadyReported: false, reportId: "report", reportedAt: "2026-11-03T12:00:00.000Z" }),
     respondToInterest: resolved(undefined),
+    saveHaulerProfile: resolved({ organizationId: "org" }),
+    supportsHaulerFleet: supportsPublishing,
+    supportsHaulerProfile: supportsPublishing,
     supportsPublishing,
     viewerAccess: resolved({ capabilities: [], organizationName: "Test" }),
     withdrawInterest: resolved(undefined)
@@ -111,14 +121,56 @@ describe("selectMarketplaceV2Port", () => {
     await port.publishJob(VIEWER, {} as never, attestation)
     await port.respondToInterest(VIEWER, { interestId: "x" })
     await port.getJob("job")
+    await port.getJob("job", VIEWER)
+    await port.reportListing(VIEWER, { jobId: "job", reason: "stale" })
 
     expect(target.publishJob).toHaveBeenCalledWith(VIEWER, {}, attestation)
     expect(target.respondToInterest).toHaveBeenCalledWith(VIEWER, { interestId: "x" })
-    expect(target.getJob).toHaveBeenCalledWith("job")
+    expect(target.getJob).toHaveBeenCalledWith("job", undefined)
+    expect(target.getJob).toHaveBeenCalledWith("job", VIEWER)
+    expect(target.reportListing).toHaveBeenCalledWith(VIEWER, { jobId: "job", reason: "stale" })
 
     for (const method of Object.values(pilot)) {
       if (typeof method === "function") expect(method).not.toHaveBeenCalled()
     }
+  })
+
+  it("routes the hauler profile methods (#125) like every other call", async () => {
+    const pilot = spyPort(false)
+    const target = spyPort(true)
+
+    const viaPilot = selectMarketplaceV2Port(pilot, { kind: () => "pilot", normalized: () => target })
+    expect(viaPilot.supportsHaulerProfile).toBe(false)
+    await viaPilot.haulerProfile(VIEWER)
+    expect(pilot.haulerProfile).toHaveBeenCalledWith(VIEWER)
+
+    const viaNormalized = selectMarketplaceV2Port(pilot, { kind: () => "normalized", normalized: () => target })
+    expect(viaNormalized.supportsHaulerProfile).toBe(true)
+    await viaNormalized.saveHaulerProfile(VIEWER, { businessName: "x" })
+    expect(target.saveHaulerProfile).toHaveBeenCalledWith(VIEWER, { businessName: "x" })
+    expect(pilot.saveHaulerProfile).not.toHaveBeenCalled()
+  })
+
+  it("routes the My trucks methods (#126) like every other call", async () => {
+    const pilot = spyPort(false)
+    const target = spyPort(true)
+
+    const viaPilot = selectMarketplaceV2Port(pilot, { kind: () => "pilot", normalized: () => target })
+    expect(viaPilot.supportsHaulerFleet).toBe(false)
+    await viaPilot.haulerFleet(VIEWER)
+    expect(pilot.haulerFleet).toHaveBeenCalledWith(VIEWER)
+
+    const viaNormalized = selectMarketplaceV2Port(pilot, { kind: () => "normalized", normalized: () => target })
+    expect(viaNormalized.supportsHaulerFleet).toBe(true)
+    await viaNormalized.addHaulerEquipment(VIEWER, { truckCode: "log_truck" })
+    await viaNormalized.setHaulerEquipmentCount(VIEWER, { count: 0 })
+    await viaNormalized.reportHaulerAvailability(VIEWER, { state: "none" })
+    await viaNormalized.confirmHaulerAvailability(VIEWER)
+    expect(target.addHaulerEquipment).toHaveBeenCalledWith(VIEWER, { truckCode: "log_truck" })
+    expect(target.setHaulerEquipmentCount).toHaveBeenCalledWith(VIEWER, { count: 0 })
+    expect(target.reportHaulerAvailability).toHaveBeenCalledWith(VIEWER, { state: "none" })
+    expect(target.confirmHaulerAvailability).toHaveBeenCalledWith(VIEWER)
+    expect(pilot.addHaulerEquipment).not.toHaveBeenCalled()
   })
 
   it("fails closed on a broken selection: calls reject and nothing claims to publish", async () => {
@@ -131,6 +183,8 @@ describe("selectMarketplaceV2Port", () => {
     })
 
     expect(port.supportsPublishing).toBe(false)
+    expect(port.supportsHaulerProfile).toBe(false)
+    expect(port.supportsHaulerFleet).toBe(false)
     await expect(port.listJobs({})).rejects.toBeInstanceOf(MarketplaceAdapterConfigurationError)
     await expect(port.viewerAccess(VIEWER)).rejects.toBeInstanceOf(MarketplaceAdapterConfigurationError)
     expect(pilot.listJobs).not.toHaveBeenCalled()

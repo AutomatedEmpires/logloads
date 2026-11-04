@@ -1,6 +1,6 @@
 "use client"
 
-import type { MarketplaceJobDetailView } from "@logloads/contracts"
+import type { MarketplacePublicJobView } from "@logloads/contracts"
 import { ContentGrid, DetailPanel, Section } from "@logloads/ui/layout"
 import { JobDetail, JobResultList, JobResultRow, type EquipmentFit } from "@logloads/ui/marketplace"
 import { Button, Dialog, SegmentedControl } from "@logloads/ui/primitives"
@@ -19,8 +19,11 @@ const DENSITY_OPTIONS: Array<{ value: Density; label: string }> = [
 ]
 
 export interface FindWorkRow {
-  /** The public detail view, so the panel and the sheet need no further request. */
-  job: MarketplaceJobDetailView
+  /**
+   * The public detail view, so the panel and the sheet need no further request. Never the port's detail view: this
+   * crosses to the browser, and the poster's organization id stays on the server (#130).
+   */
+  job: MarketplacePublicJobView
   /** The job's own page: the row link's target without JavaScript. */
   href: string
   /** This search with the job selected (`?job=`). */
