@@ -12,6 +12,7 @@ import {
   networkUsageEventSchema,
   percentageFeeEventId,
   platformFeeEventId,
+  platformFeeEventSchema,
   tripSchemaV2,
   userSchema,
   ORGANIZATION_ROLES,
@@ -74,6 +75,45 @@ function freshState() {
 }
 
 type State = ReturnType<typeof freshState>
+
+/** A stored historical fee row. This does not go through accrual. */
+function storeHistoricalFee(state: State, assignmentId: string) {
+  const assignment = state.assignments.find((candidate) => candidate.id === assignmentId)
+
+  if (!assignment?.termsSnapshot.driverPayCents) {
+    throw new Error(`Assignment ${assignmentId} has no frozen driver pay to preserve`)
+  }
+
+  const movementId = assignment.loadMovementId ?? assignment.id
+  const occurredAt = assignment.completedAt ?? "2026-06-20T15:00:00.000Z"
+  const driverPayCents = assignment.termsSnapshot.driverPayCents
+  const billingModel = assignment.billingModel === "percentage_v1"
+    ? "percentage_v1"
+    : "legacy_percentage"
+  const event = platformFeeEventSchema.parse({
+    assignmentId,
+    billingModel,
+    createdAt: occurredAt,
+    driverPayCents,
+    feeBps: PLATFORM_FEE_BPS,
+    feeCents: computePlatformFeeCents(driverPayCents, PLATFORM_FEE_BPS),
+    id: billingModel === "percentage_v1"
+      ? percentageFeeEventId(movementId)
+      : platformFeeEventId(assignmentId),
+    invoiceId: null,
+    loadMovementId: movementId,
+    loadPostingId: assignment.loadPostingId,
+    occurredAt,
+    organizationId: state.loadPostings.find((posting) => posting.id === assignment.loadPostingId)?.companyId ?? HOST_ORG,
+    status: "accrued",
+    truckSlotId: assignment.truckSlotId,
+    updatedAt: occurredAt,
+    voidReason: null
+  })
+
+  state.platformFeeEvents.push(event)
+  return event
+}
 
 function addActiveUser(state: State, organizationId: string): string {
   const userId = randomUUID()
@@ -253,621 +293,18 @@ function accrualAuditEvents(state: State) {
   return state.auditEvents.filter((event) => event.action === "platform_fee_accrued")
 }
 
-describe("platform fee accrual", () => {
-  it("charges the host a percentage of stated driver pay, on top, for a completed load", () => {
+describe("retired percentage fee accrual", () => {
+  it("records no new fee for a completed haul", () => {
     const state = freshState()
     const haul = oneBillableHaul(state, 52_500)
-
-    const result = accruePlatformFee(state, { actorUserId: HOST_STAFF_USER, assignmentId: haul.assignmentId })
-
-    expect(result.outcome).toBe("accrued")
-
-    if (result.outcome !== "accrued") return
-
-    expect(result.event.feeCents).toBe(2_625)
-    expect(result.event.feeBps).toBe(PLATFORM_FEE_BPS)
-    // The driver's number is copied, never reduced. There is no field on this row
-    // that could carry a net-of-fee figure, and this asserts the copy is faithful.
-    expect(result.event.driverPayCents).toBe(52_500)
-    expect(result.event.organizationId).toBe(HOST_ORG)
-    expect(result.event.status).toBe("accrued")
-    expect(result.event.invoiceId).toBeNull()
-    expect(state.platformFeeEvents).toHaveLength(1)
-  })
-
-  it.each([
-    "rejected_at_scale",
-    "access_blocked",
-    "equipment_failure",
-    "weather_hold"
-  ] as const)("does not bill a confirmed zero-delivery %s exception", (exceptionType) => {
-    const state = freshState()
-    const haul = oneBillableHaul(state, 52_500)
-    const trip = state.tripsV2.find((candidate) => candidate.id === haul.tripId)
-
-    expect(trip).toBeDefined()
-    if (!trip) return
-
-    trip.deliveredQuantity = { unit: "tons", value: 0 }
-    trip.haulException = {
-      note: "The movement closed without a physical delivery.",
-      reportedAt: JUNE_CONFIRMED,
-      type: exceptionType
-    }
+    const before = state.platformFeeEvents.length
 
     expect(accruePlatformFee(state, { assignmentId: haul.assignmentId })).toMatchObject({
       assignmentId: haul.assignmentId,
-      outcome: "not_completed"
-    })
-    expect(state.platformFeeEvents).toHaveLength(0)
-  })
-
-  it("bills a positive delivered quantity carrying a genuine short-load exception", () => {
-    const state = freshState()
-    const haul = oneBillableHaul(state, 52_500)
-    const trip = state.tripsV2.find((candidate) => candidate.id === haul.tripId)!
-    trip.haulException = {
-      note: "The delivered quantity was below the planned quantity.",
-      reportedAt: JUNE_CONFIRMED,
-      type: "short_load"
-    }
-
-    expect(accruePlatformFee(state, { assignmentId: haul.assignmentId }).outcome)
-      .toBe("accrued")
-    expect(state.platformFeeEvents).toHaveLength(1)
-  })
-
-  it("preserves the legacy receipt trigger across the percentage-v1 cutover", () => {
-    const state = freshState()
-    const haul = oneBillableHaul(state, 52_500)
-    const assignment = state.assignments.find(
-      (candidate) => candidate.id === haul.assignmentId
-    )!
-    assignment.billingModel = "legacy_percentage"
-    assignment.driverPaymentReceivedAt = null
-    assignment.driverPaymentReceivedAmountCents = null
-    assignment.driverPaymentReceivedByUserId = null
-    assignment.driverPaymentReceivedCurrency = null
-
-    expect(accruePlatformFee(state, { assignmentId: assignment.id })).toMatchObject({
-      outcome: "not_completed",
-      reason: expect.stringMatching(/legacy agreement.*driver confirms receipt/i)
-    })
-    expect(reconcileMissingPlatformFees(state)).toEqual([])
-    expect(state.platformFeeEvents).toHaveLength(0)
-
-    assignment.driverPaymentReceivedAt = "2026-06-21T12:00:00.000Z"
-    assignment.driverPaymentReceivedAmountCents = 52_500
-    assignment.driverPaymentReceivedByUserId = DRIVER_USER
-    assignment.driverPaymentReceivedCurrency = "USD"
-
-    const reconciled = reconcileMissingPlatformFees(state, MID_JULY)
-
-    expect(reconciled).toHaveLength(1)
-    expect(reconciled[0]).toMatchObject({ outcome: "accrued" })
-    expect(state.platformFeeEvents).toHaveLength(1)
-    expect(state.platformFeeEvents[0]).toMatchObject({
-      billingModel: "legacy_percentage",
-      occurredAt: "2026-06-21T12:00:00.000Z"
-    })
-  })
-
-  it("keeps provider-independent billing reconciliation available after an organization lock", () => {
-    const state = freshState()
-    const haul = oneBillableHaul(state, 52_500)
-    const load = state.loadPostings.find(
-      (candidate) => candidate.id === haul.loadPostingId
-    )
-    const organization = state.organizations.find(
-      (candidate) => candidate.id === load?.companyId
-    )
-
-    if (!load || !organization) {
-      throw new Error("Billable host organization fixture missing")
-    }
-
-    organization.verificationStatus = "suspended"
-
-    expect(reconcileMissingPlatformFees(state, MID_JULY)).toEqual([
-      expect.objectContaining({ outcome: "accrued" })
-    ])
-    expect(state.platformFeeEvents).toHaveLength(1)
-  })
-
-  it("bills the organization that POSTED the load, never the one that hauled it", () => {
-    const state = freshState()
-    const haul = oneBillableHaul(state)
-    const load = state.loadPostings.find((candidate) => candidate.id === haul.loadPostingId)
-
-    // Fabricate a caller who would rather the hauling side paid.
-    const result = accruePlatformFee(state, {
-      actorUserId: DRIVER_USER,
-      assignmentId: haul.assignmentId
-    })
-
-    expect(result.outcome).toBe("accrued")
-    if (result.outcome !== "accrued") return
-    expect(result.event.organizationId).toBe(load?.companyId)
-  })
-
-  it("writes at most one fee per assignment however many times completion is confirmed", () => {
-    const state = freshState()
-    const haul = oneBillableHaul(state)
-
-    const first = accruePlatformFee(state, { assignmentId: haul.assignmentId })
-    const second = accruePlatformFee(state, { assignmentId: haul.assignmentId })
-    const third = accruePlatformFee(state, { assignmentId: haul.assignmentId })
-
-    expect(first.outcome).toBe("accrued")
-    expect(second.outcome).toBe("already_accrued")
-    expect(third.outcome).toBe("already_accrued")
-    expect(state.platformFeeEvents).toHaveLength(1)
-    expect(state.platformFeeEvents[0]?.id).toBe(platformFeeEventId(haul.assignmentId))
-
-    if (first.outcome !== "accrued" || second.outcome !== "already_accrued") return
-
-    expect(second.event.id).toBe(first.event.id)
-    // One charge means one record of a charge. A second audit event would report a
-    // billing action that never happened.
-    expect(accrualAuditEvents(state)).toHaveLength(1)
-  })
-
-  it("recognises a fee that reached the ledger under some other id", () => {
-    // The negative control for the assignment half of the at-most-one check. With
-    // only the deterministic-id comparison, a fee written by a hand repair or an
-    // import would be invisible and this load would be charged a second time.
-    const state = freshState()
-    const haul = oneBillableHaul(state)
-
-    accruePlatformFee(state, { assignmentId: haul.assignmentId })
-
-    const stored = state.platformFeeEvents[0]
-
-    if (!stored) throw new Error("the first accrual wrote nothing")
-
-    state.platformFeeEvents = [{ ...stored, id: randomUUID() }]
-
-    const retry = accruePlatformFee(state, { assignmentId: haul.assignmentId })
-
-    expect(retry.outcome).toBe("already_accrued")
-    expect(state.platformFeeEvents).toHaveLength(1)
-  })
-
-  it("fails loudly when an existing movement fee is cross-wired", () => {
-    const state = freshState()
-    const haul = oneBillableHaul(state)
-
-    accruePlatformFee(state, { assignmentId: haul.assignmentId })
-    state.platformFeeEvents[0]!.organizationId = OTHER_HOST_ORG
-
-    expect(() =>
-      accruePlatformFee(state, { assignmentId: haul.assignmentId })
-    ).toThrow(/cross-wired/)
-  })
-
-  it("refuses to accrue when the load states no driver pay, rather than accruing zero", () => {
-    const state = freshState()
-    const haul = oneBillableHaul(state, null)
-
-    const result = accruePlatformFee(state, { assignmentId: haul.assignmentId })
-
-    expect(result.outcome).toBe("no_basis")
-    // A refusal carries no event at all, so no caller can read it as a charge — and
-    // nothing reached the ledger to be billed later.
-    expect("event" in result).toBe(false)
-    expect(state.platformFeeEvents).toEqual([])
-    expect(accrualAuditEvents(state)).toEqual([])
-  })
-
-  it("never turns non-USD legacy driver pay into a USD platform fee", () => {
-    const state = freshState()
-    const haul = oneBillableHaul(state, 52_500)
-    const assignment = state.assignments.find(
-      (candidate) => candidate.id === haul.assignmentId
-    )
-
-    if (!assignment) throw new Error("the billable assignment is missing")
-
-    assignment.driverPaymentReceivedCurrency = "CAD"
-    assignment.termsSnapshot = {
-      ...assignment.termsSnapshot,
-      currency: "CAD"
-    }
-
-    const result = accruePlatformFee(state, {
-      actorUserId: HOST_STAFF_USER,
-      assignmentId: haul.assignmentId
-    })
-
-    expect(result).toMatchObject({
-      assignmentId: haul.assignmentId,
       outcome: "no_basis",
-      reason: expect.stringContaining(
-        LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
-      )
+      reason: "The completed-load percentage fee is retired. No new fee was recorded."
     })
-    expect(state.platformFeeEvents).toEqual([])
-    expect(accrualAuditEvents(state)).toEqual([])
-  })
-
-  it("refuses to accrue for a haul nobody has confirmed delivered", () => {
-    const state = freshState()
-    const assignment = hostAssignments(state)[0]
-
-    if (!assignment) throw new Error("seed has no live assignment on a host posting")
-
-    // Everything a fee needs EXCEPT the agreement: stated pay, a completed
-    // assignment, a completed trip — but no confirmed delivery record.
-    const haul = billableHaul(state, { assignment, confirmedAt: JUNE_CONFIRMED, driverPayCents: 52_500 })
-
-    state.tripsV2 = state.tripsV2.map((trip) =>
-      trip.id === haul.tripId
-        ? { ...trip, completionConfirmedAt: null, completionConfirmedByUserId: null, completionStatus: "submitted" }
-        : trip
-    )
-
-    const result = accruePlatformFee(state, { assignmentId: haul.assignmentId })
-
-    expect(result.outcome).toBe("not_completed")
-    expect(state.platformFeeEvents).toEqual([])
-  })
-
-  it("requires a trustworthy host-confirmation timestamp", () => {
-    const state = freshState()
-    const haul = oneBillableHaul(state)
-    const trip = state.tripsV2.find((candidate) => candidate.id === haul.tripId)!
-
-    trip.completionConfirmedAt = null
-    const result = accruePlatformFee(state, { assignmentId: haul.assignmentId })
-
-    expect(result).toMatchObject({
-      outcome: "no_basis",
-      reason: expect.stringMatching(/trustworthy completion timestamp/)
-    })
-    expect(state.platformFeeEvents).toEqual([])
-  })
-
-  it("deduplicates replacement assignments by percentage movement identity", () => {
-    const state = freshState()
-    const firstHaul = oneBillableHaul(state)
-    const first = state.assignments.find(
-      (candidate) => candidate.id === firstHaul.assignmentId
-    )!
-    first.billingModel = "percentage_v1"
-    const movementId = first.loadMovementId ?? first.id
-
-    expect(accruePlatformFee(state, { assignmentId: first.id }).outcome).toBe("accrued")
-    const replacement = assignmentSchema.parse({
-      ...first,
-      id: randomUUID(),
-      loadMovementId: movementId,
-      status: "accepted"
-    })
-    state.assignments.push(replacement)
-    billableHaul(state, {
-      assignment: replacement,
-      confirmedAt: JULY_CONFIRMED,
-      driverPayCents: 52_500
-    })
-
-    expect(accruePlatformFee(state, { assignmentId: replacement.id }).outcome)
-      .toBe("already_accrued")
-    expect(state.platformFeeEvents).toHaveLength(1)
-    expect(state.platformFeeEvents[0]!.id).toBe(percentageFeeEventId(movementId))
-  })
-
-  it("refuses a percentage fee when the movement already carries subscription usage", () => {
-    const state = freshState()
-    const haul = oneBillableHaul(state)
-    const assignment = state.assignments.find(
-      (candidate) => candidate.id === haul.assignmentId
-    )!
-    assignment.billingModel = "percentage_v1"
-    const movementId = assignment.loadMovementId ?? assignment.id
-    const subscriptionId = "57575757-5757-4757-8757-575757575757"
-
-    state.networkUsageEvents.push(networkUsageEventSchema.parse({
-      assignmentId: assignment.id,
-      auditMetadata: {},
-      billingModel: "subscription_v1",
-      billingPeriodSummaryId: billingPeriodSummaryId(
-        subscriptionId,
-        JUNE_PERIOD_START
-      ),
-      capacitySource: "logloads_network",
-      completionAt: JUNE_CONFIRMED,
-      createdAt: JUNE_CONFIRMED,
-      id: networkUsageEventId(movementId),
-      invoiceId: null,
-      loadMovementId: movementId,
-      loadPostingId: assignment.loadPostingId,
-      organizationId: HOST_ORG,
-      planCode: "network_25",
-      reversalAdjustmentId: null,
-      status: "recorded",
-      subscriptionId,
-      unitCount: 1,
-      updatedAt: JUNE_CONFIRMED
-    }))
-
-    expect(accruePlatformFee(state, { assignmentId: assignment.id })).toMatchObject({
-      outcome: "no_basis",
-      reason: expect.stringMatching(/already has Network usage/)
-    })
-    expect(state.platformFeeEvents).toEqual([])
-  })
-
-  it("refuses to accrue for a cancelled assignment even when a confirmed trip exists", () => {
-    const state = freshState()
-    const haul = oneBillableHaul(state)
-    const assignment = state.assignments.find((candidate) => candidate.id === haul.assignmentId)
-
-    if (!assignment) throw new Error("the fixture lost its assignment")
-
-    assignment.status = "cancelled"
-
-    expect(accruePlatformFee(state, { assignmentId: haul.assignmentId }).outcome).toBe("not_completed")
-    expect(state.platformFeeEvents).toEqual([])
-  })
-
-  it("refuses to accrue when the trip carrying the confirmation was cancelled", () => {
-    const state = freshState()
-    const haul = oneBillableHaul(state)
-
-    state.tripsV2 = state.tripsV2.map((trip) =>
-      trip.id === haul.tripId ? { ...trip, status: "cancelled" as const } : trip
-    )
-
-    expect(accruePlatformFee(state, { assignmentId: haul.assignmentId }).outcome).toBe("not_completed")
-    expect(state.platformFeeEvents).toEqual([])
-  })
-
-  it.each(["at_destination", "unloading"] as const)(
-    "refuses a confirmed delivery record while the physical trip is still %s",
-    (status) => {
-      const state = freshState()
-      const haul = oneBillableHaul(state)
-
-      state.tripsV2 = state.tripsV2.map((trip) =>
-        trip.id === haul.tripId ? { ...trip, status } : trip
-      )
-
-      expect(
-        accruePlatformFee(state, { assignmentId: haul.assignmentId }).outcome
-      ).toBe("not_completed")
-      expect(state.platformFeeEvents).toEqual([])
-    }
-  )
-
-  it("dates percentage accrual when both physical completion and host confirmation are true", () => {
-    const state = freshState()
-    const haul = oneBillableHaul(state)
-    const trip = state.tripsV2.find((candidate) => candidate.id === haul.tripId)!
-    const assignment = state.assignments.find(
-      (candidate) => candidate.id === haul.assignmentId
-    )!
-
-    assignment.billingModel = "percentage_v1"
-    trip.completionConfirmedAt = "2026-07-01T12:00:00.000Z"
-    trip.completedAt = "2026-07-01T12:05:00.000Z"
-
-    const result = accruePlatformFee(state, { assignmentId: haul.assignmentId })
-
-    expect(result).toMatchObject({
-      outcome: "accrued",
-      event: { occurredAt: "2026-07-01T12:05:00.000Z" }
-    })
-  })
-
-  it("bills a confirmed haul whose assignment row still reads hauled", () => {
-    // The positive control for the previous two: the assignment status lags the
-    // trip, and refusing "hauled" would silently skip the fee on a delivery both
-    // sides already agreed on.
-    const state = freshState()
-    const haul = oneBillableHaul(state)
-    const assignment = state.assignments.find((candidate) => candidate.id === haul.assignmentId)
-
-    if (!assignment) throw new Error("the fixture lost its assignment")
-
-    assignment.status = "hauled"
-
-    expect(accruePlatformFee(state, { assignmentId: haul.assignmentId }).outcome).toBe("accrued")
-  })
-
-  it("throws for an assignment that does not exist, rather than reporting a refusal", () => {
-    const state = freshState()
-
-    expect(() => accruePlatformFee(state, { assignmentId: randomUUID() })).toThrow(/was not found/)
-  })
-
-  it("freezes the stated pay, so editing the load cannot restate a charge", () => {
-    const state = freshState()
-    const haul = oneBillableHaul(state, 52_500)
-    const billingUserId = billingMember(state)
-
-    accruePlatformFee(state, { assignmentId: haul.assignmentId })
-
-    const load = state.loadPostings.find((candidate) => candidate.id === haul.loadPostingId)
-
-    if (!load) throw new Error("the fixture lost its posting")
-
-    // The host raises what the load pays, long after it was hauled and charged.
-    load.driverPayCents = 1_000_000
-
-    const retry = accruePlatformFee(state, { assignmentId: haul.assignmentId })
-
-    expect(retry.outcome).toBe("already_accrued")
-
-    if (retry.outcome !== "already_accrued") return
-
-    expect(retry.event.driverPayCents).toBe(52_500)
-    expect(retry.event.feeCents).toBe(2_625)
-    expect(
-      hostFeeSummary(state, { actorUserId: billingUserId, organizationId: HOST_ORG }, MID_JULY).accruedCents
-    ).toBe(2_625)
-  })
-
-  it("freezes the rate, so a later rate change re-rates nothing", () => {
-    const state = freshState()
-    const haul = oneBillableHaul(state, 52_500)
-    const assignment = state.assignments.find((candidate) => candidate.id === haul.assignmentId)!
-
-    assignment.termsSnapshot = {
-      ...assignment.termsSnapshot,
-      hostFee: {
-        collectionState: "accrues_monthly_in_arrears",
-        feeCents: null,
-        providerCollectionState: "feature_gated",
-        proposedRateBps: 300,
-        rateBps: 300
-      }
-    }
-
-    accruePlatformFee(state, { assignmentId: haul.assignmentId })
-
-    const retry = accruePlatformFee(state, { assignmentId: haul.assignmentId, feeBps: 900 })
-
-    expect(retry.outcome).toBe("already_accrued")
-    if (retry.outcome !== "already_accrued") return
-    expect(retry.event.feeBps).toBe(300)
-    expect(retry.event.feeCents).toBe(1_575)
-  })
-
-  it("refuses to accrue without an accepted fee rate or to override it at call time", () => {
-    const missingState = freshState()
-    const missingHaul = oneBillableHaul(missingState, 52_500)
-    const missingAssignment = missingState.assignments.find(
-      (candidate) => candidate.id === missingHaul.assignmentId
-    )!
-    missingAssignment.termsSnapshot = {
-      ...missingAssignment.termsSnapshot,
-      hostFee: {
-        collectionState: "accrues_monthly_in_arrears",
-        feeCents: null,
-        providerCollectionState: "feature_gated",
-        proposedRateBps: PLATFORM_FEE_BPS
-      }
-    }
-
-    expect(
-      accruePlatformFee(missingState, { assignmentId: missingHaul.assignmentId })
-    ).toMatchObject({
-      outcome: "no_basis",
-      reason: expect.stringMatching(/active authoritative platform-fee terms/i)
-    })
-
-    const disabledState = freshState()
-    const disabledHaul = oneBillableHaul(disabledState, 52_500)
-    const disabledAssignment = disabledState.assignments.find(
-      (candidate) => candidate.id === disabledHaul.assignmentId
-    )!
-    disabledAssignment.termsSnapshot = {
-      ...disabledAssignment.termsSnapshot,
-      hostFee: {
-        collectionState: "disabled_pending_legal_and_payment_approval",
-        feeCents: null,
-        proposedRateBps: PLATFORM_FEE_BPS,
-        rateBps: PLATFORM_FEE_BPS
-      }
-    }
-
-    expect(
-      accruePlatformFee(disabledState, { assignmentId: disabledHaul.assignmentId })
-    ).toMatchObject({
-      outcome: "no_basis",
-      reason: expect.stringMatching(/active authoritative platform-fee terms/i)
-    })
-
-    const overrideState = freshState()
-    const overrideHaul = oneBillableHaul(overrideState, 52_500)
-
-    expect(() =>
-      accruePlatformFee(overrideState, {
-        assignmentId: overrideHaul.assignmentId,
-        feeBps: PLATFORM_FEE_BPS + 100
-      })
-    ).toThrow(/does not match the accepted/i)
-  })
-
-  it("reports the charge that exists even after the load loses its stated pay", () => {
-    // The at-most-one check runs BEFORE the basis check on purpose. Re-deriving
-    // eligibility first would make a retry after an edit answer "no basis", which
-    // reads as "nothing was ever charged" for a load that was.
-    const state = freshState()
-    const haul = oneBillableHaul(state, 52_500)
-
-    accruePlatformFee(state, { assignmentId: haul.assignmentId })
-
-    const load = state.loadPostings.find((candidate) => candidate.id === haul.loadPostingId)
-
-    if (!load) throw new Error("the fixture lost its posting")
-
-    load.driverPayCents = null
-
-    expect(accruePlatformFee(state, { assignmentId: haul.assignmentId }).outcome).toBe("already_accrued")
-  })
-
-  it("stamps the fee with the instant the host confirmed the delivery", () => {
-    const state = freshState()
-    const haul = oneBillableHaul(state, 52_500, JUNE_CONFIRMED)
-
-    const result = accruePlatformFee(state, { assignmentId: haul.assignmentId }, MID_JULY)
-
-    expect(result.outcome).toBe("accrued")
-    if (result.outcome !== "accrued") return
-    // The write clock is mid-July; the fee belongs to June because that is when the
-    // load was agreed delivered, and that is what decides which bill it lands on.
-    expect(result.event.occurredAt).toBe(JUNE_CONFIRMED)
-    expect(result.event.createdAt).toBe(MID_JULY)
-  })
-
-  it("accrues for whoever settled the haul, whatever billing right they hold", () => {
-    // A DELIBERATE divergence from "manage_billing for anything that changes
-    // money", pinned here so it cannot be changed by accident. Accrual is not a
-    // discretionary money action; it is the ledger recording a completion. Gating
-    // it on the billing right would not merely skip the fee when a dispatcher
-    // confirms a delivery — it would make the confirmation itself throw, because
-    // dispatchers and landing managers settle deliveries and hold no billing
-    // right. The actor is recorded for attribution, and never consulted.
-    const state = freshState()
-    const settlerUserId = addMember(state, HOST_ORG, ROLE_WITHOUT_BILLING as OrganizationRole)
-    const haul = oneBillableHaul(state, 52_500)
-
-    expect(organizationRoleCan(ROLE_WITHOUT_BILLING as OrganizationRole, "manage_billing")).toBe(false)
-    expect(
-      accruePlatformFee(state, { actorUserId: settlerUserId, assignmentId: haul.assignmentId }).outcome
-    ).toBe("accrued")
-    expect(accrualAuditEvents(state)[0]?.actorUserId).toBe(settlerUserId)
-  })
-
-  it("accrues on a replay that carries no actor at all", () => {
-    // A compare-and-swap retry replays the mutation with no person attached. The
-    // fee still has to be recorded, and the audit event says so rather than naming
-    // somebody who was not there.
-    const state = freshState()
-    const haul = oneBillableHaul(state, 52_500)
-
-    expect(accruePlatformFee(state, { assignmentId: haul.assignmentId }).outcome).toBe("accrued")
-    expect(accrualAuditEvents(state)[0]?.actorUserId).toBeNull()
-  })
-
-  it("records who settled the haul and what the amount was derived from", () => {
-    const state = freshState()
-    const haul = oneBillableHaul(state, 52_500)
-
-    accruePlatformFee(state, { actorUserId: HOST_STAFF_USER, assignmentId: haul.assignmentId })
-
-    const audit = accrualAuditEvents(state)[0]
-
-    expect(audit?.actorUserId).toBe(HOST_STAFF_USER)
-    expect(audit?.entityType).toBe("platform_fee_event")
-    expect(audit?.metadata).toMatchObject({
-      assignmentId: haul.assignmentId,
-      driverPayCents: 52_500,
-      feeBps: PLATFORM_FEE_BPS,
-      feeCents: 2_625,
-      organizationId: HOST_ORG
-    })
+    expect(state.platformFeeEvents).toHaveLength(before)
   })
 })
 
@@ -878,7 +315,7 @@ describe("platform fee void", () => {
     const billingUserId = billingMember(state)
     const actor = { actorUserId: billingUserId, organizationId: HOST_ORG }
 
-    accruePlatformFee(state, { assignmentId: haul.assignmentId })
+    storeHistoricalFee(state, haul.assignmentId)
 
     // The positive control: the amount was real before it was withdrawn.
     expect(hostFeeSummary(state, actor, MID_JULY).accruedCents).toBe(2_625)
@@ -910,7 +347,7 @@ describe("platform fee void", () => {
     const actor = { actorUserId: billingMember(state), organizationId: HOST_ORG }
     const input = { ...actor, assignmentId: haul.assignmentId, reason: "Reversed" }
 
-    accruePlatformFee(state, { assignmentId: haul.assignmentId })
+    storeHistoricalFee(state, haul.assignmentId)
 
     expect(voidPlatformFee(state, input, MID_JULY).outcome).toBe("voided")
     expect(voidPlatformFee(state, input, MID_JULY).outcome).toBe("already_voided")
@@ -922,7 +359,7 @@ describe("platform fee void", () => {
     const haul = oneBillableHaul(state)
     const actor = { actorUserId: billingMember(state), organizationId: HOST_ORG }
 
-    accruePlatformFee(state, { assignmentId: haul.assignmentId })
+    storeHistoricalFee(state, haul.assignmentId)
     voidPlatformFee(
       state,
       { ...actor, assignmentId: haul.assignmentId, reason: "Delivery reversed" },
@@ -938,7 +375,7 @@ describe("platform fee void", () => {
       event: { assignmentId: haul.assignmentId, status: "voided" }
     })
     expect(state.platformFeeEvents).toHaveLength(1)
-    expect(accrualAuditEvents(state)).toHaveLength(1)
+    expect(accrualAuditEvents(state)).toHaveLength(0)
     expect(reconcileMissingPlatformFees(state, MID_JULY)).toEqual([])
   })
 
@@ -947,7 +384,7 @@ describe("platform fee void", () => {
     const haul = oneBillableHaul(state)
     const actor = { actorUserId: billingMember(state), organizationId: HOST_ORG }
 
-    accruePlatformFee(state, { assignmentId: haul.assignmentId })
+    storeHistoricalFee(state, haul.assignmentId)
     openInvoiceForPeriod(
       state,
       { ...actor, periodEnd: JUNE_PERIOD_END, periodStart: JUNE_PERIOD_START },
@@ -979,7 +416,7 @@ describe("platform fee void", () => {
     const haul = oneBillableHaul(state)
     const actor = { actorUserId: billingMember(state), organizationId: HOST_ORG }
 
-    accruePlatformFee(state, { assignmentId: haul.assignmentId })
+    storeHistoricalFee(state, haul.assignmentId)
 
     expect(() =>
       voidPlatformFee(state, { ...actor, assignmentId: haul.assignmentId, reason: "   " }, MID_JULY)
@@ -991,7 +428,7 @@ describe("platform fee void", () => {
     const haul = oneBillableHaul(state)
     const actorUserId = addMember(state, HOST_ORG, ROLE_WITHOUT_BILLING as OrganizationRole)
 
-    accruePlatformFee(state, { assignmentId: haul.assignmentId })
+    storeHistoricalFee(state, haul.assignmentId)
 
     expect(() =>
       voidPlatformFee(
@@ -1007,7 +444,7 @@ describe("platform fee void", () => {
     const haul = oneBillableHaul(state)
     const outsiderUserId = billingMember(state, OTHER_HOST_ORG)
 
-    accruePlatformFee(state, { assignmentId: haul.assignmentId })
+    storeHistoricalFee(state, haul.assignmentId)
 
     expect(() =>
       voidPlatformFee(
@@ -1028,7 +465,7 @@ describe("platform fee void", () => {
     const haul = oneBillableHaul(state)
     const nonmemberUserId = addActiveUser(state, HOST_ORG)
 
-    accruePlatformFee(state, { assignmentId: haul.assignmentId })
+    storeHistoricalFee(state, haul.assignmentId)
 
     expect(() =>
       voidPlatformFee(
@@ -1048,7 +485,7 @@ describe("platform fee void", () => {
     const state = freshState()
     const haul = oneBillableHaul(state)
 
-    accruePlatformFee(state, { assignmentId: haul.assignmentId })
+    storeHistoricalFee(state, haul.assignmentId)
 
     expect(() =>
       voidPlatformFee(state, { assignmentId: haul.assignmentId, reason: "Reversed" }, MID_JULY)
@@ -1076,8 +513,8 @@ describe("host invoice", () => {
       driverPayCents: 62_500
     })
 
-    accruePlatformFee(state, { assignmentId: first.assignmentId })
-    accruePlatformFee(state, { assignmentId: second.assignmentId })
+    storeHistoricalFee(state, first.assignmentId)
+    storeHistoricalFee(state, second.assignmentId)
 
     return { first, second }
   }
@@ -1133,7 +570,7 @@ describe("host invoice", () => {
     const state = freshState()
     const actor = { actorUserId: billingMember(state), organizationId: HOST_ORG }
     const haul = oneBillableHaul(state, 52_500)
-    expect(accruePlatformFee(state, { assignmentId: haul.assignmentId }).outcome).toBe("accrued")
+    expect(storeHistoricalFee(state, haul.assignmentId).status).toBe("accrued")
     const fee = state.platformFeeEvents[0]!
     state.platformFeeEvents.push({ ...fee, id: randomUUID() })
 
@@ -1158,7 +595,7 @@ describe("host invoice", () => {
     const assignment = state.assignments.find(
       (candidate) => candidate.id === haul.assignmentId
     )!
-    expect(accruePlatformFee(state, { assignmentId: haul.assignmentId }).outcome).toBe("accrued")
+    expect(storeHistoricalFee(state, haul.assignmentId).status).toBe("accrued")
     const movementId = assignment.loadMovementId ?? assignment.id
     const subscriptionId = "57575757-5757-4757-8757-575757575757"
     state.networkUsageEvents.push(networkUsageEventSchema.parse({
@@ -1202,7 +639,7 @@ describe("host invoice", () => {
   it("blocks invoicing when a stored fee is cross-wired to another host", () => {
     const state = freshState()
     const haul = oneBillableHaul(state, 52_500)
-    expect(accruePlatformFee(state, { assignmentId: haul.assignmentId }).outcome).toBe("accrued")
+    expect(storeHistoricalFee(state, haul.assignmentId).status).toBe("accrued")
     state.platformFeeEvents[0]!.organizationId = OTHER_HOST_ORG
     const actor = {
       actorUserId: billingMember(state, OTHER_HOST_ORG),
@@ -1289,16 +726,8 @@ describe("host invoice", () => {
       confirmedAt: JUNE_CONFIRMED,
       driverPayCents: 62_500
     })
-    const blockedFee = accruePlatformFee(state, {
-      assignmentId: blockedHaul.assignmentId
-    })
-    const cleanFee = accruePlatformFee(state, {
-      assignmentId: cleanHaul.assignmentId
-    })
-
-    if (blockedFee.outcome !== "accrued" || cleanFee.outcome !== "accrued") {
-      throw new Error("The isolation fixture did not accrue both fees")
-    }
+    const blockedFee = { event: storeHistoricalFee(state, blockedHaul.assignmentId), outcome: "accrued" as const }
+    const cleanFee = { event: storeHistoricalFee(state, cleanHaul.assignmentId), outcome: "accrued" as const }
 
     state.platformFeeEvents = state.platformFeeEvents.map((event) =>
       event.id === blockedFee.event.id
@@ -1575,7 +1004,7 @@ describe("host invoice", () => {
       driverPayCents: 10_000
     })
 
-    accruePlatformFee(state, { assignmentId: may.assignmentId })
+    storeHistoricalFee(state, may.assignmentId)
 
     const june = billableHaul(state, {
       assignment: assignments[1] as Assignment,
@@ -1583,7 +1012,7 @@ describe("host invoice", () => {
       driverPayCents: 52_500
     })
 
-    accruePlatformFee(state, { assignmentId: june.assignmentId })
+    storeHistoricalFee(state, june.assignmentId)
 
     const july = billableHaul(state, {
       assignment: mintAssignmentLike(state, assignments[0] as Assignment),
@@ -1591,7 +1020,7 @@ describe("host invoice", () => {
       driverPayCents: 20_000
     })
 
-    accruePlatformFee(state, { assignmentId: july.assignmentId })
+    storeHistoricalFee(state, july.assignmentId)
 
     const result = openInvoiceForPeriod(
       state,
@@ -1626,8 +1055,8 @@ describe("host invoice", () => {
       driverPayCents: 80_000
     })
 
-    accruePlatformFee(state, { assignmentId: ours.assignmentId })
-    accruePlatformFee(state, { assignmentId: theirs.assignmentId })
+    storeHistoricalFee(state, ours.assignmentId)
+    storeHistoricalFee(state, theirs.assignmentId)
 
     const result = openInvoiceForPeriod(
       state,
@@ -1673,7 +1102,7 @@ describe("host invoice settlement", () => {
   function openJuneInvoice(state: State, actorUserId: string) {
     const haul = oneBillableHaul(state, 52_500)
 
-    accruePlatformFee(state, { assignmentId: haul.assignmentId })
+    storeHistoricalFee(state, haul.assignmentId)
 
     const result = openInvoiceForPeriod(
       state,
@@ -1805,7 +1234,7 @@ describe("host fee summary", () => {
     const actor = { actorUserId, organizationId: HOST_ORG }
     const haul = oneBillableHaul(state, 52_500, JULY_CONFIRMED)
 
-    accruePlatformFee(state, { assignmentId: haul.assignmentId })
+    storeHistoricalFee(state, haul.assignmentId)
 
     const summary = hostFeeSummary(state, actor, MID_JULY)
 
@@ -1830,7 +1259,7 @@ describe("host fee summary", () => {
     const actor = { actorUserId: billingMember(state), organizationId: HOST_ORG }
     const haul = oneBillableHaul(state, 52_500, JUNE_CONFIRMED)
 
-    accruePlatformFee(state, { assignmentId: haul.assignmentId })
+    storeHistoricalFee(state, haul.assignmentId)
 
     const summary = hostFeeSummary(state, actor, MID_JULY)
 
@@ -1845,7 +1274,7 @@ describe("host fee summary", () => {
     const actor = { actorUserId, organizationId: HOST_ORG }
     const haul = oneBillableHaul(state, 52_500, JUNE_CONFIRMED)
 
-    accruePlatformFee(state, { assignmentId: haul.assignmentId })
+    storeHistoricalFee(state, haul.assignmentId)
     openInvoiceForPeriod(
       state,
       { ...actor, periodEnd: JUNE_PERIOD_END, periodStart: JUNE_PERIOD_START },
@@ -1881,8 +1310,8 @@ describe("host fee summary", () => {
       driverPayCents: 52_500
     })
 
-    accruePlatformFee(state, { assignmentId: may.assignmentId })
-    accruePlatformFee(state, { assignmentId: june.assignmentId })
+    storeHistoricalFee(state, may.assignmentId)
+    storeHistoricalFee(state, june.assignmentId)
     openInvoiceForPeriod(
       state,
       { ...actor, periodEnd: JUNE_PERIOD_END, periodStart: JUNE_PERIOD_START },
@@ -1903,7 +1332,7 @@ describe("host fee summary", () => {
     const haul = oneBillableHaul(state)
     const nonmemberUserId = addActiveUser(state, HOST_ORG)
 
-    accruePlatformFee(state, { assignmentId: haul.assignmentId })
+    storeHistoricalFee(state, haul.assignmentId)
 
     expect(() =>
       hostFeeSummary(state, { actorUserId: nonmemberUserId, organizationId: HOST_ORG }, MID_JULY)
@@ -1917,7 +1346,7 @@ describe("host fee summary", () => {
     const actorUserId = addMember(state, HOST_ORG, ROLE_WITHOUT_BILLING as OrganizationRole)
     const haul = oneBillableHaul(state, 52_500)
 
-    accruePlatformFee(state, { assignmentId: haul.assignmentId })
+    storeHistoricalFee(state, haul.assignmentId)
 
     expect(hostFeeSummary(state, { actorUserId, organizationId: HOST_ORG }, MID_JULY).accruedCents).toBe(
       2_625

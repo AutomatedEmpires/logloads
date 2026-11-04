@@ -1,10 +1,6 @@
 import {
-  FEE_BPS_SCALE,
-  PERCENTAGE_V1_CUTOVER_AT,
-  PLATFORM_FEE_BPS,
   allocationModeSchema,
   createLoadPostingInputSchema,
-  isCurrentPercentageAgreement,
   loadPostingSchema,
   opportunityCapacitySchema,
   opportunityVisibilityModeSchema,
@@ -12,7 +8,6 @@ import {
   truckSlotSchema,
   updateLoadPostingInputSchema,
   type AllocationMode,
-  type HostBillingProfileStatus,
   type LoadPosting,
   type OpportunityVisibilityMode
 } from "@logloads/contracts"
@@ -113,43 +108,9 @@ function scheduleDates(entity: LoadPosting, fallbackDate: string): string[] {
   return dates.slice(0, MAX_SCHEDULE_SLOTS)
 }
 
-// ── The publish gate ──────────────────────────────────────────────────────────
-
 /**
- * The rate as a host reads it, derived from the constant they will be charged at.
- * A "5%" typed into a sentence is a claim about money that stops being true the
- * moment the constant moves, and these sentences are the first place a host meets
- * the fee.
- */
-const FEE_PERCENT_LABEL = `${(PLATFORM_FEE_BPS / FEE_BPS_SCALE) * 100}%`
-
-/**
- * Whether a percentage-billed host in each card state may publish work, and
- * what to tell them when they may not. `null` means publishing is allowed.
- *
- * An exhaustive record rather than a `status !== "attached"` check: adding a
- * state to `hostBillingProfileStatusSchema` will not compile until somebody
- * decides whether a host in it may post work that will accrue a charge.
- *
- * Each refusal names the requirement AND what to do about it, because a host
- * stopped at the last step of the builder by "not allowed" has been told
- * nothing. They also state the rule in full, since this is the moment a host
- * first meets the fee: charged on top of driver pay, monthly, on completed
- * truckloads only, and never taken out of what the driver is paid.
- *
- * The stored failure detail is deliberately not quoted here. It is a card
- * processor's words about a card, which belongs on the billing surface next to
- * the card, not in the middle of a publishing refusal.
- */
-const BILLING_STATE_PUBLISH_REFUSAL: Record<HostBillingProfileStatus, string | null> = {
-  attached: null,
-  failed: `The payment card on file for this organization was declined, so this work cannot be published. LogLoads bills the host ${FEE_PERCENT_LABEL} of stated driver pay monthly, and only on truckloads that complete. Attach a working card to this organization's billing profile, then publish.`,
-  none: `This organization has no payment card on file, so this work cannot be published. LogLoads charges the host ${FEE_PERCENT_LABEL} of stated driver pay — on top of that pay, billed monthly, and only on truckloads that actually complete. Posting costs nothing, and nothing is ever taken out of driver pay. Attach a card to this organization's billing profile, then publish.`
-}
-
-/**
- * The operating promise, exact current percentage agreement, and collection
- * readiness that have to be true before work reaches the network.
+ * Driver pay has to be stated before work reaches the network. The retired
+ * percentage fee and a card on file are not publication requirements.
  *
  * WHY IN THE SERVICE. Both a server action and `POST /api/loads` publish work,
  * and a field marked required in the builder guards neither: a bare REST body
@@ -157,9 +118,8 @@ const BILLING_STATE_PUBLISH_REFUSAL: Record<HostBillingProfileStatus, string | n
  * chokepoint both callers pass through.
  *
  * Driver pay remains required in every model because it is the driver's accepted
- * operating promise. Percentage publication also requires one usable attached
- * card. Historical subscription records remain readable and collectible, but
- * after the percentage-v1 cutover they do not authorize new publication.
+ * operating promise. The retired completed-load percentage fee is not required,
+ * and a card on file is not a condition of publication.
  *
  * WHY A DRAFT IS EXEMPT. A draft is not on the network and accrues nothing.
  * A draft becomes work through `provisionLoadCapacity`, which calls this, so a
@@ -187,29 +147,13 @@ export function assertHostCanPublish(
     )
   }
   const billingAccount = billingAccounts[0]
-  const usesLegacyPercentage =
-    billingAccount?.activationState === "legacy" &&
-    billingAccount.billingModel === "legacy_percentage"
-  const usesCurrentPercentage = isCurrentPercentageAgreement(billingAccount)
-  const usesPercentage = usesLegacyPercentage || usesCurrentPercentage
-
-  assertCondition(
-    Boolean(billingAccount),
-    "This organization has not accepted the LogLoads fee agreement. Accept it in Billing, then publish; posting itself is free."
-  )
-
-  assertCondition(
-    Date.parse(at) < Date.parse(PERCENTAGE_V1_CUTOVER_AT) ||
-      usesCurrentPercentage,
-    "This organization must accept the current LogLoads fee agreement before publishing new work. Historical subscription records remain available, but subscriptions no longer authorize new activity."
-  )
 
   const effectiveVisibility =
     visibilityMode ??
     state.opportunityCapacities.find(
       (capacity) => capacity.loadPostingId === load.id
     )?.visibilityMode
-  if (!usesPercentage && billingAccount?.subscriptionId) {
+  if (billingAccount?.subscriptionId) {
     const subscriptions = state.organizationSubscriptions.filter(
       (subscription) => subscription.id === billingAccount.subscriptionId
     )
@@ -221,10 +165,8 @@ export function assertHostCanPublish(
       `This organization's subscription billing account is cross-wired or incomplete, so publication is blocked.`
     )
     if (subscriptions[0]?.planCode === "dispatch_pro") {
-      assertCondition(
-        effectiveVisibility === "private_network" ||
-          effectiveVisibility === "direct_offer",
-        "Dispatch Pro publishes only to private-network partners or direct offers. Choose a Network plan before publishing public or LogLoads Network work."
+      throw new DomainRefusalError(
+        "Dispatch Pro is retired and does not authorize new publication. The completed-load percentage fee is not an offer."
       )
     }
   }
@@ -236,45 +178,9 @@ export function assertHostCanPublish(
     )
   }
   assertCondition(
-    usesPercentage ||
-      billingAccount?.activationState === "active" ||
-      billingAccount?.activationState === "suspended",
-    "This organization has not accepted the LogLoads fee agreement yet. Accept it in Billing, then publish; posting itself is free."
-  )
-
-  assertCondition(
     typeof load.driverPayCents === "number" && load.driverPayCents > 0,
-    usesPercentage
-      ? `State what this work pays a driver per truckload before publishing it. That figure is what a driver is promised, and it is the base LogLoads charges ${FEE_PERCENT_LABEL} on — on top of driver pay, never out of it.`
-      : "State what this work pays a driver per truckload before publishing it. Posting itself is free, but the driver's accepted operating promise must be explicit."
+    "State what this work pays a driver per truckload before publishing it. Posting itself is free, and the retired percentage fee is not charged on it."
   )
-
-  if (!usesPercentage) {
-    return
-  }
-
-  const profiles = state.hostBillingProfiles.filter((entry) => entry.organizationId === load.companyId)
-
-  // AT MOST ONE, asserted rather than assumed. This document has no unique index,
-  // so two profiles for one organization is a state the store itself cannot
-  // refuse — and with one attached and one not, `find` would let array order
-  // decide whether a host publishes work that gets billed to a card nobody has
-  // identified. Failing closed costs a posting; failing open bills the wrong card
-  // or nobody at all.
-  if (profiles.length > 1) {
-    throw new Error(
-      `This organization has ${profiles.length} billing profiles on file, so LogLoads cannot tell which card a completed truckload would be billed to. Publishing is blocked until that is resolved. Nothing has been charged and no work has been lost.`
-    )
-  }
-
-  // An absent profile IS a host with no card: this collection starts empty for
-  // every organization, so a missing row has to fail closed rather than read as
-  // "nothing to check here".
-  const refusal = BILLING_STATE_PUBLISH_REFUSAL[profiles[0]?.status ?? "none"]
-
-  if (refusal !== null) {
-    throw new DomainRefusalError(refusal)
-  }
 }
 
 export interface PublishModes {

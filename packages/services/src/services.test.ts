@@ -640,11 +640,8 @@ describe("logloads services", () => {
     expect(result.assignment.status).toBe("accepted")
     expect(result.assignment.termsSnapshot).toMatchObject({
       hostFee: {
-        collectionState: "accrues_monthly_in_arrears",
-        feeCents: null,
-        providerCollectionState: "feature_gated",
-        rateBps: 500,
-        proposedRateBps: 500
+        collectionState: "not_applicable_subscription_v1",
+        rateBps: null
       },
       paymentMode: "off_platform"
     })

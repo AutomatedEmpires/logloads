@@ -1,7 +1,6 @@
 import "server-only"
 
 import {
-  isCurrentPercentageAgreement,
   type HostBillingProfile,
   type HostInvoice,
   type PlatformFeeEvent
@@ -49,7 +48,6 @@ export type HostCardSetupEligibility =
   | {
       allowed: true
       basis:
-        | "accepted_percentage_v1"
         | "preserved_legacy_agreement"
         | "preserved_subscription_agreement"
         | "unsettled_obligation"
@@ -64,7 +62,7 @@ export type HostCardSetupEligibility =
     }
 
 const AGREEMENT_REQUIRED_MESSAGE =
-  "Payment method setup opens only after this workspace is approved for percentage billing and accepts the current agreement, or when a preserved obligation still requires collection."
+  "Payment method setup is closed. The completed-load percentage fee is retired, and landing memberships are not available for purchase yet."
 
 function preservedSubscriptionAgreement(
   account: HostCardEligibilityAccount
@@ -113,20 +111,7 @@ export function hostCardSetupEligibility(
 
   const account = accounts[0]
   const profileCustomerId = profiles[0]?.stripeCustomerId ?? null
-
-  if (
-    account &&
-    percentageEnrollmentAllowed &&
-    isCurrentPercentageAgreement(account)
-  ) {
-    return {
-      allowed: true,
-      basis: "accepted_percentage_v1",
-      existingCustomerId: profileCustomerId,
-      message: null,
-      profileCustomerId
-    }
-  }
+  void percentageEnrollmentAllowed
 
   if (
     account?.activationState === "legacy" &&

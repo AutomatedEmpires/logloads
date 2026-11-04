@@ -2,6 +2,13 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-11-04 — Founding promotion stays off; production ledger cleanup stays blocked
+
+- **Production records.** The LogLoads production database has not been examined. The Supabase projects visible from this workspace are `ee-dev` and `ee-preview`, not LogLoads production. Do not infer that no agreements, invoices, accrued fees, or refunds exist. Destructive deletion of the historical fee ledger stays blocked until that database is examined and a retention decision is made.
+- **Inactive ledger.** Parsers, stored rows, and invoice history remain so an existing document can still be read. New percentage agreements and new percentage-fee events are refused. Collection gates stay disabled. This is not an active business model.
+- **Founding promotion.** It is disabled. It is not the Explore&Earn promotion, and that promotion must not be copied or reused as the LogLoads offer. These questions are unanswered: whether the discount is still 50 percent; whether it still lasts six paid billing cycles; what the single nationwide cohort cap is; what the eligibility start and end are; what verification makes a landing qualifying; and whether the first 1,000 haulers still receive recognition only. Do not invent those answers and do not activate promotional billing.
+- **Public prices.** Basic $149, Pro $299, and Regional $499 stay visible and are not available for purchase. No checkout, payment, or enrollment control is authorized.
+
 ## 2026-11-04 — Membership prices locked, percentage fee retired, nationwide launch
 
 - **Authority.** Explicit founder decisions on 2026-11-04. They supersede, for new product and commercial work, the 2026-08-01 `percentage_v1` decision and the state-by-state founding schedule in Blueprint v1.0 §8.1. The Blueprint file stays the verbatim commercial specification for plan prices and limits. This entry is the newer decision where they conflict.

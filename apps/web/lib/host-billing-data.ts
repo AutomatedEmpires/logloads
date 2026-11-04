@@ -7,7 +7,6 @@ import {
   hostInvoiceStatusSchema,
   invoicePeriodFor,
   invoiceSubtotalCents,
-  PLATFORM_FEE_BPS,
   type HostBillingProfile,
   type HostBillingProfileStatus,
   type HostInvoice,
@@ -79,8 +78,6 @@ export function feeRateLabel(feeBps: number): string {
 }
 
 /** The current rate, worded once so no string on these surfaces hand-types it. */
-const CURRENT_RATE_LABEL = feeRateLabel(PLATFORM_FEE_BPS)
-
 function formatMonth(instant: string): string {
   return new Intl.DateTimeFormat("en-US", {
     month: "long",
@@ -221,20 +218,20 @@ export const PAYMENT_STATE_PRESENTATION: Record<HostBillingProfileStatus, Paymen
     tone: "success"
   },
   failed: {
-    blocksPublishing: true,
+    blocksPublishing: false,
     consequence:
-      "The card on file was declined, so you cannot publish live work until it is replaced. Work already on the network is unchanged, and drivers are paid by you. Landing memberships are not available for purchase yet.",
-    nextStep: "Replace the card on this workspace's billing profile, then publish.",
+      "The card on file was declined. It is not used for a new charge. Work already on the network is unchanged, and drivers are paid by you. Landing memberships are not available for purchase yet.",
+    nextStep: null,
     statusLabel: "Card declined",
     tone: "critical"
   },
   none: {
-    blocksPublishing: true,
+    blocksPublishing: false,
     consequence:
-      "No card is on file, so you cannot publish live work yet. Landing memberships are not available for purchase yet, and this page cannot accept a percentage fee.",
-    nextStep: "Attach a card to this workspace's billing profile, then publish.",
+      "No card is on file. A card is not required to publish. Landing memberships are not available for purchase yet, and this page cannot accept a percentage fee.",
+    nextStep: null,
     statusLabel: "No card on file",
-    tone: "critical"
+    tone: "warning"
   }
 }
 
@@ -261,8 +258,8 @@ export const SUBSCRIPTION_CARD_PRESENTATION: Record<
   none: {
     blocksPublishing: false,
     consequence:
-      "No card is attached. Creating a workspace or draft does not require one. Card setup opens only after an approved percentage agreement is in force or a preserved obligation requires collection.",
-    nextStep: "Attach a card only after this panel confirms that setup is available.",
+      "No card is attached. Creating a workspace or publishing work does not require one. The retired percentage fee cannot be accepted, and landing memberships are not available for purchase yet.",
+    nextStep: null,
     statusLabel: "No card on file",
     tone: "warning"
   }
@@ -355,23 +352,21 @@ export interface HostFeeExplainerView {
 const EXAMPLE_DRIVER_PAY_CENTS = 50_000
 
 function feeExplainerView(): HostFeeExplainerView {
-  const example = hostChargeBreakdown(EXAMPLE_DRIVER_PAY_CENTS, PLATFORM_FEE_BPS)
-
   return {
     example: {
-      driverPayLabel: money(example.driverPayCents),
-      hostTotalLabel: money(example.hostTotalCents),
-      platformFeeLabel: money(example.platformFeeCents)
+      driverPayLabel: money(EXAMPLE_DRIVER_PAY_CENTS),
+      hostTotalLabel: money(EXAMPLE_DRIVER_PAY_CENTS),
+      platformFeeLabel: money(0)
     },
-    headline: `${CURRENT_RATE_LABEL} of the driver pay stated for each completed load, charged to the host on top.`,
+    headline:
+      "The completed-load percentage fee is retired. Landing memberships are Basic $149, Pro $299, and Regional $499 per month, and they are not available for purchase yet.",
     points: [
-      "There is no monthly fee, subscription, minimum, tier, allowance, overage rate, or charge to post work.",
-      `Nothing is deducted from driver pay. The driver is paid exactly what you stated; the ${CURRENT_RATE_LABEL} is added to what you owe LogLoads.`,
-      "You pay your driver directly. Driver money never passes through LogLoads, which holds no funds and settles no freight.",
-      "Drivers pay nothing to use LogLoads, ever.",
-      "The accepted agreement freezes the rate, currency, and monthly-in-arrears billing cadence before live work can be published."
+      "No new percentage fee is recorded.",
+      "Nothing is deducted from driver pay. Drivers and fleets stay free.",
+      "You pay your driver directly. LogLoads does not hold freight funds.",
+      "Historical fee rows stay readable. They are not a current offer."
     ],
-    rateLabel: CURRENT_RATE_LABEL
+    rateLabel: "Retired"
   }
 }
 

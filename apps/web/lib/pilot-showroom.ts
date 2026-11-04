@@ -173,7 +173,7 @@ export const pilotProgramPhases = [
 
 export const pilotLaunchGates = [
   {
-    body: "A dated counsel-approved operating posture covers the exact commodity, route, relationships, and LogLoads role before Network enrollment.",
+    body: "A dated counsel-approved operating posture covers the exact commodity, route, relationships, and LogLoads role before any membership is offered for sale.",
     icon: "status.verified" as IconKey,
     title: "Legal posture recorded"
   },
@@ -335,7 +335,7 @@ const hostSurfaces: readonly PilotSurface[] = [
   },
   {
     alt: "Synthetic host billing view from the pilot workspace",
-    description: "Billing screen from the pilot workspace, shown for reference only. It is not current pricing: pricing for landing organizations has not been published.",
+    description: "Billing screen from the pilot workspace, shown for reference only. Landing memberships are Basic $149, Pro $299, and Regional $499 per month, and they are not available for purchase yet.",
     group: "Workspace",
     height: 900,
     image: "/pilot/host-billing.jpg",
@@ -633,7 +633,7 @@ export const pilotRoles: Record<PilotRole, PilotRoleSpec> = {
     ]
   },
   host: {
-    commercialTruth: "Pricing for landing organizations has not been published, and nothing in this tour is offered for sale. Stated driver pay remains a direct host-to-driver obligation.",
+    commercialTruth: "Landing memberships are Basic $149, Pro $299, and Regional $499 per month, and nothing in this tour is available for purchase. Stated driver pay remains a direct host-to-driver obligation.",
     contactLabel: "Plan a host pilot",
     eyebrow: "Host experience",
     icon: "nav.landing",

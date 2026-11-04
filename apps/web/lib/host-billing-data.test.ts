@@ -407,10 +407,10 @@ describe("the card on file, and what its state costs the host", () => {
     )
 
     expect(view.paymentMethod.status).toBe("none")
-    expect(view.paymentMethod.blocksPublishing).toBe(true)
+    expect(view.paymentMethod.blocksPublishing).toBe(false)
     expect(view.paymentMethod.cardLine).toBeNull()
-    expect(view.paymentMethod.consequence).toMatch(/cannot publish/i)
-    expect(view.paymentMethod.nextStep).toMatch(/attach a card/i)
+    expect(view.paymentMethod.consequence).toMatch(/not required to publish/i)
+    expect(view.paymentMethod.nextStep).toBeNull()
     // A host with no card is not charged for having no card.
     expect(view.paymentMethod.consequence).toMatch(/not available for purchase yet/i)
   })
@@ -431,8 +431,8 @@ describe("the card on file, and what its state costs the host", () => {
     )
 
     expect(view.paymentMethod.status).toBe("failed")
-    expect(view.paymentMethod.blocksPublishing).toBe(true)
-    expect(view.paymentMethod.consequence).toMatch(/cannot publish/i)
+    expect(view.paymentMethod.blocksPublishing).toBe(false)
+    expect(view.paymentMethod.consequence).toMatch(/not used for a new charge/i)
     expect(view.paymentMethod.failureLine).toBe("Declined Jul 3, 2026: card_declined: insufficient funds")
     // A declined card does not touch work already on the network, and never
     // touches what a driver is owed.
@@ -464,8 +464,8 @@ describe("the card on file, and what its state costs the host", () => {
 
     expect(view.paymentMethod.status).toBe("none")
     expect(view.paymentMethod.blocksPublishing).toBe(false)
-    expect(view.paymentMethod.consequence).toMatch(/creating a workspace or draft does not require one/i)
-    expect(view.paymentMethod.consequence).toMatch(/approved percentage agreement/i)
+    expect(view.paymentMethod.consequence).toMatch(/does not require one/i)
+    expect(view.paymentMethod.consequence).toMatch(/retired percentage fee cannot be accepted/i)
     expect(view.paymentMethod.setupAllowed).toBe(false)
     expect(view.paymentMethod.nextStep).toBeNull()
   })
@@ -491,7 +491,7 @@ describe("the card on file, and what its state costs the host", () => {
     expect(viewer.paymentMethod.setupUnavailableReason).toMatch(/owner, administrator, or billing manager/i)
     expect(unenrolledManager.paymentMethod.setupAllowed).toBe(false)
     expect(unenrolledManager.paymentMethod.setupUnavailableReason).toMatch(
-      /approved for percentage billing/i
+      /percentage fee is retired/i
     )
   })
 
@@ -505,7 +505,9 @@ describe("the card on file, and what its state costs the host", () => {
     const publishable = Object.entries(PAYMENT_STATE_PRESENTATION).filter(
       ([, presentation]) => !presentation.blocksPublishing
     )
-    expect(publishable.map(([status]) => status)).toEqual(["attached"])
+    expect(publishable.map(([status]) => status).sort()).toEqual(
+      ["attached", "failed", "none"]
+    )
 
     // A blocked state has to tell the host what to do about it.
     for (const [status, presentation] of Object.entries(PAYMENT_STATE_PRESENTATION)) {
@@ -700,7 +702,7 @@ describe("tenancy", () => {
     expect(view.hasBillingHistory).toBe(false)
     // The other host's card must not become this host's licence to publish.
     expect(view.paymentMethod.status).toBe("none")
-    expect(view.paymentMethod.blocksPublishing).toBe(true)
+    expect(view.paymentMethod.blocksPublishing).toBe(false)
   })
 })
 
@@ -708,21 +710,21 @@ describe("what exactly the host is charged", () => {
   it("explains the fee with a worked example produced by the billing arithmetic", () => {
     const view = buildHostBillingView(source(), HOST, NOW)
 
-    expect(view.fee.rateLabel).toBe("5%")
+    expect(view.fee.rateLabel).toBe("Retired")
     expect(view.fee.example).toEqual({
       driverPayLabel: "$500.00",
-      hostTotalLabel: "$525.00",
-      platformFeeLabel: "$25.00"
+      hostTotalLabel: "$500.00",
+      platformFeeLabel: "$0.00"
     })
-    expect(view.fee.headline).toMatch(/on top/i)
-    expect(view.fee.headline).toMatch(/completed/i)
+    expect(view.fee.headline).toMatch(/retired/i)
+    expect(view.fee.headline).toMatch(/\$149/)
 
     const points = view.fee.points.join(" ")
     // The four claims a host must not have to ask about.
-    expect(points).toMatch(/no monthly fee/i)
+    expect(points).toMatch(/no new percentage fee is recorded/i)
     expect(points).toMatch(/nothing is deducted from driver pay/i)
-    expect(points).toMatch(/holds no funds and settles no freight/i)
-    expect(points).toMatch(/drivers pay nothing/i)
+    expect(points).toMatch(/does not hold freight funds/i)
+    expect(points).toMatch(/drivers and fleets stay free/i)
   })
 
   it("derives the rate label from the rate rather than from a typed string", () => {
@@ -919,6 +921,6 @@ describe("the live wiring", () => {
     expect(view.paymentMethod.cardLine).toMatch(/ending \d{4}$/)
     expect(view.hasBillingHistory).toBe(false)
     expect(view.currentPeriod.totals.platformFeeCents).toBe(0)
-    expect(view.fee.rateLabel).toBe("5%")
+    expect(view.fee.rateLabel).toBe("Retired")
   })
 })

@@ -1,9 +1,4 @@
-import {
-  FEE_BPS_SCALE,
-  PLATFORM_FEE_BPS,
-  computePlatformFeeCents,
-  type HostBillingProfile
-} from "@logloads/contracts"
+import { type HostBillingProfile } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 import { describe, expect, it } from "vitest"
@@ -11,12 +6,6 @@ import { describe, expect, it } from "vitest"
 import { createLoadPosting, provisionLoadCapacity, updateLoadPosting } from "./loads"
 
 const HOST_ORG = "33333333-3333-4333-8333-333333333332"
-
-/**
- * The rate a host is quoted, derived the way the refusals derive it, so the
- * message assertions below survive a rate change instead of pinning a string.
- */
-const FEE_PERCENT = `${(PLATFORM_FEE_BPS / FEE_BPS_SCALE) * 100}%`
 
 const BASE_LOAD = {
   companyId: HOST_ORG,
@@ -97,7 +86,7 @@ const INVALID_CURRENT_AGREEMENT_CASES: Array<{
   },
   {
     corrupt: (account) => {
-      account.percentageTermsSnapshot.feeBps = PLATFORM_FEE_BPS - 1
+      account.percentageTermsSnapshot.feeBps = 499
     },
     reason: "an altered fee"
   },
@@ -113,13 +102,19 @@ const INVALID_CURRENT_AGREEMENT_CASES: Array<{
     },
     reason: "an altered currency"
   },
-  {
-    corrupt: (account) => {
-      account.subscriptionId = "20202020-2020-4020-8020-202020202020"
-    },
-    reason: "a subscription attached to the percentage account"
-  }
 ]
+
+it("blocks a cross-wired subscription without recording a percentage fee", () => {
+  const state = createInMemoryDatabase()
+  const account = percentageAccountFor(state)
+
+  account.subscriptionId = "20202020-2020-4020-8020-202020202020"
+
+  expect(() => createLoadPosting(state, { ...BASE_LOAD, status: "open" })).toThrow(
+    /cross-wired or incomplete/
+  )
+  expect(state.platformFeeEvents).toHaveLength(0)
+})
 
 describe("publishing a load makes it requestable", () => {
   it("creates an opportunity-capacity ledger and a requestable loading slot for a live load", () => {
@@ -225,14 +220,13 @@ describe("what a published load pays the driver", () => {
     expect(stored?.driverPayCents).not.toBeNull()
   })
 
-  it("is a usable fee base: the stored figure is what the fee is computed from", () => {
+  it("stores the driver's pay without recording a percentage fee", () => {
     const state = createInMemoryDatabase()
     const created = createLoadPosting(state, { ...BASE_LOAD, driverPayCents: 52_500, status: "open" })
     const stored = state.loadPostings.find((load) => load.id === created.id)!
 
-    // 5% of $525.00, from the contracts function the ledger and the invoice use.
-    // If this row's pay were null or an estimate, there would be nothing to bill.
-    expect(computePlatformFeeCents(stored.driverPayCents!, PLATFORM_FEE_BPS)).toBe(2_625)
+    expect(stored.driverPayCents).toBe(52_500)
+    expect(state.platformFeeEvents).toHaveLength(0)
   })
 
   it("keeps the rate card alongside the stated pay rather than replacing it", () => {
@@ -285,80 +279,44 @@ describe("what a published load pays the driver", () => {
     expect(state.opportunityCapacities.some((entry) => entry.loadPostingId === draft.id)).toBe(false)
   })
 
-  it("says the fee is charged on top, never out of driver pay", () => {
+  it("says the retired percentage fee is not charged on driver pay", () => {
     const state = createInMemoryDatabase()
 
-    // The wording is the product's only promise to a driver about this fee, so it
-    // is asserted rather than left to whoever edits the string next.
     try {
       createLoadPosting(state, { ...BASE_LOAD, driverPayCents: null, status: "open" })
       throw new Error("publishing without stated pay should have been refused")
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
 
-      expect(message).toContain("on top of driver pay, never out of it")
-      expect(message).toContain(FEE_PERCENT)
+      expect(message).toContain("retired percentage fee is not charged")
+      expect(message).not.toContain("5%")
     }
-  })
-
-  it("quotes the founder-decided rate", () => {
-    // Pinned once, here, rather than as a literal inside every message
-    // assertion: 5% of stated driver pay is the decided commercial term, and a
-    // silent change to it should stop this suite.
-    expect(FEE_PERCENT).toBe("5%")
   })
 })
 
-describe("a host may not publish work they cannot be billed for", () => {
+describe("publication does not require the retired percentage fee", () => {
   it.each(INVALID_CURRENT_AGREEMENT_CASES)(
-    "refuses $reason before creating live work",
+    "publishes when the historical agreement is $reason",
     ({ corrupt }) => {
       const state = createInMemoryDatabase()
-      const before = {
-        capacities: state.opportunityCapacities.length,
-        postings: state.loadPostings.length,
-        slots: state.truckSlots.length
-      }
 
       corrupt(percentageAccountFor(state))
 
-      expect(() => createLoadPosting(state, { ...BASE_LOAD, status: "open" })).toThrow(
-        /must accept the current LogLoads fee agreement/
-      )
-      expect(state.loadPostings).toHaveLength(before.postings)
-      expect(state.truckSlots).toHaveLength(before.slots)
-      expect(state.opportunityCapacities).toHaveLength(before.capacities)
+      const load = createLoadPosting(state, { ...BASE_LOAD, status: "open" })
+
+      expect(state.loadPostings.some((entry) => entry.id === load.id)).toBe(true)
+      expect(state.platformFeeEvents).toHaveLength(0)
     }
   )
 
-  it("refuses an organization with no card on file, and says what to do about it", () => {
+  it("publishes with no card on file and records no percentage fee", () => {
     const state = createInMemoryDatabase()
     removeCard(state)
-    const before = {
-      capacities: state.opportunityCapacities.length,
-      postings: state.loadPostings.length,
-      slots: state.truckSlots.length
-    }
 
-    let message = ""
+    const load = createLoadPosting(state, { ...BASE_LOAD, status: "open" })
 
-    try {
-      createLoadPosting(state, { ...BASE_LOAD, status: "open" })
-      throw new Error("publishing without a card should have been refused")
-    } catch (error) {
-      message = error instanceof Error ? error.message : String(error)
-    }
-
-    // Useful, not merely negative: what is missing, what it costs, when it is
-    // charged, and the one action that unblocks them.
-    expect(message).toContain("no payment card on file")
-    expect(message).toContain(FEE_PERCENT)
-    expect(message).toContain("only on truckloads that actually complete")
-    expect(message).toContain("Attach a card")
-
-    expect(state.loadPostings).toHaveLength(before.postings)
-    expect(state.truckSlots).toHaveLength(before.slots)
-    expect(state.opportunityCapacities).toHaveLength(before.capacities)
+    expect(state.loadPostings.some((entry) => entry.id === load.id)).toBe(true)
+    expect(state.platformFeeEvents).toHaveLength(0)
   })
 
   it("publishes with the exact current agreement and an attached card", () => {
@@ -374,7 +332,7 @@ describe("a host may not publish work they cannot be billed for", () => {
     expect(state.truckSlots.some((slot) => slot.loadPostingId === load.id)).toBe(true)
   })
 
-  it("refuses a card that was declined, not only a missing one", () => {
+  it("publishes when the card on file was declined", () => {
     const state = createInMemoryDatabase()
     const profile = billingProfileFor(state)
 
@@ -382,19 +340,16 @@ describe("a host may not publish work they cannot be billed for", () => {
     profile.lastFailureAt = "2026-07-01T00:00:00.000Z"
     profile.lastFailureReason = "card_declined"
 
-    // A row existing is not a card working. Publishing work that accrues a charge
-    // against a card that has already been refused just books an unpayable bill.
-    expect(() => createLoadPosting(state, { ...BASE_LOAD, status: "open" })).toThrow(/was declined/)
-    expect(state.loadPostings.some((load) => load.title === BASE_LOAD.title)).toBe(false)
+    const load = createLoadPosting(state, { ...BASE_LOAD, status: "open" })
+
+    expect(state.loadPostings.some((entry) => entry.id === load.id)).toBe(true)
+    expect(state.platformFeeEvents).toHaveLength(0)
   })
 
-  it("refuses when one organization has two billing profiles, instead of picking one", () => {
+  it("publishes when one organization has two billing profiles", () => {
     const state = createInMemoryDatabase()
     const profile = billingProfileFor(state)
 
-    // The store has no unique index, so this state is reachable. One attached and
-    // one not means array order would otherwise decide whether this host can
-    // publish work that will be charged to a card nobody has identified.
     state.hostBillingProfiles.push({
       ...profile,
       attachedAt: null,
@@ -405,13 +360,13 @@ describe("a host may not publish work they cannot be billed for", () => {
       status: "none"
     })
 
-    expect(() => createLoadPosting(state, { ...BASE_LOAD, status: "open" })).toThrow(
-      /2 billing profiles on file/
-    )
-    expect(state.loadPostings.some((load) => load.title === BASE_LOAD.title)).toBe(false)
+    const load = createLoadPosting(state, { ...BASE_LOAD, status: "open" })
+
+    expect(state.loadPostings.some((entry) => entry.id === load.id)).toBe(true)
+    expect(state.platformFeeEvents).toHaveLength(0)
   })
 
-  it("reads the card of the publishing organization, not of any organization", () => {
+  it("does not treat another organization's card as this organization's fee", () => {
     const state = createInMemoryDatabase()
     const other = state.hostBillingProfiles.find((profile) => profile.organizationId !== HOST_ORG)
 
@@ -419,12 +374,10 @@ describe("a host may not publish work they cannot be billed for", () => {
     expect(other?.status).toBe("attached")
     removeCard(state)
 
-    // Another host's attached card must not publish this host's work: the lookup
-    // is per organization, and a wallet-shaped check would let any one paying
-    // customer unlock the whole network.
-    expect(() => createLoadPosting(state, { ...BASE_LOAD, status: "open" })).toThrow(
-      /no payment card on file/
-    )
+    const load = createLoadPosting(state, { ...BASE_LOAD, status: "open" })
+
+    expect(load.companyId).toBe(HOST_ORG)
+    expect(state.platformFeeEvents).toHaveLength(0)
   })
 
   it("still lets a draft be saved with no card, so onboarding is not a dead end", () => {
@@ -440,35 +393,28 @@ describe("a host may not publish work they cannot be billed for", () => {
     expect(state.truckSlots.some((slot) => slot.loadPostingId === draft.id)).toBe(false)
   })
 
-  it("refuses a draft published through provisionLoadCapacity with no card", () => {
+  it("publishes a draft through provisionLoadCapacity with no card", () => {
     const state = createInMemoryDatabase()
     const draft = createLoadPosting(state, { ...BASE_LOAD, status: "draft" })
 
     removeCard(state)
+    provisionLoadCapacity(state, draft, "open_network", "request_approval")
 
-    // openDraftLoadPosting mints capacity through this function, so the gate has
-    // to hold here as well as on the create path — otherwise "save a draft first"
-    // is a way around it.
-    expect(() => provisionLoadCapacity(state, draft, "open_network", "request_approval")).toThrow(
-      /no payment card on file/
-    )
-    expect(state.truckSlots.some((slot) => slot.loadPostingId === draft.id)).toBe(false)
-    expect(state.opportunityCapacities.some((entry) => entry.loadPostingId === draft.id)).toBe(false)
+    expect(state.truckSlots.some((slot) => slot.loadPostingId === draft.id)).toBe(true)
+    expect(state.opportunityCapacities.some((entry) => entry.loadPostingId === draft.id)).toBe(true)
+    expect(state.platformFeeEvents).toHaveLength(0)
   })
 
-  it("refuses an edit that moves a draft onto the network with no card", () => {
+  it("lets an edit move a draft onto the network with no card", () => {
     const state = createInMemoryDatabase()
     const draft = createLoadPosting(state, { ...BASE_LOAD, status: "draft" })
 
     removeCard(state)
 
-    // updateLoadPosting can set a status, so it is a third door onto the network.
-    // It mints no capacity, so it is not how the product publishes — it is closed
-    // here so it cannot become the way around the gate.
-    expect(() => updateLoadPosting(state, { id: draft.id, status: "open" })).toThrow(
-      /no payment card on file/
-    )
-    expect(state.loadPostings.find((load) => load.id === draft.id)?.status).toBe("draft")
+    const updated = updateLoadPosting(state, { id: draft.id, status: "open" })
+
+    expect(updated.status).toBe("open")
+    expect(state.platformFeeEvents).toHaveLength(0)
   })
 
   it("lets an ordinary edit of already-published work through", () => {

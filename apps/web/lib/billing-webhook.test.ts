@@ -16,7 +16,6 @@ import {
 } from "@logloads/contracts"
 import { createInMemoryDatabase, type LogLoadsDatabaseState } from "@logloads/db"
 import {
-  acceptPercentageBillingAgreement,
   activateOrganizationSubscription,
   activateAuthorizedOrganizationSubscriptionFromProvider,
   authorizePilotConversionSubscription,
@@ -1292,15 +1291,22 @@ describe("Network subscription provider events", () => {
     expect(owner).toBeDefined()
     if (!owner) return
 
-    acceptPercentageBillingAgreement(
-      fixture.state,
-      {
-        acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION,
-        actorUserId: owner.userId,
-        organizationId: fixture.host.id
-      },
-      "2026-08-02T12:00:00.000Z"
+    const preservedAccount = fixture.state.organizationBillingAccounts.find(
+      (account) => account.organizationId === fixture.host.id
     )
+    expect(preservedAccount).toBeDefined()
+    if (!preservedAccount) return
+    preservedAccount.activationState = "percentage_active"
+    preservedAccount.billingModel = "percentage_v1"
+    preservedAccount.subscriptionId = null
+    preservedAccount.percentageTermsSnapshot = {
+      acceptedAt: "2026-08-02T12:00:00.000Z",
+      acceptedByUserId: owner.userId,
+      acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION,
+      billingCadence: "monthly_in_arrears",
+      currency: "USD",
+      feeBps: PLATFORM_FEE_BPS
+    }
     const accountBefore = structuredClone(
       fixture.state.organizationBillingAccounts.find(
         (account) => account.organizationId === fixture.host.id

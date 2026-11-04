@@ -82,7 +82,7 @@ The paid side is a set of landing subscriptions:
 - **Team members, including the owner:** 2 / 5 / 10.
 - **Targeted invitations:** 3 / 10 / 30 per billing cycle, with no rollover.
 - **Optional one-job boosts:** $99 / $149 / $199.
-- **Founding offer:** not activated. The per-state schedule in Blueprint §8.1 is superseded by the nationwide launch. Cohort size, eligibility window, and whether a discount still applies are unanswered. Do not invent them.
+- **Founding offer:** disabled. It is not the Explore&Earn promotion. Do not reuse that promotion. Nationwide cohort cap, eligibility window, whether 50 percent for six cycles still applies, qualifying verification, and whether the first 1,000 haulers receive recognition are unanswered. Do not invent them and do not activate promotional billing.
 
 The **authoritative definitions** are the Blueprint (`docs/product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md`). In code, the numbers live only in `packages/contracts/src/membership.ts`. Do not restate plan tables elsewhere. **None of this is purchasable yet** (§7.5).
 

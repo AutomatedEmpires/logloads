@@ -56,7 +56,7 @@ test("public pricing shows the locked landing prices and nothing for sale", asyn
 
   await expect(
     page.getByRole("heading", {
-      name: "Pricing for landing organizations is not published yet."
+      name: "Landing memberships are $149, $299, and $499."
     })
   ).toBeVisible()
   await expect(
@@ -87,7 +87,7 @@ test("public pricing shows the locked landing prices and nothing for sale", asyn
   ).toHaveAttribute("href", "/sign-up?path=host")
 
   await expect(
-    page.getByText("they are not available for purchase yet", { exact: false })
+    page.getByText("they are not available for purchase yet", { exact: false }).first()
   ).toBeVisible()
   await expect(page.locator("body")).not.toContainText(RETIRED_COMMERCIAL_CLAIM)
   await expect(page.locator("body")).not.toContainText(/platform fee/i)
@@ -229,7 +229,7 @@ test("an active host sees locked membership prices and no percentage offer", asy
     })
   ).toBeVisible()
   await expect(
-    page.getByText("The completed-load percentage fee is retired", { exact: false })
+    page.getByText("The completed-load percentage fee is retired", { exact: false }).first()
   ).toBeVisible()
   await expect(page.getByText("You state the driver is paid", { exact: true })).toHaveCount(0)
   await expect(page.getByText("LogLoads fee, on top")).toHaveCount(0)

@@ -44,19 +44,16 @@ function currentAgreement(termsVersion = PERCENTAGE_V1_TERMS_VERSION) {
 }
 
 describe("host card setup eligibility", () => {
-  it("requires the exact current agreement and this host's rollout admission", () => {
+  it("does not open card setup for a retired percentage agreement", () => {
     const state = source({
       organizationBillingAccounts: [currentAgreement()]
     })
 
     expect(hostCardSetupEligibility(state, HOST, true)).toMatchObject({
-      allowed: true,
-      basis: "accepted_percentage_v1"
-    })
-    expect(hostCardSetupEligibility(state, HOST, false)).toMatchObject({
       allowed: false,
       basis: "agreement_required"
     })
+    expect(hostCardSetupEligibility(state, HOST, false).allowed).toBe(false)
   })
 
   it("refuses a stale or altered percentage agreement", () => {

@@ -272,7 +272,9 @@ export function boostWindow(code: BoostPackageCode, activatedAt: string): { star
 }
 
 // ---------------------------------------------------------------------------
-// Founding programme (§8)
+// Founding programme arithmetic from Blueprint §8.
+// Not an active promotion. The nationwide founding offer is a separate decision
+// and is not Explore&Earn. Do not enroll anyone from these constants.
 // ---------------------------------------------------------------------------
 
 export const FOUNDING_OPERATOR_OFFER = Object.freeze({

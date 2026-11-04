@@ -189,8 +189,8 @@ function HostCardControl({
           </strong>
         </p>
         <p className="settings-meaning">
-          No card is needed to create a workspace or prepare draft work. LogLoads
-          will never ask for one before the applicable billing agreement is in force.
+          No card is needed to publish. Landing memberships are not available for
+          purchase yet, and the retired percentage fee cannot be accepted.
         </p>
       </div>
     )
@@ -737,7 +737,7 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
         </section>
 
       <section className="settings-panel" aria-label="Payment method">
-        <SectionHeader eyebrow="Payment method" title="The card LogLoads bills" />
+        <SectionHeader eyebrow="Payment method" title="Preserved card" />
         <div className="pay-state">
           <Badge tone={paymentMethod.tone}>{paymentMethod.statusLabel}</Badge>
           {paymentMethod.cardLine ? <span className="pay-state__card">{paymentMethod.cardLine}</span> : null}
@@ -812,11 +812,10 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
           </section>
 
           <section className="settings-panel" aria-label="Platform fee invoices">
-            <SectionHeader eyebrow="Invoices" title="Monthly platform-fee charges" />
+            <SectionHeader eyebrow="Invoices" title="Preserved fee invoices" />
             {invoices.length === 0 ? (
               <p className="settings-meaning">
-                No bill has been raised yet. Your first one covers {currentPeriod.periodLabel} and is charged
-                after it closes on {currentPeriod.closesOnLabel}.
+                No percentage bill will be raised. The completed-load percentage fee is retired, and historical invoices stay readable.
               </p>
             ) : (
               <div className="invoice-list">

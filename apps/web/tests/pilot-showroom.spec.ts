@@ -3,7 +3,7 @@ import { expect, test, type Page, type TestInfo } from "@playwright/test"
 const ROLE_TOURS = [
   {
     captureCount: 12,
-    commercialTruth: /Pricing for landing organizations has not been published, and nothing in this tour is offered for sale/,
+    commercialTruth: /Basic \$149, Pro \$299, and Regional \$499 per month, and nothing in this tour is available for purchase/,
     heading: "Run the landing from one shared operating picture.",
     role: "host"
   },
