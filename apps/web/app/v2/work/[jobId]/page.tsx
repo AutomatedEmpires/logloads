@@ -11,6 +11,7 @@ import styles from "@/components/v2/InterestForm.module.css"
 import { PageNotice } from "@/components/v2/PageNotice"
 import { PendingSubmitButton } from "@/components/v2/PendingSubmitButton"
 import { expressInterestAction } from "@/lib/marketplace-v2/actions"
+import { TRUCKS_PATH } from "@/lib/marketplace-v2/fleet-page"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
 import { withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
@@ -46,8 +47,8 @@ function EquipmentFields({ options }: { options: MarketplaceHaulerEquipmentOptio
       <div className={styles.group}>
         <InterestCountField defaultValue={1} id="interest-trucks" label="Trucks you can offer" max={500} min={1} name="trucksOffered" required />
         <p className={styles.hint}>
-          Your business profile lists no trucks or trailers yet, so the landing sees a count only. Adding equipment to your profile is
-          not available in this preview yet.
+          Your business lists no trucks or trailers yet, so the landing sees a count only.{" "}
+          <Link href={TRUCKS_PATH}>Add your equipment</Link> to offer trucks by type.
         </p>
       </div>
     )

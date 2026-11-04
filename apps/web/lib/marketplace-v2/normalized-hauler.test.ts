@@ -160,7 +160,8 @@ describe("marketplaceQueryStatement", () => {
   it("schema-qualifies every table and checks the person's role in the named business", () => {
     for (const { text } of Object.values(MARKETPLACE_QUERIES)) {
       expect(text).toMatch(/marketplace\.has_org_role\(/)
-      expect(text).not.toMatch(/\b(update|join)\s+(?!marketplace\.)/i)
+      // "on conflict … do update set" is the only update that names no table.
+      expect(text).not.toMatch(/\b(update|join)\s+(?!marketplace\.|set\b)/i)
     }
   })
 })

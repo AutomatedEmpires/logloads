@@ -218,7 +218,9 @@ describe("the job page (/v2/work/[jobId])", () => {
     expect(count).toMatch(/required=""/)
     expect(form).toMatch(/<label[^>]*for="interest-trucks"[^>]*>Trucks you can offer/)
     expect(form).not.toContain('name="equipmentCount"')
-    expect(textOf(form)).toContain("Your business profile lists no trucks or trailers yet")
+    expect(textOf(form)).toContain("Your business lists no trucks or trailers yet")
+    // #126: "Add your equipment" leads to My trucks in V2, never the legacy fleet page.
+    expect(form).toMatch(/<a[^>]*href="\/v2\/hauler\/trucks"[^>]*>Add your equipment<\/a>/)
   })
 
   it("keeps the refusal notes: visitor, poster, non-hauler, closed listing and interest already sent", async () => {

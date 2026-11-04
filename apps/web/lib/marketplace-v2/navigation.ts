@@ -5,6 +5,7 @@ import type { NavItem, WorkspaceKind } from "@logloads/ui/layout"
 export const V2_NAVIGATION: readonly NavItem[] = Object.freeze([
   { href: "/v2/work", icon: "nav.loads", id: "work", label: "Find work" },
   { href: "/v2/inquiries", icon: "nav.messages", id: "inquiries", label: "My inquiries" },
+  { href: "/v2/hauler/trucks", icon: "truck.log", id: "hauler-trucks", label: "My trucks" },
   { href: "/v2/hauler/profile", icon: "nav.profile", id: "hauler-profile", label: "Profile" },
   { href: "/v2/landing/inquiries", icon: "nav.landing", id: "landing-inquiries", label: "Landing inbox" },
   { href: "/v2/landing/jobs", icon: "ops.document", id: "landing-jobs", label: "Post jobs" }
@@ -16,11 +17,18 @@ export const V2_NAVIGATION: readonly NavItem[] = Object.freeze([
  */
 const NAV_CAPABILITY: Readonly<Record<string, MarketplaceCapability | null>> = Object.freeze({
   "hauler-profile": "interest.express",
+  "hauler-trucks": "interest.express",
   "inquiries": "interest.express",
   "landing-inquiries": "inquiry.respond",
   "landing-jobs": "job.publish",
   "work": null
 })
+
+/**
+ * Hauler destinations a business that is also a landing business does not get in its navigation, so it stays within
+ * the five bottom tabs (#124). Its profile is still one link away: from My trucks and the Find work checklist.
+ */
+const ONE_SIDED_ONLY: ReadonlySet<string> = new Set(["hauler-profile"])
 
 export function hasHaulerSide(capabilities: readonly MarketplaceCapability[]): boolean {
   return capabilities.includes("interest.express")
@@ -41,9 +49,11 @@ export function v2NavigationFor(capabilities: readonly MarketplaceCapability[] |
   }
 
   const landingOnly = hasLandingSide(capabilities) && !hasHaulerSide(capabilities)
+  const bothSides = hasLandingSide(capabilities) && hasHaulerSide(capabilities)
 
   return V2_NAVIGATION.filter((item) => {
     const needed = NAV_CAPABILITY[item.id]
+    if (bothSides && ONE_SIDED_ONLY.has(item.id)) return false
     return needed === null ? !landingOnly : needed !== undefined && capabilities.includes(needed)
   })
 }

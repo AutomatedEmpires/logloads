@@ -377,7 +377,7 @@ test.describe("responsive matrix: /v2/switch (signed in)", () => {
       await expect(page.getByRole("heading", { level: 1, name: "Switch business" })).toBeVisible()
 
       await expectNoHorizontalOverflow(page)
-      expect(await expectNavigationForWidth(page, width)).toEqual(["Find work", "My inquiries", "Profile"])
+      expect(await expectNavigationForWidth(page, width)).toEqual(["Find work", "My inquiries", "My trucks", "Profile"])
       // /v2/switch is not a navigation destination, so no item claims to be the current page.
       await expectCurrent(page, width, null)
     }
@@ -509,7 +509,7 @@ test.describe("responsive matrix: pages migrated in DS-04 (#147)", () => {
 
       await expectNoHorizontalOverflow(page)
       await expectSplitLayout(page, width)
-      expect(await expectNavigationForWidth(page, width)).toEqual(["Find work", "My inquiries", "Profile"])
+      expect(await expectNavigationForWidth(page, width)).toEqual(["Find work", "My inquiries", "My trucks", "Profile"])
       await expectCurrent(page, width, "My inquiries")
     }
   })
@@ -551,12 +551,12 @@ test.describe("responsive matrix: pages migrated in DS-04 (#147)", () => {
 
 test.describe("capability navigation (#124)", () => {
   const cases = [
-    { email: "hank@northpine.example", home: "/v2/work", items: ["Find work", "My inquiries", "Profile"], visit: "/v2/inquiries", current: "My inquiries" },
+    { email: "hank@northpine.example", home: "/v2/work", items: ["Find work", "My inquiries", "My trucks", "Profile"], visit: "/v2/inquiries", current: "My inquiries" },
     { email: "cole@summit.example", home: "/v2/landing", items: ["Landing inbox", "Post jobs"], visit: "/v2/landing/inquiries", current: "Landing inbox" },
     {
       email: "dispatch@northpine.example",
       home: "/v2/work",
-      items: ["Find work", "My inquiries", "Profile", "Landing inbox", "Post jobs"],
+      items: ["Find work", "My inquiries", "My trucks", "Landing inbox", "Post jobs"],
       visit: "/v2/inquiries",
       current: "My inquiries"
     }
@@ -712,7 +712,7 @@ test.describe("keyboard: /v2/work", () => {
     await signIn(page, "hank@northpine.example")
     await openV2(page, "/v2/work")
 
-    const stops = await tabThrough(page, 8)
+    const stops = await tabThrough(page, 9)
     const chrome = stops.filter((stop) => stop.where === "chrome")
 
     expect(chrome.map((stop) => stop.key)).toEqual([
@@ -720,6 +720,7 @@ test.describe("keyboard: /v2/work", () => {
       "LogLoads home",
       "Find work",
       "My inquiries",
+      "My trucks",
       "Profile",
       // The switcher's first text line; its full accessible name (visible text plus hidden words) is asserted in the
       // capability-navigation tests.
@@ -1782,7 +1783,7 @@ test.describe("find-work map (UX-13)", () => {
  */
 const DUAL = { email: "maya@northpine.example", hauling: "North Pine Logging", landing: "Summit Ridge Timber", name: "Maya Mills" }
 const SUMMIT_OWNER = "cole@summit.example"
-const HAULER_NAVIGATION = ["Find work", "My inquiries", "Profile"]
+const HAULER_NAVIGATION = ["Find work", "My inquiries", "My trucks", "Profile"]
 const LANDING_NAVIGATION = ["Landing inbox", "Post jobs"]
 
 const businessChoices = (page: Page) => page.getByRole("list", { name: "Your businesses" }).getByRole("listitem")

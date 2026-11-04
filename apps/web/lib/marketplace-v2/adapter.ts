@@ -151,6 +151,13 @@ export function selectMarketplaceV2Port(
         return false
       }
     },
+    get supportsHaulerFleet() {
+      try {
+        return current().supportsHaulerFleet
+      } catch {
+        return false
+      }
+    },
     get supportsHaulerProfile() {
       try {
         return current().supportsHaulerProfile
@@ -158,10 +165,13 @@ export function selectMarketplaceV2Port(
         return false
       }
     },
+    addHaulerEquipment: async (viewer, input) => current().addHaulerEquipment(viewer, input),
     authoringLandings: async (viewer) => current().authoringLandings(viewer),
+    confirmHaulerAvailability: async (viewer) => current().confirmHaulerAvailability(viewer),
     expressInterest: async (viewer, input) => current().expressInterest(viewer, input),
     getJob: async (jobId) => current().getJob(jobId),
     haulerEquipment: async (viewer) => current().haulerEquipment(viewer),
+    haulerFleet: async (viewer) => current().haulerFleet(viewer),
     haulerProfile: async (viewer) => current().haulerProfile(viewer),
     interestForJob: async (viewer, jobId) => current().interestForJob(viewer, jobId),
     listHaulerInterests: async (viewer) => current().listHaulerInterests(viewer),
@@ -171,7 +181,9 @@ export function selectMarketplaceV2Port(
     publishJob: async (viewer, draft, attestation) => current().publishJob(viewer, draft, attestation),
     reconfirmJob: async (viewer, jobId, attestation) => current().reconfirmJob(viewer, jobId, attestation),
     respondToInterest: async (viewer, input) => current().respondToInterest(viewer, input),
+    reportHaulerAvailability: async (viewer, input) => current().reportHaulerAvailability(viewer, input),
     saveHaulerProfile: async (viewer, input) => current().saveHaulerProfile(viewer, input),
+    setHaulerEquipmentCount: async (viewer, input) => current().setHaulerEquipmentCount(viewer, input),
     viewerAccess: async (viewer) => current().viewerAccess(viewer),
     withdrawInterest: async (viewer, interestId) => current().withdrawInterest(viewer, interestId)
   }
