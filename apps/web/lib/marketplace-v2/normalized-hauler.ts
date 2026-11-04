@@ -13,7 +13,7 @@ import {
 import { z } from "zod"
 
 import type { MarketplaceCalls } from "./normalized-db"
-import { uuidValue } from "./normalized-mapping"
+import { organizationSlug, uuidValue } from "./normalized-mapping"
 import { MarketplaceRefusalError, MarketplaceStoreError, type MarketplaceV2Port, type MarketplaceV2Viewer } from "./port"
 
 /**
@@ -98,25 +98,6 @@ function asRefusal(error: unknown): never {
   throw error
 }
 
-/**
- * A unique `organizations.slug` for a new business (`^[a-z0-9]+(-[a-z0-9]+)*$`, at most 80): its name's letters and
- * digits, and a random suffix, so two businesses with one name never collide. Pure; exported for tests.
- */
-export function haulingBusinessSlug(displayName: string, suffix: string): string {
-  const words = displayName
-    .normalize("NFKD")
-    // Accents come apart under NFKD; drop the marks so "Élan" is "elan", not "e-lan".
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60)
-    .replace(/-+$/g, "")
-  const tail = suffix.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12) || "org"
-
-  return words ? `${words}-${tail}` : `hauling-${tail}`
-}
-
 /** The hauler profile's public basics, in `hauler_profile_update`'s argument order. */
 function profileUpdateValues(organizationId: string, input: HaulerProfileInput) {
   return [
@@ -156,7 +137,7 @@ export function normalizedHaulerProfileMethods(
         const [created] = await calls.call("create_organization", {
           p_display_name: input.businessName,
           p_enable_hauler: true,
-          p_slug: haulingBusinessSlug(input.businessName, randomBytes(4).toString("hex"))
+          p_slug: organizationSlug(input.businessName, randomBytes(4).toString("hex"), "hauling")
         })
         const organizationId = uuidValue(created)
 

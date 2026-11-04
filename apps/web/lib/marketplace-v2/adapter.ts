@@ -221,6 +221,14 @@ export function selectMarketplaceV2Port(
     viewerAccess: async (viewer) => current().viewerAccess(viewer),
     withdrawInterest: async (viewer, interestId) => current().withdrawInterest(viewer, interestId),
 
+    // Landing workspace (#127, #133).
+    createLandingOrganization: async (account, input) => current().createLandingOrganization(account, input),
+    getOwnLanding: async (viewer, landingId) => current().getOwnLanding(viewer, landingId),
+    landingAllowance: async (viewer) => current().landingAllowance(viewer),
+    listOwnLandings: async (viewer) => current().listOwnLandings(viewer),
+    saveLanding: async (viewer, input) => current().saveLanding(viewer, input),
+    setLandingStatus: async (viewer, landingId, status) => current().setLandingStatus(viewer, landingId, status),
+
     // Inquiry conversations (UX-09, #132).
     landingInquiryJobs: async (viewer) => current().landingInquiryJobs(viewer),
     withdrawInterestWithReason: async (viewer, input) => current().withdrawInterestWithReason(viewer, input)

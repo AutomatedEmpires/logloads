@@ -921,6 +921,161 @@ $$;`)
   })
 
   // -------------------------------------------------------------------------------------------------------------
+  // Landing workspace (#127 UX-04, #133 UX-10). Runs after the flows above: it pauses Upper Spur Landing at the end.
+  describe("landings and allowances", () => {
+    /** Private strings of the landing these cases save. Like PRIVATE_STRINGS, they must never reach a public view. */
+    const LOWER_PRIVATE = ["Blue gate 5521", "Sam Spur", "+15415550199", "44.27391", "-122.01854"]
+    let lowerSpurId = ""
+
+    const anonymousViews = async () => JSON.stringify([
+      await port.listJobs({ acceptingOnly: false }),
+      landJobId ? await port.getJob(landJobId) : null,
+      await port.authoringLandings(viewer("land", "land"))
+    ])
+
+    it("lists the business's own landings with their private half, for its landing desk only", async () => {
+      const [upper] = await port.listOwnLandings(viewer("land", "land"))
+      const activeAtUpper = (await one<{ n: number }>(
+        "select count(*)::int as n from marketplace.job_postings where landing_id = $1::uuid and status = 'active'", [fixture.landings.land]
+      )).n
+
+      expect(activeAtUpper).toBeGreaterThan(0)
+      expect(upper).toMatchObject({
+        activeJobs: activeAtUpper,
+        approximatePoint: { lat: 44.2, lng: -122.5 },
+        areaLabel: "Near Vida, OR",
+        id: fixture.landings.land,
+        name: "Upper Spur Landing",
+        privateDetails: { exactLocation: { lat: 44.15432, lng: -122.48765 }, gateInstructions: PRIVATE_STRINGS[0] },
+        stateCode: "OR",
+        status: "active"
+      })
+      expect((await port.listOwnLandings(viewer("rival", "rival"))).map((landing) => landing.name)).toEqual(["Rival Landing"])
+      await expect(port.listOwnLandings(viewer("haul", "haul"))).rejects.toBeInstanceOf(MarketplaceRefusalError)
+      await expect(port.listOwnLandings(viewer("land", "rival"))).rejects.toBeInstanceOf(MarketplaceRefusalError)
+      expect(await port.getOwnLanding(viewer("rival", "rival"), fixture.landings.land)).toBeNull()
+    })
+
+    it("refuses a new recruiting landing over the plan's cap, in the adapter and in the store's own trigger", async () => {
+      const count = async () => (await one<{ n: number }>("select count(*)::int as n from marketplace.landings where org_id = $1::uuid", [fixture.orgs.land])).n
+      const before = await count()
+
+      await expect(port.saveLanding(viewer("land", "land"), { areaLabel: "Blue River", name: "Lower Spur Landing", recruiting: "1", stateCode: "OR" }))
+        .rejects.toThrow(/Basic plan allows 1 active landing/)
+      expect(await count()).toBe(before)
+
+      // Without the adapter's own check, tg_landing_guard still refuses an insert that would recruit over the cap.
+      await expect(db.asUser(await principalFor(ISSUER)(viewer("land", "land")), (calls) =>
+        calls.landingStatement("insert_landing", [fixture.orgs.land, "Over Cap Landing", "active", "Near Blue River", null, null, "OR", null]), { readOnly: false }))
+        .rejects.toMatchObject({ code: "23514" })
+      expect(await count()).toBe(before)
+    })
+
+    it("saves a paused landing without an exact location; it has no public point and does not count", async () => {
+      lowerSpurId = (await port.saveLanding(viewer("land", "land"), { areaLabel: "Blue River", name: "Lower Spur Landing", stateCode: "or" })).landingId
+
+      expect(await port.getOwnLanding(viewer("land", "land"), lowerSpurId)).toMatchObject({
+        activeJobs: 0,
+        approximatePoint: null,
+        areaLabel: "Blue River, OR",
+        privateDetails: { exactLocation: null, gateInstructions: null, siteContactName: null, siteContactPhone: null },
+        stateCode: "OR",
+        status: "paused"
+      })
+      expect((await port.landingAllowance(viewer("land", "land"))).activeLandings).toBe(1)
+    })
+
+    it("keeps the exact location and access details private, and publishes only the 0.10° point", async () => {
+      await port.saveLanding(viewer("land", "land"), {
+        areaLabel: "Blue River",
+        exactLat: LOWER_PRIVATE[3],
+        exactLng: LOWER_PRIVATE[4],
+        gateInstructions: LOWER_PRIVATE[0],
+        landingId: lowerSpurId,
+        name: "Lower Spur Landing",
+        siteContactName: LOWER_PRIVATE[1],
+        siteContactPhone: "541 555 0199",
+        stateCode: "OR"
+      })
+
+      expect(await port.getOwnLanding(viewer("land", "land"), lowerSpurId)).toMatchObject({
+        approximatePoint: { lat: 44.3, lng: -122 },
+        privateDetails: { exactLocation: { lat: 44.27391, lng: -122.01854 }, gateInstructions: LOWER_PRIVATE[0], siteContactName: LOWER_PRIVATE[1], siteContactPhone: LOWER_PRIVATE[2] },
+        status: "paused"
+      })
+
+      const stored = await one<{ lat: number; lng: number; exact: string }>(
+        `select extensions.st_y(l.public_point::extensions.geometry) as lat, extensions.st_x(l.public_point::extensions.geometry) as lng,
+                extensions.st_astext(p.exact_point::extensions.geometry) as exact
+         from marketplace.landings l join marketplace.landing_private_details p on p.landing_id = l.id where l.id = $1::uuid`, [lowerSpurId]
+      )
+      expect(stored).toEqual({ exact: "POINT(-122.01854 44.27391)", lat: 44.3, lng: -122 })
+
+      // Another business reading the same statement sees no private column of an active landing (RLS), and the
+      // anonymous views carry none of either landing's private strings.
+      const seenByHauler = await db.asUser(await principalFor(ISSUER)(viewer("haul", "haul")), (calls) =>
+        calls.landingStatement("own_landings", [fixture.orgs.land, null]))
+      expect(JSON.stringify(seenByHauler)).not.toContain(PRIVATE_STRINGS[0])
+      expect(seenByHauler.map((row) => (row as { gate_instructions: unknown }).gate_instructions)).toEqual(seenByHauler.map(() => null))
+
+      const views = await anonymousViews()
+      for (const secret of [...PRIVATE_STRINGS, ...LOWER_PRIVATE]) expect(views).not.toContain(secret)
+    })
+
+    it("pausing a landing unlists its jobs; paused and archived landings do not count toward the cap", async () => {
+      await expect(port.setLandingStatus(viewer("rival", "rival"), fixture.landings.land, "paused")).rejects.toThrow("That landing was not found")
+
+      const jobStatus = async () => (await one<{ status: string }>("select status from marketplace.job_postings where id = $1::uuid", [landJobId])).status
+
+      await port.setLandingStatus(viewer("land", "land"), fixture.landings.land, "paused")
+      expect(await jobStatus()).toBe("paused")
+      // Unlisted: anonymous discovery no longer returns the job at all.
+      expect(await port.getJob(landJobId)).toBeNull()
+      expect((await port.listJobs({ acceptingOnly: true })).map((job) => job.id)).not.toContain(landJobId)
+      expect((await port.landingAllowance(viewer("land", "land"))).activeLandings).toBe(0)
+
+      // The freed slot lets the other landing recruit; the first cannot take it back.
+      await port.setLandingStatus(viewer("land", "land"), lowerSpurId, "active")
+      await expect(port.setLandingStatus(viewer("land", "land"), fixture.landings.land, "active")).rejects.toThrow("Pause another landing or see plans")
+
+      await port.setLandingStatus(viewer("land", "land"), fixture.landings.land, "archived")
+      expect((await port.landingAllowance(viewer("land", "land"))).activeLandings).toBe(1)
+      await expect(port.setLandingStatus(viewer("land", "land"), fixture.landings.land, "active")).rejects.toThrow("comes back paused first")
+      expect((await port.listOwnLandings(viewer("land", "land"))).map((landing) => [landing.name, landing.status])).toEqual([
+        ["Lower Spur Landing", "active"],
+        ["Upper Spur Landing", "archived"]
+      ])
+      // The job stays paused: putting a job back on the board needs its own fresh availability confirmation.
+      expect(await jobStatus()).toBe("paused")
+    })
+
+    it("reads the plan code, counts and the cycle from the store", async () => {
+      const allowance = await port.landingAllowance(viewer("land", "land"))
+
+      expect(allowance).toMatchObject({ activeLandings: 1, invitationsRemaining: 3, planCode: "basic", teamMembers: 1 })
+      expect(Date.parse(allowance.cycleEndsAt ?? "")).toBeGreaterThan(Date.now() + 27 * 86_400_000)
+    })
+
+    it("sets up a landing business owned by the person, which recruits only once billing is active", async () => {
+      const { organizationId } = await port.createLandingOrganization({ userId: fixture.users.stranger }, { displayName: "Adapter Fresh Timber", homeState: "or" })
+      const own = { organizationId, userId: fixture.users.stranger }
+
+      const membership = await one<{ role: string; seat: boolean; slug: string; state: string }>(
+        `select m.role, m.landing_workspace_seat as seat, o.slug, o.home_state as state
+         from marketplace.organization_memberships m join marketplace.organizations o on o.id = m.org_id
+         where m.org_id = $1::uuid and m.user_id = $2::uuid`, [organizationId, fixture.users.stranger]
+      )
+      expect(membership).toMatchObject({ role: "owner", seat: true, state: "OR" })
+      expect(membership.slug).toMatch(/^adapter-fresh-timber-[0-9a-f]{8}$/)
+
+      expect((await port.viewerAccess(own)).capabilities).toEqual(expect.arrayContaining(["landing.manage", "job.publish"]))
+      expect(await port.landingAllowance(own)).toEqual({ activeLandings: 0, cycleEndsAt: null, invitationsRemaining: null, planCode: null, teamMembers: 1 })
+      await expect(port.saveLanding(own, { areaLabel: "Detroit", name: "Fresh Landing", recruiting: "1", stateCode: "OR" })).rejects.toThrow("Billing isn't active yet")
+      expect((await port.saveLanding(own, { areaLabel: "Detroit", name: "Fresh Landing", stateCode: "OR" })).landingId).toMatch(/^[0-9a-f-]{36}$/)
+    })
+  })
+
+  // -------------------------------------------------------------------------------------------------------------
   it("never leaves an identity on the pooled connection", async () => {
     await port.viewerAccess(viewer("land", "land"))
 

@@ -31,6 +31,8 @@ function fakeDb(): MarketplaceDb {
     call: async () => [],
     inquiryJobs: async () => [],
     inquiryParties: async () => null,
+    // Landing statements (#127) are not part of My trucks; this stub only satisfies the interface.
+    landingStatement: async () => [],
     // Listing reports (#214) are not part of My trucks; these stubs only satisfy the interface.
     standingListingReport: async () => null,
     fileListingReport: async () => {

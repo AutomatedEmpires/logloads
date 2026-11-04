@@ -8,6 +8,7 @@ import { validateMarketplaceJobDraft } from "@logloads/contracts"
 
 import { createNormalizedMarketplaceV2 } from "./normalized-adapter"
 import type {
+  LandingStatementName,
   MarketplaceCalls,
   MarketplaceDb,
   MarketplaceFunctionName,
@@ -68,6 +69,8 @@ function interestRow(overrides: Record<string, unknown> = {}) {
 let recorded: Recorded[]
 let responses: Partial<Record<MarketplaceFunctionName, unknown[]>>
 let parties: MarketplaceInquiryParties | null
+/** Landing workspace statements (#127, #133), by name. */
+let statements: Partial<Record<LandingStatementName, unknown[]>>
 let inquiryJobs: unknown[]
 let standingReport: StoredListingReport | null
 let principal: ReturnType<typeof vi.fn>
@@ -82,6 +85,10 @@ function fakeDb(): MarketplaceDb {
       async inquiryParties() {
         recorded.push({ ...extra, args: {}, fn: "inquiryParties", session })
         return parties
+      },
+      async landingStatement(name, values) {
+        recorded.push({ ...extra, args: { values: [...values] }, fn: `statement:${name}`, session })
+        return statements[name] ?? []
       },
       async query(name, values) {
         recorded.push({ ...extra, args: { values }, fn: name, session })
@@ -137,6 +144,7 @@ beforeEach(() => {
   recorded = []
   responses = {}
   parties = { haulerOrganizationId: HAUL, jobId: JOB, jobOrganizationId: LAND }
+  statements = {}
   inquiryJobs = []
   standingReport = null
   principal = vi.fn(async () => PRINCIPAL)
@@ -376,6 +384,162 @@ describe("normalized adapter: publishing and reconfirmation", () => {
   it("refuses a reconfirmation without its own attestation", async () => {
     await expect(adapter().reconfirmJob(landingViewer, JOB, publishAttestation)).rejects.toThrow("availability confirmation")
     expect(recorded).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// Landing workspace (#127, #133)
+// ---------------------------------------------------------------------------------------------------------------
+
+function accessRow(capabilities: string[]) {
+  return { capabilities, hauler_profile: false, landing_workspace_seat: true, organization_id: LAND, organization_name: "Adapter Timber", role: "owner" }
+}
+
+const MANAGER = ["job.publish", "landing.manage", "inquiry.respond"]
+const DESK_STAFF = ["job.publish", "inquiry.respond"]
+
+function ownLandingRow(overrides: Record<string, unknown> = {}) {
+  return {
+    active_jobs: 1, county: null, exact_lat: 44.15432, exact_lng: -122.48765, gate_instructions: "Green gate 4417", id: LANDING,
+    name: "Upper Spur Landing", public_area_label: "Near Vida, OR", public_lat: 44.2, public_lng: -122.5, site_contact_name: "Lee",
+    site_contact_phone: "+15415550100", state_code: "OR", status: "active", updated_at: "2026-11-03T11:00:00+00:00",
+    ...overrides
+  }
+}
+
+function entitlementRow(overrides: Record<string, unknown> = {}) {
+  return {
+    active_landings: 1, fleet_only_members: 0, grace_ends_at: null, invitations_remaining: 3, landing_conflict: false,
+    max_active_landings: 1, max_team_members: 2, paid_landing_seats: 1, period_end: "2026-12-01T00:00:00+00:00",
+    plan_code: "basic", seat_conflict: false, subscription_status: "active", ...overrides
+  }
+}
+
+const NEW_LANDING = { areaLabel: "Oakridge", name: "Hills Creek Unit 4", stateCode: "OR" }
+
+describe("normalized adapter: landing workspace", () => {
+  it("lists the active business's own landings for its landing desk, with the private half", async () => {
+    responses.get_viewer_marketplace_access = [accessRow(DESK_STAFF)]
+    statements.own_landings = [ownLandingRow(), ownLandingRow({ id: OTHER, name: "Layng Creek", status: "inactive", exact_lat: null, exact_lng: null, public_lat: null, public_lng: null })]
+
+    const landings = await adapter().listOwnLandings(landingViewer)
+
+    expect(landings.map((landing) => [landing.name, landing.status, landing.approximatePoint])).toEqual([
+      ["Upper Spur Landing", "active", { lat: 44.2, lng: -122.5 }],
+      ["Layng Creek", "paused", null]
+    ])
+    expect(landings[0]?.privateDetails).toEqual({ exactLocation: { lat: 44.15432, lng: -122.48765 }, gateInstructions: "Green gate 4417", siteContactName: "Lee", siteContactPhone: "+15415550100" })
+    expect(recorded.find((call) => call.fn === "statement:own_landings")?.args).toEqual({ values: [LAND, null] })
+    expect(recorded.every((call) => call.readOnly === true)).toBe(true)
+  })
+
+  it("refuses a role without the landing desk", async () => {
+    responses.get_viewer_marketplace_access = [accessRow(["interest.express"])]
+
+    await expect(adapter().listOwnLandings(landingViewer)).rejects.toThrow("cannot see this business's landings")
+    expect(storeCalls()).toEqual(["get_viewer_marketplace_access"])
+  })
+
+  it("never asks the store for a landing id that cannot exist", async () => {
+    expect(await adapter().getOwnLanding(landingViewer, "../x")).toBeNull()
+    expect(recorded).toEqual([])
+  })
+
+  it("saves a new landing paused without an exact location, and its public point only from the private one", async () => {
+    responses.get_viewer_marketplace_access = [accessRow(MANAGER)]
+    statements.insert_landing = [{ id: LANDING }]
+    statements.save_landing_private = [{ id: LANDING }]
+
+    expect(await adapter().saveLanding(landingViewer, NEW_LANDING)).toEqual({ landingId: LANDING })
+    expect(storeCalls()).toEqual(["get_viewer_marketplace_access", "statement:insert_landing", "statement:save_landing_private"])
+    expect(recorded.find((call) => call.fn === "statement:insert_landing")?.args).toEqual({ values: [LAND, "Hills Creek Unit 4", "inactive", "Oakridge, OR", null, null, "OR", null] })
+    expect(recorded.at(-1)?.readOnly).toBe(false)
+  })
+
+  it("checks the plan before a new landing recruits, and refuses at the cap", async () => {
+    responses.get_viewer_marketplace_access = [accessRow(MANAGER)]
+    responses.get_org_entitlement_state = [entitlementRow()]
+
+    await expect(adapter().saveLanding(landingViewer, { ...NEW_LANDING, recruiting: "1" })).rejects.toThrow(/Basic plan allows 1 active landing.*Pause another landing or see plans/)
+    expect(storeCalls()).toEqual(["get_viewer_marketplace_access", "get_org_entitlement_state"])
+
+    recorded = []
+    responses.get_org_entitlement_state = [entitlementRow({ plan_code: null, invitations_remaining: 0, period_end: null })]
+    await expect(adapter().saveLanding(landingViewer, { ...NEW_LANDING, recruiting: "1" })).rejects.toThrow("Billing isn't active yet")
+  })
+
+  it("edits only one of the business's own landings, and never its status", async () => {
+    responses.get_viewer_marketplace_access = [accessRow(MANAGER)]
+    statements.own_landings = [ownLandingRow()]
+    statements.update_landing = [{ id: LANDING }]
+    statements.save_landing_private = [{ id: LANDING }]
+
+    await adapter().saveLanding(landingViewer, { ...NEW_LANDING, exactLat: "44.15432", exactLng: "-122.48765", landingId: LANDING, recruiting: "1" })
+    expect(storeCalls()).toEqual(["get_viewer_marketplace_access", "statement:own_landings", "statement:update_landing", "statement:save_landing_private"])
+    expect(recorded.find((call) => call.fn === "statement:update_landing")?.args).toEqual({
+      values: [LANDING, LAND, "Hills Creek Unit 4", "Oakridge, OR", "44.15432", "-122.48765", "OR", null]
+    })
+
+    recorded = []
+    statements.own_landings = []
+    await expect(adapter().saveLanding(landingViewer, { ...NEW_LANDING, landingId: LANDING })).rejects.toThrow("That landing was not found")
+    expect(storeCalls()).toEqual(["get_viewer_marketplace_access", "statement:own_landings"])
+  })
+
+  it("lets only owners and managers save, and validates before the store", async () => {
+    responses.get_viewer_marketplace_access = [accessRow(DESK_STAFF)]
+    await expect(adapter().saveLanding(landingViewer, NEW_LANDING)).rejects.toThrow("Only an owner or manager")
+
+    recorded = []
+    await expect(adapter().saveLanding(landingViewer, { ...NEW_LANDING, name: "Gate code 4417" })).rejects.toBeInstanceOf(MarketplaceRefusalError)
+    expect(recorded).toEqual([])
+  })
+
+  it("pauses, restores and starts recruiting through the plan rule", async () => {
+    responses.get_viewer_marketplace_access = [accessRow(MANAGER)]
+    statements.own_landings = [ownLandingRow()]
+    statements.set_landing_status = [{ id: LANDING, status: "inactive" }]
+
+    await adapter().setLandingStatus(landingViewer, LANDING, "paused")
+    expect(recorded.find((call) => call.fn === "statement:set_landing_status")?.args).toEqual({ values: [LANDING, LAND, "inactive"] })
+
+    // Already in that status: nothing is written.
+    recorded = []
+    await adapter().setLandingStatus(landingViewer, LANDING, "active")
+    expect(storeCalls()).toEqual(["get_viewer_marketplace_access", "statement:own_landings"])
+
+    // Paused → recruiting asks the plan; archived → recruiting is refused outright.
+    recorded = []
+    statements.own_landings = [ownLandingRow({ status: "inactive" })]
+    responses.get_org_entitlement_state = [entitlementRow({ active_landings: 1 })]
+    await expect(adapter().setLandingStatus(landingViewer, LANDING, "active")).rejects.toThrow("Pause another landing or see plans")
+    expect(storeCalls()).not.toContain("statement:set_landing_status")
+
+    statements.own_landings = [ownLandingRow({ status: "archived" })]
+    await expect(adapter().setLandingStatus(landingViewer, LANDING, "active")).rejects.toThrow("comes back paused first")
+  })
+
+  it("reads the allowance with every limit left to the contracts", async () => {
+    responses.get_viewer_marketplace_access = [accessRow(DESK_STAFF)]
+    responses.get_org_entitlement_state = [entitlementRow({ invitations_remaining: 2, paid_landing_seats: 2 })]
+
+    expect(await adapter().landingAllowance(landingViewer)).toEqual({
+      activeLandings: 1, cycleEndsAt: "2026-12-01T00:00:00.000Z", invitationsRemaining: 2, planCode: "basic", teamMembers: 2
+    })
+
+    responses.get_org_entitlement_state = [entitlementRow({ plan_code: "dispatch_pro" })]
+    await expect(adapter().landingAllowance(landingViewer)).rejects.toThrow()
+  })
+
+  it("sets up a landing business for the signed-in person, with a fresh slug", async () => {
+    responses.create_organization = [OTHER]
+
+    expect(await adapter().createLandingOrganization({ userId: USER }, { displayName: "Cedar Fork Logging", homeState: "or" })).toEqual({ organizationId: OTHER })
+    const call = recorded.find((entry) => entry.fn === "create_organization")
+    expect(call?.args).toMatchObject({ p_display_name: "Cedar Fork Logging", p_enable_hauler: false, p_home_state: "OR" })
+    expect(String(call?.args.p_slug)).toMatch(/^cedar-fork-logging-[0-9a-f]{8}$/)
+    expect(call?.readOnly).toBe(false)
+    expect(principal).toHaveBeenCalledWith({ organizationId: "", userId: USER })
   })
 })
 

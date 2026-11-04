@@ -6,7 +6,8 @@ import { HAULER_IDENTITY_EDIT_REFUSED, HAULER_PROFILE_EDIT_REFUSED, HAULER_PROFI
 
 import { createNormalizedMarketplaceV2 } from "./normalized-adapter"
 import type { MarketplaceCalls, MarketplaceDb } from "./normalized-db"
-import { haulerProfileFromRow, haulingBusinessSlug } from "./normalized-hauler"
+import { haulerProfileFromRow } from "./normalized-hauler"
+import { organizationSlug } from "./normalized-mapping"
 import { MARKETPLACE_QUERIES, marketplaceQueryStatement } from "./normalized-queries"
 import { MarketplaceRefusalError, MarketplaceStoreError, type MarketplaceV2Viewer } from "./port"
 
@@ -53,6 +54,8 @@ function fakeDb(): MarketplaceDb {
     },
     inquiryJobs: async () => [],
     inquiryParties: async () => null,
+    // Landing statements (#127) are not part of the hauler profile surface; this stub only satisfies the interface.
+    landingStatement: async () => [],
     // Listing reports (#214) are not part of the hauler profile surface; these stubs only satisfy the interface.
     standingListingReport: async () => null,
     fileListingReport: async () => {
@@ -205,19 +208,20 @@ describe("createHaulingBusiness (#213)", () => {
   })
 })
 
-describe("haulingBusinessSlug", () => {
+describe("organizationSlug (shared with landing setup, #127)", () => {
   it.each([
     ["Ridgeline Hauling", "ridgeline-hauling-ab12cd34"],
     ["  Kootenai  Timber & Haul, LLC ", "kootenai-timber-haul-llc-ab12cd34"],
     ["Élan Trucking", "elan-trucking-ab12cd34"],
     ["!!!", "hauling-ab12cd34"]
   ])("%s → %s", (name, slug) => {
-    expect(haulingBusinessSlug(name, "AB12cd34")).toBe(slug)
+    expect(organizationSlug(name, "AB12cd34", "hauling")).toBe(slug)
     expect(slug).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/)
   })
 
   it("stays within the schema's 80 characters", () => {
-    expect(haulingBusinessSlug("x".repeat(200), "ab12cd34").length).toBeLessThanOrEqual(80)
+    expect(organizationSlug("x".repeat(200), "ab12cd34", "hauling").length).toBeLessThanOrEqual(80)
+    expect(organizationSlug("!!!", "ab12cd34")).toBe("landing-ab12cd34")
   })
 })
 

@@ -1,0 +1,100 @@
+/* Landing workspace (#127, #133): layout only. Fields, panels, buttons and states are design-system components.
+   Semantic --ll-* tokens only. */
+
+.stack { display: grid; gap: var(--ll-space-4); }
+
+.form { display: grid; gap: var(--ll-space-4); margin: 0; }
+
+.grid2 {
+  display: grid;
+  gap: var(--ll-space-3) var(--ll-space-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+}
+
+.fieldset { display: grid; gap: var(--ll-space-2); min-width: 0; margin: 0; padding: 0; border: 0; }
+
+.legend { padding: 0; font-size: var(--ll-text-md); font-weight: var(--ll-weight-semibold); color: var(--ll-color-text); }
+
+.hint, .note { margin: 0; font-size: var(--ll-text-sm); line-height: var(--ll-leading-normal); color: var(--ll-color-text-muted); }
+
+.note strong { color: var(--ll-color-text); }
+
+.links { display: flex; flex-wrap: wrap; gap: var(--ll-space-2); }
+
+.checklist { display: grid; gap: var(--ll-space-2); margin: 0; padding: 0; list-style: none; }
+
+.checklist li { display: flex; gap: var(--ll-space-2); align-items: flex-start; font-size: var(--ll-text-md); line-height: var(--ll-leading-normal); }
+
+.checklist li > :first-child { flex: none; margin-top: 2px; }
+
+/* Plan cards (B2). Three across from a comfortable width, stacked below. */
+.plans {
+  display: grid;
+  gap: var(--ll-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+}
+
+.plan {
+  display: grid;
+  align-content: start;
+  gap: var(--ll-space-2);
+  padding: var(--ll-space-4);
+  border: 1px solid var(--ll-color-border);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-surface);
+}
+
+.planName { margin: 0; font-size: var(--ll-text-lg); font-weight: var(--ll-weight-semibold); }
+
+.planPrice { margin: 0; font-size: var(--ll-text-xl); font-weight: var(--ll-weight-bold); font-variant-numeric: tabular-nums; }
+
+.planFacts { display: grid; gap: var(--ll-space-1); margin: 0; padding: 0; list-style: none; font-size: var(--ll-text-md); }
+
+/* Landing rows: name and area, status, jobs, then the actions. */
+.rows { display: grid; margin: 0; padding: 0; list-style: none; }
+
+.row {
+  display: grid;
+  gap: var(--ll-space-2);
+  padding-block: var(--ll-space-4);
+  border-top: 1px solid var(--ll-color-border);
+}
+
+.row:first-child { border-top: 0; padding-top: 0; }
+
+.rowHead { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--ll-space-1) var(--ll-space-3); }
+
+.rowTitle { margin: 0; font-size: var(--ll-text-base); font-weight: var(--ll-weight-semibold); overflow-wrap: anywhere; }
+
+.rowTitle a { color: inherit; }
+
+.rowMeta { margin: 0; font-size: var(--ll-text-sm); color: var(--ll-color-text-muted); overflow-wrap: anywhere; }
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--ll-space-2);
+  border-radius: var(--ll-radius-pill);
+  background: var(--ll-color-status-neutral-bg);
+  color: var(--ll-color-text);
+  font-size: var(--ll-text-sm);
+  font-weight: var(--ll-weight-medium);
+}
+
+.status[data-status="active"] { background: var(--ll-color-status-positive-bg); }
+
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ll-space-2); }
+
+.actions form { margin: 0; }
+
+/* Allowance figures (B8 / prototype "This billing cycle"). */
+.usage { display: grid; gap: var(--ll-space-2); margin: 0; }
+
+.usageRow { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--ll-space-1) var(--ll-space-3); font-size: var(--ll-text-md); }
+
+.usageRow dt { color: var(--ll-color-text-secondary); }
+
+.usageRow dd { margin: 0; font-weight: var(--ll-weight-semibold); font-variant-numeric: tabular-nums; }

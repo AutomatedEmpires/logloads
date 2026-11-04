@@ -26,6 +26,17 @@ import {
   type MarketplaceJobDraft,
   type MarketplaceJobFilters,
   type MarketplaceMemberRole,
+  // Landing workspace (#127, #133)
+  landingOrganizationInputSchema,
+  landingPlanCodeSchema,
+  marketplaceLandingInputSchema,
+  marketplaceLandingStatusInputSchema,
+  type LandingOrganizationInput,
+  type MarketplaceLandingAllowanceView,
+  type MarketplaceLandingInput,
+  type MarketplaceLandingPoint,
+  type MarketplaceLandingStatus,
+  type MarketplaceLandingView,
   type MarketplaceListingReportReason,
   type MarketplaceListingReportReceipt
 } from "@logloads/contracts"
@@ -496,6 +507,146 @@ export function publishArguments(draft: MarketplaceJobDraft) {
     p_trucks_requested: draft.trucksRequested,
     p_work_starts_on: draft.startsOn ?? null
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Landing workspace (#127, #133): `LANDING_STATEMENTS` rows, `get_org_entitlement_state`, and their inputs.
+// ---------------------------------------------------------------------------------------------------------------
+
+/** The store's landing statuses → the V2 vocabulary: `inactive` is shown as paused. */
+const STORE_LANDING_STATUS = { active: "active", archived: "archived", inactive: "paused" } as const satisfies Record<string, MarketplaceLandingStatus>
+
+export function storeLandingStatus(status: MarketplaceLandingStatus): "active" | "inactive" | "archived" {
+  return status === "paused" ? "inactive" : status
+}
+
+const coordinateValue = z.number().finite().nullable()
+
+const ownLandingRowSchema = z.object({
+  active_jobs: z.number().int().nonnegative(),
+  county: nullableText,
+  exact_lat: coordinateValue,
+  exact_lng: coordinateValue,
+  gate_instructions: nullableText,
+  id: uuid,
+  name: z.string(),
+  public_area_label: z.string(),
+  public_lat: coordinateValue,
+  public_lng: coordinateValue,
+  site_contact_name: nullableText,
+  site_contact_phone: nullableText,
+  state_code: z.string(),
+  status: z.enum(["active", "inactive", "archived"]),
+  updated_at: nullableTimestamp
+})
+
+function pointOf(lat: number | null, lng: number | null): MarketplaceLandingPoint | null {
+  return lat === null || lng === null ? null : { lat, lng }
+}
+
+/** `own_landings` row → the team's view of one landing. The public point is the store's 0.10° value, used as given. */
+export function landingViewFromRow(row: unknown): MarketplaceLandingView {
+  const landing = parseRow(ownLandingRowSchema, row)
+
+  return {
+    activeJobs: landing.active_jobs,
+    approximatePoint: pointOf(landing.public_lat, landing.public_lng),
+    areaLabel: landing.public_area_label,
+    county: landing.county,
+    id: landing.id,
+    name: landing.name,
+    privateDetails: {
+      exactLocation: pointOf(landing.exact_lat, landing.exact_lng),
+      gateInstructions: landing.gate_instructions,
+      siteContactName: landing.site_contact_name,
+      siteContactPhone: landing.site_contact_phone
+    },
+    stateCode: landing.state_code.trim(),
+    status: STORE_LANDING_STATUS[landing.status],
+    updatedAt: landing.updated_at
+  }
+}
+
+const allowanceRowSchema = z.object({
+  active_landings: z.number().int().nonnegative(),
+  invitations_remaining: z.number().int().nonnegative().nullable(),
+  paid_landing_seats: z.number().int().nonnegative(),
+  period_end: nullableTimestamp,
+  // An entitling plan the contracts do not define is a drift between the store and LANDING_PLANS: it fails loudly.
+  plan_code: landingPlanCodeSchema.nullable()
+})
+
+/** `get_org_entitlement_state` row → counts and the entitling plan's code. Limits stay in contracts. */
+export function landingAllowanceFromRow(row: unknown): MarketplaceLandingAllowanceView {
+  const state = parseRow(allowanceRowSchema, row)
+  const entitled = state.plan_code !== null
+
+  return {
+    activeLandings: state.active_landings,
+    cycleEndsAt: entitled ? state.period_end : null,
+    invitationsRemaining: entitled ? state.invitations_remaining ?? 0 : null,
+    planCode: state.plan_code,
+    teamMembers: state.paid_landing_seats
+  }
+}
+
+export function landingInput(input: unknown): MarketplaceLandingInput {
+  return parseInput(marketplaceLandingInputSchema, input)
+}
+
+function coordinateText(value: number | undefined): string | null {
+  return value === undefined ? null : String(value)
+}
+
+/** The public row's values for `insert_landing` ($2–$8 after the org) and `update_landing` ($3–$8 after id and org). */
+export function landingPublicValues(input: MarketplaceLandingInput): [string, string, string | null, string | null, string, string | null] {
+  return [
+    input.name,
+    input.areaLabel,
+    coordinateText(input.exactLocation?.lat),
+    coordinateText(input.exactLocation?.lng),
+    input.stateCode,
+    input.county
+  ]
+}
+
+/** The private row's values for `save_landing_private` ($3–$7 after landing and org). */
+export function landingPrivateValues(input: MarketplaceLandingInput): [string | null, string | null, string | null, string | null, string | null] {
+  return [
+    coordinateText(input.exactLocation?.lat),
+    coordinateText(input.exactLocation?.lng),
+    input.gateInstructions,
+    input.siteContactName,
+    input.siteContactPhone
+  ]
+}
+
+export function landingStatusInput(landingId: unknown, status: unknown): { landingId: string; status: MarketplaceLandingStatus } {
+  return parseInput(marketplaceLandingStatusInputSchema, { landingId, status })
+}
+
+export function landingOrganizationInput(input: unknown): LandingOrganizationInput {
+  return parseInput(landingOrganizationInputSchema, input)
+}
+
+/**
+ * A slug for `organizations.slug` (unique, `^[a-z0-9]+(-[a-z0-9]+)*$`, at most 80): the name's words and a random
+ * suffix, so two businesses with the same name never collide. `fallback` stands in for a name with no letters or
+ * digits. Used for landing (#127) and hauling (#213) businesses.
+ */
+export function organizationSlug(displayName: string, suffix: string, fallback: "landing" | "hauling" = "landing"): string {
+  const words = displayName
+    .normalize("NFKD")
+    // Accents come apart under NFKD; drop the marks so "Élan" is "elan", not "e-lan".
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60)
+    .replace(/-+$/g, "")
+  const tail = suffix.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12) || "org"
+
+  return words ? `${words}-${tail}` : `${fallback}-${tail}`
 }
 
 // ---------------------------------------------------------------------------
