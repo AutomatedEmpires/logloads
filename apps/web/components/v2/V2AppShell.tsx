@@ -19,15 +19,18 @@ export function V2AppShell({
   account,
   business,
   capabilities,
-  children
+  children,
+  counts
 }: {
   account: V2ShellAccount
   business?: BusinessSwitcherProps
   capabilities: readonly MarketplaceCapability[] | null
   children: ReactNode
+  /** Unread inquiries per navigation destination (UX-09, #132). */
+  counts?: Readonly<Partial<Record<string, number>>>
 }) {
   const pathname = usePathname()
-  const navigation = v2NavigationFor(capabilities)
+  const navigation = v2NavigationFor(capabilities, counts)
   const menu = v2AccountMenuFor(account, pathname)
 
   return (

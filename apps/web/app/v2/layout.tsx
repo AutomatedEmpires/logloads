@@ -5,6 +5,7 @@ import type { ReactNode } from "react"
 import { V2AppShell } from "@/components/v2/V2AppShell"
 import { resolveV2Shell } from "@/lib/marketplace-v2/business-switcher"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
+import { v2InquiryNavCounts } from "@/lib/marketplace-v2/inquiries"
 
 import { plexFaceDeclarations } from "./_fonts/ibm-plex"
 
@@ -25,13 +26,14 @@ export default async function MarketplaceV2Layout({ children }: { children: Reac
   }
 
   const { account, business, capabilities } = await resolveV2Shell()
+  const counts = await v2InquiryNavCounts(capabilities)
 
   // The development-preview notice is in the account menu on every page, not a banner (#124 criterion 7).
   return (
     <>
       {/* #148: the self-hosted IBM Plex faces, for V2 only (app/v2/_fonts/ibm-plex.ts). Build-time constant. */}
       <style dangerouslySetInnerHTML={{ __html: plexFaceDeclarations }} />
-      <V2AppShell account={account} business={business} capabilities={capabilities}>
+      <V2AppShell account={account} business={business} capabilities={capabilities} counts={counts}>
         {children}
       </V2AppShell>
     </>
