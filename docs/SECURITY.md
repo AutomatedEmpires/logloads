@@ -229,6 +229,13 @@ The default is the pilot adapter. `VERCEL_ENV=production` always selects the pil
 selection fails closed rather than falling back to the pilot store (`adapter.ts`). No hosted database has the
 schema or the role. Provisioning them is a separate, approved step.
 
+**Provisioning (#200).** `tools/normalized-store.mjs` is the owner-run path, staging only
+([`INTEGRATIONS.md`](./INTEGRATIONS.md) §15). It creates the login role with exactly these properties, and adds a
+15-second `statement_timeout` and a 60-second `idle_in_transaction_session_timeout` on the role. The password comes
+from `LOGLOADS_NORMALIZED_DATABASE_URL` and is sent only as a SCRAM-SHA-256 verifier on psql's standard input. An
+existing role that does not meet this section is refused, never altered. CI runs the tool on disposable databases,
+then runs the adapter as the role it created (`normalized-adapter-ci.yml`, the seeded-store jobs).
+
 ## 5. Unverified requirements (UNVERIFIED unless marked)
 
 Do not claim the corresponding security property until the evidence exists. Record each result with its date,
