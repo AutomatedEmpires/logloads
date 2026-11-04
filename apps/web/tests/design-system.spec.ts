@@ -1849,6 +1849,24 @@ test.describe("the find-work map loads on request (UX-14, #137)", () => {
     }
   })
 
+  // While its code loads the map's box is already in place (JobMapLoader), so the map never pushes the list down.
+  for (const width of [1280, 390]) {
+    test(`${width} px: the map takes its place without moving the job list`, async ({ page }) => {
+      await openFindWorkMap(page, width)
+      // Every layout shift since the page opened, from the browser's own record (the Layout Instability API).
+      const shifted = await page.evaluate(() => new Promise<number>((resolve) => {
+        let total = 0
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries() as Array<PerformanceEntry & { hadRecentInput: boolean; value: number }>) {
+            if (!entry.hadRecentInput) total += entry.value
+          }
+        }).observe({ buffered: true, type: "layout-shift" })
+        setTimeout(() => resolve(total), 250)
+      }))
+      expect(shifted, "cumulative layout shift as the map loads (Lighthouse's good is under 0.1)").toBeLessThan(0.1)
+    })
+  }
+
   test.describe("without JavaScript", () => {
     test.use({ javaScriptEnabled: false })
 
