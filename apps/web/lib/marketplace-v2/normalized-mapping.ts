@@ -3,13 +3,16 @@ import { z } from "zod"
 import {
   draftProductLabel,
   expressInterestInputSchema,
+  filterMarketplaceJobs,
   haulerInterestReplyInputSchema,
   MARKETPLACE_CAPABILITIES,
+  MARKETPLACE_EQUIPMENT_TYPES,
   marketplaceContactPreferenceSchema,
   marketplaceInterestStatusSchema,
   marketplaceJobStatusSchema,
   marketplacePayUnitSchema,
   respondToInterestInputSchema,
+  sortMarketplaceJobs,
   type MarketplaceCapability,
   type MarketplaceDraftLandingContext,
   type MarketplaceHaulerEquipmentOption,
@@ -62,7 +65,7 @@ const jobRowSchema = z.object({
   accepting_interest: z.boolean(),
   destination_label: nullableText,
   ends_on: calendarDate,
-  equipment_labels: z.array(z.string()).nullable(),
+  equipment_codes: z.array(z.string()).nullable(),
   est_one_way_miles: numeric,
   estimated_daily_loads: numeric,
   estimated_loads_per_truck_per_day: numeric,
@@ -114,7 +117,8 @@ export function jobViewFromRow(row: unknown): MarketplaceJobDetailView {
     acceptingInterest: job.accepting_interest,
     destinationLabel: job.destination_label,
     endsOn: job.ends_on,
-    equipment: job.equipment_labels ?? [],
+    // Taxonomy codes, as the pilot mapping gives them (#185); every screen shows each code's label.
+    equipment: job.equipment_codes ?? [],
     estimatedDailyLoads: job.estimated_daily_loads,
     estimatedLoadsPerTruckPerDay: job.estimated_loads_per_truck_per_day,
     estimatedTonsPerLoad: job.estimated_tons_per_load,
@@ -254,10 +258,26 @@ export function landingFromRow(row: unknown): MarketplaceDraftLandingContext {
 
 const equipmentRowSchema = z.object({ configuration_key: z.string(), label: z.string(), units_listed: z.number().int() })
 
+const EQUIPMENT_CODES = new Set<string>(MARKETPLACE_EQUIPMENT_TYPES.map((type) => type.code))
+
+/**
+ * The codes in a configuration key. `equipment_units.configuration_key` is generated as `equipment_code` or
+ * `equipment_code|paired_trailer_code` (06, `equipment_units`), both `equipment_types` codes. Anything outside the
+ * contract's taxonomy is left out, never guessed.
+ */
+export function configurationEquipmentCodes(configurationKey: string): string[] {
+  return Array.from(new Set(configurationKey.split("|").map((part) => part.trim()).filter((code) => EQUIPMENT_CODES.has(code))))
+}
+
 export function equipmentOptionFromRow(row: unknown): MarketplaceHaulerEquipmentOption {
   const option = parseRow(equipmentRowSchema, row)
 
-  return { configurationKey: option.configuration_key, label: option.label, unitsListed: option.units_listed }
+  return {
+    configurationKey: option.configuration_key,
+    equipmentCodes: configurationEquipmentCodes(option.configuration_key),
+    label: option.label,
+    unitsListed: option.units_listed
+  }
 }
 
 /** `submit_expression_of_interest` row → the inquiry id. */
@@ -268,6 +288,29 @@ export function submittedInterestId(row: unknown): string {
 /** A scalar uuid result (`publish_job_posting`). */
 export function uuidValue(value: unknown): string {
   return parseRow(uuid, value)
+}
+
+/**
+ * The discovery filters and order that `list_marketplace_jobs` does not take yet. They are applied to its rows with
+ * the contract's own pure rules, exactly as the pilot adapter applies them:
+ * - the viewer's equipment setups;
+ * - product and start date;
+ * - distance from a typed place, snapped to the 0.1° grid and measured to each job's public point;
+ * - then the chosen sort.
+ * Text, equipment and pay basis were already applied by the function. They are not re-applied, because its text
+ * match is broader. Pushing these into SQL is a follow-up.
+ */
+export function refineDiscovery<T extends MarketplaceJobDetailView>(jobs: readonly T[], filters: MarketplaceJobFilters): T[] {
+  const refined = filterMarketplaceJobs(jobs, {
+    acceptingOnly: filters.acceptingOnly,
+    equipmentSetups: filters.equipmentSetups,
+    near: filters.near,
+    product: filters.product,
+    radiusMiles: filters.radiusMiles,
+    startsBy: filters.startsBy
+  })
+
+  return sortMarketplaceJobs(refined, { near: filters.near, sort: filters.sort })
 }
 
 // ---------------------------------------------------------------------------
@@ -282,7 +325,10 @@ function boundedText(value: string | null | undefined, max: number): string | nu
   return text ? text.slice(0, max) : null
 }
 
-/** `listJobs` filters → `list_marketplace_jobs` arguments, or `null` when the filter can match nothing. */
+/**
+ * `listJobs` filters → `list_marketplace_jobs` arguments, or `null` when the filter can match nothing. The function
+ * takes text, one equipment code or label, the pay basis and "accepting only". `refineDiscovery` applies the rest.
+ */
 export function jobFilterArguments(filters: MarketplaceJobFilters) {
   const payUnit = filters.payUnit ? marketplacePayUnitSchema.safeParse(filters.payUnit) : null
 

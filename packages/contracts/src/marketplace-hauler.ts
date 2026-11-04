@@ -16,8 +16,9 @@ import type { MarketplaceVerification } from "./marketplace-v2"
  *   listed              hauler_profiles.is_public           setting   owner or manager; recorded consent (F1)
  *   acceptsInvitations  hauler_profiles.accepts_targeted_invitations   setting   owner or manager; off by default (§1.4)
  *
- * The business type from setup ("Just me", "A hauling company") and a business phone or default contact route have
- * no column, so they are not stored here (the contact route is chosen on each inquiry).
+ * The home base's point (`homeBasePoint`) becomes hauler_profiles.service_center. The business type from setup
+ * ("Just me", "A hauling company") and a business phone or default contact route have no column, so they are not
+ * stored here (the contact route is chosen on each inquiry).
  */
 
 export const HAULER_BUSINESS_NAME_MAX_LENGTH = 160
@@ -46,14 +47,16 @@ const ZIP = /^(\d{5})(?:-\d{4})?$/
 const TOWN = /^([A-Za-z][A-Za-z .'-]*[A-Za-z.])(?:\s*,\s*([A-Za-z]{2}))?$/
 
 export const HOME_BASE_FORMAT_MESSAGE = "Enter a town (Sweet Home, OR) or a 5-digit ZIP code. A street address is never needed."
+export const HOME_BASE_UNKNOWN_MESSAGE =
+  "We couldn't place that town or ZIP. LogLoads knows towns in Oregon's timber country for now: choose the nearest one from the list."
 
 export type HaulerHomeBaseResult = { ok: true; label: string; kind: "town" | "zip" } | { ok: false; message: string }
 
 /**
  * A home base as the business types it: "Sweet Home, OR", "sweet home", "97386" or "97386-1234". The result is the
- * label shown to landing operators ("Sweet Home, OR", "97386"). Anything with a house number, or any other text, is
- * refused rather than guessed at. This checks the format only; whether a town is on the Find work place list is
- * decided where that list lives.
+ * label typed ("Sweet Home, OR", "97386"). Anything with a house number, or any other text, is refused rather than
+ * guessed at. This checks the format only; the server then places it on the Find work place list
+ * (apps/web/lib/marketplace-v2/places.ts), and a place that is not listed is refused, never guessed.
  */
 export function parseHaulerHomeBase(input: string): HaulerHomeBaseResult {
   const text = input.replace(/\s+/g, " ").trim()
@@ -124,6 +127,14 @@ export const haulerProfileInputSchema = z.object({
       }
       return parsed.label
     }),
+  /**
+   * The home base's point on the public 0.1° grid, from the server's place list (never from the browser); `null` with
+   * no home base. It becomes `hauler_profiles.service_center`, the area an availability report is for.
+   */
+  homeBasePoint: z
+    .object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) })
+    .nullable()
+    .default(null),
   legalName: optionalText(HAULER_LEGAL_NAME_MAX_LENGTH, `Keep the legal name to ${HAULER_LEGAL_NAME_MAX_LENGTH} characters or fewer`),
   listed: z.boolean(),
   serviceRadiusMiles: z

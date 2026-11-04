@@ -198,16 +198,20 @@ describe.skipIf(!DISPOSABLE)("normalized hauler profile contract (disposable Pos
     expect((await one<{ about: string }>("select description as about from marketplace.hauler_profiles where org_id = $1::uuid", [haul])).about).toBe("Manager's words")
   })
 
-  it("clears the service point when the home base changes, so an old town's position is never reused", async () => {
-    await admin.unsafe(
-      "update marketplace.hauler_profiles set service_center = extensions.st_GeogFromText('SRID=4326;POINT(-122.73 44.40)') where org_id = $1::uuid",
+  it("sets the service point from the home base's place, on the public grid, and clears it with no home base", async () => {
+    const point = async () => one<{ lat: number | null; lng: number | null }>(
+      `select extensions.st_y(service_center::extensions.geometry) as lat, extensions.st_x(service_center::extensions.geometry) as lng
+       from marketplace.hauler_profiles where org_id = $1::uuid`,
       [haul]
     )
-    await port.saveHaulerProfile(as("owner"), form({ about: "Manager's words", homeBase: "Sweet Home, OR" }))
-    expect((await one<{ placed: boolean }>("select service_center is not null as placed from marketplace.hauler_profiles where org_id = $1::uuid", [haul])).placed).toBe(true)
 
-    await port.saveHaulerProfile(as("owner"), form({ about: "Manager's words", homeBase: "97386" }))
-    expect((await one<{ placed: boolean }>("select service_center is not null as placed from marketplace.hauler_profiles where org_id = $1::uuid", [haul])).placed).toBe(false)
+    await port.saveHaulerProfile(as("owner"), form({ about: "Manager's words", homeBase: "Sweet Home, OR", homeBasePoint: { lat: 44.4, lng: -122.7 } }))
+    const placed = await point()
+    expect(placed.lat).toBeCloseTo(44.4, 6)
+    expect(placed.lng).toBeCloseTo(-122.7, 6)
+
+    await port.saveHaulerProfile(as("owner"), form({ about: "Manager's words", homeBase: null, homeBasePoint: null }))
+    expect(await point()).toEqual({ lat: null, lng: null })
   })
 
   it("re-opens verification when a verified business changes its legal name (LE-08)", async () => {

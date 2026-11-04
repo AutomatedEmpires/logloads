@@ -66,7 +66,7 @@ import { HaulerSetupChecklist } from "@/components/v2/onboarding/HaulerSetupChec
 import { saveHaulerProfileAction, startHaulingBusinessAction } from "./hauler-actions"
 import { initialProfileFormState, PROFILE_SAVE_UNAVAILABLE, START_BUSINESS_UNAVAILABLE } from "./hauler-profile-form"
 import { MarketplaceOperationUnavailableError, MarketplaceRefusalError } from "./port"
-import { sessionHaulerChecklist } from "./hauler-setup"
+import { haulerChecklistFor } from "./hauler-setup"
 
 const HAULER_ORG = "33333333-bbbb-4bbb-8bbb-333333333333"
 const USER_ID = "55555555-dddd-4ddd-8ddd-555555555555"
@@ -212,6 +212,7 @@ describe("/v2/hauler/profile", () => {
     }
     expect(html).toMatch(/id="profile-legal-name-hint"[^>]*>Private: never shown on your profile\./)
     expect(text).toContain("A town or ZIP code, never a street address.")
+    expect(html).toMatch(/<datalist id="profile-home-base-places">[\s\S]*value="Sweet Home, OR"/)
     expect(text).not.toMatch(FORBIDDEN)
   })
 
@@ -279,6 +280,19 @@ describe("saveHaulerProfileAction", () => {
     expect(mocks.saveHaulerProfile).not.toHaveBeenCalled()
   })
 
+  it("places the home base on the Find work list, and refuses a town it cannot place", async () => {
+    mocks.saveHaulerProfile.mockResolvedValue(profile())
+    await saveHaulerProfileAction(idle, post({ ...VALID_POST, homeBase: "97386" }))
+    expect(mocks.saveHaulerProfile).toHaveBeenCalledWith(viewer, expect.objectContaining({
+      homeBase: "Sweet Home, OR",
+      homeBasePoint: { lat: 44.4, lng: -122.7 }
+    }))
+
+    const unknown = await saveHaulerProfileAction(idle, post({ ...VALID_POST, homeBase: "Bend, WA" }))
+    expect(unknown).toMatchObject({ issues: [{ field: "homeBase", message: expect.stringContaining("couldn't place") }], status: "invalid", values: { homeBase: "Bend, WA" } })
+    expect(mocks.saveHaulerProfile).toHaveBeenCalledTimes(1)
+  })
+
   it("says plainly when saving is not available, keeps the input and claims nothing", async () => {
     mocks.saveHaulerProfile.mockRejectedValue(new MarketplaceOperationUnavailableError("Saving a hauling business profile"))
     const state = await saveHaulerProfileAction(idle, post(VALID_POST))
@@ -323,19 +337,19 @@ describe("startHaulingBusinessAction", () => {
 describe("the Find work checklist", () => {
   it("lists what is left for a hauling business, and nothing for anyone else or once done", async () => {
     mocks.haulerProfile.mockResolvedValue(profile({ homeBase: null }))
-    const items = await sessionHaulerChecklist()
+    const items = await haulerChecklistFor(viewer, true)
     const html = renderToStaticMarkup(<HaulerSetupChecklist items={items} />)
 
     expect(html).toContain('href="/v2/hauler/profile?setup=1"')
     expect(textOf(html)).toContain("Search works without it.")
 
     mocks.haulerProfile.mockResolvedValue(profile())
-    expect(renderToStaticMarkup(<HaulerSetupChecklist items={await sessionHaulerChecklist()} />)).toBe("")
+    expect(renderToStaticMarkup(<HaulerSetupChecklist items={await haulerChecklistFor(viewer, true)} />)).toBe("")
 
-    mocks.viewerAccess.mockResolvedValue({ capabilities: ["job.publish"], organizationName: "Summit" })
-    expect(await sessionHaulerChecklist()).toEqual([])
+    expect(await haulerChecklistFor(viewer, false)).toEqual([])
+    expect(await haulerChecklistFor(null, true)).toEqual([])
 
-    mocks.getSessionActor.mockResolvedValue(null)
-    expect(await sessionHaulerChecklist()).toEqual([])
+    mocks.haulerProfile.mockRejectedValue(new Error("store down"))
+    expect(await haulerChecklistFor(viewer, true)).toEqual([])
   })
 })

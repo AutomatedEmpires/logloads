@@ -46,6 +46,7 @@ describe("validateHaulerProfileForm", () => {
         acceptsInvitations: false,
         businessName: "Ridgeline Hauling",
         homeBase: "Sweet Home, OR",
+        homeBasePoint: null,
         legalName: null,
         listed: false,
         serviceRadiusMiles: 100

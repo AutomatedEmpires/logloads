@@ -19,11 +19,14 @@ import {
   PROFILE_SETUP_NEXT_PATH
 } from "@/lib/marketplace-v2/hauler-profile-form"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
+import { MARKETPLACE_PLACES, placeLabel } from "@/lib/marketplace-v2/places"
 import { MarketplaceRefusalError } from "@/lib/marketplace-v2/port"
 import { resolveV2Viewer, withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
 import { getSessionActor } from "@/lib/session"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
+
+const PLACE_OPTIONS = MARKETPLACE_PLACES.map(placeLabel)
 
 function one(value: string | string[] | undefined): string {
   return (Array.isArray(value) ? value[0] : value) ?? ""
@@ -133,6 +136,7 @@ export default async function HaulerProfilePage({ searchParams }: { searchParams
                     canEditIdentity={profile.canEditIdentity}
                     canEditProfile={profile.canEditProfile}
                     initial={initialProfileFormState(haulerProfileFormValues(profile))}
+                    places={PLACE_OPTIONS}
                     setup={setup}
                     skipHref={PROFILE_SETUP_NEXT_PATH}
                     supportsSaving={pilotMarketplaceV2.supportsHaulerProfile}

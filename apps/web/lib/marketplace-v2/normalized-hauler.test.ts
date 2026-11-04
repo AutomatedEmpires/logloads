@@ -98,7 +98,14 @@ describe("saveHaulerProfile", () => {
 
     await expect(port().saveHaulerProfile(viewer, { ...form, homeBase: "97386" })).resolves.toMatchObject({ homeBase: "97386" })
     expect(statements.map((statement) => statement.name)).toEqual(["hauler_profile", "hauler_profile_update", "hauler_profile"])
-    expect(statements[1]).toEqual({ name: "hauler_profile_update", readOnly: false, values: [HAUL, "97386", 100, null, false, false] })
+    expect(statements[1]).toEqual({ name: "hauler_profile_update", readOnly: false, values: [HAUL, "97386", 100, null, false, false, null, null] })
+  })
+
+  it("writes the home base's place-list point as the service point", async () => {
+    profileRows = [[row()], [row()]]
+
+    await port().saveHaulerProfile(viewer, { ...form, homeBasePoint: { lat: 44.4, lng: -122.7 } })
+    expect(statements[1]?.values.slice(-2)).toEqual([44.4, -122.7])
   })
 
   it("writes the organization first when the owner renames the business", async () => {
@@ -142,7 +149,9 @@ describe("haulerProfileFromRow", () => {
 describe("marketplaceQueryStatement", () => {
   it("binds every value as text and refuses a value of the wrong type or count", () => {
     expect(marketplaceQueryStatement("hauler_profile", [HAUL])).toEqual({ text: MARKETPLACE_QUERIES.hauler_profile.text, values: [HAUL] })
-    expect(marketplaceQueryStatement("hauler_profile_update", [HAUL, null, 100, null, true, false]).values).toEqual([HAUL, null, "100", null, "true", "false"])
+    expect(marketplaceQueryStatement("hauler_profile_update", [HAUL, null, 100, null, true, false, 44.4, -122.7]).values).toEqual([
+      HAUL, null, "100", null, "true", "false", "44.4", "-122.7"
+    ])
     expect(() => marketplaceQueryStatement("hauler_profile", ["x'; drop table marketplace.organizations; --"])).toThrow(TypeError)
     expect(() => marketplaceQueryStatement("hauler_profile", [])).toThrow(TypeError)
     expect(() => marketplaceQueryStatement("nope" as never, [])).toThrow(TypeError)

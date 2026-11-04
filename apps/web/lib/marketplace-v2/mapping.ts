@@ -10,6 +10,7 @@ import {
   type VerificationRecord
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
+import { pilotEquipmentCode } from "@logloads/services"
 
 import type { NetworkLoadView } from "../network"
 
@@ -26,10 +27,15 @@ import type { NetworkLoadView } from "../network"
  *   trucks, so the total trucks for the job is unknown (null) rather than guessed.
  * - Pilot pay is the driver pay per load the host stated; there is no other basis and no pay note.
  * - The pilot records no loads-per-day or loads-per-truck estimates; those stay null.
+ * - Pilot equipment requirements are free tags ("pole-trailer", "chip-box", "chains"). Tags that name a taxonomy
+ *   code become that code, so every screen shows its label and fit can compare it; the rest ("chains") are other
+ *   requirements, listed with the access requirements rather than shown as a raw code. Access tags are shown in
+ *   words too ("snow-kit" → "Snow kit").
+ * - Products use the controlled list's wording where the pilot type has one (UX-DEC-03).
  */
 
 const PRODUCT_LABELS: Record<string, string> = {
-  biomass: "Biomass",
+  biomass: "Hog fuel and biomass",
   chips: "Chips",
   mixed: "Mixed products",
   other: "Other timber",
@@ -50,6 +56,26 @@ const ROAD_CONDITION_LABELS: Record<RoadCondition, string> = {
 
 export function humanizeProduct(loadType: string): string {
   return PRODUCT_LABELS[loadType] ?? loadType.replace(/_/g, " ")
+}
+
+/** A pilot tag in words: "snow-kit" → "Snow kit". */
+function sentenceCase(tag: string): string {
+  const words = tag.trim().replace(/[_-]+/g, " ")
+  return `${words.charAt(0).toUpperCase()}${words.slice(1)}`
+}
+
+/** Pilot equipment tags split into taxonomy codes and other stated requirements, in words rather than raw tags. */
+export function pilotJobEquipment(tags: readonly string[]): { codes: string[]; otherRequirements: string[] } {
+  const codes = new Set<string>()
+  const other = new Set<string>()
+
+  for (const tag of tags) {
+    const code = pilotEquipmentCode(tag)
+    if (code) codes.add(code)
+    else if (tag.trim()) other.add(sentenceCase(tag))
+  }
+
+  return { codes: [...codes], otherRequirements: [...other] }
 }
 
 /**
@@ -93,12 +119,13 @@ export function toJobDetailView(
   const origin = view.landing
   const destination = view.destination
   const roadSummary = ROAD_CONDITION_LABELS[view.route.condition]
+  const equipment = pilotJobEquipment(view.equipment)
 
   return {
     acceptingInterest: marketplaceJobAcceptsInterest(status),
     destinationLabel: destination ? [destination.name, [destination.city, destination.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ") : null,
     endsOn,
-    equipment: [...view.equipment],
+    equipment: equipment.codes,
     estimatedDailyLoads: null,
     estimatedLoadsPerTruckPerDay: null,
     estimatedTonsPerLoad: load.estimatedTonsPerLoad ?? null,
@@ -119,7 +146,7 @@ export function toJobDetailView(
     posterOrganizationId: load.companyId,
     posterVerification,
     product: humanizeProduct(load.loadType),
-    publicAccessRequirements: [...view.accessRequirements],
+    publicAccessRequirements: Array.from(new Set([...view.accessRequirements.map(sentenceCase), ...equipment.otherRequirements])),
     publicRoadNotes: [roadSummary, view.route.weatherNotes].filter(Boolean).join(". ") || null,
     scheduleNote: load.scheduleType === "one_off" ? null : view.scheduleLabel || null,
     slug: load.id,

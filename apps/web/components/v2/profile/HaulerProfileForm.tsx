@@ -42,6 +42,8 @@ export interface HaulerProfileFormProps {
   verified: boolean
   /** Whether this store saves the profile; when false the page says so before anything is typed. */
   supportsSaving: boolean
+  /** Known towns ("Sweet Home, OR") offered as suggestions for the home base. */
+  places: readonly string[]
   /** Setup step 2 (UX 02 §A3): Save and continue, or Skip to `skipHref`. */
   setup: boolean
   skipHref: string
@@ -89,6 +91,7 @@ export function HaulerProfileForm({
   canEditIdentity,
   canEditProfile,
   initial,
+  places,
   setup,
   skipHref,
   supportsSaving,
@@ -139,7 +142,7 @@ export function HaulerProfileForm({
             </FormField>
             <FormField
               error={error("homeBase")}
-              hint={`${PUBLIC} A town or ZIP code, never a street address.`}
+              hint={`${PUBLIC} A town or ZIP code, never a street address. Choose the nearest town on the list.`}
               id={PROFILE_FIELD_IDS.homeBase}
               label={FIELD_LABELS.homeBase}
               optional
@@ -147,12 +150,18 @@ export function HaulerProfileForm({
               <input
                 autoComplete="off"
                 defaultValue={values.homeBase}
+                list="profile-home-base-places"
                 maxLength={HAULER_HOME_BASE_MAX_LENGTH}
                 name="homeBase"
                 placeholder="Sweet Home, OR"
                 type="text"
               />
             </FormField>
+            <datalist id="profile-home-base-places">
+              {places.map((place) => (
+                <option key={place} value={place} />
+              ))}
+            </datalist>
             <FormField
               error={error("serviceRadiusMiles")}
               hint={`${PUBLIC} From your home base.`}

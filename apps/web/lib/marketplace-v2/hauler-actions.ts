@@ -3,7 +3,13 @@
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 
-import { EMPTY_HAULER_PROFILE_FORM, haulerProfileFormValues, validateHaulerProfileForm } from "@logloads/contracts"
+import {
+  EMPTY_HAULER_PROFILE_FORM,
+  HOME_BASE_UNKNOWN_MESSAGE,
+  haulerProfileFormValues,
+  validateHaulerProfileForm,
+  type HaulerProfileInput
+} from "@logloads/contracts"
 import { DomainRefusalError } from "@logloads/services"
 
 import { checkRateLimit } from "../rate-limit"
@@ -22,7 +28,22 @@ import {
   type StartBusinessFormState
 } from "./hauler-profile-form"
 import { pilotMarketplaceV2 } from "./pilot-adapter"
+import { placeLabel, resolvePlace } from "./places"
 import { MarketplaceOperationUnavailableError, MarketplaceRefusalError } from "./port"
+
+/**
+ * The home base placed on the Find work place list (#129): its label becomes the list's ("97386" -> "Sweet Home, OR")
+ * and its 0.1 degree point the business's service point. `null` when the place is not on the list; it is never guessed.
+ */
+function placedProfile(input: HaulerProfileInput): HaulerProfileInput | null {
+  if (input.homeBase === null) {
+    return { ...input, homeBasePoint: null }
+  }
+
+  const lookup = resolvePlace(input.homeBase)
+
+  return lookup.status === "found" ? { ...input, homeBase: placeLabel(lookup.place), homeBasePoint: lookup.place.point } : null
+}
 
 /**
  * The hauling business profile form's action (#125). Identity and the acting business come from the server session
@@ -61,12 +82,18 @@ export async function saveHaulerProfileAction(previous: HaulerProfileFormState, 
     return { ...answer("invalid", null), issues: validation.issues }
   }
 
+  const input = placedProfile(validation.input)
+
+  if (!input) {
+    return { ...answer("invalid", null), issues: [{ field: "homeBase", message: HOME_BASE_UNKNOWN_MESSAGE }] }
+  }
+
   const viewer = { organizationId: actor.activeOrganization.id, userId: actor.profile.id }
   let saved: HaulerProfileFormState
 
   try {
     await checkRateLimit("marketplace-hauler-profile", viewer.userId, 30, 60 * 60_000)
-    const profile = await pilotMarketplaceV2.saveHaulerProfile(viewer, validation.input)
+    const profile = await pilotMarketplaceV2.saveHaulerProfile(viewer, input)
     saved = { ...answer("saved", PROFILE_SAVED), values: haulerProfileFormValues(profile) }
   } catch (error) {
     if (error instanceof MarketplaceOperationUnavailableError) {
@@ -114,6 +141,10 @@ export async function startHaulingBusinessAction(previous: StartBusinessFormStat
 
   if (!validation.ok) {
     return { attempt, issues: validation.issues, message: null, status: "invalid", values }
+  }
+
+  if (!placedProfile(validation.input)) {
+    return { attempt, issues: [{ field: "homeBase", message: HOME_BASE_UNKNOWN_MESSAGE }], message: null, status: "invalid", values }
   }
 
   return { attempt, issues: [], message: START_BUSINESS_UNAVAILABLE, status: "unavailable", values }

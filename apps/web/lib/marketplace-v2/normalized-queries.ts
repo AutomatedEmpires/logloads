@@ -15,7 +15,7 @@
  * come back as `to_jsonb(row)`, like the function calls.
  */
 
-export type MarketplaceQueryArgument = "uuid" | "text" | "integer" | "boolean"
+export type MarketplaceQueryArgument = "uuid" | "text" | "integer" | "numeric" | "boolean"
 
 interface QuerySpec {
   args: readonly MarketplaceQueryArgument[]
@@ -42,15 +42,18 @@ select to_jsonb(p) as row from (
   },
 
   /**
-   * The profile fields an owner or manager may change. A changed home base clears the service point, so an area
-   * search never uses the previous town's position (V2 has no place list to set a new one yet).
+   * The profile fields an owner or manager may change. The service point is the home base's place-list point
+   * ($7 latitude, $8 longitude; the guard trigger snaps it to the public grid), or none without a home base.
    */
   hauler_profile_update: {
-    args: ["uuid", "text", "integer", "text", "boolean", "boolean"],
+    args: ["uuid", "text", "integer", "text", "boolean", "boolean", "numeric", "numeric"],
     text: `
 with changed as (
   update marketplace.hauler_profiles
-  set service_center = case when base_area_label is distinct from $2::text then null else service_center end,
+  set service_center = case
+        when $7::text is null or $8::text is null then null
+        else extensions.st_setsrid(extensions.st_makepoint($8::text::float8, $7::text::float8), 4326)::extensions.geography
+      end,
       base_area_label = $2::text,
       service_radius_miles = $3::text::integer,
       description = $4::text,
@@ -96,6 +99,9 @@ function serializeQueryValue(value: MarketplaceQueryValue, type: MarketplaceQuer
       break
     case "integer":
       if (typeof value === "number" && Number.isSafeInteger(value)) return String(value)
+      break
+    case "numeric":
+      if (typeof value === "number" && Number.isFinite(value)) return String(value)
       break
     case "boolean":
       if (typeof value === "boolean") return value ? "true" : "false"

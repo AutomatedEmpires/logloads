@@ -703,7 +703,7 @@ export { destinationFacilityVerificationAt, millUsableByOrganization } from "./d
 export { directOfferClaimCount, directOfferIsClaimable, effectiveDirectOfferStatus } from "./operating-network"
 export { DomainRefusalError } from "./utils"
 export { marketplaceJobStatus, type MarketplaceActor } from "./marketplace-interest"
-export { pilotMarketplaceMembership, type MarketplaceViewerAccess } from "./marketplace-access"
+export { pilotEquipmentCode, pilotMarketplaceMembership, type MarketplaceViewerAccess } from "./marketplace-access"
 export {
   HAULER_IDENTITY_EDIT_REFUSED,
   HAULER_PROFILE_EDIT_REFUSED,

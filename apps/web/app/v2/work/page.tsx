@@ -1,107 +1,177 @@
 import { notFound } from "next/navigation"
 
-import { marketplacePayUnitSchema, type MarketplacePayUnit } from "@logloads/contracts"
-import { ContentGrid, PageContainer, PageHeader, Section } from "@logloads/ui/layout"
-import { JobResultList, JobResultRow } from "@logloads/ui/marketplace"
+import {
+  MARKETPLACE_PAY_UNIT_LABELS,
+  marketplaceComparablePayUnits,
+  marketplaceDistanceMiles,
+  marketplaceEquipmentFit
+} from "@logloads/contracts"
+import { PageContainer, PageHeader } from "@logloads/ui/layout"
 import { Button, EmptyState } from "@logloads/ui/primitives"
 
+import { FindWorkFilters } from "@/components/v2/discovery/FindWorkFilters"
+import { FindWorkResults, type FindWorkRow } from "@/components/v2/discovery/FindWorkResults"
+import { SortControl } from "@/components/v2/discovery/SortControl"
 import { JobMapLoader } from "@/components/v2/JobMapLoader"
 import { HaulerSetupChecklist } from "@/components/v2/onboarding/HaulerSetupChecklist"
-import { WorkFilters } from "@/components/v2/WorkFilters"
+import {
+  effectiveSort,
+  filterTexts,
+  FIND_WORK_RADIUS_LABELS,
+  findWorkEmptyState,
+  findWorkFilters,
+  findWorkFormValues,
+  findWorkHiddenFields,
+  findWorkHref,
+  parseFindWorkSearch,
+  whereText,
+  type FindWorkContext,
+  type FindWorkSearch
+} from "@/lib/marketplace-v2/find-work"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
-import { sessionHaulerChecklist } from "@/lib/marketplace-v2/hauler-setup"
+import { haulerChecklistFor } from "@/lib/marketplace-v2/hauler-setup"
+import { jobMapPoints } from "@/lib/marketplace-v2/job-map"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
+import { MARKETPLACE_PLACES, placeLabel } from "@/lib/marketplace-v2/places"
+import { getSessionActor } from "@/lib/session"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
-function one(value: string | string[] | undefined): string {
-  return (Array.isArray(value) ? value[0] : value)?.trim() ?? ""
+const PLACE_OPTIONS = MARKETPLACE_PLACES.map(placeLabel)
+
+/** "Within 100 mi of Sweet Home, OR · accepting interest" */
+function listDescription(search: FindWorkSearch): string {
+  const where = search.place.status === "found"
+    ? search.radius === "any" ? `Near ${placeLabel(search.place.place)}` : `Within ${FIND_WORK_RADIUS_LABELS[search.radius]} of ${placeLabel(search.place.place)}`
+    : "Anywhere"
+  return `${where} · ${search.includeClosed ? "including filled, paused and closed listings" : "accepting interest"}`
 }
 
 /**
- * Find work (hauler), built from the design system (DS-04, #147). `data-ds-page` on the root names the page for the
- * DS-05 regression suite. The page fetches and decides; the components only render.
+ * Find work (hauler home, UX-06 #129; UX 02 §A6; 06_DESIGN_SYSTEM.md §4–5). The page reads the search from the URL,
+ * resolves the viewer and their own equipment from the session, and asks the port for matching jobs; the components
+ * only render. Location is a typed town or ZIP, never a device location, and every distance is measured to a job's
+ * approximate public point. Works without JavaScript: the filters are a GET form and each row is a plain link.
  */
 export default async function FindWorkPage({ searchParams }: { searchParams: SearchParams }) {
   if (!marketplaceV2Enabled()) notFound()
 
   const params = await searchParams
-  const query = one(params.q)
-  const equipment = one(params.equipment)
-  const payParse = marketplacePayUnitSchema.safeParse(one(params.pay))
-  const payUnit: MarketplacePayUnit | null = payParse.success ? payParse.data : null
-  const includeInactive = one(params.all) === "1"
-  const showMap = one(params.view) === "map"
-
-  const [jobs, everything, checklist] = await Promise.all([
-    pilotMarketplaceV2.listJobs({ acceptingOnly: !includeInactive, equipment, payUnit, query }),
-    pilotMarketplaceV2.listJobs({ acceptingOnly: false }),
-    sessionHaulerChecklist()
-  ])
-  const equipmentOptions = Array.from(new Set(everything.flatMap((job) => job.equipment))).sort()
   const now = new Date().toISOString()
-  const mapQuery = new URLSearchParams({ ...(query ? { q: query } : {}), ...(equipment ? { equipment } : {}), ...(payUnit ? { pay: payUnit } : {}), ...(includeInactive ? { all: "1" } : {}) })
-  const listHref = mapQuery.toString() ? `/v2/work?${mapQuery.toString()}` : "/v2/work"
-  const mapHref = `/v2/work?${new URLSearchParams({ ...Object.fromEntries(mapQuery), view: "map" }).toString()}`
-  const points = jobs.flatMap((job) => job.origin.approximatePoint ? [{ id: job.id, title: job.title, ...job.origin.approximatePoint }] : [])
-  const filtered = Boolean(query || equipment || payUnit)
+
+  // Identity is the session's (CLAUDE.md); a visitor sees the public board with no fit and no "My trucks".
+  const actor = await getSessionActor()
+  const workspace = actor && !actor.workspaceSelectionInvalid ? actor.activeOrganization ?? null : null
+  const viewer = actor && workspace ? { organizationId: workspace.id, userId: actor.profile.id } : null
+  const access = viewer ? await pilotMarketplaceV2.viewerAccess(viewer).catch(() => null) : null
+  const canExpress = Boolean(access?.capabilities.includes("interest.express"))
+  const equipment = canExpress && viewer ? await pilotMarketplaceV2.haulerEquipment(viewer).catch(() => []) : []
+  const setups = equipment.map((option) => option.equipmentCodes).filter((codes) => codes.length > 0)
+  const context: FindWorkContext = { hasSetups: setups.length > 0 }
+
+  const search = parseFindWorkSearch(params, context)
+  const jobs = await pilotMarketplaceV2.listJobs(findWorkFilters(search, { now, setups }))
+  const origin = search.place.status === "found" ? search.place.place.point : null
+  const href = (overrides: Partial<FindWorkSearch>) => findWorkHref(search, context, overrides)
+
+  // Each listed job's public detail view and the viewer's standing interest, so selecting a row needs no request.
+  const [details, interests, checklist] = await Promise.all([
+    Promise.all(jobs.map((job) => pilotMarketplaceV2.getJob(job.id))),
+    canExpress && viewer ? pilotMarketplaceV2.listHaulerInterests(viewer).catch(() => []) : Promise.resolve([]),
+    haulerChecklistFor(viewer, canExpress)
+  ])
+  const sentTo = new Set(interests.filter((interest) => interest.status !== "withdrawn").map((interest) => interest.job.id))
+
+  const rows: FindWorkRow[] = details.flatMap((job) => {
+    if (!job) return []
+    const own = job.posterOrganizationId === workspace?.id
+
+    return [{
+      canExpressInterest: canExpress && !own,
+      distanceMiles: origin ? marketplaceDistanceMiles(origin, job) : null,
+      // Advisory, from the viewer's own setups; never on the viewer's own listing.
+      fit: setups.length > 0 && !own ? marketplaceEquipmentFit(job.equipment, setups) ?? undefined : undefined,
+      href: `/v2/work/${job.slug}`,
+      interestSent: sentTo.has(job.id),
+      job,
+      selectHref: href({ jobId: job.id })
+    }]
+  })
+  const selectedId = search.jobId && rows.some((row) => row.job.id === search.jobId) ? search.jobId : null
+
+  const showMap = search.view === "map"
+  // Each pin's preview is the job's public card (#183): the allowlisted fields only, never the detail view.
+  const points = jobMapPoints(jobs)
+  const sort = effectiveSort(search)
+  const bases = marketplaceComparablePayUnits(jobs)
+  const empty = rows.length === 0 ? findWorkEmptyState(search, context) : null
+  const notes = [
+    search.place.status === "unknown" ? (
+      <p key="place">
+        We couldn&apos;t place &ldquo;{search.place.input}&rdquo;, so jobs at every distance are shown. Change the search to
+        choose a known town or ZIP.
+      </p>
+    ) : null,
+    sort === "pay" && bases.length > 1 ? (
+      <p key="bases">
+        Rates use different bases ({bases.map((unit) => MARKETPLACE_PAY_UNIT_LABELS[unit]).join(", ")}). Pay is sorted within
+        each basis, never across them.
+      </p>
+    ) : null
+  ].filter(Boolean)
 
   return (
     <div data-ds-page="find-work">
       <PageHeader description="Real jobs from landing operators. Free for haulers." title="Find hauling work">
-        <WorkFilters
-          equipment={equipment}
-          equipmentOptions={equipmentOptions}
-          includeInactive={includeInactive}
-          payUnit={payUnit}
-          query={query}
-          showMap={showMap}
+        <FindWorkFilters
+          places={PLACE_OPTIONS}
+          resetHref={findWorkHref(parseFindWorkSearch({}, context), context, { view: search.view })}
+          values={findWorkFormValues(search, setups.length)}
+          what={filterTexts(search).join(" · ")}
+          where={whereText(search)}
         />
       </PageHeader>
       <PageContainer>
-        <ContentGrid
-          layout="single"
-          main={
+        <HaulerSetupChecklist items={checklist} />
+        <FindWorkResults
+          actions={
             <>
-              <HaulerSetupChecklist items={checklist} />
-              {showMap ? <JobMapLoader points={points} /> : null}
-              <Section
-                actions={
-                  <Button
-                    href={showMap ? listHref : mapHref}
-                    icon="nav.map"
-                    label={showMap ? "Hide map" : "Show map"}
-                    size="sm"
-                    variant="secondary"
-                  />
-                }
-                description={
-                  includeInactive
-                    ? "Including filled, paused and closed listings. Listings the poster confirmed come first."
-                    : "Accepting interest. Listings the poster confirmed come first, then the most recently edited."
-                }
-                title={`${jobs.length} job${jobs.length === 1 ? "" : "s"}`}
-                variant="flush"
-              >
-                {jobs.length === 0 ? (
-                  <EmptyState
-                    actions={filtered ? <Button href="/v2/work" label="Clear filters" size="sm" variant="secondary" /> : null}
-                    body={`LogLoads lists only real postings from landing operators. Try another equipment type or pay basis,${includeInactive ? "" : " include filled and closed jobs,"} or check back later.`}
-                    title="No jobs match right now"
-                  />
-                ) : (
-                  <JobResultList
-                    footnote="Pay is shown as each poster stated it. Rates on different bases (per load, per ton, per hour) are never converted into one another."
-                    label="Jobs"
-                  >
-                    {jobs.map((job) => (
-                      <JobResultRow context="hauler" href={`/v2/work/${job.slug}`} job={job} key={job.id} now={now} />
-                    ))}
-                  </JobResultList>
-                )}
-              </Section>
+              {rows.length > 1 ? (
+                <SortControl
+                  hidden={findWorkHiddenFields(search, context, { jobId: null, sort: "newest" })}
+                  nearestAvailable={origin !== null}
+                  value={sort}
+                />
+              ) : null}
+              <Button
+                href={href({ jobId: null, view: showMap ? "list" : "map" })}
+                icon="nav.map"
+                label={showMap ? "Hide map" : "Show map"}
+                size="sm"
+                variant="secondary"
+              />
             </>
           }
+          closeHref={href({ jobId: null })}
+          description={listDescription(search)}
+          empty={
+            empty ? (
+              <EmptyState
+                actions={empty.actions.map((action) => (
+                  <Button href={action.href} key={action.label} label={action.label} size="sm" variant="secondary" />
+                ))}
+                body={empty.body}
+                title={empty.title}
+              />
+            ) : null
+          }
+          footnote="Pay is shown as each poster stated it. Rates on different bases (per load, per ton, per hour) are never converted into one another."
+          heading={`${rows.length} job${rows.length === 1 ? "" : "s"}`}
+          map={showMap ? <JobMapLoader now={now} points={points} /> : null}
+          notes={notes.length > 0 ? notes : null}
+          now={now}
+          rows={rows}
+          selectedId={selectedId}
         />
       </PageContainer>
     </div>

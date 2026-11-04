@@ -135,7 +135,9 @@ export function normalizedHaulerProfileMethods(asViewer: AsViewer): Pick<Marketp
           input.serviceRadiusMiles,
           input.about,
           input.listed,
-          input.acceptsInvitations
+          input.acceptsInvitations,
+          input.homeBase === null ? null : input.homeBasePoint?.lat ?? null,
+          input.homeBase === null ? null : input.homeBasePoint?.lng ?? null
         ])
 
         if (changed.length !== 1) {
