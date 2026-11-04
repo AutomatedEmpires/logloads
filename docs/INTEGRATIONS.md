@@ -13,11 +13,14 @@
 **Order.** Do staging end to end first, then production only when it is authorized:
 
 1. Doppler (§1)
-2. Supabase staging project, migrations, bucket (§2.1–§2.4)
+2. Supabase staging project, migrations, bucket (§2.1–§2.4). **If the normalized-V2 proof (step 6) may ever run
+   on this project, apply its schema (§15.1–§15.2) after §2.2 and before the migrations in §2.3.** The reverse
+   order cannot be repaired later without an owner decision (§15.1). §15.1 needs the Clerk development instance's
+   issuer, so create that instance (§3) first.
 3. Clerk development instance (§3)
 4. Vercel project, Doppler sync, first Preview, canonical-state bootstrap (§5, §2.5)
 5. Optional, all dark by default: Stripe test mode (§6), Resend (§7), PostHog (§8), Sentry (§9), maps (§10)
-6. Optional, staging only: the normalized store (V2) proof (§15)
+6. Optional, staging only: the normalized store (V2) proof (§15). Its schema step comes before §2.3 (step 2).
 7. Production (§13), with the founder's authorization
 
 **Verify after every step** with the readiness check. It reads the environment, prints only variable names and
@@ -128,7 +131,7 @@ Verify: `doppler run --project logloads --config stg -- pnpm integrations:check 
 
 `supabase db push` applies `supabase/migrations/*.sql` in order (the pilot ledger,
 [`DEPLOYMENT.md`](./DEPLOYMENT.md) §3). It does not apply `supabase/seed/` or `architecture/normalized-v2/`.
-If the normalized-V2 proof may run on this project, deploy the normalized store first (§15.1, §15.2): these
+**If the normalized-V2 proof may run on this project, deploy the normalized store first (§15.1, §15.2).** These
 migrations install PostGIS in `public` when it is missing, and the normalized schema needs it in `extensions`.
 **Owner:** install the Supabase CLI (or set `SUPABASE_CLI` to its path), then:
 
@@ -579,33 +582,38 @@ store. The seed links only the seeded people's pilot Clerk ids, and on staging p
 accounts: seeded sign-in (`LOGLOADS_ENABLE_DEV_LOGIN`) is never enabled on a hosted target. So while the normalized
 adapter is selected, the signed-in V2 pages refuse a staging account. The signed-in flows are proven in CI on the
 seeded store (`apps/web/lib/marketplace-v2/normalized-seed.contract.test.ts`), and can be tried locally (§15.6).
-Bringing real staging accounts into the normalized store is cutover work (#200).
+#213 (in progress) covers this. With the normalized adapter selected, the session's memberships and active business
+will come from the normalized store. A Clerk user's first sign-in will be linked there through the schema's own
+`sync_verified_identity`. Moving existing pilot data across stays cutover work (#200).
 
 ### 15.6 A disposable local stack
 
-The same commands work against the repository's local Supabase stack (`supabase start`, database on port 55322),
-named `local`. The app's seeded sign-in then reaches the seeded people through the normalized adapter, for example
-`dispatch@northpine.example` (North Pine Logging's landing desk) or `emptyfleet@logloads.example` (New River
-Hauling). Add these lines to the git-ignored `apps/web/.env.local`, with a throwaway password of at least 24
-characters (the stack is disposable):
+Do not use the repository's own stack. `supabase start` in this checkout applies the pilot migrations as it starts,
+so PostGIS lands in `public`, and `schema --apply` refuses with nothing changed (§15.1). Use an empty stack, as CI
+does (`tools/normalized-v2-ci/supabase-stack.sh`): a separate Supabase CLI project in an empty folder outside this
+repository, on the CLI's default ports (database on 54322), named `local`. The normalized store needs none of the
+pilot tables, because the adapter connects only to `LOGLOADS_NORMALIZED_DATABASE_URL`. The app's seeded sign-in
+then reaches the seeded people through the normalized adapter, for example `dispatch@northpine.example` (North Pine
+Logging's landing desk) or `emptyfleet@logloads.example` (New River Hauling). Add these lines to the git-ignored
+`apps/web/.env.local`, with a throwaway password of at least 24 characters (the stack is disposable):
 
 ```bash
-DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55322/postgres
-LOGLOADS_NORMALIZED_DATABASE_URL=postgresql://logloads_marketplace_adapter:<password>@127.0.0.1:55322/postgres
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres
+LOGLOADS_NORMALIZED_DATABASE_URL=postgresql://logloads_marketplace_adapter:<password>@127.0.0.1:54322/postgres
 LOGLOADS_NORMALIZED_IDENTITY_ISSUER=https://clerk.local-stack.test
 LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE=logloads-local
 LOGLOADS_MARKETPLACE_V2=enabled
 LOGLOADS_MARKETPLACE_V2_ADAPTER=normalized
 ```
 
-Then:
+Then, with `<stack folder>` an empty folder outside this repository:
 
 ```bash
-supabase start
+cd <stack folder> && supabase init && supabase start && cd -
 node --env-file=apps/web/.env.local tools/normalized-store.mjs schema --expected-project-ref local --apply
 node --env-file=apps/web/.env.local tools/normalized-store.mjs seed --expected-project-ref local --apply
 pnpm dev
 ```
 
-`supabase stop --no-backup` discards the stack. Remove `LOGLOADS_MARKETPLACE_V2_ADAPTER` to return to the pilot
+`supabase stop --no-backup`, run in `<stack folder>`, discards the stack. Remove `LOGLOADS_MARKETPLACE_V2_ADAPTER` to return to the pilot
 adapter.
