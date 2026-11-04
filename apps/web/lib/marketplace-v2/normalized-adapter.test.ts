@@ -35,7 +35,7 @@ interface Recorded { session: "anon" | "user"; principal?: MarketplacePrincipal;
 
 function jobRow(overrides: Record<string, unknown> = {}) {
   return {
-    accepting_interest: true, destination_label: null, ends_on: null, equipment_labels: ["Log truck"], est_one_way_miles: null,
+    accepting_interest: true, destination_label: null, ends_on: null, equipment_codes: ["log_truck"], est_one_way_miles: null,
     estimated_daily_loads: null, estimated_loads_per_truck_per_day: null, estimated_tons_per_load: null, expires_at: null,
     job_id: JOB, last_confirmed_at: null, last_modified_at: "2026-11-03T11:00:00+00:00", origin_label: "Near Vida, OR",
     origin_lat: 44.2, origin_lng: -122.5, origin_state_code: "OR", pay_amount_cents: 9100, pay_note: null, pay_unit: "per_ton",
@@ -123,6 +123,15 @@ describe("normalized adapter: identity and discovery", () => {
     expect((await adapter().getJob(JOB))?.title).toBe("Adapter Sawlog Run")
     expect(recorded.map((call) => call.session)).toEqual(["anon", "anon"])
     expect(principal).not.toHaveBeenCalled()
+  })
+
+  it("sends the filters the function takes, then applies the rest with the contract's rules (#185)", async () => {
+    const other = "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaa2"
+    responses.list_marketplace_jobs = [jobRow(), jobRow({ job_id: other, pay_amount_cents: 52500, pay_unit: "per_load", product: "Pulpwood", slug: other })]
+
+    expect((await adapter().listJobs({ product: "Pulpwood" })).map((job) => job.id)).toEqual([other])
+    expect((await adapter().listJobs({ sort: "pay" })).map((job) => job.id)).toEqual([other, JOB])
+    expect(recorded[0]?.args).toEqual({ p_accepting_only: true, p_equipment: null, p_limit: 200, p_pay_unit: null, p_query: null })
   })
 
   it("answers not-found for an id that cannot exist, without asking the store", async () => {
