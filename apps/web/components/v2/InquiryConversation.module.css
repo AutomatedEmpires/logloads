@@ -164,3 +164,54 @@
 }
 
 .dialogBody { margin: 0; }
+
+/* UX-09 (#132): the optional reason of a decline or withdrawal, in the Dialog body or above the in-page actions. */
+.reason { margin-top: var(--ll-space-3); }
+
+/* Each offered configuration against the job's equipment (UX 02 §B9). The words carry the verdict; colour only helps. */
+.equipment {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.equipmentLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--ll-space-2);
+}
+
+.fit {
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-sm);
+  font-weight: var(--ll-weight-semibold);
+}
+
+.fit[data-fit="matches"] { color: var(--ll-color-status-positive); }
+.fit[data-fit="not_requested"] { color: var(--ll-color-text-muted); font-weight: var(--ll-weight-regular); }
+
+/* The inbox's job and landing filter: a GET form above the list, stacked on a phone and in one row from bp-md. */
+.filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--ll-space-3);
+  margin: 0 0 var(--ll-space-4);
+}
+
+.filterActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ll-space-2);
+}
+
+@container ll-app (min-width: 768px) {
+  .filters {
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    align-items: end;
+    column-gap: var(--ll-space-4);
+  }
+}

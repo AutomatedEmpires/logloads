@@ -73,3 +73,13 @@
   font-variant-numeric: tabular-nums;
   line-height: 18px;
 }
+
+/* The words around a destination's count, for assistive technology only: "My inquiries, 2 unread" (UX-09, #132). */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

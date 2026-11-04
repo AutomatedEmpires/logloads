@@ -1,6 +1,7 @@
 import type { NetworkLoadView, NetworkView } from "./network"
 import { buildNetworkView, publicAvailableEquipmentCount } from "./network"
 import { notificationVisibleToActor } from "./notification-access"
+import { publicBoard } from "./public-board"
 import { readState, services } from "./services"
 import { requireCockpitActor, type Cockpit, type SessionActor } from "./session"
 import { loadSlug } from "./v3-shared"
@@ -200,8 +201,14 @@ export async function getPublicNetwork(): Promise<NetworkView> {
   return readState((current) => buildNetworkView(current.state, { kind: "public" }))
 }
 
+/**
+ * The public board for the server-rendered public pages (`/`, `/loads`,
+ * `/loads/[slug]`, the sitemap). Anonymous views share the short-lived
+ * projection `GET /api/loads` serves, instead of each downloading the whole
+ * operating_state document (HF-09, #187).
+ */
 export async function getPublicLoads(): Promise<NetworkLoadView[]> {
-  return (await getPublicNetwork()).loads
+  return publicBoard.get()
 }
 
 export async function findPublicLoad(slug: string): Promise<NetworkLoadView | undefined> {

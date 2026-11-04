@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest"
 import { findElement, openingTag, textOf } from "../primitives/test-helpers"
 import { ConversationThread } from "./ConversationThread"
 import { InquiryRow } from "./InquiryRow"
+import { localTimeText, utcTimeText } from "./LocalTime"
 import { MessageComposer } from "./MessageComposer"
 import { interestView } from "./test-fixtures"
 import type { MessageComposerProps } from "./types"
@@ -50,6 +51,17 @@ describe("InquiryRow", () => {
     expect(`${landing} ${hauler}`).not.toMatch(/\b(booked|hired|assigned)\b/i)
   })
 
+  it("marks a landing's reviewed inquiry Seen, still the landing's move; never on the hauler's side", () => {
+    const viewed = interestView({ status: "viewed" })
+    const landing = renderToStaticMarkup(<InquiryRow href="#" interest={viewed} selected={false} viewerSide="landing" />)
+    const hauler = renderToStaticMarkup(<InquiryRow href="#" interest={viewed} selected={false} viewerSide="hauler" />)
+
+    expect(openingTag(landing, /data-seen/)).toContain('data-tone="attention"')
+    expect(textOf(landing)).toContain("Seen · not answered")
+    expect(hauler).not.toContain("data-seen")
+    expect(renderToStaticMarkup(<InquiryRow href="#" interest={interestView()} selected={false} viewerSide="landing" />)).not.toContain("data-seen")
+  })
+
   it("selects on a plain click when onSelect is given", () => {
     const onSelect = vi.fn()
     const link = findElement(InquiryRow({ href: "#c", interest: interestView(), onSelect, selected: false, viewerSide: "landing" }), (props) => props.href === "#c")
@@ -76,10 +88,35 @@ describe("ConversationThread", () => {
 
     expect(openingTag(html, /role="log"/)).toContain('aria-label="Messages with Example Hauling LLC"')
     expect(textOf(html)).toBe(
-      "Interest sent Nov 1, 2026 Two trucks ready from the 10th. Sam Hauler · Nov 1, 2026 First from the landing You · Nov 1, 2026 Second from the hauler Sam Hauler · Nov 1, 2026"
+      "Interest sent Nov 1, 2026 Two trucks ready from the 10th. Sam Hauler · Nov 1, 2026, 12:00 PM UTC First from the landing You · Nov 1, 2026, 2:00 PM UTC Second from the hauler Sam Hauler · Nov 1, 2026, 3:00 PM UTC"
     )
     expect(sides).toEqual(["them", "me", "them"])
     expect(renderToStaticMarkup(<ConversationThread interest={interest} viewerSide="hauler" />)).toMatch(/data-side="me"[\s\S]*data-side="them"[\s\S]*data-side="me"/)
+  })
+
+  it("gives every message a machine-readable time, shown in UTC until the browser shows the reader's own", () => {
+    const html = renderToStaticMarkup(<ConversationThread interest={interest} viewerSide="landing" />)
+
+    expect([...html.matchAll(/<time class="[^"]*" dateTime="([^"]+)">/g)].map((match) => match[1])).toEqual([
+      interest.createdAt,
+      "2026-11-01T14:00:00.000Z",
+      "2026-11-01T15:00:00.000Z"
+    ])
+  })
+
+  it("names a colleague's message and marks only the viewer's own as You", () => {
+    const colleague = { ...reply("landing", "From a colleague", "2026-11-01T14:30:00.000Z"), authorName: "Dana Dispatch", authorUserId: "77777777-ffff-4fff-8fff-777777777777" }
+    const html = renderToStaticMarkup(
+      <ConversationThread
+        interest={interestView({ replies: [reply("landing", "Mine", "2026-11-01T14:00:00.000Z"), colleague] })}
+        viewerSide="landing"
+        viewerUserId="66666666-eeee-4eee-8eee-666666666666"
+      />
+    )
+
+    expect(textOf(html)).toContain("Mine You · Nov 1, 2026, 2:00 PM UTC")
+    expect(textOf(html)).toContain("From a colleague Dana Dispatch · Nov 1, 2026, 2:30 PM UTC")
+    expect([...html.matchAll(/data-side="(me|them)"/g)].map((match) => match[1])).toEqual(["them", "me", "me"])
   })
 
   it("renders every message as escaped text", () => {
@@ -99,6 +136,23 @@ describe("ConversationThread", () => {
     expect(textOf(renderToStaticMarkup(<ConversationThread interest={interestView({ message: null })} viewerSide="hauler" />))).toBe(
       "Interest sent Nov 1, 2026 No messages yet."
     )
+  })
+})
+
+describe("LocalTime", () => {
+  it("renders the same labelled UTC text on the server and before the browser takes over", () => {
+    expect(utcTimeText("2026-11-02T18:48:00.000Z")).toBe("Nov 2, 2026, 6:48 PM UTC")
+    expect(utcTimeText("2026-01-05T00:07:00.000Z")).toBe("Jan 5, 2026, 12:07 AM UTC")
+    expect(utcTimeText("2026-07-04T12:00:00.000Z")).toBe("Jul 4, 2026, 12:00 PM UTC")
+    expect(utcTimeText("not a time")).toBeNull()
+  })
+
+  it("shows the reader's local time, with the year only when it is not this year", () => {
+    const now = new Date("2026-11-03T12:00:00.000Z")
+
+    expect(localTimeText("2026-11-02T18:48:00.000Z", now)).not.toMatch(/2026/)
+    expect(localTimeText("2025-11-02T18:48:00.000Z", now)).toMatch(/2025/)
+    expect(localTimeText("nope", now)).toBeNull()
   })
 })
 

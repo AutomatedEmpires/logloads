@@ -6,7 +6,9 @@ import {
   initializeRemoteOperatingState,
   loadRemoteOperatingState,
   mutateRemoteOperatingState,
+  OPERATING_STATE_MAX_BYTES,
   OPERATING_STATE_SCHEMA_VERSION,
+  OperatingStateTooLargeError,
   setOperatingStateDefectReporter,
   updateRemoteOperatingState,
   upgradeStateSnapshot,
@@ -899,5 +901,98 @@ describe("withheld rows and the compare-and-swap write", () => {
     await expect(updateRemoteOperatingState(config, stored, 4)).rejects.toThrow(
       "Canonical operating state update returned invalid data: collections missing or not an array: messageEvents"
     )
+  })
+})
+
+describe("document size limit (HF-02, #187)", () => {
+  function byteLengthOf(value: unknown): number {
+    return new TextEncoder().encode(JSON.stringify(value)).byteLength
+  }
+
+  /** The stored document grown by one audit row carrying `bytes` of text. */
+  function grownBy(state: LogLoadsDatabaseState, bytes: number): void {
+    const row = structuredClone(rowsOf(state, "auditEvents")[0]!)
+
+    row.metadata = { padding: "x".repeat(bytes) }
+    rowsOf(state, "auditEvents").push(row)
+  }
+
+  it("leaves the seeded document far below the default limit", () => {
+    // The limit is meant to stop runaway growth, never ordinary data.
+    expect(byteLengthOf(createInMemoryDatabase()) * 50).toBeLessThan(OPERATING_STATE_MAX_BYTES)
+  })
+
+  it("refuses a write over the default limit before anything is sent", async () => {
+    const state = createInMemoryDatabase()
+    const fetchMock = vi.fn()
+
+    vi.stubGlobal("fetch", fetchMock)
+    grownBy(state, OPERATING_STATE_MAX_BYTES)
+
+    const refused = updateRemoteOperatingState(config, state, 4)
+
+    await expect(refused).rejects.toBeInstanceOf(OperatingStateTooLargeError)
+    await expect(refused).rejects.toMatchObject({ limitBytes: OPERATING_STATE_MAX_BYTES })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("refuses the mutation that would pass the limit, keeps the stored row, and accepts the next ordinary write", async () => {
+    const stored = createInMemoryDatabase()
+    const limit = byteLengthOf(stored) + 4_096
+    const limited = { ...config, maxDocumentBytes: limit }
+    const api = new FakeOperatingStateApi(stored, 4)
+
+    vi.stubGlobal("fetch", vi.fn(api.fetch))
+
+    const initial = await loadRemoteOperatingState(limited)
+
+    expect(initial).not.toBeNull()
+    if (!initial) {
+      return
+    }
+
+    await expect(
+      mutateRemoteOperatingState(limited, initial, (draft) => {
+        grownBy(draft, 8_192)
+      })
+    ).rejects.toThrow(/Operating state write refused: the document would be \d+ bytes, over the \d+-byte limit/)
+    expect(api.snapshot()?.version).toBe(4)
+    expect(api.snapshot()?.state.auditEvents).toHaveLength(stored.auditEvents.length)
+
+    const committed = await mutateRemoteOperatingState(limited, initial, (draft) => {
+      draft.profiles[0]!.fullName = "Dispatch operator"
+    })
+
+    expect(committed.snapshot.version).toBe(5)
+  })
+
+  it("counts the withheld rows the write puts back", async () => {
+    const state = createInMemoryDatabase()
+    const fetchMock = vi.fn()
+    const limit = byteLengthOf(state) + 4_096
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(
+      updateRemoteOperatingState({ ...config, maxDocumentBytes: limit }, state, 4, 8000, {
+        truckSlots: [{ id: "withheld-slot", notes: "x".repeat(8_192) }]
+      })
+    ).rejects.toBeInstanceOf(OperatingStateTooLargeError)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("refuses a bootstrap over the limit too", async () => {
+    const api = new FakeOperatingStateApi(null)
+    const fetchMock = vi.fn(api.fetch)
+    const state = createInMemoryDatabase()
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(
+      initializeRemoteOperatingState({ ...config, maxDocumentBytes: byteLengthOf(state) - 1 }, state)
+    ).rejects.toBeInstanceOf(OperatingStateTooLargeError)
+    // Only the read that found no row; nothing was inserted.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(api.snapshot()).toBeNull()
   })
 })

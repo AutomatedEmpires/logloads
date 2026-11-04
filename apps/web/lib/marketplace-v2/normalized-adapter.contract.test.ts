@@ -5,7 +5,13 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 
 vi.mock("server-only", () => ({}))
 
-import { marketplaceCapabilities, validateMarketplaceJobDraft, type MarketplaceMemberRole } from "@logloads/contracts"
+import {
+  landingInterestQueueFor,
+  marketplaceCapabilities,
+  marketplaceInquiryUnread,
+  validateMarketplaceJobDraft,
+  type MarketplaceMemberRole
+} from "@logloads/contracts"
 
 import { createNormalizedMarketplaceV2 } from "./normalized-adapter"
 import { createPostgresMarketplaceDb, MARKETPLACE_FUNCTIONS, type MarketplaceDb, type MarketplacePrincipal } from "./normalized-db"
@@ -249,7 +255,7 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
     ])
   })
 
-  function publishDraft(landingId: string, title: string, overrides: Record<string, string> = {}) {
+  function publishDraft(landingId: string, title: string, overrides: Record<string, string | string[]> = {}) {
     const result = validateMarketplaceJobDraft({
       destinationLabel: "Mill near Albany, OR",
       durationDays: "10",
@@ -547,6 +553,101 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
   })
 
   // -------------------------------------------------------------------------------------------------------------
+  describe("inquiry conversations (UX-09, #132)", () => {
+    let poleJobId = ""
+    /** Adapter Hauling → the pole job: marked reviewed, then declined with a reason. */
+    let poleInterestId = ""
+    /** Adapter Timber Hauling (the dual business) → the pole job: withdrawn with a reason. */
+    let dualPoleInterestId = ""
+
+    const messageCount = async (interestId: string) =>
+      (await one<{ n: number }>("select count(*)::int as n from marketplace.interest_messages where interest_id = $1::uuid", [interestId])).n
+
+    it("lists the landing's own inquiry jobs with their landing and equipment, and refuses everyone else", async () => {
+      poleJobId = (await port.publishJob(
+        viewer("land", "land"),
+        publishDraft(fixture.landings.land, "Adapter Pole Run", { equipment: ["pole_trailer", "log_truck"] }),
+        attestation("publish")
+      )).jobId
+      poleInterestId = (await port.expressInterest(viewer("haul", "haul"), {
+        equipment: [{ configurationKey: "log_truck", count: "1" }],
+        loadPostingId: poleJobId,
+        message: "One truck from Sweet Home"
+      })).id
+      dualPoleInterestId = (await port.expressInterest(viewer("land", "dual"), { loadPostingId: poleJobId, trucksOffered: "1" })).id
+
+      const landing = { id: fixture.landings.land, name: "Upper Spur Landing" }
+      const jobs = await port.landingInquiryJobs(viewer("land", "land"))
+
+      expect(jobs).toEqual(expect.arrayContaining([
+        { equipmentCodes: ["log_truck"], jobId: landJobId, landing },
+        { equipmentCodes: ["log_truck", "pole_trailer"], jobId: poleJobId, landing }
+      ]))
+      expect(jobs.map((job) => job.jobId)).not.toContain(rivalJobId)
+      for (const secret of PRIVATE_STRINGS) expect(JSON.stringify(jobs)).not.toContain(secret)
+
+      expect((await port.landingInquiryJobs(viewer("rival", "rival"))).map((job) => job.jobId)).toEqual([rivalJobId])
+      await expect(port.landingInquiryJobs(viewer("haul", "haul"))).rejects.toBeInstanceOf(MarketplaceRefusalError)
+      await expect(port.landingInquiryJobs(viewer("stranger", "land"))).rejects.toBeInstanceOf(MarketplaceRefusalError)
+    })
+
+    it("refuses a cross-organization read of an inbox or of a hauling business's inquiries", async () => {
+      await expect(port.listLandingInterests(viewer("haul", "land"))).rejects.toBeInstanceOf(MarketplaceRefusalError)
+      await expect(port.listHaulerInterests(viewer("land", "haul"))).rejects.toBeInstanceOf(MarketplaceRefusalError)
+      await expect(port.listLandingInterests(viewer("stranger", "rival"))).rejects.toBeInstanceOf(MarketplaceRefusalError)
+
+      expect((await port.listLandingInterests(viewer("rival", "rival"))).map((row) => row.id)).not.toContain(poleInterestId)
+      expect((await port.listHaulerInterests(viewer("land", "dual"))).map((row) => row.id)).not.toContain(poleInterestId)
+    })
+
+    it("marks an inquiry reviewed: it stays in New, seen and no longer unread", async () => {
+      await port.respondToInterest(viewer("land", "land"), { decision: "viewed", interestId: poleInterestId })
+
+      const seen = (await port.listLandingInterests(viewer("land", "land"))).find((row) => row.id === poleInterestId)
+      expect(seen?.status).toBe("viewed")
+      expect(seen && landingInterestQueueFor(seen)).toBe("new")
+      expect(seen && marketplaceInquiryUnread(seen, "landing")).toBe(false)
+      expect(await messageCount(poleInterestId)).toBe(0)
+    })
+
+    it("declines with a reason the hauler sees, and a declined inquiry cannot be withdrawn (#194 HF-03)", async () => {
+      await port.respondToInterest(viewer("land", "land"), {
+        body: "We've filled this job",
+        decision: "declined",
+        interestId: poleInterestId,
+        replyId: randomUUID()
+      })
+
+      const declined = (await port.listHaulerInterests(viewer("haul", "haul"))).find((row) => row.id === poleInterestId)
+      expect(declined?.status).toBe("declined")
+      expect(declined?.replies.map((entry) => [entry.authorSide, entry.body])).toEqual([["landing", "We've filled this job"]])
+
+      await expect(port.withdrawInterestWithReason(viewer("haul", "haul"), { interestId: poleInterestId, reason: "Never mind", replyId: randomUUID() }))
+        .rejects.toThrow("The landing has closed this inquiry")
+      await expect(port.withdrawInterest(viewer("haul", "haul"), poleInterestId)).rejects.toThrow("The landing has closed this inquiry")
+
+      expect(await messageCount(poleInterestId)).toBe(1)
+      expect((await one<{ status: string }>("select status from marketplace.expressions_of_interest where id = $1::uuid", [poleInterestId])).status)
+        .toBe("declined")
+    })
+
+    it("withdraws with a reason the landing sees, once, in one change, and only from the business that sent it", async () => {
+      const input = { interestId: dualPoleInterestId, reason: "Booked on another job this week", replyId: randomUUID() }
+
+      await expect(port.withdrawInterestWithReason(viewer("haul", "haul"), input)).rejects.toThrow("Inquiry not found")
+      expect(await messageCount(dualPoleInterestId)).toBe(0)
+
+      await port.withdrawInterestWithReason(viewer("land", "dual"), input)
+      await port.withdrawInterestWithReason(viewer("land", "dual"), input)
+
+      const withdrawn = (await port.listLandingInterests(viewer("land", "land"))).find((row) => row.id === dualPoleInterestId)
+      expect(withdrawn?.status).toBe("withdrawn")
+      expect(withdrawn?.replies.map((entry) => [entry.authorSide, entry.body])).toEqual([["hauler", "Booked on another job this week"]])
+      expect(withdrawn && landingInterestQueueFor(withdrawn)).toBe("closed")
+    })
+  })
+
+  // -------------------------------------------------------------------------------------------------------------
   // Landing workspace (#127 UX-04, #133 UX-10). Runs after the flows above: it pauses Upper Spur Landing at the end.
   describe("landings and allowances", () => {
     /** Private strings of the landing these cases save. Like PRIVATE_STRINGS, they must never reach a public view. */
@@ -561,9 +662,13 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
 
     it("lists the business's own landings with their private half, for its landing desk only", async () => {
       const [upper] = await port.listOwnLandings(viewer("land", "land"))
+      const activeAtUpper = (await one<{ n: number }>(
+        "select count(*)::int as n from marketplace.job_postings where landing_id = $1::uuid and status = 'active'", [fixture.landings.land]
+      )).n
 
+      expect(activeAtUpper).toBeGreaterThan(0)
       expect(upper).toMatchObject({
-        activeJobs: 1,
+        activeJobs: activeAtUpper,
         approximatePoint: { lat: 44.2, lng: -122.5 },
         areaLabel: "Near Vida, OR",
         id: fixture.landings.land,

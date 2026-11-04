@@ -102,6 +102,57 @@ as the legacy code is reachable.
   Card setup is non-activating. Stripe calls assert the expected account and live/test mode. These gates
   protect **historical** obligations only. They must not be repurposed to activate the new model
   ([`ACTIVATION_STRIPE.md`](./ACTIVATION_STRIPE.md)).
+- **Write bounds on the shared document (#187, HF-02):** stored text fields have length caps in
+  `packages/contracts`, and new load titles are capped at 140 characters. The API write routes read their JSON
+  body through a 64 KiB cap (`apps/web/lib/request-body.ts`, `413`). Notice and trip-event writes have per-user
+  limits that the API routes and the cockpit actions share (`apps/web/lib/write-limits.ts`). The snapshot
+  writer refuses a write that would make the document larger than 8 MiB (`OPERATING_STATE_MAX_BYTES`); the
+  client gets `507` with a fixed message, and the operator log gets the sizes.
+- **Upload ownership (#187, HF-07):** every new attachment must be exactly `<prefix>/uploads/<uuid>` for the
+  caller's own target. The rule is in `packages/contracts/src/upload-ids.ts`, and both the web routes and the
+  services check it. Stored references, including seeded legacy ids, are read unchanged.
+
+### 2.1 Response headers and the Content-Security-Policy plan
+
+**IMPLEMENTED (code):** `apps/web/next.config.ts` sends baseline headers on every route. The enforced
+`Content-Security-Policy` is `frame-ancestors 'none'`, with `X-Frame-Options: DENY`, `nosniff`,
+`strict-origin-when-cross-origin` and a restrictive `Permissions-Policy`. The full policy is sent beside it as
+`Content-Security-Policy-Report-Only`. The comment above `contentSecurityPolicyReportOnly` lists each allowed
+origin and why it is there, and `apps/web/lib/security-headers.test.ts` reads the header.
+
+- The report-only policy blocks nothing. It has no `report-uri` and no `report-to`, so no report leaves the
+  browser. Violations appear only in the browser console. Chromium logs a report-only violation at the `info`
+  level, not `error` (checked in Edge on 2026-11-03), so the existing Playwright checks for console errors do
+  not catch them.
+- `next.config.ts` headers are computed at build time. The Clerk, PostHog and Mapbox origins come from
+  `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `NEXT_PUBLIC_POSTHOG_KEY` and `NEXT_PUBLIC_MAPBOX_TOKEN` in the **build**
+  environment, so a build made without them leaves those origins out.
+- `script-src` keeps `'unsafe-inline'`, because a static header cannot carry a per-request nonce for the Next.js
+  inline scripts. Until step 4 below, the policy constrains where scripts, connections, frames and forms may go,
+  and blocks plugins and `<base>` rewrites. It does not stop an injected inline script.
+
+**Enforcement plan (TARGET; each step is a separate, reviewed change):**
+
+1. **Observe.** In a non-production preview with Clerk, Stripe test mode, the CARTO key and PostHog configured,
+   walk the public pages, sign-in, every cockpit, the map, a photo and a document upload, card setup, and the V2
+   pages. Record every `[Report Only]` console line and fix the allowlist or the code. Nothing leaves the
+   browser, so this needs no report endpoint.
+2. **Make violations fail CI.** Add a Playwright console listener to the smoke and DS-05 suites that fails on
+   any message containing `Content Security Policy`, so a new origin cannot be added silently.
+3. **Enforce the static policy.** Move the same string into the enforced `Content-Security-Policy` header,
+   replacing the `frame-ancestors`-only value, and keep it in report-only for one release before dropping the
+   duplicate. Confirm on the first production-like deploy that Clerk sign-in, Stripe card setup, uploads and
+   the map still work.
+4. **Nonces instead of `'unsafe-inline'` for scripts.** Generate a nonce per request in `apps/web/middleware.ts`,
+   send `script-src 'self' 'nonce-…' 'strict-dynamic'` (Next.js applies the nonce to its own inline scripts),
+   report-only first, then enforced. Measure the cost first: a nonce makes every page render dynamically.
+   `style-src 'unsafe-inline'` stays for React `style` attributes, or moves to `style-src-attr`.
+5. **Narrow the wildcards.** Allow the Supabase media project only on the pages that upload, instead of
+   `*.supabase.co` everywhere. When PostHog is connected, decide whether its heatmap viewer may frame LogLoads
+   (`frame-ancestors`; #187 follow-up 5).
+
+If a first-party report collector is wanted later, it must be same-origin, rate-limited, store no page content
+beyond the directive and blocked origin, and never forward reports to a third party.
 
 ## 3. Current V2 preview controls — IMPLEMENTED (code, development preview)
 

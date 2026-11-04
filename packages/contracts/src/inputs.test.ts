@@ -6,8 +6,10 @@ import {
   createTruckSlotInputSchema,
   initialLoadStatusSchema,
   initialTruckSlotStatusSchema,
+  LOAD_POSTING_TITLE_MAX_LENGTH,
   updateLoadPostingInputSchema
 } from "./inputs"
+import { loadPostingSchema } from "./schemas"
 import { stateMachines } from "./state-machines"
 
 const uuid = (nibble: string) => `${nibble.repeat(8)}-${nibble.repeat(4)}-4${nibble.repeat(3)}-8${nibble.repeat(3)}-${nibble.repeat(12)}`
@@ -114,5 +116,43 @@ describe("create-time status is a lifecycle entry point, not a client choice", (
 
     expect(parsed.success).toBe(true)
     expect(parsed.data?.status).toBe("completed")
+  })
+})
+
+describe("load posting title length (#187)", () => {
+  const atCap = "T".repeat(LOAD_POSTING_TITLE_MAX_LENGTH)
+  const overCap = "T".repeat(LOAD_POSTING_TITLE_MAX_LENGTH + 1)
+
+  it("matches the V2 job title bound", () => {
+    expect(LOAD_POSTING_TITLE_MAX_LENGTH).toBe(140)
+  })
+
+  it("accepts a title at the cap and refuses one over it, on create", () => {
+    expect(createLoadPostingInputSchema.safeParse({ ...postingInput("open"), title: atCap }).success).toBe(true)
+
+    const refused = createLoadPostingInputSchema.safeParse({ ...postingInput("open"), title: overCap })
+
+    expect(refused.success).toBe(false)
+    expect(refused.error?.issues).toMatchObject([
+      { message: "Keep the work title to 140 characters or fewer", path: ["title"] }
+    ])
+  })
+
+  it("refuses an over-long title on update, and leaves an update without a title alone", () => {
+    expect(updateLoadPostingInputSchema.safeParse({ id: uuid("9"), title: overCap }).success).toBe(false)
+    expect(updateLoadPostingInputSchema.safeParse({ id: uuid("9"), title: atCap }).success).toBe(true)
+    expect(updateLoadPostingInputSchema.safeParse({ id: uuid("9"), status: "open" }).success).toBe(true)
+  })
+
+  it("still reads a stored load whose title predates the cap", () => {
+    const stored = loadPostingSchema.safeParse({
+      ...postingInput("open"),
+      createdAt: "2026-07-01T12:00:00.000Z",
+      id: uuid("a"),
+      title: "T".repeat(LOAD_POSTING_TITLE_MAX_LENGTH * 4),
+      updatedAt: "2026-07-01T12:00:00.000Z"
+    })
+
+    expect(stored.success).toBe(true)
   })
 })
