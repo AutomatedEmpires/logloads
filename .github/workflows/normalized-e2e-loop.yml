@@ -17,6 +17,9 @@ name: Normalized V2 E2E Loop
 # generated in the job; the stack's keys are its own, local and masked.
 
 on:
+  # TEMPORARY (iteration before the PR exists): a new workflow cannot be dispatched until it is on the default branch.
+  push:
+    branches: [test/qa/normalized-e2e-loop]
   pull_request:
     paths:
       - apps/web/app/v2/**
