@@ -12,6 +12,23 @@
 -- Additive: no data is rewritten or deleted. Each step is idempotent.
 -- Behavioural checks: supabase/verify/20261103200000_pilot_sql_hardening.sql,
 -- run by tools/db-check.sh after every local reset (the `migrations` CI check).
+--
+-- Deploy-time aborts, by design. Apply this file as one transaction (the
+-- Supabase CLI runs each migration file as one; with psql, pass
+-- --single-transaction), so an abort leaves nothing applied or recorded.
+--   1. ERROR 23514 `check constraint "profiles_clerk_user_id_not_blank" of
+--      relation "profiles" is violated by some row`: a profile holds an empty
+--      or blank clerk_user_id. List those rows with
+--        select id, full_name, is_active from public.profiles
+--        where pg_catalog.btrim(clerk_user_id) = '';
+--      Do not blank-fill or remove them to get past the error. Decide each row
+--      with the founder (restore its real Clerk id, or retire it in a
+--      separately authorized step), then apply this file again.
+--   2. ERROR P0001 `not owned by <role>; anon SELECT left unchanged: {...}`:
+--      the listed public tables belong to another role, so this role cannot
+--      revoke anon SELECT on them. Have their owner run
+--      `revoke select on table <table> from anon` (or transfer ownership to
+--      the migration role), then apply this file again.
 -- ============================================================================
 
 -- --- HF-19a. A missing, empty or blank `sub` claim is no identity ------------
