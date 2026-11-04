@@ -88,7 +88,25 @@ test("the disposable-database guard accepts Supabase's PostgreSQL 17 image from 
     "registry.example.test/supabase/postgres:17.11.0.004",
     "example/supabase/postgres:17.11.0.004",
     "postgres:17",
-    "postgis/postgis:17-3.5"
+    "postgis/postgis:17-3.5",
+    // Look-alike namespaces and hosts: the namespace must be exactly `supabase`.
+    "ghcr.io/supabase-evil/postgres:17.11.0.004",
+    "public.ecr.aws/supabasex/postgres:17.11.0.004",
+    "docker.io/supabasex/postgres:17.11.0.004",
+    "supabasex/postgres:17.11.0.004",
+    "supabase.example.test/postgres:17.11.0.004",
+    "ghcr.io.example.test/supabase/postgres:17.11.0.004",
+    "localhost:5000/supabase/postgres:17.11.0.004",
+    "ghcr.io/supabase/example/postgres:17.11.0.004",
+    "ghcr.io/supabase/postgres-example:17.11.0.004",
+    // Tags: only a plain numeric 17.x release, with no suffix and no digest.
+    `supabase/postgres@sha256:${"0".repeat(64)}`,
+    `ghcr.io/supabase/postgres:17.11.0.004@sha256:${"0".repeat(64)}`,
+    "supabase/postgres:17.evil",
+    "public.ecr.aws/supabase/postgres:17.11.0.004-evil",
+    "public.ecr.aws/supabase/postgres:17.",
+    "public.ecr.aws/supabase/postgres:170.1",
+    "public.ecr.aws/supabase/postgres:17.11.0.004\nexample"
   ]) {
     assert.doesNotMatch(refused, image)
   }

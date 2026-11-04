@@ -61,10 +61,10 @@ per workflow, never as one combined colour.
 
 ## 3. Normalized V2 database CI
 
-**Workflow:** `.github/workflows/normalized-v2-ci.yml`. It exists only on `test/normalized-v2-postgres17-ci`
-and is not merged.
+**Workflow:** `.github/workflows/normalized-v2-ci.yml`, on `work/logloads-repair` since PR #123 (`1d79678`).
 
-- **Triggers:** pushes to that branch, PRs touching `architecture/normalized-v2/**`, and manual runs.
+- **Triggers:** pushes to the two `test/normalized-v2-*` branches, PRs touching `architecture/normalized-v2/**`,
+  `tools/normalized-v2-ci/**` or the other paths the workflow lists, and manual runs.
 - **Jobs:** a 3-way matrix. Each job gets a fresh `postgis/postgis:17-3.5` service container (pinned digest) and
   a fail-closed disposable-database guard (`tools/normalized-v2-ci/guard.sh`).
 - **Baseline stages, in order:**
