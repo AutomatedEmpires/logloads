@@ -8,22 +8,34 @@ import {
 } from "./marketplace-job-draft"
 import { MARKETPLACE_CAPABILITIES, marketplaceCan, marketplaceCapabilities, type MarketplaceMembership } from "./marketplace-permissions"
 import {
+  describeMarketplaceInterestStatus,
   describeMarketplaceVerification,
   expressInterestInputSchema,
   filterMarketplaceJobs,
   formatMarketplacePay,
+  LANDING_INTEREST_QUEUE_LABELS,
   landingInterestQueue,
+  landingInterestQueueFor,
+  lastMarketplaceInterestReplySide,
   MARKETPLACE_EQUIPMENT_TYPES,
+  MARKETPLACE_INTEREST_STATUS_LABELS,
+  MARKETPLACE_JOB_STATUS_LABELS,
   MARKETPLACE_RADIUS_BUFFER_MILES,
   marketplaceComparablePayUnits,
   marketplaceDistanceMiles,
   marketplaceEquipmentFit,
+  marketplaceInterestIsFinal,
+  marketplaceInterestIsOpen,
   marketplaceInterestSchema,
+  marketplaceInterestStatusSchema,
   marketplaceJobAcceptsInterest,
+  marketplaceJobClosedReason,
+  marketplaceJobStatusSchema,
   postingFreshness,
   respondToInterestInputSchema,
   snapToPublicGrid,
   sortMarketplaceJobs,
+  type MarketplaceInterestSide,
   type MarketplaceJobCardView
 } from "./marketplace-v2"
 
@@ -253,14 +265,6 @@ describe("interest rules", () => {
     }
   })
 
-  it("maps statuses onto the landing inbox queues", () => {
-    expect(landingInterestQueue("submitted")).toBe("new")
-    expect(landingInterestQueue("viewed")).toBe("responded")
-    expect(landingInterestQueue("replied")).toBe("responded")
-    expect(landingInterestQueue("declined")).toBe("closed")
-    expect(landingInterestQueue("withdrawn")).toBe("closed")
-  })
-
   it("rejects a landing organization expressing interest in its own job", () => {
     expect(() => marketplaceInterestSchema.parse({ ...base, jobOrganizationId: base.haulerOrganizationId })).toThrow(/own job/)
   })
@@ -290,6 +294,135 @@ describe("interest rules", () => {
     expect(() => respondToInterestInputSchema.parse({ decision: "replied", interestId: "33333333-3333-4333-8333-333333333333" })).toThrow()
     expect(respondToInterestInputSchema.parse({ decision: "declined", interestId: "33333333-3333-4333-8333-333333333333" }))
       .toMatchObject({ body: null, decision: "declined" })
+  })
+})
+
+describe("status vocabulary (UX-DEC-01, #135)", () => {
+  const reply = (authorSide: MarketplaceInterestSide, createdAt: string) => ({ authorSide, createdAt })
+  const LANDING_LAST = [reply("hauler", "2026-11-01T13:00:00.000Z"), reply("landing", "2026-11-01T14:00:00.000Z")]
+  const HAULER_LAST = [reply("landing", "2026-11-01T13:00:00.000Z"), reply("hauler", "2026-11-01T14:00:00.000Z")]
+  const TURNS = [[], LANDING_LAST, HAULER_LAST]
+
+  // The decision's table, one row per stored status and turn: hauler wording, landing queue, landing wording.
+  const TABLE = [
+    { hauler: "Sent · waiting for the landing", haulerTone: "waiting", landing: "New", landingTone: "attention", queue: "new", replies: [], status: "submitted", turn: "no replies" },
+    { hauler: "Seen by the landing", haulerTone: "waiting", landing: "Seen · not answered", landingTone: "attention", queue: "new", replies: [], status: "viewed", turn: "no replies" },
+    { hauler: "Your turn", haulerTone: "attention", landing: "Waiting for the hauler", landingTone: "waiting", queue: "responded", replies: LANDING_LAST, status: "replied", turn: "landing spoke last" },
+    { hauler: "Waiting for the landing", haulerTone: "waiting", landing: "Hauler replied", landingTone: "attention", queue: "new", replies: HAULER_LAST, status: "replied", turn: "hauler spoke last" },
+    { hauler: "Declined by the landing", haulerTone: "closed", landing: "Declined", landingTone: "closed", queue: "closed", replies: [], status: "declined", turn: "no replies" },
+    { hauler: "Withdrawn by you", haulerTone: "closed", landing: "Withdrawn by the hauler", landingTone: "closed", queue: "closed", replies: [], status: "withdrawn", turn: "no replies" }
+  ] as const
+
+  it("has a row for every stored interest status", () => {
+    expect(new Set(TABLE.map((row) => row.status))).toEqual(new Set(marketplaceInterestStatusSchema.options))
+  })
+
+  it.each(TABLE)("$status ($turn): hauler wording, landing queue and landing wording match the table", (row) => {
+    const interest = { replies: row.replies, status: row.status }
+
+    expect(describeMarketplaceInterestStatus(interest, "hauler")).toEqual({ label: row.hauler, tone: row.haulerTone })
+    expect(describeMarketplaceInterestStatus(interest, "landing")).toEqual({ label: row.landing, tone: row.landingTone })
+    expect(landingInterestQueueFor(interest)).toBe(row.queue)
+  })
+
+  it("files a viewed inquiry under New: seen is not answered", () => {
+    expect(landingInterestQueue("viewed")).toBe("new")
+    for (const replies of TURNS) expect(landingInterestQueueFor({ replies, status: "viewed" })).toBe("new")
+  })
+
+  it("queues from the status alone when the replies are not at hand, reading replied as the landing's reply", () => {
+    expect(landingInterestQueue("submitted")).toBe("new")
+    expect(landingInterestQueue("viewed")).toBe("new")
+    expect(landingInterestQueue("replied")).toBe("responded")
+    expect(landingInterestQueue("declined")).toBe("closed")
+    expect(landingInterestQueue("withdrawn")).toBe("closed")
+    for (const status of marketplaceInterestStatusSchema.options) {
+      expect(landingInterestQueueFor({ replies: [], status })).toBe(landingInterestQueue(status))
+    }
+  })
+
+  it("files each inquiry by the landing's move: New needs an answer, Replied waits for the hauler", () => {
+    const TONE_OF_QUEUE = { closed: "closed", new: "attention", responded: "waiting" } as const
+    for (const status of marketplaceInterestStatusSchema.options) {
+      for (const replies of TURNS) {
+        const interest = { replies, status }
+        expect(describeMarketplaceInterestStatus(interest, "landing").tone).toBe(TONE_OF_QUEUE[landingInterestQueueFor(interest)])
+      }
+    }
+  })
+
+  it("names the queues New, Replied and Closed", () => {
+    expect(LANDING_INTEREST_QUEUE_LABELS).toEqual({ closed: "Closed", new: "New", responded: "Replied" })
+  })
+
+  it("takes the turn from the latest reply, not the order of the list", () => {
+    expect(lastMarketplaceInterestReplySide({ replies: [] })).toBeNull()
+    expect(lastMarketplaceInterestReplySide({ replies: HAULER_LAST })).toBe("hauler")
+    expect(lastMarketplaceInterestReplySide({ replies: [...HAULER_LAST].reverse() })).toBe("hauler")
+    expect(describeMarketplaceInterestStatus({ replies: [], status: "replied" }, "hauler").label).toBe("Your turn")
+  })
+
+  it("keeps a decline final: closed for both sides and in the landing's queue, whoever spoke last", () => {
+    for (const replies of TURNS) {
+      const declined = { replies, status: "declined" } as const
+      expect(describeMarketplaceInterestStatus(declined, "hauler")).toEqual({ label: "Declined by the landing", tone: "closed" })
+      expect(describeMarketplaceInterestStatus(declined, "landing")).toEqual({ label: "Declined", tone: "closed" })
+      expect(landingInterestQueueFor(declined)).toBe("closed")
+    }
+    expect(marketplaceInterestIsFinal("declined")).toBe(true)
+    expect(marketplaceInterestIsOpen("declined")).toBe(false)
+  })
+
+  it("closes a withdrawal without making it final: the hauler can send interest again", () => {
+    expect(marketplaceInterestIsOpen("withdrawn")).toBe(false)
+    expect(marketplaceInterestIsFinal("withdrawn")).toBe(false)
+    for (const status of ["submitted", "viewed", "replied"] as const) {
+      expect(marketplaceInterestIsOpen(status)).toBe(true)
+      expect(marketplaceInterestIsFinal(status)).toBe(false)
+    }
+  })
+
+  it("keeps the status-only labels on the hauler's wording", () => {
+    expect(MARKETPLACE_INTEREST_STATUS_LABELS).toEqual({
+      declined: "Declined by the landing",
+      replied: "Your turn",
+      submitted: "Sent · waiting for the landing",
+      viewed: "Seen by the landing",
+      withdrawn: "Withdrawn by you"
+    })
+  })
+
+  it.each([
+    ["active", "Accepting interest", null],
+    ["paused", "Paused by the poster", "The poster paused this listing."],
+    ["filled", "Marked filled by the poster", "The poster marked this job filled."],
+    ["closed", "Closed by the poster", "The poster closed this listing."],
+    ["expired", "Listing expired", "This listing expired."]
+  ] as const)("labels the %s job status, with a reason whenever it takes no interest", (status, label, reason) => {
+    expect(MARKETPLACE_JOB_STATUS_LABELS[status]).toBe(label)
+    expect(marketplaceJobClosedReason(status)).toBe(reason)
+    expect(reason === null).toBe(marketplaceJobAcceptsInterest(status))
+  })
+
+  it("labels every job status, and says filled only as the poster's claim", () => {
+    expect(Object.keys(MARKETPLACE_JOB_STATUS_LABELS).sort()).toEqual([...marketplaceJobStatusSchema.options].sort())
+    const wording = [...Object.values(MARKETPLACE_JOB_STATUS_LABELS), ...marketplaceJobStatusSchema.options.map((status) => marketplaceJobClosedReason(status) ?? "")]
+    expect(wording.filter((text) => /fill/i.test(text))).toEqual(["Marked filled by the poster", "The poster marked this job filled."])
+  })
+
+  it("never says hired, booked or assigned", () => {
+    const sides: MarketplaceInterestSide[] = ["hauler", "landing"]
+    const wording = [
+      ...marketplaceInterestStatusSchema.options.flatMap((status) =>
+        TURNS.flatMap((replies) => sides.map((side) => describeMarketplaceInterestStatus({ replies, status }, side).label))
+      ),
+      ...Object.values(MARKETPLACE_INTEREST_STATUS_LABELS),
+      ...Object.values(LANDING_INTEREST_QUEUE_LABELS),
+      ...Object.values(MARKETPLACE_JOB_STATUS_LABELS),
+      ...marketplaceJobStatusSchema.options.map((status) => marketplaceJobClosedReason(status) ?? "")
+    ]
+
+    expect(wording.filter((text) => /\b(hire[sd]?|hiring|book(ed|ing)?|assign(ed|ment)?)\b/i.test(text))).toEqual([])
   })
 })
 

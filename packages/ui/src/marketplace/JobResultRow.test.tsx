@@ -152,7 +152,8 @@ describe("JobResultRow: honest listing copy", () => {
   it("says when a listing no longer accepts interest", () => {
     const filled: MarketplaceJobCardView = jobCard({ acceptingInterest: false, status: "filled" })
 
-    expect(textOf(render({ context: "hauler", href: HREF, job: filled, now: NOW }))).toContain("Not accepting interest · poster reports enough trucks")
+    // "filled" is the poster's claim (UX-DEC-01, #135), never a verified fact.
+    expect(textOf(render({ context: "hauler", href: HREF, job: filled, now: NOW }))).toContain("Marked filled by the poster")
     expect(textOf(render({ context: "hauler", href: HREF, job, now: NOW }))).not.toContain("Accepting interest")
   })
 
