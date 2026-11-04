@@ -10,6 +10,8 @@ import {
   jobFilterArguments,
   jobViewFromRow,
   landingFromRow,
+  listingReportReceipt,
+  listingReportRow,
   publishArguments,
   refineDiscovery,
   respondArguments,
@@ -292,5 +294,43 @@ describe("refineDiscovery (#185 filters the function does not take yet)", () => 
   it("orders by the chosen sort, with pay compared only within a basis", () => {
     expect(ids(refineDiscovery(jobs, { near: { lat: 45.5, lng: -122.7 }, sort: "nearest" }))).toEqual([far.id, near.id])
     expect(ids(refineDiscovery(jobs, { sort: "pay" }))).toEqual([far.id, near.id])
+  })
+})
+
+describe("listing reports (#130)", () => {
+  it("stores the spec's reasons under the schema's codes, keeping the person's words", () => {
+    expect(listingReportRow({ details: "Pay is $70 a ton at the scale", jobId: JOB_ID, reason: "inaccurate_pay" })).toEqual({
+      details: "Pay is $70 a ton at the scale",
+      jobId: JOB_ID,
+      reason: "inaccurate_pay"
+    })
+    expect(listingReportRow({ jobId: JOB_ID, reason: "fake_work" }).reason).toBe("nonexistent_job")
+    expect(listingReportRow({ jobId: JOB_ID, reason: "abusive_language" }).reason).toBe("abuse")
+    expect(listingReportRow({ jobId: JOB_ID, reason: "privacy_risk" }).reason).toBe("unsafe_disclosure")
+    expect(listingReportRow({ jobId: JOB_ID, reason: "other" })).toEqual({ details: null, jobId: JOB_ID, reason: "other" })
+  })
+
+  it("writes the chosen reason first when the schema has no code for it", () => {
+    expect(listingReportRow({ details: "Filled last week", jobId: JOB_ID, reason: "stale" })).toEqual({
+      details: "Reason: No longer available.\nFilled last week",
+      jobId: JOB_ID,
+      reason: "other"
+    })
+    expect(listingReportRow({ jobId: JOB_ID, reason: "wrong_equipment" }).details).toBe("Reason: Wrong equipment listed.")
+    expect(listingReportRow({ jobId: JOB_ID, reason: "suspicious_contact" }).details).toBe("Reason: Suspicious contact request.")
+  })
+
+  it("refuses input the contract does not accept", () => {
+    expect(() => listingReportRow({ jobId: JOB_ID, reason: "spam" })).toThrow(MarketplaceRefusalError)
+    expect(() => listingReportRow({ jobId: "nope", reason: "stale" })).toThrow("Listing not found")
+  })
+
+  it("acknowledges the stored report with an ISO time, and refuses a malformed id", () => {
+    expect(listingReportReceipt({ createdAt: "2026-11-03 12:00:00+00", id: INTEREST_ID }, false)).toEqual({
+      alreadyReported: false,
+      reportId: INTEREST_ID,
+      reportedAt: "2026-11-03T12:00:00.000Z"
+    })
+    expect(() => listingReportReceipt({ createdAt: "2026-11-03T12:00:00Z", id: "1" }, true)).toThrow(MarketplaceStoreError)
   })
 })

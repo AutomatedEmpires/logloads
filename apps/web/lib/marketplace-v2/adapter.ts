@@ -160,7 +160,9 @@ export function selectMarketplaceV2Port(
     },
     authoringLandings: async (viewer) => current().authoringLandings(viewer),
     expressInterest: async (viewer, input) => current().expressInterest(viewer, input),
-    getJob: async (jobId) => current().getJob(jobId),
+    getJob: async (jobId, viewer) => current().getJob(jobId, viewer),
+    // Listing reports (UX-07, #130)
+    reportListing: async (viewer, input) => current().reportListing(viewer, input),
     haulerEquipment: async (viewer) => current().haulerEquipment(viewer),
     haulerProfile: async (viewer) => current().haulerProfile(viewer),
     interestForJob: async (viewer, jobId) => current().interestForJob(viewer, jobId),
