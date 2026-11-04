@@ -20,16 +20,15 @@
     "legacy_boundary": "Historical cloudinary provider literals remain parseable as stored metadata only. No Cloudinary signing, upload, read-back, delivery, dependency, or environment activation path exists."
   },
   "commercial_authority": {
-    "decision": "percentage_v1",
-    "effective": "2026-08-01",
-    "terms": "The host owes LogLoads 5% of host-stated driver pay on top after the physical movement completes. Fees are invoiced monthly in arrears. There is no monthly minimum, posting fee, driver charge, or custody of transportation funds.",
-    "current_collection_gate": "LOGLOADS_FEE_COLLECTION",
-    "current_enrollment_gate": "LOGLOADS_PERCENTAGE_ENROLLMENT",
-    "current_enrollment_allowlist": "LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS",
-    "current_enrollment_scope_assertion": "LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256",
-    "legacy_boundary": "legacy_percentage remains read-only for frozen accepted terms and obligations; no new activity may enter it.",
+    "decision": "landing-membership-2026-11-04",
+    "effective": "2026-11-04",
+    "terms": "Landing memberships are Basic $149, Pro $299, and Regional $499 per month. They are not activated for purchase. Drivers and fleets are free. The retired completed-load percentage fee is not an offer.",
+    "purchasable": false,
+    "legacy_boundary": "percentage_v1 and legacy_percentage remain parseable historical records. LOGLOADS_FEE_COLLECTION and LOGLOADS_PERCENTAGE_ENROLLMENT stay disabled. No new percentage obligation may be created.",
     "subscription_boundary": "subscription_v1 and its plan catalog remain read-only evidence for obligations accepted while that decision governed; no new enrollment, tier allowance, overage, renewal, or usage obligation may be created.",
     "historical_gates": {
+      "LOGLOADS_FEE_COLLECTION": "disabled",
+      "LOGLOADS_PERCENTAGE_ENROLLMENT": "disabled",
       "LOGLOADS_SUBSCRIPTION_COLLECTION": "disabled",
       "LOGLOADS_DISPATCH_SELF_SERVE": "disabled"
     }

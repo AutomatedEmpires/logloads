@@ -2,6 +2,22 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-11-04 — Founding promotion stays off; production ledger cleanup stays blocked
+
+- **Production records.** The LogLoads production database has not been examined. The Supabase projects visible from this workspace are `ee-dev` and `ee-preview`, not LogLoads production. Do not infer that no agreements, invoices, accrued fees, or refunds exist. Destructive deletion of the historical fee ledger stays blocked until that database is examined and a retention decision is made.
+- **Inactive ledger.** Parsers, stored rows, and invoice history remain so an existing document can still be read. New percentage agreements and new percentage-fee events are refused. Collection gates stay disabled. This is not an active business model.
+- **Founding promotion.** It is disabled. It is not the Explore&Earn promotion, and that promotion must not be copied or reused as the LogLoads offer. These questions are unanswered: whether the discount is still 50 percent; whether it still lasts six paid billing cycles; what the single nationwide cohort cap is; what the eligibility start and end are; what verification makes a landing qualifying; and whether the first 1,000 haulers still receive recognition only. Do not invent those answers and do not activate promotional billing.
+- **Public prices.** Basic $149, Pro $299, and Regional $499 stay visible and are not available for purchase. No checkout, payment, or enrollment control is authorized.
+
+## 2026-11-04 — Membership prices locked, percentage fee retired, nationwide launch
+
+- **Authority.** Explicit founder decisions on 2026-11-04. They supersede, for new product and commercial work, the 2026-08-01 `percentage_v1` decision and the state-by-state founding schedule in Blueprint v1.0 §8.1. The Blueprint file stays the verbatim commercial specification for plan prices and limits. This entry is the newer decision where they conflict.
+- **Locked prices.** Landing memberships are Basic $149, Pro $299, and Regional $499 per month. Do not change them without a new explicit founder approval. Drivers and fleets are free. There is no per-load commission, percentage fee, transaction fee, or deduction from driver pay.
+- **Percentage fee.** The 5% completed-load model is retired. It is not a current offer, not a selectable agreement, and not an instruction for future agents. Customer-facing surfaces must not present it as available. `LOGLOADS_FEE_COLLECTION` and `LOGLOADS_PERCENTAGE_ENROLLMENT` stay disabled. No new percentage obligation may be created.
+- **Historical ledger.** Fee, invoice, and agreement parsers stay until the founder confirms that the production `operating_state` document contains no accepted agreements, invoices, accrued obligations, or refunds. The connected Supabase projects visible on 2026-11-04 (`ee-dev`, `ee-preview`) are not the LogLoads production project, so that confirmation is still open. Do not destroy those parsers, rewrite Git history, or run a destructive migration before that confirmation.
+- **Nationwide.** LogLoads launches across the United States. An empty region is not an unlaunched state. Do not invent listings, haulers, or guaranteed matches.
+- **Founding promotion.** The per-state “first 10” schedule is superseded. A nationwide founding rule is not activated. Cohort size, eligibility window, and whether the 50% / six-cycle discount still applies are unanswered. Do not invent them and do not turn on promotional billing.
+
 ## 2026-11-03 — One status vocabulary for interests and jobs (UX-12, #135)
 
 - **Approval.** The lead approved #135 on 2026-11-03 and delegated the exact wording. This implements UX-DEC-01

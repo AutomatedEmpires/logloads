@@ -134,7 +134,7 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
           <div className="feature-grid">
             <article><span>Driver accounts</span><h3>Drivers &amp; owner-operators</h3><p>See available work, know whether it fits, request it, and follow the schedule from a phone.</p><Link className="text-link" href="/sign-up?path=driver">Create a driver profile</Link></article>
             <article><span>Free fleet dispatch</span><h3>Dispatchers &amp; fleets</h3><p>Keep trucks, drivers, requests, schedules, and exceptions in one operating view without reducing driver pay.</p><Link className="text-link" href="/sign-up?path=fleet">Set up dispatch</Link></article>
-            <article><span>Post hauling work</span><h3>Hosts</h3><p>Prepare your landings and the hauling work you need trucks for. Live publication requires separate pilot approval. Pricing for landing organizations has not been published.</p><Link className="text-link" href="/pricing">About pricing</Link></article>
+            <article><span>Post hauling work</span><h3>Hosts</h3><p>Prepare your landings and the hauling work you need trucks for. Memberships are Basic $149, Pro $299, and Regional $499 per month, and they are not available for purchase yet.</p><Link className="text-link" href="/pricing">About pricing</Link></article>
           </div>
         </section>
         <section className="loads-preview">
@@ -394,8 +394,8 @@ export function PricingPage() {
       <main className="page-main pricing-page">
         <PageIntro
           eyebrow="Pricing"
-          title="Pricing for landing organizations is not published yet."
-          body="LogLoads is a timber-hauling load board: businesses that need log trucks post their hauling work, and hauling businesses find work that fits their trucks. Drivers and hauling businesses use LogLoads free. Pricing for landing organizations will be published before any paid feature is offered."
+          title="Landing memberships are $149, $299, and $499."
+          body="LogLoads is a timber-hauling marketplace. Landing operators publish opportunities. Haulers and fleets find them and express interest. Drivers and fleets use LogLoads free of charge. Basic, Pro, and Regional are the only landing prices, and they are not available for purchase yet."
         />
 
         <aside className="pricing-availability" role="note">
@@ -928,13 +928,13 @@ export function ContactPage({
             </section>
             <section>
               <h2>Host pilot access</h2>
-              <p>Workspace creation is free. Live publication and Network enrollment require separate approval for the exact pilot organization. Creating an account does not activate billing.</p>
+              <p>Workspace creation is free. Landing memberships are not available for purchase yet, and creating an account does not start a charge.</p>
             </section>
             <section>
               <h2>Pricing</h2>
               <p>
-                Pricing for landing organizations has not been published. Nothing
-                on LogLoads is offered for sale today.
+                Basic $149, Pro $299, and Regional $499 per month. Nothing
+                is available for purchase yet.
               </p>
             </section>
           </aside>

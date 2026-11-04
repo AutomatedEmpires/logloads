@@ -1,4 +1,4 @@
-import { PERCENTAGE_V1_TERMS_VERSION } from "@logloads/contracts"
+import { PERCENTAGE_V1_TERMS_VERSION, PLATFORM_FEE_BPS } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
@@ -478,11 +478,22 @@ describe("assignment cancellation", () => {
     // bypass the post-cutover host agreement.
     organization.type = "landing_source"
     billingManager.role = "owner"
-    services.acceptPercentageBillingAgreement({
+    const account = services.state.organizationBillingAccounts.find(
+      (candidate) => candidate.organizationId === HAULER_ORG
+    )
+    expect(account).toBeDefined()
+    if (!account) return
+    account.activationState = "percentage_active"
+    account.billingModel = "percentage_v1"
+    account.subscriptionId = null
+    account.percentageTermsSnapshot = {
+      acceptedAt: "2026-08-04T12:00:00.000Z",
+      acceptedByUserId: HOST_ACTOR,
       acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION,
-      actorUserId: HOST_ACTOR,
-      organizationId: HAULER_ORG
-    })
+      billingCadence: "monthly_in_arrears",
+      currency: "USD",
+      feeBps: PLATFORM_FEE_BPS
+    }
 
     const { load, slot } = publishFreshLoad(services, 1, HAULER_ORG)
     const assignment = requestFreshLoad(services, load.id, slot.id)

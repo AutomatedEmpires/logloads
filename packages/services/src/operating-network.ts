@@ -1476,23 +1476,11 @@ function finalizeCapacityAssignment(
       estimatedTonsPerLoad: load.estimatedTonsPerLoad ?? null,
       fuelSurchargeCents: rate.fuelSurchargeCents,
       haulerOrganizationId: equipmentCombination?.organizationId ?? null,
-      hostFee:
-        billingCommitment.billingModel === "legacy_percentage" ||
-        billingCommitment.billingModel === "percentage_v1"
-          ? {
-              billingModel: billingCommitment.billingModel,
-              collectionState: "accrues_monthly_in_arrears",
-              currency: billingCommitment.platformFeeCurrency,
-              feeCents: null,
-              providerCollectionState: "feature_gated",
-              rateBps: billingCommitment.platformFeeBps,
-              proposedRateBps: billingCommitment.platformFeeBps
-            }
-          : {
-              collectionState: "not_applicable_subscription_v1",
-              legacyOnly: true,
-              rateBps: null
-            },
+      hostFee: {
+        collectionState: "not_applicable_subscription_v1",
+        legacyOnly: true,
+        rateBps: null
+      },
       hostOrganizationId: load.companyId,
       loadPostingId: load.id,
       loadVersion: load.updatedAt,

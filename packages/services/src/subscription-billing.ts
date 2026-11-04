@@ -19,7 +19,6 @@ import {
   organizationSubscriptionSchema,
   organizationRoleCan,
   PERCENTAGE_V1_CUTOVER_AT,
-  PLATFORM_FEE_BPS,
   readFrozenDriverPay,
   subscriptionBaseInvoiceId,
   subscriptionBaseInvoiceSchema,
@@ -1218,12 +1217,12 @@ export function resolveAssignmentBillingCommitment(
       capacitySource,
       committedAt: at,
       includedAllowanceSnapshot: null,
-      includesDispatchProCapabilitiesSnapshot: true,
+      includesDispatchProCapabilitiesSnapshot: false,
       overageRateSnapshotCents: null,
       planCode: null,
       planSnapshot: null,
-      platformFeeBps: percentageTerms.feeBps,
-      platformFeeCurrency: percentageTerms.currency,
+      platformFeeBps: null,
+      platformFeeCurrency: null,
       subscriptionId: null
     }
   }
@@ -1231,7 +1230,7 @@ export function resolveAssignmentBillingCommitment(
   if (account.activationState === "legacy") {
     assertDomainCondition(
       Date.parse(at) < Date.parse(PERCENTAGE_V1_CUTOVER_AT),
-      "Accept the current percentage_v1 agreement before committing new work"
+      "The completed-load percentage fee is retired. No new fee obligation was created."
     )
     assertCondition(
       account.billingModel === "legacy_percentage",
@@ -1257,8 +1256,8 @@ export function resolveAssignmentBillingCommitment(
       overageRateSnapshotCents: null,
       planCode: null,
       planSnapshot: null,
-      platformFeeBps: PLATFORM_FEE_BPS,
-      platformFeeCurrency: LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
+      platformFeeBps: null,
+      platformFeeCurrency: null,
       subscriptionId: null
     }
   }
@@ -1274,7 +1273,7 @@ export function resolveAssignmentBillingCommitment(
   )
   assertDomainCondition(
     Date.parse(at) < Date.parse(PERCENTAGE_V1_CUTOVER_AT),
-    "Historical subscriptions no longer authorize new work; accept the current percentage agreement after provider retirement"
+    "Historical subscriptions no longer authorize new work. The completed-load percentage fee is retired, and landing memberships are not available for purchase yet."
   )
   const subscriptionId = assertFound(
     account.subscriptionId ?? undefined,

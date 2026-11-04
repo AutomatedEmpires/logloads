@@ -919,7 +919,7 @@ describe("subscription activation and commercial scope", () => {
         "request_approval",
         "2026-08-04T16:00:00.000Z"
       )
-    ).toThrow(/current LogLoads fee agreement/)
+    ).toThrow(/Dispatch Pro is retired/)
     expect(state.opportunityCapacities).toHaveLength(capacityCount)
     expect(state.truckSlots).toHaveLength(slotCount)
 
@@ -931,7 +931,7 @@ describe("subscription activation and commercial scope", () => {
         "request_approval",
         "2026-08-04T16:00:00.000Z"
       )
-    ).toThrow(/current LogLoads fee agreement/)
+    ).toThrow(/Dispatch Pro is retired/)
     expect(state.opportunityCapacities).toHaveLength(capacityCount)
     expect(state.truckSlots).toHaveLength(slotCount)
   })
@@ -1724,7 +1724,7 @@ describe("dunning and Pilot conversion boundaries", () => {
         "request_approval",
         "2026-08-04T16:00:00.000Z"
       )
-    ).toThrow(/current LogLoads fee agreement/)
+    ).toThrow(/Dispatch Pro is retired/)
     expect(subscription.status).toBe("active")
   })
 

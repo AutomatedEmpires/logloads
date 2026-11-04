@@ -339,7 +339,7 @@ function activationPresentation(
       }
     case "percentage_active":
       return {
-        detail: "The current 5% completed-load agreement is accepted for this organization.",
+        detail: "A retired percentage agreement is on file for this organization. It is not a current offer.",
         label: "Current 5% agreement active",
         tone: "success"
       }

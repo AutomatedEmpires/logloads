@@ -129,32 +129,23 @@ describe("percentage billing agreement route", () => {
     vi.unstubAllEnvs()
   })
 
-  it("binds the authenticated host to the server-owned agreement", async () => {
+  it("refuses a new percentage acceptance from an authorized host", async () => {
     const response = await POST(request({ acceptPercentageTerms: true }))
 
-    expect(response.status).toBe(200)
-    expect(mocks.acceptPercentageBillingAgreement).toHaveBeenCalledWith({
-      acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION,
-      actorUserId: ACTOR_ID,
-      organizationId: ORGANIZATION_ID
-    })
+    expect(response.status).toBe(410)
+    expect(mocks.acceptPercentageBillingAgreement).not.toHaveBeenCalled()
     await expect(response.json()).resolves.toEqual({
-      agreement: {
-        activationState: "percentage_active",
-        billingModel: "percentage_v1",
-        termsVersion: PERCENTAGE_V1_TERMS_VERSION
-      },
-      changed: true
+      error: "The completed-load percentage fee is retired and cannot be accepted."
     })
   })
 
-  it("allows an organization administrator to accept the current agreement", async () => {
+  it("refuses a new percentage acceptance from an organization administrator", async () => {
     mocks.requireApiActor.mockResolvedValue(actor("admin"))
 
     const response = await POST(request({ acceptPercentageTerms: true }))
 
-    expect(response.status).toBe(200)
-    expect(mocks.acceptPercentageBillingAgreement).toHaveBeenCalledOnce()
+    expect(response.status).toBe(410)
+    expect(mocks.acceptPercentageBillingAgreement).not.toHaveBeenCalled()
   })
 
   it("refuses a carrier workspace", async () => {
@@ -191,7 +182,7 @@ describe("percentage billing agreement route", () => {
       request({ acceptPercentageTerms: true })
     )
 
-    expect(disabled.status).toBe(403)
+    expect(disabled.status).toBe(410)
     expect(mocks.acceptPercentageBillingAgreement).not.toHaveBeenCalled()
 
     vi.stubEnv("LOGLOADS_PERCENTAGE_ENROLLMENT", "enabled")
@@ -210,7 +201,7 @@ describe("percentage billing agreement route", () => {
       request({ acceptPercentageTerms: true })
     )
 
-    expect(unlisted.status).toBe(403)
+    expect(unlisted.status).toBe(410)
     expect(mocks.acceptPercentageBillingAgreement).not.toHaveBeenCalled()
   })
 
@@ -223,35 +214,26 @@ describe("percentage billing agreement route", () => {
       })
     )
 
-    expect(response.status).toBe(422)
+    expect(response.status).toBe(410)
     expect(mocks.requireApiActor).toHaveBeenCalledOnce()
-    expect(mocks.enforceApiRateLimit).toHaveBeenCalledOnce()
     expect(mocks.acceptPercentageBillingAgreement).not.toHaveBeenCalled()
   })
 
-  it("authenticates and rate limits before rejecting malformed JSON", async () => {
+  it("refuses a malformed body without recording an acceptance", async () => {
     const response = await POST(rawRequest("{"))
 
-    expect(response.status).toBe(422)
-    await expect(response.json()).resolves.toEqual({
-      error: "The request must contain a valid JSON object"
-    })
+    expect(response.status).toBe(410)
     expect(mocks.requireApiActor).toHaveBeenCalledOnce()
-    expect(mocks.enforceApiRateLimit).toHaveBeenCalledOnce()
     expect(mocks.acceptPercentageBillingAgreement).not.toHaveBeenCalled()
   })
 
-  it("stops an undeclared oversized body while streaming it", async () => {
+  it("refuses an oversized body without recording an acceptance", async () => {
     const response = await POST(
       rawRequest(JSON.stringify({ padding: "x".repeat(2_048) }))
     )
 
-    expect(response.status).toBe(413)
-    await expect(response.json()).resolves.toEqual({
-      error: "The percentage agreement request is too large"
-    })
+    expect(response.status).toBe(410)
     expect(mocks.requireApiActor).toHaveBeenCalledOnce()
-    expect(mocks.enforceApiRateLimit).toHaveBeenCalledOnce()
     expect(mocks.acceptPercentageBillingAgreement).not.toHaveBeenCalled()
   })
 })

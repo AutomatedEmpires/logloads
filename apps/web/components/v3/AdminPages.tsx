@@ -910,7 +910,7 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
   return (
     <AppShell account={account} kicker={KICKER} role="admin" title="Billing">
       <section className="app-section">
-        <SectionHeader eyebrow="Percentage v1" title="Current host billing position" />
+        <SectionHeader eyebrow="Preserved records" title="Retired fee ledger" />
         <div className="command-grid admin-plan-mix">
           <Metric label="Current percentage organizations" value={billing.platformFeeLedger.currentOrganizationCount} />
           <Metric label="Current percentage assignments" value={billing.platformFeeLedger.currentAssignmentCount} />
@@ -920,10 +920,10 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
           <Metric label="Outstanding" value={billing.platformFeeLedger.currentOutstandingInvoiceLabel} />
         </div>
         <p className="admin-panel__intro">
-          Current host revenue is the 5% platform fee added on top of stated
-          driver pay for completed loads. Posting is free; there is no subscription,
-          monthly minimum, tier, allowance, or overage. Legacy percentage rows remain
-          in the same immutable ledger and retain their frozen discriminator.
+          The completed-load percentage fee is retired and is not current revenue.
+          These counts are preserved records only. Landing memberships are Basic
+          $149, Pro $299, and Regional $499 per month, and they are not available
+          for purchase yet.
         </p>
       </section>
 
@@ -938,11 +938,11 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
           title="Percentage fee attention"
         />
         <p className="admin-panel__intro">
-          This queue covers only current percentage-v1 fee and invoice disagreements. Normal monthly-arrears accrual and open invoices are not treated as failures, and no live Stripe state is inferred.
+          This queue covers preserved fee and invoice disagreements only. Those records are not a current offer, and no live Stripe state is inferred.
         </p>
         {billing.platformFeeLedger.currentExceptions.length === 0 ? (
           <EmptyState
-            body="Current percentage fee events and their local invoice references are internally consistent. Provider state was not checked."
+            body="Preserved fee events and their local invoice references are internally consistent. They are not a current offer. Provider state was not checked."
             title="No current fee exceptions."
           />
         ) : (

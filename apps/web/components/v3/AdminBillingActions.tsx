@@ -707,8 +707,8 @@ export function AdminBillingActions({
           Subscription configuration, activation, conversion, and plan-change
           controls are closed. Existing provider-bound records remain available
           for non-renewal, adjustment, reversal, entitlement retirement, usage
-          reconciliation, audit, and signed webhook processing. Current hosts
-          activate the 5% completed-load agreement from their own Billing page.
+          reconciliation, audit, and signed webhook processing. The retired
+          percentage fee cannot be accepted from Host Billing.
         </p>
       </section>
 

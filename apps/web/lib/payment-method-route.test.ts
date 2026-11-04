@@ -168,7 +168,7 @@ describe("host payment method setup route", () => {
     mocks.percentageEnrollmentAllowed.mockReturnValue(true)
     mocks.hostCardSetupEligibility.mockReturnValue({
       allowed: true,
-      basis: "accepted_percentage_v1",
+      basis: "unsettled_obligation",
       existingCustomerId: null,
       message: null,
       profileCustomerId: null

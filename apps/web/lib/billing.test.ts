@@ -1856,8 +1856,8 @@ describe("retired checkout catalog", () => {
     const hostPlan = checkoutPlanFor("landing_operations")
 
     expect(hostPlan.kind).toBe("not_purchasable")
-    expect(hostPlan.kind === "not_purchasable" && hostPlan.message).toContain("5% completed-load agreement")
-    expect(hostPlan.kind === "not_purchasable" && hostPlan.message).toContain("no posting fee")
+    expect(hostPlan.kind === "not_purchasable" && hostPlan.message).toContain("not available for purchase yet")
+    expect(hostPlan.kind === "not_purchasable" && hostPlan.message).toContain("retired percentage fee cannot be accepted")
     expect(state.organizationSubscriptions).toEqual([])
   })
 })

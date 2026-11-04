@@ -179,7 +179,7 @@ describe("pilot showroom rendering", () => {
     expect(markup).toContain("Public product tour")
     expect(markup).toContain("Assisted rehearsal")
     expect(markup).toContain("Approved live pilot")
-    expect(markup).toContain("Pricing for landing organizations has not been published")
+    expect(markup).toContain("nothing in this tour is available for purchase")
     expect(markup).not.toContain("5%")
     expect(markup).toContain('id="launch-readiness"')
     expect(markup).toContain("What success needs to prove.")

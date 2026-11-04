@@ -1,9 +1,7 @@
 "use client"
 
 import {
-  FEE_BPS_SCALE,
   OPERATIONAL_NOTICE_LIMITS,
-  PLATFORM_FEE_BPS,
   createMoney,
   formatMoney,
   type OpportunityVisibilityMode
@@ -24,11 +22,7 @@ import {
   revokeDirectOfferAction,
   settleHaulCompletionAction
 } from "@/lib/cockpit-actions"
-import {
-  driverPayQuote,
-  parseDriverPayCents,
-  payOutlookForTruckloads
-} from "@/lib/driver-pay-input"
+import { parseDriverPayCents } from "@/lib/driver-pay-input"
 import type { HostPublishingOptions, RequirementOption } from "@/lib/host-data"
 import { hostLiveVisibilityModes } from "@/lib/host-publishing-options"
 import { formatDateTime, formatHuman, humanizeTag } from "@/lib/v3-shared"
@@ -49,10 +43,6 @@ const VISIBILITY_MODES: Array<[OpportunityVisibilityMode, string, string]> = [
   ["private_network", "Private — partners only", "Only your trusted partner organizations see it."],
   ["verified_network", "Verified carriers", "Limited to carriers building a verified track record."]
 ]
-
-const PERCENTAGE_FEE_PERCENT_LABEL = `${
-  (PLATFORM_FEE_BPS / FEE_BPS_SCALE) * 100
-}%`
 
 /**
  * Whole cents, as a host reads them. Goes through the contracts money helpers so
@@ -796,16 +786,6 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
   // One parse, used for display and for the payload, so the host cannot be shown
   // one compensation figure and have another one published.
   const driverPayCents = parseDriverPayCents(driverPay)
-  const percentagePayQuote = driverPayQuote(driverPay)
-  const percentagePerDayOutlook =
-    percentagePayQuote &&
-    Number.isInteger(truckloadCount) &&
-    truckloadCount > 0
-      ? payOutlookForTruckloads(
-          percentagePayQuote.driverPayCents,
-          truckloadCount
-        )
-      : null
 
   const missingSetup = [
     options.landings.length === 0 ? "a landing" : null,
@@ -1182,50 +1162,8 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
             </p>
           </div>
 
-          {percentagePayQuote ? (
-            <div
-              className="host-route-fact host-field--full"
-              aria-label="Host price for one completed truckload"
-            >
-              <span>
-                Driver or carrier compensation{" "}
-                {money(percentagePayQuote.driverPayCents)} per truckload
-              </span>
-              <span>
-                LogLoads fee {PERCENTAGE_FEE_PERCENT_LABEL}, added on top:{" "}
-                {money(percentagePayQuote.platformFeeCents)}
-              </span>
-              <span>
-                <strong>
-                  Your total for a completed truckload:{" "}
-                  {money(percentagePayQuote.hostTotalCents)}
-                </strong>
-              </span>
-              {percentagePerDayOutlook && percentagePerDayOutlook.truckloads > 1 ? (
-                <span>
-                  If all {percentagePerDayOutlook.truckloads} truckloads run in one
-                  day: {money(percentagePerDayOutlook.driverPayCents)} direct
-                  compensation + {money(percentagePerDayOutlook.platformFeeCents)}{" "}
-                  LogLoads fee = {money(percentagePerDayOutlook.hostTotalCents)}
-                </span>
-              ) : null}
-            </div>
-          ) : (
-            <p className="host-builder-note">
-              Enter the direct transportation compensation for one truckload.
-            </p>
-          )}
-
           <p className="host-builder-note">
-            {options.billingModel === "subscription_v1" ||
-            options.billingModel === "dispatch_pro" ||
-            options.billingModel === "enterprise_custom"
-              ? "This workspace has a historical subscription record. New subscription work is closed; reconcile that record from Billing before publishing new work under the current percentage agreement."
-              : options.billingModel === "legacy_percentage"
-                ? "Existing legacy assignments keep their frozen fee terms. New live work requires approved activation of the current percentage agreement; check Billing for this workspace's status."
-                : options.billingActivationState === "percentage_active"
-                  ? `There is no charge to post, subscription, monthly minimum, tier, allowance, or overage. After a load completes, LogLoads bills you ${PERCENTAGE_FEE_PERCENT_LABEL} of the driver pay you stated, added on top and never deducted from transportation compensation.`
-                  : `Pilot activation is invitation-based. Once this workspace is approved, accepts the current agreement, and attaches a card, each completed load carries a separate ${PERCENTAGE_FEE_PERCENT_LABEL} LogLoads fee on top of stated driver pay.`}
+            Driver pay is the amount the driver is paid. LogLoads does not add a percentage fee and does not deduct from that pay. Landing memberships are not available for purchase yet.
           </p>
 
           <span className="req-label">Rate card for this lane</span>
@@ -1371,19 +1309,13 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
           <div>
             <dt>LogLoads billing</dt>
             <dd>
-              {percentagePayQuote
-                ? `${money(percentagePayQuote.platformFeeCents)} fee per completed truckload (${PERCENTAGE_FEE_PERCENT_LABEL} of stated compensation, added on top)`
-                : "Enter driver pay to calculate the fee. There is no charge to post."}
+              No percentage fee. Landing memberships are not available for purchase yet.
             </dd>
           </div>
           <div>
             <dt>Capacity source</dt>
             <dd>
-              {options.billingModel === "percentage_v1"
-                ? "The current percentage agreement is active for new work."
-                : options.billingModel === "legacy_percentage"
-                  ? "Existing legacy assignments keep their frozen terms; accept the current percentage agreement from Billing for new work."
-                  : "Accept the current percentage agreement and attach a card from Billing before publishing live work."}
+              The retired percentage fee cannot be accepted. Nothing on this form starts a charge.
             </dd>
           </div>
           <div>

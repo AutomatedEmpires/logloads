@@ -27,10 +27,11 @@ const publicSourceFiles = [
   "../app/contact/page.tsx"
 ] as const
 
-// The retired 5% completed-load host fee, Dispatch Pro, and any price figure
-// stay off public surfaces until new pricing and terms are approved (#108).
-const RETIRED_OR_UNAPPROVED_PRICE_CLAIM =
-  /\d\s?%|per completed load|completed-load (?:fee|agreement)|\$\s?\d|\bDispatch Pro\b/i
+// The retired percentage fee and Dispatch Pro stay off public surfaces.
+// The only approved prices are the locked landing memberships.
+const RETIRED_COMMERCIAL_CLAIM =
+  /\d\s?%|per completed load|completed-load (?:fee|agreement)|\bDispatch Pro\b/i
+const APPROVED_PRICE = /^\$(?:149|299|499)$/
 
 const signUpPageSource = readFileSync(
   new URL("../app/sign-up/page.tsx", import.meta.url),
@@ -83,7 +84,7 @@ describe("public role entry copy", () => {
     "keeps %s free of the retired host fee and unapproved prices",
     (file) => {
       expect(readFileSync(new URL(file, import.meta.url), "utf8")).not.toMatch(
-        RETIRED_OR_UNAPPROVED_PRICE_CLAIM
+        RETIRED_COMMERCIAL_CLAIM
       )
     }
   )
@@ -98,20 +99,21 @@ describe("public role entry copy", () => {
       storyPages
     })
 
-    expect(publicCopy).not.toMatch(RETIRED_OR_UNAPPROVED_PRICE_CLAIM)
+    expect(publicCopy).not.toMatch(RETIRED_COMMERCIAL_CLAIM)
   })
 
-  it("shows the host pricing card as unpublished instead of a rate", () => {
+  it("shows the locked landing prices and says they are not for sale", () => {
     const hostPlan = pricingPlans.find((plan) => plan.name === "Host")
+    const publicCopy = JSON.stringify({ pricingPlans, storyPages })
+    const prices = publicCopy.match(/\$\d+/g) ?? []
 
     expect(pricingPlans.map((plan) => plan.name)).toEqual(["Driver", "Fleet Free", "Host"])
     expect(hostPlan).toMatchObject({
       cta: { href: "/sign-up?path=host", label: "Create host workspace" },
-      price: "Not yet published"
+      price: "$149 / $299 / $499"
     })
-    expect(hostPlan?.summary).toContain(
-      "Pricing for landing organizations will be published before any paid feature is offered."
-    )
+    expect(hostPlan?.summary).toContain("not available for purchase yet")
+    expect(prices.every((price) => APPROVED_PRICE.test(price))).toBe(true)
   })
 
   it("keeps the retired host fee sections out of the Terms of Service but links their archive", () => {
@@ -121,7 +123,7 @@ describe("public role entry copy", () => {
     expect(sectionTitles).toContain("What LogLoads is")
     expect(sectionTitles).not.toContain("Host platform fee")
     expect(sectionTitles).not.toContain("Agreement and payment method")
-    expect(JSON.stringify(terms)).not.toMatch(RETIRED_OR_UNAPPROVED_PRICE_CLAIM)
+    expect(JSON.stringify(terms)).not.toMatch(RETIRED_COMMERCIAL_CLAIM)
     expect(JSON.stringify(terms)).not.toMatch(/monthly in arrears|percentage agreement/i)
     // The removed text stays readable for agreements accepted under it (LE-13).
     expect(terms?.changeNotice).toMatchObject({
@@ -131,11 +133,13 @@ describe("public role entry copy", () => {
     })
   })
 
-  it("limits live trip visibility to assigned participants", () => {
+  it("describes publish, discovery, and interest without dispatch or trip tracking", () => {
     const processCopy = JSON.stringify(storyPages["how-it-works"])
 
-    expect(processCopy).toContain("Live trip status shared with assigned participants")
-    expect(processCopy).not.toContain("Live trip status everyone can see")
+    expect(processCopy).toContain("Express interest")
+    expect(processCopy).toContain("LogLoads does not dispatch the trip")
+    expect(processCopy).not.toContain("Live trip status")
+    expect(processCopy).not.toContain("Route Pack")
   })
 
   it("keeps the plain public auth link hidden beside the mobile menu", () => {

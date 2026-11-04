@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     )
 
     throw new ApiError(
-      "New subscription enrollment is closed. Hosts use the current 5% completed-load agreement.",
+      "Landing memberships are not available for purchase yet. The retired percentage fee is not an offer.",
       410
     )
   } catch (error) {

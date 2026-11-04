@@ -1363,18 +1363,15 @@ describe("host onboarding", () => {
       weatherNotes: null
     }
 
-    // Workspace setup is free, but no legacy fee or paid plan is invented for a
-    // new host. A card reference alone cannot silently enroll it either.
-    expect(() => services.createLoadPostingWithPolicy(posting)).toThrow(
-      /accept the current LogLoads fee agreement/
-    )
-    expect(services.state.loadPostings.some((load) => load.title === posting.title)).toBe(false)
+    // A new landing can publish without the retired percentage fee. Attaching a
+    // card does not enroll a membership or record a fee.
+    const created = services.createLoadPostingWithPolicy(posting)
+
+    expect(created.driverPayCents).toBe(52_500)
+    expect(services.state.platformFeeEvents).toHaveLength(0)
 
     attachCard(services, organizationId)
 
-    expect(() => services.createLoadPostingWithPolicy(posting)).toThrow(
-      /accept the current LogLoads fee agreement/
-    )
     expect(
       services.state.organizationBillingAccounts.find(
         (account) => account.organizationId === organizationId
@@ -1384,12 +1381,13 @@ describe("host onboarding", () => {
       billingModel: null,
       subscriptionId: null
     })
+    expect(services.state.platformFeeEvents).toHaveLength(0)
     expect(services.state.truckSlots.some(
       (slot) =>
         services.state.loadPostings.some(
           (load) => load.id === slot.loadPostingId && load.title === posting.title
         )
-    )).toBe(false)
+    )).toBe(true)
   })
 
   it("does not invent a dispatch contact for a driver", () => {
