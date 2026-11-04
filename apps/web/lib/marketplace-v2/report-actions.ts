@@ -4,10 +4,10 @@ import { MARKETPLACE_LISTING_REPORT_REASONS, reportListingInputSchema } from "@l
 
 import { checkRateLimit } from "../rate-limit"
 import { serializeError } from "../services"
-import { getSessionActor } from "../session"
 import { marketplaceV2Enabled } from "./flag"
 import { pilotMarketplaceV2 } from "./pilot-adapter"
 import { MarketplaceOperationUnavailableError } from "./port"
+import { getV2SessionActor } from "./v2-session"
 import type { ReportListingState } from "./report-state"
 
 /**
@@ -37,7 +37,7 @@ export async function reportListingAction(_previous: ReportListingState, formDat
     return { ...kept, message: "This page is not available.", status: "error" }
   }
 
-  const actor = await getSessionActor()
+  const actor = await getV2SessionActor()
 
   if (!actor) {
     return { ...kept, message: "Sign in to report this listing.", status: "error" }

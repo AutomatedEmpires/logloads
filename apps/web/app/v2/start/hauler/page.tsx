@@ -53,8 +53,8 @@ function Layout({ children, step, title, description }: { children: React.ReactN
  * - "I work for a hauling company" joins by invitation and asks nothing about trucks (Blueprint §93: nobody has to
  *   claim trucks they do not own).
  * - "Just me" and "A hauling company" change only the wording. An account already acting for a hauling business
- *   goes on to that business's profile; any other account gets "Your business", which says plainly that creating a
- *   business is not available in this preview.
+ *   goes on to that business's profile; any other account gets "Your business". On the normalized store it creates
+ *   the business and selects it (#213); on the pilot store it says plainly that creating a business is not available.
  *
  * Every step after this one can be skipped, and Find work never waits for any of them.
  */

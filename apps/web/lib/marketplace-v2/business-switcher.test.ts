@@ -1,44 +1,40 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const mocks = vi.hoisted(() => ({
-  getClerkUserId: vi.fn(),
-  getSessionActor: vi.fn(),
+  getV2SessionActor: vi.fn(),
   unstableRethrow: vi.fn(),
-  v2SessionCapabilities: vi.fn()
+  v2SessionCapabilities: vi.fn(),
+  v2SignedInWithoutPerson: vi.fn()
 }))
 
 vi.mock("server-only", () => ({}))
 vi.mock("next/navigation", () => ({ redirect: vi.fn(), unstable_rethrow: mocks.unstableRethrow }))
-vi.mock("../session", () => ({ getClerkUserId: mocks.getClerkUserId, getSessionActor: mocks.getSessionActor }))
+vi.mock("./v2-session", () => ({ getV2SessionActor: mocks.getV2SessionActor, v2SignedInWithoutPerson: mocks.v2SignedInWithoutPerson }))
 vi.mock("./home", () => ({ v2SessionCapabilities: mocks.v2SessionCapabilities }))
 
-import type { SessionActor } from "../session-policy"
 import { businessInitials, resolveV2Shell, v2BusinessSwitcher, v2MembershipChoices } from "./business-switcher"
+import type { V2SessionActor, V2SessionMembership } from "./v2-session"
 
 const HAULER_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 const LANDING_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
 const USER_ID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
 
-type Entry = SessionActor["memberships"][number]
-
-function entry(id: string, displayName: string, type: Entry["organization"]["type"], role: Entry["membership"]["role"]): Entry {
-  return {
-    membership: { organizationId: id, role, status: "active", userId: USER_ID } as Entry["membership"],
-    organization: { displayName, id, type } as Entry["organization"]
-  }
+function entry(id: string, displayName: string, kindLabel: string, roleLabel: string): V2SessionMembership {
+  return { kindLabel, organization: { displayName, id }, roleLabel }
 }
 
-const hauler = entry(HAULER_ID, "Kootenai Timber Haul", "carrier", "owner")
-const landing = entry(LANDING_ID, "Ridge Landing Co.", "landing_source", "landing_manager")
+// The labels are the session's (v2-session.ts relabels the pilot's memberships and labels the normalized store's).
+const hauler = entry(HAULER_ID, "Kootenai Timber Haul", "Hauling business", "Owner")
+const landing = entry(LANDING_ID, "Ridge Landing Co.", "Landing business", "Landing manager")
 
-function actor(overrides: Partial<SessionActor> = {}): SessionActor {
+function actor(overrides: Partial<V2SessionActor> = {}): V2SessionActor {
   return {
-    activeMembership: hauler.membership,
+    activeMembership: hauler,
     activeOrganization: hauler.organization,
-    driverProfileId: null,
     isPlatformAdmin: false,
     memberships: [hauler, landing],
-    profile: { email: "jamie@example.test", fullName: "Jamie Pine", id: USER_ID } as SessionActor["profile"],
+    profile: { email: "jamie@example.test", fullName: "Jamie Pine", id: USER_ID },
+    store: "pilot",
     workspaceSelectionInvalid: false,
     ...overrides
   }
@@ -46,7 +42,7 @@ function actor(overrides: Partial<SessionActor> = {}): SessionActor {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mocks.getClerkUserId.mockResolvedValue(null)
+  mocks.v2SignedInWithoutPerson.mockResolvedValue(false)
 })
 
 describe("v2BusinessSwitcher", () => {
@@ -59,6 +55,17 @@ describe("v2BusinessSwitcher", () => {
       ],
       switchHref: "/v2/switch"
     })
+  })
+
+  it("shows the normalized store's memberships and labels as the session gives them (#213)", () => {
+    const fleet = entry(LANDING_ID, "Adapter Timber Hauling", "Landing and hauling business", "Manager")
+
+    expect(v2BusinessSwitcher(actor({ activeMembership: fleet, activeOrganization: fleet.organization, memberships: [fleet], store: "normalized" })))
+      .toEqual({
+        current: { id: LANDING_ID, initials: "AT", kind: "Landing and hauling business", name: "Adapter Timber Hauling", roleLabel: "Manager" },
+        memberships: [{ id: LANDING_ID, kind: "Landing and hauling business", name: "Adapter Timber Hauling", roleLabel: "Manager" }],
+        switchHref: "/v2/switch"
+      })
   })
 
   it("shows nothing without a session, a selected business or a valid selection", () => {
@@ -95,7 +102,7 @@ describe("v2MembershipChoices", () => {
 describe("resolveV2Shell", () => {
   it("reads the session actor and the selected business's capabilities", async () => {
     const session = actor({ memberships: [hauler] })
-    mocks.getSessionActor.mockResolvedValue(session)
+    mocks.getV2SessionActor.mockResolvedValue(session)
     mocks.v2SessionCapabilities.mockResolvedValue(["interest.express"])
 
     await expect(resolveV2Shell()).resolves.toMatchObject({
@@ -107,14 +114,14 @@ describe("resolveV2Shell", () => {
   })
 
   it("resolves no capabilities for a visitor", async () => {
-    mocks.getSessionActor.mockResolvedValue(null)
+    mocks.getV2SessionActor.mockResolvedValue(null)
 
     await expect(resolveV2Shell()).resolves.toEqual({ account: { kind: "visitor" }, business: undefined, capabilities: null })
     expect(mocks.v2SessionCapabilities).not.toHaveBeenCalled()
   })
 
   it("keeps the account menu for a member whose selected business is gone, without a switcher or capabilities", async () => {
-    mocks.getSessionActor.mockResolvedValue(actor({ workspaceSelectionInvalid: true }))
+    mocks.getV2SessionActor.mockResolvedValue(actor({ workspaceSelectionInvalid: true }))
 
     await expect(resolveV2Shell()).resolves.toEqual({
       account: { kind: "signed-in", person: { email: "jamie@example.test", name: "Jamie Pine" } },
@@ -123,16 +130,16 @@ describe("resolveV2Shell", () => {
     })
   })
 
-  it("treats a Clerk sign-in without a LogLoads profile as signed in, with no person", async () => {
-    mocks.getSessionActor.mockResolvedValue(null)
-    mocks.getClerkUserId.mockResolvedValue("user_example")
+  it("treats a sign-in without a person in the selected store as signed in, with no person", async () => {
+    mocks.getV2SessionActor.mockResolvedValue(null)
+    mocks.v2SignedInWithoutPerson.mockResolvedValue(true)
 
     await expect(resolveV2Shell()).resolves.toMatchObject({ account: { kind: "signed-in", person: null }, business: undefined })
   })
 
   it("leaves the chrome at its public form when the session cannot be read, after rethrowing framework signals", async () => {
     const failure = new Error("state unavailable")
-    mocks.getSessionActor.mockRejectedValue(failure)
+    mocks.getV2SessionActor.mockRejectedValue(failure)
 
     await expect(resolveV2Shell()).resolves.toEqual({ account: { kind: "visitor" }, business: undefined, capabilities: null })
     expect(mocks.unstableRethrow).toHaveBeenCalledExactlyOnceWith(failure)

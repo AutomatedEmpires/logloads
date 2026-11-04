@@ -260,6 +260,25 @@ service-layer authorization over the schema's functions, as the session's person
    person's other businesses are untouched, even ones they belong to. It calls only a fixed list of user
    functions (`MARKETPLACE_FUNCTIONS`). Those exclude worker, billing, admin and legacy-import functions.
 
+**Session memberships and identity linking (#213).** With the normalized adapter selected, V2's session
+(`apps/web/lib/marketplace-v2/v2-session.ts`) takes the person and their businesses from the normalized store, not
+from the pilot account context. The read runs as the person, through the same identity-bound transaction:
+`current_user_id()`, `memberships_read`, `organizations_read` and `get_viewer_marketplace_access` decide which active
+memberships of active businesses are listed. The signed cookie's business selection counts only while it is one of
+them. Every request reads them again, so a removed membership or a suspended business loses access on the next
+request, and the switch action refuses a stale choice server-side. A first sign-in is linked through
+`sync_verified_identity`, keyed to the Clerk user id from the server session, or to the dev profile's linked Clerk id
+on the loopback bench. That function is granted to `service_role` only, and the adapter's login role can never become
+`service_role`. Linking therefore uses a second, optional credential (`LOGLOADS_NORMALIZED_IDENTITY_SYNC_DATABASE_URL`):
+a NOINHERIT login role that can switch only to `service_role`, owns nothing in the schema and calls only that one
+function. `createPostgresIdentitySync` checks it on first use, and it stores an email only when Clerk verified it.
+The database does not limit it to that function: `service_role` also runs the schema's other worker functions
+(billing, boosts, invitation delivery), so the credential is as sensitive as the service-role key. Narrowing it to
+`sync_verified_identity` alone needs a schema change (a dedicated grantee). Without that credential nothing is
+written, and a sign-in the store has not linked yet has no business there. On this store `/v2/start/hauler` and
+`/v2/start/landing` create the business through `create_organization` as the person, who becomes its owner, and
+select it. Legacy cockpits keep the pilot session.
+
 **Why not the verified-token path yet.** Real Clerk tokens through Supabase third-party auth are not verified
 (#112). Building on them now would rest the adapter on an unproven trust path, and local loopback development
 sessions carry no Clerk token. This path is verifiable today on a disposable database

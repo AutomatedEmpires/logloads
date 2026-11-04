@@ -14,8 +14,9 @@ import styles from "./Onboarding.module.css"
 const LABELS = { businessName: "Business name", homeBase: "Home base" } as const
 
 /**
- * UX 02 §A3 for an account with no hauling business: the public basics, validated on the server. Creating the
- * business is not available in this preview, and the answer says so while keeping what was typed.
+ * UX 02 §A3 for an account with no hauling business: the public basics, validated on the server. Where the V2 store
+ * can create the business (the normalized store, #213) the action creates and selects it and goes on to the profile;
+ * otherwise, or when the store refuses, the answer says so while keeping what was typed.
  */
 export function StartBusinessForm({ solo }: { solo: boolean }) {
   const [state, formAction] = useActionState(startHaulingBusinessAction, initialStartBusinessState())
@@ -42,7 +43,7 @@ export function StartBusinessForm({ solo }: { solo: boolean }) {
           </ul>
         </div>
       ) : null}
-      {state.status === "unavailable" ? (
+      {state.status === "unavailable" || state.status === "refused" ? (
         <div className={profileStyles.summary} data-tone="critical" ref={summaryRef} role="alert" tabIndex={-1}>
           <p>{state.message}</p>
         </div>

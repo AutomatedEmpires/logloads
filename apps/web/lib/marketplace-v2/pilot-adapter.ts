@@ -92,6 +92,11 @@ export const operatingStateMarketplaceV2: MarketplaceV2Port = {
     return readState((current) => current.marketplaceHaulerEquipment(actor(viewer)))
   },
 
+  // #213: the pilot store has no service that adds a business to an existing account, so nothing is created here.
+  async createHaulingBusiness() {
+    throw new MarketplaceOperationUnavailableError("Setting up a hauling business")
+  },
+
   async haulerProfile(viewer) {
     return readState((current) => {
       const organization = current.state.organizations.find((candidate) => candidate.id === viewer.organizationId)

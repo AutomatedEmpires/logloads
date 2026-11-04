@@ -193,7 +193,14 @@ export function createNormalizedMarketplaceV2({ db, now = () => new Date(), prin
 
   return {
     supportsPublishing: true,
-    ...normalizedHaulerProfileMethods(asViewer),
+    ...normalizedHaulerProfileMethods(asViewer, async (account, work) => {
+      if (!account || typeof account.userId !== "string" || !account.userId) {
+        throw new MarketplaceRefusalError(NOT_AVAILABLE, "42501")
+      }
+
+      // No business is selected yet: the person acts as themselves, and the store makes them the new business's owner.
+      return db.asUser(await principal({ organizationId: "", userId: account.userId }), work, write)
+    }),
     ...normalizedHaulerFleetMethods(asViewer, now),
 
     async authoringLandings(viewer) {

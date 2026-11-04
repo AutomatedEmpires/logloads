@@ -82,9 +82,12 @@ export function haulerSetupKind(value: unknown): HaulerSetupKind | null {
   return value === "solo" || value === "company" ? value : null
 }
 
-/** "Your business" for an account with no hauling business yet (UX 02 §A3): the public basics only. */
+/**
+ * "Your business" for an account with no hauling business yet (UX 02 §A3): the public basics only. `refused` is the
+ * normalized store saying no (#213); on success the action goes on to the business profile instead of returning.
+ */
 export interface StartBusinessFormState {
-  status: "idle" | "invalid" | "unavailable"
+  status: "idle" | "invalid" | "unavailable" | "refused"
   values: { businessName: string; homeBase: string }
   issues: HaulerProfileIssue[]
   message: string | null
@@ -95,6 +98,12 @@ export const START_BUSINESS_FIELD_IDS = Object.freeze({ businessName: "start-bus
 
 export const START_BUSINESS_UNAVAILABLE =
   "Setting up a new hauling business from V2 isn't available in this preview yet. Nothing was saved; what you entered is still in the form. You can search for work now: it never needs a profile."
+
+export const START_BUSINESS_FAILED =
+  "We couldn't set up your business. Try again in a moment; what you entered is still in the form."
+/** The business was created but the session could not select it; switching to it from the business name works. */
+export const START_BUSINESS_NOT_SELECTED =
+  "Your business was set up, but we couldn't switch you to it. Choose it from the business name at the top of the page."
 
 export function initialStartBusinessState(): StartBusinessFormState {
   return { attempt: 0, issues: [], message: null, status: "idle", values: { businessName: "", homeBase: "" } }
