@@ -179,6 +179,11 @@ export function resolveExpectedProjectRef({ fromEnvironment, fromFlag }) {
 /**
  * Whether the configured URL is the project the operator expects. Nothing is read or written until this passes.
  * On a mismatch both references are named (a reference is not a secret); the URL and key never are.
+ *
+ * A hosted project needs the reference ON THE COMMAND LINE. An env file pulled from a hosted project sets
+ * `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF` beside its own `SUPABASE_URL`, so the variable alone would only prove
+ * that the file agrees with itself. The variable still counts for a loopback stack, and is still checked against
+ * the flag whenever both are set.
  */
 export function checkTargetProject({ expectedFromEnvironment, expectedFromFlag, url }) {
   const expected = resolveExpectedProjectRef({
@@ -194,6 +199,16 @@ export function checkTargetProject({ expectedFromEnvironment, expectedFromFlag, 
 
   if (!target.ok) {
     return target
+  }
+
+  if (target.hosted && !trimmedValue(expectedFromFlag)) {
+    return {
+      ok: false,
+      reason:
+        `a hosted project needs ${EXPECTED_PROJECT_REF_FLAG} <ref> on the command line. ` +
+        `${EXPECTED_PROJECT_REF_ENV} alone is not enough, because an env file pulled from that project sets it ` +
+        "too. Nothing was read or written"
+    }
   }
 
   if (target.ref !== expected.ref) {
