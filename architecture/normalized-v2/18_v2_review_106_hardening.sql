@@ -318,7 +318,7 @@ begin
     if old.role = 'owner' and old.status = 'active' and (new.role <> 'owner' or new.status <> 'active') then
       -- HF-15: one owner exit at a time per organization. The check below then reads the committed state
       -- (READ COMMITTED takes a new snapshot for each statement of this function).
-      perform 1 from marketplace.organizations o where o.id = old.org_id for update;
+      -- NEGATIVE CONTROL: HF-15 lock removed
       if not exists (
            select 1 from marketplace.organization_memberships m
            where m.org_id = old.org_id and m.role = 'owner' and m.status = 'active' and m.id <> old.id) then
