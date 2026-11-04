@@ -6,7 +6,9 @@ import {
   routePackSchema,
   selectDriverEquipmentCombination,
   transitionTripStatus,
+  TRIP_RECORD_LIMITS,
   tripDocumentSchema,
+  tripEventSchema,
   tripSchemaV2
 } from "./production-network"
 
@@ -201,5 +203,53 @@ describe("production operating network contracts", () => {
     })
 
     expect(result.success).toBe(true)
+  })
+
+  it("caps the text a trip event and a trip document store", () => {
+    const event = {
+      actorUserId: "22222222-2222-4222-8222-222222222222",
+      createdAt: timestamp,
+      id: "13131313-1313-4313-8313-131313131313",
+      metadata: { assignmentId: "88888888-8888-4888-8888-888888888888" },
+      note: "Checked in at the landing.",
+      occurredAt: timestamp,
+      source: "driver",
+      tripId: "77777777-7777-4777-8777-777777777777",
+      type: "landing_check_in"
+    } as const
+
+    expect(tripEventSchema.safeParse(event).success).toBe(true)
+    expect(tripEventSchema.safeParse({ ...event, note: "n".repeat(TRIP_RECORD_LIMITS.eventNote) }).success).toBe(true)
+    expect(tripEventSchema.safeParse({ ...event, note: "n".repeat(TRIP_RECORD_LIMITS.eventNote + 1) }).success).toBe(false)
+
+    // The metadata bound is on its stored JSON, so a long value and many small keys fail alike.
+    expect(tripEventSchema.safeParse({ ...event, metadata: { blob: "m".repeat(TRIP_RECORD_LIMITS.eventMetadataJson) } }).success).toBe(false)
+    expect(
+      tripEventSchema.safeParse({
+        ...event,
+        metadata: Object.fromEntries(Array.from({ length: 1000 }, (_, index) => [`k${index}`, index]))
+      }).success
+    ).toBe(false)
+    expect(tripEventSchema.parse({ ...event, metadata: undefined }).metadata).toEqual({})
+
+    const cyclic: Record<string, unknown> = {}
+    cyclic.self = cyclic
+    expect(tripEventSchema.safeParse({ ...event, metadata: cyclic }).success).toBe(false)
+
+    const document = {
+      auditMetadata: {},
+      contentType: "image/jpeg",
+      id: "12121212-1212-4212-8212-121212121212",
+      processingStatus: "ready",
+      storageKey: "logloads/trip-documents/trip-1/uploads/photo-1",
+      storageProvider: "supabase",
+      tripId: "77777777-7777-4777-8777-777777777777",
+      type: "scale_ticket",
+      uploadedAt: timestamp,
+      uploadedByUserId: "22222222-2222-4222-8222-222222222222"
+    } as const
+
+    expect(tripDocumentSchema.safeParse({ ...document, filename: `${"f".repeat(TRIP_RECORD_LIMITS.documentFilename - 4)}.jpg` }).success).toBe(true)
+    expect(tripDocumentSchema.safeParse({ ...document, filename: `${"f".repeat(TRIP_RECORD_LIMITS.documentFilename)}.jpg` }).success).toBe(false)
   })
 })

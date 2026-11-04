@@ -10,8 +10,9 @@ import { expect, test, type Browser, type Locator, type Page } from "@playwright
  * Writes: the conversation cases need an inquiry, and the seed has none. New River Hauling (a hauling business
  * with no trucks listed) expresses interest in the one public job, North Pine Logging's, and replies on it. Nothing
  * declines or withdraws; the no-JavaScript interest case posts once with a date range the server refuses, which
- * writes nothing. When no job accepts interest in the shared CI state those cases are skipped with that reason, not
- * passed.
+ * writes nothing. The equipment case signs in as Granite Creek Hauling (equipment listed) and submits one offer
+ * above its listing, which the server refuses without writing. When no job accepts interest in the shared CI state
+ * those cases are skipped with that reason, not passed.
  *
  * The business-switching case (#124 criterion 8, last in the file) needs a dual-membership account, which the seed
  * does not have. Through the app's own pages it makes Maya Mills (North Pine Logging driver) a Summit Ridge Timber
@@ -97,6 +98,17 @@ const NORTH_PINE_LANDING = NORTH_PINE.landing // North Pine Logging acting on it
 // Summit Ridge Timber: the suite never expresses interest in its jobs, so its inbox stays empty even when the pilot
 // journeys have published one of them in the shared CI state.
 const LANDING_WITHOUT_INQUIRIES = "cole@summit.example"
+/**
+ * Granite Creek Hauling (#178): a hauling business whose profile lists equipment, in the interest form's order
+ * (most units first). The suite only reads its form and one refused offer; it never sends its interest.
+ */
+const GRANITE_CREEK = {
+  email: "avery@granitecreek.example",
+  setups: [
+    { label: "Log truck + Bunk / short-log", units: 2 },
+    { label: "Log truck + Pole trailer", units: 1 }
+  ]
+} as const
 const NO_OPEN_JOB = "No North Pine Logging job accepts interest in this run's state (the shared CI state can have them filled or closed)"
 
 /** Markup a hauler might type. It must reach every page as text: no element, no script. */
@@ -868,6 +880,85 @@ async function expectNoLegacyFonts(page: Page) {
   expect(leaks, "design-system text resolving to the legacy Archivo/Inter stacks").toEqual([])
 }
 
+/** The V2 faces app/v2/layout.tsx sets on `.ll-theme` (next/font/local family names), and the weights each ships. */
+const PLEX_WEIGHTS = { display: [600, 700], mono: [500, 600], sans: [400, 500, 600, 700] } as const
+type PlexRole = keyof typeof PLEX_WEIGHTS
+
+async function plexFamilies(page: Page): Promise<Record<PlexRole, string>> {
+  return page.locator(".ll-app").evaluate((root) => {
+    const first = (list: string) => list.split(",")[0]!.trim().replace(/^["']|["']$/g, "")
+    const style = getComputedStyle(root)
+    return {
+      display: first(style.getPropertyValue("--ll-font-display-face")),
+      mono: first(style.getPropertyValue("--ll-font-mono-face")),
+      sans: first(style.getPropertyValue("--ll-font-sans-face"))
+    }
+  })
+}
+
+/** Every @font-face the page declares for the given families, with the URLs it loads them from. */
+async function declaredFaces(page: Page, families: string[]): Promise<Array<{ family: string; urls: string[] }>> {
+  return page.evaluate((wanted) => {
+    const unquote = (value: string) => value.trim().replace(/^["']|["']$/g, "")
+    const rules = Array.from(document.styleSheets).flatMap((sheet) => {
+      try {
+        return Array.from(sheet.cssRules)
+      } catch {
+        return []
+      }
+    })
+
+    return rules
+      .filter((rule): rule is CSSFontFaceRule => rule instanceof CSSFontFaceRule)
+      .map((rule) => ({
+        family: unquote(rule.style.getPropertyValue("font-family")),
+        // A relative url() resolves against its stylesheet, not the page.
+        urls: Array.from(rule.style.getPropertyValue("src").matchAll(/url\(["']?([^"')]+)["']?\)/g), (match) =>
+          new URL(match[1]!, rule.parentStyleSheet?.href ?? document.baseURI).href)
+      }))
+      .filter((face) => wanted.includes(face.family))
+  }, families)
+}
+
+/**
+ * The page's V2 text resolves to the self-hosted IBM Plex faces: each `--ll-font-*-face` names a face this page
+ * declares, every shipped weight loads from the app itself, and headings and body text use them.
+ */
+async function expectSelfHostedPlex(page: Page) {
+  const families = await plexFamilies(page)
+  const faces = await declaredFaces(page, Object.values(families))
+
+  for (const [role, family] of Object.entries(families) as Array<[PlexRole, string]>) {
+    expect(family, `--ll-font-${role}-face is set`).not.toBe("")
+    expect(family, `--ll-font-${role}-face is a self-hosted face, not the bare name in tokens.css`).not.toMatch(/^IBM Plex/)
+    const urls = faces.filter((face) => face.family === family).flatMap((face) => face.urls)
+    expect(urls, `${role}: one file per shipped weight`).toHaveLength(PLEX_WEIGHTS[role].length)
+    for (const url of urls) expect(url, `${role}: served by the app`).toMatch(new RegExp(`^${baseOrigin(page)}/_next/static/media/[^/]+\\.woff2$`))
+  }
+
+  const loaded = await page.evaluate(async ({ families, weights }) => {
+    const results: string[] = []
+    for (const [role, family] of Object.entries(families)) {
+      for (const weight of weights[role as keyof typeof weights]) {
+        const faces = await document.fonts.load(`${weight} 16px "${family}"`)
+        if (!faces.some((face) => face.status === "loaded")) results.push(`${role} ${weight}`)
+      }
+    }
+    return results
+  }, { families, weights: PLEX_WEIGHTS })
+  expect(loaded, "Plex weights that did not load").toEqual([])
+
+  const used = await page.locator(".ll-app").evaluate((root) => {
+    const first = (element: Element | null) => (element ? getComputedStyle(element).fontFamily.split(",")[0]!.trim().replace(/^["']|["']$/g, "") : null)
+    // The page root: the text style every page's body copy inherits from the shell.
+    return { body: first(root.querySelector("#main [data-ds-page]")), heading: first(root.querySelector("#main h1")) }
+  })
+  expect(used.heading, "the page title uses Plex Sans Condensed").toBe(families.display)
+  expect(used.body, "page text inherits Plex Sans").toBe(families.sans)
+}
+
+const baseOrigin = (page: Page) => new URL(page.url()).origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
 test.describe("style isolation", () => {
   test("/v2/work and the migrated visitor pages: the shell carries the theme and nothing resolves to a legacy font", async ({ page }) => {
     const jobPath = await firstJobPath(page)
@@ -895,6 +986,39 @@ test.describe("style isolation", () => {
     await page.waitForLoadState("networkidle")
 
     expect(requests).toEqual([])
+  })
+
+  test("V2 text renders in self-hosted IBM Plex, on the board and in a signed-in page", async ({ page }) => {
+    await openV2(page, "/v2/work")
+    await expectSelfHostedPlex(page)
+
+    await signIn(page, LANDING_WITHOUT_INQUIRIES)
+    await openV2(page, "/v2/landing/inquiries")
+    await expectSelfHostedPlex(page)
+  })
+
+  test("legacy / and /pricing neither declare nor download the V2 faces", async ({ page }) => {
+    await openV2(page, "/v2/work")
+    const families = Object.values(await plexFamilies(page))
+    const plexUrls = (await declaredFaces(page, families)).flatMap((face) => face.urls)
+    expect(plexUrls.length).toBeGreaterThan(0)
+
+    for (const path of ["/", "/pricing"]) {
+      const fonts: string[] = []
+      const onRequest = (request: { resourceType(): string; url(): string }) => {
+        if (request.resourceType() === "font" || /\.woff2?(\?|$)/.test(request.url())) fonts.push(request.url())
+      }
+      page.on("request", onRequest)
+      await page.goto(path)
+      await page.waitForLoadState("load")
+      await page.evaluate(() => document.fonts.ready)
+      page.off("request", onRequest)
+
+      expect(await declaredFaces(page, families), `${path}: no @font-face for the V2 families`).toEqual([])
+      const preloads = await page.locator("link[rel='preload'][as='font']").evaluateAll((links) => links.map((link) => (link as HTMLLinkElement).href))
+      expect(preloads.filter((href) => plexUrls.includes(href)), `${path}: no V2 font preloads`).toEqual([])
+      expect(fonts.filter((url) => plexUrls.includes(url)), `${path}: no V2 font downloads`).toEqual([])
+    }
   })
 
   for (const { path, email } of [
@@ -1020,14 +1144,74 @@ test.describe("waiting on page migrations", () => {
     // selecting a row, switching to compact and back keeps the same row selected and the panel on it.
   })
 
-  test.fixme("equipment on a page: a per-setup count never exceeds the units listed, and unknown capacity is never 0", async () => {
-    // The job page's interest form now renders this (DS-04, #147): one NumberStepper per equipment configuration,
-    // capped at the units in the hauler's profile, beside an EquipmentCapacity in the unknown state ("N units ·
-    // availability not recently confirmed"). The browser cannot reach it with the seed: the only public job is North
-    // Pine Logging's, and every seeded hauling business with listed equipment is North Pine itself (its own job
-    // offers no form). Covered on the server-rendered page by apps/web/lib/marketplace-v2/v2-pages.test.tsx and in
-    // packages/ui (NumberStepper.test.tsx, profile.test.tsx). Needs a seeded hauler with equipment and another
-    // business's public job, or the hauler equipment page (UX-03, #126).
+})
+
+test.describe("equipment on a page (#148 criterion 4)", () => {
+  test("a per-setup count never exceeds the units listed, and unknown capacity is never 0", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1440))
+    await signIn(page, GRANITE_CREEK.email)
+    await openV2(page, "/v2/work")
+    const link = northPineJobLink(page)
+    test.skip((await link.count()) === 0, NO_OPEN_JOB)
+
+    const jobPath = (await link.getAttribute("href"))!
+    await openV2(page, jobPath)
+    // Nothing in this suite sends Granite Creek's interest, so a job that accepts interest always offers the form.
+    const form = page.locator("form:has(input[name='loadPostingId'])")
+    await expect(form, "Granite Creek Hauling can express interest in North Pine Logging's open job").toHaveCount(1)
+    await expect(form.locator("[name='trucksOffered']"), "with equipment listed there is no plain count").toHaveCount(0)
+
+    const setups = form.locator("fieldset li")
+    await expect(setups).toHaveCount(GRANITE_CREEK.setups.length)
+
+    for (const [index, { label, units }] of GRANITE_CREEK.setups.entries()) {
+      const setup = setups.nth(index)
+      await expect(setup).toContainText(label)
+
+      // EquipmentCapacity: V2 has no availability record, so it is unknown — the units listed, never a 0.
+      const capacity = setup.locator("[data-state]")
+      await expect(capacity).toHaveAttribute("data-state", "unknown")
+      await expect(capacity).toHaveText(`${units} ${units === 1 ? "unit" : "units"} · availability not recently confirmed`)
+      await expect(capacity.locator("[aria-hidden='true'] > span"), "one dashed mark per unit").toHaveCount(units)
+      await expect(capacity.locator("[data-on]"), "no mark claims a unit is available").toHaveCount(0)
+
+      // The stepper starts at 0 when there are several setups and stops at the units listed.
+      const stepper = setup.getByRole("group", { name: `Trucks offered: ${label}` })
+      const more = stepper.getByRole("button", { name: "One more" })
+      const fewer = stepper.getByRole("button", { name: "One fewer" })
+      const value = setup.locator("input[type='hidden'][name='equipmentCount']")
+
+      await expect(value).toHaveValue("0")
+      for (let step = 0; step < units + 2; step += 1) await more.click({ force: true })
+      await expect(value).toHaveValue(String(units))
+      await expect(stepper.locator("output")).toHaveText(String(units))
+      await expect(more).toHaveAttribute("aria-disabled", "true")
+      await expect(fewer).not.toHaveAttribute("aria-disabled", "true")
+    }
+
+    // The server re-checks every count: one edited past the listing is refused, and no interest is sent.
+    const [first] = GRANITE_CREEK.setups
+    const refusal = `Your profile lists ${first.units} x ${first.label}`
+    await setups.first().locator("input[type='hidden'][name='equipmentCount']").evaluate((input, count) => {
+      (input as HTMLInputElement).value = String(count)
+    }, first.units + 1)
+    const [response] = await Promise.all([
+      page.waitForResponse((candidate) => candidate.request().method() === "POST" && new URL(candidate.url()).pathname === jobPath),
+      form.getByRole("button", { name: "Send interest" }).click()
+    ])
+
+    // The action answers with a redirect back to the job carrying the refusal. The test opens that target itself:
+    // in CI the client router sometimes does not follow an action's redirect (seen on PR #179 and #181, on this
+    // form and the reply composer alike), which is not what this case is about.
+    const redirect = response.headers()["x-action-redirect"]?.split(";")[0]
+    expect(redirect, "the action redirects back to the job").toBeTruthy()
+    const target = new URL(redirect!, page.url())
+    expect(target.pathname).toBe(jobPath)
+    expect(target.searchParams.get("error")).toContain(refusal)
+
+    await openV2(page, `${target.pathname}${target.search}`)
+    await expect(page.getByRole("alert").filter({ hasText: refusal })).toBeVisible()
+    await expect(page.locator("form:has(input[name='loadPostingId'])"), "the refused offer created no inquiry").toHaveCount(1)
   })
 })
 
@@ -1185,6 +1369,50 @@ test.describe("conversation without JavaScript (#174)", () => {
     await expect(page.getByRole("log")).toContainText(PLAIN_FORM_REPLY)
     await expect(page.locator("textarea[aria-label^='Reply to']")).toHaveValue("")
   })
+})
+
+/**
+ * Visual baselines (#148 criterion 5): `toHaveScreenshot` at 1440 and 390 px, with the fonts self-hosted
+ * (app/v2/_fonts) so the glyphs are the committed files, not whatever a machine has installed.
+ *
+ * Only screens the shared CI state cannot change are baselined: their content is fixed by the seed and no test in
+ * either suite writes to it. The board, the job page and the inquiry pages are not: the pilot journeys run first on
+ * the same state and publish, fill and close jobs, seed dates move with the calendar (apps/web/lib/seed-dates.ts),
+ * and the DS cases above add an inquiry. Masking all of that would leave nothing to compare. Those pages stay
+ * covered by the layout, keyboard and axe cases.
+ *
+ * The baselines are Linux Chromium renders from CI (`*-linux.png`, design-system.config.mjs). Text rasterises
+ * differently on Windows and macOS and in branded channels such as Edge, so other platforms skip these cases rather
+ * than compare against or write a second set. To add or update one: run CI, download the `design-system-traces`
+ * artifact, and commit each case's `<name>-actual.png` as `design-system.spec.ts-snapshots/<name>-linux.png`.
+ * Retries are off here: a baseline that only matches on a second attempt is not deterministic.
+ */
+test.describe("visual baselines (#148 criterion 5)", () => {
+  test.describe.configure({ retries: 0 })
+  test.skip(process.platform !== "linux" || Boolean(process.env.DS_E2E_CHANNEL), "Baselines are Linux Chromium renders from CI; other platforms rasterise text differently")
+
+  const screens = [
+    { email: null, heading: "Set up your business", name: "start", path: "/v2/start" },
+    { email: null, heading: "This page is not available", name: "not-found", path: "/v2/work/00000000-0000-4000-8000-000000000000" },
+    { email: "hank@northpine.example", heading: "Switch business", name: "switch", path: "/v2/switch" },
+    { email: LANDING_WITHOUT_INQUIRIES, heading: "Hauler inquiries", name: "landing-inbox-empty", path: "/v2/landing/inquiries" }
+  ] as const
+
+  for (const { email, heading, name, path } of screens) {
+    for (const width of [1440, 390]) {
+      test(`${name} at ${width} px`, async ({ page }) => {
+        await page.setViewportSize(viewportFor(width))
+        if (email) await signIn(page, email)
+        await openV2(page, path)
+        await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible()
+        await expectSelfHostedPlex(page)
+
+        // Nothing hovered or focused: the pointer leaves wherever sign-in left it.
+        await page.mouse.move(0, 0)
+        await expect(page).toHaveScreenshot(`${name}-${width}.png`, { fullPage: true })
+      })
+    }
+  }
 })
 
 /**
