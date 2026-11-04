@@ -262,7 +262,7 @@ each #112 acceptance criterion:
   after signing, foreign signing key, `alg: none`), expired, wrong issuer, wrong audience and missing role.
 - **AC3.** A removed membership loses access on the next request, with the same still-valid token.
 
-It prints a pass/fail table with no keys, tokens, user IDs or row IDs.
+It prints a pass/fail table with no keys, tokens, user IDs, row IDs or project reference.
 
 **What runs today without keys** (in `.github/workflows/normalized-v2-ci.yml`):
 
@@ -369,8 +369,9 @@ membership left live by an interrupted run is removed at the next start.
 
 If AC1 says "resolved to no user", the token's `aud` differs from the issuer row's `expected_audience`.
 
-**After a pass:** post the table on #112, with the date and the commit SHA. It contains no tokens or keys. The
-docs lane then records the result in [`CI.md`](./CI.md) §3 and in row 5 above. A pass is evidence for the
+**After a pass:** post the run's output on #112, with the date and the commit SHA. It contains no keys,
+tokens, user IDs, row IDs or project reference. The output of a refused run names the project reference, so do
+not post that. The docs lane then records the result in [`CI.md`](./CI.md) §3 and in row 5 above. A pass is evidence for the
 development environment only. It does not authorize enabling the integration anywhere else.
 
 ## 6. Handling rules

@@ -186,7 +186,9 @@ function fakeWorld(options = {}) {
   function postgrest(method, path, params, body, role, me) {
     const denied = (message) => json(role === "anon" ? 401 : 403, { code: "42501", message })
     const select = (rows) => rows.map((row) => Object.fromEntries((params.get("select") ?? "id").split(",").map((column) => [column, row[column]])))
+    const overridden = options.override?.({ me, method, params, path, world })
 
+    if (overridden) return overridden
     if (options.redirectPreflight && path === "equipment_types") return new Response("", { headers: { location: "https://elsewhere.example" }, status: 307 })
     if (path === "equipment_types") return options.schemaMissing ? json(406, { code: "PGRST106" }) : json(200, [{ code: "log_truck" }])
 
@@ -411,13 +413,14 @@ test("a full live run passes every #112 check against a gateway that enforces th
   assert.ok(world.calls.every((call) => call.redirect === "manual"))
 })
 
-test("output never contains a key, a token, a Clerk user ID or a row ID", async () => {
+test("output never contains a key, a token, a Clerk user ID, a row ID or the project reference", async () => {
   const world = fakeWorld()
   const { output } = await harness(world)
 
-  for (const secret of ["sk_test_example", "sb_secret_example", "sb_publishable_example", USER_A, USER_B, ...world.minted]) {
+  for (const secret of ["sk_test_example", "sb_secret_example", "sb_publishable_example", USER_A, USER_B, REF, ...world.minted]) {
     assert.ok(!output.includes(secret), `output leaked ${secret.slice(0, 12)}…`)
   }
+  assert.match(output.split("\n")[0], /Supabase development project \(project ref hidden\)$/)
   assert.doesNotMatch(output, /eyJ[A-Za-z0-9_-]{6,}\./)
   assert.doesNotMatch(output, /fake-(user|org|membership|unit)-\d+/)
 })
@@ -456,6 +459,43 @@ test("each broken rule fails its own check", async () => {
   }
 })
 
+// Replaces B's read of organization A once B's membership there is removed (the AC3 "after" read).
+function afterRemovalReadOfA(response) {
+  return ({ me, method, params, path, world }) => {
+    const orgA = [...world.orgs].find(([, org]) => org.slug === FIXTURES.a.slug)?.[0]
+    const userB = world.links.get(`${CLERK_ISSUER}|${USER_B}`)
+    const removed = world.memberships.some((m) => m.org_id === orgA && m.user_id === userB && m.status === "removed")
+
+    if (removed && me === userB && method === "GET" && path === "equipment_units" && params.get("org_id") === `in.(${orgA})`) {
+      return response()
+    }
+
+    return undefined
+  }
+}
+
+test("AC3 fails as inconclusive when the read after removal errors instead of returning nothing", async () => {
+  const world = fakeWorld({ override: afterRemovalReadOfA(() => json(500, { code: "XX000", message: "internal error" })) })
+  const { code, output } = await harness(world)
+
+  assert.equal(code, 1)
+  assert.equal(resultOf(output, "removed-membership"), "FAIL")
+  assert.match(output, /inconclusive: after removal the read gave HTTP 500 XX000 and access HTTP 403 42501/)
+  assert.equal(resultOf(output, "cleanup"), "PASS")
+  for (const check of CHECKS.filter((entry) => !["removed-membership", "cleanup"].includes(entry.id))) {
+    assert.equal(resultOf(output, check.id), "PASS", check.id)
+  }
+})
+
+test("AC3 accepts an explicit refusal of the read after removal, from the database or the gateway", async () => {
+  for (const [status, code] of [[403, "42501"], [401, "PGRST301"]]) {
+    const { code: exit, output } = await harness(fakeWorld({ override: afterRemovalReadOfA(() => json(status, { code })) }))
+
+    assert.equal(exit, 0, output)
+    assert.match(output, new RegExp(`after removal the same token was refused A's rows \\(HTTP ${status} ${code}\\)`))
+  }
+})
+
 test("a token the gateway lets through still passes when the database resolves it to no user", async () => {
   const { code, output } = await harness(fakeWorld({ gatewayIgnoresExpiry: true }))
 
@@ -489,6 +529,24 @@ test("a misconfigured template fails rather than proving the wrong thing", async
   assert.equal(code, 1)
   assert.match(output, /must set an audience other than the session token's/)
   assert.match(output, /carries a role claim; it must leave role out/)
+})
+
+test("a template token naming another subject fails, whatever else it gets right", async () => {
+  const { code, output } = await harness(
+    fakeWorld({
+      templates: {
+        [NO_ROLE_TEMPLATE]: { aud: SESSION_AUDIENCE, sub: USER_B },
+        [WRONG_AUDIENCE_TEMPLATE]: { aud: "logloads-authcheck-elsewhere", role: "authenticated", sub: USER_B }
+      }
+    })
+  )
+
+  assert.equal(code, 1)
+  assert.equal(resultOf(output, "wrong-audience"), "FAIL")
+  assert.equal(resultOf(output, "missing-role"), "FAIL")
+  assert.match(output, /template "logloads-authcheck-wrong-audience" token names another subject than test user A/)
+  assert.match(output, /template "logloads-authcheck-no-role" token names another subject than test user A/)
+  assert.ok(!output.includes(USER_B))
 })
 
 test("session tokens without the Supabase role claim stop the run at preflight, and sessions are still revoked", async () => {
