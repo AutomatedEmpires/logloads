@@ -384,6 +384,14 @@ export async function provisionSupabaseProject({
       throw new Error(`${options.dopplerProject}/${options.dopplerConfig} already points at a Supabase project that ${options.name} would replace; remove its Supabase values first if you mean to switch`)
     }
 
+    // The tooling config (often a separate one) holds the password and connection string, so it is guarded too.
+    if (toolingNames.has("SUPABASE_PROJECT_REF")) {
+      const configured = doppler.get(options.toolingConfig, "SUPABASE_PROJECT_REF")
+      if (!existing || (configured && configured !== existing.id)) {
+        throw new Error(`${options.dopplerProject}/${options.toolingConfig} already points at a different Supabase project (SUPABASE_PROJECT_REF); remove its Supabase values first if you mean to switch`)
+      }
+    }
+
     const generatedMissing = GENERATED_SECRETS.filter((name) => !appNames.has(name))
     const baselineMissing = Object.keys(baselineValues(options.dopplerConfig)).filter((name) => !appNames.has(name))
     log(`Doppler ${options.dopplerProject}/${options.dopplerConfig}: would generate ${generatedMissing.join(", ") || "nothing"}; would set ${baselineMissing.join(", ") || "nothing"}.`)

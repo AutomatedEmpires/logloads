@@ -175,10 +175,10 @@ The seed is synthetic. Never present it as real activity. On production this ste
   Providers, turn off "Allow new users to sign up", because the publishable key is browser-visible.
 - **Clerk third-party auth:** not configured today. The pilot never sends Clerk tokens to Supabase. It becomes
   relevant only for the normalized-V2 proof, on the staging project first
-  ([`ACTIVATION_CLERK.md`](./ACTIVATION_CLERK.md) §4). When that is scheduled: Clerk → Integrations → Supabase →
+  ([`ACTIVATION_CLERK.md`](./ACTIVATION_CLERK.md) §4). When that is scheduled, **Owner:** Clerk → Integrations → Supabase →
   activate and copy the Clerk domain; Supabase → Authentication → Sign In / Providers → Third-party auth → Clerk →
   paste the domain.
-- **Data API:** keep it enabled with the `public` schema exposed. The app reads `operating_state` and calls
+- **Data API:** **Owner:** keep it enabled with the `public` schema exposed. The app reads `operating_state` and calls
   `consume_rate_limit` through it with the service-role key.
 - Confirm everything with `doppler run --project logloads --config stg -- pnpm supabase:post-provision check`.
 
@@ -192,7 +192,7 @@ Clerk roles and webhooks are not needed ([`ACTIVATION_CLERK.md`](./ACTIVATION_CL
    social provider needs its own OAuth credentials).
 2. **Owner:** store the development instance keys in `stg` (and in `dev` if you want Clerk locally):
    `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (`pk_test_…`) and `CLERK_SECRET_KEY` (`sk_test_…`).
-3. Store the paths so Clerk's own links stay on the app's pages:
+3. **Owner:** store the paths so Clerk's own links stay on the app's pages:
    `NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in`, `NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up`,
    `NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/onboarding`,
    `NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/onboarding`. They are browser-visible, so changing them needs
@@ -200,10 +200,10 @@ Clerk roles and webhooks are not needed ([`ACTIVATION_CLERK.md`](./ACTIVATION_CL
 4. **Origins and redirects.** A development instance accepts any origin (`localhost`, `*.vercel.app`), so no
    allowed-origin or redirect entry is needed for staging. The app's sign-in and sign-up pages redirect to their
    own paths on the same origin, so the redirect-URL allowlist stays empty.
-5. **Production (§13):** the production instance needs the domain `logloads.com` and the DNS records Clerk lists
+5. **Production (§13). Owner:** the production instance needs the domain `logloads.com` and the DNS records Clerk lists
    under Domains. Its keys (`pk_live_…`, `sk_live_…`) go only in `prd`. Do not add staging or preview origins to
    the production instance.
-6. Founder platform admin: after Clerk works, follow [`ACTIVATION_CLERK.md`](./ACTIVATION_CLERK.md) §3 to set
+6. **Owner:** founder platform admin. After Clerk works, follow [`ACTIVATION_CLERK.md`](./ACTIVATION_CLERK.md) §3 to set
    `LOGLOADS_PLATFORM_ADMIN_CLERK_IDS`, `LOGLOADS_PLATFORM_ADMIN_EXPECTED_SCOPE_SHA256`, and for one claim window
    `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP` with `LOGLOADS_PLATFORM_ADMIN_BOOTSTRAP_EXPIRES_AT`. The readiness check
    recomputes the digest and fails on a mismatch, without printing either value.
@@ -247,13 +247,13 @@ Optional local keys go in `dev`: Clerk development keys, a dev CARTO key, Stripe
    protects Preview deployments). For scripted checks of a protected Preview, enable Protection Bypass for
    Automation and export its secret as `VERCEL_AUTOMATION_BYPASS_SECRET` in your shell only; the readiness probe
    sends it.
-5. **V2 flag:** `LOGLOADS_MARKETPLACE_V2=enabled` only in `stg`, and only when the
+5. **V2 flag. Owner:** set `LOGLOADS_MARKETPLACE_V2=enabled` only in `stg`, and only when the
    [`DEPLOYMENT.md`](./DEPLOYMENT.md) §4 gates hold. Never in `prd`: the readiness check marks it INVALID there
    (the code also ignores it when `VERCEL_ENV=production`).
 6. **Cron:** `apps/web/vercel.json` schedules `/api/billing/cron` daily at 05:15 UTC (Hobby allows daily jobs,
    run within the hour). Vercel runs crons on Production deployments only and sends `CRON_SECRET` as a bearer
    token. The route stays dark while the historical gates are disabled.
-7. **App origin:** set `NEXT_PUBLIC_APP_URL=https://logloads.com` in `prd` only when the domain is attached.
+7. **App origin. Owner:** set `NEXT_PUBLIC_APP_URL=https://logloads.com` in `prd` only when the domain is attached.
    Preview deployments may leave it unset (`VERCEL_URL` is used). For a stable staging URL, use the branch alias
    Vercel assigns to the staging branch.
 
@@ -268,10 +268,10 @@ Billing stays **dark**: no Blueprint plan or boost exists in code, and the histo
 credential the readiness check reports it OFF and `/api/health` reports `billing: "misconfigured"`.
 
 1. **Owner:** create the Stripe account and work in test mode (no monthly fee).
-2. Store in `stg` (and `dev` if wanted): `STRIPE_SECRET_KEY` (`sk_test_…`; restricted `rk_` keys are refused by
+2. **Owner:** store in `stg` (and `dev` if wanted): `STRIPE_SECRET_KEY` (`sk_test_…`; restricted `rk_` keys are refused by
    the runtime mode check), `STRIPE_PUBLISHABLE_KEY` (`pk_test_…`), `LOGLOADS_STRIPE_EXPECTED_ACCOUNT_ID` (the
    `acct_…` id from Settings → Business → Account details) and `LOGLOADS_STRIPE_EXPECTED_LIVEMODE=test`.
-3. **Webhook, only when a test-mode billing exercise is scheduled:** Developers → Webhooks → Add endpoint
+3. **Webhook, only when a test-mode billing exercise is scheduled. Owner:** Developers → Webhooks → Add endpoint
    `https://<staging-origin>/api/billing/webhook` with the events the app handles
    (`HANDLED_BILLING_EVENT_TYPES` in `apps/web/lib/billing.ts`): `charge.refunded`,
    `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.deleted`,
@@ -279,12 +279,13 @@ credential the readiness check reports it OFF and `/api/health` reports `billing
    `payment_method.detached`, `refund.updated`, `setup_intent.succeeded`. Store the signing secret (`whsec_…`) as
    `STRIPE_WEBHOOK_SECRET`. A protected Preview refuses Stripe's deliveries unless the endpoint URL carries
    Vercel's automation bypass parameter.
-4. **Catalog:** `node tools/provision-stripe-catalog.mjs` without `--apply` prints the catalog and makes no
-   provider call. That catalog is the **historical** subscription catalog, so do not run it with `--apply`
-   ([`ACTIVATION_STRIPE.md`](./ACTIVATION_STRIPE.md) §2). A fresh account has no historical obligation to
-   reconcile, so leave every `STRIPE_PRICE_*` and `STRIPE_PORTAL_CONFIGURATION_NETWORK` unset. The new catalog
-   needs its own reviewed change.
-5. **Production:** live keys, `LOGLOADS_STRIPE_EXPECTED_LIVEMODE=live` and a live webhook only after explicit
+4. **Catalog: there is no catalog step. Never run `tools/provision-stripe-catalog.mjs` with `--apply`**, on
+   any account or mode. That tool creates only the **historical** subscription catalog, which
+   [`ACTIVATION_STRIPE.md`](./ACTIVATION_STRIPE.md) §2 forbids provisioning. Its dry run (no `--apply`) only
+   prints that catalog and makes no provider call; its closing note suggests re-running with `--apply`, so ignore
+   that note. A fresh account has no historical obligation to reconcile, so leave every `STRIPE_PRICE_*` and
+   `STRIPE_PORTAL_CONFIGURATION_NETWORK` unset. The Blueprint catalog needs its own reviewed change.
+5. **Production. Owner:** live keys, `LOGLOADS_STRIPE_EXPECTED_LIVEMODE=live` and a live webhook only after explicit
    founder authorization ([`ACTIVATION_STRIPE.md`](./ACTIVATION_STRIPE.md) §5).
 
 Verify: the readiness check compares each key's test/live prefix with `LOGLOADS_STRIPE_EXPECTED_LIVEMODE` and the
@@ -299,7 +300,7 @@ Optional; without `RESEND_API_KEY` email is skipped and in-app records stay the 
    bounce MX on the `send` subdomain, the DKIM TXT record). Wait until it shows Verified.
 2. **Owner:** create one API key per environment with **Sending access** restricted to `logloads.com`. Store it
    as `RESEND_API_KEY` in `stg` (controlled test recipients only); the production key only after authorization.
-3. Store the identities in `stg` and `prd`: `RESEND_FROM="LogLoads <notifications@logloads.com>"`,
+3. **Owner:** store the identities in `stg` and `prd`: `RESEND_FROM="LogLoads <notifications@logloads.com>"`,
    `RESEND_REPLY_TO=support@logloads.com`, `SUPPORT_EMAIL=support@logloads.com`,
    `LOGLOADS_CONTACT_EMAIL=support@logloads.com`.
 
@@ -312,7 +313,7 @@ Optional; inert without a key ([`OBSERVABILITY.md`](./OBSERVABILITY.md) §1). Th
 monthly event allowance.
 
 1. **Owner:** create one PostHog Cloud project for LogLoads (US or EU region).
-2. Store its **project** API key (`phc_…`) as `NEXT_PUBLIC_POSTHOG_KEY` in `prd`, and set
+2. **Owner:** store its **project** API key (`phc_…`) as `NEXT_PUBLIC_POSTHOG_KEY` in `prd`, and set
    `NEXT_PUBLIC_POSTHOG_HOST` to the project's ingestion host (`https://us.i.posthog.com` or
    `https://eu.i.posthog.com`). Never a personal API key (`phx_…`): the value ships to every browser, and the
    readiness check marks it INVALID. Leave PostHog unset in `dev` and `stg` so test traffic stays out.
@@ -322,7 +323,7 @@ monthly event allowance.
 Optional; Sentry is never imported without a DSN ([`OBSERVABILITY.md`](./OBSERVABILITY.md) §2).
 
 1. **Owner:** on the free Developer plan, create a project with platform Next.js.
-2. Store its DSN (Project Settings → Client Keys) as `SENTRY_DSN` in `prd`. Events are tagged with `NODE_ENV`,
+2. **Owner:** store its DSN (Project Settings → Client Keys) as `SENTRY_DSN` in `prd`. Events are tagged with `NODE_ENV`,
    which is `production` on every Vercel deployment, so use a separate Sentry project if you also want staging
    errors.
 3. **Source-map token: not needed.** The build does not upload source maps (`next.config.ts` is not wrapped with
@@ -332,7 +333,7 @@ Optional; Sentry is never imported without a DSN ([`OBSERVABILITY.md`](./OBSERVA
 ## 10. Maps
 
 No setup is required: without keys the map uses keyless CARTO on MapLibre. A CARTO key is optional, browser-visible,
-and its allowance is unverified (#114). If you create one, restrict it by origin, keep separate dev and prod
+and its allowance is unverified (#114). **Owner**, if you create one: restrict it by origin, keep separate dev and prod
 keys, and store it as `NEXT_PUBLIC_CARTO_BASEMAP_KEY`. The legacy `NEXT_PUBLIC_MAPBOX_TOKEN` is used only without
 a CARTO key; the readiness check refuses a secret (`sk.`) Mapbox token.
 
@@ -364,11 +365,11 @@ match `--target`.
 
 ## 13. Production (only with the founder's authorization)
 
-1. Supabase: `doppler run --project logloads --config dev -- pnpm supabase:provision --name logloads-production --region us-east-1 --doppler-config prd --allow-production --apply`,
+1. **Owner:** Supabase: `doppler run --project logloads --config dev -- pnpm supabase:provision --name logloads-production --region us-east-1 --doppler-config prd --allow-production --apply`,
    then §2.3, §2.4 and §2.6 with `--config prd`.
-2. Clerk production instance and DNS (§3.5); keys in `prd`.
-3. Vercel: attach `logloads.com`, set `NEXT_PUBLIC_APP_URL=https://logloads.com` in `prd`, redeploy.
-4. Bootstrap the canonical state (§2.5 with `prd`), then claim founder access
+2. **Owner:** Clerk production instance and DNS (§3.5); keys in `prd`.
+3. **Owner:** Vercel: attach `logloads.com`, set `NEXT_PUBLIC_APP_URL=https://logloads.com` in `prd`, redeploy.
+4. **Owner:** bootstrap the canonical state (§2.5 with `prd`), then claim founder access
    ([`ACTIVATION_CLERK.md`](./ACTIVATION_CLERK.md) §3).
 5. `doppler run --project logloads --config prd -- pnpm integrations:check --target production --strict --health-url https://logloads.com`,
    then the smoke (§12).

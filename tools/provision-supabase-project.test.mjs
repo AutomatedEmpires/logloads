@@ -291,6 +291,36 @@ test("apply: a separate tooling config receives the password and connection stri
   assert.ok(configs.stg.has("SUPABASE_SERVICE_ROLE_KEY"))
 })
 
+test("apply: a tooling config that already points at another project is never repointed, and its password is kept", async () => {
+  // A tooling config reused by mistake for a second app config (stg_tooling with --doppler-config dev).
+  const tooling = () => new Map([[DB_PASSWORD, "zzsentinel-staging-password"], ["SUPABASE_PROJECT_REF", "zzsentinelother"]])
+  const configs = { dev: new Map(), stg_tooling: tooling() }
+  const create = await run(["--name", "logloads-dev", "--doppler-config", "dev", "--tooling-config", "stg_tooling", "--apply"], { doppler: fakeDoppler({ configs }) })
+
+  assert.equal(create.code, 1)
+  assert.match(create.err, /stg_tooling already points at a different Supabase project/)
+  assert.ok(!create.supabase.calls.some((call) => call.method === "POST"))
+  assert.equal(writes(create.doppler).length, 0)
+  assert.equal(configs.stg_tooling.get(DB_PASSWORD), "zzsentinel-staging-password")
+
+  const projects = [{ id: REF, name: "logloads-staging", organization_id: "zzsentinel-org-id", status: "ACTIVE_HEALTHY" }]
+  const reuse = await run([...STAGING, "--tooling-config", "stg_tooling", "--apply"], {
+    doppler: fakeDoppler({ configs: { stg: new Map(), stg_tooling: tooling() } }),
+    supabase: fakeSupabase({ projects })
+  })
+
+  assert.equal(reuse.code, 1)
+  assert.match(reuse.err, /stg_tooling already points at a different Supabase project/)
+  assert.equal(writes(reuse.doppler).length, 0)
+
+  // Re-running against the project the configs already name is still allowed.
+  const same = new Map([[DB_PASSWORD, "zzsentinel-pw"], ["SUPABASE_PROJECT_REF", REF], ["LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF", REF]])
+  const rerun = await run([...STAGING, "--apply"], { doppler: fakeDoppler({ configs: { stg: same } }), supabase: fakeSupabase({ projects }) })
+
+  assert.equal(rerun.code, 0, rerun.err)
+  assertNoSentinel(create.out, create.err, reuse.out, reuse.err, rerun.out, rerun.err)
+})
+
 test("apply: production writes live Stripe mode and needs --allow-production", async () => {
   const configs = { prd: new Map() }
   const result = await run(["--name", "logloads-production", "--doppler-config", "prd", "--allow-production", "--apply"], { doppler: fakeDoppler({ configs }) })

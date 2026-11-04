@@ -238,7 +238,7 @@ test("rule 10: removed placeholders and CI-only secrets recorded in the contract
   const withContract = (extra) => ({ ...guide(extra), "ops/production-env-contract.json": JSON.stringify(contract) })
 
   assert.deepEqual(rules(withContract("`NEXT_PUBLIC_NOTIFICATION_PROVIDER`, `GITHUB_TOKEN` and `GITHUB_AGENT_WEBHOOK_URL` are recorded.")), [])
-  assert.deepEqual(rules(withContract("Set `GITHUB_NOT_REAL`.")), ["env-name"])
+  assert.deepEqual(rules(withContract("Set `LOGLOADS_NOT_REAL`.")), ["env-name"])
 })
 
 test("rule 10: production-namespace env names in code must be in the env contract", () => {
@@ -256,8 +256,9 @@ test("rule 10: generic NODE_, GITHUB_, VERCEL_ and NEXT_ names are outside the p
   const generic = "`NODE_OPTIONS=--max-old-space-size=4096`, `GITHUB_TOKEN`, `NEXT_TELEMETRY_DISABLED=1`, `VERCEL_URL`"
   assert.deepEqual(rules(guide(`Set ${generic}.`)), [])
   assert.deepEqual(rules(guide("```bash\nexport NODE_ENV=production GITHUB_SHA=abc\n```")), [])
-  assert.deepEqual(rules(guide("The Supabase CLI reads `SUPABASE_ACCESS_TOKEN`.")), [])
   assert.deepEqual(rules(guide("Set `POSTHOG_NOT_REAL` and `SUPABASE_NOT_REAL`.")), ["env-name", "env-name"])
+  // App variables without a provider prefix stay checked, so a typo in them fails.
+  assert.deepEqual(rules(guide("Set `SUPPORT_EMIAL` and `ASSISTANT_MODLE`.")), ["env-name", "env-name"])
 })
 
 test("rule 9: pnpm commands and dependency binaries are accepted, and `pnpm run` needs a script", () => {

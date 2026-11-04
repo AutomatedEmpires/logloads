@@ -125,6 +125,26 @@ test("readEnvFile accepts a JSON object of strings and refuses other JSON", () =
   assert.deepEqual(readEnvFile("x.json", () => '{"A":"1","B":2}'), { A: "1" })
   assert.throws(() => readEnvFile("x.json", () => "[1]"), /object/)
   assert.deepEqual(readEnvFile("x.env", () => "A=1\n"), { A: "1" })
+  assert.deepEqual(readEnvFile("x.json", () => '﻿{"A":"1"}'), { A: "1" })
+})
+
+test("a malformed JSON env file is refused without quoting its contents", async () => {
+  // JSON.parse's own messages quote the text around the error ("...: zzsentinel..." is not valid JSON).
+  for (const text of ['{"A": zzsentinel-unquoted}', '{"A":"zzsentinel-value"}{"B":"x"}', "zzsentinel-not-json"]) {
+    assert.throws(() => readEnvFile("x.json", () => text), (error) => !SENTINEL.test(error.message) && /not valid JSON/.test(error.message))
+
+    const io = capture()
+    const code = await runCli(["--target", "staging", "--env-file", "stg.json"], {
+      cwd: "/repo",
+      env: {},
+      fileExists: () => true,
+      readFile: () => text,
+      ...io.io
+    })
+
+    assert.equal(code, 2)
+    assertNoSentinel(io.out.join("") + io.err.join(""))
+  }
 })
 
 test("Supabase helpers classify refs and keys without verifying signatures", () => {

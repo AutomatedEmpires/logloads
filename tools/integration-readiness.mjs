@@ -80,10 +80,18 @@ export function parseEnvText(text) {
 
 /** Reads a dotenv file, or a JSON object of strings (e.g. `doppler secrets download --format json`). */
 export function readEnvFile(path, readFile = (file) => readFileSync(file, "utf8")) {
-  const text = readFile(path)
+  // Windows PowerShell writes a byte-order mark when it redirects `doppler secrets download` to a file.
+  const text = readFile(path).replace(/^﻿/, "")
 
   if (/\.json$/i.test(path)) {
-    const parsed = JSON.parse(text)
+    let parsed
+
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      // The parser's own message quotes the text around the error, which can be a secret value.
+      throw new Error("the JSON env file is not valid JSON (the parser's message is withheld because it can quote values)")
+    }
 
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       throw new Error("the JSON env file must be an object of NAME: value strings")

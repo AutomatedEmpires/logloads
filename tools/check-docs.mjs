@@ -79,8 +79,10 @@ const GENERATED_SEGMENTS = new Set([
 // Rule 10 covers only the project's own environment namespaces. Generic names (`NODE_*`, `GITHUB_*`, `VERCEL_*`,
 // `NEXT_TELEMETRY_DISABLED`, `CI`) belong to Node, GitHub, Vercel or Next.js and are not checked. The contract's
 // forbidden prefixes (the retired Cloudinary ones) are added at load time, so naming them needs removal context.
+// `ASSISTANT_` and `SUPPORT_` hold app variables without a provider prefix (`ASSISTANT_MODEL`, `SUPPORT_EMAIL`).
 const ENV_PROJECT_PREFIXES = [
   "ANTHROPIC_",
+  "ASSISTANT_",
   "CLERK_",
   "CREDENTIAL_REVIEW_",
   "CRON_",
@@ -90,13 +92,13 @@ const ENV_PROJECT_PREFIXES = [
   "RESEND_",
   "SENTRY_",
   "STRIPE_",
-  "SUPABASE_"
+  "SUPABASE_",
+  "SUPPORT_"
 ]
 // Well-known variables of external tools inside those namespaces. They configure a CLI, not LogLoads, so they need
-// not be in the contract (it may still list them). Keep the list short and say which tool reads each one.
-export const ENV_EXTERNAL_TOOL_NAMES = {
-  SUPABASE_ACCESS_TOKEN: "Personal access token for the Supabase CLI (`supabase link`, `supabase db push`)."
-}
+// not be in the contract. Keep the list short and say which tool reads each one. Empty today: the Supabase CLI's
+// `SUPABASE_ACCESS_TOKEN` is in the contract (#111), which is the better home for any name a doc tells you to set.
+export const ENV_EXTERNAL_TOOL_NAMES = {}
 
 // pnpm 10's own commands and aliases, plus the npm commands it passes through. `test`/`t`/`tst` and `start` are
 // absent on purpose: they run a script, so the script must exist.
