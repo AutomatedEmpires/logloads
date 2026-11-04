@@ -9,9 +9,10 @@ import { expect, test, type Page } from "@playwright/test"
  *
  * Writes: the conversation cases need an inquiry, and the seed has none. New River Hauling (a hauling business
  * with no trucks listed) expresses interest in the one public job, North Pine Logging's, and replies on it. Nothing
- * else in the suite writes, and nothing declines or withdraws. The equipment case signs in as Granite Creek Hauling
- * (equipment listed) and submits one offer above its listing, which the server refuses without writing. When no
- * job accepts interest in the shared CI state those cases are skipped with that reason, not passed.
+ * else in the suite writes, and nothing declines or withdraws; the no-JavaScript interest case posts once with a date
+ * range the server refuses, which writes nothing. The equipment case signs in as Granite Creek Hauling (equipment
+ * listed) and submits one offer above its listing, which the server refuses without writing. When no job accepts
+ * interest in the shared CI state those cases are skipped with that reason, not passed.
  */
 
 const MATRIX = [1440, 1280, 1024, 768, 390] as const
@@ -38,7 +39,10 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
-/** Opens a V2 page and waits until the shell has replaced the root loading skeleton. */
+/**
+ * Opens a V2 page and waits for the shell. No loading boundary sits above V2 (#174), so the server sends the page
+ * itself and the legacy route skeleton never appears, with or without JavaScript.
+ */
 async function openV2(page: Page, path: string) {
   await page.goto(path)
   await expect(page.locator(".ll-app #main")).toBeVisible()
@@ -80,6 +84,8 @@ const NO_OPEN_JOB = "No North Pine Logging job accepts interest in this run's st
 /** Markup a hauler might type. It must reach every page as text: no element, no script. */
 const MARKUP_NOTE = `<img src=x onerror="window.__llInjected=1"><b>bold</b> & "two trucks"`
 const MARKUP_REPLY = `<script>window.__llInjected=2</script> Tuesday at 5 & Thursday`
+/** The reply the no-JavaScript case sends. */
+const PLAIN_FORM_REPLY = "Sent from a page without JavaScript: Wednesday at 6"
 
 /**
  * /v2/work freshly loaded with at least one job row. In CI the state is shared with the pilot journeys, which can
@@ -344,7 +350,48 @@ test.describe("responsive matrix: /v2/switch (signed in)", () => {
   })
 })
 
-// First of the cases that write: it needs New River Hauling to have no inquiry yet, so it runs before any test that
+// Before the case that sends (below), because it needs the form, which goes once New River Hauling has an inquiry.
+// It submits once, with a date range the server refuses, so it writes nothing and the run's one interest is still
+// sent by the scripted case.
+test.describe("the express-interest form without JavaScript (New River Hauling, #174)", () => {
+  test.use({ javaScriptEnabled: false })
+
+  test("the server's form has a native truck count and posts to the action, which answers on the page", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1440))
+    await signIn(page, NEW_RIVER.email)
+    await openV2(page, "/v2/work")
+    const link = northPineJobLink(page)
+    test.skip((await link.count()) === 0, NO_OPEN_JOB)
+
+    const jobPath = (await link.getAttribute("href"))!
+    await openV2(page, jobPath)
+    const form = page.locator("form:has(input[name='loadPostingId'])")
+    test.skip((await form.count()) === 0, "New River Hauling already sent interest on this job in this run's state")
+
+    // "I'm interested" is an in-page link to the form.
+    await expect(page.locator("[data-ds-page='job-detail'] article").getByRole("link", { name: "I'm interested" })).toHaveAttribute("href", "#interest")
+
+    // Unhydrated, the count is a native number field in [1, 500]; the NumberStepper only replaces it once scripts run.
+    const count = form.getByRole("spinbutton", { name: "Trucks you can offer" })
+    await expect(count).toHaveValue("1")
+    await expect(count).toHaveAttribute("min", "1")
+    await expect(count).toHaveAttribute("max", "500")
+    await expect(form.getByRole("group", { name: "Trucks you can offer" })).toHaveCount(0)
+    await expect(form.locator("[name='trucksOffered']")).toHaveCount(1)
+
+    // The browser posts the form itself; the action refuses the inverted range and the page comes back with why.
+    await form.getByText("Dates and contact preference (optional)").click()
+    await form.getByLabel("Available from").fill("2026-12-10")
+    await form.getByLabel("Available until").fill("2026-12-01")
+    await form.getByRole("button", { name: "Send interest" }).click()
+
+    await page.waitForURL((url) => url.pathname === jobPath && url.searchParams.has("error"))
+    await expect(page.getByRole("alert").filter({ hasText: "Available until must not be before available from" })).toBeVisible()
+    await expect(page.locator("form:has(input[name='loadPostingId'])"), "nothing was sent: the form is still offered").toHaveCount(1)
+  })
+})
+
+// First of the cases that send: it needs New River Hauling to have no inquiry yet, so it runs before any test that
 // calls ensureNewRiverInquiry (workers: 1, file order).
 test.describe("the express-interest form (New River Hauling)", () => {
   test("the truck count stays in range, the form has no serious axe violations, and sending opens an inquiry", async ({ page }) => {
@@ -650,19 +697,52 @@ test.describe("job rows: semantic structure (/v2/work)", () => {
     }
   })
 
-  test.describe("without JavaScript", () => {
+  // #174: a loading boundary above a page streams it hidden behind the skeleton until a script reveals it, so V2
+  // has none. These fail if one comes back.
+  test.describe("without JavaScript (#174)", () => {
     test.use({ javaScriptEnabled: false })
 
-    test.fixme("the row's title link still lists and opens the job", async ({ page }) => {
-      // Fails today: app/loading.tsx is a Suspense boundary above every route, so a dynamic page arrives as the
-      // skeleton plus a hidden streamed segment that only React's inline script reveals. With JavaScript off the
-      // visitor sees the skeleton and no jobs (observed on `next dev`, 2026-11-02). Needs a product decision on
-      // the root loading boundary for /v2; not a design-system component defect.
-      await page.goto("/v2/work")
+    test("the row's title link still lists and opens the job", async ({ page }) => {
+      await openFindWorkWithRows(page)
       const link = jobRows(page).first().locator("h3 a")
+      const href = await link.getAttribute("href")
+
       await expect(link).toBeVisible()
       await link.click()
-      await expect(page).toHaveURL(/\/v2\/work\/[^/]+$/)
+      await expect(page).toHaveURL(new RegExp(`${href}$`))
+      await expect(page.getByRole("heading", { level: 1, name: "Job details" })).toBeVisible()
+    })
+
+    test("the filter form is a GET form the server answers", async ({ page }) => {
+      await openV2(page, "/v2/work?all=1")
+      const title = (await jobRows(page).first().locator("h3 a").innerText()).trim()
+      const filters = page.getByRole("search", { name: "Filter jobs" })
+      const search = filters.getByLabel("Search")
+
+      // The page rendered the box from the query, so the next search still includes every listing.
+      await expect(filters.getByRole("checkbox", { name: "Include filled, paused and closed jobs" })).toBeChecked()
+
+      await search.fill(title)
+      await filters.getByRole("button", { name: "Apply" }).click()
+      await page.waitForURL((url) => url.searchParams.get("q") === title && url.searchParams.get("all") === "1")
+      await expect(search).toHaveValue(title)
+      await expect(jobRows(page).filter({ hasText: title }).first()).toBeVisible()
+
+      await search.fill("no listing matches this zqxv")
+      await filters.getByRole("button", { name: "Apply" }).click()
+      await page.waitForURL((url) => url.searchParams.get("q") === "no listing matches this zqxv")
+      await expect(jobRows(page)).toHaveCount(0)
+      await expect(page.getByText("No jobs match right now")).toBeVisible()
+      await expect(page.getByRole("link", { name: "Clear filters" })).toHaveAttribute("href", "/v2/work")
+    })
+
+    test.fixme("a missing job's not-found page shows its message", async ({ page }) => {
+      // Needs a decision (#174 follow-up). The response is now an honest 404 instead of a 200 skeleton, but Next.js 15
+      // answers a `notFound()` thrown outside a Suspense boundary with an empty document and draws the V2 not-found
+      // page in the browser from the RSC payload, so without JavaScript the page is blank. Server-rendering it means
+      // the job page shows its not-available state itself, which gives up the 404 status.
+      await page.goto("/v2/work/00000000-0000-4000-8000-000000000000")
+      await expect(page.getByRole("heading", { level: 1, name: "This page is not available" })).toBeVisible()
     })
   })
 })
@@ -1142,6 +1222,35 @@ test.describe("conversation on a page (#148 criterion 4)", () => {
     await expectNoSeriousAxeViolations(page)
     await page.setViewportSize(viewportFor(390))
     await expectNoSeriousAxeViolations(page)
+  })
+})
+
+test.describe("conversation without JavaScript (#174)", () => {
+  // The row link opens `#conversation`, and globals.css sets `html { scroll-behavior: smooth }`. With scripts off and
+  // smooth scrolling on, Playwright often never found Send stable, even after the page had stopped at its last scroll
+  // position (seen locally on Edge once the thread was long enough to scroll). Reduced motion turns smooth scrolling
+  // off; it changes nothing about how the form posts.
+  test.use({ contextOptions: { reducedMotion: "reduce" }, javaScriptEnabled: false })
+
+  test("hauler: the plain Send button posts a reply and the page comes back with it", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1280))
+    test.skip(!(await ensureNewRiverInquiry(page)), NO_OPEN_JOB)
+    await openV2(page, "/v2/inquiries")
+
+    // Selecting North Pine Logging's inquiry is a plain link.
+    await inquiryRows(page).filter({ hasText: NORTH_PINE.name }).first().getByRole("link").click()
+    await page.waitForURL((url) => url.searchParams.has("inquiry"))
+    const inquiry = new URL(page.url()).searchParams.get("inquiry")
+
+    // The <noscript> submit stands in for the scripted Send; `required` is what blocks an empty reply here.
+    const composer = page.locator("form:has(textarea[aria-label^='Reply to'])")
+    await expect(composer.locator("textarea")).toHaveAttribute("required", "")
+    await composer.locator("textarea").fill(PLAIN_FORM_REPLY)
+    await composer.getByRole("button", { exact: true, name: "Send" }).click()
+
+    await page.waitForURL((url) => url.searchParams.get("updated") === "reply" && url.searchParams.get("inquiry") === inquiry)
+    await expect(page.getByRole("log")).toContainText(PLAIN_FORM_REPLY)
+    await expect(page.locator("textarea[aria-label^='Reply to']")).toHaveValue("")
   })
 })
 
