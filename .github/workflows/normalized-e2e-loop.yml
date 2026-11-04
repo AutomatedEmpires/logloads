@@ -9,8 +9,8 @@ name: Normalized V2 E2E Loop
 # deployed the way the owner deploys staging (docs/INTEGRATIONS.md §15.1): the normalized store first, with the owner
 # tool (tools/normalized-store.mjs: the chain, the issuer row, the adapter's login role), then the pilot migrations,
 # then the synthetic pilot seed. The app is the production build under `next start`, with
-# LOGLOADS_MARKETPLACE_V2_ADAPTER=normalized; the session and the rest of the app keep the pilot operating state, in the
-# same stack's API. Publishing and the rest of the loop run in two Playwright invocations, each with its own server, and
+# LOGLOADS_MARKETPLACE_V2_ADAPTER=normalized; V2 resolves the signed-in person and business from the normalized store.
+# Legacy sign-in still uses the pilot operating state in the same stack's API. Publishing and the rest of the loop run in two Playwright invocations, each with its own server, and
 # psql checks the rows in between and after, so the loop is proven against the database, not a process's memory.
 #
 # No hosted database, Supabase project, Vercel environment, Clerk instance or secret is used. The adapter's password is

@@ -8,8 +8,8 @@ import { defineConfig, devices } from "@playwright/test"
  * It runs only in `.github/workflows/normalized-e2e-loop.yml`, against a disposable Supabase CLI local stack that job
  * starts, deploys with `tools/normalized-store.mjs` (schema and seed) and then gives the pilot migrations, in the
  * staging order of docs/INTEGRATIONS.md §15.1. Marketplace V2 reads and writes the normalized store
- * (`LOGLOADS_MARKETPLACE_V2_ADAPTER=normalized`); the session and the rest of the app keep the pilot operating state,
- * which the production runtime only reads from Supabase (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY: the local stack's).
+ * (`LOGLOADS_MARKETPLACE_V2_ADAPTER=normalized`), including V2 identity and business context. Legacy sign-in still
+ * reads pilot operating state from Supabase (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY: the local stack's).
  *
  * The suite runs in two invocations, each with its own `next start` on the same production build: `--grep @publish`,
  * then `--grep @loop`. `reuseExistingServer` is always false, so the second invocation never meets the first one's
