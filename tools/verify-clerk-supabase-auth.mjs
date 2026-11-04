@@ -850,7 +850,14 @@ export async function run({
   }
 
   const { config } = resolved
-  const secrets = new Set([config.supabase.anonKey, config.supabase.serviceKey, config.clerk?.secretKey, config.jwtSecret])
+  // Live, the project reference and the test users' Clerk IDs are redacted too, so no error path can print them.
+  const secrets = new Set([
+    config.supabase.anonKey,
+    config.supabase.serviceKey,
+    config.clerk?.secretKey,
+    config.jwtSecret,
+    ...(mode === "live" ? [config.supabase.ref, config.users.a, config.users.b] : [])
+  ])
   const remember = (token) => {
     secrets.add(token)
     return token

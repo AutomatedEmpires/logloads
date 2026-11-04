@@ -593,6 +593,25 @@ test("a redirect is never followed", async () => {
   assert.ok(!world.calls.some((call) => call.host === "elsewhere.example"))
 })
 
+test("an error that first appears during cleanup names neither the project reference nor a test user", async () => {
+  let liveMembershipReads = 0
+  const world = fakeWorld({
+    override: ({ method, params, path }) => {
+      if (path === "organization_memberships" && method === "GET" && params.get("status") === "neq.removed") {
+        liveMembershipReads += 1
+        if (liveMembershipReads === 2) return new Response("", { headers: { location: "https://elsewhere.example" }, status: 307 })
+      }
+      return undefined
+    }
+  })
+  const { code, output } = await harness(world)
+
+  assert.equal(code, 1, output)
+  assert.match(resultOf(output, "cleanup"), /FAIL/)
+  assert.match(output, /membership cleanup failed: \[redacted\]\.supabase\.co answered with a redirect/)
+  for (const value of [REF, USER_A, USER_B]) assert.ok(!output.includes(value), `output leaked ${value}`)
+})
+
 test("a membership left live by an interrupted run is removed first, and said so", async () => {
   const world = fakeWorld()
 

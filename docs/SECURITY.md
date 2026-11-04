@@ -370,8 +370,13 @@ membership left live by an interrupted run is removed at the next start.
 If AC1 says "resolved to no user", the token's `aud` differs from the issuer row's `expected_audience`.
 
 **After a pass:** post the run's output on #112, with the date and the commit SHA. It contains no keys,
-tokens, user IDs, row IDs or project reference. The output of a refused run names the project reference, so do
-not post that. The docs lane then records the result in [`CI.md`](./CI.md) §3 and in row 5 above. A pass is evidence for the
+tokens, user IDs, row IDs or project reference.
+
+**Never post the output of a refused run** (exit code 2, a line starting `verify-clerk-supabase-auth: refused:`),
+on #112 or anywhere else. A refusal can name the project reference it refused. Fix the configuration and run it
+again.
+
+The docs lane then records the result in [`CI.md`](./CI.md) §3 and in row 5 above. A pass is evidence for the
 development environment only. It does not authorize enabling the integration anywhere else.
 
 ## 6. Handling rules
