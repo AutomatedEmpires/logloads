@@ -6,7 +6,7 @@ import { HAULER_IDENTITY_EDIT_REFUSED, HAULER_PROFILE_EDIT_REFUSED, HAULER_PROFI
 
 import { createNormalizedMarketplaceV2 } from "./normalized-adapter"
 import type { MarketplaceCalls, MarketplaceDb } from "./normalized-db"
-import { haulerProfileFromRow } from "./normalized-hauler"
+import { haulerProfileFromRow, haulingBusinessSlug } from "./normalized-hauler"
 import { MARKETPLACE_QUERIES, marketplaceQueryStatement } from "./normalized-queries"
 import { MarketplaceRefusalError, MarketplaceStoreError, type MarketplaceV2Viewer } from "./port"
 
@@ -17,6 +17,7 @@ import { MarketplaceRefusalError, MarketplaceStoreError, type MarketplaceV2Viewe
  */
 
 const HAUL = "44444444-cccc-4ccc-8ccc-cccccccccccc"
+const CREATED = "66666666-eeee-4eee-8eee-666666666666"
 const USER = "55555555-dddd-4ddd-8ddd-dddddddddddd"
 const viewer: MarketplaceV2Viewer = { organizationId: HAUL, userId: USER }
 
@@ -40,12 +41,16 @@ const form = {
 }
 
 let statements: Array<{ name: string; values: readonly unknown[]; readOnly?: boolean }>
+let created: unknown[]
 let profileRows: unknown[][]
 let updateRows: Record<string, unknown[]>
 
 function fakeDb(): MarketplaceDb {
   const calls = (readOnly?: boolean): MarketplaceCalls => ({
-    call: async () => [],
+    async call(fn, args) {
+      statements.push({ name: fn, readOnly, values: [args] })
+      return fn === "create_organization" ? created : []
+    },
     inquiryJobs: async () => [],
     inquiryParties: async () => null,
     // Listing reports (#214) are not part of the hauler profile surface; these stubs only satisfy the interface.
@@ -68,10 +73,15 @@ function fakeDb(): MarketplaceDb {
   }
 }
 
-const port = () => createNormalizedMarketplaceV2({ db: fakeDb(), principal: async () => ({ audience: "aud", issuer: "https://issuer.test", subject: "user_x" }) })
+const principal = vi.fn<(viewer: MarketplaceV2Viewer) => Promise<{ audience: string; issuer: string; subject: string }>>(
+  async () => ({ audience: "aud", issuer: "https://issuer.test", subject: "user_x" })
+)
+const port = () => createNormalizedMarketplaceV2({ db: fakeDb(), principal })
 
 beforeEach(() => {
   statements = []
+  created = [CREATED]
+  principal.mockClear()
   profileRows = []
   updateRows = { hauler_profile_update: [{ org_id: HAUL }], organization_identity_update: [{ id: HAUL }] }
 })
@@ -150,6 +160,64 @@ describe("haulerProfileFromRow", () => {
 
   it("fails loudly on a row that drifted from the SQL", () => {
     expect(() => haulerProfileFromRow({ ...row(), is_public: "yes" })).toThrow(MarketplaceStoreError)
+  })
+})
+
+describe("createHaulingBusiness (#213)", () => {
+  const start = { ...form, homeBasePoint: { lat: 44.4, lng: -122.7 }, legalName: "" }
+
+  it("creates the business with a hauler profile as the session's person, then writes its basics, in one write", async () => {
+    await expect(port().createHaulingBusiness({ userId: USER }, start)).resolves.toEqual({ organizationId: CREATED })
+
+    // No business is selected yet: the principal is the person alone.
+    expect(principal).toHaveBeenCalledExactlyOnceWith({ organizationId: "", userId: USER })
+    expect(statements.map((statement) => [statement.name, statement.readOnly])).toEqual([
+      ["create_organization", false],
+      ["hauler_profile_update", false]
+    ])
+    expect(statements[0]?.values[0]).toEqual({ p_display_name: "Ridgeline Hauling", p_enable_hauler: true, p_slug: expect.stringMatching(/^ridgeline-hauling-[0-9a-f]{8}$/) })
+    expect(statements[1]?.values).toEqual([CREATED, "Sweet Home, OR", 100, null, false, false, 44.4, -122.7])
+  })
+
+  it("re-validates the input and refuses an address as the home base before any statement", async () => {
+    await expect(port().createHaulingBusiness({ userId: USER }, { ...start, homeBase: "4417 Spur Road" })).rejects.toBeInstanceOf(MarketplaceRefusalError)
+    await expect(port().createHaulingBusiness({ userId: USER }, { ...start, businessName: "" })).rejects.toBeInstanceOf(MarketplaceRefusalError)
+    expect(statements).toEqual([])
+  })
+
+  it("refuses without the session's person, before any statement", async () => {
+    await expect(port().createHaulingBusiness({ userId: "" }, start)).rejects.toBeInstanceOf(MarketplaceRefusalError)
+    expect(principal).not.toHaveBeenCalled()
+    expect(statements).toEqual([])
+  })
+
+  it("refuses when the new business's profile could not be written (the transaction rolls back)", async () => {
+    updateRows = { hauler_profile_update: [] }
+
+    await expect(port().createHaulingBusiness({ userId: USER }, start)).rejects.toThrow(HAULER_PROFILE_EDIT_REFUSED)
+  })
+
+  it("fails loudly when the store returns no business id", async () => {
+    created = []
+
+    await expect(port().createHaulingBusiness({ userId: USER }, start)).rejects.toBeInstanceOf(MarketplaceStoreError)
+    expect(statements.map((statement) => statement.name)).toEqual(["create_organization"])
+  })
+})
+
+describe("haulingBusinessSlug", () => {
+  it.each([
+    ["Ridgeline Hauling", "ridgeline-hauling-ab12cd34"],
+    ["  Kootenai  Timber & Haul, LLC ", "kootenai-timber-haul-llc-ab12cd34"],
+    ["Élan Trucking", "elan-trucking-ab12cd34"],
+    ["!!!", "hauling-ab12cd34"]
+  ])("%s → %s", (name, slug) => {
+    expect(haulingBusinessSlug(name, "AB12cd34")).toBe(slug)
+    expect(slug).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/)
+  })
+
+  it("stays within the schema's 80 characters", () => {
+    expect(haulingBusinessSlug("x".repeat(200), "ab12cd34").length).toBeLessThanOrEqual(80)
   })
 })
 

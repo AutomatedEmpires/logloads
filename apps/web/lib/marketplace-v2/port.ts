@@ -139,6 +139,13 @@ export interface MarketplaceV2Port {
    * Throws `MarketplaceOperationUnavailableError` when this adapter cannot persist it.
    */
   saveHaulerProfile(viewer: MarketplaceV2Viewer, input: unknown): Promise<HaulerProfileView>
+  /**
+   * Set up a hauling business owned by the signed-in person (UX 02 §A3; #213): the business, its hauler profile and
+   * the profile's public basics (`haulerProfileInputSchema`, re-parsed here), in one change. `account` is the V2
+   * session's own person; there is no active business yet. Throws `MarketplaceOperationUnavailableError` where the
+   * store cannot add a business to an existing account (the pilot store).
+   */
+  createHaulingBusiness(account: Pick<MarketplaceV2Viewer, "userId">, input: unknown): Promise<{ organizationId: string }>
 
   // --- Inquiry conversations (UX-09, #132) ---------------------------------------------------------------------
   /**

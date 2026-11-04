@@ -190,6 +190,7 @@ export function selectMarketplaceV2Port(
       }
     },
     authoringLandings: async (viewer) => current().authoringLandings(viewer),
+    createHaulingBusiness: async (account, input) => current().createHaulingBusiness(account, input),
     expressInterest: async (viewer, input) => current().expressInterest(viewer, input),
     getJob: async (jobId, viewer) => current().getJob(jobId, viewer),
     // Listing reports (UX-07, #130)

@@ -872,6 +872,52 @@ $$;`)
         await admin.unsafe("update marketplace.organizations set status = 'active' where id = $1::uuid", [fixture.orgs.dual])
       }
     })
+
+    it("sets up a hauling business for a first sign-in (/v2/start/hauler), selectable at once as a hauling business", async () => {
+      const subject = "adapter_new_hauler"
+      const linked = await linkingStore.resolve({ hints: async () => ({ fullName: "New Hauler", verifiedEmail: null }), subject })
+      const userId = linked?.person.id ?? ""
+      expect(linked?.memberships).toEqual([])
+      subjects.set(userId, subject)
+
+      const { organizationId } = await port.createHaulingBusiness({ userId }, {
+        about: "",
+        acceptsInvitations: false,
+        businessName: "Adapter New Hauling",
+        homeBase: "Sweet Home, OR",
+        homeBasePoint: { lat: 44.4, lng: -122.7 },
+        legalName: "",
+        listed: false,
+        serviceRadiusMiles: null
+      })
+
+      const memberships = (await sessionStore.resolve({ hints: noHints, subject }))?.memberships ?? []
+      expect(memberships.map((entry) => [entry.organizationId, entry.role, entry.haulerProfile])).toEqual([[organizationId, "owner", true]])
+      expect(memberships[0]?.capabilities).toEqual(expect.arrayContaining(["interest.express", "interest.withdraw", "interest.reply"]))
+      expect(memberships[0]?.capabilities).not.toContain("job.publish")
+
+      const choices = memberships.map(v2MembershipFromNormalized)
+      expect(choices).toEqual([{ kindLabel: "Hauling business", organization: { displayName: "Adapter New Hauling", id: organizationId }, roleLabel: "Owner" }])
+      expect(selectV2Membership(choices, organizationId)).toEqual({ active: choices[0], invalid: false })
+      await expect(port.haulerProfile({ organizationId, userId })).resolves.toMatchObject({
+        businessName: "Adapter New Hauling",
+        homeBase: "Sweet Home, OR",
+        listed: false,
+        organizationId
+      })
+    })
+
+    it("creates no business for someone the session does not resolve, and leaves nothing half-made", async () => {
+      const organizations = async () => (await one<{ n: number }>("select count(*)::int as n from marketplace.organizations")).n
+      const before = await organizations()
+      const input = { about: "", acceptsInvitations: false, businessName: "Never Made", homeBase: "", legalName: "", listed: false, serviceRadiusMiles: null }
+
+      await expect(port.createHaulingBusiness({ userId: randomUUID() }, input)).rejects.toBeInstanceOf(MarketplaceRefusalError)
+      // A principal whose claims resolve to no one (an untrusted issuer) is refused by create_organization itself.
+      const untrusted = createNormalizedMarketplaceV2({ db, principal: principalFor("https://clerk.untrusted.test") })
+      await expect(untrusted.createHaulingBusiness({ userId: fixture.users.haul }, input)).rejects.toBeInstanceOf(MarketplaceRefusalError)
+      expect(await organizations()).toBe(before)
+    })
   })
 
   // -------------------------------------------------------------------------------------------------------------

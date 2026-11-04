@@ -50,6 +50,9 @@ interface FunctionSpec {
 
 /** The closed list of database functions the adapter may call. Names and argument names match the SQL exactly. */
 export const MARKETPLACE_FUNCTIONS = {
+  // #213: a business owned by the caller, who becomes its owner (03_entitlements.sql, 06 §4). The home state is left
+  // to the function's default.
+  create_organization: { anonymous: false, args: { p_display_name: "text", p_enable_hauler: "boolean", p_slug: "text" }, returns: "value" },
   get_marketplace_job: { anonymous: true, args: { p_job_id: "uuid" }, returns: "rows" },
   get_viewer_marketplace_access: { anonymous: false, args: { p_org_id: "uuid" }, returns: "rows" },
   list_authoring_landings: { anonymous: false, args: { p_org_id: "uuid" }, returns: "rows" },

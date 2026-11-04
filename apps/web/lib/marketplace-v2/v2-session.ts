@@ -1,10 +1,21 @@
 import "server-only"
 
 import type { MarketplaceMemberRole, Organization } from "@logloads/contracts"
+import { revalidatePath } from "next/cache"
+import { cookies } from "next/headers"
 import { cache } from "react"
 
 import { MEMBER_ROLE_LABELS } from "../plans"
-import { getClerkUserId, getSessionActor, getSessionIdentity, hasSessionIdentity, type SessionActor } from "../session"
+import {
+  createSessionCookieValue,
+  getClerkUserId,
+  getSessionActor,
+  getSessionIdentity,
+  hasSessionIdentity,
+  SESSION_COOKIE,
+  SESSION_COOKIE_OPTIONS,
+  type SessionActor
+} from "../session"
 import { marketplaceV2AdapterKind, normalizedSessionStore, type NormalizedSessionPrincipal } from "./adapter"
 import { hasHaulerSide, hasLandingSide } from "./navigation"
 import type { NormalizedViewerMembership } from "./normalized-mapping"
@@ -204,4 +215,24 @@ export async function normalizedSessionCookieUserId(): Promise<string | null> {
   const session = await normalizedSession()
 
   return session ? session.cookieUserId ?? session.actor.profile.id : null
+}
+
+/**
+ * Server actions only, normalized store: make `organizationId` the session's selected business by re-signing the
+ * session cookie. The cookie keeps its user id (`normalizedSessionCookieUserId`), so only the selection changes.
+ * The caller has established that the person is a member (the switch re-reads the memberships; a business just
+ * created by the person is theirs); every later request re-checks the selection against the memberships anyway.
+ */
+export async function selectNormalizedSessionBusiness(organizationId: string): Promise<boolean> {
+  const cookieUserId = await normalizedSessionCookieUserId()
+
+  if (!cookieUserId || !organizationId) {
+    return false
+  }
+
+  const cookieStore = await cookies()
+
+  cookieStore.set(SESSION_COOKIE, createSessionCookieValue(cookieUserId, organizationId), SESSION_COOKIE_OPTIONS)
+  revalidatePath("/", "layout")
+  return true
 }

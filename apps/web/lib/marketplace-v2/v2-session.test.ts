@@ -1,15 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const mocks = vi.hoisted(() => ({
+  cookieSet: vi.fn(),
   getClerkUserId: vi.fn(),
   getSessionActor: vi.fn(),
   getSessionIdentity: vi.fn(),
   hasSessionIdentity: vi.fn(),
-  resolve: vi.fn()
+  resolve: vi.fn(),
+  revalidatePath: vi.fn()
 }))
 
 vi.mock("server-only", () => ({}))
+vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }))
+vi.mock("next/headers", () => ({ cookies: async () => ({ set: mocks.cookieSet }) }))
 vi.mock("../session", () => ({
+  SESSION_COOKIE: "ll_session",
+  SESSION_COOKIE_OPTIONS: { httpOnly: true, path: "/" },
+  createSessionCookieValue: (userId: string, organizationId: string | null) => `signed:${userId}:${organizationId ?? "-"}`,
   getClerkUserId: mocks.getClerkUserId,
   getSessionActor: mocks.getSessionActor,
   getSessionIdentity: mocks.getSessionIdentity,
@@ -27,6 +34,7 @@ import {
   getV2SessionActor,
   normalizedSessionCookieUserId,
   normalizedSessionPrincipal,
+  selectNormalizedSessionBusiness,
   selectV2Membership,
   v2ActorFromPilot,
   v2MembershipFromNormalized,
@@ -258,6 +266,29 @@ describe("the normalized store (#213)", () => {
 
     mocks.getSessionIdentity.mockResolvedValue(identity())
     await expect(normalizedSessionCookieUserId()).resolves.toBe(PERSON_ID)
+  })
+
+  it("re-signs only the selection: a dev sign-in keeps its profile id in the cookie, a Clerk sign-in the person's", async () => {
+    mocks.resolve.mockResolvedValue(resolved([normalizedMembership()]))
+
+    mocks.getSessionIdentity.mockResolvedValue(identity({ cookieUserId: PILOT_USER_ID, source: "dev" }))
+    await expect(selectNormalizedSessionBusiness(HAULER_ID)).resolves.toBe(true)
+    expect(mocks.cookieSet).toHaveBeenLastCalledWith("ll_session", `signed:${PILOT_USER_ID}:${HAULER_ID}`, { httpOnly: true, path: "/" })
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/", "layout")
+
+    mocks.getSessionIdentity.mockResolvedValue(identity())
+    await expect(selectNormalizedSessionBusiness(LANDING_ID)).resolves.toBe(true)
+    expect(mocks.cookieSet).toHaveBeenLastCalledWith("ll_session", `signed:${PERSON_ID}:${LANDING_ID}`, expect.anything())
+  })
+
+  it("writes no selection without a normalized session or a business", async () => {
+    mocks.getSessionIdentity.mockResolvedValue(null)
+    await expect(selectNormalizedSessionBusiness(HAULER_ID)).resolves.toBe(false)
+
+    mocks.getSessionIdentity.mockResolvedValue(identity())
+    mocks.resolve.mockResolvedValue(resolved([]))
+    await expect(selectNormalizedSessionBusiness("")).resolves.toBe(false)
+    expect(mocks.cookieSet).not.toHaveBeenCalled()
   })
 
   it("fails closed when the normalized store cannot be read", async () => {

@@ -1,6 +1,8 @@
 import "server-only"
 
-import { haulerProfileInputSchema, type HaulerProfileView } from "@logloads/contracts"
+import { randomBytes } from "node:crypto"
+
+import { haulerProfileInputSchema, type HaulerProfileInput, type HaulerProfileView } from "@logloads/contracts"
 import {
   DomainRefusalError,
   HAULER_IDENTITY_EDIT_REFUSED,
@@ -11,6 +13,7 @@ import {
 import { z } from "zod"
 
 import type { MarketplaceCalls } from "./normalized-db"
+import { uuidValue } from "./normalized-mapping"
 import { MarketplaceRefusalError, MarketplaceStoreError, type MarketplaceV2Port, type MarketplaceV2Viewer } from "./port"
 
 /**
@@ -95,11 +98,78 @@ function asRefusal(error: unknown): never {
   throw error
 }
 
-type AsViewer = <T>(viewer: MarketplaceV2Viewer, work: (calls: MarketplaceCalls) => Promise<T>, options: { readOnly: boolean }) => Promise<T>
+/**
+ * A unique `organizations.slug` for a new business (`^[a-z0-9]+(-[a-z0-9]+)*$`, at most 80): its name's letters and
+ * digits, and a random suffix, so two businesses with one name never collide. Pure; exported for tests.
+ */
+export function haulingBusinessSlug(displayName: string, suffix: string): string {
+  const words = displayName
+    .normalize("NFKD")
+    // Accents come apart under NFKD; drop the marks so "Élan" is "elan", not "e-lan".
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60)
+    .replace(/-+$/g, "")
+  const tail = suffix.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12) || "org"
 
-export function normalizedHaulerProfileMethods(asViewer: AsViewer): Pick<MarketplaceV2Port, "haulerProfile" | "saveHaulerProfile" | "supportsHaulerProfile"> {
+  return words ? `${words}-${tail}` : `hauling-${tail}`
+}
+
+/** The hauler profile's public basics, in `hauler_profile_update`'s argument order. */
+function profileUpdateValues(organizationId: string, input: HaulerProfileInput) {
+  return [
+    organizationId,
+    input.homeBase,
+    input.serviceRadiusMiles,
+    input.about,
+    input.listed,
+    input.acceptsInvitations,
+    input.homeBase === null ? null : input.homeBasePoint?.lat ?? null,
+    input.homeBase === null ? null : input.homeBasePoint?.lng ?? null
+  ]
+}
+
+type AsViewer = <T>(viewer: MarketplaceV2Viewer, work: (calls: MarketplaceCalls) => Promise<T>, options: { readOnly: boolean }) => Promise<T>
+/** One write transaction as the session's own person, before any business is selected (#213). */
+type AsPerson = <T>(account: Pick<MarketplaceV2Viewer, "userId">, work: (calls: MarketplaceCalls) => Promise<T>) => Promise<T>
+
+export function normalizedHaulerProfileMethods(
+  asViewer: AsViewer,
+  asPerson: AsPerson
+): Pick<MarketplaceV2Port, "createHaulingBusiness" | "haulerProfile" | "saveHaulerProfile" | "supportsHaulerProfile"> {
   return {
     supportsHaulerProfile: true,
+
+    async createHaulingBusiness(account, rawInput) {
+      const parsed = haulerProfileInputSchema.safeParse(rawInput)
+
+      if (!parsed.success) {
+        throw new MarketplaceRefusalError(FIX_FIELDS, "23514")
+      }
+
+      const input = parsed.data
+
+      return asPerson(account, async (calls) => {
+        // create_organization makes the caller the owner, with a hauler profile and no landing seat (06 §4).
+        const [created] = await calls.call("create_organization", {
+          p_display_name: input.businessName,
+          p_enable_hauler: true,
+          p_slug: haulingBusinessSlug(input.businessName, randomBytes(4).toString("hex"))
+        })
+        const organizationId = uuidValue(created)
+
+        // The same transaction, so the business and its public basics exist together or not at all.
+        const changed = await calls.query("hauler_profile_update", profileUpdateValues(organizationId, input))
+
+        if (changed.length !== 1) {
+          throw new MarketplaceRefusalError(HAULER_PROFILE_EDIT_REFUSED, "42501")
+        }
+
+        return { organizationId }
+      })
+    },
 
     async haulerProfile(viewer) {
       return asViewer(viewer, (calls) => readProfile(calls, viewer), { readOnly: true })
@@ -129,16 +199,7 @@ export function normalizedHaulerProfileMethods(asViewer: AsViewer): Pick<Marketp
           if (changed.length !== 1) throw new MarketplaceRefusalError(HAULER_IDENTITY_EDIT_REFUSED, "42501")
         }
 
-        const changed = await calls.query("hauler_profile_update", [
-          viewer.organizationId,
-          input.homeBase,
-          input.serviceRadiusMiles,
-          input.about,
-          input.listed,
-          input.acceptsInvitations,
-          input.homeBase === null ? null : input.homeBasePoint?.lat ?? null,
-          input.homeBase === null ? null : input.homeBasePoint?.lng ?? null
-        ])
+        const changed = await calls.query("hauler_profile_update", profileUpdateValues(viewer.organizationId, input))
 
         if (changed.length !== 1) {
           throw new MarketplaceRefusalError(HAULER_PROFILE_EDIT_REFUSED, "42501")
