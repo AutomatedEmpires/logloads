@@ -170,10 +170,17 @@ describe("the pilot store (default)", () => {
     vi.stubEnv("LOGLOADS_MARKETPLACE_V2_ADAPTER", "normalized")
     vi.stubEnv("VERCEL_ENV", "production")
     mocks.getSessionActor.mockResolvedValue(pilotActor())
+    // A server session and a store that would answer: production still never reads (or links through) it.
+    mocks.getSessionIdentity.mockResolvedValue(identity())
+    mocks.resolve.mockResolvedValue(resolved([normalizedMembership()]))
 
     await expect(getV2SessionActor()).resolves.toMatchObject({ store: "pilot" })
-    expect(mocks.resolve).not.toHaveBeenCalled()
     expect(await normalizedSessionPrincipal()).toBeNull()
+    expect(await normalizedSessionCookieUserId()).toBeNull()
+    await expect(selectNormalizedSessionBusiness(HAULER_ID)).resolves.toBe(false)
+    expect(mocks.getSessionIdentity).not.toHaveBeenCalled()
+    expect(mocks.resolve).not.toHaveBeenCalled()
+    expect(mocks.cookieSet).not.toHaveBeenCalled()
   })
 
   it("treats a Clerk sign-in without a pilot profile as signed in without a person", async () => {

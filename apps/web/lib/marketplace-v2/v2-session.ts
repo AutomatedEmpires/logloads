@@ -144,6 +144,12 @@ interface NormalizedSession {
 }
 
 const normalizedSession = cache(async (): Promise<NormalizedSession | null> => {
+  // Every exported reader of this session (principal, cookie user id, re-signed selection) stays off the normalized
+  // store and its identity-sync connection unless that store is selected; `VERCEL_ENV=production` never selects it.
+  if (marketplaceV2AdapterKind() !== "normalized") {
+    return null
+  }
+
   const identity = await getSessionIdentity()
 
   if (!identity) {

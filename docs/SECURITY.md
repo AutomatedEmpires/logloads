@@ -272,7 +272,9 @@ on the loopback bench. That function is granted to `service_role` only, and the 
 `service_role`. Linking therefore uses a second, optional credential (`LOGLOADS_NORMALIZED_IDENTITY_SYNC_DATABASE_URL`):
 a NOINHERIT login role that can switch only to `service_role`, owns nothing in the schema and calls only that one
 function. `createPostgresIdentitySync` checks it on first use, and it stores an email only when Clerk verified it.
-Without that credential nothing is written, and a sign-in the store has not linked yet has no business there. On this
+The database does not limit it to that function: `service_role` also runs the schema's other worker functions
+(billing, boosts, invitation delivery), so the credential is as sensitive as the service-role key. Narrowing it to
+`sync_verified_identity` alone needs a schema change (a dedicated grantee). Without that credential nothing is written, and a sign-in the store has not linked yet has no business there. On this
 store `/v2/start/hauler` creates the business through `create_organization` as the person, who becomes its owner,
 and selects it. Legacy cockpits keep the pilot session.
 
