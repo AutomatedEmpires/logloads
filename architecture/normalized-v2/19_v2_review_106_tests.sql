@@ -171,7 +171,8 @@ begin
   perform pg_temp.ok(not exists (select 1 from marketplace.app_users where id = u_drv)
     and not exists (select 1 from marketplace.app_users where id = u_stranger),
     'HF-05: ... but no one else in that business, and no stranger');
-  perform pg_temp.ok((select legal_name = 'S18 Landing Co' from marketplace.organizations where id = o_land),
+  update marketplace.organizations set legal_name = 'S18 Landing LLC' where id = o_land;
+  perform pg_temp.ok((select legal_name = 'S18 Landing LLC' from marketplace.organizations where id = o_land),
     'HF-05: an owner still reads their own organization''s legal name');
 
   -- -------------------------------------------------------------------------
