@@ -8,6 +8,10 @@
 > Read [`DECISIONS.md`](./DECISIONS.md) (2026-11-01) and
 > [`product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md`](./product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md) before any billing
 > change.
+>
+> The earlier Stripe account was deleted for the fresh start. Connecting a new account in **test mode** (keys,
+> account assertion, the webhook endpoint and its events) is [`INTEGRATIONS.md`](./INTEGRATIONS.md) §6; it keeps
+> billing dark.
 
 ## 1. What the adopted business model sells
 
@@ -60,7 +64,9 @@ copy.
   catalog entries, not V2 product IDs.
 - `tools/provision-stripe-catalog.mjs`, `tools/stripe-catalog.mjs`, `tools/verify-stripe-subscriptions.mjs`,
   and `tools/stripe-test-clock.mjs` operate the **historical** catalog. Do not run them with `--apply` against
-  any account to create new-model products.
+  any account to create new-model products. Without `--apply`, `tools/provision-stripe-catalog.mjs` only prints
+  the historical catalog and makes no provider call. A fresh account has no historical obligation to reconcile,
+  so its `STRIPE_PRICE_*` variables stay unset.
 - A signed webhook proves the event's source is authentic. It does not prove the agreement, amount,
   customer, or entitlement was authorized.
 - **Guardrail conflict to resolve deliberately:** `tools/check-guardrails.mjs` bans the retired copy pattern

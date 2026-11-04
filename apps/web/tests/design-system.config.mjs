@@ -69,7 +69,8 @@ export default defineConfig({
   // One server and, in CI, one shared state row, so the suite stays serial like the pilot suite. Its only writes are
   // New River Hauling's inquiry and replies to North Pine Logging's job (see design-system.spec.ts); the equipment
   // case's one offer as Granite Creek Hauling exceeds its listing and is refused unwritten. Summit Ridge Timber's
-  // inbox stays empty, nothing declines or withdraws, and the cases rely on file order.
+  // inbox stays empty and nothing declines or withdraws. The last case also seats Maya Mills at Summit Ridge Timber
+  // through an invitation if she is not there, removes that membership and restores it. The cases rely on file order.
   workers: 1,
   use: {
     baseURL,

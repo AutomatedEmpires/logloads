@@ -26,6 +26,8 @@ function declarationsFor(path: string, selector: string): string[] {
 }
 
 const RESETS: ReadonlyArray<readonly [string, string]> = [
+  ["layout/AccountMenu.module.css", ".trigger:focus-visible"],
+  ["layout/AccountMenu.module.css", ".link:focus-visible"],
   ["layout/AppShell.module.css", ".root :focus-visible"],
   ["layout/BusinessSwitcher.module.css", ".switcher:focus-visible"],
   ["layout/DetailPanel.module.css", ".close:focus-visible"],
