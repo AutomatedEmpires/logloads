@@ -322,7 +322,7 @@ case "$STAGE" in
     aligned_privilege_checks "'job_publication_attestations','legacy_job_imports','job_moderation_holds','billing_provider_events','schema_migrations'"
     check "D-1/D-2: the migration ledger records 06, 11, 12, 16, 18, 23 in order" "select string_agg(version, ',' order by applied_at, version) = '06,11,12,16,18,23' from marketplace.schema_migrations;"
     [[ "$(wc -l < "$FN_BEFORE")" == "$(wc -l < "$FN_AFTER")" ]] || { echo "POST-STAGE CHECK FAILED: 23 added or dropped a marketplace function" | tee -a "$LOG" >&2; exit 1; }
-    CHANGED="$(diff "$FN_BEFORE" "$FN_AFTER" | sed -nE 's/^> ([^|]+)\|.*$/\1/p' | LC_ALL=C sort | paste -sd, -)"
+    CHANGED="$({ diff "$FN_BEFORE" "$FN_AFTER" || true; } | sed -nE 's/^> ([^|]+)\|.*$/\1/p' | LC_ALL=C sort | paste -sd, -)"
     EXPECTED_CHANGED="marketplace.can_view_app_user(uuid),marketplace.can_view_organization(uuid),marketplace.tg_membership_guard()"
     [[ "$CHANGED" == "$EXPECTED_CHANGED" ]] || { echo "POST-STAGE CHECK FAILED: 23 changed [$CHANGED], expected [$EXPECTED_CHANGED]" | tee -a "$LOG" >&2; exit 1; }
     echo "  check ok: R2-1: 23 changes only can_view_app_user, can_view_organization and tg_membership_guard; every billing function (and every grant) is unchanged" | tee -a "$LOG"
