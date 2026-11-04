@@ -19,6 +19,7 @@ import {
   jobViewFromRow,
   landingFromRow,
   publishArguments,
+  refineDiscovery,
   respondArguments,
   submittedInterestId,
   uuidValue,
@@ -178,7 +179,7 @@ export function createNormalizedMarketplaceV2({ db, now = () => new Date(), prin
       }
 
       const rows = await db.asAnon((calls) => calls.call("list_marketplace_jobs", args))
-      return rows.map(jobViewFromRow)
+      return refineDiscovery(rows.map(jobViewFromRow), filters ?? {})
     },
 
     async listLandingInterests(viewer) {

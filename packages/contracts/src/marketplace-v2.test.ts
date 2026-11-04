@@ -14,10 +14,15 @@ import {
   formatMarketplacePay,
   landingInterestQueue,
   MARKETPLACE_EQUIPMENT_TYPES,
+  MARKETPLACE_RADIUS_BUFFER_MILES,
+  marketplaceComparablePayUnits,
+  marketplaceDistanceMiles,
+  marketplaceEquipmentFit,
   marketplaceInterestSchema,
   marketplaceJobAcceptsInterest,
   postingFreshness,
   respondToInterestInputSchema,
+  snapToPublicGrid,
   sortMarketplaceJobs,
   type MarketplaceJobCardView
 } from "./marketplace-v2"
@@ -117,6 +122,118 @@ describe("discovery filters and ordering", () => {
 
   it("puts confirmed listings ahead of more recently edited unconfirmed ones", () => {
     expect(sortMarketplaceJobs(jobs).map((j) => j.id)).toEqual(["c", "a", "b"])
+    expect(sortMarketplaceJobs(jobs, { sort: "newest" }).map((j) => j.id)).toEqual(["c", "a", "b"])
+  })
+
+  it("matches equipment labels in text search, not only codes", () => {
+    const coded = [job({ equipment: ["pole_trailer"], id: "p" }), job({ equipment: ["chip_van"], id: "q" })]
+    expect(filterMarketplaceJobs(coded, { query: "pole trailer" }).map((j) => j.id)).toEqual(["p"])
+  })
+})
+
+describe("discovery by place, product, start and fit (#129)", () => {
+  // Public points are already on the 0.1° grid. Sweet Home, OR is about 44.4, -122.7.
+  const sweetHome = { lat: 44.397, lng: -122.736 }
+  const at = (lat: number, lng: number) => ({ approximatePoint: { lat, lng }, label: "Somewhere, OR", stateCode: "OR" })
+  const near = job({ id: "near", origin: at(44.4, -122.7) }) // about 2 mi
+  const mid = job({ id: "mid", origin: at(44.1, -123.1) }) // about 29 mi (Eugene)
+  const far = job({ id: "far", origin: at(42.3, -122.9) }) // about 145 mi (Medford)
+  const nowhere = job({ id: "nowhere", origin: { approximatePoint: null, label: "Location shared on request", stateCode: null } })
+  const all = [far, nowhere, mid, near]
+
+  it("measures whole miles from the snapped search origin to the public point only", () => {
+    expect(snapToPublicGrid(sweetHome)).toEqual({ lat: 44.4, lng: -122.7 })
+    expect(snapToPublicGrid({ lat: -0.05, lng: 0.04 })).toEqual({ lat: -0.1, lng: 0 })
+    expect(marketplaceDistanceMiles(sweetHome, near)).toBe(0)
+    expect(marketplaceDistanceMiles(sweetHome, mid)).toBe(29)
+    expect(marketplaceDistanceMiles(sweetHome, far)).toBe(145)
+    expect(marketplaceDistanceMiles(sweetHome, nowhere)).toBeNull()
+    // Moving the origin inside one grid cell never changes a distance: nothing finer than the cell can be learned.
+    expect(marketplaceDistanceMiles({ lat: 44.43, lng: -122.66 }, mid)).toBe(marketplaceDistanceMiles(sweetHome, mid))
+  })
+
+  it("keeps jobs within the radius plus the grid buffer, and drops jobs it cannot place", () => {
+    expect(filterMarketplaceJobs(all, { near: sweetHome, radiusMiles: 50 }).map((j) => j.id)).toEqual(["mid", "near"])
+    expect(filterMarketplaceJobs(all, { near: sweetHome, radiusMiles: 25 }).map((j) => j.id)).toEqual(["mid", "near"]) // 28.7 ≤ 25 + 5
+    expect(filterMarketplaceJobs(all, { near: sweetHome, radiusMiles: 20 }).map((j) => j.id)).toEqual(["near"])
+    expect(filterMarketplaceJobs(all, { near: sweetHome, radiusMiles: 150 }).map((j) => j.id)).toEqual(["far", "mid", "near"])
+    // Any distance, or no place: nothing is dropped for distance.
+    expect(filterMarketplaceJobs(all, { near: sweetHome, radiusMiles: null })).toHaveLength(4)
+    expect(filterMarketplaceJobs(all, { radiusMiles: 20 })).toHaveLength(4)
+    expect(MARKETPLACE_RADIUS_BUFFER_MILES).toBeCloseTo(4.97, 2)
+  })
+
+  it("sorts nearest first from a place, unplaceable jobs last, and is newest without one", () => {
+    expect(sortMarketplaceJobs(all, { near: sweetHome, sort: "nearest" }).map((j) => j.id)).toEqual(["near", "mid", "far", "nowhere"])
+    expect(sortMarketplaceJobs(all, { sort: "nearest" }).map((j) => j.id)).toEqual(sortMarketplaceJobs(all).map((j) => j.id))
+  })
+
+  it("filters products from the controlled list; Other is anything stated outside it", () => {
+    const products = [
+      job({ id: "saw", product: "Saw logs" }),
+      job({ id: "mixed", product: "Mixed products" }),
+      job({ id: "unknown", product: null }),
+      job({ id: "biomass", product: "Hog fuel and biomass" })
+    ]
+    expect(filterMarketplaceJobs(products, { product: "saw logs" }).map((j) => j.id)).toEqual(["saw"])
+    expect(filterMarketplaceJobs(products, { product: "Other" }).map((j) => j.id)).toEqual(["mixed"])
+    expect(filterMarketplaceJobs(products, { product: "Hog fuel and biomass" }).map((j) => j.id)).toEqual(["biomass"])
+  })
+
+  it("keeps jobs that start by the date, including work under way, and hides jobs with no stated start", () => {
+    const starts = [
+      job({ id: "under-way", startsOn: "2026-10-01" }),
+      job({ id: "soon", startsOn: "2026-11-09" }),
+      job({ id: "later", startsOn: "2026-12-01" }),
+      job({ id: "unstated", startsOn: null })
+    ]
+    expect(filterMarketplaceJobs(starts, { startsBy: "2026-11-10" }).map((j) => j.id)).toEqual(["under-way", "soon"])
+    expect(filterMarketplaceJobs(starts, {})).toHaveLength(4)
+  })
+
+  it("calls a job a fit only when one setup has all of its equipment, and claims nothing without data", () => {
+    const setups = [["log_truck", "pole_trailer"], ["chip_truck", "chip_van"]]
+    expect(marketplaceEquipmentFit(["pole_trailer"], setups)).toBe("fits")
+    expect(marketplaceEquipmentFit(["log_truck", "pole_trailer"], setups)).toBe("fits")
+    // Each piece is in some setup, but no single setup has both.
+    expect(marketplaceEquipmentFit(["pole_trailer", "chip_van"], setups)).toBe("not_in_setups")
+    expect(marketplaceEquipmentFit(["lowboy_trailer"], setups)).toBe("not_in_setups")
+    expect(marketplaceEquipmentFit([], setups)).toBeNull()
+    expect(marketplaceEquipmentFit(["pole_trailer"], [])).toBeNull()
+    expect(marketplaceEquipmentFit(["pole_trailer"], [[]])).toBeNull()
+  })
+
+  it("'My trucks' hides only jobs that need equipment the setups lack", () => {
+    const fleet = [
+      job({ equipment: ["pole_trailer"], id: "fits" }),
+      job({ equipment: ["chip_van"], id: "misfit" }),
+      job({ equipment: [], id: "unstated" })
+    ]
+    expect(filterMarketplaceJobs(fleet, { equipmentSetups: [["log_truck", "pole_trailer"]] }).map((j) => j.id)).toEqual(["fits", "unstated"])
+    expect(filterMarketplaceJobs(fleet, { equipmentSetups: [] })).toHaveLength(3)
+  })
+})
+
+describe("pay is compared within one basis only (spec §10.5)", () => {
+  const pay = (id: string, amountCents: number | null, unit: MarketplaceJobCardView["pay"]["unit"]) =>
+    job({ id, pay: { amountCents, note: unit === "negotiable" ? "depends on haul" : null, unit } })
+  const jobs = [
+    pay("ton-low", 900, "per_ton"),
+    pay("negotiable", null, "negotiable"),
+    pay("load-high", 60_000, "per_load"),
+    pay("ton-high", 1_200, "per_ton"),
+    pay("unstated", null, null),
+    pay("load-low", 45_000, "per_load")
+  ]
+
+  it("groups by basis and orders each basis by amount, with no comparable amount last", () => {
+    expect(sortMarketplaceJobs(jobs, { sort: "pay" }).map((j) => j.id)).toEqual(["load-high", "load-low", "ton-high", "ton-low", "negotiable", "unstated"])
+  })
+
+  it("reports which bases a list mixes", () => {
+    expect(marketplaceComparablePayUnits(jobs)).toEqual(["per_load", "per_ton"])
+    expect(marketplaceComparablePayUnits(jobs.filter((j) => j.pay.unit === "per_load"))).toEqual(["per_load"])
+    expect(marketplaceComparablePayUnits([pay("n", null, "negotiable")])).toEqual([])
   })
 })
 

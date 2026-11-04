@@ -73,7 +73,8 @@
   font-size: var(--ll-text-sm);
 }
 
-/* With a form action, the scripted Send gives way to the <noscript> submit button when scripting is off. */
+/* With a form action, the scripted Send gives way to the <noscript> submit button when scripting is off. Scoped to
+   .composer so it outranks the Button module's own `display` whatever the production stylesheet order. */
 @media (scripting: none) {
-  .scripted { display: none; }
+  .composer .scripted { display: none; }
 }
