@@ -1445,3 +1445,206 @@ test.describe("visual baselines (#148 criterion 5)", () => {
     }
   }
 })
+
+/**
+ * UX-13 (#136): the optional Find work map. The basemap is a network service, so these cases serve a stand-in CARTO
+ * style (one background layer, no tiles, glyphs or sprites) and never depend on tiles loading; every marker is a DOM
+ * button the page draws from its own data. The seed has fewer than 21 mappable jobs, so clustering is covered in
+ * apps/web/lib/marketplace-v2/job-map.test.tsx.
+ */
+const STAND_IN_BASEMAP = {
+  layers: [{ id: "background", paint: { "background-color": "#eef1ef" }, type: "background" }],
+  name: "DS-05 stand-in basemap",
+  sources: {},
+  version: 8
+}
+const MAP_CANVAS = "Map of approximate job areas. Arrow keys pan, plus and minus zoom."
+
+/** Serves the stand-in style for CARTO's style.json and refuses every other CARTO request, or fails them all. */
+async function standInBasemap(page: Page, outcome: "style" | "down" = "style") {
+  await page.route(/^https:\/\/([a-z0-9-]+\.)*basemaps\.cartocdn\.com\//, (route) => {
+    if (outcome === "down") return route.fulfill({ body: "", status: 503 })
+    if (/\/style\.json/.test(route.request().url())) {
+      return route.fulfill({ body: JSON.stringify(STAND_IN_BASEMAP), contentType: "application/json" })
+    }
+    return route.abort()
+  })
+}
+
+const jobMap = (page: Page) => page.getByRole("region", { exact: true, name: "Approximate job locations" })
+const mapMarkers = (page: Page) => jobMap(page).locator("button[data-marker-key]")
+
+/** /v2/work with the map open (and `all=1` when no job accepts interest), its markers drawn. */
+async function openFindWorkMap(page: Page, width: number) {
+  await page.setViewportSize(viewportFor(width))
+  await standInBasemap(page)
+  await openFindWorkWithRows(page)
+  const url = new URL(page.url())
+  url.searchParams.set("view", "map")
+  await openV2(page, `${url.pathname}${url.search}`)
+  await expect(jobMap(page)).toBeVisible()
+  await expect(mapMarkers(page).first()).toBeVisible()
+}
+
+test.describe("find-work map (UX-13)", () => {
+  for (const width of [1280, 390]) {
+    test(`${width} px: 44 px targets around 32 px pins, the "Approximate areas" label and the attribution in view`, async ({ page }) => {
+      await openFindWorkMap(page, width)
+      const region = jobMap(page)
+
+      for (const marker of await mapMarkers(page).all()) {
+        const target = (await marker.boundingBox())!
+        const pin = (await marker.locator("span").first().boundingBox())!
+        expect(Math.min(target.width, target.height), "target size (--ll-target-touch)").toBeGreaterThanOrEqual(44)
+        expect(Math.min(pin.width, pin.height), "visible pin (UX-13 criterion 1)").toBeGreaterThanOrEqual(32)
+      }
+      for (const control of await region.locator(".maplibregl-ctrl-group button").all()) {
+        const box = (await control.boundingBox())!
+        expect(Math.min(box.width, box.height), `${await control.getAttribute("aria-label")}: target size`).toBeGreaterThanOrEqual(44)
+      }
+
+      await expect(region.getByText("Approximate areas", { exact: true })).toBeInViewport()
+      const attribution = region.locator(".maplibregl-ctrl-attrib")
+      await expect(attribution).toBeInViewport()
+      await expect(attribution.getByRole("link", { name: "OpenStreetMap" })).toBeVisible()
+      await expect(attribution.getByRole("link", { name: "CARTO" })).toBeVisible()
+      await expectNoHorizontalOverflow(page)
+
+      const showList = region.getByRole("link", { name: "Show list" })
+      if (width >= 768) {
+        await expect(showList).toBeHidden()
+        return
+      }
+
+      // Below bp-md the map is the full-screen view: edge to edge, from the top of the screen down to the bottom tabs
+      // (the tabs' height varies with the label font by a few px), never under them. It settles at the top again once
+      // the web fonts have reflowed the page above it.
+      await expect.poll(async () => Math.abs((await region.boundingBox())!.y), { message: "the map starts at the top of the screen" }).toBeLessThanOrEqual(1)
+      const box = (await region.boundingBox())!
+      const tabs = (await bottomTabs(page).boundingBox())!
+      expect(box.x).toBe(0)
+      expect(box.width).toBe(width)
+      expect(box.y + box.height, "the map never runs under the bottom tabs").toBeLessThanOrEqual(tabs.y + 0.5)
+      expect(box.y + box.height, "the map reaches the bottom tabs").toBeGreaterThan(tabs.y - 12)
+
+      // The list is one tap away: the same search without view=map.
+      expect((await showList.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+      await showList.click()
+      await expect(page).not.toHaveURL(/[?&]view=map/)
+      await expect(jobRows(page).first()).toBeVisible()
+      await expect(jobMap(page)).toHaveCount(0)
+    })
+  }
+
+  for (const width of [1280, 390]) {
+    test(`${width} px: the map is keyboard reachable and every stop draws the design-system ring`, async ({ page }) => {
+      await openFindWorkMap(page, width)
+      const markerLabels = await mapMarkers(page).evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label")!))
+      const rowTitles = (await jobRows(page).locator("h3 a").allInnerTexts()).map((title) => title.trim())
+
+      const stops = await tabThrough(page)
+      const keys = stops.map((stop) => stop.key)
+      const first = keys.indexOf("#work-all") + 1
+      const last = keys.indexOf("Hide map")
+
+      expect(keys.slice(first, last)).toEqual([
+        ...(width < 768 ? ["Show list"] : []),
+        MAP_CANVAS,
+        ...markerLabels,
+        "Zoom in",
+        "Zoom out",
+        "OpenStreetMap",
+        "CARTO"
+      ])
+      // The list stays complete and reachable after the map.
+      expect(keys.slice(last + 1, last + 1 + rowTitles.length)).toEqual(rowTitles)
+      for (const stop of stops.slice(first, last)) expectDesignSystemRing(stop)
+    })
+  }
+
+  for (const width of [1280, 390]) {
+    test(`${width} px: a pin opens its preview sheet over the map without resizing it; Escape and Close return focus to the pin`, async ({ page }) => {
+      await openFindWorkMap(page, width)
+      const region = jobMap(page)
+      const pin = mapMarkers(page).first()
+      const canvas = region.locator(".maplibregl-canvas")
+      const mapSize = async () => {
+        const box = (await canvas.boundingBox())!
+        return { height: box.height, width: box.width }
+      }
+      // Where the camera puts the pin: relative to the map, so page scrolling does not count.
+      const pinOnMap = async () => {
+        const [marker, map] = await Promise.all([pin.boundingBox(), canvas.boundingBox()])
+        return { x: marker!.x - map!.x, y: marker!.y - map!.y }
+      }
+      const expectSamePlace = (actual: { x: number; y: number }, expected: { x: number; y: number }, message: string) => {
+        expect(Math.abs(actual.x - expected.x) + Math.abs(actual.y - expected.y), message).toBeLessThanOrEqual(1)
+      }
+      const size = await mapSize()
+
+      await pin.focus()
+      await page.keyboard.press("Enter")
+      const sheet = region.getByRole("region", { name: /in this area$/ })
+      await expect(sheet).toBeVisible()
+      await expect(pin).toHaveAttribute("aria-expanded", "true")
+      await expect(pin).toHaveAttribute("aria-controls", (await sheet.getAttribute("id"))!)
+      await expect(sheet.getByRole("heading", { level: 2 })).toBeFocused()
+      expect(await mapSize(), "opening the sheet never resizes the map").toEqual(size)
+
+      // The preview links each job. It covers part of the map, but never the pin, the "Approximate areas" label, the
+      // attribution or the zoom buttons.
+      const links = sheet.getByRole("list", { name: "Jobs in this area" }).getByRole("link")
+      expect(await links.count()).toBeGreaterThan(0)
+      for (const href of await links.evaluateAll((anchors) => anchors.map((anchor) => anchor.getAttribute("href")))) {
+        expect(href).toMatch(/^\/v2\/work\/[^/?#]+$/)
+      }
+      const sheetBox = (await sheet.boundingBox())!
+      const uncovered = [
+        ["the pin", pin],
+        ["the label", region.getByText("Approximate areas", { exact: true })],
+        ["the attribution", region.locator(".maplibregl-ctrl-attrib")],
+        ["the zoom buttons", region.locator(".maplibregl-ctrl-group")]
+      ] as const
+      for (const [name, locator] of uncovered) {
+        await expect(locator).toBeInViewport()
+        const box = (await locator.boundingBox())!
+        const overlaps = box.x < sheetBox.x + sheetBox.width && sheetBox.x < box.x + box.width && box.y < sheetBox.y + sheetBox.height && sheetBox.y < box.y + box.height
+        expect(overlaps, `the sheet covers ${name}`).toBe(false)
+      }
+      const opened = await pinOnMap()
+
+      // The audit grows the viewport to the page's height and back; the camera ends where it was.
+      await expectNoSeriousAxeViolations(page)
+      expectSamePlace(await pinOnMap(), opened, "a window resize leaves the camera where it was")
+
+      await sheet.getByRole("heading", { level: 2 }).focus()
+      await page.keyboard.press("Escape")
+      await expect(sheet).toHaveCount(0)
+      await expect(pin).toBeFocused()
+      await expect(pin).toHaveAttribute("aria-expanded", "false")
+      expect(await mapSize(), "closing the sheet never resizes the map").toEqual(size)
+      expectSamePlace(await pinOnMap(), opened, "closing the sheet never moves the camera")
+
+      await pin.click()
+      await expect(sheet).toBeVisible()
+      await sheet.getByRole("button", { name: "Close job preview" }).click()
+      await expect(sheet).toHaveCount(0)
+      await expect(pin).toBeFocused()
+      expectSamePlace(await pinOnMap(), opened, "reopening and closing leave the camera where it was")
+    })
+  }
+
+  test("when the basemap is down the map says so and the list stays complete", async ({ page }) => {
+    await page.setViewportSize(viewportFor(390))
+    await standInBasemap(page, "down")
+    await openFindWorkWithRows(page)
+    const rows = await jobRows(page).count()
+    const url = new URL(page.url())
+    url.searchParams.set("view", "map")
+    await openV2(page, `${url.pathname}${url.search}`)
+
+    await expect(page.getByRole("status").filter({ hasText: "The map could not load right now. Every job is listed below." })).toBeVisible()
+    await expect(jobMap(page)).toHaveCount(0)
+    await expect(jobRows(page)).toHaveCount(rows)
+  })
+})

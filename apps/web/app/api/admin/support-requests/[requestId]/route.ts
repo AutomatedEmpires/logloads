@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server"
 
 import { enforceApiRateLimit, requireAdminApiActor } from "@/lib/api-actor"
 import { captureServerEvent } from "@/lib/analytics"
+import { assertSameOrigin } from "@/lib/same-origin"
 import { mutateState } from "@/lib/services"
 import {
   readBoundedJsonObject,
@@ -16,6 +17,8 @@ export async function PATCH(
   context: { params: Promise<{ requestId: string }> }
 ) {
   try {
+    // Driven from the admin support page only (HF-10, #187).
+    assertSameOrigin(request)
     const actor = await requireAdminApiActor()
     await enforceApiRateLimit("support-request-review", actor.profile.id, 60, 60_000)
 
