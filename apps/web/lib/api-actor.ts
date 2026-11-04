@@ -1,12 +1,17 @@
 import "server-only"
 
-import { OperatingStateConflictError, OperatingStateUnavailableError } from "@logloads/db"
+import {
+  OperatingStateConflictError,
+  OperatingStateTooLargeError,
+  OperatingStateUnavailableError
+} from "@logloads/db"
 import {
   DomainRefusalError,
   organizationOperationallyAccessible
 } from "@logloads/services"
 import { NextResponse } from "next/server"
 
+import { OPERATING_STATE_FULL_MESSAGE } from "./operating-state-messages"
 import { RateLimitError, RateLimitUnavailableError, checkRateLimit } from "./rate-limit"
 import { getSessionActor, type SessionActor } from "./session"
 
@@ -189,6 +194,21 @@ export function apiErrorResponse(error: unknown): NextResponse {
         }),
         status: 503
       }
+    )
+  }
+
+  // Not a busy store and not the caller's fault: the write would have pushed
+  // the shared document past its size limit, so no retry can succeed. The
+  // operator needs the sizes; the client gets a fixed message.
+  if (error instanceof OperatingStateTooLargeError) {
+    console.error("logloads: operating state write refused at the size limit", {
+      byteLength: error.byteLength,
+      limitBytes: error.limitBytes
+    })
+
+    return NextResponse.json(
+      { error: OPERATING_STATE_FULL_MESSAGE },
+      { headers: privateNoStoreHeaders(), status: 507 }
     )
   }
 

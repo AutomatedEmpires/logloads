@@ -1,5 +1,10 @@
 import { createLoadPostingInputSchema } from "@logloads/contracts"
-import { createInMemoryDatabase, OperatingStateConflictError, OperatingStateUnavailableError } from "@logloads/db"
+import {
+  createInMemoryDatabase,
+  OperatingStateConflictError,
+  OperatingStateTooLargeError,
+  OperatingStateUnavailableError
+} from "@logloads/db"
 import { DomainRefusalError } from "@logloads/services"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -21,6 +26,7 @@ import {
   requireApiActor,
   requireSupportApiActor
 } from "./api-actor"
+import { OPERATING_STATE_FULL_MESSAGE } from "./operating-state-messages"
 import { clientKeyFromHeaders } from "./rate-limit-client-key"
 import type { SessionActor } from "./session-policy"
 
@@ -214,6 +220,21 @@ describe("apiErrorResponse", () => {
     expect(unavailable.status).toBe(503)
     expect(Number(unavailable.headers.get("Retry-After"))).toBeGreaterThan(0)
     expect(unavailable.body.error).not.toContain("SUPABASE")
+  })
+
+  it("answers a write refused at the document size limit as final, with the sizes only in the server log", async () => {
+    const full = await answer(new OperatingStateTooLargeError(8_400_000, 8_388_608))
+
+    // Not 503: no retry of the same write can succeed.
+    expect(full.status).toBe(507)
+    expect(full.headers.get("Retry-After")).toBeNull()
+    expect(full.headers.get("Cache-Control")).toBe("private, no-store")
+    expect(full.body.error).toBe(OPERATING_STATE_FULL_MESSAGE)
+    expect(full.body.error).not.toContain("8400000")
+    expect(console.error).toHaveBeenCalledWith(
+      "logloads: operating state write refused at the size limit",
+      { byteLength: 8_400_000, limitBytes: 8_388_608 }
+    )
   })
 
   it("passes an ApiError through with its curated message, status and headers", async () => {
