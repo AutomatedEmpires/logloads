@@ -41,6 +41,7 @@ const RESETS: ReadonlyArray<readonly [string, string]> = [
   ["layout/SearchToolbar.module.css", ".submit:focus-visible"],
   ["layout/SearchToolbar.module.css", ".summary:focus-visible"],
   ["marketplace/InquiryRow.module.css", ".link:focus-visible"],
+  ["marketplace/JobDetail.module.css", ".more > .summary:focus-visible"],
   ["marketplace/JobResultRow.module.css", ".link:focus-visible"],
   ["marketplace/MessageComposer.module.css", ".chip:focus-visible"],
   ["marketplace/MessageComposer.module.css", ".input:focus-visible"],

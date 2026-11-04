@@ -48,6 +48,11 @@ function fakeDb(): MarketplaceDb {
     call: async () => [],
     inquiryJobs: async () => [],
     inquiryParties: async () => null,
+    // Listing reports (#214) are not part of the hauler profile surface; these stubs only satisfy the interface.
+    standingListingReport: async () => null,
+    fileListingReport: async () => {
+      throw new Error("fileListingReport is not used by the hauler profile tests")
+    },
     async query(name, values) {
       statements.push({ name, readOnly, values })
       if (name === "hauler_profile") return profileRows.shift() ?? []

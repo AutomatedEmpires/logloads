@@ -349,7 +349,7 @@ describe("job editor: validation per step on the server", () => {
 })
 
 describe("job editor: review and publish", () => {
-  it("previews the job with the real JobResultRow and JobDetail components", async () => {
+  it("previews the job with the real JobResultRow and JobDetail components, JobSummary first (#130)", async () => {
     const html = await render(JobPreviewPage, COMPLETE)
 
     expect(html).toMatch(/<li[^>]*data-context="preview"/)
@@ -358,7 +358,9 @@ describe("job editor: review and publish", () => {
     expect(html).not.toContain('href="/v2/work/preview"')
     expect(html).toContain('aria-labelledby="job-detail-preview"')
     expect(html).toContain("How haulers see the job page")
-    expect(html).toContain("The haul")
+    // The same decision summary the job page leads with (UX-07 criterion 7), then the job page's sections.
+    expect(html).toContain('id="job-summary-preview"')
+    expect(html).toMatch(/<summary[^>]*>Haul details<\/summary>/)
     expect(html).toContain("Log truck")
     expect(html).toContain("Near Oakridge, OR")
     // As published: accepting interest, but never shown as confirmed before the poster confirms.

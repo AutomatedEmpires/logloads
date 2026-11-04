@@ -77,7 +77,13 @@ export const operatingStateMarketplaceV2: MarketplaceV2Port = {
   },
 
   async getJob(jobId) {
+    // The pilot's public view already lists every non-draft job, accepting interest or not, so the viewer adds nothing.
     return readState((current) => publicJobs(current.state).find((job) => job.id === jobId) ?? null)
+  },
+
+  // Listing reports (UX-07, #130): the pilot store has no report record, so nothing is kept and nothing pretends to be.
+  async reportListing() {
+    throw new MarketplaceOperationUnavailableError("Reporting a listing")
   },
 
   async interestForJob(viewer, jobId) {

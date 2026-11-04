@@ -1,36 +1,29 @@
+import { describeMarketplaceVerification } from "@logloads/contracts"
 import type { ReactNode } from "react"
 
 import { cx } from "../layout/cx"
 import { Button } from "../primitives/Button"
-import { AvailabilityStatus } from "./AvailabilityStatus"
-import { EquipmentRequirement } from "./EquipmentRequirement"
-import {
-  areaText,
-  demandText,
-  estimatesText,
-  haulDistanceText,
-  JOB_PUBLIC_STATUS_LABELS,
-  jobAvailabilityStatus,
-  NOT_STATED,
-  payParts,
-  scheduleDetail,
-  scheduleText
-} from "./format"
+import { estimatesText, jobClosureText } from "./format"
 import styles from "./JobDetail.module.css"
-import { PayFigure } from "./PayFigure"
-import { SponsoredIndicator } from "./SponsoredIndicator"
+import { JobSummary, jobTitleId } from "./JobSummary"
 import type { JobDetailProps, Placement } from "./types"
-import { VerificationIndicator } from "./VerificationIndicator"
 
-function Fact({ label, children, note }: { label: string; children: ReactNode; note?: string | null }) {
+function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className={styles.fact}>
       <dt className={styles.label}>{label}</dt>
-      <dd className={styles.value}>
-        {children}
-        {note ? <small className={styles.note}>{note}</small> : null}
-      </dd>
+      <dd className={styles.value}>{children}</dd>
     </div>
+  )
+}
+
+/** One collapsible section under the summary: a native <details>, so it opens from the keyboard and without scripts. */
+function More({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <details className={styles.more}>
+      <summary className={styles.summary}>{title}</summary>
+      <div className={styles.moreBody}>{children}</div>
+    </details>
   )
 }
 
@@ -43,7 +36,13 @@ function interestAction({
   expressInterestHref
 }: Pick<JobDetailProps, "job" | "canExpressInterest" | "interestState" | "onExpressInterest" | "expressInterestHref">): ReactNode {
   if (!job.acceptingInterest) {
-    return <p className={styles.state}>{JOB_PUBLIC_STATUS_LABELS[job.status]}</p>
+    // Why and when (spec §5.3): the status, and the date the listing records for it.
+    return (
+      <div className={styles.closed}>
+        <p className={styles.state}>Not accepting interest</p>
+        <p className={styles.closedWhy}>{jobClosureText(job)}</p>
+      </div>
+    )
   }
   if (interestState === "sent") {
     return <p className={styles.state}>Interest sent · the poster reviews interest and replies</p>
@@ -60,19 +59,13 @@ function interestAction({
   return null
 }
 
-/** Where the pay figure comes from, in the poster's terms. LogLoads never sets or guarantees pay. */
-const PAY_SOURCE = {
-  negotiable: "Pay is negotiable. The poster's note is shown beside it.",
-  negotiableWithoutNote: "Pay is negotiable. Ask the poster what it depends on.",
-  rate: "Rate stated by the poster. LogLoads doesn't set or guarantee pay.",
-  unstated: "The poster hasn't stated pay. Ask before you commit a truck."
-} as const
-
 /**
- * The facts of one job, shared by the DetailPanel beside the list, the mobile Dialog sheet and the job editor's
- * preview (fixes audit P1-8). Presentational: whether the viewer may express interest arrives as
- * `canExpressInterest`, resolved on the server. The area is approximate (V2-DEC-01), pay is the poster's
- * (V2-DEC-02) and "confirmed" wording appears only after the poster's explicit confirmation (V2-DEC-03).
+ * The facts of one job, shared by the job page, the DetailPanel beside the list, the mobile Dialog sheet and the job
+ * editor's preview (fixes audit P1-8). The decision summary (JobSummary) comes first; the rest is in collapsible
+ * sections (UX-07, #130): haul details, road and access, weather, and the poster. Presentational: whether the viewer
+ * may express interest arrives as `canExpressInterest`, resolved on the server. The area is approximate (V2-DEC-01),
+ * pay is the poster's (V2-DEC-02) and "confirmed" wording appears only after the poster's explicit confirmation
+ * (V2-DEC-03). Exact location, gate and access instructions and contact details are never part of the view.
  */
 export function JobDetail({
   job,
@@ -84,62 +77,57 @@ export function JobDetail({
   expressInterestHref,
   className
 }: JobDetailProps & Placement) {
-  const availability = jobAvailabilityStatus(job, now)
-  const pay = payParts(job.pay)
-  const payNote = pay.kind !== "negotiable" && job.pay.note ? job.pay.note : null
   const estimates = estimatesText(job)
   const action = interestAction({ canExpressInterest, expressInterestHref, interestState, job, onExpressInterest })
+  const verification = job.posterVerification ? describeMarketplaceVerification(job.posterVerification).statement : null
 
   return (
-    <article aria-labelledby={`job-detail-${job.id}`} className={cx(styles.detail, className)}>
-      <header className={styles.head}>
-        <p className={styles.poster}>
-          <span>{job.posterName}</span>
-          <VerificationIndicator verification={job.posterVerification} />
-        </p>
-        {job.sponsored ? <SponsoredIndicator /> : null}
-        <h2 className={styles.title} id={`job-detail-${job.id}`}>{job.title}</h2>
-        <PayFigure pay={job.pay} size="lg" />
-        <p className={styles.source}>{PAY_SOURCE[pay.kind === "negotiable" && !pay.basis ? "negotiableWithoutNote" : pay.kind]}</p>
-        {payNote ? <p className={styles.source}>Poster&apos;s note on pay: {payNote}</p> : null}
-        <div className={styles.actions}>{action}</div>
-      </header>
+    <article aria-labelledby={jobTitleId(job.id)} className={cx(styles.detail, className)}>
+      <JobSummary action={action} fit={fit} job={job} now={now} />
 
-      <div className={styles.body}>
-        <section aria-labelledby={`job-detail-${job.id}-haul`} className={styles.group}>
-          <h3 className={styles.groupTitle} id={`job-detail-${job.id}-haul`}>The haul</h3>
-          <dl className={styles.facts}>
-            <Fact label="Product">{job.product ?? NOT_STATED}</Fact>
-            <Fact label="To" note={haulDistanceText(job)}>{job.destinationLabel ?? "Not stated by the poster"}</Fact>
-            <Fact label="Equipment">
-              <EquipmentRequirement codes={job.equipment} fit={fit} />
-            </Fact>
-          </dl>
-        </section>
+      <div className={styles.sections}>
+        <More title="Haul details">
+          {job.product || estimates ? (
+            <dl className={styles.facts}>
+              {job.product ? <Fact label="Product">{job.product}</Fact> : null}
+              {estimates ? <Fact label="Volume">{estimates}</Fact> : null}
+            </dl>
+          ) : (
+            <p className={styles.text}>The poster gave no more haul details.</p>
+          )}
+        </More>
 
-        <section aria-labelledby={`job-detail-${job.id}-schedule`} className={styles.group}>
-          <h3 className={styles.groupTitle} id={`job-detail-${job.id}-schedule`}>Schedule and demand</h3>
-          <dl className={styles.facts}>
-            <Fact label="Start" note={scheduleDetail(job)}>{scheduleText(job)}</Fact>
-            <Fact label="Trucks">{demandText(job.trucks)}</Fact>
-            {estimates ? <Fact label="Volume">{estimates}</Fact> : null}
-          </dl>
-        </section>
+        <More title="Road and access">
+          {job.publicRoadNotes || job.publicAccessRequirements.length > 0 ? (
+            <dl className={styles.facts}>
+              {job.publicRoadNotes ? <Fact label="Road">{job.publicRoadNotes}</Fact> : null}
+              {job.publicAccessRequirements.length > 0 ? <Fact label="Access">{job.publicAccessRequirements.join(", ")}</Fact> : null}
+            </dl>
+          ) : (
+            <p className={styles.text}>No road notes from the poster.</p>
+          )}
+          <p className={styles.hint}>
+            Public notes only, and the area is approximate. The landing shares the exact site and access if they choose,
+            after you&apos;ve been in touch.
+          </p>
+        </More>
 
-        <section aria-labelledby={`job-detail-${job.id}-location`} className={styles.group}>
-          <h3 className={styles.groupTitle} id={`job-detail-${job.id}-location`}>Location</h3>
-          <dl className={styles.facts}>
-            <Fact label="Area" note="Approximate area. The landing shares the exact site directly.">{areaText(job)}</Fact>
-            <Fact label="Road">{job.publicRoadNotes ?? "No road notes from the poster"}</Fact>
-            {job.publicAccessRequirements.length > 0 ? (
-              <Fact label="Access">{job.publicAccessRequirements.join(", ")}</Fact>
-            ) : null}
-          </dl>
-        </section>
+        <More title="Weather near the landing">
+          <p className={styles.text}>
+            Weather isn&apos;t shown in this preview yet. Check a forecast for {job.origin.label} before you send a truck.
+          </p>
+        </More>
+
+        <More title={`About ${job.posterName}`}>
+          <p className={styles.text}>{verification ?? "LogLoads hasn't verified this business."}</p>
+          <p className={styles.hint}>
+            Listings never show the poster&apos;s phone number or email address. You reach them through LogLoads messages
+            once you express interest.
+          </p>
+        </More>
       </div>
 
       <footer className={styles.foot}>
-        <AvailabilityStatus label={availability.label} state={availability.state} />
         <span>Free and nonbinding. The poster reviews interest and replies through LogLoads messages.</span>
       </footer>
     </article>

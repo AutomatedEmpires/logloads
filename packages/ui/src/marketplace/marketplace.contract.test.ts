@@ -31,6 +31,7 @@ const COMPONENTS = [
   "JobDetail",
   "JobResultList",
   "JobResultRow",
+  "JobSummary",
   "LocalTime",
   "MessageComposer",
   "OperatingRegion",

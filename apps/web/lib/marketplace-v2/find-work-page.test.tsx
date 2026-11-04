@@ -38,6 +38,7 @@ vi.mock("@/lib/marketplace-v2/pilot-adapter", () => ({
 import type { MarketplaceJobDetailView } from "@logloads/contracts"
 
 import FindWorkPage from "@/app/v2/work/page"
+import { FindWorkResults } from "@/components/v2/discovery/FindWorkResults"
 
 const HAULER_ORG = "33333333-bbbb-4bbb-8bbb-333333333333"
 const LANDING_ORG = "22222222-aaaa-4aaa-8aaa-222222222222"
@@ -287,3 +288,38 @@ describe("list and detail (06_DESIGN_SYSTEM.md §4–5)", () => {
     expect(await render({ equipment: "any", job: SAW })).toContain(`href="/v2/work/${SAW}#interest"`)
   })
 })
+
+describe("what reaches the browser (#130, from the #185 review)", () => {
+  it("hands the client list the public view of each job, without the poster's organization id", async () => {
+    signInAsHauler()
+    mocks.listJobs.mockResolvedValue([saw, own])
+
+    const page = await FindWorkPage({ searchParams: Promise.resolve({ equipment: "any", job: SAW }) })
+    const results = findProps<{ rows: Array<{ job: Record<string, unknown> }> }>(page, FindWorkResults)
+
+    expect(results?.rows.map((row) => row.job.id)).toEqual([SAW, OWN])
+    for (const row of results?.rows ?? []) expect(Object.keys(row.job)).not.toContain("posterOrganizationId")
+    expect(JSON.stringify(results?.rows)).not.toContain(LANDING_ORG)
+    expect(JSON.stringify(results?.rows)).not.toContain(HAULER_ORG)
+    // The own-job rule still holds: it is decided on the server before the id is dropped.
+    expect(results?.rows.find((row) => row.job.id === OWN)).toMatchObject({ canExpressInterest: false })
+  })
+})
+
+/** The props of the first element of `type` in a server tree, looking through element props (e.g. `actions`). */
+function findProps<P>(node: unknown, type: unknown): P | undefined {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const found = findProps<P>(child, type)
+      if (found) return found
+    }
+    return undefined
+  }
+  if (!React.isValidElement(node)) return undefined
+  if (node.type === type) return node.props as P
+  for (const value of Object.values(node.props as Record<string, unknown>)) {
+    const found = findProps<P>(value, type)
+    if (found) return found
+  }
+  return undefined
+}
