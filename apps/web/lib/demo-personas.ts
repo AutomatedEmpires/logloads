@@ -39,11 +39,14 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
 ] as const
 
 // The five launchers are the curated founder walkthrough. Maya remains
-// available for the two-sided reputation journey, but every other seeded
-// identity is deliberately unreachable through demo email sign-in.
+// available for the two-sided reputation journey, and Avery (Granite Creek
+// Hauling, a hauler with listed equipment, #178) for the V2 express-interest
+// form, but every other seeded identity is deliberately unreachable through
+// demo email sign-in.
 export const DEMO_EMAIL_SIGN_IN_ALLOWLIST: readonly string[] = [
   ...DEMO_PERSONAS.map((persona) => persona.email),
-  "maya@northpine.example"
+  "maya@northpine.example",
+  "avery@granitecreek.example"
 ] as const
 
 const DEMO_EMAIL_SIGN_IN_SET = new Set(DEMO_EMAIL_SIGN_IN_ALLOWLIST)
