@@ -1,6 +1,6 @@
 "use client"
 
-import Link from "next/link"
+import { AppLink as Link } from "../AppLink"
 import type { CSSProperties } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
