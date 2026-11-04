@@ -20,6 +20,7 @@ vi.mock("server-only", () => ({}))
 
 import { ApiError } from "./api-actor"
 import {
+  isOwnedUploadPublicId,
   mediaTarget,
   parseJsonObject,
   parseTripDocumentType,
@@ -30,6 +31,11 @@ import {
   verifiedMediaReference
 } from "./media"
 import type { SessionActor } from "./session"
+
+/** Obviously fake, but in the lowercase UUID shape `signedUpload` mints. */
+const UPLOAD_OBJECT_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+const TRIP_PREFIX = "logloads/trip-documents/trip-1"
+const UPLOADED_PUBLIC_ID = `${TRIP_PREFIX}/uploads/${UPLOAD_OBJECT_ID}`
 
 const configuredMediaEnvironment = {
   LOGLOADS_MEDIA_BUCKET: "logloads-private-media",
@@ -45,7 +51,7 @@ const supabaseMedia: MediaReference = {
   format: "png",
   height: 1,
   provider: "supabase",
-  publicId: "logloads/trip-documents/trip-1/uploads/photo-1",
+  publicId: UPLOADED_PUBLIC_ID,
   uploadedAt: "2026-07-21T12:00:00.000Z",
   version: 1,
   width: 1
@@ -115,7 +121,7 @@ function prepareSupabaseAdapter() {
       {
         created_at: "2026-07-21T12:00:00.000Z",
         metadata: { size: PNG_BYTES.byteLength },
-        name: "photo-1"
+        name: UPLOAD_OBJECT_ID
       }
     ],
     error: null
@@ -321,14 +327,14 @@ describe("Supabase read-back and delivery", () => {
   it("verifies stored bytes and image dimensions before returning a reference", async () => {
     await expect(
       verifiedMediaReference(
-        "logloads/trip-documents/trip-1/uploads/photo-1"
+        UPLOADED_PUBLIC_ID
       )
     ).resolves.toMatchObject({
       bytes: PNG_BYTES.byteLength,
       format: "png",
       height: 1,
       provider: "supabase",
-      publicId: "logloads/trip-documents/trip-1/uploads/photo-1",
+      publicId: UPLOADED_PUBLIC_ID,
       uploadedAt: "2026-07-21T12:00:00.000Z",
       width: 1
     })
@@ -340,7 +346,7 @@ describe("Supabase read-back and delivery", () => {
         {
           created_at: "2026-07-21T12:00:00.000Z",
           metadata: { size: 10_000_001 },
-          name: "photo-1"
+          name: UPLOAD_OBJECT_ID
         }
       ],
       error: null
@@ -348,7 +354,7 @@ describe("Supabase read-back and delivery", () => {
 
     await expect(
       verifiedMediaReference(
-        "logloads/trip-documents/trip-1/uploads/photo-1"
+        UPLOADED_PUBLIC_ID
       )
     ).rejects.toMatchObject({
       message: "Photos must be 10 MB or smaller",
@@ -389,6 +395,59 @@ describe("Supabase read-back and delivery", () => {
     ).rejects.toMatchObject({
       message: "This legacy file is not available",
       status: 404
+    })
+    expect(supabaseAdapter.createClient).not.toHaveBeenCalled()
+  })
+})
+
+describe("upload ownership (HF-07, #187)", () => {
+  it("accepts exactly the object signedUpload mints for the target", async () => {
+    const upload = await signedUpload({ publicIdPrefix: TRIP_PREFIX })
+
+    expect(isOwnedUploadPublicId(upload.publicId, TRIP_PREFIX)).toBe(true)
+    expect(isOwnedUploadPublicId(UPLOADED_PUBLIC_ID, TRIP_PREFIX)).toBe(true)
+  })
+
+  it.each([
+    ["a sibling target whose id extends this one", `logloads/trip-documents/trip-10/uploads/${UPLOAD_OBJECT_ID}`],
+    ["a sibling target that shares the prefix text", `${TRIP_PREFIX}-other/uploads/${UPLOAD_OBJECT_ID}`],
+    ["another target's namespace", `logloads/trip-documents/trip-2/uploads/${UPLOAD_OBJECT_ID}`],
+    ["a parent-directory traversal", `${TRIP_PREFIX}/uploads/../../trip-2/uploads/${UPLOAD_OBJECT_ID}`],
+    ["a current-directory segment", `${TRIP_PREFIX}/uploads/./${UPLOAD_OBJECT_ID}`],
+    ["a nested object below the upload", `${TRIP_PREFIX}/uploads/${UPLOAD_OBJECT_ID}/extra`],
+    ["a trailing separator", `${TRIP_PREFIX}/uploads/${UPLOAD_OBJECT_ID}/`],
+    ["an empty segment", `${TRIP_PREFIX}//uploads/${UPLOAD_OBJECT_ID}`],
+    ["an encoded separator", `${TRIP_PREFIX}/uploads/..%2F..%2Ftrip-2%2Fuploads%2F${UPLOAD_OBJECT_ID}`],
+    ["an encoded dot segment", `${TRIP_PREFIX}/uploads/%2e%2e/${UPLOAD_OBJECT_ID}`],
+    ["a backslash separator", `${TRIP_PREFIX}/uploads/..\\..\\trip-2\\uploads\\${UPLOAD_OBJECT_ID}`],
+    ["a query suffix", `${TRIP_PREFIX}/uploads/${UPLOAD_OBJECT_ID}?download=1`],
+    ["a fragment suffix", `${TRIP_PREFIX}/uploads/${UPLOAD_OBJECT_ID}#x`],
+    ["a trailing newline", `${TRIP_PREFIX}/uploads/${UPLOAD_OBJECT_ID}\n`],
+    ["an object name the server never mints", `${TRIP_PREFIX}/uploads/photo-1`],
+    ["an upper-case object id", `${TRIP_PREFIX}/uploads/${UPLOAD_OBJECT_ID.toUpperCase()}`],
+    ["the namespace itself", `${TRIP_PREFIX}/uploads/`],
+    ["an empty id", ""],
+    ["a non-string id", 7]
+  ])("refuses %s", (_label, publicId) => {
+    expect(isOwnedUploadPublicId(publicId, TRIP_PREFIX)).toBe(false)
+  })
+
+  it("refuses an id under a target prefix that is not itself a safe storage path", () => {
+    const unsafePrefix = "logloads/trip-documents/../driver-credentials"
+
+    expect(
+      isOwnedUploadPublicId(`${unsafePrefix}/uploads/${UPLOAD_OBJECT_ID}`, unsafePrefix)
+    ).toBe(false)
+  })
+
+  it.each([
+    `${TRIP_PREFIX}/uploads/../../trip-2/uploads/${UPLOAD_OBJECT_ID}`,
+    `${TRIP_PREFIX}/uploads/%2e%2e/${UPLOAD_OBJECT_ID}`,
+    `${TRIP_PREFIX}/uploads/photo-1`
+  ])("refuses to read back %s before any storage call", async (publicId) => {
+    await expect(verifiedMediaReference(publicId)).rejects.toMatchObject({
+      message: "The uploaded photo could not be read back",
+      status: 422
     })
     expect(supabaseAdapter.createClient).not.toHaveBeenCalled()
   })

@@ -144,10 +144,17 @@ function actor(
   }
 }
 
-function request(body: Record<string, unknown>): Request {
+/** A POST as the LogLoads page sends it: the browser adds Origin and Sec-Fetch-Site. */
+function request(
+  body: Record<string, unknown>,
+  headers: Record<string, string> = {
+    Origin: "https://logloads.test",
+    "Sec-Fetch-Site": "same-origin"
+  }
+): Request {
   return new Request("https://logloads.test/api/billing", {
     body: JSON.stringify(body),
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     method: "POST"
   })
 }
@@ -1329,6 +1336,31 @@ describe("internal nominal billing route", () => {
       allowed: true
     })
     mocks.resolveSubscriptionStripe.mockReturnValue({ ok: true, port: { marker: "stripe" } })
+  })
+
+  it.each([
+    ["a cross-site page", { Origin: "https://attacker.example", "Sec-Fetch-Site": "cross-site" }],
+    ["a same-site sibling", { Origin: "https://logloads.test", "Sec-Fetch-Site": "same-site" }],
+    ["a request without an Origin", {}]
+  ])("refuses %s before reading the admin session (HF-10)", async (_label, headers) => {
+    const response = await runInternalSmoke(
+      request(
+        {
+          action: "charge",
+          confirm: "CHARGE_ONE_DOLLAR",
+          organizationId: ORGANIZATION_ID
+        },
+        headers
+      )
+    )
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: "This request must come from the LogLoads application"
+    })
+    expect(mocks.requireAdminApiActor).not.toHaveBeenCalled()
+    expect(mocks.enforceApiRateLimit).not.toHaveBeenCalled()
+    expect(mocks.resolveSubscriptionStripe).not.toHaveBeenCalled()
   })
 
   it("requires platform-admin authentication before checking its separate gate", async () => {
