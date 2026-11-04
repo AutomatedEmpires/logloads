@@ -1,4 +1,5 @@
 import type {
+  HaulerProfileView,
   MarketplaceAvailabilityAttestation,
   MarketplaceCapability,
   MarketplaceDraftLandingContext,
@@ -8,7 +9,8 @@ import type {
   MarketplaceJobCardView,
   MarketplaceJobDetailView,
   MarketplaceJobDraft,
-  MarketplaceJobFilters
+  MarketplaceJobFilters,
+  MarketplaceListingReportReceipt
 } from "@logloads/contracts"
 
 /**
@@ -79,7 +81,20 @@ export interface MarketplaceV2Port {
 
   /** Public discovery. Returns only public-safe fields; never exact coordinates or access details. */
   listJobs(filters: MarketplaceJobFilters): Promise<MarketplaceJobCardView[]>
-  getJob(jobId: string): Promise<MarketplaceJobDetailView | null>
+  /**
+   * One listing's public view. With the session's `viewer`, a store that hides paused, filled, closed or expired jobs
+   * from the public may still return one the viewer is allowed to see (their own business's job, or one they sent
+   * interest on), so the job page can say why it stopped and when (UX-07, #130). The fields are the same either way.
+   */
+  getJob(jobId: string, viewer?: MarketplaceV2Viewer | null): Promise<MarketplaceJobDetailView | null>
+
+  // --- Listing reports (UX-07, #130) ---
+  /**
+   * Report a listing to LogLoads staff (spec §8.18). `input` is checked against `reportListingInputSchema`. One
+   * standing report per person and listing: a repeat returns that report (`alreadyReported`) and files nothing. The
+   * listing stays up until staff review it. Throws `MarketplaceOperationUnavailableError` when the store keeps no reports.
+   */
+  reportListing(viewer: MarketplaceV2Viewer, input: unknown): Promise<MarketplaceListingReportReceipt>
 
   /** The viewer's V2 capabilities in the active workspace (empty when the role has none). */
   viewerAccess(viewer: MarketplaceV2Viewer): Promise<MarketplaceV2ViewerAccess>
@@ -110,6 +125,20 @@ export interface MarketplaceV2Port {
    * Throws when unsupported.
    */
   reconfirmJob(viewer: MarketplaceV2Viewer, jobId: string, attestation: MarketplaceAvailabilityAttestation): Promise<void>
+
+  /** Whether saving the hauling-business profile persists through this adapter (#125). */
+  readonly supportsHaulerProfile: boolean
+  /**
+   * The viewer's own hauling business profile, private fields included, for the business's members only. Refuses a
+   * person who is not a member of the active business, and a business with no hauler profile.
+   */
+  haulerProfile(viewer: MarketplaceV2Viewer): Promise<HaulerProfileView>
+  /**
+   * Save the profile form (`haulerProfileInputSchema`, re-parsed here). Owners and managers may change the profile;
+   * only the owner may change the business name or legal name (`planHaulerProfileSave`). Returns the saved profile.
+   * Throws `MarketplaceOperationUnavailableError` when this adapter cannot persist it.
+   */
+  saveHaulerProfile(viewer: MarketplaceV2Viewer, input: unknown): Promise<HaulerProfileView>
 
   // --- Inquiry conversations (UX-09, #132) ---------------------------------------------------------------------
   /**

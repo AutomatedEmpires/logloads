@@ -5,10 +5,11 @@ import type { MarketplaceCapability } from "@logloads/contracts"
 import { activeV2NavId, V2_NAVIGATION, v2HomePathFor, v2NavigationFor, v2WorkspaceFor, v2WorkspaceForContext } from "./navigation"
 
 describe("V2 navigation", () => {
-  it("keeps the four preview destinations, in order", () => {
+  it("keeps the preview destinations, in order", () => {
     expect(V2_NAVIGATION.map((item) => [item.label, item.href])).toEqual([
       ["Find work", "/v2/work"],
       ["My inquiries", "/v2/inquiries"],
+      ["Profile", "/v2/hauler/profile"],
       ["Landing inbox", "/v2/landing/inquiries"],
       ["Post jobs", "/v2/landing/jobs"]
     ])
@@ -18,6 +19,7 @@ describe("V2 navigation", () => {
     ["/v2/work", "work"],
     ["/v2/work/0f8b2c1e-1d4b-4f0a-9a52-3c5e2f8d6b71", "work"],
     ["/v2/inquiries", "inquiries"],
+    ["/v2/hauler/profile", "hauler-profile"],
     ["/v2/landing/inquiries", "landing-inquiries"],
     ["/v2/landing/jobs", "landing-jobs"],
     ["/v2/landing/jobs/new", "landing-jobs"],
@@ -55,8 +57,8 @@ describe("capability-scoped V2 navigation (#124)", () => {
   })
 
   it("gives a hauling business the hauler set and a landing business the landing set", () => {
-    expect(ids(HAULER)).toEqual(["work", "inquiries"])
-    expect(ids(DRIVER)).toEqual(["work", "inquiries"])
+    expect(ids(HAULER)).toEqual(["work", "inquiries", "hauler-profile"])
+    expect(ids(DRIVER)).toEqual(["work", "inquiries", "hauler-profile"])
     expect(ids(LANDING_DESK)).toEqual(["landing-inquiries", "landing-jobs"])
   })
 
@@ -66,7 +68,7 @@ describe("capability-scoped V2 navigation (#124)", () => {
   })
 
   it("gives a business that is both sides both sets, in display order", () => {
-    expect(ids([...HAULER, ...LANDING_DESK])).toEqual(["work", "inquiries", "landing-inquiries", "landing-jobs"])
+    expect(ids([...HAULER, ...LANDING_DESK])).toEqual(["work", "inquiries", "hauler-profile", "landing-inquiries", "landing-jobs"])
   })
 
   it("shows unread inquiry counts on the destinations the business sees, and no badge for zero (UX-09)", () => {
@@ -76,6 +78,7 @@ describe("capability-scoped V2 navigation (#124)", () => {
     expect(both.map((item) => [item.id, item.count])).toEqual([
       ["work", undefined],
       ["inquiries", 2],
+      ["hauler-profile", undefined],
       ["landing-inquiries", 3],
       ["landing-jobs", 7]
     ])

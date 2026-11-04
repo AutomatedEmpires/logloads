@@ -4,7 +4,8 @@ import {
   MARKETPLACE_PAY_UNIT_LABELS,
   marketplaceComparablePayUnits,
   marketplaceDistanceMiles,
-  marketplaceEquipmentFit
+  marketplaceEquipmentFit,
+  toPublicJobView
 } from "@logloads/contracts"
 import { PageContainer, PageHeader } from "@logloads/ui/layout"
 import { Button, EmptyState } from "@logloads/ui/primitives"
@@ -13,6 +14,7 @@ import { FindWorkFilters } from "@/components/v2/discovery/FindWorkFilters"
 import { FindWorkResults, type FindWorkRow } from "@/components/v2/discovery/FindWorkResults"
 import { SortControl } from "@/components/v2/discovery/SortControl"
 import { JobMapLoader } from "@/components/v2/JobMapLoader"
+import { HaulerSetupChecklist } from "@/components/v2/onboarding/HaulerSetupChecklist"
 import {
   effectiveSort,
   filterTexts,
@@ -28,6 +30,7 @@ import {
   type FindWorkSearch
 } from "@/lib/marketplace-v2/find-work"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
+import { haulerChecklistFor } from "@/lib/marketplace-v2/hauler-setup"
 import { jobMapPoints } from "@/lib/marketplace-v2/job-map"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
 import { MARKETPLACE_PLACES, placeLabel } from "@/lib/marketplace-v2/places"
@@ -73,9 +76,10 @@ export default async function FindWorkPage({ searchParams }: { searchParams: Sea
   const href = (overrides: Partial<FindWorkSearch>) => findWorkHref(search, context, overrides)
 
   // Each listed job's public detail view and the viewer's standing interest, so selecting a row needs no request.
-  const [details, interests] = await Promise.all([
+  const [details, interests, checklist] = await Promise.all([
     Promise.all(jobs.map((job) => pilotMarketplaceV2.getJob(job.id))),
-    canExpress && viewer ? pilotMarketplaceV2.listHaulerInterests(viewer).catch(() => []) : Promise.resolve([])
+    canExpress && viewer ? pilotMarketplaceV2.listHaulerInterests(viewer).catch(() => []) : Promise.resolve([]),
+    haulerChecklistFor(viewer, canExpress)
   ])
   const sentTo = new Set(interests.filter((interest) => interest.status !== "withdrawn").map((interest) => interest.job.id))
 
@@ -90,7 +94,8 @@ export default async function FindWorkPage({ searchParams }: { searchParams: Sea
       fit: setups.length > 0 && !own ? marketplaceEquipmentFit(job.equipment, setups) ?? undefined : undefined,
       href: `/v2/work/${job.slug}`,
       interestSent: sentTo.has(job.id),
-      job,
+      // The public view only: the row is a client component's prop, and the organization id is needed only above.
+      job: toPublicJobView(job),
       selectHref: href({ jobId: job.id })
     }]
   })
@@ -129,6 +134,7 @@ export default async function FindWorkPage({ searchParams }: { searchParams: Sea
         />
       </PageHeader>
       <PageContainer>
+        <HaulerSetupChecklist items={checklist} />
         <FindWorkResults
           actions={
             <>
