@@ -1,0 +1,52 @@
+/* Hauler setup (UX 02 §A1–A3; #125) and the resumable checklist on Find work. Layout only; semantic --ll-* tokens. */
+
+.stack { display: grid; gap: var(--ll-space-5); min-width: 0; }
+
+.form { display: grid; gap: var(--ll-space-5); margin: 0; min-width: 0; }
+
+.choices { display: grid; gap: var(--ll-space-3); min-width: 0; margin: 0; padding: 0; border: 0; }
+
+.legend {
+  padding: 0;
+  margin-bottom: var(--ll-space-2);
+  font-size: var(--ll-text-lg);
+  font-weight: var(--ll-weight-semibold);
+  color: var(--ll-color-text);
+}
+
+.note { margin: 0; font-size: var(--ll-text-md); color: var(--ll-color-text-secondary); }
+
+.note :where(a), .steps :where(a) { color: var(--ll-color-action); font-weight: var(--ll-weight-semibold); text-underline-offset: 3px; }
+
+.steps { display: grid; gap: var(--ll-space-2); margin: 0; padding-left: var(--ll-space-5); font-size: var(--ll-text-md); color: var(--ll-color-text); }
+
+/* The checklist on Find work: a quiet panel above the results, never in the way of search. */
+.checklist {
+  display: grid;
+  gap: var(--ll-space-2);
+  margin: 0;
+  padding: var(--ll-space-3) var(--ll-space-4);
+  border: 1px solid var(--ll-color-border);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-surface-subtle);
+  min-width: 0;
+}
+
+.checklistTitle { margin: 0; font-size: var(--ll-text-md); font-weight: var(--ll-weight-semibold); color: var(--ll-color-text); }
+
+.checklistNote { margin: 0; font-size: var(--ll-text-sm); color: var(--ll-color-text-muted); }
+
+.items { display: grid; gap: var(--ll-space-1); margin: 0; padding: 0; list-style: none; font-size: var(--ll-text-md); }
+
+.item { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--ll-space-2); min-height: var(--ll-target-min); }
+
+.item :where(a) {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--ll-target-min);
+  color: var(--ll-color-action);
+  font-weight: var(--ll-weight-semibold);
+  text-underline-offset: 3px;
+}
+
+.done { color: var(--ll-color-text-muted); }

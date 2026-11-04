@@ -633,8 +633,8 @@ describe("/v2/switch, /v2/start and the V2 not-found page", () => {
     expect(hidden(formAround(html, "Act as Example Timber Co"), "organizationId", LANDING_ORG)).toBe(true)
   })
 
-  it("builds /v2/start and the not-found page from the design system", () => {
-    const start = renderToStaticMarkup(<StartPage />)
+  it("builds /v2/start and the not-found page from the design system", async () => {
+    const start = renderToStaticMarkup(await StartPage({}))
     const missing = renderToStaticMarkup(<MarketplaceV2NotFound />)
 
     expect(start).toContain('data-ds-page="start"')

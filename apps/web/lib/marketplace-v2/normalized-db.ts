@@ -2,6 +2,7 @@ import "server-only"
 
 import type { Sql, TransactionSql } from "postgres"
 
+import { marketplaceQueryStatement, type MarketplaceQueryName, type MarketplaceQueryValue } from "./normalized-queries"
 import { MarketplaceAdapterConfigurationError, MarketplaceRefusalError, MarketplaceStoreError } from "./port"
 
 /**
@@ -128,6 +129,8 @@ export interface MarketplaceCalls {
   /** Rows as JSON objects (`rows`), `[value]` (`value`) or `[]` (`void`). */
   call<F extends MarketplaceFunctionName>(fn: F, args: MarketplaceCallArguments<F>): Promise<unknown[]>
   inquiryParties(interestId: string): Promise<MarketplaceInquiryParties | null>
+  /** Rows (JSON objects) of one catalogued table statement (`MARKETPLACE_QUERIES`, normalized-queries.ts). */
+  query(name: MarketplaceQueryName, values: readonly MarketplaceQueryValue[]): Promise<unknown[]>
   /**
    * UX-09 (#132): the organization's jobs that have inquiries, as `INQUIRY_JOBS` rows (JSON). Row-level security
    * applies as for any direct read: only the owning desk sees them.
@@ -436,6 +439,15 @@ function callsFor(tx: TransactionSql, anonymous: boolean): MarketplaceCalls {
       }
 
       return { haulerOrganizationId: row.hauler_org_id, jobId: row.job_id, jobOrganizationId: row.job_org_id }
+    },
+
+    async query(name, values) {
+      if (anonymous) {
+        throw new TypeError(`${name} needs a signed-in person`)
+      }
+
+      const statement = marketplaceQueryStatement(name, values)
+      return rowsOf(await tx.unsafe(statement.text, statement.values), "row")
     },
 
     async inquiryJobs(organizationId) {
