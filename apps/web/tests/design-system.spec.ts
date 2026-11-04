@@ -8,11 +8,14 @@ import { expect, test, type Browser, type Locator, type Page } from "@playwright
  * data nobody has built yet are `test.fixme` with what they wait for, never faked.
  *
  * Writes: the conversation cases need an inquiry, and the seed has none. New River Hauling (a hauling business
- * with no trucks listed) expresses interest in the one public job, North Pine Logging's, and replies on it. Nothing
- * declines or withdraws; the no-JavaScript interest case posts once with a date range the server refuses, which
- * writes nothing. The equipment case signs in as Granite Creek Hauling (equipment listed) and submits one offer
- * above its listing, which the server refuses without writing. When no job accepts interest in the shared CI state
- * those cases are skipped with that reason, not passed.
+ * with no trucks listed) expresses interest in the one public job, North Pine Logging's, and replies on it; near the
+ * end (UX-09, #132) North Pine marks that inquiry reviewed and replies to it. Nothing withdraws; the no-JavaScript
+ * interest case posts once with a date range the server refuses, which writes nothing. The equipment case signs in
+ * as Granite Creek Hauling (equipment listed) and submits one offer above its listing, which the server refuses
+ * without writing; the last conversation case then has Granite Creek express interest in the same North Pine job
+ * and North Pine decline it with a reason. A decline is final (HF-03), so that case runs after every case that
+ * needs Granite Creek without an inquiry. Every write is to North Pine Logging's inbox. When no job accepts
+ * interest in the shared CI state those cases are skipped with that reason, not passed.
  *
  * The business-switching case (#124 criterion 8, last in the file) needs a dual-membership account, which the seed
  * does not have. Through the app's own pages it makes Maya Mills (North Pine Logging driver) a Summit Ridge Timber
@@ -218,7 +221,15 @@ async function expectNavigationForWidth(page: Page, width: number): Promise<stri
   // Only one "Main" navigation landmark is exposed at a time.
   await expect(page.getByRole("navigation", { name: "Main" })).toHaveCount(1)
 
-  return (await shown.getByRole("link").allInnerTexts()).map((label) => label.trim())
+  // A destination's unread count (UX-09, #132) follows its label; the labels are compared without it.
+  return (await shown.getByRole("link").allInnerTexts()).map((label) => label.trim().replace(/\s*\d+$/, ""))
+}
+
+/** The unread count on a navigation destination at this width, or 0 when it shows none (UX-09, #132). */
+async function navigationCount(page: Page, width: number, label: string): Promise<number> {
+  const shown = width >= BP_LG ? topNavigation(page) : bottomTabs(page)
+  const text = (await shown.getByRole("link", { name: new RegExp(`^${label}`) }).innerText()).trim()
+  return Number(/(\d+)$/.exec(text.slice(label.length))?.[1] ?? 0)
 }
 
 async function expectCurrent(page: Page, width: number, label: string | null) {
@@ -231,7 +242,7 @@ async function expectCurrent(page: Page, width: number, label: string | null) {
   }
 
   await expect(current).toHaveCount(1)
-  await expect(current).toHaveText(label)
+  await expect(current).toHaveText(new RegExp(`^\\s*${label}\\s*\\d*\\s*$`))
 }
 
 interface FocusStop {
@@ -506,6 +517,8 @@ test.describe("responsive matrix: pages migrated in DS-04 (#147)", () => {
       await page.setViewportSize(viewportFor(width))
       await openV2(page, "/v2/inquiries")
       await expect(page.locator("[data-ds-page='my-inquiries'] #conversation")).toBeVisible()
+      // UX-09 (#132): the Active, Replied and Closed tabs fit every width.
+      await expect(page.getByRole("navigation", { name: "Inquiries by status" }).getByRole("link")).toHaveText([/^Active/, /^Replied/, /^Closed/])
 
       await expectNoHorizontalOverflow(page)
       await expectSplitLayout(page, width)
@@ -527,6 +540,9 @@ test.describe("responsive matrix: pages migrated in DS-04 (#147)", () => {
         await page.setViewportSize(viewportFor(width))
         await openV2(page, "/v2/landing/inquiries")
         await expect(page.locator("[data-ds-page='landing-inbox'] #conversation")).toBeVisible()
+        // UX-09 (#132): the New, Replied and Closed queues and the job and landing filter fit every width.
+        await expect(page.getByRole("navigation", { name: "Inquiries by queue" }).getByRole("link")).toHaveText([/^New/, /^Replied/, /^Closed/])
+        await expect(page.getByRole("search", { name: "Filter inquiries" }).getByLabel("Job")).toBeVisible()
 
         await expectNoHorizontalOverflow(page)
         await expectSplitLayout(page, width)
@@ -793,9 +809,36 @@ test.describe("keyboard: the design-system ring on the migrated pages", () => {
     const stops = await tabThrough(page)
     const main = stops.filter((stop) => stop.where === "main").map((stop) => stop.key)
 
-    // The row's single link, then the conversation's job link, the reply field, Send and Withdraw: no other stops.
-    expect(main[0]).toBe(await inquiryRows(page).first().getByRole("link").innerText())
+    // The Active, Replied and Closed tabs (UX-09, #132), the row's single link, then the conversation's job link,
+    // the reply field, Send and Withdraw: no other stops.
+    expect(main.slice(0, 3)).toEqual([expect.stringMatching(/^Active/), expect.stringMatching(/^Replied/), expect.stringMatching(/^Closed/)])
+    expect(main[3]).toBe(await inquiryRows(page).first().getByRole("link").innerText())
     expect(main.slice(-3)).toEqual([expect.stringMatching(/^Reply to /), "Send", "Withdraw interest"])
+    for (const stop of stops) expectDesignSystemRing(stop)
+  })
+
+  test("landing: /v2/landing/inquiries, queue tabs → filter → rows → conversation → composer → Decline (UX-09)", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1280))
+    test.skip(!(await ensureNewRiverInquiry(page)), NO_OPEN_JOB)
+    await page.context().clearCookies()
+    await signIn(page, NORTH_PINE_LANDING)
+    await openV2(page, "/v2/landing/inquiries")
+
+    const stops = await tabThrough(page)
+    const main = stops.filter((stop) => stop.where === "main").map((stop) => stop.key)
+    const filter = page.getByRole("search", { name: "Filter inquiries" })
+    const landingFilter = (await filter.getByLabel("Landing").count()) > 0 ? ["#inbox-landing"] : []
+
+    expect(main.slice(0, 6 + landingFilter.length)).toEqual([
+      expect.stringMatching(/^New/),
+      expect.stringMatching(/^Replied/),
+      expect.stringMatching(/^Closed/),
+      "#inbox-job",
+      ...landingFilter,
+      "Apply",
+      await inquiryRows(page).first().getByRole("link").innerText()
+    ])
+    expect(main.slice(-3)).toEqual([expect.stringMatching(/^Reply to /), "Send", "Decline"])
     for (const stop of stops) expectDesignSystemRing(stop)
   })
 })
@@ -1474,6 +1517,11 @@ test.describe("conversation on a page (#148 criterion 4)", () => {
     await expect(dialog).toHaveClass(/\bll-theme\b/)
     await expect(dialog).toContainText(`${NEW_RIVER.name} will see that you declined`)
     await expect(dialog.getByRole("button", { name: "Decline inquiry" })).toBeVisible()
+    // UX-09 criterion 5: an optional reason the hauler sees, posted with the confirmation's form.
+    const reason = dialog.getByRole("textbox", { name: /^Reason/ })
+    await expect(reason).toBeVisible()
+    await expect(reason).not.toHaveAttribute("required", /.*/)
+    expect(await reason.getAttribute("form")).toBe(await dialog.locator("form:has(button)").getAttribute("id"))
     await page.keyboard.press("Escape")
     await expect(dialog).toBeHidden()
     await expect(decline).toBeFocused()
@@ -1516,6 +1564,117 @@ test.describe("conversation without JavaScript (#174)", () => {
     await page.waitForURL((url) => url.searchParams.get("updated") === "reply" && url.searchParams.get("inquiry") === inquiry)
     await expect(page.getByRole("log")).toContainText(PLAIN_FORM_REPLY)
     await expect(page.locator("textarea[aria-label^='Reply to']")).toHaveValue("")
+  })
+
+  // UX-09 (#132). These write to North Pine Logging's inbox only, and run after every case above that needs New River's
+  // inquiry unanswered or Granite Creek without an inquiry (workers: 1, file order).
+  test("landing: Mark reviewed keeps the inquiry in New with a Seen marker; a plain reply makes it the hauler's turn", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1280))
+    test.skip(!(await ensureNewRiverInquiry(page)), NO_OPEN_JOB)
+    await page.context().clearCookies()
+    await signIn(page, NORTH_PINE_LANDING)
+    await openV2(page, "/v2/landing/inquiries")
+
+    const newRiverRow = inquiryRows(page).filter({ hasText: NEW_RIVER.name }).first()
+    await newRiverRow.getByRole("link").click()
+    await page.waitForURL((url) => url.searchParams.has("inquiry"))
+    const inquiry = new URL(page.url()).searchParams.get("inquiry")!
+
+    // Mark reviewed, once: a retry finds it already seen.
+    const reviewed = page.getByRole("button", { exact: true, name: "Mark reviewed" })
+    if ((await reviewed.count()) > 0) {
+      await reviewed.click()
+      await page.waitForURL((url) => url.searchParams.get("updated") === "viewed")
+    }
+    await expect(page.getByRole("navigation", { name: "Inquiries by queue" }).locator("a[aria-current='page']")).toHaveText(/^New/)
+    await expect(inquiryRows(page).filter({ hasText: NEW_RIVER.name }).first()).toContainText("Seen · not answered")
+    await expect(page.getByRole("button", { exact: true, name: "Mark reviewed" })).toHaveCount(0)
+
+    // The plain Send posts the landing's reply; the inquiry moves to Replied, waiting for the hauler.
+    const reply = "North Pine, without JavaScript: can you start Monday at 5?"
+    const composer = page.locator("form:has(textarea[aria-label^='Reply to'])")
+    await composer.locator("textarea").fill(reply)
+    await composer.getByRole("button", { exact: true, name: "Send" }).click()
+    await page.waitForURL((url) => url.searchParams.get("updated") === "replied" && url.searchParams.get("inquiry") === inquiry)
+    await expect(page.getByRole("log")).toContainText(reply)
+    await expect(page.getByRole("navigation", { name: "Inquiries by queue" }).locator("a[aria-current='page']")).toHaveText(/^Replied/)
+    await expect(inquiryRows(page).filter({ hasText: NEW_RIVER.name }).first()).toContainText("Waiting for the hauler")
+    // The message carries its sender and a time the server labels UTC (the reader's local time needs scripts).
+    await expect(page.getByRole("log").locator("li").last()).toContainText(/^[\s\S]*You · [A-Z][a-z]{2} \d{1,2}, \d{4}, \d{1,2}:\d{2} [AP]M UTC$/)
+
+    // New River sees whose turn it is, on its Replied tab and in the navigation.
+    await page.context().clearCookies()
+    await signIn(page, NEW_RIVER.email)
+    await openV2(page, "/v2/inquiries")
+    await expect(page.getByRole("navigation", { name: "Inquiries by status" }).locator("a[aria-current='page']")).toHaveText(/^Replied/)
+    await expect(inquiryRows(page).filter({ hasText: NORTH_PINE.name }).first()).toContainText("Your turn")
+    expect(await navigationCount(page, 1280, "My inquiries")).toBeGreaterThanOrEqual(1)
+  })
+
+  test("landing: Decline confirms in the page with a reason the hauler sees, and the hauler's page says it is closed", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1280))
+    const reason = "Equipment doesn't fit this job (sent without JavaScript)"
+    const [, poleSetup] = GRANITE_CREEK.setups
+
+    // Granite Creek Hauling offers its pole-trailer truck on North Pine's job, unless a retry already did.
+    await signIn(page, GRANITE_CREEK.email)
+    await openV2(page, "/v2/inquiries")
+    if ((await inquiryRows(page).filter({ hasText: NORTH_PINE.name }).count()) === 0) {
+      await openV2(page, "/v2/work")
+      const link = northPineJobLink(page)
+      test.skip((await link.count()) === 0, NO_OPEN_JOB)
+
+      await openV2(page, (await link.getAttribute("href"))!)
+      const form = page.locator("form:has(input[name='loadPostingId'])")
+      await expect(form, "Granite Creek Hauling can express interest in North Pine Logging's open job").toHaveCount(1)
+      await form.getByRole("spinbutton", { name: `Trucks offered: ${poleSetup.label}` }).fill("1")
+      await form.getByRole("button", { name: "Send interest" }).click()
+      await page.waitForURL((url) => url.searchParams.get("sent") === "1")
+    }
+
+    // North Pine declines it from the in-page confirmation, with a reason.
+    await page.context().clearCookies()
+    await signIn(page, NORTH_PINE_LANDING)
+    await openV2(page, "/v2/landing/inquiries")
+    const graniteName = "Granite Creek Hauling"
+    const openRow = inquiryRows(page).filter({ hasText: graniteName })
+
+    if ((await openRow.count()) > 0) {
+      await openRow.first().getByRole("link").click()
+      await page.waitForURL((url) => url.searchParams.has("inquiry"))
+      await page.getByRole("link", { exact: true, name: "Decline" }).click()
+      await page.waitForURL((url) => url.searchParams.get("confirm") === "decline")
+
+      const confirmation = page.locator("#confirm-action")
+      await expect(confirmation).toContainText(`${graniteName} will see that you declined`)
+      await confirmation.getByRole("textbox", { name: /^Reason/ }).fill(reason)
+      await confirmation.getByRole("button", { exact: true, name: "Decline inquiry" }).click()
+      await page.waitForURL((url) => url.searchParams.get("updated") === "declined")
+
+      await expect(page.getByRole("navigation", { name: "Inquiries by queue" }).locator("a[aria-current='page']")).toHaveText(/^Closed/)
+      await expect(page.getByRole("log")).toContainText(reason)
+      await expect(page.getByRole("log")).toContainText("You declined this inquiry.")
+      await expect(page.locator("textarea[aria-label^='Reply to']")).toHaveCount(0)
+    }
+
+    // Granite Creek sees the reason and, plainly, that the landing closed the inquiry: no withdraw, no reply.
+    await page.context().clearCookies()
+    await signIn(page, GRANITE_CREEK.email)
+    await openV2(page, "/v2/inquiries")
+    await expect(page.getByRole("navigation", { name: "Inquiries by status" }).locator("a[aria-current='page']")).toHaveText(/^Closed/)
+    await expect(inquiryRows(page).filter({ hasText: NORTH_PINE.name }).first()).toContainText("Declined by the landing")
+    await expect(page.getByRole("log")).toContainText(reason)
+    await expect(page.locator("#conversation")).toContainText("The landing has closed this inquiry.")
+    await expect(page.getByRole("link", { name: "Withdraw interest" })).toHaveCount(0)
+    await expect(page.locator("textarea[aria-label^='Reply to']")).toHaveCount(0)
+
+    // Not even the confirmation link brings a withdrawal back.
+    const href = await inquiryRows(page).filter({ hasText: NORTH_PINE.name }).first().getByRole("link").getAttribute("href")
+    const selected = /[?&]inquiry=([^&#]+)/.exec(href ?? "")?.[1]
+    expect(selected, "the row links to its inquiry").toBeTruthy()
+    await openV2(page, `/v2/inquiries?inquiry=${selected}&confirm=withdraw`)
+    await expect(page.locator("#confirm-action")).toHaveCount(0)
+    await expect(page.locator("#conversation")).toContainText("The landing has closed this inquiry.")
   })
 })
 

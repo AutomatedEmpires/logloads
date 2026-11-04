@@ -1,8 +1,9 @@
 import type { MarketplaceInterestView } from "@logloads/contracts"
 import { ConversationThread, inquiryStatus, type ViewerSide } from "@logloads/ui/marketplace"
 import { Button } from "@logloads/ui/primitives"
-import Link from "next/link"
 import type { ReactNode } from "react"
+
+import { AppLink } from "@/components/AppLink"
 
 import styles from "./InquiryConversation.module.css"
 
@@ -69,10 +70,9 @@ export function InquiryConversation({
             <p className={styles.sub}>
               <span>
                 {viewerSide === "landing" ? "For " : null}
-                {/* prefetch off: the job page renders per request, and a prefetched link can park the navigation on
-                    phones (Next 15.5; #203 adds AppLink for this and can replace it once merged). */}
+                {/* AppLink (#203): the job page renders per request, so the link is never prefetched. */}
                 {jobIsListed(interest) ? (
-                  <Link className={styles.link} href={`/v2/work/${interest.job.slug}`} prefetch={false}>{interest.job.title}</Link>
+                  <AppLink className={styles.link} href={`/v2/work/${interest.job.slug}`}>{interest.job.title}</AppLink>
                 ) : interest.job.title}
               </span>
               <span className={styles.status} data-tone={status.tone}>{status.label}</span>

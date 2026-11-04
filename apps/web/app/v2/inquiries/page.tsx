@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 
 import { notFound } from "next/navigation"
 
-import { marketplaceInterestIsOpen, type MarketplaceInterestView } from "@logloads/contracts"
+import { marketplaceInterestIsFinal, marketplaceInterestIsOpen, type MarketplaceInterestView } from "@logloads/contracts"
 import { ContentGrid, PageContainer, PageHeader, Section } from "@logloads/ui/layout"
 import { availabilityText, formatDay, InquiryRow } from "@logloads/ui/marketplace"
 import { Button, EmptyState, Tabs } from "@logloads/ui/primitives"
@@ -212,7 +212,7 @@ function HaulerConversation({
 
   return (
     <InquiryConversation
-      closedNote={interest.status === "declined" ? DECLINED_NOTE : CLOSED_NOTE}
+      closedNote={marketplaceInterestIsFinal(interest.status) ? DECLINED_NOTE : CLOSED_NOTE}
       composer={
         open ? (
           <InquiryReplyComposer
