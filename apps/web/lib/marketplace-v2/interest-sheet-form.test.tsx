@@ -107,7 +107,7 @@ describe("every field in the page, without JavaScript (criterion 5)", () => {
     expect(textOf(html)).toContain("As on your last inquiry.")
     // Both setups are log trucks and the report is per truck type: the type's count, never one claimed per setup.
     expect(textOf(html)).toContain("Log truck + Pole trailer 3 units listed Available from Nov 12, 2026: 2 of 5 across your Log truck setups · Updated today by the hauler")
-    expect(textOf(html)).not.toMatch(/d+ of [23] available/)
+    expect(textOf(html)).not.toMatch(/\b\d+ of [23] available\b/)
   })
 
   it("leaves the date empty, says availability is not recently confirmed, and never shows 0, when nothing was reported", () => {
