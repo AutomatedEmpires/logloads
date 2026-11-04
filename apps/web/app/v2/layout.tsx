@@ -5,6 +5,7 @@ import type { ReactNode } from "react"
 
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 
+import "@logloads/ui/tokens.css"
 import "./v2.css"
 
 export const metadata: Metadata = {
