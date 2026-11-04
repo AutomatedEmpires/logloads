@@ -1,0 +1,660 @@
+{
+  "date": "2026-11-04",
+  "integrationSha": "f78a5b3f1ab90cb715bd2fb741459c7ba196245b",
+  "mainSha": "40f4416e9dc6542d58c7b38f3c88f649b85c5935",
+  "sourceFileCount": 87,
+  "recoveryBranchCount": 19,
+  "snapshotMeaning": "Unfinished source preservation; not approval, completed implementation, production proof or a migration.",
+  "snapshots": [
+    {
+      "label": "root",
+      "branch": "backup/reconciliation-2026-11-04/root",
+      "sha": "7f1a95ef92da73f8acb411e0413289cf7d6277df",
+      "files": [
+        {
+          "status": " M",
+          "path": "AGENTS.md",
+          "sha256": "0aa7d3d07fd894f903c97d8c3267cd71bf3342f3e2b6935f6e453b462721a4ca",
+          "bytes": 45565
+        },
+        {
+          "status": " M",
+          "path": "docs/ENVIRONMENT.md",
+          "sha256": "5896331608fc3a6f59806758a2555edc7d8131dbdc78285951a2c1d449d041e7",
+          "bytes": 24739
+        },
+        {
+          "status": "??",
+          "path": "architecture/normalized-v2/01_schema.sql",
+          "sha256": "35e2ea54fffdb575a24fd17a13373acfdbf16fa93fb7fc8a0162f1c7692ec55e",
+          "bytes": 45454
+        },
+        {
+          "status": "??",
+          "path": "architecture/normalized-v2/02_access.sql",
+          "sha256": "d7429b7d972ca71d1ac4beb35b68005a0cd4043b8db9bd465862deda72a686ce",
+          "bytes": 51163
+        },
+        {
+          "status": "??",
+          "path": "architecture/normalized-v2/03_entitlements.sql",
+          "sha256": "23e6dd6430b58e84476070c6a803cde77b8f36e633a14592fe472f1a8791888f",
+          "bytes": 58489
+        },
+        {
+          "status": "??",
+          "path": "architecture/normalized-v2/04_tests.sql",
+          "sha256": "46c9d43f40a4a7f64d221301a25c2bc2b44aeba4229c5b556082681f918adb02",
+          "bytes": 42411
+        },
+        {
+          "status": "??",
+          "path": "architecture/normalized-v2/05_concurrency_test.ps1",
+          "sha256": "0c0a45a381a0145577cab6010a9b09561338127b12ce276e81a342499b6a3b48",
+          "bytes": 18428
+        },
+        {
+          "status": "??",
+          "path": "architecture/normalized-v2/05_concurrency_test.sh",
+          "sha256": "4542c5e4ce65eb9e223eeeb2afe8f3b56c15bd512bcd7aadf3097ce7dff2931a",
+          "bytes": 18998
+        },
+        {
+          "status": "??",
+          "path": "architecture/normalized-v2/06_v2_contract_alignment.sql",
+          "sha256": "e8016aec7d83e7221cdc36ac1a260d0eae5fa4384bd073db344e11035908be54",
+          "bytes": 106310
+        },
+        {
+          "status": "??",
+          "path": "architecture/normalized-v2/07_v2_contract_tests.sql",
+          "sha256": "0bebb24586823c9b9304b07de06dd8f95bc6c7e40c1574b5ca3433addc4bc20e",
+          "bytes": 46498
+        },
+        {
+          "status": "??",
+          "path": "architecture/normalized-v2/ARCHITECTURE.md",
+          "sha256": "fbd0de69c384c0afcd128a1320f382edd84b67a326f950d01eecc3fe1903555f",
+          "bytes": 37007
+        },
+        {
+          "status": "??",
+          "path": "architecture/normalized-v2/GAP_AUDIT_V2_CONTRACTS.md",
+          "sha256": "dd612234fd72bc5030dd0bc81959e5d466172dd7539e8daa05fbeccc82c01b62",
+          "bytes": 29167
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/APPLY_GUIDE.md",
+          "sha256": "f8ca12f1668f7cb9ef1d207b2202728997c93428b6a879790b33cb939bd7ad0d",
+          "bytes": 5715
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/docs/ACTIVATION_CLERK.md",
+          "sha256": "1c4d44931ed45a9b0d63ea9e9209c8c7ec20cebd3f245787e319f05d24d65e27",
+          "bytes": 4600
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/docs/ACTIVATION_RESEND.md",
+          "sha256": "94565cb4d3ad3337f95c8574e012719ebf59faab70a19951fa725b43252d791f",
+          "bytes": 3640
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/docs/ACTIVATION_STRIPE.md",
+          "sha256": "fd50ba40ac43628c287f663050e2151ba9373ae07139ec8dbd001005d1f74f32",
+          "bytes": 6881
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/docs/AGENT_WORKFLOW.md",
+          "sha256": "419b82da44bef632e8459700fde61e9b428f7c35cf2fc1999f91f6e46eb9c1ea",
+          "bytes": 2486
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/docs/API_CONTRACTS.md",
+          "sha256": "8c29f76545e5485371f87d0aa1ed2c2fdbe90e9611165ab410d595b3b834256d",
+          "bytes": 6395
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/docs/AUTOMATION_ROADMAP.md",
+          "sha256": "6e4fe1ecfae6dbafdf80c544fd127011456c9e8f52afdcc7271ab60be2c9a5b4",
+          "bytes": 3919
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/docs/BACKEND_ARCHITECTURE.md",
+          "sha256": "4c3864bb5e0f44457155b715fc73664f09d3c7a3deae1bec3da8f64698518d26",
+          "bytes": 6524
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/docs/DATA_MODEL.md",
+          "sha256": "33fac471021df0912aa25233380554b8182d5131ec59de3d4596b602387ba347",
+          "bytes": 5711
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/docs/DEPLOYMENT.md",
+          "sha256": "e0db14d2e59f72f52bc8bc750adad0dfcbe0892eb011846087f9c8c8aa865b33",
+          "bytes": 6221
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/docs/ENV_CONTRACT.md",
+          "sha256": "c9b7b277c568b1db22d03c02f0ff390c337e501aa58f58d4502c041f2639b6cc",
+          "bytes": 8119
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/docs/HANDOFF-2026-07-27.md",
+          "sha256": "ce986ca0d2cc0dc77d44c316199b8ac19d019c9ddd278ed33c36b983f8ad3e09",
+          "bytes": 894
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/docs/HANDOFF.md",
+          "sha256": "01d4fa08915c9001e654feeb33914e297a5cb51c304fb66091cc64224db22f38",
+          "bytes": 889
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/docs/MVP_BACKEND_SCOPE.md",
+          "sha256": "d5392ac89957aca03aa687e92aa6e76644436bf33a4d4bf1e5de1eb1abe43c5c",
+          "bytes": 2979
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/docs/OBSERVABILITY.md",
+          "sha256": "ddf256d1458c2d3176d0e7949319c3f988c460e8f3d06a81a689e63ce25d2110",
+          "bytes": 4652
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/docs/README.md",
+          "sha256": "556eeb875afa5228bc544d920bad4ab6132b8bd26c2016d72cc20d960bbefd63",
+          "bytes": 3634
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/docs/archive/2026-legacy-commercial/ACTIVATION_STRIPE_2026-08-01.md",
+          "sha256": "be396ca4eb79a3b771a5c6b23c42de5104e7f6979e5e76c2974d93d45aca62ba",
+          "bytes": 14666
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/docs/archive/2026-legacy-commercial/marketplace-implementation-spec_2026-07-24.md",
+          "sha256": "b65ed034d5b9e8d425fd98a97753cfc28b94c91463fd225866560b425a64b46f",
+          "bytes": 315997
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/docs/archive/2026-legacy-commercial/marketplace-realignment-blueprint_2026-07-24.md",
+          "sha256": "138e5c4073f0a98e518797ed90253297f6113f45d59af67c1c7e83bf650deecc",
+          "bytes": 170216
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/docs/archive/handoffs/HANDOFF_2026-07-17.md",
+          "sha256": "a20101ac4f4a9eb9ba6b91d991a65789caa80532040bc3fd5a51b5671a11b746",
+          "bytes": 20120
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/docs/archive/handoffs/HANDOFF_2026-07-27.md",
+          "sha256": "9a3e1d537fad65e4b02072b37a9887a40fb8f7bff661f96be9a3a136be64e6b7",
+          "bytes": 20149
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/docs/marketplace-implementation-spec.md",
+          "sha256": "036c65bc03cca53eb01e85afc138fb24efbb2c8f82fe99f60f19d16fb6eb9d6e",
+          "bytes": 993
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/docs/marketplace-realignment-blueprint.md",
+          "sha256": "d3f124fd9e33057bcfa567bd47e4df0ba167f10e90120d3197460586ecb577df",
+          "bytes": 992
+        },
+        {
+          "status": "??",
+          "path": "docs/LogLoads_Docs_Reconciliation_2026-11-01/manifest.json",
+          "sha256": "637e1e5fd2de3cc1857f6f185974a3baa060bb3c9acf7ce4536d079c5d99f1ac",
+          "bytes": 3344
+        }
+      ]
+    },
+    {
+      "label": "ds-01-forest-tokens",
+      "branch": "backup/reconciliation-2026-11-04/ds-01-forest-tokens",
+      "sha": "868ac173b655c2cb0193ee117dc5337f9babe764",
+      "files": [
+        {
+          "status": " M",
+          "path": "apps/web/app/v2/layout.tsx",
+          "sha256": "e07986754fd84b3a2bacedc24526d8c393c4599f56d3fce8c134e8dbee5207b7",
+          "bytes": 1328
+        },
+        {
+          "status": " M",
+          "path": "packages/ui/package.json",
+          "sha256": "264f57ec0fb43f674975ac3dcdbaf92832d617ef42d9c5074ff66d7e056e0926",
+          "bytes": 676
+        },
+        {
+          "status": "??",
+          "path": "packages/ui/src/tokens/index.ts",
+          "sha256": "c1ae41eb459142af09c0ba666a392f55504f732eccd5621961957f697cc2072a",
+          "bytes": 4420
+        },
+        {
+          "status": "??",
+          "path": "packages/ui/src/tokens/tokens.css",
+          "sha256": "0394a5911a97fdd04838a7a0ca34290093997a0057ab54db96fad57d28c02b16",
+          "bytes": 8702
+        }
+      ]
+    },
+    {
+      "label": "rv-218",
+      "branch": "backup/reconciliation-2026-11-04/rv-218",
+      "sha": "3385d1697600736edde55eb483a93e1d75a0e678",
+      "files": [
+        {
+          "status": " M",
+          "path": ".github/workflows/normalized-e2e-loop.yml",
+          "sha256": "f48a8d66aff1ea7eb094205d9d89eff42b1a0dc0c5a125d8139271ee1b91cb59",
+          "bytes": 16507
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/marketplace-v2/normalized-bundle.test.ts",
+          "sha256": "19bb1748c584416701da9e3f9616b3ec13956ee515d977405e89c30fdb5fb094",
+          "bytes": 761
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/marketplace-v2/normalized-db.test.ts",
+          "sha256": "ee20770b1d19401ee3a6722957304c6b90d7d7cb7783de237af78435c51286f6",
+          "bytes": 11761
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/marketplace-v2/normalized-db.ts",
+          "sha256": "da81ce01d3fb9c850f390722d4df1d01c181449567fb43ee1a843e5f3421a4f6",
+          "bytes": 34305
+        },
+        {
+          "status": " M",
+          "path": "apps/web/next.config.ts",
+          "sha256": "613f88ad97872205036e8b47e00afe2b84000db0004007fc0234db94468b6544",
+          "bytes": 7060
+        },
+        {
+          "status": " M",
+          "path": "docs/CI.md",
+          "sha256": "100e4fd5efe0bbd8d949738060e6c66ddb7e481401807230e60fd4baccd05d0e",
+          "bytes": 14783
+        }
+      ]
+    },
+    {
+      "label": "schema26",
+      "branch": "backup/reconciliation-2026-11-04/schema26",
+      "sha": "a6e44d63d0b0ff47630566ce8b7eaecbcf8ee6d4",
+      "files": [
+        {
+          "status": " M",
+          "path": "apps/web/components/v2/landing/LandingAside.tsx",
+          "sha256": "f3ddf29c5a3a498791daf058807ed6b3fc8c0e50a76f2e4279fb98188dadc708",
+          "bytes": 1862
+        },
+        {
+          "status": " M",
+          "path": "apps/web/components/v2/landing/LandingForm.tsx",
+          "sha256": "847aee14621e44e7a78af4d92b47317b4318846a925126b52e266f1cdc777594",
+          "bytes": 7377
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/marketplace-v2/landing-pages.test.tsx",
+          "sha256": "485b744b63cf9b1a8f3df88ceb6870562977a997e44f2b4cdf97cce98c17675b",
+          "bytes": 13567
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/marketplace-v2/landing-workspace.ts",
+          "sha256": "7cff313863fd6f15547923d2e4e4c1e5b61084578e5a7f654378652b7bc61d9d",
+          "bytes": 8184
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/marketplace-v2/normalized-adapter.contract.test.ts",
+          "sha256": "88681e491621a5531623496bab6362962a9f5df22c199aa622115b3ff30fc06c",
+          "bytes": 54399
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/marketplace-v2/normalized-adapter.test.ts",
+          "sha256": "fa049f2ba9e0b4a721e1bd0186456a67f97b7bc93dccfb08cfe20c2a646bb891",
+          "bytes": 33190
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/marketplace-v2/normalized-adapter.ts",
+          "sha256": "1d253957805af6d05fc0292f90931ce986684406510f57d65f3bc1e7f37b587c",
+          "bytes": 22048
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/marketplace-v2/normalized-db.ts",
+          "sha256": "9350243b0fd6f40017ab4781ef7942e6c9d5e7700612325d39695cbbba9f2b93",
+          "bytes": 34050
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/marketplace-v2/normalized-mapping.ts",
+          "sha256": "8ec722a3a7801d72fd9b5d34ea22cfad07c5796bce8c6c6043cfcb8e5da25660",
+          "bytes": 27222
+        },
+        {
+          "status": " M",
+          "path": "apps/web/tests/design-system.spec.ts",
+          "sha256": "564320c7faf0e48bfc143710847e8cebba0eaff1d8b55a2ea33c91c63c5f1247",
+          "bytes": 156970
+        },
+        {
+          "status": " M",
+          "path": "packages/contracts/src/marketplace-landings.test.ts",
+          "sha256": "8a30c8de86503a2e8c95dfe342eedba5e768347641d81640c120e4a3475a3596",
+          "bytes": 11712
+        },
+        {
+          "status": " M",
+          "path": "packages/contracts/src/marketplace-landings.ts",
+          "sha256": "95c8a2531e57201bfece2bd079511d02a0f3e79fd5ff4f50c1c539c5120822cd",
+          "bytes": 20109
+        },
+        {
+          "status": " M",
+          "path": "packages/services/src/marketplace-landings.ts",
+          "sha256": "483c50db317bc3e671543eb5b1861ada2e4319ca6781162660f3b0276328f7d3",
+          "bytes": 4423
+        },
+        {
+          "status": "??",
+          "path": "architecture/normalized-v2/26_v2_product_gap_batch.sql",
+          "sha256": "af55fa6c42ff9a99f92bc772104e1ad369e5561af615dcc9ee9fddf6a9b7f53b",
+          "bytes": 27159
+        },
+        {
+          "status": "??",
+          "path": "architecture/normalized-v2/27_v2_product_gap_batch_tests.sql",
+          "sha256": "74747c4ce89064ba2e52323344b6f6809ebc60a0f5d6f722491f1a27d16eace5",
+          "bytes": 39652
+        }
+      ]
+    },
+    {
+      "label": "sec3",
+      "branch": "backup/reconciliation-2026-11-04/sec3",
+      "sha": "ab4b7d630383dd65cc32c5e9d69e6e88977ac439",
+      "files": [
+        {
+          "status": " M",
+          "path": "apps/web/app/api/billing/webhook/route.ts",
+          "sha256": "5804ad82b741835f00ea70d436bb39ab8385237e6e9c40fc51d408b1e0f01206",
+          "bytes": 43057
+        },
+        {
+          "status": " M",
+          "path": "apps/web/app/api/loads/route.ts",
+          "sha256": "6e9c95642389e6730dbc80ad0521a471eefe5d7faf59cf92f8abb21f249e98a9",
+          "bytes": 1316
+        },
+        {
+          "status": " M",
+          "path": "apps/web/app/api/notices/route.ts",
+          "sha256": "8a0cd56f75cda5809f1da275513242c1ed4d650ca6548501d9e89779ea7a111d",
+          "bytes": 937
+        },
+        {
+          "status": " M",
+          "path": "apps/web/app/api/trips/[tripId]/events/route.ts",
+          "sha256": "2464a75eaaa2580522a29b97086901458f2c82a6569245cd610af70064d15618",
+          "bytes": 992
+        },
+        {
+          "status": " M",
+          "path": "apps/web/components/v3/HostActions.tsx",
+          "sha256": "04915e1191100c3263c77e894eee580082a4352a5894d1b8304f78409e9479b6",
+          "bytes": 63668
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/api-actor.ts",
+          "sha256": "b11856122497b51d473e2b9ae40c894e6bd1e819bfb7c27019ae8b2c7caff0d6",
+          "bytes": 8879
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/billing-webhook.test.ts",
+          "sha256": "cc0ee4b7543533cfa486f1bc58052a851b0d20540ea9bf91cf5df6474e71b05d",
+          "bytes": 91986
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/cockpit-actions.ts",
+          "sha256": "9f3eb70514193ef15ebe557ae0ce4e7f54e5cc1b6887143eb6ad06291ea8206d",
+          "bytes": 64358
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/public-pages-board.test.ts",
+          "sha256": "8996fb1177cde8abd9b6c092742fe9f4ae533892f5bcf991e01de8ec46d2aec6",
+          "bytes": 3958
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/rate-limit-core.test.ts",
+          "sha256": "6ff69ec29f76aaa5ae783a33d1aca5dc3d0accb9721f64c682ad65a2880651d3",
+          "bytes": 2911
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/rate-limit-core.ts",
+          "sha256": "c7535eb72103a4713229a38fb88a31741e76badf854496c28ee0107a1ab37092",
+          "bytes": 3600
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/rate-limit-supabase.test.ts",
+          "sha256": "85ec32d32809ecd68303886155ae0daef0543f88285ff67879a5015acbf81b46",
+          "bytes": 6905
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/rate-limit-supabase.ts",
+          "sha256": "48ff6b72e86fa43c0fdf17b09897c68857968744683065d092caa2c62b27dbd5",
+          "bytes": 3426
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/rate-limit.ts",
+          "sha256": "6abb79c826f3f5d30bd520dd4c6c9fddfff274f1e2a16586b233d530d20df2f0",
+          "bytes": 1525
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/request-body.ts",
+          "sha256": "10963a8cad496d58a30855578e814e5a6ced25e7d207ad1f5ee3ac885f60e00a",
+          "bytes": 3882
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/security-headers.test.ts",
+          "sha256": "6b9f749ef2a46fe2d066d099b0a2518614e0caa1400224eb335012bbca8d7d94",
+          "bytes": 14124
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/v3.ts",
+          "sha256": "4e6225770a2dd2c0b19fc42941755349a54543c987ae6506c52a53c5690a8d65",
+          "bytes": 9072
+        },
+        {
+          "status": " M",
+          "path": "apps/web/lib/write-limits.ts",
+          "sha256": "268a76ddbdcdd2fa5c9d5e515d129a62f64574dd89df8a8336fa4230343be460",
+          "bytes": 1449
+        },
+        {
+          "status": " M",
+          "path": "apps/web/next.config.ts",
+          "sha256": "d57fcb6c0c7fd9cfbbc874879004ccca7ced8545fe2d6c7753c98d963d1c0e1d",
+          "bytes": 8436
+        },
+        {
+          "status": " M",
+          "path": "packages/db/src/snapshot.test.ts",
+          "sha256": "9b4f509f6e0894e0e41c15f0787fb0dcfac51eb5a62d3cc3a887254b4e8c9693",
+          "bytes": 40631
+        },
+        {
+          "status": " M",
+          "path": "packages/db/src/snapshot.ts",
+          "sha256": "310128e95691cac4ef27d6133fb37a3823946b5820e921da0972bfbbe70f3e14",
+          "bytes": 65134
+        },
+        {
+          "status": " M",
+          "path": "tools/normalized-store-policy.mjs",
+          "sha256": "7a86a7a0911dc87175b6b8543d11461cd868025a565dd351d8c293b77adfc8e4",
+          "bytes": 22769
+        },
+        {
+          "status": " M",
+          "path": "tools/normalized-store.test.mjs",
+          "sha256": "ec8075e499789121e34735c357c18140677749bccc61f15f481dd821e3c10507",
+          "bytes": 33045
+        },
+        {
+          "status": "??",
+          "path": "apps/web/lib/load-builder-title-input.test.tsx",
+          "sha256": "925a01263cff823e9e4fd3c4cb48c53e0a821657b19d3b15baeb73b6121e3269",
+          "bytes": 1905
+        },
+        {
+          "status": "??",
+          "path": "apps/web/lib/public-board-refresh.test.ts",
+          "sha256": "20c8e1c380f3e522ad971a9176a529c8b06780de1c0f3a35818b02b2705d58ae",
+          "bytes": 4137
+        },
+        {
+          "status": "??",
+          "path": "apps/web/lib/write-limit-timeout.test.ts",
+          "sha256": "dce132842c9a67a467c8f39adb665ee27b6f98aee49709b207c4efbb77eb1b6a",
+          "bytes": 4667
+        }
+      ]
+    }
+  ],
+  "preservedLocalOnlyHistories": [
+    {
+      "branch": "backup/reconciliation-2026-11-04/refs/backup/main-checkout-uncommitted-2026-11-02",
+      "sha": "965aafbf26ce86361c83cb8b81ba37e9d07b90d3",
+      "kind": "local-only-history",
+      "originalBranch": "backup/main-checkout-uncommitted-2026-11-02"
+    },
+    {
+      "branch": "backup/reconciliation-2026-11-04/refs/docs/lean-authoritative-knowledge",
+      "sha": "8fd0c0f4c06d0b0fb7bf4e7b8d6441418ac0f631",
+      "kind": "local-only-history",
+      "originalBranch": "docs/lean-authoritative-knowledge"
+    },
+    {
+      "branch": "backup/reconciliation-2026-11-04/refs/docs/root-blueprint-alignment",
+      "sha": "9f000d4ead97b1dcb1c9be370b3025556021d227",
+      "kind": "local-only-history",
+      "originalBranch": "docs/root-blueprint-alignment"
+    },
+    {
+      "branch": "backup/reconciliation-2026-11-04/refs/feat/v2-frontend/ds-03-primitives",
+      "sha": "39490812fa45208563cfb8451f5121cb8e10164d",
+      "kind": "local-only-history",
+      "originalBranch": "feat/v2-frontend/ds-03-primitives"
+    },
+    {
+      "branch": "backup/reconciliation-2026-11-04/refs/feat/v2-frontend/ds-04-marketplace",
+      "sha": "63dfa554b5f4d876f8064a0e660c6611516cb7ee",
+      "kind": "local-only-history",
+      "originalBranch": "feat/v2-frontend/ds-04-marketplace"
+    },
+    {
+      "branch": "backup/reconciliation-2026-11-04/refs/feat/v2-frontend/ds-05",
+      "sha": "3ee66013fb7b91e82279743697e614bbac8ec8d8",
+      "kind": "local-only-history",
+      "originalBranch": "feat/v2-frontend/ds-05"
+    },
+    {
+      "branch": "backup/reconciliation-2026-11-04/refs/feat/v2-frontend/ds-05-axe",
+      "sha": "423ccd9c0ceae8f8a8b8b4959590b6d533c103a8",
+      "kind": "local-only-history",
+      "originalBranch": "feat/v2-frontend/ds-05-axe"
+    },
+    {
+      "branch": "backup/reconciliation-2026-11-04/refs/feat/v2/job-editor",
+      "sha": "daaec6d3e256d90ce3b9619ef7f1d8e9c7d20925",
+      "kind": "local-only-history",
+      "originalBranch": "feat/v2/job-editor"
+    },
+    {
+      "branch": "backup/reconciliation-2026-11-04/refs/feat/v2/verification-scope",
+      "sha": "2b75201ae06f166f1e4bd1da7e20072a4bc54c3b",
+      "kind": "local-only-history",
+      "originalBranch": "feat/v2/verification-scope"
+    },
+    {
+      "branch": "backup/reconciliation-2026-11-04/refs/fix/normalized-v2/final-review",
+      "sha": "5d7d1c03d294f69a3bda87da574c5793de31d4bf",
+      "kind": "local-only-history",
+      "originalBranch": "fix/normalized-v2/final-review"
+    },
+    {
+      "branch": "backup/reconciliation-2026-11-04/refs/fix/security/locked-load-estimates",
+      "sha": "899b01927536734bb8e94a12b2f4701196bac530",
+      "kind": "local-only-history",
+      "originalBranch": "fix/security/locked-load-estimates"
+    },
+    {
+      "branch": "backup/reconciliation-2026-11-04/refs/verify/sec-sql-adapter-ci",
+      "sha": "ec83158efbc9d059b4c72a9375f186c97750b0de",
+      "kind": "local-only-history",
+      "originalBranch": "verify/sec-sql-adapter-ci"
+    },
+    {
+      "branch": "backup/reconciliation-2026-11-04/refs/verify/sec-sql-hf15-control",
+      "sha": "ba0d690f2b12d7d563896a824dfe8b00d729df27",
+      "kind": "local-only-history",
+      "originalBranch": "verify/sec-sql-hf15-control"
+    },
+    {
+      "branch": "backup/reconciliation-2026-11-04/refs/work/zod4-trial",
+      "sha": "45f8a4ce6cf09121f0099bcbc266f2c2296d9889",
+      "kind": "local-only-history",
+      "originalBranch": "work/zod4-trial"
+    }
+  ],
+  "exclusions": [
+    "ignored environment/credential files",
+    "local data and backups",
+    "dependencies",
+    "build/test/browser artifacts",
+    "nested worktree as parent entry (its source was snapshotted separately)"
+  ]
+}
