@@ -194,10 +194,12 @@ service-layer authorization over the schema's functions, as the session's person
 1. The server identifies the person from its own session (`getSessionActor()`; Clerk verifies the session
    token). The adapter refuses a viewer that is not the session's user.
 2. It connects directly to PostgreSQL (postgres.js) as a **dedicated login role** that can do nothing by itself.
-   It must be NOINHERIT, with no superuser, BYPASSRLS, CREATEROLE or replication attributes, and no ownership of
-   the schema. It must not belong to `service_role`, or to any role with superuser, BYPASSRLS or CREATEROLE, directly
-   or through other roles (HF-22, #187). It may only switch to `anon` and `authenticated`.
-   `createPostgresMarketplaceDb` checks this on first use and refuses any other credential.
+   It must be NOINHERIT, with no superuser, BYPASSRLS, CREATEROLE or replication attributes, and own neither the
+   schema nor any table, function or type in it. It must not belong to `service_role`, to any role with superuser,
+   BYPASSRLS or CREATEROLE, or to any other role that `anon` and `authenticated` do not already reach (for example
+   `pg_write_all_data`), directly or through other roles (HF-22, #187). It may only switch to `anon` and
+   `authenticated`. `createPostgresMarketplaceDb` checks the login role itself (`session_user`) on first use and
+   refuses any other credential.
 3. Each call is one transaction. It runs `set_config('role', 'authenticated', true)` and sets
    `request.jwt.claims` to the configured issuer, the session's Clerk user id and the pinned audience, with a
    60-second expiry. These are the settings PostgREST makes after verifying a token. `current_user_id()`, every
@@ -238,13 +240,138 @@ SHA, environment, and command output.
 | 2 | Confirm that migrations `20260713053327`, `20260726090000`, and `20260808230214` are applied live, and that the ledger matches the repository. | Pilot |
 | 3 | Exact-SHA multi-instance rate-limit proof and simulated store outage → `503` | Pilot |
 | 4 | ~~Execute `01`–`05` on a disposable PostgreSQL 17/PostGIS in CI~~ — **VERIFIED** at `ec4bb66` ([`CI.md`](./CI.md) §3). `06`–`10` are VERIFIED in CI on draft PR #123 (head recorded in `CI.md` §3). Still open: review and merge of PR #123, and integration of the CI branch. | Normalized-v2 |
-| 5 | Configure Supabase third-party auth for a **development** Clerk instance. Prove that forged, expired, wrong-issuer, and wrong-audience tokens are rejected at the gateway, and that valid tokens resolve to the right `app_users` row. | Normalized-v2 |
+| 5 | Configure Supabase third-party auth for a **development** Clerk instance. Prove that forged, expired, wrong-issuer, and wrong-audience tokens are rejected at the gateway, and that valid tokens resolve to the right `app_users` row. Harness and runbook: §5.1. | Normalized-v2 |
 | 6 | Cross-tenant denial matrix: anon, authenticated stranger, member of another org, removed member, multi-org user switching context, platform admin without a support reason | Normalized-v2 and V2 adapter |
 | 7 | `SECURITY DEFINER` review: owners, `search_path`, grants, and exposure through the Data API | Normalized-v2 |
 | 8 | Parity between the `marketplace-permissions.ts` capability sets (added in `4c9518e`, unit-tested) and the normalized RLS role sets, proven on an executed database. Rate limits on publish/reconfirm before persistence is enabled. | V2 and normalized-v2 |
 | 9 | Audited private-detail disclosure and revocation, with tests proving interest alone discloses nothing | V2 |
 | 10 | Invitation quota races (final credit, double failure callback, reaper versus callback, duplicate cycle webhook) under real concurrent sessions. **VERIFIED at the SQL level** by stage 5 ([`CI.md`](./CI.md) §3). Still open: the same behavior through the application and real webhooks. | Normalized-v2 |
 | 11 | Migration rehearsal on synthetic data, with historical financial records preserved read-only | Cutover |
+
+### 5.1 Verify Clerk → Supabase third-party auth (development)
+
+**Status:** the harness is IMPLEMENTED. The live result is **UNVERIFIED** until the founder creates the
+development providers below and runs it (#112). Development only: the harness refuses production keys and any
+project that is not on its allowlist.
+
+`tools/verify-clerk-supabase-auth.mjs` sends tokens through the Supabase API gateway and PostgREST, and checks
+each #112 acceptance criterion:
+
+- **AC1.** A valid token resolves its own `app_users` row and reads only its own tenant's rows.
+- **AC2.** Five kinds of bad token are rejected at the gateway or resolve to no user: forged (payload edited
+  after signing, foreign signing key, `alg: none`), expired, wrong issuer, wrong audience and missing role.
+- **AC3.** A removed membership loses access on the next request, with the same still-valid token.
+
+It prints a pass/fail table with no keys, tokens, user IDs or row IDs.
+
+**What runs today without keys** (in `.github/workflows/normalized-v2-ci.yml`):
+
+- **Stage 21** (`architecture/normalized-v2/21_v2_auth_claims_membership_tests.sql`) works at the database
+  layer, with simulated claims. It adds the cases that 04 and 17 do not cover:
+  - audience arrays and a missing audience;
+  - `nbf` and a non-numeric `exp`;
+  - a spoofed `role`;
+  - blank and differently-cased subjects;
+  - issuer spelling, and a subject presented under another trusted issuer;
+  - a disabled issuer, and suspended or deactivated users;
+  - tenant isolation for a valid token;
+  - loss of access on the next statement after a suspension, a removal or an organization suspension.
+- **Stage 22** (`architecture/normalized-v2/22_clerk_auth_harness_local.sh`) runs this harness with
+  `--local-stack`, twice, on the disposable Supabase CLI stack. Locally signed tokens stand in for Clerk:
+  - PostgREST rejects the forged and expired tokens;
+  - the wrong-issuer, wrong-audience and missing-role tokens are validly signed, and resolve to no user;
+  - the AC3 flow and the cleanup run as they would live.
+
+Neither proves the one thing that needs the providers: that Supabase verifies **Clerk-signed** RS256 tokens
+against Clerk's JWKS, and that Clerk's session claims match the issuer row.
+
+**Owner steps (development providers only; never the production project or instance):**
+
+1. **Clerk.** Create a development instance of the LogLoads Clerk application. Create two test users, and note
+   their user IDs (`user_…`). Do not create Clerk Organizations: LogLoads organizations live in the database,
+   and the harness creates its own two (`logloads-authcheck-a` and `-b`) as those users.
+2. **Session token claims.** Under Sessions → Customize session token, add
+   `{"role": "authenticated", "aud": "logloads-dev"}`. Clerk's "Connect with Supabase" setup adds the `role`
+   claim on its own, but the audience must be added by hand. Every enabled trusted issuer pins an audience
+   (LE-09), so a token without one never resolves a user.
+3. **Two JWT templates**, for the wrong-audience and missing-role checks. Use the default signing key.
+   - `logloads-authcheck-wrong-audience`, with claims
+     `{"role": "authenticated", "aud": "logloads-authcheck-not-this-app"}`.
+   - `logloads-authcheck-no-role`, with claims `{"aud": "logloads-dev"}` (the step 2 audience).
+
+   Without them, those two checks report SKIP, and `--require` fails the run.
+4. **Supabase.** Create a development project. Apply the normalized-v2 chain to it in the order the CI
+   alignment job uses (01, 02, 03, 06, 11, 12, 16, then any later migration file there). Apply each file in one
+   transaction: `psql <development connection string> -v ON_ERROR_STOP=1 --single-transaction -f <file>`.
+   Then add `marketplace` to the exposed schemas in the project's Data API settings.
+5. **Third-party auth.** In the project's Authentication settings, add Clerk under Third-Party Auth, with the
+   development domain (`<slug>.clerk.accounts.dev`). Then register the issuer in the SQL editor:
+   `insert into marketplace.trusted_identity_issuers (issuer, label, expected_audience, enabled) values ('https://<slug>.clerk.accounts.dev', 'Clerk development', 'logloads-dev', true);`
+6. **Environment.** Put these in the Doppler `dev` config, or in an env file outside the repository. Never
+   commit them.
+
+   | Variable | Value |
+   |---|---|
+   | `SUPABASE_URL` | The development project's URL |
+   | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Its publishable key |
+   | `SUPABASE_SERVICE_ROLE_KEY` | Its secret key, used only for the `sync_verified_identity` worker RPC |
+   | `CLERK_SECRET_KEY` | The development instance's `sk_test_` key |
+   | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Its `pk_test_` key (recommended: it lets the harness check the token issuer) |
+   | `LOGLOADS_SUPABASE_DEV_PROJECT_REFS` | The development project's reference |
+   | `LOGLOADS_AUTH_HARNESS_CLERK_USER_IDS` | `<user A id>,<user B id>` |
+
+**The command:**
+
+```bash
+doppler run --config dev -- node tools/verify-clerk-supabase-auth.mjs --require
+# or: node --env-file=<file outside the repo> tools/verify-clerk-supabase-auth.mjs --require
+```
+
+**A pass** is 11 PASS rows, ending with
+`verify-clerk-supabase-auth: PASS: 11 passed, 0 failed or not run, 0 skipped (live).` The run takes about a
+minute, because it waits for a 15-second token to expire. Expected evidence:
+
+- forged tokens: "rejected at the gateway (HTTP 401 …)";
+- the expired token: "accepted while valid; after expiry: rejected at the gateway";
+- the wrong-issuer token: rejected at the gateway, because no trusted key signed it;
+- the wrong-audience and missing-role tokens: "resolved to no user". Clerk signs them, so the gateway accepts
+  them, and the database refuses them.
+
+**Exit codes:** 0 is a pass, 1 is a failure, and 2 is a refusal. Without its environment the harness prints
+`skipped: …` and exits 0, or 1 with `--require`.
+
+**What it refuses (exit 2, nothing sent):**
+
+- `sk_live_` or `pk_live_` keys, or a publishable key that does not name a `*.clerk.accounts.dev` frontend API;
+- a Supabase URL that is not `https://<ref>.supabase.co`, or whose reference is not listed in
+  `LOGLOADS_SUPABASE_DEV_PROJECT_REFS`;
+- Supabase keys that belong to another project or role.
+
+It also stops before any Supabase request if Clerk reports a production instance, or if a minted token's issuer
+is not a development frontend API. Requests never follow a redirect.
+
+**What it changes in the development project:**
+
+- it links the two test users;
+- on first use, it creates the two fixture organizations, with one equipment row each, and reuses them on later
+  runs;
+- each run adds one removed membership of user B in organization A.
+
+Cleanup always leaves B without a live membership in A, and revokes the Clerk sessions the run created. A
+membership left live by an interrupted run is removed at the next start.
+
+**Troubleshooting.** A preflight message names the step to revisit:
+
+- a missing `role` or `aud` claim: step 2;
+- a template not found: step 3;
+- the schema not reachable: step 4;
+- an untrusted identity issuer: step 5.
+
+If AC1 says "resolved to no user", the token's `aud` differs from the issuer row's `expected_audience`.
+
+**After a pass:** post the table on #112, with the date and the commit SHA. It contains no tokens or keys. The
+docs lane then records the result in [`CI.md`](./CI.md) §3 and in row 5 above. A pass is evidence for the
+development environment only. It does not authorize enabling the integration anywhere else.
 
 ## 6. Handling rules
 

@@ -6,6 +6,8 @@ import { V2AppShell } from "@/components/v2/V2AppShell"
 import { resolveV2Shell } from "@/lib/marketplace-v2/business-switcher"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 
+import { plexFaceDeclarations } from "./_fonts/ibm-plex"
+
 // DS-01 (#144): the semantic token layer. Tokens apply only inside .ll-theme (the AppShell root), so legacy
 // pages are unaffected. DS-02 (#145): the shared AppShell replaces the hand-rolled header.
 import "@logloads/ui/tokens.css"
@@ -25,17 +27,21 @@ export default async function MarketplaceV2Layout({ children }: { children: Reac
   const { business, capabilities } = await resolveV2Shell()
 
   return (
-    <V2AppShell
-      banner={
-        <p role="note">
-          Marketplace V2 development preview. Listings come from the current LogLoads data store; nothing here
-          dispatches trucks, records loads or charges a fee.
-        </p>
-      }
-      business={business}
-      capabilities={capabilities}
-    >
-      {children}
-    </V2AppShell>
+    <>
+      {/* #148: the self-hosted IBM Plex faces, for V2 only (app/v2/_fonts/ibm-plex.ts). Build-time constant. */}
+      <style dangerouslySetInnerHTML={{ __html: plexFaceDeclarations }} />
+      <V2AppShell
+        banner={
+          <p role="note">
+            Marketplace V2 development preview. Listings come from the current LogLoads data store; nothing here
+            dispatches trucks, records loads or charges a fee.
+          </p>
+        }
+        business={business}
+        capabilities={capabilities}
+      >
+        {children}
+      </V2AppShell>
+    </>
   )
 }

@@ -141,6 +141,15 @@ Every `SECURITY DEFINER` function in `01_schema.sql`, `02_access.sql`, and `03_e
 | `admin_grant_founding_promotion`, `admin_grant_founding_hauler_badge`, `admin_set_org_verification`, `admin_moderate_job_posting`, `admin_read_landing_private` | `authenticated` | Require `marketplace.is_platform_admin(...)` with specific staff role (`billing`, `moderator`, `support`), non-empty audit reason, and write an `audit_events` row in the same transaction. |
 | `sync_verified_identity`, `open_subscription_cycle`, `activate_job_boost`, `resolve_invitation_delivery`, `expire_stale_invitation_reservations` | `service_role` | Narrow server-worker entry points; `service_role` has zero direct table privileges in `marketplace`. |
 
+### Deployment note: `18_v2_review_106_hardening.sql` changes a database-wide default (HF-18, #187)
+
+Migration 18 runs `ALTER DEFAULT PRIVILEGES FOR ROLE current_user REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`, without `IN SCHEMA`. It applies to the whole database for the role that applies 18, which on Supabase is `postgres`. Check the following before you apply 18 to a database that holds anything besides `marketplace`:
+
+* Every function that role creates afterwards, in any schema, gets no `EXECUTE` for `PUBLIC`. This includes later pilot migrations and Dashboard SQL run as `postgres`.
+* On Supabase, the per-schema defaults for `postgres` in `public` and `storage` still add their grants to the API roles. Any other schema needs an explicit `GRANT EXECUTE`, and so does any other role, for example `supabase_auth_admin` for an Auth hook. Without one, a helper called from an RLS policy fails with "permission denied for function".
+* Extensions that Supabase installs belong to `supabase_admin`, and trigger functions need no `EXECUTE` when they fire, so neither is affected.
+* Dropping the `marketplace` schema does not undo it. To revert it, run `ALTER DEFAULT PRIVILEGES FOR ROLE <role> GRANT EXECUTE ON FUNCTIONS TO PUBLIC`.
+
 ---
 
 ## 5. All 32 Normalized Tables and Key Indexes

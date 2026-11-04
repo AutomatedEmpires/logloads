@@ -35,10 +35,19 @@ The retired 5% fee is historical. Inline code like \`[x](./missing.md)\` is not 
 `
 
 const BASE = {
-  "package.json": JSON.stringify({ name: "fixture", scripts: { guardrails: "node x", "docs:check": "node y" } }),
+  "package.json": JSON.stringify({
+    name: "fixture",
+    scripts: { guardrails: "node x", "docs:check": "node y" },
+    devDependencies: { "@changesets/cli": "2.0.0", "@playwright/test": "1.0.0", eslint: "8.0.0", typescript: "5.0.0" }
+  }),
   "pnpm-workspace.yaml": 'packages:\n  - "apps/*"\n',
-  "apps/web/package.json": JSON.stringify({ name: "@fixture/web", scripts: { dev: "next dev" } }),
+  "apps/web/package.json": JSON.stringify({
+    name: "@fixture/web",
+    scripts: { dev: "next dev" },
+    dependencies: { next: "15.0.0" }
+  }),
   "apps/web/lib/session.ts": "export {}\n",
+  "apps/web/app/(marketing)/page.tsx": "export {}\n",
   "ops/production-env-contract.json": JSON.stringify({
     variables: [{ name: "LOGLOADS_MARKETPLACE_V2" }, { name: "NEXT_PUBLIC_APP_URL" }],
     unused_in_code_remove_or_ignore: ["NEXT_PUBLIC_MAP_PROVIDER / NOTIFICATION_PROVIDER (listed in .env.example; unused)"],
@@ -120,6 +129,17 @@ test("rule 1: links in fenced code are ignored and verbatim archives are exempt 
   assert.deepEqual(rules({ "docs/DECISIONS.md": "# Decisions\n\n[gone](./gone.md)\n" }), [])
 })
 
+test("rule 1: a link destination keeps balanced parentheses (Next.js route groups), titles and <…>", () => {
+  assert.deepEqual(rules(guide("See [the page](../apps/web/app/(marketing)/page.tsx).")), [])
+  assert.deepEqual(
+    rules(guide('See [workflow](./AGENT_WORKFLOW.md "Workflow") and [plan](<./product/TRANSITION_PLAN.md>).')),
+    []
+  )
+  const [finding] = run(guide("See [the page](../apps/web/app/(marketing)/nope.tsx).")).errors
+  assert.equal(finding.message, "broken relative link → ../apps/web/app/(marketing)/nope.tsx")
+  assert.deepEqual(rules(guide("A stray ](not a link and (an aside).")), [])
+})
+
 test("rule 1: an anchor must name a heading or id in the target file", () => {
   assert.deepEqual(rules(guide("See [rules](./AGENT_WORKFLOW.md#branch-rules).")), ["anchor"])
   assert.deepEqual(rules(guide("See [here](#no-such-heading).")), ["anchor"])
@@ -132,6 +152,9 @@ test("rule 2: a backticked docs path must exist unless it is said to be at the a
   assert.deepEqual(rules(guide("Read `docs/HANDOFF-2026-07-27.md` first.")), ["removed-ref"])
   assert.deepEqual(rules(guide("Read `docs/HANDOFF-2026-07-27.md` at tag `archive/docs-history-20261102`.")), [])
   assert.deepEqual(rules(guide("The percentage stage of `docs/HANDOFF-2026-07-27.md`.")), ["removed-ref"])
+  assert.deepEqual(rules(guide("Each HTML tag is described in `docs/GONE.md`.")), ["removed-ref"])
+  assert.deepEqual(rules(guide("Recovery steps live in `docs/GONE.md`.")), ["removed-ref"])
+  assert.deepEqual(rules(guide("`docs/GONE.md` is kept at the archive tag.")), [])
   assert.deepEqual(rules({ "README.md": "# Fixture\n\nRead `docs/HANDOFF.md`.\n" }), ["removed-ref"])
   // The archive index lists removed paths by design (see BASE).
   assert.deepEqual(rules({ "docs/archive/README.md": "# Archive\n\n**Status:** HISTORICAL.\n\n`docs/GONE.md`\n" }), [])
@@ -215,6 +238,33 @@ test("rule 10: production-namespace env names in code must be in the env contrac
   assert.deepEqual(rules(guide("Tooling: `DS_E2E_PORT=4100`, `SMOKE_BASE`, `INVITABLE_ROLES` are out of scope.")), [])
   const [finding] = run(guide("Set `LOGLOADS_NOT_REAL=1`.")).errors
   assert.equal(finding.message, "LOGLOADS_NOT_REAL is not in ops/production-env-contract.json")
+})
+
+test("rule 10: generic NODE_, GITHUB_, VERCEL_ and NEXT_ names are outside the project's namespaces", () => {
+  const generic = "`NODE_OPTIONS=--max-old-space-size=4096`, `GITHUB_TOKEN`, `NEXT_TELEMETRY_DISABLED=1`, `VERCEL_URL`"
+  assert.deepEqual(rules(guide(`Set ${generic}.`)), [])
+  assert.deepEqual(rules(guide("```bash\nexport NODE_ENV=production GITHUB_SHA=abc\n```")), [])
+  assert.deepEqual(rules(guide("The Supabase CLI reads `SUPABASE_ACCESS_TOKEN`.")), [])
+  assert.deepEqual(rules(guide("Set `POSTHOG_NOT_REAL` and `SUPABASE_NOT_REAL`.")), ["env-name", "env-name"])
+})
+
+test("rule 9: pnpm commands and dependency binaries are accepted, and `pnpm run` needs a script", () => {
+  const commands = "`pnpm approve-builds`, `pnpm tsc --noEmit`, `pnpm changeset`, `pnpm eslint .`, `pnpm playwright install`"
+  assert.deepEqual(rules(guide(`Run ${commands}.`)), [])
+  assert.deepEqual(rules(guide("Run `pnpm --filter @fixture/web next build` or `pnpm --filter @fixture/web tsc`.")), [])
+  assert.deepEqual(rules(guide("Run `pnpm run tsc`.")), ["pnpm-script"])
+  assert.deepEqual(rules(guide("Run `pnpm prettier --check .`.")), ["pnpm-script"])
+  // A scoped package's own name is not a binary: `@playwright/test` does not make `pnpm test` valid.
+  assert.deepEqual(rules(guide("Run `pnpm test`.")), ["pnpm-script"])
+  const [finding] = run(guide("Run `pnpm prettier --check .`.")).errors
+  assert.match(finding.message, /no script "prettier" in the root package\.json, and no dependency binary of that name/)
+})
+
+test("rule 9: a quoted --filter value names the same package", () => {
+  const quoted = "`pnpm --filter \"@fixture/web\" dev`, `pnpm --filter='@fixture/web' dev`, `pnpm -F \"./apps/web\" dev`"
+  assert.deepEqual(rules(guide(`Run ${quoted}.`)), [])
+  const [finding] = run(guide('Run `pnpm --filter "@fixture/missing" dev`.')).errors
+  assert.equal(finding.message, "`pnpm --filter @fixture/missing` names no workspace package")
 })
 
 test("a reviewed allowlist entry suppresses one finding and an unused entry is reported", () => {

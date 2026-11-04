@@ -163,6 +163,23 @@ describe("landing reviews and responds", () => {
     expect(() => expressMarketplaceInterest(state, hauler, { loadPostingId: openJob.id, trucksOffered: 2 }, AT)).toThrow("closed this inquiry")
   })
 
+  it("keeps a decline final: withdrawing and resubmitting cannot reopen it (#187 HF-03)", () => {
+    const { hauler, landing, openJob, state } = fixture()
+    const { interest } = expressMarketplaceInterest(state, hauler, { loadPostingId: openJob.id, trucksOffered: 1 }, AT)
+    respondToMarketplaceInterest(state, landing, { decision: "declined", interestId: interest.id }, AT)
+    const auditCount = state.auditEvents.length
+
+    expect(() => withdrawMarketplaceInterest(state, hauler, interest.id, AT)).toThrow("The landing has closed this inquiry")
+    expect(() => expressMarketplaceInterest(state, hauler, { loadPostingId: openJob.id, trucksOffered: 1 }, AT)).toThrow("closed this inquiry")
+
+    expect(interest).toMatchObject({ status: "declined", withdrawnAt: null })
+    expect(state.auditEvents).toHaveLength(auditCount)
+    expect(listMarketplaceInterestsForLanding(state, landing).find((row) => row.id === interest.id)?.status).toBe("declined")
+    expect(() =>
+      respondToMarketplaceInterest(state, landing, { body: "Back on?", decision: "replied", interestId: interest.id, replyId: REPLY_2 }, AT)
+    ).toThrow("This inquiry is closed")
+  })
+
   it("lets the hauler withdraw and later renew; the landing cannot act on a withdrawn inquiry", () => {
     const { hauler, landing, openJob, state } = fixture()
     const { interest } = expressMarketplaceInterest(state, hauler, { loadPostingId: openJob.id, trucksOffered: 1 }, AT)

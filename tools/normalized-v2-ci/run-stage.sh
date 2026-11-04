@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Runs one normalized-v2 validation stage against the guarded disposable database
-# and performs independent post-stage checks. Usage: run-stage.sh <1|2|3|4|5>
+# and performs independent post-stage checks. Usage: run-stage.sh <stage number, 1..22>
 # Logs: $RUNNER_TEMP/normalized-v2-ci/logs/stage<N>.log (uploaded on failure).
 # =============================================================================
 set -euo pipefail
@@ -230,6 +230,39 @@ case "$STAGE" in
     echo "  executed assertions reporting PASS: $PASSES" | tee -a "$LOG" | tee -a "$SUMMARY"
     [[ "$PASSES" -ge 50 ]] || { echo "STAGE 17: only $PASSES PASS notices; expected at least 50" >&2; exit 1; }
     ;;
+  18)
+    run_migration "$DIR/18_v2_review_106_hardening.sql"
+    aligned_privilege_checks "'job_publication_attestations','legacy_job_imports','job_moderation_holds','billing_provider_events','schema_migrations'"
+    check "D-1/D-2: the migration ledger records 06, 11, 12, 16, 18 in order" "select string_agg(version, ',' order by applied_at, version) = '06,11,12,16,18' from marketplace.schema_migrations;"
+    check "HF-05: organizations.created_by is not client-readable; the rest of the organization still is" "select not has_column_privilege('authenticated', 'marketplace.organizations', 'created_by', 'SELECT') and has_column_privilege('authenticated', 'marketplace.organizations', 'legal_name', 'SELECT') and not has_column_privilege('anon', 'marketplace.organizations', 'created_by', 'SELECT');"
+    check "HF-05: app_users and organizations reads go through the visibility helpers" "select count(*) = 3 from pg_policies where schemaname = 'marketplace' and ((tablename = 'app_users' and policyname = 'app_users_read' and qual like '%can_view_app_user%') or (tablename = 'organizations' and policyname = 'organizations_read' and qual like '%can_view_organization%') or (tablename = 'organizations' and policyname = 'organizations_public' and qual like '%org_has_public_presence%'));"
+    check "HF-05: the visibility helpers are executable by the roles their policies serve, and by no other" "select has_function_privilege('authenticated', 'marketplace.can_view_app_user(uuid)', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.can_view_app_user(uuid)', 'EXECUTE') and has_function_privilege('authenticated', 'marketplace.can_view_organization(uuid)', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.can_view_organization(uuid)', 'EXECUTE') and has_function_privilege('anon', 'marketplace.org_has_public_presence(uuid)', 'EXECUTE') and not has_function_privilege('service_role', 'marketplace.org_has_public_presence(uuid)', 'EXECUTE');"
+    check "HF-06: the qualification verification-reset trigger is installed" "select exists (select 1 from pg_trigger t where t.tgrelid = 'marketplace.user_qualifications'::regclass and t.tgname = 'qualification_verification_reset' and t.tgenabled = 'O');"
+    check "HF-16: abuse_reports.reviewed_by is not client-readable; the report's outcome still is" "select not has_column_privilege('authenticated', 'marketplace.abuse_reports', 'reviewed_by', 'SELECT') and has_column_privilege('authenticated', 'marketplace.abuse_reports', 'resolution_note', 'SELECT');"
+    check "HF-18: the migration role's global default for functions withholds EXECUTE from PUBLIC" "select exists (select 1 from pg_default_acl d where d.defaclrole = (select oid from pg_roles where rolname = current_user) and d.defaclnamespace = 0 and d.defaclobjtype = 'f' and not exists (select 1 from aclexplode(d.defaclacl) a where a.grantee = 0));"
+    check "withdraw_interest and estimate_boost_audience keep their grants (authenticated only)" "select has_function_privilege('authenticated', 'marketplace.withdraw_interest(uuid)', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.withdraw_interest(uuid)', 'EXECUTE') and not has_function_privilege('service_role', 'marketplace.withdraw_interest(uuid)', 'EXECUTE') and has_function_privilege('authenticated', 'marketplace.estimate_boost_audience(uuid, text)', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.estimate_boost_audience(uuid, text)', 'EXECUTE');"
+    ;;
+  19)
+    run_sql "$DIR/19_v2_review_106_tests.sql"
+    grep -q "ALL REVIEW-106 HARDENING (HF-03, HF-05, HF-06, HF-15, HF-16, HF-17, HF-18) TESTS PASSED" "$LOG" || { echo "STAGE 19: suite did not reach its final PASS notice" >&2; exit 1; }
+    check "suite rolled back (no test organizations left)" "select count(*) = 0 from marketplace.organizations;"
+    check "suite rolled back (the default-privileges probe function is gone)" "select to_regprocedure('marketplace.s18_default_acl_probe()') is null;"
+    PASSES="$(grep -cE "NOTICE:  00000: PASS: " "$LOG" || true)"
+    echo "  executed assertions reporting PASS: $PASSES" | tee -a "$LOG" | tee -a "$SUMMARY"
+    [[ "$PASSES" -ge 34 ]] || { echo "STAGE 19: only $PASSES PASS notices; expected at least 34" >&2; exit 1; }
+    ;;
+  20)
+    echo "== bash $DIR/20_v2_review_106_concurrency_test.sh" | tee "$LOG"
+    started=$SECONDS
+    set +e
+    timeout --kill-after=30s 300s bash "$DIR/20_v2_review_106_concurrency_test.sh" 2>&1 | tee -a "$LOG"
+    rc=${PIPESTATUS[0]}
+    set -e
+    echo "== exit $rc after $((SECONDS - started))s" | tee -a "$LOG"
+    [[ "$rc" == "0" ]] || exit "$rc"
+    grep -q "ALL REVIEW-106 CONCURRENCY TESTS PASSED" "$LOG" || { echo "STAGE 20: runner did not report completion" >&2; exit 1; }
+    { echo "### Stage 20 review-106 concurrency (HF-15)"; echo '```'; grep -E "^\[|ok:|overlap" "$LOG" || true; echo '```'; } >> "$SUMMARY"
+    ;;
   13)
     run_sql "$DIR/13_v2_phase3_tests.sql"
     grep -q "ALL PHASE 3 POLICY (F1-F5) AND BILLING-ORDERING TESTS PASSED" "$LOG" || { echo "STAGE 13: suite did not reach its final PASS notice" >&2; exit 1; }
@@ -258,6 +291,26 @@ case "$STAGE" in
     [[ "$rc" == "0" ]] || exit "$rc"
     grep -q "MIGRATION DRILL PASSED" "$LOG" || { echo "STAGE 15: drill did not report completion" >&2; exit 1; }
     { echo "### Stage 15 migration sequencing / rollback / recovery drill"; echo '```'; grep -E "^\[|^  ok" "$LOG" || true; echo '```'; } >> "$SUMMARY"
+    ;;
+  21)
+    run_sql "$DIR/21_v2_auth_claims_membership_tests.sql"
+    grep -q "ALL IDENTITY-CLAIM AND MEMBERSHIP-REVOCATION (#112 DATABASE LAYER) TESTS PASSED" "$LOG" || { echo "STAGE 21: suite did not reach its final PASS notice" >&2; exit 1; }
+    check "suite rolled back (no test organizations left)" "select count(*) = 0 from marketplace.organizations where slug like 's21-%';"
+    check "suite rolled back (no extra trusted issuer left)" "select not exists (select 1 from marketplace.trusted_identity_issuers where issuer = 'https://clerk-other.logloads.test');"
+    PASSES="$(grep -cE "NOTICE:  00000: PASS: " "$LOG" || true)"
+    echo "  executed assertions reporting PASS: $PASSES" | tee -a "$LOG" | tee -a "$SUMMARY"
+    [[ "$PASSES" -ge 48 ]] || { echo "STAGE 21: only $PASSES PASS notices; expected at least 48" >&2; exit 1; }
+    ;;
+  22)
+    [[ "${LOGLOADS_DB_ENV:-}" == "supabase-local-ci" ]] || { echo "stage 22 runs only on the Supabase local stack" >&2; exit 2; }
+    echo "== bash $DIR/22_clerk_auth_harness_local.sh" | tee "$LOG"
+    set +e
+    timeout --kill-after=30s 300s bash "$DIR/22_clerk_auth_harness_local.sh" 2>&1 | tee -a "$LOG"
+    rc=${PIPESTATUS[0]}
+    set -e
+    [[ "$rc" == "0" ]] || exit "$rc"
+    grep -q "AUTH HARNESS LOCAL-STACK RUNS PASSED" "$LOG" || { echo "STAGE 22: harness did not report completion" >&2; exit 1; }
+    { echo "### Stage 22 #112 auth harness on the local stack (locally signed tokens through the gateway)"; echo '```'; grep -E "^\[run|^\| |^verify-clerk-supabase-auth: (PASS|FAIL)|^  ok" "$LOG" || true; echo '```'; } >> "$SUMMARY"
     ;;
   *) echo "unknown stage $STAGE" >&2; exit 2 ;;
 esac
