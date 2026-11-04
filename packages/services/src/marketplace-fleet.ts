@@ -205,6 +205,8 @@ export interface CapacityRow {
   state: CapacityState
   /** The start date of a fresh report that starts after today. */
   from: string | null
+  /** The last day of a fresh available report, inclusive. Null when the row is not a current available window. */
+  until: string | null
   stamp: AvailabilityStamp
 }
 
@@ -220,11 +222,11 @@ export function fleetCapacity(fleet: Pick<HaulerFleetView, "units" | "availabili
     const stamp = availabilityStamp(report, now)
 
     if (!report || !stamp.fresh) {
-      return { available: null, configurations, equipmentCode: code, from: null, have, label: marketplaceEquipmentLabel(code), stamp, state: "unknown" }
+      return { available: null, configurations, equipmentCode: code, from: null, have, label: marketplaceEquipmentLabel(code), stamp, state: "unknown", until: null }
     }
 
     if (report.state === "not_available") {
-      return { available: null, configurations, equipmentCode: code, from: null, have, label: marketplaceEquipmentLabel(code), stamp, state: "not_available" }
+      return { available: null, configurations, equipmentCode: code, from: null, have, label: marketplaceEquipmentLabel(code), stamp, state: "not_available", until: null }
     }
 
     const later = report.availableFrom !== null && report.availableFrom > today
@@ -238,7 +240,8 @@ export function fleetCapacity(fleet: Pick<HaulerFleetView, "units" | "availabili
       have,
       label: marketplaceEquipmentLabel(code),
       stamp,
-      state: later ? "available_from" : "available_now"
+      state: later ? "available_from" : "available_now",
+      until: report.availableUntil
     }
   })
 }
