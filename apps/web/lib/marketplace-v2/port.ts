@@ -11,6 +11,9 @@ import type {
   MarketplaceJobDetailView,
   MarketplaceJobDraft,
   MarketplaceJobFilters,
+  MarketplaceLandingAllowanceView,
+  MarketplaceLandingStatus,
+  MarketplaceLandingView,
   MarketplaceListingReportReceipt
 } from "@logloads/contracts"
 
@@ -126,6 +129,37 @@ export interface MarketplaceV2Port {
    * Throws when unsupported.
    */
   reconfirmJob(viewer: MarketplaceV2Viewer, jobId: string, attestation: MarketplaceAvailabilityAttestation): Promise<void>
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // Landing workspace: setup, landings and allowances (#127 UX-04, #133 UX-10). Business rules in
+  // packages/services/src/marketplace-landings.ts; inputs and views in packages/contracts/src/marketplace-landings.ts.
+  // ---------------------------------------------------------------------------------------------------------------
+
+  /**
+   * The active business's own landings, recruiting first, each with its private half for the business's own landing
+   * desk (`job.publish`). Never another business's landings.
+   */
+  listOwnLandings(viewer: MarketplaceV2Viewer): Promise<MarketplaceLandingView[]>
+  /** One of the active business's own landings, or `null` when it is not one of them. */
+  getOwnLanding(viewer: MarketplaceV2Viewer, landingId: string): Promise<MarketplaceLandingView | null>
+  /**
+   * Create a landing (no `landingId`) or edit one's details (`marketplaceLandingInputSchema`). Needs `landing.manage`.
+   * A new landing recruits only when asked and when the plan allows it; an edit never changes the status. A missing
+   * exact location never blocks saving.
+   */
+  saveLanding(viewer: MarketplaceV2Viewer, input: unknown): Promise<{ landingId: string }>
+  /**
+   * Pause, archive, restore or start recruiting at a landing. Starting needs a plan with room (server-enforced);
+   * pausing or archiving unlists the landing's jobs. Needs `landing.manage`.
+   */
+  setLandingStatus(viewer: MarketplaceV2Viewer, landingId: string, status: MarketplaceLandingStatus): Promise<void>
+  /** The active business's plan and counts. Limits come from contracts (`LANDING_PLANS`), never from the store. */
+  landingAllowance(viewer: MarketplaceV2Viewer): Promise<MarketplaceLandingAllowanceView>
+  /**
+   * Set up a landing business owned by the signed-in person (`landingOrganizationInputSchema`). `account` is the
+   * session's own user; there is no business yet. Throws `MarketplaceOperationUnavailableError` when unsupported.
+   */
+  createLandingOrganization(account: Pick<MarketplaceV2Viewer, "userId">, input: unknown): Promise<{ organizationId: string }>
 
   /** Whether saving the hauling-business profile persists through this adapter (#125). */
   readonly supportsHaulerProfile: boolean

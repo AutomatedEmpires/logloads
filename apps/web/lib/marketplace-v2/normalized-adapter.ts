@@ -1,11 +1,20 @@
 import "server-only"
 
+import { randomBytes } from "node:crypto"
+
 import {
+  LANDING_STATUS_CHANGE_REFUSAL,
+  landingActivationRefusal,
+  landingStatusChangeAllowed,
   marketplaceJobPublicationIssues,
   PUBLISH_ATTESTATION_REQUIRED,
   validateMarketplaceJobDraft,
   type MarketplaceAvailabilityAttestation,
-  type MarketplaceJobDraft
+  type MarketplaceCapability,
+  type MarketplaceJobDraft,
+  type MarketplaceLandingAllowanceView,
+  type MarketplaceLandingStatus,
+  type MarketplaceLandingView
 } from "@logloads/contracts"
 
 import type { MarketplaceCalls, MarketplaceDb, MarketplacePrincipal } from "./normalized-db"
@@ -20,12 +29,21 @@ import {
   isUuid,
   jobFilterArguments,
   jobViewFromRow,
+  landingAllowanceFromRow,
   landingFromRow,
+  landingInput,
+  landingOrganizationInput,
+  landingPrivateValues,
+  landingPublicValues,
+  landingStatusInput,
+  landingViewFromRow,
   listingReportReceipt,
   listingReportRow,
+  organizationSlug,
   publishArguments,
   refineDiscovery,
   respondArguments,
+  storeLandingStatus,
   submittedInterestId,
   uuidValue,
   viewerAccessFromRow,
@@ -60,6 +78,9 @@ const LANDING_NOT_OWNED = "Choose one of your organization's landings"
 const NOT_OWN_JOB = "You can only confirm your organization's own job postings"
 const FIX_FIELDS = "Fix the highlighted fields before publishing"
 const RECONFIRM_ATTESTATION_REQUIRED = "Tick the availability confirmation to record that this job is still available"
+const LANDING_NOT_FOUND = "That landing was not found"
+const CANNOT_VIEW_LANDINGS = "Your role cannot see this business's landings"
+const CANNOT_MANAGE_LANDINGS = "Only an owner or manager can change this business's landings"
 /** `withdraw_interest`'s refusal for a declined inquiry (18_v2_review_106_hardening.sql, HF-03). */
 const LANDING_CLOSED = "The landing has closed this inquiry"
 const LISTING_NOT_FOUND = "Listing not found"
@@ -114,6 +135,52 @@ export function createNormalizedMarketplaceV2({ db, now = () => new Date(), prin
     if (!parties || organizationId !== viewer.organizationId) {
       throw new MarketplaceRefusalError(INQUIRY_NOT_FOUND, "42501")
     }
+  }
+
+  // -------------------------------------------------------------------------------------------------------------
+  // Landing workspace (#127, #133)
+  // -------------------------------------------------------------------------------------------------------------
+
+  /** The viewer's capability in the active business, checked in the same transaction as the work. */
+  async function requireCapability(calls: MarketplaceCalls, viewer: MarketplaceV2Viewer, capability: MarketplaceCapability, refusal: string) {
+    const [row] = await calls.call("get_viewer_marketplace_access", { p_org_id: viewer.organizationId })
+
+    if (!row || !viewerAccessFromRow(row).capabilities.includes(capability)) {
+      throw new MarketplaceRefusalError(refusal, "42501")
+    }
+  }
+
+  async function ownLandings(calls: MarketplaceCalls, viewer: MarketplaceV2Viewer, landingId: string | null): Promise<MarketplaceLandingView[]> {
+    return (await calls.landingStatement("own_landings", [viewer.organizationId, landingId])).map(landingViewFromRow)
+  }
+
+  async function allowanceOf(calls: MarketplaceCalls, viewer: MarketplaceV2Viewer): Promise<MarketplaceLandingAllowanceView> {
+    const [row] = await calls.call("get_org_entitlement_state", { p_org_id: viewer.organizationId })
+
+    if (!row) {
+      throw new MarketplaceStoreError()
+    }
+
+    return landingAllowanceFromRow(row)
+  }
+
+  /** The plan rule both adapters share (packages/services); the store's `tg_landing_guard` enforces it again. */
+  async function requireRoomToRecruit(calls: MarketplaceCalls, viewer: MarketplaceV2Viewer, currentStatus: MarketplaceLandingStatus | null) {
+    const refusal = landingActivationRefusal(await allowanceOf(calls, viewer), currentStatus)
+
+    if (refusal) {
+      throw new MarketplaceRefusalError(refusal.message, "23514")
+    }
+  }
+
+  function savedLandingId(rows: unknown[]): string {
+    const id = (rows[0] as { id?: unknown } | undefined)?.id
+
+    if (!isUuid(id)) {
+      throw new MarketplaceRefusalError(LANDING_NOT_FOUND, "P0002")
+    }
+
+    return id
   }
 
   function interestId(value: unknown): string {
@@ -306,6 +373,113 @@ export function createNormalizedMarketplaceV2({ db, now = () => new Date(), prin
       await asViewer(viewer, async (calls) => {
         await requireInquiryParty(calls, target, "hauler", viewer)
         await calls.call("withdraw_interest", { p_interest_id: target })
+      }, write)
+    },
+
+    // -----------------------------------------------------------------------------------------------------------
+    // Landing workspace (#127, #133)
+    // -----------------------------------------------------------------------------------------------------------
+
+    async createLandingOrganization(account, input) {
+      const parsed = landingOrganizationInput(input)
+
+      if (!account || typeof account.userId !== "string" || !account.userId) {
+        throw new MarketplaceRefusalError(NOT_AVAILABLE, "42501")
+      }
+
+      // No business exists yet, so the person acts for none; the store makes them its owner with a landing seat.
+      const id = await db.asUser(await principal({ organizationId: "", userId: account.userId }), async (calls) => {
+        const [created] = await calls.call("create_organization", {
+          p_display_name: parsed.displayName,
+          p_enable_hauler: false,
+          p_home_state: parsed.homeState,
+          p_slug: organizationSlug(parsed.displayName, randomBytes(4).toString("hex"))
+        })
+        return uuidValue(created)
+      }, write)
+
+      return { organizationId: id }
+    },
+
+    async getOwnLanding(viewer, landingId) {
+      if (!isUuid(landingId)) {
+        return null
+      }
+
+      return asViewer(viewer, async (calls) => {
+        await requireCapability(calls, viewer, "job.publish", CANNOT_VIEW_LANDINGS)
+        return (await ownLandings(calls, viewer, landingId))[0] ?? null
+      }, read)
+    },
+
+    async landingAllowance(viewer) {
+      return asViewer(viewer, async (calls) => {
+        await requireCapability(calls, viewer, "job.publish", CANNOT_VIEW_LANDINGS)
+        return allowanceOf(calls, viewer)
+      }, read)
+    },
+
+    async listOwnLandings(viewer) {
+      return asViewer(viewer, async (calls) => {
+        await requireCapability(calls, viewer, "job.publish", CANNOT_VIEW_LANDINGS)
+        return ownLandings(calls, viewer, null)
+      }, read)
+    },
+
+    async saveLanding(viewer, input) {
+      const parsed = landingInput(input)
+
+      return asViewer(viewer, async (calls) => {
+        await requireCapability(calls, viewer, "landing.manage", CANNOT_MANAGE_LANDINGS)
+        let landingId: string
+
+        if (parsed.landingId) {
+          // An edit names one of the ACTIVE business's own landings and never changes its status.
+          if ((await ownLandings(calls, viewer, parsed.landingId)).length === 0) {
+            throw new MarketplaceRefusalError(LANDING_NOT_FOUND, "P0002")
+          }
+
+          landingId = savedLandingId(await calls.landingStatement("update_landing", [parsed.landingId, viewer.organizationId, ...landingPublicValues(parsed)]))
+        } else {
+          if (parsed.recruiting) {
+            await requireRoomToRecruit(calls, viewer, null)
+          }
+
+          const status = parsed.recruiting ? "active" : "inactive"
+          const [name, area, lat, lng, state, county] = landingPublicValues(parsed)
+          landingId = savedLandingId(await calls.landingStatement("insert_landing", [viewer.organizationId, name, status, area, lat, lng, state, county]))
+        }
+
+        await calls.landingStatement("save_landing_private", [landingId, viewer.organizationId, ...landingPrivateValues(parsed)])
+        return { landingId }
+      }, write)
+    },
+
+    async setLandingStatus(viewer, landingId, status) {
+      const target = landingStatusInput(landingId, status)
+
+      await asViewer(viewer, async (calls) => {
+        await requireCapability(calls, viewer, "landing.manage", CANNOT_MANAGE_LANDINGS)
+        const [current] = await ownLandings(calls, viewer, target.landingId)
+
+        if (!current) {
+          throw new MarketplaceRefusalError(LANDING_NOT_FOUND, "P0002")
+        }
+
+        if (current.status === target.status) {
+          return
+        }
+
+        if (!landingStatusChangeAllowed(current.status, target.status)) {
+          throw new MarketplaceRefusalError(LANDING_STATUS_CHANGE_REFUSAL, "23514")
+        }
+
+        if (target.status === "active") {
+          await requireRoomToRecruit(calls, viewer, current.status)
+        }
+
+        // Pausing or archiving a recruiting landing pauses its active jobs in the same statement (tg_landing_after).
+        savedLandingId(await calls.landingStatement("set_landing_status", [target.landingId, viewer.organizationId, storeLandingStatus(target.status)]))
       }, write)
     },
 
