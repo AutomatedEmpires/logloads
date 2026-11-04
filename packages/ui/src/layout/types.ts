@@ -39,13 +39,38 @@ export interface AppShellProps {
   business?: BusinessSwitcherProps
   children: ReactNode
   density?: Density              // default "comfortable"; scoped via data-density
-  banner?: ReactNode             // e.g. preview or billing-state notices; never marketing
+  banner?: ReactNode             // e.g. billing-state notices; never marketing. The preview note lives in `account`.
+  /**
+   * DEVIATION (addition, #124): the top bar's account menu, the "[Account]" of 02_EXPERIENCE_DESIGN.md §2.1.
+   * It carries the development-preview note instead of a page-wide banner (§2.2). Omitted: no account menu.
+   */
+  account?: AccountMenuProps
 }
 
 export interface GlobalNavigationProps {
   items: NavItem[]
   activeId: string
   business?: BusinessSwitcherProps // DEVIATION: optional, as on AppShellProps
+  account?: AccountMenuProps       // DEVIATION (addition), as on AppShellProps
+}
+
+/**
+ * DEVIATION (addition, #124): the account menu at the end of the top bar. A disclosure (a native
+ * <details>), not an ARIA menu: it holds text as well as links, and it opens and closes with Enter or
+ * Space without JavaScript. With scripts, Escape closes it and returns focus to its trigger, and a click
+ * or focus outside closes it.
+ */
+export interface AccountMenuProps {
+  /** The signed-in person, shown at the top of the panel. Omitted for a visitor. */
+  person?: { name: string; email?: string }
+  /** Plain links, in order: e.g. "Switch business" for a member, "Sign in" for a visitor. */
+  links?: Array<{ id: string; label: string; href: string }>
+  /** A short notice under its own title, e.g. the development preview. Never marketing. */
+  note?: { title: string; body: ReactNode }
+  /** A short tag on the trigger while the note applies, e.g. "Preview", so the notice stays discoverable. */
+  tag?: string
+  /** A control the app supplies at the end of the panel, e.g. its sign-out button. */
+  action?: ReactNode
 }
 
 /** Bottom tabs below bp-lg; at most 5 items (extra items are not rendered). */

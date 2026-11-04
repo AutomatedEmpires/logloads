@@ -57,7 +57,8 @@
   border: 1px solid var(--ll-color-border-strong);
   border-radius: var(--ll-radius-md);
   background: var(--ll-color-surface);
-  box-shadow: var(--ll-shadow-md);
+  /* No shadow while it is off-screen: its 24 px blur reached into the top-left of every page. */
+  box-shadow: none;
   color: var(--ll-color-text);
   font-weight: var(--ll-weight-semibold);
   text-decoration: underline;
@@ -65,7 +66,8 @@
   transform: translateY(calc(-100% - var(--ll-space-4)));
 }
 
-/* Restating the shadow here outranks the app's legacy global :focus-visible halo whatever the stylesheet order. */
+/* The shadow appears only with focus. Setting it here also outranks the app's legacy global :focus-visible halo,
+   whatever the stylesheet order. */
 .skip:focus {
   box-shadow: var(--ll-shadow-md);
   transform: none;

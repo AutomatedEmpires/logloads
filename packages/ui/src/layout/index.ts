@@ -2,6 +2,7 @@
  * Layout foundations (DS-02, #145), exported as "@logloads/ui/layout". Render inside <AppShell>, whose
  * root carries `ll-theme ll-app`; import "@logloads/ui/tokens.css" once in the route layout.
  */
+export { ACCOUNT_MENU_LABEL, AccountMenu } from "./AccountMenu"
 export { AppShell, MAIN_CONTENT_ID } from "./AppShell"
 export { BusinessSwitcher } from "./BusinessSwitcher"
 export { ContentGrid } from "./ContentGrid"
@@ -15,6 +16,7 @@ export { bottomTabItems, MAX_BOTTOM_TABS, ResponsiveNavigation } from "./Respons
 export { SEARCH_PARAMS, SearchToolbar } from "./SearchToolbar"
 export { Section } from "./Section"
 export type {
+  AccountMenuProps,
   AppShellProps,
   BusinessSwitcherProps,
   ContentGridProps,
