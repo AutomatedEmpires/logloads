@@ -2,8 +2,9 @@ import { defineConfig, devices } from "@playwright/test"
 
 export default defineConfig({
   testDir: ".",
-  // The design-system suite needs Marketplace V2 on and has its own server: design-system.config.mjs.
-  testIgnore: "design-system.spec.ts",
+  // The design-system suite needs Marketplace V2 on and has its own server: design-system.config.mjs. The normalized
+  // loop needs its own disposable store and runs only in normalized-e2e-loop.yml: v2-normalized-loop.config.mjs.
+  testIgnore: ["design-system.spec.ts", "v2-normalized-loop.spec.ts"],
   timeout: 60_000,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
