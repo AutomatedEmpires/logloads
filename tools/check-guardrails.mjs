@@ -35,7 +35,6 @@ const commercialCustomerSurfaces = new Set([
   "apps/web/components/v3/BillingSettings.tsx",
   "apps/web/components/v3/PublicPages.tsx",
   "apps/web/components/v3/Shells.tsx",
-  "apps/web/lib/billing-actions.ts",
   "apps/web/lib/plans.ts",
   "apps/web/lib/subscription-billing-data.ts",
   "apps/web/lib/v3-shared.ts"

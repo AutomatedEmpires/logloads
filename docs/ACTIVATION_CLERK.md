@@ -99,6 +99,7 @@ Required proof before the application relies on normalized RLS:
 1. Configure Supabase's third-party auth integration for the **correct** Clerk environment, starting with
    development. Supabase validates signature, issuer, JWKS, and expiry at its API gateway. SQL claim checks
    with simulated claims cannot substitute for that cryptographic verification.
+   The development setup steps and the one-command check are [`SECURITY.md`](./SECURITY.md) §5.1.
 2. Require explicit, valid identity and role claims. Never fall back from a missing role to an authorized
    role. Treat user-editable metadata as untrusted.
 3. Link a verified `(issuer, subject)` to exactly one application user. Disabled or suspended users must fail
