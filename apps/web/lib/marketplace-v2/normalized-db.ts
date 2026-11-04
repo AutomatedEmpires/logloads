@@ -37,7 +37,7 @@ export interface MarketplacePrincipal {
   audience: string
 }
 
-type ArgumentType = "uuid" | "text" | "integer" | "bigint" | "numeric" | "boolean" | "date" | "jsonb" | "text[]"
+type ArgumentType = "uuid" | "text" | "bpchar" | "integer" | "bigint" | "numeric" | "boolean" | "date" | "jsonb" | "text[]"
 
 interface FunctionSpec {
   args: Readonly<Record<string, ArgumentType>>
@@ -49,7 +49,15 @@ interface FunctionSpec {
 
 /** The closed list of database functions the adapter may call. Names and argument names match the SQL exactly. */
 export const MARKETPLACE_FUNCTIONS = {
+  // Landing workspace (#127): a landing business owned by the caller (03_entitlements.sql, 06 §4).
+  create_organization: {
+    anonymous: false,
+    args: { p_display_name: "text", p_enable_hauler: "boolean", p_home_state: "bpchar", p_slug: "text" },
+    returns: "value"
+  },
   get_marketplace_job: { anonymous: true, args: { p_job_id: "uuid" }, returns: "rows" },
+  // Landing workspace (#127, #133): plan, counts and the current cycle's invitations (03_entitlements.sql).
+  get_org_entitlement_state: { anonymous: false, args: { p_org_id: "uuid" }, returns: "rows" },
   get_viewer_marketplace_access: { anonymous: false, args: { p_org_id: "uuid" }, returns: "rows" },
   list_authoring_landings: { anonymous: false, args: { p_org_id: "uuid" }, returns: "rows" },
   list_hauler_equipment_options: { anonymous: false, args: { p_org_id: "uuid" }, returns: "rows" },
@@ -123,11 +131,90 @@ export interface MarketplaceInquiryParties {
   haulerOrganizationId: string
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Landing workspace statements (#127, #133). The schema has no function for creating or editing a landing: its
+// tables, column grants, row-level security and triggers ARE the interface (02_access.sql: `landings_insert`,
+// `landings_update`, `landing_private_*`, `tg_landing_guard` for the plan cap, `tg_landing_after` to pause a landing's
+// jobs). These statements run as the person inside the same identity-bound transaction as the functions, every value
+// bound as text and cast in SQL. The public point is rounded to the 0.10 degree grid in SQL before it is written
+// (V2-DEC-01; the trigger snaps it again), so the exact location only ever reaches `landing_private_details`.
+// ---------------------------------------------------------------------------------------------------------------
+
+/** The 0.10 degree public grid point for a latitude and longitude bound as text, or NULL when there is none. */
+const publicPoint = (lat: string, lng: string) =>
+  `case when ${lat}::text is null or ${lng}::text is null then null else extensions.st_setsrid(extensions.st_makepoint(round(${lng}::text::numeric, 1)::double precision, round(${lat}::text::numeric, 1)::double precision), 4326)::extensions.geography end`
+
+const exactPoint = (lat: string, lng: string) =>
+  `case when ${lat}::text is null or ${lng}::text is null then null else extensions.st_setsrid(extensions.st_makepoint(${lng}::text::double precision, ${lat}::text::double precision), 4326)::extensions.geography end`
+
+export const LANDING_STATEMENTS = {
+  /** $1 org id, $2 landing id or NULL for all. The private columns come back only where RLS lets the person see them. */
+  own_landings: {
+    params: 2,
+    text: `select to_jsonb(r) as row from (
+  select l.id, l.name, l.status, l.public_area_label, l.state_code, l.county, l.updated_at,
+         extensions.st_y(l.public_point::extensions.geometry) as public_lat,
+         extensions.st_x(l.public_point::extensions.geometry) as public_lng,
+         extensions.st_y(p.exact_point::extensions.geometry) as exact_lat,
+         extensions.st_x(p.exact_point::extensions.geometry) as exact_lng,
+         p.gate_instructions, p.site_contact_name, p.site_contact_phone,
+         (select count(*) from marketplace.job_postings j
+          where j.landing_id = l.id and j.org_id = l.org_id and j.status = 'active')::integer as active_jobs
+  from marketplace.landings l
+  left join marketplace.landing_private_details p on p.landing_id = l.id and p.org_id = l.org_id
+  where l.org_id = $1::text::uuid and ($2::text is null or l.id = $2::text::uuid)
+  order by case l.status when 'active' then 0 when 'inactive' then 1 else 2 end, l.name, l.id
+) as r`
+  },
+  /** $1 org, $2 name, $3 status, $4 area label, $5 lat, $6 lng, $7 state code, $8 county. */
+  insert_landing: {
+    params: 8,
+    text: `insert into marketplace.landings (org_id, name, status, public_area_label, public_point, state_code, county)
+values ($1::text::uuid, $2::text, $3::text, $4::text, ${publicPoint("$5", "$6")}, $7::text, $8::text)
+returning jsonb_build_object('id', id) as row`
+  },
+  /** $1 landing, $2 org, $3 name, $4 area label, $5 lat, $6 lng, $7 state code, $8 county. Never the status. */
+  update_landing: {
+    params: 8,
+    text: `update marketplace.landings
+set name = $3::text, public_area_label = $4::text, public_point = ${publicPoint("$5", "$6")}, state_code = $7::text, county = $8::text
+where id = $1::text::uuid and org_id = $2::text::uuid
+returning jsonb_build_object('id', id) as row`
+  },
+  /** $1 landing, $2 org, $3 lat, $4 lng, $5 gate instructions, $6 contact name, $7 contact phone. Directions are kept. */
+  save_landing_private: {
+    params: 7,
+    text: `with changed as (
+  update marketplace.landing_private_details
+  set exact_point = ${exactPoint("$3", "$4")}, gate_instructions = $5::text, site_contact_name = $6::text, site_contact_phone = $7::text
+  where landing_id = $1::text::uuid and org_id = $2::text::uuid
+  returning landing_id
+), added as (
+  insert into marketplace.landing_private_details (landing_id, org_id, exact_point, gate_instructions, site_contact_name, site_contact_phone)
+  select $1::text::uuid, $2::text::uuid, ${exactPoint("$3", "$4")}, $5::text, $6::text, $7::text
+  where not exists (select 1 from changed)
+  returning landing_id
+)
+select jsonb_build_object('id', coalesce((select landing_id from changed), (select landing_id from added))) as row`
+  },
+  /** $1 landing, $2 org, $3 store status (active, inactive, archived). The triggers enforce the cap and pause jobs. */
+  set_landing_status: {
+    params: 3,
+    text: `update marketplace.landings set status = $3::text
+where id = $1::text::uuid and org_id = $2::text::uuid
+returning jsonb_build_object('id', id, 'status', status) as row`
+  }
+} as const satisfies Record<string, { params: number; text: string }>
+
+export type LandingStatementName = keyof typeof LANDING_STATEMENTS
+
 /** What a unit of work can do inside one identity-bound transaction. */
 export interface MarketplaceCalls {
   /** Rows as JSON objects (`rows`), `[value]` (`value`) or `[]` (`void`). */
   call<F extends MarketplaceFunctionName>(fn: F, args: MarketplaceCallArguments<F>): Promise<unknown[]>
   inquiryParties(interestId: string): Promise<MarketplaceInquiryParties | null>
+  /** One catalogued landing statement (#127, #133) with exactly its bound values; rows as JSON objects. */
+  landingStatement(name: LandingStatementName, values: ReadonlyArray<string | null>): Promise<unknown[]>
 }
 
 export interface MarketplaceDb {
@@ -239,6 +326,7 @@ function serialize(value: MarketplaceArgumentValue, type: ArgumentType, name: st
   switch (type) {
     case "uuid":
     case "text":
+    case "bpchar":
     case "date":
       if (typeof value !== "string") break
       return value
@@ -387,6 +475,24 @@ function callsFor(tx: TransactionSql, anonymous: boolean): MarketplaceCalls {
       }
 
       return { haulerOrganizationId: row.hauler_org_id, jobId: row.job_id, jobOrganizationId: row.job_org_id }
+    },
+
+    async landingStatement(name, values) {
+      if (anonymous) {
+        throw new TypeError("Landings need a signed-in person")
+      }
+
+      if (!Object.prototype.hasOwnProperty.call(LANDING_STATEMENTS, name)) {
+        throw new TypeError(`${String(name)} is not a catalogued landing statement`)
+      }
+
+      const statement = LANDING_STATEMENTS[name]
+
+      if (values.length !== statement.params || !values.every((value) => value === null || typeof value === "string")) {
+        throw new TypeError(`${name} takes exactly ${statement.params} text or null values`)
+      }
+
+      return rowsOf(await tx.unsafe(statement.text, [...values]), "row")
     }
   }
 }
