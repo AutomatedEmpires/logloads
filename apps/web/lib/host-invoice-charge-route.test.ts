@@ -51,6 +51,18 @@ vi.mock("@/lib/subscription-stripe", () => ({
 
 import { POST } from "@/app/api/billing/invoices/[invoiceId]/charge/route"
 
+const SAME_ORIGIN = { Origin: "https://logloads.test", "Sec-Fetch-Site": "same-origin" }
+
+function charge(headers: Record<string, string> = SAME_ORIGIN) {
+  return POST(
+    new Request("https://logloads.test/api/billing/invoices/invoice-1/charge", {
+      headers,
+      method: "POST"
+    }),
+    { params: Promise.resolve({ invoiceId: "invoice-1" }) }
+  )
+}
+
 describe("manual host invoice collection", () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -64,18 +76,28 @@ describe("manual host invoice collection", () => {
       new Error("wrong Stripe account")
     )
 
-    const response = await POST(
-      new Request("https://logloads.test/api/billing/invoices/invoice-1/charge", {
-        method: "POST"
-      }),
-      { params: Promise.resolve({ invoiceId: "invoice-1" }) }
-    )
+    const response = await charge()
 
     expect(response.status).toBe(503)
     await expect(response.json()).resolves.toEqual({
       error: "Stripe billing account verification failed"
     })
     expect(mocks.resolveStripeBilling).not.toHaveBeenCalled()
+    expect(mocks.chargeHostInvoice).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ["a cross-site page", { Origin: "https://attacker.example", "Sec-Fetch-Site": "cross-site" }],
+    ["a same-site sibling", { Origin: "https://logloads.test", "Sec-Fetch-Site": "same-site" }],
+    ["a request without an Origin", {}]
+  ])("refuses %s before reading the admin session (HF-10)", async (_label, headers) => {
+    const response = await charge(headers)
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: "This request must come from the LogLoads application"
+    })
+    expect(mocks.requireAdminApiActor).not.toHaveBeenCalled()
     expect(mocks.chargeHostInvoice).not.toHaveBeenCalled()
   })
 })

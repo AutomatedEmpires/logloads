@@ -3,14 +3,26 @@ import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse, requireApiActor } from "@/lib/api-actor"
 import { buildNetworkView } from "@/lib/network"
 import { mutateState, readState } from "@/lib/services"
+import { PUBLIC_READ_TTL_MS, shortLivedCache } from "@/lib/short-lived-cache"
+
+/**
+ * The anonymous board is the same redacted projection for every caller, and
+ * building it downloads the whole operating_state document. It is shared for
+ * a short window per instance rather than rebuilt per request (HF-09, #187).
+ */
+const publicBoard = shortLivedCache(PUBLIC_READ_TTL_MS, () =>
+	readState((current) => buildNetworkView(current.state, { kind: "public" }).loads)
+)
 
 export async function GET() {
-	const network = await readState((current) => buildNetworkView(current.state, { kind: "public" }))
-
-	return NextResponse.json(
-		{ loads: network.loads },
-		{ headers: { "Cache-Control": "public, no-store" } }
-	)
+	try {
+		return NextResponse.json(
+			{ loads: await publicBoard.get() },
+			{ headers: { "Cache-Control": "public, no-store" } }
+		)
+	} catch (error) {
+		return apiErrorResponse(error)
+	}
 }
 
 export async function POST(request: NextRequest) {

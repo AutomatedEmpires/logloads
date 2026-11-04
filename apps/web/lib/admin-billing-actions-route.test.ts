@@ -132,10 +132,17 @@ const facade = {
     mocks.scheduleOrganizationSubscriptionPlanChange
 }
 
-function jsonRequest(body: Record<string, unknown>): Request {
+/** A POST as the admin page sends it: the browser adds Origin and Sec-Fetch-Site. */
+function jsonRequest(
+  body: Record<string, unknown>,
+  headers: Record<string, string> = {
+    Origin: "https://logloads.test",
+    "Sec-Fetch-Site": "same-origin"
+  }
+): Request {
   return new Request("https://logloads.test/api/admin/billing/actions", {
     body: JSON.stringify(body),
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     method: "POST"
   })
 }
@@ -233,6 +240,34 @@ beforeEach(() => {
       planCode: "network_pilot"
     }
   ])
+})
+
+describe("admin billing action origin (HF-10)", () => {
+  it.each([
+    ["a cross-site page", { Origin: "https://attacker.example", "Sec-Fetch-Site": "cross-site" }],
+    ["a same-site sibling", { Origin: "https://logloads.test", "Sec-Fetch-Site": "same-site" }],
+    ["a request without an Origin", {}]
+  ])("refuses %s before reading the admin session", async (_label, headers) => {
+    const response = await POST(
+      jsonRequest(
+        {
+          action: "schedule_non_renewal",
+          confirm: "SCHEDULE_NON_RENEWAL",
+          effectiveAt: EFFECTIVE_AT,
+          subscriptionId: SUBSCRIPTION_ID
+        },
+        headers
+      )
+    )
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: "This request must come from the LogLoads application"
+    })
+    expect(mocks.requireAdminApiActor).not.toHaveBeenCalled()
+    expect(mocks.enforceApiRateLimit).not.toHaveBeenCalled()
+    expect(mocks.mutateState).not.toHaveBeenCalled()
+  })
 })
 
 describe("retired admin subscription writes", () => {

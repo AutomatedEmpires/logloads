@@ -10,6 +10,12 @@ const JobMap = dynamic(() => import("./JobMap"), {
   ssr: false
 })
 
-export function JobMapLoader({ points }: { points: JobMapPoint[] }) {
-  return <JobMap points={points} />
+/**
+ * Loads the map chunk only when the page renders this (the visitor asked for the map). Build `points` on the server
+ * with `jobMapPoints(jobs)` (lib/marketplace-v2/job-map.ts) so each pin preview shows the job's public card; points
+ * without a card still plot, and their preview names and links the job. `now` is the request's instant, for the
+ * cards' freshness; without it the map uses the time it opened.
+ */
+export function JobMapLoader({ points, now }: { points: JobMapPoint[]; now?: string }) {
+  return <JobMap now={now} points={points} />
 }

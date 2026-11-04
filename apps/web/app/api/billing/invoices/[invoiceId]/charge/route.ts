@@ -7,6 +7,7 @@ import {
 	platformFeeCollectionEnabled,
 	resolveStripeBilling
 } from "@/lib/billing"
+import { assertSameOrigin } from "@/lib/same-origin"
 import {
 	resolveSubscriptionStripe,
 	verifyExpectedStripeAccount
@@ -24,9 +25,14 @@ import {
  * derived from the bill's id, so a repeat lands on the same Stripe invoice rather
  * than a second one. That is what makes this callable from a scheduler that
  * retries.
+ *
+ * SAME ORIGIN ONLY. The route is driven from an admin's browser session, so a
+ * request from any other site is refused before the session is read (HF-10,
+ * #187). The scheduled run calls `chargeHostInvoice` directly, not this route.
  */
-export async function POST(_request: Request, context: { params: Promise<{ invoiceId: string }> }) {
+export async function POST(request: Request, context: { params: Promise<{ invoiceId: string }> }) {
 	try {
+		assertSameOrigin(request)
 		await requireAdminApiActor()
 
 		const { invoiceId } = await context.params

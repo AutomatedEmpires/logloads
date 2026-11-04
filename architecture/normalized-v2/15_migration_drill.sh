@@ -131,14 +131,14 @@ show_diff() { # show_diff <before rows file> <label>
 }
 
 echo "[1/7] Sequencing: no file controls its own transaction or uses non-transactional DDL..."
-for f in 01_schema.sql 02_access.sql 03_entitlements.sql 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql 16_v2_identity_membership_hardening.sql; do
+for f in 01_schema.sql 02_access.sql 03_entitlements.sql 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql 16_v2_identity_membership_hardening.sql 18_v2_review_106_hardening.sql; do
   # (PL/pgSQL block ends are `end;` / `end if;` and its `begin` carries no semicolon, so they do not match.)
   ! grep -Eiq '^[[:space:]]*(begin|commit|rollback|start[[:space:]]+transaction)[[:space:]]*;' "$SCRIPT_DIR/$f" \
     || fail "$f contains transaction control and cannot be applied atomically"
   ! grep -Eiq '(create|drop)[[:space:]]+(unique[[:space:]]+)?index[[:space:]]+concurrently|^[[:space:]]*vacuum|alter[[:space:]]+system|alter[[:space:]]+type[[:space:]].*add[[:space:]]+value' "$SCRIPT_DIR/$f" \
     || fail "$f contains a statement that cannot run inside a transaction"
 done
-ok "01, 02, 03, 06, 11, 12, 16 contain no transaction control and no non-transactional DDL"
+ok "01, 02, 03, 06, 11, 12, 16, 18 contain no transaction control and no non-transactional DDL"
 
 echo "[2/7] Baseline 01 -> 02 -> 03, each in one transaction, with data..."
 x "drop schema if exists marketplace cascade;"
@@ -182,8 +182,9 @@ ok "pre-migration backup written ($(wc -c < "$TMP/pre_v2.dump") bytes)"
 refused "$SCRIPT_DIR/11_v2_phase3_policy.sql" "requires migration 06"
 refused "$SCRIPT_DIR/12_v2_billing_events.sql" "requires migration 11"
 refused "$SCRIPT_DIR/16_v2_identity_membership_hardening.sql" "requires migration 12"
+refused "$SCRIPT_DIR/18_v2_review_106_hardening.sql" "requires migration 16"
 [[ "$(fp)" == "$FP0" ]] || { show_diff "$TMP/rows0.txt" "after refused out-of-order runs"; fail "a refused out-of-order migration changed something"; }
-ok "11, 12 and 16 before 06 are refused; nothing changed"
+ok "11, 12, 16 and 18 before 06 are refused; nothing changed"
 if psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 -f "$SCRIPT_DIR/06_v2_contract_alignment.sql" >/dev/null 2>"$TMP/autocommit.log"; then
   fail "M1: 06 applied in autocommit mode"
 fi
@@ -198,8 +199,8 @@ grep -q "read-only transaction" "$TMP/plain.log" || fail "M1: later statements o
 [[ "$(fp)" == "$FP0" ]] || { show_diff "$TMP/rows0.txt" "after a plain psql run"; fail "M1: a plain psql run of 06 (no ON_ERROR_STOP) changed something"; }
 ok "06 run by a plain psql without ON_ERROR_STOP changes nothing either (session made read-only)"
 
-echo "[4/7] Rollback: a failure after the last statement of 06 -> 11 -> 12 leaves nothing behind..."
-{ cat "$SCRIPT_DIR/06_v2_contract_alignment.sql" "$SCRIPT_DIR/11_v2_phase3_policy.sql" "$SCRIPT_DIR/12_v2_billing_events.sql" "$SCRIPT_DIR/16_v2_identity_membership_hardening.sql"
+echo "[4/7] Rollback: a failure after the last statement of 06 -> 11 -> 12 -> 16 -> 18 leaves nothing behind..."
+{ cat "$SCRIPT_DIR/06_v2_contract_alignment.sql" "$SCRIPT_DIR/11_v2_phase3_policy.sql" "$SCRIPT_DIR/12_v2_billing_events.sql" "$SCRIPT_DIR/16_v2_identity_membership_hardening.sql" "$SCRIPT_DIR/18_v2_review_106_hardening.sql"
   echo "select 1 / 0; -- injected failure"; } > "$TMP/batch_with_failure.sql"
 if psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$TMP/batch_with_failure.sql" >/dev/null 2>"$TMP/err.log"; then
   fail "the injected failure did not abort the batch"
@@ -214,11 +215,11 @@ if psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$TMP/06_with
 [[ "$(fp)" == "$FP0" ]] || fail "a failed 06 left partial changes"
 ok "a failure at the end of 06 alone also rolls back completely"
 
-echo "[5/7] Forward: 06, 11, 12 each in one transaction; then a live V2-published job..."
-for f in 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql 16_v2_identity_membership_hardening.sql; do apply1 "$SCRIPT_DIR/$f"; done
-[[ "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" == "06,11,12,16" ]] || fail "ledger does not record 06, 11, 12, 16 in order"
+echo "[5/7] Forward: 06, 11, 12, 16, 18 each in one transaction; then a live V2-published job..."
+for f in 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql 16_v2_identity_membership_hardening.sql 18_v2_review_106_hardening.sql; do apply1 "$SCRIPT_DIR/$f"; done
+[[ "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" == "06,11,12,16,18" ]] || fail "ledger does not record 06, 11, 12, 16, 18 in order"
 [[ "$(q "select bool_and(c.relrowsecurity) from pg_class c where c.relnamespace = 'marketplace'::regnamespace and c.relkind in ('r','p');")" == "t" ]] || fail "RLS missing after forward migration"
-ok "06, 11, 12, 16 applied atomically and recorded in order; RLS on every table"
+ok "06, 11, 12, 16, 18 applied atomically and recorded in order; RLS on every table"
 x "
 do \$\$
 declare v_org uuid; v_land uuid; v_job uuid;
@@ -254,10 +255,11 @@ refused "$SCRIPT_DIR/06_v2_contract_alignment.sql" "already applied"
 refused "$SCRIPT_DIR/11_v2_phase3_policy.sql" "already applied"
 refused "$SCRIPT_DIR/12_v2_billing_events.sql" "already applied"
 refused "$SCRIPT_DIR/16_v2_identity_membership_hardening.sql" "already applied"
+refused "$SCRIPT_DIR/18_v2_review_106_hardening.sql" "already applied"
 [[ "$(fp)" == "$FP1" ]] || { show_diff "$TMP/rows1.txt" "after refused re-runs"; fail "a refused re-run changed the catalog or data"; }
 [[ "$(q "select is_legacy_import::text from marketplace.job_postings where title = 'Drill V2 Published Job';")" == "false" ]] \
   || fail "D-1: the V2-published job was reinterpreted as a legacy import"
-ok "06, 11, 12 and 16 re-runs refused; catalog and every table identical; the V2 job is still a V2 posting"
+ok "06, 11, 12, 16 and 18 re-runs refused; catalog and every table identical; the V2 job is still a V2 posting"
 
 echo "[7/7] Recovery: restore the pre-migration backup, then migrate forward again..."
 x "drop schema marketplace cascade;"
@@ -279,22 +281,22 @@ if [[ "${LOGLOADS_DB_ENV:-}" == "ci-disposable" ]]; then
   FRESH_FP="$(fp)"
   [[ "$FRESH_FP" == "$FP0" ]] || fail "restoring the backup into a fresh database did not reproduce the pre-migration fingerprint"
   ok "backup restored into a brand-new database to exactly the pre-migration fingerprint"
-  for f in 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql 16_v2_identity_membership_hardening.sql; do
+  for f in 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql 16_v2_identity_membership_hardening.sql 18_v2_review_106_hardening.sql; do
     psql "$FRESH_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$SCRIPT_DIR/$f" >/dev/null
   done
   [[ "$(q "select count(*) from marketplace.job_postings where title = 'Drill Active Job' and is_legacy_import;")" == "1" \
-     && "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" == "06,11,12,16" ]] \
+     && "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" == "06,11,12,16,18" ]] \
     || fail "the forward migration did not apply cleanly on the freshly restored database"
   TARGET_URL="$DB_URL"
   x "drop database ${FRESH};"
-  ok "the freshly restored database also migrates forward (legacy data carried, ledger 06,11,12,16)"
+  ok "the freshly restored database also migrates forward (legacy data carried, ledger 06,11,12,16,18)"
   ok "not covered by this drill (operator prerequisites): cluster roles, database settings, restoring into another cluster"
 else
   ok "fresh-database restore runs on the plain PostgreSQL target (this target cannot create databases with PostGIS)"
 fi
-for f in 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql 16_v2_identity_membership_hardening.sql; do apply1 "$SCRIPT_DIR/$f"; done
+for f in 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql 16_v2_identity_membership_hardening.sql 18_v2_review_106_hardening.sql; do apply1 "$SCRIPT_DIR/$f"; done
 [[ "$(q "select count(*) from marketplace.job_postings where title = 'Drill Active Job' and is_legacy_import;")" == "1" ]] || fail "forward migration after restore lost data"
-[[ "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" == "06,11,12,16" ]] || fail "ledger after the forward migration is not 06,11,12,16"
+[[ "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" == "06,11,12,16,18" ]] || fail "ledger after the forward migration is not 06,11,12,16,18"
 ok "forward migration after restore succeeded; existing data carried through; the ledger records the re-applied migrations"
 x "drop schema if exists marketplace cascade;"
 

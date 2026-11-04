@@ -29,6 +29,7 @@
     "mapbox-gl": "^3.25.0",
     "maplibre-gl": "^6.16.0",
     "next": "^15.5.28",
+    "postgres": "3.4.9",
     "posthog-js": "^1.396.5",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
