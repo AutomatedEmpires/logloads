@@ -218,6 +218,21 @@ export const seedProfiles: User[] = parseMany(userSchema, [
     isActive: true,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
+  },
+  // #178: the owner of Granite Creek Hauling, a hauling business with listed equipment and no landing of its own,
+  // so a founder-demo login can express interest in another business's public job with per-setup truck counts.
+  {
+    id: "22222222-2222-4222-8222-222222222231",
+    clerkUserId: "clerk-equipped-fleet-1",
+    role: "dispatcher",
+    fullName: "Avery Granite",
+    phone: "555-5001",
+    email: "avery@granitecreek.example",
+    companyId: "33333333-3333-4333-8333-333333333335",
+    verificationStatus: "pending",
+    isActive: true,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
   }
 ])
 
@@ -269,6 +284,23 @@ export const seedCompanies: LoggingCompany[] = parseMany(loggingCompanySchema, [
       email: "emptyfleet@logloads.example"
     },
     notes: "Synthetic empty-state organization for the local founder demo.",
+    archivedAt: null,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "33333333-3333-4333-8333-333333333335",
+    slug: "granite-creek-hauling",
+    legalName: "Granite Creek Hauling LLC",
+    displayName: "Granite Creek Hauling",
+    verificationStatus: "pending",
+    primaryRegion: "Cascade Foothills",
+    contact: {
+      name: "Avery Granite",
+      phone: "555-5001",
+      email: "avery@granitecreek.example"
+    },
+    notes: "Synthetic hauling business with listed equipment for the local founder demo.",
     archivedAt: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
@@ -915,6 +947,61 @@ export const seedTruckProfiles: TruckProfile[] = parseMany(truckProfileSchema, [
     archivedAt: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
+  },
+  // #178: Granite Creek Hauling's three listed rigs (two bunk, one pole) — see seedEquipmentCombinations.
+  {
+    id: "77777777-7777-4777-8777-777777777781",
+    ownerUserId: "22222222-2222-4222-8222-222222222231",
+    companyId: "33333333-3333-4333-8333-333333333335",
+    truckType: "log_truck",
+    unitNumber: "GC-11",
+    make: "Kenworth",
+    model: "T880",
+    plateNumber: "GRN011",
+    vin: "VIN-GC-11",
+    axleCount: 4,
+    maxPayloadTons: 30,
+    equipmentTags: ["chains"],
+    roadAccessCapabilities: ["forest-road", "gravel"],
+    archivedAt: null,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "77777777-7777-4777-8777-777777777782",
+    ownerUserId: "22222222-2222-4222-8222-222222222231",
+    companyId: "33333333-3333-4333-8333-333333333335",
+    truckType: "log_truck",
+    unitNumber: "GC-12",
+    make: "Western Star",
+    model: "49X",
+    plateNumber: "GRN012",
+    vin: "VIN-GC-12",
+    axleCount: 4,
+    maxPayloadTons: 30,
+    equipmentTags: ["chains"],
+    roadAccessCapabilities: ["forest-road", "gravel"],
+    archivedAt: null,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "77777777-7777-4777-8777-777777777783",
+    ownerUserId: "22222222-2222-4222-8222-222222222231",
+    companyId: "33333333-3333-4333-8333-333333333335",
+    truckType: "log_truck",
+    unitNumber: "GC-21",
+    make: "Peterbilt",
+    model: "567",
+    plateNumber: "GRN021",
+    vin: "VIN-GC-21",
+    axleCount: 5,
+    maxPayloadTons: 31,
+    equipmentTags: ["radio"],
+    roadAccessCapabilities: ["steep-grade", "gravel"],
+    archivedAt: null,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
   }
 ])
 
@@ -971,6 +1058,39 @@ export const seedTrailerProfiles: TrailerProfile[] = parseMany(trailerProfileSch
     unitNumber: "TRL-220",
     capacityTons: 30,
     equipmentTags: ["chains"],
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "88888888-8888-4888-8888-888888888891",
+    ownerUserId: "22222222-2222-4222-8222-222222222231",
+    truckId: "77777777-7777-4777-8777-777777777781",
+    trailerType: "bunk_trailer",
+    unitNumber: "TRL-GC11",
+    capacityTons: 30,
+    equipmentTags: ["chains"],
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "88888888-8888-4888-8888-888888888892",
+    ownerUserId: "22222222-2222-4222-8222-222222222231",
+    truckId: "77777777-7777-4777-8777-777777777782",
+    trailerType: "bunk_trailer",
+    unitNumber: "TRL-GC12",
+    capacityTons: 30,
+    equipmentTags: ["chains"],
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "88888888-8888-4888-8888-888888888893",
+    ownerUserId: "22222222-2222-4222-8222-222222222231",
+    truckId: "77777777-7777-4777-8777-777777777783",
+    trailerType: "pole_trailer",
+    unitNumber: "TRL-GC21",
+    capacityTons: 31,
+    equipmentTags: ["stakes"],
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
   }
@@ -1992,6 +2112,20 @@ export const seedOrganizations: Organization[] = parseMany(organizationSchema, [
     archivedAt: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
+  },
+  // #178: a hauling business with listed equipment and no landing. Pending, like New River: no verification
+  // record exists for it, so the seed does not claim one.
+  {
+    id: "33333333-3333-4333-8333-333333333335",
+    slug: "granite-creek-hauling",
+    type: "fleet",
+    legalName: "Granite Creek Hauling LLC",
+    displayName: "Granite Creek Hauling",
+    primaryRegion: "Cascade Foothills",
+    verificationStatus: "pending",
+    archivedAt: null,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
   }
 ])
 
@@ -2073,6 +2207,15 @@ export const seedOrganizationMemberships: OrganizationMembership[] = parseMany(o
     organizationId: "33333333-3333-4333-8333-333333333332",
     userId: "22222222-2222-4222-8222-222222222228",
     role: "driver",
+    status: "active",
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "16161616-1616-4616-8616-161616161631",
+    organizationId: "33333333-3333-4333-8333-333333333335",
+    userId: "22222222-2222-4222-8222-222222222231",
+    role: "owner",
     status: "active",
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
@@ -2218,6 +2361,65 @@ export const seedEquipmentCombinations: EquipmentCombination[] = parseMany(equip
     status: "available",
     homeRegion: "Cascade Foothills",
     lastVerifiedAt: timestamps.updated,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  // #178: Granite Creek Hauling lists two "Log truck + Bunk / short-log" units and one "Log truck + Pole trailer",
+  // so the V2 interest form shows two setups with different caps. Self-reported; never verified (lastVerifiedAt null).
+  {
+    id: "18181818-1818-4818-8818-181818181821",
+    organizationId: "33333333-3333-4333-8333-333333333335",
+    truckProfileId: "77777777-7777-4777-8777-777777777781",
+    trailerProfileId: "88888888-8888-4888-8888-888888888891",
+    assignedDriverProfileId: null,
+    label: "GC-11 with bunk trailer",
+    truckTypes: ["log_truck"],
+    trailerTypes: ["bunk_trailer"],
+    capabilityTags: ["chains", "forest-road"],
+    productLengthMinFeet: 16,
+    productLengthMaxFeet: 40,
+    maxPayloadTons: 30,
+    status: "available",
+    homeRegion: "Cascade Foothills",
+    lastVerifiedAt: null,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "18181818-1818-4818-8818-181818181822",
+    organizationId: "33333333-3333-4333-8333-333333333335",
+    truckProfileId: "77777777-7777-4777-8777-777777777782",
+    trailerProfileId: "88888888-8888-4888-8888-888888888892",
+    assignedDriverProfileId: null,
+    label: "GC-12 with bunk trailer",
+    truckTypes: ["log_truck"],
+    trailerTypes: ["bunk_trailer"],
+    capabilityTags: ["chains", "forest-road"],
+    productLengthMinFeet: 16,
+    productLengthMaxFeet: 40,
+    maxPayloadTons: 30,
+    status: "available",
+    homeRegion: "Cascade Foothills",
+    lastVerifiedAt: null,
+    createdAt: timestamps.created,
+    updatedAt: timestamps.updated
+  },
+  {
+    id: "18181818-1818-4818-8818-181818181823",
+    organizationId: "33333333-3333-4333-8333-333333333335",
+    truckProfileId: "77777777-7777-4777-8777-777777777783",
+    trailerProfileId: "88888888-8888-4888-8888-888888888893",
+    assignedDriverProfileId: null,
+    label: "GC-21 with pole trailer",
+    truckTypes: ["log_truck"],
+    trailerTypes: ["pole_trailer"],
+    capabilityTags: ["radio", "steep-grade"],
+    productLengthMinFeet: 24,
+    productLengthMaxFeet: 42,
+    maxPayloadTons: 31,
+    status: "available",
+    homeRegion: "Cascade Foothills",
+    lastVerifiedAt: null,
     createdAt: timestamps.created,
     updatedAt: timestamps.updated
   }
