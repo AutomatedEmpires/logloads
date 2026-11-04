@@ -20,6 +20,15 @@
 
 .hint { margin: 0; font-size: var(--ll-text-sm); color: var(--ll-color-text-muted); }
 
+/* A date field is several tab stops (its month, day and year segments). Chromium matches :focus-visible, and even
+   :focus, on the input for its first segment only, so the design-system ring is drawn on :focus-within, which holds
+   for every segment (box-shadow: none drops the legacy global halo). */
+.date:focus-within {
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: var(--ll-focus-offset);
+  box-shadow: none;
+}
+
 .empty { margin: 0; font-size: var(--ll-text-md); color: var(--ll-color-text-muted); }
 
 .stamp { margin: 0; font-size: var(--ll-text-sm); color: var(--ll-color-text-secondary); font-variant-numeric: tabular-nums; }

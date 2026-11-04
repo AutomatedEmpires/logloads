@@ -71,6 +71,8 @@ export default async function HaulerTrucksPage({ searchParams }: { searchParams:
   const trucks = fleet.units.filter((unit) => unit.category === "truck")
   const extras = fleet.units.filter((unit) => unit.category === "attachment")
   const failed = answer.outcome !== null && answer.outcome !== "saved"
+  // A field shows the message only when the field is the reason (invalid or refused); "not available" is page-wide.
+  const fieldError = answer.outcome === "invalid" || answer.outcome === "refused" ? answer.message : null
 
   return (
     <div data-ds-page="hauler-trucks">
@@ -110,7 +112,7 @@ export default async function HaulerTrucksPage({ searchParams }: { searchParams:
                     ))}
                   </ul>
                 )}
-                <AddEquipmentForm disabled={!editable} error={answer.form === "add" && failed ? answer.message : null} setup={setup} values={answer.add} />
+                <AddEquipmentForm disabled={!editable} error={answer.form === "add" ? fieldError : null} setup={setup} values={answer.add} />
               </Section>
 
               {rows.length > 0 ? (
@@ -119,7 +121,7 @@ export default async function HaulerTrucksPage({ searchParams }: { searchParams:
                   {rows.map((row) => (
                     <AvailabilityForm
                       disabled={!editable}
-                      error={answer.form === "availability" && failed && answer.availability?.equipmentCode === row.equipmentCode ? answer.message : null}
+                      error={answer.form === "availability" && answer.availability?.equipmentCode === row.equipmentCode ? fieldError : null}
                       key={row.equipmentCode}
                       now={now.toISOString()}
                       row={row}

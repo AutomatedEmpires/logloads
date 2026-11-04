@@ -132,7 +132,7 @@ export function AvailabilityForm({ disabled, error, now, row, setup, values }: {
         <ChoiceCardGroup defaultValue={state} legend={`Are your ${row.label.toLowerCase()}s available?`} name="state" options={STATE_OPTIONS} />
         <div className={styles.pair}>
           <FormField error={error ?? undefined} hint="Only for Available from a date." id={`${id}-from`} label="Available from" optional>
-            <input defaultValue={values?.fromDate ?? row.from ?? ""} max={latest} min={today} name="fromDate" type="date" />
+            <input className={styles.date} defaultValue={values?.fromDate ?? row.from ?? ""} max={latest} min={today} name="fromDate" type="date" />
           </FormField>
           <InterestCountField
             defaultValue={Math.min(row.have, Number(values?.count) || row.available || row.have)}
