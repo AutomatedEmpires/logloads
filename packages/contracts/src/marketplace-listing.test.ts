@@ -45,7 +45,8 @@ const detail: MarketplaceJobDetailView = {
 describe("the public job view", () => {
   it("keeps every public field and drops the poster's organization id", () => {
     const view = toPublicJobView(detail)
-    const { posterOrganizationId: _dropped, ...expected } = detail
+    const expected: Partial<MarketplaceJobDetailView> = { ...detail }
+    delete expected.posterOrganizationId
 
     expect(view).toEqual(expected)
     expect(Object.keys(view)).not.toContain("posterOrganizationId")

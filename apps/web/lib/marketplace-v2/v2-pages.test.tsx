@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   haulerEquipment: vi.fn(),
   interestForJob: vi.fn(),
   listHaulerInterests: vi.fn(),
+  listJobs: vi.fn(),
   listLandingInterests: vi.fn(),
   resolveV2Actor: vi.fn(),
   viewerAccess: vi.fn()
@@ -52,6 +53,7 @@ vi.mock("@/lib/marketplace-v2/pilot-adapter", () => ({
     haulerEquipment: mocks.haulerEquipment,
     interestForJob: mocks.interestForJob,
     listHaulerInterests: mocks.listHaulerInterests,
+    listJobs: mocks.listJobs,
     listLandingInterests: mocks.listLandingInterests,
     viewerAccess: mocks.viewerAccess
   }
@@ -162,6 +164,7 @@ beforeEach(() => {
   mocks.getSessionActor.mockResolvedValue(actorFor(HAULER_ORG))
   mocks.viewerAccess.mockResolvedValue({ capabilities: ["interest.express", "interest.withdraw", "interest.reply"], organizationName: "Example Hauling LLC" })
   mocks.interestForJob.mockResolvedValue(null)
+  mocks.listJobs.mockResolvedValue([])
   mocks.haulerEquipment.mockResolvedValue([
     { configurationKey: "log_truck|pole_trailer", label: "Log truck + Pole trailer", unitsListed: 2 },
     { configurationKey: "chip_truck|chip_van", label: "Chip truck + Chip van", unitsListed: 1 }
@@ -235,7 +238,7 @@ describe("the job page (/v2/work/[jobId])", () => {
 
     mocks.getJob.mockResolvedValueOnce(job({ acceptingInterest: false, status: "paused" }))
     const paused = await renderJob()
-    expect(textOf(paused)).toContain("This job is paused by the poster and is not accepting new interest.")
+    expect(textOf(paused)).toContain("The poster paused this listing. Listing last changed on Nov 1, 2026. It is not accepting new interest.")
     expect(paused).not.toContain('name="loadPostingId"')
 
     mocks.interestForJob.mockResolvedValueOnce(interest({ status: "replied" }))

@@ -21,9 +21,9 @@ describe("JobSummary (UX-07, #130)", () => {
     expect(text(html)).toMatch(/^Example Timber Co Saw logs to the river mill \$525\.00 per load Stated by the poster\. Not a LogLoads guarantee\./)
     expect(facts(html)).toEqual([
       ["Equipment", "Log truck, Pole trailer Fits your trucks"],
-      ["Area", "Near Riverton, OR Approximate"],
+      ["Area", "Near Riverton, OR · approximate"],
       ["To", "Example mill · Riverton, OR 54 mi one way · poster's route estimate"],
-      ["Starts", "Nov 10, 2026 – Nov 30, 2026 About 21 days"],
+      ["Schedule", "Nov 10, 2026 – Nov 30, 2026 · About 21 days"],
       ["Trucks", "6 trucks for the job · 3 trucks a day"],
       ["Listing", "Not confirmed by poster · edited 1 day ago"]
     ])

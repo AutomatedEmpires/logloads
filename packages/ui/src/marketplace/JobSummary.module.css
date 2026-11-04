@@ -90,6 +90,11 @@
   font-size: var(--ll-text-sm);
 }
 
+.inlineNote {
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+}
+
 .unstated {
   margin: 0;
   color: var(--ll-color-text-muted);

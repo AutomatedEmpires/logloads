@@ -12,8 +12,9 @@ const CLEARANCE_PX = 8
 
 /**
  * The job page's sticky interest bar (UX 02 §A7, UX-07 #130). It appears once the job summary has scrolled up out of
- * view and hides again while the interest form is on screen, so it never repeats an action the viewer can already
- * see. Without JavaScript it never appears; the summary's own "I'm interested" link is the route then.
+ * view and steps aside once the interest form has reached the top half of the screen, so it does not repeat an action
+ * the viewer is already looking at. Without JavaScript it never appears; the summary's own "I'm interested" link is
+ * the route then.
  *
  * WCAG 2.4.11 (focus not obscured): while it shows, the page's scroll padding reserves the bar's height (and the
  * bottom tabs under it), so the browser scrolls a newly focused element clear of it; if an element still ends up
@@ -24,7 +25,7 @@ export function JobInterestBar({ offer, summaryId, targetId }: { offer: Interest
   const [visible, setVisible] = useState(false)
   const barRef = useRef<HTMLDivElement | null>(null)
 
-  // Visible while the summary is above the viewport and the interest form is not in it.
+  // Visible while the summary is above the viewport and the interest form is not yet in its top half.
   useEffect(() => {
     const summary = document.getElementById(summaryId)
     if (!summary || typeof IntersectionObserver === "undefined") return
@@ -39,10 +40,12 @@ export function JobInterestBar({ offer, summaryId, targetId }: { offer: Interest
       summaryAbove = !entry.isIntersecting && entry.boundingClientRect.bottom <= 0
       update()
     })
+    // The form counts as reached once it is in the top half of the viewport: while it only peeks in from below, the
+    // bar still offers the jump to it.
     const targetObserver = new IntersectionObserver(([entry]) => {
       targetInView = Boolean(entry?.isIntersecting)
       update()
-    })
+    }, { rootMargin: "0px 0px -50% 0px" })
 
     summaryObserver.observe(summary)
     if (target) targetObserver.observe(target)

@@ -1,4 +1,3 @@
-import Link from "next/link"
 import { notFound } from "next/navigation"
 
 import {
@@ -12,6 +11,7 @@ import { ContentGrid, PageContainer, PageHeader, Section } from "@logloads/ui/la
 import { EquipmentCapacity, formatDay, inquiryStatus, JobDetail, jobClosureText, jobSummaryId } from "@logloads/ui/marketplace"
 import { Button, FormField } from "@logloads/ui/primitives"
 
+import { AppLink } from "@/components/AppLink"
 import { InterestCountField } from "@/components/v2/InterestCountField"
 import styles from "@/components/v2/InterestForm.module.css"
 import { JobInterestBar } from "@/components/v2/JobInterestBar"
@@ -128,7 +128,7 @@ function InterestForm({ equipmentOptions, job }: { equipmentOptions: Marketplace
 
 /**
  * Open jobs like this one, for a listing that stopped accepting interest (spec §5.3). Links to job pages are rendered
- * per request, so they do not prefetch (the Next 15.5 parked-navigation bug, #197/#203).
+ * per request, so they are AppLinks, which do not prefetch them (the Next 15.5 parked-navigation bug, #197/#203).
  */
 function SimilarJobs({ jobs }: { jobs: SimilarJob[] }) {
   return (
@@ -137,7 +137,7 @@ function SimilarJobs({ jobs }: { jobs: SimilarJob[] }) {
         <ul className={page.similar}>
           {jobs.map((similar) => (
             <li className={page.similarItem} key={similar.id}>
-              <Link className={page.link} href={similar.href} prefetch={false}>{similar.title}</Link>
+              <AppLink className={page.link} href={similar.href}>{similar.title}</AppLink>
               <span className={page.meta}>{similar.posterName} · Near {similar.areaLabel}</span>
             </li>
           ))}
@@ -146,7 +146,7 @@ function SimilarJobs({ jobs }: { jobs: SimilarJob[] }) {
         <p className={page.text}>No other open job is listed right now.</p>
       )}
       <p className={page.text}>
-        <Link className={page.link} href="/v2/work" prefetch={false}>See all open jobs</Link>
+        <AppLink className={page.link} href="/v2/work">See all open jobs</AppLink>
       </p>
     </Section>
   )
@@ -220,7 +220,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
                   {!job.acceptingInterest ? (
                     <p className={styles.text}>
                       {jobClosureText(job)} It is not accepting new interest.{" "}
-                      <Link className={styles.link} href="/v2/work" prefetch={false}>See open jobs</Link>.
+                      <AppLink className={styles.link} href="/v2/work">See open jobs</AppLink>.
                     </p>
                   ) : !actor ? (
                     <div className={styles.stack}>
@@ -230,14 +230,14 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
                   ) : isPoster ? (
                     <p className={styles.text}>
                       This is your organization’s job. Review inquiries in the{" "}
-                      <Link className={styles.link} href="/v2/landing/inquiries" prefetch={false}>landing inbox</Link>.
+                      <AppLink className={styles.link} href="/v2/landing/inquiries">landing inbox</AppLink>.
                     </p>
                   ) : !canExpress ? (
                     <p className={styles.text}>{withBusinessSwitchNote("Only a hauling business can express interest.")}</p>
                   ) : standing ? (
                     <p className={styles.text}>
                       {standingSummary(standing)}{" "}
-                      <Link className={styles.link} href={`/v2/inquiries?inquiry=${standing.id}`} prefetch={false}>Open my inquiries</Link>
+                      <AppLink className={styles.link} href={`/v2/inquiries?inquiry=${standing.id}`}>Open my inquiries</AppLink>
                     </p>
                   ) : (
                     <InterestForm equipmentOptions={equipmentOptions} job={job} />

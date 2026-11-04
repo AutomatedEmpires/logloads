@@ -29,6 +29,7 @@ function spyPort(supportsPublishing: boolean): MarketplaceV2Port {
     postHaulerReply: resolved(undefined),
     publishJob: resolved({ jobId: "job" }),
     reconfirmJob: resolved(undefined),
+    reportListing: resolved({ alreadyReported: false, reportId: "report", reportedAt: "2026-11-03T12:00:00.000Z" }),
     respondToInterest: resolved(undefined),
     supportsPublishing,
     viewerAccess: resolved({ capabilities: [], organizationName: "Test" }),
@@ -111,10 +112,14 @@ describe("selectMarketplaceV2Port", () => {
     await port.publishJob(VIEWER, {} as never, attestation)
     await port.respondToInterest(VIEWER, { interestId: "x" })
     await port.getJob("job")
+    await port.getJob("job", VIEWER)
+    await port.reportListing(VIEWER, { jobId: "job", reason: "stale" })
 
     expect(target.publishJob).toHaveBeenCalledWith(VIEWER, {}, attestation)
     expect(target.respondToInterest).toHaveBeenCalledWith(VIEWER, { interestId: "x" })
-    expect(target.getJob).toHaveBeenCalledWith("job")
+    expect(target.getJob).toHaveBeenCalledWith("job", undefined)
+    expect(target.getJob).toHaveBeenCalledWith("job", VIEWER)
+    expect(target.reportListing).toHaveBeenCalledWith(VIEWER, { jobId: "job", reason: "stale" })
 
     for (const method of Object.values(pilot)) {
       if (typeof method === "function") expect(method).not.toHaveBeenCalled()

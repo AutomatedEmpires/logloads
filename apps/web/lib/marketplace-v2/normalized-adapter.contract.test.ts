@@ -547,6 +547,63 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
   })
 
   // -------------------------------------------------------------------------------------------------------------
+  describe("the job page: reports and a job that stopped (#130)", () => {
+    const reportsOf = async (jobId: string) =>
+      (await admin.unsafe(
+        "select reporter_user_id::text as reporter, target_kind, reason, details, status from marketplace.abuse_reports where target_id = $1::uuid order by created_at",
+        [jobId]
+      )) as unknown as Array<{ reporter: string; target_kind: string; reason: string; details: string | null; status: string }>
+
+    it("files one report per person and listing, as that person, with the reason the person chose", async () => {
+      const first = await port.reportListing(viewer("haul", "haul"), { details: "Filled last week", jobId: landJobId, reason: "stale" })
+      const again = await port.reportListing(viewer("haul", "haul"), { details: "Still up", jobId: landJobId, reason: "inaccurate_pay" })
+
+      expect(first.alreadyReported).toBe(false)
+      expect(again).toEqual({ ...first, alreadyReported: true })
+      expect(await reportsOf(landJobId)).toEqual([
+        { details: "Reason: No longer available.\nFilled last week", reason: "other", reporter: fixture.users.haul, status: "open", target_kind: "job_posting" }
+      ])
+    })
+
+    it("keeps each person's report apart, and a schema reason as itself", async () => {
+      const rival = await port.reportListing(viewer("rival", "rival"), { jobId: landJobId, reason: "inaccurate_pay" })
+
+      expect(rival.alreadyReported).toBe(false)
+      expect((await reportsOf(landJobId)).map((row) => [row.reporter, row.reason])).toEqual([
+        [fixture.users.haul, "other"],
+        [fixture.users.rival, "inaccurate_pay"]
+      ])
+    })
+
+    it("refuses a listing the person cannot see, and files nothing", async () => {
+      const missing = randomUUID()
+
+      await expect(port.reportListing(viewer("haul", "haul"), { jobId: missing, reason: "fake_work" })).rejects.toThrow("Listing not found")
+      expect(await reportsOf(missing)).toEqual([])
+    })
+
+    it("shows a paused job to its own business and to a business that sent interest, never to the public", async () => {
+      await admin.unsafe(`do $$
+begin
+  perform set_config('request.jwt.claims', jsonb_build_object('role','authenticated','iss','${ISSUER}','sub','adapter_rival','aud','${AUDIENCE}','exp',extract(epoch from now())::bigint + 600)::text, true);
+  set local role authenticated;
+  perform marketplace.set_job_posting_status('${rivalJobId}'::uuid, 'paused');
+  reset role;
+end
+$$;`)
+
+      expect(await port.getJob(rivalJobId)).toBeNull()
+      expect(await port.getJob(rivalJobId, viewer("rival", "rival"))).toMatchObject({ acceptingInterest: false, id: rivalJobId, status: "paused" })
+      // Adapter Timber Hauling's inquiry on it was withdrawn, but it was sent: the job can still say why it stopped.
+      expect((await port.getJob(rivalJobId, viewer("land", "dual")))?.status).toBe("paused")
+      expect(await port.getJob(rivalJobId, viewer("stranger", "land"))).toBeNull()
+
+      const seen = JSON.stringify(await port.getJob(rivalJobId, viewer("rival", "rival")))
+      for (const secret of PRIVATE_STRINGS) expect(seen).not.toContain(secret)
+    })
+  })
+
+  // -------------------------------------------------------------------------------------------------------------
   it("never leaves an identity on the pooled connection", async () => {
     await port.viewerAccess(viewer("land", "land"))
 

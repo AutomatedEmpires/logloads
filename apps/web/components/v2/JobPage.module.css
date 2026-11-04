@@ -154,7 +154,7 @@
 
 /* The sticky interest bar (UX 02 §A7): hidden until the summary has scrolled away. It sticks to the bottom of the
    viewport above the bottom tabs, and docks at the end of the page, so it never sits over the page's last content.
-   Below bp-lg it clears the 56 px tabs, which pad for the safe area themselves; from bp-lg it pads for it. */
+   Below bp-lg it clears the bottom tabs, which pad for the safe area themselves; from bp-lg it pads for it. */
 .bar {
   position: sticky;
   bottom: 0;
@@ -173,9 +173,9 @@
 
 .bar[hidden] { display: none; }
 
-@container ll-app (max-width: 959px) { /* below bp-lg: above the bottom tabs */
+@container ll-app (max-width: 959px) { /* below bp-lg: above the bottom tabs (56 px targets, their 1 px rule, rounding) */
   .bar {
-    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(58px + env(safe-area-inset-bottom, 0px));
     padding-bottom: var(--ll-space-3);
   }
 }

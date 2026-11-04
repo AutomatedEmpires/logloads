@@ -37,13 +37,14 @@ const PAY_SOURCE = {
   unstated: "The poster hasn't stated pay. Ask before you commit a truck."
 } as const
 
-function Fact({ label, children, note }: { label: string; children: ReactNode; note?: string | null }) {
+/** A fact and its note; a short note runs on the same line ("Near Oakridge, OR · approximate") to keep the fold. */
+function Fact({ label, children, note, inline = false }: { label: string; children: ReactNode; note?: string | null; inline?: boolean }) {
   return (
     <div className={styles.fact}>
       <dt className={styles.label}>{label}</dt>
       <dd className={styles.value}>
         {children}
-        {note ? <small className={styles.note}>{note}</small> : null}
+        {note ? <small className={inline ? styles.inlineNote : styles.note}>{inline ? ` · ${note}` : note}</small> : null}
       </dd>
     </div>
   )
@@ -87,11 +88,11 @@ export function JobSummary({ job, now, fit, action, className }: JobSummaryProps
             <EquipmentRequirement codes={job.equipment} fit={fit} />
           </Fact>
         ) : null}
-        <Fact label="Area" note="Approximate">{areaText(job)}</Fact>
+        <Fact inline label="Area" note="approximate">{areaText(job)}</Fact>
         {job.destinationLabel || distance ? (
           <Fact label="To" note={job.destinationLabel ? distance : null}>{job.destinationLabel ?? distance}</Fact>
         ) : null}
-        {scheduled ? <Fact label="Starts" note={scheduleDetail(job)}>{scheduleText(job)}</Fact> : null}
+        {scheduled ? <Fact inline label="Schedule" note={scheduleDetail(job)}>{scheduleText(job)}</Fact> : null}
         {trucksStated ? <Fact label="Trucks">{demandText(job.trucks)}</Fact> : null}
         <Fact label="Listing">
           <AvailabilityStatus label={availability.label} state={availability.state} />
