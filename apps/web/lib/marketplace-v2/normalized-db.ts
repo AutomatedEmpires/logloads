@@ -534,10 +534,18 @@ const REFUSAL_CODES = new Set(["23514", "42501", "P0002"])
 const NOT_ALLOWED = "This is not available to your account."
 const CONFLICT = "This changed while you were working on it. Reload the page and try again."
 
+const SERVER_SEVERITIES = new Set(["ERROR", "FATAL", "PANIC"])
+
+/**
+ * The SQLSTATE of an error the database server sent. postgres.js copies the server's error fields onto the error it
+ * throws, so a server error has both `code` (the SQLSTATE) and `severity`. The class name is not checked: a minifier
+ * renames it. A client-side failure (Node's `EPIPE`, the driver's own `CONNECT_TIMEOUT`) has no severity.
+ */
 function sqlState(error: unknown): string | null {
   if (!error || typeof error !== "object") return null
-  const candidate = error as { name?: unknown; code?: unknown }
-  return candidate.name === "PostgresError" && typeof candidate.code === "string" && /^[0-9A-Z]{5}$/.test(candidate.code)
+  const candidate = error as { code?: unknown; severity?: unknown }
+  return typeof candidate.severity === "string" && SERVER_SEVERITIES.has(candidate.severity) &&
+    typeof candidate.code === "string" && /^[0-9A-Z]{5}$/.test(candidate.code)
     ? candidate.code
     : null
 }
