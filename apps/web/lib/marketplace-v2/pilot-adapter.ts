@@ -173,6 +173,37 @@ export const operatingStateMarketplaceV2: MarketplaceV2Port = {
     await mutateState((draft) => draft.withdrawMarketplaceInterest(actor(viewer), interestId))
   },
 
+  // -------------------------------------------------------------------------------------------------------------
+  // Landing workspace (#127, #133). Reads come from the pilot's own landings. Writes are not persisted here: the
+  // pilot landing record needs a street address, an exact pin and a contact, its cap follows the retired pilot
+  // billing model rather than the Blueprint plans, and pausing it would not unlist its jobs. So saving, status
+  // changes and business setup wait for the normalized store, and the pages say so.
+  // -------------------------------------------------------------------------------------------------------------
+
+  async createLandingOrganization() {
+    throw new MarketplaceOperationUnavailableError("Setting up a landing business")
+  },
+
+  async getOwnLanding(viewer, landingId) {
+    return readState((current) => current.marketplaceOwnLandings(actor(viewer)).find((landing) => landing.id === landingId) ?? null)
+  },
+
+  async landingAllowance(viewer) {
+    return readState((current) => current.marketplaceLandingAllowance(actor(viewer)))
+  },
+
+  async listOwnLandings(viewer) {
+    return readState((current) => current.marketplaceOwnLandings(actor(viewer)))
+  },
+
+  async saveLanding() {
+    throw new MarketplaceOperationUnavailableError("Saving a landing")
+  },
+
+  async setLandingStatus() {
+    throw new MarketplaceOperationUnavailableError("Changing a landing's status")
+  },
+
   // Inquiry conversations (UX-09, #132).
 
   async withdrawInterestWithReason(viewer, input) {

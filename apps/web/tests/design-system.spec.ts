@@ -579,7 +579,7 @@ test.describe("responsive matrix: pages migrated in DS-04 (#147)", () => {
       await expect(page.locator("#conversation")).toHaveCount(0)
 
       await expectNoHorizontalOverflow(page)
-      expect(await expectNavigationForWidth(page, width)).toEqual(["Landing inbox", "Post jobs"])
+      expect(await expectNavigationForWidth(page, width)).toEqual(["Landing inbox", "Post jobs", "Landings"])
       await expectCurrent(page, width, "Landing inbox")
     }
   })
@@ -588,7 +588,7 @@ test.describe("responsive matrix: pages migrated in DS-04 (#147)", () => {
 test.describe("capability navigation (#124)", () => {
   const cases = [
     { email: "hank@northpine.example", home: "/v2/work", items: ["Find work", "My inquiries", "My trucks", "Profile"], visit: "/v2/inquiries", current: "My inquiries" },
-    { email: "cole@summit.example", home: "/v2/landing", items: ["Landing inbox", "Post jobs"], visit: "/v2/landing/inquiries", current: "Landing inbox" },
+    { email: "cole@summit.example", home: "/v2/landing", items: ["Landing inbox", "Post jobs", "Landings"], visit: "/v2/landing/inquiries", current: "Landing inbox" },
     {
       email: "dispatch@northpine.example",
       home: "/v2/work",
@@ -2337,7 +2337,7 @@ test.describe("the find-work map loads on request (UX-14, #137)", () => {
 const DUAL = { email: "maya@northpine.example", hauling: "North Pine Logging", landing: "Summit Ridge Timber", name: "Maya Mills" }
 const SUMMIT_OWNER = "cole@summit.example"
 const HAULER_NAVIGATION = ["Find work", "My inquiries", "My trucks", "Profile"]
-const LANDING_NAVIGATION = ["Landing inbox", "Post jobs"]
+const LANDING_NAVIGATION = ["Landing inbox", "Post jobs", "Landings"]
 
 const businessChoices = (page: Page) => page.getByRole("list", { name: "Your businesses" }).getByRole("listitem")
 
@@ -2687,5 +2687,192 @@ test.describe("My trucks (#126)", () => {
       await expect(page.getByLabel("On-board scales")).toBeChecked()
       await expect(page.getByRole("spinbutton", { name: "How many like this" })).toHaveValue("3")
     })
+  })
+})
+
+/**
+ * #127 (UX-04): landing business setup and plans, the landings list and the landing editor. Summit Ridge Timber's
+ * owner (cole@summit.example) manages Blue River Landing in the seed. The pilot store cannot save V2 landings, so
+ * the form posts and the page answers that saving isn't available, with the input kept: nothing in these cases
+ * writes. The private half of the seeded landings (pilot contact phone, entrance and site coordinates, gate notes)
+ * must appear on the landing's own editor and nowhere else.
+ */
+const LANDING_OWNER = SUMMIT_OWNER
+const BLUE_RIVER = { id: "66666666-6666-4666-8666-666666666662", name: "Blue River Landing" }
+const BLUE_RIVER_PRIVATE = ["555-1003", "44.1919", "-122.0925", "44.1926", "-122.0898", "Summit dispatcher confirms gate status"]
+const OAK_LANDING_PRIVATE = ["555-2002", "43.7463", "-122.4628", "43.7471", "-122.4617", "Gate code rotates daily"]
+const LANDING_PAGES = [
+  { email: null, heading: "Set up your landing business", path: "/v2/start/landing", root: "landing-setup" },
+  { email: LANDING_OWNER, heading: "Landings", path: "/v2/landing/landings", root: "landings" },
+  { email: LANDING_OWNER, heading: "Add a landing", path: "/v2/landing/landings/new", root: "landing-editor" },
+  { email: LANDING_OWNER, heading: "Edit landing", path: `/v2/landing/landings/${BLUE_RIVER.id}`, root: "landing-editor" }
+] as const
+
+/**
+ * The HTML the server sends for a page, fetched by navigating so the browser's own session cookie goes with it (an
+ * API request does not send the production build's Secure cookie over plain http). A redirect, for example to
+ * sign-in, fails rather than letting an absence check pass on the wrong page.
+ */
+async function pageHtml(page: Page, path: string): Promise<string> {
+  const response = await page.goto(path)
+  expect(response?.status(), `${path} answers`).toBe(200)
+  const served = new URL(response!.url())
+  expect(`${served.pathname}${served.search}`, `${path} is served without a redirect`).toBe(path)
+  return response!.text()
+}
+
+const landingForm = (page: Page) => page.locator("[data-ds-page='landing-editor'] form").filter({ has: page.locator("input[name='name']") })
+
+test.describe("landing workspace (#127)", () => {
+  test("responsive at 1440 and 390 px: no overflow, the width's navigation, Landings current on landing pages", async ({ page }) => {
+    for (const { email, heading, path, root } of LANDING_PAGES) {
+      await page.context().clearCookies()
+      if (email) await signIn(page, email)
+
+      for (const width of [1440, 390]) {
+        await page.setViewportSize(viewportFor(width))
+        await openV2(page, path)
+        await expect(page.locator(`[data-ds-page='${root}']`)).toBeVisible()
+        await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible()
+
+        await expectNoHorizontalOverflow(page)
+        const items = await expectNavigationForWidth(page, width)
+        if (email) {
+          expect(items).toEqual(LANDING_NAVIGATION)
+          await expectCurrent(page, width, "Landings")
+        } else {
+          expect(items).toEqual(["Find work"])
+        }
+      }
+    }
+  })
+
+  test("plans: every card from the contracts, billing stated as inactive, no checkout", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1440))
+    await openV2(page, "/v2/start/landing")
+
+    const plans = page.getByRole("list", { name: "Landing plans" }).locator(":scope > li")
+    await expect(plans).toHaveCount(3)
+    for (const [name, price, landings, team, invitations] of [
+      ["Basic", "$149 per month", "1 active landing", "2 team members, including you", "3 targeted invitations per billing cycle"],
+      ["Pro", "$299 per month", "3 active landings", "5 team members, including you", "10 targeted invitations per billing cycle"],
+      ["Regional", "$499 per month", "Unlimited active landings", "10 team members, including you", "30 targeted invitations per billing cycle"]
+    ] as const) {
+      const card = plans.filter({ has: page.getByRole("heading", { level: 3, name }) })
+      for (const fact of [price, landings, team, invitations]) await expect(card.getByText(fact, { exact: true })).toBeVisible()
+    }
+    await expect(page.getByText("Billing isn't active yet. You can set up landings and draft jobs.")).toBeVisible()
+    await expect(page.locator("[data-ds-page='landing-setup']").getByRole("button", { name: /checkout|subscribe|buy|pay/i })).toHaveCount(0)
+    await expect(page.locator("[data-ds-page='landing-setup']").getByRole("link", { name: /checkout|subscribe|buy|pay/i })).toHaveCount(0)
+  })
+
+  test("the landings list shows the plan count and status actions, and none of the private half", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1440))
+    await signIn(page, LANDING_OWNER)
+    await openV2(page, "/v2/landing/landings")
+
+    const row = page.getByRole("list", { name: "Your landings" }).locator(":scope > li").filter({ hasText: BLUE_RIVER.name })
+    await expect(row.getByText("Recruiting", { exact: true })).toBeVisible()
+    await expect(row.getByRole("button", { name: `Pause ${BLUE_RIVER.name}` })).toBeVisible()
+    await expect(page.locator("[data-ds-page='landings'] header")).toContainText("active landing")
+
+    const listHtml = await pageHtml(page, "/v2/landing/landings")
+    for (const secret of BLUE_RIVER_PRIVATE) expect(listHtml, `the list page never carries ${secret}`).not.toContain(secret)
+
+    // The landing's own editor is where its team sees the private half, inside the private panel only.
+    const editorHtml = await pageHtml(page, `/v2/landing/landings/${BLUE_RIVER.id}`)
+    const privateAt = editorHtml.indexOf('aria-label="Private · your team only"')
+    expect(privateAt).toBeGreaterThan(0)
+    expect(editorHtml.slice(privateAt)).toContain("555-1003")
+    expect(editorHtml.slice(privateAt)).toContain("44.1919")
+  })
+
+  test("public pages never carry a landing's private half (criterion 4)", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1440))
+    const paths = ["/v2/work", "/v2/work?all=1", await firstJobPath(page)]
+    await openV2(page, "/v2/work?all=1")
+    const northPine = northPineJobLink(page)
+    if ((await northPine.count()) > 0) paths.push((await northPine.getAttribute("href"))!)
+
+    for (const path of paths) {
+      const body = await pageHtml(page, path)
+      for (const secret of [...BLUE_RIVER_PRIVATE, ...OAK_LANDING_PRIVATE]) expect(body, `${path} never carries ${secret}`).not.toContain(secret)
+    }
+  })
+
+  test("keyboard: every stop on the landing pages keeps the design-system ring", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1280))
+    await signIn(page, LANDING_OWNER)
+
+    for (const path of ["/v2/landing/landings", "/v2/landing/landings/new", "/v2/start/landing"]) {
+      await openV2(page, path)
+      const stops = await tabThrough(page)
+
+      expect(stops.filter((stop) => stop.where === "main").length, `${path}: focus reaches the page content`).toBeGreaterThan(0)
+      for (const stop of stops) expectDesignSystemRing(stop)
+    }
+
+    // The form's fields are reachable in reading order: the public half first, then the private half.
+    await openV2(page, "/v2/landing/landings/new")
+    const main = (await tabThrough(page)).filter((stop) => stop.where === "main").map((stop) => stop.key)
+    expect(main.indexOf("#landing-name")).toBeGreaterThanOrEqual(0)
+    expect(main.indexOf("#landing-name")).toBeLessThan(main.indexOf("#landing-lat"))
+    expect(main.indexOf("#landing-lat")).toBeLessThan(main.indexOf("#landing-gate"))
+  })
+
+  for (const width of [1440, 390]) {
+    test(`the landing pages at ${width} px have no serious or critical axe violations`, async ({ page }) => {
+      await page.setViewportSize(viewportFor(width))
+      await openV2(page, "/v2/start/landing")
+      await expectNoSeriousAxeViolations(page)
+
+      await signIn(page, LANDING_OWNER)
+      for (const path of ["/v2/landing/landings", "/v2/landing/landings/new", `/v2/landing/landings/${BLUE_RIVER.id}`]) {
+        await openV2(page, path)
+        await expectNoSeriousAxeViolations(page)
+      }
+    })
+  }
+})
+
+test.describe("the landing form without JavaScript (#127)", () => {
+  // As in "conversation without JavaScript": globals.css sets smooth scrolling, and with scripts off Playwright never
+  // found Save landing stable at 1440 px (seen locally on Edge). Reduced motion turns it off; the form posts the same.
+  test.use({ contextOptions: { reducedMotion: "reduce" }, javaScriptEnabled: false })
+
+  test("posts to the server, which says saving isn't available and keeps what was typed; no exact location needed", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1440))
+    await signIn(page, LANDING_OWNER)
+    await openV2(page, "/v2/landing/landings/new")
+
+    const form = landingForm(page)
+    await form.getByLabel("Landing name").fill("Hills Creek Unit 4")
+    await form.getByLabel("Nearest town").fill("Oakridge")
+    await form.getByLabel("State", { exact: true }).fill("OR")
+    await form.getByLabel("Gate and access instructions").fill("Blue gate past the scale")
+    await form.getByRole("button", { name: "Save landing" }).click()
+
+    await expect(page.getByRole("status").filter({ hasText: "Saving landings isn't available in this preview yet" })).toBeVisible()
+    const kept = landingForm(page)
+    await expect(kept.getByLabel("Landing name")).toHaveValue("Hills Creek Unit 4")
+    await expect(kept.getByLabel("Nearest town")).toHaveValue("Oakridge")
+    await expect(kept.getByLabel("Gate and access instructions")).toHaveValue("Blue gate past the scale")
+    await expect(kept.getByLabel("Latitude")).toHaveValue("")
+  })
+
+  test("a refused field comes back next to the field, with the rest kept", async ({ page }) => {
+    await page.setViewportSize(viewportFor(390))
+    await signIn(page, LANDING_OWNER)
+    await openV2(page, "/v2/landing/landings/new")
+
+    const form = landingForm(page)
+    await form.getByLabel("Landing name").fill("Gate code 4417 landing")
+    await form.getByLabel("Nearest town").fill("Oakridge")
+    await form.getByLabel("State", { exact: true }).fill("OR")
+    await form.getByRole("button", { name: "Save landing" }).click()
+
+    await expect(page.getByRole("alert").filter({ hasText: "Remove coordinates and gate or lock codes" })).toBeVisible()
+    await expect(landingForm(page).getByLabel("Landing name")).toHaveAttribute("aria-invalid", "true")
+    await expect(landingForm(page).getByLabel("Nearest town")).toHaveValue("Oakridge")
   })
 })
