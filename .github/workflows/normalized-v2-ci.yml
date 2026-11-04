@@ -14,11 +14,15 @@ on:
     paths:
       - architecture/normalized-v2/**
       - tools/normalized-v2-ci/**
+      - tools/verify-clerk-supabase-auth.mjs
+      - tools/operating-state-backup-policy.mjs
       - .github/workflows/normalized-v2-ci.yml
   pull_request:
     paths:
       - architecture/normalized-v2/**
       - tools/normalized-v2-ci/**
+      - tools/verify-clerk-supabase-auth.mjs
+      - tools/operating-state-backup-policy.mjs
       - .github/workflows/normalized-v2-ci.yml
   workflow_dispatch:
 
@@ -264,6 +268,10 @@ jobs:
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 13
 
+      - name: "Stage 21: 21_v2_auth_claims_membership_tests.sql (#112, database layer)"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 21
+
       - name: "Stage 17: 17_v2_identity_membership_tests.sql"
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 17
@@ -410,6 +418,10 @@ jobs:
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 13
 
+      - name: "Stage 21: 21_v2_auth_claims_membership_tests.sql (#112, database layer)"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 21
+
       - name: "Stage 17: 17_v2_identity_membership_tests.sql"
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 17
@@ -417,6 +429,17 @@ jobs:
       - name: "Stage 14: 14_supabase_api_tests.sh (PostgREST + JWT, real Supabase roles)"
         timeout-minutes: 6
         run: bash tools/normalized-v2-ci/run-stage.sh 14
+
+      # Stage 22 runs tools/verify-clerk-supabase-auth.mjs, the #112 harness the owner runs live with real Clerk
+      # tokens, against this stack with locally signed stand-in tokens. It needs Node and no provider key.
+      - name: Set up Node.js for the auth harness
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: "Stage 22: 22_clerk_auth_harness_local.sh (#112 harness through the gateway, locally signed tokens)"
+        timeout-minutes: 6
+        run: bash tools/normalized-v2-ci/run-stage.sh 22
 
       - name: "Stage 8: 08_v2_contract_concurrency_test.sh"
         timeout-minutes: 12
