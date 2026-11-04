@@ -7,6 +7,7 @@ vi.stubGlobal("React", React)
 import type { MarketplaceJobCardView, MarketplaceJobDetailView } from "@logloads/contracts"
 import { JobResultRow } from "@logloads/ui/marketplace"
 
+import { JobMapLoader } from "@/components/v2/JobMapLoader"
 import { JobMapSheet } from "@/components/v2/JobMapSheet"
 
 import {
@@ -309,5 +310,16 @@ describe("JobMapSheet: the pin preview", () => {
     expect(html).toContain(">Job in this area</h2>")
     expect(html).toContain(">Approximate area</p>")
     expect(html).toMatch(/<a[^>]*href="\/v2\/work\/job-a"[^>]*>Pulp to the mill<\/a>/)
+  })
+})
+
+describe("JobMapLoader: nothing to plot", () => {
+  // UX-14 (#137): the loading placeholder holds the map's full box, so with no points the server says so at once
+  // instead of a map-sized "Loading map…" box that collapses (moving the list up) once the map's code arrives.
+  it("renders the no-locations note on the server, without the loading box or the map", () => {
+    const html = renderToStaticMarkup(<JobMapLoader points={[]} />)
+
+    expect(html).toMatch(/^<p[^>]*>No mappable approximate locations in these results\.<\/p>$/)
+    expect(html).not.toContain("Loading map")
   })
 })

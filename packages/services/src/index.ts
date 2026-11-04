@@ -51,6 +51,7 @@ import {
   type MarketplaceActor
 } from "./marketplace-interest"
 import { marketplaceAuthoringLandings, marketplaceHaulerEquipment, marketplaceViewerAccess } from "./marketplace-access"
+import { marketplaceLandingAllowance, marketplaceOwnLandings } from "./marketplace-landings"
 import {
   createThread,
   listThreadMessages,
@@ -455,6 +456,9 @@ export function createLogLoadsServices(seed?: LogLoadsDatabaseState) {
     marketplaceViewerAccess: (actor: MarketplaceActor) => marketplaceViewerAccess(state, actor),
     marketplaceHaulerEquipment: (actor: MarketplaceActor) => marketplaceHaulerEquipment(state, actor),
     marketplaceAuthoringLandings: (actor: MarketplaceActor) => marketplaceAuthoringLandings(state, actor),
+    // Marketplace V2 landing workspace reads (#127, #133).
+    marketplaceOwnLandings: (actor: MarketplaceActor) => marketplaceOwnLandings(state, actor),
+    marketplaceLandingAllowance: (actor: MarketplaceActor) => marketplaceLandingAllowance(state, actor),
     createSupportRequest: (
       input: Parameters<typeof createSupportRequest>[1],
       now?: Parameters<typeof createSupportRequest>[2]
@@ -718,6 +722,28 @@ export {
   type HaulerProfileSavePlan,
   type HaulerSetupItem
 } from "./marketplace-hauler"
+export {
+  availabilityCapMessage,
+  availabilityStamp,
+  confirmableCodes,
+  FLEET_EDIT_REFUSED,
+  FLEET_NOT_HAULING,
+  FLEET_NOT_PLACED,
+  FLEET_NOTHING_TO_WITHDRAW,
+  fleetCapacity,
+  NOT_RECENTLY_CONFIRMED,
+  pilotHaulerFleet,
+  planAvailabilityReport,
+  planEquipmentAdd,
+  registeredTrucks,
+  registeredUnits,
+  showsCapacityBoard,
+  type AvailabilityStamp,
+  type CapacityRow,
+  type CapacityState,
+  type HaulerAvailabilityPlan,
+  type HaulerEquipmentRecord
+} from "./marketplace-fleet"
 export {
   organizationOperationallyAccessible,
   resolveRestrictedOrganizationAccess

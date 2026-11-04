@@ -48,6 +48,8 @@ function fakeDb(): MarketplaceDb {
     call: async () => [],
     inquiryJobs: async () => [],
     inquiryParties: async () => null,
+    // Landing statements (#127) are not part of the hauler profile surface; this stub only satisfies the interface.
+    landingStatement: async () => [],
     // Listing reports (#214) are not part of the hauler profile surface; these stubs only satisfy the interface.
     standingListingReport: async () => null,
     fileListingReport: async () => {
@@ -166,7 +168,8 @@ describe("marketplaceQueryStatement", () => {
   it("schema-qualifies every table and checks the person's role in the named business", () => {
     for (const { text } of Object.values(MARKETPLACE_QUERIES)) {
       expect(text).toMatch(/marketplace\.has_org_role\(/)
-      expect(text).not.toMatch(/\b(update|join)\s+(?!marketplace\.)/i)
+      // "on conflict … do update set" is the only update that names no table.
+      expect(text).not.toMatch(/\b(update|join)\s+(?!\s|marketplace\.|set\b)/i)
     }
   })
 })

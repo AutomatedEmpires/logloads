@@ -1,0 +1,79 @@
+/* My trucks (UX 02 §A4, §A5, A-fleet; #126). Layout only; fields, buttons and capacity marks are design-system
+   components. Semantic --ll-* tokens only; measures the AppShell's "ll-app" container. */
+
+.form { display: grid; gap: var(--ll-space-4); margin: 0; min-width: 0; padding-top: var(--ll-space-4); border-top: 1px solid var(--ll-color-rule); }
+
+.fields { display: grid; gap: var(--ll-space-4); min-width: 0; margin: 0; padding: 0; border: 0; }
+
+.legend { padding: 0; margin-bottom: var(--ll-space-1); font-size: var(--ll-text-md); font-weight: var(--ll-weight-semibold); color: var(--ll-color-text); }
+
+.group { display: grid; gap: 0; min-width: 0; margin: 0; padding: 0; border: 0; }
+
+.groupLegend { padding: 0; margin-bottom: var(--ll-space-1); font-size: var(--ll-text-sm); font-weight: var(--ll-weight-semibold); color: var(--ll-color-text); }
+
+/* Two fields side by side from bp-sm, one column below. */
+.pair { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--ll-space-4); align-items: start; }
+
+@container ll-app (min-width: 600px) {
+  .pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.hint { margin: 0; font-size: var(--ll-text-sm); color: var(--ll-color-text-muted); }
+
+/* A date field is several tab stops (its month, day and year segments). Chromium matches :focus-visible, and even
+   :focus, on the input for its first segment only, so the design-system ring is drawn on :focus-within, which holds
+   for every segment (box-shadow: none drops the legacy global halo). */
+.date:focus-within {
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: var(--ll-focus-offset);
+  box-shadow: none;
+}
+
+.empty { margin: 0; font-size: var(--ll-text-md); color: var(--ll-color-text-muted); }
+
+.stamp { margin: 0; font-size: var(--ll-text-sm); color: var(--ll-color-text-secondary); font-variant-numeric: tabular-nums; }
+
+/* ---- The listed equipment ---- */
+
+.units { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+
+.unit { border-top: 1px solid var(--ll-color-rule); }
+.unit:first-child { border-top: 0; }
+
+.unitForm { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ll-space-2) var(--ll-space-3); padding: var(--ll-space-3) 0; margin: 0; }
+
+.unitText { display: grid; gap: var(--ll-space-1); flex: 1 1 12rem; min-width: 0; }
+
+.unitName { font-size: var(--ll-text-md); font-weight: var(--ll-weight-semibold); color: var(--ll-color-text); overflow-wrap: anywhere; }
+
+.unitMeta { font-size: var(--ll-text-sm); color: var(--ll-color-text-muted); }
+
+.unitCount { font-size: var(--ll-text-lg); font-weight: var(--ll-weight-semibold); font-variant-numeric: tabular-nums; }
+
+/* ---- The capacity board: a table from bp-lg, stacked rows below (UX 02 §6.4 "Tables") ---- */
+
+.board { display: grid; gap: var(--ll-space-3); min-width: 0; }
+
+.table { width: 100%; border-collapse: collapse; font-size: var(--ll-text-md); }
+
+.caption { padding-bottom: var(--ll-space-2); text-align: left; font-size: var(--ll-text-sm); color: var(--ll-color-text-muted); }
+
+.table th, .table td { padding: var(--ll-space-2) var(--ll-space-3) var(--ll-space-2) 0; text-align: left; vertical-align: top; border-top: 1px solid var(--ll-color-rule); }
+
+.table thead th { font-size: var(--ll-text-xs); font-weight: var(--ll-weight-semibold); color: var(--ll-color-text-muted); border-top: 0; }
+
+.table td { font-variant-numeric: tabular-nums; }
+
+.boardName { display: block; font-weight: var(--ll-weight-semibold); color: var(--ll-color-text); }
+
+.boardDetail { display: block; font-size: var(--ll-text-sm); font-weight: var(--ll-weight-regular); color: var(--ll-color-text-muted); }
+
+@container ll-app (max-width: 959px) {
+  .table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .table, .table tbody, .table tr, .table th, .table td { display: block; width: 100%; }
+  .table tr { padding: var(--ll-space-2) 0; border-top: 1px solid var(--ll-color-rule); }
+  .table th, .table td { padding: var(--ll-space-1) 0; border-top: 0; }
+  .table td::before { content: attr(data-label) ": "; color: var(--ll-color-text-muted); font-size: var(--ll-text-sm); }
+}
+
+.confirm { display: grid; gap: var(--ll-space-2); justify-items: start; margin: 0; }

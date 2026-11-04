@@ -1,0 +1,70 @@
+{
+  "$comment": "UX-14 (#137): the V2 performance budget, measured by .github/workflows/performance-budget.yml with Lighthouse CI on a production build; tools/performance-budget.mjs turns this file into the Lighthouse CI config and the run summary. Every value is the median of the runs. Sizes are compressed transfer sizes in KiB (1,024 bytes), as Lighthouse reports them, response headers included (next start serves HTTP/1.1, so each response carries its security headers uncompressed); times are milliseconds. `budget` is enforced: the measured median plus a margin (about 5 % on bytes, 2 requests, 6,000 ms of LCP, about 20 % above the medians measured (4.5 to 5.0 s): Lighthouse's simulated LCP moved by up to 12 % from run to run, so LCP is a backstop and the byte budgets are the precise guard, and 300 ms of TBT, 500 ms with the map, because CI runners vary most there), so a regression fails the check. `target` is where each screen should get to (the issue's targets and Lighthouse's 'good' thresholds); it is reported, not enforced, until the screen meets it.",
+  "lighthouse": {
+    "runs": 5,
+    "settings": {
+      "onlyCategories": ["performance"],
+      "formFactor": "mobile",
+      "throttlingMethod": "simulate",
+      "throttling": { "rttMs": 150, "throughputKbps": 1638.4, "cpuSlowdownMultiplier": 4 },
+      "blockedUrlPatterns": ["*cartocdn.com*"],
+      "chromeFlags": "--no-sandbox"
+    }
+  },
+  "screens": [
+    {
+      "id": "find-work",
+      "label": "Find work, the list",
+      "path": "/v2/work",
+      "budget": {
+        "lcpMs": 6000,
+        "tbtMs": 300,
+        "cls": 0.1,
+        "transferKiB": 665,
+        "requests": 46,
+        "scriptKiB": 270,
+        "thirdPartyRequests": 0
+      },
+      "target": {
+        "lcpMs": 2500,
+        "tbtMs": 200,
+        "cls": 0.1,
+        "scriptKiB": 150
+      }
+    },
+    {
+      "id": "find-work-map",
+      "label": "Find work with the map requested",
+      "path": "/v2/work?view=map",
+      "budget": {
+        "lcpMs": 6000,
+        "tbtMs": 500,
+        "transferKiB": 1000,
+        "scriptKiB": 595
+      },
+      "target": {
+        "lcpMs": 2500
+      }
+    },
+    {
+      "id": "job",
+      "label": "A job page (the board's first job)",
+      "path": "/v2/work/:job",
+      "budget": {
+        "lcpMs": 6000,
+        "tbtMs": 300,
+        "cls": 0.1,
+        "transferKiB": 665,
+        "requests": 44,
+        "scriptKiB": 270,
+        "thirdPartyRequests": 0
+      },
+      "target": {
+        "lcpMs": 2500,
+        "tbtMs": 200,
+        "cls": 0.1,
+        "scriptKiB": 150
+      }
+    }
+  ]
+}

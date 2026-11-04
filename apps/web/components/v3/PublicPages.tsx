@@ -944,8 +944,6 @@ export function ContactPage({
   )
 }
 
-export function NotFoundProduct() {
-  return <PublicShell><main className="page-main"><EmptyState title="This page is not available." body="The page may have moved or the load may no longer be public." actionHref="/" actionLabel="Go home" /></main></PublicShell>
-}
+// NotFoundProduct is in ./NotFoundProduct.tsx on purpose; see there before moving it back (#137).
 
 export { legalPages }

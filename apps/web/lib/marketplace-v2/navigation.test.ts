@@ -9,9 +9,11 @@ describe("V2 navigation", () => {
     expect(V2_NAVIGATION.map((item) => [item.label, item.href])).toEqual([
       ["Find work", "/v2/work"],
       ["My inquiries", "/v2/inquiries"],
+      ["My trucks", "/v2/hauler/trucks"],
       ["Profile", "/v2/hauler/profile"],
       ["Landing inbox", "/v2/landing/inquiries"],
-      ["Post jobs", "/v2/landing/jobs"]
+      ["Post jobs", "/v2/landing/jobs"],
+      ["Landings", "/v2/landing/landings"]
     ])
   })
 
@@ -19,11 +21,14 @@ describe("V2 navigation", () => {
     ["/v2/work", "work"],
     ["/v2/work/0f8b2c1e-1d4b-4f0a-9a52-3c5e2f8d6b71", "work"],
     ["/v2/inquiries", "inquiries"],
+    ["/v2/hauler/trucks", "hauler-trucks"],
     ["/v2/hauler/profile", "hauler-profile"],
     ["/v2/landing/inquiries", "landing-inquiries"],
     ["/v2/landing/jobs", "landing-jobs"],
     ["/v2/landing/jobs/new", "landing-jobs"],
-    ["/v2/landing/jobs/preview", "landing-jobs"]
+    ["/v2/landing/jobs/preview", "landing-jobs"],
+    ["/v2/landing/landings", "landings"],
+    ["/v2/landing/landings/new", "landings"]
   ])("marks %s as %s", (pathname, id) => {
     expect(activeV2NavId(pathname)).toBe(id)
   })
@@ -57,18 +62,20 @@ describe("capability-scoped V2 navigation (#124)", () => {
   })
 
   it("gives a hauling business the hauler set and a landing business the landing set", () => {
-    expect(ids(HAULER)).toEqual(["work", "inquiries", "hauler-profile"])
-    expect(ids(DRIVER)).toEqual(["work", "inquiries", "hauler-profile"])
-    expect(ids(LANDING_DESK)).toEqual(["landing-inquiries", "landing-jobs"])
+    expect(ids(HAULER)).toEqual(["work", "inquiries", "hauler-trucks", "hauler-profile"])
+    expect(ids(DRIVER)).toEqual(["work", "inquiries", "hauler-trucks", "hauler-profile"])
+    expect(ids(LANDING_DESK)).toEqual(["landing-inquiries", "landing-jobs", "landings"])
   })
 
   it("hides each landing item the role lacks", () => {
     expect(ids(["inquiry.respond"])).toEqual(["landing-inquiries"])
-    expect(ids(["job.publish"])).toEqual(["landing-jobs"])
+    expect(ids(["job.publish"])).toEqual(["landing-jobs", "landings"])
   })
 
   it("gives a business that is both sides both sets, in display order", () => {
-    expect(ids([...HAULER, ...LANDING_DESK])).toEqual(["work", "inquiries", "hauler-profile", "landing-inquiries", "landing-jobs"])
+    // A business on both sides keeps within the five bottom tabs: its profile is linked from My trucks, and Landings is not
+    // a tab for it either (the landing overview links it, #133).
+    expect(ids([...HAULER, ...LANDING_DESK])).toEqual(["work", "inquiries", "hauler-trucks", "landing-inquiries", "landing-jobs"])
   })
 
   it("shows unread inquiry counts on the destinations the business sees, and no badge for zero (UX-09)", () => {
@@ -78,11 +85,11 @@ describe("capability-scoped V2 navigation (#124)", () => {
     expect(both.map((item) => [item.id, item.count])).toEqual([
       ["work", undefined],
       ["inquiries", 2],
-      ["hauler-profile", undefined],
+      ["hauler-trucks", undefined],
       ["landing-inquiries", 3],
       ["landing-jobs", 7]
     ])
-    expect(v2NavigationFor(LANDING_DESK, counts).map((item) => [item.id, item.count])).toEqual([["landing-inquiries", undefined], ["landing-jobs", 7]])
+    expect(v2NavigationFor(LANDING_DESK, counts).map((item) => [item.id, item.count])).toEqual([["landing-inquiries", undefined], ["landing-jobs", 7], ["landings", undefined]])
     expect(v2NavigationFor(null, counts).map((item) => item.count)).toEqual([undefined])
     expect(V2_NAVIGATION.every((item) => item.count === undefined)).toBe(true)
   })

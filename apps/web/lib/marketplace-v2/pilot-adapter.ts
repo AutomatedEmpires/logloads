@@ -7,7 +7,7 @@ import {
   type MarketplaceJobDetailView,
   type MarketplaceJobFilters
 } from "@logloads/contracts"
-import { marketplaceJobStatus, pilotHaulerProfile } from "@logloads/services"
+import { marketplaceJobStatus, pilotHaulerFleet, pilotHaulerProfile } from "@logloads/services"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { buildNetworkView } from "../network"
@@ -56,6 +56,29 @@ export const operatingStateMarketplaceV2: MarketplaceV2Port = {
   supportsPublishing: false,
   // The pilot holds a business name and legal name only, and no service edits them (#125).
   supportsHaulerProfile: false,
+  // The pilot's equipment is per-unit dispatch records (unit numbers, payload, drivers) and its availability is per
+  // driver; V2 presets and self-reported counts are read from it but never written into it (#126).
+  supportsHaulerFleet: false,
+
+  async haulerFleet(viewer) {
+    return readState((current) => pilotHaulerFleet(current.state, actor(viewer)))
+  },
+
+  async addHaulerEquipment() {
+    throw new MarketplaceOperationUnavailableError("Adding equipment")
+  },
+
+  async setHaulerEquipmentCount() {
+    throw new MarketplaceOperationUnavailableError("Changing equipment counts")
+  },
+
+  async reportHaulerAvailability() {
+    throw new MarketplaceOperationUnavailableError("Reporting availability")
+  },
+
+  async confirmHaulerAvailability() {
+    throw new MarketplaceOperationUnavailableError("Confirming availability")
+  },
 
   async authoringLandings(viewer) {
     return readState((current) => current.marketplaceAuthoringLandings(actor(viewer)))
@@ -148,6 +171,37 @@ export const operatingStateMarketplaceV2: MarketplaceV2Port = {
 
   async withdrawInterest(viewer, interestId) {
     await mutateState((draft) => draft.withdrawMarketplaceInterest(actor(viewer), interestId))
+  },
+
+  // -------------------------------------------------------------------------------------------------------------
+  // Landing workspace (#127, #133). Reads come from the pilot's own landings. Writes are not persisted here: the
+  // pilot landing record needs a street address, an exact pin and a contact, its cap follows the retired pilot
+  // billing model rather than the Blueprint plans, and pausing it would not unlist its jobs. So saving, status
+  // changes and business setup wait for the normalized store, and the pages say so.
+  // -------------------------------------------------------------------------------------------------------------
+
+  async createLandingOrganization() {
+    throw new MarketplaceOperationUnavailableError("Setting up a landing business")
+  },
+
+  async getOwnLanding(viewer, landingId) {
+    return readState((current) => current.marketplaceOwnLandings(actor(viewer)).find((landing) => landing.id === landingId) ?? null)
+  },
+
+  async landingAllowance(viewer) {
+    return readState((current) => current.marketplaceLandingAllowance(actor(viewer)))
+  },
+
+  async listOwnLandings(viewer) {
+    return readState((current) => current.marketplaceOwnLandings(actor(viewer)))
+  },
+
+  async saveLanding() {
+    throw new MarketplaceOperationUnavailableError("Saving a landing")
+  },
+
+  async setLandingStatus() {
+    throw new MarketplaceOperationUnavailableError("Changing a landing's status")
   },
 
   // Inquiry conversations (UX-09, #132).
