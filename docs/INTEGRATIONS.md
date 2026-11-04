@@ -13,11 +13,15 @@
 **Order.** Do staging end to end first, then production only when it is authorized:
 
 1. Doppler (§1)
-2. Supabase staging project, migrations, bucket (§2.1–§2.4)
+2. Supabase staging project, migrations, bucket (§2.1–§2.4). **If the normalized-V2 proof (step 6) may ever run
+   on this project, apply its schema (§15.1–§15.2) after §2.2 and before the migrations in §2.3.** The reverse
+   order cannot be repaired later without an owner decision (§15.1). §15.1 needs the Clerk development instance's
+   issuer, so create that instance (§3) first.
 3. Clerk development instance (§3)
 4. Vercel project, Doppler sync, first Preview, canonical-state bootstrap (§5, §2.5)
 5. Optional, all dark by default: Stripe test mode (§6), Resend (§7), PostHog (§8), Sentry (§9), maps (§10)
-6. Production (§13), with the founder's authorization
+6. Optional, staging only: the normalized store (V2) proof (§15). Its schema step comes before §2.3 (step 2).
+7. Production (§13), with the founder's authorization
 
 **Verify after every step** with the readiness check. It reads the environment, prints only variable names and
 verdicts, never values, and takes its variable lists from `ops/production-env-contract.json`:
@@ -127,6 +131,8 @@ Verify: `doppler run --project logloads --config stg -- pnpm integrations:check 
 
 `supabase db push` applies `supabase/migrations/*.sql` in order (the pilot ledger,
 [`DEPLOYMENT.md`](./DEPLOYMENT.md) §3). It does not apply `supabase/seed/` or `architecture/normalized-v2/`.
+**If the normalized-V2 proof may run on this project, deploy the normalized store first (§15.1, §15.2).** These
+migrations install PostGIS in `public` when it is missing, and the normalized schema needs it in `extensions`.
 **Owner:** install the Supabase CLI (or set `SUPABASE_CLI` to its path), then:
 
 ```bash
@@ -254,8 +260,8 @@ Optional local keys go in `dev`: Clerk development keys, a dev CARTO key, Stripe
    (the code also ignores it when `VERCEL_ENV=production`). The V2 store stays the pilot store unless the
    normalized-V2 proof is scheduled on staging: then `LOGLOADS_MARKETPLACE_V2_ADAPTER=normalized`,
    `LOGLOADS_NORMALIZED_DATABASE_URL` (a restricted login role, secret), `LOGLOADS_NORMALIZED_IDENTITY_ISSUER` and
-   `LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE` go in `stg` only ([`SECURITY.md`](./SECURITY.md) §4.1). Never in `prd`;
-   the readiness check marks them INVALID there.
+   `LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE` go in `stg` only ([`SECURITY.md`](./SECURITY.md) §4.1), after the
+   store is deployed (§15). Never in `prd`; the readiness check marks them INVALID there.
 6. **Cron:** `apps/web/vercel.json` schedules `/api/billing/cron` daily at 05:15 UTC (Hobby allows daily jobs,
    run within the hour). Vercel runs crons on Production deployments only and sends `CRON_SECRET` as a bearer
    token. The route stays dark while the historical gates are disabled.
@@ -358,6 +364,7 @@ unless the founder decides otherwise.
 | Deployment matches Doppler | add `--health-url https://<origin>` | `/api/health` agrees with the environment, the canonical state loaded, and the cron route has `CRON_SECRET` |
 | Supabase post-provision | `doppler run --project logloads --config stg -- pnpm supabase:post-provision check` | Migrations applied (table and rate-limit RPC present), canonical row present, bucket matches the contract |
 | Health document | `curl -fsS https://<origin>/api/health` | Coarse booleans and the deployed commit, never values |
+| Normalized store (staging only) | `doppler run --project logloads --config stg -- pnpm normalized:store status --expected-project-ref <ref>` | The V2 schema is current, the issuer row and the adapter's login role are safe, and the adapter can log in (§15) |
 | Smoke | `SMOKE_BASE=https://<origin> SMOKE_EXPECT_FEE_COLLECTION=disabled SMOKE_EXPECT_PERCENTAGE_ENROLLMENT=disabled node tools/production-smoke.mjs` | Public pages, cockpit protection, wiring |
 
 About the smoke (`tools/production-smoke.mjs`): it needs a Playwright browser (`pnpm exec playwright install chromium`),
@@ -449,3 +456,164 @@ the same list with every variable, including the ones set by Vercel or CI.
 `LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256`, `LOGLOADS_SUBSCRIPTION_ALLOWED_ORGANIZATION_IDS`; in
 production: `LOGLOADS_MARKETPLACE_V2`, `LOGLOADS_MARKETPLACE_V2_ADAPTER` and `LOGLOADS_NORMALIZED_*`. The historical catalog ids (`STRIPE_PRICE_*`,
 `STRIPE_PORTAL_CONFIGURATION_NETWORK`) and the smoke allowlists stay unset on a fresh start.
+
+## 15. Normalized store (V2) on staging
+
+Optional, and for the staging normalized-V2 proof only (#200, #140). The pilot `operating_state` store stays the
+source of truth for everything else, and production never uses the normalized store: `VERCEL_ENV=production`
+always selects the pilot adapter. Nothing here migrates pilot data. This deploys an empty normalized store and, if
+you choose, the synthetic demo seed.
+
+`tools/normalized-store.mjs` (`pnpm normalized:store`) applies the normalized schema (`architecture/normalized-v2/`)
+to one database, the way CI applies it, and creates the adapter's login role ([`SECURITY.md`](./SECURITY.md) §4.1).
+It is a **dry run by default**. It refuses anything that looks like production, needs the project named on the
+command line, and never prints a value. CI runs the same commands on disposable databases: the "Seeded normalized
+store" jobs of `.github/workflows/normalized-adapter-ci.yml`, on plain PostgreSQL 17 and on a Supabase local stack.
+
+### 15.1 Before you start
+
+1. **Owner:** the staging project exists and `stg` (or its tooling branch) holds `DATABASE_URL`,
+   `SUPABASE_PROJECT_REF` and `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF` (§2.2). The tool applies the schema as the
+   migration role in `DATABASE_URL`.
+2. **Order.** On a fresh project, do §15.2 right after §2.2, **before** the pilot migrations (§2.3). The normalized
+   schema installs PostGIS in the `extensions` schema and never moves an existing copy. The pilot migrations install
+   it in `public` only when it is missing, so applied afterwards they use the copy in `extensions`. CI applies them in
+   this order on a Supabase local stack and runs their checks (`supabase/verify/`). If the pilot migrations already
+   ran, PostGIS is in `public`, the plan refuses and names the schema, and nothing is changed: moving PostGIS on a
+   project that holds pilot tables is an owner decision.
+3. **Owner:** install the PostgreSQL client, version 17 (`psql`; on Windows, the installer's command line tools are
+   enough).
+4. **Owner:** set the adapter's three values in `stg` only. `doppler secrets set <NAME> --project logloads --config stg`
+   prompts for each value.
+
+   | Variable | Value |
+   |---|---|
+   | `LOGLOADS_NORMALIZED_DATABASE_URL` | `postgresql://logloads_marketplace_adapter.<ref>:<password>@<pooler host>:6543/postgres?sslmode=require`. The pooler host is the one in `DATABASE_URL`; port 6543 is its transaction pooler, which the adapter is built for. The role name must start with `logloads_`. Use a new random password of at least 24 characters, for example from `openssl rand -hex 24`. Secret. The role does not exist yet: §15.2 creates it with this password. |
+   | `LOGLOADS_NORMALIZED_IDENTITY_ISSUER` | The Clerk development instance's issuer: its Frontend API URL, `https://<slug>.clerk.accounts.dev`. |
+   | `LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE` | A name for the identity this app asserts, for example `logloads-staging`. |
+
+`<ref>` below is the staging project reference (`SUPABASE_PROJECT_REF`). If you chose a tooling config in §2.2, use
+`--config stg_tooling` instead of `--config stg`; it inherits the `stg` values.
+
+### 15.2 Apply the schema
+
+```bash
+doppler run --project logloads --config stg -- pnpm normalized:store schema --expected-project-ref <ref>          # plan: nothing is changed
+doppler run --project logloads --config stg -- pnpm normalized:store schema --expected-project-ref <ref> --apply  # Owner: apply
+```
+
+What `--apply` does, each step in one transaction:
+
+1. It applies the pending migration files in CI's order: 01, 02, 03, 06, 11, 12, 16, 18, 23. Files already applied
+   are skipped: the migration ledger `marketplace.schema_migrations` records 06 onward, and 01 to 03 are recognized
+   by objects only they create. Re-running is a no-op. A failure rolls that file back and leaves the earlier files
+   applied, so fix the cause and run the same command again.
+2. It registers the issuer row the adapter asserts: `LOGLOADS_NORMALIZED_IDENTITY_ISSUER`, enabled, with
+   `LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE` pinned.
+3. It creates the login role from `LOGLOADS_NORMALIZED_DATABASE_URL`: NOINHERIT, no other attribute, a member of
+   `anon` and `authenticated` only, with a 15-second statement timeout and a 60-second idle-in-transaction timeout.
+   The password reaches the database as a SCRAM-SHA-256 verifier on psql's standard input, never on a command line
+   and never in plaintext. An existing role is checked and kept. A role that is not safe is refused, never altered.
+   After you change the password in Doppler, run the command again with `--reset-adapter-password`.
+4. It verifies the result: the full ledger, RLS on every table, no function executable by `PUBLIC`, and every
+   `SECURITY DEFINER` function's search path. Then it logs in as the adapter's role and runs public discovery.
+
+It refuses, with exit code 2 and before connecting:
+
+- any production signal: a `prd` Doppler config, `VERCEL_ENV=production`, the production origin in
+  `NEXT_PUBLIC_APP_URL`, `LOGLOADS_STRIPE_EXPECTED_LIVEMODE=live`, or a live Stripe or Clerk key;
+- a `--expected-project-ref` that differs from the project in either URL, from
+  `LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF` or from `SUPABASE_PROJECT_REF`;
+- `DATABASE_URL` on the transaction pooler, an adapter URL without `sslmode=require`, or a role name outside `logloads_`.
+
+**Migration 18 changes a database-wide default.** Every function the migration role (`postgres`) creates later,
+in any schema of the staging database, gets no `EXECUTE` for `PUBLIC`. Supabase's own defaults in `public` and
+`storage` still grant the API roles, so the pilot's functions keep working; a function in any other schema needs an
+explicit grant. Read the deployment note in `architecture/normalized-v2/ARCHITECTURE.md` §4 before the first
+`--apply`. The tool prints the same warning while 18 is pending.
+
+Do not add `marketplace` to the project's exposed Data API schemas for this: the adapter connects to the database
+directly. Only the #112 harness needs it exposed, on the development project ([`SECURITY.md`](./SECURITY.md) §5.1).
+
+### 15.3 Load the synthetic seed (staging only, never production)
+
+```bash
+doppler run --project logloads --config stg -- pnpm normalized:store seed --expected-project-ref <ref>          # plan
+doppler run --project logloads --config stg -- pnpm normalized:store seed --expected-project-ref <ref> --apply  # Owner: load
+```
+
+The seed, `architecture/normalized-v2/seed/pilot_demo_seed.sql`, mirrors the pilot demo seed
+(`packages/db/src/seed-data.ts`) and keeps its ids:
+
+- **North Pine Logging**: Oak Landing; the open jobs "Oak saw-log morning run" and "Oak chip shuttle", and one
+  closed job; three trucks.
+- **Summit Ridge Timber**: Blue River Landing; the open job "Blue River high-grade campaign", and one filled job.
+- **New River Hauling**: a hauling business with no trucks listed.
+- **Granite Creek Hauling**: a public hauling profile, two "Log truck + Bunk / short-log" units and one
+  "Log truck + Pole trailer", and one availability report.
+
+Each landing has private details (the exact entrance, directions, the gate, a site contact) that no public page
+shows. Each person is linked to their pilot Clerk user id (`clerk-…`) under your issuer. No inquiry is seeded.
+Dates are relative to the day you load it: the jobs start within a week, and the two landing plans run for 30 days.
+
+The seed loads only into an empty store, and only once. It runs in one transaction and checks its own result before
+it commits. Nothing unloads it, so a seeded store stays a demo store. The data is synthetic: never present it as
+real activity.
+
+### 15.4 Point staging at it
+
+1. **Owner:** in `stg`, set `LOGLOADS_MARKETPLACE_V2_ADAPTER=normalized`, with `LOGLOADS_MARKETPLACE_V2=enabled` (only
+   when the [`DEPLOYMENT.md`](./DEPLOYMENT.md) §4 gates hold, §5) and the three values from §15.1. Never in `prd`.
+2. **Owner:** let Doppler sync, then redeploy the staging Preview (Vercel → Deployments → Redeploy).
+
+To switch back, delete `LOGLOADS_MARKETPLACE_V2_ADAPTER` from `stg` and redeploy: the pilot adapter is the default.
+
+### 15.5 Verify
+
+| What | Command | Proves |
+|---|---|---|
+| Store and login role | `doppler run --project logloads --config stg -- pnpm normalized:store status --expected-project-ref <ref>` | The ledger and the RLS and function checks, the issuer row, the role's safety, and a login as the adapter. It ends with "ready for the adapter" and exit code 0. |
+| Environment and deployment | `doppler run --project logloads --config stg -- pnpm integrations:check --target staging --health-url https://<staging-origin>` | The adapter's variables are set only where the contract allows, and the deployment answers |
+| Health | `curl -fsS https://<staging-origin>/api/health` | `status: "ok"` and the deployed commit. It does not name the V2 store. |
+| Page, **Owner** | Open `https://<staging-origin>/v2/work` in a browser, signed out | The seed's three open jobs, newest first: "Oak saw-log morning run", "Oak chip shuttle", "Blue River high-grade campaign". The pilot seed publishes only North Pine Logging's job, so Summit Ridge Timber's job shows that the normalized store answered. A job page shows "Oakridge, OR" or "Blue River, OR", and never a gate, directions or an exact location. |
+
+**What staging does not prove yet.** Signed-in V2 pages need the session's person and business in the normalized
+store. The seed links only the seeded people's pilot Clerk ids, and on staging people sign in with real Clerk
+accounts: seeded sign-in (`LOGLOADS_ENABLE_DEV_LOGIN`) is never enabled on a hosted target. So while the normalized
+adapter is selected, the signed-in V2 pages refuse a staging account. The signed-in flows are proven in CI on the
+seeded store (`apps/web/lib/marketplace-v2/normalized-seed.contract.test.ts`), and can be tried locally (§15.6).
+#213 (in progress) covers this. With the normalized adapter selected, the session's memberships and active business
+will come from the normalized store. A Clerk user's first sign-in will be linked there through the schema's own
+`sync_verified_identity`. Moving existing pilot data across stays cutover work (#200).
+
+### 15.6 A disposable local stack
+
+Do not use the repository's own stack. `supabase start` in this checkout applies the pilot migrations as it starts,
+so PostGIS lands in `public`, and `schema --apply` refuses with nothing changed (§15.1). Use an empty stack, as CI
+does (`tools/normalized-v2-ci/supabase-stack.sh`): a separate Supabase CLI project in an empty folder outside this
+repository, on the CLI's default ports (database on 54322), named `local`. The normalized store needs none of the
+pilot tables, because the adapter connects only to `LOGLOADS_NORMALIZED_DATABASE_URL`. The app's seeded sign-in
+then reaches the seeded people through the normalized adapter, for example `dispatch@northpine.example` (North Pine
+Logging's landing desk) or `emptyfleet@logloads.example` (New River Hauling). Add these lines to the git-ignored
+`apps/web/.env.local`, with a throwaway password of at least 24 characters (the stack is disposable):
+
+```bash
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres
+LOGLOADS_NORMALIZED_DATABASE_URL=postgresql://logloads_marketplace_adapter:<password>@127.0.0.1:54322/postgres
+LOGLOADS_NORMALIZED_IDENTITY_ISSUER=https://clerk.local-stack.test
+LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE=logloads-local
+LOGLOADS_MARKETPLACE_V2=enabled
+LOGLOADS_MARKETPLACE_V2_ADAPTER=normalized
+```
+
+Then, with `<stack folder>` an empty folder outside this repository:
+
+```bash
+cd <stack folder> && supabase init && supabase start && cd -
+node --env-file=apps/web/.env.local tools/normalized-store.mjs schema --expected-project-ref local --apply
+node --env-file=apps/web/.env.local tools/normalized-store.mjs seed --expected-project-ref local --apply
+pnpm dev
+```
+
+`supabase stop --no-backup`, run in `<stack folder>`, discards the stack. Remove `LOGLOADS_MARKETPLACE_V2_ADAPTER` to return to the pilot
+adapter.

@@ -1,4 +1,6 @@
 import type {
+  HaulerFleetView,
+  HaulerProfileView,
   MarketplaceAvailabilityAttestation,
   MarketplaceCapability,
   MarketplaceDraftLandingContext,
@@ -11,7 +13,8 @@ import type {
   MarketplaceJobFilters,
   MarketplaceLandingAllowanceView,
   MarketplaceLandingStatus,
-  MarketplaceLandingView
+  MarketplaceLandingView,
+  MarketplaceListingReportReceipt
 } from "@logloads/contracts"
 
 /**
@@ -82,7 +85,20 @@ export interface MarketplaceV2Port {
 
   /** Public discovery. Returns only public-safe fields; never exact coordinates or access details. */
   listJobs(filters: MarketplaceJobFilters): Promise<MarketplaceJobCardView[]>
-  getJob(jobId: string): Promise<MarketplaceJobDetailView | null>
+  /**
+   * One listing's public view. With the session's `viewer`, a store that hides paused, filled, closed or expired jobs
+   * from the public may still return one the viewer is allowed to see (their own business's job, or one they sent
+   * interest on), so the job page can say why it stopped and when (UX-07, #130). The fields are the same either way.
+   */
+  getJob(jobId: string, viewer?: MarketplaceV2Viewer | null): Promise<MarketplaceJobDetailView | null>
+
+  // --- Listing reports (UX-07, #130) ---
+  /**
+   * Report a listing to LogLoads staff (spec §8.18). `input` is checked against `reportListingInputSchema`. One
+   * standing report per person and listing: a repeat returns that report (`alreadyReported`) and files nothing. The
+   * listing stays up until staff review it. Throws `MarketplaceOperationUnavailableError` when the store keeps no reports.
+   */
+  reportListing(viewer: MarketplaceV2Viewer, input: unknown): Promise<MarketplaceListingReportReceipt>
 
   /** The viewer's V2 capabilities in the active workspace (empty when the role has none). */
   viewerAccess(viewer: MarketplaceV2Viewer): Promise<MarketplaceV2ViewerAccess>
@@ -144,6 +160,39 @@ export interface MarketplaceV2Port {
    * session's own user; there is no business yet. Throws `MarketplaceOperationUnavailableError` when unsupported.
    */
   createLandingOrganization(account: Pick<MarketplaceV2Viewer, "userId">, input: unknown): Promise<{ organizationId: string }>
+
+  /** Whether saving the hauling-business profile persists through this adapter (#125). */
+  readonly supportsHaulerProfile: boolean
+  /**
+   * The viewer's own hauling business profile, private fields included, for the business's members only. Refuses a
+   * person who is not a member of the active business, and a business with no hauler profile.
+   */
+  haulerProfile(viewer: MarketplaceV2Viewer): Promise<HaulerProfileView>
+  /**
+   * Save the profile form (`haulerProfileInputSchema`, re-parsed here). Owners and managers may change the profile;
+   * only the owner may change the business name or legal name (`planHaulerProfileSave`). Returns the saved profile.
+   * Throws `MarketplaceOperationUnavailableError` when this adapter cannot persist it.
+   */
+  saveHaulerProfile(viewer: MarketplaceV2Viewer, input: unknown): Promise<HaulerProfileView>
+
+  /** Whether "My trucks" (equipment and availability) persists through this adapter (#126). */
+  readonly supportsHaulerFleet: boolean
+  /**
+   * The active hauling business's listed equipment and latest self-reported availability per truck type. Refuses a
+   * person who is not a member of that business, and a business with no hauler profile.
+   */
+  haulerFleet(viewer: MarketplaceV2Viewer): Promise<HaulerFleetView>
+  /** Add a configuration (or extra) from the presets (`haulerEquipmentAddInputSchema`). Owner, manager or staff. */
+  addHaulerEquipment(viewer: MarketplaceV2Viewer, input: unknown): Promise<void>
+  /** Change one listed row's count (`haulerEquipmentCountInputSchema`); 0 takes it off the list. */
+  setHaulerEquipmentCount(viewer: MarketplaceV2Viewer, input: unknown): Promise<void>
+  /**
+   * Report one truck type available now, from a date, or not available (`haulerAvailabilityInputSchema`). The count
+   * can never exceed the units of that type listed (`planAvailabilityReport`).
+   */
+  reportHaulerAvailability(viewer: MarketplaceV2Viewer, input: unknown): Promise<void>
+  /** "Confirm all as shown": re-states every truck type with a fresh answer, dated now. */
+  confirmHaulerAvailability(viewer: MarketplaceV2Viewer): Promise<{ confirmed: number }>
 
   // --- Inquiry conversations (UX-09, #132) ---------------------------------------------------------------------
   /**

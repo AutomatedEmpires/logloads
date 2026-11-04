@@ -17,6 +17,8 @@ import {
 
 export const OVERVIEW_PATH = "/v2/landing"
 export const LANDING_INBOX_PATH = "/v2/landing/inquiries"
+/** The job list ("Post jobs"). A business on both sides has no tab for it, so the overview links it (#209). */
+export const LANDING_JOBS_PATH = "/v2/landing/jobs"
 export const NEW_JOB_PATH = "/v2/landing/jobs/new"
 
 export interface NewInquiriesItem {

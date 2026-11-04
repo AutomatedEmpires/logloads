@@ -107,7 +107,9 @@ const NORTH_PINE_LANDING = NORTH_PINE.landing // North Pine Logging acting on it
 const LANDING_WITHOUT_INQUIRIES = "cole@summit.example"
 /**
  * Granite Creek Hauling (#178): a hauling business whose profile lists equipment, in the interest form's order
- * (most units first). The suite only reads its form and one refused offer; it never sends its interest.
+ * (most units first). The suite reads its form and sends one refused offer, and only the Decline case under
+ * "conversation without JavaScript (#174)" sends its interest, which North Pine declines. The suite runs on one worker
+ * in file order, so every case that needs Granite Creek's form (equipment on a page, the UX-07 job page) comes first.
  */
 const GRANITE_CREEK = {
   email: "avery@granitecreek.example",
@@ -390,10 +392,26 @@ test.describe("responsive matrix: /v2/switch (signed in)", () => {
       await expect(page.getByRole("heading", { level: 1, name: "Switch business" })).toBeVisible()
 
       await expectNoHorizontalOverflow(page)
-      expect(await expectNavigationForWidth(page, width)).toEqual(["Find work", "My inquiries"])
+      expect(await expectNavigationForWidth(page, width)).toEqual(["Find work", "My inquiries", "My trucks", "Profile"])
       // /v2/switch is not a navigation destination, so no item claims to be the current page.
       await expectCurrent(page, width, null)
     }
+  })
+})
+
+// #126: before any case that sends New River Hauling's interest, because the link is in the interest form, which
+// goes once New River has an inquiry on the job (workers: 1, file order; later cases leave one open).
+test.describe("My trucks (#126): the job page's equipment link", () => {
+  test("the job page's Add your equipment link leads here", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1440))
+    await signIn(page, NEW_RIVER.email)
+    await openV2(page, "/v2/work")
+    const link = northPineJobLink(page)
+    test.skip((await link.count()) === 0, NO_OPEN_JOB)
+    await openV2(page, (await link.getAttribute("href"))!)
+    const form = page.locator("form:has(input[name='loadPostingId'])")
+    test.skip((await form.count()) === 0, "New River Hauling already sent interest on this job in this run's state")
+    await expect(form.getByRole("link", { name: "Add your equipment" })).toHaveAttribute("href", TRUCKS_PATH)
   })
 })
 
@@ -524,7 +542,7 @@ test.describe("responsive matrix: pages migrated in DS-04 (#147)", () => {
 
       await expectNoHorizontalOverflow(page)
       await expectSplitLayout(page, width)
-      expect(await expectNavigationForWidth(page, width)).toEqual(["Find work", "My inquiries"])
+      expect(await expectNavigationForWidth(page, width)).toEqual(["Find work", "My inquiries", "My trucks", "Profile"])
       await expectCurrent(page, width, "My inquiries")
     }
   })
@@ -569,12 +587,12 @@ test.describe("responsive matrix: pages migrated in DS-04 (#147)", () => {
 
 test.describe("capability navigation (#124)", () => {
   const cases = [
-    { email: "hank@northpine.example", home: "/v2/work", items: ["Find work", "My inquiries"], visit: "/v2/inquiries", current: "My inquiries" },
+    { email: "hank@northpine.example", home: "/v2/work", items: ["Find work", "My inquiries", "My trucks", "Profile"], visit: "/v2/inquiries", current: "My inquiries" },
     { email: "cole@summit.example", home: "/v2/landing", items: ["Overview", "Landing inbox", "Post jobs", "Landings"], visit: "/v2/landing/inquiries", current: "Landing inbox" },
     {
       email: "dispatch@northpine.example",
       home: "/v2/work",
-      items: ["Find work", "My inquiries", "Overview", "Landing inbox", "Post jobs"],
+      items: ["Find work", "My inquiries", "My trucks", "Overview", "Landing inbox"],
       visit: "/v2/inquiries",
       current: "My inquiries"
     }
@@ -729,7 +747,7 @@ test.describe("keyboard: /v2/work", () => {
     await signIn(page, "hank@northpine.example")
     await openV2(page, "/v2/work")
 
-    const stops = await tabThrough(page, 7)
+    const stops = await tabThrough(page, 9)
     const chrome = stops.filter((stop) => stop.where === "chrome")
 
     expect(chrome.map((stop) => stop.key)).toEqual([
@@ -737,6 +755,8 @@ test.describe("keyboard: /v2/work", () => {
       "LogLoads home",
       "Find work",
       "My inquiries",
+      "My trucks",
+      "Profile",
       // The switcher's first text line; its full accessible name (visible text plus hidden words) is asserted in the
       // capability-navigation tests.
       "Acting as",
@@ -1348,7 +1368,7 @@ test.describe("equipment on a page (#148 criterion 4)", () => {
 
     const jobPath = (await link.getAttribute("href"))!
     await openV2(page, jobPath)
-    // Nothing in this suite sends Granite Creek's interest, so a job that accepts interest always offers the form.
+    // No earlier case sends Granite Creek's interest (see GRANITE_CREEK), so a job that accepts interest offers the form.
     const form = page.locator("form:has(input[name='loadPostingId'])")
     await expect(form, "Granite Creek Hauling can express interest in North Pine Logging's open job").toHaveCount(1)
     await expect(form.locator("[name='trucksOffered']"), "with equipment listed there is no plain count").toHaveCount(0)
@@ -1536,6 +1556,269 @@ test.describe("conversation on a page (#148 criterion 4)", () => {
     await expectNoSeriousAxeViolations(page)
     await page.setViewportSize(viewportFor(390))
     await expectNoSeriousAxeViolations(page)
+  })
+})
+
+/**
+ * Job detail (UX-07, #130): the decision summary inside the first 600 px at 390 px, sections that are native
+ * <details>, a sticky interest bar that never covers the focused element, Share and Report. Nothing here writes: on
+ * the pilot store a report is refused as unavailable before anything is stored. The seed has no listing that stopped
+ * accepting interest, so the paused, closed and expired job pages are server-render tests instead
+ * (apps/web/lib/marketplace-v2/job-detail-page.test.tsx), as is the 404 for a job the store does not return.
+ */
+const jobSummary = (page: Page) => page.locator("[data-ds-page='job-detail'] [id^='job-summary-']")
+const jobSections = (page: Page) => page.locator("[data-ds-page='job-detail'] article details")
+const interestBar = (page: Page) => page.locator("[data-interest-bar]")
+const shareTool = (page: Page) => page.locator("[data-ds-page='job-detail'] details").filter({ has: page.locator("summary", { hasText: "Share this job" }) })
+const reportTool = (page: Page) => page.locator("[data-ds-page='job-detail'] details#report")
+
+/** Two animation frames, so focus handlers that measure after layout have run. */
+async function nextFrames(page: Page) {
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+}
+
+/** The path of North Pine Logging's first job that accepts interest, as the signed-in hauler's board lists it; null when none. */
+async function openNorthPineJobPath(page: Page): Promise<string | null> {
+  await openV2(page, "/v2/work")
+  const link = northPineJobLink(page)
+  return (await link.count()) > 0 ? link.getAttribute("href") : null
+}
+
+test.describe("job detail: the decision summary, sections, sticky bar, share and report (UX-07, #130)", () => {
+  test("job page at 390 px: pay and every decision fact sit in the first 600 px, with one 'Not stated' line at most", async ({ page }) => {
+    await page.setViewportSize(viewportFor(390))
+    await openV2(page, await firstJobPath(page))
+
+    const summary = jobSummary(page)
+    await expect(summary).toBeVisible()
+    const layout = await summary.evaluate((root) => {
+      const bottom = (element: Element | null) => (element ? element.getBoundingClientRect().bottom + window.scrollY : Number.POSITIVE_INFINITY)
+      return {
+        facts: Array.from(root.querySelectorAll("dt")).map((term) => ({ bottom: bottom(term.nextElementSibling), label: term.textContent?.trim() ?? "" })),
+        pay: bottom(root.querySelector("h2")?.nextElementSibling ?? null),
+        unstated: Array.from(root.querySelectorAll("p")).filter((line) => /Not stated/.test(line.textContent ?? "")).length
+      }
+    })
+
+    // The seeded job states all of these; a fact the poster left out would be named in the one "Not stated" line.
+    expect(layout.facts.map((fact) => fact.label)).toEqual(["Equipment", "Area", "To", "Schedule", "Trucks", "Listing"])
+    for (const fact of [{ bottom: layout.pay, label: "Pay" }, ...layout.facts]) {
+      expect(fact.bottom, `${fact.label} ends within the first 600 px`).toBeLessThanOrEqual(600)
+    }
+    expect(layout.unstated).toBeLessThanOrEqual(1)
+    await expect(summary.locator("dd").filter({ hasText: /^Not stated/ })).toHaveCount(0)
+  })
+
+  test("job page: each section is a native <details> that Enter and Space open and close, with the design-system ring", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1280))
+    await openV2(page, await firstJobPath(page))
+
+    const titles = (await jobSections(page).locator("summary").allInnerTexts()).map((title) => title.trim())
+    expect(titles.slice(0, 3)).toEqual(["Haul details", "Road and access", "Weather near the landing"])
+    expect(titles[3]).toMatch(/^About /)
+
+    for (const title of titles) {
+      const section = jobSections(page).filter({ has: page.locator("summary", { hasText: title }) })
+      const summary = section.locator("summary")
+
+      await expect(section).not.toHaveAttribute("open", /.*/)
+      await summary.focus()
+      await page.keyboard.press("Enter")
+      await expect(section, `${title}: Enter opens it`).toHaveAttribute("open", "")
+      await expect(section.locator("p, dl").first()).toBeVisible()
+      expectDesignSystemRing((await focusStop(page))!)
+      await page.keyboard.press("Space")
+      await expect(section, `${title}: Space closes it`).not.toHaveAttribute("open", /.*/)
+    }
+  })
+
+  test("job page at 390 px: the sticky interest bar appears once the summary scrolls away, sits above the tabs, and never covers the focused element", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" })
+    await page.setViewportSize(viewportFor(390))
+    await signIn(page, GRANITE_CREEK.email)
+    const jobPath = await openNorthPineJobPath(page)
+    test.skip(!jobPath, NO_OPEN_JOB)
+
+    await openV2(page, jobPath!)
+    const bar = interestBar(page)
+    await expect(bar).toBeHidden()
+
+    // Scrolled until the summary is gone: the bar offers the interest form, above the bottom tabs.
+    await jobSummary(page).evaluate((summary) => window.scrollTo({ behavior: "instant", top: summary.getBoundingClientRect().bottom + window.scrollY + 1 }))
+    await expect(bar).toBeVisible()
+    await expect(bar.getByRole("link", { name: "I'm interested" })).toHaveAttribute("href", "#interest")
+    const barBox = (await bar.boundingBox())!
+    const tabsBox = (await bottomTabs(page).boundingBox())!
+    expect(barBox.y + barBox.height, "the bar sits above the bottom tabs").toBeLessThanOrEqual(tabsBox.y + 1)
+    expect(barBox.y + barBox.height, "the bar is in the viewport").toBeLessThanOrEqual(844)
+
+    // Every focus stop from the top of the page: none is under the bar while it shows (WCAG 2.4.11). With every
+    // disclosure open the page is long enough that the bar shows while focus moves through Share and Report.
+    await page.evaluate(() => window.scrollTo({ behavior: "instant", top: 0 }))
+    for (const summary of await page.locator("[data-ds-page='job-detail'] details:not(form details) > summary").all()) await summary.click()
+    await page.evaluate(() => window.scrollTo({ behavior: "instant", top: 0 }))
+    // Sequential focus starts after the page heading, so the walk covers the whole job and the form beside it.
+    await page.getByRole("heading", { level: 1, name: "Job details" }).click()
+    const covered: string[] = []
+    let stopsWithBar = 0
+    let first: string | null = null
+
+    for (let index = 0; index < 150; index += 1) {
+      await page.keyboard.press("Tab")
+      await nextFrames(page)
+      const stop = await page.evaluate(() => {
+        const element = document.activeElement as HTMLElement | null
+        const strip = document.querySelector<HTMLElement>("[data-interest-bar]")
+        if (!element || element === document.body || !strip) return null
+        const rect = element.getBoundingClientRect()
+        const area = strip.getBoundingClientRect()
+        const shown = !strip.hidden && !strip.contains(element)
+        return {
+          covered: shown && rect.bottom > area.top + 0.5 && rect.top < area.bottom - 0.5,
+          key: `${element.tagName.toLowerCase()} ${element.id || element.getAttribute("aria-label") || element.innerText?.trim().split("\n")[0] || ""}`.slice(0, 60),
+          shown
+        }
+      })
+
+      if (!stop || stop.key === first) break
+      first ??= stop.key
+      if (stop.shown) stopsWithBar += 1
+      if (stop.covered) covered.push(stop.key)
+    }
+
+    expect(stopsWithBar, "the bar showed for some focus stops").toBeGreaterThan(0)
+    expect(covered, "focused elements under the sticky bar").toEqual([])
+
+    // The case the browser does not handle by itself: the next control is already on screen, but under the bar, so
+    // Tab would not scroll. Put "Send report" there, focus the field before it, and Tab.
+    const send = reportTool(page).getByRole("button", { name: "Send report" })
+    await send.evaluate((button) => button.scrollIntoView({ behavior: "instant", block: "center" }))
+    await expect(bar).toBeVisible()
+    await send.evaluate((button) => {
+      const area = document.querySelector<HTMLElement>("[data-interest-bar]")!.getBoundingClientRect()
+      window.scrollBy({ behavior: "instant", top: button.getBoundingClientRect().top - (area.top + 10) })
+    })
+    await expect(bar).toBeVisible()
+    const placed = await send.evaluate((button) => {
+      const area = document.querySelector<HTMLElement>("[data-interest-bar]")!.getBoundingClientRect()
+      return button.getBoundingClientRect().top > area.top && button.getBoundingClientRect().top < area.bottom
+    })
+    expect(placed, "the next control starts under the bar").toBe(true)
+    await reportTool(page).getByLabel("What did you see?").evaluate((field) => (field as HTMLElement).focus({ preventScroll: true }))
+    await page.keyboard.press("Tab")
+    await expect(send).toBeFocused()
+    await nextFrames(page)
+    const clear = await send.evaluate((button) => {
+      const area = document.querySelector<HTMLElement>("[data-interest-bar]")!.getBoundingClientRect()
+      return button.getBoundingClientRect().bottom <= area.top
+    })
+    expect(clear, "Tab scrolled the focused control clear of the bar").toBe(true)
+
+    // With the interest form on screen the bar steps aside; its link leads there.
+    await page.evaluate(() => window.scrollTo({ behavior: "instant", top: 0 }))
+    await jobSummary(page).evaluate((summary) => window.scrollTo({ behavior: "instant", top: summary.getBoundingClientRect().bottom + window.scrollY + 1 }))
+    await expect(bar).toBeVisible()
+    await bar.getByRole("link", { name: "I'm interested" }).click()
+    await expect(page).toHaveURL(/#interest$/)
+    await expect(bar).toBeHidden()
+  })
+
+  test("job page: Share shows the public link only, which Copy puts on the clipboard", async ({ context, page }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"])
+    await page.setViewportSize(viewportFor(1280))
+    const jobPath = await firstJobPath(page)
+    // The request's own query never reaches the shared link.
+    await openV2(page, `${jobPath}?sent=1&error=x`)
+
+    const share = shareTool(page)
+    await share.locator("summary").click()
+    const field = share.getByRole("textbox", { name: "Public link to this job" })
+    const expected = new URL(jobPath, page.url()).toString()
+    await expect(field).toHaveValue(expected)
+    await expect(field).toHaveAttribute("readonly", "")
+
+    await share.getByRole("button", { name: "Copy link" }).click()
+    await expect(share.getByText("Link copied.")).toBeVisible()
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(expected)
+  })
+
+  test("job page: Report this listing offers the spec's reasons and says plainly that reporting isn't available yet, keeping the report", async ({ page }) => {
+    await page.setViewportSize(viewportFor(390))
+    const jobPath = await firstJobPath(page)
+
+    // A visitor is asked to sign in first.
+    await openV2(page, jobPath)
+    await reportTool(page).locator("summary").click()
+    await expect(reportTool(page).getByRole("link", { name: "Sign in to report" })).toHaveAttribute("href", `/sign-in?next=${encodeURIComponent(`${jobPath}#report`)}`)
+
+    await signIn(page, NEW_RIVER.email)
+    await openV2(page, jobPath)
+    const report = reportTool(page)
+    await report.locator("summary").click()
+    const reasons = report.getByRole("group", { name: "What's wrong with this listing?" }).getByRole("radio")
+    await expect(reasons).toHaveCount(8)
+    expect((await report.locator("fieldset label").allInnerTexts()).map((label) => label.trim())).toEqual([
+      "No longer available",
+      "Pay looks inaccurate",
+      "The work doesn't seem real",
+      "Wrong equipment listed",
+      "Suspicious contact request",
+      "Abusive language",
+      "It shows private or access details",
+      "Something else"
+    ])
+
+    await report.getByRole("radio", { name: "No longer available" }).check()
+    await report.getByLabel("What did you see?").fill("The landing said it filled last week")
+    await report.getByRole("button", { name: "Send report" }).click()
+
+    // The pilot store keeps no reports: the page says so, claims nothing was sent, and keeps what was chosen and written.
+    await expect(report.getByText("Reporting isn't available in this preview yet, so nothing was sent.")).toBeVisible()
+    await expect(report.getByRole("radio", { name: "No longer available" })).toBeChecked()
+    await expect(report.getByLabel("What did you see?")).toHaveValue("The landing said it filled last week")
+    await expect(report.getByText(/Thanks\. LogLoads staff review reports/)).toHaveCount(0)
+  })
+
+  for (const width of [1440, 390]) {
+    test(`job page at ${width} px with every section, Share and Report open has no serious or critical axe violations`, async ({ page }) => {
+      await page.setViewportSize(viewportFor(width))
+      await signIn(page, GRANITE_CREEK.email)
+      await openV2(page, await firstJobPath(page))
+
+      for (const summary of await page.locator("[data-ds-page='job-detail'] details:not(form details) > summary").all()) await summary.click()
+      await expect(reportTool(page)).toHaveAttribute("open", "")
+      await expectNoSeriousAxeViolations(page)
+    })
+  }
+
+  test.describe("without JavaScript", () => {
+    test.use({ contextOptions: { reducedMotion: "reduce" }, javaScriptEnabled: false })
+
+    test("job page: the sections open natively, the bar never shows, Share's link is selectable and a report posts and answers on the page", async ({ page }) => {
+      await page.setViewportSize(viewportFor(390))
+      await signIn(page, NEW_RIVER.email)
+      const jobPath = await firstJobPath(page)
+      await openV2(page, jobPath)
+
+      await expect(interestBar(page)).toBeHidden()
+      const haul = jobSections(page).first()
+      await haul.locator("summary").click()
+      await expect(haul).toHaveAttribute("open", "")
+
+      await shareTool(page).locator("summary").click()
+      await expect(shareTool(page).getByRole("textbox", { name: "Public link to this job" })).toHaveValue(new URL(jobPath, page.url()).toString())
+      await expect(shareTool(page).getByRole("button", { name: "Copy link" })).toHaveCount(0)
+
+      const report = reportTool(page)
+      await report.locator("summary").click()
+      await report.getByRole("radio", { name: "Pay looks inaccurate" }).check()
+      await report.getByLabel("What did you see?").fill("Posted without JavaScript")
+      await report.getByRole("button", { name: "Send report" }).click()
+
+      await expect(reportTool(page).getByText("Reporting isn't available in this preview yet, so nothing was sent.")).toBeVisible()
+      await expect(reportTool(page).getByRole("radio", { name: "Pay looks inaccurate" })).toBeChecked()
+      await expect(reportTool(page).getByLabel("What did you see?")).toHaveValue("Posted without JavaScript")
+    })
   })
 })
 
@@ -1935,13 +2218,124 @@ test.describe("find-work map (UX-13)", () => {
 })
 
 /**
+ * UX-14 (#137): the map's code loads only when the visitor asks for the map. JobMapLoader imports JobMap (the map and
+ * react-map-gl) through `next/dynamic`, and JobMap imports MapLibre GL when it mounts, so /v2/work requests neither
+ * until "Show map". A production build hashes file names, so map code is recognised by what it contains: MapLibre GL
+ * by its control class names, JobMap by its canvas label and MapLibre's stylesheet by its canvas container rule.
+ * performance-budget.yml runs these cases beside Lighthouse (budget: apps/web/tests/performance-budget.json).
+ */
+const MAP_CODE = [
+  { marker: "maplibregl-ctrl", name: "MapLibre GL", type: "script" },
+  { marker: MAP_CANVAS, name: "the job map (JobMap)", type: "script" },
+  { marker: "maplibregl-canvas-container", name: "MapLibre GL's stylesheet", type: "stylesheet" }
+] as const
+
+/**
+ * Records the map code that script and stylesheet responses carry. `take()` waits for the network to go quiet and for
+ * every body to be read, then returns the code found since the last call and how many bodies could not be read.
+ */
+function recordMapCode(page: Page) {
+  let found: string[] = []
+  let unreadable = 0
+  const reads: Promise<void>[] = []
+
+  page.on("response", (response) => {
+    const codes = MAP_CODE.filter((code) => code.type === response.request().resourceType())
+    if (codes.length === 0) return
+    reads.push(
+      response.text().then(
+        (body) => {
+          for (const code of codes) if (body.includes(code.marker)) found.push(code.name)
+        },
+        () => {
+          unreadable += 1
+        }
+      )
+    )
+  })
+
+  return {
+    async take() {
+      await page.waitForLoadState("networkidle")
+      await Promise.all(reads)
+      const result = { found: [...new Set(found)].sort(), unreadable }
+      found = []
+      unreadable = 0
+      return result
+    }
+  }
+}
+
+test.describe("the find-work map loads on request (UX-14, #137)", () => {
+  test("/v2/work requests no map code until Show map, then MapLibre GL, the map and its stylesheet load", async ({ baseURL, browser, page }) => {
+    // A board with jobs (a board without one draws no map), opened in a fresh browser so nothing comes from a cache.
+    await openFindWorkWithRows(page)
+    const board = new URL(page.url())
+    const fresh = await browser.newContext({ baseURL, viewport: viewportFor(390) })
+
+    try {
+      const visitor = await fresh.newPage()
+      await standInBasemap(visitor)
+      const mapCode = recordMapCode(visitor)
+
+      await openV2(visitor, `${board.pathname}${board.search}`)
+      await expect(jobRows(visitor).first()).toBeVisible()
+      expect(await mapCode.take(), "no map code (and no unread body) before the map is requested").toEqual({ found: [], unreadable: 0 })
+
+      await visitor.getByRole("link", { name: "Show map" }).click()
+      await visitor.waitForURL((url) => url.searchParams.get("view") === "map")
+      await expect(jobMap(visitor)).toBeVisible()
+      await expect(mapMarkers(visitor).first()).toBeVisible()
+      expect((await mapCode.take()).found, "the map's code loads once the map is requested").toEqual(MAP_CODE.map((code) => code.name).sort())
+    } finally {
+      await fresh.close()
+    }
+  })
+
+  // While its code loads the map's box is already in place (JobMapLoader), so the map never pushes the list down.
+  for (const width of [1280, 390]) {
+    test(`${width} px: the map takes its place without moving the job list`, async ({ page }) => {
+      await openFindWorkMap(page, width)
+      // Every layout shift since the page opened, from the browser's own record (the Layout Instability API).
+      const shifted = await page.evaluate(() => new Promise<number>((resolve) => {
+        let total = 0
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries() as Array<PerformanceEntry & { hadRecentInput: boolean; value: number }>) {
+            if (!entry.hadRecentInput) total += entry.value
+          }
+        }).observe({ buffered: true, type: "layout-shift" })
+        setTimeout(() => resolve(total), 250)
+      }))
+      expect(shifted, "cumulative layout shift as the map loads (Lighthouse's good is under 0.1)").toBeLessThan(0.1)
+    })
+  }
+
+  test.describe("without JavaScript", () => {
+    test.use({ javaScriptEnabled: false })
+
+    test("with the map requested the server's page still lists every job: job text needs no map code", async ({ page }) => {
+      await page.setViewportSize(viewportFor(1280))
+      await openFindWorkWithRows(page)
+      const titles = await jobRows(page).locator("h3 a").allInnerTexts()
+      const url = new URL(page.url())
+      url.searchParams.set("view", "map")
+      await openV2(page, `${url.pathname}${url.search}`)
+
+      await expect(page.getByText("Loading map… the list below is already complete.")).toBeVisible()
+      await expect(jobRows(page).first()).toBeVisible()
+      expect(await jobRows(page).locator("h3 a").allInnerTexts()).toEqual(titles)
+    })
+  })
+})
+
+/**
  * #124 criterion 8's dual-membership account. Maya Mills drives for North Pine Logging: a hauling business where a
  * driver holds no landing seat, so that context shows hauler navigation only. Summit Ridge Timber is a landing
  * business, so her dispatcher seat there shows landing navigation only. The seed gives her North Pine only.
  */
 const DUAL = { email: "maya@northpine.example", hauling: "North Pine Logging", landing: "Summit Ridge Timber", name: "Maya Mills" }
 const SUMMIT_OWNER = "cole@summit.example"
-const HAULER_NAVIGATION = ["Find work", "My inquiries"]
+const HAULER_NAVIGATION = ["Find work", "My inquiries", "My trucks", "Profile"]
 const LANDING_NAVIGATION = ["Overview", "Landing inbox", "Post jobs", "Landings"]
 
 const businessChoices = (page: Page) => page.getByRole("list", { name: "Your businesses" }).getByRole("listitem")
@@ -2093,6 +2487,205 @@ test.describe("business switching with two memberships (#124 criterion 8)", () =
 
     // Restore the membership this case removed: Summit invites Maya back and she accepts.
     await ensureDualMembership(browser, baseURL)
+  })
+})
+
+/**
+ * #125: hauler setup (/v2/start, /v2/start/hauler) and the business profile (/v2/hauler/profile). Nothing here
+ * writes: the pilot store cannot save a profile or create a business, so every post is answered with that, and the
+ * cases check the page keeps what was typed. New River Hauling is the seeded hauling business.
+ */
+const PROFILE_PATH = "/v2/hauler/profile"
+const HAULER_SETUP_PAGES = [
+  { heading: "Set up your business", path: "/v2/start", root: "start" },
+  { heading: "Your hauling business", path: "/v2/start/hauler", root: "start-hauler" },
+  { heading: "Join a hauling company", path: "/v2/start/hauler?type=member", root: "start-hauler" }
+] as const
+
+test.describe("hauler setup and business profile (#125)", () => {
+  test("responsive at 390 and 1440 px: setup, the profile form and its preview", async ({ page }) => {
+    for (const width of [390, 1440]) {
+      await page.setViewportSize(viewportFor(width))
+      for (const { heading, path, root } of HAULER_SETUP_PAGES) {
+        await openV2(page, path)
+        await expect(page.locator(`[data-ds-page='${root}']`)).toBeVisible()
+        await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible()
+        await expectNoHorizontalOverflow(page)
+      }
+    }
+
+    await signIn(page, NEW_RIVER.email)
+    for (const width of [390, 1440]) {
+      await page.setViewportSize(viewportFor(width))
+      await openV2(page, PROFILE_PATH)
+      await expect(page.getByRole("heading", { level: 1, name: "Business profile" })).toBeVisible()
+      await expect(page.getByRole("region", { name: "Seen by landing operators" })).toBeVisible()
+      await expect(page.getByRole("region", { name: "Private · only your team" })).toBeVisible()
+      await expectNoHorizontalOverflow(page)
+      await expectCurrent(page, width, "Profile")
+
+      await openV2(page, `${PROFILE_PATH}?view=preview`)
+      await expect(page.locator("[data-public-profile]")).toBeVisible()
+      await expect(page.locator("[data-public-profile] h2").first()).toHaveText(NEW_RIVER.name)
+      await expect(page.locator("[data-public-profile] input, [data-public-profile] textarea")).toHaveCount(0)
+      await expectNoHorizontalOverflow(page)
+    }
+  })
+
+  test("keyboard: every stop on setup and the profile keeps the design-system ring", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1280))
+    for (const path of ["/v2/start", "/v2/start/hauler"]) {
+      await openV2(page, path)
+      const stops = await tabThrough(page)
+      expect(stops.filter((stop) => stop.where === "main").length, `${path}: focus reaches the page content`).toBeGreaterThan(0)
+      for (const stop of stops) expectDesignSystemRing(stop)
+    }
+
+    await signIn(page, NEW_RIVER.email)
+    await openV2(page, PROFILE_PATH)
+    const stops = await tabThrough(page)
+    const main = stops.filter((stop) => stop.where === "main").map((stop) => stop.key)
+    expect(main).toEqual(expect.arrayContaining(["#profile-home-base", "#profile-about", "#profile-listed", "Save profile"]))
+    for (const stop of stops) expectDesignSystemRing(stop)
+  })
+
+  for (const width of [1440, 390]) {
+    test(`axe at ${width} px: setup, the profile form and its preview have no serious or critical violations`, async ({ page }) => {
+      await page.setViewportSize(viewportFor(width))
+      for (const path of ["/v2/start/hauler", "/v2/start/hauler?type=member"]) {
+        await openV2(page, path)
+        await expectNoSeriousAxeViolations(page)
+      }
+      await signIn(page, NEW_RIVER.email)
+      for (const path of [PROFILE_PATH, `${PROFILE_PATH}?view=preview`, `${PROFILE_PATH}?setup=1&type=company`]) {
+        await openV2(page, path)
+        await expectNoSeriousAxeViolations(page)
+      }
+    })
+  }
+
+  test.describe("without JavaScript", () => {
+    test.use({ javaScriptEnabled: false })
+
+    test("the setup choices are GET forms the server answers", async ({ page }) => {
+      await page.setViewportSize(viewportFor(390))
+      await openV2(page, "/v2/start")
+      await page.getByRole("radio", { name: "I have trucks" }).check()
+      await page.getByRole("button", { name: "Continue" }).click()
+      await page.waitForURL((url) => url.pathname === "/v2/start/hauler")
+
+      await page.getByRole("radio", { name: "I work for a hauling company" }).check()
+      await page.getByRole("button", { name: "Continue" }).click()
+      await page.waitForURL((url) => url.searchParams.get("type") === "member")
+      await expect(page.getByRole("heading", { level: 1, name: "Join a hauling company" })).toBeVisible()
+      // Joining asks nothing about trucks: there is no field at all.
+      await expect(page.locator("#main input, #main select, #main textarea")).toHaveCount(0)
+    })
+
+    test("the profile form posts to its action, which validates on the server and keeps what was typed", async ({ page }) => {
+      // At 1440 px the form actions are in the page flow; below bp-sm they stick above the tabs (covered at 390 above).
+      await page.setViewportSize(viewportFor(1440))
+      await signIn(page, NEW_RIVER.email)
+      await openV2(page, PROFILE_PATH)
+
+      // A street address is refused by the server, with an error summary and the field's own message.
+      await page.getByLabel("Home base").fill("4417 Spur Road")
+      await page.getByLabel("About").fill("Sent without JavaScript: two trucks")
+      await page.getByRole("button", { name: "Save profile" }).click()
+      await expect(page.getByRole("alert").filter({ hasText: "Fix 1 field to save your profile" })).toBeVisible()
+      await expect(page.getByLabel("Home base")).toHaveValue("4417 Spur Road")
+      await expect(page.getByLabel("About")).toHaveValue("Sent without JavaScript: two trucks")
+
+      // A valid post: the pilot store cannot save it, and the page says so without losing anything.
+      await page.getByLabel("Home base").fill("sweet home, or")
+      await page.getByRole("button", { name: "Save profile" }).click()
+      await expect(page.getByRole("alert").filter({ hasText: "isn't available in this preview yet" })).toBeVisible()
+      await expect(page.getByLabel("Home base")).toHaveValue("sweet home, or")
+      await expect(page.getByLabel("About")).toHaveValue("Sent without JavaScript: two trucks")
+      await expect(page).toHaveURL(new RegExp(`${PROFILE_PATH}$`))
+    })
+  })
+})
+
+/**
+ * #126: My trucks (/v2/hauler/trucks). Nothing here writes: the pilot store reads a business's equipment but cannot
+ * save V2 presets or availability, so every post is answered with that, and the cases check the page keeps what was
+ * posted. Granite Creek Hauling is the seeded hauling business with equipment listed; New River Hauling has none.
+ */
+const TRUCKS_PATH = "/v2/hauler/trucks"
+
+test.describe("My trucks (#126)", () => {
+  test("responsive at 390 and 1440 px, with every availability shown with its source and never as zero", async ({ page }) => {
+    await signIn(page, GRANITE_CREEK.email)
+    for (const width of [390, 1440]) {
+      await page.setViewportSize(viewportFor(width))
+      await openV2(page, TRUCKS_PATH)
+      await expect(page.locator("[data-ds-page='hauler-trucks']")).toBeVisible()
+      await expect(page.getByRole("heading", { level: 1, name: "My trucks" })).toBeVisible()
+      await expectNoHorizontalOverflow(page)
+      await expectCurrent(page, width, "My trucks")
+
+      // The pilot holds no V2 availability report: each truck type reads "Not recently confirmed", never 0.
+      await expect(page.getByText("Not recently confirmed").first()).toBeVisible()
+      await expect(page.locator("#main")).not.toContainText(/\b0 of \d+ available/)
+      // Presets come from the reference list, grouped truck, trailer and extras, with Other (describe).
+      await expect(page.getByLabel("Truck", { exact: true })).toBeVisible()
+      await expect(page.getByLabel("Trailer (optional)", { exact: true })).toContainText("Other (describe)")
+      await expect(page.getByRole("group", { name: "Extras on these trucks (optional)" })).toBeVisible()
+    }
+  })
+
+  test("keyboard: every stop on My trucks keeps the design-system ring", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1280))
+    await signIn(page, GRANITE_CREEK.email)
+    await openV2(page, TRUCKS_PATH)
+    const stops = await tabThrough(page)
+    expect(stops.filter((stop) => stop.where === "main").map((stop) => stop.key)).toEqual(expect.arrayContaining(["#add-truck", "Add to my trucks"]))
+    for (const stop of stops) expectDesignSystemRing(stop)
+  })
+
+  for (const width of [1440, 390]) {
+    test(`axe at ${width} px: My trucks with equipment, without equipment, and as setup step 3`, async ({ page }) => {
+      await page.setViewportSize(viewportFor(width))
+      await signIn(page, GRANITE_CREEK.email)
+      for (const path of [TRUCKS_PATH, `${TRUCKS_PATH}?setup=1`]) {
+        await openV2(page, path)
+        await expectNoSeriousAxeViolations(page)
+      }
+      // A signed-in browser is sent away from /sign-in, so the second business signs in from a fresh session.
+      await page.context().clearCookies()
+      await signIn(page, NEW_RIVER.email)
+      await openV2(page, TRUCKS_PATH)
+      await expectNoSeriousAxeViolations(page)
+    })
+  }
+
+  test.describe("without JavaScript", () => {
+    test.use({ javaScriptEnabled: false })
+
+    test("the add form posts to its action, which answers on the page and keeps what was posted", async ({ page }) => {
+      await page.setViewportSize(viewportFor(1440))
+      await signIn(page, NEW_RIVER.email)
+      await openV2(page, TRUCKS_PATH)
+
+      await page.getByLabel("Truck", { exact: true }).selectOption("chip_truck")
+      await page.getByLabel("Trailer (optional)", { exact: true }).selectOption("chip_van")
+      await page.getByLabel("On-board scales").check()
+      // Unhydrated, the count is a native number field.
+      const count = page.getByRole("spinbutton", { name: "How many like this" })
+      await count.fill("3")
+      await expect(page.getByRole("button", { name: "Add to my trucks" })).toHaveAttribute("type", "submit")
+      // Enter in a field submits the form natively through its submit button (Playwright reports that button as
+      // "not stable" in this unscripted dev page, so the case does not click it).
+      await count.press("Enter")
+
+      await page.waitForURL((url) => url.pathname === TRUCKS_PATH && url.searchParams.get("outcome") === "unavailable")
+      await expect(page.getByRole("alert").filter({ hasText: "isn't available in this preview yet" })).toBeVisible()
+      await expect(page.getByLabel("Truck", { exact: true })).toHaveValue("chip_truck")
+      await expect(page.getByLabel("Trailer (optional)", { exact: true })).toHaveValue("chip_van")
+      await expect(page.getByLabel("On-board scales")).toBeChecked()
+      await expect(page.getByRole("spinbutton", { name: "How many like this" })).toHaveValue("3")
+    })
   })
 })
 
@@ -2290,8 +2883,8 @@ test.describe("the landing form without JavaScript (#127)", () => {
  */
 const OVERVIEW_ACCOUNTS = [
   { email: LANDING_OWNER, items: LANDING_NAVIGATION },
-  // Both sides: five destinations, the bottom tabs' limit; Landings is one tap away under Overview.
-  { email: "dispatch@northpine.example", items: ["Find work", "My inquiries", "Overview", "Landing inbox", "Post jobs"] }
+  // Both sides: the five bottom tabs (lead decision on #209); Post jobs and Landings are one tap away under Overview.
+  { email: "dispatch@northpine.example", items: ["Find work", "My inquiries", "My trucks", "Overview", "Landing inbox"] }
 ] as const
 
 test.describe("landing overview (#133)", () => {
@@ -2362,7 +2955,7 @@ test.describe("landing overview (#133)", () => {
       await openV2(page, "/v2/landing")
       const stops = await tabThrough(page)
 
-      expect(stops.filter((stop) => stop.where === "main").map((stop) => stop.key)).toEqual(expect.arrayContaining(["Post a job", "Find trucks"]))
+      expect(stops.filter((stop) => stop.where === "main").map((stop) => stop.key)).toEqual(expect.arrayContaining(["Post a job", "Find trucks", "All jobs", "All landings"]))
       for (const stop of stops) expectDesignSystemRing(stop)
     }
   })

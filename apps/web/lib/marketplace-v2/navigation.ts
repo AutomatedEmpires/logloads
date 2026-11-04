@@ -5,6 +5,8 @@ import type { NavItem, WorkspaceKind } from "@logloads/ui/layout"
 export const V2_NAVIGATION: readonly NavItem[] = Object.freeze([
   { href: "/v2/work", icon: "nav.loads", id: "work", label: "Find work" },
   { href: "/v2/inquiries", icon: "nav.messages", id: "inquiries", label: "My inquiries" },
+  { href: "/v2/hauler/trucks", icon: "truck.log", id: "hauler-trucks", label: "My trucks" },
+  { href: "/v2/hauler/profile", icon: "nav.profile", id: "hauler-profile", label: "Profile" },
   { href: "/v2/landing", icon: "nav.today", id: "landing-overview", label: "Overview" },
   { href: "/v2/landing/inquiries", icon: "nav.landing", id: "landing-inquiries", label: "Landing inbox" },
   { href: "/v2/landing/jobs", icon: "ops.document", id: "landing-jobs", label: "Post jobs" },
@@ -16,6 +18,8 @@ export const V2_NAVIGATION: readonly NavItem[] = Object.freeze([
  * convenience only: every page still resolves the viewer on the server and refuses what the role cannot do.
  */
 const NAV_CAPABILITY: Readonly<Record<string, MarketplaceCapability | null>> = Object.freeze({
+  "hauler-profile": "interest.express",
+  "hauler-trucks": "interest.express",
   "inquiries": "interest.express",
   "landing-inquiries": "inquiry.respond",
   "landing-jobs": "job.publish",
@@ -23,6 +27,15 @@ const NAV_CAPABILITY: Readonly<Record<string, MarketplaceCapability | null>> = O
   "landings": "job.publish",
   "work": null
 })
+
+/**
+ * Destinations a business that is both a hauling and a landing business does not get in its navigation, so it stays
+ * within the five bottom tabs (#124): Find work, My inquiries, My trucks, Overview and Landing inbox (lead decision on
+ * #209, 2026-11-04). Each is still one link away: the profile from My trucks and the Find work checklist; Post jobs
+ * ("Post a job", "All jobs") and Landings ("All landings") from the landing overview (#133). The long-term fix is
+ * navigation scoped to the workspace the person is in.
+ */
+const ONE_SIDED_ONLY: ReadonlySet<string> = new Set(["hauler-profile", "landing-jobs", "landings"])
 
 export function hasHaulerSide(capabilities: readonly MarketplaceCapability[]): boolean {
   return capabilities.includes("interest.express")
@@ -46,12 +59,11 @@ export function v2NavigationFor(
   }
 
   const landingOnly = hasLandingSide(capabilities) && !hasHaulerSide(capabilities)
-  // Both sides would need six destinations; the bottom tabs hold five. Landings stays one tap away, under Overview.
   const bothSides = hasLandingSide(capabilities) && hasHaulerSide(capabilities)
 
   return V2_NAVIGATION.filter((item) => {
     const needed = NAV_CAPABILITY[item.id]
-    if (bothSides && item.id === "landings") return false
+    if (bothSides && ONE_SIDED_ONLY.has(item.id)) return false
     return needed === null ? !landingOnly : needed !== undefined && capabilities.includes(needed)
   }).map((item) => {
     // UX-09 (#132): unread inquiries per destination (`inquiries.ts`); a zero shows no badge.

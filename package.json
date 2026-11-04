@@ -46,6 +46,7 @@
     "supabase:provision": "node tools/provision-supabase-project.mjs",
     "lint": "turbo run lint && pnpm lint:workflows",
     "lint:workflows": "npx --yes github-actionlint@1.7.12",
+    "normalized:store": "node tools/normalized-store.mjs",
     "test": "turbo run test --concurrency=1 && pnpm test:tools",
     "test:tools": "node --test tools/*.test.mjs",
     "test:e2e": "node tools/run-e2e.mjs",

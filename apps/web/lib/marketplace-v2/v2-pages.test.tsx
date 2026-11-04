@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   interestForJob: vi.fn(),
   landingInquiryJobs: vi.fn(),
   listHaulerInterests: vi.fn(),
+  listJobs: vi.fn(),
   listLandingInterests: vi.fn(),
   resolveV2Actor: vi.fn(),
   viewerAccess: vi.fn()
@@ -54,6 +55,7 @@ vi.mock("@/lib/marketplace-v2/pilot-adapter", () => ({
     interestForJob: mocks.interestForJob,
     landingInquiryJobs: mocks.landingInquiryJobs,
     listHaulerInterests: mocks.listHaulerInterests,
+    listJobs: mocks.listJobs,
     listLandingInterests: mocks.listLandingInterests,
     viewerAccess: mocks.viewerAccess
   }
@@ -178,6 +180,7 @@ beforeEach(() => {
   mocks.getSessionActor.mockResolvedValue(actorFor(HAULER_ORG))
   mocks.viewerAccess.mockResolvedValue({ capabilities: ["interest.express", "interest.withdraw", "interest.reply"], organizationName: "Example Hauling LLC" })
   mocks.interestForJob.mockResolvedValue(null)
+  mocks.listJobs.mockResolvedValue([])
   mocks.haulerEquipment.mockResolvedValue([
     { configurationKey: "log_truck|pole_trailer", label: "Log truck + Pole trailer", unitsListed: 2 },
     { configurationKey: "chip_truck|chip_van", label: "Chip truck + Chip van", unitsListed: 1 }
@@ -235,7 +238,9 @@ describe("the job page (/v2/work/[jobId])", () => {
     expect(count).toMatch(/required=""/)
     expect(form).toMatch(/<label[^>]*for="interest-trucks"[^>]*>Trucks you can offer/)
     expect(form).not.toContain('name="equipmentCount"')
-    expect(textOf(form)).toContain("Your business profile lists no trucks or trailers yet")
+    expect(textOf(form)).toContain("Your business lists no trucks or trailers yet")
+    // #126: "Add your equipment" leads to My trucks in V2, never the legacy fleet page.
+    expect(form).toMatch(/<a[^>]*href="\/v2\/hauler\/trucks"[^>]*>Add your equipment<\/a>/)
   })
 
   it("keeps the refusal notes: visitor, poster, non-hauler, closed listing and interest already sent", async () => {
@@ -252,7 +257,7 @@ describe("the job page (/v2/work/[jobId])", () => {
 
     mocks.getJob.mockResolvedValueOnce(job({ acceptingInterest: false, status: "paused" }))
     const paused = await renderJob()
-    expect(textOf(paused)).toContain("This job is paused by the poster and is not accepting new interest.")
+    expect(textOf(paused)).toContain("The poster paused this listing. Listing last changed on Nov 1, 2026. It is not accepting new interest.")
     expect(paused).not.toContain('name="loadPostingId"')
 
     mocks.interestForJob.mockResolvedValueOnce(interest({ status: "replied" }))
@@ -633,8 +638,8 @@ describe("/v2/switch, /v2/start and the V2 not-found page", () => {
     expect(hidden(formAround(html, "Act as Example Timber Co"), "organizationId", LANDING_ORG)).toBe(true)
   })
 
-  it("builds /v2/start and the not-found page from the design system", () => {
-    const start = renderToStaticMarkup(<StartPage />)
+  it("builds /v2/start and the not-found page from the design system", async () => {
+    const start = renderToStaticMarkup(await StartPage({}))
     const missing = renderToStaticMarkup(<MarketplaceV2NotFound />)
 
     expect(start).toContain('data-ds-page="start"')
