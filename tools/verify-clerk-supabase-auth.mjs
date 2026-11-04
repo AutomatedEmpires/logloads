@@ -9,7 +9,8 @@
  *   AC2  forged, expired, wrong-issuer, wrong-audience and missing-role tokens are rejected at the gateway or
  *        resolve to no user;
  *   AC3  a removed membership loses access on the next request, with the same still-valid token.
- * It prints a pass/fail table. It never prints a key, a token, a user ID or a row ID.
+ * It prints a pass/fail table. A run that is not refused never prints a key, a token, a user ID, a row ID or the
+ * project reference, so its output can be posted on the public issue. A refusal names the reference it refused.
  *
  * TWO MODES
  *   live (default)   A development Clerk instance and a development Supabase project. Clerk session tokens for
@@ -379,6 +380,10 @@ export function classify(result) {
   return { detail: httpDetail(result), outcome: "error", rows: [] }
 }
 
+// Outcomes that show a read was refused or empty: a database refusal (42501), a gateway refusal (401/403 or
+// PGRST3xx), or an empty 2xx. Anything else ("error") is inconclusive.
+const LOST_ACCESS = new Set(["denied", "no-rows", "rejected"])
+
 function describeRefusal(probe) {
   if (probe.outcome === "rejected") return `rejected at the gateway (${probe.detail})`
   if (probe.outcome === "denied") return `resolved to no user (${probe.detail})`
@@ -505,6 +510,9 @@ function clerkTokenSource({ config, fetch: fetchImpl, generateRsaKey, now, remem
       const { payload } = decodeJwt(minted.token)
       const session = this.claims(label)
 
+      if (payload.sub !== config.users[label]) {
+        return { fail: `template "${NO_ROLE_TEMPLATE}" token names another subject than test user ${label.toUpperCase()}` }
+      }
       if (payload.role !== undefined) {
         return { fail: `template "${NO_ROLE_TEMPLATE}" carries a role claim; it must leave role out` }
       }
@@ -590,6 +598,9 @@ function clerkTokenSource({ config, fetch: fetchImpl, generateRsaKey, now, remem
       const session = this.claims(label)
       const pinned = new Set(audiences(session.aud))
 
+      if (payload.sub !== config.users[label]) {
+        return { fail: `template "${WRONG_AUDIENCE_TEMPLATE}" token names another subject than test user ${label.toUpperCase()}` }
+      }
       if (audiences(payload.aud).length === 0 || audiences(payload.aud).some((value) => pinned.has(value))) {
         return { fail: `template "${WRONG_AUDIENCE_TEMPLATE}" must set an audience other than the session token's` }
       }
@@ -839,7 +850,14 @@ export async function run({
   }
 
   const { config } = resolved
-  const secrets = new Set([config.supabase.anonKey, config.supabase.serviceKey, config.clerk?.secretKey, config.jwtSecret])
+  // Live, the project reference and the test users' Clerk IDs are redacted too, so no error path can print them.
+  const secrets = new Set([
+    config.supabase.anonKey,
+    config.supabase.serviceKey,
+    config.clerk?.secretKey,
+    config.jwtSecret,
+    ...(mode === "live" ? [config.supabase.ref, config.users.a, config.users.b] : [])
+  ])
   const remember = (token) => {
     secrets.add(token)
     return token
@@ -857,7 +875,8 @@ export async function run({
   let refused = null
   let aborted = null
 
-  out(`${TOOL}: ${tokens.describe()}${config.supabase.ref ? ` (project ${config.supabase.ref})` : ""}`)
+  // The output is meant to be pasted into a public issue, so it never names the project reference.
+  out(`${TOOL}: ${tokens.describe()}${mode === "live" ? " (project ref hidden)" : ""}`)
 
   try {
     await tokens.start()
@@ -1007,15 +1026,25 @@ export async function run({
         const afterAccess = await db.access(tokenB, people.a.orgId)
         const stillValid = await db.tenant(tokenB, [people.b.orgId])
 
-        if (after.outcome === "rows" || afterAccess.outcome !== "denied") {
+        if (after.outcome === "rows" || afterAccess.outcome === "rows") {
           record("removed-membership", "FAIL", `B kept access after removal (${after.detail}; access ${afterAccess.detail})`)
+        } else if (!LOST_ACCESS.has(after.outcome) || afterAccess.outcome !== "denied") {
+          // Only an explicit empty read or refusal counts as lost access; an error proves nothing either way.
+          record(
+            "removed-membership",
+            "FAIL",
+            `inconclusive: after removal the read gave ${after.detail} and access ${afterAccess.detail}; ` +
+              "expected 0 rows or a refusal, and a 42501 refusal"
+          )
         } else if (stillValid.outcome !== "rows") {
           record("removed-membership", "FAIL", `inconclusive: B's token stopped working altogether (${stillValid.detail})`)
         } else {
+          const read = after.outcome === "no-rows" ? "read 0 rows of A" : `was refused A's rows (${after.detail})`
+
           record(
             "removed-membership",
             "PASS",
-            `as a member B read A's probe row; after removal the same token read ${after.detail.replace(/^HTTP \d+, /, "")} of A ` +
+            `as a member B read A's probe row; after removal the same token ${read} ` +
               `and get_viewer_marketplace_access refused (${afterAccess.detail}), while B's own organization stayed readable`
           )
         }
