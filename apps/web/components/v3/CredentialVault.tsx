@@ -1,7 +1,7 @@
 "use client"
 
 import Image from "next/image"
-import Link from "next/link"
+import { AppLink as Link } from "../AppLink"
 import { useId, useState, useTransition, type FormEvent } from "react"
 import { Badge, Icon } from "@logloads/ui"
 

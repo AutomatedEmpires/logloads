@@ -1,6 +1,6 @@
 "use client"
 
-import Link from "next/link"
+import { AppLink as Link } from "../AppLink"
 import Image from "next/image"
 import { useState, useTransition, type FormEvent } from "react"
 import { PRE_TRIP_INSPECTION_CHECKLIST } from "@logloads/contracts"

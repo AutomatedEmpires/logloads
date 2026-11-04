@@ -1,6 +1,6 @@
 "use client"
 
-import Link from "next/link"
+import { AppLink as Link } from "../AppLink"
 import { Badge, Icon } from "@logloads/ui"
 
 import type { DriverAvailabilitySummary } from "@/lib/driver-data"

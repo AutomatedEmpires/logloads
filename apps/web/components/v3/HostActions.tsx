@@ -8,8 +8,7 @@ import {
   formatMoney,
   type OpportunityVisibilityMode
 } from "@logloads/contracts"
-import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { AppLink as Link } from "../AppLink"
 import { useMemo, useState, useTransition } from "react"
 
 import {
@@ -119,7 +118,6 @@ export interface PendingCapacityRequest {
 }
 
 function ApprovalRow({ request }: { request: PendingCapacityRequest }) {
-  const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [confirming, setConfirming] = useState<"approve" | "decline" | null>(null)
   const [decided, setDecided] = useState(false)
@@ -139,7 +137,6 @@ function ApprovalRow({ request }: { request: PendingCapacityRequest }) {
 
         setConfirming(null)
         setDecided(true)
-        router.refresh()
       } catch {
         setError("That decision did not go through. Check your connection and try again.")
       }

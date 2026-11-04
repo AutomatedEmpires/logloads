@@ -1,6 +1,6 @@
 "use client"
 
-import Link from "next/link"
+import { AppLink as Link } from "../AppLink"
 import { useRef, useState, useTransition, type FormEvent } from "react"
 import { Icon } from "@logloads/ui"
 
