@@ -1,0 +1,160 @@
+name: Performance Budget
+
+# UX-14 (#137): Lighthouse mobile budgets for V2 Find work, Find work with the map requested and a job page, measured
+# on a production build, plus the DS-05 cases that prove the map's code loads only when the map is requested.
+# The budget and the Lighthouse settings are apps/web/tests/performance-budget.json; tools/performance-budget.mjs turns
+# them into the Lighthouse CI config and the run summary. The app runs on this job's disposable Supabase stack with
+# the seeded demo accounts, as extended-validation's DS-05 suite does. No provider key is configured, so Clerk,
+# PostHog and CARTO are not part of the measurement (CARTO's basemap requests are blocked; the map's own code is not).
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/performance-budget.yml"
+      - "apps/web/**"
+      - "packages/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "tools/performance-budget.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: performance-budget-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lighthouse:
+    name: Lighthouse budget
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Lighthouse CI is run with npx so it never enters the app's dependencies; pinned exactly.
+      LHCI_CLI: "@lhci/cli@0.15.1"
+      PERF_BASE_URL: http://127.0.0.1:3014
+    steps:
+      # Everything the job measures goes outside the checkout, into one directory uploaded at the end.
+      - name: Prepare the output directory
+        run: |
+          echo "PERF_OUT=$RUNNER_TEMP/performance-budget" >>"$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/performance-budget"
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+
+      # The same isolated stack as extended-validation; the app bootstraps the seeded operating state into it.
+      - name: Start the isolated Supabase stack
+        run: pnpm db:assert
+
+      - name: Build production application
+        id: build
+        run: pnpm --filter @logloads/web build 2>&1 | tee "$PERF_OUT/next-build.log"
+
+      - name: Install Playwright browsers
+        id: playwright-browsers
+        run: pnpm --filter @logloads/web exec playwright install --with-deps chromium
+
+      # #137 criterion 3, and the job text before any map code: the DS-05 cases tagged #137, which extended-validation
+      # also runs with the whole suite.
+      - name: Map code loads only on request (DS-05)
+        id: map-code
+        run: pnpm test:e2e:design-system --grep "#137"
+
+      - name: Upload map-code traces
+        if: ${{ !cancelled() && steps.map-code.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-budget-map-traces
+          path: apps/web/tests/test-results/design-system/
+          retention-days: 7
+
+      # `next start` with the DS-05 suite's environment (apps/web/tests/design-system.config.mjs) on its own port.
+      - name: Start the production server
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: apps/web
+        run: |
+          status="$(supabase status --output json)"
+          SUPABASE_URL="$(jq -r '.API_URL // .PROJECT_URL // empty' <<<"$status")"
+          SUPABASE_SERVICE_ROLE_KEY="$(jq -r '.SERVICE_ROLE_KEY // .SECRET_KEY // empty' <<<"$status")"
+          if [[ -z "$SUPABASE_URL" || -z "$SUPABASE_SERVICE_ROLE_KEY" ]]; then
+            echo "The local Supabase stack reported no API URL or service-role key."
+            exit 1
+          fi
+          echo "::add-mask::$SUPABASE_SERVICE_ROLE_KEY"
+          export SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY
+          nohup node node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3014 >"$PERF_OUT/next-start.log" 2>&1 &
+        env:
+          LOGLOADS_ALLOW_STATE_BOOTSTRAP: "true"
+          LOGLOADS_DEMO_MODE: "true"
+          LOGLOADS_ENABLE_DEV_LOGIN: "true"
+          LOGLOADS_MARKETPLACE_V2: enabled
+          LOGLOADS_RATE_LIMIT_HMAC_SECRET: logloads-perf-rate-limit-hmac-secret
+          LOGLOADS_RATE_LIMIT_TEST_MODE: "true"
+          LOGLOADS_SESSION_SECRET: logloads-perf-session-secret
+          NEXT_PUBLIC_APP_URL: ${{ env.PERF_BASE_URL }}
+
+      - name: Choose the job page and write the Lighthouse CI config
+        id: config
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: node tools/performance-budget.mjs config --base "$PERF_BASE_URL" --out "$PERF_OUT/lighthouserc.json"
+
+      - name: Lighthouse, mobile with simulated slow 4G and a 4x CPU slowdown
+        id: collect
+        if: ${{ !cancelled() && steps.config.outcome == 'success' }}
+        working-directory: ${{ env.PERF_OUT }}
+        run: |
+          google-chrome --version || true
+          npx --yes "$LHCI_CLI" collect --config=lighthouserc.json
+
+      - name: Check the budget
+        id: assert
+        if: ${{ !cancelled() && steps.collect.outcome == 'success' }}
+        working-directory: ${{ env.PERF_OUT }}
+        run: npx --yes "$LHCI_CLI" assert --config=lighthouserc.json
+
+      - name: Summarize
+        if: ${{ !cancelled() && steps.collect.outcome == 'success' }}
+        run: |
+          status=0
+          node tools/performance-budget.mjs summary --results "$PERF_OUT/.lighthouseci" --build-log "$PERF_OUT/next-build.log" >"$PERF_OUT/summary.md" || status=$?
+          cat "$PERF_OUT/summary.md" >>"$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      # The HTML and JSON report of every run, the summary, the build log and the server log. They hold only this
+      # job's disposable stack and seeded demo data.
+      - name: Upload Lighthouse reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-reports
+          path: ${{ env.PERF_OUT }}
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 14

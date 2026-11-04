@@ -345,3 +345,26 @@
   background: var(--ll-color-surface-subtle);
   font-size: var(--ll-text-md);
 }
+
+/* While the map's code loads (#137) the loader holds the region's own box (.region .placeholder), so the map takes
+   its place without moving the list below it. Without JavaScript the map never comes, so the box is only the note. */
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--ll-space-4);
+  text-align: center;
+}
+
+@media (scripting: none) {
+  .placeholder {
+    display: block;
+    height: auto;
+    min-height: 0;
+    margin-inline: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    text-align: start;
+  }
+}

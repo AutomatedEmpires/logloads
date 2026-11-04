@@ -6,7 +6,12 @@ import type { JobMapPoint } from "./JobMap"
 import styles from "./JobMap.module.css"
 
 const JobMap = dynamic(() => import("./JobMap"), {
-  loading: () => <p className={styles.note}>Loading map… the list below is already complete.</p>,
+  // The region's own box while the code loads, so the map arrives without moving the list (#137).
+  loading: () => (
+    <div className={`${styles.region} ${styles.placeholder}`}>
+      <p className={styles.note}>Loading map… the list below is already complete.</p>
+    </div>
+  ),
   ssr: false
 })
 
@@ -17,5 +22,8 @@ const JobMap = dynamic(() => import("./JobMap"), {
  * cards' freshness; without it the map uses the time it opened.
  */
 export function JobMapLoader({ points, now }: { points: JobMapPoint[]; now?: string }) {
+  // Nothing to plot (e.g. a search with no results): say so at once, without the map's box or its code, so the list
+  // never jumps up when the map would only have said this (#137).
+  if (points.length === 0) return <p className={styles.note}>No mappable approximate locations in these results.</p>
   return <JobMap now={now} points={points} />
 }
