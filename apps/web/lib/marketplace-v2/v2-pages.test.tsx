@@ -374,14 +374,14 @@ describe("the landing inbox (/v2/landing/inquiries)", () => {
     expect(textOf(html)).toContain("New 1 inquiry")
     expect(tabs(html, "Inquiries by queue")).toEqual([
       ["/v2/landing/inquiries", "New 1", true],
-      ["/v2/landing/inquiries?tab=replied", "Replied 1", false],
+      ["/v2/landing/inquiries?tab=responded", "Replied 1", false],
       ["/v2/landing/inquiries?tab=closed", "Closed 0", false]
     ])
     // The first row of the first non-empty queue is selected by default.
     expect(html.match(/<a[^>]*aria-current="true"[^>]*>[^<]*/g)).toEqual([expect.stringContaining("Example Hauling LLC")])
     expect(html).not.toMatch(/<script>alert|<img/)
 
-    const replied = await renderPage(LandingInboxPage, { tab: "replied" })
+    const replied = await renderPage(LandingInboxPage, { tab: "responded" })
     expect(replied).toMatch(/<ul aria-label="Replied inquiries"/)
     expect(textOf(replied)).toContain("Waiting for the hauler")
   })
@@ -587,7 +587,7 @@ describe("inquiry conversations (UX-09, #132)", () => {
       expect(textOf(form)).toContain("Landing All landings Upper Spur Landing")
 
       const filtered = await renderPage(LandingInboxPage, { job: OTHER_JOB })
-      expect(tabs(filtered, "Inquiries by queue")[1]?.[0]).toBe(`/v2/landing/inquiries?tab=replied&job=${OTHER_JOB}`)
+      expect(tabs(filtered, "Inquiries by queue")[1]?.[0]).toBe(`/v2/landing/inquiries?tab=responded&job=${OTHER_JOB}`)
       expect(newRows(filtered)).toContain(`?inquiry=${THIRD}&amp;job=${OTHER_JOB}#conversation`)
       expect(textOf(filtered)).toContain("New 1 inquiry")
       expect(filtered).toContain('href="/v2/landing/inquiries"')

@@ -1,5 +1,7 @@
 import { z } from "zod"
 
+import { haversineMiles, type Coordinates } from "./geo"
+
 /**
  * Marketplace V2 — the load-board domain from the Product Blueprint v1.0 and the UX & Functional
  * Specification v1.0 (docs/product/). This module is the boundary the V2 screens depend on:
@@ -335,14 +337,48 @@ export interface MarketplaceHaulerEquipmentOption {
   label: string
   /** Units of this configuration listed in the business profile (self-reported). */
   unitsListed: number
+  /**
+   * The configuration's truck, trailer and attachment codes from `MARKETPLACE_EQUIPMENT_TYPES`, for advisory fit
+   * against a job's equipment. Parts outside that taxonomy are left out, never guessed.
+   */
+  equipmentCodes: string[]
 }
+
+/** Discovery orders (UX 02 §A6): newest confirmed, nearest, and pay compared within one basis only. */
+export const MARKETPLACE_JOB_SORTS = ["newest", "nearest", "pay"] as const
+export type MarketplaceJobSort = (typeof MARKETPLACE_JOB_SORTS)[number]
 
 export interface MarketplaceJobFilters {
   query?: string | null
+  /** One equipment code: jobs that list it. */
   equipment?: string | null
+  /**
+   * The viewer's own equipment setups, each a list of equipment codes ("My trucks"). Hides jobs that ask for
+   * equipment no single setup has. Jobs that state no equipment stay in: nothing says they need other trucks.
+   */
+  equipmentSetups?: ReadonlyArray<readonly string[]> | null
   payUnit?: MarketplacePayUnit | null
+  /** One of `MARKETPLACE_PRODUCTS`, matched without case; "Other" matches any stated product outside the named list. */
+  product?: string | null
+  /**
+   * UTC calendar date (YYYY-MM-DD): jobs whose stated start is on or before it, including work already under way.
+   * Jobs that state no start are hidden while it is set, because nothing says they start in time.
+   */
+  startsBy?: string | null
+  /**
+   * The search origin: a place the user typed (town or ZIP), never a device location. It is snapped to the public
+   * 0.1° grid before any distance is measured, as `search_job_postings` does with `p_point`.
+   */
+  near?: Coordinates | null
+  /**
+   * With `near`: keep jobs whose public point is within this many miles, plus `MARKETPLACE_RADIUS_BUFFER_MILES`.
+   * Null or absent: any distance (the normalized adapter passes its 500-mile maximum). Ignored without `near`.
+   */
+  radiusMiles?: number | null
   /** Default true: closed, paused, filled and expired jobs are hidden from discovery. */
   acceptingOnly?: boolean
+  /** Default "newest". "nearest" without `near` falls back to "newest". */
+  sort?: MarketplaceJobSort | null
 }
 
 // ---------------------------------------------------------------------------
@@ -418,56 +454,188 @@ function normalized(value: string): string {
   return value.trim().toLowerCase()
 }
 
-/** Text, equipment and pay-basis filtering. Pay amounts on different bases are never compared. */
+// ---------------------------------------------------------------------------
+// Approximate distance (V2-DEC-01): public points only, on the 0.1° grid
+// ---------------------------------------------------------------------------
+
+/** The public location grid: every public point is rounded to the nearest 0.1° (about 7 mi east–west here). */
+export const MARKETPLACE_PUBLIC_GRID_DEGREES = 0.1
+
+/**
+ * The 8,000 m (about 5 mi) that `search_job_postings` adds to every radius check, so snapping both ends to the
+ * 0.1° grid never silently drops a job near the edge of the radius.
+ */
+export const MARKETPLACE_RADIUS_BUFFER_MILES = 8_000 / 1_609.344
+
+function snapCoordinate(value: number): number {
+  // Halves round away from zero, as SQL `round(coord, 1)` (`quantize_public_coordinate`) and the pilot's
+  // `approximateCoordinate` do, so a search origin lands in the same cell in every layer.
+  const magnitude = Math.round(Math.abs(value) * 10) / 10
+  return value < 0 && magnitude !== 0 ? -magnitude : magnitude
+}
+
+/** A point snapped to the public 0.1° grid. A search origin is snapped before any distance is measured. */
+export function snapToPublicGrid(point: Coordinates): Coordinates {
+  return { lat: snapCoordinate(point.lat), lng: snapCoordinate(point.lng) }
+}
+
+function exactMilesToPublicPoint(from: Coordinates, job: Pick<MarketplaceJobCardView, "origin">): number | null {
+  const point = job.origin.approximatePoint
+  return point ? haversineMiles(snapToPublicGrid(from), point) : null
+}
+
+/**
+ * Whole miles from a search origin to a job's approximate public point, both on the 0.1° grid; null when the job
+ * has no public point. It measures grid cells, never a site, so callers label it as approximate ("about 18 mi").
+ */
+export function marketplaceDistanceMiles(from: Coordinates, job: Pick<MarketplaceJobCardView, "origin">): number | null {
+  const miles = exactMilesToPublicPoint(from, job)
+  return miles === null ? null : Math.round(miles)
+}
+
+// ---------------------------------------------------------------------------
+// Equipment fit: advisory, from the viewer's own self-reported setups
+// ---------------------------------------------------------------------------
+
+export type MarketplaceEquipmentFit = "fits" | "not_in_setups"
+
+/**
+ * Whether one of the viewer's setups has every piece of equipment a job lists. Advisory only: it compares
+ * self-reported codes and never claims the hauler is qualified (UX 02 §A6, spec §10.4). Null when the job states no
+ * equipment or the viewer has listed none, because there is nothing to compare.
+ */
+export function marketplaceEquipmentFit(
+  jobEquipment: readonly string[],
+  setups: ReadonlyArray<readonly string[]>
+): MarketplaceEquipmentFit | null {
+  const needed = Array.from(new Set(jobEquipment.map(normalized)))
+  const listed = setups.map((setup) => new Set(setup.map(normalized))).filter((setup) => setup.size > 0)
+
+  if (needed.length === 0 || listed.length === 0) return null
+  return listed.some((setup) => needed.every((code) => setup.has(code))) ? "fits" : "not_in_setups"
+}
+
+const NAMED_PRODUCTS = new Set(MARKETPLACE_PRODUCTS.filter((product) => product !== MARKETPLACE_OTHER_PRODUCT).map(normalized))
+
+function matchesProduct(product: string | null, wanted: string): boolean {
+  const stated = product ? normalized(product) : ""
+  if (normalized(wanted) === normalized(MARKETPLACE_OTHER_PRODUCT)) return stated !== "" && !NAMED_PRODUCTS.has(stated)
+  return stated === normalized(wanted)
+}
+
+/**
+ * Discovery filtering: text, equipment (one code, or fit against the viewer's setups), product, pay basis, start
+ * and distance from a typed place. Pay amounts on different bases are never compared, and distance only ever uses
+ * the job's approximate public point.
+ */
 export function filterMarketplaceJobs<T extends MarketplaceJobCardView>(jobs: readonly T[], filters: MarketplaceJobFilters = {}): T[] {
   const query = filters.query ? normalized(filters.query) : ""
   const equipment = filters.equipment ? normalized(filters.equipment) : ""
+  const setups = filters.equipmentSetups ?? null
   const acceptingOnly = filters.acceptingOnly ?? true
+  const startsBy = filters.startsBy ? filters.startsBy.slice(0, 10) : null
+  const near = filters.near ?? null
+  const radius = near && filters.radiusMiles !== null && filters.radiusMiles !== undefined ? filters.radiusMiles : null
 
   return jobs.filter((job) => {
     if (acceptingOnly && !job.acceptingInterest) return false
     if (filters.payUnit && job.pay.unit !== filters.payUnit) return false
     if (equipment && !job.equipment.some((item) => normalized(item) === equipment)) return false
+    if (setups && marketplaceEquipmentFit(job.equipment, setups) === "not_in_setups") return false
+    if (filters.product && !matchesProduct(job.product, filters.product)) return false
+    if (startsBy && (!job.startsOn || job.startsOn.slice(0, 10) > startsBy)) return false
+    if (near && radius !== null) {
+      const miles = exactMilesToPublicPoint(near, job)
+      if (miles === null || miles > radius + MARKETPLACE_RADIUS_BUFFER_MILES) return false
+    }
     if (!query) return true
 
-    return [job.title, job.posterName, job.product ?? "", job.origin.label, job.destinationLabel ?? "", ...job.equipment]
-      .some((field) => normalized(field).includes(query))
+    return [
+      job.title,
+      job.posterName,
+      job.product ?? "",
+      job.origin.label,
+      job.destinationLabel ?? "",
+      ...job.equipment,
+      ...job.equipment.map(marketplaceEquipmentLabel)
+    ].some((field) => normalized(field).includes(query))
   })
 }
 
-/**
- * Explicitly confirmed listings first (most recent confirmation first), then unconfirmed ones by
- * last edit. An edit never outranks a confirmation. Sponsored placement is not applied (no boosts).
- */
-export function sortMarketplaceJobs<T extends MarketplaceJobCardView>(jobs: readonly T[]): T[] {
-  return [...jobs].sort((a, b) => {
-    if (a.lastConfirmedAt && !b.lastConfirmedAt) return -1
-    if (!a.lastConfirmedAt && b.lastConfirmedAt) return 1
-    const aKey = a.lastConfirmedAt ?? a.lastModifiedAt
-    const bKey = b.lastConfirmedAt ?? b.lastModifiedAt
-    return Date.parse(bKey) - Date.parse(aKey) || a.title.localeCompare(b.title)
-  })
+function newestFirst(a: MarketplaceJobCardView, b: MarketplaceJobCardView): number {
+  if (a.lastConfirmedAt && !b.lastConfirmedAt) return -1
+  if (!a.lastConfirmedAt && b.lastConfirmedAt) return 1
+  const aKey = a.lastConfirmedAt ?? a.lastModifiedAt
+  const bKey = b.lastConfirmedAt ?? b.lastModifiedAt
+  return Date.parse(bKey) - Date.parse(aKey) || a.title.localeCompare(b.title)
 }
 
-export type LandingInterestQueue = "new" | "replied" | "closed"
+/** A stated amount on a comparable basis; negotiable, "other" and unstated pay have none. */
+function comparablePay(job: MarketplaceJobCardView): { unit: MarketplacePayUnit; cents: number } | null {
+  const { amountCents, unit } = job.pay
+  return amountCents !== null && unit !== null && unit !== "negotiable" && unit !== "other" ? { cents: amountCents, unit } : null
+}
+
+const PAY_UNIT_ORDER = marketplacePayUnitSchema.options
 
 /**
- * Landing inbox queues (UX spec §4.7) as UX-DEC-01 maps them (docs/product/ux-v2/08_UX_DECISIONS.md): New holds what
- * nobody at the landing has answered, including an inquiry marked reviewed (`viewed`, shown with a "Seen" marker)
- * and a replied inquiry where the hauler spoke last. Replied holds the ones waiting for the hauler. Closed holds
- * declined and withdrawn inquiries. The turn comes from the side of the latest message.
+ * The distinct pay bases that have a stated, comparable amount, in a fixed order. More than one means the list
+ * mixes bases and pay can only be compared within each ("Rates use different bases", spec §10.5).
  */
-export function landingInterestQueue(interest: Pick<MarketplaceInterestView, "status" | "replies">): LandingInterestQueue {
-  switch (interest.status) {
-    case "submitted":
-    case "viewed":
-      return "new"
-    case "replied":
-      return interestLastReplySide(interest) === "hauler" ? "new" : "replied"
-    case "declined":
-    case "withdrawn":
-      return "closed"
+export function marketplaceComparablePayUnits(jobs: readonly MarketplaceJobCardView[]): MarketplacePayUnit[] {
+  const units = new Set(jobs.flatMap((job) => comparablePay(job)?.unit ?? []))
+  return PAY_UNIT_ORDER.filter((unit) => units.has(unit))
+}
+
+/**
+ * Discovery order.
+ * - "newest" (default): explicitly confirmed listings first (most recent confirmation first), then unconfirmed ones
+ *   by last edit. An edit never outranks a confirmation.
+ * - "nearest": by approximate distance from `near` (jobs without a public point last), then newest. Without `near`
+ *   it is "newest".
+ * - "pay": grouped by basis in a fixed order, highest stated amount first within each basis; jobs without a
+ *   comparable amount (negotiable, other, not stated) last. Amounts on different bases are never compared.
+ * Sponsored placement is not applied (no boosts).
+ */
+export function sortMarketplaceJobs<T extends MarketplaceJobCardView>(
+  jobs: readonly T[],
+  options: Pick<MarketplaceJobFilters, "near" | "sort"> = {}
+): T[] {
+  const sort = options.sort ?? "newest"
+  const near = options.near ?? null
+
+  if (sort === "nearest" && near) {
+    const miles = new Map(jobs.map((job) => [job.id, exactMilesToPublicPoint(near, job)]))
+    return [...jobs].sort((a, b) => {
+      const aMiles = miles.get(a.id) ?? null
+      const bMiles = miles.get(b.id) ?? null
+      if (aMiles !== null && bMiles === null) return -1
+      if (aMiles === null && bMiles !== null) return 1
+      return (aMiles ?? 0) - (bMiles ?? 0) || newestFirst(a, b)
+    })
   }
+
+  if (sort === "pay") {
+    return [...jobs].sort((a, b) => {
+      const aPay = comparablePay(a)
+      const bPay = comparablePay(b)
+      if (aPay && !bPay) return -1
+      if (!aPay && bPay) return 1
+      if (!aPay || !bPay) return newestFirst(a, b)
+      return PAY_UNIT_ORDER.indexOf(aPay.unit) - PAY_UNIT_ORDER.indexOf(bPay.unit) || bPay.cents - aPay.cents || newestFirst(a, b)
+    })
+  }
+
+  return [...jobs].sort(newestFirst)
+}
+
+export type LandingInterestQueue = "new" | "responded" | "closed"
+
+/** Landing inbox queues (UX spec §4.7): New, Responded, Closed. */
+export function landingInterestQueue(status: MarketplaceInterestStatus): LandingInterestQueue {
+  if (status === "submitted") return "new"
+  if (status === "viewed" || status === "replied") return "responded"
+  return "closed"
 }
 
 export const MARKETPLACE_INTEREST_STATUS_LABELS: Readonly<Record<MarketplaceInterestStatus, string>> = Object.freeze({
@@ -482,8 +650,12 @@ export const MARKETPLACE_INTEREST_STATUS_LABELS: Readonly<Record<MarketplaceInte
 // Inquiry conversations (UX-09, #132): queues, turn, unread, equipment fit and closing with a reason
 // ---------------------------------------------------------------------------
 
-/** The side that wrote the latest message of an inquiry's thread, or `null` when nobody has replied yet. */
-export function interestLastReplySide(interest: Pick<MarketplaceInterestView, "replies">): "hauler" | "landing" | null {
+// PROVISIONAL until #205 (#135, the status vocabulary) merges: the same names and rules as #205, so the merge only
+// deletes these copies. `lastMarketplaceInterestReplySide`, `landingInterestQueueFor`, `LANDING_INTEREST_QUEUE_LABELS`
+// and `marketplaceInterestIsOpen` then come from #205's block.
+
+/** The side that wrote the latest reply, or null when nobody has replied. On equal times the later entry wins. */
+export function lastMarketplaceInterestReplySide(interest: Pick<MarketplaceInterestView, "replies">): "hauler" | "landing" | null {
   let latest: MarketplaceInterestView["replies"][number] | null = null
 
   for (const reply of interest.replies) {
@@ -492,6 +664,29 @@ export function interestLastReplySide(interest: Pick<MarketplaceInterestView, "r
 
   return latest ? latest.authorSide : null
 }
+
+export const LANDING_INTEREST_QUEUE_LABELS: Readonly<Record<LandingInterestQueue, string>> = Object.freeze({
+  closed: "Closed",
+  new: "New",
+  responded: "Replied"
+})
+
+/**
+ * The landing inbox queue with the turn (UX-DEC-01): submitted and viewed (seen, not answered) are New, replied is
+ * Replied unless the hauler spoke last (then back to New), declined and withdrawn are Closed.
+ */
+export function landingInterestQueueFor(interest: Pick<MarketplaceInterestView, "status" | "replies">): LandingInterestQueue {
+  if (interest.status === "submitted" || interest.status === "viewed") return "new"
+  if (interest.status === "replied") return lastMarketplaceInterestReplySide(interest) === "hauler" ? "new" : "responded"
+  return "closed"
+}
+
+/** Submitted, viewed and replied inquiries are open: both sides can still write, and the hauler can withdraw. */
+export function marketplaceInterestIsOpen(status: MarketplaceInterestStatus): boolean {
+  return status === "submitted" || status === "viewed" || status === "replied"
+}
+
+// End of the provisional copies.
 
 export type HaulerInterestQueue = "active" | "replied" | "closed"
 
@@ -520,10 +715,10 @@ export function haulerInterestQueue(status: MarketplaceInterestStatus): HaulerIn
  */
 export function marketplaceInquiryUnread(interest: Pick<MarketplaceInterestView, "status" | "replies">, side: "hauler" | "landing"): boolean {
   if (side === "landing") {
-    return landingInterestQueue(interest) === "new" && interest.status !== "viewed"
+    return landingInterestQueueFor(interest) === "new" && interest.status !== "viewed"
   }
 
-  return interest.status === "replied" && interestLastReplySide(interest) === "landing"
+  return interest.status === "replied" && lastMarketplaceInterestReplySide(interest) === "landing"
 }
 
 /**
@@ -554,29 +749,19 @@ export interface MarketplaceInquiryJobContext {
 
 export type MarketplaceOfferedEquipmentFit = "matches" | "not_requested"
 
-const EQUIPMENT_CATEGORY = new Map<string, "truck" | "trailer" | "attachment">(MARKETPLACE_EQUIPMENT_TYPES.map((type) => [type.code, type.category]))
+/** The equipment codes in an offered configuration's key: codes joined by `|` and `+`, e.g. `log_truck|pole_trailer`. */
+export function configurationEquipmentCodes(configurationKey: string): string[] {
+  return configurationKey.split(/[|+]/).map((code) => code.trim()).filter(Boolean)
+}
 
 /**
- * Compares one offered configuration (its key lists equipment codes joined by `|` and `+`, e.g.
- * `log_truck|pole_trailer`) with the codes a job asks for. It matches when it shares a code with the job and, for
- * each of truck and trailer that the job names, it includes one of the job's codes of that kind. Advisory only: the
- * offer is self-reported by the hauler (UX 02 §B9).
+ * One offered configuration against the codes a job asks for (UX 02 §B9): "matches" when it has every piece of
+ * equipment the job lists, the same rule as the hauler's own fit (`marketplaceEquipmentFit`), otherwise "not
+ * requested". `null` when there is nothing to compare. Advisory only: the offer is self-reported by the hauler.
  */
-export function offeredEquipmentFit(configurationKey: string, jobEquipmentCodes: readonly string[]): MarketplaceOfferedEquipmentFit {
-  const offered = new Set(configurationKey.split(/[|+]/).map((code) => code.trim()).filter(Boolean))
-  const wanted = new Set(jobEquipmentCodes)
+export function offeredEquipmentFit(configurationKey: string, jobEquipmentCodes: readonly string[]): MarketplaceOfferedEquipmentFit | null {
+  const codes = configurationEquipmentCodes(configurationKey)
 
-  if (![...offered].some((code) => wanted.has(code))) {
-    return "not_requested"
-  }
-
-  for (const category of ["truck", "trailer"] as const) {
-    const named = [...wanted].filter((code) => EQUIPMENT_CATEGORY.get(code) === category)
-
-    if (named.length > 0 && !named.some((code) => offered.has(code))) {
-      return "not_requested"
-    }
-  }
-
-  return "matches"
+  if (jobEquipmentCodes.length === 0) return null
+  return codes.length > 0 && marketplaceEquipmentFit(jobEquipmentCodes, [codes]) === "fits" ? "matches" : "not_requested"
 }

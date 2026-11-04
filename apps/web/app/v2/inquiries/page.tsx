@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 
 import { notFound } from "next/navigation"
 
-import type { MarketplaceInterestView } from "@logloads/contracts"
+import { marketplaceInterestIsOpen, type MarketplaceInterestView } from "@logloads/contracts"
 import { ContentGrid, PageContainer, PageHeader, Section } from "@logloads/ui/layout"
 import { availabilityText, formatDay, InquiryRow } from "@logloads/ui/marketplace"
 import { Button, EmptyState, Tabs } from "@logloads/ui/primitives"
@@ -35,7 +35,6 @@ import { resolveV2Actor, withBusinessSwitchNote } from "@/lib/marketplace-v2/vie
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
 const PATH = "/v2/inquiries"
-const OPEN = new Set(["submitted", "viewed", "replied"])
 
 function one(value: string | string[] | undefined): string {
   return (Array.isArray(value) ? value[0] : value) ?? ""
@@ -206,7 +205,7 @@ function HaulerConversation({
   interest: MarketplaceInterestView
   viewerUserId: string
 }) {
-  const open = OPEN.has(interest.status)
+  const open = marketplaceInterestIsOpen(interest.status)
   const replyId = randomUUID()
   // The reason is a message too: its own server-generated id makes a repeated withdrawal post it once.
   const withdrawFields = { interestId: interest.id, replyId: randomUUID() }

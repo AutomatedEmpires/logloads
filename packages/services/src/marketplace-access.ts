@@ -1,8 +1,10 @@
 import {
   marketplaceCan,
   marketplaceCapabilities,
+  MARKETPLACE_EQUIPMENT_TYPES,
   marketplaceEquipmentLabel,
   type EquipmentCombination,
+  type MarketplaceEquipmentCode,
   type MarketplaceCapability,
   type MarketplaceDraftLandingContext,
   type MarketplaceHaulerEquipmentOption,
@@ -103,6 +105,29 @@ function configurationKey(combination: EquipmentCombination): string {
   return [[...combination.truckTypes].sort().join("+"), [...combination.trailerTypes].sort().join("+")].join("|")
 }
 
+/** Pilot equipment words that name a taxonomy code differently (a pilot "chip box" is a chip van trailer). */
+const PILOT_EQUIPMENT_ALIASES: Readonly<Record<string, MarketplaceEquipmentCode>> = Object.freeze({
+  chip_box: "chip_van",
+  lowboy: "lowboy_tractor"
+})
+
+const EQUIPMENT_CODES = new Set<string>(MARKETPLACE_EQUIPMENT_TYPES.map((type) => type.code))
+
+/**
+ * The `MARKETPLACE_EQUIPMENT_TYPES` code a pilot truck type, trailer type or equipment tag names ("pole-trailer",
+ * "pole_trailer" and "Pole trailer" all name `pole_trailer`), or null when the pilot value is outside the taxonomy
+ * (e.g. "chains", "flatbed"). Never a guess: unknown values are not forced into the nearest code.
+ */
+export function pilotEquipmentCode(value: string): MarketplaceEquipmentCode | null {
+  const key = value.trim().toLowerCase().replace(/[\s-]+/g, "_")
+  const code = PILOT_EQUIPMENT_ALIASES[key] ?? key
+  return EQUIPMENT_CODES.has(code) ? (code as MarketplaceEquipmentCode) : null
+}
+
+function configurationCodes(combination: EquipmentCombination): string[] {
+  return Array.from(new Set([...combination.truckTypes, ...combination.trailerTypes].flatMap((type) => pilotEquipmentCode(type) ?? [])))
+}
+
 function configurationLabel(combination: EquipmentCombination): string {
   const parts = [...combination.truckTypes, ...combination.trailerTypes].map(marketplaceEquipmentLabel)
   return parts.length > 0 ? Array.from(new Set(parts)).join(" + ") : combination.label
@@ -128,7 +153,7 @@ export function haulerEquipmentOptions(state: LogLoadsDatabaseState, organizatio
     if (existing) {
       existing.unitsListed += 1
     } else {
-      groups.set(key, { configurationKey: key, label: configurationLabel(combination), unitsListed: 1 })
+      groups.set(key, { configurationKey: key, equipmentCodes: configurationCodes(combination), label: configurationLabel(combination), unitsListed: 1 })
     }
   }
 

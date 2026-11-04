@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import { notFound } from "next/navigation"
 
 import {
+  marketplaceInterestIsOpen,
   offeredEquipmentFit,
   type MarketplaceInquiryJobContext,
   type MarketplaceInterestView
@@ -308,7 +309,7 @@ function LandingConversation({
   jobEquipment: readonly string[] | null
   viewerUserId: string
 }) {
-  const open = interest.status !== "withdrawn" && interest.status !== "declined"
+  const open = marketplaceInterestIsOpen(interest.status)
   const replyId = randomUUID()
   // The reason is a landing message: its own server-generated id makes a repeated decline post it once.
   const declineFields = { decision: "declined", interestId: interest.id, replyId: randomUUID() }

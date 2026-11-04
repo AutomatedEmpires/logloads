@@ -2,7 +2,8 @@ import "server-only"
 
 import {
   haulerInterestQueue,
-  landingInterestQueue,
+  LANDING_INTEREST_QUEUE_LABELS,
+  landingInterestQueueFor,
   marketplaceInquiryUnread,
   type HaulerInterestQueue,
   type LandingInterestQueue,
@@ -18,8 +19,9 @@ import { pilotMarketplaceV2 } from "./pilot-adapter"
 
 /**
  * Inquiry conversations (UX-09, #132): the hauler's tabs, the landing's queues and filters, and the navigation's
- * unread counts. The queue, turn and unread rules are the contracts' (`haulerInterestQueue`, `landingInterestQueue`,
- * `marketplaceInquiryUnread`, UX-DEC-01); this module only arranges them for the pages and the shell.
+ * unread counts. The queue, turn and unread rules and the queue names are the contracts' (`haulerInterestQueue`,
+ * `landingInterestQueueFor`, `LANDING_INTEREST_QUEUE_LABELS`, `marketplaceInquiryUnread`, UX-DEC-01); this module
+ * only arranges them for the pages and the shell.
  */
 
 /** One read per request and business, shared by the layout's counts and the inquiry page it renders. */
@@ -42,13 +44,13 @@ export const HAULER_INQUIRY_TABS: ReadonlyArray<InquiryTab<HaulerInterestQueue>>
 ])
 
 export const LANDING_INQUIRY_TABS: ReadonlyArray<InquiryTab<LandingInterestQueue>> = Object.freeze([
-  { empty: "No new interest.", id: "new", label: "New" },
-  { empty: "Nothing awaiting the hauler.", id: "replied", label: "Replied" },
-  { empty: "No closed inquiries.", id: "closed", label: "Closed" }
+  { empty: "No new interest.", id: "new", label: LANDING_INTEREST_QUEUE_LABELS.new },
+  { empty: "Nothing awaiting the hauler.", id: "responded", label: LANDING_INTEREST_QUEUE_LABELS.responded },
+  { empty: "No closed inquiries.", id: "closed", label: LANDING_INTEREST_QUEUE_LABELS.closed }
 ])
 
 export const haulerQueueOf = (interest: MarketplaceInterestView): HaulerInterestQueue => haulerInterestQueue(interest.status)
-export const landingQueueOf = (interest: MarketplaceInterestView): LandingInterestQueue => landingInterestQueue(interest)
+export const landingQueueOf = (interest: MarketplaceInterestView): LandingInterestQueue => landingInterestQueueFor(interest)
 
 /** Inquiries per tab, every tab present (0 when empty). */
 export function inquiryTabCounts<T extends string>(

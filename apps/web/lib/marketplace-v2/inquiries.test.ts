@@ -92,18 +92,19 @@ describe("the queue mapping on both sides", () => {
   })
 
   it("keeps a reviewed inquiry and a hauler's answer in the landing's New queue (UX-DEC-01)", () => {
-    expect(all.map(landingQueueOf)).toEqual(["new", "new", "replied", "new", "closed", "closed"])
-    expect(inquiryTabCounts(all, LANDING_INQUIRY_TABS, landingQueueOf)).toEqual({ closed: 2, new: 3, replied: 1 })
-    expect(inquiryTabCounts([], LANDING_INQUIRY_TABS, landingQueueOf)).toEqual({ closed: 0, new: 0, replied: 0 })
+    expect(all.map(landingQueueOf)).toEqual(["new", "new", "responded", "new", "closed", "closed"])
+    expect(inquiryTabCounts(all, LANDING_INQUIRY_TABS, landingQueueOf)).toEqual({ closed: 2, new: 3, responded: 1 })
+    expect(inquiryTabCounts([], LANDING_INQUIRY_TABS, landingQueueOf)).toEqual({ closed: 0, new: 0, responded: 0 })
+    expect(LANDING_INQUIRY_TABS.map((tab) => tab.label)).toEqual(["New", "Replied", "Closed"])
   })
 
   it("opens the tab asked for, else the selected inquiry's, else the first with inquiries", () => {
-    const counts = { closed: 1, new: 0, replied: 2 }
+    const counts = { closed: 1, new: 0, responded: 2 }
 
-    expect(chooseInquiryTab("closed", "replied", counts, LANDING_INQUIRY_TABS)).toBe("closed")
+    expect(chooseInquiryTab("closed", "responded", counts, LANDING_INQUIRY_TABS)).toBe("closed")
     expect(chooseInquiryTab("", "closed", counts, LANDING_INQUIRY_TABS)).toBe("closed")
-    expect(chooseInquiryTab("nonsense", null, counts, LANDING_INQUIRY_TABS)).toBe("replied")
-    expect(chooseInquiryTab("", null, { closed: 0, new: 0, replied: 0 }, LANDING_INQUIRY_TABS)).toBe("new")
+    expect(chooseInquiryTab("nonsense", null, counts, LANDING_INQUIRY_TABS)).toBe("responded")
+    expect(chooseInquiryTab("", null, { closed: 0, new: 0, responded: 0 }, LANDING_INQUIRY_TABS)).toBe("new")
   })
 })
 

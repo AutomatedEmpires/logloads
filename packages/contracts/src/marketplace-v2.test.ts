@@ -13,15 +13,23 @@ import {
   filterMarketplaceJobs,
   formatMarketplacePay,
   haulerInterestQueue,
-  interestLastReplySide,
+  LANDING_INTEREST_QUEUE_LABELS,
   landingInterestQueue,
+  landingInterestQueueFor,
+  lastMarketplaceInterestReplySide,
   MARKETPLACE_EQUIPMENT_TYPES,
+  MARKETPLACE_RADIUS_BUFFER_MILES,
+  marketplaceComparablePayUnits,
+  marketplaceDistanceMiles,
+  marketplaceEquipmentFit,
   marketplaceInquiryUnread,
   marketplaceInterestSchema,
   marketplaceJobAcceptsInterest,
   postingFreshness,
+  configurationEquipmentCodes,
   offeredEquipmentFit,
   respondToInterestInputSchema,
+  snapToPublicGrid,
   sortMarketplaceJobs,
   withdrawInterestInputSchema,
   type MarketplaceInterestStatus,
@@ -124,6 +132,118 @@ describe("discovery filters and ordering", () => {
 
   it("puts confirmed listings ahead of more recently edited unconfirmed ones", () => {
     expect(sortMarketplaceJobs(jobs).map((j) => j.id)).toEqual(["c", "a", "b"])
+    expect(sortMarketplaceJobs(jobs, { sort: "newest" }).map((j) => j.id)).toEqual(["c", "a", "b"])
+  })
+
+  it("matches equipment labels in text search, not only codes", () => {
+    const coded = [job({ equipment: ["pole_trailer"], id: "p" }), job({ equipment: ["chip_van"], id: "q" })]
+    expect(filterMarketplaceJobs(coded, { query: "pole trailer" }).map((j) => j.id)).toEqual(["p"])
+  })
+})
+
+describe("discovery by place, product, start and fit (#129)", () => {
+  // Public points are already on the 0.1° grid. Sweet Home, OR is about 44.4, -122.7.
+  const sweetHome = { lat: 44.397, lng: -122.736 }
+  const at = (lat: number, lng: number) => ({ approximatePoint: { lat, lng }, label: "Somewhere, OR", stateCode: "OR" })
+  const near = job({ id: "near", origin: at(44.4, -122.7) }) // about 2 mi
+  const mid = job({ id: "mid", origin: at(44.1, -123.1) }) // about 29 mi (Eugene)
+  const far = job({ id: "far", origin: at(42.3, -122.9) }) // about 145 mi (Medford)
+  const nowhere = job({ id: "nowhere", origin: { approximatePoint: null, label: "Location shared on request", stateCode: null } })
+  const all = [far, nowhere, mid, near]
+
+  it("measures whole miles from the snapped search origin to the public point only", () => {
+    expect(snapToPublicGrid(sweetHome)).toEqual({ lat: 44.4, lng: -122.7 })
+    expect(snapToPublicGrid({ lat: -0.05, lng: 0.04 })).toEqual({ lat: -0.1, lng: 0 })
+    expect(marketplaceDistanceMiles(sweetHome, near)).toBe(0)
+    expect(marketplaceDistanceMiles(sweetHome, mid)).toBe(29)
+    expect(marketplaceDistanceMiles(sweetHome, far)).toBe(145)
+    expect(marketplaceDistanceMiles(sweetHome, nowhere)).toBeNull()
+    // Moving the origin inside one grid cell never changes a distance: nothing finer than the cell can be learned.
+    expect(marketplaceDistanceMiles({ lat: 44.43, lng: -122.66 }, mid)).toBe(marketplaceDistanceMiles(sweetHome, mid))
+  })
+
+  it("keeps jobs within the radius plus the grid buffer, and drops jobs it cannot place", () => {
+    expect(filterMarketplaceJobs(all, { near: sweetHome, radiusMiles: 50 }).map((j) => j.id)).toEqual(["mid", "near"])
+    expect(filterMarketplaceJobs(all, { near: sweetHome, radiusMiles: 25 }).map((j) => j.id)).toEqual(["mid", "near"]) // 28.7 ≤ 25 + 5
+    expect(filterMarketplaceJobs(all, { near: sweetHome, radiusMiles: 20 }).map((j) => j.id)).toEqual(["near"])
+    expect(filterMarketplaceJobs(all, { near: sweetHome, radiusMiles: 150 }).map((j) => j.id)).toEqual(["far", "mid", "near"])
+    // Any distance, or no place: nothing is dropped for distance.
+    expect(filterMarketplaceJobs(all, { near: sweetHome, radiusMiles: null })).toHaveLength(4)
+    expect(filterMarketplaceJobs(all, { radiusMiles: 20 })).toHaveLength(4)
+    expect(MARKETPLACE_RADIUS_BUFFER_MILES).toBeCloseTo(4.97, 2)
+  })
+
+  it("sorts nearest first from a place, unplaceable jobs last, and is newest without one", () => {
+    expect(sortMarketplaceJobs(all, { near: sweetHome, sort: "nearest" }).map((j) => j.id)).toEqual(["near", "mid", "far", "nowhere"])
+    expect(sortMarketplaceJobs(all, { sort: "nearest" }).map((j) => j.id)).toEqual(sortMarketplaceJobs(all).map((j) => j.id))
+  })
+
+  it("filters products from the controlled list; Other is anything stated outside it", () => {
+    const products = [
+      job({ id: "saw", product: "Saw logs" }),
+      job({ id: "mixed", product: "Mixed products" }),
+      job({ id: "unknown", product: null }),
+      job({ id: "biomass", product: "Hog fuel and biomass" })
+    ]
+    expect(filterMarketplaceJobs(products, { product: "saw logs" }).map((j) => j.id)).toEqual(["saw"])
+    expect(filterMarketplaceJobs(products, { product: "Other" }).map((j) => j.id)).toEqual(["mixed"])
+    expect(filterMarketplaceJobs(products, { product: "Hog fuel and biomass" }).map((j) => j.id)).toEqual(["biomass"])
+  })
+
+  it("keeps jobs that start by the date, including work under way, and hides jobs with no stated start", () => {
+    const starts = [
+      job({ id: "under-way", startsOn: "2026-10-01" }),
+      job({ id: "soon", startsOn: "2026-11-09" }),
+      job({ id: "later", startsOn: "2026-12-01" }),
+      job({ id: "unstated", startsOn: null })
+    ]
+    expect(filterMarketplaceJobs(starts, { startsBy: "2026-11-10" }).map((j) => j.id)).toEqual(["under-way", "soon"])
+    expect(filterMarketplaceJobs(starts, {})).toHaveLength(4)
+  })
+
+  it("calls a job a fit only when one setup has all of its equipment, and claims nothing without data", () => {
+    const setups = [["log_truck", "pole_trailer"], ["chip_truck", "chip_van"]]
+    expect(marketplaceEquipmentFit(["pole_trailer"], setups)).toBe("fits")
+    expect(marketplaceEquipmentFit(["log_truck", "pole_trailer"], setups)).toBe("fits")
+    // Each piece is in some setup, but no single setup has both.
+    expect(marketplaceEquipmentFit(["pole_trailer", "chip_van"], setups)).toBe("not_in_setups")
+    expect(marketplaceEquipmentFit(["lowboy_trailer"], setups)).toBe("not_in_setups")
+    expect(marketplaceEquipmentFit([], setups)).toBeNull()
+    expect(marketplaceEquipmentFit(["pole_trailer"], [])).toBeNull()
+    expect(marketplaceEquipmentFit(["pole_trailer"], [[]])).toBeNull()
+  })
+
+  it("'My trucks' hides only jobs that need equipment the setups lack", () => {
+    const fleet = [
+      job({ equipment: ["pole_trailer"], id: "fits" }),
+      job({ equipment: ["chip_van"], id: "misfit" }),
+      job({ equipment: [], id: "unstated" })
+    ]
+    expect(filterMarketplaceJobs(fleet, { equipmentSetups: [["log_truck", "pole_trailer"]] }).map((j) => j.id)).toEqual(["fits", "unstated"])
+    expect(filterMarketplaceJobs(fleet, { equipmentSetups: [] })).toHaveLength(3)
+  })
+})
+
+describe("pay is compared within one basis only (spec §10.5)", () => {
+  const pay = (id: string, amountCents: number | null, unit: MarketplaceJobCardView["pay"]["unit"]) =>
+    job({ id, pay: { amountCents, note: unit === "negotiable" ? "depends on haul" : null, unit } })
+  const jobs = [
+    pay("ton-low", 900, "per_ton"),
+    pay("negotiable", null, "negotiable"),
+    pay("load-high", 60_000, "per_load"),
+    pay("ton-high", 1_200, "per_ton"),
+    pay("unstated", null, null),
+    pay("load-low", 45_000, "per_load")
+  ]
+
+  it("groups by basis and orders each basis by amount, with no comparable amount last", () => {
+    expect(sortMarketplaceJobs(jobs, { sort: "pay" }).map((j) => j.id)).toEqual(["load-high", "load-low", "ton-high", "ton-low", "negotiable", "unstated"])
+  })
+
+  it("reports which bases a list mixes", () => {
+    expect(marketplaceComparablePayUnits(jobs)).toEqual(["per_load", "per_ton"])
+    expect(marketplaceComparablePayUnits(jobs.filter((j) => j.pay.unit === "per_load"))).toEqual(["per_load"])
+    expect(marketplaceComparablePayUnits([pay("n", null, "negotiable")])).toEqual([])
   })
 })
 
@@ -143,16 +263,12 @@ describe("interest rules", () => {
     }
   })
 
-  it("maps every status onto the landing inbox queues (UX-DEC-01)", () => {
-    expect(landingInterestQueue({ replies: [], status: "submitted" })).toBe("new")
-    // "Mark reviewed" keeps an inquiry in New (it is shown with a "Seen" marker), even after a hauler follow-up.
-    expect(landingInterestQueue({ replies: [], status: "viewed" })).toBe("new")
-    expect(landingInterestQueue({ replies: [reply("hauler", 1)], status: "viewed" })).toBe("new")
-    expect(landingInterestQueue({ replies: [reply("hauler", 1), reply("landing", 2)], status: "replied" })).toBe("replied")
-    // The hauler answered the landing's reply: the inquiry is back in New.
-    expect(landingInterestQueue({ replies: [reply("landing", 1), reply("hauler", 2)], status: "replied" })).toBe("new")
-    expect(landingInterestQueue({ replies: [reply("landing", 1)], status: "declined" })).toBe("closed")
-    expect(landingInterestQueue({ replies: [], status: "withdrawn" })).toBe("closed")
+  it("maps statuses onto the landing inbox queues", () => {
+    expect(landingInterestQueue("submitted")).toBe("new")
+    expect(landingInterestQueue("viewed")).toBe("responded")
+    expect(landingInterestQueue("replied")).toBe("responded")
+    expect(landingInterestQueue("declined")).toBe("closed")
+    expect(landingInterestQueue("withdrawn")).toBe("closed")
   })
 
   it("rejects a landing organization expressing interest in its own job", () => {
@@ -322,9 +438,22 @@ describe("inquiry queues, turn and unread (UX-09, #132)", () => {
   const STATUSES: MarketplaceInterestStatus[] = ["submitted", "viewed", "replied", "declined", "withdrawn"]
 
   it("names the side that spoke last, whatever the order the replies arrive in", () => {
-    expect(interestLastReplySide({ replies: [] })).toBeNull()
-    expect(interestLastReplySide({ replies: [reply("landing", 5), reply("hauler", 2)] })).toBe("landing")
-    expect(interestLastReplySide({ replies: [reply("landing", 1), reply("hauler", 2)] })).toBe("hauler")
+    expect(lastMarketplaceInterestReplySide({ replies: [] })).toBeNull()
+    expect(lastMarketplaceInterestReplySide({ replies: [reply("landing", 5), reply("hauler", 2)] })).toBe("landing")
+    expect(lastMarketplaceInterestReplySide({ replies: [reply("landing", 1), reply("hauler", 2)] })).toBe("hauler")
+  })
+
+  it("maps every status onto the landing's New, Replied and Closed queues with the turn (UX-DEC-01)", () => {
+    expect(landingInterestQueueFor({ replies: [], status: "submitted" })).toBe("new")
+    // "Mark reviewed" keeps an inquiry in New (it is shown with a "Seen" marker), even after a hauler follow-up.
+    expect(landingInterestQueueFor({ replies: [], status: "viewed" })).toBe("new")
+    expect(landingInterestQueueFor({ replies: [reply("hauler", 1)], status: "viewed" })).toBe("new")
+    expect(landingInterestQueueFor({ replies: [reply("hauler", 1), reply("landing", 2)], status: "replied" })).toBe("responded")
+    // The hauler answered the landing's reply: the inquiry is back in New.
+    expect(landingInterestQueueFor({ replies: [reply("landing", 1), reply("hauler", 2)], status: "replied" })).toBe("new")
+    expect(landingInterestQueueFor({ replies: [reply("landing", 1)], status: "declined" })).toBe("closed")
+    expect(landingInterestQueueFor({ replies: [], status: "withdrawn" })).toBe("closed")
+    expect(LANDING_INTEREST_QUEUE_LABELS).toEqual({ closed: "Closed", new: "New", responded: "Replied" })
   })
 
   it("maps every status onto the hauler's Active, Replied and Closed tabs", () => {
@@ -366,22 +495,22 @@ describe("inquiry queues, turn and unread (UX-09, #132)", () => {
 })
 
 describe("offered equipment against the job's equipment (UX-09 criterion 4)", () => {
-  it("matches a configuration that brings what the job names, truck and trailer alike", () => {
+  it("matches a configuration that has every piece of equipment the job lists, as the hauler's own fit does", () => {
     expect(offeredEquipmentFit("log_truck", ["log_truck"])).toBe("matches")
     expect(offeredEquipmentFit("log_truck|pole_trailer", ["log_truck", "pole_trailer"])).toBe("matches")
     expect(offeredEquipmentFit("log_truck|pole_trailer", ["log_truck"])).toBe("matches")
-    // Alternatives: either truck the job names will do.
-    expect(offeredEquipmentFit("self_loader", ["log_truck", "self_loader"])).toBe("matches")
     // The pilot store's key joins several types of a kind with "+".
-    expect(offeredEquipmentFit("log_truck+self_loader|bunk_trailer", ["self_loader", "bunk_trailer", "onboard_scales"])).toBe("matches")
+    expect(offeredEquipmentFit("log_truck+self_loader|bunk_trailer", ["self_loader", "bunk_trailer"])).toBe("matches")
+    expect(configurationEquipmentCodes("log_truck+self_loader|bunk_trailer")).toEqual(["log_truck", "self_loader", "bunk_trailer"])
+    // One rule on both sides of the inquiry.
+    expect(marketplaceEquipmentFit(["log_truck", "pole_trailer"], [configurationEquipmentCodes("log_truck|pole_trailer")])).toBe("fits")
   })
 
-  it("says not requested when the configuration lacks a kind the job names, or shares nothing with it", () => {
+  it("says not requested when the configuration lacks something the job lists, and compares nothing without a list", () => {
     expect(offeredEquipmentFit("chip_truck|chip_van", ["log_truck", "pole_trailer"])).toBe("not_requested")
     expect(offeredEquipmentFit("log_truck|bunk_trailer", ["log_truck", "pole_trailer"])).toBe("not_requested")
     expect(offeredEquipmentFit("log_truck", ["log_truck", "pole_trailer"])).toBe("not_requested")
-    expect(offeredEquipmentFit("pole_trailer", ["log_truck", "pole_trailer"])).toBe("not_requested")
-    expect(offeredEquipmentFit("log_truck", [])).toBe("not_requested")
     expect(offeredEquipmentFit("", ["log_truck"])).toBe("not_requested")
+    expect(offeredEquipmentFit("log_truck", [])).toBeNull()
   })
 })
