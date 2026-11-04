@@ -222,14 +222,16 @@ async function expectNavigationForWidth(page: Page, width: number): Promise<stri
   await expect(page.getByRole("navigation", { name: "Main" })).toHaveCount(1)
 
   // A destination's unread count (UX-09, #132) follows its label; the labels are compared without it.
-  return (await shown.getByRole("link").allInnerTexts()).map((label) => label.trim().replace(/\s*\d+$/, ""))
+  return (await shown.getByRole("link").allInnerTexts()).map((label) => label.trim().replace(/,?\s*\d+(\s+unread)?$/, "").trim())
 }
 
 /** The unread count on a navigation destination at this width, or 0 when it shows none (UX-09, #132). */
 async function navigationCount(page: Page, width: number, label: string): Promise<number> {
   const shown = width >= BP_LG ? topNavigation(page) : bottomTabs(page)
-  const text = (await shown.getByRole("link", { name: new RegExp(`^${label}`) }).innerText()).trim()
-  return Number(/(\d+)$/.exec(text.slice(label.length))?.[1] ?? 0)
+  const link = shown.getByRole("link", { name: new RegExp(`^${label}`) })
+  const name = await link.evaluate((element) => element.textContent ?? "")
+  // The badge's accessible name reads "<label>, <count> unread" (visually hidden words around the visible number).
+  return Number(new RegExp(`^\\s*${label}, (\\d+) unread\\s*$`).exec(name)?.[1] ?? 0)
 }
 
 async function expectCurrent(page: Page, width: number, label: string | null) {
@@ -242,7 +244,7 @@ async function expectCurrent(page: Page, width: number, label: string | null) {
   }
 
   await expect(current).toHaveCount(1)
-  await expect(current).toHaveText(new RegExp(`^\\s*${label}\\s*\\d*\\s*$`))
+  await expect(current).toHaveText(new RegExp(`^\\s*${label}(, \\d+ unread)?\\s*$`))
 }
 
 interface FocusStop {

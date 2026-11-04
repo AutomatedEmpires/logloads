@@ -24,7 +24,13 @@ export function ResponsiveNavigation({ items, activeId, className }: ResponsiveN
         >
           {item.icon ? <Icon aria-hidden name={item.icon} size={22} /> : null}
           {item.label}
-          {item.count ? <span className={styles.count}>{item.count}</span> : null}
+          {item.count ? (
+            <>
+              <span className={styles.visuallyHidden}>, </span>
+              <span className={styles.count}>{item.count}</span>
+              <span className={styles.visuallyHidden}> unread</span>
+            </>
+          ) : null}
         </a>
       ))}
     </nav>
