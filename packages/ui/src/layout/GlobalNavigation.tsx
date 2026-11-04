@@ -49,7 +49,13 @@ export function GlobalNavigation({ items, activeId, business, account, className
               key={item.id}
             >
               {item.label}
-              {item.count ? <span className={styles.count}>{item.count}</span> : null}
+              {item.count ? (
+                <>
+                  <span className={styles.visuallyHidden}>, </span>
+                  <span className={styles.count}>{item.count}</span>
+                  <span className={styles.visuallyHidden}> unread</span>
+                </>
+              ) : null}
             </a>
           ))}
         </nav>

@@ -172,6 +172,10 @@ export function selectMarketplaceV2Port(
     landingAllowance: async (viewer) => current().landingAllowance(viewer),
     listOwnLandings: async (viewer) => current().listOwnLandings(viewer),
     saveLanding: async (viewer, input) => current().saveLanding(viewer, input),
-    setLandingStatus: async (viewer, landingId, status) => current().setLandingStatus(viewer, landingId, status)
+    setLandingStatus: async (viewer, landingId, status) => current().setLandingStatus(viewer, landingId, status),
+
+    // Inquiry conversations (UX-09, #132).
+    landingInquiryJobs: async (viewer) => current().landingInquiryJobs(viewer),
+    withdrawInterestWithReason: async (viewer, input) => current().withdrawInterestWithReason(viewer, input)
   }
 }

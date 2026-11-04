@@ -3,7 +3,7 @@
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js"
 import type { Stripe } from "@stripe/stripe-js"
 import { loadStripe } from "@stripe/stripe-js/pure"
-import Link from "next/link"
+import { AppLink as Link } from "../AppLink"
 import { useId, useMemo, useState } from "react"
 import { Badge, Icon } from "@logloads/ui"
 

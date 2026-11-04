@@ -1,8 +1,9 @@
 import type { MarketplaceInterestView } from "@logloads/contracts"
 import { ConversationThread, inquiryStatus, type ViewerSide } from "@logloads/ui/marketplace"
 import { Button } from "@logloads/ui/primitives"
-import Link from "next/link"
 import type { ReactNode } from "react"
+
+import { AppLink } from "@/components/AppLink"
 
 import styles from "./InquiryConversation.module.css"
 
@@ -43,7 +44,8 @@ export function InquiryConversation({
   facts,
   headActions,
   interest,
-  viewerSide
+  viewerSide,
+  viewerUserId
 }: {
   closedNote: string
   composer: ReactNode
@@ -52,6 +54,8 @@ export function InquiryConversation({
   headActions?: ReactNode
   interest: MarketplaceInterestView
   viewerSide: ViewerSide
+  /** The session's own user, so the thread marks only their messages "You" and names colleagues. */
+  viewerUserId?: string
 }) {
   const name = viewerSide === "landing" ? interest.haulerOrganization.name : interest.landingOrganization.name
   const titleId = `conversation-${interest.id}-title`
@@ -66,7 +70,10 @@ export function InquiryConversation({
             <p className={styles.sub}>
               <span>
                 {viewerSide === "landing" ? "For " : null}
-                {jobIsListed(interest) ? <Link className={styles.link} href={`/v2/work/${interest.job.slug}`}>{interest.job.title}</Link> : interest.job.title}
+                {/* AppLink (#203): the job page renders per request, so the link is never prefetched. */}
+                {jobIsListed(interest) ? (
+                  <AppLink className={styles.link} href={`/v2/work/${interest.job.slug}`}>{interest.job.title}</AppLink>
+                ) : interest.job.title}
               </span>
               <span className={styles.status} data-tone={status.tone}>{status.label}</span>
             </p>
@@ -86,23 +93,40 @@ export function InquiryConversation({
         </dl>
       </header>
       {confirmation}
-      <ConversationThread interest={interest} viewerSide={viewerSide} />
+      <ConversationThread interest={interest} viewerSide={viewerSide} viewerUserId={viewerUserId} />
       {composer ?? <p className={styles.closed}>{closedNote}</p>}
     </section>
   )
 }
 
+/** The id of the in-page confirmation's form, which its reason field names in `form`. */
+export const CONFIRM_FORM_ID = `${CONFIRM_ANCHOR}-form`
+
 /**
  * The no-JavaScript confirmation of a decline or withdraw, rendered by the server when the trigger link was
- * followed. With scripts the trigger opens a Dialog with the same text and form instead.
+ * followed. With scripts the trigger opens a Dialog with the same text and form instead. `reason` (a
+ * `ConfirmReasonField` for the form `CONFIRM_FORM_ID`) sits between the text and the actions.
  */
-export function InquiryConfirmation({ body, cancelHref, children, title }: { body: ReactNode; cancelHref: string; children: ReactNode; title: string }) {
+export function InquiryConfirmation({
+  body,
+  cancelHref,
+  children,
+  reason,
+  title
+}: {
+  body: ReactNode
+  cancelHref: string
+  children: ReactNode
+  reason?: ReactNode
+  title: string
+}) {
   const titleId = `${CONFIRM_ANCHOR}-title`
 
   return (
     <section aria-labelledby={titleId} className={styles.confirm} id={CONFIRM_ANCHOR}>
       <h3 className={styles.confirmTitle} id={titleId}>{title}</h3>
       <div className={styles.confirmBody}>{body}</div>
+      {reason}
       <div className={styles.confirmActions}>
         <Button href={cancelHref} label="Cancel" variant="secondary" />
         {children}

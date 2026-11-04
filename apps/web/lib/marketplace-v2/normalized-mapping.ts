@@ -13,9 +13,11 @@ import {
   marketplacePayUnitSchema,
   respondToInterestInputSchema,
   sortMarketplaceJobs,
+  withdrawInterestInputSchema,
   type MarketplaceCapability,
   type MarketplaceDraftLandingContext,
   type MarketplaceHaulerEquipmentOption,
+  type MarketplaceInquiryJobContext,
   type MarketplaceInterestView,
   type MarketplaceJobDetailView,
   type MarketplaceJobDraft,
@@ -585,4 +587,36 @@ export function organizationSlug(displayName: string, suffix: string): string {
   const tail = suffix.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12) || "org"
 
   return words ? `${words}-${tail}` : `landing-${tail}`
+}
+
+// ---------------------------------------------------------------------------
+// Inquiry conversations (UX-09, #132)
+// ---------------------------------------------------------------------------
+
+const inquiryJobRowSchema = z.object({
+  equipment_codes: z.array(z.string()).nullable(),
+  job_id: uuid,
+  landing_id: uuid.nullable(),
+  landing_name: z.string().nullable()
+})
+
+/** An `INQUIRY_JOBS` row (normalized-db.ts) → the inbox's job context. */
+export function inquiryJobFromRow(row: unknown): MarketplaceInquiryJobContext {
+  const job = parseRow(inquiryJobRowSchema, row)
+
+  return {
+    equipmentCodes: job.equipment_codes ?? [],
+    jobId: job.job_id,
+    landing: job.landing_id && job.landing_name ? { id: job.landing_id, name: job.landing_name } : null
+  }
+}
+
+/** The hauler's withdrawal with an optional reason → the reason as a `post_hauler_interest_reply`, or none. */
+export function withdrawArguments(input: unknown) {
+  const parsed = parseInput(withdrawInterestInputSchema, input)
+
+  return {
+    interestId: parsed.interestId,
+    reason: parsed.reason && parsed.replyId ? { p_body: parsed.reason, p_interest_id: parsed.interestId, p_reply_id: parsed.replyId } : null
+  }
 }

@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server"
 
 import { apiErrorResponse, requireApiActor } from "@/lib/api-actor"
 import { mutateState } from "@/lib/services"
+import { readJsonBody } from "@/lib/request-body"
 
 export async function POST(request: NextRequest) {
 	try {
-		const payload = await request.json() as Record<string, unknown>
+		const payload = await readJsonBody(request) as Record<string, unknown>
 		const requestedOrganizationId = typeof payload.organizationId === "string" ? payload.organizationId : null
 		const { actorUserId, organizationId } = await requireApiActor(requestedOrganizationId)
 		const offer = await mutateState((draft) =>
@@ -35,7 +36,7 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
 	try {
-		const payload = await request.json() as Record<string, unknown>
+		const payload = await readJsonBody(request) as Record<string, unknown>
 		const requestedOrganizationId = typeof payload.organizationId === "string" ? payload.organizationId : null
 		const { actorUserId, organizationId } = await requireApiActor(requestedOrganizationId)
 		const directOfferId = typeof payload.directOfferId === "string" ? payload.directOfferId : ""

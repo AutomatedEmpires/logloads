@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 
 import { apiErrorResponse, requireApiActor } from "@/lib/api-actor"
 import { mutateState } from "@/lib/services"
+import { readOptionalJsonBody } from "@/lib/request-body"
 
 export async function POST(
 	request: NextRequest,
@@ -9,7 +10,7 @@ export async function POST(
 ) {
 	try {
 		const { assignmentId } = await context.params
-		const payload = await request.json().catch(() => ({}))
+		const payload = await readOptionalJsonBody(request)
 		const { actorUserId, organizationId } = await requireApiActor(payload.organizationId)
 		const result = await mutateState((draft) =>
 			draft.cancelAssignmentWithPolicy({

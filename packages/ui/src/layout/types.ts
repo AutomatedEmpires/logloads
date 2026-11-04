@@ -15,6 +15,7 @@ export type { Density }
 export type WorkspaceKind = "hauler" | "landing" | "admin"
 
 /** `icon` is a key of the semantic Phosphor registry in packages/ui/src/icons (typed, not a free string). */
+/** `count`: unread items at the destination, shown as a badge and read as "<label>, <count> unread". */
 export interface NavItem { id: string; label: string; href: string; count?: number; icon?: IconKey }
 
 /** Placement only: a class for the parent's layout. Never a visual override. */

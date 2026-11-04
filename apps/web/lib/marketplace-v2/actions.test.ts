@@ -13,7 +13,8 @@ const mocks = vi.hoisted(() => ({
   respondToInterest: vi.fn(),
   revalidatePath: vi.fn(),
   viewerAccess: vi.fn(),
-  withdrawInterest: vi.fn()
+  withdrawInterest: vi.fn(),
+  withdrawInterestWithReason: vi.fn()
 }))
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }))
@@ -34,7 +35,8 @@ vi.mock("./pilot-adapter", () => ({
     respondToInterest: mocks.respondToInterest,
     supportsPublishing: false,
     viewerAccess: mocks.viewerAccess,
-    withdrawInterest: mocks.withdrawInterest
+    withdrawInterest: mocks.withdrawInterest,
+    withdrawInterestWithReason: mocks.withdrawInterestWithReason
   }
 }))
 
@@ -376,5 +378,43 @@ describe("inquiry actions keep the inquiry selected (DS-04 list and conversation
     const target = await redirectOf(withdrawInterestAction, form({ interestId: "../../workspace?x=1" }, []))
 
     expect(target.query).toEqual({ updated: "withdrawn" })
+  })
+})
+
+describe("closing an inquiry with a reason the other side sees (UX-09, #132)", () => {
+  const INTEREST_ID = "44444444-4444-4444-8444-444444444444"
+  const REPLY_ID = "55555555-5555-4555-8555-555555555555"
+
+  it("withdraws with the hauler's reason and the form's reply id, rate-limited like a reply", async () => {
+    await redirectOf(withdrawInterestAction, form({ interestId: INTEREST_ID, reason: "Booked elsewhere", replyId: REPLY_ID, userId: "x" }, []))
+
+    expect(mocks.withdrawInterestWithReason).toHaveBeenCalledExactlyOnceWith(VIEWER, { interestId: INTEREST_ID, reason: "Booked elsewhere", replyId: REPLY_ID })
+    expect(mocks.withdrawInterest).not.toHaveBeenCalled()
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith("marketplace-reply", USER_ID, 60, 60 * 60_000)
+  })
+
+  it("withdraws without a reason, and without spending the reply rate limit", async () => {
+    await redirectOf(withdrawInterestAction, form({ interestId: INTEREST_ID, reason: " " }, []))
+
+    expect(mocks.withdrawInterestWithReason).toHaveBeenCalledExactlyOnceWith(VIEWER, { interestId: INTEREST_ID, reason: " ", replyId: expect.stringMatching(/^[0-9a-f-]{36}$/) })
+    expect(mocks.checkRateLimit).not.toHaveBeenCalled()
+  })
+
+  it("shows the landing's closure when the inquiry was declined (#194 HF-03)", async () => {
+    mocks.withdrawInterestWithReason.mockRejectedValueOnce(new Error("The landing has closed this inquiry"))
+
+    const target = await redirectOf(withdrawInterestAction, form({ interestId: INTEREST_ID, reason: "Never mind", replyId: REPLY_ID }, []))
+    expect(target).toMatchObject({ path: "/v2/inquiries", query: { error: "The landing has closed this inquiry", inquiry: INTEREST_ID } })
+  })
+
+  it("declines with the landing's reason and the form's reply id", async () => {
+    await redirectOf(respondToInterestAction, form({ body: "We've filled this job", decision: "declined", interestId: INTEREST_ID, replyId: REPLY_ID }, []))
+
+    expect(mocks.respondToInterest).toHaveBeenCalledExactlyOnceWith(VIEWER, {
+      body: "We've filled this job",
+      decision: "declined",
+      interestId: INTEREST_ID,
+      replyId: REPLY_ID
+    })
   })
 })

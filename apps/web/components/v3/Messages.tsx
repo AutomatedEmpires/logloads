@@ -1,6 +1,6 @@
 "use client"
 
-import Link from "next/link"
+import { AppLink as Link } from "../AppLink"
 
 import type { MessagesData } from "@/lib/messages-data"
 import type { MessageDraftScope } from "@/lib/message-submission"

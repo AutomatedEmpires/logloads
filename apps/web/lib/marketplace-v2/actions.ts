@@ -112,11 +112,24 @@ export async function expressInterestAction(formData: FormData): Promise<void> {
   safeRedirect(back, { sent: "1" })
 }
 
+/**
+ * The hauler withdraws, optionally with a reason the landing sees (UX-09 #132). The reason is a message, so it
+ * counts against the same reply rate limit; the port posts it and withdraws in one change.
+ */
 export async function withdrawInterestAction(formData: FormData): Promise<void> {
   const viewer = await requireViewer("/v2/inquiries")
+  const reason = field(formData, "reason")
 
   try {
-    await pilotMarketplaceV2.withdrawInterest(viewer, field(formData, "interestId"))
+    if (reason.trim()) {
+      await checkRateLimit("marketplace-reply", viewer.userId, 60, 60 * 60_000)
+    }
+
+    await pilotMarketplaceV2.withdrawInterestWithReason(viewer, {
+      interestId: field(formData, "interestId"),
+      reason,
+      replyId: field(formData, "replyId") || randomUUID()
+    })
   } catch (error) {
     inquiryRedirect("/v2/inquiries", formData, { error: message(error) })
   }
