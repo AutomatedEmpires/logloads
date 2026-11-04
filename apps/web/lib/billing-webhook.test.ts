@@ -71,6 +71,7 @@ vi.mock("@/lib/subscription-stripe", async (importOriginal) => {
 })
 
 import { POST } from "../app/api/billing/webhook/route"
+import { STRIPE_WEBHOOK_BODY_LIMIT_BYTES } from "./request-body"
 import {
   billingOk,
   billingUnavailable,
@@ -673,6 +674,56 @@ describe("billing webhook transport", () => {
     await expect(response.json()).resolves.toEqual({ error: "Invalid signature" })
     expect(counts.mutations).toBe(0)
     expect(hostBillingStatus(state, host.id)).toBe("attached")
+  })
+
+  // #187: the body is read through a cap, still as the raw text Stripe signed.
+  function rawWebhookRequest(body: string, headers: Record<string, string> = {}): NextRequest {
+    return new NextRequest("https://logloads.test/api/billing/webhook", {
+      body,
+      headers: { "Content-Type": "application/json", "stripe-signature": "t=1,v1=signed", ...headers },
+      method: "POST"
+    })
+  }
+
+  it("verifies the signature over the exact raw body", async () => {
+    const { stripe } = harness(webhookState().state, {
+      event: billingEvent("customer.created", { id: "cus_x" })
+    })
+    const verify = vi.spyOn(stripe.port, "constructWebhookEvent")
+    // Spacing, a non-ASCII character and a trailing newline: any re-encoding
+    // or re-serialization would break a real signature.
+    const body = '{ "id": "evt_1",\n  "note": "Sawmill at Côte-Saint-Luc" }\n'
+
+    expect((await POST(rawWebhookRequest(body))).status).toBe(200)
+    expect(verify).toHaveBeenCalledWith(body, "t=1,v1=signed")
+  })
+
+  it("accepts a body at the 1 MiB cap", async () => {
+    const { stripe } = harness(webhookState().state, {
+      event: billingEvent("customer.created", { id: "cus_x" })
+    })
+    const verify = vi.spyOn(stripe.port, "constructWebhookEvent")
+
+    expect(STRIPE_WEBHOOK_BODY_LIMIT_BYTES).toBe(1024 * 1024)
+    expect((await POST(rawWebhookRequest("x".repeat(STRIPE_WEBHOOK_BODY_LIMIT_BYTES)))).status).toBe(200)
+    expect(verify).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ["streamed without a length", {}],
+    ["declared in Content-Length", { "content-length": String(STRIPE_WEBHOOK_BODY_LIMIT_BYTES + 1) }]
+  ])("answers 413 for a body over the cap (%s), before verifying, and writes nothing", async (_label, headers) => {
+    const { counts, stripe } = harness(webhookState().state, {
+      event: billingEvent("customer.created", { id: "cus_x" })
+    })
+    const verify = vi.spyOn(stripe.port, "constructWebhookEvent")
+    const response = await POST(rawWebhookRequest("x".repeat(STRIPE_WEBHOOK_BODY_LIMIT_BYTES + 1), headers))
+
+    expect(response.status).toBe(413)
+    await expect(response.json()).resolves.toEqual({ error: "Payload too large" })
+    expect(verify).not.toHaveBeenCalled()
+    expect(counts.mutations).toBe(0)
+    expect(mocks.operatingStateAccess).not.toHaveBeenCalled()
   })
 
   it("rejects a cross-wired account before state access without exposing either account id", async () => {

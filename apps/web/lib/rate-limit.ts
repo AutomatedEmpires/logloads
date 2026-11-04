@@ -4,7 +4,8 @@ import { headers } from "next/headers"
 
 import { clientKeyFromHeaders } from "./rate-limit-client-key"
 import { createRateLimiter } from "./rate-limit-config"
-import type { RateLimiter } from "./rate-limit-core"
+import type { RateLimitCheckOptions, RateLimiter } from "./rate-limit-core"
+import type { WriteLimit } from "./write-limits"
 
 export { RateLimitError, RateLimitUnavailableError } from "./rate-limit-core"
 
@@ -18,9 +19,17 @@ export async function checkRateLimit(
   bucket: string,
   key: string,
   limit: number,
-  windowMs: number
+  windowMs: number,
+  options?: RateLimitCheckOptions
 ): Promise<void> {
-  await limiter().check(bucket, key, limit, windowMs)
+  await limiter().check(bucket, key, limit, windowMs, options)
+}
+
+/** Spend one of `userId`'s per-user write limits, with the write's own time budget. */
+export async function checkWriteLimit(writeLimit: WriteLimit, userId: string): Promise<void> {
+  await checkRateLimit(writeLimit.bucket, userId, writeLimit.limit, writeLimit.windowMs, {
+    timeoutMs: writeLimit.timeoutMs
+  })
 }
 
 export async function requestClientKey(): Promise<string> {

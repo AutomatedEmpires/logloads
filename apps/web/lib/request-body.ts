@@ -11,6 +11,17 @@ import { ApiError } from "./api-actor"
  */
 export const JSON_BODY_LIMIT_BYTES = 64 * 1024
 
+/**
+ * The largest Stripe webhook body the billing webhook reads (#187).
+ *
+ * Generous on purpose, because a refused event is retried by Stripe and then
+ * dropped: Stripe event payloads are typically a few kilobytes and list
+ * properties inside them are truncated, so 1 MiB is far above any legitimate
+ * event. The cap only stops an unauthenticated caller from making the server
+ * buffer an arbitrarily large body before the signature has been checked.
+ */
+export const STRIPE_WEBHOOK_BODY_LIMIT_BYTES = 1024 * 1024
+
 const BODY_TOO_LARGE_MESSAGE = "The request body is too large."
 
 /**
@@ -24,12 +35,20 @@ function bodyTooLarge(): ApiError {
   return new ApiError(BODY_TOO_LARGE_MESSAGE, 413)
 }
 
+/** Whether `error` is the refusal `readBoundedText` throws for a body over its limit. */
+export function isBodyTooLarge(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 413
+}
+
 /**
  * The body as text, refused with `413` once it passes `limitBytes`. The limit is
  * enforced while reading, so a chunked body without a Content-Length cannot
  * buffer past it either.
+ *
+ * The text is the body's bytes decoded as UTF-8, exactly as `request.text()`
+ * decodes them, so a signature computed over the raw body still verifies.
  */
-async function readBoundedText(request: Request, limitBytes: number): Promise<string> {
+export async function readBoundedText(request: Request, limitBytes: number): Promise<string> {
   const declaredLength = Number(request.headers.get("content-length"))
 
   if (Number.isFinite(declaredLength) && declaredLength > limitBytes) {

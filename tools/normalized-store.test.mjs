@@ -38,6 +38,7 @@ const LOCAL_ENV = {
 }
 const HOSTED_ENV = {
   DATABASE_URL: `postgresql://postgres.${REF}:${MIGRATION_PASSWORD}@aws-0-us-east-1.pooler.supabase.com:5432/postgres`,
+  DOPPLER_CONFIG: "stg",
   LOGLOADS_NORMALIZED_DATABASE_URL: `postgresql://logloads_marketplace_adapter.${REF}:${ADAPTER_PASSWORD}@aws-0-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require`,
   LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE: "logloads-test-audience",
   LOGLOADS_NORMALIZED_IDENTITY_ISSUER: "https://clerk.normalized-store.test",
@@ -103,9 +104,17 @@ test("the migration chain is exactly the files and order CI applies", () => {
     assert.ok(full.includes(job), `${job} applies the whole chain`)
   }
   assert.deepEqual(LEDGER_CHAIN, ["06", "11", "12", "16", "18", "23"])
-  // The seed and the adapter contract test expect the same ledger.
-  assert.match(read(SEED_FILE), /'06,11,12,16,18,23'/)
-  assert.match(read("apps/web/lib/marketplace-v2/normalized-adapter.contract.test.ts"), /toBe\("06,11,12,16,18,23"\)/)
+  // The seed and both contract tests expect the ledger this chain records, so a new migration that is added here
+  // but not to them fails here, not first against a database.
+  const ledger = LEDGER_CHAIN.join(",")
+
+  assert.ok(read(SEED_FILE).includes(`v_ledger is distinct from '${ledger}'`), `${SEED_FILE} checks for the ledger ${ledger}`)
+  for (const contract of ["normalized-adapter.contract.test.ts", "normalized-seed.contract.test.ts"]) {
+    assert.ok(
+      read(`apps/web/lib/marketplace-v2/${contract}`).includes(`toBe("${ledger}")`),
+      `${contract} expects the ledger ${ledger}`
+    )
+  }
 })
 
 test("the seeded-store CI jobs deploy through this tool, not a second copy of the chain", () => {
@@ -186,6 +195,26 @@ test("targets: the project is named on the command line and every source agrees"
   refused({ ...LOCAL_ENV, LOGLOADS_NORMALIZED_DATABASE_URL: LOCAL_ENV.LOGLOADS_NORMALIZED_DATABASE_URL.replace("/logloads_test", "/postgres") }, "local", /different databases/)
   refused({ ...LOCAL_ENV, LOGLOADS_NORMALIZED_DATABASE_URL: LOCAL_ENV.LOGLOADS_NORMALIZED_DATABASE_URL.replace(":5432", ":54322") }, "local", /different local servers/)
   refused({ ...LOCAL_ENV, DOPPLER_CONFIG: "prd" }, "local", /looks like production/)
+})
+
+test("targets: a hosted project only from the staging Doppler config or one of its branches", () => {
+  for (const config of ["stg", "stg_tooling", " stg "]) {
+    assert.equal(checkTargets({ env: { ...HOSTED_ENV, DOPPLER_CONFIG: config }, expectedRef: REF }).ok, true, config)
+  }
+
+  for (const config of [undefined, "", "dev", "dev_personal", "staging", "stg-tooling", "stgx", "ci"]) {
+    const result = checkTargets({ env: { ...HOSTED_ENV, DOPPLER_CONFIG: config }, expectedRef: REF })
+
+    assert.equal(result.ok, false, String(config))
+    assert.match(result.reason, /reached only from the staging Doppler config/)
+    // The reason names the variable, never its value.
+    if (config) assert.ok(!result.reason.includes(`"${config}"`))
+  }
+
+  // Production still wins over the allow-list, and a local database needs no Doppler config at all.
+  assert.match(checkTargets({ env: { ...HOSTED_ENV, DOPPLER_CONFIG: "prd" }, expectedRef: REF }).reason, /looks like production/)
+  assert.equal(checkTargets({ env: LOCAL_ENV, expectedRef: "local" }).ok, true)
+  assert.equal(checkTargets({ env: { ...LOCAL_ENV, DOPPLER_CONFIG: "dev" }, expectedRef: "local" }).ok, true)
 })
 
 test("production signals: the config, the platform, the origin and live keys; names only", () => {

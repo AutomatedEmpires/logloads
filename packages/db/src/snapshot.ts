@@ -82,8 +82,29 @@ export const OPERATING_STATE_SCHEMA_VERSION = 2
  * parse, clone and upload of a document this size still fits well inside the
  * request timeout. The live document's size was not measured for this change
  * (no hosted access); a pilot document is expected to be far below the limit.
+ *
+ * At the limit, a write that does not grow the document still goes through, so
+ * the document can be brought back under it (`boundedWriteBody`,
+ * `docs/RECOVERY.md` §6.1).
  */
 export const OPERATING_STATE_MAX_BYTES = 8 * 1024 * 1024
+
+/**
+ * A write whose document is larger than this share of the limit goes through
+ * with a warning in the server log, so the operator hears about growth before
+ * writes are refused (#187).
+ */
+export const OPERATING_STATE_WARN_RATIO = 0.75
+
+/**
+ * How long one request to the operating_state row may take before it is
+ * abandoned: each read attempt, the compare-and-swap write, the bootstrap
+ * insert. A check that gates a write on the same store should get the same
+ * budget, or a slow store refuses the write at the check although the write
+ * itself would have landed (the web app's per-user write limits,
+ * `docs/SECURITY.md` §2).
+ */
+export const OPERATING_STATE_REQUEST_TIMEOUT_MS = 8_000
 
 /**
  * The verdict this module needs from a contract schema, described structurally.
@@ -1330,14 +1351,44 @@ export function remoteSnapshotConfig(): RemoteSnapshotConfig | null {
   return { key, url: url.replace(/\/$/, "") }
 }
 
-/** The request body for a write, or a refusal when it would pass the size limit. */
-function boundedWriteBody(config: RemoteSnapshotConfig, row: Record<string, unknown>): string {
+function utf8ByteLength(text: string): number {
+  return new TextEncoder().encode(text).byteLength
+}
+
+/**
+ * The request body for a write, or a refusal when it would pass the size limit.
+ *
+ * `replaced` builds the body that would write the replaced document back
+ * unchanged. Over the limit, a write no larger than that one is still sent: it
+ * does not grow the document, and refusing it would also refuse every write
+ * that shrinks the document, which is how it gets back under the limit. It is
+ * only built for a write over the limit. Without it (a bootstrap insert, which
+ * replaces nothing), over the limit is always refused.
+ *
+ * Only sizes reach the log, never document content.
+ */
+function boundedWriteBody(
+  config: RemoteSnapshotConfig,
+  row: Record<string, unknown>,
+  replaced?: () => Record<string, unknown>
+): string {
   const body = JSON.stringify(row)
   const limitBytes = config.maxDocumentBytes ?? OPERATING_STATE_MAX_BYTES
-  const byteLength = new TextEncoder().encode(body).byteLength
+  const byteLength = utf8ByteLength(body)
 
   if (byteLength > limitBytes) {
-    throw new OperatingStateTooLargeError(byteLength, limitBytes)
+    const replacedByteLength = replaced ? utf8ByteLength(JSON.stringify(replaced())) : null
+
+    if (replacedByteLength === null || byteLength > replacedByteLength) {
+      throw new OperatingStateTooLargeError(byteLength, limitBytes)
+    }
+  }
+
+  if (byteLength > limitBytes * OPERATING_STATE_WARN_RATIO) {
+    console.warn(
+      `[operating-state] the document is ${byteLength} bytes, ${Math.round((byteLength / limitBytes) * 100)}% ` +
+        `of the ${limitBytes}-byte limit; writes that grow it are refused at the limit (docs/RECOVERY.md §6.1)`
+    )
   }
 
   return body
@@ -1473,7 +1524,7 @@ function restoreWithheldRows(
 
 export async function loadRemoteOperatingState(
   config: RemoteSnapshotConfig,
-  timeoutMs = 8000
+  timeoutMs = OPERATING_STATE_REQUEST_TIMEOUT_MS
 ): Promise<RemoteOperatingStateSnapshot | null> {
   for (let attempt = 1; attempt <= REMOTE_READ_ATTEMPTS; attempt += 1) {
     let response: Response
@@ -1536,7 +1587,7 @@ export async function loadRemoteOperatingState(
 export async function initializeRemoteOperatingState(
   config: RemoteSnapshotConfig,
   state: LogLoadsDatabaseState,
-  timeoutMs = 8000
+  timeoutMs = OPERATING_STATE_REQUEST_TIMEOUT_MS
 ): Promise<RemoteOperatingStateSnapshot> {
   const existing = await loadRemoteOperatingState(config, timeoutMs)
 
@@ -1593,22 +1644,29 @@ export async function initializeRemoteOperatingState(
 /**
  * Compare-and-swap a complete state document. A zero-row response is a normal
  * stale-version conflict, never permission to overwrite the newer document.
+ *
+ * `replacedState` is the document as read at `expectedVersion`. With it, a
+ * write over the size limit that does not grow the document is still sent
+ * (`boundedWriteBody`); without it, every write over the limit is refused.
  */
 export async function updateRemoteOperatingState(
   config: RemoteSnapshotConfig,
   state: LogLoadsDatabaseState,
   expectedVersion: number,
-  timeoutMs = 8000,
-  withheldRows: WithheldOperatingStateRows = {}
+  timeoutMs = OPERATING_STATE_REQUEST_TIMEOUT_MS,
+  withheldRows: WithheldOperatingStateRows = {},
+  replacedState?: LogLoadsDatabaseState
 ): Promise<RemoteOperatingStateSnapshot | null> {
+  const updatedAt = new Date().toISOString()
   // Measured with the withheld rows put back, because that is the document that
-  // would be stored.
-  const body = boundedWriteBody(config, {
+  // would be stored. The replaced document is measured the same way.
+  const row = (document: LogLoadsDatabaseState) => ({
     schema_version: OPERATING_STATE_SCHEMA_VERSION,
-    state: restoreWithheldRows(state, withheldRows),
-    updated_at: new Date().toISOString(),
+    state: restoreWithheldRows(document, withheldRows),
+    updated_at: updatedAt,
     version: expectedVersion + 1
   })
+  const body = boundedWriteBody(config, row(state), replacedState ? () => row(replacedState) : undefined)
   let response: Response
 
   try {
@@ -1666,20 +1724,22 @@ export async function mutateRemoteOperatingState<T>(
   options: { maxAttempts?: number; timeoutMs?: number } = {}
 ): Promise<RemoteMutationResult<T>> {
   const maxAttempts = options.maxAttempts ?? 4
-  const timeoutMs = options.timeoutMs ?? 8000
+  const timeoutMs = options.timeoutMs ?? OPERATING_STATE_REQUEST_TIMEOUT_MS
   let current = initialSnapshot
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const draft = structuredClone(current.state)
     const value = mutate(draft, attempt)
     // The withheld rows travel with the snapshot the draft came from, so the
-    // document that lands in Postgres still contains them.
+    // document that lands in Postgres still contains them. The unmutated state
+    // is what the write replaces, for the size limit's no-growth rule.
     const committed = await updateRemoteOperatingState(
       config,
       draft,
       current.version,
       timeoutMs,
-      current.withheldRows
+      current.withheldRows,
+      current.state
     )
 
     if (committed) {
@@ -1701,7 +1761,7 @@ export async function mutateRemoteOperatingState<T>(
 /** Backward-compatible state-only read for tooling that does not need metadata. */
 export async function loadRemoteSnapshot(
   config: RemoteSnapshotConfig,
-  timeoutMs = 8000
+  timeoutMs = OPERATING_STATE_REQUEST_TIMEOUT_MS
 ): Promise<LogLoadsDatabaseState | null> {
   return (await loadRemoteOperatingState(config, timeoutMs))?.state ?? null
 }

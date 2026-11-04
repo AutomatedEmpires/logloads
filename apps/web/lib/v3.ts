@@ -197,10 +197,6 @@ export async function getHostNetwork(): Promise<NetworkView> {
   return (await getCockpitContext("host")).network
 }
 
-export async function getPublicNetwork(): Promise<NetworkView> {
-  return readState((current) => buildNetworkView(current.state, { kind: "public" }))
-}
-
 /**
  * The public board for the server-rendered public pages (`/`, `/loads`,
  * `/loads/[slug]`, the sitemap). Anonymous views share the short-lived

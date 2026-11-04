@@ -21,7 +21,8 @@ import { captureServerEvent } from "./analytics"
 import { parseStatedCredentialExpiry } from "./credential-date"
 import { parseDriverPayCents } from "./driver-pay-input"
 import { reviewCredentialDocument } from "./credential-reviewer"
-import { checkRateLimit } from "./rate-limit"
+import { publicBoard } from "./public-board"
+import { checkRateLimit, checkWriteLimit } from "./rate-limit"
 import {
   isOwnedUploadPublicId,
   mediaTarget,
@@ -141,10 +142,11 @@ async function requireResidualSettlementActor(): Promise<{
 
 /**
  * Spends one unit of the user's budget for this kind of write, before the write.
- * The API route for the same write spends the same bucket (HF-02, #187).
+ * The API route for the same write spends the same bucket, with the same time
+ * budget (HF-02, #187; `write-limits.ts`).
  */
 async function spendWriteLimit(actor: SessionActor, writeLimit: WriteLimit): Promise<void> {
-  await checkRateLimit(writeLimit.bucket, actor.profile.id, writeLimit.limit, writeLimit.windowMs)
+  await checkWriteLimit(writeLimit, actor.profile.id)
 }
 
 async function commit<T>(
@@ -152,6 +154,14 @@ async function commit<T>(
   mutation: (draft: typeof services) => T
 ): Promise<T> {
   const value = await mutateState(mutation)
+
+  // Every write that changes the public board revalidates `/loads`. Drop this
+  // instance's short-lived copy of the board too, so the re-rendered public
+  // pages show the host's own publish or update at once instead of up to 10 s
+  // later (#187). Other instances still catch up within that window.
+  if (paths.includes("/loads")) {
+    publicBoard.clear()
+  }
 
   for (const path of paths) {
     revalidatePath(path, "layout")

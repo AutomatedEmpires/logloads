@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest"
 
 import { createInMemoryDatabase } from "./store"
 import {
@@ -8,6 +8,7 @@ import {
   mutateRemoteOperatingState,
   OPERATING_STATE_MAX_BYTES,
   OPERATING_STATE_SCHEMA_VERSION,
+  OPERATING_STATE_WARN_RATIO,
   OperatingStateTooLargeError,
   setOperatingStateDefectReporter,
   updateRemoteOperatingState,
@@ -905,6 +906,17 @@ describe("withheld rows and the compare-and-swap write", () => {
 })
 
 describe("document size limit (HF-02, #187)", () => {
+  // Writes near the limit warn; collect the warnings instead of printing them.
+  let warn: MockInstance<typeof console.warn>
+
+  beforeEach(() => {
+    warn = vi.spyOn(console, "warn").mockImplementation(() => undefined)
+  })
+
+  afterEach(() => {
+    warn.mockRestore()
+  })
+
   function byteLengthOf(value: unknown): number {
     return new TextEncoder().encode(JSON.stringify(value)).byteLength
   }
@@ -979,6 +991,101 @@ describe("document size limit (HF-02, #187)", () => {
       })
     ).rejects.toBeInstanceOf(OperatingStateTooLargeError)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("at the limit, still lets a write through that does not grow the document, so it can be shrunk", async () => {
+    // A stored document already over the limit: the most any write can face.
+    // The padding row gets its own id, so the read keeps it in runtime state.
+    const stored = createInMemoryDatabase()
+
+    grownBy(stored, 8_192)
+    rowsOf(stored, "auditEvents").at(-1)!.id = crypto.randomUUID()
+
+    const api = new FakeOperatingStateApi(stored, 4)
+
+    vi.stubGlobal("fetch", vi.fn(api.fetch))
+
+    // Measured as read back, since reading fills in defaults the stored row lacked.
+    const limit = byteLengthOf((await loadRemoteOperatingState(config))!.state) - 1_024
+    const limited = { ...config, maxDocumentBytes: limit }
+    const read = async () => {
+      const snapshot = await loadRemoteOperatingState(limited)
+
+      expect(snapshot).not.toBeNull()
+
+      return snapshot!
+    }
+
+    // Growing it, even by a few bytes, is refused and changes nothing.
+    await expect(
+      mutateRemoteOperatingState(limited, await read(), (draft) => {
+        draft.profiles[0]!.fullName = `${draft.profiles[0]!.fullName} Jr.`
+      })
+    ).rejects.toBeInstanceOf(OperatingStateTooLargeError)
+    expect(api.snapshot()?.version).toBe(4)
+
+    // The same size goes through.
+    const sameSize = await mutateRemoteOperatingState(limited, await read(), (draft) => {
+      const name = draft.profiles[0]!.fullName
+
+      draft.profiles[0]!.fullName = `${name.slice(0, -1)}${name.endsWith("x") ? "y" : "x"}`
+    })
+
+    expect(sameSize.snapshot.version).toBe(5)
+
+    // So does a write that shrinks it, here back under the limit.
+    const shrunk = await mutateRemoteOperatingState(limited, await read(), (draft) => {
+      rowsOf(draft, "auditEvents").pop()
+    })
+
+    expect(shrunk.snapshot.version).toBe(6)
+    expect(byteLengthOf(api.snapshot()?.state)).toBeLessThan(limit)
+  })
+
+  it("counts the withheld rows on both sides of the no-growth comparison", async () => {
+    const stored = createInMemoryDatabase()
+    const withheld = { truckSlots: [{ id: "withheld-slot", notes: "x".repeat(8_192) }] }
+    const limit = byteLengthOf(stored) + 4_096
+    const fetchMock = vi.fn(async () => Response.json([]))
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    // Over the limit only because of the withheld rows it puts back, and no
+    // larger than the document it replaces, which holds them too: sent. (The
+    // zero-row answer is a stale version.)
+    await expect(
+      updateRemoteOperatingState({ ...config, maxDocumentBytes: limit }, stored, 4, 8000, withheld, stored)
+    ).resolves.toBeNull()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("warns, with sizes only, when a write passes 75% of the limit", async () => {
+    const state = createInMemoryDatabase()
+    const size = byteLengthOf({
+      schema_version: OPERATING_STATE_SCHEMA_VERSION,
+      state,
+      updated_at: new Date().toISOString(),
+      version: 5
+    })
+
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json([])))
+
+    // About 60% of the limit: quiet.
+    await updateRemoteOperatingState({ ...config, maxDocumentBytes: Math.ceil(size / 0.6) }, state, 4)
+    expect(warn).not.toHaveBeenCalled()
+
+    // About 80%: one warning naming the sizes and the runbook.
+    await updateRemoteOperatingState({ ...config, maxDocumentBytes: Math.ceil(size / 0.8) }, state, 4)
+    expect(OPERATING_STATE_WARN_RATIO).toBe(0.75)
+    expect(warn).toHaveBeenCalledTimes(1)
+
+    const line = String(warn.mock.calls[0]![0])
+
+    expect(line).toMatch(
+      /^\[operating-state\] the document is \d+ bytes, 80% of the \d+-byte limit; .*\(docs\/RECOVERY\.md §6\.1\)$/
+    )
+    // No document content in the line.
+    expect(line).not.toContain(state.profiles[0]!.fullName)
   })
 
   it("refuses a bootstrap over the limit too", async () => {

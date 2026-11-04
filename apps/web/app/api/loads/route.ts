@@ -30,6 +30,9 @@ export async function POST(request: NextRequest) {
 			})
 		)
 
+		// The poster's next read of this instance's board shows the new posting (#187).
+		publicBoard.clear()
+
 		return NextResponse.json(
 			{ load },
 			{

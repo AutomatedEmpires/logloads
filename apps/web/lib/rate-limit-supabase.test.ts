@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 
 import { RateLimitError, RateLimiter, RateLimitUnavailableError } from "./rate-limit-core"
-import { SupabaseRateLimitStore } from "./rate-limit-supabase"
+import { DEFAULT_RATE_LIMIT_TIMEOUT_MS, SupabaseRateLimitStore } from "./rate-limit-supabase"
 
 function fetchMock(response: Response): typeof fetch {
   return vi.fn(async () => response) as unknown as typeof fetch
@@ -121,6 +121,64 @@ describe("SupabaseRateLimitStore", () => {
 
     await expect(
       rateLimitStore.consume({ bucket: "contact", key: "client", windowMs: 60_000 })
+    ).rejects.toBeInstanceOf(RateLimitUnavailableError)
+  })
+})
+
+describe("SupabaseRateLimitStore time budget (#187)", () => {
+  /** A store that answers after `delayMs`, unless the request is abandoned first. */
+  function slowRpc(delayMs: number): typeof fetch {
+    return vi.fn(
+      (_url: unknown, init?: RequestInit) =>
+        new Promise<Response>((resolve, reject) => {
+          const timer = setTimeout(
+            () => resolve(Response.json([{ request_count: 1, retry_after_ms: 60_000 }])),
+            delayMs
+          )
+
+          init?.signal?.addEventListener("abort", () => {
+            clearTimeout(timer)
+            reject(init.signal?.reason)
+          })
+        })
+    ) as unknown as typeof fetch
+  }
+
+  /** The same store, with a short default budget so the test stays fast. */
+  function slowStore(delayMs: number): SupabaseRateLimitStore {
+    return new SupabaseRateLimitStore({
+      endpoint: "https://project.supabase.co/",
+      fetch: slowRpc(delayMs),
+      keySecret: "dedicated-hmac-secret",
+      prefix: "test:limits",
+      serviceRoleKey: "service-role-key",
+      timeoutMs: 50
+    })
+  }
+
+  it("waits 1.5 s by default", () => {
+    expect(DEFAULT_RATE_LIMIT_TIMEOUT_MS).toBe(1_500)
+  })
+
+  it("gives up after the default when the check sets no budget, and fails closed", async () => {
+    const limiter = new RateLimiter(slowStore(250))
+
+    await expect(limiter.check("contact", "client", 5, 60_000)).rejects.toBeInstanceOf(RateLimitUnavailableError)
+  })
+
+  it("waits as long as the check's own budget allows", async () => {
+    const limiter = new RateLimiter(slowStore(250))
+
+    await expect(
+      limiter.check("trip-event-create", "user", 30, 60_000, { timeoutMs: 2_000 })
+    ).resolves.toBeUndefined()
+  })
+
+  it("still fails closed when the store takes longer than that budget", async () => {
+    const limiter = new RateLimiter(slowStore(250))
+
+    await expect(
+      limiter.check("trip-event-create", "user", 30, 60_000, { timeoutMs: 100 })
     ).rejects.toBeInstanceOf(RateLimitUnavailableError)
   })
 })

@@ -24,6 +24,7 @@ import {
 	type StripeSubscriptionFacts,
 	type SubscriptionBillingEventHooks
 } from "@/lib/billing"
+import { isBodyTooLarge, readBoundedText, STRIPE_WEBHOOK_BODY_LIMIT_BYTES } from "@/lib/request-body"
 import {
 	baseInvoicePaymentCompositionProblem,
 	expectedStripeLivemode,
@@ -1371,8 +1372,22 @@ export async function POST(request: NextRequest) {
 	let event: StripeBillingEvent
 
 	try {
-		event = webhook.value.constructWebhookEvent(await request.text(), signature)
-		} catch {
+		// The raw text, as Stripe signed it, read through a size cap (#187).
+		event = webhook.value.constructWebhookEvent(
+			await readBoundedText(request, STRIPE_WEBHOOK_BODY_LIMIT_BYTES),
+			signature
+		)
+		} catch (error) {
+			if (isBodyTooLarge(error)) {
+				// Stripe retries a refused event; the operator needs to know a real
+				// one never fits. Only the limit is logged, never the body.
+				console.error("logloads: billing webhook body refused at the size cap", {
+					limitBytes: STRIPE_WEBHOOK_BODY_LIMIT_BYTES
+				})
+
+				return webhookJson({ error: "Payload too large" }, 413)
+			}
+
 			return webhookJson({ error: "Invalid signature" }, 400)
 		}
 

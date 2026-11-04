@@ -21,8 +21,10 @@ type Environment = Readonly<Record<string, string | undefined>>
  *   Map canvases use `blob:` and `data:` images. The legacy Mapbox renderer
  *   starts `blob:` workers, and its hosts are allowed only when its token is set.
  * - Clerk: the Frontend API host (read from the publishable key) serves
- *   clerk-js and its API, `img.clerk.com` its images, and Cloudflare Turnstile
- *   its bot check.
+ *   clerk-js and its API, `img.clerk.com` its images, Cloudflare Turnstile
+ *   its bot check, `*.protect.clerk.com` its abuse and fraud protection
+ *   (scripts, frames, and connections on any port, as Clerk's CSP guide
+ *   requires for every application), and `clerk-telemetry.com` its telemetry.
  * - Stripe: Stripe.js and the Payment Element's frames, for card setup.
  * - Supabase Storage: signed uploads go from the browser straight to the media
  *   project. The host is a wildcard so the project reference is not published
@@ -39,6 +41,11 @@ const STRIPE_FRAME_ORIGINS = ["https://js.stripe.com", "https://*.js.stripe.com"
 const CARTO_ORIGINS = ["https://basemaps.cartocdn.com", "https://*.basemaps.cartocdn.com"]
 const MAPBOX_ORIGINS = ["https://api.mapbox.com", "https://*.tiles.mapbox.com", "https://events.mapbox.com"]
 const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com"
+const CLERK_PROTECT_ORIGIN = "https://*.protect.clerk.com"
+// Clerk serves its protection hosts on ports other than 443 too, and a source
+// without a port matches only the default one.
+const CLERK_PROTECT_CONNECT_ORIGIN = "https://*.protect.clerk.com:*"
+const CLERK_TELEMETRY_ORIGINS = ["https://clerk-telemetry.com", "https://*.clerk-telemetry.com"]
 const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com"
 
 /** Clerk's Frontend API origin. A publishable key is `pk_<env>_` + base64 of `<host>$`. */
@@ -88,7 +95,8 @@ export function contentSecurityPolicyReportOnly(environment: Environment = proce
 				development && "'unsafe-eval'",
 				...STRIPE_SCRIPT_ORIGINS,
 				clerk,
-				clerk && TURNSTILE_ORIGIN
+				clerk && TURNSTILE_ORIGIN,
+				clerk && CLERK_PROTECT_ORIGIN
 			]
 		],
 		["style-src", ["'self'", "'unsafe-inline'"]],
@@ -106,13 +114,14 @@ export function contentSecurityPolicyReportOnly(environment: Environment = proce
 				"https://*.supabase.co",
 				"https://api.stripe.com",
 				clerk,
-				clerk && "https://clerk-telemetry.com",
+				clerk && CLERK_PROTECT_CONNECT_ORIGIN,
+				...(clerk ? CLERK_TELEMETRY_ORIGINS : []),
 				posthog
 			]
 		],
 		["worker-src", ["'self'", "blob:"]],
 		["child-src", ["'self'", "blob:"]],
-		["frame-src", [...STRIPE_FRAME_ORIGINS, clerk && TURNSTILE_ORIGIN]],
+		["frame-src", [...STRIPE_FRAME_ORIGINS, clerk && TURNSTILE_ORIGIN, clerk && CLERK_PROTECT_ORIGIN]],
 		["manifest-src", ["'self'"]]
 	]
 
@@ -128,14 +137,14 @@ export function contentSecurityPolicyReportOnly(environment: Environment = proce
  *
  * The enforced CSP carries only `frame-ancestors`, so no LogLoads page can be
  * framed by another site, while scripts, styles, workers and connections stay
- * as they are. The full policy rides alongside it in report-only mode.
+ * as they are. The full policy rides alongside it in report-only mode, on
+ * pages only (`HTML_DOCUMENT_PATHS`).
  * `X-Frame-Options` covers browsers without `frame-ancestors`.
  * `Permissions-Policy` turns off device features LogLoads does not use and
  * keeps geolocation for LogLoads itself only.
  */
 const securityHeaders = [
 	{ key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
-	{ key: "Content-Security-Policy-Report-Only", value: contentSecurityPolicyReportOnly() },
 	{ key: "X-Frame-Options", value: "DENY" },
 	{ key: "X-Content-Type-Options", value: "nosniff" },
 	{ key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
@@ -145,10 +154,41 @@ const securityHeaders = [
 	}
 ]
 
+/**
+ * The paths that can answer with an HTML page (#187). A browser applies a CSP
+ * only to a document (or a worker), so the full policy, about half a kilobyte,
+ * is not sent on the rest:
+ * - `/_next/…`: build assets and the image optimizer;
+ * - `/api/…`: JSON routes;
+ * - any path with a dot: `public/` files, `robots.txt`, `sitemap.xml`, the app
+ *   icon and the MapLibre worker. The middleware matcher draws the same line
+ *   (no page path contains a dot), so pages and files are told apart one way.
+ *
+ * The match is by path, so every response for one URL carries the same
+ * headers, and a shared cache cannot hand a page out without its policy.
+ */
+export const HTML_DOCUMENT_PATHS = "/((?!_next/|api/|.*\\..*).*)"
+
+/**
+ * Requests to a page path that do not answer with a document: a client
+ * navigation's RSC payload (the `RSC` header; Next sends `Vary: RSC`, so a
+ * cache keeps it apart from the page) and a Server Action call (`Next-Action`,
+ * a POST).
+ */
+const NOT_A_DOCUMENT_REQUEST = [
+	{ type: "header" as const, key: "rsc" },
+	{ type: "header" as const, key: "next-action" }
+]
+
+const documentHeaders = [{ key: "Content-Security-Policy-Report-Only", value: contentSecurityPolicyReportOnly() }]
+
 const nextConfig: NextConfig = {
 	transpilePackages: ["@logloads/contracts", "@logloads/db", "@logloads/services", "@logloads/ui"],
 	async headers() {
-		return [{ source: "/:path*", headers: securityHeaders }]
+		return [
+			{ source: "/:path*", headers: securityHeaders },
+			{ source: HTML_DOCUMENT_PATHS, missing: NOT_A_DOCUMENT_REQUEST, headers: documentHeaders }
+		]
 	}
 }
 

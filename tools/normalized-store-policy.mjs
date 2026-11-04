@@ -104,6 +104,13 @@ export function productionSignals(env) {
   return signals
 }
 
+/** The Doppler configs a run against a hosted project may come from: `stg`, or a `stg_` branch config of it. */
+export function isStagingDopplerConfig(value) {
+  const config = trimmed(value)
+
+  return config !== null && (config === "stg" || config.startsWith("stg_"))
+}
+
 // ---------------------------------------------------------------------------------------------
 // Connection strings
 // ---------------------------------------------------------------------------------------------
@@ -245,6 +252,15 @@ export function checkTargets({ env, expectedRef }) {
 
   const configured = trimmed(env.LOGLOADS_SUPABASE_EXPECTED_PROJECT_REF)
   const tooling = trimmed(env.SUPABASE_PROJECT_REF)
+
+  // An allow-list on top of the production deny signals: a hosted project is reached only from the staging config
+  // or one of its branch configs, so a run from dev, an unnamed config or no Doppler at all is refused too.
+  if (migration.hosted && !isStagingDopplerConfig(env.DOPPLER_CONFIG)) {
+    return refuse(
+      "a hosted project is reached only from the staging Doppler config, and DOPPLER_CONFIG is not set or names another " +
+        "config: run under doppler run --project logloads --config stg (or a stg_ branch config such as stg_tooling)"
+    )
+  }
 
   if (migration.hosted && !configured) {
     return refuse(

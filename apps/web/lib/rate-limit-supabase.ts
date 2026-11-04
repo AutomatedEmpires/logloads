@@ -17,6 +17,13 @@ export interface SupabaseRateLimitStoreOptions {
   now?: () => number
 }
 
+/**
+ * How long a check waits for the shared store when the caller sets no budget
+ * of its own. Short, so a slow store refuses quickly. The per-user write limits
+ * wait longer (`write-limits.ts`).
+ */
+export const DEFAULT_RATE_LIMIT_TIMEOUT_MS = 1_500
+
 interface SupabaseRateLimitRow {
   request_count?: unknown
   retry_after_ms?: unknown
@@ -42,10 +49,10 @@ export class SupabaseRateLimitStore implements RateLimitStore {
     this.now = options.now ?? (() => Date.now())
     this.prefix = (options.prefix?.trim() || "logloads:rate-limit").slice(0, 79)
     this.serviceRoleKey = options.serviceRoleKey
-    this.timeoutMs = options.timeoutMs ?? 1_500
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_RATE_LIMIT_TIMEOUT_MS
   }
 
-  async consume({ bucket, key, windowMs }: RateLimitRequest): Promise<RateLimitWindow> {
+  async consume({ bucket, key, timeoutMs, windowMs }: RateLimitRequest): Promise<RateLimitWindow> {
     const safeBucket = bucket.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80)
     const keyHash = createHmac("sha256", this.keySecret).update(key).digest("hex")
 
@@ -65,7 +72,7 @@ export class SupabaseRateLimitStore implements RateLimitStore {
             apikey: this.serviceRoleKey
           },
           method: "POST",
-          signal: AbortSignal.timeout(this.timeoutMs)
+          signal: AbortSignal.timeout(timeoutMs ?? this.timeoutMs)
         }
       )
 
