@@ -10,7 +10,9 @@ import {
   marketplaceContactPreferenceSchema,
   marketplaceInterestStatusSchema,
   marketplaceJobStatusSchema,
+  MARKETPLACE_LISTING_REPORT_REASON_LABELS,
   marketplacePayUnitSchema,
+  reportListingInputSchema,
   respondToInterestInputSchema,
   sortMarketplaceJobs,
   type MarketplaceCapability,
@@ -19,9 +21,12 @@ import {
   type MarketplaceInterestView,
   type MarketplaceJobDetailView,
   type MarketplaceJobDraft,
-  type MarketplaceJobFilters
+  type MarketplaceJobFilters,
+  type MarketplaceListingReportReason,
+  type MarketplaceListingReportReceipt
 } from "@logloads/contracts"
 
+import type { StoredAbuseReason, StoredListingReport } from "./normalized-db"
 import { MarketplaceRefusalError, MarketplaceStoreError, type MarketplaceV2ViewerAccess } from "./port"
 
 /**
@@ -437,4 +442,43 @@ export function publishArguments(draft: MarketplaceJobDraft) {
     p_trucks_requested: draft.trucksRequested,
     p_work_starts_on: draft.startsOn ?? null
   }
+}
+
+// ---------------------------------------------------------------------------
+// Listing reports (UX-07, #130)
+// ---------------------------------------------------------------------------
+
+/**
+ * The spec's report reasons (§8.18) as `abuse_reports.reason` stores them. Three have no code of their own in the
+ * schema (no longer available, suspicious contact, wrong equipment): they are stored as `other` with the reason the
+ * person chose written first in `details`, so staff still see it. Nothing the person wrote is dropped.
+ */
+const STORED_REPORT_REASONS: Readonly<Record<MarketplaceListingReportReason, StoredAbuseReason>> = Object.freeze({
+  abusive_language: "abuse",
+  fake_work: "nonexistent_job",
+  inaccurate_pay: "inaccurate_pay",
+  other: "other",
+  privacy_risk: "unsafe_disclosure",
+  stale: "other",
+  suspicious_contact: "other",
+  wrong_equipment: "other"
+})
+
+/** A report as the form sent it → the row `fileListingReport` writes. Refuses input the contract does not accept. */
+export function listingReportRow(input: unknown): { jobId: string; reason: StoredAbuseReason; details: string | null } {
+  const parsed = parseInput(reportListingInputSchema, input)
+  const reason = STORED_REPORT_REASONS[parsed.reason]
+  const chosen = reason === "other" && parsed.reason !== "other" ? `Reason: ${MARKETPLACE_LISTING_REPORT_REASON_LABELS[parsed.reason]}.` : null
+  const details = [chosen, parsed.details].filter((part): part is string => Boolean(part)).join("\n")
+
+  return { details: details || null, jobId: parsed.jobId, reason }
+}
+
+/** The stored report → the receipt the page acknowledges. */
+export function listingReportReceipt(report: StoredListingReport, alreadyReported: boolean): MarketplaceListingReportReceipt {
+  if (!isUuid(report.id)) {
+    throw new MarketplaceStoreError(undefined, "22023")
+  }
+
+  return { alreadyReported, reportId: report.id, reportedAt: toIso(report.createdAt) }
 }

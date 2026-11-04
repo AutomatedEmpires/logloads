@@ -7,7 +7,14 @@ vi.mock("server-only", () => ({}))
 import { validateMarketplaceJobDraft } from "@logloads/contracts"
 
 import { createNormalizedMarketplaceV2 } from "./normalized-adapter"
-import type { MarketplaceCalls, MarketplaceDb, MarketplaceFunctionName, MarketplaceInquiryParties, MarketplacePrincipal } from "./normalized-db"
+import type {
+  MarketplaceCalls,
+  MarketplaceDb,
+  MarketplaceFunctionName,
+  MarketplaceInquiryParties,
+  MarketplacePrincipal,
+  StoredListingReport
+} from "./normalized-db"
 import { MarketplaceRefusalError, type MarketplaceV2Viewer } from "./port"
 
 /**
@@ -26,6 +33,7 @@ const JOB = "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 const INTEREST = "66666666-eeee-4eee-8eee-eeeeeeeeeeee"
 const LANDING = "77777777-ffff-4fff-8fff-ffffffffffff"
 const REPLY = "99999999-dddd-4ddd-8ddd-dddddddddddd"
+const REPORT = "22222222-eeee-4eee-8eee-eeeeeeeeeeee"
 const PRINCIPAL: MarketplacePrincipal = { audience: "logloads-test-audience", issuer: "https://clerk.logloads.test", subject: "user_test_subject" }
 
 const landingViewer: MarketplaceV2Viewer = { organizationId: LAND, userId: USER }
@@ -60,6 +68,7 @@ function interestRow(overrides: Record<string, unknown> = {}) {
 let recorded: Recorded[]
 let responses: Partial<Record<MarketplaceFunctionName, unknown[]>>
 let parties: MarketplaceInquiryParties | null
+let standingReport: StoredListingReport | null
 let principal: ReturnType<typeof vi.fn>
 
 function fakeDb(): MarketplaceDb {
@@ -72,6 +81,14 @@ function fakeDb(): MarketplaceDb {
       async inquiryParties() {
         recorded.push({ ...extra, args: {}, fn: "inquiryParties", session })
         return parties
+      },
+      async standingListingReport(jobId) {
+        recorded.push({ ...extra, args: { jobId }, fn: "standingListingReport", session })
+        return standingReport
+      },
+      async fileListingReport(report) {
+        recorded.push({ ...extra, args: report, fn: "fileListingReport", session })
+        return { createdAt: "2026-11-03T12:00:00.123456+00:00", id: REPORT }
       }
     }
   }
@@ -107,6 +124,7 @@ beforeEach(() => {
   recorded = []
   responses = {}
   parties = { haulerOrganizationId: HAUL, jobId: JOB, jobOrganizationId: LAND }
+  standingReport = null
   principal = vi.fn(async () => PRINCIPAL)
 })
 
@@ -132,6 +150,24 @@ describe("normalized adapter: identity and discovery", () => {
     expect((await adapter().listJobs({ product: "Pulpwood" })).map((job) => job.id)).toEqual([other])
     expect((await adapter().listJobs({ sort: "pay" })).map((job) => job.id)).toEqual([other, JOB])
     expect(recorded[0]?.args).toEqual({ p_accepting_only: true, p_equipment: null, p_limit: 200, p_pay_unit: null, p_query: null })
+  })
+
+  it("reads one job as the session's person when there is one, so a job that stopped can still say why (#130)", async () => {
+    responses.get_marketplace_job = [jobRow({ accepting_interest: false, status: "paused" })]
+
+    expect((await adapter().getJob(JOB, haulerViewer))?.status).toBe("paused")
+    expect(recorded).toEqual([{ args: { p_job_id: JOB }, fn: "get_marketplace_job", principal: PRINCIPAL, readOnly: true, session: "user" }])
+  })
+
+  it("falls back to the public view when the store refuses the person, and never hides a store failure", async () => {
+    responses.get_marketplace_job = [jobRow()]
+    principal.mockRejectedValueOnce(new MarketplaceRefusalError("Sign in again to continue."))
+
+    expect((await adapter().getJob(JOB, haulerViewer))?.id).toBe(JOB)
+    expect(recorded.map((call) => call.session)).toEqual(["anon"])
+
+    principal.mockRejectedValueOnce(new Error("connection reset"))
+    await expect(adapter().getJob(JOB, haulerViewer)).rejects.toThrow("connection reset")
   })
 
   it("answers not-found for an id that cannot exist, without asking the store", async () => {
@@ -260,6 +296,51 @@ describe("normalized adapter: publishing and reconfirmation", () => {
 
   it("refuses a reconfirmation without its own attestation", async () => {
     await expect(adapter().reconfirmJob(landingViewer, JOB, publishAttestation)).rejects.toThrow("availability confirmation")
+    expect(recorded).toEqual([])
+  })
+})
+
+describe("normalized adapter: reporting a listing (#130)", () => {
+  beforeEach(() => {
+    responses.get_marketplace_job = [jobRow()]
+  })
+
+  it("files one report as the person, for a listing they can see, and returns the receipt", async () => {
+    await expect(adapter().reportListing(haulerViewer, { details: "Pay was $80 a ton", jobId: JOB, reason: "inaccurate_pay" })).resolves.toEqual({
+      alreadyReported: false,
+      reportId: REPORT,
+      reportedAt: "2026-11-03T12:00:00.123Z"
+    })
+
+    expect(recorded.map((call) => [call.fn, call.session, call.readOnly])).toEqual([
+      ["get_marketplace_job", "user", false],
+      ["standingListingReport", "user", false],
+      ["fileListingReport", "user", false]
+    ])
+    expect(recorded[2]?.args).toEqual({ details: "Pay was $80 a ton", jobId: JOB, reason: "inaccurate_pay" })
+  })
+
+  it("files nothing when the person already has a standing report of the listing", async () => {
+    standingReport = { createdAt: "2026-11-01T08:00:00+00:00", id: REPORT }
+
+    await expect(adapter().reportListing(haulerViewer, { jobId: JOB, reason: "stale" })).resolves.toEqual({
+      alreadyReported: true,
+      reportId: REPORT,
+      reportedAt: "2026-11-01T08:00:00.000Z"
+    })
+    expect(storeCalls()).not.toContain("fileListingReport")
+  })
+
+  it("says not found for a listing the person cannot see, and files nothing", async () => {
+    responses.get_marketplace_job = []
+
+    await expect(adapter().reportListing(haulerViewer, { jobId: JOB, reason: "fake_work" })).rejects.toThrow("Listing not found")
+    expect(storeCalls()).toEqual(["get_marketplace_job"])
+  })
+
+  it("validates the report before reaching the store", async () => {
+    await expect(adapter().reportListing(haulerViewer, { jobId: JOB, reason: "spam" })).rejects.toThrow("Choose why you are reporting this listing")
+    await expect(adapter().reportListing(haulerViewer, { jobId: "../etc", reason: "stale" })).rejects.toThrow("Listing not found")
     expect(recorded).toEqual([])
   })
 })

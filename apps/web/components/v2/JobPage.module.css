@@ -1,0 +1,194 @@
+/* The job page's own parts (UX-07, #130): Share and Report under the job, similar open jobs for a listing that stopped,
+   and the sticky interest bar. Layout only; controls are design-system components. Semantic --ll-* tokens only. The
+   app's legacy global rules for a, summary, fieldset and legend are neutralised explicitly. */
+
+/* Share and Report: two disclosures in a row under the job, inside its Section. */
+.tools {
+  display: grid;
+  border-top: 1px solid var(--ll-color-border);
+}
+
+.tool + .tool { border-top: 1px solid var(--ll-color-border); }
+
+.toolSummary {
+  display: flex;
+  align-items: center;
+  min-height: var(--ll-target-touch);
+  padding: var(--ll-space-2) var(--ll-space-5);
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-md);
+  font-weight: var(--ll-weight-semibold);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+/* Inside the Section's clipping frame the ring sits inset; the shadow reset removes the legacy global halo. */
+.tool > .toolSummary:focus-visible {
+  outline-offset: calc(-1 * var(--ll-focus-width) - 2px);
+  box-shadow: none;
+}
+
+.toolBody {
+  display: grid;
+  gap: var(--ll-space-3);
+  padding: 0 var(--ll-space-5) var(--ll-space-4);
+  min-width: 0;
+}
+
+.text {
+  margin: 0;
+  font-size: var(--ll-text-md);
+  line-height: var(--ll-leading-normal);
+  overflow-wrap: anywhere;
+}
+
+.hint {
+  margin: 0;
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+  line-height: var(--ll-leading-normal);
+}
+
+.shareRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--ll-space-2);
+}
+
+.shareField {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.form {
+  display: grid;
+  gap: var(--ll-space-4);
+  margin: 0;
+  min-width: 0;
+}
+
+.fieldset {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.legend {
+  padding: 0;
+  margin-bottom: var(--ll-space-2);
+  font-size: var(--ll-text-md);
+  font-weight: var(--ll-weight-semibold);
+}
+
+/* One reason: a native radio in a 44 px label row. */
+.reason {
+  display: flex;
+  align-items: center;
+  gap: var(--ll-space-3);
+  min-height: var(--ll-target-touch);
+  font-size: var(--ll-text-md);
+  cursor: pointer;
+}
+
+.radio {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--ll-color-action);
+}
+
+.radio:focus-visible {
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: var(--ll-focus-offset);
+  box-shadow: none;
+}
+
+.submit { justify-self: start; }
+
+.ack {
+  margin: 0;
+  font-size: var(--ll-text-md);
+  line-height: var(--ll-leading-normal);
+}
+
+.ack:focus { outline: none; }
+
+/* Similar open jobs, for a listing that stopped accepting interest. */
+.similar {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.similarItem {
+  display: grid;
+  gap: 2px;
+  padding: var(--ll-space-3) 0;
+  border-top: 1px solid var(--ll-color-border);
+}
+
+.similarItem:first-child { border-top: 0; padding-top: 0; }
+
+.link {
+  color: inherit;
+  font-weight: var(--ll-weight-semibold);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* AppShell draws the ring; this removes the app's legacy global :focus-visible halo (globals.css). */
+.link:focus-visible { box-shadow: none; }
+
+.meta {
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+}
+
+/* The sticky interest bar (UX 02 §A7): hidden until the summary has scrolled away. It sticks to the bottom of the
+   viewport above the bottom tabs, and docks at the end of the page, so it never sits over the page's last content.
+   Below bp-lg it clears the 56 px tabs, which pad for the safe area themselves; from bp-lg it pads for it. */
+.bar {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--ll-z-sticky);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ll-space-2) var(--ll-space-4);
+  padding: var(--ll-space-3) max(var(--ll-gutter), env(safe-area-inset-right, 0px)) calc(var(--ll-space-3) + env(safe-area-inset-bottom, 0px))
+    max(var(--ll-gutter), env(safe-area-inset-left, 0px));
+  border-top: 1px solid var(--ll-color-border);
+  background: var(--ll-color-surface);
+  box-shadow: var(--ll-shadow-md);
+}
+
+.bar[hidden] { display: none; }
+
+@container ll-app (max-width: 959px) { /* below bp-lg: above the bottom tabs */
+  .bar {
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: var(--ll-space-3);
+  }
+}
+
+.barNote {
+  margin: 0;
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-md);
+  font-weight: var(--ll-weight-semibold);
+}
+
+.barAction { flex: 0 1 auto; }
+
+@container ll-app (max-width: 599px) { /* below bp-sm: the action takes the rest of the row */
+  .barAction { flex: 1 1 auto; }
+}

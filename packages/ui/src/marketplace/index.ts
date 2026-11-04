@@ -12,6 +12,7 @@ export { InquiryRow } from "./InquiryRow"
 export { JobDetail } from "./JobDetail"
 export { JOB_RESULT_COLUMNS, JobResultList } from "./JobResultList"
 export { JobResultRow } from "./JobResultRow"
+export { JobSummary, jobSummaryId, jobTitleId } from "./JobSummary"
 export { MESSAGE_FIELD_NAME, MESSAGE_MAX_LENGTH, MessageComposer } from "./MessageComposer"
 export { OperatingRegion } from "./OperatingRegion"
 export { PayFigure } from "./PayFigure"
@@ -27,9 +28,12 @@ export {
   inquiryStatus,
   JOB_PUBLIC_STATUS_LABELS,
   jobAvailabilityStatus,
+  jobClosureText,
   offerText,
   payParts,
   scheduleText,
+  unstatedFields,
+  unstatedText,
   type InquiryTone,
   type PayParts
 } from "./format"
@@ -45,6 +49,7 @@ export type {
   JobDetailProps,
   JobResultListProps,
   JobResultRowProps,
+  JobSummaryProps,
   MessageComposerProps,
   OperatingRegionProps,
   PayFigureProps,

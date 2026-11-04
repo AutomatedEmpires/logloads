@@ -176,6 +176,49 @@ export function distanceText(miles: number | null | undefined): string | null {
   return miles < 1 ? "Under 1 mi from your search" : `About ${Math.round(miles)} mi from your search`
 }
 
+/* ------------------------------------------------------------------ What the poster left out (UX-07, #130) */
+
+type StatedFields = Pick<
+  MarketplaceJobCardView,
+  | "equipment"
+  | "destinationLabel"
+  | "haulDistance"
+  | "startsOn"
+  | "endsOn"
+  | "scheduleNote"
+  | "trucks"
+  | "product"
+  | "estimatedDailyLoads"
+  | "estimatedLoadsPerTruckPerDay"
+  | "estimatedTonsPerLoad"
+> & { publicRoadNotes: string | null }
+
+/**
+ * The listing fields the poster did not state, in the order the job page shows them, as short lower-case names.
+ * Pay is not listed: the pay figure itself says "Pay not stated".
+ */
+export function unstatedFields(job: StatedFields): string[] {
+  return [
+    job.equipment.length === 0 ? "equipment" : null,
+    job.destinationLabel ? null : "destination",
+    job.haulDistance ? null : "haul distance",
+    !job.startsOn && !job.scheduleNote ? "start date" : null,
+    job.startsOn && !job.endsOn && !job.scheduleNote ? "end date" : null,
+    job.trucks.total === null && job.trucks.perDay === null ? "trucks needed" : null,
+    job.product ? null : "product",
+    job.estimatedDailyLoads === null ? "loads a day" : null,
+    job.estimatedLoadsPerTruckPerDay === null ? "loads per truck a day" : null,
+    job.estimatedTonsPerLoad === null ? "tons a load" : null,
+    job.publicRoadNotes ? null : "road notes"
+  ].filter((field): field is string => field !== null)
+}
+
+/** "Not stated by the poster: destination, loads a day." — one line instead of a row per field; null when complete. */
+export function unstatedText(job: StatedFields): string | null {
+  const fields = unstatedFields(job)
+  return fields.length > 0 ? `Not stated by the poster: ${fields.join(", ")}.` : null
+}
+
 /* ------------------------------------------------------------------ Status vocabulary (UX-DEC-01) */
 
 /** What the public listing says about a job's status. "Filled" is the poster's report, never a verified fact. */
@@ -186,6 +229,30 @@ export const JOB_PUBLIC_STATUS_LABELS: Readonly<Record<MarketplaceJobStatus, str
   filled: "Not accepting interest · poster reports enough trucks",
   paused: "Paused by the poster"
 })
+
+const CLOSURE_REASONS: Readonly<Record<MarketplaceJobStatus, string>> = Object.freeze({
+  active: "Not accepting interest",
+  closed: "Closed by the poster",
+  expired: "Listing expired",
+  filled: "The poster reports enough trucks",
+  paused: "Paused by the poster"
+})
+
+/**
+ * Why a listing is not accepting interest, and when, from what the listing records (spec §5.3). No view carries the
+ * moment a status changed, so "when" is never invented: the expiry date when one is set, the last stated work day for
+ * an expired job without one, and otherwise the day the listing last changed, worded as exactly that.
+ */
+export function jobClosureText(job: Pick<MarketplaceJobCardView, "status" | "expiresAt" | "endsOn" | "lastModifiedAt">): string {
+  const reason = CLOSURE_REASONS[job.status]
+
+  if (job.status === "expired") {
+    if (job.expiresAt) return `${reason} on ${formatDay(job.expiresAt)}`
+    if (job.endsOn) return `${reason} · last stated work day ${formatDay(job.endsOn)}`
+  }
+
+  return `${reason} · listing last changed ${formatDay(job.lastModifiedAt)}`
+}
 
 /** "attention": the viewer's move. "waiting": the other side's move. "closed": nothing more to do. */
 export type InquiryTone = "attention" | "waiting" | "closed"

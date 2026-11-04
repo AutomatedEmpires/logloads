@@ -1,0 +1,104 @@
+/* JobSummary (UX-07, #130): the decision summary at the top of JobDetail. Compact on purpose: at 390 px the pay, the
+   six decision facts and the "Not stated" line sit inside the first 600 px of the page. Draws no frame of its own.
+   The app's legacy global rules for h2, dl, dl div, dt and dd are neutralised explicitly. */
+.summary {
+  display: grid;
+  gap: var(--ll-space-3);
+  min-width: 0;
+  padding: var(--ll-space-4) var(--ll-space-5);
+  color: var(--ll-color-text);
+}
+
+.head {
+  display: grid;
+  gap: var(--ll-space-1);
+  min-width: 0;
+}
+
+.poster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--ll-space-3);
+  margin: 0;
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-md);
+}
+
+.title {
+  margin: 0 0 var(--ll-space-1);
+  font-family: inherit;
+  font-size: var(--ll-text-xl);
+  font-weight: var(--ll-weight-semibold);
+  line-height: var(--ll-leading-snug);
+  letter-spacing: normal;
+  overflow-wrap: anywhere;
+}
+
+.source {
+  margin: 0;
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+  line-height: var(--ll-leading-snug);
+}
+
+/* Stacked facts: an 80 px label column beside the value (104 px from bp-md, where width is not scarce). */
+.facts {
+  display: grid;
+  gap: var(--ll-space-2);
+  margin: 0;
+  padding-top: var(--ll-space-3);
+  border-top: 1px solid var(--ll-color-border);
+}
+
+.fact {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: var(--ll-space-3);
+  justify-content: stretch;
+  padding: 0;
+  border: 0;
+}
+
+@container ll-app (min-width: 768px) { /* bp-md */
+  .fact { grid-template-columns: 104px minmax(0, 1fr); }
+}
+
+.label {
+  padding-top: 3px;
+  color: var(--ll-color-text-muted);
+  font-family: var(--ll-font-mono);
+  font-size: var(--ll-text-2xs);
+  font-weight: var(--ll-weight-semibold);
+  letter-spacing: var(--ll-tracking-label);
+  text-transform: uppercase;
+}
+
+.value {
+  min-width: 0;
+  margin: 0;
+  font-size: var(--ll-text-md);
+  font-weight: var(--ll-weight-regular);
+  line-height: var(--ll-leading-snug);
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+.note {
+  display: block;
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+}
+
+.unstated {
+  margin: 0;
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+  line-height: var(--ll-leading-snug);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ll-space-2);
+}

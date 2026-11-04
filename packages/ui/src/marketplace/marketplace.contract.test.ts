@@ -31,6 +31,7 @@ const COMPONENTS = [
   "JobDetail",
   "JobResultList",
   "JobResultRow",
+  "JobSummary",
   "MessageComposer",
   "OperatingRegion",
   "PayFigure",

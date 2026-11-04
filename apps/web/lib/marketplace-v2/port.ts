@@ -7,7 +7,8 @@ import type {
   MarketplaceJobCardView,
   MarketplaceJobDetailView,
   MarketplaceJobDraft,
-  MarketplaceJobFilters
+  MarketplaceJobFilters,
+  MarketplaceListingReportReceipt
 } from "@logloads/contracts"
 
 /**
@@ -78,7 +79,20 @@ export interface MarketplaceV2Port {
 
   /** Public discovery. Returns only public-safe fields; never exact coordinates or access details. */
   listJobs(filters: MarketplaceJobFilters): Promise<MarketplaceJobCardView[]>
-  getJob(jobId: string): Promise<MarketplaceJobDetailView | null>
+  /**
+   * One listing's public view. With the session's `viewer`, a store that hides paused, filled, closed or expired jobs
+   * from the public may still return one the viewer is allowed to see (their own business's job, or one they sent
+   * interest on), so the job page can say why it stopped and when (UX-07, #130). The fields are the same either way.
+   */
+  getJob(jobId: string, viewer?: MarketplaceV2Viewer | null): Promise<MarketplaceJobDetailView | null>
+
+  // --- Listing reports (UX-07, #130) ---
+  /**
+   * Report a listing to LogLoads staff (spec §8.18). `input` is checked against `reportListingInputSchema`. One
+   * standing report per person and listing: a repeat returns that report (`alreadyReported`) and files nothing. The
+   * listing stays up until staff review it. Throws `MarketplaceOperationUnavailableError` when the store keeps no reports.
+   */
+  reportListing(viewer: MarketplaceV2Viewer, input: unknown): Promise<MarketplaceListingReportReceipt>
 
   /** The viewer's V2 capabilities in the active workspace (empty when the role has none). */
   viewerAccess(viewer: MarketplaceV2Viewer): Promise<MarketplaceV2ViewerAccess>
