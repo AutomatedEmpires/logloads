@@ -1,28 +1,22 @@
 import { notFound } from "next/navigation"
 
-import {
-  marketplaceEquipmentFit,
-  toPublicJobView,
-  type MarketplaceHaulerEquipmentOption,
-  type MarketplaceInterestView,
-  type MarketplaceJobDetailView
-} from "@logloads/contracts"
+import { marketplaceEquipmentFit, toPublicJobView, type HaulerFleetView, type MarketplaceInterestView } from "@logloads/contracts"
+import { fleetCapacity } from "@logloads/services"
 import { ContentGrid, PageContainer, PageHeader, Section } from "@logloads/ui/layout"
-import { EquipmentCapacity, formatDay, inquiryStatus, JobDetail, jobClosureText, jobSummaryId } from "@logloads/ui/marketplace"
-import { Button, FormField } from "@logloads/ui/primitives"
+import { formatDay, inquiryStatus, JobDetail, jobClosureText, jobSummaryId } from "@logloads/ui/marketplace"
+import { Button } from "@logloads/ui/primitives"
 
 import { AppLink } from "@/components/AppLink"
-import { InterestCountField } from "@/components/v2/InterestCountField"
 import styles from "@/components/v2/InterestForm.module.css"
+import { InterestSheet } from "@/components/v2/InterestSheet"
 import { JobInterestBar } from "@/components/v2/JobInterestBar"
 import page from "@/components/v2/JobPage.module.css"
 import { PageNotice } from "@/components/v2/PageNotice"
-import { PendingSubmitButton } from "@/components/v2/PendingSubmitButton"
 import { ReportListing } from "@/components/v2/ReportListing"
 import { ShareListing } from "@/components/v2/ShareListing"
-import { expressInterestAction } from "@/lib/marketplace-v2/actions"
-import { TRUCKS_PATH } from "@/lib/marketplace-v2/fleet-page"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
+import { contradictionText, UPDATE_AVAILABILITY, type CapacityContradiction } from "@/lib/marketplace-v2/interest-capacity"
+import { interestConfirmation, interestSheetModel, sentContradictions, standingInterestSummary } from "@/lib/marketplace-v2/interest-sheet"
 import { interestBarOffer, jobPagePath, jobShareUrl, similarJobs, type SimilarJob } from "@/lib/marketplace-v2/job-detail"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
 import { withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
@@ -31,134 +25,65 @@ import { getSessionActor } from "@/lib/session"
 type Params = Promise<{ jobId: string }>
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
-/** The interest form's anchor: JobDetail's "I'm interested" links here, which also works without JavaScript. */
+/** The interest sheet's anchor: JobDetail's "I'm interested" links here, which also works without JavaScript. */
 const INTEREST_ANCHOR = "interest"
+/** Similar open jobs, which the confirmation links to after sending. */
+const SIMILAR_ANCHOR = "similar"
 
 /** Interest the hauler already sent and has not withdrawn; the form is not offered again while it stands. */
 function standingInterest(existing: MarketplaceInterestView | null): MarketplaceInterestView | null {
   return existing && existing.status !== "withdrawn" ? existing : null
 }
 
-/** "You offered this landing 2 trucks (2 × Log truck + Pole trailer). Sent · waiting for the landing." */
-function standingSummary(interest: MarketplaceInterestView): string {
-  const trucks = `${interest.trucksOffered} truck${interest.trucksOffered === 1 ? "" : "s"}`
-  const equipment = interest.equipment.map((line) => `${line.count} × ${line.label}`).join(", ")
-
-  return `You offered this landing ${trucks}${equipment ? ` (${equipment})` : ""}. ${inquiryStatus(interest, "hauler").label}.`
+/** "Log truck: you reported 2 available, and you offered 3. Update availability?", per truck type over its report. */
+function SentContradictions({ contradictions }: { contradictions: CapacityContradiction[] }) {
+  return contradictions.map((contradiction) => (
+    <p className={styles.capacityNote} key={contradiction.truckCode}>
+      {contradictionText(contradiction, "sent")}{" "}
+      <AppLink className={styles.link} href={contradiction.href}>{UPDATE_AVAILABILITY}</AppLink>
+    </p>
+  ))
 }
 
 /**
- * Trucks offered, by equipment configuration from the hauler's own business profile (self-reported). Each row
- * caps its count at the units listed; V2 has no availability record, so each says "not recently confirmed" rather
- * than a number. Without equipment the landing sees a plain count. The server re-checks every count.
- */
-function EquipmentFields({ options }: { options: MarketplaceHaulerEquipmentOption[] }) {
-  if (options.length === 0) {
-    return (
-      <div className={styles.group}>
-        <InterestCountField defaultValue={1} id="interest-trucks" label="Trucks you can offer" max={500} min={1} name="trucksOffered" required />
-        <p className={styles.hint}>
-          Your business lists no trucks or trailers yet, so the landing sees a count only.{" "}
-          <AppLink href={TRUCKS_PATH}>Add your equipment</AppLink> to offer trucks by type.
-        </p>
-      </div>
-    )
-  }
-
-  return (
-    <fieldset className={styles.fieldset}>
-      <legend className={styles.legend}>Trucks you can send, by equipment</legend>
-      <ul className={styles.equipmentList}>
-        {options.map((option, index) => (
-          <li className={styles.equipmentRow} key={option.configurationKey}>
-            <input name="equipmentKey" type="hidden" value={option.configurationKey} />
-            <div className={styles.equipmentText}>
-              <span className={styles.equipmentName}>{option.label}</span>
-              <EquipmentCapacity available={null} state="unknown" units={option.unitsListed} />
-            </div>
-            <InterestCountField
-              defaultValue={options.length === 1 ? 1 : 0}
-              id={`interest-equipment-${index}`}
-              label={`Trucks offered: ${option.label}`}
-              labelHidden
-              max={option.unitsListed}
-              min={0}
-              name="equipmentCount"
-            />
-          </li>
-        ))}
-      </ul>
-      <p className={styles.hint}>Self-reported from your business profile — not live availability. Enter at least one truck.</p>
-    </fieldset>
-  )
-}
-
-function InterestForm({ equipmentOptions, job }: { equipmentOptions: MarketplaceHaulerEquipmentOption[]; job: MarketplaceJobDetailView }) {
-  return (
-    <form action={expressInterestAction} className={styles.form}>
-      <input name="loadPostingId" type="hidden" value={job.id} />
-      <EquipmentFields options={equipmentOptions} />
-      <FormField id="interest-message" label="Message" optional>
-        <textarea maxLength={2000} name="message" rows={3} />
-      </FormField>
-      <details className={styles.more}>
-        <summary className={styles.summary}>Dates and contact preference (optional)</summary>
-        <div className={styles.moreBody}>
-          <div className={styles.pair}>
-            <FormField id="interest-from" label="Available from">
-              <input name="availableFrom" type="date" />
-            </FormField>
-            <FormField id="interest-until" label="Available until">
-              <input name="availableUntil" type="date" />
-            </FormField>
-          </div>
-          <FormField id="interest-contact" label="Preferred contact">
-            <select defaultValue="in_app" name="contactPreference">
-              <option value="in_app">LogLoads messages</option>
-              <option value="phone">Phone</option>
-              <option value="email">Email</option>
-            </select>
-          </FormField>
-        </div>
-      </details>
-      <PendingSubmitButton className={styles.submit} label="Send interest" />
-      <p className={styles.hint}>Free and nonbinding. The landing reviews and replies.</p>
-    </form>
-  )
-}
-
-/**
- * Open jobs like this one, for a listing that stopped accepting interest (spec §5.3). Links to job pages are rendered
- * per request, so they are AppLinks, which do not prefetch them (the Next 15.5 parked-navigation bug, #197/#203).
+ * Open jobs like this one: for a listing that stopped accepting interest (spec §5.3), and after sending interest (UX 02
+ * §A8 "links to Inquiries and Similar jobs"). Links to job pages are rendered per request, so they are AppLinks, which
+ * do not prefetch them (the Next 15.5 parked-navigation bug, #197/#203).
  */
 function SimilarJobs({ jobs }: { jobs: SimilarJob[] }) {
   return (
-    <Section title="Similar open jobs" variant="open">
-      {jobs.length > 0 ? (
-        <ul className={page.similar}>
-          {jobs.map((similar) => (
-            <li className={page.similarItem} key={similar.id}>
-              <AppLink className={page.link} href={similar.href}>{similar.title}</AppLink>
-              <span className={page.meta}>{similar.posterName} · Near {similar.areaLabel}</span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className={page.text}>No other open job is listed right now.</p>
-      )}
-      <p className={page.text}>
-        <AppLink className={page.link} href="/v2/work">See all open jobs</AppLink>
-      </p>
-    </Section>
+    <div className={styles.anchor} id={SIMILAR_ANCHOR}>
+      <Section title="Similar open jobs" variant="open">
+        {jobs.length > 0 ? (
+          <ul className={page.similar}>
+            {jobs.map((similar) => (
+              <li className={page.similarItem} key={similar.id}>
+                <AppLink className={page.link} href={similar.href}>{similar.title}</AppLink>
+                <span className={page.meta}>{similar.posterName} · Near {similar.areaLabel}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className={page.text}>No other open job is listed right now.</p>
+        )}
+        <p className={page.text}>
+          <AppLink className={page.link} href="/v2/work">See all open jobs</AppLink>
+        </p>
+      </Section>
+    </div>
   )
 }
 
 /**
  * One job (hauler view, UX 02 §A7; UX-07 #130), built from the design system: the shared JobDetail (its JobSummary
  * first, then collapsible sections) in a flush Section with Share and Report under it, the listing's dates, and the
- * express-interest form beside it from bp-xl. The page header is "Job details", as on the DetailPanel and the mobile
- * sheet, because JobDetail carries the job's own title. Who may express interest is decided here from the session's
- * business; JobDetail only renders the result.
+ * interest sheet beside it from bp-xl (under it below). The page header is "Job details", as on the DetailPanel and the
+ * mobile sheet, because JobDetail carries the job's own title. Who may express interest is decided here from the
+ * session's business; JobDetail only renders the result.
+ *
+ * The interest sheet (UX 02 §A8; UX-08 #131) is filled in from the business's own equipment, its self-reported
+ * availability (My trucks) and its last inquiry (`interest-sheet.ts`). Once sent, the confirmation names the landing
+ * business, the trucks and the date, and flags an offer above the business's latest availability report.
  *
  * A paused, filled, closed or expired job still renders here (200) with why and when, and similar open jobs; only a job
  * the store does not return is a 404 (#188, #193). Components receive the public view, never the poster's
@@ -181,18 +106,24 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
   const access = viewer ? await pilotMarketplaceV2.viewerAccess(viewer).catch(() => null) : null
   const isPoster = workspace?.id === job.posterOrganizationId
   const canExpress = Boolean(access?.capabilities.includes("interest.express")) && !isPoster
-  const [existing, equipmentOptions] = canExpress && viewer
+  // Every read is the business's own and optional: a store that cannot answer one leaves that part of the sheet blank.
+  const [existing, equipmentOptions, fleet, interests] = canExpress && viewer
     ? await Promise.all([
         pilotMarketplaceV2.interestForJob(viewer, job.id).catch(() => null),
-        pilotMarketplaceV2.haulerEquipment(viewer).catch(() => [])
+        pilotMarketplaceV2.haulerEquipment(viewer).catch(() => []),
+        Promise.resolve().then(() => pilotMarketplaceV2.haulerFleet(viewer)).catch((): HaulerFleetView | null => null),
+        Promise.resolve().then(() => pilotMarketplaceV2.listHaulerInterests(viewer)).catch((): MarketplaceInterestView[] => [])
       ])
-    : [null, []]
-  const similar = job.acceptingInterest ? [] : similarJobs(job, await pilotMarketplaceV2.listJobs({ acceptingOnly: true }).catch(() => []))
+    : [null, [], null, []]
   const error = typeof query.error === "string" ? query.error : null
   const sent = query.sent === "1"
-  const now = new Date().toISOString()
+  const now = new Date()
   const standing = standingInterest(existing)
+  const justSent = sent && standing !== null
   const showForm = job.acceptingInterest && canExpress && !standing
+  const showSimilar = !job.acceptingInterest || justSent
+  const similar = showSimilar ? similarJobs(job, await pilotMarketplaceV2.listJobs({ acceptingOnly: true }).catch(() => [])) : []
+  const capacity = fleet ? fleetCapacity(fleet, now) : []
   // Advisory, from the hauler's own self-reported setups (never offered on the viewer's own listing).
   const setups = equipmentOptions.map((option) => option.equipmentCodes ?? []).filter((codes) => codes.length > 0)
   const fit = setups.length > 0 ? marketplaceEquipmentFit(job.equipment, setups) ?? undefined : undefined
@@ -216,7 +147,8 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
             <div className={styles.anchor} id={INTEREST_ANCHOR}>
               <Section title="Interested in this job?">
                 <div className={styles.stack}>
-                  {sent ? <PageNotice role="status" tone="positive">Your interest was sent. The landing can reply in My inquiries.</PageNotice> : null}
+                  {justSent ? <PageNotice role="status" tone="positive">{interestConfirmation(standing)}</PageNotice> : null}
+                  {sent && !standing ? <PageNotice role="status" tone="positive">Your interest was sent. The landing can reply in My inquiries.</PageNotice> : null}
                   {error ? <PageNotice role="alert" tone="critical">{error}</PageNotice> : null}
                   {!job.acceptingInterest ? (
                     <p className={styles.text}>
@@ -236,12 +168,35 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
                   ) : !canExpress ? (
                     <p className={styles.text}>{withBusinessSwitchNote("Only a hauling business can express interest.")}</p>
                   ) : standing ? (
-                    <p className={styles.text}>
-                      {standingSummary(standing)}{" "}
-                      <AppLink className={styles.link} href={`/v2/inquiries?inquiry=${standing.id}`}>Open my inquiries</AppLink>
-                    </p>
+                    <div className={styles.stack}>
+                      <p className={styles.text}>
+                        {justSent
+                          ? `${inquiryStatus(standing, "hauler").label}. Free and nonbinding: the landing reviews it and replies in your inquiries.`
+                          : standingInterestSummary(standing)}
+                      </p>
+                      <SentContradictions contradictions={sentContradictions(standing, equipmentOptions, capacity)} />
+                      <p className={styles.text}>
+                        <AppLink className={styles.link} href={`/v2/inquiries?inquiry=${standing.id}`}>Open my inquiries</AppLink>
+                        {justSent ? (
+                          <>
+                            {" · "}
+                            <a className={styles.link} href={`#${SIMILAR_ANCHOR}`}>See similar jobs</a>
+                          </>
+                        ) : null}
+                      </p>
+                    </div>
                   ) : (
-                    <InterestForm equipmentOptions={equipmentOptions} job={job} />
+                    <InterestSheet
+                      jobId={job.id}
+                      model={interestSheetModel({
+                        businessName: access?.organizationName ?? "your business",
+                        capacity,
+                        interests,
+                        job,
+                        options: equipmentOptions,
+                        today: now.toISOString().slice(0, 10)
+                      })}
+                    />
                   )}
                 </div>
               </Section>
@@ -257,14 +212,14 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
                   fit={isPoster ? undefined : fit}
                   interestState={standing ? "sent" : "none"}
                   job={toPublicJobView(job)}
-                  now={now}
+                  now={now.toISOString()}
                 />
                 <div className={page.tools}>
                   <ShareListing url={jobShareUrl(job)} />
                   <ReportListing jobId={job.id} signedIn={Boolean(actor)} signInHref={`/sign-in?next=${encodeURIComponent(`${path}#report`)}`} />
                 </div>
               </Section>
-              {job.acceptingInterest ? null : <SimilarJobs jobs={similar} />}
+              {showSimilar ? <SimilarJobs jobs={similar} /> : null}
               <Section title="Listing dates" variant="open">
                 <dl className={styles.facts}>
                   <div className={styles.fact}>

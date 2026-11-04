@@ -67,9 +67,9 @@ function equipmentLines(formData: FormData): Array<{ configurationKey: string; c
   })
 }
 
-function safeRedirect(path: string, query: Record<string, string>): never {
+function safeRedirect(path: string, query: Record<string, string>, hash = ""): never {
   const params = new URLSearchParams(query)
-  redirect(`${path}?${params.toString()}`)
+  redirect(`${path}?${params.toString()}${hash}`)
 }
 
 /** Returns a short, user-safe message (service refusals are written for end users). */
@@ -88,9 +88,17 @@ function inquiryRedirect(path: string, formData: FormData, query: Record<string,
   safeRedirect(path, UUID.test(interestId) ? { ...query, inquiry: interestId } : query)
 }
 
+/** The interest sheet on the job page (UX-08, #131): a page without JavaScript lands on its answer, not the page top. */
+const INTEREST_ANCHOR = "#interest"
+
+/**
+ * The hauler sends (or sends again) interest. The form supplies the job id, a count per configuration key, the dates,
+ * the contact route and the message; the business is the session's. Sending twice is safe: both stores keep one
+ * inquiry per job and business, and an identical one changes nothing (UX spec §5.4 "idempotent submission").
+ */
 export async function expressInterestAction(formData: FormData): Promise<void> {
   const jobId = field(formData, "loadPostingId")
-  const back = `/v2/work/${jobId}`
+  const back = `/v2/work/${encodeURIComponent(jobId)}`
   const viewer = await requireViewer(back)
 
   try {
@@ -105,11 +113,11 @@ export async function expressInterestAction(formData: FormData): Promise<void> {
       trucksOffered: field(formData, "trucksOffered")
     })
   } catch (error) {
-    safeRedirect(back, { error: message(error) })
+    safeRedirect(back, { error: message(error) }, INTEREST_ANCHOR)
   }
 
   revalidatePath("/v2", "layout")
-  safeRedirect(back, { sent: "1" })
+  safeRedirect(back, { sent: "1" }, INTEREST_ANCHOR)
 }
 
 /**

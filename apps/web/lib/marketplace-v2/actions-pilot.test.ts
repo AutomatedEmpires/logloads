@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 /**
- * The publish and reconfirm actions over the REAL pilot adapter and the REAL service layer (in-memory
- * seed). Only the Next.js runtime, the session and the rate limiter are stubbed. Proves that publishing
- * is still disabled end to end, and that a cross-organization attempt is refused by the server before
- * the port is reached.
+ * The publish, reconfirm and express-interest actions over the REAL pilot adapter and the REAL service layer
+ * (in-memory seed). Only the Next.js runtime, the session and the rate limiter are stubbed. Proves that publishing
+ * is still disabled end to end, that a cross-organization attempt is refused by the server before the port is
+ * reached, and that sending the same interest twice is one inquiry (UX-08 #131).
  */
 
 const hoisted = vi.hoisted(() => ({
@@ -36,7 +36,7 @@ vi.mock("../services", async () => {
 import { MARKETPLACE_AVAILABILITY_ATTESTATION, MARKETPLACE_PUBLISH_ATTESTATION_FIELDS, type MarketplaceJobDraft } from "@logloads/contracts"
 
 import { services } from "../services"
-import { publishJobAction, reconfirmJobAction } from "./actions"
+import { expressInterestAction, publishJobAction, reconfirmJobAction } from "./actions"
 import { pilotMarketplaceV2 } from "./pilot-adapter"
 import { MarketplaceOperationUnavailableError } from "./port"
 
@@ -184,5 +184,47 @@ describe("cross-organization attempts against the real service layer", () => {
     expect(target.path).toBe("/v2/landing/jobs/preview")
     expect(target.query.error).toBeTruthy()
     expect(target.query.unavailable).toBeUndefined()
+  })
+})
+
+describe("sending the same interest twice (UX-08 #131)", () => {
+  const newRiverOwner = state.profiles.find((profile) => profile.email === "emptyfleet@logloads.example")!
+  const newRiver = state.organizations.find((organization) => organization.displayName === "New River Hauling")!
+
+  function interestForm(jobId: string): FormData {
+    const formData = new FormData()
+    for (const [name, value] of Object.entries({
+      availableFrom: "",
+      availableUntil: "",
+      contactPreference: "phone",
+      loadPostingId: jobId,
+      message: "Two trucks from Sweet Home",
+      trucksOffered: "2"
+    })) formData.set(name, value)
+    return formData
+  }
+
+  beforeEach(() => {
+    // The pilot's writes run through the real services inside the stubbed compare-and-swap.
+    hoisted.mutateState.mockImplementation(async (mutate: (draft: typeof services) => unknown) => mutate(services))
+    hoisted.sessionActor = { activeOrganization: { id: newRiver.id }, profile: { id: newRiverOwner.id }, workspaceSelectionInvalid: false }
+  })
+
+  it("is one inquiry after a double tap or a retry, and both sends land on the sheet's confirmation", async () => {
+    const job = (await pilotMarketplaceV2.listJobs({ acceptingOnly: true })).find((candidate) => candidate.posterOrganizationId === northPine.id)
+    expect(newRiverOwner && newRiver && job).toBeTruthy()
+    const mine = () => state.marketplaceInterests.filter((interest) => interest.loadPostingId === job!.id && interest.haulerOrganizationId === newRiver.id)
+
+    const first = await redirectOf(expressInterestAction, interestForm(job!.id))
+    const stored = structuredClone(mine()[0])
+    const second = await redirectOf(expressInterestAction, interestForm(job!.id))
+
+    expect(first).toEqual({ path: `/v2/work/${job!.id}`, query: { sent: "1" } })
+    expect(second).toEqual(first)
+    expect(hoisted.redirect).toHaveBeenLastCalledWith(`/v2/work/${job!.id}?sent=1#interest`)
+    expect(mine()).toHaveLength(1)
+    expect(mine()[0]).toEqual(stored)
+    expect(mine()[0]).toMatchObject({ contactPreference: "phone", status: "submitted", trucksOffered: 2 })
+    expect((await pilotMarketplaceV2.interestForJob({ organizationId: newRiver.id, userId: newRiverOwner.id }, job!.id))?.id).toBe(stored!.id)
   })
 })

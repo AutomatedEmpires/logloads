@@ -287,6 +287,24 @@ export function equipmentOptionFromRow(row: unknown): MarketplaceHaulerEquipment
   }
 }
 
+const ATTACHMENT_CODES = new Set<string>(MARKETPLACE_EQUIPMENT_TYPES.filter((type) => type.category === "attachment").map((type) => type.code))
+
+/**
+ * Whether a configuration is a truck to offer. An extra (On-board scales, Central tire inflation) is its own
+ * `equipment_units` row (#126), so `list_hauler_equipment_options` also returns it, keyed by the attachment code
+ * alone. It is not a truck, so it is never offered on its own (UX-08, #131).
+ * TODO(normalized-v2 schema batch): drop this once `list_hauler_equipment_options` leaves attachments out itself.
+ */
+export function isOfferableConfiguration(configurationKey: string): boolean {
+  const head = configurationKey.split("|")[0]?.trim() ?? ""
+  return head !== "" && !ATTACHMENT_CODES.has(head)
+}
+
+/** `list_hauler_equipment_options` rows → the configurations a hauler can offer, with extras left out. */
+export function equipmentOptionsFromRows(rows: readonly unknown[]): MarketplaceHaulerEquipmentOption[] {
+  return rows.map(equipmentOptionFromRow).filter((option) => isOfferableConfiguration(option.configurationKey))
+}
+
 /** `submit_expression_of_interest` row → the inquiry id. */
 export function submittedInterestId(row: unknown): string {
   return parseRow(z.object({ interest_id: uuid }), row).interest_id

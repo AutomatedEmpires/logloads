@@ -106,6 +106,8 @@ begin
   perform set_config('request.jwt.claims', ${claims("adapter_haul")}, true);
   v_haul := marketplace.create_organization('Adapter Hauling', 'adapter-hauling', 'OR', true);
   insert into marketplace.equipment_units (org_id, equipment_code, unit_label, unit_count) values (v_haul, 'log_truck', 'Adapter trucks', 2);
+  -- An extra is its own row (#126); list_hauler_equipment_options returns it, and the adapter never offers it (#131).
+  insert into marketplace.equipment_units (org_id, equipment_code, unit_label, unit_count) values (v_haul, 'onboard_scales', 'Adapter scales', 2);
   reset role;
 
   perform set_config('request.jwt.claims', worker, true); set local role service_role;
@@ -136,6 +138,8 @@ interface Fixture {
 describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL 17)", () => {
   let admin: Sql
   let adapterSql: Sql
+  /** A second connection as the same adapter role, so two sends can run at the same time (UX-08 #131). */
+  let secondSql: Sql
   let unsafeSql: Sql
   let indirectSql: Sql
   let roleAdminMemberSql: Sql
@@ -144,6 +148,7 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
   let maskedSuperuserSql: Sql
   let db: MarketplaceDb
   let port: MarketplaceV2Port
+  let secondPort: MarketplaceV2Port
   let fixture: Fixture
   const subjects = new Map<string, string>()
 
@@ -231,6 +236,7 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
     }
 
     adapterSql = client(roleUrl(ADAPTER_ROLE, password))
+    secondSql = client(roleUrl(ADAPTER_ROLE, password))
     unsafeSql = client(roleUrl(UNSAFE_ROLE, unsafePassword))
     indirectSql = client(roleUrl(INDIRECT_ROLE, indirectPassword))
     roleAdminMemberSql = client(roleUrl(ROLE_ADMIN_MEMBER, roleAdminPassword))
@@ -240,11 +246,13 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
     maskedSuperuserSql = postgres(DB_URL, { connection: { options: `-c role=${ADAPTER_ROLE}` }, max: 1, onnotice: () => undefined, prepare: false })
     db = createPostgresMarketplaceDb({ sql: adapterSql })
     port = createNormalizedMarketplaceV2({ db, principal: principalFor(ISSUER) })
+    secondPort = createNormalizedMarketplaceV2({ db: createPostgresMarketplaceDb({ sql: secondSql }), principal: principalFor(ISSUER) })
   }, 120_000)
 
   afterAll(async () => {
     await Promise.allSettled([
       adapterSql?.end({ timeout: 5 }),
+      secondSql?.end({ timeout: 5 }),
       unsafeSql?.end({ timeout: 5 }),
       indirectSql?.end({ timeout: 5 }),
       roleAdminMemberSql?.end({ timeout: 5 }),
@@ -456,7 +464,12 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
 
   // -------------------------------------------------------------------------------------------------------------
   describe("interest → respond → reply", () => {
-    it("offers the hauler's own listed equipment", async () => {
+    it("offers the hauler's own listed equipment, never an extra on its own (UX-08 #131)", async () => {
+      const listed = await admin.unsafe(
+        "select configuration_key from marketplace.equipment_units where org_id = $1::uuid order by configuration_key", [fixture.orgs.haul]
+      ) as unknown as Array<{ configuration_key: string }>
+      expect(listed.map((row) => row.configuration_key)).toEqual(["log_truck", "onboard_scales"])
+
       expect(await port.haulerEquipment(viewer("haul", "haul"))).toEqual([{ configurationKey: "log_truck", equipmentCodes: ["log_truck"], label: "Log truck", unitsListed: 2 }])
     })
 
@@ -481,6 +494,30 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
       expect((await port.listHaulerInterests(viewer("haul", "haul"))).map((row) => row.id)).toContain(haulInterestId)
       expect((await port.listLandingInterests(viewer("land", "land"))).map((row) => row.id)).toContain(haulInterestId)
       expect((await port.listLandingInterests(viewer("rival", "rival"))).map((row) => row.id)).not.toContain(haulInterestId)
+    })
+
+    it("keeps one inquiry when the same interest is sent twice at once, or again later (UX-08 #131)", async () => {
+      const jobId = (await port.publishJob(viewer("land", "land"), publishDraft(fixture.landings.land, "Adapter Double Tap Run"), attestation("publish"))).jobId
+      const input = { availableFrom: isoDay(8), contactPreference: "phone", equipment: [{ configurationKey: "log_truck", count: "1" }], loadPostingId: jobId, message: "One truck, sent twice" }
+
+      // A double tap: two sends on two connections at once. The function serialises them on (job, business).
+      const [first, second] = await Promise.all([
+        port.expressInterest(viewer("haul", "haul"), input),
+        secondPort.expressInterest(viewer("haul", "haul"), input)
+      ])
+      // A retry after the answer was lost.
+      const retry = await port.expressInterest(viewer("haul", "haul"), input)
+
+      expect(second.id).toBe(first.id)
+      expect(retry).toMatchObject({ contactPreference: "phone", id: first.id, status: "submitted", trucksOffered: 1 })
+      const rows = await admin.unsafe(
+        "select id::text as id from marketplace.expressions_of_interest where job_id = $1::uuid and hauler_org_id = $2::uuid", [jobId, fixture.orgs.haul]
+      ) as unknown as Array<{ id: string }>
+      expect(rows.map((row) => row.id)).toEqual([first.id])
+      const actions = (await admin.unsafe(
+        "select action from marketplace.audit_events where entity_id = $1::uuid order by id", [first.id]
+      ) as unknown as Array<{ action: string }>).map((row) => row.action)
+      expect(actions).toEqual(["interest.submitted"])
     })
 
     it("turns a database business rule into a readable refusal", async () => {
