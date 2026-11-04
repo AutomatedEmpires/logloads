@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# LogLoads normalized-v2 — 10 migration-path test for 06 -> 11 -> 12 on existing data
+# LogLoads normalized-v2 — 10 migration-path test for 06 -> 11 -> 12 -> 16 -> 18 on existing data
 #
 # NON-ACTIVE PROTOTYPE TEST HARNESS. Disposable PostgreSQL only; same fail-closed target checks as 05/08.
 # Builds a baseline (01 -> 02 -> 03) holding data created the baseline way — including the states the
@@ -15,7 +15,8 @@
 #   11  a hauler profile that was public only by the pre-V2 default becomes private, audited (F1), still
 #       without touching its confirmation;
 #   12  an existing subscription keeps its state, carries no invented provider-event history, and accepts
-#       provider events afterwards (R4).
+#       provider events afterwards (R4);
+#   18  changes no stored row (its fixes are rules, policies and grants), and existing data still works.
 # =============================================================================
 set -euo pipefail
 
@@ -29,11 +30,11 @@ x() { printf '%s\n' "$1" | psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 >/dev/null; }
 apply1() { psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$1" >/dev/null; }
 fail() { echo "ERROR: $*" >&2; exit 1; }
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-# md5 of every row of every marketplace table, one entry per table.
+# md5 of every row of every marketplace table, one entry per table. $1 (optional): one table to leave out.
 all_data() {
   local parts
   parts="$(q "select string_agg(format('select %L || '':'' || coalesce((select md5(string_agg(t::text, ''|'' order by t::text)) from marketplace.%I t), ''empty'')', c.relname, c.relname), ' union all ')
-              from pg_class c where c.relnamespace = 'marketplace'::regnamespace and c.relkind in ('r','p');")"
+              from pg_class c where c.relnamespace = 'marketplace'::regnamespace and c.relkind in ('r','p') and c.relname <> '${1:-}';")"
   q "select md5(string_agg(x, '|' order by x)) from (${parts}) s(x);"
 }
 expect_eq() { [[ "$2" == "$3" ]] || fail "$1: expected '$3', got '$2'"; echo "  ok: $1"; }
@@ -240,11 +241,14 @@ grep -q "requires migration 11" "$TMP/early12.log" || fail "12 before 11 failed 
 expect_eq "every table unchanged by the refused runs" "$(all_data)" "$STATE"
 expect_eq "ledger unchanged by the refused runs" "$(q "select string_agg(version, ',' order by version) from marketplace.schema_migrations;")" "06"
 
-echo "[5/6] Applying 11_v2_phase3_policy.sql, 12_v2_billing_events.sql and 16_v2_identity_membership_hardening.sql (each one transaction) on top of existing data..."
+echo "[5/6] Applying 11_v2_phase3_policy.sql, 12_v2_billing_events.sql, 16_v2_identity_membership_hardening.sql and 18_v2_review_106_hardening.sql (each one transaction) on top of existing data..."
 apply1 "$SCRIPT_DIR/11_v2_phase3_policy.sql"
 apply1 "$SCRIPT_DIR/12_v2_billing_events.sql"
 MEMBERS_MODIFIED="$(q "select string_agg(id::text || ':' || updated_at::text, ',' order by id) from marketplace.organization_memberships;")"
 apply1 "$SCRIPT_DIR/16_v2_identity_membership_hardening.sql"
+BEFORE_18="$(all_data schema_migrations)"
+apply1 "$SCRIPT_DIR/18_v2_review_106_hardening.sql"
+AFTER_18="$(all_data schema_migrations)"
 
 echo "[6/6] Asserting 11 and 12 fabricated nothing and existing data still works..."
 expect_eq "F1: a profile public only by the pre-V2 default is now private" \
@@ -270,6 +274,7 @@ expect_eq "R4: a provider event for the migrated subscription applies" "$EVENT_R
 expect_eq "R4: ... and changes the plan" "$(q "select p.code from marketplace.organization_subscriptions s join marketplace.subscription_plans p on p.id = s.plan_id where s.provider_subscription_ref = 'sub_m';")" "pro"
 expect_eq "B-1: 16 records every existing active membership as accepted" "$(q "select count(*) from marketplace.organization_memberships where status = 'active' and accepted_at is null;")" "0"
 expect_eq "B-1: ... without changing any membership's last-modified time" "$(q "select string_agg(id::text || ':' || updated_at::text, ',' order by id) from marketplace.organization_memberships;")" "$MEMBERS_MODIFIED"
-expect_eq "the ledger records 06, 11, 12 and 16 in order" "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" "06,11,12,16"
+expect_eq "18 changes no stored row in any marketplace table (the ledger aside)" "$AFTER_18" "$BEFORE_18"
+expect_eq "the ledger records 06, 11, 12, 16 and 18 in order" "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" "06,11,12,16,18"
 x "drop schema if exists marketplace cascade;"
 echo "MIGRATION PATH TEST PASSED."

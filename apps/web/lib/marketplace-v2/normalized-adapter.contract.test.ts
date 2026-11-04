@@ -14,7 +14,7 @@ import { MarketplaceAdapterConfigurationError, MarketplaceRefusalError, type Mar
 
 /**
  * Contract tests of the normalized adapter against the REAL schema: architecture/normalized-v2 stages 01, 02, 03, 06,
- * 11, 12 and 16 applied to a disposable PostgreSQL 17 + PostGIS database by `.github/workflows/normalized-adapter-ci.yml`,
+ * 11, 12, 16 and 18 applied to a disposable PostgreSQL 17 + PostGIS database by `.github/workflows/normalized-adapter-ci.yml`,
  * behind the same fail-closed guard as the normalized-v2 workflow (`tools/normalized-v2-ci/guard.sh`).
  *
  * They run only on GitHub Actions against that guarded database, and skip anywhere else (there is no local PostgreSQL;
@@ -39,6 +39,9 @@ const UNSAFE_ROLE = "logloads_adapter_ci_unsafe"
 /** HF-22: login roles that hold no attribute themselves but belong to a privileged role, directly or indirectly. */
 const INDIRECT_ROLE = "logloads_adapter_ci_indirect"
 const ROLE_ADMIN_MEMBER = "logloads_adapter_ci_roleadmin"
+/** HF-22: a member of a role that holds no attribute (pg_write_all_data), and an owner of an object in the schema. */
+const WRITER_ROLE = "logloads_adapter_ci_writer"
+const OWNER_ROLE = "logloads_adapter_ci_owner"
 
 /** Public and private strings of the fixture landing. The private ones must never appear in any V2 view. */
 const EXACT_POINT = "POINT(-122.48765 44.15432)"
@@ -130,6 +133,9 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
   let unsafeSql: Sql
   let indirectSql: Sql
   let roleAdminMemberSql: Sql
+  let writerSql: Sql
+  let ownerSql: Sql
+  let maskedSuperuserSql: Sql
   let db: MarketplaceDb
   let port: MarketplaceV2Port
   let fixture: Fixture
@@ -166,7 +172,7 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
     expect((await one<{ v: string }>("select current_setting('server_version_num') as v")).v).toMatch(/^17\d{4}$/)
 
     const migrations = await one<{ versions: string }>("select string_agg(version, ',' order by applied_at, version) as versions from marketplace.schema_migrations")
-    expect(migrations.versions).toBe("06,11,12,16")
+    expect(migrations.versions).toBe("06,11,12,16,18")
 
     const password = randomBytes(18).toString("hex")
     const unsafePassword = randomBytes(18).toString("hex")
@@ -184,6 +190,14 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
     await admin.unsafe("create role logloads_ci_role_admin nologin createrole")
     await admin.unsafe(`create role ${ROLE_ADMIN_MEMBER} login noinherit password '${roleAdminPassword}'`)
     await admin.unsafe(`grant anon, authenticated, logloads_ci_role_admin to ${ROLE_ADMIN_MEMBER}`)
+    const writerPassword = randomBytes(18).toString("hex")
+    const ownerPassword = randomBytes(18).toString("hex")
+    await admin.unsafe(`create role ${WRITER_ROLE} login noinherit password '${writerPassword}'`)
+    await admin.unsafe(`grant anon, authenticated, pg_write_all_data to ${WRITER_ROLE}`)
+    await admin.unsafe(`create role ${OWNER_ROLE} login noinherit password '${ownerPassword}'`)
+    await admin.unsafe(`grant anon, authenticated to ${OWNER_ROLE}`)
+    await admin.unsafe("create function marketplace.logloads_ci_owned_probe() returns integer language sql immutable as 'select 1'")
+    await admin.unsafe(`alter function marketplace.logloads_ci_owned_probe() owner to ${OWNER_ROLE}`)
 
     await admin.unsafe(fixtureSql())
 
@@ -214,6 +228,10 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
     unsafeSql = client(roleUrl(UNSAFE_ROLE, unsafePassword))
     indirectSql = client(roleUrl(INDIRECT_ROLE, indirectPassword))
     roleAdminMemberSql = client(roleUrl(ROLE_ADMIN_MEMBER, roleAdminPassword))
+    writerSql = client(roleUrl(WRITER_ROLE, writerPassword))
+    ownerSql = client(roleUrl(OWNER_ROLE, ownerPassword))
+    // The superuser's credential with the adapter role set at connection time: current_user looks inert, the login is not.
+    maskedSuperuserSql = postgres(DB_URL, { connection: { options: `-c role=${ADAPTER_ROLE}` }, max: 1, onnotice: () => undefined, prepare: false })
     db = createPostgresMarketplaceDb({ sql: adapterSql })
     port = createNormalizedMarketplaceV2({ db, principal: principalFor(ISSUER) })
   }, 120_000)
@@ -224,6 +242,9 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
       unsafeSql?.end({ timeout: 5 }),
       indirectSql?.end({ timeout: 5 }),
       roleAdminMemberSql?.end({ timeout: 5 }),
+      writerSql?.end({ timeout: 5 }),
+      ownerSql?.end({ timeout: 5 }),
+      maskedSuperuserSql?.end({ timeout: 5 }),
       admin?.end({ timeout: 5 })
     ])
   })
@@ -274,6 +295,20 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
         .rejects.toThrow(/privileged role \(logloads_ci_role_admin\)/)
       // The adapter's own role passes the same check.
       await expect(createPostgresMarketplaceDb({ sql: adapterSql }).asAnon(async () => "ran")).resolves.toBe("ran")
+    })
+
+    it("refuses a login role that reaches any role beyond anon and authenticated, or owns anything in the schema (HF-22)", async () => {
+      await expect(createPostgresMarketplaceDb({ sql: writerSql }).asAnon(async () => "ran"))
+        .rejects.toThrow(/roles other than anon and authenticated \(pg_write_all_data\)/)
+      await expect(createPostgresMarketplaceDb({ sql: ownerSql }).asAnon(async () => "ran"))
+        .rejects.toThrow(/owns objects in the marketplace schema/)
+    })
+
+    it("checks the login role itself, not a role set at connection time", async () => {
+      const [masked] = await maskedSuperuserSql.unsafe("select current_user::text as current, session_user::text as login")
+      expect(masked).toEqual({ current: ADAPTER_ROLE, login: "postgres" })
+
+      await expect(createPostgresMarketplaceDb({ sql: maskedSuperuserSql }).asAnon(async () => "ran")).rejects.toThrow(/superuser/)
     })
 
     it("calls only functions that exist with the catalogued argument names and grants", async () => {

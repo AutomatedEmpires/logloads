@@ -35,8 +35,14 @@ const ORGANIZATION_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 const ORGANIZATION_SCOPE_SHA256 =
   "303617b9730210ef3c86c52dc2aecc4dce54aaca6af8c8b0f4ceec9ecc54e57e"
 
+// The engine probe's window lives with the route module, so every test starts
+// a minute after the last one and never sees an earlier test's answer.
+let testClock = Date.parse("2026-11-03T12:00:00.000Z")
+
 describe("public health route", () => {
   beforeEach(() => {
+    testClock += 60_000
+    vi.useFakeTimers({ now: testClock, toFake: ["Date"] })
     vi.clearAllMocks()
     mocks.platformFeeCollectionEnabled.mockReturnValue(false)
     mocks.refreshState.mockResolvedValue(undefined)
@@ -56,6 +62,42 @@ describe("public health route", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs()
+    vi.useRealTimers()
+  })
+
+  it("answers repeated anonymous probes inside the window from one state download (HF-09)", async () => {
+    const responses = await Promise.all([GET(), GET()])
+    vi.setSystemTime(testClock + 9_999)
+    responses.push(await GET())
+
+    for (const response of responses) {
+      expect(response.status).toBe(200)
+      await expect(response.json()).resolves.toMatchObject({ engine: { ok: true }, status: "ok" })
+    }
+    expect(mocks.refreshState).toHaveBeenCalledTimes(1)
+  })
+
+  it("checks the engine again once the window has passed (HF-09)", async () => {
+    await GET()
+    vi.setSystemTime(testClock + 10_000)
+    await GET()
+
+    expect(mocks.refreshState).toHaveBeenCalledTimes(2)
+  })
+
+  it("keeps a degraded answer for the window, then reports recovery (HF-09)", async () => {
+    mocks.refreshState.mockRejectedValueOnce(new Error("state unavailable"))
+
+    const degraded = await GET()
+    const stillDegraded = await GET()
+    vi.setSystemTime(testClock + 10_000)
+    const recovered = await GET()
+
+    expect(degraded.status).toBe(503)
+    await expect(degraded.json()).resolves.toMatchObject({ engine: { ok: false }, status: "degraded" })
+    expect(stillDegraded.status).toBe(503)
+    expect(recovered.status).toBe(200)
+    expect(mocks.refreshState).toHaveBeenCalledTimes(2)
   })
 
   it("publishes only coarse billing posture and a boolean scope proof", async () => {

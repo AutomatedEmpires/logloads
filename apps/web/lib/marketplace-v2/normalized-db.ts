@@ -19,8 +19,8 @@ import { MarketplaceAdapterConfigurationError, MarketplaceRefusalError, Marketpl
  * Both settings are transaction-local, so a pooled connection never carries one person's identity into the next call.
  *
  * The connection's own login role must be unable to do anything by itself: no superuser, no BYPASSRLS, no inherited
- * privileges, no membership of `service_role` or of any superuser, BYPASSRLS or CREATEROLE role, and nothing but the
- * ability to switch to `anon` and `authenticated`.
+ * privileges, no ownership of anything in the schema, no membership of `service_role` or of any superuser, BYPASSRLS
+ * or CREATEROLE role, and no membership of any role beyond what `anon` and `authenticated` already reach (HF-22).
  * `checkCredential` proves this on first use and refuses to run otherwise. This is not a service-role path: the
  * service role holds no EXECUTE on any user function in this schema, and this adapter never uses it.
  *
@@ -163,6 +163,22 @@ select to_jsonb(c) as row from (
          coalesce((select pg_has_role(r.oid, x.oid, 'SET') from pg_roles x where x.rolname = 'authenticated'), false) as can_become_authenticated,
          coalesce((select pg_has_role(r.oid, x.oid, 'SET') from pg_roles x where x.rolname = 'anon'), false) as can_become_anon,
          exists (select 1 from pg_namespace n where n.nspname = 'marketplace' and n.nspowner = r.oid) as owns_marketplace,
+         -- HF-22: owning any table, view, sequence, function or type in the schema also bypasses its RLS and grants.
+         (exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                  where n.nspname = 'marketplace' and c.relowner = r.oid)
+          or exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                     where n.nspname = 'marketplace' and p.proowner = r.oid)
+          or exists (select 1 from pg_type t join pg_namespace n on n.oid = t.typnamespace
+                     where n.nspname = 'marketplace' and t.typowner = r.oid)) as owns_marketplace_objects,
+         -- HF-22: any role the login role can reach that anon or authenticated cannot (for example
+         -- pg_write_all_data, pg_execute_server_program or a table-owning role) is refused.
+         coalesce((select array_agg(p.rolname::text order by p.rolname)
+                   from pg_roles p
+                   where p.oid <> r.oid
+                     and pg_has_role(r.oid, p.oid, 'MEMBER')
+                     and not exists (select 1 from pg_roles a
+                                     where a.rolname in ('anon', 'authenticated') and pg_has_role(a.oid, p.oid, 'MEMBER'))),
+                  array[]::text[]) as other_memberships,
          -- HF-22: membership, direct or through other roles, of any role that is a superuser, bypasses RLS or can
          -- create roles (for example postgres or supabase_admin) is refused even though NOINHERIT withholds its
          -- privileges, because the login role could SET ROLE to it.
@@ -172,7 +188,8 @@ select to_jsonb(c) as row from (
                      and (p.rolsuper or p.rolbypassrls or p.rolcreaterole)
                      and pg_has_role(r.oid, p.oid, 'MEMBER')), array[]::text[]) as privileged_memberships
   from pg_roles r
-  where r.rolname = current_user
+  -- The login role itself: a role set at connection time (startup options) cannot stand in for it.
+  where r.rolname = session_user
 ) as c`
 
 export interface CredentialFacts {
@@ -185,8 +202,12 @@ export interface CredentialFacts {
   can_become_authenticated: boolean
   can_become_anon: boolean
   owns_marketplace: boolean
+  /** It owns a table, view, sequence, function or type in the `marketplace` schema. */
+  owns_marketplace_objects: boolean
   /** Roles with superuser, BYPASSRLS or CREATEROLE that the login role belongs to, directly or indirectly. */
   privileged_memberships: string[]
+  /** Roles the login role belongs to, directly or indirectly, that neither anon nor authenticated reaches. */
+  other_memberships: string[]
 }
 
 /** The reasons a login role is unsafe for this adapter; empty when it is safe. */
@@ -205,8 +226,11 @@ export function credentialProblems(facts: CredentialFacts | null | undefined): s
     !facts.can_become_authenticated && "it cannot switch to the authenticated role",
     !facts.can_become_anon && "it cannot switch to the anon role",
     facts.owns_marketplace && "it owns the marketplace schema",
+    facts.owns_marketplace_objects !== false && "it owns objects in the marketplace schema",
     (!Array.isArray(facts.privileged_memberships) || facts.privileged_memberships.length > 0) &&
-      `it belongs to a privileged role (${Array.isArray(facts.privileged_memberships) ? facts.privileged_memberships.join(", ") : "unknown"})`
+      `it belongs to a privileged role (${Array.isArray(facts.privileged_memberships) ? facts.privileged_memberships.join(", ") : "unknown"})`,
+    (!Array.isArray(facts.other_memberships) || facts.other_memberships.length > 0) &&
+      `it belongs to roles other than anon and authenticated (${Array.isArray(facts.other_memberships) ? facts.other_memberships.join(", ") : "unknown"})`
   ].filter((problem): problem is string => typeof problem === "string")
 }
 
