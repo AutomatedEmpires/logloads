@@ -107,7 +107,9 @@ const NORTH_PINE_LANDING = NORTH_PINE.landing // North Pine Logging acting on it
 const LANDING_WITHOUT_INQUIRIES = "cole@summit.example"
 /**
  * Granite Creek Hauling (#178): a hauling business whose profile lists equipment, in the interest form's order
- * (most units first). The suite only reads its form and one refused offer; it never sends its interest.
+ * (most units first). The suite reads its form and sends one refused offer, and only the Decline case under
+ * "conversation without JavaScript (#174)" sends its interest, which North Pine declines. The suite runs on one worker
+ * in file order, so every case that needs Granite Creek's form (equipment on a page, the UX-07 job page) comes first.
  */
 const GRANITE_CREEK = {
   email: "avery@granitecreek.example",
@@ -1367,7 +1369,7 @@ test.describe("equipment on a page (#148 criterion 4)", () => {
 
     const jobPath = (await link.getAttribute("href"))!
     await openV2(page, jobPath)
-    // Nothing in this suite sends Granite Creek's interest, so a job that accepts interest always offers the form.
+    // No earlier case sends Granite Creek's interest (see GRANITE_CREEK), so a job that accepts interest offers the form.
     const form = page.locator("form:has(input[name='loadPostingId'])")
     await expect(form, "Granite Creek Hauling can express interest in North Pine Logging's open job").toHaveCount(1)
     await expect(form.locator("[name='trucksOffered']"), "with equipment listed there is no plain count").toHaveCount(0)
@@ -1555,6 +1557,269 @@ test.describe("conversation on a page (#148 criterion 4)", () => {
     await expectNoSeriousAxeViolations(page)
     await page.setViewportSize(viewportFor(390))
     await expectNoSeriousAxeViolations(page)
+  })
+})
+
+/**
+ * Job detail (UX-07, #130): the decision summary inside the first 600 px at 390 px, sections that are native
+ * <details>, a sticky interest bar that never covers the focused element, Share and Report. Nothing here writes: on
+ * the pilot store a report is refused as unavailable before anything is stored. The seed has no listing that stopped
+ * accepting interest, so the paused, closed and expired job pages are server-render tests instead
+ * (apps/web/lib/marketplace-v2/job-detail-page.test.tsx), as is the 404 for a job the store does not return.
+ */
+const jobSummary = (page: Page) => page.locator("[data-ds-page='job-detail'] [id^='job-summary-']")
+const jobSections = (page: Page) => page.locator("[data-ds-page='job-detail'] article details")
+const interestBar = (page: Page) => page.locator("[data-interest-bar]")
+const shareTool = (page: Page) => page.locator("[data-ds-page='job-detail'] details").filter({ has: page.locator("summary", { hasText: "Share this job" }) })
+const reportTool = (page: Page) => page.locator("[data-ds-page='job-detail'] details#report")
+
+/** Two animation frames, so focus handlers that measure after layout have run. */
+async function nextFrames(page: Page) {
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+}
+
+/** The path of North Pine Logging's first job that accepts interest, as the signed-in hauler's board lists it; null when none. */
+async function openNorthPineJobPath(page: Page): Promise<string | null> {
+  await openV2(page, "/v2/work")
+  const link = northPineJobLink(page)
+  return (await link.count()) > 0 ? link.getAttribute("href") : null
+}
+
+test.describe("job detail: the decision summary, sections, sticky bar, share and report (UX-07, #130)", () => {
+  test("job page at 390 px: pay and every decision fact sit in the first 600 px, with one 'Not stated' line at most", async ({ page }) => {
+    await page.setViewportSize(viewportFor(390))
+    await openV2(page, await firstJobPath(page))
+
+    const summary = jobSummary(page)
+    await expect(summary).toBeVisible()
+    const layout = await summary.evaluate((root) => {
+      const bottom = (element: Element | null) => (element ? element.getBoundingClientRect().bottom + window.scrollY : Number.POSITIVE_INFINITY)
+      return {
+        facts: Array.from(root.querySelectorAll("dt")).map((term) => ({ bottom: bottom(term.nextElementSibling), label: term.textContent?.trim() ?? "" })),
+        pay: bottom(root.querySelector("h2")?.nextElementSibling ?? null),
+        unstated: Array.from(root.querySelectorAll("p")).filter((line) => /Not stated/.test(line.textContent ?? "")).length
+      }
+    })
+
+    // The seeded job states all of these; a fact the poster left out would be named in the one "Not stated" line.
+    expect(layout.facts.map((fact) => fact.label)).toEqual(["Equipment", "Area", "To", "Schedule", "Trucks", "Listing"])
+    for (const fact of [{ bottom: layout.pay, label: "Pay" }, ...layout.facts]) {
+      expect(fact.bottom, `${fact.label} ends within the first 600 px`).toBeLessThanOrEqual(600)
+    }
+    expect(layout.unstated).toBeLessThanOrEqual(1)
+    await expect(summary.locator("dd").filter({ hasText: /^Not stated/ })).toHaveCount(0)
+  })
+
+  test("job page: each section is a native <details> that Enter and Space open and close, with the design-system ring", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1280))
+    await openV2(page, await firstJobPath(page))
+
+    const titles = (await jobSections(page).locator("summary").allInnerTexts()).map((title) => title.trim())
+    expect(titles.slice(0, 3)).toEqual(["Haul details", "Road and access", "Weather near the landing"])
+    expect(titles[3]).toMatch(/^About /)
+
+    for (const title of titles) {
+      const section = jobSections(page).filter({ has: page.locator("summary", { hasText: title }) })
+      const summary = section.locator("summary")
+
+      await expect(section).not.toHaveAttribute("open", /.*/)
+      await summary.focus()
+      await page.keyboard.press("Enter")
+      await expect(section, `${title}: Enter opens it`).toHaveAttribute("open", "")
+      await expect(section.locator("p, dl").first()).toBeVisible()
+      expectDesignSystemRing((await focusStop(page))!)
+      await page.keyboard.press("Space")
+      await expect(section, `${title}: Space closes it`).not.toHaveAttribute("open", /.*/)
+    }
+  })
+
+  test("job page at 390 px: the sticky interest bar appears once the summary scrolls away, sits above the tabs, and never covers the focused element", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" })
+    await page.setViewportSize(viewportFor(390))
+    await signIn(page, GRANITE_CREEK.email)
+    const jobPath = await openNorthPineJobPath(page)
+    test.skip(!jobPath, NO_OPEN_JOB)
+
+    await openV2(page, jobPath!)
+    const bar = interestBar(page)
+    await expect(bar).toBeHidden()
+
+    // Scrolled until the summary is gone: the bar offers the interest form, above the bottom tabs.
+    await jobSummary(page).evaluate((summary) => window.scrollTo({ behavior: "instant", top: summary.getBoundingClientRect().bottom + window.scrollY + 1 }))
+    await expect(bar).toBeVisible()
+    await expect(bar.getByRole("link", { name: "I'm interested" })).toHaveAttribute("href", "#interest")
+    const barBox = (await bar.boundingBox())!
+    const tabsBox = (await bottomTabs(page).boundingBox())!
+    expect(barBox.y + barBox.height, "the bar sits above the bottom tabs").toBeLessThanOrEqual(tabsBox.y + 1)
+    expect(barBox.y + barBox.height, "the bar is in the viewport").toBeLessThanOrEqual(844)
+
+    // Every focus stop from the top of the page: none is under the bar while it shows (WCAG 2.4.11). With every
+    // disclosure open the page is long enough that the bar shows while focus moves through Share and Report.
+    await page.evaluate(() => window.scrollTo({ behavior: "instant", top: 0 }))
+    for (const summary of await page.locator("[data-ds-page='job-detail'] details:not(form details) > summary").all()) await summary.click()
+    await page.evaluate(() => window.scrollTo({ behavior: "instant", top: 0 }))
+    // Sequential focus starts after the page heading, so the walk covers the whole job and the form beside it.
+    await page.getByRole("heading", { level: 1, name: "Job details" }).click()
+    const covered: string[] = []
+    let stopsWithBar = 0
+    let first: string | null = null
+
+    for (let index = 0; index < 150; index += 1) {
+      await page.keyboard.press("Tab")
+      await nextFrames(page)
+      const stop = await page.evaluate(() => {
+        const element = document.activeElement as HTMLElement | null
+        const strip = document.querySelector<HTMLElement>("[data-interest-bar]")
+        if (!element || element === document.body || !strip) return null
+        const rect = element.getBoundingClientRect()
+        const area = strip.getBoundingClientRect()
+        const shown = !strip.hidden && !strip.contains(element)
+        return {
+          covered: shown && rect.bottom > area.top + 0.5 && rect.top < area.bottom - 0.5,
+          key: `${element.tagName.toLowerCase()} ${element.id || element.getAttribute("aria-label") || element.innerText?.trim().split("\n")[0] || ""}`.slice(0, 60),
+          shown
+        }
+      })
+
+      if (!stop || stop.key === first) break
+      first ??= stop.key
+      if (stop.shown) stopsWithBar += 1
+      if (stop.covered) covered.push(stop.key)
+    }
+
+    expect(stopsWithBar, "the bar showed for some focus stops").toBeGreaterThan(0)
+    expect(covered, "focused elements under the sticky bar").toEqual([])
+
+    // The case the browser does not handle by itself: the next control is already on screen, but under the bar, so
+    // Tab would not scroll. Put "Send report" there, focus the field before it, and Tab.
+    const send = reportTool(page).getByRole("button", { name: "Send report" })
+    await send.evaluate((button) => button.scrollIntoView({ behavior: "instant", block: "center" }))
+    await expect(bar).toBeVisible()
+    await send.evaluate((button) => {
+      const area = document.querySelector<HTMLElement>("[data-interest-bar]")!.getBoundingClientRect()
+      window.scrollBy({ behavior: "instant", top: button.getBoundingClientRect().top - (area.top + 10) })
+    })
+    await expect(bar).toBeVisible()
+    const placed = await send.evaluate((button) => {
+      const area = document.querySelector<HTMLElement>("[data-interest-bar]")!.getBoundingClientRect()
+      return button.getBoundingClientRect().top > area.top && button.getBoundingClientRect().top < area.bottom
+    })
+    expect(placed, "the next control starts under the bar").toBe(true)
+    await reportTool(page).getByLabel("What did you see?").evaluate((field) => (field as HTMLElement).focus({ preventScroll: true }))
+    await page.keyboard.press("Tab")
+    await expect(send).toBeFocused()
+    await nextFrames(page)
+    const clear = await send.evaluate((button) => {
+      const area = document.querySelector<HTMLElement>("[data-interest-bar]")!.getBoundingClientRect()
+      return button.getBoundingClientRect().bottom <= area.top
+    })
+    expect(clear, "Tab scrolled the focused control clear of the bar").toBe(true)
+
+    // With the interest form on screen the bar steps aside; its link leads there.
+    await page.evaluate(() => window.scrollTo({ behavior: "instant", top: 0 }))
+    await jobSummary(page).evaluate((summary) => window.scrollTo({ behavior: "instant", top: summary.getBoundingClientRect().bottom + window.scrollY + 1 }))
+    await expect(bar).toBeVisible()
+    await bar.getByRole("link", { name: "I'm interested" }).click()
+    await expect(page).toHaveURL(/#interest$/)
+    await expect(bar).toBeHidden()
+  })
+
+  test("job page: Share shows the public link only, which Copy puts on the clipboard", async ({ context, page }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"])
+    await page.setViewportSize(viewportFor(1280))
+    const jobPath = await firstJobPath(page)
+    // The request's own query never reaches the shared link.
+    await openV2(page, `${jobPath}?sent=1&error=x`)
+
+    const share = shareTool(page)
+    await share.locator("summary").click()
+    const field = share.getByRole("textbox", { name: "Public link to this job" })
+    const expected = new URL(jobPath, page.url()).toString()
+    await expect(field).toHaveValue(expected)
+    await expect(field).toHaveAttribute("readonly", "")
+
+    await share.getByRole("button", { name: "Copy link" }).click()
+    await expect(share.getByText("Link copied.")).toBeVisible()
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(expected)
+  })
+
+  test("job page: Report this listing offers the spec's reasons and says plainly that reporting isn't available yet, keeping the report", async ({ page }) => {
+    await page.setViewportSize(viewportFor(390))
+    const jobPath = await firstJobPath(page)
+
+    // A visitor is asked to sign in first.
+    await openV2(page, jobPath)
+    await reportTool(page).locator("summary").click()
+    await expect(reportTool(page).getByRole("link", { name: "Sign in to report" })).toHaveAttribute("href", `/sign-in?next=${encodeURIComponent(`${jobPath}#report`)}`)
+
+    await signIn(page, NEW_RIVER.email)
+    await openV2(page, jobPath)
+    const report = reportTool(page)
+    await report.locator("summary").click()
+    const reasons = report.getByRole("group", { name: "What's wrong with this listing?" }).getByRole("radio")
+    await expect(reasons).toHaveCount(8)
+    expect((await report.locator("fieldset label").allInnerTexts()).map((label) => label.trim())).toEqual([
+      "No longer available",
+      "Pay looks inaccurate",
+      "The work doesn't seem real",
+      "Wrong equipment listed",
+      "Suspicious contact request",
+      "Abusive language",
+      "It shows private or access details",
+      "Something else"
+    ])
+
+    await report.getByRole("radio", { name: "No longer available" }).check()
+    await report.getByLabel("What did you see?").fill("The landing said it filled last week")
+    await report.getByRole("button", { name: "Send report" }).click()
+
+    // The pilot store keeps no reports: the page says so, claims nothing was sent, and keeps what was chosen and written.
+    await expect(report.getByText("Reporting isn't available in this preview yet, so nothing was sent.")).toBeVisible()
+    await expect(report.getByRole("radio", { name: "No longer available" })).toBeChecked()
+    await expect(report.getByLabel("What did you see?")).toHaveValue("The landing said it filled last week")
+    await expect(report.getByText(/Thanks\. LogLoads staff review reports/)).toHaveCount(0)
+  })
+
+  for (const width of [1440, 390]) {
+    test(`job page at ${width} px with every section, Share and Report open has no serious or critical axe violations`, async ({ page }) => {
+      await page.setViewportSize(viewportFor(width))
+      await signIn(page, GRANITE_CREEK.email)
+      await openV2(page, await firstJobPath(page))
+
+      for (const summary of await page.locator("[data-ds-page='job-detail'] details:not(form details) > summary").all()) await summary.click()
+      await expect(reportTool(page)).toHaveAttribute("open", "")
+      await expectNoSeriousAxeViolations(page)
+    })
+  }
+
+  test.describe("without JavaScript", () => {
+    test.use({ contextOptions: { reducedMotion: "reduce" }, javaScriptEnabled: false })
+
+    test("job page: the sections open natively, the bar never shows, Share's link is selectable and a report posts and answers on the page", async ({ page }) => {
+      await page.setViewportSize(viewportFor(390))
+      await signIn(page, NEW_RIVER.email)
+      const jobPath = await firstJobPath(page)
+      await openV2(page, jobPath)
+
+      await expect(interestBar(page)).toBeHidden()
+      const haul = jobSections(page).first()
+      await haul.locator("summary").click()
+      await expect(haul).toHaveAttribute("open", "")
+
+      await shareTool(page).locator("summary").click()
+      await expect(shareTool(page).getByRole("textbox", { name: "Public link to this job" })).toHaveValue(new URL(jobPath, page.url()).toString())
+      await expect(shareTool(page).getByRole("button", { name: "Copy link" })).toHaveCount(0)
+
+      const report = reportTool(page)
+      await report.locator("summary").click()
+      await report.getByRole("radio", { name: "Pay looks inaccurate" }).check()
+      await report.getByLabel("What did you see?").fill("Posted without JavaScript")
+      await report.getByRole("button", { name: "Send report" }).click()
+
+      await expect(reportTool(page).getByText("Reporting isn't available in this preview yet, so nothing was sent.")).toBeVisible()
+      await expect(reportTool(page).getByRole("radio", { name: "Pay looks inaccurate" })).toBeChecked()
+      await expect(reportTool(page).getByLabel("What did you see?")).toHaveValue("Posted without JavaScript")
+    })
   })
 })
 

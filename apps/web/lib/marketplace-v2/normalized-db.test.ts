@@ -4,9 +4,11 @@ vi.mock("server-only", () => ({}))
 
 import {
   credentialProblems,
+  FILE_LISTING_REPORT,
   MARKETPLACE_FUNCTIONS,
   marketplaceCallStatement,
   principalClaims,
+  STANDING_LISTING_REPORT,
   translateStoreError,
   type CredentialFacts
 } from "./normalized-db"
@@ -80,6 +82,21 @@ describe("marketplaceCallStatement", () => {
     expect(names.some((name) => /admin|billing|subscription|invitation|legacy|import|cycle|audit|boost|sync/.test(name))).toBe(false)
     expect(names.filter((name) => MARKETPLACE_FUNCTIONS[name as keyof typeof MARKETPLACE_FUNCTIONS].anonymous).sort())
       .toEqual(["get_marketplace_job", "list_marketplace_jobs"])
+  })
+})
+
+describe("listing report statements (#130)", () => {
+  it("reads only the person's own open reports, by the columns HF-16 grants the reporter", () => {
+    expect(STANDING_LISTING_REPORT).toContain("reporter_user_id = marketplace.current_user_id()")
+    expect(STANDING_LISTING_REPORT).toContain("target_kind = 'job_posting' and target_id = $1::text::uuid")
+    expect(STANDING_LISTING_REPORT).toMatch(/select id, created_at from marketplace\.abuse_reports/)
+    expect(STANDING_LISTING_REPORT).not.toMatch(/reviewed_by|resolution_note/)
+  })
+
+  it("inserts only the columns the authenticated role may write, as bound values, and returns no reviewer", () => {
+    expect(FILE_LISTING_REPORT).toMatch(/insert into marketplace\.abuse_reports \(target_kind, target_id, reason, details\)/)
+    expect(FILE_LISTING_REPORT).toContain("values ('job_posting', $1::text::uuid, $2::text, $3::text) returning id, created_at")
+    expect(FILE_LISTING_REPORT).not.toMatch(/reporter_user_id|status|reviewed/)
   })
 })
 

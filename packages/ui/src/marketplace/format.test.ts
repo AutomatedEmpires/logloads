@@ -15,13 +15,16 @@ import {
   inquiryStatus,
   JOB_PUBLIC_STATUS_LABELS,
   jobAvailabilityStatus,
+  jobClosureText,
   lastReplySide,
   offerText,
   payParts,
   scheduleDetail,
-  scheduleText
+  scheduleText,
+  unstatedFields,
+  unstatedText
 } from "./format"
-import { interestView, jobCard, NOW } from "./test-fixtures"
+import { interestView, jobCard, jobDetail, NOW } from "./test-fixtures"
 
 describe("payParts (V2-DEC-02)", () => {
   it("splits the contract wording into a figure and its basis without changing it", () => {
@@ -158,5 +161,64 @@ describe("inquiryStatus (UX-DEC-01)", () => {
     expect(offerText(interestView({ equipment: [], trucksOffered: 1 }))).toBe("1 truck offered")
     expect(availabilityText(interestView({ availableUntil: "2026-11-20" }))).toBe("From Nov 10, 2026 until Nov 20, 2026")
     expect(availabilityText(interestView({ availableFrom: null }))).toBeNull()
+  })
+})
+
+describe("what the poster did not state (UX-07, #130)", () => {
+  it("names every unstated field once, in page order, and nothing the poster stated", () => {
+    expect(unstatedFields(jobDetail())).toEqual(["loads a day", "loads per truck a day"])
+    expect(unstatedText(jobDetail())).toBe("Not stated by the poster: loads a day, loads per truck a day.")
+
+    const bare = jobDetail({
+      destinationLabel: null,
+      endsOn: null,
+      equipment: [],
+      estimatedTonsPerLoad: null,
+      haulDistance: null,
+      product: null,
+      publicRoadNotes: null,
+      startsOn: null,
+      trucks: { perDay: null, total: null }
+    })
+    expect(unstatedFields(bare)).toEqual([
+      "equipment",
+      "destination",
+      "haul distance",
+      "start date",
+      "trucks needed",
+      "product",
+      "loads a day",
+      "loads per truck a day",
+      "tons a load",
+      "road notes"
+    ])
+  })
+
+  it("counts a schedule note as a stated start, and asks for an end date only when a start has none", () => {
+    expect(unstatedFields(jobDetail({ endsOn: null, scheduleNote: "Ongoing through winter", startsOn: null }))).not.toContain("start date")
+    expect(unstatedFields(jobDetail({ endsOn: null }))).toContain("end date")
+    expect(unstatedFields(jobDetail({ endsOn: null, scheduleNote: "Ongoing" }))).not.toContain("end date")
+  })
+
+  it("is null when the poster stated everything", () => {
+    expect(unstatedText(jobDetail({ estimatedDailyLoads: 12, estimatedLoadsPerTruckPerDay: 2 }))).toBeNull()
+  })
+})
+
+describe("jobClosureText (spec §5.3)", () => {
+  it("says why (the contracts reason) and when, from what the listing records, never an invented status date", () => {
+    const changed = { lastModifiedAt: "2026-11-04T18:00:00.000Z" }
+
+    expect(jobClosureText(jobCard({ ...changed, status: "paused" }))).toBe("The poster paused this listing. Listing last changed on Nov 4, 2026.")
+    expect(jobClosureText(jobCard({ ...changed, status: "closed" }))).toBe("The poster closed this listing. Listing last changed on Nov 4, 2026.")
+    expect(jobClosureText(jobCard({ ...changed, status: "filled" }))).toBe("The poster marked this job filled. Listing last changed on Nov 4, 2026.")
+  })
+
+  it("dates an expired listing by its expiry, else by its last stated work day", () => {
+    expect(jobClosureText(jobCard({ expiresAt: "2026-11-05T00:00:00.000Z", status: "expired" }))).toBe("This listing expired. Expired on Nov 5, 2026.")
+    expect(jobClosureText(jobCard({ endsOn: "2026-10-30", expiresAt: null, status: "expired" }))).toBe("This listing expired. Last stated work day: Oct 30, 2026.")
+    expect(jobClosureText(jobCard({ endsOn: null, expiresAt: null, lastModifiedAt: NOW, status: "expired" }))).toBe(
+      "This listing expired. Listing last changed on Nov 2, 2026."
+    )
   })
 })
