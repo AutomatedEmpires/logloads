@@ -34,7 +34,8 @@ if (missing.length > 0) {
   )
 }
 
-const port = Number(process.env.NORMALIZED_LOOP_PORT ?? 3014)
+// Its own port, never the pilot suite's (3002) or DS-05's (3012); normalized-e2e-loop.yml checks it is free between runs.
+const port = 3014
 const baseURL = `http://127.0.0.1:${port}`
 
 export default defineConfig({

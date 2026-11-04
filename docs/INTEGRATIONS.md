@@ -581,7 +581,8 @@ To switch back, delete `LOGLOADS_MARKETPLACE_V2_ADAPTER` from `stg` and redeploy
 store. The seed links only the seeded people's pilot Clerk ids, and on staging people sign in with real Clerk
 accounts: seeded sign-in (`LOGLOADS_ENABLE_DEV_LOGIN`) is never enabled on a hosted target. So while the normalized
 adapter is selected, the signed-in V2 pages refuse a staging account. The signed-in flows are proven in CI on the
-seeded store (`apps/web/lib/marketplace-v2/normalized-seed.contract.test.ts`), and can be tried locally (§15.6).
+seeded store (`apps/web/lib/marketplace-v2/normalized-seed.contract.test.ts`), and through the app's own pages under
+`next start` with the seeded sign-in (`.github/workflows/normalized-e2e-loop.yml`, #140). They can be tried locally (§15.6).
 #213 (in progress) covers this. With the normalized adapter selected, the session's memberships and active business
 will come from the normalized store. A Clerk user's first sign-in will be linked there through the schema's own
 `sync_verified_identity`. Moving existing pilot data across stays cutover work (#200).

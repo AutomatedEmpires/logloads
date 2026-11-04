@@ -17,9 +17,6 @@ name: Normalized V2 E2E Loop
 # generated in the job; the stack's keys are its own, local and masked.
 
 on:
-  # TEMPORARY (iteration before the PR exists): a new workflow cannot be dispatched until it is on the default branch.
-  push:
-    branches: [test/qa/normalized-e2e-loop]
   pull_request:
     paths:
       - apps/web/app/v2/**
@@ -70,8 +67,6 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
       LOGLOADS_NORMALIZED_IDENTITY_ISSUER: https://clerk.normalized-loop.test
       LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE: logloads-normalized-loop-ci
-      # The suite's server (v2-normalized-loop.config.mjs).
-      NORMALIZED_LOOP_PORT: "3014"
       # Matches the spec's job titles (`jobTitle`) and the stranger's forged reply (`FORGED_REPLY`).
       LOOP_TITLES: "Spruce saw logs, loop check (%)"
       FORGED_REPLY: "Forged by another business: this must never be posted"
@@ -213,7 +208,8 @@ jobs:
       - name: "Persistence: the first server is gone, and the jobs are rows in the normalized store only"
         run: |
           set -euo pipefail
-          if curl -s -o /dev/null --max-time 5 "http://127.0.0.1:${NORMALIZED_LOOP_PORT}/"; then
+          # 3014 is the suite's port (v2-normalized-loop.config.mjs).
+          if curl -s -o /dev/null --max-time 5 "http://127.0.0.1:3014/"; then
             echo "the first server still answers; the next invocation would not be a restart" >&2; exit 1
           fi
           # psql reads the queries from standard input, where it interpolates :'titles'.
