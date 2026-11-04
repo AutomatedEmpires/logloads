@@ -13,6 +13,7 @@ import {
   findHostBillingProfile,
   operatingStateAccess
 } from "@/lib/billing"
+import { assertSameOrigin } from "@/lib/same-origin"
 import {
   ensureInternalSmokeInvoice,
   internalBillingSmokeAuthorization,
@@ -73,10 +74,13 @@ function recordedInvoiceId(
 /**
  * Founder-only, manual and separately gated. This route is never called by a
  * scheduler and cannot use an inline amount: Stripe must already contain the
- * hidden one-time $1 Price.
+ * hidden one-time $1 Price. It is driven from the admin billing page, so a
+ * request from any other site is refused before the session is read (HF-10,
+ * #187).
  */
 export async function POST(request: Request) {
   try {
+    assertSameOrigin(request)
     const actor = await requireAdminApiActor()
     const actorUserId = actor.profile.id
 

@@ -9,6 +9,7 @@ import {
 } from "@/lib/api-actor"
 import { captureServerEvent } from "@/lib/analytics"
 import { ADMIN_BILLING_ACTION_BODY_LIMIT_BYTES } from "@/lib/admin-billing-action-request"
+import { assertSameOrigin } from "@/lib/same-origin"
 import { mutateState } from "@/lib/services"
 
 const uuidSchema = z.string().uuid()
@@ -568,6 +569,8 @@ function billingActionErrorResponse(error: unknown): NextResponse {
 
 export async function POST(request: Request) {
   try {
+    // Driven from the admin billing page only (HF-10, #187).
+    assertSameOrigin(request)
     const actor = await requireAdminApiActor()
     const actorUserId = actor.profile.id
 
