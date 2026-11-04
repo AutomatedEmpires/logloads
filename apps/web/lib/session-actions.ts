@@ -307,10 +307,15 @@ export async function completeOnboardingAction(
       return { error: "Sign in first, then finish setting up your account." }
     }
 
+    // Only a verified primary address resolves here: the profile keeps this
+    // email, and invitations are claimed by matching it.
     const clerkIdentity = await getClerkIdentity()
 
     if (!clerkIdentity) {
-      return { error: "We could not verify the email on your signed-in account. Sign in again and retry setup." }
+      return {
+        error:
+          "We could not confirm a verified primary email on your signed-in account. Verify your email address, then sign in again and retry setup."
+      }
     }
 
     email = clerkIdentity.email

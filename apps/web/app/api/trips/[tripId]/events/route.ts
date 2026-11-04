@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import { apiErrorResponse, requireApiActor } from "@/lib/api-actor"
+import { apiErrorResponse, enforceApiRateLimit, requireApiActor } from "@/lib/api-actor"
 import { mutateState } from "@/lib/services"
 
 export async function POST(
@@ -11,6 +11,7 @@ export async function POST(
 		const { tripId } = await context.params
 		const payload = await request.json()
 		const { actorUserId, organizationId } = await requireApiActor(payload.organizationId)
+		await enforceApiRateLimit("trip-event-create", actorUserId, 30, 60_000)
 		const result = await mutateState((draft) =>
 			draft.progressTripStatus({
 				...payload,

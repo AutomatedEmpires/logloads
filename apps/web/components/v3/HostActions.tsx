@@ -2,6 +2,7 @@
 
 import {
   FEE_BPS_SCALE,
+  OPERATIONAL_NOTICE_LIMITS,
   PLATFORM_FEE_BPS,
   createMoney,
   formatMoney,
@@ -1690,6 +1691,7 @@ export function NoticeComposer({ loads }: { loads: Array<{ id: string; title: st
       <label>
         Headline
         <input
+          maxLength={OPERATIONAL_NOTICE_LIMITS.title}
           onChange={(event) => setTitle(event.target.value)}
           placeholder="e.g. Bridge control active after mile 18"
           type="text"
@@ -1699,6 +1701,7 @@ export function NoticeComposer({ loads }: { loads: Array<{ id: string; title: st
       <label>
         What crews need to know
         <textarea
+          maxLength={OPERATIONAL_NOTICE_LIMITS.body}
           onChange={(event) => setBody(event.target.value)}
           placeholder="Say what changed, where, and what drivers should do about it."
           value={body}
