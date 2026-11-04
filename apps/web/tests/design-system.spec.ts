@@ -723,10 +723,11 @@ test.describe("job rows: semantic structure (/v2/work)", () => {
       await search.fill(title)
       await filters.getByRole("button", { name: "Apply" }).click()
       await page.waitForURL((url) => url.searchParams.get("q") === title && url.searchParams.get("all") === "1")
+      // The new page's <details> starts closed, and getByRole skips what a closed <details> hides.
+      await summary.click()
       await expect(search).toHaveValue(title)
       await expect(jobRows(page).filter({ hasText: title }).first()).toBeVisible()
 
-      await summary.click()
       await search.fill("no listing matches this zqxv")
       await filters.getByRole("button", { name: "Apply" }).click()
       await page.waitForURL((url) => url.searchParams.get("q") === "no listing matches this zqxv")
