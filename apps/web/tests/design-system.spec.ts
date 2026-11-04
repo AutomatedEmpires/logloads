@@ -1544,8 +1544,14 @@ test.describe("find-work map (UX-13)", () => {
 
       const stops = await tabThrough(page)
       const keys = stops.map((stop) => stop.key)
-      const first = keys.indexOf("#work-all") + 1
-      const last = keys.indexOf("Hide map")
+      // The map sits at the top of the list column (#129): after the summary bar, before the list's tools (the sort,
+      // offered with more than one job; the map toggle; density from bp-lg) and the rows.
+      // Below bp-md the first Tab lands on the full-screen map's "Show list", so anchor on the map's own first stop.
+      const tools = [...(rowTitles.length > 1 ? ["#work-sort"] : []), "Hide map", ...(width >= BP_LG ? ["Comfortable", "Compact"] : [])]
+      const first = keys.indexOf(width < 768 ? "Show list" : MAP_CANVAS)
+      const last = keys.indexOf(tools[0]!)
+      expect(first, "the map is reachable by keyboard").toBeGreaterThanOrEqual(0)
+      if (first > 0) expect(keys[first - 1], "the map follows the summary bar").toBe("#work-filters-summary")
 
       expect(keys.slice(first, last)).toEqual([
         ...(width < 768 ? ["Show list"] : []),
@@ -1556,8 +1562,8 @@ test.describe("find-work map (UX-13)", () => {
         "OpenStreetMap",
         "CARTO"
       ])
-      // The list stays complete and reachable after the map.
-      expect(keys.slice(last + 1, last + 1 + rowTitles.length)).toEqual(rowTitles)
+      // The list stays complete and reachable after the map and its tools.
+      expect(keys.slice(last, last + tools.length + rowTitles.length)).toEqual([...tools, ...rowTitles])
       for (const stop of stops.slice(first, last)) expectDesignSystemRing(stop)
     })
   }
