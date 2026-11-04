@@ -2850,6 +2850,8 @@ test.describe("the landing form without JavaScript (#127)", () => {
     await form.getByLabel("Nearest town").fill("Oakridge")
     await form.getByLabel("State", { exact: true }).fill("OR")
     await form.getByLabel("Gate and access instructions").fill("Blue gate past the scale")
+    await form.getByLabel("Typical hours").fill("5 a.m. to 3 p.m.")
+    await form.getByLabel("Public road notes").fill("Gravel the last 6 miles")
     await form.getByRole("button", { name: "Save landing" }).click()
 
     await expect(page.getByRole("status").filter({ hasText: "Saving landings isn't available in this preview yet" })).toBeVisible()
@@ -2857,6 +2859,8 @@ test.describe("the landing form without JavaScript (#127)", () => {
     await expect(kept.getByLabel("Landing name")).toHaveValue("Hills Creek Unit 4")
     await expect(kept.getByLabel("Nearest town")).toHaveValue("Oakridge")
     await expect(kept.getByLabel("Gate and access instructions")).toHaveValue("Blue gate past the scale")
+    await expect(kept.getByLabel("Typical hours")).toHaveValue("5 a.m. to 3 p.m.")
+    await expect(kept.getByLabel("Public road notes")).toHaveValue("Gravel the last 6 miles")
     await expect(kept.getByLabel("Latitude")).toHaveValue("")
   })
 

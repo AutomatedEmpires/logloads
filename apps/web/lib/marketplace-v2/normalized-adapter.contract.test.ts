@@ -840,6 +840,51 @@ $$;`)
       expect(Date.parse(allowance.cycleEndsAt ?? "")).toBeGreaterThan(Date.now() + 27 * 86_400_000)
     })
 
+    it("publishes a recruiting landing's typical hours and public road notes, capped by the store (migration 26)", async () => {
+      await port.saveLanding(viewer("land", "land"), {
+        areaLabel: "Blue River",
+        exactLat: LOWER_PRIVATE[3],
+        exactLng: LOWER_PRIVATE[4],
+        gateInstructions: LOWER_PRIVATE[0],
+        landingId: lowerSpurId,
+        name: "Lower Spur Landing",
+        publicRoadNotes: "Gravel the last 6 miles; chains when posted.",
+        siteContactName: LOWER_PRIVATE[1],
+        siteContactPhone: "541 555 0199",
+        stateCode: "OR",
+        typicalHours: "5 a.m. to 3 p.m., Mon to Fri"
+      })
+
+      expect(await port.getOwnLanding(viewer("land", "land"), lowerSpurId)).toMatchObject({
+        publicRoadNotes: "Gravel the last 6 miles; chains when posted.",
+        status: "active",
+        typicalHours: "5 a.m. to 3 p.m., Mon to Fri"
+      })
+
+      // Seen by haulers: an anonymous reader of the recruiting landing gets both, and still none of its private half.
+      const [seen] = await admin.begin(async (tx) => {
+        await tx.unsafe("select set_config('request.jwt.claims', '{\"role\":\"anon\"}', true)")
+        await tx.unsafe("set local role anon")
+        return tx.unsafe("select typical_hours, public_road_notes from marketplace.landings where id = $1::uuid", [lowerSpurId])
+      }) as unknown as Array<{ typical_hours: string; public_road_notes: string }>
+      expect(seen).toEqual({ public_road_notes: "Gravel the last 6 miles; chains when posted.", typical_hours: "5 a.m. to 3 p.m., Mon to Fri" })
+      await expect(admin.begin(async (tx) => {
+        await tx.unsafe("set local role anon")
+        return tx.unsafe("select gate_instructions from marketplace.landing_private_details where landing_id = $1::uuid", [lowerSpurId])
+      })).rejects.toMatchObject({ code: "42501" })
+
+      // Capped twice: the shared input rule refuses before the store, and the store's own CHECK refuses without it.
+      await expect(port.saveLanding(viewer("land", "land"), { areaLabel: "Blue River", landingId: lowerSpurId, name: "Lower Spur Landing", stateCode: "OR", typicalHours: "h".repeat(121) }))
+        .rejects.toBeInstanceOf(MarketplaceRefusalError)
+      await expect(db.asUser(await principalFor(ISSUER)(viewer("land", "land")), (calls) =>
+        calls.landingStatement("update_landing", [lowerSpurId, fixture.orgs.land, "Lower Spur Landing", "Blue River, OR", null, null, "OR", null, "h".repeat(121), null]), { readOnly: false }))
+        .rejects.toMatchObject({ code: "23514" })
+      await expect(db.asUser(await principalFor(ISSUER)(viewer("land", "land")), (calls) =>
+        calls.landingStatement("update_landing", [lowerSpurId, fixture.orgs.land, "Lower Spur Landing", "Blue River, OR", null, null, "OR", null, null, "Gate code 4417 at the spur"]), { readOnly: false }))
+        .rejects.toMatchObject({ code: "23514" })
+      expect((await port.getOwnLanding(viewer("land", "land"), lowerSpurId))?.typicalHours).toBe("5 a.m. to 3 p.m., Mon to Fri")
+    })
+
     it("sets up a landing business owned by the person, which recruits only once billing is active", async () => {
       const { organizationId } = await port.createLandingOrganization({ userId: fixture.users.stranger }, { displayName: "Adapter Fresh Timber", homeState: "or" })
       const own = { organizationId, userId: fixture.users.stranger }

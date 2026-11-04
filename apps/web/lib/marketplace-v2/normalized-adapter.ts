@@ -446,8 +446,8 @@ export function createNormalizedMarketplaceV2({ db, now = () => new Date(), prin
           }
 
           const status = parsed.recruiting ? "active" : "inactive"
-          const [name, area, lat, lng, state, county] = landingPublicValues(parsed)
-          landingId = savedLandingId(await calls.landingStatement("insert_landing", [viewer.organizationId, name, status, area, lat, lng, state, county]))
+          const [name, area, lat, lng, state, county, hours, roadNotes] = landingPublicValues(parsed)
+          landingId = savedLandingId(await calls.landingStatement("insert_landing", [viewer.organizationId, name, status, area, lat, lng, state, county, hours, roadNotes]))
         }
 
         await calls.landingStatement("save_landing_private", [landingId, viewer.organizationId, ...landingPrivateValues(parsed)])

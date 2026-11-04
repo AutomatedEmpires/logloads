@@ -92,10 +92,12 @@ describe("landing input", () => {
       gateInstructions: null,
       landingId: null,
       name: "Hills Creek Unit 4",
+      publicRoadNotes: null,
       recruiting: false,
       siteContactName: null,
       siteContactPhone: null,
-      stateCode: "OR"
+      stateCode: "OR",
+      typicalHours: null
     })
   })
 
@@ -150,6 +152,38 @@ describe("landing input", () => {
   })
 })
 
+describe("a landing's public details (migration 26)", () => {
+  it("keeps typical hours and public road notes as public text, blank as null", () => {
+    const parsed = marketplaceLandingInputSchema.parse({ ...VALID, publicRoadNotes: "Gravel the last 6 miles", typicalHours: " 5 a.m. to 3 p.m. " })
+    expect([parsed.typicalHours, parsed.publicRoadNotes]).toEqual(["5 a.m. to 3 p.m.", "Gravel the last 6 miles"])
+    expect(marketplaceLandingInputSchema.parse({ ...VALID, publicRoadNotes: "  ", typicalHours: "" })).toMatchObject({ publicRoadNotes: null, typicalHours: null })
+  })
+
+  it("caps them at the store's 120 and 1000 characters", () => {
+    expect(marketplaceLandingInputSchema.safeParse({ ...VALID, typicalHours: "h".repeat(120), publicRoadNotes: "r".repeat(1000) }).success).toBe(true)
+    for (const [field, value] of [["typicalHours", "h".repeat(121)], ["publicRoadNotes", "r".repeat(1001)]] as const) {
+      const result = marketplaceLandingInputSchema.safeParse({ ...VALID, [field]: value })
+      expect(result.success, field).toBe(false)
+      if (!result.success) expect(marketplaceInputIssues(result.error).map((issue) => issue.field)).toEqual([field])
+    }
+  })
+
+  it("refuses access codes, coordinates and contact details in them, as in every public field", () => {
+    for (const [field, value] of [
+      ["publicRoadNotes", "Turn at 43.74712, -122.46171"],
+      ["publicRoadNotes", "Gate code 4417 at the spur"],
+      ["typicalHours", "Call 541-555-0100 first"]
+    ] as const) {
+      expect(marketplaceLandingInputSchema.safeParse({ ...VALID, [field]: value }).success, `${field}: ${value}`).toBe(false)
+    }
+  })
+
+  it("are part of the public view", () => {
+    expect(MARKETPLACE_LANDING_PUBLIC_FIELDS).toEqual(expect.arrayContaining(["typicalHours", "publicRoadNotes"]))
+    expect(publicLandingView({ ...OWNED, publicRoadNotes: "Gravel", typicalHours: "Dawn to 2 p.m." })).toMatchObject({ publicRoadNotes: "Gravel", typicalHours: "Dawn to 2 p.m." })
+  })
+})
+
 describe("landing organization input", () => {
   it("keeps the public name and an optional home state", () => {
     expect(landingOrganizationInputSchema.parse({ displayName: " Cedar Fork Logging ", homeState: "or" })).toEqual({ displayName: "Cedar Fork Logging", homeState: "OR" })
@@ -166,8 +200,10 @@ const OWNED: MarketplaceLandingView = {
   id: "77777777-ffff-4fff-8fff-ffffffffffff",
   name: "Hills Creek Unit 4",
   privateDetails: { exactLocation: { lat: 43.74712, lng: -122.46171 }, gateInstructions: "Green gate 4417", siteContactName: "Lee", siteContactPhone: "+15415550100" },
+  publicRoadNotes: null,
   stateCode: "OR",
   status: "active",
+  typicalHours: null,
   updatedAt: "2026-11-03T12:00:00.000Z"
 }
 

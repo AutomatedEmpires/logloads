@@ -67,9 +67,18 @@ export function LandingForm({ initialState, landingId, recruiting = null }: Land
         <FormField error={errors.county} id="landing-county" label="County" optional>
           <input defaultValue={values.county} maxLength={MARKETPLACE_LANDING_LIMITS.county} name="county" type="text" />
         </FormField>
-        <p className={styles.note}>
-          Typical hours and public road notes aren&rsquo;t kept on a landing yet. Put road conditions in each job you post.
-        </p>
+        <FormField error={errors.typicalHours} hint="For example 5 a.m. to 3 p.m., Monday to Friday." id="landing-hours" label="Typical hours" optional>
+          <input defaultValue={values.typicalHours} maxLength={MARKETPLACE_LANDING_LIMITS.typicalHours} name="typicalHours" type="text" />
+        </FormField>
+        <FormField
+          error={errors.publicRoadNotes}
+          hint="Road conditions only. Never gate codes, combinations or coordinates: those go in the private section."
+          id="landing-road"
+          label="Public road notes"
+          optional
+        >
+          <textarea defaultValue={values.publicRoadNotes} maxLength={MARKETPLACE_LANDING_LIMITS.publicRoadNotes} name="publicRoadNotes" rows={3} />
+        </FormField>
       </VisibilityPanel>
 
       <VisibilityPanel audience="private" title="Private · your team only">

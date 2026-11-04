@@ -54,8 +54,11 @@ export function marketplaceOwnLandings(state: LogLoadsDatabaseState, actor: Mark
           siteContactName: landing.contact?.name ?? null,
           siteContactPhone: landing.contact?.phone ?? null
         },
+        // The pilot has no public hours or road notes: its access notes are shown only to assigned drivers.
+        publicRoadNotes: null,
         stateCode: landing.state,
         status: landing.isActive === false ? "paused" : "active",
+        typicalHours: null,
         updatedAt: landing.updatedAt ?? null
       }
     })

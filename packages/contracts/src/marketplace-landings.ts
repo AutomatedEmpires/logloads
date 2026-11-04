@@ -56,6 +56,10 @@ export interface MarketplaceLandingPublicView {
   /** The store's 0.10° public grid point (V2-DEC-01), or `null` when no exact location is saved to derive it from. */
   approximatePoint: MarketplaceLandingPoint | null
   status: MarketplaceLandingStatus
+  /** When trucks are loaded, in the operator's words (`landings.typical_hours`, migration 26); `null` when not given. */
+  typicalHours: string | null
+  /** Road conditions to the landing (`landings.public_road_notes`, migration 26); `null` when not given. */
+  publicRoadNotes: string | null
 }
 
 /** The keys of `MarketplaceLandingPublicView`, in display order. A public projection copies these and nothing else. */
@@ -66,7 +70,9 @@ export const MARKETPLACE_LANDING_PUBLIC_FIELDS = Object.freeze([
   "stateCode",
   "county",
   "approximatePoint",
-  "status"
+  "status",
+  "typicalHours",
+  "publicRoadNotes"
 ] as const satisfies ReadonlyArray<keyof MarketplaceLandingPublicView>)
 
 /** Team only. Never on a listing, a map or a public response; shared with a hauler only by a later, explicit act. */
@@ -261,7 +267,11 @@ export const MARKETPLACE_LANDING_LIMITS = Object.freeze({
   gateInstructions: 2000,
   name: 120,
   organizationName: 160,
-  siteContactName: 120
+  /** `landings.public_road_notes` (migration 26), the same cap as a job's public road notes. */
+  publicRoadNotes: 1000,
+  siteContactName: 120,
+  /** `landings.typical_hours` (migration 26). */
+  typicalHours: 120
 })
 
 const SENSITIVE_MESSAGE = "Remove coordinates and gate or lock codes. Put access details in the private section."
@@ -348,6 +358,8 @@ export const marketplaceLandingInputSchema = z.object({
   areaLabel: publicName(MARKETPLACE_LANDING_LIMITS.areaLabel, "Enter the nearest town, for example Oakridge"),
   stateCode: stateCode(true),
   county: optionalPublicText(MARKETPLACE_LANDING_LIMITS.county),
+  typicalHours: optionalPublicText(MARKETPLACE_LANDING_LIMITS.typicalHours),
+  publicRoadNotes: optionalPublicText(MARKETPLACE_LANDING_LIMITS.publicRoadNotes),
   exactLat: coordinate(-90, 90, "latitude"),
   exactLng: coordinate(-180, 180, "longitude"),
   gateInstructions: optionalPrivateText(MARKETPLACE_LANDING_LIMITS.gateInstructions),
@@ -370,10 +382,12 @@ export const marketplaceLandingInputSchema = z.object({
   gateInstructions: input.gateInstructions ?? null,
   landingId: input.landingId ?? null,
   name: input.name,
+  publicRoadNotes: input.publicRoadNotes ?? null,
   recruiting: input.recruiting,
   siteContactName: input.siteContactName ?? null,
   siteContactPhone: input.siteContactPhone ?? null,
-  stateCode: input.stateCode as string
+  stateCode: input.stateCode as string,
+  typicalHours: input.typicalHours ?? null
 }))
 export type MarketplaceLandingInput = z.output<typeof marketplaceLandingInputSchema>
 
@@ -383,6 +397,8 @@ export const MARKETPLACE_LANDING_FORM_FIELDS = Object.freeze([
   "areaLabel",
   "stateCode",
   "county",
+  "typicalHours",
+  "publicRoadNotes",
   "exactLat",
   "exactLng",
   "gateInstructions",
