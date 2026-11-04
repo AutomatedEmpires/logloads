@@ -1,6 +1,7 @@
-# LogLoads stabilization ? November 4, 2026
+# LogLoads stabilization - November 4, 2026
 
-**Status:** In progress. Owner: Codex, stabilization lead. Tracking: #220.
+**Status:** PR #218 code is on `stabilize/2026-11-04/pr218` and merges cleanly into `work/logloads-repair`. Local validation recorded below. Tracking: #220.
+**Takeover:** Grok 4.7 resumed after Codex stopped at `3fac5e6`. The stabilize worktree was clean and matched origin. No second writer was running a build or test.
 
 ## Authority and baseline
 
@@ -17,13 +18,20 @@ Started at `bd0d15cd50f0abacd9b6210b94db411b5731e8b6`. Merge `3e2fb60` incorpora
 
 Files: normalized database adapter and tests, bundle test, Next configuration, normalized workflow/configuration comments, CI/integration documentation, this handoff. No schema or production environment changes.
 
-Validation: frozen-lockfile installation running, reusing the existing store without downloads. Fresh tests and build pending; older CI is not proof for this revision.
+Validation on this worktree, Node 24.16.0, pnpm 10.12.4, 2026-11-04:
 
-Next action: finish installation; run pnpm validate in this worktree; record local database skips explicitly; fast-forward the existing PR head after verifying its expected SHA; inspect the fresh disposable database browser CI. Continue to #219 only after #218 is stable or its blocker is proven.
+- `pnpm lint`, `pnpm typecheck`, package `pnpm test`, and `pnpm build`: turbo cache hit, prior success replayed. Web: 157 files passed, 3 skipped; 1677 tests passed, 75 skipped. Contracts 400, services 863, db 84, ui 293. The stderr line `LogLoads subscription billing account isolation verification failed` is inside a passing billing-cron test.
+- Fresh, not from cache: `vitest run lib/marketplace-v2/normalized-db.test.ts lib/marketplace-v2/normalized-bundle.test.ts` - 2 files, 49 tests, passed.
+- Fresh: `pnpm test:tools` - 234 passed, 0 failed.
+- Fresh: `pnpm guardrails` - passed (`check-docs: ok`, 29 files).
+- `pnpm db:assert`: **skipped**. Git Bash reports `Supabase CLI not installed` and exits 0. The `pnpm validate` script invokes `bash`, and the Windows `bash` shim starts WSL; that process was stopped. No Docker or local Supabase reset was run. This skip is not a database pass.
+- Disposable-database browser CI already succeeded for the code commit `9d95ccc` (Actions run 41893971687, Normalized V2 E2E Loop). The later commits on this branch are documentation only.
+
+Next action: fast-forward `test/qa/normalized-e2e-loop` to this branch so #218 is no longer conflicting, then confirm GitHub mergeability. #219 remains conflicting in `normalized-adapter.contract.test.ts` and still has the availability-window prefill defect. #209 merges, but Lighthouse reports 45 resources against a limit of 44 on the job-detail URL, and extended-validation times out in legacy cockpit specs. Schema #221 and security #222 stay deferred.
 
 ## Remaining ownership
 
-Codex owns #218/#219/#209 stabilization and batch classification under #220. Original agent worktrees are preservation-only; no source there is assigned for edits during this task. Schema26 and sec3 remain isolated recovery snapshots pending classification. The maintainer owns integration merges; none is authorized here.
+Stabilization continues under #220 in `C:/Users/Cole0/wt/logloads-stabilize`. Original agent worktrees are preservation-only. Their dirty trees match the pushed recovery commits and were not edited. Schema26 and sec3 remain isolated recovery snapshots pending classification. The maintainer owns integration merges; none is authorized here.
 
 ## Recovered batches: inventory complete, implementation deferred
 
