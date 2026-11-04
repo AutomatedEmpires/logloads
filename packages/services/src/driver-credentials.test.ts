@@ -637,6 +637,31 @@ describe("submitCredential", () => {
     ).toThrow(/must be stored under/)
   })
 
+  // HF-07 (#187): the exact `<prefix>/uploads/<uuid>` shape the signer mints, not a
+  // prefix match. Each of these starts with this driver's own CDL uploads prefix.
+  it.each([
+    ["a parent-directory traversal", `/../../${HANK_DRIVER}/cdl/uploads/${randomUUID()}`],
+    ["a nested object below an upload", `/${randomUUID()}/extra`],
+    ["an encoded separator", `/..%2F${randomUUID()}`],
+    ["an object name the signer never mints", "/licence-front"]
+  ])("refuses %s under the driver's own uploads prefix", (_label, suffix) => {
+    const state = freshState()
+    const before = state.driverCredentials.length
+
+    expect(() =>
+      file(state, {
+        actorUserId: RILEY_USER,
+        documentMedia: credentialDocument(RILEY_DRIVER, "cdl", null, {
+          publicId: `${credentialDocumentPublicIdPrefix(RILEY_DRIVER, "cdl")}/uploads${suffix}`
+        }),
+        driverProfileId: RILEY_DRIVER,
+        kind: "cdl",
+        organizationId: MAYA_ORG
+      })
+    ).toThrow(/must be stored under/)
+    expect(state.driverCredentials).toHaveLength(before)
+  })
+
   it("requires equipment evidence to name its exact assigned profile", () => {
     const state = freshState()
 
