@@ -1,7 +1,6 @@
 "use client"
 
-import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { AppLink as Link } from "../AppLink"
 import { useMemo, useState, useTransition } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
@@ -392,7 +391,6 @@ function supportStatusTone(status: string): "success" | "warning" | "info" {
 }
 
 function MarkInquiryReadButton({ inquiryId, title }: { inquiryId: string; title: string }) {
-  const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
@@ -406,7 +404,6 @@ function MarkInquiryReadButton({ inquiryId, title }: { inquiryId: string; title:
         return
       }
 
-      router.refresh()
     })
   }
 
@@ -975,7 +972,6 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
             <Link
               className="action-link action-link--secondary"
               href="/api/admin/billing/export"
-              prefetch={false}
             >
               Export canonical CSV
             </Link>

@@ -1,7 +1,7 @@
 "use client"
 
 import dynamic from "next/dynamic"
-import Link from "next/link"
+import { AppLink as Link } from "../AppLink"
 import { useEffect, useMemo, useState } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
@@ -62,12 +62,7 @@ export function LoadCard({ href, load, publicMode = false }: { href?: string; lo
     return <article className="load-card-v3">{content}</article>
   }
 
-  // No prefetch (#153, #159). A load detail is a dynamic page with no loading boundary, so an automatic prefetch
-  // holds only the route tree. Navigating from that partial entry makes Next.js 15.5 commit the page through a
-  // second, lazy fetch, and intermittently React never commits that transition: the click is handled, the payload
-  // arrives, and the URL never changes. Without a prefetch the click makes one full fetch and commits it. The data
-  // still costs one round trip after the click either way, because a dynamic prefetch never carries it.
-  return <Link className="load-card-v3" href={href} prefetch={false}>{content}</Link>
+  return <Link className="load-card-v3" href={href}>{content}</Link>
 }
 
 export function OperatingMap({ loads, onSelect, selectedLoadId, variant = "app" }: {
@@ -119,8 +114,7 @@ export function OperatingMap({ loads, onSelect, selectedLoadId, variant = "app" 
             <p className="map-selected-note"><Icon aria-hidden name="map.landing" size={14} /> Approximate area — exact access unlocks after assignment.</p>
           ) : null}
           <div className="map-selected-actions">
-            {/* No prefetch, for the same reason as LoadCard. */}
-            <Link className="action-link" href={detailHref} prefetch={false}>Check this load</Link>
+            <Link className="action-link" href={detailHref}>Check this load</Link>
             <span className="map-selected-visibility">{visibilityLabel(selected)}</span>
           </div>
         </aside>
