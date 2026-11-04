@@ -944,6 +944,6 @@ export function ContactPage({
   )
 }
 
-// NotFoundProduct lives in ./NotFoundProduct, on its own, so every page does not load this module's chunks (#137).
+// NotFoundProduct is in ./NotFoundProduct.tsx on purpose; see there before moving it back (#137).
 
 export { legalPages }

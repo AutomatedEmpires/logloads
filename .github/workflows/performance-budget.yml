@@ -17,9 +17,6 @@ on:
       - "pnpm-lock.yaml"
       - "tools/performance-budget.mjs"
   workflow_dispatch:
-  # TEMPORARY (#137): runs on this branch's pushes while the budget is calibrated; removed before review.
-  push:
-    branches: [test/qa/ux-14-perf-budget]
 
 permissions:
   contents: read
