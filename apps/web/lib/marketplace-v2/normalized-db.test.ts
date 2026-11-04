@@ -19,8 +19,9 @@ import { MarketplaceAdapterConfigurationError, MarketplaceRefusalError, Marketpl
 
 const PRINCIPAL = { audience: "logloads-test-audience", issuer: "https://clerk.logloads.test", subject: "user_test_subject" }
 
-function postgresError(code: string, message: string): Error {
-  return Object.assign(new Error(message), { code, name: "PostgresError" })
+/** The shape postgres.js throws for a server error: the server's fields copied onto it, severity included. */
+function postgresError(code: string, message: string, name = "PostgresError"): Error {
+  return Object.assign(new Error(message), { code, name, severity: "ERROR", severity_local: "ERROR" })
 }
 
 describe("marketplaceCallStatement", () => {
@@ -266,6 +267,16 @@ describe("translateStoreError", () => {
     expect((refusal as MarketplaceRefusalError).code).toBe("23514")
     expect(translateStoreError(postgresError("P0002", "Job not found")).message).toBe("Job not found")
     expect(translateStoreError(postgresError("42501", "Inquiry not found")).message).toBe("Inquiry not found")
+  })
+
+  it("recognises a server error by its fields, not its class name, which a minified build renames (#140)", () => {
+    const refusal = translateStoreError(postgresError("23514", "This job is no longer accepting interest", "e"))
+
+    expect(refusal).toBeInstanceOf(MarketplaceRefusalError)
+    expect(refusal.message).toBe("This job is no longer accepting interest")
+    // A SQLSTATE-shaped code without the server's severity is not a server error.
+    expect(translateStoreError(Object.assign(new Error("not from the server"), { code: "23514", name: "PostgresError" })))
+      .toBeInstanceOf(MarketplaceStoreError)
   })
 
   it("turns a bare grant failure into a plain refusal", () => {
