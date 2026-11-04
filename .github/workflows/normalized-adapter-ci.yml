@@ -6,14 +6,25 @@ name: Normalized V2 Adapter Contract CI
 # fail-closed guard as the Normalized V2 Database CI (tools/normalized-v2-ci/guard.sh). Then the adapter runs over a
 # restricted NOINHERIT login role, exactly as a deployment would connect. No hosted database, Supabase project,
 # Vercel environment or credential is used or needed.
+#
+# The seeded-store jobs (#200) deploy a fresh database the way the owner deploys staging, with the owner tool
+# (tools/normalized-store.mjs: the same chain, the issuer row, the adapter's login role) and the synthetic pilot seed
+# (architecture/normalized-v2/seed/), then run the adapter against it as that role
+# (normalized-seed.contract.test.ts): once on plain PostgreSQL 17 + PostGIS, once on a Supabase CLI local stack, whose
+# migration role is a non-superuser `postgres` as on a hosted project.
 
 on:
   pull_request:
     paths:
       - apps/web/lib/marketplace-v2/**
       - packages/contracts/src/marketplace*.ts
+      - packages/db/src/seed-data.ts
       - architecture/normalized-v2/**
       - tools/normalized-v2-ci/**
+      - tools/normalized-store*.mjs
+      - tools/operating-state-backup-policy.mjs
+      - supabase/migrations/**
+      - supabase/verify/**
       - .github/workflows/normalized-adapter-ci.yml
       - apps/web/package.json
       - pnpm-lock.yaml
@@ -187,3 +198,342 @@ jobs:
           name: normalized-adapter-ci-logs
           path: ${{ runner.temp }}/normalized-v2-ci/logs/
           retention-days: 7
+
+  seeded-store:
+    name: Seeded normalized store (PostgreSQL 17, owner tool + pilot seed)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        # postgis/postgis:17-3.5 (PostgreSQL 17, PostGIS 3.5), pinned by index digest, as in normalized-v2-ci.yml.
+        image: postgis/postgis:17-3.5@sha256:01a6a70e41e6c4467c8f55f6063555ed72db2d6662cd0d571040d42eadaeb6f6
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres # CI-only credential for a throwaway service container.
+          POSTGRES_DB: logloads_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres -d logloads_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+
+    env:
+      LOGLOADS_DISPOSABLE_DB_URL: postgresql://postgres:postgres@127.0.0.1:5432/logloads_test
+      LOGLOADS_DB_ENV: ci-disposable
+      LOGLOADS_CI_ITERATION: "1"
+      PGCONNECT_TIMEOUT: "10"
+      PGOPTIONS: "-c lock_timeout=30s -c statement_timeout=300s -c idle_in_transaction_session_timeout=120s"
+      # The owner tool's inputs, as a staging config holds them: the migration role and the adapter's identity. The
+      # adapter's login URL (LOGLOADS_NORMALIZED_DATABASE_URL) gets a fresh, masked password in a step below.
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/logloads_test
+      LOGLOADS_NORMALIZED_IDENTITY_ISSUER: https://clerk.normalized-seed.test
+      LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE: logloads-normalized-seed-ci
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install PostgreSQL 17 client
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common >/dev/null
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+          sudo apt-get install -y -qq postgresql-client-17 >/dev/null
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Wait for the service to finish initialization
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          ok=0
+          for _ in $(seq 1 60); do
+            if psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -t -A -c "select 1" >/dev/null 2>&1; then
+              ok=$((ok + 1)); [[ $ok -ge 3 ]] && break
+            else
+              ok=0
+            fi
+            sleep 2
+          done
+          [[ $ok -ge 3 ]] || { echo "database service never became stable" >&2; exit 1; }
+          psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -t -A -c "select version();"
+
+      - name: Guard and provision disposable database
+        run: bash tools/normalized-v2-ci/guard.sh provision
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: A fresh adapter login password for this run (masked)
+        run: |
+          set -euo pipefail
+          password="$(openssl rand -hex 24)"
+          echo "::add-mask::${password}"
+          echo "LOGLOADS_NORMALIZED_DATABASE_URL=postgresql://logloads_marketplace_adapter:${password}@127.0.0.1:5432/logloads_test" >> "$GITHUB_ENV"
+
+      - name: "Owner tool: a production signal or the wrong project is refused before connecting"
+        run: |
+          set +e -uo pipefail
+          DOPPLER_CONFIG=prd node tools/normalized-store.mjs schema --expected-project-ref local --apply; production=$?
+          node tools/normalized-store.mjs schema --expected-project-ref stagingfakeref --apply; mismatch=$?
+          [[ "$production" == "2" && "$mismatch" == "2" ]] || { echo "expected both runs to be refused with exit 2" >&2; exit 1; }
+
+      - name: "Owner tool: schema dry run changes nothing"
+        run: |
+          set -euo pipefail
+          node tools/normalized-store.mjs schema --expected-project-ref local | tee "$RUNNER_TEMP/schema-plan.log"
+          grep -q "pending: 01_schema.sql, 02_access.sql, 03_entitlements.sql" "$RUNNER_TEMP/schema-plan.log"
+          [[ "$(psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -t -A -c "select to_regnamespace('marketplace') is null and not exists (select 1 from pg_roles where rolname = 'logloads_marketplace_adapter')")" == "t" ]]
+
+      - name: Re-verify the disposable database before the tool writes
+        run: bash tools/normalized-v2-ci/guard.sh verify
+
+      - name: "Owner tool: schema --apply (chain, issuer row, adapter login role, verification as the adapter)"
+        timeout-minutes: 10
+        run: node tools/normalized-store.mjs schema --expected-project-ref local --apply
+
+      - name: "Owner tool: re-running schema --apply is a no-op"
+        run: |
+          set -euo pipefail
+          node tools/normalized-store.mjs schema --expected-project-ref local --apply | tee "$RUNNER_TEMP/schema-again.log"
+          grep -q "up to date (ledger 06,11,12,16,18,23)" "$RUNNER_TEMP/schema-again.log"
+          grep -q "keep logloads_marketplace_adapter and its password" "$RUNNER_TEMP/schema-again.log"
+
+      - name: "Owner tool: seed dry run, then --apply"
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          node tools/normalized-store.mjs seed --expected-project-ref local
+          node tools/normalized-store.mjs seed --expected-project-ref local --apply
+
+      - name: "Owner tool: re-running the seed is a no-op, and status is ready"
+        run: |
+          set -euo pipefail
+          node tools/normalized-store.mjs seed --expected-project-ref local --apply | tee "$RUNNER_TEMP/seed-again.log"
+          grep -q "already loaded" "$RUNNER_TEMP/seed-again.log"
+          node tools/normalized-store.mjs status --expected-project-ref local
+
+      - name: Re-verify the disposable database before the adapter writes
+        run: bash tools/normalized-v2-ci/guard.sh verify
+
+      - name: Seeded-store adapter tests (normalized-seed.contract.test.ts)
+        timeout-minutes: 10
+        env:
+          # A missing or unguarded seeded store fails these tests instead of skipping them.
+          LOGLOADS_ADAPTER_CONTRACT: required
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/normalized-v2-ci/logs"
+          pnpm --filter @logloads/web exec vitest run lib/marketplace-v2/normalized-seed.contract.test.ts \
+            --testTimeout=60000 --reporter=verbose 2>&1 | tee "$RUNNER_TEMP/normalized-v2-ci/logs/seeded-store.log"
+          {
+            echo "### Seeded normalized store (PostgreSQL 17)"
+            echo '```'
+            grep -E "✓|✗|×|Test Files|Tests " "$RUNNER_TEMP/normalized-v2-ci/logs/seeded-store.log" || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Collect database server log
+        if: failure()
+        run: |
+          set +e
+          cid="$(docker ps -q --filter "ancestor=postgis/postgis:17-3.5@sha256:01a6a70e41e6c4467c8f55f6063555ed72db2d6662cd0d571040d42eadaeb6f6" | head -1)"
+          [[ -z "$cid" ]] && cid="$(docker ps -q | head -1)"
+          mkdir -p "$RUNNER_TEMP/normalized-v2-ci/logs"
+          docker logs "$cid" > "$RUNNER_TEMP/normalized-v2-ci/logs/postgres-server.log" 2>&1
+          tail -n 80 "$RUNNER_TEMP/normalized-v2-ci/logs/postgres-server.log"
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: normalized-seeded-store-logs
+          path: ${{ runner.temp }}/normalized-v2-ci/logs/
+          retention-days: 7
+
+  seeded-store-supabase:
+    # The same deploy on a disposable Supabase CLI local stack started inside this job: Supabase's PostgreSQL 17 image,
+    # its real anon / authenticated / service_role roles, supautils, and a non-superuser `postgres` migration role,
+    # as on a hosted project. No hosted Supabase project, access token or credential is used.
+    name: Seeded normalized store (Supabase local stack, owner tool + pilot seed)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    env:
+      LOGLOADS_DISPOSABLE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      LOGLOADS_DISPOSABLE_DB_NAME: postgres
+      LOGLOADS_DB_ENV: supabase-local-ci
+      LOGLOADS_CI_ITERATION: "1"
+      LOGLOADS_SUPABASE_PROJECT_ID: logloads-ci
+      SUPABASE_CLI_VERSION: 2.121.0
+      SUPABASE_CLI_SHA256: 4b481189efbdc57cf2d37bdee5f1a0d29574314398564b32a6dfb76c0fcf275f
+      SUPABASE_TELEMETRY_DISABLED: "1"
+      DO_NOT_TRACK: "1"
+      PGCONNECT_TIMEOUT: "10"
+      PGOPTIONS: "-c lock_timeout=30s -c statement_timeout=300s -c idle_in_transaction_session_timeout=120s"
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      LOGLOADS_NORMALIZED_IDENTITY_ISSUER: https://clerk.normalized-seed.test
+      LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE: logloads-normalized-seed-ci
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install PostgreSQL 17 client
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common >/dev/null
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+          sudo apt-get install -y -qq postgresql-client-17 >/dev/null
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Install Supabase CLI (pinned release, checksum-verified)
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          tgz="supabase_${SUPABASE_CLI_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$tgz" "https://github.com/supabase/cli/releases/download/v${SUPABASE_CLI_VERSION}/${tgz}"
+          echo "${SUPABASE_CLI_SHA256}  $RUNNER_TEMP/$tgz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/supabase-cli"
+          tar -xzf "$RUNNER_TEMP/$tgz" -C "$RUNNER_TEMP/supabase-cli" supabase
+          echo "$RUNNER_TEMP/supabase-cli" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/supabase-cli/supabase" --version
+
+      - name: Start a disposable Supabase local stack
+        timeout-minutes: 12
+        run: bash tools/normalized-v2-ci/supabase-stack.sh start
+
+      - name: Guard and provision the disposable Supabase database
+        run: bash tools/normalized-v2-ci/guard.sh provision
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: A fresh adapter login password for this run (masked)
+        run: |
+          set -euo pipefail
+          password="$(openssl rand -hex 24)"
+          echo "::add-mask::${password}"
+          echo "LOGLOADS_NORMALIZED_DATABASE_URL=postgresql://logloads_marketplace_adapter:${password}@127.0.0.1:54322/postgres" >> "$GITHUB_ENV"
+
+      - name: "Owner tool: schema dry run"
+        run: node tools/normalized-store.mjs schema --expected-project-ref local
+
+      - name: Re-verify the disposable database before the tool writes
+        run: bash tools/normalized-v2-ci/guard.sh verify
+
+      - name: "Owner tool: schema --apply as the non-superuser postgres role"
+        timeout-minutes: 10
+        run: node tools/normalized-store.mjs schema --expected-project-ref local --apply
+
+      - name: "Owner tool: re-running schema --apply is a no-op"
+        run: |
+          set -euo pipefail
+          node tools/normalized-store.mjs schema --expected-project-ref local --apply | tee "$RUNNER_TEMP/schema-again.log"
+          grep -q "up to date (ledger 06,11,12,16,18,23)" "$RUNNER_TEMP/schema-again.log"
+
+      # The staging order (docs/INTEGRATIONS.md §15.1): the normalized store first, so PostGIS lives in `extensions`,
+      # then the pilot migrations on the same database, each in one transaction as the migration role, and their own
+      # behavioural checks (supabase/verify, each rolled back).
+      - name: "Pilot migrations and their checks on the same database, after the normalized store"
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          for file in supabase/migrations/*.sql; do
+            echo "== $file"
+            psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$file" >/dev/null
+          done
+          for check in supabase/verify/*.sql; do
+            echo "== $check"
+            psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -v ON_ERROR_STOP=1 -f "$check" >/dev/null
+          done
+          [[ "$(psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -q -t -A -c "select n.nspname from pg_extension e join pg_namespace n on n.oid = e.extnamespace where e.extname = 'postgis'")" == "extensions" ]]
+          node tools/normalized-store.mjs status --expected-project-ref local
+
+      - name: "Owner tool: seed --apply, then status"
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          node tools/normalized-store.mjs seed --expected-project-ref local --apply
+          node tools/normalized-store.mjs status --expected-project-ref local
+
+      - name: Re-verify the disposable database before the adapter writes
+        run: bash tools/normalized-v2-ci/guard.sh verify
+
+      - name: Seeded-store adapter tests (normalized-seed.contract.test.ts, Supabase roles)
+        timeout-minutes: 10
+        env:
+          LOGLOADS_ADAPTER_CONTRACT: required
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/normalized-v2-ci/logs"
+          pnpm --filter @logloads/web exec vitest run lib/marketplace-v2/normalized-seed.contract.test.ts \
+            --testTimeout=60000 --reporter=verbose 2>&1 | tee "$RUNNER_TEMP/normalized-v2-ci/logs/seeded-store-supabase.log"
+          {
+            echo "### Seeded normalized store (Supabase local stack)"
+            echo '```'
+            grep -E "✓|✗|×|Test Files|Tests " "$RUNNER_TEMP/normalized-v2-ci/logs/seeded-store-supabase.log" || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Collect Supabase container logs
+        if: failure()
+        run: |
+          set +e
+          mkdir -p "$RUNNER_TEMP/normalized-v2-ci/logs"
+          for c in db rest kong auth; do
+            docker logs "supabase_${c}_${LOGLOADS_SUPABASE_PROJECT_ID}" > "$RUNNER_TEMP/normalized-v2-ci/logs/supabase-${c}.log" 2>&1
+          done
+          tail -n 60 "$RUNNER_TEMP/normalized-v2-ci/logs/supabase-db.log"
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: normalized-seeded-store-supabase-logs
+          path: ${{ runner.temp }}/normalized-v2-ci/logs/
+          retention-days: 7
+
+      - name: Stop the Supabase local stack
+        if: always()
+        run: bash tools/normalized-v2-ci/supabase-stack.sh stop
