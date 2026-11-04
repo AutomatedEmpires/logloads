@@ -65,6 +65,22 @@ describe("driver profile service", () => {
       ...context,
       photo: { ...photo, publicId: `logloads/${FLEET_ORG}/profile/not-this-driver/uploads/bad` }
     })).toThrow(/does not belong/)
+
+    // HF-07 (#187): the exact shape the signer mints, not a prefix match. Each of
+    // these starts with this driver's own uploads prefix.
+    for (const suffix of [
+      "/../../not-this-driver/uploads/11111111-1111-4111-8111-111111111112",
+      "/11111111-1111-4111-8111-111111111111/extra",
+      "/..%2F11111111-1111-4111-8111-111111111112",
+      "/profile-photo"
+    ]) {
+      expect(() => services.saveDriverMediaReference({
+        ...context,
+        photo: { ...photo, publicId: `${target.publicIdPrefix}/uploads${suffix}` }
+      })).toThrow(/does not belong/)
+    }
+
+    expect(services.getDriverMediaTarget(context).photo).toEqual(photo)
   })
 
   it("revokes private media and profile writes when the user, organization, or exact membership is inactive", () => {

@@ -8,6 +8,7 @@ import {
   loadRemoteOperatingState,
   loadStateSnapshot,
   mutateRemoteOperatingState,
+  OperatingStateTooLargeError,
   OperatingStateUnavailableError,
   persistStateSnapshot,
   remoteSnapshotConfig,
@@ -16,6 +17,7 @@ import {
 } from "@logloads/db"
 import { createLogLoadsServices } from "@logloads/services"
 
+import { OPERATING_STATE_FULL_MESSAGE } from "./operating-state-messages"
 import { shiftSeedDates } from "./seed-dates"
 
 const stateFilePath =
@@ -220,6 +222,17 @@ export function mutateState<T>(mutate: (draft: ServicesSingleton) => T): Promise
 }
 
 export function serializeError(error: unknown): { error: string } {
+  // The writer refused a write at the document size limit (HF-02, #187). The
+  // operator needs the sizes; the person in the cockpit gets a fixed message.
+  if (error instanceof OperatingStateTooLargeError) {
+    console.error("logloads: operating state write refused at the size limit", {
+      byteLength: error.byteLength,
+      limitBytes: error.limitBytes
+    })
+
+    return { error: OPERATING_STATE_FULL_MESSAGE }
+  }
+
   if (error instanceof Error) {
     return { error: error.message }
   }

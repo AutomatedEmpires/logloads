@@ -12,6 +12,7 @@ import {
   canTransitionLoadPostingStatus,
   evaluateLoadCompatibility,
   formatMoney,
+  isOwnedUploadPublicId,
   mediaReferenceSchema,
   moneySchema,
   notificationSchema,
@@ -3450,9 +3451,11 @@ export function attachTripDocument(state: LogLoadsDatabaseState, input: AttachTr
   // The signature this asset was uploaded under is scoped to one trip, so an
   // asset outside this trip's prefix was signed for something else. Re-checked
   // here and not only at the edge: this is the last point before the record is
-  // written, and the record is what the evidence gate trusts.
+  // written, and the record is what the evidence gate trusts. The check is the
+  // exact `<prefix>/uploads/<uuid>` shape the signer mints, not a prefix match
+  // (HF-07, #187).
   assertCondition(
-    media.publicId.startsWith(`${target.publicIdPrefix}/uploads/`),
+    isOwnedUploadPublicId(media.publicId, target.publicIdPrefix),
     "The uploaded document does not belong to this trip"
   )
 
