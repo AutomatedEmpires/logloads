@@ -74,6 +74,7 @@ they remain required for ongoing admin authority.
 | Group | Variables |
 |---|---|
 | Marketplace V2 preview | `LOGLOADS_MARKETPLACE_V2`. Exactly `enabled` turns on `/v2`, which is always off when `VERCEL_ENV=production`. **Must be unset in Production.** Do not set it on hosted Preview without an approved, isolated preview ([`DEPLOYMENT.md`](./DEPLOYMENT.md) §4). Listed, unset, in `.env.example`. Not yet in the JSON contract (#111). |
+| Marketplace V2 store (development only) | `LOGLOADS_MARKETPLACE_V2_ADAPTER`: `pilot` (default) or `normalized`. `normalized` also needs `LOGLOADS_NORMALIZED_DATABASE_URL` (a restricted NOINHERIT login role, **secret**, server-only), `LOGLOADS_NORMALIZED_IDENTITY_ISSUER` and `LOGLOADS_NORMALIZED_IDENTITY_AUDIENCE` (an enabled `marketplace.trusted_identity_issuers` row). An incomplete or unsafe configuration fails closed. `VERCEL_ENV=production` always uses the pilot store ([`SECURITY.md`](./SECURITY.md) §4.1). Listed in the JSON contract as must-be-unset in Production; not in `.env.example`. |
 | Maps | `NEXT_PUBLIC_CARTO_BASEMAP_KEY` — preferred: authenticated CARTO Basemaps on MapLibre. Browser-visible; restrict it by origin. The legacy `NEXT_PUBLIC_MAPBOX_TOKEN` is used only when no CARTO key is set; keyless CARTO when neither is. |
 | Billing provider | `STRIPE_SECRET_KEY`, `LOGLOADS_STRIPE_EXPECTED_LIVEMODE`, `LOGLOADS_STRIPE_EXPECTED_ACCOUNT_ID`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PUBLISHABLE_KEY` or `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` |
 | Historical Dispatch Pro catalog | `STRIPE_PRICE_DISPATCH` — read-only reconciliation, no new enrollment |
@@ -207,6 +208,8 @@ delivery fails unavailable. Every `CLOUDINARY_*` and `LOGLOADS_CLOUDINARY_*` var
 - `LOGLOADS_ENABLE_DEV_LOGIN` — credential-free development sign-in.
 - `LOGLOADS_RATE_LIMIT_TEST_MODE` — the local Playwright bypass.
 - `LOGLOADS_MARKETPLACE_V2` — the code ignores it in production anyway. Keep it unset so intent is clear.
+- `LOGLOADS_MARKETPLACE_V2_ADAPTER` and `LOGLOADS_NORMALIZED_*` — also ignored in production. No production
+  database has the normalized schema.
 - Any `CLOUDINARY_*` or `LOGLOADS_CLOUDINARY_*` variable.
 - `SUPABASE_ANON_KEY` as an operating-state credential. `operating_state` is service-role only.
 

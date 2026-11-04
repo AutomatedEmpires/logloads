@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Runs one normalized-v2 validation stage against the guarded disposable database
-# and performs independent post-stage checks. Usage: run-stage.sh <stage number, 1..20>
+# and performs independent post-stage checks. Usage: run-stage.sh <stage number, 1..22>
 # Logs: $RUNNER_TEMP/normalized-v2-ci/logs/stage<N>.log (uploaded on failure).
 # =============================================================================
 set -euo pipefail
@@ -291,6 +291,26 @@ case "$STAGE" in
     [[ "$rc" == "0" ]] || exit "$rc"
     grep -q "MIGRATION DRILL PASSED" "$LOG" || { echo "STAGE 15: drill did not report completion" >&2; exit 1; }
     { echo "### Stage 15 migration sequencing / rollback / recovery drill"; echo '```'; grep -E "^\[|^  ok" "$LOG" || true; echo '```'; } >> "$SUMMARY"
+    ;;
+  21)
+    run_sql "$DIR/21_v2_auth_claims_membership_tests.sql"
+    grep -q "ALL IDENTITY-CLAIM AND MEMBERSHIP-REVOCATION (#112 DATABASE LAYER) TESTS PASSED" "$LOG" || { echo "STAGE 21: suite did not reach its final PASS notice" >&2; exit 1; }
+    check "suite rolled back (no test organizations left)" "select count(*) = 0 from marketplace.organizations where slug like 's21-%';"
+    check "suite rolled back (no extra trusted issuer left)" "select not exists (select 1 from marketplace.trusted_identity_issuers where issuer = 'https://clerk-other.logloads.test');"
+    PASSES="$(grep -cE "NOTICE:  00000: PASS: " "$LOG" || true)"
+    echo "  executed assertions reporting PASS: $PASSES" | tee -a "$LOG" | tee -a "$SUMMARY"
+    [[ "$PASSES" -ge 48 ]] || { echo "STAGE 21: only $PASSES PASS notices; expected at least 48" >&2; exit 1; }
+    ;;
+  22)
+    [[ "${LOGLOADS_DB_ENV:-}" == "supabase-local-ci" ]] || { echo "stage 22 runs only on the Supabase local stack" >&2; exit 2; }
+    echo "== bash $DIR/22_clerk_auth_harness_local.sh" | tee "$LOG"
+    set +e
+    timeout --kill-after=30s 300s bash "$DIR/22_clerk_auth_harness_local.sh" 2>&1 | tee -a "$LOG"
+    rc=${PIPESTATUS[0]}
+    set -e
+    [[ "$rc" == "0" ]] || exit "$rc"
+    grep -q "AUTH HARNESS LOCAL-STACK RUNS PASSED" "$LOG" || { echo "STAGE 22: harness did not report completion" >&2; exit 1; }
+    { echo "### Stage 22 #112 auth harness on the local stack (locally signed tokens through the gateway)"; echo '```'; grep -E "^\[run|^\| |^verify-clerk-supabase-auth: (PASS|FAIL)|^  ok" "$LOG" || true; echo '```'; } >> "$SUMMARY"
     ;;
   *) echo "unknown stage $STAGE" >&2; exit 2 ;;
 esac
