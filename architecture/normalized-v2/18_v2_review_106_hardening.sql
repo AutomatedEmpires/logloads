@@ -25,6 +25,19 @@
 --   HF-18  New functions created by the migration role no longer get EXECUTE for PUBLIC. 02's per-schema
 --          ALTER DEFAULT PRIVILEGES ... REVOKE did nothing (a per-schema entry can only add to the global
 --          default). The explicit per-function revokes stay.
+--
+-- DEPLOYMENT NOTE (HF-18): read before applying this file to a shared database.
+--   * The default-privilege change is database-wide for the role that applies this file (on Supabase, `postgres`).
+--     It is not limited to `marketplace`: every function that role creates afterwards, in any schema, gets no
+--     EXECUTE for PUBLIC. That includes later supabase/migrations files and Dashboard SQL run as `postgres`.
+--   * On Supabase, the per-schema defaults for `postgres` in `public` and `storage` still add their grants to the
+--     API roles. Any other schema needs an explicit GRANT EXECUTE, and so does any other role, for example
+--     supabase_auth_admin for an Auth hook. A helper called from an RLS policy fails with "permission denied for
+--     function" without one.
+--   * Extensions that Supabase installs belong to supabase_admin, and trigger functions need no EXECUTE when they
+--     fire, so neither is affected.
+--   * Dropping the `marketplace` schema does not undo it. To revert it, run
+--     ALTER DEFAULT PRIVILEGES FOR ROLE <that role> GRANT EXECUTE ON FUNCTIONS TO PUBLIC.
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
