@@ -3,7 +3,7 @@ name: Normalized V2 Database CI
 # Validates the non-active normalized-v2 prototype (architecture/normalized-v2/) on disposable databases
 # created inside each job. No production, staging, hosted-Supabase or Vercel credentials are used or needed.
 #   Job 1 (baseline): the verified 01..05 suite on PostgreSQL 17 + PostGIS, unchanged. 3 fresh databases.
-#   Job 2 (alignment): 01, 02, 03, 06, 11, 12, 16, 18, then 04, 07, 09, 13, 21, 17, 19, 08, 20, 10, 15 on PostgreSQL 17 + PostGIS.
+#   Job 2 (alignment): 01, 02, 03, 06, 11, 12, 16, 18, 23, then 04, 07, 09, 13, 21, 17, 19, 24, 08, 20, 25, 10, 15 on PostgreSQL 17 + PostGIS.
 #   Job 3 (Supabase): the same chain and suites, plus PostgREST/JWT API tests (14) and the #112 auth harness (22), on a Supabase CLI
 #   local stack started inside the job (real authenticator / anon / authenticated / service_role roles,
 #   non-superuser migration role, Supabase's PostgreSQL 17 image).
@@ -256,6 +256,10 @@ jobs:
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 18
 
+      - name: "Stage 23: 23_v2_round2_hardening.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 23
+
       - name: "Stage 4: 04_tests.sql on the aligned schema"
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 4
@@ -284,6 +288,10 @@ jobs:
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 19
 
+      - name: "Stage 24: 24_v2_round2_hardening_tests.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 24
+
       - name: "Stage 8: 08_v2_contract_concurrency_test.sh"
         timeout-minutes: 12
         run: bash tools/normalized-v2-ci/run-stage.sh 8
@@ -291,6 +299,10 @@ jobs:
       - name: "Stage 20: 20_v2_review_106_concurrency_test.sh"
         timeout-minutes: 6
         run: bash tools/normalized-v2-ci/run-stage.sh 20
+
+      - name: "Stage 25: 25_v2_round2_concurrency_test.sh"
+        timeout-minutes: 6
+        run: bash tools/normalized-v2-ci/run-stage.sh 25
 
       - name: "Stage 10: 10_v2_migration_path_test.sh"
         timeout-minutes: 6
@@ -418,6 +430,10 @@ jobs:
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 18
 
+      - name: "Stage 23: 23_v2_round2_hardening.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 23
+
       - name: "Stage 4: 04_tests.sql"
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 4
@@ -446,6 +462,10 @@ jobs:
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 19
 
+      - name: "Stage 24: 24_v2_round2_hardening_tests.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 24
+
       - name: "Stage 14: 14_supabase_api_tests.sh (PostgREST + JWT, real Supabase roles)"
         timeout-minutes: 6
         run: bash tools/normalized-v2-ci/run-stage.sh 14
@@ -468,6 +488,10 @@ jobs:
       - name: "Stage 20: 20_v2_review_106_concurrency_test.sh"
         timeout-minutes: 6
         run: bash tools/normalized-v2-ci/run-stage.sh 20
+
+      - name: "Stage 25: 25_v2_round2_concurrency_test.sh"
+        timeout-minutes: 6
+        run: bash tools/normalized-v2-ci/run-stage.sh 25
 
       - name: "Stage 10: 10_v2_migration_path_test.sh"
         timeout-minutes: 6

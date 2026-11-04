@@ -2,15 +2,20 @@
  * Display formatting for the marketplace components (DS-04, #147). Pure functions over contract view models.
  *
  * Business wording that already exists in @logloads/contracts is reused, never re-implemented: pay text comes from
- * `formatMarketplacePay`, listing currency from `postingFreshness`, equipment names from `marketplaceEquipmentLabel`
- * and verification wording from `describeMarketplaceVerification`. What is left here is layout-level wording
- * (dates, demand, distance) and the UX-DEC-01 status vocabulary, which #147 owns for these components.
+ * `formatMarketplacePay`, listing currency from `postingFreshness`, equipment names from `marketplaceEquipmentLabel`,
+ * verification wording from `describeMarketplaceVerification`, and the UX-DEC-01 status vocabulary from
+ * `describeMarketplaceInterestStatus` and `MARKETPLACE_JOB_STATUS_LABELS` (#135). What is left here is layout-level
+ * wording (dates, demand, distance).
  */
 import {
+  describeMarketplaceInterestStatus,
   formatMarketplacePay,
+  lastMarketplaceInterestReplySide,
+  MARKETPLACE_JOB_STATUS_LABELS,
   MARKETPLACE_PAY_UNIT_LABELS,
   marketplaceEquipmentLabel,
   postingFreshness,
+  type MarketplaceInterestTone,
   type MarketplaceInterestView,
   type MarketplaceJobCardView,
   type MarketplaceJobStatus,
@@ -221,14 +226,11 @@ export function unstatedText(job: StatedFields): string | null {
 
 /* ------------------------------------------------------------------ Status vocabulary (UX-DEC-01) */
 
-/** What the public listing says about a job's status. "Filled" is the poster's report, never a verified fact. */
-export const JOB_PUBLIC_STATUS_LABELS: Readonly<Record<MarketplaceJobStatus, string>> = Object.freeze({
-  active: "Accepting interest",
-  closed: "Closed by the poster",
-  expired: "Listing expired",
-  filled: "Not accepting interest · poster reports enough trucks",
-  paused: "Paused by the poster"
-})
+/**
+ * What a listing says about its status: contracts `MARKETPLACE_JOB_STATUS_LABELS`, so every screen uses one set of
+ * words. "filled" reads as the poster's claim, never a verified fact.
+ */
+export const JOB_PUBLIC_STATUS_LABELS: Readonly<Record<MarketplaceJobStatus, string>> = MARKETPLACE_JOB_STATUS_LABELS
 
 const CLOSURE_REASONS: Readonly<Record<MarketplaceJobStatus, string>> = Object.freeze({
   active: "Not accepting interest",
@@ -255,44 +257,22 @@ export function jobClosureText(job: Pick<MarketplaceJobCardView, "status" | "exp
 }
 
 /** "attention": the viewer's move. "waiting": the other side's move. "closed": nothing more to do. */
-export type InquiryTone = "attention" | "waiting" | "closed"
+export type InquiryTone = MarketplaceInterestTone
 
 /** The side that wrote the latest reply, or null when nobody has replied yet. */
 export function lastReplySide(interest: Pick<MarketplaceInterestView, "replies">): ViewerSide | null {
-  let latest: MarketplaceInterestView["replies"][number] | null = null
-
-  for (const reply of interest.replies) {
-    if (!latest || Date.parse(reply.createdAt) >= Date.parse(latest.createdAt)) latest = reply
-  }
-
-  return latest ? latest.authorSide : null
+  return lastMarketplaceInterestReplySide(interest)
 }
 
 /**
- * The inquiry's status for one side (UX-DEC-01). A "replied" inquiry is the hauler's turn when the landing spoke
- * last and the landing's turn when the hauler did.
+ * The inquiry's status for one side: contracts `describeMarketplaceInterestStatus` (UX-DEC-01). A "replied"
+ * inquiry is the hauler's turn when the landing spoke last and the landing's turn when the hauler did.
  */
 export function inquiryStatus(
   interest: Pick<MarketplaceInterestView, "status" | "replies">,
   viewerSide: ViewerSide
 ): { label: string; tone: InquiryTone } {
-  const hauler = viewerSide === "hauler"
-
-  switch (interest.status) {
-    case "submitted":
-      return hauler ? { label: "Sent · waiting for the landing", tone: "waiting" } : { label: "New", tone: "attention" }
-    case "viewed":
-      return hauler ? { label: "Seen by the landing", tone: "waiting" } : { label: "Seen · not answered", tone: "attention" }
-    case "replied": {
-      const landingSpokeLast = lastReplySide(interest) !== "hauler"
-      if (hauler) return landingSpokeLast ? { label: "Your turn", tone: "attention" } : { label: "Waiting for the landing", tone: "waiting" }
-      return landingSpokeLast ? { label: "Waiting for the hauler", tone: "waiting" } : { label: "Hauler replied", tone: "attention" }
-    }
-    case "declined":
-      return { label: hauler ? "Declined by the landing" : "Declined", tone: "closed" }
-    case "withdrawn":
-      return { label: hauler ? "Withdrawn by you" : "Withdrawn by the hauler", tone: "closed" }
-  }
+  return describeMarketplaceInterestStatus(interest, viewerSide)
 }
 
 /** "3 trucks offered · 2 × Log truck + Pole trailer, 1 × Chip truck". Self-reported by the hauler. */

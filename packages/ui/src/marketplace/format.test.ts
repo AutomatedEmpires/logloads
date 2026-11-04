@@ -1,4 +1,9 @@
-import { formatMarketplacePay } from "@logloads/contracts"
+import {
+  describeMarketplaceInterestStatus,
+  formatMarketplacePay,
+  MARKETPLACE_JOB_STATUS_LABELS,
+  marketplaceInterestStatusSchema
+} from "@logloads/contracts"
 import { describe, expect, it } from "vitest"
 
 import {
@@ -8,6 +13,7 @@ import {
   equipmentLabels,
   estimatesText,
   inquiryStatus,
+  JOB_PUBLIC_STATUS_LABELS,
   jobAvailabilityStatus,
   jobClosureText,
   lastReplySide,
@@ -137,6 +143,17 @@ describe("inquiryStatus (UX-DEC-01)", () => {
     expect(inquiryStatus(landingLast, "landing")).toEqual({ label: "Waiting for the hauler", tone: "waiting" })
     expect(inquiryStatus(haulerLast, "hauler")).toEqual({ label: "Waiting for the landing", tone: "waiting" })
     expect(inquiryStatus(haulerLast, "landing")).toEqual({ label: "Hauler replied", tone: "attention" })
+  })
+
+  it("is the contracts vocabulary, not a second copy of it (#135)", () => {
+    expect(JOB_PUBLIC_STATUS_LABELS).toBe(MARKETPLACE_JOB_STATUS_LABELS)
+    const replies = [reply("landing", "2026-11-01T13:00:00.000Z"), reply("hauler", "2026-11-01T14:00:00.000Z")]
+    for (const status of marketplaceInterestStatusSchema.options) {
+      for (const side of ["hauler", "landing"] as const) {
+        expect(inquiryStatus(interestView({ replies: [], status }), side)).toEqual(describeMarketplaceInterestStatus({ replies: [], status }, side))
+        expect(inquiryStatus(interestView({ replies, status }), side)).toEqual(describeMarketplaceInterestStatus({ replies, status }, side))
+      }
+    }
   })
 
   it("describes the self-reported offer and dates", () => {
