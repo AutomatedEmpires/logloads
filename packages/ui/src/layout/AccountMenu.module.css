@@ -1,0 +1,166 @@
+/* AccountMenu (#124). The top bar's account disclosure: a trigger chip beside the business switcher and a white
+   panel under it, right-aligned and never wider than the app minus its gutters. "Account" shows at bp-lg and up;
+   below that the icon and the tag are visible and the word stays available to assistive technology. */
+.menu {
+  position: relative;
+  flex: none;
+}
+
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--ll-space-2);
+  min-height: var(--ll-target-touch);
+  padding: 5px 10px;
+  border: 1px solid var(--ll-color-border);
+  border-radius: var(--ll-radius-lg);
+  background: var(--ll-color-surface);
+  color: var(--ll-color-text);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.trigger::-webkit-details-marker {
+  display: none;
+}
+
+.trigger:hover,
+.menu[open] > .trigger {
+  background: var(--ll-color-surface-subtle);
+}
+
+/* AppShell draws the ring; this removes the app's legacy global :focus-visible halo (globals.css). */
+.trigger:focus-visible {
+  box-shadow: none;
+}
+
+.label,
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@container ll-app (min-width: 960px) { /* bp-lg */
+  .label {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip: auto;
+    font-size: var(--ll-text-md);
+    font-weight: var(--ll-weight-medium);
+  }
+}
+
+/* Words, not a tint alone: the tag names what the panel's notice is about. */
+.tag {
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  border-radius: var(--ll-radius-pill);
+  background: var(--ll-color-surface);
+  color: var(--ll-color-status-warning);
+  font-family: var(--ll-font-mono);
+  font-size: var(--ll-text-2xs);
+  font-weight: var(--ll-weight-semibold);
+  letter-spacing: var(--ll-tracking-label);
+  line-height: 18px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* 100cqi is the ll-app container's width, so the panel stays inside the page at 390 px. */
+.panel {
+  position: absolute;
+  top: calc(100% + var(--ll-space-2));
+  right: 0;
+  z-index: var(--ll-z-sheet);
+  display: grid;
+  width: min(20rem, calc(100cqi - 2 * var(--ll-gutter)));
+  border: 1px solid var(--ll-color-border);
+  border-radius: var(--ll-radius-lg);
+  background: var(--ll-color-surface);
+  box-shadow: var(--ll-shadow-md);
+  color: var(--ll-color-text);
+  font-size: var(--ll-text-sm);
+  line-height: var(--ll-leading-snug);
+}
+
+.panel > * + * {
+  border-top: 1px solid var(--ll-color-border);
+}
+
+.person {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--ll-space-3) var(--ll-space-4);
+}
+
+.name {
+  font-size: var(--ll-text-md);
+  font-weight: var(--ll-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.email {
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-xs);
+  overflow-wrap: anywhere;
+}
+
+/* The links sit inset, so the 2 px-offset focus ring stays inside the panel. */
+.links {
+  display: grid;
+  padding: var(--ll-space-2);
+}
+
+.link {
+  display: flex;
+  align-items: center;
+  min-height: var(--ll-target-touch);
+  padding: 0 var(--ll-space-2);
+  border-radius: var(--ll-radius-md);
+  color: var(--ll-color-text);
+  font-weight: var(--ll-weight-medium);
+  text-decoration: none;
+}
+
+.link:hover {
+  background: var(--ll-color-surface-subtle);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* AppShell draws the ring; this removes the app's legacy global :focus-visible halo (globals.css). */
+.link:focus-visible {
+  box-shadow: none;
+}
+
+.note {
+  padding: var(--ll-space-3) var(--ll-space-4);
+  color: var(--ll-color-text-secondary);
+}
+
+.noteTitle {
+  margin: 0 0 var(--ll-space-1);
+  color: var(--ll-color-status-warning);
+  font-family: var(--ll-font-mono);
+  font-size: var(--ll-text-2xs);
+  font-weight: var(--ll-weight-semibold);
+  letter-spacing: var(--ll-tracking-label);
+  text-transform: uppercase;
+}
+
+.noteBody :where(p) {
+  margin: 0;
+}
+
+.action {
+  display: flex;
+  padding: var(--ll-space-3) var(--ll-space-4);
+}

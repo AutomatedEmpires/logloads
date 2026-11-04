@@ -95,8 +95,7 @@ test.describe.serial("request withdrawal", () => {
     await expect(page.getByRole("button", { name: "Request haul" })).toBeVisible({ timeout: 15_000 })
 
     // Returning to Schedule must no longer classify the cancelled assignment
-    // as pending. Navigating away first avoids racing the confirmation state's
-    // deliberate background refresh on a slow field connection.
+    // as pending, on a fresh server render rather than the in-page projection.
     await page.goto(`/driver/schedule?verify=${Date.now()}`)
     await page.waitForLoadState("domcontentloaded")
     await expect(page.locator(".schedule-request-card").filter({ hasText: TITLE })).toHaveCount(0, { timeout: 15_000 })

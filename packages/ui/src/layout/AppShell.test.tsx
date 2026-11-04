@@ -65,6 +65,15 @@ describe("AppShell", () => {
     expect(shell()).not.toContain('role="note"')
   })
 
+  it("renders the account menu inside the top bar only when given (#124)", () => {
+    const html = shell({ account: { links: [{ href: "/sign-in", id: "sign-in", label: "Sign in" }], note: { body: "Development preview.", title: "Preview" } } })
+    const header = /<header[\s\S]*<\/header>/.exec(html)?.[0] ?? ""
+
+    expect(header).toContain("<details")
+    expect(header).toContain("Development preview.")
+    expect(shell()).not.toContain("<details")
+  })
+
   it("shows the business only when one is supplied", () => {
     expect(shell({ business: BUSINESS })).toContain("Kootenai Timber Haul")
     expect(shell()).not.toContain("Acting as")
