@@ -131,6 +131,11 @@ export interface MarketplaceCalls {
   inquiryParties(interestId: string): Promise<MarketplaceInquiryParties | null>
   /** Rows (JSON objects) of one catalogued table statement (`MARKETPLACE_QUERIES`, normalized-queries.ts). */
   query(name: MarketplaceQueryName, values: readonly MarketplaceQueryValue[]): Promise<unknown[]>
+  /**
+   * UX-09 (#132): the organization's jobs that have inquiries, as `INQUIRY_JOBS` rows (JSON). Row-level security
+   * applies as for any direct read: only the owning desk sees them.
+   */
+  inquiryJobs(organizationId: string): Promise<unknown[]>
 }
 
 export interface MarketplaceDb {
@@ -150,6 +155,26 @@ const SESSION_SETUP =
 
 const INQUIRY_PARTIES =
   "select to_jsonb(e) as row from (select id, job_id, job_org_id, hauler_org_id from marketplace.expressions_of_interest where id = $1::text::uuid) as e"
+
+/**
+ * UX-09 (#132): the organization's jobs that have inquiries, with the landing each is posted at and the equipment
+ * codes it asks for. Only existing columns, read under the caller's row-level security (`job_postings_read`,
+ * `landings_read`, `job_equipment_read`, `interests_read`): a person outside the organization's landing desk gets no
+ * rows. Never `landing_private_details`.
+ */
+const INQUIRY_JOBS = `
+select to_jsonb(j) as row from (
+  select jp.id as job_id,
+         l.id as landing_id,
+         l.name as landing_name,
+         coalesce((select array_agg(e.equipment_code::text order by e.equipment_code)
+                   from marketplace.job_posting_equipment e where e.job_id = jp.id), array[]::text[]) as equipment_codes
+  from marketplace.job_postings jp
+  left join marketplace.landings l on l.id = jp.landing_id
+  where jp.org_id = $1::text::uuid
+    and exists (select 1 from marketplace.expressions_of_interest i where i.job_id = jp.id and i.job_org_id = jp.org_id)
+  order by jp.id
+) as j`
 
 /** What the connection's login role may be: nothing by itself, and able to become only `anon` and `authenticated`. */
 export const CREDENTIAL_CHECK = `
@@ -423,6 +448,14 @@ function callsFor(tx: TransactionSql, anonymous: boolean): MarketplaceCalls {
 
       const statement = marketplaceQueryStatement(name, values)
       return rowsOf(await tx.unsafe(statement.text, statement.values), "row")
+    },
+
+    async inquiryJobs(organizationId) {
+      if (anonymous) {
+        throw new TypeError("Inquiries need a signed-in person")
+      }
+
+      return rowsOf(await tx.unsafe(INQUIRY_JOBS, [organizationId]), "row")
     }
   }
 }

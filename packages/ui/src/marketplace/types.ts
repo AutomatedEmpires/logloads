@@ -127,7 +127,11 @@ export interface InquiryRowProps {
   onSelect?: (id: string) => void
 }
 
-export interface ConversationThreadProps { interest: MarketplaceInterestView; viewerSide: ViewerSide }
+/**
+ * DEVIATION (addition, UX-09 #132): optional `viewerUserId`, so "You" marks only the viewer's own messages and a
+ * colleague's on the same side are named.
+ */
+export interface ConversationThreadProps { interest: MarketplaceInterestView; viewerSide: ViewerSide; viewerUserId?: string }
 
 export interface MessageComposerProps {
   recipientName: string

@@ -12,6 +12,16 @@ const SEVEN: NavItem[] = ["overview", "jobs", "inbox", "trucks", "landings", "te
 }))
 
 describe("ResponsiveNavigation", () => {
+  it("reads a tab's count as '<label>, <count> unread' and still shows the badge (UX-09, #132)", () => {
+    const html = renderToStaticMarkup(
+      <ResponsiveNavigation activeId="" items={[{ count: 2, href: "/v2/inquiries", icon: "nav.messages", id: "inquiries", label: "My inquiries" }]} />
+    )
+    const link = html.match(/<a [^>]*>([\s\S]*?)<\/a>/)?.[1] ?? ""
+
+    expect(link.replace(/<svg[\s\S]*?<\/svg>/g, "").replace(/<[^>]+>/g, "")).toBe("My inquiries, 2 unread")
+    expect(link).toMatch(/<span class="[^"]*count[^"]*">2<\/span>/)
+  })
+
   it("renders at most five bottom tabs, in the supplied order", () => {
     const html = renderToStaticMarkup(<ResponsiveNavigation activeId="jobs" items={SEVEN} />)
     const hrefs = [...html.matchAll(/<a [^>]*href="([^"]+)"/g)].map((match) => match[1])

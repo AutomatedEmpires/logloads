@@ -71,6 +71,22 @@ describe("capability-scoped V2 navigation (#124)", () => {
     expect(ids([...HAULER, ...LANDING_DESK])).toEqual(["work", "inquiries", "hauler-profile", "landing-inquiries", "landing-jobs"])
   })
 
+  it("shows unread inquiry counts on the destinations the business sees, and no badge for zero (UX-09)", () => {
+    const counts = { inquiries: 2, "landing-inquiries": 0, "landing-jobs": 7 }
+    const both = v2NavigationFor([...HAULER, ...LANDING_DESK], { ...counts, "landing-inquiries": 3 })
+
+    expect(both.map((item) => [item.id, item.count])).toEqual([
+      ["work", undefined],
+      ["inquiries", 2],
+      ["hauler-profile", undefined],
+      ["landing-inquiries", 3],
+      ["landing-jobs", 7]
+    ])
+    expect(v2NavigationFor(LANDING_DESK, counts).map((item) => [item.id, item.count])).toEqual([["landing-inquiries", undefined], ["landing-jobs", 7]])
+    expect(v2NavigationFor(null, counts).map((item) => item.count)).toEqual([undefined])
+    expect(V2_NAVIGATION.every((item) => item.count === undefined)).toBe(true)
+  })
+
   it("never offers more than the five bottom tabs allowed", () => {
     expect(v2NavigationFor([...HAULER, ...LANDING_DESK]).length).toBeLessThanOrEqual(5)
   })

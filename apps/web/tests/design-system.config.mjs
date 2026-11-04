@@ -67,9 +67,11 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   // One server and, in CI, one shared state row, so the suite stays serial like the pilot suite. Its only writes are
-  // New River Hauling's inquiry and replies to North Pine Logging's job (see design-system.spec.ts); the equipment
-  // case's one offer as Granite Creek Hauling exceeds its listing and is refused unwritten. Summit Ridge Timber's
-  // inbox stays empty and nothing declines or withdraws. The last case also seats Maya Mills at Summit Ridge Timber
+  // to North Pine Logging's inbox (see design-system.spec.ts): New River Hauling's inquiry and replies, North Pine's
+  // "Mark reviewed" and reply on it, and Granite Creek Hauling's inquiry, which North Pine declines with a reason
+  // (UX-09, #132; a decline is final, so that case runs after every case needing Granite Creek without an inquiry).
+  // The equipment case's one offer as Granite Creek Hauling exceeds its listing and is refused unwritten. Summit
+  // Ridge Timber's inbox stays empty and nothing withdraws. The last case also seats Maya Mills at Summit Ridge Timber
   // through an invitation if she is not there, removes that membership and restores it. The cases rely on file order.
   workers: 1,
   use: {

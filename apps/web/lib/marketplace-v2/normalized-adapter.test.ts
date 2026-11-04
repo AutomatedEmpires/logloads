@@ -60,6 +60,7 @@ function interestRow(overrides: Record<string, unknown> = {}) {
 let recorded: Recorded[]
 let responses: Partial<Record<MarketplaceFunctionName, unknown[]>>
 let parties: MarketplaceInquiryParties | null
+let inquiryJobs: unknown[]
 let principal: ReturnType<typeof vi.fn>
 
 function fakeDb(): MarketplaceDb {
@@ -76,6 +77,10 @@ function fakeDb(): MarketplaceDb {
       async query(name, values) {
         recorded.push({ ...extra, args: { values }, fn: name, session })
         return []
+      },
+      async inquiryJobs(organizationId) {
+        recorded.push({ ...extra, args: { organizationId }, fn: "inquiryJobs", session })
+        return inquiryJobs
       }
     }
   }
@@ -92,7 +97,7 @@ function adapter() {
 }
 
 function storeCalls() {
-  return recorded.filter((call) => call.fn !== "inquiryParties").map((call) => call.fn)
+  return recorded.filter((call) => call.fn !== "inquiryParties" && call.fn !== "inquiryJobs").map((call) => call.fn)
 }
 
 function publishDraft() {
@@ -111,6 +116,7 @@ beforeEach(() => {
   recorded = []
   responses = {}
   parties = { haulerOrganizationId: HAUL, jobId: JOB, jobOrganizationId: LAND }
+  inquiryJobs = []
   principal = vi.fn(async () => PRINCIPAL)
 })
 
@@ -213,6 +219,71 @@ describe("normalized adapter: inquiries stay inside the active business", () => 
     await expect(adapter().respondToInterest(landingViewer, { decision: "replied", interestId: INTEREST, replyId: REPLY })).rejects.toThrow("A reply needs a message")
     await expect(adapter().withdrawInterest(haulerViewer, "nope")).rejects.toBeInstanceOf(MarketplaceRefusalError)
     expect(recorded).toEqual([])
+  })
+})
+
+describe("normalized adapter: inquiry conversations (UX-09, #132)", () => {
+  const access = (capabilities: string[]) => [{
+    capabilities, hauler_profile: false, landing_workspace_seat: true, organization_id: LAND, organization_name: "Adapter Timber", role: "owner"
+  }]
+
+  it("withdraws with the hauler's reason in one write: the reason first, then the withdrawal", async () => {
+    responses.list_marketplace_interests = [interestRow()]
+
+    await adapter().withdrawInterestWithReason(haulerViewer, { interestId: INTEREST, reason: " Booked elsewhere ", replyId: REPLY })
+
+    expect(storeCalls()).toEqual(["list_marketplace_interests", "post_hauler_interest_reply", "withdraw_interest"])
+    expect(new Set(recorded.map((call) => call.readOnly))).toEqual(new Set([false]))
+    expect(recorded.find((call) => call.fn === "list_marketplace_interests")?.args).toEqual({ p_job_id: JOB, p_org_id: HAUL, p_side: "hauler" })
+    expect(recorded.find((call) => call.fn === "post_hauler_interest_reply")?.args).toEqual({ p_body: "Booked elsewhere", p_interest_id: INTEREST, p_reply_id: REPLY })
+  })
+
+  it("withdraws without a message when there is no reason, and does nothing more for a withdrawn inquiry", async () => {
+    responses.list_marketplace_interests = [interestRow()]
+    await adapter().withdrawInterestWithReason(haulerViewer, { interestId: INTEREST, reason: "", replyId: REPLY })
+    expect(storeCalls()).toEqual(["list_marketplace_interests", "withdraw_interest"])
+
+    recorded = []
+    responses.list_marketplace_interests = [interestRow({ status: "withdrawn" })]
+    await adapter().withdrawInterestWithReason(haulerViewer, { interestId: INTEREST, reason: "Again", replyId: REPLY })
+    expect(storeCalls()).toEqual(["list_marketplace_interests"])
+  })
+
+  it("refuses a declined inquiry with the landing's closure, before writing a reason (#194 HF-03)", async () => {
+    responses.list_marketplace_interests = [interestRow({ status: "declined" })]
+
+    await expect(adapter().withdrawInterestWithReason(haulerViewer, { interestId: INTEREST, reason: "Never mind", replyId: REPLY }))
+      .rejects.toThrow("The landing has closed this inquiry")
+    expect(storeCalls()).toEqual(["list_marketplace_interests"])
+  })
+
+  it("refuses another business's inquiry, and a reason without a reply id, before reaching the store", async () => {
+    parties = { haulerOrganizationId: OTHER, jobId: JOB, jobOrganizationId: LAND }
+    await expect(adapter().withdrawInterestWithReason(haulerViewer, { interestId: INTEREST, reason: "x", replyId: REPLY })).rejects.toThrow("Inquiry not found")
+    await expect(adapter().withdrawInterestWithReason(haulerViewer, { interestId: INTEREST, reason: "x" })).rejects.toBeInstanceOf(MarketplaceRefusalError)
+    expect(storeCalls()).toEqual([])
+  })
+
+  it("reads the landing's own inquiry jobs read-only, once inquiry.respond is confirmed", async () => {
+    responses.get_viewer_marketplace_access = access(["inquiry.respond", "job.publish"])
+    inquiryJobs = [
+      { equipment_codes: ["log_truck", "pole_trailer"], job_id: JOB, landing_id: LANDING, landing_name: "Upper Spur" },
+      { equipment_codes: null, job_id: INTEREST, landing_id: null, landing_name: null }
+    ]
+
+    expect(await adapter().landingInquiryJobs(landingViewer)).toEqual([
+      { equipmentCodes: ["log_truck", "pole_trailer"], jobId: JOB, landing: { id: LANDING, name: "Upper Spur" } },
+      { equipmentCodes: [], jobId: INTEREST, landing: null }
+    ])
+    expect(recorded.map((call) => [call.fn, call.readOnly])).toEqual([["get_viewer_marketplace_access", true], ["inquiryJobs", true]])
+    expect(recorded[1]?.args).toEqual({ organizationId: LAND })
+  })
+
+  it("refuses the job context to a role without inquiry.respond: a cross-organization read is refused", async () => {
+    responses.get_viewer_marketplace_access = access(["interest.express", "interest.reply"])
+
+    await expect(adapter().landingInquiryJobs(haulerViewer)).rejects.toThrow("Inquiry not found")
+    expect(recorded.map((call) => call.fn)).toEqual(["get_viewer_marketplace_access"])
   })
 })
 
