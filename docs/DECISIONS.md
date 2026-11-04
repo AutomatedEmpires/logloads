@@ -2,6 +2,49 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-11-03 — One status vocabulary for interests and jobs (UX-12, #135)
+
+- **Approval.** The lead approved #135 on 2026-11-03 and delegated the exact wording. This implements UX-DEC-01
+  (`docs/product/ux-v2/08_UX_DECISIONS.md` on `docs/product/v2-ux-spec`), which resolves spec conflicts C5 and C6,
+  with one amendment (filled, below). Stored statuses and the schema are unchanged.
+- **One source.** The wording lives in `packages/contracts/src/marketplace-v2.ts` (`describeMarketplaceInterestStatus`,
+  `landingInterestQueue`, `landingInterestQueueFor`, `LANDING_INTEREST_QUEUE_LABELS`, `MARKETPLACE_JOB_STATUS_LABELS`,
+  `marketplaceJobClosedReason`). `@logloads/ui`'s `inquiryStatus` and `JOB_PUBLIC_STATUS_LABELS` delegate to it.
+  Why: two copies had already drifted (contracts said "Sent — awaiting review" while the UI said "Sent · waiting for
+  the landing").
+- **Interests.** The turn comes from the side that wrote the last message. Each row gives what the hauler sees, the
+  landing's queue and what the landing sees:
+  - `submitted`: "Sent · waiting for the landing" · New · "New". Why: it says whose move it is without the undefined
+    "Waiting" queue (C5), and without "awaiting review", which implied a review step.
+  - `viewed`: "Seen by the landing" · New · "Seen · not answered". Why: opening an inquiry isn't answering it, and
+    filing it under Responded hid unanswered work (audit P1-6).
+  - `replied`, the landing spoke last: "Your turn" · Replied · "Waiting for the hauler". Why: each side sees
+    whether it has to act.
+  - `replied`, the hauler spoke last: "Waiting for the landing" · New · "Hauler replied". Why: a hauler's follow-up
+    needs an answer, so it goes back to New instead of sitting in Replied.
+  - `declined`: "Declined by the landing" · Closed · "Declined". It is final, closed whoever spoke last. Why: since
+    HF-03 (#194) a decline can't be withdrawn, resent or replied to.
+  - `withdrawn`: "Withdrawn by you" · Closed · "Withdrawn by the hauler". It is closed but not final. Why: it names
+    who closed it, and the hauler can send interest again, which reopens it.
+- **Queues: New, Replied, Closed.** Why: both 02 §6.6 and UX-DEC-01 name them so, replacing spec §4.7's four
+  queues. The `responded` key stays for existing callers. `landingInterestQueue(status)` reads `replied` as the
+  landing's reply, because that is when it is stored; `landingInterestQueueFor(interest)` uses the turn.
+- **Jobs (public label):**
+  - `active`: "Accepting interest". Why: the one state a hauler can act on, said as what it allows.
+  - `paused`: "Paused by the poster". Why: it names who set the state.
+  - `filled`: **"Marked filled by the poster"**, amending UX-DEC-01's "Not accepting interest · poster reports enough
+    trucks". Why: it says exactly what is stored, a mark LogLoads doesn't check (spec §4.6), without reading "enough
+    trucks" into it, and it matches the "… by the poster" form of paused and closed (02 §6.6 had "Poster marked as
+    filled").
+  - `closed`: "Closed by the poster". Why: as UX-DEC-01; it names who closed it.
+  - `expired`: "Listing expired". Why: the listing lapsed, not the work, and nobody closed it.
+  - `draft`: no public label. Why: drafts are not stored on the server or listed; the poster's tab says "Draft".
+  - **Reasons:** `marketplaceJobClosedReason` gives a sentence for each status that takes no interest ("The poster
+    marked this job filled."). Why: spec §5.3 asks the job page to show why it blocks new interest, and a lower-cased
+    label read wrongly in a sentence ("This job is listing expired").
+- **Wording rule.** No status wording says hired, booked or assigned, and a unit test checks it. Why: an inquiry is
+  marketplace communication, not an assignment (spec §8.11).
+
 ## 2026-11-02 — Founder grant: Claude Agent 2 takes ownership of unstaffed integration blockers
 
 - **Grant.** The founder authorized Claude Agent 2 to "take ownership of what's needed" and to justify each

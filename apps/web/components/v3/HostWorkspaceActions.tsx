@@ -1,7 +1,6 @@
 "use client"
 
-import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { AppLink as Link } from "../AppLink"
 import { useState, useTransition, type FormEvent } from "react"
 import { rateTypeSchema, roadConditionSchema } from "@logloads/contracts"
 import { Icon } from "@logloads/ui"
@@ -100,7 +99,6 @@ export function LandingForm({
   landingId?: string
   onDone?: () => void
 }) {
-  const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [pending, startTransition] = useTransition()
@@ -149,7 +147,6 @@ export function LandingForm({
       setSaved(true)
       if (!editing) form.reset()
       onDone?.()
-      router.refresh()
     })
   }
 
@@ -239,7 +236,6 @@ export function LandingDetailsForm({
   details: HostLandingDetailsDraft
   landingId: string
 }) {
-  const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [pending, startTransition] = useTransition()
@@ -278,7 +274,6 @@ export function LandingDetailsForm({
       }
 
       setSaved(true)
-      router.refresh()
     })
   }
 
@@ -354,7 +349,6 @@ export function LandingActiveToggle({
   isActive: boolean
   landingId: string
 }) {
-  const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
@@ -368,7 +362,6 @@ export function LandingActiveToggle({
         return
       }
 
-      router.refresh()
     })
   }
 
@@ -395,7 +388,6 @@ export function MillForm({
   millId?: string
   onDone?: () => void
 }) {
-  const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [pending, startTransition] = useTransition()
@@ -444,7 +436,6 @@ export function MillForm({
       setSaved(true)
       if (!editing) form.reset()
       onDone?.()
-      router.refresh()
     })
   }
 
@@ -532,7 +523,6 @@ export function MillActiveToggle({
   isActive: boolean
   millId: string
 }) {
-  const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
@@ -546,7 +536,6 @@ export function MillActiveToggle({
         return
       }
 
-      router.refresh()
     })
   }
 
@@ -562,7 +551,6 @@ export function MillActiveToggle({
 
 /** Adds a lane from this landing to a destination. */
 export function HaulRouteForm({ landingId, mills }: { landingId: string; mills: HostMillOption[] }) {
-  const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [pending, startTransition] = useTransition()
@@ -600,7 +588,6 @@ export function HaulRouteForm({ landingId, mills }: { landingId: string; mills: 
 
       form.reset()
       setSaved(true)
-      router.refresh()
     })
   }
 
@@ -677,7 +664,6 @@ export function LaneBuilder({ landingId, mills }: { landingId: string; mills: Ho
 
 /** Adds a rate the organization can publish work at. */
 export function RateForm() {
-  const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [pending, startTransition] = useTransition()
@@ -714,7 +700,6 @@ export function RateForm() {
 
       form.reset()
       setSaved(true)
-      router.refresh()
     })
   }
 
