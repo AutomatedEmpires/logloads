@@ -57,11 +57,19 @@ export default defineConfig({
   outputDir,
   // `next dev` compiles each route on its first request, so the local mode gets longer budgets.
   timeout: serverMode === "dev" ? 180_000 : 60_000,
-  expect: { timeout: serverMode === "dev" ? 30_000 : 10_000 },
+  expect: {
+    timeout: serverMode === "dev" ? 30_000 : 10_000,
+    // Visual baselines (#148 criterion 5): still frames, no caret, CSS pixels, exact match.
+    toHaveScreenshot: { animations: "disabled", caret: "hide", scale: "css" }
+  },
+  // Baselines are per platform (`-linux` from CI); see the "visual baselines" cases in design-system.spec.ts.
+  snapshotPathTemplate: "{testDir}/{testFileName}-snapshots/{arg}-{platform}{ext}",
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   // One server and, in CI, one shared state row, so the suite stays serial like the pilot suite. Its only writes are
-  // New River Hauling's inquiry and replies (see design-system.spec.ts), and the cases rely on file order.
+  // New River Hauling's inquiry and replies to North Pine Logging's job (see design-system.spec.ts); the equipment
+  // case's one offer as Granite Creek Hauling exceeds its listing and is refused unwritten. Summit Ridge Timber's
+  // inbox stays empty, nothing declines or withdraws, and the cases rely on file order.
   workers: 1,
   use: {
     baseURL,
