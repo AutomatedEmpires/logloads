@@ -46,3 +46,19 @@ if ! grep -q '"API_URL"' <<<"$status_json"; then
 fi
 
 supabase db reset --local
+
+# Behavioural checks against the freshly reset database (supabase/verify/*.sql). Each file runs as the migration
+# role inside one transaction that it rolls back, so the stack is left exactly as the reset produced it. psql runs
+# inside the stack's own database container, so no client needs to be installed on the host. On a failure the
+# container's recent log is printed, because a lost connection otherwise reports no cause.
+db_container="supabase_db_logloads-local"
+shopt -s nullglob
+for check in supabase/verify/*.sql; do
+  echo "Running database check ${check}"
+  if ! docker exec -i -e PGPASSWORD=postgres "$db_container" \
+    psql -X -q -v ON_ERROR_STOP=1 -h 127.0.0.1 -U postgres -d postgres -f - <"$check"; then
+    echo "Database check ${check} failed; recent database log:"
+    docker logs --tail 40 "$db_container" 2>&1 || true
+    exit 1
+  fi
+done

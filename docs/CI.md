@@ -19,14 +19,23 @@
 
 | Workflow | Trigger | Does |
 |---|---|---|
-| `ci.yml` | push `main`, PR, merge queue | Organization reusable CI (`secrets: inherit`), then `extended-validation`: Supabase CLI 2.101.0; `pnpm db:assert` (resets an isolated PostgreSQL 17 stack); guardrails (including `pnpm docs:check`); build; Playwright |
-| `database-check.yml` | PR, manual | `pnpm db:check` on the pilot ledger `supabase/migrations/`. In CI it fails rather than skips. Then rehearses an operating-state backup, wipe and restore on that disposable stack ([`RECOVERY.md`](./RECOVERY.md) §7.1). |
+| `ci.yml` | push `main`, PR, merge queue | Organization reusable CI (`secrets: inherit`), then `extended-validation`: Supabase CLI 2.121.0; `pnpm db:assert` (resets an isolated PostgreSQL 17 stack and runs the `supabase/verify/` checks); guardrails (including `pnpm docs:check`); build; Playwright |
+| `database-check.yml` | PR, manual | `pnpm db:check` on the pilot ledger `supabase/migrations/`, then the behavioural checks in `supabase/verify/`. In CI it fails rather than skips. Then rehearses an operating-state backup, wipe and restore on that disposable stack ([`RECOVERY.md`](./RECOVERY.md) §7.1). |
 | `codeql.yml`, `dependency-review.yml`, `pr-review.yml` | PR, `main`, weekly | Security and review |
 | `release.yml` | push `main` | Organization reusable release |
 | `agent-handoff.yml`, `agent-build-task-router.yml`, `pr-agent-router.yml`, `pr-agent-dispatch.yml` | manual, issues, comments, dispatch | Agent routing. Their output is context, never approval. |
 
 **Locally**, `pnpm db:check` and `pnpm db:assert` print a skip and exit 0 when the Supabase CLI or Docker is
 missing. A local skip is **not** a pass.
+
+**Supabase CLI version.** `ci.yml`, `database-check.yml`, `pr-review.yml` and `normalized-v2-ci.yml` all pin
+Supabase CLI **2.121.0**, which runs PostgreSQL 17 image `17.11.0.004`. `pnpm test:tools`
+(`tools/supabase-cli-pin.test.mjs`) fails if the pins differ or fall below 2.121.0. The image that CLI 2.101.0 ran
+(`17.6.1.106`) returned a lost connection instead of a permission error when `anon` or `authenticated` called a
+function it may not execute. `supabase/verify/20260726090000_revoke_public_relational_grants.sql` checks that
+such a call returns SQLSTATE `42501` on every run. The CLI pulls its images from Supabase's public ECR and falls
+back to Supabase's GitHub Container Registry, then Docker Hub, so the image check in
+`tools/normalized-v2-ci/guard.sh` accepts the Supabase image from any of the three.
 
 **Documentation checks (IMPLEMENTED, #110).** `pnpm guardrails` also runs `pnpm docs:check`
 (`tools/check-docs.mjs`), so the organization CI and `extended-validation` both run it on every PR. It needs no

@@ -48,7 +48,11 @@ else
   CONTAINER="supabase_db_${LOGLOADS_SUPABASE_PROJECT_ID:?LOGLOADS_SUPABASE_PROJECT_ID is required}"
   command -v docker >/dev/null || fail "docker is not available to verify the local stack"
   [[ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null)" == "true" ]] || fail "$CONTAINER is not running"
-  [[ "$(docker inspect -f '{{.Config.Image}}' "$CONTAINER")" =~ ^public\.ecr\.aws/supabase/postgres:17\. ]] \
+  # Supabase's own PostgreSQL 17 image, from any registry the pinned CLI pulls it from. The CLI tries Supabase's
+  # public ECR first, then falls back to Supabase's GitHub Container Registry and then Docker Hub (for example when
+  # ECR rate-limits the runner). Any other registry or namespace is refused.
+  SUPABASE_PG17_IMAGE_RE='^(public\.ecr\.aws/supabase|ghcr\.io/supabase|(docker\.io/)?supabase)/postgres:17\.'
+  [[ "$(docker inspect -f '{{.Config.Image}}' "$CONTAINER")" =~ $SUPABASE_PG17_IMAGE_RE ]] \
     || fail "$CONTAINER is not a Supabase PostgreSQL 17 image"
   docker port "$CONTAINER" 5432/tcp | grep -qE ':54322$' || fail "$CONTAINER does not publish port 54322"
   AGE_S=$(( $(date +%s) - $(date -d "$(docker inspect -f '{{.State.StartedAt}}' "$CONTAINER")" +%s) ))
