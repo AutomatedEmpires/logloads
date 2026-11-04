@@ -10,6 +10,7 @@ import {
   postHaulerInterestReply,
   respondToMarketplaceInterest,
   withdrawMarketplaceInterest,
+  withdrawMarketplaceInterestWithReason,
   type MarketplaceActor
 } from "./marketplace-interest"
 
@@ -190,6 +191,55 @@ describe("landing reviews and responds", () => {
 
     const renewed = expressMarketplaceInterest(state, hauler, { loadPostingId: openJob.id, trucksOffered: 1 }, AT).interest
     expect(renewed).toMatchObject({ id: interest.id, status: "submitted", withdrawnAt: null })
+  })
+})
+
+describe("closing an inquiry with a reason the other side sees (UX-09, #132)", () => {
+  it("posts the hauler's reason as its last message and withdraws in the same change", () => {
+    const { hauler, landing, openJob, state } = fixture()
+    const { interest } = expressMarketplaceInterest(state, hauler, { loadPostingId: openJob.id, trucksOffered: 1 }, AT)
+    const input = { interestId: interest.id, reason: "  Booked on another job this week  ", replyId: REPLY_1 }
+
+    withdrawMarketplaceInterestWithReason(state, hauler, input, AT)
+    // A repeated submit neither posts the reason again nor fails.
+    withdrawMarketplaceInterestWithReason(state, hauler, input, AT)
+
+    const seen = listMarketplaceInterestsForLanding(state, landing).find((row) => row.id === interest.id)
+    expect(seen?.status).toBe("withdrawn")
+    expect(seen?.replies.map((reply) => [reply.authorSide, reply.body])).toEqual([["hauler", "Booked on another job this week"]])
+  })
+
+  it("withdraws without a message when no reason is given", () => {
+    const { hauler, openJob, state } = fixture()
+    const { interest } = expressMarketplaceInterest(state, hauler, { loadPostingId: openJob.id, trucksOffered: 1 }, AT)
+
+    expect(withdrawMarketplaceInterestWithReason(state, hauler, { interestId: interest.id, reason: " ", replyId: REPLY_1 }, AT)).toMatchObject({
+      replies: [],
+      status: "withdrawn"
+    })
+  })
+
+  it("refuses a declined inquiry before writing anything: the landing's decision is final (#194 HF-03)", () => {
+    const { hauler, landing, openJob, state } = fixture()
+    const { interest } = expressMarketplaceInterest(state, hauler, { loadPostingId: openJob.id, trucksOffered: 1 }, AT)
+    respondToMarketplaceInterest(state, landing, { body: "We've filled this job.", decision: "declined", interestId: interest.id, replyId: REPLY_1 }, AT)
+    const audits = state.auditEvents.length
+
+    expect(() => withdrawMarketplaceInterestWithReason(state, hauler, { interestId: interest.id, reason: "Never mind", replyId: REPLY_2 }, AT))
+      .toThrow("The landing has closed this inquiry")
+    expect(interest).toMatchObject({ status: "declined", withdrawnAt: null })
+    expect(interest.replies.map((reply) => [reply.authorSide, reply.body])).toEqual([["landing", "We've filled this job."]])
+    expect(state.auditEvents).toHaveLength(audits)
+  })
+
+  it("refuses another business's inquiry and a role without withdraw", () => {
+    const { hauler, openJob, otherLanding, publisherDriver, state } = fixture()
+    const { interest } = expressMarketplaceInterest(state, hauler, { loadPostingId: openJob.id, trucksOffered: 1 }, AT)
+
+    expect(() => withdrawMarketplaceInterestWithReason(state, publisherDriver, { interestId: interest.id, reason: "x", replyId: REPLY_1 }, AT))
+      .toThrow("Inquiry not found")
+    expect(() => withdrawMarketplaceInterestWithReason(state, otherLanding, { interestId: interest.id }, AT)).toThrow()
+    expect(interest).toMatchObject({ replies: [], status: "submitted" })
   })
 })
 

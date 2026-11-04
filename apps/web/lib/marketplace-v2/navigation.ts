@@ -33,7 +33,10 @@ export function hasLandingSide(capabilities: readonly MarketplaceCapability[]): 
  * sees the public board only. A landing-only business gets the landing set; a hauling business gets the
  * hauler set; a business that is both gets both.
  */
-export function v2NavigationFor(capabilities: readonly MarketplaceCapability[] | null): NavItem[] {
+export function v2NavigationFor(
+  capabilities: readonly MarketplaceCapability[] | null,
+  counts: Readonly<Partial<Record<string, number>>> = {}
+): NavItem[] {
   if (!capabilities) {
     return V2_NAVIGATION.filter((item) => NAV_CAPABILITY[item.id] === null)
   }
@@ -43,6 +46,10 @@ export function v2NavigationFor(capabilities: readonly MarketplaceCapability[] |
   return V2_NAVIGATION.filter((item) => {
     const needed = NAV_CAPABILITY[item.id]
     return needed === null ? !landingOnly : needed !== undefined && capabilities.includes(needed)
+  }).map((item) => {
+    // UX-09 (#132): unread inquiries per destination (`inquiries.ts`); a zero shows no badge.
+    const count = counts[item.id]
+    return count && count > 0 ? { ...item, count } : item
   })
 }
 

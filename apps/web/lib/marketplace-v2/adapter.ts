@@ -164,6 +164,10 @@ export function selectMarketplaceV2Port(
     reconfirmJob: async (viewer, jobId, attestation) => current().reconfirmJob(viewer, jobId, attestation),
     respondToInterest: async (viewer, input) => current().respondToInterest(viewer, input),
     viewerAccess: async (viewer) => current().viewerAccess(viewer),
-    withdrawInterest: async (viewer, interestId) => current().withdrawInterest(viewer, interestId)
+    withdrawInterest: async (viewer, interestId) => current().withdrawInterest(viewer, interestId),
+
+    // Inquiry conversations (UX-09, #132).
+    landingInquiryJobs: async (viewer) => current().landingInquiryJobs(viewer),
+    withdrawInterestWithReason: async (viewer, input) => current().withdrawInterestWithReason(viewer, input)
   }
 }

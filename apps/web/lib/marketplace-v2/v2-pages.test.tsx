@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   getSessionActor: vi.fn(),
   haulerEquipment: vi.fn(),
   interestForJob: vi.fn(),
+  landingInquiryJobs: vi.fn(),
   listHaulerInterests: vi.fn(),
   listLandingInterests: vi.fn(),
   resolveV2Actor: vi.fn(),
@@ -51,6 +52,7 @@ vi.mock("@/lib/marketplace-v2/pilot-adapter", () => ({
     getJob: mocks.getJob,
     haulerEquipment: mocks.haulerEquipment,
     interestForJob: mocks.interestForJob,
+    landingInquiryJobs: mocks.landingInquiryJobs,
     listHaulerInterests: mocks.listHaulerInterests,
     listLandingInterests: mocks.listLandingInterests,
     viewerAccess: mocks.viewerAccess
@@ -154,6 +156,20 @@ function hidden(html: string, name: string, value: string): boolean {
 
 const textOf = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
 
+/** The first tag matching `pattern`, or "". */
+const openingTagOf = (html: string, pattern: RegExp) => html.match(pattern)?.[0] ?? ""
+
+/** A link Tabs set: [href, text, current] per tab. */
+function tabs(html: string, label: string): Array<[string, string, boolean]> {
+  const start = html.indexOf(`aria-label="${label}"`)
+  const nav = start < 0 ? "" : html.slice(start, html.indexOf("</nav>", start))
+  return [...nav.matchAll(/<a([^>]*)>([\s\S]*?)<\/a>/g)].map((match) => [
+    (match[1]?.match(/href="([^"]*)"/)?.[1] ?? "").replace(/&amp;/g, "&"),
+    textOf(match[2] ?? ""),
+    /aria-current="page"/.test(match[1] ?? "")
+  ])
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   // The app compiles JSX with the classic runtime under Vitest (tsconfig "jsx": "preserve"), as in job-authoring-pages.test.tsx.
@@ -167,6 +183,7 @@ beforeEach(() => {
     { configurationKey: "chip_truck|chip_van", label: "Chip truck + Chip van", unitsListed: 1 }
   ])
   mocks.resolveV2Actor.mockResolvedValue({ actor: actorFor(HAULER_ORG), ok: true })
+  mocks.landingInquiryJobs.mockResolvedValue([])
 })
 
 describe("the job page (/v2/work/[jobId])", () => {
@@ -315,12 +332,16 @@ describe("My inquiries (/v2/inquiries)", () => {
     expect(confirming).toContain(`href="/v2/inquiries?inquiry=${FIRST}#conversation"`)
   })
 
-  it("closes the composer on a declined inquiry", async () => {
+  it("closes the composer on a declined inquiry and says plainly that the landing closed it (#194 HF-03)", async () => {
     const html = await renderPage(MyInquiriesPage, { inquiry: SECOND })
 
     expect(html).not.toContain("Reply to Other Landing Co")
-    expect(textOf(html)).toContain("This conversation is closed.")
+    expect(textOf(html)).toContain("The landing has closed this inquiry. It can’t be withdrawn or sent again")
     expect(textOf(html)).toContain("The landing declined this inquiry.")
+    // Not even the no-JavaScript confirmation link brings a withdrawal back.
+    const confirming = await renderPage(MyInquiriesPage, { confirm: "withdraw", inquiry: SECOND })
+    expect(confirming).not.toContain('id="confirm-action"')
+    expect(confirming).not.toContain("Withdraw interest")
   })
 
   it("explains an empty list and a refusal", async () => {
@@ -343,17 +364,26 @@ describe("the landing inbox (/v2/landing/inquiries)", () => {
     ])
   })
 
-  it("groups InquiryRows into New, Responded and Closed beside the selected conversation", async () => {
+  it("shows the New, Replied and Closed queues as tabs beside the selected conversation", async () => {
     const html = await renderPage(LandingInboxPage)
 
     expect(html).toContain('data-ds-page="landing-inbox"')
     expect(html).toContain('data-layout="split"')
     expect(html).toMatch(/<ul aria-label="New inquiries"/)
-    expect(html).toMatch(/<ul aria-label="Responded inquiries"/)
-    expect(textOf(html)).toContain("Closed 0 inquiries No closed inquiries.")
+    expect(html).not.toMatch(/<ul aria-label="Replied inquiries"/)
+    expect(textOf(html)).toContain("New 1 inquiry")
+    expect(tabs(html, "Inquiries by queue")).toEqual([
+      ["/v2/landing/inquiries", "New 1", true],
+      ["/v2/landing/inquiries?tab=replied", "Replied 1", false],
+      ["/v2/landing/inquiries?tab=closed", "Closed 0", false]
+    ])
     // The first row of the first non-empty queue is selected by default.
     expect(html.match(/<a[^>]*aria-current="true"[^>]*>[^<]*/g)).toEqual([expect.stringContaining("Example Hauling LLC")])
     expect(html).not.toMatch(/<script>alert|<img/)
+
+    const replied = await renderPage(LandingInboxPage, { tab: "replied" })
+    expect(replied).toMatch(/<ul aria-label="Replied inquiries"/)
+    expect(textOf(replied)).toContain("Waiting for the hauler")
   })
 
   it("posts replies as decision=replied with a server reply id, and offers Mark reviewed while new", async () => {
@@ -385,16 +415,199 @@ describe("the landing inbox (/v2/landing/inquiries)", () => {
     expect(form).toMatch(/<button[^>]*data-variant="danger"[^>]*type="submit"/)
   })
 
-  it("keeps the empty queues when nothing has arrived, and never shares private landing details", async () => {
+  it("offers an optional reason with a decline, posted with the form and a server reply id (UX-09 criterion 5)", async () => {
+    const confirming = await renderPage(LandingInboxPage, { confirm: "decline", inquiry: FIRST })
+    const form = formAround(confirming, 'value="declined"')
+    const formId = form.match(/<form[^>]*id="([^"]+)"/)?.[1]
+    const reason = openingTagOf(confirming, /<textarea[^>]*name="body"[^>]*>/)
+
+    expect(formId).toBe("confirm-action-form")
+    expect(reason).toContain('form="confirm-action-form"')
+    expect(reason).toContain('maxLength="2000"')
+    expect(reason).not.toContain("required")
+    expect(textOf(confirming)).toContain("Reason (optional) The hauler sees this as your last message")
+    expect(form).toMatch(/name="replyId"[^>]*value="[0-9a-f-]{36}"|value="[0-9a-f-]{36}"[^>]*name="replyId"/)
+    expect(form).not.toMatch(/name="(organizationId|userId|actorUserId)"/)
+  })
+
+  it("says when nothing has arrived, with nothing to switch or filter, and never shares private landing details", async () => {
     mocks.listLandingInterests.mockResolvedValueOnce([])
     const empty = await renderPage(LandingInboxPage)
 
     expect(empty).toContain('data-layout="single"')
     expect(textOf(empty)).toContain("New 0 inquiries No new interest.")
-    expect(textOf(empty)).toContain("Responded 0 inquiries Nothing awaiting the hauler.")
+    expect(empty).not.toContain('aria-label="Inquiries by queue"')
+    expect(empty).not.toContain('role="search"')
+    expect(mocks.landingInquiryJobs).not.toHaveBeenCalled()
 
     // The composer only carries what the landing writes; nothing in the page offers to share access details.
     expect(await renderPage(LandingInboxPage)).not.toMatch(/gate|access instructions|exact location/i)
+  })
+})
+
+describe("inquiry conversations (UX-09, #132)", () => {
+  const LANDING_ID = "77777777-ffff-4fff-8fff-777777777777"
+  const OTHER_JOB = "88888888-8888-4888-8888-888888888888"
+  const THIRD = "99999999-aaaa-4aaa-8aaa-999999999999"
+  const landingReply = (minute: number) => ({
+    authorName: "Dana Dispatch",
+    authorSide: "landing" as const,
+    authorUserId: "77777777-7777-4777-8777-777777777777",
+    body: `Landing message ${minute}`,
+    createdAt: new Date(Date.UTC(2026, 10, 2, 18, minute)).toISOString(),
+    id: `00000000-0000-4000-8000-${String(minute).padStart(12, "0")}`
+  })
+  const haulerReply = (minute: number) => ({
+    ...landingReply(minute),
+    authorName: "Sam Hauler",
+    authorSide: "hauler" as const,
+    authorUserId: USER_ID,
+    body: `Hauler message ${minute}`
+  })
+  const newRows = (html: string) => html.match(/<ul aria-label="New inquiries"[\s\S]*?<\/ul>/)?.[0] ?? ""
+
+  describe("My inquiries", () => {
+    beforeEach(() => {
+      mocks.listHaulerInterests.mockResolvedValue([
+        interest(),
+        interest({ id: SECOND, replies: [landingReply(1)], status: "replied" }),
+        interest({ id: THIRD, replies: [landingReply(1), haulerReply(2)], status: "replied" })
+      ])
+    })
+
+    it("has Active, Replied and Closed tabs with counts, as links that work without JavaScript", async () => {
+      const html = await renderPage(MyInquiriesPage)
+
+      expect(tabs(html, "Inquiries by status")).toEqual([
+        ["/v2/inquiries", "Active 1", true],
+        ["/v2/inquiries?tab=replied", "Replied 2", false],
+        ["/v2/inquiries?tab=closed", "Closed 0", false]
+      ])
+      expect(textOf(html)).toContain("1 active inquiry")
+
+      const closed = await renderPage(MyInquiriesPage, { tab: "closed" })
+      expect(textOf(closed)).toContain("Closed No closed inquiries.")
+      expect(closed).toContain('data-layout="single"')
+    })
+
+    it("says on each row whose turn it is", async () => {
+      const replied = textOf(await renderPage(MyInquiriesPage, { tab: "replied" }))
+
+      expect(replied).toContain("Your turn")
+      expect(replied).toContain("Waiting for the landing")
+      expect(textOf(await renderPage(MyInquiriesPage))).toContain("Sent · waiting for the landing")
+    })
+
+    it("opens a selected inquiry on its own tab, so a reply or a withdrawal comes back to it", async () => {
+      const html = await renderPage(MyInquiriesPage, { inquiry: SECOND, updated: "reply" })
+
+      expect(tabs(html, "Inquiries by status").find(([, , current]) => current)?.[1]).toBe("Replied 2")
+      expect(html.match(/<a[^>]*aria-current="true"[^>]*>/g)).toEqual([expect.stringContaining(`inquiry=${SECOND}`)])
+    })
+
+    it("aligns messages by side, names the sender and gives each a time; the reply field is multi-line", async () => {
+      const html = await renderPage(MyInquiriesPage, { inquiry: THIRD })
+
+      expect([...html.matchAll(/data-side="(me|them)"/g)].map((match) => match[1])).toEqual(["me", "them", "me"])
+      expect(textOf(html)).toContain("Landing message 1 Dana Dispatch · Nov 2, 2026, 6:01 PM UTC")
+      expect(textOf(html)).toContain("Hauler message 2 You · Nov 2, 2026, 6:02 PM UTC")
+      expect(html).toContain('dateTime="2026-11-02T18:01:00.000Z"')
+      expect(openingTagOf(html, /<textarea[^>]*aria-label="Reply to Example Timber Co"[^>]*>/)).toMatch(/rows="3"/)
+    })
+
+    it("offers an optional reason with a withdrawal, in the Dialog and in the page (UX-09 criterion 5)", async () => {
+      const confirming = await renderPage(MyInquiriesPage, { confirm: "withdraw", inquiry: FIRST })
+      const form = formAround(confirming, "Withdraw interest</span></button>")
+      const reason = openingTagOf(confirming, /<textarea[^>]*name="reason"[^>]*>/)
+
+      expect(form).toMatch(/<form[^>]*id="confirm-action-form"/)
+      expect(reason).toContain('form="confirm-action-form"')
+      expect(reason).not.toContain("required")
+      expect(textOf(confirming)).toContain("Reason (optional) The landing sees this as your last message")
+      expect(form).toMatch(/name="replyId"/)
+      expect(hidden(form, "interestId", FIRST)).toBe(true)
+    })
+  })
+
+  describe("the landing inbox", () => {
+    beforeEach(() => {
+      mocks.resolveV2Actor.mockResolvedValue({ actor: actorFor(LANDING_ORG), ok: true })
+      mocks.listLandingInterests.mockResolvedValue([
+        interest({ equipment: [{ configurationKey: "log_truck|pole_trailer", count: 2, label: "Log truck + Pole trailer" }] }),
+        interest({ haulerOrganization: { id: HAULER_ORG, name: "Second Hauling", type: "hauler" }, id: SECOND, status: "viewed" }),
+        interest({
+          equipment: [{ configurationKey: "chip_truck|chip_van", count: 1, label: "Chip truck + Chip van" }],
+          haulerOrganization: { id: HAULER_ORG, name: "Third Hauling", type: "hauler" },
+          id: THIRD,
+          job: { acceptingInterest: true, id: OTHER_JOB, slug: OTHER_JOB, status: "active", title: "Pulp to the board plant" },
+          replies: [landingReply(1), haulerReply(2)],
+          status: "replied",
+          trucksOffered: 1
+        })
+      ])
+      mocks.landingInquiryJobs.mockResolvedValue([
+        { equipmentCodes: ["log_truck", "pole_trailer"], jobId: JOB_ID, landing: { id: LANDING_ID, name: "Upper Spur Landing" } },
+        { equipmentCodes: ["log_truck"], jobId: OTHER_JOB, landing: { id: LANDING_ID, name: "Upper Spur Landing" } }
+      ])
+    })
+
+    it("keeps a reviewed inquiry in New with a Seen marker, and a hauler's answer back in New (UX-DEC-01)", async () => {
+      const html = await renderPage(LandingInboxPage)
+
+      expect(tabs(html, "Inquiries by queue").map(([, label]) => label)).toEqual(["New 3", "Replied 0", "Closed 0"])
+      expect(textOf(newRows(html))).toContain("Seen · not answered")
+      expect(textOf(newRows(html))).toContain("Hauler replied")
+      expect(newRows(html).match(/data-seen=""/g)).toHaveLength(1)
+
+      // "Mark reviewed" is offered only while the inquiry is unreviewed.
+      expect(await renderPage(LandingInboxPage, { inquiry: FIRST })).toContain("Mark reviewed")
+      expect(await renderPage(LandingInboxPage, { inquiry: SECOND })).not.toContain("Mark reviewed")
+    })
+
+    it("compares each offered configuration with the job's equipment, labelled self-reported (UX-09 criterion 4)", async () => {
+      const matches = textOf(await renderPage(LandingInboxPage, { inquiry: FIRST }))
+      const other = textOf(await renderPage(LandingInboxPage, { inquiry: THIRD }))
+
+      expect(matches).toContain("Equipment 2 × Log truck + Pole trailer ✓ matches Self-reported by the hauler; compared with this job’s equipment")
+      expect(other).toContain("Equipment 1 × Chip truck + Chip van not requested Self-reported by the hauler")
+
+      // Without a comparable equipment list (the pilot store) the lines are shown without a verdict.
+      mocks.landingInquiryJobs.mockResolvedValue([{ equipmentCodes: null, jobId: JOB_ID, landing: null }])
+      const unknown = textOf(await renderPage(LandingInboxPage, { inquiry: FIRST }))
+      expect(unknown).toContain("Equipment 2 × Log truck + Pole trailer Self-reported by the hauler")
+      expect(unknown).not.toMatch(/✓ matches|not requested/)
+    })
+
+    it("filters by job and landing with a GET form, and the tabs and rows keep the filter", async () => {
+      const html = await renderPage(LandingInboxPage)
+      const form = html.match(/<form[^>]*role="search"[\s\S]*?<\/form>/)?.[0] ?? ""
+
+      expect(openingTagOf(form, /<form[^>]*>/)).toMatch(/action="\/v2\/landing\/inquiries"[^>]*method="get"/)
+      expect(textOf(form)).toContain("Job All jobs Pulp to the board plant · Upper Spur Landing Saw logs to the river mill · Upper Spur Landing")
+      expect(textOf(form)).toContain("Landing All landings Upper Spur Landing")
+
+      const filtered = await renderPage(LandingInboxPage, { job: OTHER_JOB })
+      expect(tabs(filtered, "Inquiries by queue")[1]?.[0]).toBe(`/v2/landing/inquiries?tab=replied&job=${OTHER_JOB}`)
+      expect(newRows(filtered)).toContain(`?inquiry=${THIRD}&amp;job=${OTHER_JOB}#conversation`)
+      expect(textOf(filtered)).toContain("New 1 inquiry")
+      expect(filtered).toContain('href="/v2/landing/inquiries"')
+
+      // Without landings from the store there is no landing filter; the inbox still works.
+      mocks.landingInquiryJobs.mockRejectedValue(new Error("unavailable"))
+      const plain = await renderPage(LandingInboxPage)
+      expect(plain).not.toContain('name="landing"')
+      expect(plain).toContain('name="job"')
+    })
+
+    it("refuses another business's inbox: nothing of it is listed", async () => {
+      mocks.listLandingInterests.mockRejectedValueOnce(new Error("Inquiry not found"))
+      const html = await renderPage(LandingInboxPage)
+
+      expect(textOf(html)).toContain("Your role in this business cannot review hauler inquiries.")
+      expect(html).not.toContain("Example Hauling LLC")
+      expect(html).not.toContain('role="search"')
+      expect(mocks.landingInquiryJobs).not.toHaveBeenCalled()
+    })
   })
 })
 

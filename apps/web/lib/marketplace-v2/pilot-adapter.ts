@@ -127,6 +127,28 @@ export const operatingStateMarketplaceV2: MarketplaceV2Port = {
 
   async withdrawInterest(viewer, interestId) {
     await mutateState((draft) => draft.withdrawMarketplaceInterest(actor(viewer), interestId))
+  },
+
+  // Inquiry conversations (UX-09, #132).
+
+  async withdrawInterestWithReason(viewer, input) {
+    await mutateState((draft) => draft.withdrawMarketplaceInterestWithReason(actor(viewer), input))
+  },
+
+  async landingInquiryJobs(viewer) {
+    return readState((current) => {
+      // Authority through the service: only a member who may respond to the landing's inquiries, and only its own.
+      const jobIds = new Set(current.listMarketplaceInterestsForLanding(actor(viewer)).map((interest) => interest.loadPostingId))
+
+      return [...jobIds].map((jobId) => {
+        const load = current.state.loadPostings.find((candidate) => candidate.id === jobId)
+        const landing = load ? current.state.landings.find((candidate) => candidate.id === load.pickupLandingId) : undefined
+
+        // The pilot's equipment requirements are free-text tags, not the V2 equipment codes, so there is nothing to
+        // compare an offered configuration with: `null`, never a guessed match.
+        return { equipmentCodes: null, jobId, landing: landing ? { id: landing.id, name: landing.name } : null }
+      })
+    })
   }
 }
 

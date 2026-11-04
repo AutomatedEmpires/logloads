@@ -449,13 +449,25 @@ export function sortMarketplaceJobs<T extends MarketplaceJobCardView>(jobs: read
   })
 }
 
-export type LandingInterestQueue = "new" | "responded" | "closed"
+export type LandingInterestQueue = "new" | "replied" | "closed"
 
-/** Landing inbox queues (UX spec §4.7): New, Responded, Closed. */
-export function landingInterestQueue(status: MarketplaceInterestStatus): LandingInterestQueue {
-  if (status === "submitted") return "new"
-  if (status === "viewed" || status === "replied") return "responded"
-  return "closed"
+/**
+ * Landing inbox queues (UX spec §4.7) as UX-DEC-01 maps them (docs/product/ux-v2/08_UX_DECISIONS.md): New holds what
+ * nobody at the landing has answered, including an inquiry marked reviewed (`viewed`, shown with a "Seen" marker)
+ * and a replied inquiry where the hauler spoke last. Replied holds the ones waiting for the hauler. Closed holds
+ * declined and withdrawn inquiries. The turn comes from the side of the latest message.
+ */
+export function landingInterestQueue(interest: Pick<MarketplaceInterestView, "status" | "replies">): LandingInterestQueue {
+  switch (interest.status) {
+    case "submitted":
+    case "viewed":
+      return "new"
+    case "replied":
+      return interestLastReplySide(interest) === "hauler" ? "new" : "replied"
+    case "declined":
+    case "withdrawn":
+      return "closed"
+  }
 }
 
 export const MARKETPLACE_INTEREST_STATUS_LABELS: Readonly<Record<MarketplaceInterestStatus, string>> = Object.freeze({
@@ -465,3 +477,106 @@ export const MARKETPLACE_INTEREST_STATUS_LABELS: Readonly<Record<MarketplaceInte
   viewed: "Viewed by landing",
   withdrawn: "Withdrawn"
 })
+
+// ---------------------------------------------------------------------------
+// Inquiry conversations (UX-09, #132): queues, turn, unread, equipment fit and closing with a reason
+// ---------------------------------------------------------------------------
+
+/** The side that wrote the latest message of an inquiry's thread, or `null` when nobody has replied yet. */
+export function interestLastReplySide(interest: Pick<MarketplaceInterestView, "replies">): "hauler" | "landing" | null {
+  let latest: MarketplaceInterestView["replies"][number] | null = null
+
+  for (const reply of interest.replies) {
+    if (!latest || Date.parse(reply.createdAt) >= Date.parse(latest.createdAt)) latest = reply
+  }
+
+  return latest ? latest.authorSide : null
+}
+
+export type HaulerInterestQueue = "active" | "replied" | "closed"
+
+/**
+ * The hauler's tabs (UX 02 §A9): Active until the landing replies, Replied once it has (each row then says whose
+ * turn it is), Closed when the landing declined or the hauler withdrew.
+ */
+export function haulerInterestQueue(status: MarketplaceInterestStatus): HaulerInterestQueue {
+  switch (status) {
+    case "submitted":
+    case "viewed":
+      return "active"
+    case "replied":
+      return "replied"
+    case "declined":
+    case "withdrawn":
+      return "closed"
+  }
+}
+
+/**
+ * Whether an inquiry is unread for one side, which is what the navigation counts. LogLoads keeps no per-person read
+ * receipts, so "unread" is what the stored status and the thread can prove:
+ * - landing: in New and not marked reviewed — a new inquiry, or a hauler message after the landing's last reply;
+ * - hauler: the landing spoke last on an open inquiry ("Your turn").
+ */
+export function marketplaceInquiryUnread(interest: Pick<MarketplaceInterestView, "status" | "replies">, side: "hauler" | "landing"): boolean {
+  if (side === "landing") {
+    return landingInterestQueue(interest) === "new" && interest.status !== "viewed"
+  }
+
+  return interest.status === "replied" && interestLastReplySide(interest) === "landing"
+}
+
+/**
+ * The hauler withdraws, optionally saying why. The reason is posted to the thread as the hauler's last message, in
+ * the same change as the withdrawal, so the landing sees it; `replyId` (server-generated per render) makes a
+ * repeated submit idempotent.
+ */
+export const withdrawInterestInputSchema = z.object({
+  interestId: uuidSchema,
+  replyId: uuidSchema.optional(),
+  reason: z.string().trim().max(2000).optional().transform((value) => (value ? value : null))
+}).refine((input) => !input.reason || input.replyId, {
+  message: "A reason needs a reply id",
+  path: ["replyId"]
+})
+export type WithdrawInterestInput = z.infer<typeof withdrawInterestInputSchema>
+
+/**
+ * One of the landing organization's jobs as its inbox needs it: the landing (site) it is posted at, for the landing
+ * filter, and the equipment codes it asks for, to compare with what haulers offer. `equipmentCodes` is `null` when
+ * the store holds no comparable equipment list for the job (the pilot store's free-text requirements).
+ */
+export interface MarketplaceInquiryJobContext {
+  jobId: string
+  landing: { id: string; name: string } | null
+  equipmentCodes: string[] | null
+}
+
+export type MarketplaceOfferedEquipmentFit = "matches" | "not_requested"
+
+const EQUIPMENT_CATEGORY = new Map<string, "truck" | "trailer" | "attachment">(MARKETPLACE_EQUIPMENT_TYPES.map((type) => [type.code, type.category]))
+
+/**
+ * Compares one offered configuration (its key lists equipment codes joined by `|` and `+`, e.g.
+ * `log_truck|pole_trailer`) with the codes a job asks for. It matches when it shares a code with the job and, for
+ * each of truck and trailer that the job names, it includes one of the job's codes of that kind. Advisory only: the
+ * offer is self-reported by the hauler (UX 02 §B9).
+ */
+export function offeredEquipmentFit(configurationKey: string, jobEquipmentCodes: readonly string[]): MarketplaceOfferedEquipmentFit {
+  const offered = new Set(configurationKey.split(/[|+]/).map((code) => code.trim()).filter(Boolean))
+  const wanted = new Set(jobEquipmentCodes)
+
+  if (![...offered].some((code) => wanted.has(code))) {
+    return "not_requested"
+  }
+
+  for (const category of ["truck", "trailer"] as const) {
+    const named = [...wanted].filter((code) => EQUIPMENT_CATEGORY.get(code) === category)
+
+    if (named.length > 0 && !named.some((code) => offered.has(code))) {
+      return "not_requested"
+    }
+  }
+
+  return "matches"
+}

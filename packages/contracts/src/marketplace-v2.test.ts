@@ -12,13 +12,20 @@ import {
   expressInterestInputSchema,
   filterMarketplaceJobs,
   formatMarketplacePay,
+  haulerInterestQueue,
+  interestLastReplySide,
   landingInterestQueue,
   MARKETPLACE_EQUIPMENT_TYPES,
+  marketplaceInquiryUnread,
   marketplaceInterestSchema,
   marketplaceJobAcceptsInterest,
   postingFreshness,
+  offeredEquipmentFit,
   respondToInterestInputSchema,
   sortMarketplaceJobs,
+  withdrawInterestInputSchema,
+  type MarketplaceInterestStatus,
+  type MarketplaceInterestView,
   type MarketplaceJobCardView
 } from "./marketplace-v2"
 
@@ -136,12 +143,16 @@ describe("interest rules", () => {
     }
   })
 
-  it("maps statuses onto the landing inbox queues", () => {
-    expect(landingInterestQueue("submitted")).toBe("new")
-    expect(landingInterestQueue("viewed")).toBe("responded")
-    expect(landingInterestQueue("replied")).toBe("responded")
-    expect(landingInterestQueue("declined")).toBe("closed")
-    expect(landingInterestQueue("withdrawn")).toBe("closed")
+  it("maps every status onto the landing inbox queues (UX-DEC-01)", () => {
+    expect(landingInterestQueue({ replies: [], status: "submitted" })).toBe("new")
+    // "Mark reviewed" keeps an inquiry in New (it is shown with a "Seen" marker), even after a hauler follow-up.
+    expect(landingInterestQueue({ replies: [], status: "viewed" })).toBe("new")
+    expect(landingInterestQueue({ replies: [reply("hauler", 1)], status: "viewed" })).toBe("new")
+    expect(landingInterestQueue({ replies: [reply("hauler", 1), reply("landing", 2)], status: "replied" })).toBe("replied")
+    // The hauler answered the landing's reply: the inquiry is back in New.
+    expect(landingInterestQueue({ replies: [reply("landing", 1), reply("hauler", 2)], status: "replied" })).toBe("new")
+    expect(landingInterestQueue({ replies: [reply("landing", 1)], status: "declined" })).toBe("closed")
+    expect(landingInterestQueue({ replies: [], status: "withdrawn" })).toBe("closed")
   })
 
   it("rejects a landing organization expressing interest in its own job", () => {
@@ -288,5 +299,89 @@ describe("verification marks name what was checked (#150)", () => {
   it("does not invent a date when none is on record", () => {
     expect(describeMarketplaceVerification({ reviewedOn: null, scope: "business_identity" }).statement)
       .toBe("Business identity reviewed by LogLoads.")
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// Inquiry conversations (UX-09, #132)
+// ---------------------------------------------------------------------------------------------------------------
+
+/** A thread message from one side, `minute` minutes after 12:00 on Nov 1, 2026. */
+function reply(authorSide: "hauler" | "landing", minute: number): MarketplaceInterestView["replies"][number] {
+  return {
+    authorName: authorSide === "hauler" ? "Sam Hauler" : "Dana Dispatch",
+    authorSide,
+    authorUserId: "55555555-dddd-4ddd-8ddd-555555555555",
+    body: `Message ${minute}`,
+    createdAt: new Date(Date.UTC(2026, 10, 1, 12, minute)).toISOString(),
+    id: `00000000-0000-4000-8000-${String(minute).padStart(12, "0")}`
+  }
+}
+
+describe("inquiry queues, turn and unread (UX-09, #132)", () => {
+  const STATUSES: MarketplaceInterestStatus[] = ["submitted", "viewed", "replied", "declined", "withdrawn"]
+
+  it("names the side that spoke last, whatever the order the replies arrive in", () => {
+    expect(interestLastReplySide({ replies: [] })).toBeNull()
+    expect(interestLastReplySide({ replies: [reply("landing", 5), reply("hauler", 2)] })).toBe("landing")
+    expect(interestLastReplySide({ replies: [reply("landing", 1), reply("hauler", 2)] })).toBe("hauler")
+  })
+
+  it("maps every status onto the hauler's Active, Replied and Closed tabs", () => {
+    expect(STATUSES.map((status) => haulerInterestQueue(status))).toEqual(["active", "active", "replied", "closed", "closed"])
+  })
+
+  it("counts as unread only what the status and the thread prove", () => {
+    const landing = (status: MarketplaceInterestStatus, replies: MarketplaceInterestView["replies"] = []) =>
+      marketplaceInquiryUnread({ replies, status }, "landing")
+    const hauler = (status: MarketplaceInterestStatus, replies: MarketplaceInterestView["replies"] = []) =>
+      marketplaceInquiryUnread({ replies, status }, "hauler")
+
+    expect(landing("submitted")).toBe(true)
+    expect(landing("viewed")).toBe(false)
+    expect(landing("replied", [reply("landing", 1)])).toBe(false)
+    expect(landing("replied", [reply("landing", 1), reply("hauler", 2)])).toBe(true)
+    expect(landing("declined")).toBe(false)
+    expect(landing("withdrawn")).toBe(false)
+
+    expect(hauler("submitted")).toBe(false)
+    expect(hauler("viewed")).toBe(false)
+    expect(hauler("replied", [reply("landing", 1)])).toBe(true)
+    expect(hauler("replied", [reply("landing", 1), reply("hauler", 2)])).toBe(false)
+    // A decline's reason is the landing's last message, but a closed inquiry is nobody's turn.
+    expect(hauler("declined", [reply("landing", 1)])).toBe(false)
+  })
+
+  it("accepts an optional withdrawal reason, which needs a reply id", () => {
+    const interestId = "44444444-cccc-4ccc-8ccc-444444444444"
+    const replyId = "66666666-eeee-4eee-8eee-666666666666"
+
+    expect(withdrawInterestInputSchema.parse({ interestId })).toEqual({ interestId, reason: null })
+    expect(withdrawInterestInputSchema.parse({ interestId, reason: "   ", replyId })).toEqual({ interestId, reason: null, replyId })
+    expect(withdrawInterestInputSchema.parse({ interestId, reason: " Booked elsewhere ", replyId }).reason).toBe("Booked elsewhere")
+    expect(withdrawInterestInputSchema.safeParse({ interestId, reason: "Booked elsewhere" }).success).toBe(false)
+    expect(withdrawInterestInputSchema.safeParse({ interestId, reason: "x".repeat(2001), replyId }).success).toBe(false)
+    expect(withdrawInterestInputSchema.safeParse({ interestId: "not-an-id" }).success).toBe(false)
+  })
+})
+
+describe("offered equipment against the job's equipment (UX-09 criterion 4)", () => {
+  it("matches a configuration that brings what the job names, truck and trailer alike", () => {
+    expect(offeredEquipmentFit("log_truck", ["log_truck"])).toBe("matches")
+    expect(offeredEquipmentFit("log_truck|pole_trailer", ["log_truck", "pole_trailer"])).toBe("matches")
+    expect(offeredEquipmentFit("log_truck|pole_trailer", ["log_truck"])).toBe("matches")
+    // Alternatives: either truck the job names will do.
+    expect(offeredEquipmentFit("self_loader", ["log_truck", "self_loader"])).toBe("matches")
+    // The pilot store's key joins several types of a kind with "+".
+    expect(offeredEquipmentFit("log_truck+self_loader|bunk_trailer", ["self_loader", "bunk_trailer", "onboard_scales"])).toBe("matches")
+  })
+
+  it("says not requested when the configuration lacks a kind the job names, or shares nothing with it", () => {
+    expect(offeredEquipmentFit("chip_truck|chip_van", ["log_truck", "pole_trailer"])).toBe("not_requested")
+    expect(offeredEquipmentFit("log_truck|bunk_trailer", ["log_truck", "pole_trailer"])).toBe("not_requested")
+    expect(offeredEquipmentFit("log_truck", ["log_truck", "pole_trailer"])).toBe("not_requested")
+    expect(offeredEquipmentFit("pole_trailer", ["log_truck", "pole_trailer"])).toBe("not_requested")
+    expect(offeredEquipmentFit("log_truck", [])).toBe("not_requested")
+    expect(offeredEquipmentFit("", ["log_truck"])).toBe("not_requested")
   })
 })

@@ -5,12 +5,14 @@ import { notFound } from "next/navigation"
 import type { MarketplaceInterestView } from "@logloads/contracts"
 import { ContentGrid, PageContainer, PageHeader, Section } from "@logloads/ui/layout"
 import { availabilityText, formatDay, InquiryRow } from "@logloads/ui/marketplace"
-import { Button, EmptyState } from "@logloads/ui/primitives"
+import { Button, EmptyState, Tabs } from "@logloads/ui/primitives"
 
 import { ConfirmActionDialog } from "@/components/v2/ConfirmActionDialog"
 import { ConfirmActionForm } from "@/components/v2/ConfirmActionForm"
+import { ConfirmReasonField, type ConfirmReason } from "@/components/v2/ConfirmReasonField"
 import {
   CONFIRM_ANCHOR,
+  CONFIRM_FORM_ID,
   InquiryConfirmation,
   InquiryConversation,
   inquiryHref,
@@ -21,7 +23,13 @@ import { InquiryReplyComposer } from "@/components/v2/InquiryReplyComposer"
 import { PageNotice } from "@/components/v2/PageNotice"
 import { haulerReplyAction, withdrawInterestAction } from "@/lib/marketplace-v2/actions"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
-import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
+import {
+  chooseInquiryTab,
+  HAULER_INQUIRY_TABS,
+  haulerQueueOf,
+  inquiryTabCounts,
+  listHaulerInquiries
+} from "@/lib/marketplace-v2/inquiries"
 import { resolveV2Actor, withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
@@ -34,6 +42,16 @@ function one(value: string | string[] | undefined): string {
 }
 
 const WITHDRAW_TITLE = "Withdraw your interest?"
+
+const WITHDRAW_REASON: ConfirmReason = {
+  hint: "The landing sees this as your last message, for example “Booked on another job this week”.",
+  label: "Reason",
+  name: "reason"
+}
+
+/** #194 (HF-03): the landing's decline is final, so the page says so instead of offering anything. */
+const DECLINED_NOTE = "The landing has closed this inquiry. It can’t be withdrawn or sent again, and nothing more can be sent on it."
+const CLOSED_NOTE = "This conversation is closed. Nothing more can be sent on it."
 
 function withdrawBody(interest: MarketplaceInterestView) {
   return (
@@ -56,11 +74,16 @@ function haulerFacts(interest: MarketplaceInterestView): InquiryFact[] {
   ]
 }
 
+function tabHref(tab: string): string {
+  return tab === HAULER_INQUIRY_TABS[0]?.id ? PATH : `${PATH}?${new URLSearchParams({ tab }).toString()}`
+}
+
 /**
- * My inquiries (hauler, UX 02 §A9), built from the design system (DS-04, #147): the hauling business's inquiries as
- * InquiryRows beside the selected conversation (ContentGrid "split": side by side from 1024 px, stacked below).
- * Selection is the `inquiry` query parameter, so every row is a plain link that works without JavaScript. Replies
- * and withdrawals post to the existing server actions, which take identity from the session.
+ * My inquiries (hauler, UX 02 §A9; UX-09 #132): Active, Replied and Closed tabs (`haulerInterestQueue`), each row
+ * saying whose turn it is, beside the selected conversation (ContentGrid "split": side by side from 1024 px, stacked
+ * below). Tabs and rows are plain links (`tab`, `inquiry`), so everything works without JavaScript; an inquiry the
+ * query selects opens on its own tab. Replies and withdrawals post to the server actions, which take identity from
+ * the session. A withdrawal can carry a reason the landing sees; a declined inquiry says plainly that it is closed.
  */
 export default async function MyInquiriesPage({ searchParams }: { searchParams: SearchParams }) {
   if (!marketplaceV2Enabled()) notFound()
@@ -78,23 +101,38 @@ export default async function MyInquiriesPage({ searchParams }: { searchParams: 
     refusal = withBusinessSwitchNote("No hauling business is selected for your account.")
   } else {
     try {
-      interests = await pilotMarketplaceV2.listHaulerInterests({ organizationId: workspace.id, userId: actor.profile.id })
+      interests = await listHaulerInquiries(workspace.id, actor.profile.id)
     } catch (error) {
       refusal = withBusinessSwitchNote(error instanceof Error ? error.message : "Inquiries are not available for this business.")
     }
   }
 
   const error = one(query.error) || null
-  const selected = interests.find((interest) => interest.id === one(query.inquiry)) ?? interests[0] ?? null
+  const counts = inquiryTabCounts(interests, HAULER_INQUIRY_TABS, haulerQueueOf)
+  const requested = interests.find((interest) => interest.id === one(query.inquiry)) ?? null
+  const tab = chooseInquiryTab(one(query.tab), requested ? haulerQueueOf(requested) : null, counts, HAULER_INQUIRY_TABS)
+  const current = HAULER_INQUIRY_TABS.find((item) => item.id === tab) ?? HAULER_INQUIRY_TABS[0]
+  const rows = interests.filter((interest) => haulerQueueOf(interest) === tab)
+  const selected = (requested && haulerQueueOf(requested) === tab ? requested : null) ?? rows[0] ?? null
+  const hasInquiries = !refusal && interests.length > 0
 
   return (
     <div data-ds-page="my-inquiries">
       <PageHeader
         description="Interest your hauling business sent to landing operators. This tracks conversations only — not contracts, loads or pay."
+        tabs={
+          hasInquiries ? (
+            <Tabs
+              activeId={tab}
+              items={HAULER_INQUIRY_TABS.map((item) => ({ count: counts[item.id], href: tabHref(item.id), id: item.id, label: item.label }))}
+              label="Inquiries by status"
+            />
+          ) : undefined
+        }
         title="My inquiries"
       />
       <PageContainer>
-        {refusal || interests.length === 0 || !selected ? (
+        {!hasInquiries || !current ? (
           <ContentGrid
             layout="single"
             main={
@@ -116,27 +154,35 @@ export default async function MyInquiriesPage({ searchParams }: { searchParams: 
           />
         ) : (
           <ContentGrid
-            aside={<HaulerConversation confirmWithdraw={one(query.confirm) === "withdraw"} interest={selected} />}
-            layout="split"
+            aside={
+              selected && actor ? (
+                <HaulerConversation confirmWithdraw={one(query.confirm) === "withdraw"} interest={selected} viewerUserId={actor.profile.id} />
+              ) : undefined
+            }
+            layout={selected ? "split" : "single"}
             main={
               <>
                 {error ? <PageNotice role="alert" tone="critical">{error}</PageNotice> : null}
                 <Section
-                  description="Newest activity first. Select one to read and reply."
-                  title={`${interests.length} inquir${interests.length === 1 ? "y" : "ies"}`}
+                  description={rows.length > 0 ? "Newest activity first. Select one to read and reply." : undefined}
+                  title={rows.length > 0 ? `${rows.length} ${current.label.toLowerCase()} inquir${rows.length === 1 ? "y" : "ies"}` : current.label}
                   variant="flush"
                 >
-                  <ul aria-label="Your inquiries" className={styles.rows}>
-                    {interests.map((interest) => (
-                      <InquiryRow
-                        href={inquiryHref(PATH, interest.id)}
-                        interest={interest}
-                        key={interest.id}
-                        selected={interest.id === selected.id}
-                        viewerSide="hauler"
-                      />
-                    ))}
-                  </ul>
+                  {rows.length === 0 ? (
+                    <p className={styles.empty}>{current.empty}</p>
+                  ) : (
+                    <ul aria-label="Your inquiries" className={styles.rows}>
+                      {rows.map((interest) => (
+                        <InquiryRow
+                          href={inquiryHref(PATH, interest.id)}
+                          interest={interest}
+                          key={interest.id}
+                          selected={interest.id === selected?.id}
+                          viewerSide="hauler"
+                        />
+                      ))}
+                    </ul>
+                  )}
                 </Section>
               </>
             }
@@ -147,15 +193,27 @@ export default async function MyInquiriesPage({ searchParams }: { searchParams: 
   )
 }
 
-/** The selected conversation: facts, thread, and while it is open the reply composer with Withdraw beside Send. */
-function HaulerConversation({ confirmWithdraw, interest }: { confirmWithdraw: boolean; interest: MarketplaceInterestView }) {
+/**
+ * The selected conversation: facts, thread, and while it is open the reply composer with Withdraw beside Send. A
+ * withdrawal is confirmed first (a Dialog, or in the page without JavaScript) and can carry a reason.
+ */
+function HaulerConversation({
+  confirmWithdraw,
+  interest,
+  viewerUserId
+}: {
+  confirmWithdraw: boolean
+  interest: MarketplaceInterestView
+  viewerUserId: string
+}) {
   const open = OPEN.has(interest.status)
   const replyId = randomUUID()
-  const withdrawFields = { interestId: interest.id }
+  // The reason is a message too: its own server-generated id makes a repeated withdrawal post it once.
+  const withdrawFields = { interestId: interest.id, replyId: randomUUID() }
 
   return (
     <InquiryConversation
-      closedNote="This conversation is closed. Nothing more can be sent on it."
+      closedNote={interest.status === "declined" ? DECLINED_NOTE : CLOSED_NOTE}
       composer={
         open ? (
           <InquiryReplyComposer
@@ -170,6 +228,7 @@ function HaulerConversation({ confirmWithdraw, interest }: { confirmWithdraw: bo
                 confirmLabel="Withdraw interest"
                 fallbackHref={inquiryHref(PATH, interest.id, { confirm: "withdraw" }, CONFIRM_ANCHOR)}
                 fields={withdrawFields}
+                reason={WITHDRAW_REASON}
                 title={WITHDRAW_TITLE}
                 triggerLabel="Withdraw interest"
               />
@@ -179,14 +238,20 @@ function HaulerConversation({ confirmWithdraw, interest }: { confirmWithdraw: bo
       }
       confirmation={
         open && confirmWithdraw ? (
-          <InquiryConfirmation body={withdrawBody(interest)} cancelHref={inquiryHref(PATH, interest.id)} title={WITHDRAW_TITLE}>
-            <ConfirmActionForm action={withdrawInterestAction} confirmLabel="Withdraw interest" fields={withdrawFields} />
+          <InquiryConfirmation
+            body={withdrawBody(interest)}
+            cancelHref={inquiryHref(PATH, interest.id)}
+            reason={<ConfirmReasonField form={CONFIRM_FORM_ID} id={`${CONFIRM_FORM_ID}-reason`} reason={WITHDRAW_REASON} />}
+            title={WITHDRAW_TITLE}
+          >
+            <ConfirmActionForm action={withdrawInterestAction} confirmLabel="Withdraw interest" fields={withdrawFields} id={CONFIRM_FORM_ID} />
           </InquiryConfirmation>
         ) : null
       }
       facts={haulerFacts(interest)}
       interest={interest}
       viewerSide="hauler"
+      viewerUserId={viewerUserId}
     />
   )
 }
