@@ -944,8 +944,6 @@ export function ContactPage({
   )
 }
 
-export function NotFoundProduct() {
-  return <PublicShell><main className="page-main"><EmptyState title="This page is not available." body="The page may have moved or the load may no longer be public." actionHref="/" actionLabel="Go home" /></main></PublicShell>
-}
+// NotFoundProduct lives in ./NotFoundProduct, on its own, so every page does not load this module's chunks (#137).
 
 export { legalPages }
