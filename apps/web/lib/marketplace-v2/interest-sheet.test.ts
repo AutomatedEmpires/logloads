@@ -119,7 +119,7 @@ describe("what is filled in from My trucks (criterion 1)", () => {
     expect(counts(model({ capacity: withReport, job: { ...JOB, trucks: { perDay: null, total: 1 } }, options: [POLE] }).requested)).toEqual([["Log truck + Pole trailer", 1]])
   })
 
-  it("dates the offer from the report: today for 'available now', the report's date for 'available from', the later of several", () => {
+  it("dates the offer from a shared window: today, a future start, or the later start only when every offered window includes it", () => {
     const now = model({ capacity: capacity([POLE], [report({})]), options: [POLE] })
     expect([now.availableFrom, now.availableFromSource]).toEqual([TODAY, "availability"])
 
@@ -128,12 +128,24 @@ describe("what is filled in from My trucks (criterion 1)", () => {
     expect(later.requested[0]?.capacity.line).toBe("Available from Nov 12, 2026 · Updated today by the hauler")
 
     const both = [POLE, { ...CHIP, equipmentCodes: ["chip_truck"] }]
-    const mixed = model({
+    const overlapping = model({
+      capacity: capacity(both, [
+        report({ availableUntil: "2026-11-25" }),
+        report({ availableFrom: "2026-11-12", availableUntil: "2026-11-19", equipmentCode: "chip_truck" })
+      ]),
+      job: { equipment: [], trucks: { perDay: null, total: null } },
+      options: both
+    })
+    expect(overlapping.availableFrom).toBe("2026-11-12")
+
+    // Log truck is free through Nov 11. Chip truck starts Nov 20. Nov 20 is not a day both reports support.
+    const separate = model({
       capacity: capacity(both, [report({}), report({ availableFrom: "2026-11-20", availableUntil: "2026-11-27", equipmentCode: "chip_truck" })]),
       job: { equipment: [], trucks: { perDay: null, total: null } },
       options: both
     })
-    expect(mixed.availableFrom).toBe("2026-11-20")
+    expect([separate.availableFrom, separate.availableFromSource]).toEqual(["", null])
+    expect(counts(separate.requested)).toEqual([["Log truck + Pole trailer", 2], ["Chip truck + Chip van", 2]])
   })
 
   it("offers none of a type reported not available, and no date for it", () => {
@@ -148,7 +160,7 @@ describe("what is filled in from My trucks (criterion 1)", () => {
     const stale = model({ capacity: capacity([BUNK, POLE], [report({ reportedAt: "2026-10-20T08:00:00.000Z" })]), job: { equipment: [], trucks: { perDay: 3, total: null } }, options: [BUNK, POLE] })
 
     expect(counts(stale.requested)).toEqual([["Log truck + Bunk / short-log", 1], ["Log truck + Pole trailer", 0]])
-    expect(stale.requested[0]?.capacity).toEqual({ available: null, from: null, line: null, stamp: "Not recently confirmed", state: "unknown" })
+    expect(stale.requested[0]?.capacity).toEqual({ available: null, from: null, line: null, stamp: "Not recently confirmed", state: "unknown", until: null })
     expect([stale.availableFrom, stale.availableFromSource]).toEqual(["", null])
     expect(stale.reports).toEqual([])
 

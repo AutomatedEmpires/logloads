@@ -41,6 +41,8 @@ export interface InterestRowCapacity {
   available: number | null
   /** The start date of a report that starts after today. */
   from: string | null
+  /** The last day of that report, inclusive. Null when this row has no current available window. */
+  until: string | null
   /** "Updated today by the hauler", or "Not recently confirmed". */
   stamp: string
   /**
@@ -105,7 +107,7 @@ export function reportedAvailability(capacity: readonly CapacityRow[]): Reported
 
 function rowCapacity(units: number, row: CapacityRow | undefined): InterestRowCapacity {
   if (!row || row.state === "unknown") {
-    return { available: null, from: null, line: null, stamp: row?.stamp.label ?? NOT_RECENTLY_CONFIRMED, state: "unknown" }
+    return { available: null, from: null, line: null, stamp: row?.stamp.label ?? NOT_RECENTLY_CONFIRMED, state: "unknown", until: null }
   }
 
   const state = row.state === "available_from" && row.from ? `Available from ${formatDay(row.from)}` : row.state === "not_available" ? "Not available" : "Available now"
@@ -115,6 +117,7 @@ function rowCapacity(units: number, row: CapacityRow | undefined): InterestRowCa
   return {
     available: row.state === "not_available" ? 0 : shared ? null : Math.min(units, row.available ?? 0),
     from: row.from,
+    until: row.state === "not_available" ? null : row.until,
     line: shared ? `${state}: ${row.available} of ${row.have} across your ${row.label} setups · ${row.stamp.label}` : `${state} · ${row.stamp.label}`,
     stamp: row.stamp.label,
     state: row.state
@@ -152,16 +155,25 @@ function prefill(rows: InterestSheetRow[], reports: readonly ReportedAvailabilit
   }
 }
 
-/** The latest date among the offered trucks' reports: today for "available now", the report's date otherwise. */
+/**
+ * A start date every offered truck's fresh window includes. Today for "available now", the report's start otherwise,
+ * and the later start when several windows overlap. Empty when any offered truck has no fresh window, or the windows
+ * do not share a day: the later start alone can name a day another offered type is no longer available.
+ */
 function prefilledFrom(rows: readonly InterestSheetRow[], today: string): string {
-  const dates = rows.flatMap((row) => {
-    if (row.count === 0) return []
-    if (row.capacity.state === "available_from" && row.capacity.from) return [row.capacity.from]
-    if (row.capacity.state === "available_now") return [today]
-    return []
+  const offered = rows.filter((row) => row.count > 0)
+  const windows = offered.map((row) => {
+    if (row.capacity.state === "available_now") return { end: row.capacity.until ?? "9999-12-31", start: today }
+    if (row.capacity.state === "available_from" && row.capacity.from) return { end: row.capacity.until ?? "9999-12-31", start: row.capacity.from }
+    return null
   })
 
-  return dates.sort().at(-1) ?? ""
+  if (offered.length === 0 || windows.some((window) => window === null)) return ""
+
+  const start = windows.map((window) => window?.start ?? "").sort().at(-1) ?? ""
+  const end = windows.map((window) => window?.end ?? "").sort()[0] ?? ""
+
+  return start && start <= end ? start : ""
 }
 
 export function interestSheetModel(input: {

@@ -106,7 +106,7 @@ describe("stale labelling", () => {
       availability: [report({ availableFrom: "2026-11-12", availableUntil: "2026-11-19" }), report({ availableCount: null, availableFrom: null, availableUntil: null, equipmentCode: "chip_truck", state: "not_available" })]
     }), NOW)
 
-    expect(rows[0]).toMatchObject({ from: "2026-11-12", state: "available_from" })
+    expect(rows[0]).toMatchObject({ from: "2026-11-12", state: "available_from", until: "2026-11-19" })
     expect(rows[1]).toMatchObject({ available: null, stamp: { fresh: true }, state: "not_available" })
   })
 
