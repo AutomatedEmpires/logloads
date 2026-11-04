@@ -185,7 +185,7 @@ describe.skipIf(!DISPOSABLE)("normalized hauler profile contract (disposable Pos
     // Without the adapter's own check: row-level security filters the driver's update out (no row changes).
     const db = createPostgresMarketplaceDb({ sql: adapterSql })
     const rows = await db.asUser(await principal(as("driver")), (calls) =>
-      calls.query("hauler_profile_update", [haul, "97386", 50, "Driver's words", true, true]), { readOnly: false })
+      calls.query("hauler_profile_update", [haul, "97386", 50, "Driver's words", true, true, null, null]), { readOnly: false })
     expect(rows).toEqual([])
     expect((await one<{ about: string }>("select description as about from marketplace.hauler_profiles where org_id = $1::uuid", [haul])).about).toBe("Manager's words")
   })
@@ -210,7 +210,7 @@ describe.skipIf(!DISPOSABLE)("normalized hauler profile contract (disposable Pos
     expect(placed.lat).toBeCloseTo(44.4, 6)
     expect(placed.lng).toBeCloseTo(-122.7, 6)
 
-    await port.saveHaulerProfile(as("owner"), form({ about: "Manager's words", homeBase: null, homeBasePoint: null }))
+    await port.saveHaulerProfile(as("owner"), form({ about: "Manager's words", homeBase: "", homeBasePoint: null }))
     expect(await point()).toEqual({ lat: null, lng: null })
   })
 
