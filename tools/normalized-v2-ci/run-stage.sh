@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Runs one normalized-v2 validation stage against the guarded disposable database
-# and performs independent post-stage checks. Usage: run-stage.sh <stage number, 1..20>
+# and performs independent post-stage checks. Usage: run-stage.sh <stage number, 1..22>
 # Logs: $RUNNER_TEMP/normalized-v2-ci/logs/stage<N>.log (uploaded on failure).
 # =============================================================================
 set -euo pipefail
