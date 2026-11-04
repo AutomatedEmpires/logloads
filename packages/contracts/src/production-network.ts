@@ -382,6 +382,31 @@ export const tripSchemaV2 = z.object({
   completedAt: optionalTimestampSchema
 })
 
+/**
+ * Upper bounds for the text a trip's history stores. Trip events and documents
+ * live in the one shared operating-state document that each request reads and
+ * rewrites, so an unbounded field would let a single writer slow every tenant
+ * down. The metadata bound is on its serialized JSON, the size it is stored at.
+ */
+export const TRIP_RECORD_LIMITS = Object.freeze({
+  documentFilename: 255,
+  eventMetadataJson: 4000,
+  eventNote: 1000
+})
+
+function serializedLengthAtMost(limit: number): (value: unknown) => boolean {
+  return (value) => {
+    try {
+      const serialized = JSON.stringify(value)
+
+      return serialized === undefined || serialized.length <= limit
+    } catch {
+      // Not JSON-serializable (a cycle or a BigInt), so it could not be stored.
+      return false
+    }
+  }
+}
+
 export const tripEventSchema = z.object({
   id: uuidSchema,
   tripId: uuidSchema,
@@ -389,8 +414,13 @@ export const tripEventSchema = z.object({
   actorUserId: uuidSchema.optional().nullable(),
   source: z.enum(["driver", "dispatcher", "landing", "destination", "system"]),
   occurredAt: timestampSchema,
-  note: z.string().optional().nullable(),
-  metadata: z.record(z.unknown()).default({}),
+  note: z.string().max(TRIP_RECORD_LIMITS.eventNote).optional().nullable(),
+  metadata: z
+    .record(z.unknown())
+    .refine(serializedLengthAtMost(TRIP_RECORD_LIMITS.eventMetadataJson), {
+      message: `Trip event metadata must serialize to at most ${TRIP_RECORD_LIMITS.eventMetadataJson} characters`
+    })
+    .default({}),
   createdAt: timestampSchema
 })
 
@@ -422,7 +452,7 @@ export const tripDocumentSchema = z.object({
   type: z.enum(["scale_ticket", "load_slip", "delivery_record", "photo", "other"]),
   storageProvider: z.enum(["cloudinary", "supabase", "external"]),
   storageKey: z.string().min(1),
-  filename: z.string().min(1),
+  filename: z.string().min(1).max(TRIP_RECORD_LIMITS.documentFilename),
   contentType: z.string().min(1),
   uploadedByUserId: uuidSchema,
   uploadedAt: timestampSchema,
