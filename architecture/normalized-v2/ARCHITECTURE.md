@@ -150,6 +150,46 @@ Migration 18 runs `ALTER DEFAULT PRIVILEGES FOR ROLE current_user REVOKE EXECUTE
 * Extensions that Supabase installs belong to `supabase_admin`, and trigger functions need no `EXECUTE` when they fire, so neither is affected.
 * Dropping the `marketplace` schema does not undo it. To revert it, run `ALTER DEFAULT PRIVILEGES FOR ROLE <role> GRANT EXECUTE ON FUNCTIONS TO PUBLIC`.
 
+### Round 2: `23_v2_round2_hardening.sql` (follow-ups from the PR #194 review, #187)
+
+Migration 23 redefines three functions (`tg_membership_guard`, `can_view_organization`, `can_view_app_user`), comments one (`tg_qualification_verification_reset`), and changes no stored row, no grant and no billing function. Stage 23 in CI checks that exact set by comparing every `marketplace` function's source and ACL before and after the file. Tests: `24_v2_round2_hardening_tests.sql` (one session) and `25_v2_round2_concurrency_test.sh` (two sessions).
+
+#### Lock order between memberships and billing (R2-1)
+
+PostgreSQL locks a row before its `BEFORE ROW` triggers run, so every membership `UPDATE` holds that membership row while `tg_membership_guard` runs.
+
+| Path | Locks, in order |
+|---|---|
+| Owner exit (an active owner leaves or steps down), 18 | membership row, then the organization row (HF-15's turn) |
+| Owner exit, 23 | membership row, then the advisory lock `hashtextextended('marketplace.owner_exit:' \|\| org_id, 0)` |
+| Billing: `apply_subscription_cycle` (also behind `open_subscription_cycle`) and `apply_billing_provider_event` | the organization row, then the subscription row; the subscription write fires `tg_ensure_owner_landing_seat`, which updates every owner row that has no landing seat |
+| A landing seat added to a membership (the seat check in `tg_membership_guard`, 16) | membership row, then the organization row |
+
+Under 18, an owner with no landing seat (possible only while the organization has no entitling plan and no landing) who left while the organization's subscription row was written formed a cycle. The exit held its row and waited for the organization row; billing held the organization row and waited for the exit's row. PostgreSQL aborted one side with `40P01`. Under 23 an exit never waits for the organization row, and billing never takes the owner-exit lock, so the cycle cannot form. Two exits still take turns on the advisory lock, and the second reads the first one's committed change (HF-15). We chose this over making billing lock owner memberships before the organization row because it changes no billing function. `25` proves it: billing waits for the exit, both commit, and the result equals running the exit and then billing in series on a twin organization. With 18's lock restored, the same race fails with `40P01`.
+
+Residual cases, unchanged by 23. Each ends in a retryable `40P01` with nothing lost:
+* **A landing seat added to an owner row that has none**, while the subscription row is written. Examples: an owner gives another owner a seat, or an owner steps down to manager and takes a seat in the same `UPDATE`. The seat check must keep waiting for the organization row, because that is what serializes it with a plan change. Billing gives such owners a seat anyway.
+* **One `UPDATE` statement that changes several memberships of one organization**, including an owner exit, racing another owner exit. The statement holds its earlier rows while it waits for its turn on a later one. The V2 contract changes one membership per statement.
+
+To remove these as well, the billing entry points would lock the organization's seatless owner memberships before the organization row, or membership changes would go through one RPC that locks the organization first.
+
+#### Who reads an organization and a profile (R2-2, R2-3)
+
+| Reader | `organizations` row | `app_users` profile |
+|---|---|---|
+| An active member of an active organization | yes | colleagues who **accepted** their membership, including former and suspended ones (the organization's history) |
+| A pending invitee | the inviting organization, while it is active | only the person who invited them |
+| A person who declined, left, or was removed or suspended, or whose organization is suspended or closed | no, unless the organization is public | only the person who invited them |
+| The organization, about a person whose invitation is not yet accepted | n/a | **no**: it sees only the membership row it wrote |
+| Anyone signed in, and `anon` for the organization row | organizations with a public presence (an active landing, or F1 discovery consent) | no |
+| Counterparts (an inquiry or a targeted invitation) and platform staff | unchanged from 18 | unchanged from 18 |
+
+Decision (R2-3): the review offered two fixes for "an owner can invite any user id and then read that profile": require an allowed discovery path for the invitee, or limit what an invitation exposes. 23 takes the second at its narrowest: until the person accepts (`accepted_at`, set only by the person or a service path, B-1), the invitation exposes no profile field. The schema has no invite-by-email path to require: `app_users` holds no email, and `user_contacts` is readable only by the person and support. Inviting and accepting work as before. An owner can still tell whether an id exists, from the foreign-key error on an invitation for an unknown id, but learns nothing else about that person.
+
+#### Staff re-verification of a qualification (R2-4)
+
+HF-06's `qualification_verification_reset` has no exemption. A future staff re-verification, such as a renewed expiry date on a verified CDL, is one `SECURITY DEFINER` staff function that runs two statements. The first is the edit, which resets the row to `self_reported` and writes `qualification.verification_reset`. The second sets `verification_status = 'verified'` with `reviewed_by` and `reviewed_at`, and the trigger leaves it alone because the row is no longer verified. Clients cannot write `verification_status`, `reviewed_by` or `reviewed_at` (column grants, checked in stage 23), so only such a function can re-verify. We rejected an exemption keyed on `reviewed_at` or on a session setting: it would make the reset depend on column grants staying narrow, or on a setting a client can set, for a staff flow that does not exist yet. The rule is also the trigger function's catalog comment.
+
 ---
 
 ## 5. All 32 Normalized Tables and Key Indexes
