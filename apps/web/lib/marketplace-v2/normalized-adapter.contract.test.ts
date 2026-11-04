@@ -228,7 +228,7 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
     ])
   })
 
-  function publishDraft(landingId: string, title: string) {
+  function publishDraft(landingId: string, title: string, overrides: Record<string, string> = {}) {
     const result = validateMarketplaceJobDraft({
       destinationLabel: "Mill near Albany, OR",
       durationDays: "10",
@@ -243,7 +243,8 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
       startsOn: isoDay(7),
       title,
       trucksPerDay: "2",
-      trucksRequested: "3"
+      trucksRequested: "3",
+      ...overrides
     })
 
     if (!result.ok) throw new Error(JSON.stringify(result.issues))
@@ -344,7 +345,7 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
       expect(job).toMatchObject({
         acceptingInterest: true,
         destinationLabel: "Mill near Albany, OR",
-        equipment: ["Log truck"],
+        equipment: ["log_truck"],
         estimatedTonsPerLoad: 28.5,
         haulDistance: { basis: "poster_route_estimate", miles: 42 },
         origin: { approximatePoint: { lat: 44.2, lng: -122.5 }, label: "Near Vida, OR", stateCode: "OR" },
@@ -389,15 +390,33 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
     })
 
     it("lets the rival publish at its own landing", async () => {
-      rivalJobId = (await port.publishJob(viewer("rival", "rival"), publishDraft(fixture.landings.rival, "Rival Pulp Run"), attestation("publish"))).jobId
+      const draft = publishDraft(fixture.landings.rival, "Rival Pulp Run", { payAmount: "525", payUnit: "per_load", product: "Pulpwood", startsOn: isoDay(30) })
+      rivalJobId = (await port.publishJob(viewer("rival", "rival"), draft, attestation("publish"))).jobId
       expect((await port.getJob(rivalJobId))?.posterOrganizationId).toBe(fixture.orgs.rival)
+    })
+
+    it("applies the #185 discovery filters and orders to the stored jobs (contract pure rules after the query)", async () => {
+      const ids = async (filters: Parameters<MarketplaceV2Port["listJobs"]>[0]) => (await port.listJobs(filters)).map((job) => job.id)
+      const nearLand = { lat: 44.16, lng: -122.48 }
+      const nearRival = { lat: 44.41, lng: -122.72 }
+
+      expect(await ids({ product: "Pulpwood" })).toEqual([rivalJobId])
+      expect(await ids({ product: "Saw logs" })).toEqual([landJobId])
+      expect(await ids({ startsBy: isoDay(10) })).toEqual([landJobId])
+      expect(await ids({ near: nearLand, radiusMiles: 5 })).toEqual([landJobId])
+      expect((await ids({ near: nearLand, radiusMiles: null })).sort()).toEqual([landJobId, rivalJobId].sort())
+      expect(await ids({ near: nearRival, sort: "nearest" })).toEqual([rivalJobId, landJobId])
+      expect(await ids({ near: nearLand, sort: "nearest" })).toEqual([landJobId, rivalJobId])
+      expect(await ids({ sort: "pay" })).toEqual([rivalJobId, landJobId])
+      expect(await ids({ equipmentSetups: [["self_loader"]] })).toEqual([])
+      expect((await ids({ equipmentSetups: [["log_truck"]] })).sort()).toEqual([landJobId, rivalJobId].sort())
     })
   })
 
   // -------------------------------------------------------------------------------------------------------------
   describe("interest → respond → reply", () => {
     it("offers the hauler's own listed equipment", async () => {
-      expect(await port.haulerEquipment(viewer("haul", "haul"))).toEqual([{ configurationKey: "log_truck", label: "Log truck", unitsListed: 2 }])
+      expect(await port.haulerEquipment(viewer("haul", "haul"))).toEqual([{ configurationKey: "log_truck", equipmentCodes: ["log_truck"], label: "Log truck", unitsListed: 2 }])
     })
 
     it("records the hauler's inquiry and shows it to that landing only", async () => {
