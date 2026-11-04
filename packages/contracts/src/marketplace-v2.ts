@@ -629,34 +629,35 @@ export function sortMarketplaceJobs<T extends MarketplaceJobCardView>(
   return [...jobs].sort(newestFirst)
 }
 
-export type LandingInterestQueue = "new" | "responded" | "closed"
+// ---------------------------------------------------------------------------
+// Status vocabulary (UX-DEC-01, #135): one set of words for interests and jobs
+// ---------------------------------------------------------------------------
+//
+// Every V2 screen takes its status wording from here, so the hauler, the landing, the spec and the code use the
+// same words for the same states (docs/DECISIONS.md, 2026-11-03). The stored statuses are unchanged. Two rules
+// shape the wording: an inquiry is marketplace communication, so nothing reads as hired, booked or assigned; and
+// `filled` is the poster's claim, never a verified fact (UX spec §4.6).
 
-/** Landing inbox queues (UX spec §4.7): New, Responded, Closed. */
-export function landingInterestQueue(status: MarketplaceInterestStatus): LandingInterestQueue {
-  if (status === "submitted") return "new"
-  if (status === "viewed" || status === "replied") return "responded"
-  return "closed"
+/** Which side of an inquiry the viewer is on, or which side wrote a reply. */
+export type MarketplaceInterestSide = MarketplaceInterestReply["authorSide"]
+
+/** "attention": the viewer's move. "waiting": the other side's move. "closed": nothing more to do. */
+export type MarketplaceInterestTone = "attention" | "waiting" | "closed"
+
+export interface MarketplaceInterestStatusDescription {
+  label: string
+  tone: MarketplaceInterestTone
 }
 
-export const MARKETPLACE_INTEREST_STATUS_LABELS: Readonly<Record<MarketplaceInterestStatus, string>> = Object.freeze({
-  declined: "Declined by landing",
-  replied: "Landing replied",
-  submitted: "Sent — awaiting review",
-  viewed: "Viewed by landing",
-  withdrawn: "Withdrawn"
-})
-
-// ---------------------------------------------------------------------------
-// Inquiry conversations (UX-09, #132): queues, turn, unread, equipment fit and closing with a reason
-// ---------------------------------------------------------------------------
-
-// PROVISIONAL until #205 (#135, the status vocabulary) merges: the same names and rules as #205, so the merge only
-// deletes these copies. `lastMarketplaceInterestReplySide`, `landingInterestQueueFor`, `LANDING_INTEREST_QUEUE_LABELS`
-// and `marketplaceInterestIsOpen` then come from #205's block.
+/** What the status vocabulary reads from an inquiry: the stored status and who wrote each reply, when. */
+export interface MarketplaceInterestTurnFields {
+  status: MarketplaceInterestStatus
+  replies: ReadonlyArray<Pick<MarketplaceInterestReply, "authorSide" | "createdAt">>
+}
 
 /** The side that wrote the latest reply, or null when nobody has replied. On equal times the later entry wins. */
-export function lastMarketplaceInterestReplySide(interest: Pick<MarketplaceInterestView, "replies">): "hauler" | "landing" | null {
-  let latest: MarketplaceInterestView["replies"][number] | null = null
+export function lastMarketplaceInterestReplySide(interest: Pick<MarketplaceInterestTurnFields, "replies">): MarketplaceInterestSide | null {
+  let latest: MarketplaceInterestTurnFields["replies"][number] | null = null
 
   for (const reply of interest.replies) {
     if (!latest || Date.parse(reply.createdAt) >= Date.parse(latest.createdAt)) latest = reply
@@ -665,20 +666,33 @@ export function lastMarketplaceInterestReplySide(interest: Pick<MarketplaceInter
   return latest ? latest.authorSide : null
 }
 
-export const LANDING_INTEREST_QUEUE_LABELS: Readonly<Record<LandingInterestQueue, string>> = Object.freeze({
-  closed: "Closed",
-  new: "New",
-  responded: "Replied"
-})
-
 /**
- * The landing inbox queue with the turn (UX-DEC-01): submitted and viewed (seen, not answered) are New, replied is
- * Replied unless the hauler spoke last (then back to New), declined and withdrawn are Closed.
+ * An inquiry's status for one side (UX-DEC-01). A `replied` inquiry is the hauler's turn when the landing spoke
+ * last and the landing's turn when the hauler did; `replied` is stored when the landing replies, so with no
+ * replies at hand it reads as the landing having spoken last. A decline is final (HF-03), so it is `closed`
+ * whoever spoke last.
  */
-export function landingInterestQueueFor(interest: Pick<MarketplaceInterestView, "status" | "replies">): LandingInterestQueue {
-  if (interest.status === "submitted" || interest.status === "viewed") return "new"
-  if (interest.status === "replied") return lastMarketplaceInterestReplySide(interest) === "hauler" ? "new" : "responded"
-  return "closed"
+export function describeMarketplaceInterestStatus(
+  interest: MarketplaceInterestTurnFields,
+  side: MarketplaceInterestSide
+): MarketplaceInterestStatusDescription {
+  const hauler = side === "hauler"
+
+  switch (interest.status) {
+    case "submitted":
+      return hauler ? { label: "Sent · waiting for the landing", tone: "waiting" } : { label: "New", tone: "attention" }
+    case "viewed":
+      return hauler ? { label: "Seen by the landing", tone: "waiting" } : { label: "Seen · not answered", tone: "attention" }
+    case "replied": {
+      const landingSpokeLast = lastMarketplaceInterestReplySide(interest) !== "hauler"
+      if (hauler) return landingSpokeLast ? { label: "Your turn", tone: "attention" } : { label: "Waiting for the landing", tone: "waiting" }
+      return landingSpokeLast ? { label: "Waiting for the hauler", tone: "waiting" } : { label: "Hauler replied", tone: "attention" }
+    }
+    case "declined":
+      return { label: hauler ? "Declined by the landing" : "Declined", tone: "closed" }
+    case "withdrawn":
+      return { label: hauler ? "Withdrawn by you" : "Withdrawn by the hauler", tone: "closed" }
+  }
 }
 
 /** Submitted, viewed and replied inquiries are open: both sides can still write, and the hauler can withdraw. */
@@ -686,7 +700,85 @@ export function marketplaceInterestIsOpen(status: MarketplaceInterestStatus): bo
   return status === "submitted" || status === "viewed" || status === "replied"
 }
 
-// End of the provisional copies.
+/**
+ * A decline is final for that job (HF-03, #194): the hauler can't withdraw it or send interest again, and nobody
+ * can reply. A withdrawal is closed but not final, because the hauler can send interest again, which reopens it.
+ */
+export function marketplaceInterestIsFinal(status: MarketplaceInterestStatus): boolean {
+  return status === "declined"
+}
+
+/**
+ * Landing inbox queues (UX-DEC-01). The `responded` key predates the decision and is kept for callers; its
+ * heading is "Replied" (`LANDING_INTEREST_QUEUE_LABELS`).
+ */
+export type LandingInterestQueue = "new" | "responded" | "closed"
+
+export const LANDING_INTEREST_QUEUE_LABELS: Readonly<Record<LandingInterestQueue, string>> = Object.freeze({
+  closed: "Closed",
+  new: "New",
+  responded: "Replied"
+})
+
+/**
+ * The landing inbox queue from the stored status alone (UX-DEC-01): submitted and viewed are New (a viewed
+ * inquiry is seen, not answered), replied is Replied, declined and withdrawn are Closed. A replied inquiry whose
+ * last message is the hauler's belongs back in New, which the status can't show: use `landingInterestQueueFor`
+ * when the replies are at hand.
+ */
+export function landingInterestQueue(status: MarketplaceInterestStatus): LandingInterestQueue {
+  if (status === "submitted" || status === "viewed") return "new"
+  if (status === "replied") return "responded"
+  return "closed"
+}
+
+/** The landing inbox queue with the turn (UX-DEC-01): a replied inquiry goes back to New when the hauler spoke last. */
+export function landingInterestQueueFor(interest: MarketplaceInterestTurnFields): LandingInterestQueue {
+  const queue = landingInterestQueue(interest.status)
+  return queue === "responded" && lastMarketplaceInterestReplySide(interest) === "hauler" ? "new" : queue
+}
+
+/**
+ * @deprecated Status-only hauler wording, kept for existing callers. It can't tell whose turn a replied inquiry is
+ * (it reads as the landing having spoken last); use `describeMarketplaceInterestStatus`.
+ */
+export const MARKETPLACE_INTEREST_STATUS_LABELS: Readonly<Record<MarketplaceInterestStatus, string>> = Object.freeze(
+  Object.fromEntries(
+    marketplaceInterestStatusSchema.options.map((status) => [status, describeMarketplaceInterestStatus({ replies: [], status }, "hauler").label])
+  ) as Record<MarketplaceInterestStatus, string>
+)
+
+/**
+ * A listing's status as haulers, the public and the poster's own job list read it (UX-DEC-01). Each state the
+ * poster sets is attributed to the poster. "filled" is the poster's claim; LogLoads does not check it.
+ */
+export const MARKETPLACE_JOB_STATUS_LABELS: Readonly<Record<MarketplaceJobStatus, string>> = Object.freeze({
+  active: "Accepting interest",
+  closed: "Closed by the poster",
+  expired: "Listing expired",
+  filled: "Marked filled by the poster",
+  paused: "Paused by the poster"
+})
+
+const MARKETPLACE_JOB_CLOSED_REASONS: Readonly<Record<MarketplaceJobStatus, string | null>> = Object.freeze({
+  active: null,
+  closed: "The poster closed this listing.",
+  expired: "This listing expired.",
+  filled: "The poster marked this job filled.",
+  paused: "The poster paused this listing."
+})
+
+/**
+ * Why a listing takes no new interest, as a sentence (UX spec §5.3: block new interest and show the reason); null
+ * while it accepts interest.
+ */
+export function marketplaceJobClosedReason(status: MarketplaceJobStatus): string | null {
+  return MARKETPLACE_JOB_CLOSED_REASONS[status]
+}
+
+// ---------------------------------------------------------------------------
+// Inquiry conversations (UX-09, #132): queues, turn, unread, equipment fit and closing with a reason
+// ---------------------------------------------------------------------------
 
 export type HaulerInterestQueue = "active" | "replied" | "closed"
 

@@ -7,7 +7,7 @@ import type { MarketplaceJobStatus } from "@logloads/contracts"
  * - Draft: nothing yet. Drafts are not saved on the server; an unpublished job lives only in the poster's
  *   browser tab, so this tab is always empty and says why.
  * - Published: `active`, and `filled`, which is still a public listing (it no longer accepts interest because the
- *   poster reported enough trucks, and its row says so).
+ *   poster marked it filled, and its row says so).
  * - Paused: `paused`.
  * - Expired: `expired`.
  * - Archived: `closed`, a listing the poster closed for good.
