@@ -3,6 +3,7 @@
 import {
   credentialKindSchema,
   formatMoney,
+  LOAD_POSTING_TITLE_MAX_LENGTH,
   rateTypeSchema,
   roadConditionSchema,
   type CredentialKind,
@@ -1016,6 +1017,12 @@ export async function createLoadPostingAction(input: Record<string, unknown>): P
 
     if (statedPay !== undefined && statedPay !== null && !Number.isSafeInteger(statedPay)) {
       throw new Error("Driver pay must be sent as a whole number of cents.")
+    }
+
+    // The service refuses an over-long title too (#187); this says so in words
+    // the builder can show, rather than as a schema error.
+    if (typeof input.title === "string" && input.title.length > LOAD_POSTING_TITLE_MAX_LENGTH) {
+      throw new Error(`Keep the work title to ${LOAD_POSTING_TITLE_MAX_LENGTH} characters or fewer.`)
     }
 
     const created = await commit(["/host", "/fleet", "/driver", "/loads", "/"], (draft) =>
