@@ -3102,7 +3102,7 @@ test.describe("landing overview (#133)", () => {
     test.skip((await confirm.count()) === 0, "No North Pine Logging listing is past the confirmation interval in this run's state")
 
     await expect(confirm.first()).toHaveAttribute("aria-disabled", "true")
-    await expect(page.getByText("Confirming isn't saved in this preview.")).toBeVisible()
+    await expect(page.getByText(/^Confirming isn.t saved in this preview\.$/)).toBeVisible()
     await expect(page.getByText(/Confirm records your statement: .I confirm this job is currently available as described../)).toBeVisible()
   })
 
@@ -3143,8 +3143,9 @@ test.describe("the landing overview without JavaScript (#133)", () => {
     await openV2(page, "/v2/landing")
     const overview = page.locator("[data-ds-page='landing-overview']")
 
-    await expect(overview.getByRole("link", { name: "Post a job" })).toHaveAttribute("href", "/v2/landing/jobs/new")
-    await expect(overview.getByRole("link", { name: /^Inbox \(\d+ new\)$/ })).toHaveAttribute("href", "/v2/landing/inquiries")
+    const actionRow = overview.locator("header")
+    await expect(actionRow.getByRole("link", { name: "Post a job" })).toHaveAttribute("href", "/v2/landing/jobs/new")
+    await expect(actionRow.getByRole("link", { name: /^Inbox \(\d+ new\)$/ })).toHaveAttribute("href", "/v2/landing/inquiries")
     await expect(overview.getByRole("region", { name: "This billing cycle" })).toBeVisible()
     await expect(overview.getByRole("region", { name: "Get started" }).or(overview.getByRole("region", { name: "Needs attention" }))).toBeVisible()
   })
