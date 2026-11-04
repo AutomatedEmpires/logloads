@@ -373,7 +373,7 @@ test.describe("responsive matrix: /v2/switch (signed in)", () => {
       await expect(page.getByRole("heading", { level: 1, name: "Switch business" })).toBeVisible()
 
       await expectNoHorizontalOverflow(page)
-      expect(await expectNavigationForWidth(page, width)).toEqual(["Find work", "My inquiries"])
+      expect(await expectNavigationForWidth(page, width)).toEqual(["Find work", "My inquiries", "Profile"])
       // /v2/switch is not a navigation destination, so no item claims to be the current page.
       await expectCurrent(page, width, null)
     }
@@ -505,7 +505,7 @@ test.describe("responsive matrix: pages migrated in DS-04 (#147)", () => {
 
       await expectNoHorizontalOverflow(page)
       await expectSplitLayout(page, width)
-      expect(await expectNavigationForWidth(page, width)).toEqual(["Find work", "My inquiries"])
+      expect(await expectNavigationForWidth(page, width)).toEqual(["Find work", "My inquiries", "Profile"])
       await expectCurrent(page, width, "My inquiries")
     }
   })
@@ -547,12 +547,12 @@ test.describe("responsive matrix: pages migrated in DS-04 (#147)", () => {
 
 test.describe("capability navigation (#124)", () => {
   const cases = [
-    { email: "hank@northpine.example", home: "/v2/work", items: ["Find work", "My inquiries"], visit: "/v2/inquiries", current: "My inquiries" },
+    { email: "hank@northpine.example", home: "/v2/work", items: ["Find work", "My inquiries", "Profile"], visit: "/v2/inquiries", current: "My inquiries" },
     { email: "cole@summit.example", home: "/v2/landing", items: ["Landing inbox", "Post jobs"], visit: "/v2/landing/inquiries", current: "Landing inbox" },
     {
       email: "dispatch@northpine.example",
       home: "/v2/work",
-      items: ["Find work", "My inquiries", "Landing inbox", "Post jobs"],
+      items: ["Find work", "My inquiries", "Profile", "Landing inbox", "Post jobs"],
       visit: "/v2/inquiries",
       current: "My inquiries"
     }
@@ -707,7 +707,7 @@ test.describe("keyboard: /v2/work", () => {
     await signIn(page, "hank@northpine.example")
     await openV2(page, "/v2/work")
 
-    const stops = await tabThrough(page, 7)
+    const stops = await tabThrough(page, 8)
     const chrome = stops.filter((stop) => stop.where === "chrome")
 
     expect(chrome.map((stop) => stop.key)).toEqual([
@@ -715,6 +715,7 @@ test.describe("keyboard: /v2/work", () => {
       "LogLoads home",
       "Find work",
       "My inquiries",
+      "Profile",
       // The switcher's first text line; its full accessible name (visible text plus hidden words) is asserted in the
       // capability-navigation tests.
       "Acting as",
@@ -1625,7 +1626,7 @@ test.describe("find-work map (UX-13)", () => {
  */
 const DUAL = { email: "maya@northpine.example", hauling: "North Pine Logging", landing: "Summit Ridge Timber", name: "Maya Mills" }
 const SUMMIT_OWNER = "cole@summit.example"
-const HAULER_NAVIGATION = ["Find work", "My inquiries"]
+const HAULER_NAVIGATION = ["Find work", "My inquiries", "Profile"]
 const LANDING_NAVIGATION = ["Landing inbox", "Post jobs"]
 
 const businessChoices = (page: Page) => page.getByRole("list", { name: "Your businesses" }).getByRole("listitem")
@@ -1777,5 +1778,122 @@ test.describe("business switching with two memberships (#124 criterion 8)", () =
 
     // Restore the membership this case removed: Summit invites Maya back and she accepts.
     await ensureDualMembership(browser, baseURL)
+  })
+})
+
+/**
+ * #125: hauler setup (/v2/start, /v2/start/hauler) and the business profile (/v2/hauler/profile). Nothing here
+ * writes: the pilot store cannot save a profile or create a business, so every post is answered with that, and the
+ * cases check the page keeps what was typed. New River Hauling is the seeded hauling business.
+ */
+const PROFILE_PATH = "/v2/hauler/profile"
+const HAULER_SETUP_PAGES = [
+  { heading: "Set up your business", path: "/v2/start", root: "start" },
+  { heading: "Your hauling business", path: "/v2/start/hauler", root: "start-hauler" },
+  { heading: "Join a hauling company", path: "/v2/start/hauler?type=member", root: "start-hauler" }
+] as const
+
+test.describe("hauler setup and business profile (#125)", () => {
+  test("responsive at 390 and 1440 px: setup, the profile form and its preview", async ({ page }) => {
+    for (const width of [390, 1440]) {
+      await page.setViewportSize(viewportFor(width))
+      for (const { heading, path, root } of HAULER_SETUP_PAGES) {
+        await openV2(page, path)
+        await expect(page.locator(`[data-ds-page='${root}']`)).toBeVisible()
+        await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible()
+        await expectNoHorizontalOverflow(page)
+      }
+    }
+
+    await signIn(page, NEW_RIVER.email)
+    for (const width of [390, 1440]) {
+      await page.setViewportSize(viewportFor(width))
+      await openV2(page, PROFILE_PATH)
+      await expect(page.getByRole("heading", { level: 1, name: "Business profile" })).toBeVisible()
+      await expect(page.getByRole("region", { name: "Seen by landing operators" })).toBeVisible()
+      await expect(page.getByRole("region", { name: "Private · only your team" })).toBeVisible()
+      await expectNoHorizontalOverflow(page)
+      await expectCurrent(page, width, "Profile")
+
+      await openV2(page, `${PROFILE_PATH}?view=preview`)
+      await expect(page.locator("[data-public-profile]")).toBeVisible()
+      await expect(page.locator("[data-public-profile] h2").first()).toHaveText(NEW_RIVER.name)
+      await expect(page.locator("[data-public-profile] input, [data-public-profile] textarea")).toHaveCount(0)
+      await expectNoHorizontalOverflow(page)
+    }
+  })
+
+  test("keyboard: every stop on setup and the profile keeps the design-system ring", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1280))
+    for (const path of ["/v2/start", "/v2/start/hauler"]) {
+      await openV2(page, path)
+      const stops = await tabThrough(page)
+      expect(stops.filter((stop) => stop.where === "main").length, `${path}: focus reaches the page content`).toBeGreaterThan(0)
+      for (const stop of stops) expectDesignSystemRing(stop)
+    }
+
+    await signIn(page, NEW_RIVER.email)
+    await openV2(page, PROFILE_PATH)
+    const stops = await tabThrough(page)
+    const main = stops.filter((stop) => stop.where === "main").map((stop) => stop.key)
+    expect(main).toEqual(expect.arrayContaining(["#profile-home-base", "#profile-about", "#profile-listed", "Save profile"]))
+    for (const stop of stops) expectDesignSystemRing(stop)
+  })
+
+  for (const width of [1440, 390]) {
+    test(`axe at ${width} px: setup, the profile form and its preview have no serious or critical violations`, async ({ page }) => {
+      await page.setViewportSize(viewportFor(width))
+      for (const path of ["/v2/start/hauler", "/v2/start/hauler?type=member"]) {
+        await openV2(page, path)
+        await expectNoSeriousAxeViolations(page)
+      }
+      await signIn(page, NEW_RIVER.email)
+      for (const path of [PROFILE_PATH, `${PROFILE_PATH}?view=preview`, `${PROFILE_PATH}?setup=1&type=company`]) {
+        await openV2(page, path)
+        await expectNoSeriousAxeViolations(page)
+      }
+    })
+  }
+
+  test.describe("without JavaScript", () => {
+    test.use({ javaScriptEnabled: false })
+
+    test("the setup choices are GET forms the server answers", async ({ page }) => {
+      await page.setViewportSize(viewportFor(390))
+      await openV2(page, "/v2/start")
+      await page.getByRole("radio", { name: "I have trucks" }).check()
+      await page.getByRole("button", { name: "Continue" }).click()
+      await page.waitForURL((url) => url.pathname === "/v2/start/hauler")
+
+      await page.getByRole("radio", { name: "I work for a hauling company" }).check()
+      await page.getByRole("button", { name: "Continue" }).click()
+      await page.waitForURL((url) => url.searchParams.get("type") === "member")
+      await expect(page.getByRole("heading", { level: 1, name: "Join a hauling company" })).toBeVisible()
+      // Joining asks nothing about trucks: there is no field at all.
+      await expect(page.locator("#main input, #main select, #main textarea")).toHaveCount(0)
+    })
+
+    test("the profile form posts to its action, which validates on the server and keeps what was typed", async ({ page }) => {
+      // At 1440 px the form actions are in the page flow; below bp-sm they stick above the tabs (covered at 390 above).
+      await page.setViewportSize(viewportFor(1440))
+      await signIn(page, NEW_RIVER.email)
+      await openV2(page, PROFILE_PATH)
+
+      // A street address is refused by the server, with an error summary and the field's own message.
+      await page.getByLabel("Home base").fill("4417 Spur Road")
+      await page.getByLabel("About").fill("Sent without JavaScript: two trucks")
+      await page.getByRole("button", { name: "Save profile" }).click()
+      await expect(page.getByRole("alert").filter({ hasText: "Fix 1 field to save your profile" })).toBeVisible()
+      await expect(page.getByLabel("Home base")).toHaveValue("4417 Spur Road")
+      await expect(page.getByLabel("About")).toHaveValue("Sent without JavaScript: two trucks")
+
+      // A valid post: the pilot store cannot save it, and the page says so without losing anything.
+      await page.getByLabel("Home base").fill("sweet home, or")
+      await page.getByRole("button", { name: "Save profile" }).click()
+      await expect(page.getByRole("alert").filter({ hasText: "isn't available in this preview yet" })).toBeVisible()
+      await expect(page.getByLabel("Home base")).toHaveValue("sweet home, or")
+      await expect(page.getByLabel("About")).toHaveValue("Sent without JavaScript: two trucks")
+      await expect(page).toHaveURL(new RegExp(`${PROFILE_PATH}$`))
+    })
   })
 })

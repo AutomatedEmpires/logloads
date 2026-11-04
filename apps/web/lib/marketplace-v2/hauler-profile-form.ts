@@ -12,6 +12,13 @@ import {
  * action's response, never in a URL.
  */
 
+export const HAULER_START_PATH = "/v2/start/hauler"
+/** The landing operator's setup is UX-04 (#127). */
+export const LANDING_START_PATH = "/v2/start/landing"
+
+/** The hauler setup steps after A1 (UX 02 §A2–A3). My trucks (#126) adds its own. */
+export const HAULER_SETUP_STEPS: readonly string[] = Object.freeze(["Business type", "Your business", "Find work"])
+
 export const PROFILE_PATH = "/v2/hauler/profile"
 export const PROFILE_SETUP_PATH = `${PROFILE_PATH}?setup=1`
 /** Where setup goes after this step, and where Skip leads. My trucks (#126) is the next step once it exists. */
@@ -71,4 +78,22 @@ export type HaulerSetupKind = "solo" | "company"
 
 export function haulerSetupKind(value: unknown): HaulerSetupKind | null {
   return value === "solo" || value === "company" ? value : null
+}
+
+/** "Your business" for an account with no hauling business yet (UX 02 §A3): the public basics only. */
+export interface StartBusinessFormState {
+  status: "idle" | "invalid" | "unavailable"
+  values: { businessName: string; homeBase: string }
+  issues: HaulerProfileIssue[]
+  message: string | null
+  attempt: number
+}
+
+export const START_BUSINESS_FIELD_IDS = Object.freeze({ businessName: "start-business-name", homeBase: "start-home-base" })
+
+export const START_BUSINESS_UNAVAILABLE =
+  "Setting up a new hauling business from V2 isn't available in this preview yet. Nothing was saved; what you entered is still in the form. You can search for work now: it never needs a profile."
+
+export function initialStartBusinessState(): StartBusinessFormState {
+  return { attempt: 0, issues: [], message: null, status: "idle", values: { businessName: "", homeBase: "" } }
 }

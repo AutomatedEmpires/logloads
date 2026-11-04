@@ -6,8 +6,10 @@ import { JobResultList, JobResultRow } from "@logloads/ui/marketplace"
 import { Button, EmptyState } from "@logloads/ui/primitives"
 
 import { JobMapLoader } from "@/components/v2/JobMapLoader"
+import { HaulerSetupChecklist } from "@/components/v2/onboarding/HaulerSetupChecklist"
 import { WorkFilters } from "@/components/v2/WorkFilters"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
+import { sessionHaulerChecklist } from "@/lib/marketplace-v2/hauler-setup"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
@@ -31,9 +33,10 @@ export default async function FindWorkPage({ searchParams }: { searchParams: Sea
   const includeInactive = one(params.all) === "1"
   const showMap = one(params.view) === "map"
 
-  const [jobs, everything] = await Promise.all([
+  const [jobs, everything, checklist] = await Promise.all([
     pilotMarketplaceV2.listJobs({ acceptingOnly: !includeInactive, equipment, payUnit, query }),
-    pilotMarketplaceV2.listJobs({ acceptingOnly: false })
+    pilotMarketplaceV2.listJobs({ acceptingOnly: false }),
+    sessionHaulerChecklist()
   ])
   const equipmentOptions = Array.from(new Set(everything.flatMap((job) => job.equipment))).sort()
   const now = new Date().toISOString()
@@ -60,6 +63,7 @@ export default async function FindWorkPage({ searchParams }: { searchParams: Sea
           layout="single"
           main={
             <>
+              <HaulerSetupChecklist items={checklist} />
               {showMap ? <JobMapLoader points={points} /> : null}
               <Section
                 actions={

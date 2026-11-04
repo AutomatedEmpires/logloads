@@ -5,6 +5,7 @@ import type { NavItem, WorkspaceKind } from "@logloads/ui/layout"
 export const V2_NAVIGATION: readonly NavItem[] = Object.freeze([
   { href: "/v2/work", icon: "nav.loads", id: "work", label: "Find work" },
   { href: "/v2/inquiries", icon: "nav.messages", id: "inquiries", label: "My inquiries" },
+  { href: "/v2/hauler/profile", icon: "nav.profile", id: "hauler-profile", label: "Profile" },
   { href: "/v2/landing/inquiries", icon: "nav.landing", id: "landing-inquiries", label: "Landing inbox" },
   { href: "/v2/landing/jobs", icon: "ops.document", id: "landing-jobs", label: "Post jobs" }
 ])
@@ -14,6 +15,7 @@ export const V2_NAVIGATION: readonly NavItem[] = Object.freeze([
  * convenience only: every page still resolves the viewer on the server and refuses what the role cannot do.
  */
 const NAV_CAPABILITY: Readonly<Record<string, MarketplaceCapability | null>> = Object.freeze({
+  "hauler-profile": "interest.express",
   "inquiries": "interest.express",
   "landing-inquiries": "inquiry.respond",
   "landing-jobs": "job.publish",

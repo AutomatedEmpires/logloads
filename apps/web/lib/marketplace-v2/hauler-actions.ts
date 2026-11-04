@@ -3,11 +3,11 @@
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 
-import { haulerProfileFormValues, validateHaulerProfileForm } from "@logloads/contracts"
+import { EMPTY_HAULER_PROFILE_FORM, haulerProfileFormValues, validateHaulerProfileForm } from "@logloads/contracts"
 import { DomainRefusalError } from "@logloads/services"
 
 import { checkRateLimit } from "../rate-limit"
-import { getSessionActor } from "../session"
+import { getClerkUserId, getSessionActor } from "../session"
 import { marketplaceV2Enabled } from "./flag"
 import {
   PROFILE_PATH,
@@ -16,7 +16,10 @@ import {
   PROFILE_SAVED,
   PROFILE_SETUP_NEXT_PATH,
   profileValuesFromForm,
-  type HaulerProfileFormState
+  START_BUSINESS_UNAVAILABLE,
+  HAULER_START_PATH,
+  type HaulerProfileFormState,
+  type StartBusinessFormState
 } from "./hauler-profile-form"
 import { pilotMarketplaceV2 } from "./pilot-adapter"
 import { MarketplaceOperationUnavailableError, MarketplaceRefusalError } from "./port"
@@ -84,4 +87,34 @@ export async function saveHaulerProfileAction(previous: HaulerProfileFormState, 
   }
 
   return saved
+}
+
+/**
+ * "Your business" for an account with no hauling business (UX 02 §A3, #125). The input is validated on the server
+ * like the profile's, and then the page says plainly that creating a business is not available: V2 sessions read
+ * their businesses from the pilot store, which has no service that adds a business to an existing account, so a
+ * business created elsewhere could not be selected. Nothing is written.
+ */
+export async function startHaulingBusinessAction(previous: StartBusinessFormState, formData: FormData): Promise<StartBusinessFormState> {
+  if (!marketplaceV2Enabled()) {
+    redirect("/")
+  }
+
+  // A sign-in with no LogLoads profile yet is still a person setting up; only no sign-in at all goes to sign-in.
+  if (!(await getSessionActor()) && !(await getClerkUserId())) {
+    redirect(`/sign-in?next=${encodeURIComponent(HAULER_START_PATH)}`)
+  }
+
+  const values = {
+    businessName: typeof formData.get("businessName") === "string" ? String(formData.get("businessName")).slice(0, 500) : "",
+    homeBase: typeof formData.get("homeBase") === "string" ? String(formData.get("homeBase")).slice(0, 500) : ""
+  }
+  const attempt = (previous?.attempt ?? 0) + 1
+  const validation = validateHaulerProfileForm({ ...EMPTY_HAULER_PROFILE_FORM, ...values })
+
+  if (!validation.ok) {
+    return { attempt, issues: validation.issues, message: null, status: "invalid", values }
+  }
+
+  return { attempt, issues: [], message: START_BUSINESS_UNAVAILABLE, status: "unavailable", values }
 }
