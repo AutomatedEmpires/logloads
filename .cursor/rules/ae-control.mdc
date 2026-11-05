@@ -18,7 +18,7 @@ powershell -NoProfile -File C:\Users\Cole0\AutomatedEmpires\Projects\AE-Control\
 ```
 
 4. The script checks the branch, HEAD, working tree, integration baseline, pause flag, decision pointers, owner, and latest handoff. Stop when it prints `EDIT: no`.
-5. Confirm you are `OWNER`, or that `TRANSFER` names you, before modifying files. Another model's chat is not ownership.
+5. Confirm you are `OWNER`, or that `TRANSFER` names you, before modifying files. Another model's chat is not ownership. Path ownership in `AGENTS.md` section 3.1 and `docs/AGENT_WORKFLOW.md` still applies. A transfer does not reassign those lanes.
 6. Feature development stays paused unless the assigned issue is an explicit founder exception.
 7. Do not merge, deploy, or activate billing.
 
