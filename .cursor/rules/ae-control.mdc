@@ -9,16 +9,17 @@ Product requirements in this repository stay authoritative. This rule does not r
 
 Before substantive work:
 
-1. Read `AGENTS.md` and the product decision files it names.
-2. Read `C:\Users\Cole0\AutomatedEmpires\Projects\AE-Control\registry\projects.json` and `policy\continuity.md`.
-3. Run the read-only session script:
+1. Read `AGENTS.md`. For new commercial work, sections 1.3, 7.5, and 13 outrank older percentage-fee instructions. Pull request #223 is not merged and is not implemented. Do not edit billing code or rewrite historical obligations.
+2. Read `C:\Users\Cole0\AutomatedEmpires\Projects\AE-Control\registry\projects.json`, `policy\authority.md`, and `policy\continuity.md`. `github.com/AutomatedEmpires/ae-control` is that repository. It has no `POLICY.md` and no WSL lease command.
+3. Run the read-only session script with the assigned issue and your agent id:
 
 ```powershell
 powershell -NoProfile -File C:\Users\Cole0\AutomatedEmpires\Projects\AE-Control\scripts\session.ps1 -Project logloads -Issue <number> -Agent <registry id>
 ```
 
-4. Stop when that script prints `EDIT: no`, when no issue is assigned, or when the governance files cannot be read.
-5. Feature development stays paused unless the assigned issue is an explicit founder exception.
-6. Do not merge, deploy, or activate billing.
+4. The script checks the branch, HEAD, working tree, integration baseline, pause flag, decision pointers, owner, and latest handoff. Stop when it prints `EDIT: no`.
+5. Confirm you are `OWNER`, or that `TRANSFER` names you, before modifying files. Another model's chat is not ownership.
+6. Feature development stays paused unless the assigned issue is an explicit founder exception.
+7. Do not merge, deploy, or activate billing.
 
-GitHub issues in `AutomatedEmpires/logloads` are the task record. A chat from another model is not.
+GitHub issues in `AutomatedEmpires/logloads` are the task record. If the script file is missing, stop.
