@@ -1,0 +1,24 @@
+---
+description: AE Control bootstrap for LogLoads agents
+alwaysApply: true
+---
+
+# LogLoads — AE Control bootstrap
+
+Product requirements in this repository stay authoritative. This rule does not replace `AGENTS.md`, `docs/DECISIONS.md`, or `docs/product/`.
+
+Before substantive work:
+
+1. Read `AGENTS.md` and the product decision files it names.
+2. Read `C:\Users\Cole0\AutomatedEmpires\Projects\AE-Control\registry\projects.json` and `policy\continuity.md`.
+3. Run the read-only session script:
+
+```powershell
+powershell -NoProfile -File C:\Users\Cole0\AutomatedEmpires\Projects\AE-Control\scripts\session.ps1 -Project logloads -Issue <number> -Agent <registry id>
+```
+
+4. Stop when that script prints `EDIT: no`, when no issue is assigned, or when the governance files cannot be read.
+5. Feature development stays paused unless the assigned issue is an explicit founder exception.
+6. Do not merge, deploy, or activate billing.
+
+GitHub issues in `AutomatedEmpires/logloads` are the task record. A chat from another model is not.
