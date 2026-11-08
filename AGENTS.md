@@ -45,7 +45,7 @@ Security controls, legal requirements, production restrictions, and preserved hi
 - **Setup:** `pnpm install --frozen-lockfile`, then `pnpm setup:local`, subject to `docs/ENVIRONMENT.md`. Local secrets belong in ignored environment files. Confirm that the selected Node version is active in each agent shell before troubleshooting tooling.
 - **Development server:** `pnpm dev` must listen on **`127.0.0.1:3002` only**. Never expose seeded development authentication to LAN or public interfaces. Do not run a production build into `apps/web/.next` while an active dev server uses that directory; use an isolated build location/worktree or stop the server with the owner's knowledge.
 - **Parallel agents:** Each concurrently active agent works on **its own branch in its own Git worktree**, and edits only the files its issue owns. Never edit, stage, reset, or clean another agent's worktree or untracked files. Avoid duplicate dependency installations and build caches on the 512 GB laptop. Remove a finished worktree only after its branch is pushed and its owner agrees.
-- **Deployment:** The existing `main` deployment path may trigger Vercel production automatically. Never merge, push to `main`, or deploy without explicit authorization.
+- **Deployment:** The existing `main` deployment path may trigger Vercel production automatically. Never merge into or push to `main`, or deploy, without explicit authorization. An agent's merge of its own task PR into the integration branch follows §9.
 - **Portfolio references:** `github.com/AutomatedEmpires/ae-control` and its `POLICY.md` may contain useful portfolio standards, but the old WSL/`ae` leasing workflow is not active for this checkout. Do not import contradictory instructions from older policy documents.
 
 ---
@@ -374,13 +374,13 @@ LogLoads serves real users operating on phones, sometimes on weak rural connecti
 Before work, record the branch, HEAD, working tree, acceptance criteria, and file owner. Inspect both tracked and untracked files to avoid interfering with concurrent agents.
 
 - **No direct push to `main`. No production merge or deploy without explicit founder approval.**
-- The current integration branch is **`work/logloads-repair`**. Work reaches it **only through a reviewed PR** from the owner's own branch. No agent merges a PR, its own or another's, without explicit founder authorization, even when CI is green.
+- The current integration branch is **`work/logloads-repair`**. Work reaches it **only through a reviewed PR** from the owner's own branch. An agent may merge **only its own task PR**, only into this branch, and only with AE-Control's `ae.py merge` after the required CI checks and the AE-Control review gate pass ([founder decision, 2026-11-08](https://github.com/AutomatedEmpires/AE-Control/issues/6#issuecomment-6723859431)). No agent merges another agent's PR, or any PR into `main`, without explicit founder authorization.
 - Use scope branches such as `feat/<lane>/<slug>`, `fix/<lane>/<slug>`, `docs/<lane>/<slug>` and `test/<lane>/<slug>`, each in its own worktree (§0).
 - Merge stacked PRs with **merge commits**. Squash or rebase merges break the PRs stacked on top.
 - One coherent change set per owner. Never overwrite, `git clean` away, reset, stash, rebase over, or delete somebody else's in-progress work without coordination.
-- No force pushes, history rewrites, bypassed checks, self-merges, unauthorized branch deletion, or accidental commits of secrets/build outputs.
+- No force pushes, history rewrites, bypassed checks, self-merges outside `ae.py merge`, unauthorized branch deletion, or accidental commits of secrets/build outputs.
 - A completed **local deliverable** may be handed off without a push if the assignment forbids Git operations (for example Gemini's SQL prototype). Call it *uncommitted* until integrated. Work requiring a pushed artifact is complete only after confirming the remote commit SHA.
-- Keep reviewable PRs small. The maintainer reviews and merges; agents do not merge just because CI passes.
+- Keep reviewable PRs small. Agents do not merge just because CI passes: an agent's own task PR merges only through the `ae.py merge` review gate above, and the maintainer reviews and merges everything else.
 - Historical billing/dispatch retirements, production migrations, and provider changes need independent review and explicit authorization beyond a normal code change.
 
 ## 10. Verification and definition of done

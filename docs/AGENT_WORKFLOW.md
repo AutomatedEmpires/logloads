@@ -89,8 +89,11 @@ Work that is abandoned or superseded is closed as **Not planned**, with a commen
 - Every PR links its issue, lists the commands it ran with their results, and states its boundaries.
 - Required checks must be green, or the founder must accept a known failure **explicitly**. Never disable or
   weaken a test to get a merge through.
-- **No agent merges without explicit founder authorization.** Stacked PRs are merged in order, using
-  **merge commits**.
+- **An agent merges only its own task PR, only into `work/logloads-repair`, and only with AE-Control's
+  `ae.py merge`**, after the required checks and the AE-Control review gate pass
+  ([founder decision, 2026-11-08](https://github.com/AutomatedEmpires/AE-Control/issues/6#issuecomment-6723859431)).
+  Any other merge, including any merge to `main`, needs explicit founder authorization. Stacked PRs are merged in
+  order, using **merge commits**.
 
 ## 5. Comments are the handoff
 
