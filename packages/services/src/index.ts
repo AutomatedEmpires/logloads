@@ -876,3 +876,14 @@ export type {
 export { equipmentProfileUnitNumberIsUnambiguous } from "./equipment-unit-numbers"
 export type { DriverMediaKind, DriverMediaTarget } from "./driver-profile"
 export type { TripDocumentAccess, TripDocumentTarget } from "./operating-network"
+
+// Port v3 (#244): one entry per feature group; each group's task changes only its own folder.
+export * from "./v2/jobs"
+export * from "./v2/billing"
+export * from "./v2/team"
+export * from "./v2/invites"
+export * from "./v2/trucks"
+export * from "./v2/alerts"
+export * from "./v2/notify"
+export * from "./v2/boosts"
+export * from "./v2/admin"

@@ -2,14 +2,12 @@ import "server-only"
 
 import { randomBytes } from "node:crypto"
 
-import { z } from "zod"
-
 import {
   LANDING_STATUS_CHANGE_REFUSAL,
   landingActivationRefusal,
   landingStatusChangeAllowed,
   MARKETPLACE_MEMBER_ROLES,
-  MARKETPLACE_SUBSCRIPTION_STATUSES,
+  MARKETPLACE_V2_FEATURES,
   marketplaceFeatureCapabilities,
   marketplaceJobPublicationIssues,
   marketplaceV2FeatureSupport,
@@ -22,9 +20,15 @@ import {
   type MarketplaceLandingStatus,
   type MarketplaceLandingView,
   type MarketplaceMemberRole,
-  type MarketplacePlanAllowanceView
+  type MarketplaceV2Feature
 } from "@logloads/contracts"
 
+import { normalizedAdmin } from "./admin"
+import { normalizedAlerts } from "./alerts"
+import { normalizedBilling } from "./billing"
+import { normalizedBoosts } from "./boosts"
+import { normalizedInvites } from "./invites"
+import { normalizedJobs } from "./jobs"
 import type { MarketplaceCalls, MarketplaceDb, MarketplacePrincipal } from "./normalized-db"
 import { normalizedHaulerFleetMethods } from "./normalized-fleet"
 import { normalizedHaulerProfileMethods } from "./normalized-hauler"
@@ -58,13 +62,17 @@ import {
   viewerAccessRow,
   withdrawArguments
 } from "./normalized-mapping"
+import { normalizedNotify } from "./notify"
 import {
   MarketplaceRefusalError,
   MarketplaceStoreError,
-  unavailableMarketplaceV2Feature,
+  type MarketplaceV2Account,
+  type MarketplaceV2FeaturePorts,
   type MarketplaceV2Port,
   type MarketplaceV2Viewer
 } from "./port"
+import { normalizedTeam } from "./team"
+import { normalizedTrucks } from "./trucks"
 
 /**
  * Marketplace V2 over the normalized `marketplace` schema (architecture/normalized-v2, stages 01–16). Every method
@@ -85,6 +93,42 @@ export interface NormalizedMarketplaceDependencies {
    */
   principal: (viewer: MarketplaceV2Viewer) => Promise<MarketplacePrincipal>
   now?: () => Date
+  /** Port v3 (#244): replace groups' implementations, for tests. Each defaults to its folder's entry module. */
+  features?: Partial<NormalizedFeatures>
+}
+
+/** What a port v3 group's normalized methods work with (#244): the same identity-bound transactions as this adapter. */
+export interface NormalizedFeatureContext {
+  /** One transaction as the session's person, for the viewer's ACTIVE business (a malformed viewer is refused first). */
+  asViewer: <T>(viewer: MarketplaceV2Viewer, work: (calls: MarketplaceCalls) => Promise<T>, options: { readOnly: boolean }) => Promise<T>
+  /** One transaction as the session's person for no business: seat invitations to them, LogLoads staff tools. */
+  asAccount: <T>(account: MarketplaceV2Account, work: (calls: MarketplaceCalls) => Promise<T>, options: { readOnly: boolean }) => Promise<T>
+  now: () => Date
+}
+
+/** One port v3 group's normalized implementation, as `./<group>/index.ts` exports it. */
+export interface NormalizedFeature<F extends MarketplaceV2Feature> {
+  /** `true` once every method of the group works: it turns the group on in `supports`. */
+  readonly supported: boolean
+  methods(context: NormalizedFeatureContext): MarketplaceV2FeaturePorts[F]
+}
+
+export type NormalizedFeatures = { readonly [F in MarketplaceV2Feature]: NormalizedFeature<F> }
+
+/**
+ * Port v3 (#244): each group's implementation comes from its own folder, so a group's task changes only that folder.
+ * Until a task lands, its group refuses every method with `MarketplaceFeatureUnavailableError` and reaches no store.
+ */
+const NORMALIZED_FEATURES: NormalizedFeatures = {
+  admin: normalizedAdmin,
+  alerts: normalizedAlerts,
+  billing: normalizedBilling,
+  boosts: normalizedBoosts,
+  invites: normalizedInvites,
+  jobs: normalizedJobs,
+  notify: normalizedNotify,
+  team: normalizedTeam,
+  trucks: normalizedTrucks
 }
 
 const NOT_AVAILABLE = "This business is not available to your account."
@@ -119,38 +163,6 @@ function freshAttestation(
   return !Number.isNaN(at) && age <= ATTESTATION_MAX_AGE_MS && age >= -ATTESTATION_MAX_SKEW_MS
 }
 
-/**
- * Port v3 (#244, billing #248): the `get_org_entitlement_state` columns the landing allowance does not read. A drift
- * between the SQL and this adapter fails loudly, as every row parse here does; its detail stays out of the message.
- */
-const planStateRowSchema = z.object({
-  fleet_only_members: z.number().int().nonnegative(),
-  grace_ends_at: z.string().refine((value) => !Number.isNaN(Date.parse(value))).nullable(),
-  landing_conflict: z.boolean(),
-  seat_conflict: z.boolean(),
-  subscription_status: z.enum(MARKETPLACE_SUBSCRIPTION_STATUSES).nullable()
-})
-
-export function planAllowanceFromRow(row: unknown): MarketplacePlanAllowanceView {
-  const allowance = landingAllowanceFromRow(row)
-  const parsed = planStateRowSchema.safeParse(row)
-
-  if (!parsed.success) {
-    throw new MarketplaceStoreError(undefined, "22000", parsed.error)
-  }
-
-  const state = parsed.data
-
-  return {
-    ...allowance,
-    fleetOnlyMembers: state.fleet_only_members,
-    graceEndsAt: state.grace_ends_at === null ? null : new Date(state.grace_ends_at).toISOString(),
-    landingsOverCap: state.landing_conflict,
-    seatsOverCap: state.seat_conflict,
-    subscriptionStatus: state.subscription_status
-  }
-}
-
 const isMemberRole = (value: string): value is MarketplaceMemberRole => (MARKETPLACE_MEMBER_ROLES as readonly string[]).includes(value)
 
 /** The same publication rules the server action applies, re-checked at the store boundary. */
@@ -164,7 +176,7 @@ function publishableDraft(draft: MarketplaceJobDraft): MarketplaceJobDraft {
   return validation.draft
 }
 
-export function createNormalizedMarketplaceV2({ db, now = () => new Date(), principal }: NormalizedMarketplaceDependencies): MarketplaceV2Port {
+export function createNormalizedMarketplaceV2({ db, features, now = () => new Date(), principal }: NormalizedMarketplaceDependencies): MarketplaceV2Port {
   async function asViewer<T>(viewer: MarketplaceV2Viewer, work: (calls: MarketplaceCalls) => Promise<T>, options: { readOnly: boolean }): Promise<T> {
     if (!viewer || !isUuid(viewer.organizationId) || typeof viewer.userId !== "string" || !viewer.userId) {
       throw new MarketplaceRefusalError(NOT_AVAILABLE, "42501")
@@ -173,8 +185,21 @@ export function createNormalizedMarketplaceV2({ db, now = () => new Date(), prin
     return db.asUser(await principal(viewer), work, options)
   }
 
+  async function asAccount<T>(account: MarketplaceV2Account, work: (calls: MarketplaceCalls) => Promise<T>, options: { readOnly: boolean }): Promise<T> {
+    if (!account || typeof account.userId !== "string" || !account.userId) {
+      throw new MarketplaceRefusalError(NOT_AVAILABLE, "42501")
+    }
+
+    // No business is selected: the person acts as themselves, and each function checks what they may do.
+    return db.asUser(await principal({ organizationId: "", userId: account.userId }), work, options)
+  }
+
   const read = { readOnly: true }
   const write = { readOnly: false }
+
+  // Port v3 (#244): every group from its own folder, wired once.
+  const groups: NormalizedFeatures = { ...NORMALIZED_FEATURES, ...features }
+  const context: NormalizedFeatureContext = { asAccount, asViewer, now }
 
   /** The inquiry must belong to the viewer's active business on the given side. */
   async function requireInquiryParty(calls: MarketplaceCalls, interestId: string, side: "hauler" | "landing", viewer: MarketplaceV2Viewer) {
@@ -241,6 +266,18 @@ export function createNormalizedMarketplaceV2({ db, now = () => new Date(), prin
   }
 
   return {
+    // Port v3 (#244). Spread first, so no group can replace a method defined below.
+    ...groups.jobs.methods(context),
+    ...groups.billing.methods(context),
+    ...groups.team.methods(context),
+    ...groups.invites.methods(context),
+    ...groups.trucks.methods(context),
+    ...groups.alerts.methods(context),
+    ...groups.notify.methods(context),
+    ...groups.boosts.methods(context),
+    ...groups.admin.methods(context),
+    supports: marketplaceV2FeatureSupport(MARKETPLACE_V2_FEATURES.filter((feature) => groups[feature].supported)),
+
     supportsPublishing: true,
     ...normalizedHaulerProfileMethods(asViewer, async (account, work) => {
       if (!account || typeof account.userId !== "string" || !account.userId) {
@@ -420,20 +457,27 @@ export function createNormalizedMarketplaceV2({ db, now = () => new Date(), prin
         throw new MarketplaceRefusalError(NOT_AVAILABLE, "42501")
       }
 
-      // Port v3 (#244): the feature capabilities restate the stage 03–26 functions' own checks from the same row's
-      // membership (role, seat, hauler profile). An unknown role grants none of them.
+      return viewerAccessFromRow(row)
+    },
+
+    async viewerFeatureCapabilities(viewer) {
+      const [row] = await asViewer(viewer, (calls) => calls.call("get_viewer_marketplace_access", { p_org_id: viewer.organizationId }), read)
+
+      if (!row) {
+        throw new MarketplaceRefusalError(NOT_AVAILABLE, "42501")
+      }
+
+      // Port v3 (#244): these restate the stage 03–26 functions' own checks, from the same row's membership (role,
+      // seat, hauler profile) as the store-reported capabilities. An unknown role grants none of them.
       const membership = viewerAccessRow(row)
 
-      return {
-        ...viewerAccessFromRow(row),
-        featureCapabilities: isMemberRole(membership.role)
-          ? marketplaceFeatureCapabilities({
-              haulerProfile: membership.hauler_profile,
-              landingWorkspaceSeat: membership.landing_workspace_seat,
-              role: membership.role
-            })
-          : []
-      }
+      return isMemberRole(membership.role)
+        ? marketplaceFeatureCapabilities({
+            haulerProfile: membership.hauler_profile,
+            landingWorkspaceSeat: membership.landing_workspace_seat,
+            role: membership.role
+          })
+        : []
     },
 
     async withdrawInterest(viewer, id) {
@@ -604,60 +648,6 @@ export function createNormalizedMarketplaceV2({ db, now = () => new Date(), prin
 
         await calls.call("withdraw_interest", { p_interest_id: target })
       }, write)
-    },
-
-    // -----------------------------------------------------------------------------------------------------------
-    // Port v3 (#244). Each group is refused with `MarketplaceFeatureUnavailableError` until its task lands, and
-    // `supports[group]` stays false. A task replaces only its own group's line below with its methods from
-    // `./<group>/`, turns its group on in `supports`, and adds its functions to `MARKETPLACE_FUNCTIONS`
-    // (normalized-db.ts) with the security review its catalogue test asks for. Lines are kept apart so two tasks'
-    // edits merge cleanly.
-    // -----------------------------------------------------------------------------------------------------------
-
-    // jobs (#247): set_job_posting_status, reactivate_job_posting, save_job_posting_draft (06, 11).
-    ...unavailableMarketplaceV2Feature("jobs"),
-
-    // billing (#248): the plan read model is mapped below; the founding offer (promotion_redemptions) waits for #248.
-    foundingOffer: unavailableMarketplaceV2Feature("billing").foundingOffer,
-
-    // team (#249): invite_team_member, resend/revoke/accept/decline_team_invitation, list_(my_)team_invitations,
-    // set_membership_landing_scope (26-A, 26-B). No stage 01–26 function removes a membership.
-    ...unavailableMarketplaceV2Feature("team"),
-
-    // invites (#250): count_eligible_invitation_recipients, reserve_targeted_invitation, respond_to_invitation (03).
-    ...unavailableMarketplaceV2Feature("invites"),
-
-    // trucks (#251): hauler_profiles and availability under row-level security; saved_searches (kind trucks).
-    ...unavailableMarketplaceV2Feature("trucks"),
-
-    // alerts (#252): list_saved_jobs, saved_jobs, saved_searches (kind jobs), notification_preferences (01, 26-C).
-    ...unavailableMarketplaceV2Feature("alerts"),
-
-    // notify (#253): notification_outbox (the recipient's granted columns), mark_notifications_read (26-D).
-    ...unavailableMarketplaceV2Feature("notify"),
-
-    // boosts (#254): estimate_boost_audience (18), job_boosts.
-    ...unavailableMarketplaceV2Feature("boosts"),
-
-    // admin (#255): admin_set_org_verification, admin_moderate_job_posting, admin_release_job_moderation_hold,
-    // admin_grant_founding_promotion, admin_grant_founding_hauler_badge, admin_read_landing_private,
-    // admin_read_interest_thread (03, 11, 16), abuse_reports.
-    ...unavailableMarketplaceV2Feature("admin"),
-
-    supports: marketplaceV2FeatureSupport(),
-
-    /**
-     * billing (#248): `get_org_entitlement_state` is already catalogued, so the plan read model is real here. Any
-     * active member may read it (the function's own check, `plan.view`); limits stay in `LANDING_PLANS`.
-     */
-    async planAllowance(viewer) {
-      const [row] = await asViewer(viewer, (calls) => calls.call("get_org_entitlement_state", { p_org_id: viewer.organizationId }), read)
-
-      if (!row) {
-        throw new MarketplaceStoreError()
-      }
-
-      return planAllowanceFromRow(row)
     }
   }
 }

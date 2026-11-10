@@ -229,6 +229,7 @@ export function selectMarketplaceV2Port(
     saveHaulerProfile: async (viewer, input) => current().saveHaulerProfile(viewer, input),
     setHaulerEquipmentCount: async (viewer, input) => current().setHaulerEquipmentCount(viewer, input),
     viewerAccess: async (viewer) => current().viewerAccess(viewer),
+    viewerFeatureCapabilities: async (viewer) => current().viewerFeatureCapabilities(viewer),
     withdrawInterest: async (viewer, interestId) => current().withdrawInterest(viewer, interestId),
 
     // Landing workspace (#127, #133).

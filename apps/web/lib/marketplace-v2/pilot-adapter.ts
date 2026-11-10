@@ -183,15 +183,14 @@ export const operatingStateMarketplaceV2: MarketplaceV2Port = {
   async viewerAccess(viewer) {
     return readState((current) => {
       const access = current.marketplaceViewerAccess(actor(viewer))
-      // Port v3 (#244): from the same translated membership. The pilot supports none of these groups (`supports`).
-      const { marketplace } = resolveMarketplaceActor(current.state, actor(viewer))
-
-      return {
-        capabilities: access.capabilities,
-        featureCapabilities: marketplaceFeatureCapabilities(marketplace),
-        organizationName: access.organizationName
-      }
+      return { capabilities: access.capabilities, organizationName: access.organizationName }
     })
+  },
+
+  // Port v3 (#244): from the same translated membership as `viewerAccess`, which also refuses a non-member. The pilot
+  // supports none of the groups these open (`supports`), so its pages offer none of their actions.
+  async viewerFeatureCapabilities(viewer) {
+    return readState((current) => marketplaceFeatureCapabilities(resolveMarketplaceActor(current.state, actor(viewer)).marketplace))
   },
 
   async withdrawInterest(viewer, interestId) {

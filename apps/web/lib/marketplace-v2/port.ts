@@ -77,15 +77,6 @@ export interface MarketplaceV2ViewerAccess {
   capabilities: MarketplaceCapability[]
 }
 
-/**
- * What `viewerAccess` returns: the store-reported capabilities, and the port v3 feature capabilities (#244) derived
- * from the same membership by `marketplaceFeatureCapabilities`. A capability says what the person's role allows, not
- * what the adapter can do: a page offers an action only when both the capability and `supports[group]` say so.
- */
-export interface MarketplaceV2ViewerFeatureAccess extends MarketplaceV2ViewerAccess {
-  featureCapabilities: MarketplaceFeatureCapability[]
-}
-
 /** Thrown by adapters that cannot persist an operation (e.g. publishing on the pilot store). */
 export class MarketplaceOperationUnavailableError extends Error {
   constructor(operation: string) {
@@ -176,8 +167,15 @@ export interface MarketplaceV2Port
    */
   reportListing(viewer: MarketplaceV2Viewer, input: unknown): Promise<MarketplaceListingReportReceipt>
 
-  /** The viewer's V2 capabilities in the active workspace (empty when the role has none), and the port v3 ones. */
-  viewerAccess(viewer: MarketplaceV2Viewer): Promise<MarketplaceV2ViewerFeatureAccess>
+  /** The viewer's V2 capabilities in the active workspace (empty when the role has none). */
+  viewerAccess(viewer: MarketplaceV2Viewer): Promise<MarketplaceV2ViewerAccess>
+  /**
+   * Port v3 (#244): the viewer's feature capabilities in the active workspace, derived by
+   * `marketplaceFeatureCapabilities` from the same membership as `viewerAccess` (empty when the role has none). A
+   * capability says what the person's role allows, not what the adapter can do: a page offers an action only when
+   * both the capability and `supports[group]` say so. Refuses a person who is not a member, as `viewerAccess` does.
+   */
+  viewerFeatureCapabilities(viewer: MarketplaceV2Viewer): Promise<MarketplaceFeatureCapability[]>
   /** Equipment configurations from the viewer's own hauling-business profile (self-reported). */
   haulerEquipment(viewer: MarketplaceV2Viewer): Promise<MarketplaceHaulerEquipmentOption[]>
   /** The viewer organization's own landings, public labels only. Requires `job.publish`. */
@@ -294,10 +292,11 @@ export interface MarketplaceV2Port
 
 // =================================================================================================================
 // Port v3 (#244): the feature groups the UX spec v1.0 work still needs (logloads#235, N1–N9). Views and inputs are in
-// packages/contracts/src/marketplace-port-v3.ts. Each group is built by its task in `./<group>/`, mapped to the SQL
-// function each method names (architecture/normalized-v2, stages 01–26). Until it lands, the normalized adapter
-// refuses the group with `MarketplaceFeatureUnavailableError` and `supports[group]` is `false`. The pilot store keeps
-// none of these records, so the pilot adapter refuses every one with `MarketplaceOperationUnavailableError`.
+// packages/contracts/src/marketplace-port-v3.ts and packages/contracts/src/v2/<group>/. Each group is built by its
+// task in `./<group>/` (already wired into normalized-adapter.ts), mapped to the SQL function each method names
+// (architecture/normalized-v2, stages 01–26). Until it lands, the group refuses with `MarketplaceFeatureUnavailableError`
+// and `supports[group]` is `false`. The pilot store keeps none of these records, so the pilot adapter refuses every
+// one with `MarketplaceOperationUnavailableError`.
 //
 // `input: unknown` is parsed by the adapter against the group's schema, whose output is the named `…Input` type.
 // Every viewer method acts for the viewer's ACTIVE business only, as the methods above do.
@@ -556,8 +555,8 @@ export function marketplaceV2FeatureMethods<F extends MarketplaceV2Feature>(feat
 }
 
 /**
- * A group whose every method rejects with `refusal(operation)` and reaches no store. The normalized adapter uses it for
- * each group until its task lands; the task then replaces that one line with its own methods.
+ * A group whose every method rejects with `refusal(operation)` and reaches no store. Each group's normalized entry
+ * module (`./<group>/index.ts`) returns it until the group's task replaces it with the real methods.
  */
 export function unavailableMarketplaceV2Feature<F extends MarketplaceV2Feature>(
   feature: F,
