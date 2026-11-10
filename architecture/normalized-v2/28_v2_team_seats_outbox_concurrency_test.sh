@@ -19,6 +19,10 @@
 #   membership is created.
 # Race R4: two email workers claim at the same time. The first holds its claim open; the second skips the rows the
 #   first locked (SKIP LOCKED) without waiting. Every email is claimed exactly once.
+# Race R5a: an owner invites an address to a seat while a direct downgrade to Basic runs on the same organization
+#   (Pro, 2 seats taken). The downgrade (apply_subscription_cycle, FOR UPDATE on the organization row) waits for the
+#   invitation, then counts it and is refused: it would strand the invitation. R5b: the downgrade first; the
+#   invitation waits, then finds Basic full and is refused.
 # Each race proves ordering from the sessions' own clocks, rejects deadlocks and timeouts, and asserts persisted state.
 # =============================================================================
 set -euo pipefail
@@ -155,7 +159,7 @@ refused_with() { # refused_with <label> <sqlstate> <message regex>
 }
 
 # --- Build the schema and a committed fixture -----------------------------------
-echo "[0/5] Building the disposable schema (01 -> 02 -> 03 -> 06 -> 11 -> 12 -> 16 -> 18 -> 23 -> 26, each atomic)..."
+echo "[0/6] Building the disposable schema (01 -> 02 -> 03 -> 06 -> 11 -> 12 -> 16 -> 18 -> 23 -> 26, each atomic)..."
 x "drop schema if exists marketplace cascade;"
 for f in 01_schema.sql 02_access.sql 03_entitlements.sql 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql \
          12_v2_billing_events.sql 16_v2_identity_membership_hardening.sql 18_v2_review_106_hardening.sql \
@@ -239,7 +243,7 @@ seats_of() { # seats_of <org id>: seated members plus pending, unexpired seat in
 # =============================================================================
 # R1: two owners invite two addresses to the last seat at the same time
 # =============================================================================
-echo "[1/5] R1: two owners invite different addresses to the organization's last seat at the same time..."
+echo "[1/6] R1: two owners invite different addresses to the organization's last seat at the same time..."
 ORG="$(org_of r28-r1)"
 barriers
 SQL_A="$(holder_sql "$BARRIER" "$(claims_for r28_1a)" "select marketplace.invite_team_member('${ORG}'::uuid, 'first@r28.test', 'staff', true, interval '7 days') is not null;")"
@@ -256,7 +260,7 @@ expect_eq "R1: the organization holds exactly its 5 seats" "$(seats_of "$ORG")" 
 # =============================================================================
 # R2a: a membership by user id, then an invitation, for the last seat
 # =============================================================================
-echo "[2/5] R2a: an owner adds a seated member by user id while the other owner invites an address to the same seat..."
+echo "[2/6] R2a: an owner adds a seated member by user id while the other owner invites an address to the same seat..."
 ORG="$(org_of r28-r2a)"; UX="$(uid_of r28_2a_x)"
 [[ -n "$ORG" && -n "$UX" ]] || fail "R2a: fixture setup incomplete"
 barriers
@@ -273,7 +277,7 @@ expect_eq "R2a: no invitation was created, and the organization holds exactly it
 # =============================================================================
 # R2b: an invitation, then a membership by user id, for the last seat
 # =============================================================================
-echo "[3/5] R2b: an owner invites an address to the last seat while the other owner adds a seated member by user id..."
+echo "[3/6] R2b: an owner invites an address to the last seat while the other owner adds a seated member by user id..."
 ORG="$(org_of r28-r2b)"; UX="$(uid_of r28_3a_x)"
 [[ -n "$ORG" && -n "$UX" ]] || fail "R2b: fixture setup incomplete"
 barriers
@@ -290,7 +294,7 @@ expect_eq "R2b: the membership was not created; the pending invitation holds the
 # =============================================================================
 # R3: accept against revoke, both ways round
 # =============================================================================
-echo "[4/5] R3: the invitee accepts while an owner revokes the same invitation (and the other way round)..."
+echo "[4/6] R3: the invitee accepts while an owner revokes the same invitation (and the other way round)..."
 ORG="$(org_of r28-r3)"
 INV_A="$(q "select id from marketplace.team_invitations where org_id = '${ORG}'::uuid and invited_email = 'inv_a@r28.test';")"
 INV_B="$(q "select id from marketplace.team_invitations where org_id = '${ORG}'::uuid and invited_email = 'inv_b@r28.test';")"
@@ -319,7 +323,7 @@ expect_eq "R3b: the invitation is revoked and no membership was created" \
 # =============================================================================
 # R4: two email workers claim at the same time
 # =============================================================================
-echo "[5/5] R4: two email workers claim from the same queue at the same time..."
+echo "[5/6] R4: two email workers claim from the same queue at the same time..."
 ORG="$(org_of r28-r4)"
 # Only this race's emails are due: every earlier one is closed first (the harness owns the table).
 x "update marketplace.notification_outbox set status = 'cancelled', resolved_at = now(), last_failure = 'closed before race R4' where status = 'pending';"
@@ -370,6 +374,69 @@ expect_eq "R4: worker B claimed the other 8" "$(wc -l < "$TMP_DIR/claimed_b.txt"
 expect_eq "R4: no email was claimed by both workers" "$(LC_ALL=C comm -12 "$TMP_DIR/claimed_a.txt" "$TMP_DIR/claimed_b.txt" | wc -l | tr -d ' ')" "0"
 expect_eq "R4: all 20 emails are claimed once each (one attempt, one live token)" \
   "$(q "select count(*)::text || ' ' || count(distinct claim_token)::text || ' ' || bool_and(attempt_count = 1)::text from marketplace.notification_outbox where status = 'claimed';")" "20 20 true"
+
+# =============================================================================
+# R5: an invitation against a direct downgrade, both ways round
+# =============================================================================
+echo "[6/6] R5: an owner invites an address to a seat while a direct downgrade to Basic runs (and the other way round)..."
+P_START="$(q "select (date_trunc('second', now()) - interval '1 hour')::text;")"
+P_END="$(q "select (date_trunc('second', now()) + interval '29 days')::text;")"
+# Two Pro landing organizations, each with its owner and one invited seated member: 2 seats, exactly Basic's limit.
+x "
+do \$\$
+declare
+  v_iss constant text := 'https://clerk.logloads.test';
+  r record; v_org uuid; v_f uuid;
+begin
+  for r in select * from (values ('r28-r5a', 'r28_5a'), ('r28-r5b', 'r28_5b')) t(slug, sub) loop
+    perform set_config('request.jwt.claims', '{\"role\":\"service_role\"}', true);
+    set local role service_role;
+    perform marketplace.sync_verified_identity(v_iss, r.sub, 'Owner ' || r.sub, r.sub || '@r28.test', true);
+    v_f := marketplace.sync_verified_identity(v_iss, r.sub || '_f', 'Member ' || r.sub, r.sub || '_f@r28.test', true);
+    perform set_config('request.jwt.claims', jsonb_build_object('role', 'authenticated', 'iss', v_iss, 'sub', r.sub,
+      'aud', 'logloads-app', 'exp', extract(epoch from now())::bigint + 3600)::text, true);
+    set local role authenticated;
+    v_org := marketplace.create_organization('R28 ' || r.slug, r.slug, 'OR', false);
+    perform set_config('request.jwt.claims', '{\"role\":\"service_role\"}', true);
+    set local role service_role;
+    perform marketplace.open_subscription_cycle(v_org, 'pro', 'active', '${P_START}'::timestamptz, '${P_END}'::timestamptz,
+      'cus_' || r.sub, 'sub_' || r.sub, false, 7, false);
+    perform set_config('request.jwt.claims', jsonb_build_object('role', 'authenticated', 'iss', v_iss, 'sub', r.sub,
+      'aud', 'logloads-app', 'exp', extract(epoch from now())::bigint + 3600)::text, true);
+    set local role authenticated;
+    insert into marketplace.organization_memberships (org_id, user_id, role, landing_workspace_seat, status)
+    values (v_org, v_f, 'staff', true, 'invited');
+    reset role;
+  end loop;
+end
+\$\$;"
+plan_of() { q "select p.code from marketplace.organization_subscriptions s join marketplace.subscription_plans p on p.id = s.plan_id where s.org_id = '$1'::uuid and s.status <> 'canceled';"; }
+downgrade_sql() { # downgrade_sql <org id> <subscription suffix>: the call, for "select ...;" or "perform ...;"
+  printf '%s' "marketplace.open_subscription_cycle('$1'::uuid, 'basic', 'active', '${P_START}'::timestamptz, '${P_END}'::timestamptz, 'cus_$2', 'sub_$2', false, 7, false)"
+}
+ORG="$(org_of r28-r5a)"
+[[ -n "$ORG" ]] || fail "R5a: fixture setup incomplete"
+expect_eq "R5a: fixture: Pro, 2 seats taken" "$(plan_of "$ORG") $(seats_of "$ORG")" "pro 2"
+barriers
+SQL_A="$(holder_sql "$BARRIER" "$(claims_for r28_5a)" "select marketplace.invite_team_member('${ORG}'::uuid, 'third@r28.test', 'staff', true, interval '7 days') is not null;")"
+SQL_B="$(waiter_sql "$BARRIER_B" "$(service_claims)" "perform $(downgrade_sql "$ORG" r28_5a)")"
+race R5a
+expect_eq "R5a: the invitation committed" "$RC_A" "0"
+expect_eq "R5a: the downgrading session ran to the end" "$RC_B" "0"
+overlap_waited R5a
+refused_with R5a 23514 "pending seat invitation"
+expect_eq "R5a: the organization is still on Pro, holding 3 seats (2 members, 1 invitation)" "$(plan_of "$ORG") $(seats_of "$ORG")" "pro 3"
+ORG="$(org_of r28-r5b)"
+[[ -n "$ORG" ]] || fail "R5b: fixture setup incomplete"
+barriers
+SQL_A="$(holder_sql "$BARRIER" "$(service_claims)" "select $(downgrade_sql "$ORG" r28_5b) is not null;")"
+SQL_B="$(waiter_sql "$BARRIER_B" "$(claims_for r28_5b)" "perform marketplace.invite_team_member('${ORG}'::uuid, 'third@r28.test', 'staff', true, interval '7 days')")"
+race R5b
+expect_eq "R5b: the downgrade committed" "$RC_A" "0"
+expect_eq "R5b: the inviting session ran to the end" "$RC_B" "0"
+overlap_waited R5b
+refused_with R5b 23514 "allows 2 team member"
+expect_eq "R5b: the organization is on Basic with its 2 seats and no invitation"   "$(plan_of "$ORG") $(seats_of "$ORG") $(q "select count(*) from marketplace.team_invitations where org_id = '${ORG}'::uuid;")" "basic 2 0"
 
 echo "Cleaning up..."
 x "drop schema if exists marketplace cascade;"

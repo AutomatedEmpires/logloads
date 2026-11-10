@@ -178,7 +178,7 @@ begin
   where n.nspname = 'marketplace';
   -- Functions: baseline 44; + 06 63; + 11/12 74 (5 in 11, 6 in 12); + 16 82 (the rest redefine existing ones);
   -- + 18 86 (three visibility helpers and one trigger function; the rest redefine existing ones);
-  -- + 26 109 (20 functions and 3 trigger functions; it also redefines six existing ones).
+  -- + 26 109 (20 functions and 3 trigger functions; it also redefines ten existing ones).
   perform pg_temp.assert_true(v_funcs = case when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end,
     format('expected %s functions in marketplace, found %s', case when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end, v_funcs));
 

@@ -353,7 +353,7 @@ case "$STAGE" in
     { echo "### Stage 25 round-2 concurrency (R2-1: owner exit against billing, two exits, open exit)"; echo '```'; grep -E "^\[|ok:|overlap|outcome:" "$LOG" || true; echo '```'; } >> "$SUMMARY"
     ;;
   26)
-    # Which marketplace functions 26 adds and changes, by source and by grant: exactly the 23 it creates and the six it
+    # Which marketplace functions 26 adds and changes, by source and by grant: exactly the 23 it creates and the ten it
     # redefines, and no grant on any existing function changes.
     FN_SRC_SQL="select p.oid::regprocedure::text || '|' || md5(p.prosrc) from pg_proc p where p.pronamespace = 'marketplace'::regnamespace order by 1;"
     FN_ACL_SQL="select p.oid::regprocedure::text || '|' || coalesce(array_to_string(p.proacl, ','), '') from pg_proc p where p.pronamespace = 'marketplace'::regnamespace order by 1;"
@@ -369,9 +369,9 @@ case "$STAGE" in
     [[ "$ADDED" == "$EXPECTED_ADDED" ]] || { echo "POST-STAGE CHECK FAILED: 26 added [$ADDED], expected [$EXPECTED_ADDED]" | tee -a "$LOG" >&2; exit 1; }
     echo "  check ok: 26 adds exactly its 23 functions" | tee -a "$LOG"
     CHANGED="$(LC_ALL=C join -t'|' "$LOG_DIR/stage26-src-before.txt" "$LOG_DIR/stage26-src-after.txt" | awk -F'|' '$2 != $3 {print $1}' | paste -sd, -)"
-    EXPECTED_CHANGED="marketplace.can_access_interest(uuid,text),marketplace.can_read_job_posting(uuid),marketplace.can_view_landing_private(uuid),marketplace.list_authoring_landings(uuid),marketplace.list_marketplace_interests(uuid,text,uuid),marketplace.tg_membership_guard()"
+    EXPECTED_CHANGED="marketplace.apply_subscription_cycle(uuid,text,text,timestamp with time zone,timestamp with time zone,text,text,boolean,integer,boolean,text,boolean),marketplace.can_access_interest(uuid,text),marketplace.can_read_job_posting(uuid),marketplace.can_view_app_user(uuid),marketplace.can_view_landing_private(uuid),marketplace.can_view_organization(uuid),marketplace.has_live_inquiry_from_hauler(uuid),marketplace.list_authoring_landings(uuid),marketplace.list_marketplace_interests(uuid,text,uuid),marketplace.tg_membership_guard()"
     [[ "$CHANGED" == "$EXPECTED_CHANGED" ]] || { echo "POST-STAGE CHECK FAILED: 26 changed [$CHANGED], expected [$EXPECTED_CHANGED]" | tee -a "$LOG" >&2; exit 1; }
-    echo "  check ok: 26 redefines exactly tg_membership_guard, can_read_job_posting, can_view_landing_private, can_access_interest, list_authoring_landings and list_marketplace_interests" | tee -a "$LOG"
+    echo "  check ok: 26 redefines exactly tg_membership_guard, apply_subscription_cycle (the downgrade seat check), and the scope-aware readers can_read_job_posting, can_view_landing_private, can_access_interest, has_live_inquiry_from_hauler, can_view_organization, can_view_app_user, list_authoring_landings and list_marketplace_interests" | tee -a "$LOG"
     ACL_CHANGED="$(LC_ALL=C join -t'|' "$LOG_DIR/stage26-acl-before.txt" "$LOG_DIR/stage26-acl-after.txt" | awk -F'|' '$2 != $3 {print $1}' | paste -sd, -)"
     [[ -z "$ACL_CHANGED" ]] || { echo "POST-STAGE CHECK FAILED: 26 changed the grants of [$ACL_CHANGED]" | tee -a "$LOG" >&2; exit 1; }
     echo "  check ok: no existing function's grants changed" | tee -a "$LOG"
@@ -382,7 +382,8 @@ case "$STAGE" in
     check "26-B: the landing-scope guard is installed on its seven tables" "select count(distinct c.relname) = 7 from pg_trigger t join pg_class c on c.oid = t.tgrelid where c.relnamespace = 'marketplace'::regnamespace and t.tgname = 'landing_scope_guard' and t.tgenabled = 'O' and c.relname in ('landings','landing_private_details','job_postings','job_posting_equipment','targeted_invitations','expressions_of_interest','interest_messages');"
     check "26-B: the five restrictive landing-scope read policies are installed" "select count(*) = 5 from pg_policies where schemaname = 'marketplace' and permissive = 'RESTRICTIVE' and cmd = 'SELECT' and policyname in ('landings_landing_scope','job_postings_landing_scope','interests_landing_scope','invitations_landing_scope','job_boosts_landing_scope');"
     check "26-D: the outbox's address, provider id, claim and failure text are not client-readable; its notice fields are" "select not has_column_privilege('authenticated', 'marketplace.notification_outbox', 'recipient_email', 'SELECT') and not has_column_privilege('authenticated', 'marketplace.notification_outbox', 'provider_message_id', 'SELECT') and not has_column_privilege('authenticated', 'marketplace.notification_outbox', 'claim_token', 'SELECT') and not has_column_privilege('authenticated', 'marketplace.notification_outbox', 'last_failure', 'SELECT') and has_column_privilege('authenticated', 'marketplace.notification_outbox', 'payload', 'SELECT') and has_column_privilege('authenticated', 'marketplace.notification_outbox', 'status', 'SELECT');"
-    check "26-A: the seat guard (tg_membership_guard) counts pending invitations" "select prosrc like '%marketplace.team_invitations%' from pg_proc where oid = 'marketplace.tg_membership_guard()'::regprocedure;"
+    check "26-A: the seat guard (tg_membership_guard) and the downgrade check (apply_subscription_cycle) count pending invitations" "select bool_and(prosrc like '%marketplace.team_invitations%') from pg_proc where oid in ('marketplace.tg_membership_guard()'::regprocedure, 'marketplace.apply_subscription_cycle(uuid, text, text, timestamptz, timestamptz, text, text, boolean, integer, boolean, text, boolean)'::regprocedure);"
+    check "R4: the subscription-cycle core is still executable by no API role" "select not has_function_privilege('service_role', p.oid, 'EXECUTE') and not has_function_privilege('authenticated', p.oid, 'EXECUTE') and not has_function_privilege('anon', p.oid, 'EXECUTE') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and p.proname = 'apply_subscription_cycle';"
     {
       echo "### Stage 26 inventory"
       echo '```'
@@ -430,7 +431,7 @@ SUITES
     echo "== exit $rc after $((SECONDS - started))s" | tee -a "$LOG"
     [[ "$rc" == "0" ]] || exit "$rc"
     grep -q "ALL TEAM SEAT AND OUTBOX CONCURRENCY TESTS PASSED" "$LOG" || { echo "STAGE 28: runner did not report completion" >&2; exit 1; }
-    { echo "### Stage 28 seat invitations and outbox concurrency (last seat, invitation against membership, accept against revoke, two workers)"; echo '```'; grep -E "^\[|ok:|overlap" "$LOG" || true; echo '```'; } >> "$SUMMARY"
+    { echo "### Stage 28 seat invitations and outbox concurrency (last seat, invitation against membership, accept against revoke, two workers, invitation against downgrade)"; echo '```'; grep -E "^\[|ok:|overlap" "$LOG" || true; echo '```'; } >> "$SUMMARY"
     ;;
   *) echo "unknown stage $STAGE" >&2; exit 2 ;;
 esac

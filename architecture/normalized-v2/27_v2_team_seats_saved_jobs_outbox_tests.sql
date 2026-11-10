@@ -89,8 +89,8 @@ do $$
 declare
   c_iss constant text := 'https://clerk.logloads.test';
   u_own uuid; u_bown uuid; u_mgr uuid; u_stf2 uuid; u_staff uuid; u_wide uuid; u_lmgr uuid; u_other uuid; u_unv uuid;
-  u_haul uuid; u_hdrv uuid; u_dec uuid; u_late uuid; u_str uuid; u_admin uuid;
-  o_land uuid; o_basic uuid; o_haul uuid; o_haul2 uuid;
+  u_haul uuid; u_hdrv uuid; u_dec uuid; u_late uuid; u_str uuid; u_admin uuid; u_h3 uuid; u_pown uuid; u_p1 uuid; u_p2 uuid;
+  o_land uuid; o_basic uuid; o_haul uuid; o_haul2 uuid; o_haul3 uuid; o_pro2 uuid; v_p1 uuid; v_p2 uuid; m_p1 uuid; e_h3 uuid;
   l_a uuid; l_b uuid; l_c uuid;
   j_a uuid; j_b uuid; j_b2 uuid; j_s1 uuid; j_s2 uuid; j_s3 uuid; j_x uuid; j_staff uuid; d_b uuid;
   e_a uuid; e_b uuid;
@@ -117,6 +117,10 @@ begin
   u_late  := marketplace.sync_verified_identity(c_iss, 's26_late',  'S26 Late Invitee',  'late@s26.test',  true);
   u_str   := marketplace.sync_verified_identity(c_iss, 's26_str',   'S26 Stranger',      'str@s26.test',   true);
   u_admin := marketplace.sync_verified_identity(c_iss, 's26_admin', 'S26 Moderator',     'admin@s26.test', true);
+  u_h3    := marketplace.sync_verified_identity(c_iss, 's26_h3',    'S26 Private Hauler', 'h3@s26.test',   true);
+  u_pown  := marketplace.sync_verified_identity(c_iss, 's26_pown',  'S26 Pro Owner',     'pown@s26.test',  true);
+  u_p1    := marketplace.sync_verified_identity(c_iss, 's26_p1',    'S26 Pro Invitee 1', 'p1@s26.test',    true);
+  u_p2    := marketplace.sync_verified_identity(c_iss, 's26_p2',    'S26 Pro Invitee 2', 'p2@s26.test',    true);
 
   -- -------------------------------------------------------------------------
   -- Fixture: a Pro landing organization (5 seats, 3 active landings) with landings A and B active and C inactive,
@@ -172,6 +176,16 @@ begin
   select interest_id into e_b from marketplace.submit_expression_of_interest(o_haul, j_b, 1);
   perform pg_temp.as_jwt('authenticated', 's26_str');
   o_haul2 := marketplace.create_organization('S26 Other Hauling', 's26-other-hauling', 'OR', true);
+  -- A private hauling business whose only inquiry is on a job at landing B, and whose owner lists a qualification.
+  perform pg_temp.as_jwt('authenticated', 's26_h3');
+  o_haul3 := marketplace.create_organization('S26 Private Hauling Three', 's26-hauling-three', 'OR', true);
+  insert into marketplace.user_qualifications (user_id, kind, label) values (u_h3, 'cdl', 'Class A CDL');
+  select interest_id into e_h3 from marketplace.submit_expression_of_interest(o_haul3, j_b2, 1);
+  -- A second Pro organization for the downgrade checks.
+  perform pg_temp.as_jwt('authenticated', 's26_pown');
+  o_pro2 := marketplace.create_organization('S26 Pro Two', 's26-pro-two', 'OR', false);
+  perform pg_temp.as_jwt('service_role');
+  perform marketplace.open_subscription_cycle(o_pro2, 'pro', 'active', now() - interval '1 hour', now() + interval '29 days', 'cus_s26p', 'sub_s26p', false, 7, false);
 
   -- =========================================================================
   -- 26-A seat invitations (Basic: 2 seats including the owner)
@@ -363,6 +377,36 @@ begin
   perform pg_temp.ok((select role = 'driver' and not landing_workspace_seat and status = 'active' from marketplace.organization_memberships where id = m_late),
     '26-A: a free driver joins a hauling business by invitation');
 
+  -- A plan change does not strand pending seat invitations (Pro, 5 seats: the owner and two invitations hold 3).
+  perform pg_temp.as_jwt('authenticated', 's26_pown');
+  v_p1 := marketplace.invite_team_member(o_pro2, 'p1@s26.test', 'staff', true, interval '7 days');
+  v_p2 := marketplace.invite_team_member(o_pro2, 'p2@s26.test', 'staff', true, interval '7 days');
+  perform pg_temp.as_jwt('service_role');
+  perform pg_temp.fails(format('select marketplace.open_subscription_cycle(%L::uuid, %L, %L, now() - interval %L, now() + interval %L, %L, %L, false, 7, false)',
+      o_pro2, 'basic', 'active', '1 hour', '29 days', 'cus_s26p', 'sub_s26p'),
+    '23514', '2 pending seat invitation', '26-A: a direct downgrade to Basic (2 seats) is refused while the owner and two pending invitations hold 3');
+  perform marketplace.open_subscription_cycle(o_pro2, 'basic', 'active', now() - interval '1 hour', now() + interval '29 days', 'cus_s26p', 'sub_s26p', false, 7, true);
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok((select (metadata ->> 'pending_seat_invitations')::int = 2 and (metadata ->> 'paid_landing_seats')::int = 1
+                             and metadata ->> 'plan' = 'basic'
+                      from marketplace.audit_events where org_id = o_pro2 and action = 'subscription.cycle_opened' order by id desc limit 1),
+    '26-A: a provider-driven change (p_allow_over_limit) is recorded, with the pending invitations in the audit');
+  perform pg_temp.as_jwt('authenticated', 's26_pown');
+  perform pg_temp.ok((select plan_code = 'basic' and paid_landing_seats = 1 and not seat_conflict from marketplace.get_org_entitlement_state(o_pro2)),
+    '26-A: seat_conflict still counts seated members only, so pending invitations never block publishing');
+  perform pg_temp.ok((select bool_and(seat_available = false) and count(*) = 2 from marketplace.list_team_invitations(o_pro2) where status = 'pending'),
+    '26-A: the team list shows that the plan has no room for the pending invitations');
+  perform pg_temp.as_jwt('authenticated', 's26_p1');
+  perform pg_temp.fails(format('select marketplace.accept_team_invitation(%L::uuid)', v_p1),
+    '23514', 'allows 2 team member', '26-A: ... and neither can be accepted while both are pending');
+  perform pg_temp.as_jwt('authenticated', 's26_pown');
+  perform marketplace.revoke_team_invitation(v_p2);
+  perform pg_temp.ok((select seat_available from marketplace.list_team_invitations(o_pro2) where invitation_id = v_p1),
+    '26-A: revoking one leaves room for the other');
+  perform pg_temp.as_jwt('authenticated', 's26_p1');
+  m_p1 := marketplace.accept_team_invitation(v_p1);
+  perform pg_temp.ok(m_p1 is not null, '26-A: ... which is then accepted, filling Basic''s 2 seats');
+
   -- =========================================================================
   -- 26-B staff-to-landing scope (Pro organization)
   -- =========================================================================
@@ -409,7 +453,7 @@ begin
                      and pg_temp.count_as('s26_wide', format('select count(*) from marketplace.expressions_of_interest where id in (%L, %L)', e_a, e_b)) = 2,
     '26-B: inquiries: only the job at landing A for the limited member');
   perform pg_temp.ok(pg_temp.count_as('s26_staff', format('select count(*) from marketplace.list_marketplace_interests(%L::uuid, %L)', o_land, 'landing')) = 1
-                     and pg_temp.count_as('s26_wide', format('select count(*) from marketplace.list_marketplace_interests(%L::uuid, %L)', o_land, 'landing')) = 2,
+                     and pg_temp.count_as('s26_wide', format('select count(*) from marketplace.list_marketplace_interests(%L::uuid, %L)', o_land, 'landing')) = 3,
     '26-B: the landing inbox (list_marketplace_interests) lists only in-scope inquiries');
   perform pg_temp.as_jwt('authenticated', 's26_staff');
   perform pg_temp.ok((select array_agg(id) = array[l_a] from marketplace.list_authoring_landings(o_land)),
@@ -419,6 +463,20 @@ begin
     '26-B: ... and both active landings to org-wide staff');
   perform pg_temp.ok(pg_temp.count_as('s26_own', format('select count(*) from marketplace.job_postings where id = %L', d_b)) = 1,
     '26-B: owners are never limited');
+  perform pg_temp.ok(pg_temp.count_as('s26_staff', format('select count(*) from marketplace.hauler_profiles where org_id = %L', o_haul3)) = 0
+                     and pg_temp.count_as('s26_wide', format('select count(*) from marketplace.hauler_profiles where org_id = %L', o_haul3)) = 1,
+    '26-B: a private hauling business that inquired only at landing B: its profile is hidden from the limited member (has_live_inquiry_from_hauler)');
+  perform pg_temp.ok(pg_temp.count_as('s26_staff', format('select count(*) from marketplace.user_qualifications where user_id = %L', u_h3)) = 0
+                     and pg_temp.count_as('s26_wide', format('select count(*) from marketplace.user_qualifications where user_id = %L', u_h3)) = 1,
+    '26-B: ... and so are its people''s qualifications (can_view_user_qualifications)');
+  perform pg_temp.ok(pg_temp.count_as('s26_staff', format('select count(*) from marketplace.organizations where id = %L', o_haul3)) = 0
+                     and pg_temp.count_as('s26_wide', format('select count(*) from marketplace.organizations where id = %L', o_haul3)) = 1,
+    '26-B: ... its organization row (can_view_organization)');
+  perform pg_temp.ok(pg_temp.count_as('s26_staff', format('select count(*) from marketplace.app_users where id = %L', u_h3)) = 0
+                     and pg_temp.count_as('s26_wide', format('select count(*) from marketplace.app_users where id = %L', u_h3)) = 1,
+    '26-B: ... and the person who inquired (can_view_app_user)');
+  perform pg_temp.ok(pg_temp.count_as('s26_staff', format('select count(*) from marketplace.hauler_profiles where org_id = %L', o_haul)) = 1,
+    '26-B: a hauling business that also inquired at landing A stays readable to the limited member');
 
   -- Writes (inside SECURITY DEFINER functions as well as direct).
   perform pg_temp.as_jwt('authenticated', 's26_staff');
@@ -492,6 +550,8 @@ begin
   perform pg_temp.ok(pg_temp.count_as('s26_staff', format('select count(*) from marketplace.job_postings where id = %L', d_b)) = 1
                      and pg_temp.count_as('s26_staff', format('select count(*) from marketplace.expressions_of_interest where id = %L', e_b)) = 1,
     '26-B: ... and at once reads landing B''s draft and inquiry');
+  perform pg_temp.ok(pg_temp.count_as('s26_staff', format('select count(*) from marketplace.hauler_profiles where org_id = %L', o_haul3)) = 1,
+    '26-B: ... and the business that inquired there');
   perform pg_temp.as_jwt('authenticated', 's26_own');
   perform marketplace.set_membership_landing_scope(m_staff, array[l_a, l_a]);
   perform pg_temp.ok(pg_temp.count_as('s26_staff', format('select count(*) from marketplace.job_postings where id = %L', d_b)) = 0,

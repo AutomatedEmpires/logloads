@@ -4,7 +4,7 @@
 -- NON-ACTIVE PROTOTYPE. Not an approved migration. Applied after 23_v2_round2_hardening.sql.
 -- Run order: 01 -> 02 -> 03 -> 06 -> 11 -> 12 -> 16 -> 18 -> 23 -> 26 (19..22, 24, 25, 27 and 28 are test suites and
 -- harnesses, not migrations). Apply exactly once, in one transaction: psql -v ON_ERROR_STOP=1 --single-transaction -f 26_...sql
--- 26 changes no stored row: it adds tables, functions, triggers and policies, redefines six functions, and adds one
+-- 26 changes no stored row: it adds tables, functions, triggers and policies, redefines ten functions, and adds one
 -- unique constraint every existing row already satisfies (10 proves this on existing data).
 --
 -- Sources: UX functional spec v1.0 §2.3-§2.4 (seats include the owner; the owner invites), §4.11 (seats used, pending
@@ -20,8 +20,10 @@
 --       (redefined) both count it, under the organization-row lock the guard already takes, so neither path can
 --       pass the plan's cap. The invitee accepts with the verified email address the invitation was sent to
 --       (user_contacts, written only by sync_verified_identity), and the membership starts active and accepted
---       (B-1). Fleet staff without a seat are not capped by a plan (§6.6); 50 pending invitations per organization is
---       an abuse bound, not a plan limit. Revoke, resend (at most 5 sends), decline and lazy expiry are audited.
+--       (B-1). A direct plan change (apply_subscription_cycle, redefined) refuses to strand pending seat invitations,
+--       as it refuses to strand seated members. Fleet staff without a seat are not capped by a plan (§6.6); 50 pending
+--       invitations per organization is an abuse bound, not a plan limit. Revoke, resend (at most 5 sends), decline and
+--       lazy expiry are audited.
 -- 26-B  Staff-to-landing scope. A manager or staff membership with a seat may be limited to some landings
 --       (membership_landing_scopes, set only by an owner). No rows means every landing, as before. Owners are never
 --       limited. The limit holds on every path: BEFORE triggers refuse writes to an out-of-scope landing, its jobs,
@@ -29,7 +31,9 @@
 --       functions too); RESTRICTIVE select policies hide out-of-scope private rows (public rows stay public); and the
 --       SECURITY DEFINER readers that bypass row security check it (can_read_job_posting, and through it
 --       list_marketplace_jobs and get_marketplace_job; can_view_landing_private; can_access_interest;
---       list_authoring_landings; list_marketplace_interests).
+--       list_authoring_landings; list_marketplace_interests; and what an inquiry or invitation reveals:
+--       has_live_inquiry_from_hauler, behind hauler_profiles_read and can_view_user_qualifications;
+--       can_view_organization; can_view_app_user).
 -- 26-C  Saved jobs. A member of a hauling business saves an open job (saved_jobs) and removes it; list_saved_jobs shows
 --       each saved job as open, paused, closed or unavailable, with public listing fields only, never private details.
 -- 26-D  Notification outbox (notification_outbox). Written only by this file's functions and triggers:
@@ -53,8 +57,9 @@
 -- list_team_invitations, set_membership_landing_scope, list_saved_jobs, enqueue_job_alerts, claim_email_notifications,
 -- complete_email_notification, record_email_provider_event, mark_notifications_read, and the trigger functions
 -- tg_landing_scope_guard, tg_saved_job_guard and tg_interest_message_notify.
--- Redefined (CREATE OR REPLACE keeps each ACL): tg_membership_guard, can_read_job_posting, can_view_landing_private,
--- can_access_interest, list_authoring_landings, list_marketplace_interests. Migration 18 (HF-18) withholds EXECUTE from
+-- Redefined (CREATE OR REPLACE keeps each ACL): tg_membership_guard, apply_subscription_cycle, can_read_job_posting,
+-- can_view_landing_private, can_access_interest, list_authoring_landings, list_marketplace_interests,
+-- has_live_inquiry_from_hauler, can_view_organization, can_view_app_user. Migration 18 (HF-18) withholds EXECUTE from
 -- PUBLIC on every function this role creates, so each grant below is explicit. Stage 26 in CI checks this exact set.
 -- =============================================================================
 
@@ -610,6 +615,307 @@ begin
 end
 $$;
 
+-- 26-B: what a landing desk learns from an inquiry or a targeted invitation follows the scope too. A limited member
+-- reads a private hauling business, its profile (hauler_profiles_read) and its people's qualifications
+-- (can_view_user_qualifications) only through an inquiry on a job at a landing in scope. 16's helper, verbatim, plus
+-- the 26-B line.
+create or replace function marketplace.has_live_inquiry_from_hauler(p_hauler_org uuid)
+returns boolean language sql stable security definer
+set search_path = pg_catalog, extensions, pg_temp
+as $$
+  select exists (
+    select 1 from marketplace.expressions_of_interest e
+    where e.hauler_org_id = p_hauler_org
+      and e.status not in ('withdrawn', 'declined')
+      and e.job_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff'], true))
+      and marketplace.job_scope_allows(e.job_id) -- 26-B
+  )
+$$;
+
+-- 26-B: 23's organization visibility; the landing side's counterpart branches need the job's landing in scope.
+create or replace function marketplace.can_view_organization(p_org uuid)
+returns boolean language sql stable security definer
+set search_path = pg_catalog, extensions, pg_temp
+as $$
+  select marketplace.org_has_public_presence(p_org)
+      or exists (select 1 from marketplace.organization_memberships m
+                 join marketplace.organizations o on o.id = m.org_id and o.status = 'active'
+                 where m.org_id = p_org and m.user_id = marketplace.current_user_id()
+                   and m.status in ('invited', 'active'))
+      or exists (select 1 from marketplace.expressions_of_interest e
+                 where (e.hauler_org_id = p_org
+                        and e.job_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff'], true))
+                        and marketplace.job_scope_allows(e.job_id)) -- 26-B
+                    or (e.job_org_id = p_org
+                        and e.hauler_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff', 'driver']))))
+      or exists (select 1 from marketplace.targeted_invitations ti
+                 where (ti.recipient_org_id = p_org
+                        and ti.sender_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff'], true))
+                        and marketplace.job_scope_allows(ti.job_id)) -- 26-B
+                    or (ti.sender_org_id = p_org
+                        and ti.recipient_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff', 'driver']))))
+$$;
+
+-- 26-B: 23's profile visibility; the landing side reads the people on an inquiry only for a job at a landing in scope.
+create or replace function marketplace.can_view_app_user(p_user uuid)
+returns boolean language sql stable security definer
+set search_path = pg_catalog, extensions, pg_temp
+as $$
+  select exists (select 1 from marketplace.organization_memberships m
+                 where m.user_id = p_user
+                   and m.accepted_at is not null
+                   and m.org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff', 'driver'])))
+      or exists (select 1 from marketplace.organization_memberships m
+                 where m.user_id = marketplace.current_user_id() and m.invited_by = p_user)
+      or exists (select 1 from marketplace.expressions_of_interest e
+                 where (e.hauler_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff', 'driver']))
+                        or (e.job_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff'], true))
+                            and marketplace.job_scope_allows(e.job_id))) -- 26-B
+                   and (e.submitted_by = p_user
+                        or e.private_details_shared_by = p_user
+                        or exists (select 1 from marketplace.interest_messages im
+                                   where im.interest_id = e.id and im.author_user_id = p_user)))
+      or exists (select 1 from marketplace.targeted_invitations ti
+                 where ti.sent_by = p_user
+                   and ti.recipient_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff', 'driver'])))
+$$;
+
+-- 26-A: a direct plan change (open_subscription_cycle, without p_allow_over_limit) refuses to strand pending seat
+-- invitations, as it refuses to strand seated members: the owner revokes them first. Provider events pass
+-- p_allow_over_limit and are never refused (12). After such a change, a pending invitation the plan has no room for
+-- cannot be accepted (tg_membership_guard) and list_team_invitations shows seat_available = false, so the owner revokes
+-- it. It blocks nothing else: seat_conflict (get_org_entitlement_state), which gates publishing, still counts seated
+-- members only. 12's function, verbatim, plus the lines marked 26-A. The audit keeps paid_landing_seats as seated
+-- members and adds pending_seat_invitations.
+create or replace function marketplace.apply_subscription_cycle(p_org_id uuid, p_plan_code text, p_status text,
+  p_period_start timestamp with time zone, p_period_end timestamp with time zone,
+  p_provider_customer_ref text default null, p_provider_subscription_ref text default null,
+  p_cancel_at_period_end boolean default false, p_grace_days integer default null,
+  p_allow_over_limit boolean default false, p_billing_reason text default null,
+  p_count_cycle_on_open boolean default true)
+returns uuid language plpgsql security definer
+set search_path = pg_catalog, extensions, pg_temp
+as $$
+declare
+  v_plan            marketplace.subscription_plans;
+  v_sub             marketplace.organization_subscriptions;
+  v_sub_id          uuid;
+  v_period_id       uuid;
+  v_promo_id        uuid;
+  v_grace_days      integer;
+  v_past_due_since  timestamptz;
+  v_grace_ends_at   timestamptz;
+  v_paid_seats      integer := 0;
+  v_reserved_seats  integer := 0; -- 26-A
+  v_active_landings integer := 0;
+  v_is_new_period   boolean := false;
+  v_is_split        boolean := false;
+  v_counts_cycle    boolean := false;
+  v_alloc_start     timestamptz := p_period_start;
+begin
+  perform 1 from marketplace.organizations where id = p_org_id for update;
+  select * into v_plan from marketplace.subscription_plans
+  where code = p_plan_code and status = 'active' limit 1;
+  if not found then
+    raise exception 'unknown active subscription plan: %', p_plan_code using errcode = 'P0002';
+  end if;
+
+  v_grace_days := coalesce(p_grace_days, v_plan.past_due_grace_days);
+  if v_grace_days < 0 or v_grace_days > 60 then
+    raise exception 'p_grace_days must be between 0 and 60' using errcode = '22023';
+  end if;
+
+  select count(*) into v_paid_seats
+  from marketplace.organization_memberships
+  where org_id = p_org_id and status in ('invited', 'active') and landing_workspace_seat;
+
+  -- 26-A: pending, unexpired seat invitations hold seats. Read under the organization-row lock taken above, the lock
+  -- invite_team_member also waits for.
+  select count(*) into v_reserved_seats
+  from marketplace.team_invitations
+  where org_id = p_org_id and status = 'pending' and expires_at > now() and landing_workspace_seat;
+
+  select count(*) into v_active_landings
+  from marketplace.landings
+  where org_id = p_org_id and status = 'active';
+
+  if marketplace.subscription_is_entitling(p_status, p_period_end,
+       case when p_status = 'past_due' then now() + greatest(v_grace_days, 1) * interval '24 hours' end)
+     and not p_allow_over_limit then
+    if v_paid_seats > v_plan.max_team_members then
+      raise exception 'organization has % paid landing workspace seats which exceeds plan % limit of %; explicitly remove or convert excess seats to fleet-only before downgrading',
+        v_paid_seats, v_plan.name, v_plan.max_team_members
+        using errcode = '23514',
+              hint = 'Update excess members to landing_workspace_seat = false or status = ''removed'' before changing plans.';
+    end if;
+    -- 26-A
+    if v_paid_seats + v_reserved_seats > v_plan.max_team_members then
+      raise exception 'organization has % paid landing workspace seats and % pending seat invitation(s), which exceed plan % limit of %; revoke invitations or remove seats before downgrading',
+        v_paid_seats, v_reserved_seats, v_plan.name, v_plan.max_team_members
+        using errcode = '23514',
+              hint = 'Revoke pending invitations (revoke_team_invitation), or remove or convert seats, before changing plans.';
+    end if;
+    if v_plan.max_active_landings is not null and v_active_landings > v_plan.max_active_landings then
+      raise exception 'organization has % active landings which exceeds plan % limit of %; explicitly deactivate excess landings before downgrading',
+        v_active_landings, v_plan.name, v_plan.max_active_landings
+        using errcode = '23514',
+              hint = 'Deactivate excess landings before changing plans.';
+    end if;
+  end if;
+
+  select * into v_sub from marketplace.organization_subscriptions
+  where org_id = p_org_id and status <> 'canceled' for update;
+
+  if v_sub.id is not null and p_period_start < v_sub.current_period_start then
+    if p_status = 'canceled' then
+      p_period_start := v_sub.current_period_start;
+      p_period_end   := v_sub.current_period_end;
+    else
+      raise exception 'refusing to move subscription % back to an earlier billing period (% < %)',
+        v_sub.id, p_period_start, v_sub.current_period_start
+        using errcode = '23514',
+              hint = 'Deliver provider events through marketplace.apply_billing_provider_event, which records and ignores stale events.';
+    end if;
+  end if;
+
+  if p_status = 'past_due' then
+    v_past_due_since := coalesce(v_sub.past_due_since, now());
+    v_grace_ends_at  := v_past_due_since + greatest(v_grace_days, 1) * interval '24 hours';
+  end if;
+
+  if p_status in ('trialing', 'active') then
+    select pr.id into v_promo_id
+    from marketplace.promotion_redemptions pr
+    join marketplace.promotions p on p.id = pr.promotion_id
+    where pr.org_id = p_org_id and pr.status in ('granted', 'applied')
+      and pr.cycles_applied < p.billing_cycles
+    limit 1
+    for update;
+  end if;
+
+  if v_sub.id is null then
+    insert into marketplace.organization_subscriptions
+      (org_id, plan_id, status, current_period_start, current_period_end,
+       past_due_since, grace_ends_at, cancel_at_period_end,
+       promotion_redemption_id, provider, provider_customer_ref, provider_subscription_ref)
+    values
+      (p_org_id, v_plan.id, p_status, p_period_start, p_period_end,
+       v_past_due_since, v_grace_ends_at, p_cancel_at_period_end,
+       v_promo_id, case when p_provider_subscription_ref is not null then 'stripe' end,
+       p_provider_customer_ref, p_provider_subscription_ref)
+    returning id into v_sub_id;
+  else
+    v_sub_id := v_sub.id;
+    update marketplace.organization_subscriptions
+    set plan_id = v_plan.id,
+        status = p_status,
+        current_period_start = p_period_start,
+        current_period_end = p_period_end,
+        past_due_since = v_past_due_since,
+        grace_ends_at = v_grace_ends_at,
+        cancel_at_period_end = p_cancel_at_period_end,
+        promotion_redemption_id = coalesce(v_promo_id, promotion_redemption_id),
+        provider_customer_ref = coalesce(p_provider_customer_ref, provider_customer_ref),
+        provider_subscription_ref = coalesce(p_provider_subscription_ref, provider_subscription_ref),
+        canceled_at = case when p_status = 'canceled' then now() else canceled_at end
+    where id = v_sub_id;
+  end if;
+
+  if marketplace.subscription_is_entitling(p_status, p_period_end, v_grace_ends_at) then
+    -- E-1: a replacement provider subscription can start before a period of the organization's previous
+    -- (now canceled) subscription. That period cannot be truncated to this start (it would end before it
+    -- begins) and invitation records reference it, so this subscription's allowance period begins where
+    -- the previous one ends. Only the org's other subscriptions are considered: one is live at a time.
+    select greatest(p_period_start, coalesce(max(ep.period_end), p_period_start))
+    into v_alloc_start
+    from marketplace.entitlement_periods ep
+    where ep.org_id = p_org_id
+      and ep.subscription_id <> v_sub_id
+      and ep.period_start >= p_period_start
+      and ep.period_start < p_period_end;
+  end if;
+
+  if marketplace.subscription_is_entitling(p_status, p_period_end, v_grace_ends_at) and v_alloc_start >= p_period_end then
+    -- No room before this billing period ends: no invitation allowance this cycle (fail closed), recorded.
+    perform marketplace.write_audit(
+      'subscription.period_overlap_skipped', 'organization_subscriptions', v_sub_id, p_org_id,
+      'an earlier subscription''s period covers this billing period; no invitation allowance until the next cycle',
+      jsonb_build_object('period_start', p_period_start, 'period_end', p_period_end, 'blocked_until', v_alloc_start));
+  elsif marketplace.subscription_is_entitling(p_status, p_period_end, v_grace_ends_at) then
+    v_is_split := exists (
+      select 1 from marketplace.entitlement_periods ep
+      where ep.subscription_id = v_sub_id
+        and ep.period_start < v_alloc_start
+        and ep.period_end > v_alloc_start
+    );
+
+    -- Truncate any earlier overlapping period for this org so mid-cycle plan upgrades
+    -- or timestamp adjustments across separate transactions never violate the GiST exclusion constraint.
+    update marketplace.entitlement_periods
+    set period_end = v_alloc_start
+    where org_id = p_org_id
+      and period_start < v_alloc_start
+      and period_end > v_alloc_start;
+
+    v_is_new_period := not exists (
+      select 1 from marketplace.entitlement_periods
+      where subscription_id = v_sub_id and period_start = v_alloc_start
+    );
+
+    insert into marketplace.entitlement_periods
+      (org_id, subscription_id, plan_id, period_start, period_end, invitation_allowance, invitations_committed)
+    values
+      (p_org_id, v_sub_id, v_plan.id, v_alloc_start, p_period_end, v_plan.monthly_invitations, 0)
+    on conflict (subscription_id, period_start) do update
+      set plan_id = excluded.plan_id,
+          period_end = excluded.period_end,
+          invitation_allowance = greatest(excluded.invitation_allowance, marketplace.entitlement_periods.invitations_committed)
+    returning id into v_period_id;
+
+    -- F5: a founding-discount cycle is consumed only by a genuinely new paid billing cycle — never by a
+    -- plan change (a split of the open period, or a provider event whose billing reason is a plan update).
+    -- LE-02: on the provider path a cycle is counted on payment evidence (apply_billing_provider_event); a
+    -- direct manual cycle is the administrator's own assertion that the period is paid.
+    v_counts_cycle := coalesce(p_count_cycle_on_open, true) and v_is_new_period and v_promo_id is not null and p_status = 'active'
+                      and not v_is_split
+                      and (p_billing_reason is null or p_billing_reason in ('subscription_create', 'subscription_cycle'));
+    if v_counts_cycle then
+      update marketplace.promotion_redemptions pr
+      set cycles_applied = pr.cycles_applied + 1,
+          status = case when pr.cycles_applied + 1 >= p.billing_cycles then 'exhausted' else 'applied' end,
+          counted_period_ends = pr.counted_period_ends || p_period_end
+      from marketplace.promotions p
+      where pr.id = v_promo_id and p.id = pr.promotion_id
+        and not (p_period_end = any (pr.counted_period_ends));
+    end if;
+  else
+    -- Only when a subscription ceases to be entitling altogether (e.g. canceled
+    -- or expired past grace) are active landings deactivated.
+    update marketplace.landings set status = 'inactive' where org_id = p_org_id and status = 'active';
+  end if;
+
+  perform marketplace.write_audit(
+    'subscription.cycle_opened', 'organization_subscriptions', v_sub_id, p_org_id,
+    null, jsonb_build_object(
+      'plan', p_plan_code,
+      'status', p_status,
+      'period_id', v_period_id,
+      'grace_ends_at', v_grace_ends_at,
+      'paid_landing_seats', v_paid_seats,
+      'pending_seat_invitations', v_reserved_seats, -- 26-A
+      'max_team_members', v_plan.max_team_members,
+      'seat_conflict', (v_paid_seats > v_plan.max_team_members),
+      'active_landings', v_active_landings,
+      'max_active_landings', v_plan.max_active_landings,
+      'landing_conflict', (v_plan.max_active_landings is not null and v_active_landings > v_plan.max_active_landings),
+      'mid_cycle_change', v_is_split,
+      'billing_reason', p_billing_reason,
+      'counted_discount_cycle', v_counts_cycle
+    ));
+  return v_sub_id;
+end
+$$;
+
 -- -----------------------------------------------------------------------------
 -- 4. 26-B enforcement on writes. Fires inside SECURITY DEFINER functions too, so publish, draft, status, reply,
 --    respond and invitation functions are all held to the scope. Nothing is limited when no user is acting.
@@ -1082,20 +1388,31 @@ as $$
 $$;
 
 -- The team page's invitations (§4.11), for the organization's owners: an expired one shows as expired, and the
--- latest email's real state is shown (sent is not delivered).
+-- latest email's real state is shown (sent is not delivered). seat_available (open invitations only) is false when
+-- the plan has no room for every seat the organization holds, which only a provider-driven plan change can cause; the
+-- owner then revokes invitations until it is true again.
 create function marketplace.list_team_invitations(p_org_id uuid)
 returns table (invitation_id uuid, invited_email text, role text, landing_workspace_seat boolean, landing_ids uuid[],
                status text, invited_by uuid, invited_by_name text, send_count smallint, last_sent_at timestamptz,
                expires_at timestamptz, resolved_at timestamptz, membership_id uuid, email_status text,
-               created_at timestamptz)
+               seat_available boolean, created_at timestamptz)
 language plpgsql stable security definer
 set search_path = pg_catalog, extensions, pg_temp
 as $$
 #variable_conflict use_column
+declare
+  v_plan  marketplace.subscription_plans;
+  v_held  integer;
 begin
   if not marketplace.has_org_role(p_org_id, array['owner']) then
     raise exception 'Only an owner of this organization can see its invitations' using errcode = '42501';
   end if;
+  v_plan := marketplace.org_entitled_plan(p_org_id);
+  select (select count(*) from marketplace.organization_memberships m
+          where m.org_id = p_org_id and m.status in ('invited', 'active') and m.landing_workspace_seat)
+       + (select count(*) from marketplace.team_invitations t
+          where t.org_id = p_org_id and t.status = 'pending' and t.expires_at > now() and t.landing_workspace_seat)
+  into v_held;
   return query
   select ti.id, ti.invited_email, ti.role, ti.landing_workspace_seat,
          coalesce((select array_agg(til.landing_id order by til.landing_id)
@@ -1105,6 +1422,9 @@ begin
          (select n.status from marketplace.notification_outbox n
           where n.subject_table = 'team_invitations' and n.subject_id = ti.id
           order by n.created_at desc, n.dedupe_key desc limit 1),
+         case when ti.status = 'pending' and ti.expires_at > now()
+              then not ti.landing_workspace_seat or v_plan.id is null or v_held <= v_plan.max_team_members
+         end,
          ti.created_at
   from marketplace.team_invitations ti
   join marketplace.app_users u on u.id = ti.invited_by
