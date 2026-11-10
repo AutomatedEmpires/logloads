@@ -171,7 +171,20 @@ describe("normalized adapter: identity and discovery", () => {
 
     expect((await adapter().listJobs({ product: "Pulpwood" })).map((job) => job.id)).toEqual([other])
     expect((await adapter().listJobs({ sort: "pay" })).map((job) => job.id)).toEqual([other, JOB])
-    expect(recorded[0]?.args).toEqual({ p_accepting_only: true, p_equipment: null, p_limit: 200, p_pay_unit: null, p_query: null })
+    expect(recorded[0]?.args).toEqual({ p_accepting_only: true, p_equipment: null, p_limit: 200, p_org_id: null, p_pay_unit: null, p_query: null })
+  })
+
+  it("asks the store for one business's own jobs, still anonymously, and asks nothing for a bad poster (#209)", async () => {
+    responses.list_marketplace_jobs = [jobRow()]
+
+    expect((await adapter().listJobs({ acceptingOnly: false, posterOrganizationId: LAND })).map((job) => job.id)).toEqual([JOB])
+    expect(recorded).toEqual([
+      { args: { p_accepting_only: false, p_equipment: null, p_limit: 200, p_org_id: LAND, p_pay_unit: null, p_query: null }, fn: "list_marketplace_jobs", session: "anon" }
+    ])
+    expect(principal).not.toHaveBeenCalled()
+
+    expect(await adapter().listJobs({ posterOrganizationId: "not-a-business" })).toEqual([])
+    expect(recorded).toHaveLength(1)
   })
 
   it("reads one job as the session's person when there is one, so a job that stopped can still say why (#130)", async () => {

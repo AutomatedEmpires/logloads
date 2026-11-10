@@ -66,7 +66,7 @@ export const MARKETPLACE_FUNCTIONS = {
   list_marketplace_interests: { anonymous: false, args: { p_job_id: "uuid", p_org_id: "uuid", p_side: "text" }, returns: "rows" },
   list_marketplace_jobs: {
     anonymous: true,
-    args: { p_accepting_only: "boolean", p_equipment: "text", p_limit: "integer", p_pay_unit: "text", p_query: "text" },
+    args: { p_accepting_only: "boolean", p_equipment: "text", p_limit: "integer", p_org_id: "uuid", p_pay_unit: "text", p_query: "text" },
     returns: "rows"
   },
   post_hauler_interest_reply: { anonymous: false, args: { p_body: "text", p_interest_id: "uuid", p_reply_id: "uuid" }, returns: "void" },

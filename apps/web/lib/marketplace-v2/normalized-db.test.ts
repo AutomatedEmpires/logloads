@@ -39,6 +39,17 @@ describe("marketplaceCallStatement", () => {
     expect(statement.values).toEqual(["true", "200", "saw'; drop table x; --"])
   })
 
+  it("sends discovery's poster as a bound uuid, so the function scopes before its row limit (#209)", () => {
+    const poster = "33333333-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    const scoped = marketplaceCallStatement("list_marketplace_jobs", { p_accepting_only: false, p_limit: 200, p_org_id: poster })
+
+    expect(scoped.text).toBe(
+      "select to_jsonb(r) as row from marketplace.list_marketplace_jobs(p_accepting_only => $1::text::boolean, p_limit => $2::text::integer, p_org_id => $3::text::uuid) as r"
+    )
+    expect(scoped.values).toEqual(["false", "200", poster])
+    expect(marketplaceCallStatement("list_marketplace_jobs", { p_org_id: null }).text).toContain("p_org_id => null::uuid")
+  })
+
   it("leaves undefined arguments to the function's own default", () => {
     expect(marketplaceCallStatement("list_marketplace_interests", { p_job_id: undefined, p_org_id: "org", p_side: "hauler" }).text)
       .toBe("select to_jsonb(r) as row from marketplace.list_marketplace_interests(p_org_id => $1::text::uuid, p_side => $2::text) as r")
