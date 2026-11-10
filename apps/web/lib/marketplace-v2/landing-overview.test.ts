@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest"
 
-import type { MarketplaceInterestView, MarketplaceJobCardView } from "@logloads/contracts"
+import { filterMarketplaceJobs, type MarketplaceInterestView, type MarketplaceJobCardView } from "@logloads/contracts"
 
-import { checklistIncomplete, newInquiryCount, newInquiryItems, overviewChecklist, unconfirmedJobItems, unconfirmedLabel } from "./landing-overview"
+import { checklistIncomplete, newInquiryCount, newInquiryItems, overviewChecklist, ownJobFilters, unconfirmedJobItems, unconfirmedLabel } from "./landing-overview"
 
 const ORG = "22222222-aaaa-4aaa-8aaa-222222222222"
 const OTHER = "88888888-cccc-4ccc-8ccc-cccccccccccc"
@@ -26,6 +26,19 @@ function job(id: string, title: string, overrides: Partial<MarketplaceJobCardVie
     ...overrides
   }
 }
+
+describe("the business's own jobs (#209)", () => {
+  it("asks the store for this business's listings in every status, before its row limit", () => {
+    expect(ownJobFilters(ORG)).toEqual({ acceptingOnly: false, posterOrganizationId: ORG })
+
+    const jobs = [
+      job("own-active", "Saw logs"),
+      job("own-paused", "Paused pulp", { acceptingInterest: false, status: "paused" }),
+      job("rival", "Rival run", { posterOrganizationId: OTHER })
+    ]
+    expect(filterMarketplaceJobs(jobs, ownJobFilters(ORG)).map((j) => j.id)).toEqual(["own-active", "own-paused"])
+  })
+})
 
 describe("the overview's attention list (#133 criterion 2)", () => {
   it("counts new inquiries per job, most first, for the active business only", () => {

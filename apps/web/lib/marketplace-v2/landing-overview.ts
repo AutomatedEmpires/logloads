@@ -5,6 +5,7 @@ import {
   RECENT_CONFIRMATION_DAYS,
   type MarketplaceInterestView,
   type MarketplaceJobCardView,
+  type MarketplaceJobFilters,
   type MarketplaceLandingView
 } from "@logloads/contracts"
 
@@ -20,6 +21,15 @@ export const LANDING_INBOX_PATH = "/v2/landing/inquiries"
 /** The job list ("Post jobs"). A business on both sides has no tab for it, so the overview links it (#209). */
 export const LANDING_JOBS_PATH = "/v2/landing/jobs"
 export const NEW_JOB_PATH = "/v2/landing/jobs/new"
+
+/**
+ * `listJobs` filters for one business's own listings, in every status the store shows (the overview and the job
+ * list). The store applies the poster before its row limit, so other businesses' listings never crowd out this
+ * business's older jobs (#209). Callers still keep only `organizationId`'s rows, as every function here does.
+ */
+export function ownJobFilters(organizationId: string): MarketplaceJobFilters {
+  return { acceptingOnly: false, posterOrganizationId: organizationId }
+}
 
 export interface NewInquiriesItem {
   kind: "new_inquiries"

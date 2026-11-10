@@ -15,6 +15,7 @@ import {
   type MarketplaceMemberRole
 } from "@logloads/contracts"
 
+import { ownJobFilters } from "./landing-overview"
 import { createNormalizedMarketplaceV2 } from "./normalized-adapter"
 import {
   createPostgresIdentitySync,
@@ -488,6 +489,39 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
       expect(await ids({ equipmentSetups: [["self_loader"]] })).toEqual([])
       expect((await ids({ equipmentSetups: [["log_truck"]] })).sort()).toEqual([landJobId, rivalJobId].sort())
     })
+
+    it("still returns a business's own older job when more than 200 other jobs rank ahead of it (#209, #242)", async () => {
+      // The landing overview and job list read the business's own jobs. A newer confirmation ranks first and the
+      // function returns at most 200 rows, so filtering the capped public feed afterwards loses the older job. The
+      // poster has to reach the function as p_org_id.
+      const ahead = 201
+      const prefix = "Rival Ahead Run"
+
+      try {
+        for (let n = 1; n <= ahead; n += 1) {
+          await port.publishJob(viewer("rival", "rival"), publishDraft(fixture.landings.rival, `${prefix} ${n}`), attestation("publish"))
+        }
+
+        const unscoped = (await port.listJobs({ acceptingOnly: false })).map((job) => job.id)
+        expect(unscoped).toHaveLength(200)
+        expect(unscoped).not.toContain(landJobId)
+
+        const own = await port.listJobs(ownJobFilters(fixture.orgs.land))
+        expect(own.map((job) => job.id)).toEqual([landJobId])
+
+        const rivals = await port.listJobs(ownJobFilters(fixture.orgs.rival))
+        expect(rivals.length).toBeGreaterThan(0)
+        expect(rivals.every((job) => job.posterOrganizationId === fixture.orgs.rival)).toBe(true)
+      } finally {
+        // Later cases read the board as it was: close the extra listings, so anonymous discovery no longer shows them.
+        await admin.unsafe(
+          "update marketplace.job_postings set status = 'closed' where org_id = $1::uuid and title like $2",
+          [fixture.orgs.rival, `${prefix} %`]
+        )
+      }
+
+      expect((await port.listJobs({ acceptingOnly: false })).map((job) => job.id).sort()).toEqual([landJobId, rivalJobId].sort())
+    }, 180_000)
   })
 
   // -------------------------------------------------------------------------------------------------------------

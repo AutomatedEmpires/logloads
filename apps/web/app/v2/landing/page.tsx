@@ -12,6 +12,7 @@ import {
   newInquiryItems,
   OVERVIEW_PATH,
   overviewChecklist,
+  ownJobFilters,
   unconfirmedJobItems
 } from "@/lib/marketplace-v2/landing-overview"
 import { landingRowView } from "@/lib/marketplace-v2/landing-workspace"
@@ -70,7 +71,8 @@ export default async function LandingOverviewPage({ searchParams }: { searchPara
   const organizationId = viewer.organizationId
   const [interests, jobs, landings, allowance] = await Promise.all([
     load(can("inquiry.respond"), () => pilotMarketplaceV2.listLandingInterests(viewer)),
-    load(true, async () => (await pilotMarketplaceV2.listJobs({ acceptingOnly: false })).filter((job) => job.posterOrganizationId === organizationId)),
+    // Scoped to this business in the store, before its row limit (#209); the row filter stays as a second check.
+    load(true, async () => (await pilotMarketplaceV2.listJobs(ownJobFilters(organizationId))).filter((job) => job.posterOrganizationId === organizationId)),
     load(can("job.publish"), () => pilotMarketplaceV2.listOwnLandings(viewer)),
     load(can("job.publish"), () => pilotMarketplaceV2.landingAllowance(viewer))
   ])

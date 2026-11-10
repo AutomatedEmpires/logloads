@@ -121,6 +121,14 @@ describe("the landing overview (#133)", () => {
     expect(page).toMatch(/<a [^>]*href="\/v2\/landing\/landings"[^>]*>(<[^>]+>)*All landings</)
   })
 
+  it("asks the store for the active business's own jobs, not the capped public feed, and still drops another poster's row (#209)", async () => {
+    const page = await render()
+
+    expect(mocks.listJobs).toHaveBeenCalledTimes(1)
+    expect(mocks.listJobs).toHaveBeenCalledWith({ acceptingOnly: false, posterOrganizationId: ORG })
+    expect(page).not.toContain("Rival run")
+  })
+
   it("lists new inquiries per job and listings past the interval with one-tap Confirm (criterion 2)", async () => {
     mocks.supportsPublishing = true
     const page = await render()
