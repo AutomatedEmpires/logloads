@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# LogLoads normalized-v2 — 10 migration-path test for 06 -> 11 -> 12 -> 16 -> 18 -> 23 on existing data
+# LogLoads normalized-v2 — 10 migration-path test for 06 -> 11 -> 12 -> 16 -> 18 -> 23 -> 26 on existing data
 #
 # NON-ACTIVE PROTOTYPE TEST HARNESS. Disposable PostgreSQL only; same fail-closed target checks as 05/08.
 # Builds a baseline (01 -> 02 -> 03) holding data created the baseline way — including the states the
@@ -17,7 +17,9 @@
 #   12  an existing subscription keeps its state, carries no invented provider-event history, and accepts
 #       provider events afterwards (R4);
 #   18  changes no stored row (its fixes are rules, policies and grants), and existing data still works;
-#   23  changes no stored row either (it redefines a trigger and two visibility helpers, and comments one function).
+#   23  changes no stored row either (it redefines a trigger and two visibility helpers, and comments one function);
+#   26  changes no stored row either (it adds tables, functions, triggers and policies, redefines six functions, and adds a
+#       unique constraint every membership already satisfies).
 # =============================================================================
 set -euo pipefail
 
@@ -31,11 +33,11 @@ x() { printf '%s\n' "$1" | psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 >/dev/null; }
 apply1() { psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$1" >/dev/null; }
 fail() { echo "ERROR: $*" >&2; exit 1; }
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-# md5 of every row of every marketplace table, one entry per table. $1 (optional): one table to leave out.
+# md5 of every row of every marketplace table, one entry per table. $1 (optional): tables to leave out, comma-separated.
 all_data() {
   local parts
   parts="$(q "select string_agg(format('select %L || '':'' || coalesce((select md5(string_agg(t::text, ''|'' order by t::text)) from marketplace.%I t), ''empty'')', c.relname, c.relname), ' union all ')
-              from pg_class c where c.relnamespace = 'marketplace'::regnamespace and c.relkind in ('r','p') and c.relname <> '${1:-}';")"
+              from pg_class c where c.relnamespace = 'marketplace'::regnamespace and c.relkind in ('r','p') and c.relname <> all (string_to_array('${1:-}', ','));")"
   q "select md5(string_agg(x, '|' order by x)) from (${parts}) s(x);"
 }
 expect_eq() { [[ "$2" == "$3" ]] || fail "$1: expected '$3', got '$2'"; echo "  ok: $1"; }
@@ -242,7 +244,7 @@ grep -q "requires migration 11" "$TMP/early12.log" || fail "12 before 11 failed 
 expect_eq "every table unchanged by the refused runs" "$(all_data)" "$STATE"
 expect_eq "ledger unchanged by the refused runs" "$(q "select string_agg(version, ',' order by version) from marketplace.schema_migrations;")" "06"
 
-echo "[5/6] Applying 11_v2_phase3_policy.sql, 12_v2_billing_events.sql, 16_v2_identity_membership_hardening.sql, 18_v2_review_106_hardening.sql and 23_v2_round2_hardening.sql (each one transaction) on top of existing data..."
+echo "[5/6] Applying 11_v2_phase3_policy.sql, 12_v2_billing_events.sql, 16_v2_identity_membership_hardening.sql, 18_v2_review_106_hardening.sql, 23_v2_round2_hardening.sql and 26_v2_team_seats_saved_jobs_outbox.sql (each one transaction) on top of existing data..."
 apply1 "$SCRIPT_DIR/11_v2_phase3_policy.sql"
 apply1 "$SCRIPT_DIR/12_v2_billing_events.sql"
 MEMBERS_MODIFIED="$(q "select string_agg(id::text || ':' || updated_at::text, ',' order by id) from marketplace.organization_memberships;")"
@@ -252,6 +254,8 @@ apply1 "$SCRIPT_DIR/18_v2_review_106_hardening.sql"
 AFTER_18="$(all_data schema_migrations)"
 apply1 "$SCRIPT_DIR/23_v2_round2_hardening.sql"
 AFTER_23="$(all_data schema_migrations)"
+apply1 "$SCRIPT_DIR/26_v2_team_seats_saved_jobs_outbox.sql"
+AFTER_26="$(all_data schema_migrations,team_invitations,team_invitation_landings,membership_landing_scopes,saved_jobs,notification_outbox)"
 
 echo "[6/6] Asserting 11 and 12 fabricated nothing and existing data still works..."
 expect_eq "F1: a profile public only by the pre-V2 default is now private" \
@@ -279,6 +283,8 @@ expect_eq "B-1: 16 records every existing active membership as accepted" "$(q "s
 expect_eq "B-1: ... without changing any membership's last-modified time" "$(q "select string_agg(id::text || ':' || updated_at::text, ',' order by id) from marketplace.organization_memberships;")" "$MEMBERS_MODIFIED"
 expect_eq "18 changes no stored row in any marketplace table (the ledger aside)" "$AFTER_18" "$BEFORE_18"
 expect_eq "23 changes no stored row in any marketplace table (the ledger aside)" "$AFTER_23" "$AFTER_18"
-expect_eq "the ledger records 06, 11, 12, 16, 18 and 23 in order" "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" "06,11,12,16,18,23"
+expect_eq "26 changes no stored row in any marketplace table (the ledger aside)" "$AFTER_26" "$AFTER_23"
+expect_eq "26's new tables start empty" "$(q "select (select count(*) from marketplace.team_invitations) + (select count(*) from marketplace.team_invitation_landings) + (select count(*) from marketplace.membership_landing_scopes) + (select count(*) from marketplace.saved_jobs) + (select count(*) from marketplace.notification_outbox);")" "0"
+expect_eq "the ledger records 06, 11, 12, 16, 18, 23 and 26 in order" "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" "06,11,12,16,18,23,26"
 x "drop schema if exists marketplace cascade;"
 echo "MIGRATION PATH TEST PASSED."

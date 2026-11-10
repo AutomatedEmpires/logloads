@@ -190,6 +190,56 @@ Decision (R2-3): the review offered two fixes for "an owner can invite any user 
 
 HF-06's `qualification_verification_reset` has no exemption. A future staff re-verification, such as a renewed expiry date on a verified CDL, is one `SECURITY DEFINER` staff function that runs two statements. The first is the edit, which resets the row to `self_reported` and writes `qualification.verification_reset`. The second sets `verification_status = 'verified'` with `reviewed_by` and `reviewed_at`, and the trigger leaves it alone because the row is no longer verified. Clients cannot write `verification_status`, `reviewed_by` or `reviewed_at` (column grants, checked in stage 23), so only such a function can re-verify. We rejected an exemption keyed on `reviewed_at` or on a session setting: it would make the reset depend on column grants staying narrow, or on a setting a client can set, for a staff flow that does not exist yet. The rule is also the trigger function's catalog comment.
 
+### Stage 26: `26_v2_team_seats_saved_jobs_outbox.sql` (#237)
+
+Migration 26 adds five tables and 23 functions (three of them trigger functions), redefines ten functions, and changes no stored row and no existing grant. The ten are `tg_membership_guard` and `apply_subscription_cycle` (seats), plus eight readers that now follow landing scope: `can_read_job_posting`, `can_view_landing_private`, `can_access_interest`, `has_live_inquiry_from_hauler`, `can_view_organization`, `can_view_app_user`, `list_authoring_landings` and `list_marketplace_interests`. Stage 26 in CI checks that exact set, as stage 23 does. `10` proves on existing data that no stored row changes, and `15` drills 26 like the earlier migrations. Tests: `27_v2_team_seats_saved_jobs_outbox_tests.sql` (one session) and `28_v2_team_seats_outbox_concurrency_test.sh` (two sessions). After 26, stage 27 runs `04`, `07`, `09`, `13`, `17`, `19` and `21` again. Sources: UX functional spec v1.0 §2.3–§2.4, §4.11, §5.9, §6.6, §8.7, §8.15 and §8.19. Seat limits come from `subscription_plans.max_team_members`, seeded from `packages/contracts/src/membership.ts`.
+
+#### Seat invitations (26-A)
+
+* An owner invites an **email address** (`invite_team_member`) as manager, staff or driver, with or without a Landing Operator seat, and may limit the invitation to some landings. Ownership is never invited: it moves only through a separate, guarded transfer, which does not exist yet.
+* A **pending, unexpired invitation with a seat holds that seat**. Both `invite_team_member` and the redefined `tg_membership_guard` count it, so neither path can pass the plan's cap. The two take turns on the organization row: the guard locks it `FOR UPDATE`, as it did before. The invitation locks it `FOR NO KEY UPDATE`, which conflicts with the guard and with other invitations but not with foreign-key checks. `28` proves both orders and two simultaneous invitations.
+* Accepting needs the person's **verified** address to equal the invited one. `user_contacts.email` is written only by `sync_verified_identity`, from a verified provider claim, and has no client write path. A forwarded invitation email therefore cannot be used by someone else. The membership starts active and accepted (B-1), with `invited_by` set to the inviter, so R2-3's profile rules apply unchanged.
+* Lock order. An invitation's row is locked before the organization row: accept and revoke take the invitation row first, and `invite_team_member` closes an expired invitation to the same address before it locks the organization. Billing never touches invitations. Accept and revoke take turns on the invitation row, and the second one finds the invitation closed (`28`).
+* Expiry is lazy. A pending invitation past `expires_at` holds no seat and cannot be accepted. Inviting the address again records it as `expired`. The invitation's lifetime is a required parameter (1 hour to 30 days), because no product decision fixes it.
+* A direct plan change (`open_subscription_cycle` through the redefined `apply_subscription_cycle`) **refuses to strand pending seat invitations**, just as it refuses to strand seated members (Item 1, explicit resolution). The owner revokes invitations first. Billing locks the organization row `FOR UPDATE` before it counts, so a downgrade and an invitation take turns; `28` proves both orders.
+* Provider events pass `p_allow_over_limit` (12) and are never refused. After such a change, a pending invitation the plan has no room for cannot be accepted, and `list_team_invitations` shows `seat_available = false` until the owner revokes enough of them. It blocks nothing else. `seat_conflict` (`get_org_entitlement_state`), which gates publishing, still counts seated members only (04), and `paid_landing_seats`, which the adapter shows as team members, is unchanged. The cycle audit adds `pending_seat_invitations`.
+* Fleet staff without a seat are not capped by any plan (§6.6). At most 50 pending invitations per organization and 5 sends per invitation are abuse bounds, not plan limits.
+
+#### Staff-to-landing scope (26-B)
+
+A manager or staff membership with a seat may be limited to some landings (`membership_landing_scopes`). Only an owner sets it, through `set_membership_landing_scope`, and each change is audited. No rows means every landing, which is today's behaviour. Owners are never limited. An invitation's landings become the member's scope when they accept, archived landings included, so archiving a landing never widens a scope. The limit holds on every path:
+
+| Path | How |
+|---|---|
+| Direct writes and writes inside `SECURITY DEFINER` functions (publish, draft, status, respond, reply, targeted invitation) | `landing_scope_guard` `BEFORE` triggers on `landings`, `landing_private_details`, `job_postings`, `job_posting_equipment`, `targeted_invitations`, `expressions_of_interest` (landing side) and `interest_messages` (landing side). They key on the JWT identity, not the database role. A limited member cannot add a landing. |
+| Direct reads | `RESTRICTIVE` select policies on `landings`, `job_postings`, `expressions_of_interest`, `targeted_invitations` and `job_boosts`. A public row (an active landing, a publicly visible job) stays readable to everyone who could read it before. |
+| `SECURITY DEFINER` readers (they bypass row security) | `can_read_job_posting` (and through it `list_marketplace_jobs` and `get_marketplace_job`), `can_view_landing_private`, `can_access_interest`, `list_authoring_landings` and `list_marketplace_interests` check the scope. So do the helpers that turn an inquiry or a targeted invitation into visibility: `has_live_inquiry_from_hauler` (behind `hauler_profiles_read` and `can_view_user_qualifications`), and the counterpart branches of `can_view_organization` and `can_view_app_user`. A limited member reads a private hauling business, its people and their qualifications only through an inquiry or invitation on a landing in scope. |
+
+Not limited: organization-level counts (`get_org_entitlement_state`), the audience estimates `count_eligible_invitation_recipients` and `estimate_boost_audience` (aggregate counts, no private data), and job templates (organization-level).
+
+#### Saved jobs (26-C)
+
+`saved_jobs` stores ids only: a person, the hauling business they saved for, and the job. A member saves an open job and deletes the row to remove it. `list_saved_jobs` shows each saved job as `open`, `paused`, `closed` or `unavailable`, with public listing fields only. An unavailable job (taken down by a moderator, or its business is no longer active) shows no listing fields. Job-change notifications for saved jobs (spec §10.2) are a recommendation, not an approved MVP feature, so 26 does not add them.
+
+#### Notification outbox (26-D)
+
+| | |
+|---|---|
+| Writers | Only 26's functions and triggers. A team invitation email (transactional). An inquiry message, which notifies the other side's opted-in members, never its author; a landing-side recipient needs a seat and the job's landing in scope. A saved-search job alert, queued by the matching service through `enqueue_job_alerts` (service role); each job alerts a search once per channel. |
+| Consent | `notification_preferences` (business, category, channel), an active membership in an active business, and the subject still open. Checked when a notice is queued and again when a worker claims it. Targeted invitations keep `invitation_deliveries`, which reconciles the allowance. |
+| In-app | `delivered` when written. The recipient reads their own notices and marks them read (`mark_notifications_read`). |
+| Email | `pending` → `claimed` → `sent` → `delivered` or `bounced`. A notice can also end `failed`, `suppressed` (no consent, no verified address, or a test-recipient guard) or `cancelled` (the subject closed). `sent` means the provider accepted the request; only `record_email_provider_event('delivered')` makes it `delivered` (AGENTS.md §7.6). |
+| Worker (service role) | `claim_email_notifications` takes due emails with `FOR UPDATE SKIP LOCKED` and a lease, and returns each with its address and a claim token. `complete_email_notification` needs that token, so a worker whose lease ran out cannot overwrite a later claim. A retry backs off; the fifth failed attempt is final. |
+| Privacy | The payload names the job, business and sender, and never copies message text or the invitee's address. Clients cannot read the address, the provider's message id, the claim or the failure text (column grants). Audit metadata never holds an address. |
+
+The states map onto the pilot contract's `emailDeliveryState` (`packages/contracts/src/schemas.ts`) as `pending` → `pending`, `claimed` → `claimed`, and `failed`, `bounced`, `suppressed`, `cancelled` → `failed`. That contract's `delivered` means the provider accepted the request, which is 26's `sent`. 26 keeps the provider's own confirmation separate.
+
+#### CI wiring and what is not in 26
+
+* **26 is in the migration chain everywhere.** The owner tool's `MIGRATION_CHAIN` (`tools/normalized-store-policy.mjs`) applies it, so the ledger is now `06,11,12,16,18,23,26`. The seed, both adapter contract tests and the owner tool's tests pin that ledger. `tools/normalized-store.test.mjs` keeps them, `run-stage.sh` and the workflows in step.
+* In `normalized-v2-ci.yml`, the alignment and Supabase jobs run 26 and 27 right after 24, the last suite that pins the ledger at 23, and 28 after 25. The adapter-contract job runs 26 after 23. Each stage is its own workflow step; `run-stage.sh` never chains one stage into another. That keeps the workflow steps, which the chain test reads, the single record of what CI applies.
+* The recovered `schema26` batch (#221) is not adopted. G1 must ship with contracts, adapter and UI. G2 and G4 follow #219. G3 contradicts HF-05's verified column grant and needs an adapter security review. G5 and G6 rewrite stored rows and need data-mapping, rollback and concurrency review. If adopted later, they take a stage number of 29 or above.
+
 ---
 
 ## 5. All 32 Normalized Tables and Key Indexes
