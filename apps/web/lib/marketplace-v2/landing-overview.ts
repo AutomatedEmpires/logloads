@@ -130,10 +130,27 @@ export interface OverviewChecklistStep {
  * The new subscriber's three steps (B8): add a landing, post a job, set the contact route. The contact route is not
  * a choice yet: first contact is always through LogLoads messages (UX-DEC-04), so that step is done from the start
  * and says so.
+ *
+ * "Post a job" is done when anything shows the business has posted before:
+ * - one of its own listings in `jobs`;
+ * - an inquiry on one of its jobs, in any status;
+ * - an active job counted on one of its landings, which includes a listing that expired.
+ * `jobs` comes from discovery, which shows only listings the public can see. The other two are read as the business,
+ * so a business whose listings are all expired or have inquiries still counts as having posted (#209 review). A
+ * business whose jobs are all paused or closed and never drew an inquiry still sees the step. Telling that apart
+ * needs a signed-in read of the business's own jobs, which the job lifecycle work adds.
  */
-export function overviewChecklist(input: { landings: readonly MarketplaceLandingView[] | null; jobs: readonly MarketplaceJobCardView[]; organizationId: string }): OverviewChecklistStep[] {
+export function overviewChecklist(input: {
+  landings: readonly MarketplaceLandingView[] | null
+  jobs: readonly MarketplaceJobCardView[]
+  interests?: readonly MarketplaceInterestView[] | null
+  organizationId: string
+}): OverviewChecklistStep[] {
   const hasLanding = (input.landings?.length ?? 0) > 0
-  const hasJob = input.jobs.some((job) => job.posterOrganizationId === input.organizationId)
+  const hasJob =
+    input.jobs.some((job) => job.posterOrganizationId === input.organizationId) ||
+    (input.interests ?? []).some((interest) => interest.landingOrganization.id === input.organizationId) ||
+    (input.landings ?? []).some((landing) => (landing.activeJobs ?? 0) > 0)
 
   return [
     { done: hasLanding, href: hasLanding ? null : "/v2/landing/landings/new", id: "landing", label: "Add a landing", note: "The real place you recruit trucks for. Its exact location stays private." },

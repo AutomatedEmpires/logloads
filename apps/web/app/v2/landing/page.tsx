@@ -78,9 +78,10 @@ export default async function LandingOverviewPage({ searchParams }: { searchPara
   ])
   const summary = allowance ? summarizeLandingAllowance(allowance) : null
   const now = new Date().toISOString()
-  const steps = overviewChecklist({ jobs: jobs ?? [], landings, organizationId })
+  const steps = overviewChecklist({ interests, jobs: jobs ?? [], landings, organizationId })
   const attention = [...(interests ? newInquiryItems(interests, organizationId) : []), ...(jobs ? unconfirmedJobItems(jobs, organizationId, now) : [])]
-  const showChecklist = can("job.publish") && checklistIncomplete(steps) && attention.length === 0
+  // A job read that failed is not an empty job history: no checklist is derived from it (#209 review).
+  const showChecklist = can("job.publish") && jobs !== null && checklistIncomplete(steps) && attention.length === 0
   const plan = summary?.plan ? `${summary.plan.name} plan` : summary ? "no plan is active" : null
 
   return (
@@ -105,7 +106,12 @@ export default async function LandingOverviewPage({ searchParams }: { searchPara
               ) : null}
               {one(query.error) ? <PageNotice role="alert" tone="critical"><p>{one(query.error)}</p></PageNotice> : null}
               {interests === null && can("inquiry.respond") ? <PageNotice role="status"><p>Your inquiries could not be loaded, so new inquiries are not listed.</p></PageNotice> : null}
-              {showChecklist ? <OverviewChecklist steps={steps} /> : <OverviewAttention items={attention} saves={pilotMarketplaceV2.supportsPublishing} />}
+              {jobs === null ? <PageNotice role="status"><p>Your jobs could not be loaded, so listings to confirm are not listed.</p></PageNotice> : null}
+              {showChecklist ? (
+                <OverviewChecklist steps={steps} />
+              ) : (
+                <OverviewAttention complete={jobs !== null && (interests !== null || !can("inquiry.respond"))} items={attention} saves={pilotMarketplaceV2.supportsPublishing} />
+              )}
             </>
           }
         />

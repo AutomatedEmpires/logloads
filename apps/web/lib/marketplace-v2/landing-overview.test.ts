@@ -98,10 +98,27 @@ describe("the new subscriber's checklist (#133 criterion 6)", () => {
     expect(checklistIncomplete(steps)).toBe(true)
   })
 
-  it("is complete once the business has a landing and a job of its own", () => {
-    const landing = { activeJobs: 1, approximatePoint: null, areaLabel: "Oakridge, OR", county: null, id: "l1", name: "Hills Creek", privateDetails: { exactLocation: null, gateInstructions: null, siteContactName: null, siteContactPhone: null }, stateCode: "OR", status: "active" as const, updatedAt: null }
+  const landing = (activeJobs: number | null) => ({
+    activeJobs, approximatePoint: null, areaLabel: "Oakridge, OR", county: null, id: "l1", name: "Hills Creek",
+    privateDetails: { exactLocation: null, gateInstructions: null, siteContactName: null, siteContactPhone: null }, stateCode: "OR", status: "active" as const, updatedAt: null
+  })
 
-    expect(checklistIncomplete(overviewChecklist({ jobs: [job("j1", "Mine")], landings: [landing], organizationId: ORG }))).toBe(false)
-    expect(checklistIncomplete(overviewChecklist({ jobs: [job("j9", "Theirs", { posterOrganizationId: OTHER })], landings: [landing], organizationId: ORG }))).toBe(true)
+  it("is complete once the business has a landing and a job of its own", () => {
+    expect(checklistIncomplete(overviewChecklist({ jobs: [job("j1", "Mine")], landings: [landing(0)], organizationId: ORG }))).toBe(false)
+    expect(checklistIncomplete(overviewChecklist({ jobs: [job("j9", "Theirs", { posterOrganizationId: OTHER })], landings: [landing(0)], organizationId: ORG }))).toBe(true)
+  })
+
+  it("counts a job the public cannot see when the business's own reads show it posted one (#209 review)", () => {
+    const posted = (input: Partial<Parameters<typeof overviewChecklist>[0]>) =>
+      !checklistIncomplete(overviewChecklist({ jobs: [], landings: [landing(0)], organizationId: ORG, ...input }))
+
+    // An inquiry on one of its jobs, in any status, means it posted, even if every listing is now paused or closed.
+    expect(posted({ interests: [interest("i1", "j1", "Closed pulp", "declined")] })).toBe(true)
+    // Another business's inquiry proves nothing about this one.
+    expect(posted({ interests: [interest("i9", "j9", "Theirs", "submitted", OTHER)] })).toBe(false)
+    // An active job counted on its own landing, such as a listing that expired, also means it posted.
+    expect(posted({ landings: [landing(1)] })).toBe(true)
+    expect(posted({ landings: [landing(null)] })).toBe(false)
+    expect(posted({ interests: null })).toBe(false)
   })
 })

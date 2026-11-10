@@ -188,6 +188,33 @@ describe("the landing overview (#133)", () => {
     expect(page).not.toContain("Needs attention")
   })
 
+  it("does not show the first-job checklist to a business whose only jobs the public cannot see (#209 review)", async () => {
+    // Discovery shows no listing of its own (all paused or closed), and its landing counts no active job.
+    mocks.listOwnLandings.mockResolvedValue([{ ...landing(), activeJobs: 0 }])
+    mocks.listJobs.mockResolvedValue([])
+    mocks.listLandingInterests.mockResolvedValue([])
+    expect(await render()).toContain("Get started")
+
+    // An inquiry read as the business, in any status, shows it has posted.
+    mocks.listLandingInterests.mockResolvedValue([interest("i7", "j7", "Closed pulp", "declined")])
+    const page = await render()
+
+    expect(page).not.toContain("Get started")
+    expect(page).toContain("Needs attention")
+  })
+
+  it("says when the jobs could not be loaded, and derives neither the checklist nor an all-clear from it (#209 review)", async () => {
+    mocks.listOwnLandings.mockResolvedValue([])
+    mocks.listLandingInterests.mockResolvedValue([])
+    mocks.listJobs.mockRejectedValue(new Error("store unavailable"))
+    const page = await render()
+
+    expect(page).toContain("Your jobs could not be loaded, so listings to confirm are not listed.")
+    expect(page).not.toContain("Get started")
+    expect(page).not.toContain("Nothing needs attention right now")
+    expect(page).toContain("This list could not be loaded in full.")
+  })
+
   it("says what a refused or unavailable confirmation came to", async () => {
     expect(await render({ unavailable: "reconfirm" })).toContain("Confirming isn’t saved in this preview yet")
     expect(await render({ updated: "reconfirmed" })).toContain("Confirmed.")

@@ -55,14 +55,22 @@ function ConfirmForm({ item, saves }: { item: Extract<OverviewAttentionItem, { k
   )
 }
 
-/** B8 "Needs attention": new inquiries per job, and listings unconfirmed past the interval, each with its one action. */
-export function OverviewAttention({ items, saves }: { items: readonly OverviewAttentionItem[]; saves: boolean }) {
+/**
+ * B8 "Needs attention": new inquiries per job, and listings unconfirmed past the interval, each with its one action.
+ * `complete` is false when a read behind the list failed. The page says which one, and the list never claims that
+ * nothing needs attention (#209 review).
+ */
+export function OverviewAttention({ complete = true, items, saves }: { complete?: boolean; items: readonly OverviewAttentionItem[]; saves: boolean }) {
   const confirmable = items.some((item) => item.kind === "unconfirmed")
 
   return (
     <Section title="Needs attention">
       {items.length === 0 ? (
-        <p className={styles.note}>Nothing needs attention right now. New inquiries and listings to confirm show here.</p>
+        <p className={styles.note}>
+          {complete
+            ? "Nothing needs attention right now. New inquiries and listings to confirm show here."
+            : "This list could not be loaded in full. New inquiries and listings to confirm show here once they load."}
+        </p>
       ) : (
         <div className={styles.stack}>
           <ul aria-label="Needs attention" className={styles.rows}>
