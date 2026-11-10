@@ -21,7 +21,7 @@ import type { MarketplaceCalls, MarketplaceDb, MarketplacePrincipal } from "./no
 import { normalizedHaulerFleetMethods } from "./normalized-fleet"
 import { normalizedHaulerProfileMethods } from "./normalized-hauler"
 import {
-  equipmentOptionFromRow,
+  equipmentOptionsFromRows,
   expressInterestArguments,
   haulerReplyArguments,
   inquiryJobFromRow,
@@ -268,7 +268,7 @@ export function createNormalizedMarketplaceV2({ db, now = () => new Date(), prin
 
     async haulerEquipment(viewer) {
       const rows = await asViewer(viewer, (calls) => calls.call("list_hauler_equipment_options", { p_org_id: viewer.organizationId }), read)
-      return rows.map(equipmentOptionFromRow)
+      return equipmentOptionsFromRows(rows)
     },
 
     async interestForJob(viewer, jobId) {

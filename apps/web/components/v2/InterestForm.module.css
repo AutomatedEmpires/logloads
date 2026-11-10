@@ -96,6 +96,50 @@
   overflow-wrap: anywhere;
 }
 
+/* The interest sheet (UX-08, #131): who it is sent as, each row's availability line, the other trucks' disclosure
+   and the "Update availability?" notes. */
+.as {
+  margin: 0;
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+  overflow-wrap: anywhere;
+}
+
+.business {
+  color: var(--ll-color-text);
+  font-weight: var(--ll-weight-semibold);
+}
+
+.stamp {
+  color: var(--ll-color-text-muted);
+  font-size: var(--ll-text-sm);
+  overflow-wrap: anywhere;
+}
+
+.others {
+  display: grid;
+  gap: var(--ll-space-2);
+  min-width: 0;
+}
+
+/* A live region: always in the page, so a note that appears as a count changes is announced. Empty, it has no height. */
+.capacityNotes {
+  display: grid;
+  gap: var(--ll-space-2);
+  min-width: 0;
+}
+
+.capacityNote {
+  margin: 0;
+  padding: var(--ll-space-2) var(--ll-space-3);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-status-warning-bg);
+  color: var(--ll-color-text);
+  font-size: var(--ll-text-sm);
+  line-height: var(--ll-leading-normal);
+  overflow-wrap: anywhere;
+}
+
 /* A count before hydration or without JavaScript: a native number input in the field style. */
 .countInput {
   box-sizing: border-box;

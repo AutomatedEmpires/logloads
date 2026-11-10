@@ -12,7 +12,9 @@ const mocks = vi.hoisted(() => ({
   getJob: vi.fn(),
   getSessionActor: vi.fn(),
   haulerEquipment: vi.fn(),
+  haulerFleet: vi.fn(),
   interestForJob: vi.fn(),
+  listHaulerInterests: vi.fn(),
   listJobs: vi.fn(),
   viewerAccess: vi.fn()
 }))
@@ -33,13 +35,15 @@ vi.mock("@/lib/marketplace-v2/pilot-adapter", () => ({
   pilotMarketplaceV2: {
     getJob: mocks.getJob,
     haulerEquipment: mocks.haulerEquipment,
+    haulerFleet: mocks.haulerFleet,
     interestForJob: mocks.interestForJob,
+    listHaulerInterests: mocks.listHaulerInterests,
     listJobs: mocks.listJobs,
     viewerAccess: mocks.viewerAccess
   }
 }))
 
-import type { MarketplaceJobDetailView } from "@logloads/contracts"
+import type { HaulerFleetView, MarketplaceInterestView, MarketplaceJobDetailView } from "@logloads/contracts"
 import { JobDetail } from "@logloads/ui/marketplace"
 
 import JobDetailPage from "@/app/v2/work/[jobId]/page"
@@ -86,6 +90,38 @@ function job(overrides: Partial<MarketplaceJobDetailView> = {}): MarketplaceJobD
   }
 }
 
+/** The business's own trucks (My trucks, #126): two pole-trailer trucks, with an optional availability report. */
+function fleet(availability: HaulerFleetView["availability"] = []): HaulerFleetView {
+  return {
+    availability,
+    canEdit: true,
+    organizationId: HAULER_ORG,
+    placed: true,
+    units: [{ category: "truck", equipmentCode: "log_truck", id: "log_truck|pole_trailer", label: "Log truck + Pole trailer", otherTrailer: null, trailerCode: "pole_trailer", units: 2 }]
+  }
+}
+
+function sentInterest(overrides: Partial<MarketplaceInterestView> = {}): MarketplaceInterestView {
+  return {
+    availableFrom: "2026-11-12",
+    availableUntil: null,
+    contactPreference: "in_app",
+    createdAt: "2026-11-04T18:00:00.000Z",
+    equipment: [{ configurationKey: "log_truck|pole_trailer", count: 2, label: "Log truck + Pole trailer" }],
+    haulerOrganization: { id: HAULER_ORG, name: "Example Hauling LLC", type: "hauler" },
+    id: OTHER_ID,
+    job: { acceptingInterest: true, id: JOB_ID, slug: JOB_ID, status: "active", title: "Saw logs to the river mill" },
+    landingOrganization: { id: LANDING_ORG, name: "Example Timber Co" },
+    message: null,
+    replies: [],
+    status: "submitted",
+    submittedBy: { name: "Sam Hauler", userId: USER_ID },
+    trucksOffered: 2,
+    updatedAt: "2026-11-04T18:00:00.000Z",
+    ...overrides
+  }
+}
+
 function actorFor(organizationId: string) {
   return { activeOrganization: { id: organizationId }, memberships: [], profile: { id: USER_ID }, workspaceSelectionInvalid: false }
 }
@@ -127,6 +163,8 @@ beforeEach(() => {
     { configurationKey: "log_truck|pole_trailer", equipmentCodes: ["log_truck", "pole_trailer"], label: "Log truck + Pole trailer", unitsListed: 2 }
   ])
   mocks.listJobs.mockResolvedValue([])
+  mocks.haulerFleet.mockResolvedValue(fleet())
+  mocks.listHaulerInterests.mockResolvedValue([])
 })
 
 describe("the decision summary (criteria 1, 2, 7)", () => {
@@ -269,10 +307,85 @@ describe("the sticky interest bar (criterion 4)", () => {
     mocks.getSessionActor.mockResolvedValueOnce(null)
     expect(propsOf<{ offer: { href: string } }>(await tree(), JobInterestBar)?.offer.href).toBe(`/sign-in?next=${encodeURIComponent(`/v2/work/${JOB_ID}`)}`)
 
-    mocks.interestForJob.mockResolvedValueOnce({ equipment: [], id: OTHER_ID, replies: [], status: "submitted", trucksOffered: 2 })
+    mocks.interestForJob.mockResolvedValueOnce(sentInterest({ equipment: [], id: OTHER_ID }))
     expect(propsOf(await tree(), JobInterestBar)).toBeUndefined()
 
     mocks.getSessionActor.mockResolvedValueOnce(actorFor(LANDING_ORG))
     expect(propsOf(await tree(), JobInterestBar)).toBeUndefined()
+  })
+})
+
+describe("the interest sheet (UX-08, #131)", () => {
+  const today = new Date().toISOString().slice(0, 10)
+  const fresh = (overrides: Partial<HaulerFleetView["availability"][number]> = {}) => ({
+    availableCount: 1, availableFrom: today, availableUntil: "2099-01-01", equipmentCode: "log_truck", reportedAt: new Date().toISOString(), state: "available" as const, ...overrides
+  })
+  const sheetOf = (html: string) => [...html.matchAll(/<form\b[\s\S]*?<\/form>/g)].map((match) => match[0]).find((tag) => tag.includes('name="loadPostingId"')) ?? ""
+
+  it("fills in the trucks and the date from My trucks and the contact route from the last inquiry, as the session's business (criterion 1)", async () => {
+    mocks.haulerFleet.mockResolvedValue(fleet([fresh()]))
+    mocks.listHaulerInterests.mockResolvedValue([sentInterest({ contactPreference: "email" })])
+    const sheet = sheetOf(await renderJob())
+
+    expect(textOf(sheet)).toContain("As Example Hauling LLC")
+    expect(sheet.match(/<input[^>]*name="equipmentCount"[^>]*>/)?.[0]).toContain('value="1"')
+    expect(textOf(sheet)).toContain("Log truck + Pole trailer 1 of 2 available Available now · Updated today by the hauler")
+    expect(sheet.match(/<input[^>]*name="availableFrom"[^>]*>/)?.[0]).toContain(`value="${today}"`)
+    expect(sheet).toMatch(/<option value="email" selected="">Email<\/option>/)
+  })
+
+  it("reads each record as the session's business, and still offers the form when one cannot be read", async () => {
+    await renderJob()
+    for (const read of [mocks.haulerEquipment, mocks.haulerFleet, mocks.listHaulerInterests]) {
+      expect(read).toHaveBeenCalledWith({ organizationId: HAULER_ORG, userId: USER_ID })
+    }
+
+    mocks.haulerFleet.mockRejectedValue(new Error("store down"))
+    mocks.listHaulerInterests.mockRejectedValue(new Error("store down"))
+    const sheet = sheetOf(await renderJob())
+    expect(sheet).toContain('name="equipmentCount"')
+    expect(textOf(sheet)).toContain("availability not recently confirmed")
+    expect(sheet).toMatch(/<option value="in_app" selected="">LogLoads messages<\/option>/)
+  })
+
+  it("is not offered to a visitor or to a business that already sent interest", async () => {
+    mocks.getSessionActor.mockResolvedValueOnce(null)
+    expect(sheetOf(await renderJob())).toBe("")
+    expect(mocks.haulerFleet).not.toHaveBeenCalled()
+
+    mocks.interestForJob.mockResolvedValueOnce(sentInterest())
+    expect(sheetOf(await renderJob())).toBe("")
+  })
+
+  it("confirms what was sent: the landing business, the trucks and the date, with links to inquiries and similar jobs (criterion 4)", async () => {
+    mocks.interestForJob.mockResolvedValue(sentInterest())
+    mocks.listJobs.mockResolvedValue([job({ id: "77777777-7777-4777-8777-777777777777", posterName: "Other Landing Co", slug: "77777777-7777-4777-8777-777777777777", title: "Saw logs, next valley" })])
+    const html = await renderJob({ sent: "1" })
+    const notice = /<div[^>]*role="status"[^>]*>([\s\S]*?)<\/div>/.exec(html)?.[1] ?? ""
+
+    expect(textOf(notice)).toBe("Sent to Example Timber Co: 2 trucks (2 × Log truck + Pole trailer), available from Nov 12, 2026.")
+    expect(textOf(html)).toContain("Sent · waiting for the landing. Free and nonbinding: the landing reviews it and replies in your inquiries.")
+    expect(html).toContain(`href="/v2/inquiries?inquiry=${OTHER_ID}"`)
+    expect(html).toMatch(/<a[^>]*href="#similar"[^>]*>See similar jobs<\/a>/)
+    expect(html).toContain('id="similar"')
+    expect(html).toMatch(/<a[^>]*href="\/v2\/work\/77777777-7777-4777-8777-777777777777"[^>]*>Saw logs, next valley<\/a>/)
+    expect(textOf(html)).not.toMatch(/\b(hired|booked|assigned)\b/i)
+
+    // A later visit summarises the standing interest instead, and suggests nothing.
+    const later = await renderJob()
+    expect(textOf(later)).toContain("You offered Example Timber Co 2 trucks (2 × Log truck + Pole trailer), available from Nov 12, 2026. Sent · waiting for the landing.")
+    expect(later).not.toContain('id="similar"')
+  })
+
+  it("flags a sent offer above the latest availability report, so a page without JavaScript says so too (criterion 2)", async () => {
+    mocks.interestForJob.mockResolvedValue(sentInterest())
+    mocks.haulerFleet.mockResolvedValue(fleet([fresh()]))
+    const html = await renderJob({ sent: "1" })
+
+    expect(textOf(html)).toContain("Log truck: you reported 1 available, and you offered 2. Update availability?")
+    expect(html).toMatch(/<a[^>]*href="\/v2\/hauler\/trucks#availability-log_truck"[^>]*>Update availability\?<\/a>/)
+
+    mocks.haulerFleet.mockResolvedValue(fleet([fresh({ availableCount: 2 })]))
+    expect(textOf(await renderJob({ sent: "1" }))).not.toContain("Update availability?")
   })
 })
