@@ -30,6 +30,7 @@ export function InterestCountField({
   max,
   min,
   name,
+  onValueChange,
   required = false
 }: {
   defaultValue: number
@@ -40,11 +41,17 @@ export function InterestCountField({
   max: number
   min: number
   name: string
+  /** Told each value the stepper emits once scripts run (the interest sheet's capacity check, UX-08 #131). */
+  onValueChange?: (value: number) => void
   required?: boolean
 }) {
   const scripted = useScripted()
   const [value, setValue] = useState(defaultValue)
   const hintId = hint ? `${id}-hint` : undefined
+  const change = (next: number) => {
+    setValue(next)
+    onValueChange?.(next)
+  }
 
   if (!scripted) {
     const input = (
@@ -66,7 +73,7 @@ export function InterestCountField({
   }
 
   const stepper = (
-    <NumberStepper aria-describedby={hintId} id={id} label={label} max={max} min={min} name={name} onChange={setValue} value={value} />
+    <NumberStepper aria-describedby={hintId} id={id} label={label} max={max} min={min} name={name} onChange={change} value={value} />
   )
 
   if (labelHidden) return stepper

@@ -5,7 +5,9 @@ import { validateMarketplaceJobDraft } from "@logloads/contracts"
 import {
   configurationEquipmentCodes,
   equipmentOptionFromRow,
+  equipmentOptionsFromRows,
   expressInterestArguments,
+  isOfferableConfiguration,
   interestViewFromRow,
   jobFilterArguments,
   jobViewFromRow,
@@ -275,6 +277,21 @@ describe("equipment codes (#185)", () => {
     expect(configurationEquipmentCodes("log_truck|flatbed")).toEqual(["log_truck"])
     expect(equipmentOptionFromRow({ configuration_key: "chip_truck|chip_van", label: "Chip truck + Chip van", units_listed: 3 }))
       .toEqual({ configurationKey: "chip_truck|chip_van", equipmentCodes: ["chip_truck", "chip_van"], label: "Chip truck + Chip van", unitsListed: 3 })
+  })
+
+  it("never offers an extra as a configuration of its own (UX-08 #131, until the schema leaves them out)", () => {
+    const rows = [
+      { configuration_key: "log_truck|pole_trailer", label: "Log truck + Pole trailer", units_listed: 2 },
+      { configuration_key: "onboard_scales", label: "On-board scales", units_listed: 2 },
+      { configuration_key: "central_tire", label: "Central tire inflation", units_listed: 1 },
+      { configuration_key: "chip_truck", label: "Chip truck", units_listed: 1 }
+    ]
+
+    expect(equipmentOptionsFromRows(rows).map((option) => option.configurationKey)).toEqual(["log_truck|pole_trailer", "chip_truck"])
+    expect(isOfferableConfiguration("onboard_scales")).toBe(false)
+    expect(isOfferableConfiguration(" central_tire ")).toBe(false)
+    expect(isOfferableConfiguration("self_loader|pole_trailer")).toBe(true)
+    expect(isOfferableConfiguration("")).toBe(false)
   })
 })
 
