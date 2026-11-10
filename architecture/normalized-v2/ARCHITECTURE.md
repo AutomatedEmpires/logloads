@@ -236,7 +236,8 @@ The states map onto the pilot contract's `emailDeliveryState` (`packages/contrac
 
 #### CI wiring and what is not in 26
 
-* `.github/workflows/normalized-v2-ci.yml` has no steps for 26 to 28 yet; #237 does not own it. Until it does, `tools/normalized-v2-ci/run-stage.sh` continues the step that runs 24 with 26 and 27, and the step that runs 25 with 28, in both jobs that run them. `normalized-adapter-ci.yml` stops at 23, so the adapter tests, the seed and the owner tool's chain (`tools/normalized-store-policy.mjs`) still expect the ledger `06,…,23`. Adding 26 to the owner tool's chain is a separate change: the chain, the seed's ledger check and the adapter tests' ledger expectations must change together.
+* **26 is in the migration chain everywhere.** The owner tool's `MIGRATION_CHAIN` (`tools/normalized-store-policy.mjs`) applies it, so the ledger is now `06,11,12,16,18,23,26`. The seed, both adapter contract tests and the owner tool's tests pin that ledger. `tools/normalized-store.test.mjs` keeps them, `run-stage.sh` and the workflows in step.
+* In `normalized-v2-ci.yml`, the alignment and Supabase jobs run 26 and 27 right after 24, the last suite that pins the ledger at 23, and 28 after 25. The adapter-contract job runs 26 after 23. Each stage is its own workflow step; `run-stage.sh` never chains one stage into another. That keeps the workflow steps, which the chain test reads, the single record of what CI applies.
 * The recovered `schema26` batch (#221) is not adopted. G1 must ship with contracts, adapter and UI. G2 and G4 follow #219. G3 contradicts HF-05's verified column grant and needs an adapter security review. G5 and G6 rewrite stored rows and need data-mapping, rollback and concurrency review. If adopted later, they take a stage number of 29 or above.
 
 ---

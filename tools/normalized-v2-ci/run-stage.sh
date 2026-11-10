@@ -2,7 +2,6 @@
 # =============================================================================
 # Runs one normalized-v2 validation stage against the guarded disposable database
 # and performs independent post-stage checks. Usage: run-stage.sh <stage number, 1..28>
-# (Stages 26 to 28 also run after 24 and 25; see the end of this file.)
 # Logs: $RUNNER_TEMP/normalized-v2-ci/logs/stage<N>.log (uploaded on failure).
 # =============================================================================
 set -euo pipefail
@@ -438,20 +437,3 @@ esac
 
 echo "STAGE $STAGE PASSED" | tee -a "$LOG"
 echo "- Stage $STAGE: **PASS**" >> "$SUMMARY"
-
-# Stages 26 to 28 have no step of their own in .github/workflows/normalized-v2-ci.yml yet. Until they do, the step that
-# runs 24 (the last suite on the 23 schema) continues with 26 and 27, and the step that runs 25 continues with 28, in
-# both jobs that run them (PostgreSQL 17 alignment, Supabase local stack). The adapter workflow stops at 23 and never
-# calls 24 or 25, so its schema and ledger stay at 23 (the adapter tests, the seed and the owner tool expect 23). A
-# workflow that gives 26 to 28 their own steps sets LOGLOADS_CHAIN_STAGES_26_28=0.
-if [[ "${LOGLOADS_CHAIN_STAGES_26_28:-1}" == "1" ]]; then
-  case "$STAGE" in
-    24)
-      bash "$ROOT/tools/normalized-v2-ci/run-stage.sh" 26
-      bash "$ROOT/tools/normalized-v2-ci/run-stage.sh" 27
-      ;;
-    25)
-      bash "$ROOT/tools/normalized-v2-ci/run-stage.sh" 28
-      ;;
-  esac
-fi
