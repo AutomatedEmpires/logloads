@@ -238,10 +238,20 @@ describe("arguments", () => {
   })
 
   it("filters discovery on the server and matches nothing for an unknown pay basis", () => {
-    expect(jobFilterArguments({})).toEqual({ p_accepting_only: true, p_equipment: null, p_limit: 200, p_pay_unit: null, p_query: null })
+    expect(jobFilterArguments({})).toEqual({ p_accepting_only: true, p_equipment: null, p_limit: 200, p_org_id: null, p_pay_unit: null, p_query: null })
     expect(jobFilterArguments({ acceptingOnly: false, equipment: " Log truck ", payUnit: "per_ton", query: "  saw " }))
-      .toEqual({ p_accepting_only: false, p_equipment: "Log truck", p_limit: 200, p_pay_unit: "per_ton", p_query: "saw" })
+      .toEqual({ p_accepting_only: false, p_equipment: "Log truck", p_limit: 200, p_org_id: null, p_pay_unit: "per_ton", p_query: "saw" })
     expect(jobFilterArguments({ payUnit: "per_bushel" as never })).toBeNull()
+  })
+
+  it("scopes to one poster on the server, before the row limit, and never widens a bad poster to everyone (#209)", () => {
+    const poster = "33333333-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+
+    expect(jobFilterArguments({ acceptingOnly: false, posterOrganizationId: poster }))
+      .toEqual({ p_accepting_only: false, p_equipment: null, p_limit: 200, p_org_id: poster, p_pay_unit: null, p_query: null })
+    expect(jobFilterArguments({ posterOrganizationId: null })?.p_org_id).toBeNull()
+    expect(jobFilterArguments({ posterOrganizationId: "" })).toBeNull()
+    expect(jobFilterArguments({ posterOrganizationId: "not-a-business" })).toBeNull()
   })
 
   it("sends only equipment keys and counts from the inquiry form; the hauler business is the viewer's", () => {

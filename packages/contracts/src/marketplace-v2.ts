@@ -377,6 +377,12 @@ export interface MarketplaceJobFilters {
   radiusMiles?: number | null
   /** Default true: closed, paused, filled and expired jobs are hidden from discovery. */
   acceptingOnly?: boolean
+  /**
+   * One business's own listings: only jobs it posted. The store applies it before its row limit, so a business's
+   * older jobs are never crowded out by other businesses' listings (the landing overview and job list, #209). Null
+   * or absent: every poster.
+   */
+  posterOrganizationId?: string | null
   /** Default "newest". "nearest" without `near` falls back to "newest". */
   sort?: MarketplaceJobSort | null
 }
@@ -524,11 +530,12 @@ function matchesProduct(product: string | null, wanted: string): boolean {
 }
 
 /**
- * Discovery filtering: text, equipment (one code, or fit against the viewer's setups), product, pay basis, start
- * and distance from a typed place. Pay amounts on different bases are never compared, and distance only ever uses
- * the job's approximate public point.
+ * Discovery filtering: the poster, text, equipment (one code, or fit against the viewer's setups), product, pay
+ * basis, start and distance from a typed place. Pay amounts on different bases are never compared, and distance only
+ * ever uses the job's approximate public point.
  */
 export function filterMarketplaceJobs<T extends MarketplaceJobCardView>(jobs: readonly T[], filters: MarketplaceJobFilters = {}): T[] {
+  const poster = filters.posterOrganizationId ?? null
   const query = filters.query ? normalized(filters.query) : ""
   const equipment = filters.equipment ? normalized(filters.equipment) : ""
   const setups = filters.equipmentSetups ?? null
@@ -538,6 +545,7 @@ export function filterMarketplaceJobs<T extends MarketplaceJobCardView>(jobs: re
   const radius = near && filters.radiusMiles !== null && filters.radiusMiles !== undefined ? filters.radiusMiles : null
 
   return jobs.filter((job) => {
+    if (poster !== null && job.posterOrganizationId.toLowerCase() !== poster.toLowerCase()) return false
     if (acceptingOnly && !job.acceptingInterest) return false
     if (filters.payUnit && job.pay.unit !== filters.payUnit) return false
     if (equipment && !job.equipment.some((item) => normalized(item) === equipment)) return false

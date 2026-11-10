@@ -139,6 +139,19 @@ describe("discovery filters and ordering", () => {
     expect(filterMarketplaceJobs(jobs, { payUnit: "per_ton" }).map((j) => j.id)).toEqual(["c"])
   })
 
+  it("keeps one business's own listings, of every status asked for, when a poster is given (#209)", () => {
+    const own = "11111111-1111-4111-8111-111111111111"
+    const rival = "22222222-2222-4222-8222-222222222222"
+    const mixed = [...jobs, job({ id: "r", posterOrganizationId: rival, title: "Rival saw logs" })]
+
+    expect(filterMarketplaceJobs(mixed, { acceptingOnly: false }).map((j) => j.id)).toEqual(["a", "b", "c", "r"])
+    expect(filterMarketplaceJobs(mixed, { acceptingOnly: false, posterOrganizationId: own }).map((j) => j.id)).toEqual(["a", "b", "c"])
+    expect(filterMarketplaceJobs(mixed, { acceptingOnly: false, posterOrganizationId: own.toUpperCase() }).map((j) => j.id)).toEqual(["a", "b", "c"])
+    expect(filterMarketplaceJobs(mixed, { acceptingOnly: false, posterOrganizationId: rival }).map((j) => j.id)).toEqual(["r"])
+    expect(filterMarketplaceJobs(mixed, { posterOrganizationId: "33333333-3333-4333-8333-333333333333" })).toEqual([])
+    expect(filterMarketplaceJobs(mixed, { acceptingOnly: false, posterOrganizationId: null })).toHaveLength(4)
+  })
+
   it("puts confirmed listings ahead of more recently edited unconfirmed ones", () => {
     expect(sortMarketplaceJobs(jobs).map((j) => j.id)).toEqual(["c", "a", "b"])
     expect(sortMarketplaceJobs(jobs, { sort: "newest" }).map((j) => j.id)).toEqual(["c", "a", "b"])

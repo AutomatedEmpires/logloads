@@ -16,6 +16,7 @@ import {
   parseJobPostingTab,
   type JobPostingTabId
 } from "@/lib/marketplace-v2/job-postings"
+import { ownJobFilters } from "@/lib/marketplace-v2/landing-overview"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
 import { resolveV2Viewer, withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
 
@@ -81,7 +82,8 @@ export default async function LandingJobsPage({ searchParams }: { searchParams: 
   }
 
   const { access, viewer } = resolved
-  const jobs = (await pilotMarketplaceV2.listJobs({ acceptingOnly: false })).filter((job) => job.posterOrganizationId === viewer.organizationId)
+  // Scoped to this business in the store, before its row limit (#209); the row filter stays as a second check.
+  const jobs = (await pilotMarketplaceV2.listJobs(ownJobFilters(viewer.organizationId))).filter((job) => job.posterOrganizationId === viewer.organizationId)
   const tab = parseJobPostingTab(query.tab)
   const counts = jobPostingTabCounts(jobs)
   const shown = tab === "draft" ? [] : jobs.filter((job) => jobPostingTab(job.status) === tab)
