@@ -6,6 +6,7 @@ import { Button } from "@logloads/ui/primitives"
 import { reconfirmJobAction } from "@/lib/marketplace-v2/actions"
 import {
   LANDING_INBOX_PATH,
+  LANDING_JOBS_PATH,
   NEW_JOB_PATH,
   newInquiriesLabel,
   OVERVIEW_PATH,
@@ -127,10 +128,20 @@ export function OverviewAllowance({ summary }: { summary: LandingAllowanceSummar
   )
 }
 
-/** B8's landings list: each landing, its status and jobs. Public labels only. */
+/**
+ * B8's landings list: each landing, its status and jobs. Public labels only. "All jobs" and "All landings" are how a
+ * business on both sides reaches Post jobs and Landings, which are not among its five tabs (#209).
+ */
 export function OverviewLandings({ landings }: { landings: readonly LandingRowView[] | null }) {
+  const links = (
+    <div className={styles.links}>
+      <Button href={LANDING_JOBS_PATH} label="All jobs" size="sm" variant="ghost" />
+      <Button href={LANDINGS_PATH} label="All landings" size="sm" variant="ghost" />
+    </div>
+  )
+
   return (
-    <Section actions={<Button href={LANDINGS_PATH} label="All landings" size="sm" variant="ghost" />} title="Landings">
+    <Section actions={links} title="Landings">
       {landings === null ? (
         <p className={styles.note}>Your landings could not be loaded.</p>
       ) : landings.length === 0 ? (

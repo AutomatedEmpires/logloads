@@ -3043,8 +3043,8 @@ test.describe("the landing form without JavaScript (#127)", () => {
  */
 const OVERVIEW_ACCOUNTS = [
   { email: LANDING_OWNER, items: LANDING_NAVIGATION },
-  // Both sides: five destinations, the bottom tabs' limit; Landings is one tap away under Overview.
-  { email: "dispatch@northpine.example", items: ["Find work", "My inquiries", "Overview", "Landing inbox", "Post jobs"] }
+  // Both sides: the five bottom tabs (lead decision on #209); Post jobs and Landings are one tap away under Overview.
+  { email: "dispatch@northpine.example", items: ["Find work", "My inquiries", "My trucks", "Overview", "Landing inbox"] }
 ] as const
 
 test.describe("landing overview (#133)", () => {
@@ -3115,7 +3115,7 @@ test.describe("landing overview (#133)", () => {
       await openV2(page, "/v2/landing")
       const stops = await tabThrough(page)
 
-      expect(stops.filter((stop) => stop.where === "main").map((stop) => stop.key)).toEqual(expect.arrayContaining(["Post a job", "Find trucks"]))
+      expect(stops.filter((stop) => stop.where === "main").map((stop) => stop.key)).toEqual(expect.arrayContaining(["Post a job", "Find trucks", "All jobs", "All landings"]))
       for (const stop of stops) expectDesignSystemRing(stop)
     }
   })

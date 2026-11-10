@@ -110,6 +110,17 @@ describe("the landing overview (#133)", () => {
     expect(page).toContain("aria-disabled=\"true\"")
   })
 
+  it("makes Post a job the primary action, a real link, and links All jobs and All landings (#209 two-sided tabs)", async () => {
+    const page = await render()
+    const postJob = /<a [^>]*data-variant="primary"[^>]*href="\/v2\/landing\/jobs\/new"[^>]*>(<[^>]+>)*Post a job</
+
+    // A plain link with an href is in the tab order with no script; it is the row's only primary button.
+    expect(page).toMatch(postJob)
+    expect(page.match(/data-variant="primary"/g)).toHaveLength(1)
+    expect(page).toMatch(/<a [^>]*href="\/v2\/landing\/jobs"[^>]*>(<[^>]+>)*All jobs</)
+    expect(page).toMatch(/<a [^>]*href="\/v2\/landing\/landings"[^>]*>(<[^>]+>)*All landings</)
+  })
+
   it("lists new inquiries per job and listings past the interval with one-tap Confirm (criterion 2)", async () => {
     mocks.supportsPublishing = true
     const page = await render()
