@@ -299,12 +299,15 @@ test("2–5. the published job is discovered signed out, a free hauler sends int
       await form.getByLabel("Message").fill(note)
       await form.getByRole("button", { name: "Send interest" }).click()
       await page.waitForURL((url) => url.searchParams.get("sent") === "1")
-      await expect(page.getByRole("status").filter({ hasText: "Your interest was sent." })).toBeVisible()
+      // The confirmation names the landing business and the trucks (UX-08 #131).
+      await expect(page.getByRole("status").filter({ hasText: `Sent to ${NORTH_PINE.name}: 1 truck,` })).toBeVisible()
     } else {
       expect(testInfo.retry, "the interest form is offered before any interest was sent").toBeGreaterThan(0)
     }
 
-    await expect(page.locator("[data-ds-page='job-detail']")).toContainText("You offered this landing 1 truck.")
+    // A later visit shows the standing summary, which names the landing business too (UX-08 #131).
+    await openV2(page, jobPath)
+    await expect(page.locator("[data-ds-page='job-detail']")).toContainText(`You offered ${NORTH_PINE.name} 1 truck,`)
     const open = page.getByRole("link", { name: "Open my inquiries" })
     inquiryId = new URL((await open.getAttribute("href")) ?? "", page.url()).searchParams.get("inquiry") ?? ""
     expect(inquiryId, "the inquiry's id").toMatch(UUID)
