@@ -11,6 +11,7 @@ describe("V2 navigation", () => {
       ["My inquiries", "/v2/inquiries"],
       ["My trucks", "/v2/hauler/trucks"],
       ["Profile", "/v2/hauler/profile"],
+      ["Overview", "/v2/landing"],
       ["Landing inbox", "/v2/landing/inquiries"],
       ["Post jobs", "/v2/landing/jobs"],
       ["Landings", "/v2/landing/landings"]
@@ -27,6 +28,7 @@ describe("V2 navigation", () => {
     ["/v2/landing/jobs", "landing-jobs"],
     ["/v2/landing/jobs/new", "landing-jobs"],
     ["/v2/landing/jobs/preview", "landing-jobs"],
+    ["/v2/landing", "landing-overview"],
     ["/v2/landing/landings", "landings"],
     ["/v2/landing/landings/new", "landings"]
   ])("marks %s as %s", (pathname, id) => {
@@ -37,7 +39,7 @@ describe("V2 navigation", () => {
     expect(activeV2NavId(null)).toBe("")
     expect(activeV2NavId("/v2")).toBe("")
     expect(activeV2NavId("/v2/workshop")).toBe("")
-    expect(activeV2NavId("/v2/landing")).toBe("")
+    expect(activeV2NavId("/v2/landingpage")).toBe("")
   })
 
   it("treats /v2/landing pages as the landing workspace and the rest as hauler", () => {
@@ -64,18 +66,18 @@ describe("capability-scoped V2 navigation (#124)", () => {
   it("gives a hauling business the hauler set and a landing business the landing set", () => {
     expect(ids(HAULER)).toEqual(["work", "inquiries", "hauler-trucks", "hauler-profile"])
     expect(ids(DRIVER)).toEqual(["work", "inquiries", "hauler-trucks", "hauler-profile"])
-    expect(ids(LANDING_DESK)).toEqual(["landing-inquiries", "landing-jobs", "landings"])
+    expect(ids(LANDING_DESK)).toEqual(["landing-overview", "landing-inquiries", "landing-jobs", "landings"])
   })
 
   it("hides each landing item the role lacks", () => {
     expect(ids(["inquiry.respond"])).toEqual(["landing-inquiries"])
-    expect(ids(["job.publish"])).toEqual(["landing-jobs", "landings"])
+    expect(ids(["job.publish"])).toEqual(["landing-overview", "landing-jobs", "landings"])
   })
 
   it("gives a business that is both sides both sets, in display order", () => {
-    // A business on both sides keeps within the five bottom tabs: its profile is linked from My trucks, and Landings is not
-    // a tab for it either (the landing overview links it, #133).
-    expect(ids([...HAULER, ...LANDING_DESK])).toEqual(["work", "inquiries", "hauler-trucks", "landing-inquiries", "landing-jobs"])
+    // A business on both sides keeps within the five bottom tabs (lead decision on #209, 2026-11-04): its profile is
+    // linked from My trucks, and Post jobs and Landings from the landing overview.
+    expect(ids([...HAULER, ...LANDING_DESK])).toEqual(["work", "inquiries", "hauler-trucks", "landing-overview", "landing-inquiries"])
   })
 
   it("shows unread inquiry counts on the destinations the business sees, and no badge for zero (UX-09)", () => {
@@ -86,16 +88,25 @@ describe("capability-scoped V2 navigation (#124)", () => {
       ["work", undefined],
       ["inquiries", 2],
       ["hauler-trucks", undefined],
-      ["landing-inquiries", 3],
-      ["landing-jobs", 7]
+      ["landing-overview", undefined],
+      ["landing-inquiries", 3]
     ])
-    expect(v2NavigationFor(LANDING_DESK, counts).map((item) => [item.id, item.count])).toEqual([["landing-inquiries", undefined], ["landing-jobs", 7], ["landings", undefined]])
+    expect(v2NavigationFor(LANDING_DESK, counts).map((item) => [item.id, item.count])).toEqual([["landing-overview", undefined], ["landing-inquiries", undefined], ["landing-jobs", 7], ["landings", undefined]])
     expect(v2NavigationFor(null, counts).map((item) => item.count)).toEqual([undefined])
     expect(V2_NAVIGATION.every((item) => item.count === undefined)).toBe(true)
   })
 
   it("never offers more than the five bottom tabs allowed", () => {
     expect(v2NavigationFor([...HAULER, ...LANDING_DESK]).length).toBeLessThanOrEqual(5)
+  })
+
+  it("marks Overview current on the landing pages a business on both sides reaches through it", () => {
+    const both = v2NavigationFor([...HAULER, ...LANDING_DESK])
+
+    for (const pathname of ["/v2/landing", "/v2/landing/jobs", "/v2/landing/jobs/new", "/v2/landing/landings", "/v2/landing/landings/new"]) {
+      expect(activeV2NavId(pathname, both)).toBe("landing-overview")
+    }
+    expect(activeV2NavId("/v2/landing/inquiries", both)).toBe("landing-inquiries")
   })
 
   it("homes a landing-only business on /v2/landing and everyone else on /v2/work", () => {

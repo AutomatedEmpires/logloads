@@ -415,12 +415,18 @@ function boundedText(value: string | null | undefined, max: number): string | nu
 
 /**
  * `listJobs` filters → `list_marketplace_jobs` arguments, or `null` when the filter can match nothing. The function
- * takes text, one equipment code or label, the pay basis and "accepting only". `refineDiscovery` applies the rest.
+ * takes the poster, text, one equipment code or label, the pay basis and "accepting only". `refineDiscovery` applies
+ * the rest.
+ *
+ * The poster goes to the function as `p_org_id`, which it applies before `p_limit`. Filtering one business's jobs out
+ * of the capped feed afterwards would lose its older jobs once other businesses' listings rank ahead (#209). A
+ * poster that is not a uuid matches nothing; it never widens to every poster.
  */
 export function jobFilterArguments(filters: MarketplaceJobFilters) {
   const payUnit = filters.payUnit ? marketplacePayUnitSchema.safeParse(filters.payUnit) : null
+  const poster = filters.posterOrganizationId ?? null
 
-  if (payUnit && !payUnit.success) {
+  if ((payUnit && !payUnit.success) || (poster !== null && !isUuid(poster))) {
     return null
   }
 
@@ -428,6 +434,7 @@ export function jobFilterArguments(filters: MarketplaceJobFilters) {
     p_accepting_only: filters.acceptingOnly ?? true,
     p_equipment: boundedText(filters.equipment, 160),
     p_limit: LIST_LIMIT,
+    p_org_id: poster,
     p_pay_unit: payUnit?.success ? payUnit.data : null,
     p_query: boundedText(filters.query, QUERY_LIMIT)
   }

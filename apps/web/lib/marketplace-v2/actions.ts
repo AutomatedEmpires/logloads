@@ -329,34 +329,43 @@ async function checkReconfirmRequest(viewer: MarketplaceV2Viewer, jobId: string,
   return { attestation, jobId: job.id, ok: true }
 }
 
+/** Where a reconfirmation answers: the job list, or the landing overview's attention list (#133). Nothing else. */
+const RECONFIRM_RETURN_PATHS: ReadonlySet<string> = new Set([JOBS_PATH, "/v2/landing"])
+
+function reconfirmReturnPath(formData: FormData): string {
+  const asked = field(formData, "returnTo")
+  return RECONFIRM_RETURN_PATHS.has(asked) ? asked : JOBS_PATH
+}
+
 /**
  * The poster's explicit "this work is still available" confirmation, checked on the server (see
  * `checkReconfirmRequest`). It is the only way besides publishing to set `lastConfirmedAt`.
  */
 export async function reconfirmJobAction(formData: FormData): Promise<void> {
-  const viewer = await requireViewer(JOBS_PATH)
+  const back = reconfirmReturnPath(formData)
+  const viewer = await requireViewer(back)
   let checked: ReconfirmCheck
 
   try {
     checked = await checkReconfirmRequest(viewer, field(formData, "jobId"), field(formData, MARKETPLACE_AVAILABILITY_ATTESTATION.field))
   } catch (error) {
-    safeRedirect(JOBS_PATH, { error: message(error) })
+    safeRedirect(back, { error: message(error) })
   }
 
   if (!checked.ok) {
-    safeRedirect(JOBS_PATH, { error: checked.error })
+    safeRedirect(back, { error: checked.error })
   }
 
   try {
     await pilotMarketplaceV2.reconfirmJob(viewer, checked.jobId, checked.attestation)
   } catch (error) {
     if (error instanceof MarketplaceOperationUnavailableError) {
-      safeRedirect(JOBS_PATH, { unavailable: "reconfirm" })
+      safeRedirect(back, { unavailable: "reconfirm" })
     }
 
-    safeRedirect(JOBS_PATH, { error: message(error) })
+    safeRedirect(back, { error: message(error) })
   }
 
   revalidatePath("/v2", "layout")
-  safeRedirect(JOBS_PATH, { updated: "reconfirmed" })
+  safeRedirect(back, { updated: "reconfirmed" })
 }
