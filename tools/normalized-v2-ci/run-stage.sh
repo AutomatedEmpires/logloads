@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Runs one normalized-v2 validation stage against the guarded disposable database
-# and performs independent post-stage checks. Usage: run-stage.sh <stage number, 1..25>
+# and performs independent post-stage checks. Usage: run-stage.sh <stage number, 1..28>
 # Logs: $RUNNER_TEMP/normalized-v2-ci/logs/stage<N>.log (uploaded on failure).
 # =============================================================================
 set -euo pipefail
@@ -350,6 +350,87 @@ case "$STAGE" in
     [[ "$rc" == "0" ]] || exit "$rc"
     grep -q "ALL ROUND-2 CONCURRENCY TESTS PASSED" "$LOG" || { echo "STAGE 25: runner did not report completion" >&2; exit 1; }
     { echo "### Stage 25 round-2 concurrency (R2-1: owner exit against billing, two exits, open exit)"; echo '```'; grep -E "^\[|ok:|overlap|outcome:" "$LOG" || true; echo '```'; } >> "$SUMMARY"
+    ;;
+  26)
+    # Which marketplace functions 26 adds and changes, by source and by grant: exactly the 23 it creates and the ten it
+    # redefines, and no grant on any existing function changes.
+    FN_SRC_SQL="select p.oid::regprocedure::text || '|' || md5(p.prosrc) from pg_proc p where p.pronamespace = 'marketplace'::regnamespace order by 1;"
+    FN_ACL_SQL="select p.oid::regprocedure::text || '|' || coalesce(array_to_string(p.proacl, ','), '') from pg_proc p where p.pronamespace = 'marketplace'::regnamespace order by 1;"
+    q "$FN_SRC_SQL" | LC_ALL=C sort > "$LOG_DIR/stage26-src-before.txt"; q "$FN_ACL_SQL" | LC_ALL=C sort > "$LOG_DIR/stage26-acl-before.txt"
+    run_migration "$DIR/26_v2_team_seats_saved_jobs_outbox.sql"
+    q "$FN_SRC_SQL" | LC_ALL=C sort > "$LOG_DIR/stage26-src-after.txt"; q "$FN_ACL_SQL" | LC_ALL=C sort > "$LOG_DIR/stage26-acl-after.txt"
+    aligned_privilege_checks "'job_publication_attestations','legacy_job_imports','job_moderation_holds','billing_provider_events','schema_migrations'"
+    check "D-1/D-2: the migration ledger records 06, 11, 12, 16, 18, 23, 26 in order" "select string_agg(version, ',' order by applied_at, version) = '06,11,12,16,18,23,26' from marketplace.schema_migrations;"
+    REMOVED="$(LC_ALL=C comm -23 <(cut -d'|' -f1 "$LOG_DIR/stage26-src-before.txt") <(cut -d'|' -f1 "$LOG_DIR/stage26-src-after.txt") | paste -sd, -)"
+    [[ -z "$REMOVED" ]] || { echo "POST-STAGE CHECK FAILED: 26 dropped [$REMOVED]" | tee -a "$LOG" >&2; exit 1; }
+    ADDED="$(LC_ALL=C comm -13 <(cut -d'|' -f1 "$LOG_DIR/stage26-src-before.txt") <(cut -d'|' -f1 "$LOG_DIR/stage26-src-after.txt") | paste -sd, -)"
+    EXPECTED_ADDED="marketplace.accept_team_invitation(uuid),marketplace.claim_email_notifications(integer,interval),marketplace.complete_email_notification(uuid,uuid,text,text,text,interval),marketplace.decline_team_invitation(uuid),marketplace.enqueue_job_alerts(uuid,uuid[]),marketplace.enqueue_notification(text,text,uuid,uuid,text,text,uuid,text,jsonb),marketplace.enqueue_team_invitation_email(uuid),marketplace.invite_team_member(uuid,text,text,boolean,interval,uuid[]),marketplace.job_scope_allows(uuid),marketplace.landing_scope_allows(uuid,uuid),marketplace.list_my_team_invitations(),marketplace.list_saved_jobs(uuid),marketplace.list_team_invitations(uuid),marketplace.mark_notifications_read(uuid[]),marketplace.notification_recipient_allowed(uuid,uuid,text,text,text,uuid),marketplace.record_email_provider_event(text,text,timestamp with time zone),marketplace.resend_team_invitation(uuid,interval),marketplace.revoke_team_invitation(uuid),marketplace.set_membership_landing_scope(uuid,uuid[]),marketplace.tg_interest_message_notify(),marketplace.tg_landing_scope_guard(),marketplace.tg_saved_job_guard(),marketplace.user_landing_scope_allows(uuid,uuid,uuid)"
+    [[ "$ADDED" == "$EXPECTED_ADDED" ]] || { echo "POST-STAGE CHECK FAILED: 26 added [$ADDED], expected [$EXPECTED_ADDED]" | tee -a "$LOG" >&2; exit 1; }
+    echo "  check ok: 26 adds exactly its 23 functions" | tee -a "$LOG"
+    CHANGED="$(LC_ALL=C join -t'|' "$LOG_DIR/stage26-src-before.txt" "$LOG_DIR/stage26-src-after.txt" | awk -F'|' '$2 != $3 {print $1}' | paste -sd, -)"
+    EXPECTED_CHANGED="marketplace.apply_subscription_cycle(uuid,text,text,timestamp with time zone,timestamp with time zone,text,text,boolean,integer,boolean,text,boolean),marketplace.can_access_interest(uuid,text),marketplace.can_read_job_posting(uuid),marketplace.can_view_app_user(uuid),marketplace.can_view_landing_private(uuid),marketplace.can_view_organization(uuid),marketplace.has_live_inquiry_from_hauler(uuid),marketplace.list_authoring_landings(uuid),marketplace.list_marketplace_interests(uuid,text,uuid),marketplace.tg_membership_guard()"
+    [[ "$CHANGED" == "$EXPECTED_CHANGED" ]] || { echo "POST-STAGE CHECK FAILED: 26 changed [$CHANGED], expected [$EXPECTED_CHANGED]" | tee -a "$LOG" >&2; exit 1; }
+    echo "  check ok: 26 redefines exactly tg_membership_guard, apply_subscription_cycle (the downgrade seat check), and the scope-aware readers can_read_job_posting, can_view_landing_private, can_access_interest, has_live_inquiry_from_hauler, can_view_organization, can_view_app_user, list_authoring_landings and list_marketplace_interests" | tee -a "$LOG"
+    ACL_CHANGED="$(LC_ALL=C join -t'|' "$LOG_DIR/stage26-acl-before.txt" "$LOG_DIR/stage26-acl-after.txt" | awk -F'|' '$2 != $3 {print $1}' | paste -sd, -)"
+    [[ -z "$ACL_CHANGED" ]] || { echo "POST-STAGE CHECK FAILED: 26 changed the grants of [$ACL_CHANGED]" | tee -a "$LOG" >&2; exit 1; }
+    echo "  check ok: no existing function's grants changed" | tee -a "$LOG"
+    check "26: the new tables carry no grant to PUBLIC, anon or service_role, and no UPDATE grant" "select not exists (select 1 from information_schema.role_table_grants where table_schema = 'marketplace' and table_name in ('team_invitations','team_invitation_landings','membership_landing_scopes','saved_jobs','notification_outbox') and (grantee in ('PUBLIC','anon','service_role') or (grantee = 'authenticated' and privilege_type = 'UPDATE')));"
+    check "26-A: the invitation functions are executable by authenticated only" "select bool_and(has_function_privilege('authenticated', f, 'EXECUTE') and not has_function_privilege('anon', f, 'EXECUTE') and not has_function_privilege('service_role', f, 'EXECUTE')) from unnest(array['marketplace.invite_team_member(uuid, text, text, boolean, interval, uuid[])', 'marketplace.resend_team_invitation(uuid, interval)', 'marketplace.revoke_team_invitation(uuid)', 'marketplace.accept_team_invitation(uuid)', 'marketplace.decline_team_invitation(uuid)', 'marketplace.list_my_team_invitations()', 'marketplace.list_team_invitations(uuid)', 'marketplace.set_membership_landing_scope(uuid, uuid[])', 'marketplace.list_saved_jobs(uuid)', 'marketplace.mark_notifications_read(uuid[])']::regprocedure[]) f;"
+    check "26-D: the job-alert and email-worker functions are executable by service_role only" "select bool_and(has_function_privilege('service_role', f, 'EXECUTE') and not has_function_privilege('authenticated', f, 'EXECUTE') and not has_function_privilege('anon', f, 'EXECUTE')) from unnest(array['marketplace.enqueue_job_alerts(uuid, uuid[])', 'marketplace.claim_email_notifications(integer, interval)', 'marketplace.complete_email_notification(uuid, uuid, text, text, text, interval)', 'marketplace.record_email_provider_event(text, text, timestamptz)']::regprocedure[]) f;"
+    check "26: the internal helpers and trigger functions are executable by no API role" "select bool_and(not has_function_privilege('authenticated', f, 'EXECUTE') and not has_function_privilege('anon', f, 'EXECUTE') and not has_function_privilege('service_role', f, 'EXECUTE')) from unnest(array['marketplace.user_landing_scope_allows(uuid, uuid, uuid)', 'marketplace.notification_recipient_allowed(uuid, uuid, text, text, text, uuid)', 'marketplace.enqueue_notification(text, text, uuid, uuid, text, text, uuid, text, jsonb)', 'marketplace.enqueue_team_invitation_email(uuid)', 'marketplace.tg_landing_scope_guard()', 'marketplace.tg_saved_job_guard()', 'marketplace.tg_interest_message_notify()']::regprocedure[]) f;"
+    check "26-B: the landing-scope guard is installed on its seven tables" "select count(distinct c.relname) = 7 from pg_trigger t join pg_class c on c.oid = t.tgrelid where c.relnamespace = 'marketplace'::regnamespace and t.tgname = 'landing_scope_guard' and t.tgenabled = 'O' and c.relname in ('landings','landing_private_details','job_postings','job_posting_equipment','targeted_invitations','expressions_of_interest','interest_messages');"
+    check "26-B: the five restrictive landing-scope read policies are installed" "select count(*) = 5 from pg_policies where schemaname = 'marketplace' and permissive = 'RESTRICTIVE' and cmd = 'SELECT' and policyname in ('landings_landing_scope','job_postings_landing_scope','interests_landing_scope','invitations_landing_scope','job_boosts_landing_scope');"
+    check "26-D: the outbox's address, provider id, claim and failure text are not client-readable; its notice fields are" "select not has_column_privilege('authenticated', 'marketplace.notification_outbox', 'recipient_email', 'SELECT') and not has_column_privilege('authenticated', 'marketplace.notification_outbox', 'provider_message_id', 'SELECT') and not has_column_privilege('authenticated', 'marketplace.notification_outbox', 'claim_token', 'SELECT') and not has_column_privilege('authenticated', 'marketplace.notification_outbox', 'last_failure', 'SELECT') and has_column_privilege('authenticated', 'marketplace.notification_outbox', 'payload', 'SELECT') and has_column_privilege('authenticated', 'marketplace.notification_outbox', 'status', 'SELECT');"
+    check "26-A: the seat guard (tg_membership_guard) and the downgrade check (apply_subscription_cycle) count pending invitations" "select bool_and(prosrc like '%marketplace.team_invitations%') from pg_proc where oid in ('marketplace.tg_membership_guard()'::regprocedure, 'marketplace.apply_subscription_cycle(uuid, text, text, timestamptz, timestamptz, text, text, boolean, integer, boolean, text, boolean)'::regprocedure);"
+    check "R4: the subscription-cycle core is still executable by no API role" "select not has_function_privilege('service_role', p.oid, 'EXECUTE') and not has_function_privilege('authenticated', p.oid, 'EXECUTE') and not has_function_privilege('anon', p.oid, 'EXECUTE') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and p.proname = 'apply_subscription_cycle';"
+    {
+      echo "### Stage 26 inventory"
+      echo '```'
+      q "select 'tables=' || count(*) from pg_tables where schemaname = 'marketplace';"
+      q "select 'functions=' || count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace';"
+      q "select 'policies=' || count(*) || ' (restrictive ' || count(*) filter (where permissive = 'RESTRICTIVE') || ')' from pg_policies where schemaname = 'marketplace';"
+      q "select 'functions executable by service_role: ' || coalesce(string_agg(p.proname, ', ' order by p.proname), '(none)') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace' and has_function_privilege('service_role', p.oid, 'EXECUTE');"
+      echo '```'
+    } | tee -a "$LOG" | tee -a "$SUMMARY"
+    ;;
+  27)
+    run_sql "$DIR/27_v2_team_seats_saved_jobs_outbox_tests.sql"
+    grep -q "ALL SEAT INVITATION, LANDING SCOPE, SAVED JOB AND NOTIFICATION OUTBOX (26-A..26-D) TESTS PASSED" "$LOG" || { echo "STAGE 27: suite did not reach its final PASS notice" >&2; exit 1; }
+    check "suite rolled back (no test organizations left)" "select count(*) = 0 from marketplace.organizations where slug like 's26-%';"
+    PASSES="$(grep -cE "NOTICE:  00000: PASS: " "$LOG" || true)"
+    echo "  executed assertions reporting PASS: $PASSES" | tee -a "$LOG" | tee -a "$SUMMARY"
+    [[ "$PASSES" -ge 150 ]] || { echo "STAGE 27: only $PASSES PASS notices; expected at least 150" >&2; exit 1; }
+    # Regression: the earlier suites, which ran before 26, run again on the 26 schema. (24 pins the ledger at 23; its
+    # rules are re-run through 17, 19 and 21, and 27 checks the ledger.)
+    while IFS='|' read -r SUITE NOTICE; do
+      RLOG="$LOG_DIR/stage27-rerun-${SUITE%%_*}.log"
+      echo "== psql -X -v ON_ERROR_STOP=1 -f $SUITE (again, on the 26 schema)" | tee "$RLOG"
+      psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -f "$DIR/$SUITE" >> "$RLOG" 2>&1 \
+        || { echo "STAGE 27: $SUITE failed on the 26 schema (see $RLOG)" | tee -a "$LOG" >&2; tail -n 30 "$RLOG" >&2; exit 1; }
+      grep -qF "$NOTICE" "$RLOG" || { echo "STAGE 27: $SUITE did not reach its final PASS notice on the 26 schema" | tee -a "$LOG" >&2; exit 1; }
+      echo "  check ok: $SUITE passes again on the 26 schema" | tee -a "$LOG" | tee -a "$SUMMARY"
+    done <<'SUITES'
+04_tests.sql|PASS: All normalized-v2 integration
+07_v2_contract_tests.sql|ALL V2 CONTRACT ALIGNMENT & FOUNDER DECISION (V2-DEC-01..03) TESTS PASSED
+09_v2_integration_audit_tests.sql|ALL V2 INTEGRATION AUDIT TESTS PASSED
+13_v2_phase3_tests.sql|ALL PHASE 3 POLICY (F1-F5) AND BILLING-ORDERING TESTS PASSED
+21_v2_auth_claims_membership_tests.sql|ALL IDENTITY-CLAIM AND MEMBERSHIP-REVOCATION (#112 DATABASE LAYER) TESTS PASSED
+17_v2_identity_membership_tests.sql|ALL IDENTITY, MEMBERSHIP AND QUALIFICATION (B-1, B-2, B-5) TESTS PASSED
+19_v2_review_106_tests.sql|ALL REVIEW-106 HARDENING (HF-03, HF-05, HF-06, HF-15, HF-16, HF-17, HF-18) TESTS PASSED
+SUITES
+    check "the re-run suites rolled back (no test organizations left)" "select count(*) = 0 from marketplace.organizations;"
+    ;;
+  28)
+    echo "== bash $DIR/28_v2_team_seats_outbox_concurrency_test.sh" | tee "$LOG"
+    started=$SECONDS
+    set +e
+    timeout --kill-after=30s 300s bash "$DIR/28_v2_team_seats_outbox_concurrency_test.sh" 2>&1 | tee -a "$LOG"
+    rc=${PIPESTATUS[0]}
+    set -e
+    echo "== exit $rc after $((SECONDS - started))s" | tee -a "$LOG"
+    [[ "$rc" == "0" ]] || exit "$rc"
+    grep -q "ALL TEAM SEAT AND OUTBOX CONCURRENCY TESTS PASSED" "$LOG" || { echo "STAGE 28: runner did not report completion" >&2; exit 1; }
+    { echo "### Stage 28 seat invitations and outbox concurrency (last seat, invitation against membership, accept against revoke, two workers, invitation against downgrade)"; echo '```'; grep -E "^\[|ok:|overlap" "$LOG" || true; echo '```'; } >> "$SUMMARY"
     ;;
   *) echo "unknown stage $STAGE" >&2; exit 2 ;;
 esac

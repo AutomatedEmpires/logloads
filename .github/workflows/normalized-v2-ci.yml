@@ -3,7 +3,8 @@ name: Normalized V2 Database CI
 # Validates the non-active normalized-v2 prototype (architecture/normalized-v2/) on disposable databases
 # created inside each job. No production, staging, hosted-Supabase or Vercel credentials are used or needed.
 #   Job 1 (baseline): the verified 01..05 suite on PostgreSQL 17 + PostGIS, unchanged. 3 fresh databases.
-#   Job 2 (alignment): 01, 02, 03, 06, 11, 12, 16, 18, 23, then 04, 07, 09, 13, 21, 17, 19, 24, 08, 20, 25, 10, 15 on PostgreSQL 17 + PostGIS.
+#   Job 2 (alignment): 01, 02, 03, 06, 11, 12, 16, 18, 23, then 04, 07, 09, 13, 21, 17, 19, 24, then 26 and 27, then 08, 20, 25, 28,
+#   10, 15 on PostgreSQL 17 + PostGIS.
 #   Job 3 (Supabase): the same chain and suites, plus PostgREST/JWT API tests (14) and the #112 auth harness (22), on a Supabase CLI
 #   local stack started inside the job (real authenticator / anon / authenticated / service_role roles,
 #   non-superuser migration role, Supabase's PostgreSQL 17 image).
@@ -292,6 +293,15 @@ jobs:
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 24
 
+      # 26 runs after 24, the last suite that pins the ledger at 23; every earlier suite runs again in stage 27.
+      - name: "Stage 26: 26_v2_team_seats_saved_jobs_outbox.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 26
+
+      - name: "Stage 27: 27_v2_team_seats_saved_jobs_outbox_tests.sql (and 04, 07, 09, 13, 21, 17, 19 again on the 26 schema)"
+        timeout-minutes: 10
+        run: bash tools/normalized-v2-ci/run-stage.sh 27
+
       - name: "Stage 8: 08_v2_contract_concurrency_test.sh"
         timeout-minutes: 12
         run: bash tools/normalized-v2-ci/run-stage.sh 8
@@ -303,6 +313,10 @@ jobs:
       - name: "Stage 25: 25_v2_round2_concurrency_test.sh"
         timeout-minutes: 6
         run: bash tools/normalized-v2-ci/run-stage.sh 25
+
+      - name: "Stage 28: 28_v2_team_seats_outbox_concurrency_test.sh"
+        timeout-minutes: 8
+        run: bash tools/normalized-v2-ci/run-stage.sh 28
 
       - name: "Stage 10: 10_v2_migration_path_test.sh"
         timeout-minutes: 6
@@ -466,6 +480,15 @@ jobs:
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 24
 
+      # 26 runs after 24, the last suite that pins the ledger at 23; every earlier suite runs again in stage 27.
+      - name: "Stage 26: 26_v2_team_seats_saved_jobs_outbox.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 26
+
+      - name: "Stage 27: 27_v2_team_seats_saved_jobs_outbox_tests.sql (and 04, 07, 09, 13, 21, 17, 19 again on the 26 schema)"
+        timeout-minutes: 10
+        run: bash tools/normalized-v2-ci/run-stage.sh 27
+
       - name: "Stage 14: 14_supabase_api_tests.sh (PostgREST + JWT, real Supabase roles)"
         timeout-minutes: 6
         run: bash tools/normalized-v2-ci/run-stage.sh 14
@@ -492,6 +515,10 @@ jobs:
       - name: "Stage 25: 25_v2_round2_concurrency_test.sh"
         timeout-minutes: 6
         run: bash tools/normalized-v2-ci/run-stage.sh 25
+
+      - name: "Stage 28: 28_v2_team_seats_outbox_concurrency_test.sh"
+        timeout-minutes: 8
+        run: bash tools/normalized-v2-ci/run-stage.sh 28
 
       - name: "Stage 10: 10_v2_migration_path_test.sh"
         timeout-minutes: 6
