@@ -610,7 +610,7 @@ come from the normalized store (#213). The seed links only the seeded people's p
 identity-sync URL (§15.1): its first V2 request then links it through `sync_verified_identity`, with no business yet,
 and `/v2/start/hauler` can set one up. Without that URL the signed-in V2 pages refuse a staging account. Sign-up still
 ends in the legacy `/onboarding`; open `/workspace` afterwards, which lands on `/v2/start`. The signed-in flows are
-proven in CI on the seeded store (`apps/web/lib/marketplace-v2/normalized-seed.contract.test.ts`), and can be tried
+proven in CI on the seeded store (`apps/web/lib/marketplace-v2/normalized-seed.contract.test.ts`), and through the running production build (`.github/workflows/normalized-e2e-loop.yml`, #140). They can be tried
 locally (§15.6). Moving existing pilot data across stays cutover work (#200).
 
 ### 15.6 A disposable local stack

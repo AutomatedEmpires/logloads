@@ -146,6 +146,12 @@ const securityHeaders = [
 ]
 
 const nextConfig: NextConfig = {
+	// postgres.js (the normalized marketplace store, lib/marketplace-v2/normalized-db.ts) is loaded from node_modules
+	// rather than bundled. Bundled, the minified server build renamed its PostgresError class, and the adapter, which
+	// then told a database refusal ("This job is no longer accepting interest") from a failure by that name, showed
+	// every refusal as the generic "could not complete this request" (found by the #140 loop under `next start`). The
+	// adapter now reads the error's fields instead; the driver stays external so it runs as published.
+	serverExternalPackages: ["postgres"],
 	transpilePackages: ["@logloads/contracts", "@logloads/db", "@logloads/services", "@logloads/ui"],
 	async headers() {
 		return [{ source: "/:path*", headers: securityHeaders }]

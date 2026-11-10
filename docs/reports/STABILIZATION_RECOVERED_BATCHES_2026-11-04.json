@@ -1,0 +1,253 @@
+{
+  "integration": "f78a5b3f1ab90cb715bd2fb741459c7ba196245b",
+  "schema26": "a6e44d63d0b0ff47630566ce8b7eaecbcf8ee6d4",
+  "sec3": "ab4b7d630383dd65cc32c5e9d69e6e88977ac439",
+  "files": [
+    {
+      "batch": "schema26",
+      "path": "apps/web/components/v2/landing/LandingAside.tsx",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 221
+    },
+    {
+      "batch": "schema26",
+      "path": "apps/web/components/v2/landing/LandingForm.tsx",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 221
+    },
+    {
+      "batch": "schema26",
+      "path": "apps/web/lib/marketplace-v2/landing-pages.test.tsx",
+      "classification": "recovery change absent; integration diverged, reconcile",
+      "followup": 221
+    },
+    {
+      "batch": "schema26",
+      "path": "apps/web/lib/marketplace-v2/landing-workspace.ts",
+      "classification": "recovery change absent; integration diverged, reconcile",
+      "followup": 221
+    },
+    {
+      "batch": "schema26",
+      "path": "apps/web/lib/marketplace-v2/normalized-adapter.contract.test.ts",
+      "classification": "recovery change absent; integration diverged, reconcile",
+      "followup": 221
+    },
+    {
+      "batch": "schema26",
+      "path": "apps/web/lib/marketplace-v2/normalized-adapter.test.ts",
+      "classification": "recovery change absent; integration diverged, reconcile",
+      "followup": 221
+    },
+    {
+      "batch": "schema26",
+      "path": "apps/web/lib/marketplace-v2/normalized-adapter.ts",
+      "classification": "recovery change absent; integration diverged, reconcile",
+      "followup": 221
+    },
+    {
+      "batch": "schema26",
+      "path": "apps/web/lib/marketplace-v2/normalized-db.ts",
+      "classification": "recovery change absent; integration diverged, reconcile",
+      "followup": 221
+    },
+    {
+      "batch": "schema26",
+      "path": "apps/web/lib/marketplace-v2/normalized-mapping.ts",
+      "classification": "recovery change absent; integration diverged, reconcile",
+      "followup": 221
+    },
+    {
+      "batch": "schema26",
+      "path": "apps/web/tests/design-system.spec.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 221
+    },
+    {
+      "batch": "schema26",
+      "path": "architecture/normalized-v2/26_v2_product_gap_batch.sql",
+      "classification": "new file absent from integration",
+      "followup": 221
+    },
+    {
+      "batch": "schema26",
+      "path": "architecture/normalized-v2/27_v2_product_gap_batch_tests.sql",
+      "classification": "new file absent from integration",
+      "followup": 221
+    },
+    {
+      "batch": "schema26",
+      "path": "packages/contracts/src/marketplace-landings.test.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 221
+    },
+    {
+      "batch": "schema26",
+      "path": "packages/contracts/src/marketplace-landings.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 221
+    },
+    {
+      "batch": "schema26",
+      "path": "packages/services/src/marketplace-landings.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 221
+    },
+    {
+      "batch": "sec3",
+      "path": "apps/web/app/api/billing/webhook/route.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "apps/web/app/api/loads/route.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "apps/web/app/api/notices/route.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "apps/web/app/api/trips/[tripId]/events/route.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "apps/web/components/v3/HostActions.tsx",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "apps/web/lib/api-actor.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "apps/web/lib/billing-webhook.test.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "apps/web/lib/cockpit-actions.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "apps/web/lib/load-builder-title-input.test.tsx",
+      "classification": "new file absent from integration",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "apps/web/lib/public-board-refresh.test.ts",
+      "classification": "new file absent from integration",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "apps/web/lib/public-pages-board.test.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "apps/web/lib/rate-limit-core.test.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "apps/web/lib/rate-limit-core.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "apps/web/lib/rate-limit-supabase.test.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "apps/web/lib/rate-limit-supabase.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "apps/web/lib/rate-limit.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "apps/web/lib/request-body.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "apps/web/lib/security-headers.test.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "apps/web/lib/v3.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "apps/web/lib/write-limit-timeout.test.ts",
+      "classification": "new file absent from integration",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "apps/web/lib/write-limits.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "apps/web/next.config.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "packages/db/src/snapshot.test.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "packages/db/src/snapshot.ts",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "tools/normalized-store-policy.mjs",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    },
+    {
+      "batch": "sec3",
+      "path": "tools/normalized-store.test.mjs",
+      "classification": "recovery change absent; baseline unchanged",
+      "followup": 222
+    }
+  ]
+}
