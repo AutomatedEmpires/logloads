@@ -38,7 +38,14 @@ export interface MarketplacePrincipal {
   audience: string
 }
 
-type ArgumentType = "uuid" | "text" | "bpchar" | "integer" | "bigint" | "numeric" | "boolean" | "date" | "jsonb" | "text[]"
+/**
+ * The SQL types a catalogued argument may have. Two are checked here before the server sees them:
+ *
+ * - `interval`: a whole number of seconds, minutes, hours or days as text (`"7 days"`, `"1 hour"`). No months or years
+ *   (their length varies), no signs, no fractions and no compound values.
+ * - `uuid[]`: an array of canonical UUID strings; an empty array is an empty `uuid[]`.
+ */
+type ArgumentType = "uuid" | "text" | "bpchar" | "integer" | "bigint" | "numeric" | "boolean" | "date" | "interval" | "jsonb" | "text[]" | "uuid[]"
 
 interface FunctionSpec {
   args: Readonly<Record<string, ArgumentType>>
@@ -48,7 +55,22 @@ interface FunctionSpec {
   returns: "rows" | "value" | "void"
 }
 
-/** The closed list of database functions the adapter may call. Names and argument names match the SQL exactly. */
+/**
+ * The closed list of database functions the adapter may call. Names, argument names and argument types match the SQL
+ * exactly (architecture/normalized-v2, stages 01-26).
+ *
+ * Every function here is SECURITY DEFINER with a pinned `search_path`, is granted EXECUTE to `authenticated` (and to
+ * `anon` only where `anonymous` is true) and never to `service_role`; `normalized-adapter.contract.test.ts` proves
+ * those grants against the database. A SECURITY DEFINER function bypasses row-level security, so its own checks are
+ * the whole access rule. Each entry added for port v3 (#269) states that rule: who may call it and which in-function
+ * checks it relies on. A function is added only with that review, and `normalized-db.test.ts` lists every reviewed
+ * name: an entry that is not in that list fails the test.
+ *
+ * Never catalogued: anything granted to `service_role` only (the email worker's `claim_email_notifications`,
+ * `complete_email_notification`, `record_email_provider_event` and `enqueue_job_alerts`; billing events; identity
+ * sync), and helpers with no EXECUTE grant (`eligible_invitation_recipients`). This connection cannot become
+ * `service_role` (HF-22).
+ */
 export const MARKETPLACE_FUNCTIONS = {
   // A business owned by the caller, who becomes its owner (03_entitlements.sql, 06 §4): a landing business (#127) or,
   // with p_enable_hauler, a hauling business (#213, which leaves p_home_state to the function's default).
@@ -115,7 +137,152 @@ export const MARKETPLACE_FUNCTIONS = {
     },
     returns: "rows"
   },
-  withdraw_interest: { anonymous: false, args: { p_interest_id: "uuid" }, returns: "void" }
+  withdraw_interest: { anonymous: false, args: { p_interest_id: "uuid" }, returns: "void" },
+
+  // -------------------------------------------------------------------------------------------------------------
+  // Port v3 (#244), catalogued with a security review in #269. "Member" means an active member of an active
+  // business (`my_org_ids` / `has_org_role`); "seat" means a Landing Operator seat. Functions that write, including
+  // the audited admin reads, need `asUser(..., { readOnly: false })`.
+  // -------------------------------------------------------------------------------------------------------------
+
+  // --- jobs (#247) ---
+  // Authenticated. Checks `job.publish` on the landing's business through `get_viewer_marketplace_access` (active
+  // member, seat, owner/manager/staff). Landing scope: `tg_landing_scope_guard` on `job_postings` (26). Edits only a
+  // job that is still a draft of that business (`p_draft_job_id`), or creates a draft. Returns the draft's id.
+  save_job_posting_draft: {
+    anonymous: false,
+    args: {
+      p_description: "text",
+      p_destination_label: "text",
+      p_draft_job_id: "uuid",
+      p_duration_days: "integer",
+      p_equipment_codes: "text[]",
+      p_est_daily_loads: "integer",
+      p_est_loads_per_truck_per_day: "numeric",
+      p_est_one_way_miles: "integer",
+      p_est_tons_per_load: "numeric",
+      p_landing_id: "uuid",
+      p_pay_amount_cents: "bigint",
+      p_pay_note: "text",
+      p_pay_unit: "text",
+      p_product: "text",
+      p_public_access_requirements: "text[]",
+      p_public_road_notes: "text",
+      p_schedule_note: "text",
+      p_title: "text",
+      p_trucks_per_day: "integer",
+      p_trucks_requested: "integer",
+      p_work_starts_on: "date"
+    },
+    returns: "value"
+  },
+  // Authenticated. Checks `job.publish` on the job's business (as above); locks the job row. Landing scope:
+  // `tg_landing_scope_guard` on the `job_postings` update. Never re-activates (that is `reactivate_job_posting`) and
+  // refuses a draft. Audited.
+  set_job_posting_status: { anonymous: false, args: { p_job_id: "uuid", p_status: "text" }, returns: "void" },
+  // Authenticated. Checks `job.publish` on the job's business; needs `p_attest_available = true`; refuses a moderation
+  // hold, a passed expiry and invalid pay. Landing scope: `tg_landing_scope_guard`. Returns the confirmation time. Audited.
+  reactivate_job_posting: { anonymous: false, args: { p_attest_available: "boolean", p_job_id: "uuid" }, returns: "value" },
+
+  // --- team (#249) ---
+  // Authenticated. `has_org_role(org, owner)`: owners only. Returns invited email addresses, to the owner alone.
+  list_team_invitations: { anonymous: false, args: { p_org_id: "uuid" }, returns: "rows" },
+  // Authenticated. `has_org_role(org, owner)`. Never invites an owner; landings must belong to the business; the seat
+  // cap counts pending invitations under a lock on the business; at most 50 pending. Returns the invitation id. Audited.
+  invite_team_member: {
+    anonymous: false,
+    args: {
+      p_email: "text",
+      p_landing_ids: "uuid[]",
+      p_landing_workspace_seat: "boolean",
+      p_org_id: "uuid",
+      p_role: "text",
+      p_valid_for: "interval"
+    },
+    returns: "value"
+  },
+  // Authenticated. `has_org_role(invitation's org, owner)`; another business's invitation reads as not found. At most
+  // five sends; never shortens the expiry. Returns the expiry. Audited.
+  resend_team_invitation: { anonymous: false, args: { p_invitation_id: "uuid", p_valid_for: "interval" }, returns: "value" },
+  // Authenticated. `has_org_role(invitation's org, owner)`; cancels the invitation's pending email. Audited.
+  revoke_team_invitation: { anonymous: false, args: { p_invitation_id: "uuid" }, returns: "void" },
+  // Authenticated. `has_org_role(membership's org, owner)`; only a seated manager or staff member can be limited, and
+  // only to that business's landings. An empty array clears the limit. Returns the number of landings. Audited.
+  set_membership_landing_scope: { anonymous: false, args: { p_landing_ids: "uuid[]", p_membership_id: "uuid" }, returns: "value" },
+  // Authenticated, no business needed. Only pending invitations whose address is the caller's own provider-verified
+  // email (`user_contacts.email_verified_at`). Shows the inviting business's name and the invitation's landing names.
+  list_my_team_invitations: { anonymous: false, args: {}, returns: "rows" },
+  // Authenticated, no business needed. The invitation's address must be the caller's verified email; refuses an
+  // expired or answered invitation, an inactive business and an existing member. Returns the new MEMBERSHIP id (the
+  // business id is in `list_my_team_invitations`). Audited.
+  accept_team_invitation: { anonymous: false, args: { p_invitation_id: "uuid" }, returns: "value" },
+  // Authenticated, no business needed. The invitation's address must be the caller's verified email. Audited.
+  decline_team_invitation: { anonymous: false, args: { p_invitation_id: "uuid" }, returns: "void" },
+
+  // --- invites (#250) ---
+  // Authenticated. `has_org_role(job's org, owner/manager/staff, seat)`. Returns a count only, never who is eligible.
+  // FINDING (#269): no `job_scope_allows` check, so a member limited to some landings can count for a job at another
+  // landing of the same business. Leave `p_dedupe_window` unset so the plan's window applies.
+  count_eligible_invitation_recipients: {
+    anonymous: false,
+    args: { p_dedupe_window: "interval", p_job_id: "uuid", p_radius_miles: "integer" },
+    returns: "value"
+  },
+  // Authenticated. `has_org_role(job's org, owner/manager, seat)`: staff cannot send. Landing scope:
+  // `tg_landing_scope_guard` on the `targeted_invitations` insert. Re-checks eligibility and opt-in, the plan, seat and
+  // landing conflicts, and spends one invitation of the cycle atomically (no overage). `tg_invitation_dedupe_floor`
+  // (16) keeps the plan's dedupe window whatever `p_dedupe_window` says; leave it unset. Returns the invitation id. Audited.
+  reserve_targeted_invitation: {
+    anonymous: false,
+    args: { p_dedupe_window: "interval", p_job_id: "uuid", p_note: "text", p_recipient_org_id: "uuid" },
+    returns: "value"
+  },
+  // Authenticated. `has_org_role(recipient org, owner/manager/staff/driver)`; another business's invitation is refused.
+  // FINDING (#269): no check that the invitation was delivered, and no audit row; the adapter must answer only
+  // invitations it listed as delivered.
+  respond_to_invitation: { anonymous: false, args: { p_invitation_id: "uuid", p_response: "text" }, returns: "void" },
+
+  // --- alerts (#252) ---
+  // Authenticated. Member of the business (any role); only the caller's own saved jobs in it. A job that is held or
+  // whose poster is not active comes back as `unavailable` with every other field null.
+  list_saved_jobs: { anonymous: false, args: { p_org_id: "uuid" }, returns: "rows" },
+
+  // --- notify (#253) ---
+  // Authenticated. Changes only rows where `recipient_user_id = current_user_id()` and the channel is in-app; at most
+  // 200 ids; anyone else's ids change nothing. Returns how many changed.
+  mark_notifications_read: { anonymous: false, args: { p_notification_ids: "uuid[]" }, returns: "value" },
+
+  // --- boosts (#254) ---
+  // Authenticated. `has_org_role(job's org, owner/manager/staff, seat)`. Returns counts only (the radius, opted-in
+  // public haulers, active availability reports). FINDING (#269): no `job_scope_allows` check, as for
+  // `count_eligible_invitation_recipients`.
+  estimate_boost_audience: { anonymous: false, args: { p_job_id: "uuid", p_product_code: "text" }, returns: "rows" },
+
+  // --- admin (#255): LogLoads staff only. Granted to `authenticated`; each checks `is_platform_admin(roles)` against
+  // `platform_admins` (not revoked; superadmin passes any role), never an organization role, needs a stated reason and
+  // writes it to the audit log. A person who is not staff gets 42501.
+  // Roles: moderator or support. FINDING (#269): no check that the business exists; an unknown id changes nothing
+  // but still writes an audit row.
+  admin_set_org_verification: { anonymous: false, args: { p_org_id: "uuid", p_reason: "text", p_status: "text" }, returns: "void" },
+  // Role: moderator. Pauses, closes or expires the job and places the hold in one change.
+  admin_moderate_job_posting: { anonymous: false, args: { p_job_id: "uuid", p_reason: "text", p_status: "text" }, returns: "void" },
+  // Role: moderator. Removes the hold only; the job stays stopped until its poster reactivates it.
+  admin_release_job_moderation_hold: { anonymous: false, args: { p_job_id: "uuid", p_reason: "text" }, returns: "void" },
+  // Role: billing. The business must be active, verified and in the promotion's state; the promotion's limit is
+  // counted under a lock. Returns the redemption id.
+  admin_grant_founding_promotion: {
+    anonymous: false,
+    args: { p_org_id: "uuid", p_promotion_code: "text", p_reason: "text" },
+    returns: "value"
+  },
+  // Roles: moderator, support or billing. Recognition only; numbered under a lock, at most 1000. Returns the number.
+  admin_grant_founding_hauler_badge: { anonymous: false, args: { p_org_id: "uuid", p_reason: "text" }, returns: "value" },
+  // Role: support. Reason of at least 10 characters; the audit row is written before the read. Returns the WHOLE
+  // `landing_private_details` row (exact point, gate instructions, site contact): map only what the view shows.
+  // FINDING (#269): an unknown landing id still writes an audit row.
+  admin_read_landing_private: { anonymous: false, args: { p_landing_id: "uuid", p_reason: "text" }, returns: "rows" },
+  // Role: support. The audit row is written before the read. Returns the inquiry's messages, both sides.
+  admin_read_interest_thread: { anonymous: false, args: { p_interest_id: "uuid", p_reason: "text" }, returns: "rows" }
 } as const satisfies Record<string, FunctionSpec>
 
 export type MarketplaceFunctionName = keyof typeof MARKETPLACE_FUNCTIONS
@@ -445,6 +612,11 @@ export function principalClaims(principal: MarketplacePrincipal, now = Date.now(
   })
 }
 
+const UUID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** A whole number of seconds, minutes, hours or days: the only interval text the adapter sends. */
+const INTERVAL_TEXT = /^(?:0|[1-9]\d{0,5}) (?:second|minute|hour|day)s?$/
+
 function serialize(value: MarketplaceArgumentValue, type: ArgumentType, name: string): string | null {
   if (value === null || value === undefined) {
     return null
@@ -467,10 +639,16 @@ function serialize(value: MarketplaceArgumentValue, type: ArgumentType, name: st
     case "boolean":
       if (typeof value !== "boolean") break
       return value ? "true" : "false"
+    case "interval":
+      if (typeof value !== "string" || !INTERVAL_TEXT.test(value)) break
+      return value
     case "jsonb":
       return JSON.stringify(value)
     case "text[]":
       if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) break
+      return JSON.stringify(value)
+    case "uuid[]":
+      if (!Array.isArray(value) || !value.every((item) => typeof item === "string" && UUID_TEXT.test(item))) break
       return JSON.stringify(value)
   }
 
@@ -515,8 +693,13 @@ export function marketplaceCallStatement<F extends MarketplaceFunctionName>(
         return `${name} => ${placeholder}`
       }
 
-      return type === "text[]"
-        ? `${name} => array(select jsonb_array_elements_text(${placeholder}::jsonb))`
+      if (type === "text[]") {
+        return `${name} => array(select jsonb_array_elements_text(${placeholder}::jsonb))`
+      }
+
+      // Arrays travel as JSON text; each element is cast by the server, so the result is a real uuid[] (empty included).
+      return type === "uuid[]"
+        ? `${name} => array(select e.item::uuid from jsonb_array_elements_text(${placeholder}::jsonb) as e(item))`
         : `${name} => ${placeholder}::${type}`
     })
 
@@ -874,8 +1057,6 @@ const WORKER_CLAIMS = JSON.stringify({ role: "service_role" })
 const SYNC_VERIFIED_IDENTITY =
   "select to_jsonb(marketplace.sync_verified_identity(p_issuer => $1::text, p_subject => $2::text, p_display_name => $3::text, " +
   "p_email => $4::text, p_email_verified => $5::text::boolean)) as value"
-
-const UUID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** Identity linking over a direct PostgreSQL connection as the identity-sync login role (postgres.js). */
 export function createPostgresIdentitySync(options: PostgresMarketplaceDbOptions): MarketplaceIdentitySync {
