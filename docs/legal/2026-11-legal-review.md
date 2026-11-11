@@ -119,8 +119,13 @@ in `apps/web/lib/v3-shared.ts` and the notification outbox in
   mine timbers. [49 CFR 372.115](https://www.ecfr.gov/current/title-49/section-372.115) lists further non-exempt
   items.
 - **Interstate limit.** Federal broker rules reach interstate transportation
-  ([49 U.S.C. 13501](https://www.govinfo.gov/link/uscode/49/13501)). A haul that stays inside one state falls to
-  that state. Washington, for example, requires a bond of at least $5,000 from "a person who provides brokering or
+  ([49 U.S.C. 13501](https://www.govinfo.gov/link/uscode/49/13501)). A haul that is genuinely intrastate falls to
+  that state. A truck that never leaves the state can still be in interstate commerce: FMCSA looks at the
+  shipper's intent and the whole movement, so an in-state leg of a shipment bound for another state or for export
+  is interstate
+  ([FMCSA guidance](https://www.fmcsa.dot.gov/regulations/how-does-one-distinguish-between-intra-and-interstate-commerce-purposes-applicability)).
+  Logs trucked to an export dock are one example. Which hauls are which is a question for the transportation-law
+  review of each basin, and both federal and state law should be checked. Washington, for example, requires a bond of at least $5,000 from "a person who provides brokering or
   forwarding services for the transportation of property in intrastate commerce"
   ([RCW 81.80.430](https://app.leg.wa.gov/rcw/default.aspx?cite=81.80.430)).
 - **Tort exposure.** On May 14, 2026 the Supreme Court held unanimously that federal law does not preempt a state
@@ -829,10 +834,12 @@ On the offer page, and again at checkout before payment details are taken:
    organization (COM-1).
 2. The limit, and how it is counted: for example "the first 10 landing organizations to subscribe in each open
    basin", with the basin named. It must be literally true, and the remaining count shown must be real.
-3. The discount and the base price: "50% off Pro: $149.50 a month instead of $299, plus tax".
+3. The discount and the base price for the plan being bought. The offer is 50% off the chosen plan, so the three
+   cases are Basic at $74.50 a month instead of $149, Pro at $149.50 instead of $299, and Regional at $249.50
+   instead of $499, each plus tax.
 4. How long: six paid billing cycles, and what counts as a cycle (SQL-DEC F5).
-5. **What happens next: the plan renews at the full price each month until cancelled.** Give the amount and the
-   date of the first full-price charge. This is the material term under the Restore Online Shoppers' Confidence
+5. **What happens next: the plan renews at the full price each month until cancelled.** Give the full price of
+   the plan being bought and the date of the first full-price charge. This is the material term under the Restore Online Shoppers' Confidence
    Act ([15 U.S.C. 8403](https://www.govinfo.gov/link/uscode/15/8403)) and the state renewal laws.
 6. How to cancel: online, in as few steps as signing up, effective at the end of the paid period.
 7. A reminder before the discount ends. California requires one for promotional prices (Cal. Bus. & Prof. Code
