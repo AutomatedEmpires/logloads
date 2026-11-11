@@ -710,7 +710,13 @@ export { destinationFacilityVerificationAt, millUsableByOrganization } from "./d
 export { directOfferClaimCount, directOfferIsClaimable, effectiveDirectOfferStatus } from "./operating-network"
 export { DomainRefusalError } from "./utils"
 export { marketplaceJobStatus, type MarketplaceActor } from "./marketplace-interest"
-export { pilotEquipmentCode, pilotMarketplaceMembership, type MarketplaceViewerAccess } from "./marketplace-access"
+export {
+  pilotEquipmentCode,
+  pilotMarketplaceMembership,
+  // Port v3 (#244): the translated membership the pilot adapter derives feature capabilities from.
+  resolveMarketplaceActor,
+  type MarketplaceViewerAccess
+} from "./marketplace-access"
 export {
   HAULER_IDENTITY_EDIT_REFUSED,
   HAULER_PROFILE_EDIT_REFUSED,
@@ -870,3 +876,14 @@ export type {
 export { equipmentProfileUnitNumberIsUnambiguous } from "./equipment-unit-numbers"
 export type { DriverMediaKind, DriverMediaTarget } from "./driver-profile"
 export type { TripDocumentAccess, TripDocumentTarget } from "./operating-network"
+
+// Port v3 (#244): one entry per feature group; each group's task changes only its own folder.
+export * from "./v2/jobs"
+export * from "./v2/billing"
+export * from "./v2/team"
+export * from "./v2/invites"
+export * from "./v2/trucks"
+export * from "./v2/alerts"
+export * from "./v2/notify"
+export * from "./v2/boosts"
+export * from "./v2/admin"
