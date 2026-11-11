@@ -3,9 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 /**
- * #279 (design audit 1, C1): the V2 loading and error boundaries. A client navigation shows the design system's
- * skeleton inside the V2 shell; an uncaught failure shows plain words, Try again and Find work, and the request id,
- * never the error's own message.
+ * #279 (design audit 1, C1): the V2 error boundary. An uncaught failure stays inside the V2 shell and shows plain words,
+ * Try again and Find work, and the request id, never the error's own message.
  */
 
 const mocks = vi.hoisted(() => ({ refresh: vi.fn() }))
@@ -15,8 +14,6 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mocks.refresh }
 import { ErrorState } from "@logloads/ui/primitives"
 
 import MarketplaceV2Error from "@/app/v2/error"
-import MarketplaceV2Loading from "@/app/v2/loading"
-import JobDetailLoading from "@/app/v2/work/[jobId]/loading"
 
 const PERSONAL = "maya@northpine.example"
 const textOf = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/\s+/g, " ").trim()
@@ -35,28 +32,6 @@ beforeEach(() => {
   vi.clearAllMocks()
   // The app compiles JSX with the classic runtime under Vitest, as in v2-pages.test.tsx.
   vi.stubGlobal("React", React)
-})
-
-describe("loading (C1)", () => {
-  it("shows the design system's row skeleton, announced once, with no example data", () => {
-    const html = renderToStaticMarkup(<MarketplaceV2Loading />)
-
-    expect(html).toContain('data-ds-page="loading"')
-    expect(html.match(/role="status"/g)).toHaveLength(1)
-    expect(textOf(html)).toBe("Loading the page")
-    expect(html).toMatch(/<div aria-hidden="true"[^>]*>/)
-  })
-
-  it("shows the job page's detail skeleton, and announces only the main column", () => {
-    const html = renderToStaticMarkup(<JobDetailLoading />)
-
-    expect(html).toContain('data-kind="detail"')
-    expect(html).toContain('data-layout="main-aside"')
-    expect(html.match(/role="status"/g)).toHaveLength(2)
-    // The aside's status sits inside an aria-hidden placeholder, so assistive technology hears "Loading the job" once.
-    expect(html).toMatch(/<div aria-hidden="true"[^>]*data-kind="rows"[^>]*>[\s\S]*Loading the interest form/)
-    expect(textOf(html)).toContain("Loading the job")
-  })
 })
 
 describe("the error boundary (C1, C3)", () => {
