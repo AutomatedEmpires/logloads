@@ -1,5 +1,7 @@
 # Timber-hauling market research — November 2026
 
+**Status:** Research notes for issue 267, read 10 November 2026. Blueprint prices cited here are **APPROVED** in the 1 November 2026 decision and remain **TARGET** until a delivery phase is authorized. Competitor prices are what the linked pages displayed that day.
+
 Research for [LogLoads issue 267](https://github.com/AutomatedEmpires/logloads/issues/267). Pages below were read on 10 November 2026. Vendor prices move; the figure in the table is the figure on the linked page that day.
 
 This memo compares public evidence with the adopted product in [LogLoads Product Blueprint v1.0](https://github.com/AutomatedEmpires/logloads/blob/work/logloads-repair/docs/product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md), recorded in the [1 November 2026 decision](https://github.com/AutomatedEmpires/logloads/blob/work/logloads-repair/docs/DECISIONS.md). The blueprint says a delivery phase is not permission to deploy. Nothing in this file was sent, posted, or used to contact a person.
@@ -42,7 +44,7 @@ Prices are monthly unless the row says otherwise. "Retrieved" means the linked p
 | Waldo Standard | The account that wants settlements | "Starting at $150/month" | Basic, plus reconcile and export up to 2,000 loads a year, settlements, export to PDF, CSV, Caribou, and Forest Products Accounting | Same |
 | Waldo Professional / Enterprise | Mid-size and larger operations | Custom | Up to 10,000 loads, or 10,000+, quota management, LIMS and API on Enterprise | Same |
 | Timberlark job board | Either side, to post or browse | $0 to create an account, post, browse, or use the tools | A job board for logging, hauling, and related work, plus prices, ratings, and equipment listings | [Terms, updated 6 October 2026](https://timberlark.com/terms) |
-| Timberlark completed job, paid on the platform | The accepting party, by deduction | 5% of job value, plus a 10% deposit charged to the accepting party when the job is accepted | Stripe payment, deposit refunded when the poster pays through the platform, deposit forfeitable if the acceptor does not perform | Same |
+| Timberlark completed job, paid on the platform | The accepting party, by deduction | 5 percent of job value, plus a 10% deposit charged to the accepting party when the job is accepted | Stripe payment, deposit refunded when the poster pays through the platform, deposit forfeitable if the acceptor does not perform | Same |
 | Timberlark Business / EUDR Enterprise | Subscriber | $399 / $599 per month | API access to EUDR compliance records. The terms also name a Pro plan; the Pro monthly price was not on a Timberlark page opened for this memo. The marketing page's range "Free – $7,188/yr" matches $599 × 12 | [API docs](https://timberlark.com/api-docs), [Why Timberlark](https://timberlark.com/why-timberlark) |
 | Forest Commodities Board, transportation | Transport company, as stated by the vendor | "No Cost. Our system is free — as our service relies on your business." | Lumber shipments across Canada, the United States, and Mexico for participating sawmills: book a load, print a dispatch sheet, invoices, certificates on file. The vendor says the board serves 200,000 destinations. That is their claim | [Forest Commodities Board](https://www.forcombo.com/lumber-transportation-overview.aspx/lumber-transportation-board.aspx) |
 
