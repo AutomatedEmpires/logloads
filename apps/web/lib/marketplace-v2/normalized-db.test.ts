@@ -17,6 +17,88 @@ import {
 } from "./normalized-db"
 import { MarketplaceAdapterConfigurationError, MarketplaceRefusalError, MarketplaceStoreError } from "./port"
 
+/**
+ * The reviewed allow-list (#269): every function the adapter may call, by who the database lets call it. A function
+ * added to `MARKETPLACE_FUNCTIONS` fails the catalogue test until it is listed here, which is done only after reading
+ * its SQL (architecture/normalized-v2) and recording its access rule beside its catalogue entry.
+ *
+ * - `anonymous`: granted to `anon`; public discovery, public-safe fields only.
+ * - `person`: granted to `authenticated`; the function checks the caller's own membership, role, seat or verified email.
+ * - `staff`: granted to `authenticated`; the function checks `is_platform_admin` and writes the audit log.
+ */
+const REVIEWED_FUNCTIONS = {
+  anonymous: ["get_marketplace_job", "list_marketplace_jobs"],
+  person: [
+    "accept_team_invitation",
+    "count_eligible_invitation_recipients",
+    "create_organization",
+    "decline_team_invitation",
+    "estimate_boost_audience",
+    "get_org_entitlement_state",
+    "get_viewer_marketplace_access",
+    "invite_team_member",
+    "list_authoring_landings",
+    "list_hauler_equipment_options",
+    "list_marketplace_interests",
+    "list_my_team_invitations",
+    "list_saved_jobs",
+    "list_team_invitations",
+    "mark_notifications_read",
+    "post_hauler_interest_reply",
+    "publish_job_posting",
+    "reactivate_job_posting",
+    "reconfirm_job_posting",
+    "resend_team_invitation",
+    "reserve_targeted_invitation",
+    "respond_to_interest",
+    "respond_to_invitation",
+    "revoke_team_invitation",
+    "save_job_posting_draft",
+    "set_job_posting_status",
+    "set_membership_landing_scope",
+    "submit_expression_of_interest",
+    "withdraw_interest"
+  ],
+  staff: [
+    "admin_grant_founding_hauler_badge",
+    "admin_grant_founding_promotion",
+    "admin_moderate_job_posting",
+    "admin_read_interest_thread",
+    "admin_read_landing_private",
+    "admin_release_job_moderation_hold",
+    "admin_set_org_verification"
+  ]
+} as const
+
+/**
+ * Functions of the schema that must never be reachable through this connection: worker, billing, identity-sync and
+ * import paths (granted to `service_role` only, or to no one) and internal helpers.
+ */
+const NEVER_CATALOGUED = [
+  "activate_job_boost",
+  "admin_import_legacy_job_posting",
+  "admin_list_billing_provider_events",
+  "apply_billing_provider_event",
+  "apply_subscription_cycle",
+  "claim_email_notifications",
+  "complete_email_notification",
+  "eligible_invitation_recipients",
+  "enqueue_job_alerts",
+  "enqueue_notification",
+  "enqueue_team_invitation_email",
+  "expire_stale_invitation_reservations",
+  "open_subscription_cycle",
+  "record_email_provider_event",
+  "replay_deferred_billing_event",
+  "resolve_invitation_delivery",
+  "supersede_deferred_billing_events",
+  "sync_verified_identity",
+  "write_audit"
+]
+
+const UUID_A = "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+const UUID_B = "22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+
 const PRINCIPAL = { audience: "logloads-test-audience", issuer: "https://clerk.logloads.test", subject: "user_test_subject" }
 
 /** The shape postgres.js throws for a server error: the server's fields copied onto it, severity included. */
@@ -91,12 +173,154 @@ describe("marketplaceCallStatement", () => {
     expect(() => marketplaceCallStatement("publish_job_posting", { p_equipment_codes: [1] as never })).toThrow(TypeError)
   })
 
-  it("catalogues only marketplace V2 functions: no worker, admin, billing, legacy or table-write path", () => {
-    const names = Object.keys(MARKETPLACE_FUNCTIONS)
+  it("sends an interval as a whole number of seconds, minutes, hours or days, and nothing else (#269)", () => {
+    const invite = marketplaceCallStatement("invite_team_member", { p_email: "rae@example.test", p_valid_for: "7 days" })
 
-    expect(names.some((name) => /admin|billing|subscription|invitation|legacy|import|cycle|audit|boost|sync/.test(name))).toBe(false)
-    expect(names.filter((name) => MARKETPLACE_FUNCTIONS[name as keyof typeof MARKETPLACE_FUNCTIONS].anonymous).sort())
-      .toEqual(["get_marketplace_job", "list_marketplace_jobs"])
+    expect(invite.text).toBe(
+      "select to_jsonb(marketplace.invite_team_member(p_email => $1::text, p_valid_for => $2::text::interval)) as value"
+    )
+    expect(invite.values).toEqual(["rae@example.test", "7 days"])
+
+    for (const accepted of ["1 hour", "30 days", "90 seconds", "45 minutes", "0 days", "1 day"]) {
+      expect(marketplaceCallStatement("resend_team_invitation", { p_valid_for: accepted }).values).toEqual([accepted])
+    }
+
+    expect(marketplaceCallStatement("resend_team_invitation", { p_invitation_id: UUID_A, p_valid_for: null }).text)
+      .toBe("select to_jsonb(marketplace.resend_team_invitation(p_invitation_id => $1::text::uuid, p_valid_for => null::interval)) as value")
+    // Left out, the function's own default applies (the plan's dedupe window, the invitation's current expiry).
+    expect(marketplaceCallStatement("reserve_targeted_invitation", { p_dedupe_window: undefined, p_job_id: UUID_A }).text)
+      .not.toContain("p_dedupe_window")
+
+    for (const refused of [
+      "1 month", "1 year", "1 week", "-1 days", "1.5 hours", "1 day 2 hours", "7days", "7  days", " 7 days", "7 days ", "07 days",
+      "1234567 days", "P7D", "infinity", "7 days'; drop table x; --", "", 7, 604800, true, ["7 days"], { days: 7 }
+    ]) {
+      expect(() => marketplaceCallStatement("resend_team_invitation", { p_valid_for: refused as never })).toThrow(TypeError)
+    }
+  })
+
+  it("sends a uuid[] as JSON text the server casts element by element, and refuses anything that is not a UUID (#269)", () => {
+    const scope = marketplaceCallStatement("set_membership_landing_scope", { p_landing_ids: [UUID_A, UUID_B], p_membership_id: UUID_B })
+
+    expect(scope.text).toBe(
+      "select to_jsonb(marketplace.set_membership_landing_scope(p_landing_ids => array(select e.item::uuid from jsonb_array_elements_text($1::text::jsonb) as e(item)), p_membership_id => $2::text::uuid)) as value"
+    )
+    expect(scope.values).toEqual([`["${UUID_A}","${UUID_B}"]`, UUID_B])
+    expect(scope.text).not.toMatch(/\$\d+::(?!text)/)
+
+    // An empty array is an empty uuid[] (it clears a landing scope); null is a typed null.
+    expect(marketplaceCallStatement("mark_notifications_read", { p_notification_ids: [] }).values).toEqual(["[]"])
+    expect(marketplaceCallStatement("mark_notifications_read", { p_notification_ids: null }).text)
+      .toBe("select to_jsonb(marketplace.mark_notifications_read(p_notification_ids => null::uuid[])) as value")
+
+    for (const refused of [
+      UUID_A, [UUID_A, "not-a-uuid"], [`${UUID_A}'::uuid]); drop table x; --`], [UUID_A.replaceAll("-", "")], [`{${UUID_A}}`],
+      [UUID_A, null], [1], [[UUID_A]], `{${UUID_A}}`, 7, { 0: UUID_A, length: 1 }
+    ]) {
+      expect(() => marketplaceCallStatement("mark_notifications_read", { p_notification_ids: refused as never })).toThrow(TypeError)
+    }
+  })
+
+  it("calls a function that takes no arguments, a rows function and a void function in the catalogued shape (#269)", () => {
+    expect(marketplaceCallStatement("list_my_team_invitations", {}))
+      .toEqual({ text: "select to_jsonb(r) as row from marketplace.list_my_team_invitations() as r", values: [] })
+    expect(marketplaceCallStatement("admin_read_landing_private", { p_landing_id: UUID_A, p_reason: "Ticket 4821: gate dispute" }).text)
+      .toBe("select to_jsonb(r) as row from marketplace.admin_read_landing_private(p_landing_id => $1::text::uuid, p_reason => $2::text) as r")
+    expect(marketplaceCallStatement("set_job_posting_status", { p_job_id: UUID_A, p_status: "paused" }).text)
+      .toBe("select 1 as done from marketplace.set_job_posting_status(p_job_id => $1::text::uuid, p_status => $2::text) as r")
+  })
+
+  it("catalogues exactly the reviewed functions: an unreviewed name fails here (#269)", () => {
+    const names = Object.keys(MARKETPLACE_FUNCTIONS).sort()
+    const reviewed = [...REVIEWED_FUNCTIONS.anonymous, ...REVIEWED_FUNCTIONS.person, ...REVIEWED_FUNCTIONS.staff]
+
+    expect(new Set(reviewed).size).toBe(reviewed.length)
+    expect(names).toEqual([...reviewed].sort())
+  })
+
+  it("opens only public discovery to an anonymous session", () => {
+    const anonymous = Object.entries(MARKETPLACE_FUNCTIONS).filter(([, spec]) => spec.anonymous).map(([name]) => name).sort()
+
+    expect(anonymous).toEqual([...REVIEWED_FUNCTIONS.anonymous].sort())
+  })
+
+  it("keeps staff functions apart: every admin_ function is reviewed as staff-only, takes a reason and is never anonymous", () => {
+    const admin = Object.keys(MARKETPLACE_FUNCTIONS).filter((name) => name.startsWith("admin_")).sort()
+
+    expect(admin).toEqual([...REVIEWED_FUNCTIONS.staff].sort())
+
+    for (const name of REVIEWED_FUNCTIONS.staff) {
+      expect({ name, ...MARKETPLACE_FUNCTIONS[name] }).toMatchObject({ anonymous: false, args: { p_reason: "text" }, name })
+    }
+  })
+
+  it("never catalogues a worker, billing, identity-sync, import or internal function", () => {
+    for (const name of NEVER_CATALOGUED) {
+      expect(Object.prototype.hasOwnProperty.call(MARKETPLACE_FUNCTIONS, name), name).toBe(false)
+      expect(() => marketplaceCallStatement(name as never, {})).toThrow(TypeError)
+    }
+
+    // Nothing inherited from Object.prototype is a function name either.
+    for (const name of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      expect(() => marketplaceCallStatement(name as never, {})).toThrow(TypeError)
+    }
+  })
+
+  it("declares only known argument types under SQL parameter names", () => {
+    const types = ["uuid", "text", "bpchar", "integer", "bigint", "numeric", "boolean", "date", "interval", "jsonb", "text[]", "uuid[]"]
+
+    for (const [name, spec] of Object.entries(MARKETPLACE_FUNCTIONS)) {
+      expect(name).toMatch(/^[a-z][a-z_]*$/)
+      expect(["rows", "value", "void"]).toContain(spec.returns)
+
+      for (const [argument, type] of Object.entries(spec.args)) {
+        expect(argument, name).toMatch(/^p_[a-z_]+$/)
+        expect(types, `${name}.${argument}`).toContain(type)
+      }
+    }
+  })
+
+  it("catalogues each port v3 function with its exact SQL argument names and types (stages 01-26, #269)", () => {
+    const signatures = Object.fromEntries(
+      Object.entries(MARKETPLACE_FUNCTIONS).map(([name, spec]) => [
+        name,
+        Object.entries(spec.args).map(([argument, type]) => `${argument} ${type}`).sort().join(", ")
+      ])
+    )
+
+    expect(signatures).toMatchObject({
+      accept_team_invitation: "p_invitation_id uuid",
+      admin_grant_founding_hauler_badge: "p_org_id uuid, p_reason text",
+      admin_grant_founding_promotion: "p_org_id uuid, p_promotion_code text, p_reason text",
+      admin_moderate_job_posting: "p_job_id uuid, p_reason text, p_status text",
+      admin_read_interest_thread: "p_interest_id uuid, p_reason text",
+      admin_read_landing_private: "p_landing_id uuid, p_reason text",
+      admin_release_job_moderation_hold: "p_job_id uuid, p_reason text",
+      admin_set_org_verification: "p_org_id uuid, p_reason text, p_status text",
+      count_eligible_invitation_recipients: "p_dedupe_window interval, p_job_id uuid, p_radius_miles integer",
+      decline_team_invitation: "p_invitation_id uuid",
+      estimate_boost_audience: "p_job_id uuid, p_product_code text",
+      invite_team_member:
+        "p_email text, p_landing_ids uuid[], p_landing_workspace_seat boolean, p_org_id uuid, p_role text, p_valid_for interval",
+      list_my_team_invitations: "",
+      list_saved_jobs: "p_org_id uuid",
+      list_team_invitations: "p_org_id uuid",
+      mark_notifications_read: "p_notification_ids uuid[]",
+      reactivate_job_posting: "p_attest_available boolean, p_job_id uuid",
+      resend_team_invitation: "p_invitation_id uuid, p_valid_for interval",
+      reserve_targeted_invitation: "p_dedupe_window interval, p_job_id uuid, p_note text, p_recipient_org_id uuid",
+      respond_to_invitation: "p_invitation_id uuid, p_response text",
+      revoke_team_invitation: "p_invitation_id uuid",
+      set_job_posting_status: "p_job_id uuid, p_status text",
+      set_membership_landing_scope: "p_landing_ids uuid[], p_membership_id uuid"
+    })
+    expect(signatures.save_job_posting_draft).toBe(
+      "p_description text, p_destination_label text, p_draft_job_id uuid, p_duration_days integer, p_equipment_codes text[], " +
+        "p_est_daily_loads integer, p_est_loads_per_truck_per_day numeric, p_est_one_way_miles integer, p_est_tons_per_load numeric, " +
+        "p_landing_id uuid, p_pay_amount_cents bigint, p_pay_note text, p_pay_unit text, p_product text, " +
+        "p_public_access_requirements text[], p_public_road_notes text, p_schedule_note text, p_title text, " +
+        "p_trucks_per_day integer, p_trucks_requested integer, p_work_starts_on date"
+    )
   })
 })
 
