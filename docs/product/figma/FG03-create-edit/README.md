@@ -4,15 +4,15 @@
 **Figma page:** [03 Create and edit](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=43-77) in the LogLoads file (jackson.cole's team).
 **Source of truth:** the coded V2 screens on `work/logloads-repair`, the changes spec §4.4, §4.5, §4.6, and §5.4, and design audit 2 (#285). No UI code changed in this task. Every control is an instance from [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-2), bound to that file's variables. No new styles or components were created.
 
-Example data is the seeded North Pine Logging job at Oak Landing, "Oak saw logs to Springfield" ($485.00 per load, log truck and pole trailer, from Mon, Nov 16, 2026), plus "Douglas-fir poles, Hills Creek" ($68.00 per load). Interest is from Granite Creek Hauling (1 log truck with pole trailer, from Nov 16). Sam Carter sends that interest at 10:42 am. The landing's number, shown only after a reply if the landing opts in, is (541) 555-0188.
+Example data is the seeded North Pine Logging job at Oak Landing, "Oak saw-log morning run" ($525.00 per load, log truck and pole trailer, destined for Cascade Mill · Springfield, OR, from Mon, Nov 16, 2026), plus "Douglas-fir poles, Hills Creek" ($68.00 per load). Interest is from Granite Creek Hauling (1 log truck with pole trailer, from Nov 16). Sam Carter sends that interest at 10:42 am. The landing's number, shown only after a reply if the landing opts in, is (541) 555-0188.
 
 ## What changed for audit 2
 
-The job editor is three steps, and the draft is saved: "Draft saved 10:42 am." CE-01 keeps that draft with Continue. Review shows "14 trucks available within 50 miles" before Publish job. The ending is "Job published" with `https://logloads.com/v2/work/oak-saw-logs-to-springfield` and Copy link.
+The job editor is three steps, and the draft is saved: "Draft saved 10:42 am." CE-01 keeps that draft with Continue. Review shows "14 trucks available within 50 miles" before Publish job. The ending is "Job published" with `https://logloads.com/v2/work/oak-saw-log-morning-run` and Copy link.
 
 A landing answers an inquiry in two taps: Reply or Decline. The hauler's phone stays hidden until the landing replies and chooses "Show my number."
 
-Each original screen is drawn at 390, 768, and 1440 px. New endings and the inquiry thread are drawn at 390 and 768 px. Body copy is 16 px. The primary action sits in a bottom bar at 56 px, and the other controls are 48 px. The phone tab bar labels the section Inquiries, and Post jobs is the active tab on the editor. The account chip no longer shows a Preview tag.
+Each screen, including the new endings and the inquiry thread, is drawn at 390, 768, and 1440 px. Body copy is 16 px. The primary action sits in a bottom bar at 56 px, and the other controls are 48 px. The phone tab bar labels the section Inquiries, and Post jobs is the active tab on the editor. The account chip no longer shows a Preview tag.
 
 ## Screens
 
@@ -26,20 +26,20 @@ Each original screen is drawn at 390, 768, and 1440 px. New endings and the inqu
 | CE-05 Field errors | [58:3043](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=58-3043) | [156:1901](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-1901) | [58:3230](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=58-3230) |
 | CE-06 Review and publish | [58:3495](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=58-3495) | [156:1999](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-1999) | [58:3714](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=58-3714) |
 | CE-07 Interest sheet | [58:3951](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=58-3951) | [156:2087](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-2087) | [58:4142](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=58-4142) |
-| CE-08 Job published |  | [156:3488](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-3488) | [156:2103](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-2103) |
-| CE-09 Publish failed |  | [156:3619](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-3619) | [156:2268](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-2268) |
-| CE-10 Editor offline |  | [156:3744](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-3744) | [156:2393](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-2393) |
-| CE-11 Interest sent |  | [156:3932](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-3932) | [156:2581](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-2581) |
-| CE-12 Inquiry |  | [156:4047](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-4047) | [156:2696](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-2696) |
-| CE-13 Reply sent |  | [156:4177](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-4177) | [156:2893](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-2893) |
-| CE-14 Phone showing |  | [156:4303](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-4303) | [156:3020](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-3020) |
-| CE-15 Declined |  | [156:4425](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-4425) | [156:3142](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-3142) |
-| CE-16 Reply offline |  | [156:4543](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-4543) | [156:3260](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-3260) |
-| CE-17 Reply failed |  | [156:4657](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-4657) | [156:3374](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-3374) |
+| CE-08 Job published | [238:3638](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=238-3638) | [156:3488](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-3488) | [156:2103](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-2103) |
+| CE-09 Publish failed | [238:3892](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=238-3892) | [156:3619](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-3619) | [156:2268](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-2268) |
+| CE-10 Editor offline | [238:4036](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=238-4036) | [156:3744](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-3744) | [156:2393](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-2393) |
+| CE-11 Interest sent | [238:4181](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=238-4181) | [156:3932](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-3932) | [156:2581](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-2581) |
+| CE-12 Inquiry | [238:4325](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=238-4325) | [156:4047](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-4047) | [156:2696](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-2696) |
+| CE-13 Reply sent | [238:4474](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=238-4474) | [156:4177](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-4177) | [156:2893](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-2893) |
+| CE-14 Phone showing | [238:4627](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=238-4627) | [156:4303](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-4303) | [156:3020](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-3020) |
+| CE-15 Declined | [238:4773](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=238-4773) | [156:4425](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-4425) | [156:3142](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-3142) |
+| CE-16 Reply offline | [238:4919](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=238-4919) | [156:4543](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-4543) | [156:3260](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-3260) |
+| CE-17 Reply failed | [238:5062](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=238-5062) | [156:4657](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-4657) | [156:3374](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-3374) |
 
 ## How the flows read
 
-- **Post a job.** Step 1 is the job: title, Oak Landing, Springfield, and 38 miles already filled in. Step 2 is pay and trucks: per load, $485.00, steppers for 6 trucks and 3 a day, Today / Tomorrow / Mon, Nov 16, and log truck plus pole trailer. Step 3 reviews the card, states "Will show: Poster confirmed available today.", shows the 14 trucks within 50 miles, and publishes with one sentence instead of three checkboxes.
+- **Post a job.** Step 1 is the job: title, Oak Landing, Cascade Mill · Springfield, OR, and 38 miles already filled in. Step 2 is pay and trucks: per load, $525.00, steppers for 6 trucks and 3 a day, Today / Tomorrow / Mon, Nov 16, and log truck plus pole trailer. Step 3 reviews the card, states "Will show: Poster confirmed available today.", shows the 14 trucks within 50 miles, and shows three statements unticked: "This is a real job at Oak Landing, which is recruiting now.", "Pay, equipment and dates are accurate today.", and "We'll update or pause it when we no longer need trucks."
 - **CE-05** is that same step with two errors: the pay amount is empty, and no truck type is chosen. The draft stays.
 - **CE-09** is publish failed. The draft is kept, and Try again is the primary button.
 - **CE-10** is the editor offline. The draft stays on the phone.
