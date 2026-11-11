@@ -2,21 +2,34 @@ import { describe, expect, it, vi } from "vitest"
 
 vi.mock("server-only", () => ({}))
 
+import { MARKETPLACE_V2_FEATURES, marketplaceV2FeatureSupport, type MarketplaceV2Feature } from "@logloads/contracts"
+
 import {
   marketplaceV2AdapterKind,
   normalizedAdapterConfiguration,
   selectMarketplaceV2Port,
   sessionPrincipalResolver
 } from "./adapter"
-import { MarketplaceAdapterConfigurationError, MarketplaceRefusalError, type MarketplaceV2Port } from "./port"
+import {
+  MARKETPLACE_V2_FEATURE_OPERATIONS,
+  MarketplaceAdapterConfigurationError,
+  MarketplaceRefusalError,
+  marketplaceV2FeatureMethods,
+  type MarketplaceV2Port
+} from "./port"
 
 const VIEWER = { organizationId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }
 const IDENTITY = { audience: "logloads-test-audience", issuer: "https://clerk.logloads.test" }
 
-function spyPort(supportsPublishing: boolean): MarketplaceV2Port {
+/** Every port v3 method (#244), as `[group, method]`. */
+const PORT_V3_METHODS = MARKETPLACE_V2_FEATURES.flatMap((feature) => marketplaceV2FeatureMethods(feature).map((method) => [feature, method] as const))
+
+function spyPort(supportsPublishing: boolean, supported: readonly MarketplaceV2Feature[] = []): MarketplaceV2Port {
   const resolved = <T,>(value: T) => vi.fn(async () => value)
 
   return {
+    ...Object.fromEntries(PORT_V3_METHODS.map(([, method]) => [method, resolved(undefined)])),
+    supports: marketplaceV2FeatureSupport(supported),
     authoringLandings: resolved([]),
     expressInterest: vi.fn(),
     getJob: resolved(null),
@@ -41,6 +54,7 @@ function spyPort(supportsPublishing: boolean): MarketplaceV2Port {
     supportsHaulerProfile: supportsPublishing,
     supportsPublishing,
     viewerAccess: resolved({ capabilities: [], organizationName: "Test" }),
+    viewerFeatureCapabilities: resolved([]),
     withdrawInterest: resolved(undefined)
   } as unknown as MarketplaceV2Port
 }
@@ -189,6 +203,53 @@ describe("selectMarketplaceV2Port", () => {
     expect(pilot.addHaulerEquipment).not.toHaveBeenCalled()
   })
 
+  it("routes every port v3 method (#244) to the selected adapter with its arguments unchanged", async () => {
+    expect(PORT_V3_METHODS).toHaveLength(Object.values(MARKETPLACE_V2_FEATURE_OPERATIONS).flatMap((group) => Object.keys(group)).length)
+
+    for (const kind of ["pilot", "normalized"] as const) {
+      const pilot = spyPort(false)
+      const target = spyPort(true)
+      const port = selectMarketplaceV2Port(pilot, { kind: () => kind, normalized: () => target })
+      const [chosen, other] = kind === "pilot" ? [pilot, target] : [target, pilot]
+
+      await port.viewerFeatureCapabilities(VIEWER)
+      expect(chosen.viewerFeatureCapabilities).toHaveBeenCalledExactlyOnceWith(VIEWER)
+      expect(other.viewerFeatureCapabilities).not.toHaveBeenCalled()
+
+      for (const [feature, method] of PORT_V3_METHODS) {
+        const call = port[method] as (...values: unknown[]) => Promise<unknown>
+        // Every parameter the method declares, each distinct, so a dropped or reordered argument fails.
+        const args = [VIEWER, `${feature}-argument`, { method }].slice(0, call.length)
+
+        expect(call.length, method).toBeGreaterThan(0)
+
+        await call(...args)
+
+        expect(chosen[method], `${kind} ${method}`).toHaveBeenCalledExactlyOnceWith(...args)
+        expect(other[method], `${kind} ${method}`).not.toHaveBeenCalled()
+      }
+    }
+  })
+
+  it("reports the selected adapter's groups (#244), and none on a broken selection", () => {
+    const pilot = spyPort(false)
+    const target = spyPort(true, ["billing", "jobs"])
+
+    expect(selectMarketplaceV2Port(pilot, { kind: () => "pilot", normalized: () => target }).supports).toEqual(marketplaceV2FeatureSupport())
+    expect(selectMarketplaceV2Port(pilot, { kind: () => "normalized", normalized: () => target }).supports)
+      .toEqual(marketplaceV2FeatureSupport(["jobs", "billing"]))
+
+    const broken = selectMarketplaceV2Port(pilot, {
+      kind: () => "normalized",
+      normalized: () => {
+        throw new MarketplaceAdapterConfigurationError("not configured")
+      }
+    })
+
+    expect(Object.values(broken.supports).every((supported) => supported === false)).toBe(true)
+    expect(Object.keys(broken.supports).sort()).toEqual([...MARKETPLACE_V2_FEATURES].sort())
+  })
+
   it("fails closed on a broken selection: calls reject and nothing claims to publish", async () => {
     const pilot = spyPort(false)
     const port = selectMarketplaceV2Port(pilot, {
@@ -201,7 +262,9 @@ describe("selectMarketplaceV2Port", () => {
     expect(port.supportsPublishing).toBe(false)
     expect(port.supportsHaulerProfile).toBe(false)
     expect(port.supportsHaulerFleet).toBe(false)
+    expect(port.supports.team).toBe(false)
     await expect(port.listJobs({})).rejects.toBeInstanceOf(MarketplaceAdapterConfigurationError)
+    await expect(port.planAllowance(VIEWER)).rejects.toBeInstanceOf(MarketplaceAdapterConfigurationError)
     await expect(port.viewerAccess(VIEWER)).rejects.toBeInstanceOf(MarketplaceAdapterConfigurationError)
     expect(pilot.listJobs).not.toHaveBeenCalled()
   })

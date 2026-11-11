@@ -2,19 +2,26 @@ import "server-only"
 
 import {
   filterMarketplaceJobs,
+  marketplaceFeatureCapabilities,
+  marketplaceV2FeatureSupport,
   sortMarketplaceJobs,
   type MarketplaceInterestView,
   type MarketplaceJobDetailView,
   type MarketplaceJobFilters
 } from "@logloads/contracts"
-import { marketplaceJobStatus, pilotHaulerFleet, pilotHaulerProfile } from "@logloads/services"
+import { marketplaceJobStatus, pilotHaulerFleet, pilotHaulerProfile, resolveMarketplaceActor } from "@logloads/services"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
 import { buildNetworkView } from "../network"
 import { mutateState, readState } from "../services"
 import { selectMarketplaceV2Port } from "./adapter"
 import { pilotPosterVerification, toInterestView, toJobDetailView } from "./mapping"
-import { MarketplaceOperationUnavailableError, type MarketplaceV2Port, type MarketplaceV2Viewer } from "./port"
+import {
+  MARKETPLACE_V2_FEATURE_OPERATIONS,
+  MarketplaceOperationUnavailableError,
+  type MarketplaceV2Port,
+  type MarketplaceV2Viewer
+} from "./port"
 
 /**
  * Marketplace V2 over the pilot's versioned `operating_state` document. Reads go through the public,
@@ -52,6 +59,10 @@ function interestView(state: LogLoadsDatabaseState, interest: Parameters<typeof 
   return toInterestView(state, interest, (load) => marketplaceJobStatus(load))
 }
 
+// Port v3 (#244): what each refused operation is called, shared with the normalized adapter's refusals.
+const { admin: ADMIN, alerts: ALERTS, billing: BILLING, boosts: BOOSTS, invites: INVITES, jobs: JOBS, notify: NOTIFY, team: TEAM, trucks: TRUCKS } =
+  MARKETPLACE_V2_FEATURE_OPERATIONS
+
 export const operatingStateMarketplaceV2: MarketplaceV2Port = {
   supportsPublishing: false,
   // The pilot holds a business name and legal name only, and no service edits them (#125).
@@ -59,6 +70,8 @@ export const operatingStateMarketplaceV2: MarketplaceV2Port = {
   // The pilot's equipment is per-unit dispatch records (unit numbers, payload, drivers) and its availability is per
   // driver; V2 presets and self-reported counts are read from it but never written into it (#126).
   supportsHaulerFleet: false,
+  // Port v3 (#244): the pilot store keeps none of the records these groups need (see the refusals at the end).
+  supports: marketplaceV2FeatureSupport(),
 
   async haulerFleet(viewer) {
     return readState((current) => pilotHaulerFleet(current.state, actor(viewer)))
@@ -174,6 +187,12 @@ export const operatingStateMarketplaceV2: MarketplaceV2Port = {
     })
   },
 
+  // Port v3 (#244): from the same translated membership as `viewerAccess`, which also refuses a non-member. The pilot
+  // supports none of the groups these open (`supports`), so its pages offer none of their actions.
+  async viewerFeatureCapabilities(viewer) {
+    return readState((current) => marketplaceFeatureCapabilities(resolveMarketplaceActor(current.state, actor(viewer)).marketplace))
+  },
+
   async withdrawInterest(viewer, interestId) {
     await mutateState((draft) => draft.withdrawMarketplaceInterest(actor(viewer), interestId))
   },
@@ -229,6 +248,224 @@ export const operatingStateMarketplaceV2: MarketplaceV2Port = {
         return { equipmentCodes: null, jobId, landing: landing ? { id: landing.id, name: landing.name } : null }
       })
     })
+  },
+  // -------------------------------------------------------------------------------------------------------------
+  // Port v3 (#244). Every method is refused here: the pilot store keeps none of these records, and writing them
+  // into the legacy document would make a second, untested source of truth (AGENTS.md §2.4). Nothing is read or
+  // written before the refusal.
+  // -------------------------------------------------------------------------------------------------------------
+
+  // jobs (#247): V2 jobs are not persisted in the pilot store (see above), so there is no own V2 job to manage.
+  async duplicateJob() {
+    throw new MarketplaceOperationUnavailableError(JOBS.duplicateJob)
+  },
+
+  async editJob() {
+    throw new MarketplaceOperationUnavailableError(JOBS.editJob)
+  },
+
+  async getOwnJob() {
+    throw new MarketplaceOperationUnavailableError(JOBS.getOwnJob)
+  },
+
+  async listOwnJobs() {
+    throw new MarketplaceOperationUnavailableError(JOBS.listOwnJobs)
+  },
+
+  async resumeJob() {
+    throw new MarketplaceOperationUnavailableError(JOBS.resumeJob)
+  },
+
+  async setJobStatus() {
+    throw new MarketplaceOperationUnavailableError(JOBS.setJobStatus)
+  },
+
+  // billing (#248): the pilot's plan record follows the retired pilot billing model, not the Blueprint plans.
+  async foundingOffer() {
+    throw new MarketplaceOperationUnavailableError(BILLING.foundingOffer)
+  },
+
+  async planAllowance() {
+    throw new MarketplaceOperationUnavailableError(BILLING.planAllowance)
+  },
+
+  // team (#249): the pilot has no seat invitations and no landing scope, so no team change is kept.
+  async acceptTeamInvitation() {
+    throw new MarketplaceOperationUnavailableError(TEAM.acceptTeamInvitation)
+  },
+
+  async declineTeamInvitation() {
+    throw new MarketplaceOperationUnavailableError(TEAM.declineTeamInvitation)
+  },
+
+  async inviteTeamMember() {
+    throw new MarketplaceOperationUnavailableError(TEAM.inviteTeamMember)
+  },
+
+  async receivedTeamInvitations() {
+    throw new MarketplaceOperationUnavailableError(TEAM.receivedTeamInvitations)
+  },
+
+  async removeTeamMember() {
+    throw new MarketplaceOperationUnavailableError(TEAM.removeTeamMember)
+  },
+
+  async resendTeamInvitation() {
+    throw new MarketplaceOperationUnavailableError(TEAM.resendTeamInvitation)
+  },
+
+  async revokeTeamInvitation() {
+    throw new MarketplaceOperationUnavailableError(TEAM.revokeTeamInvitation)
+  },
+
+  async setMemberLandingScope() {
+    throw new MarketplaceOperationUnavailableError(TEAM.setMemberLandingScope)
+  },
+
+  async team() {
+    throw new MarketplaceOperationUnavailableError(TEAM.team)
+  },
+
+  // invites (#250): the pilot has no opt-in targeted invitations or billing-cycle allowance.
+  async invitationAudience() {
+    throw new MarketplaceOperationUnavailableError(INVITES.invitationAudience)
+  },
+
+  async invitationRecipients() {
+    throw new MarketplaceOperationUnavailableError(INVITES.invitationRecipients)
+  },
+
+  async receivedInvitations() {
+    throw new MarketplaceOperationUnavailableError(INVITES.receivedInvitations)
+  },
+
+  async respondToInvitation() {
+    throw new MarketplaceOperationUnavailableError(INVITES.respondToInvitation)
+  },
+
+  async sendTargetedInvitations() {
+    throw new MarketplaceOperationUnavailableError(INVITES.sendTargetedInvitations)
+  },
+
+  async sentInvitations() {
+    throw new MarketplaceOperationUnavailableError(INVITES.sentInvitations)
+  },
+
+  // trucks (#251): the pilot has no listed-business directory or saved truck searches.
+  async deleteTruckSearch() {
+    throw new MarketplaceOperationUnavailableError(TRUCKS.deleteTruckSearch)
+  },
+
+  async listTruckSearches() {
+    throw new MarketplaceOperationUnavailableError(TRUCKS.listTruckSearches)
+  },
+
+  async saveTruckSearch() {
+    throw new MarketplaceOperationUnavailableError(TRUCKS.saveTruckSearch)
+  },
+
+  async searchTrucks() {
+    throw new MarketplaceOperationUnavailableError(TRUCKS.searchTrucks)
+  },
+
+  // alerts (#252): the pilot keeps no saved jobs, saved job searches or notification consent.
+  async deleteJobSearch() {
+    throw new MarketplaceOperationUnavailableError(ALERTS.deleteJobSearch)
+  },
+
+  async listJobSearches() {
+    throw new MarketplaceOperationUnavailableError(ALERTS.listJobSearches)
+  },
+
+  async listSavedJobs() {
+    throw new MarketplaceOperationUnavailableError(ALERTS.listSavedJobs)
+  },
+
+  async notificationPreferences() {
+    throw new MarketplaceOperationUnavailableError(ALERTS.notificationPreferences)
+  },
+
+  async saveJob() {
+    throw new MarketplaceOperationUnavailableError(ALERTS.saveJob)
+  },
+
+  async saveJobSearch() {
+    throw new MarketplaceOperationUnavailableError(ALERTS.saveJobSearch)
+  },
+
+  async setNotificationPreference() {
+    throw new MarketplaceOperationUnavailableError(ALERTS.setNotificationPreference)
+  },
+
+  async unsaveJob() {
+    throw new MarketplaceOperationUnavailableError(ALERTS.unsaveJob)
+  },
+
+  // notify (#253): the pilot has no notification outbox.
+  async listNotifications() {
+    throw new MarketplaceOperationUnavailableError(NOTIFY.listNotifications)
+  },
+
+  async markNotificationsRead() {
+    throw new MarketplaceOperationUnavailableError(NOTIFY.markNotificationsRead)
+  },
+
+  // boosts (#254): the pilot has no boost records.
+  async boostAudience() {
+    throw new MarketplaceOperationUnavailableError(BOOSTS.boostAudience)
+  },
+
+  async listJobBoosts() {
+    throw new MarketplaceOperationUnavailableError(BOOSTS.listJobBoosts)
+  },
+
+  // admin (#255): pilot staff tools stay in the pilot admin console; V2 moderation needs the normalized store.
+  async adminAccess() {
+    throw new MarketplaceOperationUnavailableError(ADMIN.adminAccess)
+  },
+
+  async adminGrantFoundingHaulerBadge() {
+    throw new MarketplaceOperationUnavailableError(ADMIN.adminGrantFoundingHaulerBadge)
+  },
+
+  async adminGrantFoundingPromotion() {
+    throw new MarketplaceOperationUnavailableError(ADMIN.adminGrantFoundingPromotion)
+  },
+
+  async adminModerateJob() {
+    throw new MarketplaceOperationUnavailableError(ADMIN.adminModerateJob)
+  },
+
+  async adminQueue() {
+    throw new MarketplaceOperationUnavailableError(ADMIN.adminQueue)
+  },
+
+  async adminReadInquiryThread() {
+    throw new MarketplaceOperationUnavailableError(ADMIN.adminReadInquiryThread)
+  },
+
+  async adminReadLandingPrivate() {
+    throw new MarketplaceOperationUnavailableError(ADMIN.adminReadLandingPrivate)
+  },
+
+  async adminReleaseJobHold() {
+    throw new MarketplaceOperationUnavailableError(ADMIN.adminReleaseJobHold)
+  },
+
+  async adminReports() {
+    throw new MarketplaceOperationUnavailableError(ADMIN.adminReports)
+  },
+
+  async adminResolveReport() {
+    throw new MarketplaceOperationUnavailableError(ADMIN.adminResolveReport)
+  },
+
+  async adminSetVerification() {
+    throw new MarketplaceOperationUnavailableError(ADMIN.adminSetVerification)
+  },
+
+  async adminVerificationQueue() {
+    throw new MarketplaceOperationUnavailableError(ADMIN.adminVerificationQueue)
   }
 }
 
