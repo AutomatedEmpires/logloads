@@ -8,6 +8,7 @@ import {
 } from "./marketplace-job-draft"
 import { MARKETPLACE_CAPABILITIES, marketplaceCan, marketplaceCapabilities, type MarketplaceMembership } from "./marketplace-permissions"
 import {
+  compareMarketplaceJobs,
   describeMarketplaceInterestStatus,
   describeMarketplaceVerification,
   expressInterestInputSchema,
@@ -155,6 +156,41 @@ describe("discovery filters and ordering", () => {
   it("puts confirmed listings ahead of more recently edited unconfirmed ones", () => {
     expect(sortMarketplaceJobs(jobs).map((j) => j.id)).toEqual(["c", "a", "b"])
     expect(sortMarketplaceJobs(jobs, { sort: "newest" }).map((j) => j.id)).toEqual(["c", "a", "b"])
+  })
+
+  it("breaks every tie by job id, so the order is the same whatever order the store returned (#280)", () => {
+    const twin = (id: string) => job({ id, lastModifiedAt: "2026-11-05T00:00:00.000Z", title: "Same title" })
+    const twins = [twin("t3"), twin("t1"), twin("t2")]
+
+    for (const sort of ["newest", "nearest", "pay"] as const) {
+      expect(sortMarketplaceJobs(twins, { sort }).map((j) => j.id)).toEqual(["t1", "t2", "t3"])
+      expect(sortMarketplaceJobs([...twins].reverse(), { sort }).map((j) => j.id)).toEqual(["t1", "t2", "t3"])
+    }
+  })
+
+  it("orders a cursor's copy of a job's order fields exactly where the job itself sorts (#280)", () => {
+    const near = { lat: 44.4, lng: -122.7 }
+    const placed = [
+      ...jobs,
+      job({ id: "d", origin: { approximatePoint: { lat: 44.2, lng: -122.5 }, label: "Vida, OR", stateCode: "OR" }, title: "Vida run" })
+    ]
+
+    for (const options of [{ sort: "newest" as const }, { near, sort: "nearest" as const }, { sort: "pay" as const }]) {
+      const ordered = sortMarketplaceJobs(placed, options)
+      for (const [index, item] of ordered.entries()) {
+        const key = {
+          id: item.id,
+          lastConfirmedAt: item.lastConfirmedAt,
+          lastModifiedAt: item.lastModifiedAt,
+          origin: { approximatePoint: item.origin.approximatePoint },
+          pay: { amountCents: item.pay.amountCents, unit: item.pay.unit },
+          title: item.title
+        }
+        expect(compareMarketplaceJobs(item, key, options)).toBe(0)
+        expect(ordered.slice(0, index).every((before) => compareMarketplaceJobs(before, key, options) < 0)).toBe(true)
+        expect(ordered.slice(index + 1).every((after) => compareMarketplaceJobs(after, key, options) > 0)).toBe(true)
+      }
+    }
   })
 
   it("matches equipment labels in text search, not only codes", () => {

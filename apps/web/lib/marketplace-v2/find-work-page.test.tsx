@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 /**
  * Find work (UX-06, #129), rendered on the server exactly as a first visit, or a visit without JavaScript, receives
- * it. The port and the session are stubbed; the page's own search, fit and distance rules run for real.
+ * it. The port and the session are stubbed; the page's own search, fit and distance rules run for real, and so does
+ * the keyset paging both adapters use (`keyset-pages.ts`, #280) over the stubbed board.
  */
 
 const mocks = vi.hoisted(() => ({
@@ -12,7 +13,9 @@ const mocks = vi.hoisted(() => ({
   getSessionActor: vi.fn(),
   haulerEquipment: vi.fn(),
   listHaulerInterests: vi.fn(),
+  listJobPage: vi.fn(),
   listJobs: vi.fn(),
+  mapPoints: vi.fn(),
   viewerAccess: vi.fn()
 }))
 
@@ -22,7 +25,12 @@ vi.mock("next/navigation", () => ({
     throw new Error("NEXT_NOT_FOUND")
   }
 }))
-vi.mock("@/components/v2/JobMapLoader", () => ({ JobMapLoader: () => React.createElement("div", { "data-map": "" }) }))
+vi.mock("@/components/v2/JobMapLoader", () => ({
+  JobMapLoader: ({ points }: { points: unknown[] }) => {
+    mocks.mapPoints(points)
+    return React.createElement("div", { "data-map": "" })
+  }
+}))
 vi.mock("@/lib/marketplace-v2/flag", () => ({ marketplaceV2Enabled: () => true }))
 vi.mock("@/lib/session", () => ({ getSessionActor: mocks.getSessionActor }))
 vi.mock("@/lib/marketplace-v2/pilot-adapter", () => ({
@@ -30,15 +38,18 @@ vi.mock("@/lib/marketplace-v2/pilot-adapter", () => ({
     getJob: mocks.getJob,
     haulerEquipment: mocks.haulerEquipment,
     listHaulerInterests: mocks.listHaulerInterests,
+    listJobPage: mocks.listJobPage,
     listJobs: mocks.listJobs,
     viewerAccess: mocks.viewerAccess
   }
 }))
 
-import type { MarketplaceJobDetailView } from "@logloads/contracts"
+import { sortMarketplaceJobs, type MarketplaceJobDetailView, type MarketplaceJobFilters } from "@logloads/contracts"
 
 import FindWorkPage from "@/app/v2/work/page"
 import { FindWorkResults } from "@/components/v2/discovery/FindWorkResults"
+import { marketplaceJobPage } from "@/lib/marketplace-v2/keyset-pages"
+import type { MarketplacePageRequest } from "@/lib/marketplace-v2/port"
 
 const HAULER_ORG = "33333333-bbbb-4bbb-8bbb-333333333333"
 const LANDING_ORG = "22222222-aaaa-4aaa-8aaa-222222222222"
@@ -84,6 +95,19 @@ const saw = job()
 const chips = job({ equipment: ["chip_truck", "chip_van"], id: CHIPS, pay: { amountCents: 900, note: null, unit: "per_ton" }, slug: CHIPS, title: "Chip shuttle" })
 const own = job({ id: OWN, posterOrganizationId: HAULER_ORG, slug: OWN, title: "Our own landing's job" })
 
+/**
+ * The board the stubbed store holds: `jobs` already in the adapter's discovery order, and whether its one read held
+ * every match. The store pages it exactly as both adapters do.
+ */
+let board: { jobs: MarketplaceJobDetailView[]; exact: boolean } = { exact: true, jobs: [] }
+
+function showJobs(jobs: MarketplaceJobDetailView[], exact = true) {
+  board = { exact, jobs }
+}
+
+/** The page request a first visit sends. */
+const PAGE_ONE = { after: null, limit: 25 }
+
 type Query = Record<string, string>
 
 async function render(query: Query = {}) {
@@ -110,8 +134,9 @@ beforeEach(() => {
   // The app compiles JSX with the classic runtime under Vitest (tsconfig "jsx": "preserve"), as in v2-pages.test.tsx.
   vi.stubGlobal("React", React)
   mocks.getSessionActor.mockResolvedValue(null)
-  mocks.listJobs.mockResolvedValue([saw, chips])
-  mocks.getJob.mockImplementation(async (id: string) => [saw, chips, own].find((candidate) => candidate.id === id) ?? null)
+  showJobs([saw, chips])
+  mocks.listJobPage.mockImplementation(async (filters: MarketplaceJobFilters, page?: MarketplacePageRequest) =>
+    marketplaceJobPage(board.jobs, filters, page, { exact: board.exact }))
   mocks.listHaulerInterests.mockResolvedValue([])
 })
 
@@ -158,7 +183,7 @@ describe("the summary bar and its filter form (criterion 1)", () => {
 
     expect(html).toMatch(/aria-invalid="true"[^>]*name="near"|name="near"[^>]*aria-invalid="true"/)
     expect(textOf(html)).toContain(`We don't know "Atlantis" yet.`)
-    expect(mocks.listJobs).toHaveBeenCalledWith(expect.objectContaining({ near: null, radiusMiles: null }))
+    expect(mocks.listJobPage).toHaveBeenCalledWith(expect.objectContaining({ near: null, radiusMiles: null }), PAGE_ONE)
   })
 })
 
@@ -175,7 +200,7 @@ describe("rows, distance and fit", () => {
   it("measures distance from the typed place to the approximate public point only, labelled 'about' (criterion 5)", async () => {
     const html = await render({ near: "Sweet Home, OR" })
 
-    expect(mocks.listJobs).toHaveBeenCalledWith(expect.objectContaining({ near: { lat: 44.4, lng: -122.7 }, radiusMiles: 100 }))
+    expect(mocks.listJobPage).toHaveBeenCalledWith(expect.objectContaining({ near: { lat: 44.4, lng: -122.7 }, radiusMiles: 100 }), PAGE_ONE)
     expect(textOf(rowOf(html, saw.title))).toContain("About 49 mi from your search")
     expect(textOf(html)).toContain("Within 100 mi of Sweet Home, OR")
     // No coordinate is printed: not the search point, not a job's point (icons' SVG paths aside).
@@ -185,10 +210,10 @@ describe("rows, distance and fit", () => {
 
   it("shows a signed-in hauler 'My trucks' by default and an advisory fit chip, never on its own listing (criterion 7)", async () => {
     signInAsHauler()
-    mocks.listJobs.mockResolvedValue([saw, chips, own])
+    showJobs([saw, chips, own])
     const html = await render()
 
-    expect(mocks.listJobs).toHaveBeenCalledWith(expect.objectContaining({ equipment: null, equipmentSetups: [["log_truck", "pole_trailer"]] }))
+    expect(mocks.listJobPage).toHaveBeenCalledWith(expect.objectContaining({ equipment: null, equipmentSetups: [["log_truck", "pole_trailer"]] }), PAGE_ONE)
     expect(html).toMatch(/<option value="mine" selected="">My trucks \(1 setup\)<\/option>/)
     expect(textOf(html)).toContain("My trucks · Any pay basis")
     expect(textOf(rowOf(html, saw.title))).toContain("Fits your trucks")
@@ -200,7 +225,7 @@ describe("rows, distance and fit", () => {
   it("lets the hauler choose any equipment instead", async () => {
     signInAsHauler()
     await render({ equipment: "any" })
-    expect(mocks.listJobs).toHaveBeenCalledWith(expect.objectContaining({ equipment: null, equipmentSetups: null }))
+    expect(mocks.listJobPage).toHaveBeenCalledWith(expect.objectContaining({ equipment: null, equipmentSetups: null }), PAGE_ONE)
   })
 })
 
@@ -214,22 +239,22 @@ describe("order (criterion 4)", () => {
     expect(sortForm).toMatch(/<input[^>]*name="near"[^>]*value="Eugene, OR"/)
     expect(sortForm).toMatch(/<option value="nearest" selected="">Nearest<\/option>/)
     expect(textOf(sortForm)).toContain("Sort")
-    expect(mocks.listJobs).toHaveBeenCalledWith(expect.objectContaining({ sort: "nearest" }))
+    expect(mocks.listJobPage).toHaveBeenCalledWith(expect.objectContaining({ sort: "nearest" }), PAGE_ONE)
   })
 
   it("says when pay sorting meets different bases, and compares within each basis only", async () => {
     const html = await render({ sort: "pay" })
     expect(textOf(html)).toContain("Rates use different bases (per load, per ton). Pay is sorted within each basis, never across them.")
-    expect(mocks.listJobs).toHaveBeenCalledWith(expect.objectContaining({ sort: "pay" }))
+    expect(mocks.listJobPage).toHaveBeenCalledWith(expect.objectContaining({ sort: "pay" }), PAGE_ONE)
 
-    mocks.listJobs.mockResolvedValue([saw])
+    showJobs([saw])
     expect(textOf(await render({ sort: "pay" }))).not.toContain("Rates use different bases")
   })
 })
 
 describe("the empty state (criterion 6)", () => {
   it("names the active constraints and offers one-tap changes as plain links", async () => {
-    mocks.listJobs.mockResolvedValue([])
+    showJobs([])
     const html = await render({ near: "Sweet Home", product: "Pulpwood" })
     const text = textOf(html)
 
@@ -249,8 +274,9 @@ describe("list and detail (06_DESIGN_SYSTEM.md §4–5)", () => {
     expect(html).toMatch(/<aside[^>]*aria-label="Job details"[^>]*id="find-work-detail"|<aside[^>]*id="find-work-detail"[^>]*aria-label="Job details"/)
     expect(rowOf(html, saw.title)).toMatch(/aria-controls="find-work-detail"[^>]*aria-current="true"/)
     expect(rowOf(html, chips.title)).not.toContain("aria-current")
-    // Every listed job's public detail is read up front, so selecting another row needs no request.
-    expect(mocks.getJob.mock.calls.map(([id]) => id)).toEqual([SAW, CHIPS])
+    // The page's one read carries every listed job's public detail, so selecting another row needs no request (#280).
+    expect(mocks.listJobPage).toHaveBeenCalledTimes(1)
+    expect(mocks.getJob).not.toHaveBeenCalled()
   })
 
   it("ignores a selection that isn't in the results", async () => {
@@ -260,16 +286,9 @@ describe("list and detail (06_DESIGN_SYSTEM.md §4–5)", () => {
     expect(html).not.toContain('aria-current="true"')
   })
 
-  it("drops a job whose detail is no longer public between the list and the detail read", async () => {
-    mocks.getJob.mockImplementation(async (id: string) => (id === SAW ? saw : null))
-    const html = await render()
-    expect(textOf(html)).toContain("1 job")
-    expect(rowOf(html, chips.title)).toBe("")
-  })
-
   it("offers interest from the panel only to a hauler who may express it, and not on its own job", async () => {
     signInAsHauler()
-    mocks.listJobs.mockResolvedValue([saw, own])
+    showJobs([saw, own])
 
     expect(await render({ equipment: "any", job: SAW })).toContain(`href="/v2/work/${SAW}#interest"`)
     expect(await render({ equipment: "any", job: OWN })).not.toContain("#interest")
@@ -278,7 +297,7 @@ describe("list and detail (06_DESIGN_SYSTEM.md §4–5)", () => {
 
   it("says interest was sent instead of offering it again, until it is withdrawn", async () => {
     signInAsHauler()
-    mocks.listJobs.mockResolvedValue([saw])
+    showJobs([saw])
     mocks.listHaulerInterests.mockResolvedValue([{ job: { id: SAW }, status: "submitted" }])
     const sent = await render({ equipment: "any", job: SAW })
     expect(textOf(sent)).toContain("Interest sent")
@@ -289,10 +308,154 @@ describe("list and detail (06_DESIGN_SYSTEM.md §4–5)", () => {
   })
 })
 
+/** `count` jobs in discovery order (newest first), each with its own title. */
+function boardOf(count: number): MarketplaceJobDetailView[] {
+  return sortMarketplaceJobs(Array.from({ length: count }, (_, index) => {
+    const id = `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`
+    return job({ id, lastModifiedAt: new Date(Date.UTC(2026, 10, 1, 0, count - index)).toISOString(), slug: id, title: `Job ${String(index + 1).padStart(2, "0")}` })
+  }))
+}
+
+/** The titles of the listed rows, in order. */
+function titlesOf(html: string): string[] {
+  const list = /<ul aria-label="Jobs"[^>]*>([\s\S]*?)<\/ul>/.exec(html)?.[1] ?? ""
+  return [...list.matchAll(/<h3\b[^>]*>\s*<a\b[^>]*>([^<]*)<\/a>/g)].map((match) => match[1] ?? "")
+}
+
+/** The href of the link that names `label`, or null. */
+function linkHref(html: string, label: string): string | null {
+  const match = new RegExp(`<a\\b[^>]*href="([^"]*)"[^>]*>(?:(?!</a>)[\\s\\S])*?${label}`).exec(html)
+  return match?.[1] ? match[1].replace(/&amp;/g, "&") : null
+}
+
+const queryOf = (href: string): Query => Object.fromEntries(new URL(href, "https://logloads.test").searchParams)
+
+describe("pages of results (#280)", () => {
+  it("makes one store read per view, the same for one job or sixty, and never reads a job on its own", async () => {
+    async function callsFor(count: number) {
+      vi.clearAllMocks()
+      signInAsHauler()
+      showJobs(boardOf(count))
+      await render({ equipment: "any" })
+      return Object.fromEntries((["getJob", "haulerEquipment", "listHaulerInterests", "listJobPage", "listJobs", "viewerAccess"] as const)
+        .map((name) => [name, mocks[name].mock.calls.length]))
+    }
+
+    const one = await callsFor(1)
+    expect(one).toEqual({ getJob: 0, haulerEquipment: 1, listHaulerInterests: 1, listJobPage: 1, listJobs: 0, viewerAccess: 1 })
+    expect(await callsFor(60)).toEqual(one)
+  })
+
+  it("shows 25 jobs at a time, and 'Show more jobs' opens the next ones of the same search, never repeating or skipping one", async () => {
+    const all = boardOf(60)
+    showJobs(all)
+
+    const first = await render()
+    expect(titlesOf(first)).toEqual(all.slice(0, 25).map((item) => item.title))
+    expect(textOf(first)).toContain("60 jobs")
+    expect(textOf(first)).toContain("Jobs 1 to 25 of 60")
+    expect(linkHref(first, "Back to the first jobs")).toBeNull()
+    const more = linkHref(first, "Show more jobs")
+    expect(more).toMatch(/^\/v2\/work\?after=[A-Za-z0-9_-]+$/)
+
+    const second = await render(queryOf(more!))
+    expect(titlesOf(second)).toEqual(all.slice(25, 50).map((item) => item.title))
+    expect(textOf(second)).toContain("Jobs 26 to 50 of 60")
+    expect(linkHref(second, "Back to the first jobs")).toBe("/v2/work")
+
+    const third = await render(queryOf(linkHref(second, "Show more jobs")!))
+    expect(titlesOf(third)).toEqual(all.slice(50).map((item) => item.title))
+    expect(textOf(third)).toContain("Jobs 51 to 60 of 60")
+    expect(linkHref(third, "Show more jobs")).toBeNull()
+  })
+
+  it("keeps its place when a job is posted or the page's last job closes between pages", async () => {
+    const all = boardOf(60)
+    showJobs(all)
+    const more = linkHref(await render(), "Show more jobs")!
+
+    const fresh = job({ id: "00000000-0000-4000-8000-000000000999", lastConfirmedAt: "2026-12-01T00:00:00.000Z", slug: "fresh", title: "Brand new job" })
+    showJobs([fresh, ...all.filter((item) => item.id !== all[24]?.id)])
+    const second = await render(queryOf(more))
+
+    expect(titlesOf(second)).toEqual(all.slice(25, 50).map((item) => item.title))
+    expect(titlesOf(second)).not.toContain("Brand new job")
+  })
+
+  it("keeps the page through selecting a job, closing it and the map, and starts any new search from its first jobs", async () => {
+    showJobs(boardOf(60))
+    const { after } = queryOf(linkHref(await render(), "Show more jobs")!)
+
+    const tree = await FindWorkPage({ searchParams: Promise.resolve({ after: after! }) })
+    const results = findProps<{ closeHref: string; rows: Array<{ selectHref: string }> }>(tree, FindWorkResults)
+    expect(results?.rows[0]?.selectHref).toMatch(new RegExp(`^/v2/work\\?after=${after}&job=`))
+    expect(results?.closeHref).toBe(`/v2/work?after=${after}`)
+
+    const html = renderToStaticMarkup(tree)
+    expect(linkHref(html, "Show map")).toBe(`/v2/work?view=map&after=${after}`)
+    // The filter form and the sort form start a new search, so neither carries the page.
+    const forms = html.match(/<form\b[\s\S]*?<\/form>/g) ?? []
+    expect(forms.length).toBeGreaterThanOrEqual(2)
+    for (const form of forms) expect(form).not.toContain('name="after"')
+  })
+
+  it("says 30+ when the store stopped reading at its limit, and never shows the cut list as the total", async () => {
+    showJobs(boardOf(30), false)
+
+    const first = await render()
+    expect(textOf(first)).toContain("30+ jobs")
+    expect(textOf(first)).not.toMatch(/\b30 jobs\b/)
+    expect(textOf(first)).toContain("Jobs 1 to 25 of 30+")
+
+    const last = await render(queryOf(linkHref(first, "Show more jobs")!))
+    expect(linkHref(last, "Show more jobs")).toBeNull()
+    expect(textOf(last)).toContain("These are the matches among the most recent listings.")
+
+    showJobs([], false)
+    const none = textOf(await render())
+    expect(none).toContain("No recent jobs match your search")
+    expect(none).toContain("older ones might")
+    expect(none).not.toContain("No jobs match your search")
+  })
+
+  it("starts again from the first jobs, and says why, when a link's page was made for another search", async () => {
+    showJobs(boardOf(60))
+    const { after } = queryOf(linkHref(await render({ sort: "pay" }), "Show more jobs")!)
+
+    const html = await render({ after: after! })
+    expect(titlesOf(html)).toEqual(boardOf(60).slice(0, 25).map((item) => item.title))
+    expect(textOf(html)).toContain("The list changed since that link was made, so it starts again from the first jobs.")
+
+    // A cursor that isn't one is never sent to the store.
+    await render({ after: "not a cursor!" })
+    expect(mocks.listJobPage).toHaveBeenLastCalledWith(expect.anything(), PAGE_ONE)
+  })
+
+  it("says so, with a way back, when every job after a link's page has closed", async () => {
+    const all = boardOf(30)
+    showJobs(all)
+    const more = linkHref(await render(), "Show more jobs")!
+
+    showJobs(all.slice(0, 25))
+    const html = await render(queryOf(more))
+    expect(textOf(html)).toContain("No more jobs in this list")
+    expect(textOf(html)).toContain("25 jobs")
+    expect(linkHref(html, "Back to the first jobs")).toBe("/v2/work")
+  })
+
+  it("puts this page's jobs on the map, the same ones as the list", async () => {
+    showJobs(boardOf(60))
+    await render({ view: "map" })
+
+    expect(mocks.mapPoints).toHaveBeenCalledTimes(1)
+    expect(mocks.mapPoints.mock.calls[0]?.[0]).toHaveLength(25)
+  })
+})
+
 describe("what reaches the browser (#130, from the #185 review)", () => {
   it("hands the client list the public view of each job, without the poster's organization id", async () => {
     signInAsHauler()
-    mocks.listJobs.mockResolvedValue([saw, own])
+    showJobs([saw, own])
 
     const page = await FindWorkPage({ searchParams: Promise.resolve({ equipment: "any", job: SAW }) })
     const results = findProps<{ rows: Array<{ job: Record<string, unknown> }> }>(page, FindWorkResults)
