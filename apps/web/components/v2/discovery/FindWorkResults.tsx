@@ -51,8 +51,22 @@ export interface FindWorkResultsProps {
   notes?: ReactNode
   /** Shown instead of the list when nothing matches. */
   empty?: ReactNode
+  /** Below the list when the results take more than one page (#280). Not shown with `empty`. */
+  paging?: FindWorkPaging | null
   map?: ReactNode
   footnote: string
+}
+
+/** Where this page sits in the results, and plain links to the next and first pages (#280). */
+export interface FindWorkPaging {
+  /** "Jobs 26 to 50 of 137". */
+  range: string
+  /** The next page of the same search, or `null` on the last page. */
+  moreHref: string | null
+  /** The first page of the same search, or `null` on the first page. */
+  firstHref: string | null
+  /** Said on the last page that could be read when more jobs may match than were read. */
+  note: string | null
 }
 
 function Detail({ now, row }: { now: string; row: FindWorkRow }) {
@@ -87,6 +101,7 @@ export function FindWorkResults({
   heading,
   map,
   notes,
+  paging,
   now,
   rows,
   selectedId: initialSelectedId
@@ -172,6 +187,14 @@ export function FindWorkResults({
                     ))}
                   </JobResultList>
                 </div>
+              )}
+              {empty || !paging ? null : (
+                <nav aria-label="Pages of jobs" className={styles.more}>
+                  <p className={styles.moreText}>{paging.range}</p>
+                  {paging.note ? <p className={styles.moreText}>{paging.note}</p> : null}
+                  {paging.moreHref ? <Button href={paging.moreHref} label="Show more jobs" variant="secondary" /> : null}
+                  {paging.firstHref ? <Button href={paging.firstHref} label="Back to the first jobs" variant="ghost" /> : null}
+                </nav>
               )}
             </Section>
           </>
