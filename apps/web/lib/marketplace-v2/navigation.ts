@@ -1,4 +1,10 @@
-import type { MarketplaceCapability } from "@logloads/contracts"
+import type {
+  MarketplaceAdminAccess,
+  MarketplaceCapability,
+  MarketplaceFeatureCapability,
+  MarketplaceV2Feature,
+  MarketplaceV2FeatureSupport
+} from "@logloads/contracts"
 import type { NavItem, WorkspaceKind } from "@logloads/ui/layout"
 
 /** Every V2 preview destination, in display order. Which ones a context sees comes from `v2NavigationFor`. */
@@ -65,11 +71,88 @@ export function v2NavigationFor(
     const needed = NAV_CAPABILITY[item.id]
     if (bothSides && ONE_SIDED_ONLY.has(item.id)) return false
     return needed === null ? !landingOnly : needed !== undefined && capabilities.includes(needed)
-  }).map((item) => {
-    // UX-09 (#132): unread inquiries per destination (`inquiries.ts`); a zero shows no badge.
-    const count = counts[item.id]
-    return count && count > 0 ? { ...item, count } : item
-  })
+  }).map((item) => withCount(item, counts))
+}
+
+/** UX-09 (#132): unread items per destination (`inquiries.ts`); a zero shows no badge. */
+function withCount(item: NavItem, counts: Readonly<Partial<Record<string, number>>>): NavItem {
+  const count = counts[item.id]
+  return count && count > 0 ? { ...item, count } : item
+}
+
+/**
+ * The port v3 destinations (#244, #245), in display order, following the UX spec's information architecture: the
+ * landing desk's Find Trucks (§4.0, §4.8), the hauler's invitations inbox (§5.6) and saved jobs (§5.9), saved searches,
+ * alerts and notification preferences for either side (§4.13, §5.9), then Team (§4.11, §6.6), Billing (§4.12) and
+ * Boosts (§4.10), and last the LogLoads staff console (§7). None is a bottom tab: the five tabs stay exactly as
+ * `v2NavigationFor` gives them (#124, lead decision on #209), so the shell offers these from its More and Settings
+ * menus. Which ones a context sees comes from `v2FeatureNavigationFor`.
+ */
+export const V2_FEATURE_NAVIGATION: readonly NavItem[] = Object.freeze([
+  { href: "/v2/landing/trucks", icon: "action.search", id: "find-trucks", label: "Find Trucks" },
+  { href: "/v2/invitations", icon: "action.request", id: "invitations", label: "Invitations" },
+  { href: "/v2/saved", icon: "action.save", id: "saved-jobs", label: "Saved jobs" },
+  // The registry's bell glyph.
+  { href: "/v2/alerts", icon: "action.call", id: "alerts", label: "Alerts" },
+  { href: "/v2/team", icon: "nav.fleet", id: "team", label: "Team" },
+  { href: "/v2/landing/billing", icon: "load.pay", id: "billing", label: "Billing" },
+  { href: "/v2/landing/boosts", icon: "ops.notice", id: "boosts", label: "Boosts" },
+  { href: "/v2/admin", icon: "nav.admin", id: "admin", label: "Admin" }
+])
+
+/**
+ * What each port v3 destination needs: its group working through the adapter (`supports`, #244) and the feature
+ * capability the group's store functions check (`viewerFeatureCapabilities`). `null` marks the staff console, which no
+ * organization role grants: it needs a `platform_admins` role (`adminAccess`, spec §8.7). As with the tabs, hiding an
+ * item is a convenience only; every page and every store function checks again.
+ */
+const FEATURE_NAV_GATE: Readonly<Record<string, { feature: MarketplaceV2Feature; capability: MarketplaceFeatureCapability | null }>> = Object.freeze({
+  "admin": { capability: null, feature: "admin" },
+  "alerts": { capability: "alert.manage", feature: "alerts" },
+  "billing": { capability: "plan.view", feature: "billing" },
+  "boosts": { capability: "boost.estimate", feature: "boosts" },
+  "find-trucks": { capability: "truck.search", feature: "trucks" },
+  "invitations": { capability: "invitation.respond", feature: "invites" },
+  "saved-jobs": { capability: "saved_job.manage", feature: "alerts" },
+  "team": { capability: "team.manage", feature: "team" }
+})
+
+/**
+ * Plans are the landing side's. Any member holds `plan.view`, but haulers and fleets are free forever (AGENTS.md
+ * §1.3), so a hauling-only business is never shown Billing (spec §5: no paid upgrade is marketed to haulers).
+ */
+const LANDING_SIDE_ONLY: ReadonlySet<string> = new Set(["billing"])
+
+/** What `v2FeatureNavigationFor` is gated on, all resolved on the server for the session's active business. */
+export interface V2FeatureNavigationContext {
+  /** `viewerAccess(viewer).capabilities`; `null` for a visitor or an account with no usable business. */
+  capabilities: readonly MarketplaceCapability[] | null
+  /** `viewerFeatureCapabilities(viewer)`: what the person's role allows in the active business. */
+  features: readonly MarketplaceFeatureCapability[]
+  /** The adapter's `supports`: which port v3 groups work through it. */
+  supports: MarketplaceV2FeatureSupport
+  /** `adminAccess(account)`: the person's LogLoads staff roles; `null` or empty for everyone else. */
+  admin?: MarketplaceAdminAccess | null
+}
+
+/**
+ * The port v3 destinations for the active context: each appears only when its group is supported and the person may
+ * use it. The business entries need a business on at least one side, as the tabs do; the staff console needs only a
+ * staff role. While no group is supported, which is every adapter until its group's task lands, this is empty.
+ */
+export function v2FeatureNavigationFor(context: V2FeatureNavigationContext, counts: Readonly<Partial<Record<string, number>>> = {}): NavItem[] {
+  const { capabilities, features, supports } = context
+  const landingSide = capabilities !== null && hasLandingSide(capabilities)
+  const usableBusiness = landingSide || (capabilities !== null && hasHaulerSide(capabilities))
+  const staff = (context.admin?.roles.length ?? 0) > 0
+
+  return V2_FEATURE_NAVIGATION.filter((item) => {
+    const gate = FEATURE_NAV_GATE[item.id]
+    if (!gate || supports[gate.feature] !== true) return false
+    if (gate.capability === null) return staff
+    if (!usableBusiness || !features.includes(gate.capability)) return false
+    return landingSide || !LANDING_SIDE_ONLY.has(item.id)
+  }).map((item) => withCount(item, counts))
 }
 
 /** The V2 home for a business with these capabilities: landing-only businesses start on the landing overview. */
