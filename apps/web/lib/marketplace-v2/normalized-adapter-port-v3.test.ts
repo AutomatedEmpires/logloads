@@ -103,8 +103,8 @@ beforeEach(() => {
 })
 
 describe("normalized adapter: port v3 groups (#244)", () => {
-  it("supports only the groups whose every method works (billing #306), and every group has methods", () => {
-    expect(adapter().supports).toEqual(marketplaceV2FeatureSupport(["billing"]))
+  it("supports only the groups whose every method works (billing #306, jobs #247), and every group has methods", () => {
+    expect(adapter().supports).toEqual(marketplaceV2FeatureSupport(["billing", "jobs"]))
 
     for (const feature of MARKETPLACE_V2_FEATURES) {
       expect(marketplaceV2FeatureMethods(feature).length, feature).toBeGreaterThan(0)
@@ -132,9 +132,9 @@ describe("normalized adapter: port v3 groups (#244)", () => {
       }
     }
 
-    // 51 methods in nine groups; billing's two work.
+    // 51 methods in nine groups; billing's two and jobs' six work.
     expect(refused).toBe(unbuilt.reduce((count, feature) => count + marketplaceV2FeatureMethods(feature).length, 0))
-    expect(refused).toBe(49)
+    expect(refused).toBe(43)
     expect(recorded).toEqual([])
     expect(principal).not.toHaveBeenCalled()
   })

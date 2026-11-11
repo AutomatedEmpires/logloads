@@ -32,7 +32,6 @@ function toIso(value: string): string {
 
 const uuid = z.string().uuid()
 const timestamp = z.string().transform(toIso)
-const nullableTimestamp = z.string().nullable().transform((value) => (value === null ? null : toIso(value)))
 const calendarDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable()
 const numeric = z.union([z.number(), z.string().regex(/^-?\d+(\.\d+)?$/)]).transform(Number).nullable()
 const nullableText = z.string().nullable()
@@ -111,14 +110,12 @@ export function storedJobDraft(row: unknown, landingId: string): MarketplaceJobD
 }
 
 /**
- * One row of the own-jobs statement: the job's landing, when it was saved, its delivered targeted invitations and its
- * latest boost window. `moderation_hold` is absent or `null` while the store gives the business no read of
+ * The own-jobs facts (`own_jobs` in normalized-queries.ts, which returns them on the job's `list_marketplace_jobs`
+ * row): the job's landing, when it was saved, its delivered targeted invitations and its latest boost window. `moderation_hold` is absent or `null` while the store gives the business no read of
  * `job_moderation_holds`.
  */
 const ownJobFactsRowSchema = z.object({
-  boost_active: z.boolean().nullable(),
-  boost_ends_at: nullableTimestamp,
-  boost_starts_at: nullableTimestamp,
+  boost: z.object({ active: z.boolean(), ends_at: timestamp, starts_at: timestamp }).nullable(),
   created_at: timestamp,
   invitations_delivered: z.number().int().min(0).nullable(),
   job_id: uuid,
@@ -137,9 +134,7 @@ export function storedOwnJob(publicRow: unknown, factsRow: unknown): StoredOwnJo
   }
 
   return {
-    boost: facts.boost_starts_at !== null && facts.boost_ends_at !== null
-      ? { active: facts.boost_active === true, endsAt: facts.boost_ends_at, startsAt: facts.boost_starts_at }
-      : null,
+    boost: facts.boost ? { active: facts.boost.active, endsAt: facts.boost.ends_at, startsAt: facts.boost.starts_at } : null,
     createdAt: facts.created_at,
     draft: storedJobDraft(publicRow, facts.landing_id),
     invitationsDelivered: facts.invitations_delivered,
@@ -147,4 +142,17 @@ export function storedOwnJob(publicRow: unknown, factsRow: unknown): StoredOwnJo
     landing: { id: facts.landing_id, name: facts.landing_name },
     moderationHold: facts.moderation_hold ?? null
   }
+}
+
+const editedRowSchema = z.object({ id: uuid, updated_at: timestamp })
+
+/** The `own_job_edit` row: the job it changed must be the one asked for. Returns its new `updated_at`. */
+export function editedJobFromRow(row: unknown, jobId: string): { lastModifiedAt: string } {
+  const edited = parseRow(editedRowSchema, row)
+
+  if (edited.id !== jobId) {
+    throw new MarketplaceStoreError(undefined, "22000")
+  }
+
+  return { lastModifiedAt: edited.updated_at }
 }

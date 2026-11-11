@@ -30,9 +30,9 @@ export interface NormalizedJobsStore {
   /**
    * The business's own non-draft jobs on landings in the person's landing scope (`landing_scope_allows`), newest
    * first; only `jobId` when it is given. With `lock`, the job's row is locked (`FOR UPDATE`), so the lifecycle rules
-   * are checked on the row the write then changes and a concurrent change waits for this one. Maps to a catalogued
-   * own-jobs statement (landing, created_at, delivered invitations, latest boost window) joined with
-   * `list_marketplace_jobs(p_org_id, p_accepting_only => false)` for the public view.
+   * are checked on the row the write then changes and a concurrent change waits for this one. Maps to the catalogued
+   * `own_jobs` statement (each job's `list_marketplace_jobs` row with its landing, created_at, delivered invitations
+   * and latest boost window; at most 200, none at an archived landing), after `own_job_lock` when `lock` is set.
    */
   ownJobs(organizationId: string, options: { jobId: string | null; lock: boolean }): Promise<StoredOwnJob[]>
   /** `list_marketplace_interests(p_org_id, p_job_id, p_side => 'landing')`: the desk's inquiries, for one job or all. */
@@ -45,7 +45,7 @@ export interface NormalizedJobsStore {
    */
   reactivate(jobId: string): Promise<void>
   /**
-   * A catalogued own-job edit statement: the public columns of one of the business's own non-draft jobs and its
+   * The catalogued `own_job_edit` statement: the public columns of one of the business's own non-draft jobs and its
    * `job_posting_equipment`, never `landing_id`, `status` or `last_confirmed_at` (`tg_job_guard` keeps the
    * confirmation from the attestation ledger). Returns the new `updated_at`, or `null` when no row changed.
    */

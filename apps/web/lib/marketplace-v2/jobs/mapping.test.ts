@@ -6,7 +6,7 @@ import { draftEndsOn, marketplaceJobDraftSchema, type MarketplaceJobDraft } from
 
 import { publishArguments } from "../normalized-mapping"
 import { MarketplaceStoreError } from "../port"
-import { storedJobDraft, storedOwnJob } from "./mapping"
+import { editedJobFromRow, storedJobDraft, storedOwnJob } from "./mapping"
 
 /**
  * Store rows → the jobs group's records (#247). The terms are read back from the same `list_marketplace_jobs` row as
@@ -66,9 +66,7 @@ function storedRow(args: ReturnType<typeof publishArguments>, overrides: Record<
 }
 
 const facts = (overrides: Record<string, unknown> = {}) => ({
-  boost_active: null,
-  boost_ends_at: null,
-  boost_starts_at: null,
+  boost: null,
   created_at: "2026-11-01T08:00:00+00:00",
   invitations_delivered: 3,
   job_id: JOB,
@@ -129,7 +127,7 @@ describe("storedOwnJob", () => {
   const args = publishArguments(draftOf({ endsOn: "2026-12-20", payAmount: "525", payUnit: "per_load", product: "Saw logs", startsOn: "2026-11-16" }))
 
   it("joins the public view, the editable terms and the business's own facts", () => {
-    const record = storedOwnJob(storedRow(args), facts({ boost_active: true, boost_ends_at: "2026-11-17T00:00:00+00:00", boost_starts_at: "2026-11-10T00:00:00+00:00" }))
+    const record = storedOwnJob(storedRow(args), facts({ boost: { active: true, ends_at: "2026-11-17T00:00:00+00:00", starts_at: "2026-11-10T00:00:00+00:00" } }))
 
     expect(record).toMatchObject({
       boost: { active: true, endsAt: "2026-11-17T00:00:00.000Z", startsAt: "2026-11-10T00:00:00.000Z" },
@@ -146,7 +144,7 @@ describe("storedOwnJob", () => {
     expect(storedOwnJob(storedRow(args), facts({ moderation_hold: true })).moderationHold).toBe(true)
     expect(storedOwnJob(storedRow(args), facts({ moderation_hold: false })).moderationHold).toBe(false)
     expect(storedOwnJob(storedRow(args), facts()).boost).toBeNull()
-    expect(storedOwnJob(storedRow(args), facts({ boost_ends_at: null, boost_starts_at: "2026-11-10T00:00:00+00:00" })).boost).toBeNull()
+    expect(() => storedOwnJob(storedRow(args), facts({ boost: { active: true, starts_at: "2026-11-10T00:00:00+00:00" } }))).toThrow(MarketplaceStoreError)
   })
 
   it("keeps a store that keeps no invitation count as null, never zero", () => {
@@ -158,5 +156,13 @@ describe("storedOwnJob", () => {
     expect(() => storedOwnJob(storedRow(args), facts({ landing_id: "north" }))).toThrow(MarketplaceStoreError)
     expect(() => storedOwnJob(storedRow(args), facts({ invitations_delivered: -1 }))).toThrow(MarketplaceStoreError)
     expect(() => storedOwnJob(storedRow(args), facts({ created_at: "soon" }))).toThrow(MarketplaceStoreError)
+  })
+})
+
+describe("editedJobFromRow", () => {
+  it("returns the new updated_at of the job asked for, and refuses any other row", () => {
+    expect(editedJobFromRow({ id: JOB, updated_at: "2026-11-11T09:30:00+00:00" }, JOB)).toEqual({ lastModifiedAt: "2026-11-11T09:30:00.000Z" })
+    expect(() => editedJobFromRow({ id: "66666666-0000-4000-8000-000000000002", updated_at: "2026-11-11T09:30:00+00:00" }, JOB)).toThrow(MarketplaceStoreError)
+    expect(() => editedJobFromRow({ id: JOB }, JOB)).toThrow(MarketplaceStoreError)
   })
 })
