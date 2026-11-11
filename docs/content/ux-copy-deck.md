@@ -31,7 +31,7 @@ Product terms follow the UX spec glossary (Appendix B) and the writing rules in 
 
 LogLoads publishes hauling opportunities and lets the parties talk. It does not dispatch trucks, track a haul, settle freight, or take a percentage of pay.
 
-`docs/research/2026-11-market-research.md` is not on `origin/work/logloads-repair` at this commit. This deck states no market size, no audience count, and no "haulers near you" number unless the screen is showing a count the system actually measured.
+The November 2026 market-research note is not on this branch. This deck states no market size, no audience count, and no "haulers near you" number unless the screen is showing a count the system actually measured.
 
 ## Pricing wording: decision #108, options A and B
 
@@ -1259,4 +1259,4 @@ Destructive buttons use the danger style. The confirm button repeats the verb in
 - Pricing options A and B: [issue 108](https://github.com/AutomatedEmpires/logloads/issues/108).
 - Launched state still open: issue #114, as recorded in `AGENTS.md` §1.6.
 - Sender defaults: `apps/web/lib/notify.ts` at the same commit.
-- `docs/research/2026-11-market-research.md` is absent on this branch, so no research statistics are cited.
+- The November 2026 market-research note is absent on this branch, so no research statistics are cited.
