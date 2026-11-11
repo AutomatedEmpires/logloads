@@ -10,25 +10,30 @@ import {
 } from "@logloads/contracts"
 
 import type { NormalizedFeature } from "../normalized-adapter"
-import { landingAllowanceFromRow } from "../normalized-mapping"
-import { MarketplaceStoreError, unavailableMarketplaceV2Feature } from "../port"
+import { landingAllowanceFromRow, viewerAccessRow } from "../normalized-mapping"
+import { MarketplaceRefusalError, MarketplaceStoreError } from "../port"
 
 /**
- * billing (#248): the plan and allowance read model, over the normalized store. No Stripe, no billing gates.
+ * billing (#248, #306): the plan and allowance read model, over the normalized store. No Stripe, no billing gates.
  *
- * `planAllowance` is mapped already: `get_org_entitlement_state` is catalogued in `MARKETPLACE_FUNCTIONS`, and any
- * active member may read it (the function's own check; `plan.view`). Limits stay in `LANDING_PLANS`. The read model
- * built on it (caps, invitation balance, over-cap state, plan comparison) is pure: `marketplaceBillingOverview` and
+ * `planAllowance` reads `get_org_entitlement_state` (catalogued in `MARKETPLACE_FUNCTIONS`), which any active member
+ * may read (the function's own check; `plan.view`). Limits stay in `LANDING_PLANS`. The read model built on it (caps,
+ * invitation balance, over-cap state, plan comparison) is pure: `marketplaceBillingOverview` and
  * `marketplaceFoundingOfferSummary` in packages/services/src/v2/billing/.
  *
- * `foundingOffer` reads `promotion_redemptions` and `promotions` (01, 16; `promotion_redemptions_read`,
- * `promotions_read`). No stage 01–26 function returns it, so it needs a table statement in `MARKETPLACE_QUERIES`
- * (normalized-queries.ts); until that lands it refuses, and `supported` stays `false`. `foundingOfferFromRow` is its
- * mapping. Row-level security shows a redemption to the business's owners only, and a promotion only while it is
- * open, so a closed promotion's terms come back as `terms: null`.
+ * `foundingOffer` reads `promotion_redemptions` and `promotions` (01, 16) through the `founding_offer` table statement
+ * (`MARKETPLACE_QUERIES`), because no stage 01–26 function returns it. Row-level security shows a redemption to the
+ * business's owners only (`promotion_redemptions_read`), so anyone else is refused instead of being told there is no
+ * offer. It shows a promotion only while it is open (`promotions_read`), so a closed promotion's terms come back as
+ * `terms: null`.
  *
- * Port v3 (#244) entry module, already wired into `normalized-adapter.ts`.
+ * Port v3 (#244) entry module, wired into `normalized-adapter.ts`. Every method works, so the group is supported.
  */
+
+/** `get_viewer_marketplace_access` found no active membership of the active business. */
+const NOT_AVAILABLE = "This business is not available to your account."
+/** Only owners can read a redemption (`promotion_redemptions_read`); everyone else is told so, never "no offer". */
+export const FOUNDING_OFFER_OWNER_ONLY = "Only the business's owner can see its founding offer."
 
 /**
  * The `get_org_entitlement_state` columns the landing allowance does not read. A drift between the SQL and this
@@ -105,7 +110,27 @@ export function foundingOfferFromRow(row: unknown): MarketplaceFoundingOfferView
 
 export const normalizedBilling: NormalizedFeature<"billing"> = {
   methods: ({ asViewer }) => ({
-    ...unavailableMarketplaceV2Feature("billing"),
+    async foundingOffer(viewer) {
+      return asViewer(
+        viewer,
+        async (calls) => {
+          const [access] = await calls.call("get_viewer_marketplace_access", { p_org_id: viewer.organizationId })
+
+          if (!access) {
+            throw new MarketplaceRefusalError(NOT_AVAILABLE, "42501")
+          }
+
+          if (viewerAccessRow(access).role !== "owner") {
+            throw new MarketplaceRefusalError(FOUNDING_OFFER_OWNER_ONLY, "42501")
+          }
+
+          const [row] = await calls.query("founding_offer", [viewer.organizationId])
+
+          return row === undefined ? null : foundingOfferFromRow(row)
+        },
+        { readOnly: true }
+      )
+    },
 
     async planAllowance(viewer) {
       const [row] = await asViewer(
@@ -121,5 +146,5 @@ export const normalizedBilling: NormalizedFeature<"billing"> = {
       return planAllowanceFromRow(row)
     }
   }),
-  supported: false
+  supported: true
 }
