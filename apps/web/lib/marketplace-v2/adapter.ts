@@ -1,5 +1,7 @@
 import "server-only"
 
+import { marketplaceV2FeatureSupport } from "@logloads/contracts"
+
 import { createNormalizedMarketplaceV2 } from "./normalized-adapter"
 import { createPostgresIdentitySync, createPostgresMarketplaceDb, type MarketplacePrincipal } from "./normalized-db"
 import { createNormalizedSessionStore, type NormalizedSessionStore } from "./normalized-session"
@@ -196,6 +198,14 @@ export function selectMarketplaceV2Port(
         return false
       }
     },
+    get supports() {
+      try {
+        return current().supports
+      } catch {
+        // Port v3 (#244): a broken selection supports no group; the next call reports the configuration error.
+        return marketplaceV2FeatureSupport()
+      }
+    },
     addHaulerEquipment: async (viewer, input) => current().addHaulerEquipment(viewer, input),
     authoringLandings: async (viewer) => current().authoringLandings(viewer),
     confirmHaulerAvailability: async (viewer) => current().confirmHaulerAvailability(viewer),
@@ -219,6 +229,7 @@ export function selectMarketplaceV2Port(
     saveHaulerProfile: async (viewer, input) => current().saveHaulerProfile(viewer, input),
     setHaulerEquipmentCount: async (viewer, input) => current().setHaulerEquipmentCount(viewer, input),
     viewerAccess: async (viewer) => current().viewerAccess(viewer),
+    viewerFeatureCapabilities: async (viewer) => current().viewerFeatureCapabilities(viewer),
     withdrawInterest: async (viewer, interestId) => current().withdrawInterest(viewer, interestId),
 
     // Landing workspace (#127, #133).
@@ -231,6 +242,75 @@ export function selectMarketplaceV2Port(
 
     // Inquiry conversations (UX-09, #132).
     landingInquiryJobs: async (viewer) => current().landingInquiryJobs(viewer),
-    withdrawInterestWithReason: async (viewer, input) => current().withdrawInterestWithReason(viewer, input)
+    withdrawInterestWithReason: async (viewer, input) => current().withdrawInterestWithReason(viewer, input),
+
+    // Port v3 (#244). jobs (#247)
+    duplicateJob: async (viewer, jobId) => current().duplicateJob(viewer, jobId),
+    editJob: async (viewer, jobId, draft) => current().editJob(viewer, jobId, draft),
+    getOwnJob: async (viewer, jobId) => current().getOwnJob(viewer, jobId),
+    listOwnJobs: async (viewer, filters) => current().listOwnJobs(viewer, filters),
+    resumeJob: async (viewer, jobId, attestation) => current().resumeJob(viewer, jobId, attestation),
+    setJobStatus: async (viewer, jobId, status) => current().setJobStatus(viewer, jobId, status),
+
+    // billing (#248)
+    foundingOffer: async (viewer) => current().foundingOffer(viewer),
+    planAllowance: async (viewer) => current().planAllowance(viewer),
+
+    // team (#249)
+    acceptTeamInvitation: async (account, invitationId) => current().acceptTeamInvitation(account, invitationId),
+    declineTeamInvitation: async (account, invitationId) => current().declineTeamInvitation(account, invitationId),
+    inviteTeamMember: async (viewer, input) => current().inviteTeamMember(viewer, input),
+    receivedTeamInvitations: async (account) => current().receivedTeamInvitations(account),
+    removeTeamMember: async (viewer, membershipId) => current().removeTeamMember(viewer, membershipId),
+    resendTeamInvitation: async (viewer, invitationId) => current().resendTeamInvitation(viewer, invitationId),
+    revokeTeamInvitation: async (viewer, invitationId) => current().revokeTeamInvitation(viewer, invitationId),
+    setMemberLandingScope: async (viewer, input) => current().setMemberLandingScope(viewer, input),
+    team: async (viewer) => current().team(viewer),
+
+    // invites (#250)
+    invitationAudience: async (viewer, jobId) => current().invitationAudience(viewer, jobId),
+    invitationRecipients: async (viewer, jobId) => current().invitationRecipients(viewer, jobId),
+    receivedInvitations: async (viewer) => current().receivedInvitations(viewer),
+    respondToInvitation: async (viewer, input) => current().respondToInvitation(viewer, input),
+    sendTargetedInvitations: async (viewer, input) => current().sendTargetedInvitations(viewer, input),
+    sentInvitations: async (viewer, jobId) => current().sentInvitations(viewer, jobId),
+
+    // trucks (#251)
+    deleteTruckSearch: async (viewer, searchId) => current().deleteTruckSearch(viewer, searchId),
+    listTruckSearches: async (viewer) => current().listTruckSearches(viewer),
+    saveTruckSearch: async (viewer, input) => current().saveTruckSearch(viewer, input),
+    searchTrucks: async (viewer, filters) => current().searchTrucks(viewer, filters),
+
+    // alerts (#252)
+    deleteJobSearch: async (viewer, searchId) => current().deleteJobSearch(viewer, searchId),
+    listJobSearches: async (viewer) => current().listJobSearches(viewer),
+    listSavedJobs: async (viewer) => current().listSavedJobs(viewer),
+    notificationPreferences: async (viewer) => current().notificationPreferences(viewer),
+    saveJob: async (viewer, jobId) => current().saveJob(viewer, jobId),
+    saveJobSearch: async (viewer, input) => current().saveJobSearch(viewer, input),
+    setNotificationPreference: async (viewer, input) => current().setNotificationPreference(viewer, input),
+    unsaveJob: async (viewer, jobId) => current().unsaveJob(viewer, jobId),
+
+    // notify (#253)
+    listNotifications: async (viewer, options) => current().listNotifications(viewer, options),
+    markNotificationsRead: async (viewer, notificationIds) => current().markNotificationsRead(viewer, notificationIds),
+
+    // boosts (#254)
+    boostAudience: async (viewer, jobId, packageCode) => current().boostAudience(viewer, jobId, packageCode),
+    listJobBoosts: async (viewer, jobId) => current().listJobBoosts(viewer, jobId),
+
+    // admin (#255)
+    adminAccess: async (account) => current().adminAccess(account),
+    adminGrantFoundingHaulerBadge: async (account, input) => current().adminGrantFoundingHaulerBadge(account, input),
+    adminGrantFoundingPromotion: async (account, input) => current().adminGrantFoundingPromotion(account, input),
+    adminModerateJob: async (account, input) => current().adminModerateJob(account, input),
+    adminQueue: async (account) => current().adminQueue(account),
+    adminReadInquiryThread: async (account, input) => current().adminReadInquiryThread(account, input),
+    adminReadLandingPrivate: async (account, input) => current().adminReadLandingPrivate(account, input),
+    adminReleaseJobHold: async (account, input) => current().adminReleaseJobHold(account, input),
+    adminReports: async (account, filters) => current().adminReports(account, filters),
+    adminResolveReport: async (account, input) => current().adminResolveReport(account, input),
+    adminSetVerification: async (account, input) => current().adminSetVerification(account, input),
+    adminVerificationQueue: async (account) => current().adminVerificationQueue(account)
   }
 }
