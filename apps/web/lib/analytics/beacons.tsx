@@ -58,11 +58,12 @@ export function FlowTapCounter({ flow }: { flow: ProductFlow }) {
 
 /**
  * A flow's outcome screen (the "sent", "published" or "confirmed" notice): stops the clock and sends `flow_timed`.
- * Nothing is sent when no clock was running, so arriving any other way records nothing.
+ * Nothing is sent when no clock was running, so arriving any other way records nothing. Pass the outcome's `jobId`
+ * where the flow is about one job (A, E), so an outcome on another job never stops that job's clock.
  */
-export function FlowClockStop({ flow, step }: { flow: ProductFlow; step: FlowStep }) {
-  useSendOnce(`${flow}|${step}`, () => {
-    void captureClientProductEvent("flow_timed", stopFlowClock(flow, step))
+export function FlowClockStop({ flow, jobId = null, step }: { flow: ProductFlow; jobId?: string | null; step: FlowStep }) {
+  useSendOnce(`${flow}|${step}|${jobId ?? ""}`, () => {
+    void captureClientProductEvent("flow_timed", stopFlowClock(flow, step, { job: jobId }))
   })
 
   return null

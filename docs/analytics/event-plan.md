@@ -116,7 +116,8 @@ Fields marked "or null" may be `null`.
 | `capped` | boolean | The flow took longer than an hour |
 
 The flow clock lives in the tab's sessionStorage. It keeps a start time, a tap count and the public job id, and
-nothing else. A clock older than a day is dropped, and an outcome is timed once. A flow that starts in one tab and
+nothing else. A clock older than a day is dropped, and an outcome is timed once. A start for a different job begins the flow again
+for that job, and an outcome for another job leaves the clock running. A flow that starts in one tab and
 ends in another is not timed.
 
 ## 4. Flow metrics
@@ -240,9 +241,9 @@ after(() =>
 | `availability_reconfirmed` | `confirmHaulerAvailabilityAction`, `apps/web/lib/marketplace-v2/fleet-actions.ts` | #279 | `availabilityReconfirmedProperties({ confirmed, organizationId, signedIn: true, via: "in_app" })` |
 | `job_stopped`, `job_reconfirmed` with `resumed: true` | The jobs group's pause, fill, close and resume actions, `apps/web/lib/marketplace-v2/jobs/` | #247 | `jobStoppedProperties(...)` or `jobReconfirmedProperties({ ..., resumed: true })`, with the job as it was before the change |
 | `share_link_opened` and flow A start | The share page under apps/web/app/v2/share (#287, not yet built) | #287 | `<ShareLinkOpenedBeacon channel={…} jobId={job.id} signedIn={…} />` |
-| Flow A taps and outcome | `apps/web/app/v2/work/[jobId]/page.tsx` | #279 | `<FlowTapCounter flow="A" />` beside the interest sheet. `<FlowClockStop flow="A" step="first_send" />` when `sent=1` |
+| Flow A taps and outcome | `apps/web/app/v2/work/[jobId]/page.tsx` | #279 | `<FlowTapCounter flow="A" />` beside the interest sheet. `<FlowClockStop flow="A" jobId={job.id} step="first_send" />` when `sent=1` |
 | Flow B start and outcome | `apps/web/app/v2/landing/jobs/new/page.tsx`, and the job page with `published=1` | #279 | `<FlowClockStart flow="B" />` on a new draft. `<FlowClockStop flow="B" step="published" />` on the published notice |
-| `via: "one_tap_link"` and flows C to E | The signed one-tap links for C, D and E | P0-6 (no issue yet) | Pass `via: "one_tap_link"` and `signedIn: false` where no one is signed in. Put `<FlowClockStart>` on the page the link opens and `<FlowClockStop>` on its confirmation |
+| `via: "one_tap_link"` and flows C to E | The signed one-tap links for C, D and E | P0-6 (no issue yet) | Pass `via: "one_tap_link"` and `signedIn: false` where no one is signed in. Put `<FlowClockStart>` on the page the link opens and `<FlowClockStop>` on its confirmation, with `jobId` for a job's links |
 
 **Other follow-ups**
 

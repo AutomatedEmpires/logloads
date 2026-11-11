@@ -56,6 +56,31 @@ describe("the flow clock", () => {
     expect(stopFlowClock("A", "first_send", { now: T0 + 60_000, storage })?.elapsed_ms).toBe(60_000)
   })
 
+  it("starts flow A again when a link for a different job opens in the same tab, but keeps it for the same job", () => {
+    const storage = memoryStorage()
+    const other = "7a2d3b8f-4c5e-4d6f-9a70-8293a4b5c6d7"
+
+    startFlowClock("A", { allowed, job: FIXTURE_JOB, now: T0, storage })
+    noteFlowTap("A", { now: T0 + 1_000, storage })
+    startFlowClock("A", { allowed, job: FIXTURE_JOB.toUpperCase(), now: T0 + 2_000, storage })
+    startFlowClock("A", { allowed, now: T0 + 3_000, storage })
+    expect(stopFlowClock("A", "first_send", { job: FIXTURE_JOB, now: T0 + 10_000, storage })).toMatchObject({ elapsed_ms: 10_000, job: FIXTURE_JOB, taps: 1 })
+
+    startFlowClock("A", { allowed, job: FIXTURE_JOB, now: T0, storage })
+    noteFlowTap("A", { now: T0 + 1_000, storage })
+    startFlowClock("A", { allowed, job: other, now: T0 + 60_000, storage })
+    expect(stopFlowClock("A", "first_send", { job: other, now: T0 + 90_000, storage })).toMatchObject({ elapsed_ms: 30_000, job: other, taps: 0 })
+  })
+
+  it("does not stop a job's clock on an outcome for another job", () => {
+    const storage = memoryStorage()
+    const other = "7a2d3b8f-4c5e-4d6f-9a70-8293a4b5c6d7"
+
+    startFlowClock("E", { allowed, job: FIXTURE_JOB, now: T0, storage })
+    expect(stopFlowClock("E", "reconfirmed", { job: other, now: T0 + 5_000, storage })).toBeNull()
+    expect(stopFlowClock("E", "reconfirmed", { job: FIXTURE_JOB, now: T0 + 8_000, storage })).toMatchObject({ elapsed_ms: 8_000, job: FIXTURE_JOB })
+  })
+
   it("times an outcome once, and reports nothing when the flow never started", () => {
     const storage = memoryStorage()
 

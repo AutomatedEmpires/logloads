@@ -111,7 +111,11 @@ function sentBody(): { api_key: string; distinct_id: string; event: string; prop
   return JSON.parse(String(init.body))
 }
 
-describe("server product events", () => {
+// Each test re-imports the module (the PostHog key is read at import), which loads the contracts package afresh; on a
+// busy machine that can pass the default 5 s.
+const RELOADING = { timeout: 30_000 }
+
+describe("server product events", RELOADING, () => {
   it("builds every server event from its call site's real views and sends only declared, non-personal properties", async () => {
     const server = await load()
     const landingActor = { organizationId: LANDING_ORG, userId: USER }
@@ -334,7 +338,7 @@ describe("server product events", () => {
   })
 })
 
-describe("pseudonymousId", () => {
+describe("pseudonymousId", RELOADING, () => {
   it("is stable, kind-separated and case-insensitive, and never contains the raw id", async () => {
     const { pseudonymousId } = await load()
 

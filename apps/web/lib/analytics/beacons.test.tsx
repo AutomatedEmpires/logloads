@@ -88,13 +88,14 @@ describe("product event beacons", () => {
   it("stops the clock on the outcome screen and sends what it measured, or nothing", () => {
     spies.stop.mockReturnValue(VALID_PROPERTIES.flow_timed)
 
-    expect(renderToStaticMarkup(<FlowClockStop flow="A" step="first_send" />)).toBe("")
+    expect(renderToStaticMarkup(<FlowClockStop flow="A" jobId={FIXTURE_JOB} step="first_send" />)).toBe("")
 
-    expect(spies.stop).toHaveBeenCalledWith("A", "first_send")
+    expect(spies.stop).toHaveBeenCalledWith("A", "first_send", { job: FIXTURE_JOB })
     expect(spies.capture).toHaveBeenCalledWith("flow_timed", VALID_PROPERTIES.flow_timed)
 
     spies.stop.mockReturnValue(null)
     renderToStaticMarkup(<FlowClockStop flow="B" step="published" />)
+    expect(spies.stop).toHaveBeenLastCalledWith("B", "published", { job: null })
     expect(spies.capture).toHaveBeenLastCalledWith("flow_timed", null)
   })
 })

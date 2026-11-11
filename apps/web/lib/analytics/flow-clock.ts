@@ -74,7 +74,7 @@ function readState(storage: FlowClockStorage, flow: ProductFlow): FlowClockState
       return null
     }
 
-    return { job: typeof job === "string" && UUID.test(job) ? job : null, startedAt, taps: Math.max(0, taps) }
+    return { job: typeof job === "string" ? jobId(job) : null, startedAt, taps: Math.max(0, taps) }
   } catch {
     return null
   }
@@ -102,23 +102,31 @@ function fresh(state: FlowClockState | null, now: number): state is FlowClockSta
   return state !== null && now - state.startedAt >= 0 && now - state.startedAt <= FLOW_CLOCK_STALE_MS
 }
 
+function jobId(value: string | null | undefined): string | null {
+  return value && UUID.test(value) ? value.toLowerCase() : null
+}
+
 /**
  * Starts the flow's clock on its first screen. A clock already running for the flow is kept, so a reload or a return
- * from sign-up does not restart it. Returns whether a clock is running.
+ * from sign-up does not restart it, unless this start is for a different job: then the flow begins again for that
+ * job. Returns whether a clock is running.
  */
 export function startFlowClock(flow: ProductFlow, options: FlowClockOptions & { job?: string | null } = {}): boolean {
   const storage = options.storage === undefined ? defaultStorage() : options.storage
   const now = options.now ?? Date.now()
+  const job = jobId(options.job)
 
   if (!storage || !(options.allowed ?? flowTimingAllowed)()) {
     return false
   }
 
-  if (fresh(readState(storage, flow), now)) {
+  const running = readState(storage, flow)
+
+  if (fresh(running, now) && (job === null || running.job === job)) {
     return true
   }
 
-  return writeState(storage, flow, { job: options.job && UUID.test(options.job) ? options.job : null, startedAt: now, taps: 0 })
+  return writeState(storage, flow, { job, startedAt: now, taps: 0 })
 }
 
 /** Counts one tap on a running clock; does nothing when the flow has no clock. */
@@ -133,21 +141,29 @@ export function noteFlowTap(flow: ProductFlow, options: FlowClockOptions = {}): 
 
 /**
  * Stops the flow's clock at its outcome and returns the `flow_timed` properties, or `null` when no clock was running
- * (the flow started elsewhere, or measuring is off). The clock is cleared either way, so an outcome is timed once.
+ * (the flow started elsewhere, or measuring is off). The clock is cleared, so an outcome is timed once. With `job`, an
+ * outcome for a different job than the one the clock started for is not this flow's outcome: it returns `null` and
+ * leaves the clock running.
  */
 export function stopFlowClock(
   flow: ProductFlow,
   step: FlowStep,
-  options: FlowClockOptions = {}
+  options: FlowClockOptions & { job?: string | null } = {}
 ): ProductEventProperties<"flow_timed"> | null {
   const storage = options.storage === undefined ? defaultStorage() : options.storage
   const now = options.now ?? Date.now()
+  const job = jobId(options.job)
 
   if (!storage) {
     return null
   }
 
   const state = readState(storage, flow)
+
+  if (job !== null && state?.job && state.job !== job) {
+    return null
+  }
+
   clearState(storage, flow)
 
   if (!fresh(state, now)) {
