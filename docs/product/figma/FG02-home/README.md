@@ -87,8 +87,17 @@ Page 02 had no blockers in audit 2. Every major and polish finding for 02 Home i
 | G10 three names for inquiries | "Inquiries" in the tab, the top navigation and "Inquiries (4 new)". |
 | G11 clipped state text | EmptyState and ErrorState text fills the card width and wraps; at 390 px the actions stack. |
 | G13 local JobDetail copy | Deleted, with the old gaps note. |
-| G14 plan pill on the account chip | The tag is hidden on every frame. |
+| G14 plan pill on the account chip | Left to #281, as the lead directed: the "Preview" tag comes from 00 System AccountMenu / Trigger (`17:274`), and page 02 does not override it (gap 5). |
 | Audit 1 F18, F19, F20, F24 | Job names are not quoted and buttons name their action; every allowance has one form; every widow found in the screenshot checks was fixed; whole-dollar pay has no cents. |
+
+### Design audit 3 items (lead, 2026-11-11)
+
+| Item | Status on page 02 |
+|---|---|
+| Blocker: disabled Find trucks with "Searching for trucks isn't available in this preview yet" on the four Overview frames (`42:1479`, `42:1632`, `42:1804`, `42:1938`) | Fixed. Those frames are deleted. All 21 Find trucks buttons on the page are enabled 48 px secondaries that open the trucks directory (#251; Find trucks on page 06), and the line is gone. |
+| Blocker: "TRUCK AND TRAILER" clipped at the right edge of 390 px job rows | Fixed. The two-column fact grid is gone. Trailer and distance are one 16 px line in color/text (16.7:1) that wraps: "Log truck, pole trailer · 6 mi from you". A read-back found no text past the edge of any 390 px frame or clipping container. |
+| Blocker: "Preview" tag in the header (00 System `17:274`) | Not overridden here. It still shows on every frame until #281 removes it on page 00 (gap 5). |
+| Majors: 768 px frames, every ending, 16 px body, 48 px controls | Done: see the frame tables, the findings above and the checks below. |
 
 **Flow A check at 390 × 844.** In Find Work Results 390 the first job's pay ends at y 362, its trailer and distance at y 476, and its freshness chip at y 552. All three are above the tab bar at y 787. The second job's pay and title are in the first viewport too.
 
@@ -121,15 +130,17 @@ These are follow-ups. They were not changed here, because page 00 belongs to #28
 2. **00 System navigation text under 16 px.** GlobalNavigation links and the business name are 14 px, the business kind and initials 12 px; ResponsiveNavigation tab labels are 12 px and counts 11 px. They are the only text under 16 px on page 02.
 3. **00 System ResponsiveNavigation `Workspace=landing`** marks Overview and Landing inbox both current and says "Landing inbox". Page 02 uses the hauler variant with landing labels, icons and one current tab.
 4. **00 System PageHeader** shows a "Slot: page content" box when its slot is empty (audit G1). Page 02 composes its headers instead.
-5. **Not designed here:** the saved-jobs list that Save leads to, a "Mark filled" action (flow E), the map view, alerts and saved searches in the empty state, and the inquiry screens behind "See inquiries" and "See my inquiries" (flow C).
-6. **Dark mode** is shown in one frame (Find Work results 390). The other frames use Light; they switch through the Color collection.
-7. **Code.** The loading, error, offline, more-than-100, interest-sent and waiting states, the reconfirm-with-Undo flow and one-tap Send interest are not in the code yet. They need their own build tasks after approval.
+5. **00 System AccountMenu / Trigger** (`17:274`) still defaults to the "Preview" tag, so every frame here shows it. #281 removes it on page 00; page 02 does not override it and inherits the fix. Check it again after #281 merges.
+6. **Not designed here:** the saved-jobs list that Save leads to, a "Mark filled" action (flow E), the map view, alerts and saved searches in the empty state, and the inquiry screens behind "See inquiries" and "See my inquiries" (flow C).
+7. **Dark mode** is shown in one frame (Find Work results 390). The other frames use Light; they switch through the Color collection.
+8. **Code.** The loading, error, offline, more-than-100, interest-sent and waiting states, the reconfirm-with-Undo flow and one-tap Send interest are not in the code yet. They need their own build tasks after approval.
 
 ## Checks
 
 - A read-back of page 02 found 7,318 nodes: 2,153 instances, 28 components and 8 component sets. It found no image fills, so nothing is a flattened screenshot. Every text uses IBM Plex Sans or IBM Plex Sans Condensed.
 - Every text under 16 px is inside the 00 System GlobalNavigation or ResponsiveNavigation (gap 2). The only 22 px text is the LogLoads wordmark.
-- No screen frame contains placeholder text, builder notes, "preview" wording or a disabled button.
+- No screen frame contains placeholder text, builder notes or a disabled button. The only "Preview" text is the 00 System account tag (gap 5).
+- No text contains "Truck and trailer" or "isn't available". No visible text runs past the edge of a 390 px frame or of a clipping container.
 - 25 of the 49 frames were checked with `get_screenshot`, covering every screen at one width or more and most screens at 390 px. The other frames use the same components and were checked by the read-back above, not by screenshot.
 - Defects found were fixed and checked again: the 390 px summary bar wrapped its first line, the 390 px header clipped the Filters button, the 390 px empty state's buttons overflowed, empty and error cards repeated their title, a chip-van job said "Fits your trucks", a lost "Filters · 1" label, and ten widows or split words.
 - Nothing was checked in a browser. Focus order, screen-reader names and the sticky bottom bar need the Playwright check when the screens are built.
