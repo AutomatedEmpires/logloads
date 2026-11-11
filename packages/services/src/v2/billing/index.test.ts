@@ -201,6 +201,8 @@ describe("billing overview: standing", () => {
     [{ graceEndsAt: "2026-11-17T00:00:00.000Z", subscriptionStatus: "past_due" }, "grace"],
     [{ cycleEndsAt: null, graceEndsAt: "2026-11-03T00:00:00.000Z", invitationsRemaining: null, planCode: null, subscriptionStatus: "past_due" }, "not_entitled"],
     [{ cycleEndsAt: null, invitationsRemaining: null, planCode: null, subscriptionStatus: "incomplete" }, "not_entitled"],
+    [{ cycleEndsAt: null, invitationsRemaining: null, planCode: null, subscriptionStatus: "paused" }, "not_entitled"],
+    [{ cycleEndsAt: null, invitationsRemaining: null, planCode: null, subscriptionStatus: "unpaid" }, "not_entitled"],
     [{ cycleEndsAt: null, invitationsRemaining: null, planCode: null, subscriptionStatus: null }, "no_subscription"]
   ])("%o is %s", (overrides, standing) => {
     expect(marketplaceBillingOverview(allowance(overrides)).standing).toBe(standing)
