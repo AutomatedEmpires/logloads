@@ -3,7 +3,8 @@
 -- notification outbox; #237)
 --
 -- NON-ACTIVE PROTOTYPE TEST SUITE. Disposable PostgreSQL only. Run after
--- 01 -> 02 -> 03 -> 06 -> 11 -> 12 -> 16 -> 18 -> 23 -> 26. Wraps everything in BEGIN ... ROLLBACK.
+-- 01 -> 02 -> 03 -> 06 -> 11 -> 12 -> 16 -> 18 -> 23 -> 26; stage 30 runs it again after 29. Wraps everything in
+-- BEGIN ... ROLLBACK.
 -- Negative tests require the expected SQLSTATE AND a matching message or constraint name.
 -- Races (two owners inviting for the last seat, an invitation against a direct membership, accept against revoke,
 -- two email workers claiming at once) need two sessions: 28_v2_team_seats_outbox_concurrency_test.sh.
@@ -854,8 +855,10 @@ begin
   -- -------------------------------------------------------------------------
   -- Ledger
   -- -------------------------------------------------------------------------
-  perform pg_temp.ok((select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations) = '06,11,12,16,18,23,26',
-    'the migration ledger records 06, 11, 12, 16, 18, 23, 26 in order');
+  -- Stage 30 runs this suite again on the 29 schema, whose ledger adds 29.
+  perform pg_temp.ok((select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations)
+                       in ('06,11,12,16,18,23,26', '06,11,12,16,18,23,26,29'),
+    'the migration ledger records 06, 11, 12, 16, 18, 23, 26 in order (and 29 after them, when stage 30 runs this suite again)');
 
   raise notice 'ALL SEAT INVITATION, LANDING SCOPE, SAVED JOB AND NOTIFICATION OUTBOX (26-A..26-D) TESTS PASSED.';
 end
