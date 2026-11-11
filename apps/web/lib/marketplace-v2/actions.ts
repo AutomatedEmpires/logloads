@@ -10,15 +10,15 @@ import {
   MARKETPLACE_AVAILABILITY_ATTESTATION,
   MARKETPLACE_PUBLISH_ATTESTATION_FIELDS,
   PUBLISH_ATTESTATION_FIELD,
-  PUBLISH_ATTESTATION_REQUIRED,
   validateMarketplaceJobPublication,
   type MarketplaceAvailabilityAttestation,
   type MarketplaceJobDraft
 } from "@logloads/contracts"
 
 import { checkRateLimit } from "../rate-limit"
-import { serializeError } from "../services"
-import { draftInput, draftQueryString, draftValuesFromForm, LANDING_NOT_OWNED, type DraftFormValues } from "./draft-params"
+import { draftInput, draftQueryString, draftValuesFromForm, type DraftFormValues } from "./draft-params"
+import { v2ErrorQuery, type V2ErrorCode } from "./error-codes"
+import { reportV2Error } from "./error-log"
 import { marketplaceV2Enabled } from "./flag"
 import { pilotMarketplaceV2 } from "./pilot-adapter"
 import { MarketplaceOperationUnavailableError, type MarketplaceV2Viewer } from "./port"
@@ -28,6 +28,7 @@ import { getV2SessionActor } from "./v2-session"
  * Marketplace V2 form actions. Identity and workspace always come from the server session; the form
  * supplies only the job/inquiry ids and the hauler's or landing's own words. Every write goes through
  * the port (and the service-layer authorization behind it). No dispatch, trip, invitation or fee.
+ * A failure answers with an error code, never with words (#279): see `failed`.
  */
 
 async function requireViewer(nextPath: string): Promise<MarketplaceV2Viewer> {
@@ -72,9 +73,17 @@ function safeRedirect(path: string, query: Record<string, string>, hash = ""): n
   redirect(`${path}?${params.toString()}${hash}`)
 }
 
-/** Returns a short, user-safe message (service refusals are written for end users). */
-function message(error: unknown): string {
-  return serializeError(error).error.slice(0, 160)
+/**
+ * The query for a failed operation: an error code and, when the failure was logged, its request id (#279). Never
+ * the error's words: the page shows the code's fixed copy (`error-codes.ts`), so no text travels in the URL.
+ */
+function failed(error: unknown, operation: string): Record<string, string> {
+  return v2ErrorQuery(reportV2Error(error, operation))
+}
+
+/** A refusal these actions decide themselves: its code, with nothing logged. */
+function refused(code: V2ErrorCode): Record<string, string> {
+  return v2ErrorQuery({ code, requestId: null })
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -113,7 +122,7 @@ export async function expressInterestAction(formData: FormData): Promise<void> {
       trucksOffered: field(formData, "trucksOffered")
     })
   } catch (error) {
-    safeRedirect(back, { error: message(error) }, INTEREST_ANCHOR)
+    safeRedirect(back, failed(error, "interest.express"), INTEREST_ANCHOR)
   }
 
   revalidatePath("/v2", "layout")
@@ -139,7 +148,7 @@ export async function withdrawInterestAction(formData: FormData): Promise<void> 
       replyId: field(formData, "replyId") || randomUUID()
     })
   } catch (error) {
-    inquiryRedirect("/v2/inquiries", formData, { error: message(error) })
+    inquiryRedirect("/v2/inquiries", formData, failed(error, "interest.withdraw"))
   }
 
   revalidatePath("/v2", "layout")
@@ -157,7 +166,7 @@ export async function haulerReplyAction(formData: FormData): Promise<void> {
       replyId: field(formData, "replyId") || randomUUID()
     })
   } catch (error) {
-    inquiryRedirect("/v2/inquiries", formData, { error: message(error) })
+    inquiryRedirect("/v2/inquiries", formData, failed(error, "inquiry.hauler_reply"))
   }
 
   revalidatePath("/v2", "layout")
@@ -177,7 +186,7 @@ export async function respondToInterestAction(formData: FormData): Promise<void>
       replyId: field(formData, "replyId") || undefined
     })
   } catch (error) {
-    inquiryRedirect("/v2/landing/inquiries", formData, { error: message(error) })
+    inquiryRedirect("/v2/landing/inquiries", formData, failed(error, "inquiry.respond"))
   }
 
   revalidatePath("/v2", "layout")
@@ -193,13 +202,6 @@ const HOUR_MS = 60 * 60_000
 const PUBLISH_RATE_LIMIT = { bucket: "marketplace-publish", limit: 20 } as const
 const RECONFIRM_RATE_LIMIT = { bucket: "marketplace-reconfirm", limit: 120 } as const
 
-const CANNOT_PUBLISH = "Your role cannot publish jobs for this organization"
-const CANNOT_CONFIRM = "Your role cannot confirm jobs for this organization"
-const FIX_FIELDS = "Fix the highlighted fields before publishing"
-const NOT_OWN_JOB = "You can only confirm your organization's own job postings"
-const NOT_ACCEPTING = "Only a job that is accepting interest can be confirmed as still available"
-const RECONFIRM_ATTESTATION_REQUIRED = "Tick the availability confirmation to record that this job is still available"
-
 /** Back to the authoring screens with the poster's draft intact. The attestation is never carried back. */
 function redirectWithDraft(path: string, values: DraftFormValues, extra: Record<string, string>): never {
   const params = new URLSearchParams(draftQueryString(values))
@@ -213,7 +215,7 @@ function redirectWithDraft(path: string, values: DraftFormValues, extra: Record<
 
 type PublishCheck =
   | { ok: true; draft: MarketplaceJobDraft; attestation: MarketplaceAvailabilityAttestation }
-  | { ok: false; path: string; error: string }
+  | { ok: false; path: string; error: V2ErrorCode }
 
 /**
  * Every server-side check publishing needs, in order. Identity is the session viewer; the form supplies
@@ -227,7 +229,7 @@ async function checkPublishRequest(viewer: MarketplaceV2Viewer, values: DraftFor
   const access = await pilotMarketplaceV2.viewerAccess(viewer)
 
   if (!access.capabilities.includes("job.publish")) {
-    return { error: CANNOT_PUBLISH, ok: false, path: PREVIEW_PATH }
+    return { error: "cannot_publish", ok: false, path: PREVIEW_PATH }
   }
 
   // 3. Draft rules (required pay, sensitive-access and contact text, limits), publishing rules (product,
@@ -238,8 +240,8 @@ async function checkPublishRequest(viewer: MarketplaceV2Viewer, values: DraftFor
     const onlyAttestationMissing = publication.issues.every((issue) => issue.field === PUBLISH_ATTESTATION_FIELD)
 
     return onlyAttestationMissing
-      ? { error: PUBLISH_ATTESTATION_REQUIRED, ok: false, path: PREVIEW_PATH }
-      : { error: FIX_FIELDS, ok: false, path: NEW_JOB_PATH }
+      ? { error: "publish_attestation", ok: false, path: PREVIEW_PATH }
+      : { error: "fix_fields", ok: false, path: NEW_JOB_PATH }
   }
 
   // 4. The landing belongs to the viewer's organization: the service lists only the organization's own
@@ -247,7 +249,7 @@ async function checkPublishRequest(viewer: MarketplaceV2Viewer, values: DraftFor
   const landings = await pilotMarketplaceV2.authoringLandings(viewer)
 
   if (!landings.some((landing) => landing.id === publication.draft.landingId)) {
-    return { error: LANDING_NOT_OWNED, ok: false, path: NEW_JOB_PATH }
+    return { error: "landing_not_owned", ok: false, path: NEW_JOB_PATH }
   }
 
   return { attestation: publication.attestation, draft: publication.draft, ok: true }
@@ -267,11 +269,11 @@ export async function publishJobAction(formData: FormData): Promise<void> {
     const attestations = Object.fromEntries(MARKETPLACE_PUBLISH_ATTESTATION_FIELDS.map((name) => [name, field(formData, name)]))
     checked = await checkPublishRequest(viewer, values, attestations)
   } catch (error) {
-    redirectWithDraft(PREVIEW_PATH, values, { error: message(error) })
+    redirectWithDraft(PREVIEW_PATH, values, failed(error, "job.publish_check"))
   }
 
   if (!checked.ok) {
-    redirectWithDraft(checked.path, values, { error: checked.error })
+    redirectWithDraft(checked.path, values, refused(checked.error))
   }
 
   let published: { jobId: string }
@@ -283,7 +285,7 @@ export async function publishJobAction(formData: FormData): Promise<void> {
       redirectWithDraft(PREVIEW_PATH, values, { unavailable: "publish" })
     }
 
-    redirectWithDraft(PREVIEW_PATH, values, { error: message(error) })
+    redirectWithDraft(PREVIEW_PATH, values, failed(error, "job.publish"))
   }
 
   revalidatePath("/v2", "layout")
@@ -292,7 +294,7 @@ export async function publishJobAction(formData: FormData): Promise<void> {
 
 type ReconfirmCheck =
   | { ok: true; jobId: string; attestation: MarketplaceAvailabilityAttestation }
-  | { ok: false; error: string }
+  | { ok: false; error: V2ErrorCode }
 
 async function checkReconfirmRequest(viewer: MarketplaceV2Viewer, jobId: string, attestationValue: string): Promise<ReconfirmCheck> {
   // 1. Rate limit.
@@ -302,7 +304,7 @@ async function checkReconfirmRequest(viewer: MarketplaceV2Viewer, jobId: string,
   const access = await pilotMarketplaceV2.viewerAccess(viewer)
 
   if (!access.capabilities.includes("job.publish")) {
-    return { error: CANNOT_CONFIRM, ok: false }
+    return { error: "cannot_confirm", ok: false }
   }
 
   // 3. Ownership: the job is a posting of the viewer's organization. A job's organization is its
@@ -311,19 +313,19 @@ async function checkReconfirmRequest(viewer: MarketplaceV2Viewer, jobId: string,
   const job = id && id.length <= 200 ? await pilotMarketplaceV2.getJob(id) : null
 
   if (!job || job.posterOrganizationId !== viewer.organizationId) {
-    return { error: NOT_OWN_JOB, ok: false }
+    return { error: "not_own_job", ok: false }
   }
 
   // 4. Only a listing that is accepting interest can be "still available".
   if (!job.acceptingInterest) {
-    return { error: NOT_ACCEPTING, ok: false }
+    return { error: "not_accepting", ok: false }
   }
 
   // 5. The explicit attestation; its timestamp is the server clock.
   const attestation = attestAvailability(attestationValue, "reconfirm", new Date())
 
   if (!attestation) {
-    return { error: RECONFIRM_ATTESTATION_REQUIRED, ok: false }
+    return { error: "reconfirm_attestation", ok: false }
   }
 
   return { attestation, jobId: job.id, ok: true }
@@ -349,11 +351,11 @@ export async function reconfirmJobAction(formData: FormData): Promise<void> {
   try {
     checked = await checkReconfirmRequest(viewer, field(formData, "jobId"), field(formData, MARKETPLACE_AVAILABILITY_ATTESTATION.field))
   } catch (error) {
-    safeRedirect(back, { error: message(error) })
+    safeRedirect(back, failed(error, "job.reconfirm_check"))
   }
 
   if (!checked.ok) {
-    safeRedirect(back, { error: checked.error })
+    safeRedirect(back, refused(checked.error))
   }
 
   try {
@@ -363,7 +365,7 @@ export async function reconfirmJobAction(formData: FormData): Promise<void> {
       safeRedirect(back, { unavailable: "reconfirm" })
     }
 
-    safeRedirect(back, { error: message(error) })
+    safeRedirect(back, failed(error, "job.reconfirm"))
   }
 
   revalidatePath("/v2", "layout")

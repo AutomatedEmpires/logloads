@@ -144,7 +144,7 @@ describe("cross-organization attempts against the real service layer", () => {
   it("refuses to publish on another organization's landing", async () => {
     const target = await redirectOf(publishJobAction, publishForm(otherLanding.id))
 
-    expect(target).toMatchObject({ path: "/v2/landing/jobs/new", query: { error: "Choose one of your organization's landings" } })
+    expect(target).toMatchObject({ path: "/v2/landing/jobs/new", query: { error: "landing_not_owned" } })
     expect(target.query.unavailable).toBeUndefined()
   })
 
@@ -169,7 +169,7 @@ describe("cross-organization attempts against the real service layer", () => {
 
     const target = await redirectOf(reconfirmJobAction, reconfirmForm(northPineJob!.id))
 
-    expect(target).toMatchObject({ path: "/v2/landing/jobs", query: { error: "You can only confirm your organization's own job postings" } })
+    expect(target).toMatchObject({ path: "/v2/landing/jobs", query: { error: "not_own_job" } })
     expect(target.query.unavailable).toBeUndefined()
   })
 

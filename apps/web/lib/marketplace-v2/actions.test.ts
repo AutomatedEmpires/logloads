@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 const mocks = vi.hoisted(() => ({
   authoringLandings: vi.fn(),
   checkRateLimit: vi.fn(),
+  expressInterest: vi.fn(),
   getJob: vi.fn(),
   getSessionActor: vi.fn(),
   marketplaceV2Enabled: vi.fn(),
@@ -28,6 +29,7 @@ vi.mock("./flag", () => ({ marketplaceV2Enabled: mocks.marketplaceV2Enabled }))
 vi.mock("./pilot-adapter", () => ({
   pilotMarketplaceV2: {
     authoringLandings: mocks.authoringLandings,
+    expressInterest: mocks.expressInterest,
     getJob: mocks.getJob,
     postHaulerReply: mocks.postHaulerReply,
     publishJob: mocks.publishJob,
@@ -40,14 +42,11 @@ vi.mock("./pilot-adapter", () => ({
   }
 }))
 
-import {
-  MARKETPLACE_AVAILABILITY_ATTESTATION,
-  MARKETPLACE_PUBLISH_ATTESTATION_FIELDS,
-  PUBLISH_ATTESTATION_REQUIRED
-} from "@logloads/contracts"
+import { MARKETPLACE_AVAILABILITY_ATTESTATION, MARKETPLACE_PUBLISH_ATTESTATION_FIELDS } from "@logloads/contracts"
 
-import { haulerReplyAction, publishJobAction, reconfirmJobAction, respondToInterestAction, withdrawInterestAction } from "./actions"
-import { MarketplaceOperationUnavailableError } from "./port"
+import { RateLimitError } from "../rate-limit-core"
+import { expressInterestAction, haulerReplyAction, publishJobAction, reconfirmJobAction, respondToInterestAction, withdrawInterestAction } from "./actions"
+import { MarketplaceOperationUnavailableError, MarketplaceRefusalError, MarketplaceStoreError } from "./port"
 
 const USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 const ORGANIZATION_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
@@ -145,12 +144,12 @@ describe("publishJobAction server-side checks", () => {
   })
 
   it("rate-limits every attempt per session user, before any other check", async () => {
-    mocks.checkRateLimit.mockRejectedValue(new Error("Too many attempts. Wait a moment and try again."))
+    mocks.checkRateLimit.mockRejectedValue(new RateLimitError(60))
 
     const target = await redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...PUBLISH_ATTESTED }))
 
     expect(mocks.checkRateLimit).toHaveBeenCalledExactlyOnceWith("marketplace-publish", USER_ID, 20, 3_600_000)
-    expect(target).toMatchObject({ path: PREVIEW_PATH, query: { error: "Too many attempts. Wait a moment and try again.", title: PUBLISHABLE.title } })
+    expect(target).toMatchObject({ path: PREVIEW_PATH, query: { error: "rate_limited", title: PUBLISHABLE.title } })
     expect(mocks.viewerAccess).not.toHaveBeenCalled()
     expect(mocks.authoringLandings).not.toHaveBeenCalled()
     expect(mocks.publishJob).not.toHaveBeenCalled()
@@ -161,7 +160,7 @@ describe("publishJobAction server-side checks", () => {
 
     const target = await redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...PUBLISH_ATTESTED }))
 
-    expect(target).toMatchObject({ path: PREVIEW_PATH, query: { error: "Your role cannot publish jobs for this organization" } })
+    expect(target).toMatchObject({ path: PREVIEW_PATH, query: { error: "cannot_publish" } })
     expect(mocks.viewerAccess).toHaveBeenCalledWith(VIEWER)
     expect(mocks.authoringLandings).not.toHaveBeenCalled()
     expect(mocks.publishJob).not.toHaveBeenCalled()
@@ -182,14 +181,14 @@ describe("publishJobAction server-side checks", () => {
   ])("re-validates the draft on the server and refuses %s", async (_label, change) => {
     const target = await redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...change, ...PUBLISH_ATTESTED }))
 
-    expect(target).toMatchObject({ path: NEW_PATH, query: { error: "Fix the highlighted fields before publishing" } })
+    expect(target).toMatchObject({ path: NEW_PATH, query: { error: "fix_fields" } })
     expect(mocks.publishJob).not.toHaveBeenCalled()
   })
 
   it("refuses another organization's landing (cross-organization attempt)", async () => {
     const target = await redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...PUBLISH_ATTESTED, landingId: OTHER_LANDING_ID }))
 
-    expect(target).toMatchObject({ path: NEW_PATH, query: { error: "Choose one of your organization's landings", landingId: OTHER_LANDING_ID } })
+    expect(target).toMatchObject({ path: NEW_PATH, query: { error: "landing_not_owned", landingId: OTHER_LANDING_ID } })
     // Ownership is resolved for the session's organization, not one the form names.
     expect(mocks.authoringLandings).toHaveBeenCalledExactlyOnceWith(VIEWER)
     expect(mocks.publishJob).not.toHaveBeenCalled()
@@ -219,7 +218,7 @@ describe("publishJobAction server-side checks", () => {
   ])("requires all three explicit attestations (%s)", async (_label, attestation) => {
     const target = await redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...attestation }))
 
-    expect(target).toMatchObject({ path: PREVIEW_PATH, query: { error: PUBLISH_ATTESTATION_REQUIRED, title: PUBLISHABLE.title } })
+    expect(target).toMatchObject({ path: PREVIEW_PATH, query: { error: "publish_attestation", title: PUBLISHABLE.title } })
     expect(mocks.publishJob).not.toHaveBeenCalled()
   })
 
@@ -269,7 +268,7 @@ describe("reconfirmJobAction server-side checks", () => {
     const target = await redirectOf(reconfirmJobAction, form({ jobId: JOB_ID, ...ATTESTED }, []))
 
     expect(mocks.checkRateLimit).toHaveBeenCalledExactlyOnceWith("marketplace-reconfirm", USER_ID, 120, 3_600_000)
-    expect(target).toMatchObject({ path: JOBS_PATH, query: { error: "Too many attempts. Wait a moment and try again." } })
+    expect(target).toMatchObject({ path: JOBS_PATH, query: { error: "rate_limited" } })
     expect(mocks.viewerAccess).not.toHaveBeenCalled()
     expect(mocks.getJob).not.toHaveBeenCalled()
     expect(mocks.reconfirmJob).not.toHaveBeenCalled()
@@ -280,7 +279,7 @@ describe("reconfirmJobAction server-side checks", () => {
 
     const target = await redirectOf(reconfirmJobAction, form({ jobId: JOB_ID, ...ATTESTED }, []))
 
-    expect(target).toMatchObject({ path: JOBS_PATH, query: { error: "Your role cannot confirm jobs for this organization" } })
+    expect(target).toMatchObject({ path: JOBS_PATH, query: { error: "cannot_confirm" } })
     expect(mocks.getJob).not.toHaveBeenCalled()
     expect(mocks.reconfirmJob).not.toHaveBeenCalled()
   })
@@ -290,7 +289,7 @@ describe("reconfirmJobAction server-side checks", () => {
 
     const target = await redirectOf(reconfirmJobAction, form({ jobId: JOB_ID, organizationId: OTHER_ORGANIZATION_ID, ...ATTESTED }, []))
 
-    expect(target).toMatchObject({ path: JOBS_PATH, query: { error: "You can only confirm your organization's own job postings" } })
+    expect(target).toMatchObject({ path: JOBS_PATH, query: { error: "not_own_job" } })
     expect(mocks.viewerAccess).toHaveBeenCalledWith(VIEWER)
     expect(mocks.reconfirmJob).not.toHaveBeenCalled()
   })
@@ -299,10 +298,10 @@ describe("reconfirmJobAction server-side checks", () => {
     mocks.getJob.mockResolvedValue(null)
 
     await expect(redirectOf(reconfirmJobAction, form({ jobId: JOB_ID, ...ATTESTED }, []))).resolves.toMatchObject({
-      query: { error: "You can only confirm your organization's own job postings" }
+      query: { error: "not_own_job" }
     })
     await expect(redirectOf(reconfirmJobAction, form({ jobId: "  ", ...ATTESTED }, []))).resolves.toMatchObject({
-      query: { error: "You can only confirm your organization's own job postings" }
+      query: { error: "not_own_job" }
     })
     expect(mocks.getJob).toHaveBeenCalledTimes(1)
     expect(mocks.reconfirmJob).not.toHaveBeenCalled()
@@ -312,7 +311,7 @@ describe("reconfirmJobAction server-side checks", () => {
     mocks.getJob.mockResolvedValue(ownJob({ acceptingInterest: false, status: "closed" }))
 
     await expect(redirectOf(reconfirmJobAction, form({ jobId: JOB_ID, ...ATTESTED }, []))).resolves.toMatchObject({
-      query: { error: "Only a job that is accepting interest can be confirmed as still available" }
+      query: { error: "not_accepting" }
     })
     expect(mocks.reconfirmJob).not.toHaveBeenCalled()
   })
@@ -323,7 +322,7 @@ describe("reconfirmJobAction server-side checks", () => {
   ])("requires the explicit attestation (%s)", async (_label, attestation) => {
     const target = await redirectOf(reconfirmJobAction, form({ jobId: JOB_ID, ...attestation }, []))
 
-    expect(target).toMatchObject({ path: JOBS_PATH, query: { error: "Tick the availability confirmation to record that this job is still available" } })
+    expect(target).toMatchObject({ path: JOBS_PATH, query: { error: "reconfirm_attestation" } })
     expect(mocks.reconfirmJob).not.toHaveBeenCalled()
   })
 
@@ -341,7 +340,7 @@ describe("reconfirmJobAction server-side checks", () => {
       path: "/v2/landing", query: { unavailable: "reconfirm" }
     })
     await expect(redirectOf(reconfirmJobAction, form({ jobId: JOB_ID, returnTo: "/v2/landing" }, []))).resolves.toMatchObject({
-      path: "/v2/landing", query: { error: expect.stringContaining("availability confirmation") }
+      path: "/v2/landing", query: { error: "reconfirm_attestation" }
     })
     for (const returnTo of ["https://evil.test/v2/landing", "/workspace", "//evil.test"]) {
       await expect(redirectOf(reconfirmJobAction, form({ jobId: JOB_ID, returnTo, ...ATTESTED }, []))).resolves.toMatchObject({ path: JOBS_PATH })
@@ -370,7 +369,7 @@ describe("inquiry actions keep the inquiry selected (DS-04 list and conversation
 
     const target = await redirectOf(respondToInterestAction, form({ decision: "declined", interestId: INTEREST_ID, organizationId: "x" }, []))
 
-    expect(target).toMatchObject({ path: "/v2/landing/inquiries", query: { error: "This inquiry is already closed", inquiry: INTEREST_ID } })
+    expect(target).toMatchObject({ path: "/v2/landing/inquiries", query: { error: "inquiry_closed", inquiry: INTEREST_ID } })
     expect(mocks.respondToInterest).toHaveBeenCalledExactlyOnceWith(VIEWER, { body: "", decision: "declined", interestId: INTEREST_ID, replyId: undefined })
   })
 
@@ -404,7 +403,7 @@ describe("closing an inquiry with a reason the other side sees (UX-09, #132)", (
     mocks.withdrawInterestWithReason.mockRejectedValueOnce(new Error("The landing has closed this inquiry"))
 
     const target = await redirectOf(withdrawInterestAction, form({ interestId: INTEREST_ID, reason: "Never mind", replyId: REPLY_ID }, []))
-    expect(target).toMatchObject({ path: "/v2/inquiries", query: { error: "The landing has closed this inquiry", inquiry: INTEREST_ID } })
+    expect(target).toMatchObject({ path: "/v2/inquiries", query: { error: "inquiry_declined", inquiry: INTEREST_ID } })
   })
 
   it("declines with the landing's reason and the form's reply id", async () => {
@@ -416,5 +415,54 @@ describe("closing an inquiry with a reason the other side sees (UX-09, #132)", (
       interestId: INTEREST_ID,
       replyId: REPLY_ID
     })
+  })
+})
+
+describe("a failure answers with a code, never with words (#279, C2 and C3)", () => {
+  const PERSONAL = "maya@northpine.example"
+  const INTEREST_ID = "44444444-4444-4444-8444-444444444444"
+
+  function storeFault(): MarketplaceStoreError {
+    const cause = Object.assign(new Error(`Key (email)=(${PERSONAL}) already exists`), { code: "23505", name: "PostgresError", severity: "ERROR" })
+    return new MarketplaceStoreError(undefined, "57014", cause)
+  }
+
+  it("logs a store fault under a request id and redirects with the code and that id only", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    mocks.publishJob.mockRejectedValue(storeFault())
+
+    const target = await redirectOf(publishJobAction, form({ ...PUBLISHABLE, ...PUBLISH_ATTESTED }))
+
+    expect(target.path).toBe(PREVIEW_PATH)
+    expect(target.query).toMatchObject({ error: "unexpected", ref: expect.stringMatching(/^[0-9a-f]{12}$/), title: PUBLISHABLE.title })
+    expect(target.raw).not.toContain(encodeURIComponent(PERSONAL))
+    expect(decodeURIComponent(target.raw)).not.toMatch(/already exists|could not complete/)
+    expect(logged).toHaveBeenCalledExactlyOnceWith(
+      "logloads: marketplace v2 request failed",
+      expect.objectContaining({ code: "unexpected", name: "MarketplaceStoreError", operation: "job.publish", requestId: target.query.ref, sqlstate: "57014" })
+    )
+    expect(JSON.stringify(logged.mock.calls)).not.toContain(PERSONAL)
+    logged.mockRestore()
+  })
+
+  it("never carries a store refusal's own words, even ones written to look like LogLoads", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined)
+    mocks.respondToInterest.mockRejectedValueOnce(new MarketplaceRefusalError("Your account is locked. Call 541-555-0100.", "23514"))
+
+    const target = await redirectOf(respondToInterestAction, form({ decision: "declined", interestId: INTEREST_ID }, []))
+
+    expect(target.query).toEqual({ error: "refused", inquiry: INTEREST_ID, ref: expect.stringMatching(/^[0-9a-f]{12}$/) })
+    expect(decodeURIComponent(target.raw)).not.toContain("541-555-0100")
+    expect(info).toHaveBeenCalledOnce()
+    info.mockRestore()
+  })
+
+  it("answers the interest sheet with the refusal's code at the sheet", async () => {
+    mocks.expressInterest.mockRejectedValueOnce(new Error("This job is no longer accepting interest"))
+
+    const target = await redirectOf(expressInterestAction, form({ loadPostingId: JOB_ID, trucksOffered: "2" }, []))
+
+    expect(target).toMatchObject({ path: `/v2/work/${JOB_ID}`, query: { error: "job_closed" } })
+    expect(target.query).not.toHaveProperty("ref")
   })
 })
