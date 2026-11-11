@@ -21,6 +21,7 @@ import type {
   MarketplaceFoundingOfferView,
   MarketplaceHaulerEquipmentOption,
   MarketplaceInquiryJobContext,
+  MarketplaceInterestSide,
   MarketplaceInterestView,
   MarketplaceInvitationAudienceView,
   MarketplaceInvitationRecipientView,
@@ -71,6 +72,33 @@ export interface MarketplaceV2Viewer {
 
 /** The signed-in person acting for no business: before setting one up, answering a seat invitation, or as LogLoads staff. */
 export type MarketplaceV2Account = Pick<MarketplaceV2Viewer, "userId">
+
+/** Which page of a list to read (#280). */
+export interface MarketplacePageRequest {
+  /** An earlier page's `nextCursor`. Absent, or made for another query, reads the first page. */
+  after?: string | null
+  /** Rows per page (`keyset-pages.ts` clamps it). */
+  limit?: number
+}
+
+/**
+ * One page of a list in its fixed order (#280; quality bar B4). Pages are keyset pages: the next one starts after the
+ * last row of this one by its order key, so no row repeats or goes missing when rows ahead of it change.
+ */
+export interface MarketplacePage<T> {
+  items: T[]
+  /**
+   * How many rows match. `exact: false` when the store stopped reading at its own limit: at least `count` match, and
+   * a page shows it as "count+", never as the total.
+   */
+  total: { count: number; exact: boolean }
+  /** How many matching rows come before this page. */
+  start: number
+  /** The cursor for the next page, or `null` on the last page that can be read. */
+  nextCursor: string | null
+  /** A cursor was given but was not made for this query, or could not be read, so this is the first page. */
+  restarted: boolean
+}
 
 export interface MarketplaceV2ViewerAccess {
   organizationName: string
@@ -153,6 +181,13 @@ export interface MarketplaceV2Port
   /** Public discovery. Returns only public-safe fields; never exact coordinates or access details. */
   listJobs(filters: MarketplaceJobFilters): Promise<MarketplaceJobCardView[]>
   /**
+   * Find work (#280): one page of public discovery in the filters' order (`compareMarketplaceJobs`), each job with its
+   * public detail fields, from ONE store read whatever the page holds (never a read per job). `page.after` is an
+   * earlier page's `nextCursor`; a cursor made for other filters is not used (`restarted`). The same public-safe fields
+   * as `getJob` gives anyone, so selecting a job needs no further request.
+   */
+  listJobPage(filters: MarketplaceJobFilters, page?: MarketplacePageRequest): Promise<MarketplacePage<MarketplaceJobDetailView>>
+  /**
    * One listing's public view. With the session's `viewer`, a store that hides paused, filled, closed or expired jobs
    * from the public may still return one the viewer is allowed to see (their own business's job, or one they sent
    * interest on), so the job page can say why it stopped and when (UX-07, #130). The fields are the same either way.
@@ -185,6 +220,13 @@ export interface MarketplaceV2Port
   interestForJob(viewer: MarketplaceV2Viewer, jobId: string): Promise<MarketplaceInterestView | null>
   listHaulerInterests(viewer: MarketplaceV2Viewer): Promise<MarketplaceInterestView[]>
   listLandingInterests(viewer: MarketplaceV2Viewer): Promise<MarketplaceInterestView[]>
+  /**
+   * The ACTIVE business's inquiries on one side, a page at a time (#280), in the inbox's order: the hauler's by last
+   * activity, the landing's by arrival, newest first, then by id. The same authority as `listHaulerInterests` and
+   * `listLandingInterests`. Never another business's inquiry, and a cursor made for another business or side is not
+   * used (`restarted`).
+   */
+  listInterestPage(viewer: MarketplaceV2Viewer, side: MarketplaceInterestSide, page?: MarketplacePageRequest): Promise<MarketplacePage<MarketplaceInterestView>>
   expressInterest(viewer: MarketplaceV2Viewer, input: unknown): Promise<MarketplaceInterestView>
   withdrawInterest(viewer: MarketplaceV2Viewer, interestId: string): Promise<void>
   respondToInterest(viewer: MarketplaceV2Viewer, input: unknown): Promise<void>
