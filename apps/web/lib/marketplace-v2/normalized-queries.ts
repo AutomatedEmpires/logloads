@@ -12,6 +12,9 @@
  *   equipment_units   read: members; insert/update: owner, manager or staff (equipment_units_insert/_update)
  *   availability_reports  read: members; insert/update: owner, manager or staff here (availability_insert/_update);
  *                     tg_availability_guard snaps the area and stamps reported_at on every write
+ *   promotion_redemptions  read: owners (promotion_redemptions_read), only the M2 column grant (16); the founding
+ *                     offer (#248, #306)
+ *   promotions        read: open promotions only (promotions_read), so a closed one's terms come back NULL
  *
  * Every statement also names the active business explicitly (`$1`) and checks the person's membership of it, so a
  * person who belongs to several businesses only ever reads or changes the one they are acting for. Values are bound
@@ -258,6 +261,26 @@ with changed as (
     and marketplace.has_org_role(org_id, ${DESK_ROLES})
   returning id
 ) select to_jsonb(changed) as row from changed`
+  },
+
+  // ---- Billing (#248, #306) ---------------------------------------------------------------------------------
+
+  /**
+   * The business's founding-operator redemption (one per business, `UNIQUE (program, org_id)`) with its promotion's
+   * terms. Owners only: the explicit role check keeps a billing admin, whom `promotion_redemptions_read` lets read
+   * every business's redemption, to the business they own. A promotion row-level security hides leaves its terms NULL.
+   */
+  founding_offer: {
+    args: ["uuid"],
+    text: `
+select to_jsonb(f) as row from (
+  select pr.status, pr.granted_at, pr.cycles_applied, p.state_code, p.percent_off, p.billing_cycles
+  from marketplace.promotion_redemptions pr
+  left join marketplace.promotions p on p.id = pr.promotion_id and p.program = pr.program
+  where pr.org_id = $1::text::uuid
+    and pr.program = 'founding_landing'
+    and marketplace.has_org_role(pr.org_id, array['owner']::text[])
+) as f`
   }
 } as const satisfies Record<string, QuerySpec>
 
