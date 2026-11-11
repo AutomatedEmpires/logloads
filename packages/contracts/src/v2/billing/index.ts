@@ -13,9 +13,10 @@ import type { LandingPlan, LandingPlanCode } from "../../membership"
 
 /**
  * `organization_subscriptions.status` as the billing provider last reported it. Read only; nothing here starts a
- * charge. `get_org_entitlement_state` never reports a cancelled subscription (it reads only one that is not).
+ * charge. `get_org_entitlement_state` never reports a cancelled subscription (it reads only one that is not). Stripe's
+ * `paused` and `unpaid` are stored as such since stage 12 (LE-04) and never entitle a plan.
  */
-export const MARKETPLACE_SUBSCRIPTION_STATUSES = ["incomplete", "trialing", "active", "past_due", "canceled"] as const
+export const MARKETPLACE_SUBSCRIPTION_STATUSES = ["incomplete", "trialing", "active", "past_due", "paused", "unpaid", "canceled"] as const
 export type MarketplaceSubscriptionStatus = (typeof MARKETPLACE_SUBSCRIPTION_STATUSES)[number]
 
 /** `get_org_entitlement_state`, whole. Extends the landing allowance, so `summarizeLandingAllowance` reads it too. */
