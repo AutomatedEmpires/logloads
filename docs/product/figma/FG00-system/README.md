@@ -134,6 +134,17 @@ New icons: `Icon/status.confirmed` (CheckCircle, `203:21203`), `Icon/status.agin
 | Foundations | Each semantic swatch shows a Light chip and a Dark chip, and its value line names the primitive for each mode. `color/action-pressed` has a swatch. The primitive row has all 41 primitives in ramp order. |
 | Documentation | The read-me paragraphs name the Dark and Touch modes and the field bar. The component map was recomputed from the live property definitions, and it has a Field layer group with the new components, plus rows for PageNotice and StepIndicator / Narrow. |
 
+**Design audit 3 findings for page 00, added to #281 by the lead (highest priority).**
+
+| Finding | Severity | Fix | Measured |
+|---|---|---|---|
+| The "Preview" tag on nearly every signed-in screen comes from AccountMenu / Trigger `17:274` | Blocker (whole file) | Show tag now defaults to off. Every trigger instance that did not turn it on itself drops the pill, so pages 01, 02, 04 and 06 are fixed at once. The Tag property stays for a screen that needs it. | n/a |
+| Tabs `14:131` still has a 38 px variant | Major | Every Tabs / Tab variant now has a 48 px minimum height with its label centred, so both Tabs variants are 48 px. The tab labels that were 13 px are now `type/label` (14 px). | 48 px targets in all four Tab variants |
+| `type/mono-label` (11), `type/meta` (13) and `type/label` (14) drive form labels and the StepIndicator | Major | `type/meta` is now 14 px (bound to `text/md`), the smallest size for labels, helper text and metadata. In the components, 126 text layers under 14 px moved up, and 40 layers at 14 px moved to 16 px: labels and mono or semibold captions to `type/label` (14), regular metadata to `type/meta` (14), and body or helper text to 16 px. FormField labels are now `type/body-semibold`, and its hint, error and optional marker `type/text-16`, matching Input. ChoiceCard descriptions are `type/text-16`. StepIndicator numbers are `type/label` and its labels 16 px (semibold on the current step). VisibilityPanel titles and the JobSummary and JobResultList column labels are `type/label` in sentence case. `type/mono-label` remains for code-like metadata only, and no component label uses it now. The placeholder labels inside empty slots were left alone. | Same colours as before, so the ratios hold at 14 px: `text` 13.08:1 or more, `text-secondary` 9.40:1 or more, `text-muted` 7.18:1 or more, in both modes |
+| The Button loading state uses 50% opacity | Major | In Figma, no loading variant uses opacity: the label and a 270° spinner ring are both drawn in the label colour at full opacity. The 50% comes from the code. `Button.tsx` sets `aria-disabled` when `loading`, and `.button[aria-disabled="true"]` applies `--ll-disabled-opacity`. That is a packages/ui follow-up. | Label and spinner on primary 7.08:1 (Light), 9.04:1 (Dark); secondary 16.70:1, 14.68:1; ghost 10.69:1, 10.61:1; danger 7.43:1, 10.04:1 |
+
+The Foundations type specimen was regenerated from the live styles, and it has a `type/text-16` row.
+
 **Defects from #257 (first run), added to #281 by the lead.** These were found while designing page 01. All of them are fixed on page 00, and no variant was renamed.
 
 | Defect | Fix |
@@ -196,7 +207,7 @@ Before #281, a script checked the values against `packages/ui/src/tokens/tokens.
 **Styles**
 
 - **Effect styles:** `shadow/none`, `shadow/sm`, `shadow/md` and `shadow/lg`, with the exact values of `--ll-shadow-*`.
-- **Text styles:** 14 `type/*` styles: `mono-label`, `meta`, `body-secondary`, `body`, `body-semibold`, `label`, `button`, `row-title`, `panel-title`, `page-title`, `pay`, `pay-lg`, `company-name` and `text-16`. Font family and size are bound to the Type variables. Each style's description names the CSS rule it comes from. `type/text-16` is the field-layer body style: 16 px IBM Plex Sans Regular, line height 150%, bound to `text/base` and `font/sans`. `type/body-semibold` is the same at SemiBold, the combination on Find work `.summaryWhere` and landing `.rowTitle`. `type/button` is the same size and weight with line height 1.2, so it is not that style.
+- **Text styles:** 14 `type/*` styles (`type/meta` is 14 px since audit 3, and `type/mono-label` is for code-like metadata only): `mono-label`, `meta`, `body-secondary`, `body`, `body-semibold`, `label`, `button`, `row-title`, `panel-title`, `page-title`, `pay`, `pay-lg`, `company-name` and `text-16`. Font family and size are bound to the Type variables. Each style's description names the CSS rule it comes from. `type/text-16` is the field-layer body style: 16 px IBM Plex Sans Regular, line height 150%, bound to `text/base` and `font/sans`. `type/body-semibold` is the same at SemiBold, the combination on Find work `.summaryWhere` and landing `.rowTitle`. `type/button` is the same size and weight with line height 1.2, so it is not that style.
 
 ## Components
 
@@ -270,6 +281,7 @@ The field layer is ahead of the code. Each change below needs a matching code ta
 | `--ll-c-button-h-lg` | 48px | 56px | The BottomActionBar primary |
 | `--ll-c-field-h` | 44px | 48px | |
 | `--ll-target-touch` | 44px | 48px | |
+| `--ll-text-sm`, `--ll-text-xs`, `--ll-text-2xs` for labels and helper text | 13, 12 and 11 px in FormField hints, StepIndicator, InquiryRow, BusinessSwitcher, ResponsiveNavigation, SearchToolbar, CompanyProfileHeader and others | `--ll-text-md` (14px) for labels and metadata, `--ll-text-base` (16px) for body and helper text | Audit 3. Keep `--ll-font-mono` at `--ll-text-2xs` only for code-like metadata. |
 | `--ll-c-control-h` (compact) | `var(--ll-c-button-h-sm)` | `var(--ll-c-button-h-md)` | Compact keeps 48 px controls; only the rows get denser |
 | `--ll-color-text-muted` | neutral-500 | neutral-600 | 7.18:1 or more on every Light surface |
 | `--ll-color-control-border` | neutral-400 | neutral-450 | 4.03:1 on the sunken well (was 2.93:1) |
@@ -285,6 +297,9 @@ The field layer is ahead of the code. Each change below needs a matching code ta
 - **New components:** BottomActionBar (`layout/`), Notice, Note, Switch, Fact and MemberRow (`primitives/`), PermissionState and OfflineState (`primitives/states/`), and PlanCard (`marketplace/`). Input is `FormField` with `control="input"`, so it needs no new export.
 - **AvailabilityStatus:** render the FreshnessChip, with an icon per state, 16 px `color/text` on a status tint and no dot. Map `unconfirmed` and `unknown` to the waiting look.
 - **Icon registry:** add `status.confirmed` (CheckCircle), `status.aging` (Clock), `status.info` (Info) and `status.offline` (WifiSlash), at the bold weight.
+- **Button loading:** keep a loading button at full opacity. Today `loading` sets `aria-disabled`, so `.button[aria-disabled="true"] { opacity: var(--ll-disabled-opacity) }` dims the label and spinner to 50%. Exclude `[aria-busy="true"]` from that rule, and draw disabled with the neutral token pair instead of opacity (audit G8).
+- **AccountMenu:** stop showing `V2_PREVIEW_TAG` on the trigger; keep the preview notice inside the panel. #124 criterion 7 asked for the preview to stay discoverable, so the lead decides when the tag goes.
+- **Tabs:** the page variant's tab `min-height` becomes 48 px (today `--ll-target-min`, 24 px).
 - **Button:** a pressed style for each variant (`:active`): `--ll-color-action-pressed` on primary, the sunken fill on secondary, and `--ll-pressed-overlay` on ghost and danger.
 - **JobResultRow, PayFigure, SponsoredIndicator, VerificationIndicator, EquipmentRequirement, EquipmentCapacity, OperatingRegion:** 16 px text, sentence-case fact labels, and `text-secondary` for the key facts.
 - **FilterBar:** the active filter gets a check icon and a 2 px `selected-indicator` border.
