@@ -103,6 +103,8 @@ Before #281, Light `color/text-muted` measured 5.13:1 on the sunken well and Lig
 | FreshnessChip | [205:1174](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=205-1174) | 4: State (confirmed, aging, stale, waiting). Icons: check, clock, warning, dashed circle. "Confirmed 3 days ago", "Confirmed 6 days ago", "Not confirmed for 12 days", "Waiting for the poster to confirm". | Audit H3, R5 |
 | Notice | [207:1206](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=207-1206) | 4: Tone (info, success, warning, critical); Show title, Show action. The action is a 48 px Button. | Page 04 local Note banners, page 07 Field / Notice |
 | Note | [207:1215](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=207-1215) | Text | Page 04 `52:1122` (audit S8) |
+| PageNotice | [261:16849](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-16849) | 3: Tone (info, positive, critical), each with its icon. Override the text layer. | `apps/web/components/v2/PageNotice.tsx`, page 01 (#257) |
+| StepIndicator / Narrow | [261:16836](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-16836) | 4: Current (1 to 4). Built from Step part instances. | StepIndicator below bp-sm (#257) |
 | PermissionDenied | [208:1183](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=208-1183) | Title, Body, Show actions | U2, audit 1 F5 |
 | Offline | [208:1223](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=208-1223) | 2: Kind (banner, state); Title, Body, Show actions | U2, P0-7 |
 | Input | [209:1239](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=209-1239) | 5: State (default, focus, pressed, error, disabled); Label, Value, Hint, Show hint, Optional. The field height is bound to `c/field-h`. | Page 07 Field / Input |
@@ -130,7 +132,22 @@ New icons: `Icon/status.confirmed` (CheckCircle, `203:21203`), `Icon/status.agin
 | SearchToolbar `18:440` | New Focus ring and Pressed boolean properties on the first field. |
 | SegmentedControl / Option `14:40` | New Touch pressed boolean. It already had State=focus, and its Pressed axis is `aria-pressed`. |
 | Foundations | Each semantic swatch shows a Light chip and a Dark chip, and its value line names the primitive for each mode. `color/action-pressed` has a swatch. The primitive row has all 41 primitives in ramp order. |
-| Documentation | The read-me paragraphs name the Dark and Touch modes and the field bar. The component map was recomputed from the live property definitions, and it has a Field layer group with the 11 new components. |
+| Documentation | The read-me paragraphs name the Dark and Touch modes and the field bar. The component map was recomputed from the live property definitions, and it has a Field layer group with the new components, plus rows for PageNotice and StepIndicator / Narrow. |
+
+**Defects from #257 (first run), added to #281 by the lead.** These were found while designing page 01. All of them are fixed on page 00, and no variant was renamed.
+
+| Defect | Fix |
+|---|---|
+| FormField: the textarea is not wired to its properties | The five `Control=textarea` variants now bind label, hint (with Show hint), value and error to the set's Label, Hint, Value and Error properties, like input and select. The four textarea instances on page 01 kept their own text. |
+| StepIndicator: unbound and wrong step numbers | The Step part's number layer is bound to its Number property, so each step shows the number its instance sets (✓, 2, 3, 4). The part has a new Show label property. |
+| StepIndicator: no layout below 600 px | New set [StepIndicator / Narrow](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-16836) (Current 1 to 4). It is drawn the way `StepIndicator.module.css` collapses below bp-sm: every step keeps its bar and number (28 px minimum), and only the current step shows its label. StepIndicator `14:231` stays the wide layout. |
+| VisibilityPanel: the private-panel title is not wired | The private variant's title is bound to Title. It is one property for both audiences, like the code's `title` prop, so set it on each instance. |
+| Checkbox: the hint does not wrap | Every variant is 358 px wide, and its label and hint fill that width and wrap. |
+| Button: the loading state uses 50% opacity | Checked: no loading variant uses opacity. Every variant shows its label at full opacity, with a 270° spinner ring in the label colour. The label measures 7.08:1 on primary, and the text colour measures 16.70:1 on the secondary and ghost surfaces. |
+| Section slot: FormFields inside render at 320 px at 768 px | The Content slots of Section, Dialog, DetailPanel and PageHeader now stretch a child on insert, so a FormField dropped into a slot fills it. FormFields already placed in slots on other pages keep their old fixed width: set them to Fill there. |
+| PageHeader: the new slot placeholder shows by default | The PageHeader Content slot now displays empty by default. The "Slot: page content" label is hidden, and the dashed box and padding are gone, so an empty slot takes no space. This also closes audit G1 on every page. |
+| Make PageNotice (with a tone icon) a system component | New set [PageNotice](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-16849) with Tone (info, positive, critical), as `apps/web/components/v2/PageNotice.tsx` defines it. Each tone has an icon (info, check, warning), and the text is 16 px `color/text`. |
+| type/body at 16 px in the variables | `text/base` is 16. `type/body`, `type/body-secondary`, `type/body-semibold` and `type/text-16` are bound to it, so no page needs a local 16 px override. Page 01's local overrides can now be removed (#257). |
 
 **Kept from an earlier, unclaimed draft.** Before this task was claimed, an earlier session had already edited the file without a claim or a record. This task checked that work, kept what met the bar and replaced the rest:
 
@@ -197,8 +214,9 @@ Every fill and stroke of the new and changed components is bound to a variable.
 | SegmentedControl | [14:77](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=14-77) (part [14:40](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=14-40)) | `packages/ui/src/primitives/SegmentedControl.tsx` | 4: Selected (none, 1, 2, 3). Option part: Pressed (aria-pressed) × State (default, hover, focus), Label, Touch pressed |
 | Tabs | [14:131](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=14-131) (part [14:98](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=14-98)) | `packages/ui/src/primitives/Tabs.tsx`, `packages/ui/src/primitives/TabList.tsx` | 2: Variant (page, segmented). Tab part: Variant × Selected, Label, Show count, Focus ring, Pressed |
 | NumberStepper | [14:164](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=14-164) | `packages/ui/src/primitives/NumberStepper.tsx` | 4: Value (set, unset, at-min, at-max); Focus ring, Pressed. Height follows the Component mode. |
-| StepIndicator | [14:231](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=14-231) (part [14:178](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=14-178)) | `packages/ui/src/primitives/StepIndicator.tsx` | 4: Current (1–4). Step part: State (done, current, todo), Label, Number |
-| VisibilityPanel | [16:122](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=16-122) | `packages/ui/src/primitives/VisibilityPanel.tsx` | 2: Audience (public, private); Title |
+| StepIndicator | [14:231](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=14-231) (part [14:178](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=14-178)) | `packages/ui/src/primitives/StepIndicator.tsx` | 4: Current (1–4). Step part: State (done, current, todo), Label, Number (bound), Show label |
+| StepIndicator / Narrow | [261:16836](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-16836) | `packages/ui/src/primitives/StepIndicator.module.css` (below bp-sm) | 4: Current (1–4). Only the current step shows its label. |
+| VisibilityPanel | [16:122](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=16-122) | `packages/ui/src/primitives/VisibilityPanel.tsx` | 2: Audience (public, private); Title (bound in both variants) |
 | FormActions | [16:127](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=16-127) | `packages/ui/src/primitives/FormActions.tsx` | Show secondary |
 | Dialog | [16:255](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=16-255) | `packages/ui/src/primitives/Dialog.tsx` | 3: Size (default, wide) × Layout (centred, sheet); Title, Body, Show footer, Content (native slot) |
 | EmptyState | [16:260](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=16-260) | `packages/ui/src/primitives/states/EmptyState.tsx` | Title, Body, Show actions |
@@ -231,6 +249,7 @@ Every fill and stroke of the new and changed components is bound to a variable.
 | FindWorkSummary | [86:3300](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=86-3300) | `apps/web/components/v2/discovery/FindWorkFilters.tsx` | The Find work summary bar; Focus ring, Pressed. The where line uses `type/body-semibold`. Change opens the filter sheet. |
 | SortControl | [86:3306](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=86-3306) | `apps/web/components/v2/discovery/SortControl.tsx` | Sort label and select; Value, Focus ring, Pressed. Options from `FIND_WORK_SORT_LABELS`: Newest confirmed, Nearest, Pay within each basis. |
 | HaulerSetupChecklist | [86:4045](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=86-4045) | `apps/web/components/v2/onboarding/HaulerSetupChecklist.tsx` | Title, Note, Done item, Open item, Second open item, Focus ring, Pressed. A done item is muted; an open item is a link. The checklist is hidden once every item is done. |
+| PageNotice | [261:16849](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-16849) | `apps/web/components/v2/PageNotice.tsx` | 3: Tone (info, positive, critical) |
 | Field layer components | See [What changed](#what-changed) | See the follow-ups | BottomActionBar, FreshnessChip, Notice, Note, PermissionDenied, Offline, Input, Switch, Fact, Member, PlanCard |
 
 Each component's CSS module sits next to its `.tsx` file and has the same name.
@@ -270,12 +289,15 @@ The field layer is ahead of the code. Each change below needs a matching code ta
 - **JobResultRow, PayFigure, SponsoredIndicator, VerificationIndicator, EquipmentRequirement, EquipmentCapacity, OperatingRegion:** 16 px text, sentence-case fact labels, and `text-secondary` for the key facts.
 - **FilterBar:** the active filter gets a check icon and a 2 px `selected-indicator` border.
 - **Checkbox:** a 24 px box and a label row at least 48 px tall.
+- **PageNotice** (`apps/web/components/v2/PageNotice.tsx`): 16 px text (`--ll-text-base`, not `--ll-text-md`) and a tone icon (status.info, status.confirmed, status.warning).
+- **StepIndicator:** draw the done step with `status.confirmed` instead of the "✓" glyph, which renders like a "v" in Plex Mono (audit G12).
 
 **Figma follow-ups on other pages** (not in this task; 00 System is the only page it edits)
 
 - **Page 07 Flows:** swap its local `Field / Button`, `Field / FreshnessChip`, `Field / Notice`, `Field / Input`, `Field / Checkbox` and `Field / Switch` parts (`106:*`, `131:1092`) for the 00 System components.
 - **Page 04 Settings and page 05 Marketing:** swap the local Note, Plan card, Fact and Member parts for Note, PlanCard, Fact and Member (audit S8, M7).
 - **Every 390 px frame:** set the Component collection to Touch, and put the primary action in a BottomActionBar (audit G3, G4).
+- **Page 01 (#257):** remove the local 16 px text overrides, set the FormFields already inside Section slots to Fill, and swap the local PageNotice for the 00 System one.
 - **Page 02:** the aging wording "Last confirmed 9 days ago — check with the poster" is too long for a chip at 390 px. Use "Confirmed 9 days ago" and keep the advice in the job sheet.
 
 ## What the code has that Figma does not represent
