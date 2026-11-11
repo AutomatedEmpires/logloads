@@ -87,6 +87,10 @@ function withCount(item: NavItem, counts: Readonly<Partial<Record<string, number
  * Boosts (§4.10), and last the LogLoads staff console (§7). None is a bottom tab: the five tabs stay exactly as
  * `v2NavigationFor` gives them (#124, lead decision on #209), so the shell offers these from its More and Settings
  * menus. Which ones a context sees comes from `v2FeatureNavigationFor`.
+ *
+ * Find Trucks, boost purchase and the admin queue use the routes their Figma frames record
+ * (docs/product/figma/FG06-recruit-admin): `/v2/landing/trucks`, `/v2/landing/jobs/boost` and `/admin`, the staff
+ * console outside V2. No frame records a route for the others yet.
  */
 export const V2_FEATURE_NAVIGATION: readonly NavItem[] = Object.freeze([
   { href: "/v2/landing/trucks", icon: "action.search", id: "find-trucks", label: "Find Trucks" },
@@ -96,8 +100,8 @@ export const V2_FEATURE_NAVIGATION: readonly NavItem[] = Object.freeze([
   { href: "/v2/alerts", icon: "action.call", id: "alerts", label: "Alerts" },
   { href: "/v2/team", icon: "nav.fleet", id: "team", label: "Team" },
   { href: "/v2/landing/billing", icon: "load.pay", id: "billing", label: "Billing" },
-  { href: "/v2/landing/boosts", icon: "ops.notice", id: "boosts", label: "Boosts" },
-  { href: "/v2/admin", icon: "nav.admin", id: "admin", label: "Admin" }
+  { href: "/v2/landing/jobs/boost", icon: "ops.notice", id: "boosts", label: "Boosts" },
+  { href: "/admin", icon: "nav.admin", id: "admin", label: "Admin" }
 ])
 
 /**

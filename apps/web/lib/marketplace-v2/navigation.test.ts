@@ -188,8 +188,8 @@ describe("port v3 navigation entries (#245)", () => {
       ["alerts", "Alerts", "/v2/alerts"],
       ["team", "Team", "/v2/team"],
       ["billing", "Billing", "/v2/landing/billing"],
-      ["boosts", "Boosts", "/v2/landing/boosts"],
-      ["admin", "Admin", "/v2/admin"]
+      ["boosts", "Boosts", "/v2/landing/jobs/boost"],
+      ["admin", "Admin", "/admin"]
     ])
 
     const tabIds = new Set(V2_NAVIGATION.map((item) => item.id))
@@ -274,21 +274,27 @@ describe("port v3 navigation entries (#245)", () => {
     ])
   })
 
-  it("marks the entry current on its own pages, not the landing overview", () => {
+  it("marks the entry current on its own pages, not the landing overview or Post jobs", () => {
     const both = member("owner", true, true)
     const items = [...v2NavigationFor(marketplaceCapabilities(both)), ...v2FeatureNavigationFor({ ...contextFor(both), admin: LOGLOADS_STAFF })]
 
     expect(activeV2NavId("/v2/landing/trucks", items)).toBe("find-trucks")
+    expect(activeV2NavId("/v2/landing/trucks/invite", items)).toBe("find-trucks")
     expect(activeV2NavId("/v2/landing/billing", items)).toBe("billing")
-    expect(activeV2NavId("/v2/landing/boosts", items)).toBe("boosts")
+    expect(activeV2NavId("/v2/landing/jobs/boost", items)).toBe("boosts")
     expect(activeV2NavId("/v2/landing/jobs", items)).toBe("landing-overview")
     expect(activeV2NavId("/v2/invitations", items)).toBe("invitations")
     expect(activeV2NavId("/v2/saved", items)).toBe("saved-jobs")
-    expect(activeV2NavId("/v2/admin", items)).toBe("admin")
+    expect(activeV2NavId("/admin", items)).toBe("admin")
+
+    const landing = member("owner", true, false)
+    const landingItems = [...v2NavigationFor(marketplaceCapabilities(landing)), ...v2FeatureNavigationFor(contextFor(landing))]
+    expect(activeV2NavId("/v2/landing/jobs/boost", landingItems)).toBe("boosts")
+    expect(activeV2NavId("/v2/landing/jobs/new", landingItems)).toBe("landing-jobs")
   })
 
   it("keeps the landing entries in the landing workspace and the hauler entries in the hauler workspace", () => {
-    for (const pathname of ["/v2/landing/trucks", "/v2/landing/billing", "/v2/landing/boosts"]) {
+    for (const pathname of ["/v2/landing/trucks", "/v2/landing/billing", "/v2/landing/jobs/boost"]) {
       expect(v2WorkspaceFor(pathname)).toBe("landing")
     }
     for (const pathname of ["/v2/invitations", "/v2/saved"]) {
