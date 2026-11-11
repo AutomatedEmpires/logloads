@@ -15,7 +15,9 @@ import {
   validateMarketplaceJobDraft,
   type MarketplaceAvailabilityAttestation,
   type MarketplaceCapability,
+  type MarketplaceJobDetailView,
   type MarketplaceJobDraft,
+  type MarketplaceJobFilters,
   type MarketplaceLandingAllowanceView,
   type MarketplaceLandingStatus,
   type MarketplaceLandingView,
@@ -29,6 +31,7 @@ import { normalizedBilling } from "./billing"
 import { normalizedBoosts } from "./boosts"
 import { normalizedInvites } from "./invites"
 import { normalizedJobs } from "./jobs"
+import { marketplaceInterestPage, marketplaceJobPage } from "./keyset-pages"
 import type { MarketplaceCalls, MarketplaceDb, MarketplacePrincipal } from "./normalized-db"
 import { normalizedHaulerFleetMethods } from "./normalized-fleet"
 import { normalizedHaulerProfileMethods } from "./normalized-hauler"
@@ -265,6 +268,21 @@ export function createNormalizedMarketplaceV2({ db, features, now = () => new Da
     return value
   }
 
+  /**
+   * Public discovery in one anonymous read. `exact` is false when the function filled its row limit: more jobs may
+   * match than it returned, so a count of these is a floor, never the total (#280).
+   */
+  async function discover(filters: MarketplaceJobFilters): Promise<{ jobs: MarketplaceJobDetailView[]; exact: boolean }> {
+    const args = jobFilterArguments(filters)
+
+    if (!args) {
+      return { exact: true, jobs: [] }
+    }
+
+    const rows = await db.asAnon((calls) => calls.call("list_marketplace_jobs", args))
+    return { exact: rows.length < args.p_limit, jobs: refineDiscovery(rows.map(jobViewFromRow), filters) }
+  }
+
   return {
     // Port v3 (#244). Spread first, so no group can replace a method defined below.
     ...groups.jobs.methods(context),
@@ -375,20 +393,33 @@ export function createNormalizedMarketplaceV2({ db, features, now = () => new Da
     },
 
     async listJobs(filters) {
-      const args = jobFilterArguments(filters ?? {})
+      return (await discover(filters ?? {})).jobs
+    },
 
-      if (!args) {
-        return []
-      }
-
-      const rows = await db.asAnon((calls) => calls.call("list_marketplace_jobs", args))
-      return refineDiscovery(rows.map(jobViewFromRow), filters ?? {})
+    // #280: one anonymous read per page, never one per job: `list_marketplace_jobs` already returns each job's public
+    // detail fields. Until stage 30 (#294) gives it a cursor, the page is cut from that one read.
+    async listJobPage(filters, page) {
+      const { exact, jobs } = await discover(filters ?? {})
+      return marketplaceJobPage(jobs, filters ?? {}, page, { exact })
     },
 
     async listLandingInterests(viewer) {
       const rows = await asViewer(viewer, (calls) =>
         calls.call("list_marketplace_interests", { p_org_id: viewer.organizationId, p_side: "landing" }), read)
       return rows.map(interestViewFromRow)
+    },
+
+    // #280 (audit K1): one read as the session's person, with the function's own side checks (interest.reply for the
+    // hauler, inquiry.respond for the landing). It has no limit yet, so every inquiry is read and the count is exact;
+    // stage 30 (#294) moves the limit and the cursor into SQL.
+    async listInterestPage(viewer, side, page) {
+      if (side !== "hauler" && side !== "landing") {
+        throw new MarketplaceRefusalError(INQUIRY_NOT_FOUND, "22023")
+      }
+
+      const rows = await asViewer(viewer, (calls) =>
+        calls.call("list_marketplace_interests", { p_org_id: viewer.organizationId, p_side: side }), read)
+      return marketplaceInterestPage(rows.map(interestViewFromRow), { organizationId: viewer.organizationId, side }, page, { exact: true })
     },
 
     async postHaulerReply(viewer, input) {
