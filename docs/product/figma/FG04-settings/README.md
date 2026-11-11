@@ -1,51 +1,65 @@
 # FG04 Settings: billing, team and account
 
-**Status:** TARGET. Built for founder review in Figma on 2026-11-10 (#260). It is not approved. These key screens still need the founder's approval (AE-Control `policy/designops.md`).
+**Status:** TARGET. Revised for design audit 2 on 2026-11-10 (#297). It is not approved. These key screens still need the founder's approval (AE-Control `policy/designops.md`).
 **Figma page:** [04 Settings](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=44-115) in the LogLoads file (jackson.cole's team).
-**Source of truth:** `docs/product/LOGLOADS_UX_FUNCTIONAL_SPEC_v1.0.md` and the coded V2 plan cards, account menu and profile email on `work/logloads-repair`. Figma mirrors that copy. No UI code changed in this task.
+**Source of truth:** `docs/product/LOGLOADS_UX_FUNCTIONAL_SPEC_v1.0.md` and the plan numbers in `packages/contracts/src/membership.ts`. Figma mirrors that copy. No UI code changed in this task.
 
-Billing is not active. Nothing on this page can be bought, and hauling stays free. Where a settings screen is not coded, the frame follows the spec and uses the coded wording for the inactive state.
+The approval screens show billing on. A separate frame shows billing not on yet, as facts and one notice, with no dead buttons. Hauling stays free. Nothing on this page stores a full card number.
+
+The example person is the one already on page 00 System: Sam Carter, sam@example.com, owner of North Ridge Logging.
+
+## What changed for audit 2
+
+- Billing, team and account actions are available. Each one ends in a success or error frame. Offline frames keep the last saved facts and do not pretend a change went through.
+- Builder notes are only in the annotation frame. The screens use short user copy.
+- Billing leads with the current plan and usage, then payment, then invoices. Plan choices live on Compare plans. A boost and the founding discount are one line each.
+- An account menu lists Billing, Team and Account. Each screen has a Settings breadcrumb and a Billing / Team / Account control. These screens are not a tab, so the tab bar is not shown.
+- Name, email, equipment and distance are facts with "Edit in profile". Inputs are only where the person can type.
+- Text alerts are off. The screen shows the number, the consent line, and "Reply STOP to end".
+- Alert timing is a two-choice control. Quiet hours are a start time and an end time.
+- Body copy is 16 px. Buttons are the 00 System large size, 48 px. Every screen exists at 390, 768 and 1440 px.
+- Page 00 System was not edited. The old local plan, fact, member and note parts on this page were removed. Screens are built from 00 System Button, PageHeader, Brand and variables.
 
 ## Frames
 
-| Frame | Node | Route | Spec |
+| Frame | 390 | 768 | 1440 |
 |---|---|---|---|
-| [Annotation](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=52-1141) | `52:1141` | — | Index of the screens below |
-| [Billing and plan · 1440](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=52-1156) | `52:1156` | Spec appendix, Landing: Billing & Boosts. Not coded. Coded plan facts: `/v2/start/landing#plans` | 4.12 Billing, plan & promotions; 2.3 Landing subscription matrix; 2.5 Subscription enforcement |
-| [Billing and plan · 390](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=52-1357) | `52:1357` | Same as the 1440 frame | Same |
-| [Team and seats · 1440](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=52-1576) | `52:1576` | Spec appendix, Landing: Team. Not coded | 4.11 Team and organization access; 2.4 Team-member permissions |
-| [Team and seats · 390](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=52-1727) | `52:1727` | Same as the 1440 frame | Same |
-| [Account and notifications · 1440](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=52-1904) | `52:1904` | Spec appendix, Hauler: Settings, plus the notification preferences in Saved Jobs / Alerts. Coded pieces: the account menu, `/v2/switch`, and the email on `/v2/hauler/profile` | 5.10 Hauler account and help; 5.9 Saved jobs, job alerts & notification preferences |
-| [Account and notifications · 390](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=52-2138) | `52:2138` | Same as the 1440 frame | Same |
+| Annotation (not a screen) | [126:1094](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-1094) | — | — |
+| Account menu | [126:1097](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-1097) | [126:1235](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-1235) | [126:1271](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-1271) |
+| Billing and plan | [126:1307](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-1307) | [126:1446](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-1446) | [126:1520](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-1520) |
+| Billing not on yet | [126:1594](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-1594) | [126:1690](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-1690) | [126:1742](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-1742) |
+| Compare plans | [126:1794](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-1794) | [126:1907](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-1907) | [126:1966](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-1966) |
+| Plan changed | [126:2025](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-2025) | [126:2112](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-2112) | [126:2150](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-2150) |
+| Card updated | [126:2188](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-2188) | [126:2275](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-2275) | [126:2313](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-2313) |
+| Payment failed | [126:2351](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-2351) | [126:2438](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-2438) | [126:2476](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-2476) |
+| Boost is on | [126:2514](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-2514) | [126:2601](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-2601) | [126:2639](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-2639) |
+| Billing offline | [126:2677](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-2677) | [126:2773](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-2773) | [126:2820](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-2820) |
+| Team | [126:2867](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-2867) | [126:2997](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-2997) | [126:3058](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-3058) |
+| Invitation sent | [126:3119](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-3119) | [126:3206](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-3206) | [126:3244](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-3244) |
+| Invitation failed | [126:3282](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-3282) | [126:3369](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-3369) | [126:3407](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-3407) |
+| Team offline | [126:3445](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-3445) | [126:3538](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-3538) | [126:3582](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-3582) |
+| Transfer ownership | [126:3626](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-3626) | [126:3720](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-3720) | [126:3759](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-3759) |
+| Ownership transferred | [126:3798](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-3798) | [126:3885](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-3885) | [126:3923](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-3923) |
+| Account | [126:3961](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-3961) | [126:4178](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-4178) | [126:4265](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-4265) |
+| Settings saved | [126:4352](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-4352) | [126:4439](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-4439) | [126:4477](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-4477) |
+| Settings not saved | [126:4515](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-4515) | [126:4602](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-4602) | [126:4640](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-4640) |
+| Account offline | [126:4678](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-4678) | [126:4774](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-4774) | [126:4821](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-4821) |
+| Problem reported | [126:4868](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-4868) | [126:4955](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-4955) | [126:4993](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-4993) |
+| Data copy requested | [126:5031](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-5031) | [126:5118](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-5118) | [126:5156](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-5156) |
+| Delete account | [126:5194](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-5194) | [126:5287](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-5287) | [126:5326](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-5326) |
+| Sign-in closed | [126:5365](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-5365) | [126:5452](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-5452) | [126:5490](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-5490) |
+| Signed out | [126:5528](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-5528) | [126:5580](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-5580) | [126:5603](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=126-5603) |
 
-The example person is the one already on page 00 System: Sam Carter, sam@example.com, North Ridge Logging, Landing · Owner.
+## What each approval screen shows
 
-## What each screen shows
+**Billing and plan.** Pro at $299 per month, next bill Dec 10, 2026, 2 of 3 landings, 2 of 5 seats, 7 of 10 job invites left. Invites reset on the bill date and do not carry over. Card is Visa ending 4242. Two paid invoices. Change plan, update the card, email invoices, and boost a job are actions with their own ending frames.
 
-**Billing and plan.** "Billing isn't active yet. You can set up landings and draft jobs." No plan can be bought and nothing charges the business. Current access uses the coded allowance lines for no plan: 0 active landings, 1 member, and no targeted invitations. The three plans are Basic $149 per month, Pro $299 per month and Regional $499 per month, with the seat, landing and invitation facts from `LANDING_PLANS`. Change plan, update payment method and purchase a boost are disabled. There is no card number, invoice, renewal date or founding-discount claim. Boost prices are the spec's $99, $149 and $199. Paused and archived landings never count, unused invitations do not roll over, and an exhausted invitation allowance never charges anyone automatically.
+**Team.** Sam Carter is the owner. Riley Nguyen is a manager at Oak Landing. Jordan Hale is invited as staff. Inviting, resending, and transferring ownership each have an ending. Owners handle billing and the team. Managers edit landings and jobs. Staff read inquiries and reply.
 
-**Team and seats.** One owner, Sam Carter. Seat caps including the owner are Basic 2, Pro 5 and Regional 10, but no plan is active, so another seat is not available and Invite someone is disabled. Roles are written out: Owner, Manager and Staff. A seat is a person, not a truck, a contracted hauler or a job. There are no pending invitations. The only owner cannot be removed, and transfer ownership stays disabled.
+**Account.** Profile facts link out to the profile. Email and in-app alerts are on. Texts are off. Daily digest, quiet hours 9:00 PM to 6:00 AM. Report a problem, email a copy of the data, delete the sign-in, and sign out are actions with endings. Deleting the sign-in does not delete North Ridge Logging.
 
-**Account and notifications.** Sign-in name and email are read-only. Switch business goes to the coded `/v2/switch` action, and Sign out is available. Hauling is free forever; this page does not offer a paid hauler plan. Job invitations are off by default. Saved jobs and saved searches are empty. Alert frequency is Daily digest, quiet hours are 9:00 PM – 6:00 AM, and LogLoads does not take continuous phone location. Export and deletion are disabled because this preview cannot submit them, and a real request has to respect lawful retention.
+**Billing not on yet.** One notice and the facts. No purchase buttons.
 
-Landing frames relabel the four desktop links to the coded landing destinations: Overview, Landing inbox, Post jobs and Landings. The account frames keep the hauler links. No primary item is current, because these screens are not those destinations. Mobile uses the landing or hauler bottom tabs from 00 System.
+## Gaps left outside this page
 
-## Gaps
-
-These are missing from page 00 System. The local components below are composed from that page's variables and text styles. This task added no new styles and did not change 00 System.
-
-| Gap | What the screen does instead | Local node |
-|---|---|---|
-| PageNotice | [Settings / Note](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=52-1122), filled with `color/action-subtle` | `52:1122` |
-| Plan card. ChoiceCard would look like a selection, and the coded plans are not a choice | [Settings / Plan card](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=52-1124) | `52:1124` |
-| Allowance or fact row | [Settings / Fact](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=52-1133) | `52:1133` |
-| Member row | [Settings / Member](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=52-1136) | `52:1136` |
-| Section content slot. The 00 System slot reads "Slot: section content" and is not a property, so a screen cannot put content inside a Section instance | Section bodies are frames using `color/surface`, `color/border`, `space/5` and `radius/lg`, with Button, FormField, Checkbox and EmptyState instances inside | — |
-| FormField select. Setting Value on the select variant kept the specimen text "Self-loader log truck" | Alert frequency uses the input control, value "Daily digest" | — |
-| GlobalNavigation landing variant | Landing frames relabel the four existing links. Team and Billing are not in that bar, which matches the coded V2 nav | — |
-| FormActions. Its labels are the draft wizard's Back, Save draft and Next | Actions are Button instances | — |
-| A published support address | The account screen says no support address is published. None is named in the spec or the V2 code | — |
-
-The four local components sit in [Composed components (local to 04 Settings)](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=52-1121) (`52:1121`). They are not part of 00 System.
-
-Fleet team (spec 6.6) and landing saved searches (spec 4.13) are not on this page. This issue is plan and billing, team seats, and account and notifications.
+00 System still has no Touch mode, no Notice component, and a 15 px body token. This page does not change those. It uses large buttons and 16 px text on the screen. Page 05 was not edited, so its local plan card is unchanged.
