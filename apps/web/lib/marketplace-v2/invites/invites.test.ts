@@ -650,6 +650,7 @@ describe("respondToInvitation", () => {
 
     await adapter().respondToInvitation(hauler, { invitationId: INV_1, response: "interested" })
 
+    expect(storeCalls("invite_answer_lock")).toEqual([{ args: [INV_1], kind: "query", name: "invite_answer_lock", readOnly: false }])
     expect(storeCalls("invite_received_one")).toEqual([{ args: [HAULER_A, INV_1], kind: "query", name: "invite_received_one", readOnly: false }])
     expect(storeCalls("respond_to_invitation")).toEqual([
       { args: { p_invitation_id: INV_1, p_response: "interested" }, kind: "call", name: "respond_to_invitation", readOnly: false }
@@ -695,7 +696,20 @@ describe("respondToInvitation", () => {
 
     await adapter().respondToInvitation(hauler, { invitationId: INV_1, response: "declined" })
 
-    expect(recorded.map((entry) => entry.name)).toEqual(["invite_received_one", "respond_to_invitation"])
+    expect(recorded.map((entry) => entry.name)).toEqual(["invite_answer_lock", "invite_received_one", "respond_to_invitation"])
+  })
+
+  it("serializes answers to one invitation: the lock is its own statement, before the read, in the same write transaction", async () => {
+    queries.invite_received_one = [{ id: INV_1, recipient_response: "none" }]
+
+    await adapter().respondToInvitation(hauler, { invitationId: INV_1.toUpperCase(), response: "interested" })
+
+    expect(recorded.slice(0, 2)).toEqual([
+      { args: [INV_1], kind: "query", name: "invite_answer_lock", readOnly: false },
+      { args: [HAULER_A, INV_1], kind: "query", name: "invite_received_one", readOnly: false }
+    ])
+    expect(INVITE_STATEMENTS.invite_answer_lock.text).toMatch(/pg_catalog\.pg_advisory_xact_lock\(/)
+    expect(INVITE_STATEMENTS.invite_answer_lock.text).not.toMatch(/targeted_invitations/)
   })
 
   it("refuses a malformed answer before any store call", async () => {

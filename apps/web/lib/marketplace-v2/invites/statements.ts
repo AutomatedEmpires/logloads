@@ -18,7 +18,7 @@
  * methods that run it refuse and reach no store (`./index.ts`).
  */
 
-export const INVITE_STATEMENT_NAMES = ["invite_received", "invite_received_one", "invite_sent"] as const
+export const INVITE_STATEMENT_NAMES = ["invite_answer_lock", "invite_received", "invite_received_one", "invite_sent"] as const
 
 export type InviteStatementName = (typeof INVITE_STATEMENT_NAMES)[number]
 
@@ -74,6 +74,18 @@ export const INVITE_STATEMENTS: Readonly<Record<InviteStatementName, StatementSp
   order by ti.delivered_at desc, ti.id desc
   limit 50
 ) as r`
+  },
+
+  /**
+   * $1 invitation. Serializes answers to one invitation until the transaction ends. The person cannot lock the row
+   * (`authenticated` holds no UPDATE on `targeted_invitations`), so a transaction advisory lock on the invitation id
+   * stands in. It runs as its own statement before `invite_received_one`: under READ COMMITTED that read then takes a
+   * snapshot after any earlier answer committed, so two concurrent answers cannot both see the invitation unanswered.
+   */
+  invite_answer_lock: {
+    args: ["uuid"],
+    text: `select jsonb_build_object('locked', true) as row
+from (select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended($1::text, 20261250))) as l`
   },
 
   /**

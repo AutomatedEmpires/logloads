@@ -17,7 +17,7 @@ import type { InviteStatementName } from "./statements"
  * group that is not supported:
  *
  * - `list_invitation_recipients` is not in stage 01–29: the recipients list waits on #294 (stage 30);
- * - `invite_sent`, `invite_received` and `invite_received_one` wait on their catalogue entries.
+ * - `invite_sent`, `invite_received`, `invite_received_one` and `invite_answer_lock` wait on their catalogue entries.
  *
  * `supported` stays false until that wiring is on; the task that completes it sets it and updates the shared test.
  */
@@ -27,7 +27,7 @@ export const INVITE_METHOD_NEEDS: Readonly<Record<keyof MarketplaceInvitesPort, 
   invitationAudience: { functions: ["get_marketplace_job", "count_eligible_invitation_recipients"], statements: [] },
   invitationRecipients: { functions: ["get_marketplace_job", "list_invitation_recipients"], statements: [] },
   receivedInvitations: { functions: [], statements: ["invite_received"] },
-  respondToInvitation: { functions: ["respond_to_invitation"], statements: ["invite_received_one"] },
+  respondToInvitation: { functions: ["respond_to_invitation"], statements: ["invite_answer_lock", "invite_received_one"] },
   sendTargetedInvitations: {
     functions: ["get_marketplace_job", "get_org_entitlement_state", "reserve_targeted_invitation"],
     statements: ["invite_sent"]

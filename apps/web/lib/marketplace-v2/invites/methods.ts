@@ -12,7 +12,8 @@
  * the reservations the same person made moments ago (`invite_sent`) and returns them instead of reserving again.
  *
  * Answering: only an invitation `invite_received_one` shows as delivered to the business is answered, and an answer
- * is recorded once (`planInvitationReply`). An answer never changes the allowance.
+ * is recorded once (`planInvitationReply`), with answers to one invitation serialized (`invite_answer_lock`). An
+ * answer never changes the allowance.
  */
 
 import {
@@ -232,6 +233,8 @@ export function inviteMethods(context: NormalizedFeatureContext): MarketplaceInv
       const parsed = parseInput(marketplaceInvitationReplyInputSchema, input)
 
       await run(context, viewer, false, async (calls) => {
+        // First, alone: a concurrent answer to the same invitation waits here until this transaction ends.
+        await statement(calls, "invite_answer_lock", [parsed.invitationId])
         const [row] = await statement(calls, "invite_received_one", [viewer.organizationId, parsed.invitationId])
 
         if (row === undefined) {
