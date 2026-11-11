@@ -128,3 +128,67 @@ describe("pilot adapter: feature capabilities (#244)", () => {
     await expect(operatingStateMarketplaceV2.viewerFeatureCapabilities({ organizationId: stranger.id, userId: loader.id })).rejects.toThrow()
   })
 })
+
+describe("pilot adapter: one read of the document per page (#280)", () => {
+  it("pages the public board in listJobs order, each page from one read, with an exact count", async () => {
+    const filters = { acceptingOnly: false }
+    const all = await operatingStateMarketplaceV2.listJobs(filters)
+    expect(all.length).toBeGreaterThan(0)
+    hoisted.readState.mockClear()
+
+    const seen: string[] = []
+    let after: string | null = null
+    let pages = 0
+
+    do {
+      // One job a page, so the seed's small public board still takes a page per job.
+      const page: Awaited<ReturnType<typeof pilotMarketplaceV2.listJobPage>> = await pilotMarketplaceV2.listJobPage(filters, { after, limit: 1 })
+      pages += 1
+      expect(page.total).toEqual({ count: all.length, exact: true })
+      expect(page.start).toBe(seen.length)
+      // Each job carries its public detail fields, so the page never reads a job on its own.
+      for (const job of page.items) expect(job).toHaveProperty("publicAccessRequirements")
+      seen.push(...page.items.map((job) => job.id))
+      after = page.nextCursor
+    } while (after !== null && pages < 100)
+
+    expect(seen).toEqual(all.map((job) => job.id))
+    expect(pages).toBe(all.length)
+    expect(hoisted.readState).toHaveBeenCalledTimes(pages)
+  })
+
+  it("pages a landing's inquiries from one read, through the same authority, and never another landing's", async () => {
+    const ownJob = state.loadPostings.find((load) => load.companyId === northPine.id && load.status !== "draft")!
+    const otherJob = state.loadPostings.find((load) => load.companyId !== northPine.id)!
+    const hauler = state.organizations.find((organization) => organization.id !== northPine.id && organization.id !== otherJob.companyId)!
+    const record = (minute: number, job: typeof ownJob) => {
+      const at = new Date(Date.UTC(2026, 10, 1, 0, minute)).toISOString()
+      return {
+        availableFrom: null, availableUntil: null, contactPreference: "in_app" as const, createdAt: at, equipment: [],
+        haulerOrganizationId: hauler.id, id: crypto.randomUUID(), jobOrganizationId: job.companyId, loadPostingId: job.id,
+        message: `Private note ${minute}`, replies: [], respondedAt: null, status: "submitted" as const, submittedByUserId: loader.id,
+        trucksOffered: 1, updatedAt: at, withdrawnAt: null
+      }
+    }
+    const own = [record(1, ownJob), record(3, ownJob), record(2, ownJob)]
+    const rival = record(9, otherJob)
+    state.marketplaceInterests.push(...own, rival)
+
+    try {
+      hoisted.readState.mockClear()
+      const first = await pilotMarketplaceV2.listInterestPage(viewer, "landing", { limit: 2 })
+      const second = await pilotMarketplaceV2.listInterestPage(viewer, "landing", { after: first.nextCursor, limit: 2 })
+
+      expect([...first.items, ...second.items].map((interest) => interest.id)).toEqual([own[1]!.id, own[2]!.id, own[0]!.id])
+      expect(first.total).toEqual({ count: 3, exact: true })
+      expect(second.nextCursor).toBeNull()
+      expect(hoisted.readState).toHaveBeenCalledTimes(2)
+
+      const stranger = state.organizations.find((organization) =>
+        !state.organizationMemberships.some((candidate) => candidate.organizationId === organization.id && candidate.userId === loader.id))!
+      await expect(pilotMarketplaceV2.listInterestPage({ organizationId: stranger.id, userId: loader.id }, "landing")).rejects.toThrow()
+    } finally {
+      state.marketplaceInterests.splice(state.marketplaceInterests.length - 4, 4)
+    }
+  })
+})
