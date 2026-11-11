@@ -12,13 +12,14 @@ import type { InviteStatementName } from "./statements"
  *
  * The functions are catalogue entries in `MARKETPLACE_FUNCTIONS` (normalized-db.ts) and the table reads are catalogue
  * statements in `MARKETPLACE_QUERIES` (normalized-queries.ts), with this group's SQL in `statements.ts`. Both
- * catalogues are shared files this task does not edit. Each method runs once both catalogues hold everything it
- * needs, and until then refuses with `MarketplaceFeatureUnavailableError` and reaches no store:
+ * catalogues are shared files this task does not edit. Until both hold everything every method needs, the whole group
+ * refuses with `MarketplaceFeatureUnavailableError` and reaches no store, as the shared port v3 test requires of a
+ * group that is not supported:
  *
  * - `list_invitation_recipients` is not in stage 01–29: the recipients list waits on #294 (stage 30);
  * - `invite_sent`, `invite_received` and `invite_received_one` wait on their catalogue entries.
  *
- * `supported` stays false until every method is live.
+ * `supported` stays false until that wiring is on; the task that completes it sets it and updates the shared test.
  */
 
 /** What each port method runs through the adapter: catalogue functions it calls and this group's statements. */
@@ -51,14 +52,13 @@ export function inviteMethodReady(method: keyof MarketplaceInvitesPort, catalogu
   return needs.functions.every((name) => catalogue.functions.has(name)) && needs.statements.every((name) => catalogue.statements.has(name))
 }
 
-export const normalizedInvites: NormalizedFeature<"invites"> = {
-  methods: (context) => {
-    const live = inviteMethods(context)
-    const unavailable = unavailableMarketplaceV2Feature("invites")
-    const methods = Object.keys(INVITE_METHOD_NEEDS) as Array<keyof MarketplaceInvitesPort>
+/** True once the catalogues hold every function and statement any invites method runs. */
+export function invitesCatalogueReady(catalogue: InviteCatalogue = CATALOGUE): boolean {
+  return (Object.keys(INVITE_METHOD_NEEDS) as Array<keyof MarketplaceInvitesPort>).every((method) => inviteMethodReady(method, catalogue))
+}
 
-    return Object.fromEntries(methods.map((method) => [method, inviteMethodReady(method) ? live[method] : unavailable[method]])) as unknown as MarketplaceInvitesPort
-  },
+export const normalizedInvites: NormalizedFeature<"invites"> = {
+  methods: (context) => (invitesCatalogueReady() ? inviteMethods(context) : unavailableMarketplaceV2Feature("invites")),
   supported: false
 }
 

@@ -4,7 +4,7 @@ vi.mock("server-only", () => ({}))
 
 import { LANDING_PLANS, MARKETPLACE_INVITATION_RADIUS_MILES } from "@logloads/contracts"
 
-import { INVITE_METHOD_NEEDS, inviteMethodReady, normalizedInvites } from "./index"
+import { INVITE_METHOD_NEEDS, inviteMethodReady, invitesCatalogueReady, normalizedInvites } from "./index"
 import { receivedInvitationFromRow, recipientFromRow, sentInvitationFromRow } from "./mapping"
 import { inviteMethods } from "./methods"
 import { INVITE_STATEMENT_NAMES, INVITE_STATEMENTS, inviteStatement } from "./statements"
@@ -266,37 +266,43 @@ describe("catalogue gate", () => {
     expect(Object.keys(INVITE_METHOD_NEEDS).sort()).toEqual(Object.keys(MARKETPLACE_V2_FEATURE_OPERATIONS.invites).sort())
   })
 
-  it("turns a method on only when both catalogues hold everything it runs", () => {
-    const catalogue = { functions: new Set(["get_marketplace_job", "count_eligible_invitation_recipients"]), statements: new Set<string>() }
+  it("is ready only when both catalogues hold everything every method runs", () => {
+    const everything = {
+      functions: new Set(Object.values(INVITE_METHOD_NEEDS).flatMap((needs) => needs.functions)),
+      statements: new Set<string>(INVITE_STATEMENT_NAMES)
+    }
 
-    expect(inviteMethodReady("invitationAudience", catalogue)).toBe(true)
-    expect(inviteMethodReady("invitationRecipients", catalogue)).toBe(false)
-    expect(inviteMethodReady("sentInvitations", catalogue)).toBe(false)
-    expect(inviteMethodReady("sentInvitations", { ...catalogue, statements: new Set(["invite_sent"]) })).toBe(true)
+    expect(invitesCatalogueReady(everything)).toBe(true)
+    expect(inviteMethodReady("invitationAudience", { functions: new Set(["get_marketplace_job", "count_eligible_invitation_recipients"]), statements: new Set<string>() }))
+      .toBe(true)
+
+    for (const name of [...everything.functions, ...everything.statements]) {
+      const without = {
+        functions: new Set([...everything.functions].filter((entry) => entry !== name)),
+        statements: new Set([...everything.statements].filter((entry) => entry !== name))
+      }
+
+      expect(invitesCatalogueReady(without), name).toBe(false)
+    }
   })
 
-  it("refuses an uncatalogued method without reaching the store, and stays unsupported", async () => {
+  it("refuses every method without reaching the store until the shared catalogues hold all of them, and stays unsupported", async () => {
     const port = createNormalizedMarketplaceV2({ db: fakeDb(), now: () => NOW, principal: async () => PRINCIPAL })
     const catalogue = { functions: new Set(Object.keys(MARKETPLACE_FUNCTIONS)), statements: new Set(Object.keys(MARKETPLACE_QUERIES)) }
 
     expect(normalizedInvites.supported).toBe(false)
     expect(port.supports.invites).toBe(false)
+    expect(invitesCatalogueReady()).toBe(invitesCatalogueReady(catalogue))
+
+    if (invitesCatalogueReady(catalogue)) return
 
     for (const method of Object.keys(INVITE_METHOD_NEEDS) as Array<keyof MarketplaceInvitesPort>) {
-      if (inviteMethodReady(method, catalogue)) continue
       recorded = []
       const invoke = port[method] as unknown as (viewer: MarketplaceV2Viewer, input: unknown) => Promise<unknown>
 
-      await expect(invoke(landing, JOB)).rejects.toBeInstanceOf(MarketplaceFeatureUnavailableError)
+      await expect(invoke(landing, JOB), method).rejects.toBeInstanceOf(MarketplaceFeatureUnavailableError)
       expect(recorded).toEqual([])
     }
-  })
-
-  it("counts the audience through the real catalogue today", async () => {
-    calls.count_eligible_invitation_recipients = [14]
-    const port = createNormalizedMarketplaceV2({ db: fakeDb(), now: () => NOW, principal: async () => PRINCIPAL })
-
-    expect(await port.invitationAudience(landing, JOB)).toEqual({ eligibleRecipients: 14, jobId: JOB, radiusMiles: MARKETPLACE_INVITATION_RADIUS_MILES })
   })
 })
 
