@@ -19,7 +19,7 @@ Where a screen is already coded, the frame matches the code first. "Changed" lis
 
 ## What is on the page
 
-The page has 10 screens. Each one is drawn at 390, 768 and 1440 px, which makes 30 frames. There are also 8 sign-in, sign-up and verify states at 390 px. The rows run top to bottom: 390 px at x = 0, 768 px at x = 510, 1440 px at x = 1398, and the states to the right.
+The page has 10 screens. Each one is drawn at 390, 768 and 1440 px, which makes 30 frames. There are also 12 states at 390 px: 8 for sign-in, sign-up and verify, and 4 field-error states for the setup forms. The rows run top to bottom: 390 px at x = 0, 768 px at x = 510, 1440 px at x = 1398, and the states to the right.
 
 The annotation frame [FR-00](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=95-2557) (`95:2557`) sits to the left. It lists every screen with its route, spec reference, code source and frame ids.
 
@@ -48,6 +48,12 @@ The annotation frame [FR-00](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6
 | FR-03 Verify email | Expired code, with "Send a new code" as the action | [75:1188](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=75-1188) |
 | FR-03 Verify email | New code sent, with the resend cooldown ("…in 0:24") | [75:1290](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=75-1290) |
 | FR-03 Verify email | Loading after Verify email ("Verifying…") | [75:1401](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=75-1401) |
+| FR-05 Your business | Two field errors with the summary "Fix 2 fields to continue:" | [173:2557](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=173-2557) |
+| FR-07 Your trucks | The add form refused: the trailer description is too short | [173:2698](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=173-2698) |
+| FR-08 Landing business | Business name missing | [173:2944](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=173-2944) |
+| FR-10 Add your first landing | Name missing, a gate code in a public field, and a short phone number | [173:3093](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=173-3093) |
+
+The error states keep what the person typed. The messages are the validation messages in `packages/contracts`.
 
 The example data is illustrative: Ridgeline Hauling, Sweet Home, OR, Cedar Fork Logging, Hills Creek Unit 4 and sam@example.com. Interface wording is copied from the code. Plan facts are worded from `LANDING_PLANS` and `landingPlanCardFacts` in `packages/contracts`.
 
@@ -89,9 +95,11 @@ The example data is illustrative: Ridgeline Hauling, Sweet Home, OR, Cedar Fork 
 - **FR-07 Your trucks.**
   - Step 2 of 3, shown after one configuration ("Log truck + Pole trailer", 1 listed) has been added.
   - Changed: Update and "Save availability" are 44 px buttons, and setup uses the narrow container.
+  - Changed, in the error state: the add-form error appears under the field that caused it. The code puts it under Truck whatever the cause.
 - **FR-08 Landing business.**
   - Matches the code: the "Seen by haulers" and private panels, "Set up business", the three plan cards and the "Billing isn't active yet" notice.
-  - Changed: adds a 4-step indicator (UX 02 B1 shows "● ○ ○ ○") and the founding-offer line from B2 (see the open questions).
+  - Changed: adds a 4-step indicator (UX 02 B1 shows "● ○ ○ ○").
+  - Not shown: the founding-offer line from UX 02 B2. The offer cannot be bought while billing is inactive, and the code does not show it either (see the open questions).
 - **FR-09 Plan, not purchasable yet.**
   - The state after "Set up business". There is no plan choice, no price selection and no checkout, and the notice says nothing on the page charges you.
   - Changed: step 2 of 4, with one next action, "Add your first landing".
@@ -138,7 +146,8 @@ On 2026-11-10 another session was revising 00 System while this page was built. 
 - **States not drawn:**
   - The "already signed in" page (`AuthenticatedEntryPage`).
   - Clerk social sign-in buttons. Which providers appear is set in the Clerk instance.
-  - Error states on the app screens, and the plan-cap state.
+  - Store refusals such as "isn't available in this preview yet". Audit C13 asks to replace them with read-only forms.
+  - The plan-cap state.
 - **Spec fields the code does not hold:**
   - The A5 radius and the notify opt-ins. The code keeps these on the profile.
   - The B1 type, region, about, legal name and billing contact. The store does not hold them.
@@ -147,7 +156,7 @@ On 2026-11-10 another session was revising 00 System while this page was built. 
 
 ## Open questions for the founder
 
-1. **Founding offer.** Should the plan step show the founding-offer line while billing is inactive? UX 02 B2 has the line; the code does not.
+1. **Founding offer.** The founding-offer line from UX 02 B2 is left off while billing is inactive. When billing can sell plans, should the plan step show it, and in what wording?
 2. **Folding "Who hauls?".** Audit C17 folds "Who hauls?" into the business form, so hauler setup has three steps instead of the four in UX 02 A2–A5. Is that approved?
 3. **Landing steps.**
    - Are the labels "Your business · Plan · First landing · First job" right?
