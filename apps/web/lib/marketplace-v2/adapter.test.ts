@@ -42,6 +42,8 @@ function spyPort(supportsPublishing: boolean, supported: readonly MarketplaceV2F
     setHaulerEquipmentCount: resolved(undefined),
     interestForJob: resolved(null),
     listHaulerInterests: resolved([]),
+    listInterestPage: resolved({ items: [], nextCursor: null, restarted: false, start: 0, total: { count: 0, exact: true } }),
+    listJobPage: resolved({ items: [], nextCursor: null, restarted: false, start: 0, total: { count: 0, exact: true } }),
     listJobs: resolved([]),
     listLandingInterests: resolved([]),
     postHaulerReply: resolved(undefined),
@@ -163,6 +165,25 @@ describe("selectMarketplaceV2Port", () => {
     for (const method of Object.values(pilot)) {
       if (typeof method === "function") expect(method).not.toHaveBeenCalled()
     }
+  })
+
+  it("routes the paged job and inquiry lists (#280) with their cursor and page size", async () => {
+    const pilot = spyPort(false)
+    const target = spyPort(true)
+    const page = { after: "cursor", limit: 25 }
+
+    const viaPilot = selectMarketplaceV2Port(pilot, { kind: () => "pilot", normalized: () => target })
+    await viaPilot.listJobPage({ acceptingOnly: true }, page)
+    await viaPilot.listInterestPage(VIEWER, "landing", page)
+    expect(pilot.listJobPage).toHaveBeenCalledWith({ acceptingOnly: true }, page)
+    expect(pilot.listInterestPage).toHaveBeenCalledWith(VIEWER, "landing", page)
+
+    const viaNormalized = selectMarketplaceV2Port(pilot, { kind: () => "normalized", normalized: () => target })
+    await viaNormalized.listJobPage({}, undefined)
+    await viaNormalized.listInterestPage(VIEWER, "hauler", undefined)
+    expect(target.listJobPage).toHaveBeenCalledWith({}, undefined)
+    expect(target.listInterestPage).toHaveBeenCalledWith(VIEWER, "hauler", undefined)
+    expect(pilot.listJobPage).toHaveBeenCalledTimes(1)
   })
 
   it("routes the hauler profile methods (#125) like every other call", async () => {
