@@ -1,6 +1,10 @@
 import {
   MARKETPLACE_JOB_RECONFIRM_AFTER_DAYS,
+  MARKETPLACE_JOB_RECONFIRM_REMINDER_DAYS,
   MARKETPLACE_JOB_STOP_STATUSES,
+  MARKETPLACE_JOB_UNCONFIRMED_HIDDEN_DAYS,
+  MARKETPLACE_JOB_UNCONFIRMED_LABEL,
+  MARKETPLACE_JOB_UNCONFIRMED_REASON,
   type MarketplaceAvailabilityAttestation,
   type MarketplaceJobStatus,
   type MarketplaceJobStopStatus,
@@ -20,6 +24,10 @@ import { DomainRefusalError } from "../../utils"
  *   filled  → closed; resume
  *   closed  → resume
  *   expired → closed. A listing past its expiry never comes back: the poster duplicates it into a new draft.
+ *
+ * Reconfirmation (decided 2026-11-10, #308): a job on the marketplace is reminded on day 5 after its last confirmation,
+ * due on day 7, and from day 14 it is off Find Work and takes no new interest until the poster reconfirms it. That
+ * last stage is not a status: the job stays active, never expired or paused, and reconfirming restores it.
  *
  * Asking for the status a job already has changes nothing, so a retried request is safe. A job is a public
  * advertisement: no rule here reads a load, a truck assignment or a completed haul.
@@ -41,7 +49,7 @@ export interface JobLifecycleState {
 export const JOB_EXPIRED_REFUSAL = "This listing has expired. Duplicate it to post the work again."
 export const JOB_PAUSE_REFUSAL = "Only a job on the marketplace can be paused."
 export const JOB_FILLED_REFUSAL = "A closed job cannot be marked filled. Put it back on the marketplace first."
-export const JOB_ALREADY_LISTED_REFUSAL = "This job is already on the marketplace. Confirm it is still available instead."
+export const JOB_ALREADY_LISTED_REFUSAL = "This job is already posted. Confirm it is still available instead."
 export const JOB_HELD_REFUSAL = "LogLoads staff are reviewing this job. It can go back on the marketplace once they release it."
 export const JOB_RECONFIRM_REFUSAL = "Put this job back on the marketplace to confirm it is still available."
 export const JOB_STOP_STATUS_REFUSAL = "Choose to pause the job, mark it filled or close it."
@@ -141,34 +149,75 @@ export function planJobEdit(job: JobLifecycleState, now: Date): void {
 }
 
 export interface JobReconfirmationState {
-  /** On the marketplace and never confirmed, or last confirmed `MARKETPLACE_JOB_RECONFIRM_AFTER_DAYS` or more ago. */
+  /** Day 5 or later (`MARKETPLACE_JOB_RECONFIRM_REMINDER_DAYS`): remind the poster to reconfirm. */
+  remind: boolean
+  /** Day 7 or later (`MARKETPLACE_JOB_RECONFIRM_AFTER_DAYS`): due, and haulers see the listing as aging. */
   due: boolean
-  /** When a confirmed job on the marketplace falls due; `null` when it was never confirmed or is not listed. */
+  /**
+   * Day 14 or later (`MARKETPLACE_JOB_UNCONFIRMED_HIDDEN_DAYS`): off Find Work, and no new interest until the poster
+   * reconfirms. The job is neither expired nor paused.
+   */
+  hidden: boolean
+  /** When each stage starts for a confirmed job on the marketplace; `null` when never confirmed or not listed. */
+  remindAt: string | null
   dueAt: string | null
+  hiddenAt: string | null
   /** Whole days since the last confirmation; `null` when never confirmed. */
   daysSinceConfirmation: number | null
 }
 
 /**
- * Whether the poster should be asked to reconfirm (§10.11). It matches what haulers see: a job falls due exactly when
- * `postingFreshness` stops calling it recently confirmed. Being due never stops a job.
+ * Where a job stands in the reconfirmation cadence (§10.11; decided 2026-11-10, #308). Only a job on the marketplace
+ * (`effectiveJobStatus` active) is in it. One that was never confirmed (a legacy posting) is at every stage at once:
+ * no confirmation is ever assumed. The day-7 stage matches what haulers see: it starts exactly when `postingFreshness`
+ * stops calling the job recently confirmed.
  */
 export function jobReconfirmation(job: JobLifecycleState, now: Date): JobReconfirmationState {
   const confirmedAt = job.lastConfirmedAt === null ? Number.NaN : Date.parse(job.lastConfirmedAt)
   const confirmed = !Number.isNaN(confirmedAt)
   const daysSinceConfirmation = confirmed ? Math.floor(Math.max(0, now.getTime() - confirmedAt) / DAY_MS) : null
+  const none = { dueAt: null, hiddenAt: null, remindAt: null }
 
   if (effectiveJobStatus(job, now) !== "active") {
-    return { daysSinceConfirmation, due: false, dueAt: null }
+    return { ...none, daysSinceConfirmation, due: false, hidden: false, remind: false }
   }
 
   if (!confirmed) {
-    return { daysSinceConfirmation, due: true, dueAt: null }
+    return { ...none, daysSinceConfirmation, due: true, hidden: true, remind: true }
   }
 
-  const dueAt = confirmedAt + MARKETPLACE_JOB_RECONFIRM_AFTER_DAYS * DAY_MS
+  const at = (days: number) => confirmedAt + days * DAY_MS
+  const reached = (days: number) => now.getTime() >= at(days)
+  const iso = (days: number) => new Date(at(days)).toISOString()
 
-  return { daysSinceConfirmation, due: now.getTime() >= dueAt, dueAt: new Date(dueAt).toISOString() }
+  return {
+    daysSinceConfirmation,
+    due: reached(MARKETPLACE_JOB_RECONFIRM_AFTER_DAYS),
+    dueAt: iso(MARKETPLACE_JOB_RECONFIRM_AFTER_DAYS),
+    hidden: reached(MARKETPLACE_JOB_UNCONFIRMED_HIDDEN_DAYS),
+    hiddenAt: iso(MARKETPLACE_JOB_UNCONFIRMED_HIDDEN_DAYS),
+    remind: reached(MARKETPLACE_JOB_RECONFIRM_REMINDER_DAYS),
+    remindAt: iso(MARKETPLACE_JOB_RECONFIRM_REMINDER_DAYS)
+  }
+}
+
+/**
+ * Whether a job is on Find Work and takes new interest: on the marketplace, and confirmed within
+ * `MARKETPLACE_JOB_UNCONFIRMED_HIDDEN_DAYS` (§8.22 "no new interest when not published"; #308). Reconfirming brings a
+ * hidden job straight back. Interest already sent is untouched.
+ */
+export function jobTakesNewInterest(job: JobLifecycleState, now: Date): boolean {
+  return effectiveJobStatus(job, now) === "active" && !jobReconfirmation(job, now).hidden
+}
+
+/**
+ * The label and reason for a job that left Find Work because it was not confirmed in time; `null` for any other job,
+ * whose status already says why it takes no interest. They name the missing confirmation, never a pause or an expiry.
+ */
+export function unconfirmedJobNotice(job: JobLifecycleState, now: Date): { label: string; reason: string } | null {
+  return effectiveJobStatus(job, now) === "active" && jobReconfirmation(job, now).hidden
+    ? { label: MARKETPLACE_JOB_UNCONFIRMED_LABEL, reason: MARKETPLACE_JOB_UNCONFIRMED_REASON }
+    : null
 }
 
 /** The plan's result, or `null` when the lifecycle refuses it. Any other error is not a refusal and is rethrown. */

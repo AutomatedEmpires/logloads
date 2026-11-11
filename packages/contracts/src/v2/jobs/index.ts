@@ -24,14 +24,31 @@ export const marketplaceJobStopStatusSchema = z.enum(MARKETPLACE_JOB_STOP_STATUS
 export const MARKETPLACE_JOB_MATERIAL_FIELDS = ["pay", "dates", "equipment", "trucks"] as const
 export type MarketplaceJobMaterialField = (typeof MARKETPLACE_JOB_MATERIAL_FIELDS)[number]
 
-/**
- * Days after the poster's last explicit "still available" confirmation when a job on the marketplace is due to be
- * reconfirmed (§10.11: "prompt posters to confirm a still-open job after a policy interval"). The exact cadence is an
- * open decision (spec §14 "Posting reconfirmation cadence", Blueprint §16.2), so this is the one interval the contracts
- * already define, `RECENT_CONFIRMATION_DAYS`: past it, haulers see the listing as aging. It only prompts the poster.
- * It never pauses, closes or expires a job, so a long-running job is reconfirmed rather than replaced (§10.11, §13.2).
+/*
+ * The reconfirmation cadence (§10.11), decided on 2026-11-10 as the pilot default (the "Reconfirm interval" row of the
+ * #114 register, #308; reviewed by the lead by 2026-12-15). Every interval counts from the poster's last explicit
+ * "still available" confirmation, never from an edit. None of them expires, pauses or closes a job, so a long-running
+ * job is reconfirmed rather than replaced (§10.11, §13.2).
  */
+
+/** Day 5: the poster is reminded to reconfirm. */
+export const MARKETPLACE_JOB_RECONFIRM_REMINDER_DAYS = 5
+
+/** Day 7: the job is due to be reconfirmed. It matches `RECENT_CONFIRMATION_DAYS`, so haulers then see it as aging. */
 export const MARKETPLACE_JOB_RECONFIRM_AFTER_DAYS = RECENT_CONFIRMATION_DAYS
+
+/**
+ * Day 14: a job still on the marketplace but unconfirmed this long leaves Find Work and takes no new interest until the
+ * poster reconfirms it. It is not expired, and it is not paused: its status stays what the poster set.
+ */
+export const MARKETPLACE_JOB_UNCONFIRMED_HIDDEN_DAYS = 14
+
+/**
+ * How a job that left Find Work for want of a confirmation is described. It names the missing confirmation, so it
+ * never says the poster paused or closed the job, or that it expired.
+ */
+export const MARKETPLACE_JOB_UNCONFIRMED_LABEL = "Waiting for the poster to confirm"
+export const MARKETPLACE_JOB_UNCONFIRMED_REASON = `The poster has not confirmed this job in ${MARKETPLACE_JOB_UNCONFIRMED_HIDDEN_DAYS} days, so it is not taking new interest until they do.`
 
 /** What a poster can do with one of their jobs. Each is refused server-side in a state that does not allow it. */
 export const MARKETPLACE_OWN_JOB_ACTIONS = ["edit", "reconfirm", "pause", "mark_filled", "close", "resume", "duplicate"] as const
