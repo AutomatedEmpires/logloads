@@ -14,6 +14,7 @@ import page from "@/components/v2/JobPage.module.css"
 import { PageNotice } from "@/components/v2/PageNotice"
 import { ReportListing } from "@/components/v2/ReportListing"
 import { ShareListing } from "@/components/v2/ShareListing"
+import { v2ErrorNotice } from "@/lib/marketplace-v2/error-codes"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { contradictionText, UPDATE_AVAILABILITY, type CapacityContradiction } from "@/lib/marketplace-v2/interest-capacity"
 import { interestConfirmation, interestSheetModel, sentContradictions, standingInterestSummary } from "@/lib/marketplace-v2/interest-sheet"
@@ -115,7 +116,8 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
         Promise.resolve().then(() => pilotMarketplaceV2.listHaulerInterests(viewer)).catch((): MarketplaceInterestView[] => [])
       ])
     : [null, [], null, []]
-  const error = typeof query.error === "string" ? query.error : null
+  // Only the fixed copy for an error code reaches the page, never text from the URL (#279).
+  const failure = v2ErrorNotice(query)
   const sent = query.sent === "1"
   const now = new Date()
   const standing = standingInterest(existing)
@@ -149,7 +151,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
                 <div className={styles.stack}>
                   {justSent ? <PageNotice role="status" tone="positive">{interestConfirmation(standing)}</PageNotice> : null}
                   {sent && !standing ? <PageNotice role="status" tone="positive">Your interest was sent. The landing can reply in My inquiries.</PageNotice> : null}
-                  {error ? <PageNotice role="alert" tone="critical">{error}</PageNotice> : null}
+                  {failure ? <PageNotice role="alert" tone="critical">{failure.message}</PageNotice> : null}
                   {!job.acceptingInterest ? (
                     <p className={styles.text}>
                       {jobClosureText(job)} It is not accepting new interest.{" "}
